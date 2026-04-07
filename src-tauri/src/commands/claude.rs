@@ -1657,6 +1657,7 @@ fn search_files_recursive(
 #[tauri::command]
 pub async fn create_checkpoint(
     app: tauri::State<'_, crate::checkpoint::state::CheckpointState>,
+    account_state: tauri::State<'_, AccountManagerState>,
     session_id: String,
     project_id: String,
     project_path: String,
@@ -1669,18 +1670,21 @@ pub async fn create_checkpoint(
         project_id
     );
 
+    let claude_dir =
+        get_claude_dir_for_project(&account_state, &project_path).map_err(|e| e.to_string())?;
+
     let manager = app
         .get_or_create_manager(
             session_id.clone(),
             project_id.clone(),
             PathBuf::from(&project_path),
+            claude_dir.clone(),
         )
         .await
         .map_err(|e| format!("Failed to get checkpoint manager: {}", e))?;
 
     // Always load current session messages from the JSONL file
-    let session_path = get_claude_dir()
-        .map_err(|e| e.to_string())?
+    let session_path = claude_dir
         .join("projects")
         .join(&project_id)
         .join(format!("{}.jsonl", session_id));
@@ -1717,6 +1721,7 @@ pub async fn create_checkpoint(
 #[tauri::command]
 pub async fn restore_checkpoint(
     app: tauri::State<'_, crate::checkpoint::state::CheckpointState>,
+    account_state: tauri::State<'_, AccountManagerState>,
     checkpoint_id: String,
     session_id: String,
     project_id: String,
@@ -1728,11 +1733,15 @@ pub async fn restore_checkpoint(
         session_id
     );
 
+    let claude_dir =
+        get_claude_dir_for_project(&account_state, &project_path).map_err(|e| e.to_string())?;
+
     let manager = app
         .get_or_create_manager(
             session_id.clone(),
             project_id.clone(),
             PathBuf::from(&project_path),
+            claude_dir.clone(),
         )
         .await
         .map_err(|e| format!("Failed to get checkpoint manager: {}", e))?;
@@ -1743,7 +1752,6 @@ pub async fn restore_checkpoint(
         .map_err(|e| format!("Failed to restore checkpoint: {}", e))?;
 
     // Update the session JSONL file with restored messages
-    let claude_dir = get_claude_dir().map_err(|e| e.to_string())?;
     let session_path = claude_dir
         .join("projects")
         .join(&result.checkpoint.project_id)
@@ -1766,6 +1774,7 @@ pub async fn restore_checkpoint(
 #[tauri::command]
 pub async fn list_checkpoints(
     app: tauri::State<'_, crate::checkpoint::state::CheckpointState>,
+    account_state: tauri::State<'_, AccountManagerState>,
     session_id: String,
     project_id: String,
     project_path: String,
@@ -1776,8 +1785,11 @@ pub async fn list_checkpoints(
         project_id
     );
 
+    let claude_dir =
+        get_claude_dir_for_project(&account_state, &project_path).map_err(|e| e.to_string())?;
+
     let manager = app
-        .get_or_create_manager(session_id, project_id, PathBuf::from(&project_path))
+        .get_or_create_manager(session_id, project_id, PathBuf::from(&project_path), claude_dir)
         .await
         .map_err(|e| format!("Failed to get checkpoint manager: {}", e))?;
 
@@ -1788,6 +1800,7 @@ pub async fn list_checkpoints(
 #[tauri::command]
 pub async fn fork_from_checkpoint(
     app: tauri::State<'_, crate::checkpoint::state::CheckpointState>,
+    account_state: tauri::State<'_, AccountManagerState>,
     checkpoint_id: String,
     session_id: String,
     project_id: String,
@@ -1801,7 +1814,8 @@ pub async fn fork_from_checkpoint(
         new_session_id
     );
 
-    let claude_dir = get_claude_dir().map_err(|e| e.to_string())?;
+    let claude_dir =
+        get_claude_dir_for_project(&account_state, &project_path).map_err(|e| e.to_string())?;
 
     // First, copy the session file to the new session
     let source_session_path = claude_dir
@@ -1824,6 +1838,7 @@ pub async fn fork_from_checkpoint(
             new_session_id.clone(),
             project_id,
             PathBuf::from(&project_path),
+            claude_dir,
         )
         .await
         .map_err(|e| format!("Failed to get checkpoint manager: {}", e))?;
@@ -1838,6 +1853,7 @@ pub async fn fork_from_checkpoint(
 #[tauri::command]
 pub async fn get_session_timeline(
     app: tauri::State<'_, crate::checkpoint::state::CheckpointState>,
+    account_state: tauri::State<'_, AccountManagerState>,
     session_id: String,
     project_id: String,
     project_path: String,
@@ -1848,8 +1864,11 @@ pub async fn get_session_timeline(
         project_id
     );
 
+    let claude_dir =
+        get_claude_dir_for_project(&account_state, &project_path).map_err(|e| e.to_string())?;
+
     let manager = app
-        .get_or_create_manager(session_id, project_id, PathBuf::from(&project_path))
+        .get_or_create_manager(session_id, project_id, PathBuf::from(&project_path), claude_dir)
         .await
         .map_err(|e| format!("Failed to get checkpoint manager: {}", e))?;
 
@@ -1860,6 +1879,7 @@ pub async fn get_session_timeline(
 #[tauri::command]
 pub async fn update_checkpoint_settings(
     app: tauri::State<'_, crate::checkpoint::state::CheckpointState>,
+    account_state: tauri::State<'_, AccountManagerState>,
     session_id: String,
     project_id: String,
     project_path: String,
@@ -1869,6 +1889,9 @@ pub async fn update_checkpoint_settings(
     use crate::checkpoint::CheckpointStrategy;
 
     log::info!("Updating checkpoint settings for session: {}", session_id);
+
+    let claude_dir =
+        get_claude_dir_for_project(&account_state, &project_path).map_err(|e| e.to_string())?;
 
     let strategy = match checkpoint_strategy.as_str() {
         "manual" => CheckpointStrategy::Manual,
@@ -1884,7 +1907,7 @@ pub async fn update_checkpoint_settings(
     };
 
     let manager = app
-        .get_or_create_manager(session_id, project_id, PathBuf::from(&project_path))
+        .get_or_create_manager(session_id, project_id, PathBuf::from(&project_path), claude_dir)
         .await
         .map_err(|e| format!("Failed to get checkpoint manager: {}", e))?;
 
@@ -1985,6 +2008,7 @@ pub async fn get_checkpoint_diff(
 #[tauri::command]
 pub async fn track_checkpoint_message(
     app: tauri::State<'_, crate::checkpoint::state::CheckpointState>,
+    account_state: tauri::State<'_, AccountManagerState>,
     session_id: String,
     project_id: String,
     project_path: String,
@@ -1992,8 +2016,11 @@ pub async fn track_checkpoint_message(
 ) -> Result<(), String> {
     log::info!("Tracking message for session: {}", session_id);
 
+    let claude_dir =
+        get_claude_dir_for_project(&account_state, &project_path).map_err(|e| e.to_string())?;
+
     let manager = app
-        .get_or_create_manager(session_id, project_id, PathBuf::from(project_path))
+        .get_or_create_manager(session_id, project_id, PathBuf::from(project_path), claude_dir)
         .await
         .map_err(|e| format!("Failed to get checkpoint manager: {}", e))?;
 
@@ -2007,6 +2034,7 @@ pub async fn track_checkpoint_message(
 #[tauri::command]
 pub async fn check_auto_checkpoint(
     app: tauri::State<'_, crate::checkpoint::state::CheckpointState>,
+    account_state: tauri::State<'_, AccountManagerState>,
     session_id: String,
     project_id: String,
     project_path: String,
@@ -2014,8 +2042,11 @@ pub async fn check_auto_checkpoint(
 ) -> Result<bool, String> {
     log::info!("Checking auto-checkpoint for session: {}", session_id);
 
+    let claude_dir =
+        get_claude_dir_for_project(&account_state, &project_path).map_err(|e| e.to_string())?;
+
     let manager = app
-        .get_or_create_manager(session_id.clone(), project_id, PathBuf::from(project_path))
+        .get_or_create_manager(session_id.clone(), project_id, PathBuf::from(project_path), claude_dir)
         .await
         .map_err(|e| format!("Failed to get checkpoint manager: {}", e))?;
 
@@ -2026,6 +2057,7 @@ pub async fn check_auto_checkpoint(
 #[tauri::command]
 pub async fn cleanup_old_checkpoints(
     app: tauri::State<'_, crate::checkpoint::state::CheckpointState>,
+    account_state: tauri::State<'_, AccountManagerState>,
     session_id: String,
     project_id: String,
     project_path: String,
@@ -2037,11 +2069,15 @@ pub async fn cleanup_old_checkpoints(
         keep_count
     );
 
+    let claude_dir =
+        get_claude_dir_for_project(&account_state, &project_path).map_err(|e| e.to_string())?;
+
     let manager = app
         .get_or_create_manager(
             session_id.clone(),
             project_id.clone(),
             PathBuf::from(project_path),
+            claude_dir,
         )
         .await
         .map_err(|e| format!("Failed to get checkpoint manager: {}", e))?;
@@ -2056,14 +2092,18 @@ pub async fn cleanup_old_checkpoints(
 #[tauri::command]
 pub async fn get_checkpoint_settings(
     app: tauri::State<'_, crate::checkpoint::state::CheckpointState>,
+    account_state: tauri::State<'_, AccountManagerState>,
     session_id: String,
     project_id: String,
     project_path: String,
 ) -> Result<serde_json::Value, String> {
     log::info!("Getting checkpoint settings for session: {}", session_id);
 
+    let claude_dir =
+        get_claude_dir_for_project(&account_state, &project_path).map_err(|e| e.to_string())?;
+
     let manager = app
-        .get_or_create_manager(session_id, project_id, PathBuf::from(project_path))
+        .get_or_create_manager(session_id, project_id, PathBuf::from(project_path), claude_dir)
         .await
         .map_err(|e| format!("Failed to get checkpoint manager: {}", e))?;
 
@@ -2107,6 +2147,7 @@ pub async fn get_checkpoint_state_stats(
 #[tauri::command]
 pub async fn get_recently_modified_files(
     app: tauri::State<'_, crate::checkpoint::state::CheckpointState>,
+    account_state: tauri::State<'_, AccountManagerState>,
     session_id: String,
     project_id: String,
     project_path: String,
@@ -2120,8 +2161,11 @@ pub async fn get_recently_modified_files(
         session_id
     );
 
+    let claude_dir =
+        get_claude_dir_for_project(&account_state, &project_path).map_err(|e| e.to_string())?;
+
     let manager = app
-        .get_or_create_manager(session_id, project_id, PathBuf::from(project_path))
+        .get_or_create_manager(session_id, project_id, PathBuf::from(project_path), claude_dir)
         .await
         .map_err(|e| format!("Failed to get checkpoint manager: {}", e))?;
 
@@ -2143,6 +2187,7 @@ pub async fn get_recently_modified_files(
 #[tauri::command]
 pub async fn track_session_messages(
     state: tauri::State<'_, crate::checkpoint::state::CheckpointState>,
+    account_state: tauri::State<'_, AccountManagerState>,
     session_id: String,
     project_id: String,
     project_path: String,
@@ -2154,11 +2199,15 @@ pub async fn track_session_messages(
         session_id
     );
 
+    let claude_dir =
+        get_claude_dir_for_project(&account_state, &project_path).map_err(|e| e.to_string())?;
+
     let manager = state
         .get_or_create_manager(
             session_id.clone(),
             project_id.clone(),
             PathBuf::from(&project_path),
+            claude_dir,
         )
         .await
         .map_err(|e| format!("Failed to get checkpoint manager: {}", e))?;

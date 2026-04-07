@@ -16,8 +16,6 @@ pub struct CheckpointState {
     /// Map of session_id to CheckpointManager
     /// Uses Arc<CheckpointManager> to allow sharing across async boundaries
     managers: Arc<RwLock<HashMap<String, Arc<CheckpointManager>>>>,
-    /// The Claude directory path for consistent access
-    claude_dir: Arc<RwLock<Option<PathBuf>>>,
 }
 
 impl CheckpointState {
@@ -25,16 +23,7 @@ impl CheckpointState {
     pub fn new() -> Self {
         Self {
             managers: Arc::new(RwLock::new(HashMap::new())),
-            claude_dir: Arc::new(RwLock::new(None)),
         }
-    }
-
-    /// Sets the Claude directory path
-    ///
-    /// This should be called once during application initialization
-    pub async fn set_claude_dir(&self, claude_dir: PathBuf) {
-        let mut dir = self.claude_dir.write().await;
-        *dir = Some(claude_dir);
     }
 
     /// Gets or creates a CheckpointManager for a session
@@ -46,6 +35,7 @@ impl CheckpointState {
     /// * `session_id` - The session identifier
     /// * `project_id` - The project identifier
     /// * `project_path` - The path to the project directory
+    /// * `claude_dir` - The Claude configuration directory for this project's account
     ///
     /// # Returns
     /// An Arc reference to the CheckpointManager for thread-safe sharing
@@ -54,6 +44,7 @@ impl CheckpointState {
         session_id: String,
         project_id: String,
         project_path: PathBuf,
+        claude_dir: PathBuf,
     ) -> Result<Arc<CheckpointManager>> {
         let mut managers = self.managers.write().await;
 
@@ -61,14 +52,6 @@ impl CheckpointState {
         if let Some(manager) = managers.get(&session_id) {
             return Ok(Arc::clone(manager));
         }
-
-        // Get Claude directory
-        let claude_dir = {
-            let dir = self.claude_dir.read().await;
-            dir.as_ref()
-                .ok_or_else(|| anyhow::anyhow!("Claude directory not set"))?
-                .clone()
-        };
 
         // Create new manager
         let manager =
@@ -145,9 +128,6 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let claude_dir = temp_dir.path().to_path_buf();
 
-        // Set Claude directory
-        state.set_claude_dir(claude_dir.clone()).await;
-
         // Create a manager
         let session_id = "test-session-123".to_string();
         let project_id = "test-project".to_string();
@@ -155,13 +135,23 @@ mod tests {
         std::fs::create_dir_all(&project_path).unwrap();
 
         let manager1 = state
-            .get_or_create_manager(session_id.clone(), project_id.clone(), project_path.clone())
+            .get_or_create_manager(
+                session_id.clone(),
+                project_id.clone(),
+                project_path.clone(),
+                claude_dir.clone(),
+            )
             .await
             .unwrap();
 
         // Getting the same session should return the same manager
         let manager2 = state
-            .get_or_create_manager(session_id.clone(), project_id.clone(), project_path.clone())
+            .get_or_create_manager(
+                session_id.clone(),
+                project_id.clone(),
+                project_path.clone(),
+                claude_dir.clone(),
+            )
             .await
             .unwrap();
 
@@ -175,7 +165,7 @@ mod tests {
 
         // Getting after removal should create a new one
         let manager3 = state
-            .get_or_create_manager(session_id.clone(), project_id, project_path)
+            .get_or_create_manager(session_id.clone(), project_id, project_path, claude_dir)
             .await
             .unwrap();
 
