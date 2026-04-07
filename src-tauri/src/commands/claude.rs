@@ -446,7 +446,11 @@ pub async fn list_projects(
     } else {
         for account in &accounts {
             let config_dir = PathBuf::from(&account.config_dir);
-            match collect_projects_from_dir(&config_dir, Some(account.id), Some(account.name.clone())) {
+            match collect_projects_from_dir(
+                &config_dir,
+                Some(account.id),
+                Some(account.name.clone()),
+            ) {
                 Ok(mut acct_projects) => projects.append(&mut acct_projects),
                 Err(e) => {
                     log::warn!(
@@ -461,14 +465,14 @@ pub async fn list_projects(
     }
 
     // Sort projects by most recent session activity, then by creation time
-    projects.sort_by(|a, b| {
-        match (a.most_recent_session, b.most_recent_session) {
+    projects.sort_by(
+        |a, b| match (a.most_recent_session, b.most_recent_session) {
             (Some(a_time), Some(b_time)) => b_time.cmp(&a_time),
             (Some(_), None) => std::cmp::Ordering::Less,
             (None, Some(_)) => std::cmp::Ordering::Greater,
             (None, None) => b.created_at.cmp(&a.created_at),
-        }
-    });
+        },
+    );
 
     log::info!("Found {} projects", projects.len());
     Ok(projects)
@@ -537,7 +541,9 @@ pub async fn get_project_sessions(
     log::info!("Getting sessions for project: {}", project_id);
 
     let claude_dir = match project_path {
-        Some(ref pp) => get_claude_dir_for_project(&account_state, pp).map_err(|e| e.to_string())?,
+        Some(ref pp) => {
+            get_claude_dir_for_project(&account_state, pp).map_err(|e| e.to_string())?
+        }
         None => get_claude_dir().map_err(|e| e.to_string())?,
     };
     let project_dir = claude_dir.join("projects").join(&project_id);
@@ -630,7 +636,9 @@ pub async fn get_claude_settings(
     log::info!("Reading Claude settings");
 
     let claude_dir = match project_path {
-        Some(ref pp) => get_claude_dir_for_project(&account_state, pp).map_err(|e| e.to_string())?,
+        Some(ref pp) => {
+            get_claude_dir_for_project(&account_state, pp).map_err(|e| e.to_string())?
+        }
         None => get_claude_dir().map_err(|e| e.to_string())?,
     };
     let settings_path = claude_dir.join("settings.json");
@@ -702,7 +710,9 @@ pub async fn get_system_prompt(
     log::info!("Reading CLAUDE.md system prompt");
 
     let claude_dir = match project_path {
-        Some(ref pp) => get_claude_dir_for_project(&account_state, pp).map_err(|e| e.to_string())?,
+        Some(ref pp) => {
+            get_claude_dir_for_project(&account_state, pp).map_err(|e| e.to_string())?
+        }
         None => get_claude_dir().map_err(|e| e.to_string())?,
     };
     let claude_md_path = claude_dir.join("CLAUDE.md");
@@ -817,7 +827,9 @@ pub async fn save_system_prompt(
     log::info!("Saving CLAUDE.md system prompt");
 
     let claude_dir = match project_path {
-        Some(ref pp) => get_claude_dir_for_project(&account_state, pp).map_err(|e| e.to_string())?,
+        Some(ref pp) => {
+            get_claude_dir_for_project(&account_state, pp).map_err(|e| e.to_string())?
+        }
         None => get_claude_dir().map_err(|e| e.to_string())?,
     };
     let claude_md_path = claude_dir.join("CLAUDE.md");
@@ -837,7 +849,9 @@ pub async fn save_claude_settings(
     log::info!("Saving Claude settings");
 
     let claude_dir = match project_path {
-        Some(ref pp) => get_claude_dir_for_project(&account_state, pp).map_err(|e| e.to_string())?,
+        Some(ref pp) => {
+            get_claude_dir_for_project(&account_state, pp).map_err(|e| e.to_string())?
+        }
         None => get_claude_dir().map_err(|e| e.to_string())?,
     };
     let settings_path = claude_dir.join("settings.json");
@@ -984,7 +998,9 @@ pub async fn load_session_history(
     );
 
     let claude_dir = match project_path {
-        Some(ref pp) => get_claude_dir_for_project(&account_state, pp).map_err(|e| e.to_string())?,
+        Some(ref pp) => {
+            get_claude_dir_for_project(&account_state, pp).map_err(|e| e.to_string())?
+        }
         None => get_claude_dir().map_err(|e| e.to_string())?,
     };
     let session_path = claude_dir
@@ -1793,7 +1809,12 @@ pub async fn list_checkpoints(
         get_claude_dir_for_project(&account_state, &project_path).map_err(|e| e.to_string())?;
 
     let manager = app
-        .get_or_create_manager(session_id, project_id, PathBuf::from(&project_path), claude_dir)
+        .get_or_create_manager(
+            session_id,
+            project_id,
+            PathBuf::from(&project_path),
+            claude_dir,
+        )
         .await
         .map_err(|e| format!("Failed to get checkpoint manager: {}", e))?;
 
@@ -1872,7 +1893,12 @@ pub async fn get_session_timeline(
         get_claude_dir_for_project(&account_state, &project_path).map_err(|e| e.to_string())?;
 
     let manager = app
-        .get_or_create_manager(session_id, project_id, PathBuf::from(&project_path), claude_dir)
+        .get_or_create_manager(
+            session_id,
+            project_id,
+            PathBuf::from(&project_path),
+            claude_dir,
+        )
         .await
         .map_err(|e| format!("Failed to get checkpoint manager: {}", e))?;
 
@@ -1911,7 +1937,12 @@ pub async fn update_checkpoint_settings(
     };
 
     let manager = app
-        .get_or_create_manager(session_id, project_id, PathBuf::from(&project_path), claude_dir)
+        .get_or_create_manager(
+            session_id,
+            project_id,
+            PathBuf::from(&project_path),
+            claude_dir,
+        )
         .await
         .map_err(|e| format!("Failed to get checkpoint manager: {}", e))?;
 
@@ -2027,7 +2058,12 @@ pub async fn track_checkpoint_message(
         get_claude_dir_for_project(&account_state, &project_path).map_err(|e| e.to_string())?;
 
     let manager = app
-        .get_or_create_manager(session_id, project_id, PathBuf::from(project_path), claude_dir)
+        .get_or_create_manager(
+            session_id,
+            project_id,
+            PathBuf::from(project_path),
+            claude_dir,
+        )
         .await
         .map_err(|e| format!("Failed to get checkpoint manager: {}", e))?;
 
@@ -2053,7 +2089,12 @@ pub async fn check_auto_checkpoint(
         get_claude_dir_for_project(&account_state, &project_path).map_err(|e| e.to_string())?;
 
     let manager = app
-        .get_or_create_manager(session_id.clone(), project_id, PathBuf::from(project_path), claude_dir)
+        .get_or_create_manager(
+            session_id.clone(),
+            project_id,
+            PathBuf::from(project_path),
+            claude_dir,
+        )
         .await
         .map_err(|e| format!("Failed to get checkpoint manager: {}", e))?;
 
@@ -2110,7 +2151,12 @@ pub async fn get_checkpoint_settings(
         get_claude_dir_for_project(&account_state, &project_path).map_err(|e| e.to_string())?;
 
     let manager = app
-        .get_or_create_manager(session_id, project_id, PathBuf::from(project_path), claude_dir)
+        .get_or_create_manager(
+            session_id,
+            project_id,
+            PathBuf::from(project_path),
+            claude_dir,
+        )
         .await
         .map_err(|e| format!("Failed to get checkpoint manager: {}", e))?;
 
@@ -2172,7 +2218,12 @@ pub async fn get_recently_modified_files(
         get_claude_dir_for_project(&account_state, &project_path).map_err(|e| e.to_string())?;
 
     let manager = app
-        .get_or_create_manager(session_id, project_id, PathBuf::from(project_path), claude_dir)
+        .get_or_create_manager(
+            session_id,
+            project_id,
+            PathBuf::from(project_path),
+            claude_dir,
+        )
         .await
         .map_err(|e| format!("Failed to get checkpoint manager: {}", e))?;
 
@@ -2245,7 +2296,9 @@ pub async fn get_hooks_config(
     let settings_path = match scope.as_str() {
         "user" => {
             let claude_dir = match &project_path {
-                Some(pp) => get_claude_dir_for_project(&account_state, pp).map_err(|e| e.to_string())?,
+                Some(pp) => {
+                    get_claude_dir_for_project(&account_state, pp).map_err(|e| e.to_string())?
+                }
                 None => get_claude_dir().map_err(|e| e.to_string())?,
             };
             claude_dir.join("settings.json")
@@ -2300,7 +2353,9 @@ pub async fn update_hooks_config(
     let settings_path = match scope.as_str() {
         "user" => {
             let claude_dir = match &project_path {
-                Some(pp) => get_claude_dir_for_project(&account_state, pp).map_err(|e| e.to_string())?,
+                Some(pp) => {
+                    get_claude_dir_for_project(&account_state, pp).map_err(|e| e.to_string())?
+                }
                 None => get_claude_dir().map_err(|e| e.to_string())?,
             };
             claude_dir.join("settings.json")

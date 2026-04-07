@@ -207,7 +207,11 @@ async fn load_session_history(
 
     let claude_dir = match dirs::home_dir() {
         Some(home) => home.join(".claude"),
-        None => return Json(ApiResponse::error("Could not find home directory".to_string())),
+        None => {
+            return Json(ApiResponse::error(
+                "Could not find home directory".to_string(),
+            ))
+        }
     };
 
     let session_path = claude_dir
@@ -216,12 +220,20 @@ async fn load_session_history(
         .join(format!("{}.jsonl", session_id));
 
     if !session_path.exists() {
-        return Json(ApiResponse::error(format!("Session file not found: {}", session_id)));
+        return Json(ApiResponse::error(format!(
+            "Session file not found: {}",
+            session_id
+        )));
     }
 
     let file = match std::fs::File::open(&session_path) {
         Ok(f) => f,
-        Err(e) => return Json(ApiResponse::error(format!("Failed to open session file: {}", e))),
+        Err(e) => {
+            return Json(ApiResponse::error(format!(
+                "Failed to open session file: {}",
+                e
+            )))
+        }
     };
 
     let reader = BufReader::new(file);

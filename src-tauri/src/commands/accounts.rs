@@ -2,9 +2,7 @@ use crate::accounts::{Account, AccountManagerState, PathRule, ProjectOverride};
 use tauri::State;
 
 #[tauri::command]
-pub async fn list_accounts(
-    state: State<'_, AccountManagerState>,
-) -> Result<Vec<Account>, String> {
+pub async fn list_accounts(state: State<'_, AccountManagerState>) -> Result<Vec<Account>, String> {
     state.0.list_accounts().map_err(|e| e.to_string())
 }
 
@@ -35,10 +33,7 @@ pub async fn update_account(
 }
 
 #[tauri::command]
-pub async fn delete_account(
-    state: State<'_, AccountManagerState>,
-    id: i64,
-) -> Result<(), String> {
+pub async fn delete_account(state: State<'_, AccountManagerState>, id: i64) -> Result<(), String> {
     state.0.delete_account(id).map_err(|e| e.to_string())
 }
 
@@ -75,10 +70,7 @@ pub async fn remove_path_rule(
     state: State<'_, AccountManagerState>,
     rule_id: i64,
 ) -> Result<(), String> {
-    state
-        .0
-        .remove_path_rule(rule_id)
-        .map_err(|e| e.to_string())
+    state.0.remove_path_rule(rule_id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -105,10 +97,7 @@ pub async fn set_project_account_override(
 pub async fn list_project_overrides(
     state: State<'_, AccountManagerState>,
 ) -> Result<Vec<ProjectOverride>, String> {
-    state
-        .0
-        .list_project_overrides()
-        .map_err(|e| e.to_string())
+    state.0.list_project_overrides().map_err(|e| e.to_string())
 }
 
 #[tauri::command]

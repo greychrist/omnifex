@@ -415,10 +415,7 @@ pub fn init_database(app: &AppHandle) -> SqliteResult<Connection> {
     )?;
 
     // Add account_id column to agent_runs (nullable for backwards compat)
-    let _ = conn.execute(
-        "ALTER TABLE agent_runs ADD COLUMN account_id INTEGER",
-        [],
-    );
+    let _ = conn.execute("ALTER TABLE agent_runs ADD COLUMN account_id INTEGER", []);
 
     Ok(conn)
 }

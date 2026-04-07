@@ -1,5 +1,6 @@
 use clap::Parser;
 
+mod accounts;
 mod checkpoint;
 mod claude_binary;
 mod commands;

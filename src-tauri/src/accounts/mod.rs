@@ -249,12 +249,7 @@ impl AccountManager {
         Ok(rules)
     }
 
-    pub fn add_path_rule(
-        &self,
-        account_id: i64,
-        path_prefix: &str,
-        priority: i32,
-    ) -> Result<()> {
+    pub fn add_path_rule(&self, account_id: i64, path_prefix: &str, priority: i32) -> Result<()> {
         let conn = self.db.lock().map_err(|e| anyhow::anyhow!("{}", e))?;
         conn.execute(
             "INSERT INTO account_path_rules (account_id, path_prefix, priority) VALUES (?1, ?2, ?3)",
@@ -326,7 +321,8 @@ impl AccountManager {
             let name = entry.file_name().to_string_lossy().to_string();
 
             // Match .claude-* but not .claude itself or .claude.json
-            if !name.starts_with(".claude-") || name.contains('.') && !name.starts_with(".claude-") {
+            if !name.starts_with(".claude-") || name.contains('.') && !name.starts_with(".claude-")
+            {
                 continue;
             }
 
@@ -343,7 +339,11 @@ impl AccountManager {
             if has_projects || has_settings || has_claude_json {
                 // Extract name from suffix: ".claude-personal" -> "personal"
                 let suffix = name.strip_prefix(".claude-").unwrap_or(&name);
-                info!("Discovered Claude account dir: {} -> {}", suffix, path.display());
+                info!(
+                    "Discovered Claude account dir: {} -> {}",
+                    suffix,
+                    path.display()
+                );
                 found.push((suffix.to_string(), path));
             }
         }
@@ -406,7 +406,9 @@ mod tests {
         let conn = setup_test_db();
         let mgr = AccountManager::new(conn);
 
-        let account = mgr.create_account("personal", "/home/user/.claude-personal", true).unwrap();
+        let account = mgr
+            .create_account("personal", "/home/user/.claude-personal", true)
+            .unwrap();
         assert_eq!(account.name, "personal");
         assert!(account.is_default);
 
@@ -420,10 +422,15 @@ mod tests {
         let conn = setup_test_db();
         let mgr = AccountManager::new(conn);
 
-        let personal = mgr.create_account("personal", "/home/user/.claude-personal", false).unwrap();
-        let _work = mgr.create_account("work", "/home/user/.claude-work", false).unwrap();
+        let personal = mgr
+            .create_account("personal", "/home/user/.claude-personal", false)
+            .unwrap();
+        let _work = mgr
+            .create_account("work", "/home/user/.claude-work", false)
+            .unwrap();
 
-        mgr.set_project_override("/home/user/random-project", personal.id).unwrap();
+        mgr.set_project_override("/home/user/random-project", personal.id)
+            .unwrap();
 
         let resolved = mgr.resolve("/home/user/random-project").unwrap().unwrap();
         assert_eq!(resolved.name, "personal");
@@ -434,16 +441,28 @@ mod tests {
         let conn = setup_test_db();
         let mgr = AccountManager::new(conn);
 
-        let personal = mgr.create_account("personal", "/home/user/.claude-personal", false).unwrap();
-        let work = mgr.create_account("work", "/home/user/.claude-work", false).unwrap();
+        let personal = mgr
+            .create_account("personal", "/home/user/.claude-personal", false)
+            .unwrap();
+        let work = mgr
+            .create_account("work", "/home/user/.claude-work", false)
+            .unwrap();
 
-        mgr.add_path_rule(personal.id, "/home/user/repos/personal/", 0).unwrap();
-        mgr.add_path_rule(work.id, "/home/user/repos/work/", 0).unwrap();
+        mgr.add_path_rule(personal.id, "/home/user/repos/personal/", 0)
+            .unwrap();
+        mgr.add_path_rule(work.id, "/home/user/repos/work/", 0)
+            .unwrap();
 
-        let resolved = mgr.resolve("/home/user/repos/personal/my-project").unwrap().unwrap();
+        let resolved = mgr
+            .resolve("/home/user/repos/personal/my-project")
+            .unwrap()
+            .unwrap();
         assert_eq!(resolved.name, "personal");
 
-        let resolved = mgr.resolve("/home/user/repos/work/api-gateway").unwrap().unwrap();
+        let resolved = mgr
+            .resolve("/home/user/repos/work/api-gateway")
+            .unwrap()
+            .unwrap();
         assert_eq!(resolved.name, "work");
     }
 
@@ -452,18 +471,30 @@ mod tests {
         let conn = setup_test_db();
         let mgr = AccountManager::new(conn);
 
-        let personal = mgr.create_account("personal", "/home/user/.claude-personal", false).unwrap();
-        let work = mgr.create_account("work", "/home/user/.claude-work", false).unwrap();
+        let personal = mgr
+            .create_account("personal", "/home/user/.claude-personal", false)
+            .unwrap();
+        let work = mgr
+            .create_account("work", "/home/user/.claude-work", false)
+            .unwrap();
 
-        mgr.add_path_rule(personal.id, "/home/user/repos/", 0).unwrap();
-        mgr.add_path_rule(work.id, "/home/user/repos/work/", 0).unwrap();
+        mgr.add_path_rule(personal.id, "/home/user/repos/", 0)
+            .unwrap();
+        mgr.add_path_rule(work.id, "/home/user/repos/work/", 0)
+            .unwrap();
 
         // Longer prefix should win
-        let resolved = mgr.resolve("/home/user/repos/work/project").unwrap().unwrap();
+        let resolved = mgr
+            .resolve("/home/user/repos/work/project")
+            .unwrap()
+            .unwrap();
         assert_eq!(resolved.name, "work");
 
         // Shorter prefix catches everything else
-        let resolved = mgr.resolve("/home/user/repos/other/project").unwrap().unwrap();
+        let resolved = mgr
+            .resolve("/home/user/repos/other/project")
+            .unwrap()
+            .unwrap();
         assert_eq!(resolved.name, "personal");
     }
 
@@ -472,8 +503,12 @@ mod tests {
         let conn = setup_test_db();
         let mgr = AccountManager::new(conn);
 
-        let _personal = mgr.create_account("personal", "/home/user/.claude-personal", true).unwrap();
-        let _work = mgr.create_account("work", "/home/user/.claude-work", false).unwrap();
+        let _personal = mgr
+            .create_account("personal", "/home/user/.claude-personal", true)
+            .unwrap();
+        let _work = mgr
+            .create_account("work", "/home/user/.claude-work", false)
+            .unwrap();
 
         // No rules, no override — should fall back to default
         let resolved = mgr.resolve("/some/random/path").unwrap().unwrap();
@@ -486,7 +521,9 @@ mod tests {
         let mgr = AccountManager::new(conn);
 
         // Accounts exist but no default, no rules, no override
-        let _personal = mgr.create_account("personal", "/home/user/.claude-personal", false).unwrap();
+        let _personal = mgr
+            .create_account("personal", "/home/user/.claude-personal", false)
+            .unwrap();
 
         let resolved = mgr.resolve("/some/random/path").unwrap();
         assert!(resolved.is_none());
@@ -497,15 +534,24 @@ mod tests {
         let conn = setup_test_db();
         let mgr = AccountManager::new(conn);
 
-        let personal = mgr.create_account("personal", "/home/user/.claude-personal", false).unwrap();
-        let work = mgr.create_account("work", "/home/user/.claude-work", false).unwrap();
+        let personal = mgr
+            .create_account("personal", "/home/user/.claude-personal", false)
+            .unwrap();
+        let work = mgr
+            .create_account("work", "/home/user/.claude-work", false)
+            .unwrap();
 
         // Rule says /repos/personal/ -> personal
-        mgr.add_path_rule(personal.id, "/home/user/repos/personal/", 0).unwrap();
+        mgr.add_path_rule(personal.id, "/home/user/repos/personal/", 0)
+            .unwrap();
         // But override says this specific project -> work
-        mgr.set_project_override("/home/user/repos/personal/special-project", work.id).unwrap();
+        mgr.set_project_override("/home/user/repos/personal/special-project", work.id)
+            .unwrap();
 
-        let resolved = mgr.resolve("/home/user/repos/personal/special-project").unwrap().unwrap();
+        let resolved = mgr
+            .resolve("/home/user/repos/personal/special-project")
+            .unwrap()
+            .unwrap();
         assert_eq!(resolved.name, "work");
     }
 
@@ -514,8 +560,12 @@ mod tests {
         let conn = setup_test_db();
         let mgr = AccountManager::new(conn);
 
-        let personal = mgr.create_account("personal", "/home/user/.claude-personal", true).unwrap();
-        let work = mgr.create_account("work", "/home/user/.claude-work", false).unwrap();
+        let personal = mgr
+            .create_account("personal", "/home/user/.claude-personal", true)
+            .unwrap();
+        let work = mgr
+            .create_account("work", "/home/user/.claude-work", false)
+            .unwrap();
 
         mgr.set_default(work.id).unwrap();
 
