@@ -5,6 +5,8 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::PathBuf;
 use tauri::command;
+use tauri::State;
+use crate::accounts::AccountManagerState;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct UsageEntry {
@@ -249,6 +251,20 @@ fn get_earliest_timestamp(path: &PathBuf) -> Option<String> {
     None
 }
 
+fn resolve_claude_paths(account_state: &AccountManagerState) -> Result<Vec<PathBuf>, String> {
+    let accounts = account_state.0.list_accounts().map_err(|e| e.to_string())?;
+    if accounts.is_empty() {
+        Ok(vec![dirs::home_dir()
+            .ok_or("Failed to get home directory".to_string())?
+            .join(".claude")])
+    } else {
+        Ok(accounts
+            .iter()
+            .map(|a| PathBuf::from(&a.config_dir))
+            .collect())
+    }
+}
+
 fn get_all_usage_entries(claude_path: &PathBuf) -> Vec<UsageEntry> {
     let mut all_entries = Vec::new();
     let mut processed_hashes = HashSet::new();
@@ -289,12 +305,17 @@ fn get_all_usage_entries(claude_path: &PathBuf) -> Vec<UsageEntry> {
 }
 
 #[command]
-pub fn get_usage_stats(days: Option<u32>) -> Result<UsageStats, String> {
-    let claude_path = dirs::home_dir()
-        .ok_or("Failed to get home directory")?
-        .join(".claude");
+pub fn get_usage_stats(
+    days: Option<u32>,
+    account_state: State<'_, AccountManagerState>,
+) -> Result<UsageStats, String> {
+    let claude_paths = resolve_claude_paths(&account_state)?;
 
-    let all_entries = get_all_usage_entries(&claude_path);
+    let mut all_entries = Vec::new();
+    for claude_path in &claude_paths {
+        all_entries.extend(get_all_usage_entries(claude_path));
+    }
+    all_entries.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
 
     if all_entries.is_empty() {
         return Ok(UsageStats {
@@ -449,12 +470,18 @@ pub fn get_usage_stats(days: Option<u32>) -> Result<UsageStats, String> {
 }
 
 #[command]
-pub fn get_usage_by_date_range(start_date: String, end_date: String) -> Result<UsageStats, String> {
-    let claude_path = dirs::home_dir()
-        .ok_or("Failed to get home directory")?
-        .join(".claude");
+pub fn get_usage_by_date_range(
+    start_date: String,
+    end_date: String,
+    account_state: State<'_, AccountManagerState>,
+) -> Result<UsageStats, String> {
+    let claude_paths = resolve_claude_paths(&account_state)?;
 
-    let all_entries = get_all_usage_entries(&claude_path);
+    let mut all_entries = Vec::new();
+    for claude_path in &claude_paths {
+        all_entries.extend(get_all_usage_entries(claude_path));
+    }
+    all_entries.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
 
     // Parse dates
     let start = NaiveDate::parse_from_str(&start_date, "%Y-%m-%d").or_else(|_| {
@@ -622,12 +649,15 @@ pub fn get_usage_by_date_range(start_date: String, end_date: String) -> Result<U
 pub fn get_usage_details(
     project_path: Option<String>,
     date: Option<String>,
+    account_state: State<'_, AccountManagerState>,
 ) -> Result<Vec<UsageEntry>, String> {
-    let claude_path = dirs::home_dir()
-        .ok_or("Failed to get home directory")?
-        .join(".claude");
+    let claude_paths = resolve_claude_paths(&account_state)?;
 
-    let mut all_entries = get_all_usage_entries(&claude_path);
+    let mut all_entries = Vec::new();
+    for claude_path in &claude_paths {
+        all_entries.extend(get_all_usage_entries(claude_path));
+    }
+    all_entries.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
 
     // Filter by project if specified
     if let Some(project) = project_path {
@@ -647,12 +677,15 @@ pub fn get_session_stats(
     since: Option<String>,
     until: Option<String>,
     order: Option<String>,
+    account_state: State<'_, AccountManagerState>,
 ) -> Result<Vec<ProjectUsage>, String> {
-    let claude_path = dirs::home_dir()
-        .ok_or("Failed to get home directory")?
-        .join(".claude");
+    let claude_paths = resolve_claude_paths(&account_state)?;
 
-    let all_entries = get_all_usage_entries(&claude_path);
+    let mut all_entries = Vec::new();
+    for claude_path in &claude_paths {
+        all_entries.extend(get_all_usage_entries(claude_path));
+    }
+    all_entries.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
 
     let since_date = since.and_then(|s| NaiveDate::parse_from_str(&s, "%Y%m%d").ok());
     let until_date = until.and_then(|s| NaiveDate::parse_from_str(&s, "%Y%m%d").ok());
