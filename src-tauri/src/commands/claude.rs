@@ -544,7 +544,24 @@ pub async fn get_project_sessions(
         Some(ref pp) => {
             get_claude_dir_for_project(&account_state, pp).map_err(|e| e.to_string())?
         }
-        None => get_claude_dir().map_err(|e| e.to_string())?,
+        None => {
+            // No project_path provided — search across all accounts for this project_id
+            let accounts = account_state.0.list_accounts().map_err(|e| e.to_string())?;
+            let mut found_dir = None;
+            for account in &accounts {
+                let candidate = PathBuf::from(&account.config_dir)
+                    .join("projects")
+                    .join(&project_id);
+                if candidate.exists() {
+                    found_dir = Some(PathBuf::from(&account.config_dir));
+                    break;
+                }
+            }
+            found_dir.unwrap_or_else(|| {
+                get_claude_dir()
+                    .unwrap_or_else(|_| dirs::home_dir().unwrap_or_default().join(".claude"))
+            })
+        }
     };
     let project_dir = claude_dir.join("projects").join(&project_id);
     let todos_dir = claude_dir.join("todos");
@@ -1001,7 +1018,24 @@ pub async fn load_session_history(
         Some(ref pp) => {
             get_claude_dir_for_project(&account_state, pp).map_err(|e| e.to_string())?
         }
-        None => get_claude_dir().map_err(|e| e.to_string())?,
+        None => {
+            // Search across all accounts for this project_id
+            let accounts = account_state.0.list_accounts().map_err(|e| e.to_string())?;
+            let mut found_dir = None;
+            for account in &accounts {
+                let candidate = PathBuf::from(&account.config_dir)
+                    .join("projects")
+                    .join(&project_id);
+                if candidate.exists() {
+                    found_dir = Some(PathBuf::from(&account.config_dir));
+                    break;
+                }
+            }
+            found_dir.unwrap_or_else(|| {
+                get_claude_dir()
+                    .unwrap_or_else(|_| dirs::home_dir().unwrap_or_default().join(".claude"))
+            })
+        }
     };
     let session_path = claude_dir
         .join("projects")
@@ -1046,10 +1080,7 @@ pub async fn execute_claude_code(
 
     let claude_path = find_claude_binary(&app)?;
 
-    let account = account_state
-        .0
-        .resolve(&project_path)
-        .map_err(|e| e.to_string())?;
+    let account = account_state.0.resolve(&project_path).unwrap_or(None);
 
     let args = vec![
         "-p".to_string(),
@@ -1086,10 +1117,7 @@ pub async fn continue_claude_code(
 
     let claude_path = find_claude_binary(&app)?;
 
-    let account = account_state
-        .0
-        .resolve(&project_path)
-        .map_err(|e| e.to_string())?;
+    let account = account_state.0.resolve(&project_path).unwrap_or(None);
 
     let args = vec![
         "-c".to_string(), // Continue flag
@@ -1129,10 +1157,7 @@ pub async fn resume_claude_code(
 
     let claude_path = find_claude_binary(&app)?;
 
-    let account = account_state
-        .0
-        .resolve(&project_path)
-        .map_err(|e| e.to_string())?;
+    let account = account_state.0.resolve(&project_path).unwrap_or(None);
 
     let args = vec![
         "--resume".to_string(),

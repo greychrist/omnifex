@@ -63,10 +63,10 @@ const sessionStore: StateCreator<
     },
     
     // Fetch sessions for a specific project
-    fetchProjectSessions: async (projectId: string) => {
+    fetchProjectSessions: async (projectId: string, projectPath?: string) => {
       set({ isLoadingSessions: true, error: null });
       try {
-        const projectSessions = await api.getProjectSessions(projectId);
+        const projectSessions = await api.getProjectSessions(projectId, projectPath);
         set((state) => ({
           sessions: {
             ...state.sessions,

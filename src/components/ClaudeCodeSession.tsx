@@ -346,7 +346,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       setIsLoading(true);
       setError(null);
       
-      const history = await api.loadSessionHistory(session.id, session.project_id);
+      const history = await api.loadSessionHistory(session.id, session.project_id, session.project_path);
       
       // Save session data for restoration
       if (history && history.length > 0) {

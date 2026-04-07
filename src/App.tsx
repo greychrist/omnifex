@@ -179,7 +179,7 @@ function AppContent() {
     try {
       setLoading(true);
       setError(null);
-      const sessionList = await api.getProjectSessions(project.id);
+      const sessionList = await api.getProjectSessions(project.id, project.path);
       setSessions(sessionList);
       setSelectedProject(project);
     } catch (err) {
