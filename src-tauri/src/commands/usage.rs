@@ -259,12 +259,7 @@ fn resolve_claude_paths(
 ) -> Result<(Vec<PathBuf>, std::collections::HashSet<String>), String> {
     let accounts = account_state.0.list_accounts().map_err(|e| e.to_string())?;
     if accounts.is_empty() {
-        Ok((
-            vec![dirs::home_dir()
-                .ok_or("Failed to get home directory".to_string())?
-                .join(".claude")],
-            std::collections::HashSet::new(),
-        ))
+        return Err("No accounts configured. Set up accounts in Settings > Accounts.".to_string());
     } else {
         let paths = accounts
             .iter()

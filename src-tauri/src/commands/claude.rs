@@ -156,30 +156,34 @@ fn find_claude_binary(app_handle: &AppHandle) -> Result<String, String> {
 }
 
 /// Gets the path to the ~/.claude directory
-fn get_claude_dir() -> Result<PathBuf> {
-    dirs::home_dir()
-        .context("Could not find home directory")?
-        .join(".claude")
-        .canonicalize()
-        .context("Could not find ~/.claude directory")
-}
-
 /// Gets the claude config dir for a given project path via account resolution.
-/// Falls back to ~/.claude only if no accounts are configured at all.
-/// If accounts exist but none match, returns an error.
+/// Never falls back to ~/.claude — always requires an account.
 fn get_claude_dir_for_project(
     account_mgr: &AccountManagerState,
     project_path: &str,
 ) -> Result<PathBuf> {
-    let has_accounts = account_mgr.0.has_accounts().unwrap_or(false);
-    if !has_accounts {
-        // No accounts configured at all — use legacy ~/.claude
-        return get_claude_dir();
-    }
     account_mgr
         .0
         .resolve_config_dir(project_path)
-        .context("No account configured for this project. Assign one in Settings > Accounts.")
+        .context("No account configured for this project. Set up accounts in Settings > Accounts.")
+}
+
+/// Gets the default account's config dir. Used for operations that aren't project-specific.
+/// Never falls back to ~/.claude.
+fn get_default_account_dir(account_mgr: &AccountManagerState) -> Result<PathBuf, String> {
+    let accounts = account_mgr.0.list_accounts().map_err(|e| e.to_string())?;
+    // Try default account first
+    if let Some(default_acct) = accounts.iter().find(|a| a.is_default) {
+        return Ok(PathBuf::from(&default_acct.config_dir));
+    }
+    // If only one account, use it
+    if accounts.len() == 1 {
+        return Ok(PathBuf::from(&accounts[0].config_dir));
+    }
+    if accounts.is_empty() {
+        return Err("No accounts configured. Set up accounts in Settings > Accounts.".to_string());
+    }
+    Err("Multiple accounts exist but none is set as default. Set a default in Settings > Accounts.".to_string())
 }
 
 /// Finds the config dir containing a given project_id by:
@@ -212,8 +216,8 @@ fn find_project_config_dir(
         }
     }
 
-    // Final fallback
-    get_claude_dir().map_err(|e| e.to_string())
+    // No fallback to ~/.claude — require account setup
+    Err("Project not found in any account. Assign an account in Settings > Accounts.".to_string())
 }
 
 /// Gets the actual project path by reading the cwd from the JSONL entries
@@ -496,9 +500,7 @@ pub async fn list_projects(
     let accounts = account_state.0.list_accounts().map_err(|e| e.to_string())?;
 
     if accounts.is_empty() {
-        // No accounts configured — fall back to old ~/.claude behavior
-        let claude_dir = get_claude_dir().map_err(|e| e.to_string())?;
-        projects = collect_projects_from_dir(&claude_dir, None, None)?;
+        return Err("No accounts configured. Set up accounts in Settings > Accounts.".to_string());
     } else {
         for account in &accounts {
             let config_dir = PathBuf::from(&account.config_dir);
@@ -690,7 +692,7 @@ pub async fn get_claude_settings(
         Some(ref pp) => {
             get_claude_dir_for_project(&account_state, pp).map_err(|e| e.to_string())?
         }
-        None => get_claude_dir().map_err(|e| e.to_string())?,
+        None => get_default_account_dir(&account_state)?,
     };
     let settings_path = claude_dir.join("settings.json");
 
@@ -764,7 +766,7 @@ pub async fn get_system_prompt(
         Some(ref pp) => {
             get_claude_dir_for_project(&account_state, pp).map_err(|e| e.to_string())?
         }
-        None => get_claude_dir().map_err(|e| e.to_string())?,
+        None => get_default_account_dir(&account_state)?,
     };
     let claude_md_path = claude_dir.join("CLAUDE.md");
 
@@ -881,7 +883,7 @@ pub async fn save_system_prompt(
         Some(ref pp) => {
             get_claude_dir_for_project(&account_state, pp).map_err(|e| e.to_string())?
         }
-        None => get_claude_dir().map_err(|e| e.to_string())?,
+        None => get_default_account_dir(&account_state)?,
     };
     let claude_md_path = claude_dir.join("CLAUDE.md");
 
@@ -903,7 +905,7 @@ pub async fn save_claude_settings(
         Some(ref pp) => {
             get_claude_dir_for_project(&account_state, pp).map_err(|e| e.to_string())?
         }
-        None => get_claude_dir().map_err(|e| e.to_string())?,
+        None => get_default_account_dir(&account_state)?,
     };
     let settings_path = claude_dir.join("settings.json");
 
@@ -2448,7 +2450,7 @@ pub async fn get_hooks_config(
                 Some(pp) => {
                     get_claude_dir_for_project(&account_state, pp).map_err(|e| e.to_string())?
                 }
-                None => get_claude_dir().map_err(|e| e.to_string())?,
+                None => get_default_account_dir(&account_state)?,
             };
             claude_dir.join("settings.json")
         }
@@ -2505,7 +2507,7 @@ pub async fn update_hooks_config(
                 Some(pp) => {
                     get_claude_dir_for_project(&account_state, pp).map_err(|e| e.to_string())?
                 }
-                None => get_claude_dir().map_err(|e| e.to_string())?,
+                None => get_default_account_dir(&account_state)?,
             };
             claude_dir.join("settings.json")
         }
