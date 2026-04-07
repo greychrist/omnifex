@@ -1083,6 +1083,7 @@ pub async fn execute_claude_code(
     project_path: String,
     prompt: String,
     model: String,
+    skip_permissions: Option<bool>,
 ) -> Result<(), String> {
     log::info!(
         "Starting new Claude Code session in: {} with model: {}",
@@ -1100,7 +1101,7 @@ pub async fn execute_claude_code(
             "No account configured for this project. Assign one in Settings > Accounts.".to_string()
         })?;
 
-    let args = vec![
+    let mut args = vec![
         "-p".to_string(),
         prompt.clone(),
         "--model".to_string(),
@@ -1109,6 +1110,9 @@ pub async fn execute_claude_code(
         "stream-json".to_string(),
         "--verbose".to_string(),
     ];
+    if skip_permissions.unwrap_or(false) {
+        args.push("--dangerously-skip-permissions".to_string());
+    }
 
     let mut cmd = create_system_command(&claude_path, args, &project_path);
     cmd.env("CLAUDE_CONFIG_DIR", &account.config_dir);
@@ -1123,6 +1127,7 @@ pub async fn continue_claude_code(
     project_path: String,
     prompt: String,
     model: String,
+    skip_permissions: Option<bool>,
 ) -> Result<(), String> {
     log::info!(
         "Continuing Claude Code conversation in: {} with model: {}",
@@ -1140,7 +1145,7 @@ pub async fn continue_claude_code(
             "No account configured for this project. Assign one in Settings > Accounts.".to_string()
         })?;
 
-    let args = vec![
+    let mut args = vec![
         "-c".to_string(), // Continue flag
         "-p".to_string(),
         prompt.clone(),
@@ -1150,6 +1155,9 @@ pub async fn continue_claude_code(
         "stream-json".to_string(),
         "--verbose".to_string(),
     ];
+    if skip_permissions.unwrap_or(false) {
+        args.push("--dangerously-skip-permissions".to_string());
+    }
 
     let mut cmd = create_system_command(&claude_path, args, &project_path);
     cmd.env("CLAUDE_CONFIG_DIR", &account.config_dir);
@@ -1165,6 +1173,7 @@ pub async fn resume_claude_code(
     session_id: String,
     prompt: String,
     model: String,
+    skip_permissions: Option<bool>,
 ) -> Result<(), String> {
     log::info!(
         "Resuming Claude Code session: {} in: {} with model: {}",
@@ -1183,7 +1192,7 @@ pub async fn resume_claude_code(
             "No account configured for this project. Assign one in Settings > Accounts.".to_string()
         })?;
 
-    let args = vec![
+    let mut args = vec![
         "--resume".to_string(),
         session_id.clone(),
         "-p".to_string(),
@@ -1194,6 +1203,9 @@ pub async fn resume_claude_code(
         "stream-json".to_string(),
         "--verbose".to_string(),
     ];
+    if skip_permissions.unwrap_or(false) {
+        args.push("--dangerously-skip-permissions".to_string());
+    }
 
     let mut cmd = create_system_command(&claude_path, args, &project_path);
     cmd.env("CLAUDE_CONFIG_DIR", &account.config_dir);

@@ -102,9 +102,10 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     match_detail: string;
   } | null>(null);
   const [sessionCost, setSessionCost] = useState(0);
-  const [showStartConfirmation, setShowStartConfirmation] = useState(false);
-  const [startConfirmationResolved, setStartConfirmationResolved] = useState(false);
-  const [pendingPromptData, setPendingPromptData] = useState<{ prompt: string; model: "sonnet" | "opus" } | null>(null);
+  // Pre-session config: show setup panel for new sessions until user clicks Start
+  const [sessionStarted, setSessionStarted] = useState(!!session);
+  const [selectedModel, setSelectedModel] = useState<"sonnet" | "opus">("sonnet");
+  const [permissionMode, setPermissionMode] = useState<"default" | "skip">("default");
 
   // Resolve account for this project
   useEffect(() => {
@@ -903,30 +904,23 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
         });
 
         // Execute the appropriate command
+        const skipPerms = permissionMode === "skip";
         if (effectiveSession && !isFirstPrompt) {
           console.log('[ClaudeCodeSession] Resuming session:', effectiveSession.id);
           trackEvent.sessionResumed(effectiveSession.id);
           trackEvent.modelSelected(model);
-          await api.resumeClaudeCode(projectPath, effectiveSession.id, prompt, model);
+          await api.resumeClaudeCode(projectPath, effectiveSession.id, prompt, model, skipPerms);
         } else {
-          // Show confirmation for first prompt in a new session
-          if (!startConfirmationResolved && accountResolution) {
-            setPendingPromptData({ prompt, model });
-            setShowStartConfirmation(true);
-            setIsLoading(false);
-            hasActiveSessionRef.current = false;
-            return;
-          }
           console.log('[ClaudeCodeSession] Starting new session');
           setIsFirstPrompt(false);
           trackEvent.sessionCreated(model, 'prompt_input');
           trackEvent.modelSelected(model);
-          await api.executeClaudeCode(projectPath, prompt, model);
+          await api.executeClaudeCode(projectPath, prompt, model, skipPerms);
         }
       }
     } catch (err) {
       console.error("Failed to send prompt:", err);
-      setError("Failed to send prompt");
+      setError(String(err) || "Failed to send prompt");
       setIsLoading(false);
       hasActiveSessionRef.current = false;
     }
@@ -1374,49 +1368,89 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             cost={sessionCost}
           />
         )}
-        {showStartConfirmation && accountResolution && pendingPromptData && (
-          <div className="border border-border/50 rounded-lg p-4 m-4 bg-background/80">
-            <h3 className="text-sm font-medium mb-2">Confirm Session</h3>
-            <div className="space-y-1 text-sm text-foreground/70 mb-3">
-              <div className="flex items-center gap-2">
-                <span className="text-foreground/40 w-24 shrink-0">Project:</span>
-                <span className="font-mono text-xs truncate">{projectPath}</span>
+        {!sessionStarted && (
+          <div className="flex-1 flex items-center justify-center p-8">
+            <div className="border border-border/50 rounded-lg p-6 bg-background/80 w-full max-w-md space-y-4">
+              <h3 className="text-base font-medium">New Session</h3>
+
+              {/* Account info */}
+              {accountResolution && (
+                <div className="space-y-1 text-sm">
+                  <div className="flex items-center gap-2">
+                    <span className="text-foreground/40 w-24 shrink-0">Account:</span>
+                    <AccountBadge name={accountResolution.account.name} />
+                    <span className="text-foreground/50 text-xs">({accountResolution.account.account_type})</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-foreground/40 w-24 shrink-0">Config:</span>
+                    <span className="font-mono text-xs text-foreground/50 truncate">{accountResolution.account.config_dir}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-foreground/40 w-24 shrink-0">Matched by:</span>
+                    <span className="text-xs text-foreground/60">
+                      {accountResolution.match_type === 'path_rule' ? 'Path rule' : accountResolution.match_type === 'project_override' ? 'Project override' : 'Default account'}
+                      {' — '}{accountResolution.match_detail}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Model selector */}
+              <div className="space-y-1">
+                <Label className="text-xs text-foreground/60">Model</Label>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant={selectedModel === "sonnet" ? "default" : "outline"}
+                    onClick={() => setSelectedModel("sonnet")}
+                    className="flex-1"
+                  >
+                    Sonnet
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={selectedModel === "opus" ? "default" : "outline"}
+                    onClick={() => setSelectedModel("opus")}
+                    className="flex-1"
+                  >
+                    Opus
+                  </Button>
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <span className="text-foreground/40 w-24 shrink-0">Account:</span>
-                <AccountBadge name={accountResolution.account.name} />
-                <span className="text-foreground/50 text-xs">({accountResolution.account.account_type})</span>
+
+              {/* Permission mode */}
+              <div className="space-y-1">
+                <Label className="text-xs text-foreground/60">Permissions</Label>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant={permissionMode === "default" ? "default" : "outline"}
+                    onClick={() => setPermissionMode("default")}
+                    className="flex-1"
+                  >
+                    Ask Each Time
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={permissionMode === "skip" ? "default" : "outline"}
+                    onClick={() => setPermissionMode("skip")}
+                    className="flex-1"
+                  >
+                    Auto-Approve
+                  </Button>
+                </div>
+                <p className="text-[10px] text-foreground/40">
+                  {permissionMode === "default"
+                    ? "Claude will ask before running tools (same as terminal)"
+                    : "All tool uses auto-approved (--dangerously-skip-permissions)"}
+                </p>
               </div>
-              <div className="flex items-center gap-2">
-                <span className="text-foreground/40 w-24 shrink-0">Config:</span>
-                <span className="font-mono text-xs text-foreground/50">{accountResolution.account.config_dir}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-foreground/40 w-24 shrink-0">Matched by:</span>
-                <span className="text-xs">
-                  {accountResolution.match_type === 'path_rule' ? 'Path rule' : accountResolution.match_type === 'project_override' ? 'Project override' : 'Default account'}
-                  {' — '}{accountResolution.match_detail}
-                </span>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
+
               <Button
-                size="sm"
-                onClick={() => {
-                  setShowStartConfirmation(false);
-                  setStartConfirmationResolved(true);
-                  // Re-trigger with the saved prompt data
-                  handleSendPrompt(pendingPromptData.prompt, pendingPromptData.model);
-                }}
+                className="w-full"
+                onClick={() => setSessionStarted(true)}
               >
                 Start Session
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => {
-                setShowStartConfirmation(false);
-                setPendingPromptData(null);
-                setIsLoading(false);
-              }}>
-                Cancel
               </Button>
             </div>
           </div>
