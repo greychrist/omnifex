@@ -195,6 +195,8 @@ export interface AgentRun {
   process_started_at?: string;
   created_at: string;
   completed_at?: string;
+  account_id?: number;
+  account_name?: string;
 }
 
 export interface AgentRunMetrics {
@@ -220,6 +222,8 @@ export interface AgentRunWithMetrics {
   process_started_at?: string;
   created_at: string;
   completed_at?: string;
+  account_id?: number;
+  account_name?: string;
   metrics?: AgentRunMetrics;
   output?: string; // Real-time JSONL content
 }

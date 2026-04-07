@@ -53,6 +53,8 @@ pub struct AgentRun {
     pub process_started_at: Option<String>,
     pub created_at: String,
     pub completed_at: Option<String>,
+    pub account_id: Option<i64>,
+    pub account_name: Option<String>,
 }
 
 /// Represents runtime metrics calculated from JSONL
@@ -94,6 +96,20 @@ pub struct AgentData {
 
 /// Database connection state
 pub struct AgentDb(pub Mutex<Connection>);
+
+/// Helper to resolve the config_dir for an agent run based on its project_path.
+/// Returns Some(config_dir) if an account is resolved, None otherwise (falls back to default ~/.claude).
+fn resolve_config_dir_for_run(
+    account_state: &crate::accounts::AccountManagerState,
+    run: &AgentRun,
+) -> Option<String> {
+    account_state
+        .0
+        .resolve(&run.project_path)
+        .ok()
+        .flatten()
+        .map(|a| a.config_dir)
+}
 
 /// Real-time JSONL reading and processing functions
 impl AgentRunMetrics {
@@ -167,11 +183,19 @@ impl AgentRunMetrics {
 }
 
 /// Read JSONL content from a session file
-pub async fn read_session_jsonl(session_id: &str, project_path: &str) -> Result<String, String> {
-    let claude_dir = dirs::home_dir()
-        .ok_or("Failed to get home directory")?
-        .join(".claude")
-        .join("projects");
+/// If `config_dir` is provided, uses that instead of the default ~/.claude
+pub async fn read_session_jsonl(
+    session_id: &str,
+    project_path: &str,
+    config_dir: Option<&str>,
+) -> Result<String, String> {
+    let claude_dir = match config_dir {
+        Some(dir) => std::path::PathBuf::from(dir).join("projects"),
+        None => dirs::home_dir()
+            .ok_or("Failed to get home directory")?
+            .join(".claude")
+            .join("projects"),
+    };
 
     // Encode project path to match Claude Code's directory naming
     let encoded_project = project_path.replace('/', "-");
@@ -192,8 +216,11 @@ pub async fn read_session_jsonl(session_id: &str, project_path: &str) -> Result<
 }
 
 /// Get agent run with real-time metrics
-pub async fn get_agent_run_with_metrics(run: AgentRun) -> AgentRunWithMetrics {
-    match read_session_jsonl(&run.session_id, &run.project_path).await {
+pub async fn get_agent_run_with_metrics(
+    run: AgentRun,
+    config_dir: Option<&str>,
+) -> AgentRunWithMetrics {
+    match read_session_jsonl(&run.session_id, &run.project_path, config_dir).await {
         Ok(jsonl_content) => {
             let metrics = AgentRunMetrics::from_jsonl(&jsonl_content);
             AgentRunWithMetrics {
@@ -622,11 +649,13 @@ pub async fn list_agent_runs(
     let conn = db.0.lock().map_err(|e| e.to_string())?;
 
     let query = if agent_id.is_some() {
-        "SELECT id, agent_id, agent_name, agent_icon, task, model, project_path, session_id, status, pid, process_started_at, created_at, completed_at 
-         FROM agent_runs WHERE agent_id = ?1 ORDER BY created_at DESC"
+        "SELECT r.id, r.agent_id, r.agent_name, r.agent_icon, r.task, r.model, r.project_path, r.session_id, r.status, r.pid, r.process_started_at, r.created_at, r.completed_at, r.account_id, a.name as account_name
+         FROM agent_runs r LEFT JOIN accounts a ON a.id = r.account_id
+         WHERE r.agent_id = ?1 ORDER BY r.created_at DESC"
     } else {
-        "SELECT id, agent_id, agent_name, agent_icon, task, model, project_path, session_id, status, pid, process_started_at, created_at, completed_at 
-         FROM agent_runs ORDER BY created_at DESC"
+        "SELECT r.id, r.agent_id, r.agent_name, r.agent_icon, r.task, r.model, r.project_path, r.session_id, r.status, r.pid, r.process_started_at, r.created_at, r.completed_at, r.account_id, a.name as account_name
+         FROM agent_runs r LEFT JOIN accounts a ON a.id = r.account_id
+         ORDER BY r.created_at DESC"
     };
 
     let mut stmt = conn.prepare(query).map_err(|e| e.to_string())?;
@@ -652,6 +681,8 @@ pub async fn list_agent_runs(
             process_started_at: row.get(10)?,
             created_at: row.get(11)?,
             completed_at: row.get(12)?,
+            account_id: row.get(13)?,
+            account_name: row.get(14)?,
         })
     };
 
@@ -674,8 +705,9 @@ pub async fn get_agent_run(db: State<'_, AgentDb>, id: i64) -> Result<AgentRun, 
 
     let run = conn
         .query_row(
-            "SELECT id, agent_id, agent_name, agent_icon, task, model, project_path, session_id, status, pid, process_started_at, created_at, completed_at 
-             FROM agent_runs WHERE id = ?1",
+            "SELECT r.id, r.agent_id, r.agent_name, r.agent_icon, r.task, r.model, r.project_path, r.session_id, r.status, r.pid, r.process_started_at, r.created_at, r.completed_at, r.account_id, a.name as account_name
+             FROM agent_runs r LEFT JOIN accounts a ON a.id = r.account_id
+             WHERE r.id = ?1",
             params![id],
             |row| {
                 Ok(AgentRun {
@@ -692,6 +724,8 @@ pub async fn get_agent_run(db: State<'_, AgentDb>, id: i64) -> Result<AgentRun, 
                     process_started_at: row.get(10)?,
                     created_at: row.get(11)?,
                     completed_at: row.get(12)?,
+                    account_id: row.get(13)?,
+                    account_name: row.get(14)?,
                 })
             },
         )
@@ -704,23 +738,27 @@ pub async fn get_agent_run(db: State<'_, AgentDb>, id: i64) -> Result<AgentRun, 
 #[tauri::command]
 pub async fn get_agent_run_with_real_time_metrics(
     db: State<'_, AgentDb>,
+    account_state: State<'_, crate::accounts::AccountManagerState>,
     id: i64,
 ) -> Result<AgentRunWithMetrics, String> {
     let run = get_agent_run(db, id).await?;
-    Ok(get_agent_run_with_metrics(run).await)
+    let config_dir = resolve_config_dir_for_run(&account_state, &run);
+    Ok(get_agent_run_with_metrics(run, config_dir.as_deref()).await)
 }
 
 /// List agent runs with real-time metrics from JSONL
 #[tauri::command]
 pub async fn list_agent_runs_with_metrics(
     db: State<'_, AgentDb>,
+    account_state: State<'_, crate::accounts::AccountManagerState>,
     agent_id: Option<i64>,
 ) -> Result<Vec<AgentRunWithMetrics>, String> {
     let runs = list_agent_runs(db, agent_id).await?;
     let mut runs_with_metrics = Vec::new();
 
     for run in runs {
-        let run_with_metrics = get_agent_run_with_metrics(run).await;
+        let config_dir = resolve_config_dir_for_run(&account_state, &run);
+        let run_with_metrics = get_agent_run_with_metrics(run, config_dir.as_deref()).await;
         runs_with_metrics.push(run_with_metrics);
     }
 
@@ -737,12 +775,20 @@ pub async fn execute_agent(
     model: Option<String>,
     db: State<'_, AgentDb>,
     registry: State<'_, crate::process::ProcessRegistryState>,
+    account_state: State<'_, crate::accounts::AccountManagerState>,
 ) -> Result<i64, String> {
     info!("Executing agent {} with task: {}", agent_id, task);
 
     // Get the agent from database
     let agent = get_agent(db.clone(), agent_id).await?;
     let execution_model = model.unwrap_or(agent.model.clone());
+
+    // Resolve account for this project path
+    let account = account_state
+        .0
+        .resolve(&project_path)
+        .map_err(|e| e.to_string())?;
+    let account_id = account.as_ref().map(|a| a.id);
 
     // Create .claude/settings.json with agent hooks if it doesn't exist
     if let Some(hooks_json) = &agent.hooks {
@@ -787,8 +833,8 @@ pub async fn execute_agent(
     let run_id = {
         let conn = db.0.lock().map_err(|e| e.to_string())?;
         conn.execute(
-            "INSERT INTO agent_runs (agent_id, agent_name, agent_icon, task, model, project_path, session_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![agent_id, agent.name, agent.icon, task, execution_model, project_path, ""],
+            "INSERT INTO agent_runs (agent_id, agent_name, agent_icon, task, model, project_path, session_id, account_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![agent_id, agent.name, agent.icon, task, execution_model, project_path, "", account_id],
         )
         .map_err(|e| e.to_string())?;
         conn.last_insert_rowid()
@@ -831,6 +877,7 @@ pub async fn execute_agent(
         execution_model,
         db,
         registry,
+        account,
     )
     .await
 }
@@ -840,12 +887,18 @@ fn create_agent_system_command(
     claude_path: &str,
     args: Vec<String>,
     project_path: &str,
+    account: &Option<crate::accounts::Account>,
 ) -> Command {
     let mut cmd = create_command_with_env(claude_path);
 
     // Add all arguments
     for arg in args {
         cmd.arg(arg);
+    }
+
+    // Set CLAUDE_CONFIG_DIR if an account is resolved
+    if let Some(ref acct) = account {
+        cmd.env("CLAUDE_CONFIG_DIR", &acct.config_dir);
     }
 
     cmd.current_dir(project_path)
@@ -869,9 +922,10 @@ async fn spawn_agent_system(
     execution_model: String,
     db: State<'_, AgentDb>,
     registry: State<'_, crate::process::ProcessRegistryState>,
+    account: Option<crate::accounts::Account>,
 ) -> Result<i64, String> {
     // Build the command
-    let mut cmd = create_agent_system_command(&claude_path, args, &project_path);
+    let mut cmd = create_agent_system_command(&claude_path, args, &project_path, &account);
 
     // Spawn the process
     info!("🚀 Spawning Claude system process...");
@@ -1191,8 +1245,9 @@ pub async fn list_running_sessions(
 
     // First get all running sessions from the database
     let mut stmt = conn.prepare(
-        "SELECT id, agent_id, agent_name, agent_icon, task, model, project_path, session_id, status, pid, process_started_at, created_at, completed_at 
-         FROM agent_runs WHERE status = 'running' ORDER BY process_started_at DESC"
+        "SELECT r.id, r.agent_id, r.agent_name, r.agent_icon, r.task, r.model, r.project_path, r.session_id, r.status, r.pid, r.process_started_at, r.created_at, r.completed_at, r.account_id, a.name as account_name
+         FROM agent_runs r LEFT JOIN accounts a ON a.id = r.account_id
+         WHERE r.status = 'running' ORDER BY r.process_started_at DESC"
     ).map_err(|e| e.to_string())?;
 
     let mut runs = stmt
@@ -1217,6 +1272,8 @@ pub async fn list_running_sessions(
                 process_started_at: row.get(10)?,
                 created_at: row.get(11)?,
                 completed_at: row.get(12)?,
+                account_id: row.get(13)?,
+                account_name: row.get(14)?,
             })
         })
         .map_err(|e| e.to_string())?
@@ -1402,6 +1459,7 @@ pub async fn get_live_session_output(
 pub async fn get_session_output(
     db: State<'_, AgentDb>,
     registry: State<'_, crate::process::ProcessRegistryState>,
+    account_state: State<'_, crate::accounts::AccountManagerState>,
     run_id: i64,
 ) -> Result<String, String> {
     // Get the session information
@@ -1416,10 +1474,16 @@ pub async fn get_session_output(
         return Ok(String::new());
     }
 
+    // Resolve config dir for this run's project path
+    let config_dir = resolve_config_dir_for_run(&account_state, &run);
+
     // Get the Claude directory
-    let claude_dir = dirs::home_dir()
-        .ok_or("Failed to get home directory")?
-        .join(".claude");
+    let claude_dir = match &config_dir {
+        Some(dir) => std::path::PathBuf::from(dir),
+        None => dirs::home_dir()
+            .ok_or("Failed to get home directory")?
+            .join(".claude"),
+    };
 
     // Find the correct project directory by searching for the session file
     let projects_dir = claude_dir.join("projects");
@@ -1479,7 +1543,7 @@ pub async fn get_session_output(
             "Session file not found for {}, trying legacy method",
             run.session_id
         );
-        match read_session_jsonl(&run.session_id, &run.project_path).await {
+        match read_session_jsonl(&run.session_id, &run.project_path, config_dir.as_deref()).await {
             Ok(content) => Ok(content),
             Err(_) => {
                 // Final fallback to live output
@@ -1495,6 +1559,7 @@ pub async fn get_session_output(
 pub async fn stream_session_output(
     app: AppHandle,
     db: State<'_, AgentDb>,
+    account_state: State<'_, crate::accounts::AccountManagerState>,
     run_id: i64,
 ) -> Result<(), String> {
     // Get the session information
@@ -1508,11 +1573,17 @@ pub async fn stream_session_output(
     let session_id = run.session_id.clone();
     let project_path = run.project_path.clone();
 
+    // Resolve config dir for this run
+    let config_dir = resolve_config_dir_for_run(&account_state, &run);
+
     // Spawn a task to monitor the file
     tokio::spawn(async move {
-        let claude_dir = match dirs::home_dir() {
-            Some(home) => home.join(".claude").join("projects"),
-            None => return,
+        let claude_dir = match &config_dir {
+            Some(dir) => std::path::PathBuf::from(dir).join("projects"),
+            None => match dirs::home_dir() {
+                Some(home) => home.join(".claude").join("projects"),
+                None => return,
+            },
         };
 
         let encoded_project = project_path.replace('/', "-");
@@ -1980,49 +2051,63 @@ pub async fn import_agent_from_github(
 
 /// Load agent session history from JSONL file
 /// Similar to Claude Code's load_session_history, but searches across all project directories
+/// Searches across all account config dirs when no specific account is known
 #[tauri::command]
 pub async fn load_agent_session_history(
+    account_state: State<'_, crate::accounts::AccountManagerState>,
     session_id: String,
 ) -> Result<Vec<serde_json::Value>, String> {
     log::info!("Loading agent session history for session: {}", session_id);
 
-    let claude_dir = dirs::home_dir()
-        .ok_or("Failed to get home directory")?
-        .join(".claude");
+    // Build list of config dirs to search: all accounts + default ~/.claude
+    let mut config_dirs: Vec<std::path::PathBuf> = Vec::new();
 
-    let projects_dir = claude_dir.join("projects");
-
-    if !projects_dir.exists() {
-        log::error!("Projects directory not found at: {:?}", projects_dir);
-        return Err("Projects directory not found".to_string());
+    // Add all account config dirs
+    if let Ok(accounts) = account_state.0.list_accounts() {
+        for acct in accounts {
+            config_dirs.push(std::path::PathBuf::from(&acct.config_dir));
+        }
     }
 
-    // Search for the session file in all project directories
+    // Always include default ~/.claude as fallback
+    if let Some(home) = dirs::home_dir() {
+        let default_dir = home.join(".claude");
+        if !config_dirs.iter().any(|d| d == &default_dir) {
+            config_dirs.push(default_dir);
+        }
+    }
+
+    // Search for the session file across all config dirs
     let mut session_file_path = None;
     log::info!(
-        "Searching for session file {} in all project directories",
-        session_id
+        "Searching for session file {} across {} config directories",
+        session_id,
+        config_dirs.len()
     );
 
-    if let Ok(entries) = std::fs::read_dir(&projects_dir) {
-        for entry in entries.filter_map(Result::ok) {
-            let path = entry.path();
-            if path.is_dir() {
-                let dir_name = path.file_name().unwrap_or_default().to_string_lossy();
-                log::debug!("Checking project directory: {}", dir_name);
+    for config_dir in &config_dirs {
+        let projects_dir = config_dir.join("projects");
+        if !projects_dir.exists() {
+            continue;
+        }
 
-                let potential_session_file = path.join(format!("{}.jsonl", session_id));
-                if potential_session_file.exists() {
-                    log::info!("Found session file at: {:?}", potential_session_file);
-                    session_file_path = Some(potential_session_file);
-                    break;
-                } else {
-                    log::debug!("Session file not found in: {}", dir_name);
+        if let Ok(entries) = std::fs::read_dir(&projects_dir) {
+            for entry in entries.filter_map(Result::ok) {
+                let path = entry.path();
+                if path.is_dir() {
+                    let potential_session_file = path.join(format!("{}.jsonl", session_id));
+                    if potential_session_file.exists() {
+                        log::info!("Found session file at: {:?}", potential_session_file);
+                        session_file_path = Some(potential_session_file);
+                        break;
+                    }
                 }
             }
         }
-    } else {
-        log::error!("Failed to read projects directory");
+
+        if session_file_path.is_some() {
+            break;
+        }
     }
 
     if let Some(session_path) = session_file_path {
