@@ -121,25 +121,38 @@ fn main() {
             let conn = init_database(&app.handle()).expect("Failed to initialize agents database");
             app.manage(AgentDb(Mutex::new(conn)));
 
-            // Initialize checkpoint state
-            let checkpoint_state = CheckpointState::new();
+            // Initialize AccountManager with its own DB connection
+            let app_dir = app
+                .path()
+                .app_data_dir()
+                .expect("Failed to get app data dir");
+            let account_db_path = app_dir.join("agents.db");
+            let account_conn = rusqlite::Connection::open(&account_db_path)
+                .expect("Failed to open DB for AccountManager");
+            let account_manager = accounts::AccountManager::new(account_conn);
 
-            // Set the Claude directory path
-            if let Ok(claude_dir) = dirs::home_dir()
-                .ok_or_else(|| "Could not find home directory")
-                .and_then(|home| {
-                    let claude_path = home.join(".claude");
-                    claude_path
-                        .canonicalize()
-                        .map_err(|_| "Could not find ~/.claude directory")
-                })
-            {
-                let state_clone = checkpoint_state.clone();
-                tauri::async_runtime::spawn(async move {
-                    state_clone.set_claude_dir(claude_dir).await;
-                });
+            // Auto-discover accounts on first launch
+            if !account_manager.has_accounts().unwrap_or(false) {
+                let discovered = accounts::AccountManager::discover_accounts();
+                let count = discovered.len();
+                for (name, path) in discovered {
+                    let is_default = count == 1;
+                    let path_str = path.to_string_lossy().to_string();
+                    if let Err(e) =
+                        account_manager.create_account(&name, &path_str, is_default)
+                    {
+                        log::warn!("Failed to create discovered account '{}': {}", name, e);
+                    } else {
+                        log::info!("Auto-discovered account '{}' at {}", name, path_str);
+                    }
+                }
             }
 
+            app.manage(accounts::AccountManagerState(account_manager));
+
+            // Initialize checkpoint state
+            let checkpoint_state = CheckpointState::new();
+            // Note: claude_dir is now resolved per-session via AccountManager
             app.manage(checkpoint_state);
 
             // Initialize process registry
@@ -290,6 +303,19 @@ fn main() {
             // Proxy Settings
             get_proxy_settings,
             save_proxy_settings,
+            // Account Management
+            commands::accounts::list_accounts,
+            commands::accounts::create_account,
+            commands::accounts::update_account,
+            commands::accounts::delete_account,
+            commands::accounts::set_default_account,
+            commands::accounts::list_path_rules,
+            commands::accounts::add_path_rule,
+            commands::accounts::remove_path_rule,
+            commands::accounts::resolve_account_for_project,
+            commands::accounts::set_project_account_override,
+            commands::accounts::list_project_overrides,
+            commands::accounts::discover_accounts,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
