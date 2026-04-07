@@ -6,6 +6,7 @@ mod checkpoint;
 mod claude_binary;
 mod commands;
 mod process;
+mod session_manager;
 
 use checkpoint::state::CheckpointState;
 use commands::agents::{
