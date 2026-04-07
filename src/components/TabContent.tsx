@@ -235,12 +235,24 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                 </div>
               ) : (
                 /* Projects List View */
-                <ProjectList
-                  projects={projects}
-                  onProjectClick={handleProjectClick}
-                  onOpenProject={handleOpenProject}
-                  loading={loading}
-                />
+                <div>
+                  {error && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.15 }}
+                      className="mx-6 mt-4 rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-xs text-destructive"
+                    >
+                      {error}
+                    </motion.div>
+                  )}
+                  <ProjectList
+                    projects={projects}
+                    onProjectClick={handleProjectClick}
+                    onOpenProject={handleOpenProject}
+                    loading={loading}
+                  />
+                </div>
               )}
           </div>
         );

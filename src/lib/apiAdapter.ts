@@ -135,14 +135,9 @@ export async function apiCall<T>(command: string, params?: any): Promise<T> {
   const isWeb = !detectEnvironment();
   
   if (!isWeb) {
-    // Tauri environment - try invoke
+    // Tauri environment - use invoke directly
     console.log(`[Tauri] Calling: ${command}`, params);
-    try {
-      return await invoke<T>(command, params);
-    } catch (error) {
-      console.warn(`[Tauri] invoke failed, falling back to web mode:`, error);
-      // Fall through to web mode
-    }
+    return await invoke<T>(command, params);
   }
   
   // Web environment - use REST API
