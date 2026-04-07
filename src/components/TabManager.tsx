@@ -92,7 +92,10 @@ const TabItem: React.FC<TabItemProps> = ({ tab, isActive, onClose, onClick, isDr
         {tab.title}
       </span>
       {tab.accountName && (
-        <AccountBadge name={tab.accountName} className="text-[9px] px-1 py-0" />
+        <AccountBadge
+          name={tab.accountName}
+          className={cn("text-[9px] px-1 py-0", tab.accountName === 'no account' && "bg-muted text-muted-foreground border-muted-foreground/30")}
+        />
       )}
 
       {/* Status Indicators - always takes up space */}

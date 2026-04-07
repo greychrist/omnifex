@@ -133,6 +133,17 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
     }
   };
   
+  // Resolve account badge for chat tabs on mount
+  useEffect(() => {
+    if (tab.type === 'chat' && !tab.accountName && tab.initialProjectPath) {
+      api.resolveAccountForProject(tab.initialProjectPath).then((account) => {
+        updateTab(tab.id, { accountName: account ? account.name : 'no account' });
+      }).catch(() => {
+        updateTab(tab.id, { accountName: 'no account' });
+      });
+    }
+  }, [tab.type, tab.initialProjectPath, tab.accountName, tab.id, updateTab]);
+
   // Panel visibility - hide when not active
   const panelVisibilityClass = isActive ? "" : "hidden";
   
@@ -280,9 +291,11 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
               onProjectPathChange={(path: string) => {
                 // Update tab title with directory name
                 const dirName = path.split('/').pop() || path.split('\\').pop() || 'Session';
-                updateTab(tab.id, {
-                  title: dirName
-                });
+                updateTab(tab.id, { title: dirName });
+                // Also resolve account for tab badge
+                api.resolveAccountForProject(path).then((account) => {
+                  if (account) updateTab(tab.id, { accountName: account.name });
+                }).catch(() => {});
               }}
             />
           </div>
