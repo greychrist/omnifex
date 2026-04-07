@@ -2004,8 +2004,10 @@ export const api = {
     return apiCall<Account>('create_account', params);
   },
 
-  async updateAccount(id: number, name: string, configDir: string): Promise<void> {
-    return apiCall<void>('update_account', { id, name, configDir });
+  async updateAccount(id: number, name: string, configDir: string, accountType?: string): Promise<void> {
+    const params: Record<string, any> = { id, name, configDir };
+    if (accountType) params.accountType = accountType;
+    return apiCall<void>('update_account', params);
   },
 
   async deleteAccount(id: number): Promise<void> {

@@ -27,10 +27,12 @@ pub async fn update_account(
     id: i64,
     name: String,
     config_dir: String,
+    account_type: Option<String>,
 ) -> Result<(), String> {
+    let acct_type = account_type.as_deref().unwrap_or("pro");
     state
         .0
-        .update_account(id, &name, &config_dir)
+        .update_account(id, &name, &config_dir, acct_type)
         .map_err(|e| e.to_string())
 }
 

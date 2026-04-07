@@ -208,11 +208,17 @@ impl AccountManager {
         .context("Failed to read created account")
     }
 
-    pub fn update_account(&self, id: i64, name: &str, config_dir: &str) -> Result<()> {
+    pub fn update_account(
+        &self,
+        id: i64,
+        name: &str,
+        config_dir: &str,
+        account_type: &str,
+    ) -> Result<()> {
         let conn = self.db.lock().map_err(|e| anyhow::anyhow!("{}", e))?;
         conn.execute(
-            "UPDATE accounts SET name = ?1, config_dir = ?2 WHERE id = ?3",
-            params![name, config_dir, id],
+            "UPDATE accounts SET name = ?1, config_dir = ?2, account_type = ?3 WHERE id = ?4",
+            params![name, config_dir, account_type, id],
         )?;
         Ok(())
     }
