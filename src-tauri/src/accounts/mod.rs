@@ -366,6 +366,102 @@ impl AccountManager {
         found
     }
 
+    /// Resolve which account a project path belongs to, with explanation.
+    /// Returns (Account, match_type, match_detail) or None if no match.
+    pub fn resolve_with_explanation(
+        &self,
+        project_path: &str,
+    ) -> Result<Option<(Account, String, String)>> {
+        let conn = self.db.lock().map_err(|e| anyhow::anyhow!("{}", e))?;
+
+        // 1. Check explicit project override
+        let override_result: Option<Account> = conn
+            .query_row(
+                "SELECT a.id, a.name, a.config_dir, a.is_default, a.account_type, a.created_at, a.updated_at
+                 FROM project_account_overrides o
+                 JOIN accounts a ON a.id = o.account_id
+                 WHERE o.project_path = ?1",
+                params![project_path],
+                |row| {
+                    Ok(Account {
+                        id: row.get(0)?,
+                        name: row.get(1)?,
+                        config_dir: row.get(2)?,
+                        is_default: row.get(3)?,
+                        account_type: row.get(4)?,
+                        created_at: row.get(5)?,
+                        updated_at: row.get(6)?,
+                    })
+                },
+            )
+            .ok();
+
+        if let Some(account) = override_result {
+            let detail = format!("Explicit override for {}", project_path);
+            return Ok(Some((account, "project_override".to_string(), detail)));
+        }
+
+        // 2. Check path prefix rules
+        let mut stmt = conn.prepare(
+            "SELECT a.id, a.name, a.config_dir, a.is_default, a.account_type, a.created_at, a.updated_at, r.path_prefix
+             FROM account_path_rules r
+             JOIN accounts a ON a.id = r.account_id
+             ORDER BY LENGTH(r.path_prefix) DESC, r.priority DESC",
+        )?;
+
+        let accounts: Vec<(Account, String)> = stmt
+            .query_map([], |row| {
+                Ok((
+                    Account {
+                        id: row.get(0)?,
+                        name: row.get(1)?,
+                        config_dir: row.get(2)?,
+                        is_default: row.get(3)?,
+                        account_type: row.get(4)?,
+                        created_at: row.get(5)?,
+                        updated_at: row.get(6)?,
+                    },
+                    row.get::<_, String>(7)?,
+                ))
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        for (account, prefix) in accounts {
+            if project_path.starts_with(&prefix) {
+                let detail = format!("{} -> {}", prefix, account.name);
+                return Ok(Some((account, "path_rule".to_string(), detail)));
+            }
+        }
+
+        // 3. Check default account
+        let default_result: Option<Account> = conn
+            .query_row(
+                "SELECT id, name, config_dir, is_default, account_type, created_at, updated_at
+                 FROM accounts WHERE is_default = 1 LIMIT 1",
+                [],
+                |row| {
+                    Ok(Account {
+                        id: row.get(0)?,
+                        name: row.get(1)?,
+                        config_dir: row.get(2)?,
+                        is_default: row.get(3)?,
+                        account_type: row.get(4)?,
+                        created_at: row.get(5)?,
+                        updated_at: row.get(6)?,
+                    })
+                },
+            )
+            .ok();
+
+        if let Some(account) = default_result {
+            let detail = format!("Default account: {}", account.name);
+            return Ok(Some((account, "default".to_string(), detail)));
+        }
+
+        Ok(None)
+    }
+
     /// Check if any accounts exist in the database
     pub fn has_accounts(&self) -> Result<bool> {
         let conn = self.db.lock().map_err(|e| anyhow::anyhow!("{}", e))?;
@@ -569,6 +665,62 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(resolved.name, "work");
+    }
+
+    #[test]
+    fn test_resolve_with_explanation_path_rule() {
+        let conn = setup_test_db();
+        let mgr = AccountManager::new(conn);
+
+        let personal = mgr
+            .create_account("personal", "/home/user/.claude-personal", false, "pro")
+            .unwrap();
+        mgr.add_path_rule(personal.id, "/home/user/repos/personal/", 0)
+            .unwrap();
+
+        let (account, match_type, match_detail) = mgr
+            .resolve_with_explanation("/home/user/repos/personal/my-project")
+            .unwrap()
+            .unwrap();
+        assert_eq!(account.name, "personal");
+        assert_eq!(match_type, "path_rule");
+        assert!(match_detail.contains("/home/user/repos/personal/"));
+    }
+
+    #[test]
+    fn test_resolve_with_explanation_override() {
+        let conn = setup_test_db();
+        let mgr = AccountManager::new(conn);
+
+        let work = mgr
+            .create_account("work", "/home/user/.claude-work", false, "enterprise")
+            .unwrap();
+        mgr.set_project_override("/home/user/special", work.id)
+            .unwrap();
+
+        let (account, match_type, _detail) = mgr
+            .resolve_with_explanation("/home/user/special")
+            .unwrap()
+            .unwrap();
+        assert_eq!(account.name, "work");
+        assert_eq!(match_type, "project_override");
+    }
+
+    #[test]
+    fn test_resolve_with_explanation_default() {
+        let conn = setup_test_db();
+        let mgr = AccountManager::new(conn);
+
+        let _personal = mgr
+            .create_account("personal", "/home/user/.claude-personal", true, "pro")
+            .unwrap();
+
+        let (account, match_type, _detail) = mgr
+            .resolve_with_explanation("/some/random/path")
+            .unwrap()
+            .unwrap();
+        assert_eq!(account.name, "personal");
+        assert_eq!(match_type, "default");
     }
 
     #[test]

@@ -135,6 +135,31 @@ pub async fn list_project_overrides(
     state.0.list_project_overrides().map_err(|e| e.to_string())
 }
 
+#[derive(serde::Serialize)]
+pub struct AccountResolution {
+    pub account: crate::accounts::Account,
+    pub match_type: String,
+    pub match_detail: String,
+}
+
+#[tauri::command]
+pub async fn explain_account_resolution(
+    account_state: tauri::State<'_, crate::accounts::AccountManagerState>,
+    project_path: String,
+) -> Result<Option<AccountResolution>, String> {
+    account_state
+        .0
+        .resolve_with_explanation(&project_path)
+        .map(|opt| {
+            opt.map(|(account, match_type, match_detail)| AccountResolution {
+                account,
+                match_type,
+                match_detail,
+            })
+        })
+        .map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub async fn discover_accounts() -> Result<Vec<(String, String)>, String> {
     let discovered = crate::accounts::AccountManager::discover_accounts();

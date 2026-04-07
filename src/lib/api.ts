@@ -2053,4 +2053,15 @@ export const api = {
     return apiCall<[string, string][]>('discover_accounts');
   },
 
+  /**
+   * Resolve account for a project path with explanation of why it matched
+   */
+  async explainAccountResolution(projectPath: string): Promise<{
+    account: Account;
+    match_type: string;
+    match_detail: string;
+  } | null> {
+    return apiCall("explain_account_resolution", { projectPath });
+  },
+
 };

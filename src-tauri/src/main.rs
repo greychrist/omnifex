@@ -320,6 +320,7 @@ fn main() {
             commands::accounts::set_project_account_override,
             commands::accounts::list_project_overrides,
             commands::accounts::discover_accounts,
+            commands::accounts::explain_account_resolution,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

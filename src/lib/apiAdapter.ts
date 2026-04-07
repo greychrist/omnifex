@@ -253,6 +253,9 @@ function mapCommandToEndpoint(command: string, _params?: any): string {
     'slash_command_get': '/api/slash-commands/{commandId}',
     'slash_command_save': '/api/slash-commands',
     'slash_command_delete': '/api/slash-commands/{commandId}',
+
+    // Account resolution
+    'explain_account_resolution': '/api/accounts/resolve/explain',
   };
 
   const endpoint = commandToEndpoint[command];
