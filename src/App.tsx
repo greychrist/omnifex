@@ -19,6 +19,8 @@ import { UsageDashboard } from "@/components/UsageDashboard";
 import { MCPManager } from "@/components/MCPManager";
 import { NFOCredits } from "@/components/NFOCredits";
 import { ClaudeBinaryDialog } from "@/components/ClaudeBinaryDialog";
+import { AccountPickerDialog } from "@/components/AccountPickerDialog";
+import type { Account } from "@/lib/api";
 import { Toast, ToastContainer } from "@/components/ui/toast";
 import { ProjectSettings } from '@/components/ProjectSettings';
 import { TabManager } from "@/components/TabManager";
@@ -59,6 +61,8 @@ function AppContent() {
   const [showClaudeBinaryDialog, setShowClaudeBinaryDialog] = useState(false);
   const [showProjectPicker, setShowProjectPicker] = useState(false);
   const [homeDirectory, setHomeDirectory] = useState<string>('/');
+  const [showAccountPicker, setShowAccountPicker] = useState(false);
+  const [pendingProjectPath, setPendingProjectPath] = useState<string>("");
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" | "info" } | null>(null);
   const [projectForSettings, setProjectForSettings] = useState<Project | null>(null);
   const [previousView] = useState<View>("welcome");
@@ -428,8 +432,16 @@ function AppContent() {
               basePath={homeDirectory}
               onSelect={async (entry) => {
                 if (entry.is_directory) {
-                  // Create or open a project for this directory
                   try {
+                    // Check if account can be resolved for this path
+                    const account = await api.resolveAccountForProject(entry.path);
+                    if (account === null) {
+                      // No matching rule — prompt user to pick account
+                      setPendingProjectPath(entry.path);
+                      setShowProjectPicker(false);
+                      setShowAccountPicker(true);
+                      return;
+                    }
                     const project = await api.createProject(entry.path);
                     setShowProjectPicker(false);
                     await loadProjects();
@@ -445,6 +457,22 @@ function AppContent() {
           </div>
         </div>
       )}
+
+      <AccountPickerDialog
+        open={showAccountPicker}
+        onOpenChange={setShowAccountPicker}
+        projectPath={pendingProjectPath}
+        onAccountSelected={async () => {
+          try {
+            const project = await api.createProject(pendingProjectPath);
+            await loadProjects();
+            await handleProjectClick(project);
+          } catch (err) {
+            console.error('Failed to create project after account selection:', err);
+            setError('Failed to create project for the selected directory.');
+          }
+        }}
+      />
       
       {/* Toast Container */}
       <ToastContainer>
@@ -465,12 +493,17 @@ function AppContent() {
               basePath={homeDirectory}
               onSelect={async (entry) => {
                 if (entry.is_directory) {
-                  // Create or open a project for this directory
                   try {
+                    const account = await api.resolveAccountForProject(entry.path);
+                    if (account === null) {
+                      setPendingProjectPath(entry.path);
+                      setShowProjectPicker(false);
+                      setShowAccountPicker(true);
+                      return;
+                    }
                     const project = await api.createProject(entry.path);
                     setShowProjectPicker(false);
                     await loadProjects();
-                    // Load sessions for the selected project
                     await handleProjectClick(project);
                   } catch (err) {
                     console.error('Failed to create project:', err);

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { AccountSettings } from "@/components/AccountSettings";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
   Plus, 
@@ -393,8 +394,9 @@ export const Settings: React.FC<SettingsProps> = ({
       ) : (
         <div className="flex-1 overflow-y-auto p-6">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid grid-cols-8 w-full mb-6 h-auto p-1">
+            <TabsList className="grid grid-cols-9 w-full mb-6 h-auto p-1">
               <TabsTrigger value="general" className="py-2.5 px-3">General</TabsTrigger>
+              <TabsTrigger value="accounts" className="py-2.5 px-3">Accounts</TabsTrigger>
               <TabsTrigger value="permissions" className="py-2.5 px-3">Permissions</TabsTrigger>
               <TabsTrigger value="environment" className="py-2.5 px-3">Environment</TabsTrigger>
               <TabsTrigger value="advanced" className="py-2.5 px-3">Advanced</TabsTrigger>
@@ -404,6 +406,13 @@ export const Settings: React.FC<SettingsProps> = ({
               <TabsTrigger value="proxy" className="py-2.5 px-3">Proxy</TabsTrigger>
             </TabsList>
             
+            {/* Account Settings */}
+            <TabsContent value="accounts" className="space-y-6 mt-6">
+              <Card className="p-6">
+                <AccountSettings />
+              </Card>
+            </TabsContent>
+
             {/* General Settings */}
             <TabsContent value="general" className="space-y-6 mt-6">
               <Card className="p-6 space-y-6">

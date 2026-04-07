@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import type { Project } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { AccountBadge } from "@/components/AccountBadge";
 
 interface ProjectListProps {
   /**
@@ -184,8 +185,13 @@ export const ProjectList: React.FC<ProjectListProps> = ({
                   <span className="text-body-small font-medium">
                     {getProjectName(project.path)}
                   </span>
-                  <span className="text-caption text-muted-foreground font-mono text-right" style={{ minWidth: '200px' }}>
-                    {getDisplayPath(project.path, 35)}
+                  <span className="flex items-center gap-2">
+                    {project.account_name && (
+                      <AccountBadge name={project.account_name} />
+                    )}
+                    <span className="text-caption text-muted-foreground font-mono text-right" style={{ minWidth: '200px' }}>
+                      {getDisplayPath(project.path, 35)}
+                    </span>
                   </span>
                 </motion.button>
               </motion.div>
