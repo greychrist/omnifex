@@ -13,8 +13,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover } from "@/components/ui/popover";
-import { api, type Session } from "@/lib/api";
+import { api, type Session, type Account } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { AccountBadge } from "@/components/AccountBadge";
 
 // Conditional imports for Tauri APIs
 let tauriListen: any;
@@ -123,7 +124,17 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   const [showSlashCommandsSettings, setShowSlashCommandsSettings] = useState(false);
   const [forkCheckpointId, setForkCheckpointId] = useState<string | null>(null);
   const [forkSessionName, setForkSessionName] = useState("");
-  
+  const [resolvedAccount, setResolvedAccount] = useState<Account | null>(null);
+
+  // Resolve account for this project
+  useEffect(() => {
+    if (projectPath) {
+      api.resolveAccountForProject(projectPath)
+        .then(setResolvedAccount)
+        .catch(() => setResolvedAccount(null));
+    }
+  }, [projectPath]);
+
   // Queued prompts state
   const [queuedPrompts, setQueuedPrompts] = useState<Array<{ id: string; prompt: string; model: "sonnet" | "opus" }>>([]);
   
@@ -1287,7 +1298,12 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     </div>
   );
 
-  const projectPathInput = null; // Removed project path display
+  const projectPathInput = (projectPath && resolvedAccount) ? (
+    <div className="flex items-center gap-2 px-2 py-1.5 text-xs text-muted-foreground border-b border-border/50">
+      <AccountBadge name={resolvedAccount.name} />
+      <span className="font-mono truncate">{projectPath}</span>
+    </div>
+  ) : null;
 
   // If preview is maximized, render only the WebviewPreview in full screen
   if (showPreview && isPreviewMaximized) {
