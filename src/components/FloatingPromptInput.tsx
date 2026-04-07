@@ -12,7 +12,8 @@ import {
   Lightbulb,
   Cpu,
   Rocket,
-  
+  Shield,
+  ShieldOff,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -70,6 +71,14 @@ interface FloatingPromptInputProps {
    * Extra menu items to display in the prompt bar
    */
   extraMenuItems?: React.ReactNode;
+  /**
+   * Current permission mode
+   */
+  permissionMode?: "default" | "skip";
+  /**
+   * Callback when permission mode changes
+   */
+  onPermissionModeChange?: (mode: "default" | "skip") => void;
 }
 
 export interface FloatingPromptInputRef {
@@ -221,6 +230,8 @@ const FloatingPromptInputInner = (
     className,
     onCancel,
     extraMenuItems,
+    permissionMode = "default",
+    onPermissionModeChange,
   }: FloatingPromptInputProps,
   ref: React.Ref<FloatingPromptInputRef>,
 ) => {
@@ -1214,6 +1225,45 @@ const FloatingPromptInputInner = (
                 align="start"
                 side="top"
               />
+
+              {/* Permission Mode Toggle */}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <motion.div
+                    whileTap={{ scale: 0.97 }}
+                    transition={{ duration: 0.15 }}
+                  >
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={disabled}
+                      className={cn(
+                        "h-9 px-2 hover:bg-accent/50 gap-1",
+                        permissionMode === "skip" ? "text-yellow-500" : "text-green-500"
+                      )}
+                      onClick={() => {
+                        const next = permissionMode === "default" ? "skip" : "default";
+                        onPermissionModeChange?.(next);
+                      }}
+                    >
+                      {permissionMode === "skip" ? (
+                        <ShieldOff className="h-3.5 w-3.5" />
+                      ) : (
+                        <Shield className="h-3.5 w-3.5" />
+                      )}
+                      <span className="text-[10px] font-bold opacity-70">
+                        {permissionMode === "skip" ? "AUTO" : "ASK"}
+                      </span>
+                    </Button>
+                  </motion.div>
+                </TooltipTrigger>
+                <TooltipContent side="top">
+                  <p className="text-xs font-medium">
+                    {permissionMode === "skip" ? "Auto-Approve (skip permissions)" : "Ask Each Time (terminal behavior)"}
+                  </p>
+                  <p className="text-xs text-muted-foreground">Click to toggle</p>
+                </TooltipContent>
+              </Tooltip>
 
               </div>
 

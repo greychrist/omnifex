@@ -1688,6 +1688,8 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
               disabled={!projectPath}
               projectPath={projectPath}
               defaultModel={selectedModel}
+              permissionMode={permissionMode}
+              onPermissionModeChange={setPermissionMode}
               extraMenuItems={
                 <>
                   {effectiveSession && (

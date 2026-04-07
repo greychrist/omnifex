@@ -360,9 +360,9 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
 
                     // Otherwise render as plain user text with distinct styling
                     return (
-                      <div className="border-l-2 border-blue-500/50 bg-blue-500/5 rounded-r-lg pl-4 pr-3 py-3 my-3">
+                      <div className="border-l-2 border-violet-500/50 bg-violet-500/8 rounded-r-lg pl-4 pr-3 py-3 my-3">
                         <div className="flex items-center gap-2 mb-1">
-                          <span className="text-xs font-medium text-blue-400/80">You</span>
+                          <span className="text-xs font-medium text-violet-400/80">You</span>
                         </div>
                         <div className="text-sm">
                           {contentStr}
@@ -623,9 +623,9 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
 
                     renderedSomething = true;
                     return (
-                      <div key={idx} className="border-l-2 border-blue-500/50 bg-blue-500/5 rounded-r-lg pl-4 pr-3 py-3 my-3">
+                      <div key={idx} className="border-l-2 border-violet-500/50 bg-violet-500/8 rounded-r-lg pl-4 pr-3 py-3 my-3">
                         <div className="flex items-center gap-2 mb-1">
-                          <span className="text-xs font-medium text-blue-400/80">You</span>
+                          <span className="text-xs font-medium text-violet-400/80">You</span>
                         </div>
                         <div className="text-sm">
                           {textContent}
