@@ -109,7 +109,25 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
     // Assistant message
     if (message.type === "assistant" && message.message) {
       const msg = message.message;
-      
+
+      // Check if a following result message duplicates this assistant's text content
+      // If so, hide this assistant message — the Execution Complete card will show it instead
+      if (msg.content && Array.isArray(msg.content)) {
+        const assistantText = msg.content
+          .filter((c: any) => c.type === 'text')
+          .map((c: any) => typeof c.text === 'string' ? c.text : '')
+          .join('');
+        if (assistantText) {
+          const msgIndex = streamMessages.indexOf(message);
+          for (let i = msgIndex + 1; i < Math.min(streamMessages.length, msgIndex + 5); i++) {
+            const next = streamMessages[i];
+            if (next.type === 'result' && next.result && next.result.trim() === assistantText.trim()) {
+              return null; // Suppress — Execution Complete card shows this text
+            }
+          }
+        }
+      }
+
       let renderedSomething = false;
       
       const renderedCard = (
@@ -648,7 +666,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
     // Result message - render with markdown
     if (message.type === "result") {
       const isError = message.is_error || message.subtype?.includes("error");
-      
+
       return (
         <Card className={cn(
           isError ? "border-destructive/20 bg-destructive/5" : "border-green-500/20 bg-green-500/5",
