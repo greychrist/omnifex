@@ -36,4 +36,4 @@ CLAUDE.md
 # Claude project-specific files
 .claude/
 
-.env
+.env.superpowers/
