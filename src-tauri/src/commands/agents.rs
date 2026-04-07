@@ -478,6 +478,12 @@ pub fn init_database(app: &AppHandle) -> SqliteResult<Connection> {
         [],
     );
 
+    // Add claude_binary column to accounts (migration for existing DBs)
+    let _ = conn.execute(
+        "ALTER TABLE accounts ADD COLUMN claude_binary TEXT",
+        [],
+    );
+
     Ok(conn)
 }
 

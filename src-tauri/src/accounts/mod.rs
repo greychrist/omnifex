@@ -14,6 +14,9 @@ pub struct Account {
     /// Account type: "max" (no cost, usage limits only), "enterprise" (has cost),
     /// "pro" (has cost), "free" (has cost)
     pub account_type: String,
+    /// Optional path to the claude binary for this account.
+    /// When None, falls back to global binary discovery.
+    pub claude_binary: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -68,7 +71,7 @@ impl AccountManager {
         // 1. Check explicit project override
         let override_result: Option<Account> = conn
             .query_row(
-                "SELECT a.id, a.name, a.config_dir, a.is_default, a.account_type, a.created_at, a.updated_at
+                "SELECT a.id, a.name, a.config_dir, a.is_default, a.account_type, a.claude_binary, a.created_at, a.updated_at
                  FROM project_account_overrides o
                  JOIN accounts a ON a.id = o.account_id
                  WHERE o.project_path = ?1",
@@ -80,8 +83,9 @@ impl AccountManager {
                         config_dir: row.get(2)?,
                         is_default: row.get(3)?,
                         account_type: row.get(4)?,
-                        created_at: row.get(5)?,
-                        updated_at: row.get(6)?,
+                        claude_binary: row.get(5)?,
+                        created_at: row.get(6)?,
+                        updated_at: row.get(7)?,
                     })
                 },
             )
@@ -93,7 +97,7 @@ impl AccountManager {
 
         // 2. Check path prefix rules (longest match wins, then priority)
         let mut stmt = conn.prepare(
-            "SELECT a.id, a.name, a.config_dir, a.is_default, a.account_type, a.created_at, a.updated_at, r.path_prefix
+            "SELECT a.id, a.name, a.config_dir, a.is_default, a.account_type, a.claude_binary, a.created_at, a.updated_at, r.path_prefix
              FROM account_path_rules r
              JOIN accounts a ON a.id = r.account_id
              ORDER BY LENGTH(r.path_prefix) DESC, r.priority DESC",
@@ -108,10 +112,11 @@ impl AccountManager {
                         config_dir: row.get(2)?,
                         is_default: row.get(3)?,
                         account_type: row.get(4)?,
-                        created_at: row.get(5)?,
-                        updated_at: row.get(6)?,
+                        claude_binary: row.get(5)?,
+                        created_at: row.get(6)?,
+                        updated_at: row.get(7)?,
                     },
-                    row.get::<_, String>(7)?,
+                    row.get::<_, String>(8)?,
                 ))
             })?
             .filter_map(|r| r.ok())
@@ -127,7 +132,7 @@ impl AccountManager {
         // 3. Check default account
         let default_result: Option<Account> = conn
             .query_row(
-                "SELECT id, name, config_dir, is_default, account_type, created_at, updated_at
+                "SELECT id, name, config_dir, is_default, account_type, claude_binary, created_at, updated_at
                  FROM accounts WHERE is_default = 1 LIMIT 1",
                 [],
                 |row| {
@@ -137,8 +142,9 @@ impl AccountManager {
                         config_dir: row.get(2)?,
                         is_default: row.get(3)?,
                         account_type: row.get(4)?,
-                        created_at: row.get(5)?,
-                        updated_at: row.get(6)?,
+                        claude_binary: row.get(5)?,
+                        created_at: row.get(6)?,
+                        updated_at: row.get(7)?,
                     })
                 },
             )
@@ -160,7 +166,7 @@ impl AccountManager {
     pub fn list_accounts(&self) -> Result<Vec<Account>> {
         let conn = self.db.lock().map_err(|e| anyhow::anyhow!("{}", e))?;
         let mut stmt = conn.prepare(
-            "SELECT id, name, config_dir, is_default, account_type, created_at, updated_at
+            "SELECT id, name, config_dir, is_default, account_type, claude_binary, created_at, updated_at
              FROM accounts ORDER BY name",
         )?;
         let accounts = stmt
@@ -171,8 +177,9 @@ impl AccountManager {
                     config_dir: row.get(2)?,
                     is_default: row.get(3)?,
                     account_type: row.get(4)?,
-                    created_at: row.get(5)?,
-                    updated_at: row.get(6)?,
+                    claude_binary: row.get(5)?,
+                    created_at: row.get(6)?,
+                    updated_at: row.get(7)?,
                 })
             })?
             .filter_map(|r| r.ok())
@@ -201,7 +208,7 @@ impl AccountManager {
 
         let id = conn.last_insert_rowid();
         conn.query_row(
-            "SELECT id, name, config_dir, is_default, account_type, created_at, updated_at
+            "SELECT id, name, config_dir, is_default, account_type, claude_binary, created_at, updated_at
              FROM accounts WHERE id = ?1",
             params![id],
             |row| {
@@ -211,8 +218,9 @@ impl AccountManager {
                     config_dir: row.get(2)?,
                     is_default: row.get(3)?,
                     account_type: row.get(4)?,
-                    created_at: row.get(5)?,
-                    updated_at: row.get(6)?,
+                    claude_binary: row.get(5)?,
+                    created_at: row.get(6)?,
+                    updated_at: row.get(7)?,
                 })
             },
         )
@@ -388,7 +396,7 @@ impl AccountManager {
         // 1. Check explicit project override
         let override_result: Option<Account> = conn
             .query_row(
-                "SELECT a.id, a.name, a.config_dir, a.is_default, a.account_type, a.created_at, a.updated_at
+                "SELECT a.id, a.name, a.config_dir, a.is_default, a.account_type, a.claude_binary, a.created_at, a.updated_at
                  FROM project_account_overrides o
                  JOIN accounts a ON a.id = o.account_id
                  WHERE o.project_path = ?1",
@@ -400,8 +408,9 @@ impl AccountManager {
                         config_dir: row.get(2)?,
                         is_default: row.get(3)?,
                         account_type: row.get(4)?,
-                        created_at: row.get(5)?,
-                        updated_at: row.get(6)?,
+                        claude_binary: row.get(5)?,
+                        created_at: row.get(6)?,
+                        updated_at: row.get(7)?,
                     })
                 },
             )
@@ -414,7 +423,7 @@ impl AccountManager {
 
         // 2. Check path prefix rules
         let mut stmt = conn.prepare(
-            "SELECT a.id, a.name, a.config_dir, a.is_default, a.account_type, a.created_at, a.updated_at, r.path_prefix
+            "SELECT a.id, a.name, a.config_dir, a.is_default, a.account_type, a.claude_binary, a.created_at, a.updated_at, r.path_prefix
              FROM account_path_rules r
              JOIN accounts a ON a.id = r.account_id
              ORDER BY LENGTH(r.path_prefix) DESC, r.priority DESC",
@@ -429,10 +438,11 @@ impl AccountManager {
                         config_dir: row.get(2)?,
                         is_default: row.get(3)?,
                         account_type: row.get(4)?,
-                        created_at: row.get(5)?,
-                        updated_at: row.get(6)?,
+                        claude_binary: row.get(5)?,
+                        created_at: row.get(6)?,
+                        updated_at: row.get(7)?,
                     },
-                    row.get::<_, String>(7)?,
+                    row.get::<_, String>(8)?,
                 ))
             })?
             .filter_map(|r| r.ok())
@@ -449,7 +459,7 @@ impl AccountManager {
         // 3. Check default account
         let default_result: Option<Account> = conn
             .query_row(
-                "SELECT id, name, config_dir, is_default, account_type, created_at, updated_at
+                "SELECT id, name, config_dir, is_default, account_type, claude_binary, created_at, updated_at
                  FROM accounts WHERE is_default = 1 LIMIT 1",
                 [],
                 |row| {
@@ -459,8 +469,9 @@ impl AccountManager {
                         config_dir: row.get(2)?,
                         is_default: row.get(3)?,
                         account_type: row.get(4)?,
-                        created_at: row.get(5)?,
-                        updated_at: row.get(6)?,
+                        claude_binary: row.get(5)?,
+                        created_at: row.get(6)?,
+                        updated_at: row.get(7)?,
                     })
                 },
             )
@@ -496,6 +507,7 @@ mod tests {
                 config_dir TEXT NOT NULL,
                 is_default BOOLEAN NOT NULL DEFAULT 0,
                 account_type TEXT NOT NULL DEFAULT 'pro',
+                claude_binary TEXT,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             )",

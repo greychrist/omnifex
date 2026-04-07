@@ -391,6 +391,20 @@ fn find_standard_installations() -> Vec<ClaudeInstallation> {
                 "yarn-global".to_string(),
             ),
         ]);
+
+        // Check VS Code extension native binary (glob for any version)
+        if let Ok(entries) = glob::glob(&format!(
+            "{}/.vscode/extensions/anthropic.claude-code-*/resources/native-binary/claude",
+            home
+        )) {
+            for entry in entries.flatten() {
+                if entry.is_file() {
+                    let path = entry.to_string_lossy().to_string();
+                    debug!("Found claude via VS Code extension: {}", path);
+                    paths_to_check.push((path, "vscode-extension".to_string()));
+                }
+            }
+        }
     }
 
     // Check each path

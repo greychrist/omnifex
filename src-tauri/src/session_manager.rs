@@ -96,8 +96,18 @@ pub async fn session_start(
         account.as_ref().map(|a| &a.name)
     );
 
-    // 2. Find claude binary
-    let claude_path = crate::claude_binary::find_claude_binary(&app)?;
+    // 2. Find claude binary — prefer account-level setting, fall back to global discovery
+    let claude_path = if let Some(ref binary) = account.as_ref().and_then(|a| a.claude_binary.clone()) {
+        if std::path::Path::new(binary).exists() {
+            log::info!("session_start: using account-configured binary: {}", binary);
+            binary.clone()
+        } else {
+            log::warn!("session_start: account binary not found at {}, falling back to discovery", binary);
+            crate::claude_binary::find_claude_binary(&app)?
+        }
+    } else {
+        crate::claude_binary::find_claude_binary(&app)?
+    };
     log::info!("session_start: using claude binary at {}", claude_path);
 
     // 3. Build args for persistent mode (matches VS Code extension flags)
