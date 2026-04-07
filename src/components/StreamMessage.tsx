@@ -93,9 +93,26 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
       return <SummaryWidget summary={message.summary} leafUuid={message.leafUuid} />;
     }
 
-    // System initialization message — session header already shows this info
+    // System initialization message
     if (message.type === "system" && message.subtype === "init") {
-      return null;
+      return (
+        <div className={cn("text-xs text-muted-foreground space-y-1 px-4 py-3 border border-border/30 rounded-lg bg-muted/20", className)}>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="font-medium text-foreground/70">Session Initialized</span>
+          </div>
+          {message.session_id && <div>Session: <span className="font-mono">{message.session_id}</span></div>}
+          {message.model && <div>Model: <span className="font-mono">{message.model}</span></div>}
+          {message.cwd && <div>Working Directory: <span className="font-mono">{message.cwd}</span></div>}
+          {message.tools && Array.isArray(message.tools) && (
+            <div className="flex flex-wrap gap-1 mt-1">
+              <span>Tools ({message.tools.length}):</span>
+              {message.tools.map((tool: any, i: number) => (
+                <span key={i} className="px-1.5 py-0.5 bg-muted rounded text-[10px] font-mono">{typeof tool === 'string' ? tool : tool.name || tool.type}</span>
+              ))}
+            </div>
+          )}
+        </div>
+      );
     }
 
     // Assistant message
@@ -321,7 +338,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
         <Card className={cn("border-muted-foreground/20 bg-muted/20", className)}>
           <CardContent className="p-4">
             <div className="flex items-start gap-3">
-              <User className="h-5 w-5 text-muted-foreground mt-0.5" />
+              <User className="h-5 w-5 text-violet-400 mt-0.5" />
               <div className="flex-1 space-y-2 min-w-0">
                 {/* Handle content that is a simple string (e.g. from user commands) */}
                 {(typeof msg.content === 'string' || (msg.content && !Array.isArray(msg.content))) && (

@@ -430,11 +430,17 @@ export const TabContent: React.FC = () => {
         // Create new tab for this session
         const projectName = session.project_path.split('/').pop() || 'Session';
         const newTabId = createChatTab(session.id, projectName, session.project_path);
-        // Update the new tab with session data
+        // Update the new tab with session data and resolve account
         updateTab(newTabId, {
           sessionData: session,
           initialProjectPath: session.project_path
         });
+        // Resolve account name for the tab badge
+        api.resolveAccountForProject(session.project_path).then((account) => {
+          if (account) {
+            updateTab(newTabId, { accountName: account.name });
+          }
+        }).catch(() => {});
       }
     };
 

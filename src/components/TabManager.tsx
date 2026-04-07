@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence, Reorder } from 'framer-motion';
 import { X, Plus, MessageSquare, Bot, AlertCircle, Loader2, Folder, BarChart, Server, Settings, FileText } from 'lucide-react';
+import { AccountBadge } from './AccountBadge';
 import { useTabState } from '@/hooks/useTabState';
 import { Tab, useTabContext } from '@/contexts/TabContext';
 import { cn } from '@/lib/utils';
@@ -90,6 +91,9 @@ const TabItem: React.FC<TabItemProps> = ({ tab, isActive, onClose, onClick, isDr
       <span className="flex-1 truncate text-xs font-medium min-w-0">
         {tab.title}
       </span>
+      {tab.accountName && (
+        <AccountBadge name={tab.accountName} className="text-[9px] px-1 py-0" />
+      )}
 
       {/* Status Indicators - always takes up space */}
       <div className="flex items-center gap-1.5 flex-shrink-0 w-6 justify-end">
