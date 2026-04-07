@@ -253,17 +253,29 @@ fn get_earliest_timestamp(path: &PathBuf) -> Option<String> {
     None
 }
 
-fn resolve_claude_paths(account_state: &AccountManagerState) -> Result<Vec<PathBuf>, String> {
+/// Returns (claude_paths, set_of_no_cost_path_prefixes)
+fn resolve_claude_paths(
+    account_state: &AccountManagerState,
+) -> Result<(Vec<PathBuf>, std::collections::HashSet<String>), String> {
     let accounts = account_state.0.list_accounts().map_err(|e| e.to_string())?;
     if accounts.is_empty() {
-        Ok(vec![dirs::home_dir()
-            .ok_or("Failed to get home directory".to_string())?
-            .join(".claude")])
+        Ok((
+            vec![dirs::home_dir()
+                .ok_or("Failed to get home directory".to_string())?
+                .join(".claude")],
+            std::collections::HashSet::new(),
+        ))
     } else {
-        Ok(accounts
+        let paths = accounts
             .iter()
             .map(|a| PathBuf::from(&a.config_dir))
-            .collect())
+            .collect();
+        let no_cost: std::collections::HashSet<String> = accounts
+            .iter()
+            .filter(|a| a.account_type == "max")
+            .map(|a| a.config_dir.clone())
+            .collect();
+        Ok((paths, no_cost))
     }
 }
 
@@ -311,11 +323,18 @@ pub fn get_usage_stats(
     days: Option<u32>,
     account_state: State<'_, AccountManagerState>,
 ) -> Result<UsageStats, String> {
-    let claude_paths = resolve_claude_paths(&account_state)?;
+    let (claude_paths, no_cost_dirs) = resolve_claude_paths(&account_state)?;
 
     let mut all_entries = Vec::new();
     for claude_path in &claude_paths {
-        all_entries.extend(get_all_usage_entries(claude_path));
+        let mut entries = get_all_usage_entries(claude_path);
+        // Zero out cost for entries from max (no-cost) accounts
+        if no_cost_dirs.contains(&claude_path.to_string_lossy().to_string()) {
+            for entry in &mut entries {
+                entry.cost = 0.0;
+            }
+        }
+        all_entries.extend(entries);
     }
     all_entries.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
 
@@ -457,20 +476,14 @@ pub fn get_usage_stats(
     by_date.sort_by(|a, b| b.date.cmp(&a.date));
 
     let mut by_project: Vec<ProjectUsage> = project_stats.into_values().collect();
-    // Annotate projects with account info and zero cost for max accounts
+    // Annotate projects with account info
     for project in &mut by_project {
         if let Ok(Some(account)) = account_state.0.resolve(&project.project_path) {
             project.account_name = Some(account.name);
             project.account_type = Some(account.account_type);
-            if project.account_type.as_deref() == Some("max") {
-                project.total_cost = 0.0;
-            }
         }
     }
     by_project.sort_by(|a, b| b.total_cost.partial_cmp(&a.total_cost).unwrap());
-
-    // Recalculate total_cost excluding max-account projects
-    let total_cost: f64 = by_project.iter().map(|p| p.total_cost).sum();
 
     Ok(UsageStats {
         total_cost,
@@ -492,11 +505,18 @@ pub fn get_usage_by_date_range(
     end_date: String,
     account_state: State<'_, AccountManagerState>,
 ) -> Result<UsageStats, String> {
-    let claude_paths = resolve_claude_paths(&account_state)?;
+    let (claude_paths, no_cost_dirs) = resolve_claude_paths(&account_state)?;
 
     let mut all_entries = Vec::new();
     for claude_path in &claude_paths {
-        all_entries.extend(get_all_usage_entries(claude_path));
+        let mut entries = get_all_usage_entries(claude_path);
+        // Zero out cost for entries from max (no-cost) accounts
+        if no_cost_dirs.contains(&claude_path.to_string_lossy().to_string()) {
+            for entry in &mut entries {
+                entry.cost = 0.0;
+            }
+        }
+        all_entries.extend(entries);
     }
     all_entries.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
 
@@ -648,20 +668,14 @@ pub fn get_usage_by_date_range(
     by_date.sort_by(|a, b| b.date.cmp(&a.date));
 
     let mut by_project: Vec<ProjectUsage> = project_stats.into_values().collect();
-    // Annotate projects with account info and zero cost for max accounts
+    // Annotate projects with account info
     for project in &mut by_project {
         if let Ok(Some(account)) = account_state.0.resolve(&project.project_path) {
             project.account_name = Some(account.name);
             project.account_type = Some(account.account_type);
-            if project.account_type.as_deref() == Some("max") {
-                project.total_cost = 0.0;
-            }
         }
     }
     by_project.sort_by(|a, b| b.total_cost.partial_cmp(&a.total_cost).unwrap());
-
-    // Recalculate total_cost excluding max-account projects
-    let total_cost: f64 = by_project.iter().map(|p| p.total_cost).sum();
 
     Ok(UsageStats {
         total_cost,
@@ -683,11 +697,18 @@ pub fn get_usage_details(
     date: Option<String>,
     account_state: State<'_, AccountManagerState>,
 ) -> Result<Vec<UsageEntry>, String> {
-    let claude_paths = resolve_claude_paths(&account_state)?;
+    let (claude_paths, no_cost_dirs) = resolve_claude_paths(&account_state)?;
 
     let mut all_entries = Vec::new();
     for claude_path in &claude_paths {
-        all_entries.extend(get_all_usage_entries(claude_path));
+        let mut entries = get_all_usage_entries(claude_path);
+        // Zero out cost for entries from max (no-cost) accounts
+        if no_cost_dirs.contains(&claude_path.to_string_lossy().to_string()) {
+            for entry in &mut entries {
+                entry.cost = 0.0;
+            }
+        }
+        all_entries.extend(entries);
     }
     all_entries.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
 
@@ -711,11 +732,18 @@ pub fn get_session_stats(
     order: Option<String>,
     account_state: State<'_, AccountManagerState>,
 ) -> Result<Vec<ProjectUsage>, String> {
-    let claude_paths = resolve_claude_paths(&account_state)?;
+    let (claude_paths, no_cost_dirs) = resolve_claude_paths(&account_state)?;
 
     let mut all_entries = Vec::new();
     for claude_path in &claude_paths {
-        all_entries.extend(get_all_usage_entries(claude_path));
+        let mut entries = get_all_usage_entries(claude_path);
+        // Zero out cost for entries from max (no-cost) accounts
+        if no_cost_dirs.contains(&claude_path.to_string_lossy().to_string()) {
+            for entry in &mut entries {
+                entry.cost = 0.0;
+            }
+        }
+        all_entries.extend(entries);
     }
     all_entries.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
 

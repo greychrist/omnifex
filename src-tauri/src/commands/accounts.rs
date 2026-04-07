@@ -82,7 +82,38 @@ pub async fn resolve_account_for_project(
     state: State<'_, AccountManagerState>,
     project_path: String,
 ) -> Result<Option<Account>, String> {
-    state.0.resolve(&project_path).map_err(|e| e.to_string())
+    // First try standard resolution (overrides → path rules → default)
+    let resolved = state.0.resolve(&project_path).map_err(|e| e.to_string())?;
+
+    // If resolved via override or path rule, use that
+    // But if it fell through to default, verify by checking which config dir
+    // actually contains this project's data
+    if let Some(ref account) = resolved {
+        // Check if this account actually has the project
+        let project_id = project_path.replace('/', "-");
+        let has_project = std::path::Path::new(&account.config_dir)
+            .join("projects")
+            .join(&project_id)
+            .exists();
+        if has_project {
+            return Ok(resolved);
+        }
+    }
+
+    // Search all accounts for which one actually contains this project
+    let accounts = state.0.list_accounts().map_err(|e| e.to_string())?;
+    let project_id = project_path.replace('/', "-");
+    for account in &accounts {
+        let candidate = std::path::Path::new(&account.config_dir)
+            .join("projects")
+            .join(&project_id);
+        if candidate.exists() {
+            return Ok(Some(account.clone()));
+        }
+    }
+
+    // Fall back to standard resolution result
+    Ok(resolved)
 }
 
 #[tauri::command]
