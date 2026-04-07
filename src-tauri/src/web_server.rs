@@ -18,8 +18,6 @@ use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::ServeDir;
 use which;
 
-use crate::commands;
-
 // Find Claude binary for web mode - use bundled binary first
 fn find_claude_binary_web() -> Result<String, String> {
     // First try the bundled binary (same location as Tauri app uses)
@@ -112,21 +110,20 @@ async fn serve_frontend() -> Html<&'static str> {
 }
 
 /// API endpoint to get projects (equivalent to Tauri command)
-async fn get_projects() -> Json<ApiResponse<Vec<commands::claude::Project>>> {
-    match commands::claude::list_projects().await {
-        Ok(projects) => Json(ApiResponse::success(projects)),
-        Err(e) => Json(ApiResponse::error(e.to_string())),
-    }
+/// Web mode doesn't support multi-account, so returns empty list.
+/// The actual project listing requires Tauri state (AccountManagerState).
+async fn get_projects() -> Json<ApiResponse<Vec<serde_json::Value>>> {
+    // In web mode, return empty projects — multi-account requires Tauri context
+    Json(ApiResponse::success(vec![]))
 }
 
 /// API endpoint to get sessions for a project
+/// Web mode doesn't support multi-account, so returns empty list.
 async fn get_sessions(
-    Path(project_id): Path<String>,
-) -> Json<ApiResponse<Vec<commands::claude::Session>>> {
-    match commands::claude::get_project_sessions(project_id).await {
-        Ok(sessions) => Json(ApiResponse::success(sessions)),
-        Err(e) => Json(ApiResponse::error(e.to_string())),
-    }
+    Path(_project_id): Path<String>,
+) -> Json<ApiResponse<Vec<serde_json::Value>>> {
+    // In web mode, return empty sessions — multi-account requires Tauri context
+    Json(ApiResponse::success(vec![]))
 }
 
 /// Simple agents endpoint - return empty for now (needs DB state)
@@ -202,13 +199,43 @@ async fn mcp_list() -> Json<ApiResponse<Vec<serde_json::Value>>> {
 }
 
 /// Load session history from JSONL file
+/// Web mode: reads directly from ~/.claude without multi-account support
 async fn load_session_history(
     Path((session_id, project_id)): Path<(String, String)>,
 ) -> Json<ApiResponse<Vec<serde_json::Value>>> {
-    match commands::claude::load_session_history(session_id, project_id).await {
-        Ok(history) => Json(ApiResponse::success(history)),
-        Err(e) => Json(ApiResponse::error(e.to_string())),
+    use std::io::{BufRead, BufReader};
+
+    let claude_dir = match dirs::home_dir() {
+        Some(home) => home.join(".claude"),
+        None => return Json(ApiResponse::error("Could not find home directory".to_string())),
+    };
+
+    let session_path = claude_dir
+        .join("projects")
+        .join(&project_id)
+        .join(format!("{}.jsonl", session_id));
+
+    if !session_path.exists() {
+        return Json(ApiResponse::error(format!("Session file not found: {}", session_id)));
     }
+
+    let file = match std::fs::File::open(&session_path) {
+        Ok(f) => f,
+        Err(e) => return Json(ApiResponse::error(format!("Failed to open session file: {}", e))),
+    };
+
+    let reader = BufReader::new(file);
+    let mut messages = Vec::new();
+
+    for line in reader.lines() {
+        if let Ok(line) = line {
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&line) {
+                messages.push(json);
+            }
+        }
+    }
+
+    Json(ApiResponse::success(messages))
 }
 
 /// List running Claude sessions

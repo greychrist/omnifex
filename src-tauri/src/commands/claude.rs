@@ -10,6 +10,8 @@ use tauri::{AppHandle, Emitter, Manager};
 use tokio::process::{Child, Command};
 use tokio::sync::Mutex;
 
+use crate::accounts::AccountManagerState;
+
 /// Global state to track current Claude process
 pub struct ClaudeProcessState {
     pub current_process: Arc<Mutex<Option<Child>>>,
@@ -36,6 +38,10 @@ pub struct Project {
     pub created_at: u64,
     /// Unix timestamp of the most recent session (if any)
     pub most_recent_session: Option<u64>,
+    /// Account ID this project belongs to (if multi-account)
+    pub account_id: Option<i64>,
+    /// Account name for display (if multi-account)
+    pub account_name: Option<String>,
 }
 
 /// Represents a session with its metadata
@@ -141,6 +147,18 @@ fn get_claude_dir() -> Result<PathBuf> {
         .join(".claude")
         .canonicalize()
         .context("Could not find ~/.claude directory")
+}
+
+/// Gets the claude config dir for a given project path via account resolution.
+/// Falls back to the old ~/.claude behavior if no accounts are configured.
+fn get_claude_dir_for_project(
+    account_mgr: &AccountManagerState,
+    project_path: &str,
+) -> Result<PathBuf> {
+    match account_mgr.0.resolve_config_dir(project_path) {
+        Ok(dir) => Ok(dir),
+        Err(_) => get_claude_dir(),
+    }
 }
 
 /// Gets the actual project path by reading the cwd from the JSONL entries
@@ -313,22 +331,20 @@ pub async fn get_home_directory() -> Result<String, String> {
         .ok_or_else(|| "Could not determine home directory".to_string())
 }
 
-/// Lists all projects in the ~/.claude/projects directory
-#[tauri::command]
-pub async fn list_projects() -> Result<Vec<Project>, String> {
-    log::info!("Listing projects from ~/.claude/projects");
-
-    let claude_dir = get_claude_dir().map_err(|e| e.to_string())?;
+/// Collects projects from a given config directory, attaching optional account info.
+fn collect_projects_from_dir(
+    claude_dir: &PathBuf,
+    account_id: Option<i64>,
+    account_name: Option<String>,
+) -> Result<Vec<Project>, String> {
     let projects_dir = claude_dir.join("projects");
 
     if !projects_dir.exists() {
-        log::warn!("Projects directory does not exist: {:?}", projects_dir);
         return Ok(Vec::new());
     }
 
     let mut projects = Vec::new();
 
-    // Read all directories in the projects folder
     let entries = fs::read_dir(&projects_dir)
         .map_err(|e| format!("Failed to read projects directory: {}", e))?;
 
@@ -402,13 +418,50 @@ pub async fn list_projects() -> Result<Vec<Project>, String> {
                 sessions,
                 created_at,
                 most_recent_session,
+                account_id,
+                account_name: account_name.clone(),
             });
+        }
+    }
+
+    Ok(projects)
+}
+
+/// Lists all projects in the ~/.claude/projects directory
+#[tauri::command]
+pub async fn list_projects(
+    account_state: tauri::State<'_, AccountManagerState>,
+) -> Result<Vec<Project>, String> {
+    log::info!("Listing projects (account-aware)");
+
+    let mut projects = Vec::new();
+
+    // Try to get accounts; if any exist, iterate over them
+    let accounts = account_state.0.list_accounts().map_err(|e| e.to_string())?;
+
+    if accounts.is_empty() {
+        // No accounts configured — fall back to old ~/.claude behavior
+        let claude_dir = get_claude_dir().map_err(|e| e.to_string())?;
+        projects = collect_projects_from_dir(&claude_dir, None, None)?;
+    } else {
+        for account in &accounts {
+            let config_dir = PathBuf::from(&account.config_dir);
+            match collect_projects_from_dir(&config_dir, Some(account.id), Some(account.name.clone())) {
+                Ok(mut acct_projects) => projects.append(&mut acct_projects),
+                Err(e) => {
+                    log::warn!(
+                        "Failed to read projects from account '{}' ({}): {}",
+                        account.name,
+                        account.config_dir,
+                        e
+                    );
+                }
+            }
         }
     }
 
     // Sort projects by most recent session activity, then by creation time
     projects.sort_by(|a, b| {
-        // First compare by most recent session
         match (a.most_recent_session, b.most_recent_session) {
             (Some(a_time), Some(b_time)) => b_time.cmp(&a_time),
             (Some(_), None) => std::cmp::Ordering::Less,
@@ -465,15 +518,24 @@ pub async fn create_project(path: String) -> Result<Project, String> {
         sessions: Vec::new(),
         created_at,
         most_recent_session: None,
+        account_id: None,
+        account_name: None,
     })
 }
 
 /// Gets sessions for a specific project
 #[tauri::command]
-pub async fn get_project_sessions(project_id: String) -> Result<Vec<Session>, String> {
+pub async fn get_project_sessions(
+    account_state: tauri::State<'_, AccountManagerState>,
+    project_id: String,
+    project_path: Option<String>,
+) -> Result<Vec<Session>, String> {
     log::info!("Getting sessions for project: {}", project_id);
 
-    let claude_dir = get_claude_dir().map_err(|e| e.to_string())?;
+    let claude_dir = match project_path {
+        Some(ref pp) => get_claude_dir_for_project(&account_state, pp).map_err(|e| e.to_string())?,
+        None => get_claude_dir().map_err(|e| e.to_string())?,
+    };
     let project_dir = claude_dir.join("projects").join(&project_id);
     let todos_dir = claude_dir.join("todos");
 
@@ -557,10 +619,16 @@ pub async fn get_project_sessions(project_id: String) -> Result<Vec<Session>, St
 
 /// Reads the Claude settings file
 #[tauri::command]
-pub async fn get_claude_settings() -> Result<ClaudeSettings, String> {
+pub async fn get_claude_settings(
+    account_state: tauri::State<'_, AccountManagerState>,
+    project_path: Option<String>,
+) -> Result<ClaudeSettings, String> {
     log::info!("Reading Claude settings");
 
-    let claude_dir = get_claude_dir().map_err(|e| e.to_string())?;
+    let claude_dir = match project_path {
+        Some(ref pp) => get_claude_dir_for_project(&account_state, pp).map_err(|e| e.to_string())?,
+        None => get_claude_dir().map_err(|e| e.to_string())?,
+    };
     let settings_path = claude_dir.join("settings.json");
 
     if !settings_path.exists() {
@@ -623,10 +691,16 @@ pub async fn open_new_session(app: AppHandle, path: Option<String>) -> Result<St
 
 /// Reads the CLAUDE.md system prompt file
 #[tauri::command]
-pub async fn get_system_prompt() -> Result<String, String> {
+pub async fn get_system_prompt(
+    account_state: tauri::State<'_, AccountManagerState>,
+    project_path: Option<String>,
+) -> Result<String, String> {
     log::info!("Reading CLAUDE.md system prompt");
 
-    let claude_dir = get_claude_dir().map_err(|e| e.to_string())?;
+    let claude_dir = match project_path {
+        Some(ref pp) => get_claude_dir_for_project(&account_state, pp).map_err(|e| e.to_string())?,
+        None => get_claude_dir().map_err(|e| e.to_string())?,
+    };
     let claude_md_path = claude_dir.join("CLAUDE.md");
 
     if !claude_md_path.exists() {
@@ -731,10 +805,17 @@ pub async fn check_claude_version(app: AppHandle) -> Result<ClaudeVersionStatus,
 
 /// Saves the CLAUDE.md system prompt file
 #[tauri::command]
-pub async fn save_system_prompt(content: String) -> Result<String, String> {
+pub async fn save_system_prompt(
+    account_state: tauri::State<'_, AccountManagerState>,
+    content: String,
+    project_path: Option<String>,
+) -> Result<String, String> {
     log::info!("Saving CLAUDE.md system prompt");
 
-    let claude_dir = get_claude_dir().map_err(|e| e.to_string())?;
+    let claude_dir = match project_path {
+        Some(ref pp) => get_claude_dir_for_project(&account_state, pp).map_err(|e| e.to_string())?,
+        None => get_claude_dir().map_err(|e| e.to_string())?,
+    };
     let claude_md_path = claude_dir.join("CLAUDE.md");
 
     fs::write(&claude_md_path, content).map_err(|e| format!("Failed to write CLAUDE.md: {}", e))?;
@@ -744,10 +825,17 @@ pub async fn save_system_prompt(content: String) -> Result<String, String> {
 
 /// Saves the Claude settings file
 #[tauri::command]
-pub async fn save_claude_settings(settings: serde_json::Value) -> Result<String, String> {
+pub async fn save_claude_settings(
+    account_state: tauri::State<'_, AccountManagerState>,
+    settings: serde_json::Value,
+    project_path: Option<String>,
+) -> Result<String, String> {
     log::info!("Saving Claude settings");
 
-    let claude_dir = get_claude_dir().map_err(|e| e.to_string())?;
+    let claude_dir = match project_path {
+        Some(ref pp) => get_claude_dir_for_project(&account_state, pp).map_err(|e| e.to_string())?,
+        None => get_claude_dir().map_err(|e| e.to_string())?,
+    };
     let settings_path = claude_dir.join("settings.json");
 
     // Pretty print the JSON with 2-space indentation
@@ -880,8 +968,10 @@ pub async fn save_claude_md_file(file_path: String, content: String) -> Result<S
 /// Loads the JSONL history for a specific session
 #[tauri::command]
 pub async fn load_session_history(
+    account_state: tauri::State<'_, AccountManagerState>,
     session_id: String,
     project_id: String,
+    project_path: Option<String>,
 ) -> Result<Vec<serde_json::Value>, String> {
     log::info!(
         "Loading session history for session: {} in project: {}",
@@ -889,7 +979,10 @@ pub async fn load_session_history(
         project_id
     );
 
-    let claude_dir = get_claude_dir().map_err(|e| e.to_string())?;
+    let claude_dir = match project_path {
+        Some(ref pp) => get_claude_dir_for_project(&account_state, pp).map_err(|e| e.to_string())?,
+        None => get_claude_dir().map_err(|e| e.to_string())?,
+    };
     let session_path = claude_dir
         .join("projects")
         .join(&project_id)
@@ -920,6 +1013,7 @@ pub async fn load_session_history(
 #[tauri::command]
 pub async fn execute_claude_code(
     app: AppHandle,
+    account_state: tauri::State<'_, AccountManagerState>,
     project_path: String,
     prompt: String,
     model: String,
@@ -932,6 +1026,11 @@ pub async fn execute_claude_code(
 
     let claude_path = find_claude_binary(&app)?;
 
+    let account = account_state
+        .0
+        .resolve(&project_path)
+        .map_err(|e| e.to_string())?;
+
     let args = vec![
         "-p".to_string(),
         prompt.clone(),
@@ -943,7 +1042,10 @@ pub async fn execute_claude_code(
         "--dangerously-skip-permissions".to_string(),
     ];
 
-    let cmd = create_system_command(&claude_path, args, &project_path);
+    let mut cmd = create_system_command(&claude_path, args, &project_path);
+    if let Some(ref acct) = account {
+        cmd.env("CLAUDE_CONFIG_DIR", &acct.config_dir);
+    }
     spawn_claude_process(app, cmd, prompt, model, project_path).await
 }
 
@@ -951,6 +1053,7 @@ pub async fn execute_claude_code(
 #[tauri::command]
 pub async fn continue_claude_code(
     app: AppHandle,
+    account_state: tauri::State<'_, AccountManagerState>,
     project_path: String,
     prompt: String,
     model: String,
@@ -962,6 +1065,11 @@ pub async fn continue_claude_code(
     );
 
     let claude_path = find_claude_binary(&app)?;
+
+    let account = account_state
+        .0
+        .resolve(&project_path)
+        .map_err(|e| e.to_string())?;
 
     let args = vec![
         "-c".to_string(), // Continue flag
@@ -975,7 +1083,10 @@ pub async fn continue_claude_code(
         "--dangerously-skip-permissions".to_string(),
     ];
 
-    let cmd = create_system_command(&claude_path, args, &project_path);
+    let mut cmd = create_system_command(&claude_path, args, &project_path);
+    if let Some(ref acct) = account {
+        cmd.env("CLAUDE_CONFIG_DIR", &acct.config_dir);
+    }
     spawn_claude_process(app, cmd, prompt, model, project_path).await
 }
 
@@ -983,6 +1094,7 @@ pub async fn continue_claude_code(
 #[tauri::command]
 pub async fn resume_claude_code(
     app: AppHandle,
+    account_state: tauri::State<'_, AccountManagerState>,
     project_path: String,
     session_id: String,
     prompt: String,
@@ -997,6 +1109,11 @@ pub async fn resume_claude_code(
 
     let claude_path = find_claude_binary(&app)?;
 
+    let account = account_state
+        .0
+        .resolve(&project_path)
+        .map_err(|e| e.to_string())?;
+
     let args = vec![
         "--resume".to_string(),
         session_id.clone(),
@@ -1010,7 +1127,10 @@ pub async fn resume_claude_code(
         "--dangerously-skip-permissions".to_string(),
     ];
 
-    let cmd = create_system_command(&claude_path, args, &project_path);
+    let mut cmd = create_system_command(&claude_path, args, &project_path);
+    if let Some(ref acct) = account {
+        cmd.env("CLAUDE_CONFIG_DIR", &acct.config_dir);
+    }
     spawn_claude_process(app, cmd, prompt, model, project_path).await
 }
 
@@ -2056,6 +2176,7 @@ pub async fn track_session_messages(
 /// Gets hooks configuration from settings at specified scope
 #[tauri::command]
 pub async fn get_hooks_config(
+    account_state: tauri::State<'_, AccountManagerState>,
     scope: String,
     project_path: Option<String>,
 ) -> Result<serde_json::Value, String> {
@@ -2066,9 +2187,13 @@ pub async fn get_hooks_config(
     );
 
     let settings_path = match scope.as_str() {
-        "user" => get_claude_dir()
-            .map_err(|e| e.to_string())?
-            .join("settings.json"),
+        "user" => {
+            let claude_dir = match &project_path {
+                Some(pp) => get_claude_dir_for_project(&account_state, pp).map_err(|e| e.to_string())?,
+                None => get_claude_dir().map_err(|e| e.to_string())?,
+            };
+            claude_dir.join("settings.json")
+        }
         "project" => {
             let path = project_path.ok_or("Project path required for project scope")?;
             PathBuf::from(path).join(".claude").join("settings.json")
@@ -2105,6 +2230,7 @@ pub async fn get_hooks_config(
 /// Updates hooks configuration in settings at specified scope
 #[tauri::command]
 pub async fn update_hooks_config(
+    account_state: tauri::State<'_, AccountManagerState>,
     scope: String,
     hooks: serde_json::Value,
     project_path: Option<String>,
@@ -2116,9 +2242,13 @@ pub async fn update_hooks_config(
     );
 
     let settings_path = match scope.as_str() {
-        "user" => get_claude_dir()
-            .map_err(|e| e.to_string())?
-            .join("settings.json"),
+        "user" => {
+            let claude_dir = match &project_path {
+                Some(pp) => get_claude_dir_for_project(&account_state, pp).map_err(|e| e.to_string())?,
+                None => get_claude_dir().map_err(|e| e.to_string())?,
+            };
+            claude_dir.join("settings.json")
+        }
         "project" => {
             let path = project_path.ok_or("Project path required for project scope")?;
             let claude_dir = PathBuf::from(path).join(".claude");
