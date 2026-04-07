@@ -1506,8 +1506,8 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           )}
         </div>
 
-        {/* Floating Prompt Input - Always visible */}
-        <ErrorBoundary>
+        {/* Floating Prompt Input - Only after session started */}
+        {sessionStarted && <ErrorBoundary>
           {/* Queued Prompts Display */}
           <AnimatePresence>
             {queuedPrompts.length > 0 && (
@@ -1794,7 +1794,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
               </div>
             </div>
           )}
-        </ErrorBoundary>
+        </ErrorBoundary>}
 
         {/* Timeline */}
         <AnimatePresence>
