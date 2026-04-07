@@ -326,7 +326,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
       let renderedSomething = false;
       
       const renderedCard = (
-        <Card className={cn("border-violet-500/30 bg-violet-500/15", className)}>
+        <Card className={cn("border-violet-500/30 bg-violet-600/20", className)}>
           <CardContent className="p-4">
             <div className="flex items-start gap-3">
               <User className="h-5 w-5 text-violet-300 mt-0.5" />
@@ -358,11 +358,11 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                       return <CommandOutputWidget output={output} onLinkDetected={onLinkDetected} />;
                     }
 
-                    // Otherwise render as plain user text with distinct styling
+                    // Otherwise render as plain user text
                     return (
-                      <div className="bg-background/40 rounded-lg px-4 py-3 my-1">
+                      <div>
                         <div className="flex items-center gap-2 mb-1">
-                          <span className="text-xs font-medium text-violet-400/80">You</span>
+                          <span className="text-xs font-medium text-violet-300">You</span>
                         </div>
                         <div className="text-sm">
                           {contentStr}
@@ -623,9 +623,9 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
 
                     renderedSomething = true;
                     return (
-                      <div key={idx} className="bg-background/40 rounded-lg px-4 py-3 my-1">
+                      <div key={idx}>
                         <div className="flex items-center gap-2 mb-1">
-                          <span className="text-xs font-medium text-violet-400/80">You</span>
+                          <span className="text-xs font-medium text-violet-300">You</span>
                         </div>
                         <div className="text-sm">
                           {textContent}
