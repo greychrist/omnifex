@@ -476,14 +476,18 @@ pub async fn list_projects(
 
 /// Creates a new project for the given directory path
 #[tauri::command]
-pub async fn create_project(path: String) -> Result<Project, String> {
+pub async fn create_project(
+    account_state: tauri::State<'_, AccountManagerState>,
+    path: String,
+) -> Result<Project, String> {
     log::info!("Creating project for path: {}", path);
 
     // Encode the path to create a project ID
     let project_id = path.replace('/', "-");
 
     // Get claude directory
-    let claude_dir = get_claude_dir().map_err(|e| e.to_string())?;
+    let claude_dir =
+        get_claude_dir_for_project(&account_state, &path).map_err(|e| e.to_string())?;
     let projects_dir = claude_dir.join("projects");
 
     // Create projects directory if it doesn't exist
@@ -1920,10 +1924,12 @@ pub async fn update_checkpoint_settings(
 /// Gets diff between two checkpoints
 #[tauri::command]
 pub async fn get_checkpoint_diff(
+    account_state: tauri::State<'_, AccountManagerState>,
     from_checkpoint_id: String,
     to_checkpoint_id: String,
     session_id: String,
     project_id: String,
+    project_path: String,
 ) -> Result<crate::checkpoint::CheckpointDiff, String> {
     use crate::checkpoint::storage::CheckpointStorage;
 
@@ -1933,7 +1939,8 @@ pub async fn get_checkpoint_diff(
         to_checkpoint_id
     );
 
-    let claude_dir = get_claude_dir().map_err(|e| e.to_string())?;
+    let claude_dir =
+        get_claude_dir_for_project(&account_state, &project_path).map_err(|e| e.to_string())?;
     let storage = CheckpointStorage::new(claude_dir);
 
     // Load both checkpoints

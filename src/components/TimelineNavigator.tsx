@@ -220,7 +220,8 @@ export const TimelineNavigator: React.FC<TimelineNavigatorProps> = ({
         selectedCheckpoint.id,
         checkpoint.id,
         sessionId,
-        projectId
+        projectId,
+        projectPath
       );
       
       setDiff(diffData);

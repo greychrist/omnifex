@@ -1304,14 +1304,16 @@ export const api = {
     fromCheckpointId: string,
     toCheckpointId: string,
     sessionId: string,
-    projectId: string
+    projectId: string,
+    projectPath: string
   ): Promise<CheckpointDiff> {
     try {
       return await apiCall<CheckpointDiff>("get_checkpoint_diff", {
         fromCheckpointId,
         toCheckpointId,
         sessionId,
-        projectId
+        projectId,
+        projectPath
       });
     } catch (error) {
       console.error("Failed to get checkpoint diff:", error);
