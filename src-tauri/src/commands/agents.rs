@@ -111,6 +111,60 @@ fn resolve_config_dir_for_run(
         .map(|a| a.config_dir)
 }
 
+/// Merge agent hook configuration into an existing Claude settings object.
+/// This preserves non-hook settings and appends hook handlers without dropping
+/// project-level hooks that are already present.
+fn merge_agent_hooks_into_settings(settings: &mut JsonValue, agent_hooks: JsonValue) {
+    if !settings.is_object() {
+        *settings = serde_json::json!({});
+    }
+
+    let Some(settings_obj) = settings.as_object_mut() else {
+        return;
+    };
+
+    let existing_hooks = settings_obj
+        .entry("hooks".to_string())
+        .or_insert_with(|| serde_json::json!({}));
+
+    match (existing_hooks, agent_hooks) {
+        (JsonValue::Object(existing), JsonValue::Object(incoming)) => {
+            for (event_name, incoming_value) in incoming {
+                match (existing.get_mut(&event_name), incoming_value) {
+                    (
+                        Some(JsonValue::Array(existing_handlers)),
+                        JsonValue::Array(incoming_handlers),
+                    ) => {
+                        let mut seen: std::collections::HashSet<String> = existing_handlers
+                            .iter()
+                            .filter_map(|value| serde_json::to_string(value).ok())
+                            .collect();
+
+                        for handler in incoming_handlers {
+                            if let Ok(serialized) = serde_json::to_string(&handler) {
+                                if seen.insert(serialized) {
+                                    existing_handlers.push(handler);
+                                }
+                            } else {
+                                existing_handlers.push(handler);
+                            }
+                        }
+                    }
+                    (Some(existing_value), incoming_value) => {
+                        *existing_value = incoming_value;
+                    }
+                    (None, incoming_value) => {
+                        existing.insert(event_name, incoming_value);
+                    }
+                }
+            }
+        }
+        (existing_value, incoming_value) => {
+            *existing_value = incoming_value;
+        }
+    }
+}
+
 /// Real-time JSONL reading and processing functions
 impl AgentRunMetrics {
     /// Calculate metrics from JSONL content
@@ -794,7 +848,8 @@ pub async fn execute_agent(
         .map_err(|e| e.to_string())?;
     let account_id = account.as_ref().map(|a| a.id);
 
-    // Create .claude/settings.json with agent hooks if it doesn't exist
+    // Merge agent hooks into .claude/settings.json so project-level settings
+    // can coexist with agent-defined hooks.
     if let Some(hooks_json) = &agent.hooks {
         let claude_dir = std::path::Path::new(&project_path).join(".claude");
         let settings_path = claude_dir.join("settings.json");
@@ -806,31 +861,30 @@ pub async fn execute_agent(
             info!("Created .claude directory at: {:?}", claude_dir);
         }
 
-        // Check if settings.json already exists
-        if !settings_path.exists() {
-            // Parse the hooks JSON
-            let hooks: serde_json::Value = serde_json::from_str(hooks_json)
-                .map_err(|e| format!("Failed to parse agent hooks: {}", e))?;
+        let hooks: serde_json::Value = serde_json::from_str(hooks_json)
+            .map_err(|e| format!("Failed to parse agent hooks: {}", e))?;
 
-            // Create a settings object with just the hooks
-            let settings = serde_json::json!({
-                "hooks": hooks
-            });
-
-            // Write the settings file
-            let settings_content = serde_json::to_string_pretty(&settings)
-                .map_err(|e| format!("Failed to serialize settings: {}", e))?;
-
-            std::fs::write(&settings_path, settings_content)
-                .map_err(|e| format!("Failed to write settings.json: {}", e))?;
-
-            info!(
-                "Created settings.json with agent hooks at: {:?}",
-                settings_path
-            );
+        let mut settings = if settings_path.exists() {
+            let existing = std::fs::read_to_string(&settings_path)
+                .map_err(|e| format!("Failed to read settings.json: {}", e))?;
+            serde_json::from_str::<serde_json::Value>(&existing)
+                .map_err(|e| format!("Failed to parse settings.json: {}", e))?
         } else {
-            info!("settings.json already exists at: {:?}", settings_path);
-        }
+            serde_json::json!({})
+        };
+
+        merge_agent_hooks_into_settings(&mut settings, hooks);
+
+        let settings_content = serde_json::to_string_pretty(&settings)
+            .map_err(|e| format!("Failed to serialize settings: {}", e))?;
+
+        std::fs::write(&settings_path, settings_content)
+            .map_err(|e| format!("Failed to write settings.json: {}", e))?;
+
+        info!(
+            "Updated settings.json with agent hooks at: {:?}",
+            settings_path
+        );
     }
 
     // Create a new run record

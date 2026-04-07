@@ -1341,7 +1341,11 @@ pub async fn send_session_input(
     session_id: String,
     input: String,
 ) -> Result<(), String> {
-    log::info!("Sending input to session {}: {}", session_id, &input[..input.len().min(100)]);
+    log::info!(
+        "Sending input to session {}: {}",
+        session_id,
+        &input[..input.len().min(100)]
+    );
 
     let mut handles = stdin_state.handles.lock().await;
     if let Some(stdin) = handles.get_mut(&session_id) {
@@ -1479,15 +1483,11 @@ async fn spawn_claude_process(
                                             "Registered Claude session with run_id: {}",
                                             run_id
                                         );
-                                        let mut run_id_guard =
-                                            run_id_holder_clone.lock().unwrap();
+                                        let mut run_id_guard = run_id_holder_clone.lock().unwrap();
                                         *run_id_guard = Some(run_id);
                                     }
                                     Err(e) => {
-                                        log::error!(
-                                            "Failed to register Claude session: {}",
-                                            e
-                                        );
+                                        log::error!("Failed to register Claude session: {}", e);
                                     }
                                 }
                             }
@@ -1500,7 +1500,11 @@ async fn spawn_claude_process(
                             let pid_key = format!("pid:{}", pid);
                             if let Some(stdin_handle) = handles.remove(&pid_key) {
                                 handles.insert(session_id_string.clone(), stdin_handle);
-                                log::info!("Re-keyed stdin from {} to {}", pid_key, session_id_string);
+                                log::info!(
+                                    "Re-keyed stdin from {} to {}",
+                                    pid_key,
+                                    session_id_string
+                                );
                             }
                         }
                     }
