@@ -342,6 +342,57 @@ pub fn init_database(app: &AppHandle) -> SqliteResult<Connection> {
         [],
     )?;
 
+    // Create accounts table
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS accounts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE NOT NULL,
+            config_dir TEXT NOT NULL,
+            is_default BOOLEAN NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )",
+        [],
+    )?;
+
+    conn.execute(
+        "CREATE TRIGGER IF NOT EXISTS update_accounts_timestamp
+         AFTER UPDATE ON accounts
+         FOR EACH ROW
+         BEGIN
+             UPDATE accounts SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+         END",
+        [],
+    )?;
+
+    // Create account path rules table
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS account_path_rules (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            account_id INTEGER NOT NULL,
+            path_prefix TEXT NOT NULL,
+            priority INTEGER NOT NULL DEFAULT 0,
+            FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+        )",
+        [],
+    )?;
+
+    // Create project account overrides table
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS project_account_overrides (
+            project_path TEXT PRIMARY KEY,
+            account_id INTEGER NOT NULL,
+            FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+        )",
+        [],
+    )?;
+
+    // Add account_id column to agent_runs (nullable for backwards compat)
+    let _ = conn.execute(
+        "ALTER TABLE agent_runs ADD COLUMN account_id INTEGER",
+        [],
+    );
+
     Ok(conn)
 }
 
