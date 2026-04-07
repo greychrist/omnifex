@@ -212,6 +212,7 @@ function mapCommandToEndpoint(command: string, _params?: any): string {
     'continue_claude_code': '/api/sessions/continue',
     'resume_claude_code': '/api/sessions/resume',
     'cancel_claude_execution': '/api/sessions/{sessionId}/cancel',
+    'send_session_input': '/api/sessions/{sessionId}/input',
     'get_claude_session_output': '/api/sessions/{sessionId}/output',
     
     // MCP commands

@@ -1103,6 +1103,13 @@ export const api = {
   },
 
   /**
+   * Send input to a running Claude Code session via stdin
+   */
+  async sendSessionInput(sessionId: string, input: string): Promise<void> {
+    return apiCall("send_session_input", { sessionId, input });
+  },
+
+  /**
    * Lists all currently running Claude sessions
    * @returns Promise resolving to list of running Claude sessions
    */

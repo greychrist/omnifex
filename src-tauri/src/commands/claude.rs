@@ -1337,6 +1337,36 @@ pub async fn cancel_claude_execution(
     Ok(())
 }
 
+/// Send input to a running Claude Code session via stdin
+#[tauri::command]
+pub async fn send_session_input(
+    stdin_state: tauri::State<'_, SessionStdinState>,
+    session_id: String,
+    input: String,
+) -> Result<(), String> {
+    log::info!("Sending input to session {}: {}", session_id, &input[..input.len().min(100)]);
+
+    let mut handles = stdin_state.handles.lock().await;
+    if let Some(stdin) = handles.get_mut(&session_id) {
+        use tokio::io::AsyncWriteExt;
+        stdin
+            .write_all(input.as_bytes())
+            .await
+            .map_err(|e| format!("Failed to write to stdin: {}", e))?;
+        stdin
+            .write_all(b"\n")
+            .await
+            .map_err(|e| format!("Failed to write newline: {}", e))?;
+        stdin
+            .flush()
+            .await
+            .map_err(|e| format!("Failed to flush stdin: {}", e))?;
+        Ok(())
+    } else {
+        Err(format!("No stdin handle for session: {}", session_id))
+    }
+}
+
 /// Get all running Claude sessions
 #[tauri::command]
 pub async fn list_running_claude_sessions(

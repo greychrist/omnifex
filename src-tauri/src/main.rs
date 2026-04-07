@@ -28,8 +28,8 @@ use commands::claude::{
     list_directory_contents, list_projects, list_running_claude_sessions, load_session_history,
     open_new_session, read_claude_md_file, restore_checkpoint, resume_claude_code,
     save_claude_md_file, save_claude_settings, save_system_prompt, search_files,
-    track_checkpoint_message, track_session_messages, update_checkpoint_settings,
-    update_hooks_config, validate_hook_command, ClaudeProcessState,
+    send_session_input, track_checkpoint_message, track_session_messages,
+    update_checkpoint_settings, update_hooks_config, validate_hook_command, ClaudeProcessState,
 };
 use commands::mcp::{
     mcp_add, mcp_add_from_claude_desktop, mcp_add_json, mcp_get, mcp_get_server_status, mcp_list,
@@ -220,6 +220,7 @@ fn main() {
             continue_claude_code,
             resume_claude_code,
             cancel_claude_execution,
+            send_session_input,
             list_running_claude_sessions,
             get_claude_session_output,
             list_directory_contents,
