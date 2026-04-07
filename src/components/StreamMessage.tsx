@@ -33,7 +33,6 @@ import {
   MultiEditWidget,
   MultiEditResultWidget,
   SystemReminderWidget,
-  SystemInitializedWidget,
   TaskWidget,
   LSResultWidget,
   ThinkingWidget,
@@ -94,16 +93,9 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
       return <SummaryWidget summary={message.summary} leafUuid={message.leafUuid} />;
     }
 
-    // System initialization message
+    // System initialization message — session header already shows this info
     if (message.type === "system" && message.subtype === "init") {
-      return (
-        <SystemInitializedWidget
-          sessionId={message.session_id}
-          model={message.model}
-          cwd={message.cwd}
-          tools={message.tools}
-        />
-      );
+      return null;
     }
 
     // Assistant message
@@ -360,7 +352,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
 
                     // Otherwise render as plain user text with distinct styling
                     return (
-                      <div className="border-l-2 border-violet-500/50 bg-violet-500/8 rounded-r-lg pl-4 pr-3 py-3 my-3">
+                      <div className="bg-violet-500/15 border border-violet-500/20 rounded-lg px-4 py-3 my-3">
                         <div className="flex items-center gap-2 mb-1">
                           <span className="text-xs font-medium text-violet-400/80">You</span>
                         </div>
@@ -623,7 +615,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
 
                     renderedSomething = true;
                     return (
-                      <div key={idx} className="border-l-2 border-violet-500/50 bg-violet-500/8 rounded-r-lg pl-4 pr-3 py-3 my-3">
+                      <div key={idx} className="bg-violet-500/15 border border-violet-500/20 rounded-lg px-4 py-3 my-3">
                         <div className="flex items-center gap-2 mb-1">
                           <span className="text-xs font-medium text-violet-400/80">You</span>
                         </div>
@@ -665,36 +657,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                 <h4 className="font-semibold text-sm">
                   {isError ? "Execution Failed" : "Execution Complete"}
                 </h4>
-                
-                {message.result && (
-                  <div className="prose prose-sm dark:prose-invert max-w-none">
-                    <ReactMarkdown
-                      remarkPlugins={[remarkGfm]}
-                      components={{
-                        code({ node, inline, className, children, ...props }: any) {
-                          const match = /language-(\w+)/.exec(className || '');
-                          return !inline && match ? (
-                            <SyntaxHighlighter
-                              style={syntaxTheme}
-                              language={match[1]}
-                              PreTag="div"
-                              {...props}
-                            >
-                              {String(children).replace(/\n$/, '')}
-                            </SyntaxHighlighter>
-                          ) : (
-                            <code className={className} {...props}>
-                              {children}
-                            </code>
-                          );
-                        }
-                      }}
-                    >
-                      {message.result}
-                    </ReactMarkdown>
-                  </div>
-                )}
-                
+
                 {message.error && (
                   <div className="text-sm text-destructive">{message.error}</div>
                 )}
