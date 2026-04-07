@@ -313,6 +313,10 @@ fn main() {
             save_proxy_settings,
             // Persistent Sessions
             session_manager::session_start,
+            session_manager::session_send_message,
+            session_manager::session_respond_permission,
+            session_manager::session_stop,
+            session_manager::session_get_info,
             // Account Management
             commands::accounts::list_accounts,
             commands::accounts::create_account,

@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::process::Stdio;
 use std::sync::Arc;
-use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin};
 use tokio::sync::Mutex;
 
@@ -329,4 +329,188 @@ pub async fn session_start(
 
     log::info!("session_start: complete for tab_id={}, pid={}", tab_id, pid);
     Ok(())
+}
+
+#[tauri::command]
+pub async fn session_send_message(
+    manager: tauri::State<'_, SessionProcessManagerState>,
+    tab_id: String,
+    prompt: String,
+) -> Result<(), String> {
+    log::info!(
+        "session_send_message: tab_id={}, prompt_len={}",
+        tab_id,
+        prompt.len()
+    );
+
+    let mut sessions = manager.0.sessions.lock().await;
+    let session = sessions
+        .get_mut(&tab_id)
+        .ok_or_else(|| format!("No session found for tab_id={}", tab_id))?;
+
+    let session_id = {
+        let guard = session.session_id.lock().unwrap();
+        guard.clone().unwrap_or_default()
+    };
+
+    let msg = serde_json::json!({
+        "type": "user",
+        "message": {
+            "role": "user",
+            "content": prompt
+        },
+        "session_id": session_id,
+        "parent_tool_use_id": null
+    });
+
+    let line = format!(
+        "{}\n",
+        serde_json::to_string(&msg).map_err(|e| e.to_string())?
+    );
+
+    let stdin = session
+        .stdin
+        .as_mut()
+        .ok_or_else(|| format!("stdin not available for tab_id={}", tab_id))?;
+
+    stdin
+        .write_all(line.as_bytes())
+        .await
+        .map_err(|e| format!("Failed to write to stdin: {}", e))?;
+    stdin
+        .flush()
+        .await
+        .map_err(|e| format!("Failed to flush stdin: {}", e))?;
+
+    log::info!("session_send_message: sent to tab_id={}", tab_id);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn session_respond_permission(
+    manager: tauri::State<'_, SessionProcessManagerState>,
+    tab_id: String,
+    request_id: String,
+    behavior: String,
+    updated_input: Option<serde_json::Value>,
+) -> Result<(), String> {
+    log::info!(
+        "session_respond_permission: tab_id={}, request_id={}, behavior={}",
+        tab_id,
+        request_id,
+        behavior
+    );
+
+    let mut sessions = manager.0.sessions.lock().await;
+    let session = sessions
+        .get_mut(&tab_id)
+        .ok_or_else(|| format!("No session found for tab_id={}", tab_id))?;
+
+    let msg = serde_json::json!({
+        "type": "control_response",
+        "response": {
+            "subtype": "success",
+            "request_id": request_id,
+            "response": {
+                "behavior": behavior,
+                "updatedInput": updated_input
+            }
+        }
+    });
+
+    let line = format!(
+        "{}\n",
+        serde_json::to_string(&msg).map_err(|e| e.to_string())?
+    );
+
+    let stdin = session
+        .stdin
+        .as_mut()
+        .ok_or_else(|| format!("stdin not available for tab_id={}", tab_id))?;
+
+    stdin
+        .write_all(line.as_bytes())
+        .await
+        .map_err(|e| format!("Failed to write to stdin: {}", e))?;
+    stdin
+        .flush()
+        .await
+        .map_err(|e| format!("Failed to flush stdin: {}", e))?;
+
+    log::info!("session_respond_permission: sent to tab_id={}", tab_id);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn session_stop(
+    manager: tauri::State<'_, SessionProcessManagerState>,
+    tab_id: String,
+) -> Result<(), String> {
+    log::info!("session_stop: tab_id={}", tab_id);
+
+    let mut sessions = manager.0.sessions.lock().await;
+    let removed = sessions.remove(&tab_id);
+
+    if let Some(mut session) = removed {
+        // Drop stdin to signal EOF to the child process
+        session.stdin.take();
+
+        if let Some(mut child) = session.child.take() {
+            // Wait up to 5 seconds for graceful exit, then kill
+            match tokio::time::timeout(std::time::Duration::from_secs(5), child.wait()).await {
+                Ok(Ok(status)) => {
+                    log::info!(
+                        "session_stop: tab_id={} exited with status={}",
+                        tab_id,
+                        status
+                    );
+                }
+                Ok(Err(e)) => {
+                    log::error!("session_stop: tab_id={} wait error: {}", tab_id, e);
+                }
+                Err(_) => {
+                    log::warn!(
+                        "session_stop: tab_id={} did not exit in 5s, killing",
+                        tab_id
+                    );
+                    let _ = child.kill().await;
+                }
+            }
+        }
+    } else {
+        log::info!(
+            "session_stop: no session found for tab_id={}, nothing to do",
+            tab_id
+        );
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn session_get_info(
+    manager: tauri::State<'_, SessionProcessManagerState>,
+    tab_id: String,
+) -> Result<Option<SessionInfo>, String> {
+    let sessions = manager.0.sessions.lock().await;
+
+    let info = sessions.get(&tab_id).map(|session| {
+        let session_id = {
+            let guard = session.session_id.lock().unwrap();
+            guard.clone()
+        };
+
+        SessionInfo {
+            tab_id: tab_id.clone(),
+            session_id,
+            project_path: session.project_path.clone(),
+            model: session.model.clone(),
+            permission_mode: session.permission_mode.clone(),
+            config_dir: session.config_dir.clone(),
+            alive: session.child.is_some(),
+            uptime_secs: session.started_at.elapsed().as_secs(),
+        }
+    });
+
+    Ok(info)
 }
