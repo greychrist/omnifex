@@ -183,7 +183,10 @@ pub fn get_default_account_dir(account_mgr: &AccountManagerState) -> Result<Path
     if accounts.is_empty() {
         return Err("No accounts configured. Set up accounts in Settings > Accounts.".to_string());
     }
-    Err("Multiple accounts exist but none is set as default. Set a default in Settings > Accounts.".to_string())
+    Err(
+        "Multiple accounts exist but none is set as default. Set a default in Settings > Accounts."
+            .to_string(),
+    )
 }
 
 /// Finds the config dir containing a given project_id by:
@@ -308,7 +311,7 @@ fn extract_first_user_message(jsonl_path: &PathBuf) -> (Option<String>, Option<S
 
 /// Helper function to create a tokio Command with proper environment variables
 /// This ensures commands like Claude can find Node.js and other dependencies
-fn create_command_with_env(program: &str) -> Command {
+pub fn create_command_with_env(program: &str) -> Command {
     // Convert std::process::Command to tokio::process::Command
     let _std_cmd = crate::claude_binary::create_command_with_env(program);
 

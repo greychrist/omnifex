@@ -165,6 +165,9 @@ fn main() {
             // Initialize session stdin state for two-way communication
             app.manage(commands::claude::SessionStdinState::default());
 
+            // Initialize persistent session process manager
+            app.manage(session_manager::SessionProcessManagerState::default());
+
             // Apply window vibrancy with rounded corners on macOS
             #[cfg(target_os = "macos")]
             {
@@ -308,6 +311,8 @@ fn main() {
             // Proxy Settings
             get_proxy_settings,
             save_proxy_settings,
+            // Persistent Sessions
+            session_manager::session_start,
             // Account Management
             commands::accounts::list_accounts,
             commands::accounts::create_account,
