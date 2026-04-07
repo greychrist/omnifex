@@ -533,9 +533,9 @@ export const api = {
    * @param projectId - The ID of the project to retrieve sessions for
    * @returns Promise resolving to an array of sessions
    */
-  async getProjectSessions(projectId: string): Promise<Session[]> {
+  async getProjectSessions(projectId: string, projectPath?: string): Promise<Session[]> {
     try {
-      return await apiCall<Session[]>('get_project_sessions', { projectId });
+      return await apiCall<Session[]>('get_project_sessions', { projectId, projectPath });
     } catch (error) {
       console.error("Failed to get project sessions:", error);
       throw error;
@@ -1046,8 +1046,8 @@ export const api = {
   /**
    * Loads the JSONL history for a specific session
    */
-  async loadSessionHistory(sessionId: string, projectId: string): Promise<any[]> {
-    return apiCall("load_session_history", { sessionId, projectId });
+  async loadSessionHistory(sessionId: string, projectId: string, projectPath?: string): Promise<any[]> {
+    return apiCall("load_session_history", { sessionId, projectId, projectPath });
   },
 
   /**
