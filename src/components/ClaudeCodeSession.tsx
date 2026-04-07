@@ -29,6 +29,7 @@ import { SplitPane } from "@/components/ui/split-pane";
 import { WebviewPreview } from "./WebviewPreview";
 import type { ClaudeStreamMessage } from "./AgentExecution";
 import { PermissionPrompt } from "./PermissionPrompt";
+import { SessionHeader } from "./SessionHeader";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useTrackEvent, useComponentMetrics, useWorkflowTracking } from "@/hooks";
 import { SessionPersistenceService } from "@/services/sessionPersistence";
@@ -95,6 +96,12 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   const [forkCheckpointId, setForkCheckpointId] = useState<string | null>(null);
   const [forkSessionName, setForkSessionName] = useState("");
   const [resolvedAccount, setResolvedAccount] = useState<Account | null>(null);
+  const [accountResolution, setAccountResolution] = useState<{
+    account: { name: string; account_type: string; config_dir: string };
+    match_type: string;
+    match_detail: string;
+  } | null>(null);
+  const [sessionCost, setSessionCost] = useState(0);
 
   // Resolve account for this project
   useEffect(() => {
@@ -102,6 +109,17 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       api.resolveAccountForProject(projectPath)
         .then(setResolvedAccount)
         .catch(() => setResolvedAccount(null));
+    }
+  }, [projectPath]);
+
+  // Resolve account explanation for SessionHeader
+  useEffect(() => {
+    if (projectPath) {
+      api.explainAccountResolution(projectPath).then((result) => {
+        if (result) {
+          setAccountResolution(result);
+        }
+      }).catch(console.error);
     }
   }, [projectPath]);
 
@@ -692,6 +710,16 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                   setPendingToolUse({ name: lastTool.name, input: lastTool.input || {} });
                   setWaitingForPermission(true);
                 }
+              }
+            }
+
+            // Track cost from usage data
+            if (message.usage || message.message?.usage) {
+              const usage = message.usage || message.message?.usage;
+              if (usage) {
+                const inputCost = (usage.input_tokens || 0) * 0.000003;
+                const outputCost = (usage.output_tokens || 0) * 0.000015;
+                setSessionCost(prev => prev + inputCost + outputCost);
               }
             }
 
@@ -1324,6 +1352,17 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   return (
     <TooltipProvider>
       <div className={cn("flex flex-col h-full bg-background", className)}>
+        {accountResolution && (
+          <SessionHeader
+            accountName={accountResolution.account.name}
+            accountType={accountResolution.account.account_type}
+            configDir={accountResolution.account.config_dir}
+            matchType={accountResolution.match_type}
+            matchDetail={accountResolution.match_detail}
+            sessionId={claudeSessionId}
+            cost={sessionCost}
+          />
+        )}
         <div className="w-full h-full flex flex-col">
 
         {/* Main Content Area */}
