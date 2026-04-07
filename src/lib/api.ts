@@ -1109,6 +1109,28 @@ export const api = {
     return apiCall("send_session_input", { sessionId, input });
   },
 
+  // ─── Persistent Session API ───────────────────────────────────────
+
+  async startSession(tabId: string, projectPath: string, model: string, permissionMode: string, resumeSessionId?: string): Promise<void> {
+    return apiCall("session_start", { tabId, projectPath, model, permissionMode, resumeSessionId });
+  },
+
+  async sendMessage(tabId: string, prompt: string): Promise<void> {
+    return apiCall("session_send_message", { tabId, prompt });
+  },
+
+  async respondPermission(tabId: string, requestId: string, behavior: string, updatedInput?: any): Promise<void> {
+    return apiCall("session_respond_permission", { tabId, requestId, behavior, updatedInput });
+  },
+
+  async stopSession(tabId: string): Promise<void> {
+    return apiCall("session_stop", { tabId });
+  },
+
+  async getSessionInfo(tabId: string): Promise<any | null> {
+    return apiCall("session_get_info", { tabId });
+  },
+
   /**
    * Lists all currently running Claude sessions
    * @returns Promise resolving to list of running Claude sessions
