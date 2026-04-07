@@ -376,6 +376,7 @@ pub fn init_database(app: &AppHandle) -> SqliteResult<Connection> {
             name TEXT UNIQUE NOT NULL,
             config_dir TEXT NOT NULL,
             is_default BOOLEAN NOT NULL DEFAULT 0,
+            account_type TEXT NOT NULL DEFAULT 'pro',
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )",
@@ -416,6 +417,12 @@ pub fn init_database(app: &AppHandle) -> SqliteResult<Connection> {
 
     // Add account_id column to agent_runs (nullable for backwards compat)
     let _ = conn.execute("ALTER TABLE agent_runs ADD COLUMN account_id INTEGER", []);
+
+    // Add account_type column to accounts (migration for existing DBs)
+    let _ = conn.execute(
+        "ALTER TABLE accounts ADD COLUMN account_type TEXT NOT NULL DEFAULT 'pro'",
+        [],
+    );
 
     Ok(conn)
 }

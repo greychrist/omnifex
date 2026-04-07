@@ -167,6 +167,40 @@ fn get_claude_dir_for_project(
         .context("No account configured for this project. Assign one in Settings > Accounts.")
 }
 
+/// Finds the config dir containing a given project_id by:
+/// 1. Resolving from project_path if provided
+/// 2. Searching across all account config dirs for the project_id directory
+/// 3. Falling back to ~/.claude
+fn find_project_config_dir(
+    account_mgr: &AccountManagerState,
+    project_id: &str,
+    project_path: Option<&str>,
+) -> Result<PathBuf, String> {
+    // Try resolving from project_path first
+    if let Some(pp) = project_path {
+        if let Ok(dir) = get_claude_dir_for_project(account_mgr, pp) {
+            let candidate = dir.join("projects").join(project_id);
+            if candidate.exists() {
+                return Ok(dir);
+            }
+        }
+    }
+
+    // Search across all accounts
+    let accounts = account_mgr.0.list_accounts().map_err(|e| e.to_string())?;
+    for account in &accounts {
+        let candidate = PathBuf::from(&account.config_dir)
+            .join("projects")
+            .join(project_id);
+        if candidate.exists() {
+            return Ok(PathBuf::from(&account.config_dir));
+        }
+    }
+
+    // Final fallback
+    get_claude_dir().map_err(|e| e.to_string())
+}
+
 /// Gets the actual project path by reading the cwd from the JSONL entries
 fn get_project_path_from_sessions(project_dir: &PathBuf) -> Result<String, String> {
     // Try to read any JSONL file in the directory
@@ -546,29 +580,7 @@ pub async fn get_project_sessions(
 ) -> Result<Vec<Session>, String> {
     log::info!("Getting sessions for project: {}", project_id);
 
-    let claude_dir = match project_path {
-        Some(ref pp) => {
-            get_claude_dir_for_project(&account_state, pp).map_err(|e| e.to_string())?
-        }
-        None => {
-            // No project_path provided — search across all accounts for this project_id
-            let accounts = account_state.0.list_accounts().map_err(|e| e.to_string())?;
-            let mut found_dir = None;
-            for account in &accounts {
-                let candidate = PathBuf::from(&account.config_dir)
-                    .join("projects")
-                    .join(&project_id);
-                if candidate.exists() {
-                    found_dir = Some(PathBuf::from(&account.config_dir));
-                    break;
-                }
-            }
-            found_dir.unwrap_or_else(|| {
-                get_claude_dir()
-                    .unwrap_or_else(|_| dirs::home_dir().unwrap_or_default().join(".claude"))
-            })
-        }
-    };
+    let claude_dir = find_project_config_dir(&account_state, &project_id, project_path.as_deref())?;
     let project_dir = claude_dir.join("projects").join(&project_id);
     let todos_dir = claude_dir.join("todos");
 
@@ -1020,29 +1032,7 @@ pub async fn load_session_history(
         project_id
     );
 
-    let claude_dir = match project_path {
-        Some(ref pp) => {
-            get_claude_dir_for_project(&account_state, pp).map_err(|e| e.to_string())?
-        }
-        None => {
-            // Search across all accounts for this project_id
-            let accounts = account_state.0.list_accounts().map_err(|e| e.to_string())?;
-            let mut found_dir = None;
-            for account in &accounts {
-                let candidate = PathBuf::from(&account.config_dir)
-                    .join("projects")
-                    .join(&project_id);
-                if candidate.exists() {
-                    found_dir = Some(PathBuf::from(&account.config_dir));
-                    break;
-                }
-            }
-            found_dir.unwrap_or_else(|| {
-                get_claude_dir()
-                    .unwrap_or_else(|_| dirs::home_dir().unwrap_or_default().join(".claude"))
-            })
-        }
-    };
+    let claude_dir = find_project_config_dir(&account_state, &project_id, project_path.as_deref())?;
     let session_path = claude_dir
         .join("projects")
         .join(&project_id)

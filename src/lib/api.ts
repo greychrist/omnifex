@@ -45,6 +45,8 @@ export interface Account {
   name: string;
   config_dir: string;
   is_default: boolean;
+  /** Account type: "max" (no cost), "enterprise", "pro", "free" */
+  account_type: string;
   created_at: string;
   updated_at: string;
 }
@@ -265,6 +267,8 @@ export interface ProjectUsage {
   total_tokens: number;
   session_count: number;
   last_used: string;
+  account_name?: string;
+  account_type?: string;
 }
 
 export interface UsageStats {
@@ -1994,8 +1998,10 @@ export const api = {
     return apiCall<Account[]>('list_accounts');
   },
 
-  async createAccount(name: string, configDir: string, isDefault: boolean): Promise<Account> {
-    return apiCall<Account>('create_account', { name, configDir, isDefault });
+  async createAccount(name: string, configDir: string, isDefault: boolean, accountType?: string): Promise<Account> {
+    const params: Record<string, any> = { name, configDir, isDefault };
+    if (accountType) params.accountType = accountType;
+    return apiCall<Account>('create_account', params);
   },
 
   async updateAccount(id: number, name: string, configDir: string): Promise<void> {

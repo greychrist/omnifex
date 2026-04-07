@@ -4,6 +4,7 @@ import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { api, type UsageStats, type ProjectUsage } from "@/lib/api";
+import { AccountBadge } from "@/components/AccountBadge";
 import { 
   Calendar, 
   Filter,
@@ -490,9 +491,14 @@ export const UsageDashboard: React.FC<UsageDashboardProps> = ({ }) => {
                               {paginatedProjects.map((project) => (
                                 <div key={project.project_path} className="flex items-center justify-between py-2 border-b border-border last:border-0">
                                   <div className="flex flex-col truncate">
-                                    <span className="text-sm font-medium truncate" title={project.project_path}>
-                                      {project.project_path}
-                                    </span>
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-sm font-medium truncate" title={project.project_path}>
+                                        {project.project_path}
+                                      </span>
+                                      {project.account_name && (
+                                        <AccountBadge name={project.account_name} />
+                                      )}
+                                    </div>
                                     <div className="flex items-center space-x-3 mt-1">
                                       <span className="text-caption text-muted-foreground">
                                         {project.session_count} sessions
@@ -503,10 +509,19 @@ export const UsageDashboard: React.FC<UsageDashboardProps> = ({ }) => {
                                     </div>
                                   </div>
                                   <div className="text-right">
-                                    <p className="text-sm font-semibold">{formatCurrency(project.total_cost)}</p>
-                                    <p className="text-xs text-muted-foreground">
-                                      {formatCurrency(project.total_cost / project.session_count)}/session
-                                    </p>
+                                    {project.account_type === 'max' ? (
+                                      <>
+                                        <p className="text-sm font-semibold text-muted-foreground">Included</p>
+                                        <p className="text-xs text-muted-foreground">Max plan</p>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <p className="text-sm font-semibold">{formatCurrency(project.total_cost)}</p>
+                                        <p className="text-xs text-muted-foreground">
+                                          {formatCurrency(project.total_cost / project.session_count)}/session
+                                        </p>
+                                      </>
+                                    )}
                                   </div>
                                 </div>
                               ))}

@@ -63,6 +63,8 @@ pub struct ProjectUsage {
     total_tokens: u64,
     session_count: u64,
     last_used: String,
+    account_name: Option<String>,
+    account_type: Option<String>,
 }
 
 // Claude 4 pricing constants (per million tokens)
@@ -427,6 +429,8 @@ pub fn get_usage_stats(
                     total_tokens: 0,
                     session_count: 0,
                     last_used: entry.timestamp.clone(),
+                    account_name: None,
+                    account_type: None,
                 });
         project_stat.total_cost += entry.cost;
         project_stat.total_tokens += entry.input_tokens
@@ -453,7 +457,20 @@ pub fn get_usage_stats(
     by_date.sort_by(|a, b| b.date.cmp(&a.date));
 
     let mut by_project: Vec<ProjectUsage> = project_stats.into_values().collect();
+    // Annotate projects with account info and zero cost for max accounts
+    for project in &mut by_project {
+        if let Ok(Some(account)) = account_state.0.resolve(&project.project_path) {
+            project.account_name = Some(account.name);
+            project.account_type = Some(account.account_type);
+            if project.account_type.as_deref() == Some("max") {
+                project.total_cost = 0.0;
+            }
+        }
+    }
     by_project.sort_by(|a, b| b.total_cost.partial_cmp(&a.total_cost).unwrap());
+
+    // Recalculate total_cost excluding max-account projects
+    let total_cost: f64 = by_project.iter().map(|p| p.total_cost).sum();
 
     Ok(UsageStats {
         total_cost,
@@ -603,6 +620,8 @@ pub fn get_usage_by_date_range(
                     total_tokens: 0,
                     session_count: 0,
                     last_used: entry.timestamp.clone(),
+                    account_name: None,
+                    account_type: None,
                 });
         project_stat.total_cost += entry.cost;
         project_stat.total_tokens += entry.input_tokens
@@ -629,7 +648,20 @@ pub fn get_usage_by_date_range(
     by_date.sort_by(|a, b| b.date.cmp(&a.date));
 
     let mut by_project: Vec<ProjectUsage> = project_stats.into_values().collect();
+    // Annotate projects with account info and zero cost for max accounts
+    for project in &mut by_project {
+        if let Ok(Some(account)) = account_state.0.resolve(&project.project_path) {
+            project.account_name = Some(account.name);
+            project.account_type = Some(account.account_type);
+            if project.account_type.as_deref() == Some("max") {
+                project.total_cost = 0.0;
+            }
+        }
+    }
     by_project.sort_by(|a, b| b.total_cost.partial_cmp(&a.total_cost).unwrap());
+
+    // Recalculate total_cost excluding max-account projects
+    let total_cost: f64 = by_project.iter().map(|p| p.total_cost).sum();
 
     Ok(UsageStats {
         total_cost,
@@ -711,11 +743,13 @@ pub fn get_session_stats(
             .entry(session_key)
             .or_insert_with(|| ProjectUsage {
                 project_path: entry.project_path.clone(),
-                project_name: entry.session_id.clone(), // Using session_id as project_name for session view
+                project_name: entry.session_id.clone(),
                 total_cost: 0.0,
                 total_tokens: 0,
-                session_count: 0, // In this context, this will count entries per session
+                session_count: 0,
                 last_used: " ".to_string(),
+                account_name: None,
+                account_type: None,
             });
 
         project_stat.total_cost += entry.cost;

@@ -138,7 +138,9 @@ fn main() {
                 for (name, path) in discovered {
                     let is_default = count == 1;
                     let path_str = path.to_string_lossy().to_string();
-                    if let Err(e) = account_manager.create_account(&name, &path_str, is_default) {
+                    if let Err(e) =
+                        account_manager.create_account(&name, &path_str, is_default, "pro")
+                    {
                         log::warn!("Failed to create discovered account '{}': {}", name, e);
                     } else {
                         log::info!("Auto-discovered account '{}' at {}", name, path_str);

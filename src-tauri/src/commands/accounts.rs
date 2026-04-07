@@ -12,10 +12,12 @@ pub async fn create_account(
     name: String,
     config_dir: String,
     is_default: bool,
+    account_type: Option<String>,
 ) -> Result<Account, String> {
+    let acct_type = account_type.as_deref().unwrap_or("pro");
     state
         .0
-        .create_account(&name, &config_dir, is_default)
+        .create_account(&name, &config_dir, is_default, acct_type)
         .map_err(|e| e.to_string())
 }
 

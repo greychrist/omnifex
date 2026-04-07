@@ -11,6 +11,9 @@ pub struct Account {
     pub name: String,
     pub config_dir: String,
     pub is_default: bool,
+    /// Account type: "max" (no cost, usage limits only), "enterprise" (has cost),
+    /// "pro" (has cost), "free" (has cost)
+    pub account_type: String,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -55,7 +58,7 @@ impl AccountManager {
         // 1. Check explicit project override
         let override_result: Option<Account> = conn
             .query_row(
-                "SELECT a.id, a.name, a.config_dir, a.is_default, a.created_at, a.updated_at
+                "SELECT a.id, a.name, a.config_dir, a.is_default, a.account_type, a.created_at, a.updated_at
                  FROM project_account_overrides o
                  JOIN accounts a ON a.id = o.account_id
                  WHERE o.project_path = ?1",
@@ -66,8 +69,9 @@ impl AccountManager {
                         name: row.get(1)?,
                         config_dir: row.get(2)?,
                         is_default: row.get(3)?,
-                        created_at: row.get(4)?,
-                        updated_at: row.get(5)?,
+                        account_type: row.get(4)?,
+                        created_at: row.get(5)?,
+                        updated_at: row.get(6)?,
                     })
                 },
             )
@@ -79,7 +83,7 @@ impl AccountManager {
 
         // 2. Check path prefix rules (longest match wins, then priority)
         let mut stmt = conn.prepare(
-            "SELECT a.id, a.name, a.config_dir, a.is_default, a.created_at, a.updated_at, r.path_prefix
+            "SELECT a.id, a.name, a.config_dir, a.is_default, a.account_type, a.created_at, a.updated_at, r.path_prefix
              FROM account_path_rules r
              JOIN accounts a ON a.id = r.account_id
              ORDER BY LENGTH(r.path_prefix) DESC, r.priority DESC",
@@ -93,10 +97,11 @@ impl AccountManager {
                         name: row.get(1)?,
                         config_dir: row.get(2)?,
                         is_default: row.get(3)?,
-                        created_at: row.get(4)?,
-                        updated_at: row.get(5)?,
+                        account_type: row.get(4)?,
+                        created_at: row.get(5)?,
+                        updated_at: row.get(6)?,
                     },
-                    row.get::<_, String>(6)?,
+                    row.get::<_, String>(7)?,
                 ))
             })?
             .filter_map(|r| r.ok())
@@ -111,7 +116,7 @@ impl AccountManager {
         // 3. Check default account
         let default_result: Option<Account> = conn
             .query_row(
-                "SELECT id, name, config_dir, is_default, created_at, updated_at
+                "SELECT id, name, config_dir, is_default, account_type, created_at, updated_at
                  FROM accounts WHERE is_default = 1 LIMIT 1",
                 [],
                 |row| {
@@ -120,8 +125,9 @@ impl AccountManager {
                         name: row.get(1)?,
                         config_dir: row.get(2)?,
                         is_default: row.get(3)?,
-                        created_at: row.get(4)?,
-                        updated_at: row.get(5)?,
+                        account_type: row.get(4)?,
+                        created_at: row.get(5)?,
+                        updated_at: row.get(6)?,
                     })
                 },
             )
@@ -143,7 +149,7 @@ impl AccountManager {
     pub fn list_accounts(&self) -> Result<Vec<Account>> {
         let conn = self.db.lock().map_err(|e| anyhow::anyhow!("{}", e))?;
         let mut stmt = conn.prepare(
-            "SELECT id, name, config_dir, is_default, created_at, updated_at
+            "SELECT id, name, config_dir, is_default, account_type, created_at, updated_at
              FROM accounts ORDER BY name",
         )?;
         let accounts = stmt
@@ -153,8 +159,9 @@ impl AccountManager {
                     name: row.get(1)?,
                     config_dir: row.get(2)?,
                     is_default: row.get(3)?,
-                    created_at: row.get(4)?,
-                    updated_at: row.get(5)?,
+                    account_type: row.get(4)?,
+                    created_at: row.get(5)?,
+                    updated_at: row.get(6)?,
                 })
             })?
             .filter_map(|r| r.ok())
@@ -167,6 +174,7 @@ impl AccountManager {
         name: &str,
         config_dir: &str,
         is_default: bool,
+        account_type: &str,
     ) -> Result<Account> {
         let conn = self.db.lock().map_err(|e| anyhow::anyhow!("{}", e))?;
 
@@ -176,13 +184,13 @@ impl AccountManager {
         }
 
         conn.execute(
-            "INSERT INTO accounts (name, config_dir, is_default) VALUES (?1, ?2, ?3)",
-            params![name, config_dir, is_default],
+            "INSERT INTO accounts (name, config_dir, is_default, account_type) VALUES (?1, ?2, ?3, ?4)",
+            params![name, config_dir, is_default, account_type],
         )?;
 
         let id = conn.last_insert_rowid();
         conn.query_row(
-            "SELECT id, name, config_dir, is_default, created_at, updated_at
+            "SELECT id, name, config_dir, is_default, account_type, created_at, updated_at
              FROM accounts WHERE id = ?1",
             params![id],
             |row| {
@@ -191,8 +199,9 @@ impl AccountManager {
                     name: row.get(1)?,
                     config_dir: row.get(2)?,
                     is_default: row.get(3)?,
-                    created_at: row.get(4)?,
-                    updated_at: row.get(5)?,
+                    account_type: row.get(4)?,
+                    created_at: row.get(5)?,
+                    updated_at: row.get(6)?,
                 })
             },
         )
@@ -372,6 +381,7 @@ mod tests {
                 name TEXT UNIQUE NOT NULL,
                 config_dir TEXT NOT NULL,
                 is_default BOOLEAN NOT NULL DEFAULT 0,
+                account_type TEXT NOT NULL DEFAULT 'pro',
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             )",
@@ -407,7 +417,7 @@ mod tests {
         let mgr = AccountManager::new(conn);
 
         let account = mgr
-            .create_account("personal", "/home/user/.claude-personal", true)
+            .create_account("personal", "/home/user/.claude-personal", true, "pro")
             .unwrap();
         assert_eq!(account.name, "personal");
         assert!(account.is_default);
@@ -423,10 +433,10 @@ mod tests {
         let mgr = AccountManager::new(conn);
 
         let personal = mgr
-            .create_account("personal", "/home/user/.claude-personal", false)
+            .create_account("personal", "/home/user/.claude-personal", false, "pro")
             .unwrap();
         let _work = mgr
-            .create_account("work", "/home/user/.claude-work", false)
+            .create_account("work", "/home/user/.claude-work", false, "enterprise")
             .unwrap();
 
         mgr.set_project_override("/home/user/random-project", personal.id)
@@ -442,10 +452,10 @@ mod tests {
         let mgr = AccountManager::new(conn);
 
         let personal = mgr
-            .create_account("personal", "/home/user/.claude-personal", false)
+            .create_account("personal", "/home/user/.claude-personal", false, "pro")
             .unwrap();
         let work = mgr
-            .create_account("work", "/home/user/.claude-work", false)
+            .create_account("work", "/home/user/.claude-work", false, "enterprise")
             .unwrap();
 
         mgr.add_path_rule(personal.id, "/home/user/repos/personal/", 0)
@@ -472,10 +482,10 @@ mod tests {
         let mgr = AccountManager::new(conn);
 
         let personal = mgr
-            .create_account("personal", "/home/user/.claude-personal", false)
+            .create_account("personal", "/home/user/.claude-personal", false, "pro")
             .unwrap();
         let work = mgr
-            .create_account("work", "/home/user/.claude-work", false)
+            .create_account("work", "/home/user/.claude-work", false, "enterprise")
             .unwrap();
 
         mgr.add_path_rule(personal.id, "/home/user/repos/", 0)
@@ -504,10 +514,10 @@ mod tests {
         let mgr = AccountManager::new(conn);
 
         let _personal = mgr
-            .create_account("personal", "/home/user/.claude-personal", true)
+            .create_account("personal", "/home/user/.claude-personal", true, "pro")
             .unwrap();
         let _work = mgr
-            .create_account("work", "/home/user/.claude-work", false)
+            .create_account("work", "/home/user/.claude-work", false, "enterprise")
             .unwrap();
 
         // No rules, no override — should fall back to default
@@ -522,7 +532,7 @@ mod tests {
 
         // Accounts exist but no default, no rules, no override
         let _personal = mgr
-            .create_account("personal", "/home/user/.claude-personal", false)
+            .create_account("personal", "/home/user/.claude-personal", false, "pro")
             .unwrap();
 
         let resolved = mgr.resolve("/some/random/path").unwrap();
@@ -535,10 +545,10 @@ mod tests {
         let mgr = AccountManager::new(conn);
 
         let personal = mgr
-            .create_account("personal", "/home/user/.claude-personal", false)
+            .create_account("personal", "/home/user/.claude-personal", false, "pro")
             .unwrap();
         let work = mgr
-            .create_account("work", "/home/user/.claude-work", false)
+            .create_account("work", "/home/user/.claude-work", false, "enterprise")
             .unwrap();
 
         // Rule says /repos/personal/ -> personal
@@ -561,10 +571,10 @@ mod tests {
         let mgr = AccountManager::new(conn);
 
         let personal = mgr
-            .create_account("personal", "/home/user/.claude-personal", true)
+            .create_account("personal", "/home/user/.claude-personal", true, "pro")
             .unwrap();
         let work = mgr
-            .create_account("work", "/home/user/.claude-work", false)
+            .create_account("work", "/home/user/.claude-work", false, "enterprise")
             .unwrap();
 
         mgr.set_default(work.id).unwrap();

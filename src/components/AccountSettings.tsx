@@ -10,6 +10,7 @@ export const AccountSettings: React.FC = () => {
   const [pathRules, setPathRules] = useState<PathRule[]>([]);
   const [newAccountName, setNewAccountName] = useState("");
   const [newAccountDir, setNewAccountDir] = useState("");
+  const [newAccountType, setNewAccountType] = useState("pro");
   const [newRulePrefix, setNewRulePrefix] = useState("");
   const [newRuleAccountId, setNewRuleAccountId] = useState<number | null>(null);
   const [showAddAccount, setShowAddAccount] = useState(false);
@@ -35,9 +36,10 @@ export const AccountSettings: React.FC = () => {
   const handleCreateAccount = async () => {
     if (!newAccountName.trim() || !newAccountDir.trim()) return;
     try {
-      await api.createAccount(newAccountName.trim(), newAccountDir.trim(), accounts.length === 0);
+      await api.createAccount(newAccountName.trim(), newAccountDir.trim(), accounts.length === 0, newAccountType);
       setNewAccountName("");
       setNewAccountDir("");
+      setNewAccountType("pro");
       setShowAddAccount(false);
       await loadData();
     } catch (error) {
@@ -96,6 +98,9 @@ export const AccountSettings: React.FC = () => {
               className="flex items-center gap-3 px-3 py-2.5 rounded-lg border border-border bg-muted/30"
             >
               <AccountBadge name={account.name} />
+              <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
+                {account.account_type}
+              </span>
               <span className="text-xs text-muted-foreground flex-1 truncate">
                 {account.config_dir}
               </span>
@@ -139,6 +144,16 @@ export const AccountSettings: React.FC = () => {
               onChange={(e) => setNewAccountDir(e.target.value)}
               className="h-8 text-sm"
             />
+            <select
+              value={newAccountType}
+              onChange={(e) => setNewAccountType(e.target.value)}
+              className="w-full h-8 text-sm rounded-md border border-border bg-background px-3"
+            >
+              <option value="max">Max (no cost, usage limits only)</option>
+              <option value="enterprise">Enterprise (has cost)</option>
+              <option value="pro">Pro (has cost)</option>
+              <option value="free">Free (has cost)</option>
+            </select>
             <div className="flex gap-2">
               <Button size="sm" onClick={handleCreateAccount} className="h-7 text-xs">
                 Add
