@@ -337,31 +337,36 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                     const contentStr = typeof msg.content === 'string' ? msg.content : String(msg.content);
                     if (contentStr.trim() === '') return null;
                     renderedSomething = true;
-                    
+
                     // Check if it's a command message
                     const commandMatch = contentStr.match(/<command-name>(.+?)<\/command-name>[\s\S]*?<command-message>(.+?)<\/command-message>[\s\S]*?<command-args>(.*?)<\/command-args>/);
                     if (commandMatch) {
                       const [, commandName, commandMessage, commandArgs] = commandMatch;
                       return (
-                        <CommandWidget 
-                          commandName={commandName.trim()} 
+                        <CommandWidget
+                          commandName={commandName.trim()}
                           commandMessage={commandMessage.trim()}
                           commandArgs={commandArgs?.trim()}
                         />
                       );
                     }
-                    
+
                     // Check if it's command output
                     const stdoutMatch = contentStr.match(/<local-command-stdout>([\s\S]*?)<\/local-command-stdout>/);
                     if (stdoutMatch) {
                       const [, output] = stdoutMatch;
                       return <CommandOutputWidget output={output} onLinkDetected={onLinkDetected} />;
                     }
-                    
-                    // Otherwise render as plain text
+
+                    // Otherwise render as plain user text with distinct styling
                     return (
-                      <div className="text-sm">
-                        {contentStr}
+                      <div className="border-l-2 border-blue-500/50 bg-blue-500/5 rounded-r-lg pl-4 pr-3 py-3 my-3">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-xs font-medium text-blue-400/80">You</span>
+                        </div>
+                        <div className="text-sm">
+                          {contentStr}
+                        </div>
                       </div>
                     );
                   })()
@@ -612,14 +617,19 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                   // Text content
                   if (content.type === "text") {
                     // Handle both string and object formats
-                    const textContent = typeof content.text === 'string' 
-                      ? content.text 
+                    const textContent = typeof content.text === 'string'
+                      ? content.text
                       : (content.text?.text || JSON.stringify(content.text));
-                    
+
                     renderedSomething = true;
                     return (
-                      <div key={idx} className="text-sm">
-                        {textContent}
+                      <div key={idx} className="border-l-2 border-blue-500/50 bg-blue-500/5 rounded-r-lg pl-4 pr-3 py-3 my-3">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-xs font-medium text-blue-400/80">You</span>
+                        </div>
+                        <div className="text-sm">
+                          {textContent}
+                        </div>
                       </div>
                     );
                   }
