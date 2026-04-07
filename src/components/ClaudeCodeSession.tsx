@@ -470,6 +470,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     });
 
     const errorUnlisten = await listen(`claude-error:${sessionId}`, (event: any) => {
+      if (isIgnorableStderr(event.payload)) return;
       console.error("Claude error:", event.payload);
       if (isMountedRef.current) {
         setError(event.payload);
@@ -493,7 +494,12 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     }
   };
 
-  // Project path selection handled by parent tab controls
+  // Filter out noisy stderr messages that aren't real errors
+  const isIgnorableStderr = (msg: string) => {
+    if (!msg) return false;
+    return msg.includes("no stdin data received in") ||
+           msg.includes("proceeding without it");
+  };
 
   const handleSendPrompt = async (prompt: string, model: "sonnet" | "opus") => {
     console.log('[ClaudeCodeSession] handleSendPrompt called with:', { prompt, model, projectPath, claudeSessionId, effectiveSession });
@@ -559,6 +565,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           });
 
           const specificErrorUnlisten = await listen(`claude-error:${sid}`, (evt: any) => {
+            if (isIgnorableStderr(evt.payload)) return;
             console.error('Claude error (scoped):', evt.payload);
             setError(evt.payload);
           });
@@ -833,6 +840,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
         };
 
         const genericErrorUnlisten = await listen('claude-error', (evt: any) => {
+          if (isIgnorableStderr(evt.payload)) return;
           console.error('Claude error:', evt.payload);
           setError(evt.payload);
         });
