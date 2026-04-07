@@ -913,6 +913,8 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           if (!startConfirmationResolved && accountResolution) {
             setPendingPromptData({ prompt, model });
             setShowStartConfirmation(true);
+            setIsLoading(false);
+            hasActiveSessionRef.current = false;
             return;
           }
           console.log('[ClaudeCodeSession] Starting new session');

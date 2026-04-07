@@ -34,6 +34,16 @@ pub struct ProjectOverride {
     pub account_name: String,
 }
 
+/// Expand `~` at the start of a path to the user's home directory.
+fn expand_tilde(path: &str) -> String {
+    if path.starts_with("~/") || path == "~" {
+        if let Some(home) = dirs::home_dir() {
+            return path.replacen('~', &home.to_string_lossy(), 1);
+        }
+    }
+    path.to_string()
+}
+
 pub struct AccountManager {
     db: Mutex<Connection>,
 }
@@ -108,7 +118,8 @@ impl AccountManager {
             .collect();
 
         for (account, prefix) in accounts {
-            if project_path.starts_with(&prefix) {
+            let expanded_prefix = expand_tilde(&prefix);
+            if project_path.starts_with(&expanded_prefix) {
                 return Ok(Some(account));
             }
         }
@@ -428,7 +439,8 @@ impl AccountManager {
             .collect();
 
         for (account, prefix) in accounts {
-            if project_path.starts_with(&prefix) {
+            let expanded_prefix = expand_tilde(&prefix);
+            if project_path.starts_with(&expanded_prefix) {
                 let detail = format!("{} -> {}", prefix, account.name);
                 return Ok(Some((account, "path_rule".to_string(), detail)));
             }
