@@ -150,15 +150,21 @@ fn get_claude_dir() -> Result<PathBuf> {
 }
 
 /// Gets the claude config dir for a given project path via account resolution.
-/// Falls back to the old ~/.claude behavior if no accounts are configured.
+/// Falls back to ~/.claude only if no accounts are configured at all.
+/// If accounts exist but none match, returns an error.
 fn get_claude_dir_for_project(
     account_mgr: &AccountManagerState,
     project_path: &str,
 ) -> Result<PathBuf> {
-    match account_mgr.0.resolve_config_dir(project_path) {
-        Ok(dir) => Ok(dir),
-        Err(_) => get_claude_dir(),
+    let has_accounts = account_mgr.0.has_accounts().unwrap_or(false);
+    if !has_accounts {
+        // No accounts configured at all — use legacy ~/.claude
+        return get_claude_dir();
     }
+    account_mgr
+        .0
+        .resolve_config_dir(project_path)
+        .context("No account configured for this project. Assign one in Settings > Accounts.")
 }
 
 /// Gets the actual project path by reading the cwd from the JSONL entries
@@ -1080,7 +1086,13 @@ pub async fn execute_claude_code(
 
     let claude_path = find_claude_binary(&app)?;
 
-    let account = account_state.0.resolve(&project_path).unwrap_or(None);
+    let account = account_state
+        .0
+        .resolve(&project_path)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| {
+            "No account configured for this project. Assign one in Settings > Accounts.".to_string()
+        })?;
 
     let args = vec![
         "-p".to_string(),
@@ -1094,9 +1106,7 @@ pub async fn execute_claude_code(
     ];
 
     let mut cmd = create_system_command(&claude_path, args, &project_path);
-    if let Some(ref acct) = account {
-        cmd.env("CLAUDE_CONFIG_DIR", &acct.config_dir);
-    }
+    cmd.env("CLAUDE_CONFIG_DIR", &account.config_dir);
     spawn_claude_process(app, cmd, prompt, model, project_path).await
 }
 
@@ -1117,7 +1127,13 @@ pub async fn continue_claude_code(
 
     let claude_path = find_claude_binary(&app)?;
 
-    let account = account_state.0.resolve(&project_path).unwrap_or(None);
+    let account = account_state
+        .0
+        .resolve(&project_path)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| {
+            "No account configured for this project. Assign one in Settings > Accounts.".to_string()
+        })?;
 
     let args = vec![
         "-c".to_string(), // Continue flag
@@ -1132,9 +1148,7 @@ pub async fn continue_claude_code(
     ];
 
     let mut cmd = create_system_command(&claude_path, args, &project_path);
-    if let Some(ref acct) = account {
-        cmd.env("CLAUDE_CONFIG_DIR", &acct.config_dir);
-    }
+    cmd.env("CLAUDE_CONFIG_DIR", &account.config_dir);
     spawn_claude_process(app, cmd, prompt, model, project_path).await
 }
 
@@ -1157,7 +1171,13 @@ pub async fn resume_claude_code(
 
     let claude_path = find_claude_binary(&app)?;
 
-    let account = account_state.0.resolve(&project_path).unwrap_or(None);
+    let account = account_state
+        .0
+        .resolve(&project_path)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| {
+            "No account configured for this project. Assign one in Settings > Accounts.".to_string()
+        })?;
 
     let args = vec![
         "--resume".to_string(),
@@ -1173,9 +1193,7 @@ pub async fn resume_claude_code(
     ];
 
     let mut cmd = create_system_command(&claude_path, args, &project_path);
-    if let Some(ref acct) = account {
-        cmd.env("CLAUDE_CONFIG_DIR", &acct.config_dir);
-    }
+    cmd.env("CLAUDE_CONFIG_DIR", &account.config_dir);
     spawn_claude_process(app, cmd, prompt, model, project_path).await
 }
 
