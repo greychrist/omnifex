@@ -28,6 +28,7 @@ import { TooltipProvider, TooltipSimple } from "@/components/ui/tooltip-modern";
 import { SplitPane } from "@/components/ui/split-pane";
 import { WebviewPreview } from "./WebviewPreview";
 import type { ClaudeStreamMessage } from "./AgentExecution";
+import { PermissionPrompt } from "./PermissionPrompt";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useTrackEvent, useComponentMetrics, useWorkflowTracking } from "@/hooks";
 import { SessionPersistenceService } from "@/services/sessionPersistence";
@@ -116,6 +117,11 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   
   // Add collapsed state for queued prompts
   const [queuedPromptsCollapsed, setQueuedPromptsCollapsed] = useState(false);
+
+  // Permission prompt state
+  const [waitingForPermission, setWaitingForPermission] = useState(false);
+  const [pendingToolUse, setPendingToolUse] = useState<{ name: string; input: Record<string, any> } | null>(null);
+  const [autoAllowedTools, setAutoAllowedTools] = useState<Set<string>>(new Set());
 
   const parentRef = useRef<HTMLDivElement>(null);
   const unlistenRefs = useRef<UnlistenFn[]>([]);
@@ -670,6 +676,23 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             // Track errors in system messages
             if (message.type === 'system' && (message.subtype === 'error' || message.error)) {
               sessionMetrics.current.errorsEncountered += 1;
+            }
+
+            // Detect permission prompt (tool_use with stop_reason)
+            if (message.type === 'assistant' && message.stop_reason === 'tool_use') {
+              const toolUses = message.message?.content?.filter((c: any) => c.type === 'tool_use') || [];
+              if (toolUses.length > 0) {
+                const lastTool = toolUses[toolUses.length - 1];
+                if (autoAllowedTools.has(lastTool.name)) {
+                  // Auto-approve
+                  if (claudeSessionId) {
+                    api.sendSessionInput(claudeSessionId, 'y').catch(console.error);
+                  }
+                } else {
+                  setPendingToolUse({ name: lastTool.name, input: lastTool.input || {} });
+                  setWaitingForPermission(true);
+                }
+              }
             }
 
             setMessages((prev) => [...prev, message]);
@@ -1499,6 +1522,27 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                 </TooltipSimple>
               </div>
             </motion.div>
+          )}
+
+          {waitingForPermission && pendingToolUse && claudeSessionId && (
+            <div className={cn(
+              "fixed bottom-6 left-0 right-0 z-[60] px-4",
+              showTimeline && "sm:right-96"
+            )}>
+              <div className="max-w-3xl mx-auto">
+                <PermissionPrompt
+                  sessionId={claudeSessionId}
+                  toolName={pendingToolUse.name}
+                  toolInput={pendingToolUse.input}
+                  autoAllowedTools={autoAllowedTools}
+                  onAutoAllow={(tool) => setAutoAllowedTools(prev => new Set([...prev, tool]))}
+                  onResponded={() => {
+                    setWaitingForPermission(false);
+                    setPendingToolUse(null);
+                  }}
+                />
+              </div>
+            </div>
           )}
 
           <div className={cn(
