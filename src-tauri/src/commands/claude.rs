@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
@@ -21,6 +22,20 @@ impl Default for ClaudeProcessState {
     fn default() -> Self {
         Self {
             current_process: Arc::new(Mutex::new(None)),
+        }
+    }
+}
+
+/// State to track stdin handles for active Claude sessions.
+/// Keyed by session_id (or temporary PID string until session_id is known).
+pub struct SessionStdinState {
+    pub handles: Arc<tokio::sync::Mutex<HashMap<String, tokio::process::ChildStdin>>>,
+}
+
+impl Default for SessionStdinState {
+    fn default() -> Self {
+        Self {
+            handles: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
         }
     }
 }
@@ -357,6 +372,7 @@ fn create_system_command(claude_path: &str, args: Vec<String>, project_path: &st
     }
 
     cmd.current_dir(project_path)
+        .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
@@ -1359,13 +1375,22 @@ async fn spawn_claude_process(
         .spawn()
         .map_err(|e| format!("Failed to spawn Claude: {}", e))?;
 
-    // Get stdout and stderr
+    // Get stdout, stderr, and stdin
     let stdout = child.stdout.take().ok_or("Failed to get stdout")?;
     let stderr = child.stderr.take().ok_or("Failed to get stderr")?;
+    let stdin = child.stdin.take().ok_or("Failed to get stdin")?;
 
     // Get the child PID for logging
     let pid = child.id().unwrap_or(0);
     log::info!("Spawned Claude process with PID: {:?}", pid);
+
+    // Store stdin handle under temporary PID key
+    let stdin_state = app.state::<SessionStdinState>();
+    let pid_key = format!("pid:{}", pid);
+    {
+        let mut handles = stdin_state.handles.lock().await;
+        handles.insert(pid_key.clone(), stdin);
+    }
 
     // Create readers first (before moving child)
     let stdout_reader = BufReader::new(stdout);
@@ -1405,27 +1430,50 @@ async fn spawn_claude_process(
             if let Ok(msg) = serde_json::from_str::<serde_json::Value>(&line) {
                 if msg["type"] == "system" && msg["subtype"] == "init" {
                     if let Some(claude_session_id) = msg["session_id"].as_str() {
-                        let mut session_id_guard = session_id_holder_clone.lock().unwrap();
-                        if session_id_guard.is_none() {
-                            *session_id_guard = Some(claude_session_id.to_string());
-                            log::info!("Extracted Claude session ID: {}", claude_session_id);
+                        let session_id_string = claude_session_id.to_string();
+                        let is_new_session;
+                        {
+                            let mut session_id_guard = session_id_holder_clone.lock().unwrap();
+                            is_new_session = session_id_guard.is_none();
+                            if is_new_session {
+                                *session_id_guard = Some(session_id_string.clone());
+                                log::info!("Extracted Claude session ID: {}", claude_session_id);
 
-                            // Now register with ProcessRegistry using Claude's session ID
-                            match registry_clone.register_claude_session(
-                                claude_session_id.to_string(),
-                                pid,
-                                project_path_clone.clone(),
-                                prompt_clone.clone(),
-                                model_clone.clone(),
-                            ) {
-                                Ok(run_id) => {
-                                    log::info!("Registered Claude session with run_id: {}", run_id);
-                                    let mut run_id_guard = run_id_holder_clone.lock().unwrap();
-                                    *run_id_guard = Some(run_id);
+                                // Now register with ProcessRegistry using Claude's session ID
+                                match registry_clone.register_claude_session(
+                                    session_id_string.clone(),
+                                    pid,
+                                    project_path_clone.clone(),
+                                    prompt_clone.clone(),
+                                    model_clone.clone(),
+                                ) {
+                                    Ok(run_id) => {
+                                        log::info!(
+                                            "Registered Claude session with run_id: {}",
+                                            run_id
+                                        );
+                                        let mut run_id_guard =
+                                            run_id_holder_clone.lock().unwrap();
+                                        *run_id_guard = Some(run_id);
+                                    }
+                                    Err(e) => {
+                                        log::error!(
+                                            "Failed to register Claude session: {}",
+                                            e
+                                        );
+                                    }
                                 }
-                                Err(e) => {
-                                    log::error!("Failed to register Claude session: {}", e);
-                                }
+                            }
+                        } // session_id_guard dropped here
+
+                        // Re-key stdin from PID to session_id (lock ordering safe: std::sync::Mutex released above)
+                        if is_new_session {
+                            let stdin_state = app_handle.state::<SessionStdinState>();
+                            let mut handles = stdin_state.handles.lock().await;
+                            let pid_key = format!("pid:{}", pid);
+                            if let Some(stdin_handle) = handles.remove(&pid_key) {
+                                handles.insert(session_id_string.clone(), stdin_handle);
+                                log::info!("Re-keyed stdin from {} to {}", pid_key, session_id_string);
                             }
                         }
                     }
@@ -1503,6 +1551,18 @@ async fn spawn_claude_process(
         // Unregister from ProcessRegistry if we have a run_id
         if let Some(run_id) = *run_id_holder_clone2.lock().unwrap() {
             let _ = registry_clone2.unregister_process(run_id);
+        }
+
+        // Clean up stdin handle
+        {
+            let stdin_state = app_handle_wait.state::<SessionStdinState>();
+            let mut handles = stdin_state.handles.lock().await;
+            if let Some(ref session_id) = *session_id_holder_clone3.lock().unwrap() {
+                handles.remove(session_id);
+            }
+            // Also remove PID-keyed entry if session_id was never extracted
+            let pid_key = format!("pid:{}", pid);
+            handles.remove(&pid_key);
         }
 
         // Clear the process from state
@@ -2612,5 +2672,12 @@ mod tests {
         // Should get one of the paths (implementation checks first file it finds)
         let path = result.unwrap();
         assert!(path == "/path1" || path == "/path2");
+    }
+
+    #[test]
+    fn test_session_stdin_state_default() {
+        let state = SessionStdinState::default();
+        let handles = state.handles.blocking_lock();
+        assert!(handles.is_empty());
     }
 }

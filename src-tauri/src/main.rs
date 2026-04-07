@@ -161,6 +161,9 @@ fn main() {
             // Initialize Claude process state
             app.manage(ClaudeProcessState::default());
 
+            // Initialize session stdin state for two-way communication
+            app.manage(commands::claude::SessionStdinState::default());
+
             // Apply window vibrancy with rounded corners on macOS
             #[cfg(target_os = "macos")]
             {
