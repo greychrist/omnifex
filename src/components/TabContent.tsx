@@ -118,6 +118,10 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
         sessionData: undefined,
         initialProjectPath: selectedProject.path
       });
+      // Resolve account name for the tab badge
+      api.resolveAccountForProject(selectedProject.path).then((account) => {
+        if (account) updateTab(tab.id, { accountName: account.name });
+      }).catch(() => {});
     } else {
       updateTab(tab.id, {
         type: 'chat',
@@ -222,6 +226,9 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                             sessionData: session,
                             initialProjectPath: session.project_path
                           });
+                          api.resolveAccountForProject(session.project_path).then((account) => {
+                            if (account) updateTab(tab.id, { accountName: account.name });
+                          }).catch(() => {});
                         }}
                         onEditClaudeFile={(file: ClaudeMdFile) => {
                           // Open CLAUDE.md file in a new tab
@@ -490,6 +497,9 @@ export const TabContent: React.FC = () => {
             sessionData: session,
             initialProjectPath: session.project_path
           });
+          api.resolveAccountForProject(session.project_path).then((account) => {
+            if (account) updateTab(currentTab.id, { accountName: account.name });
+          }).catch(() => {});
         } else {
           const projectName = session.project_path.split('/').pop() || 'Session';
           const newTabId = createChatTab(session.id, projectName, session.project_path);
