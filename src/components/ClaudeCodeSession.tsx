@@ -102,6 +102,9 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     match_detail: string;
   } | null>(null);
   const [sessionCost, setSessionCost] = useState(0);
+  const [showStartConfirmation, setShowStartConfirmation] = useState(false);
+  const [startConfirmationResolved, setStartConfirmationResolved] = useState(false);
+  const [pendingPromptData, setPendingPromptData] = useState<{ prompt: string; model: "sonnet" | "opus" } | null>(null);
 
   // Resolve account for this project
   useEffect(() => {
@@ -906,6 +909,12 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           trackEvent.modelSelected(model);
           await api.resumeClaudeCode(projectPath, effectiveSession.id, prompt, model);
         } else {
+          // Show confirmation for first prompt in a new session
+          if (!startConfirmationResolved && accountResolution) {
+            setPendingPromptData({ prompt, model });
+            setShowStartConfirmation(true);
+            return;
+          }
           console.log('[ClaudeCodeSession] Starting new session');
           setIsFirstPrompt(false);
           trackEvent.sessionCreated(model, 'prompt_input');
@@ -1362,6 +1371,53 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             sessionId={claudeSessionId}
             cost={sessionCost}
           />
+        )}
+        {showStartConfirmation && accountResolution && pendingPromptData && (
+          <div className="border border-border/50 rounded-lg p-4 m-4 bg-background/80">
+            <h3 className="text-sm font-medium mb-2">Confirm Session</h3>
+            <div className="space-y-1 text-sm text-foreground/70 mb-3">
+              <div className="flex items-center gap-2">
+                <span className="text-foreground/40 w-24 shrink-0">Project:</span>
+                <span className="font-mono text-xs truncate">{projectPath}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-foreground/40 w-24 shrink-0">Account:</span>
+                <AccountBadge name={accountResolution.account.name} />
+                <span className="text-foreground/50 text-xs">({accountResolution.account.account_type})</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-foreground/40 w-24 shrink-0">Config:</span>
+                <span className="font-mono text-xs text-foreground/50">{accountResolution.account.config_dir}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-foreground/40 w-24 shrink-0">Matched by:</span>
+                <span className="text-xs">
+                  {accountResolution.match_type === 'path_rule' ? 'Path rule' : accountResolution.match_type === 'project_override' ? 'Project override' : 'Default account'}
+                  {' — '}{accountResolution.match_detail}
+                </span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                onClick={() => {
+                  setShowStartConfirmation(false);
+                  setStartConfirmationResolved(true);
+                  // Re-trigger with the saved prompt data
+                  handleSendPrompt(pendingPromptData.prompt, pendingPromptData.model);
+                }}
+              >
+                Start Session
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => {
+                setShowStartConfirmation(false);
+                setPendingPromptData(null);
+                setIsLoading(false);
+              }}>
+                Cancel
+              </Button>
+            </div>
+          </div>
         )}
         <div className="w-full h-full flex flex-col">
 
