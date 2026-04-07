@@ -326,10 +326,10 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
       let renderedSomething = false;
       
       const renderedCard = (
-        <Card className={cn("border-violet-500/30 bg-violet-600/20", className)}>
+        <Card className={cn("border-violet-500/30", className)} style={{ backgroundColor: 'rgba(139, 92, 246, 0.15)' }}>
           <CardContent className="p-4">
             <div className="flex items-start gap-3">
-              <User className="h-5 w-5 text-violet-300 mt-0.5" />
+              <User className="h-6 w-6 text-violet-500 mt-0.5" />
               <div className="flex-1 space-y-2 min-w-0">
                 {/* Handle content that is a simple string (e.g. from user commands) */}
                 {(typeof msg.content === 'string' || (msg.content && !Array.isArray(msg.content))) && (
@@ -362,7 +362,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                     return (
                       <div>
                         <div className="flex items-center gap-2 mb-1">
-                          <span className="text-xs font-medium text-violet-300">You</span>
+                          <span className="text-xs font-medium text-muted-foreground">You</span>
                         </div>
                         <div className="text-sm">
                           {contentStr}
@@ -625,7 +625,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                     return (
                       <div key={idx}>
                         <div className="flex items-center gap-2 mb-1">
-                          <span className="text-xs font-medium text-violet-300">You</span>
+                          <span className="text-xs font-medium text-muted-foreground">You</span>
                         </div>
                         <div className="text-sm">
                           {textContent}

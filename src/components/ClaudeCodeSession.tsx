@@ -103,8 +103,9 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   const [sessionCost, setSessionCost] = useState(0);
   // Pre-session config: show setup panel for new sessions until user clicks Start
   const [sessionStarted, setSessionStarted] = useState(!!session);
-  const [selectedModel, setSelectedModel] = useState<"sonnet" | "opus">("sonnet");
+  const [selectedModel, setSelectedModel] = useState<"sonnet" | "opus">("opus");
   const [permissionMode, setPermissionMode] = useState<"default" | "skip">("default");
+  const [selectedThinking, setSelectedThinking] = useState<"auto" | "concise" | "verbose">("auto");
 
   // Resolve account explanation for SessionHeader
   useEffect(() => {
@@ -1403,20 +1404,38 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                 <div className="flex gap-2">
                   <Button
                     size="sm"
-                    variant={selectedModel === "sonnet" ? "default" : "outline"}
-                    onClick={() => setSelectedModel("sonnet")}
-                    className="flex-1"
-                  >
-                    Sonnet
-                  </Button>
-                  <Button
-                    size="sm"
                     variant={selectedModel === "opus" ? "default" : "outline"}
                     onClick={() => setSelectedModel("opus")}
                     className="flex-1"
                   >
                     Opus
                   </Button>
+                  <Button
+                    size="sm"
+                    variant={selectedModel === "sonnet" ? "default" : "outline"}
+                    onClick={() => setSelectedModel("sonnet")}
+                    className="flex-1"
+                  >
+                    Sonnet
+                  </Button>
+                </div>
+              </div>
+
+              {/* Thinking mode */}
+              <div className="space-y-1">
+                <Label className="text-xs text-foreground/60">Thinking</Label>
+                <div className="flex gap-2">
+                  {(["auto", "concise", "verbose"] as const).map((mode) => (
+                    <Button
+                      key={mode}
+                      size="sm"
+                      variant={selectedThinking === mode ? "default" : "outline"}
+                      onClick={() => setSelectedThinking(mode)}
+                      className="flex-1 capitalize"
+                    >
+                      {mode}
+                    </Button>
+                  ))}
                 </div>
               </div>
 
