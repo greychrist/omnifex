@@ -31,6 +31,42 @@ export interface Project {
   created_at: number;
   /** Unix timestamp of the most recent session (if any) */
   most_recent_session?: number;
+  /** Account ID this project belongs to */
+  account_id?: number;
+  /** Account name for display */
+  account_name?: string;
+}
+
+/**
+ * Represents a Claude account (e.g., personal, work)
+ */
+export interface Account {
+  id: number;
+  name: string;
+  config_dir: string;
+  is_default: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * Represents a path prefix rule that maps directories to accounts
+ */
+export interface PathRule {
+  id: number;
+  account_id: number;
+  account_name: string;
+  path_prefix: string;
+  priority: number;
+}
+
+/**
+ * Represents an explicit project-to-account override
+ */
+export interface ProjectOverride {
+  project_path: string;
+  account_id: number;
+  account_name: string;
 }
 
 /**
@@ -1940,6 +1976,56 @@ export const api = {
       console.error("Failed to delete slash command:", error);
       throw error;
     }
+  },
+
+  // ── Account Management ─────────────────────────────────────
+
+  async listAccounts(): Promise<Account[]> {
+    return apiCall<Account[]>('list_accounts');
+  },
+
+  async createAccount(name: string, configDir: string, isDefault: boolean): Promise<Account> {
+    return apiCall<Account>('create_account', { name, configDir, isDefault });
+  },
+
+  async updateAccount(id: number, name: string, configDir: string): Promise<void> {
+    return apiCall<void>('update_account', { id, name, configDir });
+  },
+
+  async deleteAccount(id: number): Promise<void> {
+    return apiCall<void>('delete_account', { id });
+  },
+
+  async setDefaultAccount(id: number): Promise<void> {
+    return apiCall<void>('set_default_account', { id });
+  },
+
+  async listPathRules(): Promise<PathRule[]> {
+    return apiCall<PathRule[]>('list_path_rules');
+  },
+
+  async addPathRule(accountId: number, pathPrefix: string, priority: number = 0): Promise<void> {
+    return apiCall<void>('add_path_rule', { accountId, pathPrefix, priority });
+  },
+
+  async removePathRule(ruleId: number): Promise<void> {
+    return apiCall<void>('remove_path_rule', { ruleId });
+  },
+
+  async resolveAccountForProject(projectPath: string): Promise<Account | null> {
+    return apiCall<Account | null>('resolve_account_for_project', { projectPath });
+  },
+
+  async setProjectAccountOverride(projectPath: string, accountId: number): Promise<void> {
+    return apiCall<void>('set_project_account_override', { projectPath, accountId });
+  },
+
+  async listProjectOverrides(): Promise<ProjectOverride[]> {
+    return apiCall<ProjectOverride[]>('list_project_overrides');
+  },
+
+  async discoverAccounts(): Promise<[string, string][]> {
+    return apiCall<[string, string][]>('discover_accounts');
   },
 
 };
