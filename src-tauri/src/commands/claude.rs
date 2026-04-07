@@ -170,7 +170,7 @@ fn get_claude_dir_for_project(
 
 /// Gets the default account's config dir. Used for operations that aren't project-specific.
 /// Never falls back to ~/.claude.
-fn get_default_account_dir(account_mgr: &AccountManagerState) -> Result<PathBuf, String> {
+pub fn get_default_account_dir(account_mgr: &AccountManagerState) -> Result<PathBuf, String> {
     let accounts = account_mgr.0.list_accounts().map_err(|e| e.to_string())?;
     // Try default account first
     if let Some(default_acct) = accounts.iter().find(|a| a.is_default) {

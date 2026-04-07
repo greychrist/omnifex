@@ -1,5 +1,4 @@
 use anyhow::{Context, Result};
-use dirs;
 use log::{debug, error, info};
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -245,9 +244,10 @@ fn create_default_commands() -> Vec<SlashCommand> {
 }
 
 /// Discover all custom slash commands
-#[tauri::command]
-pub async fn slash_commands_list(
-    project_path: Option<String>,
+/// Internal helper for listing slash commands (callable from other functions)
+fn list_commands_inner(
+    account_dir: Option<PathBuf>,
+    project_path: Option<&str>,
 ) -> Result<Vec<SlashCommand>, String> {
     info!("Discovering slash commands");
     let mut commands = Vec::new();
@@ -280,9 +280,9 @@ pub async fn slash_commands_list(
         }
     }
 
-    // Load user commands
-    if let Some(home_dir) = dirs::home_dir() {
-        let user_commands_dir = home_dir.join(".claude").join("commands");
+    // Load user commands from account config dir
+    if let Some(acct_dir) = account_dir {
+        let user_commands_dir = acct_dir.join("commands");
         if user_commands_dir.exists() {
             debug!("Scanning user commands at: {:?}", user_commands_dir);
 
@@ -309,20 +309,31 @@ pub async fn slash_commands_list(
     Ok(commands)
 }
 
+/// Discover all custom slash commands (Tauri command wrapper)
+#[tauri::command]
+pub async fn slash_commands_list(
+    account_state: tauri::State<'_, crate::accounts::AccountManagerState>,
+    project_path: Option<String>,
+) -> Result<Vec<SlashCommand>, String> {
+    let account_dir = crate::commands::claude::get_default_account_dir(&account_state).ok();
+    list_commands_inner(account_dir, project_path.as_deref())
+}
+
 /// Get a single slash command by ID
 #[tauri::command]
-pub async fn slash_command_get(command_id: String) -> Result<SlashCommand, String> {
+pub async fn slash_command_get(
+    account_state: tauri::State<'_, crate::accounts::AccountManagerState>,
+    command_id: String,
+) -> Result<SlashCommand, String> {
     debug!("Getting slash command: {}", command_id);
 
-    // Parse the ID to determine scope and reconstruct file path
     let parts: Vec<&str> = command_id.split('-').collect();
     if parts.len() < 2 {
         return Err("Invalid command ID".to_string());
     }
 
-    // The actual implementation would need to reconstruct the path and reload the command
-    // For now, we'll list all commands and find the matching one
-    let commands = slash_commands_list(None).await?;
+    let account_dir = crate::commands::claude::get_default_account_dir(&account_state).ok();
+    let commands = list_commands_inner(account_dir, None)?;
 
     commands
         .into_iter()
@@ -333,6 +344,7 @@ pub async fn slash_command_get(command_id: String) -> Result<SlashCommand, Strin
 /// Create or update a slash command
 #[tauri::command]
 pub async fn slash_command_save(
+    account_state: tauri::State<'_, crate::accounts::AccountManagerState>,
     scope: String,
     name: String,
     namespace: Option<String>,
@@ -360,9 +372,7 @@ pub async fn slash_command_save(
             return Err("Project path required for project scope".to_string());
         }
     } else {
-        dirs::home_dir()
-            .ok_or_else(|| "Could not find home directory".to_string())?
-            .join(".claude")
+        crate::commands::claude::get_default_account_dir(&account_state)?
             .join("commands")
     };
 
@@ -415,6 +425,7 @@ pub async fn slash_command_save(
 /// Delete a slash command
 #[tauri::command]
 pub async fn slash_command_delete(
+    account_state: tauri::State<'_, crate::accounts::AccountManagerState>,
     command_id: String,
     project_path: Option<String>,
 ) -> Result<String, String> {
@@ -429,7 +440,8 @@ pub async fn slash_command_delete(
     }
 
     // List all commands (including project commands if applicable)
-    let commands = slash_commands_list(project_path).await?;
+    let account_dir = crate::commands::claude::get_default_account_dir(&account_state).ok();
+    let commands = list_commands_inner(account_dir, project_path.as_deref())?;
 
     // Find the command by ID
     let command = commands

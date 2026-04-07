@@ -666,11 +666,41 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                   {isError ? "Execution Failed" : "Execution Complete"}
                 </h4>
 
+                {message.result && (
+                  <div className="prose prose-sm dark:prose-invert max-w-none">
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      components={{
+                        code({ node, inline, className, children, ...props }: any) {
+                          const match = /language-(\w+)/.exec(className || '');
+                          return !inline && match ? (
+                            <SyntaxHighlighter
+                              style={syntaxTheme}
+                              language={match[1]}
+                              PreTag="div"
+                              {...props}
+                            >
+                              {String(children).replace(/\n$/, '')}
+                            </SyntaxHighlighter>
+                          ) : (
+                            <code className={className} {...props}>
+                              {children}
+                            </code>
+                          );
+                        }
+                      }}
+                    >
+                      {message.result}
+                    </ReactMarkdown>
+                  </div>
+                )}
+
                 {message.error && (
                   <div className="text-sm text-destructive">{message.error}</div>
                 )}
-                
-                <div className="text-xs text-muted-foreground space-y-1 mt-2">
+
+                <hr className="border-t border-border/50 my-2" />
+                <div className="text-xs text-muted-foreground space-y-1">
                   {(message.cost_usd !== undefined || message.total_cost_usd !== undefined) && (
                     <div>Cost: ${((message.cost_usd || message.total_cost_usd)!).toFixed(4)} USD</div>
                   )}

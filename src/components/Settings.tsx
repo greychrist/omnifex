@@ -97,7 +97,19 @@ export const Settings: React.FC<SettingsProps> = ({
   const [tabPersistenceEnabled, setTabPersistenceEnabled] = useState(true);
   // Startup intro preference
   const [startupIntroEnabled, setStartupIntroEnabled] = useState(true);
-  
+
+  // Account selector for account-specific settings tabs
+  const [accounts, setAccounts] = useState<Array<{ id: number; name: string; config_dir: string; is_default: boolean }>>([]);
+  const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null);
+
+  useEffect(() => {
+    api.listAccounts().then((accts) => {
+      setAccounts(accts);
+      const defaultAcct = accts.find((a: any) => a.is_default) || accts[0];
+      if (defaultAcct) setSelectedAccountId(defaultAcct.id);
+    }).catch(console.error);
+  }, []);
+
   // Load settings on mount
   useEffect(() => {
     loadSettings();
@@ -405,7 +417,25 @@ export const Settings: React.FC<SettingsProps> = ({
               <TabsTrigger value="storage" className="py-2.5 px-3">Storage</TabsTrigger>
               <TabsTrigger value="proxy" className="py-2.5 px-3">Proxy</TabsTrigger>
             </TabsList>
-            
+
+            {/* Account selector for account-specific tabs */}
+            {["environment", "advanced", "hooks", "commands"].includes(activeTab) && accounts.length > 0 && (
+              <div className="flex items-center gap-2 mb-4 p-3 rounded-lg border border-border/50 bg-muted/30">
+                <Label className="text-xs text-foreground/60 whitespace-nowrap">Editing settings for:</Label>
+                <select
+                  value={selectedAccountId ?? ''}
+                  onChange={(e) => setSelectedAccountId(Number(e.target.value))}
+                  className="text-sm bg-background border border-border rounded px-2 py-1"
+                >
+                  {accounts.map((acct) => (
+                    <option key={acct.id} value={acct.id}>
+                      {acct.name} ({acct.config_dir})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             {/* Account Settings */}
             <TabsContent value="accounts" className="space-y-6 mt-6">
               <Card className="p-6">
