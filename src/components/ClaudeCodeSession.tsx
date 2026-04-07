@@ -1687,6 +1687,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
               isLoading={isLoading}
               disabled={!projectPath}
               projectPath={projectPath}
+              defaultModel={selectedModel}
               extraMenuItems={
                 <>
                   {effectiveSession && (

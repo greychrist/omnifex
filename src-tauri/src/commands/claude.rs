@@ -372,7 +372,7 @@ fn create_system_command(claude_path: &str, args: Vec<String>, project_path: &st
     }
 
     cmd.current_dir(project_path)
-        .stdin(Stdio::piped())
+        .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
@@ -1110,12 +1110,16 @@ pub async fn execute_claude_code(
         "stream-json".to_string(),
         "--verbose".to_string(),
     ];
-    if skip_permissions.unwrap_or(false) {
+    let skip = skip_permissions.unwrap_or(false);
+    if skip {
         args.push("--dangerously-skip-permissions".to_string());
     }
 
     let mut cmd = create_system_command(&claude_path, args, &project_path);
     cmd.env("CLAUDE_CONFIG_DIR", &account.config_dir);
+    if !skip {
+        cmd.stdin(Stdio::piped()); // Need stdin for permission prompts
+    }
     spawn_claude_process(app, cmd, prompt, model, project_path).await
 }
 
@@ -1155,12 +1159,16 @@ pub async fn continue_claude_code(
         "stream-json".to_string(),
         "--verbose".to_string(),
     ];
-    if skip_permissions.unwrap_or(false) {
+    let skip = skip_permissions.unwrap_or(false);
+    if skip {
         args.push("--dangerously-skip-permissions".to_string());
     }
 
     let mut cmd = create_system_command(&claude_path, args, &project_path);
     cmd.env("CLAUDE_CONFIG_DIR", &account.config_dir);
+    if !skip {
+        cmd.stdin(Stdio::piped());
+    }
     spawn_claude_process(app, cmd, prompt, model, project_path).await
 }
 
@@ -1203,12 +1211,16 @@ pub async fn resume_claude_code(
         "stream-json".to_string(),
         "--verbose".to_string(),
     ];
-    if skip_permissions.unwrap_or(false) {
+    let skip = skip_permissions.unwrap_or(false);
+    if skip {
         args.push("--dangerously-skip-permissions".to_string());
     }
 
     let mut cmd = create_system_command(&claude_path, args, &project_path);
     cmd.env("CLAUDE_CONFIG_DIR", &account.config_dir);
+    if !skip {
+        cmd.stdin(Stdio::piped());
+    }
     spawn_claude_process(app, cmd, prompt, model, project_path).await
 }
 
@@ -1418,21 +1430,22 @@ async fn spawn_claude_process(
         .spawn()
         .map_err(|e| format!("Failed to spawn Claude: {}", e))?;
 
-    // Get stdout, stderr, and stdin
+    // Get stdout, stderr, and optionally stdin
     let stdout = child.stdout.take().ok_or("Failed to get stdout")?;
     let stderr = child.stderr.take().ok_or("Failed to get stderr")?;
-    let stdin = child.stdin.take().ok_or("Failed to get stdin")?;
+    let stdin_opt = child.stdin.take();
 
     // Get the child PID for logging
     let pid = child.id().unwrap_or(0);
     log::info!("Spawned Claude process with PID: {:?}", pid);
 
-    // Store stdin handle under temporary PID key
-    let stdin_state = app.state::<SessionStdinState>();
-    let pid_key = format!("pid:{}", pid);
-    {
+    // Store stdin handle under temporary PID key (only if stdin is piped)
+    if let Some(stdin) = stdin_opt {
+        let stdin_state = app.state::<SessionStdinState>();
+        let pid_key = format!("pid:{}", pid);
         let mut handles = stdin_state.handles.lock().await;
         handles.insert(pid_key.clone(), stdin);
+        log::info!("Stored stdin handle for PID {}", pid);
     }
 
     // Create readers first (before moving child)
