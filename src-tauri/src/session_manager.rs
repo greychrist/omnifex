@@ -100,13 +100,18 @@ pub async fn session_start(
     let claude_path = crate::claude_binary::find_claude_binary(&app)?;
     log::info!("session_start: using claude binary at {}", claude_path);
 
-    // 3. Build args for persistent mode
+    // 3. Build args for persistent mode (matches VS Code extension flags)
     let mut args = vec![
         "--input-format".to_string(),
         "stream-json".to_string(),
         "--output-format".to_string(),
         "stream-json".to_string(),
+        "--permission-prompt-tool".to_string(),
+        "stdio".to_string(),
         "--verbose".to_string(),
+        "--include-partial-messages".to_string(),
+        "--replay-user-messages".to_string(),
+        "--no-chrome".to_string(),
         "--model".to_string(),
         model.clone(),
         "--permission-mode".to_string(),
