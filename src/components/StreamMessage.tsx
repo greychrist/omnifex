@@ -38,7 +38,8 @@ import {
   ThinkingWidget,
   WebSearchWidget,
   WebFetchWidget,
-  SystemInitializedWidget
+  SystemInitializedWidget,
+  SystemContextWidget
 } from "./ToolWidgets";
 
 interface StreamMessageProps {
@@ -340,14 +341,39 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
 
       // Handle different message structures
       const msg = message.message || message;
-      
+
+      // Detect system-injected context (skills, CLAUDE.md, system-reminders)
+      // Render as collapsible widget instead of user message
+      const contentStr = typeof msg.content === 'string'
+        ? msg.content
+        : Array.isArray(msg.content)
+          ? msg.content.map((c: any) => typeof c === 'string' ? c : c.text || c.content || '').join('')
+          : '';
+      if (contentStr.includes('<system-reminder>') || contentStr.includes('Base directory for this skill:')) {
+        return <SystemContextWidget content={contentStr} />;
+      }
+
+      // Check if this is a tool-result-only message (not a real user message)
+      const isToolResultOnly = Array.isArray(msg.content)
+        && msg.content.length > 0
+        && msg.content.every((c: any) => c.type === "tool_result");
+
       let renderedSomething = false;
-      
+
+      // Pick card style based on whether this is a user prompt or tool result
+      const cardStyle = isToolResultOnly
+        ? { className: cn("border-border/30 bg-muted/30", className), style: undefined }
+        : { className: cn("border-violet-500/30", className), style: { backgroundColor: 'rgba(139, 92, 246, 0.15)' } as React.CSSProperties };
+
+      const cardIcon = isToolResultOnly
+        ? <Terminal className="h-5 w-5 text-muted-foreground mt-0.5" />
+        : <User className="h-6 w-6 text-violet-500 mt-0.5" />;
+
       const renderedCard = (
-        <Card className={cn("border-violet-500/30", className)} style={{ backgroundColor: 'rgba(139, 92, 246, 0.15)' }}>
+        <Card className={cardStyle.className} style={cardStyle.style}>
           <CardContent className="p-4">
             <div className="flex items-start gap-3">
-              <User className="h-6 w-6 text-violet-500 mt-0.5" />
+              {cardIcon}
               <div className="flex-1 space-y-2 min-w-0">
                 {/* Handle content that is a simple string (e.g. from user commands) */}
                 {(typeof msg.content === 'string' || (msg.content && !Array.isArray(msg.content))) && (

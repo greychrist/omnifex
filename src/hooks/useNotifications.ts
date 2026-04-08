@@ -1,10 +1,6 @@
 import { useEffect, useRef } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import {
-  isPermissionGranted,
-  requestPermission,
-  sendNotification,
-} from "@tauri-apps/plugin-notification";
+import { onAction } from "@tauri-apps/plugin-notification";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 interface NotificationPayload {
@@ -15,52 +11,66 @@ interface NotificationPayload {
 }
 
 /**
- * Listens for claude-notification events and fires OS notifications
- * when the completed tab is not the currently active tab.
+ * Listens for claude-notification events and:
+ * 1. Marks non-active tabs with hasUnreadResult for badge display
+ * 2. Handles notification click to navigate to the correct tab
+ *
+ * Native OS notifications are sent from the Rust backend directly.
  */
 export function useNotifications(
   activeTabId: string | null,
-  setActiveTabId: (id: string) => void
+  setActiveTab: (id: string) => void,
+  updateTab: (id: string, updates: Record<string, any>) => void
 ) {
-  // Use refs so the listener always reads current values without re-subscribing
   const activeTabIdRef = useRef(activeTabId);
-  const setActiveTabIdRef = useRef(setActiveTabId);
   activeTabIdRef.current = activeTabId;
-  setActiveTabIdRef.current = setActiveTabId;
+
+  const setActiveTabRef = useRef(setActiveTab);
+  setActiveTabRef.current = setActiveTab;
+
+  const updateTabRef = useRef(updateTab);
+  updateTabRef.current = updateTab;
 
   useEffect(() => {
-    let unlisten: UnlistenFn | null = null;
+    let unlistenNotification: UnlistenFn | null = null;
+    let unlistenAction: (() => void) | null = null;
     let mounted = true;
 
     async function setup() {
-      let granted = await isPermissionGranted();
-      if (!granted) {
-        const result = await requestPermission();
-        granted = result === "granted";
-      }
-      if (!granted || !mounted) return;
+      if (!mounted) return;
 
-      unlisten = await listen<NotificationPayload>("claude-notification", (event) => {
-        const { tab_id, title, body } = event.payload;
+      // Listen for notification events from backend to update tab badges
+      unlistenNotification = await listen<NotificationPayload>(
+        "claude-notification",
+        (event) => {
+          const { tab_id } = event.payload;
 
-        // Only notify for non-active tabs
-        if (tab_id === activeTabIdRef.current) return;
+          // Mark non-active tabs with unread badge
+          if (tab_id !== activeTabIdRef.current) {
+            updateTabRef.current(tab_id, { hasUnreadResult: true });
+          }
+        }
+      );
 
-        sendNotification({ title, body: body.slice(0, 200) });
-
-        // Switch to that tab and focus the window
-        setTimeout(() => {
-          setActiveTabIdRef.current(tab_id);
-          getCurrentWindow().setFocus().catch(() => {});
-        }, 100);
+      // Handle notification click — navigate to the correct tab
+      const listener = await onAction((notification) => {
+        const tabId =
+          notification.extra && (notification.extra as Record<string, string>).tab_id;
+        if (tabId) {
+          setActiveTabRef.current(tabId);
+          // Bring window to front
+          getCurrentWindow().setFocus().catch(console.error);
+        }
       });
+      unlistenAction = () => listener.unregister();
     }
 
     setup().catch(console.error);
 
     return () => {
       mounted = false;
-      if (unlisten) unlisten();
+      if (unlistenNotification) unlistenNotification();
+      if (unlistenAction) unlistenAction();
     };
-  }, []); // Subscribe once, use refs for current values
+  }, []);
 }

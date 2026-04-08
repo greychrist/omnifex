@@ -1795,6 +1795,53 @@ export const SystemReminderWidget: React.FC<{ message: string }> = ({ message })
 };
 
 /**
+ * Collapsible widget for system-injected context (skills, CLAUDE.md, system-reminders)
+ * Styled like ThinkingWidget — collapsed by default
+ */
+export const SystemContextWidget: React.FC<{ content: string }> = ({ content }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  // Determine a short label from the content
+  let label = "System Context";
+  if (content.includes("Base directory for this skill:")) {
+    const skillMatch = content.match(/# (.+)/);
+    label = skillMatch ? `Skill: ${skillMatch[1]}` : "Skill Loaded";
+  } else if (content.includes("CLAUDE.md")) {
+    label = "CLAUDE.md Context";
+  } else if (content.includes("<system-reminder>")) {
+    label = "System Reminder";
+  }
+
+  return (
+    <div className="rounded-lg border border-gray-500/20 bg-gray-500/5 overflow-hidden">
+      <button
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="w-full px-4 py-2 flex items-center justify-between hover:bg-gray-500/10 transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <Info className="h-4 w-4 text-gray-500" />
+          <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
+            {label}
+          </span>
+        </div>
+        <ChevronRight className={cn(
+          "h-3 w-3 text-gray-500 transition-transform",
+          isExpanded && "rotate-90"
+        )} />
+      </button>
+
+      {isExpanded && (
+        <div className="px-4 pb-3 pt-1 border-t border-gray-500/20">
+          <pre className="text-xs font-mono text-gray-500 dark:text-gray-400 whitespace-pre-wrap bg-gray-500/5 p-3 rounded-lg max-h-60 overflow-y-auto">
+            {content.trim()}
+          </pre>
+        </div>
+      )}
+    </div>
+  );
+};
+
+/**
  * Widget for displaying system initialization information in a visually appealing way
  * Separates regular tools from MCP tools and provides icons for each tool type
  */

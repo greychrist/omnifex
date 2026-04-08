@@ -243,6 +243,121 @@ fn create_default_commands() -> Vec<SlashCommand> {
     ]
 }
 
+/// Find the latest version directory for each plugin under plugins/cache.
+/// Structure: plugins/cache/<marketplace>/<plugin>/<version>/
+/// Returns a list of the highest-version directories per plugin.
+fn find_latest_plugin_dirs(plugins_cache: &Path) -> Vec<PathBuf> {
+    let mut latest: std::collections::HashMap<String, (PathBuf, String)> =
+        std::collections::HashMap::new();
+
+    let Ok(marketplaces) = fs::read_dir(plugins_cache) else {
+        return Vec::new();
+    };
+    for mp_entry in marketplaces.flatten() {
+        let mp_path = mp_entry.path();
+        if !mp_path.is_dir() {
+            continue;
+        }
+        let Ok(plugins) = fs::read_dir(&mp_path) else {
+            continue;
+        };
+        for plugin_entry in plugins.flatten() {
+            let plugin_path = plugin_entry.path();
+            if !plugin_path.is_dir() {
+                continue;
+            }
+            let plugin_key = format!(
+                "{}:{}",
+                mp_path.file_name().unwrap_or_default().to_string_lossy(),
+                plugin_path
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+            );
+            let Ok(versions) = fs::read_dir(&plugin_path) else {
+                continue;
+            };
+            for ver_entry in versions.flatten() {
+                let ver_path = ver_entry.path();
+                if !ver_path.is_dir() {
+                    continue;
+                }
+                let ver_name = ver_path
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string();
+                // Keep the lexicographically highest version (works for semver)
+                if let Some(existing) = latest.get(&plugin_key) {
+                    if ver_name > existing.1 {
+                        latest.insert(plugin_key.clone(), (ver_path, ver_name));
+                    }
+                } else {
+                    latest.insert(plugin_key.clone(), (ver_path, ver_name));
+                }
+            }
+        }
+    }
+    latest.into_values().map(|(path, _)| path).collect()
+}
+
+/// Load a skill from a SKILL.md file
+fn load_skill_from_file(
+    skill_dir: &Path,
+    plugin_name: Option<&str>,
+    scope: &str,
+) -> Result<SlashCommand> {
+    let skill_file = skill_dir.join("SKILL.md");
+    if !skill_file.exists() {
+        return Err(anyhow::anyhow!("No SKILL.md in {:?}", skill_dir));
+    }
+    let content = fs::read_to_string(&skill_file).context("Failed to read skill file")?;
+    let (frontmatter, body) = parse_markdown_with_frontmatter(&content)?;
+
+    let dir_name = skill_dir
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string();
+
+    let (name, full_command) = if let Some(pname) = plugin_name {
+        (dir_name.clone(), format!("/{pname}:{dir_name}"))
+    } else {
+        (dir_name.clone(), format!("/{dir_name}"))
+    };
+
+    let id = format!(
+        "{}-skill-{}",
+        scope,
+        skill_file.to_string_lossy().replace('/', "-")
+    );
+
+    let (description, allowed_tools) = if let Some(fm) = frontmatter {
+        (fm.description, fm.allowed_tools.unwrap_or_default())
+    } else {
+        (None, Vec::new())
+    };
+
+    let has_bash_commands = body.contains("!`");
+    let has_file_references = body.contains('@');
+    let accepts_arguments = body.contains("$ARGUMENTS");
+
+    Ok(SlashCommand {
+        id,
+        name,
+        full_command,
+        scope: scope.to_string(),
+        namespace: plugin_name.map(|s| s.to_string()),
+        file_path: skill_file.to_string_lossy().to_string(),
+        content: body,
+        description,
+        allowed_tools,
+        has_bash_commands,
+        has_file_references,
+        accepts_arguments,
+    })
+}
+
 /// Discover all custom slash commands
 /// Internal helper for listing slash commands (callable from other functions)
 fn list_commands_inner(
@@ -278,10 +393,32 @@ fn list_commands_inner(
                 }
             }
         }
+
+        // Load project skills from .claude/skills/
+        let project_skills_dir = PathBuf::from(&proj_path).join(".claude").join("skills");
+        if project_skills_dir.exists() {
+            debug!("Scanning project skills at: {:?}", project_skills_dir);
+            if let Ok(entries) = fs::read_dir(&project_skills_dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.is_dir() {
+                        match load_skill_from_file(&path, None, "project") {
+                            Ok(cmd) => {
+                                debug!("Loaded project skill: {}", cmd.full_command);
+                                commands.push(cmd);
+                            }
+                            Err(e) => {
+                                debug!("Skipping skill dir {:?}: {}", path, e);
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     // Load user commands from account config dir
-    if let Some(acct_dir) = account_dir {
+    if let Some(ref acct_dir) = account_dir {
         let user_commands_dir = acct_dir.join("commands");
         if user_commands_dir.exists() {
             debug!("Scanning user commands at: {:?}", user_commands_dir);
@@ -298,6 +435,77 @@ fn list_commands_inner(
                         }
                         Err(e) => {
                             error!("Failed to load command from {:?}: {}", file_path, e);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Load plugin commands and skills from account config dir
+    if let Some(ref acct_dir) = account_dir {
+        let plugins_cache = acct_dir.join("plugins").join("cache");
+        if plugins_cache.exists() {
+            debug!("Scanning plugin commands/skills at: {:?}", plugins_cache);
+            let plugin_dirs = find_latest_plugin_dirs(&plugins_cache);
+
+            for plugin_dir in &plugin_dirs {
+                let plugin_name = plugin_dir
+                    .parent()
+                    .and_then(|p| p.file_name())
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string();
+
+                // Plugin commands
+                let cmds_dir = plugin_dir.join("commands");
+                if cmds_dir.exists() {
+                    let mut md_files = Vec::new();
+                    if let Err(e) = find_markdown_files(&cmds_dir, &mut md_files) {
+                        error!(
+                            "Failed to find plugin command files in {:?}: {}",
+                            cmds_dir, e
+                        );
+                    } else {
+                        for file_path in md_files {
+                            match load_command_from_file(&file_path, &cmds_dir, "plugin") {
+                                Ok(mut cmd) => {
+                                    // Prefix with plugin name for namespacing
+                                    if cmd.namespace.is_none() {
+                                        cmd.namespace = Some(plugin_name.clone());
+                                        cmd.full_command = format!("/{}:{}", plugin_name, cmd.name);
+                                    }
+                                    debug!("Loaded plugin command: {}", cmd.full_command);
+                                    commands.push(cmd);
+                                }
+                                Err(e) => {
+                                    debug!(
+                                        "Failed to load plugin command from {:?}: {}",
+                                        file_path, e
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Plugin skills
+                let skills_dir = plugin_dir.join("skills");
+                if skills_dir.exists() {
+                    if let Ok(entries) = fs::read_dir(&skills_dir) {
+                        for entry in entries.flatten() {
+                            let path = entry.path();
+                            if path.is_dir() {
+                                match load_skill_from_file(&path, Some(&plugin_name), "plugin") {
+                                    Ok(cmd) => {
+                                        debug!("Loaded plugin skill: {}", cmd.full_command);
+                                        commands.push(cmd);
+                                    }
+                                    Err(e) => {
+                                        debug!("Skipping plugin skill {:?}: {}", path, e);
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -372,8 +580,7 @@ pub async fn slash_command_save(
             return Err("Project path required for project scope".to_string());
         }
     } else {
-        crate::commands::claude::get_default_account_dir(&account_state)?
-            .join("commands")
+        crate::commands::claude::get_default_account_dir(&account_state)?.join("commands")
     };
 
     // Build file path

@@ -16,6 +16,7 @@ export interface Tab {
   accountName?: string; // for chat tabs - resolved account name
   status: 'active' | 'idle' | 'running' | 'complete' | 'error';
   hasUnsavedChanges: boolean;
+  hasUnreadResult?: boolean;
   order: number;
   icon?: string;
   createdAt: Date;
@@ -198,6 +199,12 @@ export const TabProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const setActiveTab = useCallback((id: string) => {
     if (tabs.find(tab => tab.id === id)) {
       setActiveTabId(id);
+      // Clear unread badge when switching to a tab
+      setTabs(prev => prev.map(tab =>
+        tab.id === id && tab.hasUnreadResult
+          ? { ...tab, hasUnreadResult: false }
+          : tab
+      ));
     }
   }, [tabs]);
 

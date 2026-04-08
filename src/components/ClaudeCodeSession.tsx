@@ -30,7 +30,7 @@ import { WebviewPreview } from "./WebviewPreview";
 import type { ClaudeStreamMessage } from "./AgentExecution";
 import { PermissionPrompt } from "./PermissionPrompt";
 import { SessionHeader } from "./SessionHeader";
-import { useVirtualizer } from "@tanstack/react-virtual";
+// Virtualizer removed — flat list for reliable scrolling
 import { useTrackEvent, useComponentMetrics, useWorkflowTracking } from "@/hooks";
 import { SessionPersistenceService } from "@/services/sessionPersistence";
 
@@ -107,7 +107,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   const [sessionCost, setSessionCost] = useState(0);
   // Pre-session config: show setup panel for new sessions until user clicks Start
   const [sessionStarted, setSessionStarted] = useState(!!session);
-  const [selectedModel, setSelectedModel] = useState<"sonnet" | "opus">("opus");
+  const [selectedModel, setSelectedModel] = useState<string>("opus[1m]");
   const [permissionMode, setPermissionMode] = useState<"default" | "skip">("default");
   const [selectedThinking, setSelectedThinking] = useState<"auto" | "concise" | "verbose">("auto");
 
@@ -123,7 +123,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   }, [projectPath]);
 
   // Queued prompts state
-  const [queuedPrompts, setQueuedPrompts] = useState<Array<{ id: string; prompt: string; model: "sonnet" | "opus" }>>([]);
+  const [queuedPrompts, setQueuedPrompts] = useState<Array<{ id: string; prompt: string; model: string }>>([]);
   
   // New state for preview feature
   const [showPreview, setShowPreview] = useState(false);
@@ -145,7 +145,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   const persistentSessionRef = useRef(false);
   const tabIdRef = useRef(tabId || 'default');
   const floatingPromptRef = useRef<FloatingPromptInputRef>(null);
-  const queuedPromptsRef = useRef<Array<{ id: string; prompt: string; model: "sonnet" | "opus" }>>([]);
+  const queuedPromptsRef = useRef<Array<{ id: string; prompt: string; model: string }>>([]);
   const isMountedRef = useRef(true);
   const sessionStartTime = useRef<number>(Date.now());
   const isIMEComposingRef = useRef(false);
@@ -268,12 +268,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     });
   }, [messages]);
 
-  const rowVirtualizer = useVirtualizer({
-    count: displayableMessages.length,
-    getScrollElement: () => parentRef.current,
-    estimateSize: () => 150, // Estimate, will be dynamically measured
-    overscan: 5,
-  });
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Debug logging
   useEffect(() => {
@@ -305,20 +300,11 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   // Auto-scroll to bottom when new messages arrive, but only if already near the bottom
   useEffect(() => {
     if (displayableMessages.length > 0 && isNearBottomRef.current) {
-      setTimeout(() => {
-        const scrollElement = parentRef.current;
-        if (scrollElement) {
-          rowVirtualizer.scrollToIndex(displayableMessages.length - 1, { align: 'end', behavior: 'auto' });
-          requestAnimationFrame(() => {
-            scrollElement.scrollTo({
-              top: scrollElement.scrollHeight,
-              behavior: 'smooth'
-            });
-          });
-        }
-      }, 50);
+      requestAnimationFrame(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      });
     }
-  }, [displayableMessages.length, rowVirtualizer]);
+  }, [displayableMessages.length]);
 
   // Calculate total tokens from messages
   useEffect(() => {
@@ -364,19 +350,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       
       // Scroll to bottom after loading history
       setTimeout(() => {
-        if (loadedMessages.length > 0) {
-          const scrollElement = parentRef.current;
-          if (scrollElement) {
-            // Use the same improved scrolling method
-            rowVirtualizer.scrollToIndex(loadedMessages.length - 1, { align: 'end', behavior: 'auto' });
-            requestAnimationFrame(() => {
-              scrollElement.scrollTo({
-                top: scrollElement.scrollHeight,
-                behavior: 'auto'
-              });
-            });
-          }
-        }
+        messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
       }, 100);
     } catch (err) {
       console.error("Failed to load session history:", err);
@@ -662,7 +636,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     persistentSessionRef.current = true;
   };
 
-  const handleSendPrompt = async (prompt: string, model: "sonnet" | "opus") => {
+  const handleSendPrompt = async (prompt: string, model: string) => {
     console.log('[ClaudeCodeSession] handleSendPrompt called with:', { prompt, model, projectPath, claudeSessionId, effectiveSession });
 
     if (!projectPath) {
@@ -1083,7 +1057,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
         });
       }
     };
-  }, [effectiveSession, projectPath]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- cleanup must only run on unmount
 
   const handleScroll = useCallback(() => {
     const el = parentRef.current;
@@ -1101,39 +1075,17 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
         contain: 'strict',
       }}
     >
-      <div
-        className="relative w-full max-w-6xl mx-auto px-4 pt-8 pb-4"
-        style={{
-          height: `${Math.max(rowVirtualizer.getTotalSize(), 100)}px`,
-          minHeight: '100px',
-        }}
-      >
-        <AnimatePresence>
-          {rowVirtualizer.getVirtualItems().map((virtualItem) => {
-            const message = displayableMessages[virtualItem.index];
-            return (
-              <motion.div
-                key={virtualItem.key}
-                data-index={virtualItem.index}
-                ref={(el) => el && rowVirtualizer.measureElement(el)}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.3 }}
-                className="absolute inset-x-4 pb-4"
-                style={{
-                  top: virtualItem.start,
-                }}
-              >
-                <StreamMessage 
-                  message={message} 
-                  streamMessages={messages}
-                  onLinkDetected={handleLinkDetected}
-                />
-              </motion.div>
-            );
-          })}
-        </AnimatePresence>
+      <div className="w-full max-w-6xl mx-auto px-4 pt-8 pb-4 space-y-4">
+          {displayableMessages.map((message, idx) => (
+            <div key={idx}>
+              <StreamMessage
+                message={message}
+                streamMessages={messages}
+                onLinkDetected={handleLinkDetected}
+              />
+            </div>
+          ))}
+          <div ref={messagesEndRef} />
       </div>
 
       {/* Loading indicator under the latest message */}
@@ -1235,6 +1187,14 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
               <div className="space-y-1">
                 <Label className="text-xs text-foreground/60">Model</Label>
                 <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant={selectedModel === "opus[1m]" ? "default" : "outline"}
+                    onClick={() => setSelectedModel("opus[1m]")}
+                    className="flex-1"
+                  >
+                    Opus 1M
+                  </Button>
                   <Button
                     size="sm"
                     variant={selectedModel === "opus" ? "default" : "outline"}
@@ -1480,22 +1440,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                       variant="ghost"
                       size="sm"
                       onClick={() => {
-                        // Use the improved scrolling method for manual scroll to bottom
-                        if (displayableMessages.length > 0) {
-                          const scrollElement = parentRef.current;
-                          if (scrollElement) {
-                            // First, scroll using virtualizer to get close to the bottom
-                            rowVirtualizer.scrollToIndex(displayableMessages.length - 1, { align: 'end', behavior: 'auto' });
-
-                            // Then use direct scroll to ensure we reach the absolute bottom
-                            requestAnimationFrame(() => {
-                              scrollElement.scrollTo({
-                                top: scrollElement.scrollHeight,
-                                behavior: 'smooth'
-                              });
-                            });
-                          }
-                        }
+                        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
                       }}
                       className="px-3 py-2 hover:bg-accent rounded-none"
                     >

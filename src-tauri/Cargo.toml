@@ -1,15 +1,16 @@
 [package]
 name = "opcode"
 version = "0.2.1"
-description = "GUI app and Toolkit for Claude Code"
+description = "GreyChrist - Claude Code Desktop"
 authors = ["mufeedvh", "123vviekr"]
 license = "AGPL-3.0"
 edition = "2021"
+default-run = "greychrist"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [[bin]]
-name = "opcode"
+name = "greychrist"
 path = "src/main.rs"
 
 [lib]
@@ -71,6 +72,7 @@ tauri = { version = "2", features = ["macos-private-api"] }
 window-vibrancy = "0.5"
 cocoa = "0.26"
 objc = "0.2"
+mac-notification-sys = "0.6"
 
 [features]
 # This feature is used for production builds or when a dev server is not specified, DO NOT REMOVE!!

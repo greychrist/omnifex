@@ -1,12 +1,53 @@
+#[cfg(target_os = "macos")]
+use objc::{msg_send, sel, sel_impl};
+
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::process::Stdio;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin};
 use tokio::sync::Mutex;
 
 use tauri::{AppHandle, Emitter, Manager};
+
+/// Global unread notification count for dock badge
+static UNREAD_COUNT: AtomicUsize = AtomicUsize::new(0);
+
+/// Update the dock badge with the current unread count
+#[cfg(target_os = "macos")]
+fn update_dock_badge(count: usize) {
+    unsafe {
+        use cocoa::foundation::NSString as NSStringTrait;
+        let ns_app = cocoa::appkit::NSApp();
+        let dock_tile: cocoa::base::id = msg_send![ns_app, dockTile];
+        if count == 0 {
+            let empty: cocoa::base::id = cocoa::base::nil;
+            let _: () = msg_send![dock_tile, setBadgeLabel: empty];
+        } else {
+            let label = format!("{}", count);
+            let badge =
+                cocoa::foundation::NSString::alloc(cocoa::base::nil).init_str(&label);
+            let _: () = msg_send![dock_tile, setBadgeLabel: badge];
+        }
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn update_dock_badge(_count: usize) {}
+
+/// Increment unread count and update badge
+pub fn increment_unread() {
+    let count = UNREAD_COUNT.fetch_add(1, Ordering::SeqCst) + 1;
+    update_dock_badge(count);
+}
+
+/// Clear all unread notifications and badge
+pub fn clear_unread() {
+    UNREAD_COUNT.store(0, Ordering::SeqCst);
+    update_dock_badge(0);
+}
 
 /// Represents a managed persistent Claude session
 struct ManagedSession {
@@ -260,11 +301,21 @@ pub async fn session_start(
                         .or_else(|| msg["error"].as_str())
                         .unwrap_or("Task complete")
                         .to_string();
+                    let project_name = std::path::Path::new(&project_path_reg)
+                        .file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_else(|| project_path_reg.clone());
                     let title = if is_error {
-                        "Claude Error".to_string()
+                        format!("GreyChrist - {}", project_name)
                     } else {
-                        "Claude Complete".to_string()
+                        format!("GreyChrist - {}", project_name)
                     };
+
+                    log::info!(
+                        "session[{}] result detected, sending notification: {}",
+                        tab_id_stdout,
+                        title
+                    );
 
                     #[derive(Clone, Serialize)]
                     struct ClaudeNotification {
@@ -276,11 +327,37 @@ pub async fn session_start(
 
                     let notification = ClaudeNotification {
                         tab_id: tab_id_stdout.clone(),
-                        title,
-                        body,
+                        title: title.clone(),
+                        body: body.clone(),
                         is_error,
                     };
                     let _ = app_stdout.emit("claude-notification", &notification);
+
+                    // Send native macOS notification under GreyChrist identity
+                    #[cfg(target_os = "macos")]
+                    {
+                        let truncated_body: String =
+                            body.chars().take(200).collect();
+                        let subtitle = if is_error {
+                            "Task Failed"
+                        } else {
+                            "Task Complete"
+                        };
+                        let _ = mac_notification_sys::set_application(
+                            "opcode.asterisk.so",
+                        );
+                        if let Err(e) = mac_notification_sys::send_notification(
+                            &title,
+                            Some(subtitle),
+                            &truncated_body,
+                            None,
+                        ) {
+                            log::warn!("Failed to send notification: {:?}", e);
+                        }
+                    }
+
+                    // Increment unread count and update dock badge
+                    increment_unread();
                 }
             }
 

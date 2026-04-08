@@ -30,10 +30,19 @@ temp_lib/
 
 .cursor/
 AGENTS.md
-CLAUDE.md
 *_TASK.md
 
 # Claude project-specific files
-.claude/
+.claude/*
+!.claude/settings.json
+!.claude/commands/
+!.claude/commands/**
+!.claude/agents/
+!.claude/agents/**
+!.claude/hooks/
+!.claude/hooks/**
+!.claude/skills/
+!.claude/skills/**
+.claude/settings.local.json
 
 .env.superpowers/

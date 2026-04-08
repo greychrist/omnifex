@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils';
 interface QueuedPrompt {
   id: string;
   prompt: string;
-  model: "sonnet" | "opus";
+  model: string;
 }
 
 interface PromptQueueProps {

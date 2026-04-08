@@ -51,8 +51,8 @@ type View =
 function AppContent() {
   const [view, setView] = useState<View>("tabs");
   const { createClaudeMdTab, createSettingsTab, createUsageTab, createMCPTab, createAgentsTab } = useTabState();
-  const { activeTabId, setActiveTab } = useTabContext();
-  useNotifications(activeTabId, setActiveTab);
+  const { activeTabId, setActiveTab, updateTab } = useTabContext();
+  useNotifications(activeTabId, setActiveTab, updateTab);
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -253,7 +253,7 @@ function AppContent() {
               >
                 <h1 className="text-4xl font-bold tracking-tight">
                   <span className="rotating-symbol"></span>
-                  Welcome to opcode
+                  Welcome to GreyChrist
                 </h1>
               </motion.div>
 

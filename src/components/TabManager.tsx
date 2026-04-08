@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence, Reorder } from 'framer-motion';
-import { X, Plus, MessageSquare, Bot, AlertCircle, Loader2, Folder, BarChart, Server, Settings, FileText } from 'lucide-react';
+import { X, Plus, MessageSquare, Bot, AlertCircle, Loader2, Folder, BarChart, Server, Settings, FileText, CheckCircle2 } from 'lucide-react';
 import { AccountBadge } from './AccountBadge';
 import { useTabState } from '@/hooks/useTabState';
 import { Tab, useTabContext } from '@/contexts/TabContext';
@@ -47,6 +47,10 @@ const TabItem: React.FC<TabItemProps> = ({ tab, isActive, onClose, onClick, isDr
   };
 
   const getStatusIcon = () => {
+    // Unread result badge takes priority
+    if (tab.hasUnreadResult) {
+      return <CheckCircle2 className="w-3.5 h-3.5 text-green-500" />;
+    }
     switch (tab.status) {
       case 'running':
         return <Loader2 className="w-3 h-3 animate-spin" />;

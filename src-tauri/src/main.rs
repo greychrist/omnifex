@@ -1,6 +1,10 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+#[cfg(target_os = "macos")]
+#[macro_use]
+extern crate objc;
+
 mod accounts;
 mod checkpoint;
 mod claude_binary;
@@ -56,6 +60,12 @@ use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial};
 fn main() {
     // Initialize logger
     env_logger::init();
+
+    // Register app identity for macOS notifications
+    #[cfg(target_os = "macos")]
+    {
+        let _ = mac_notification_sys::set_application("opcode.asterisk.so");
+    }
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -169,6 +179,35 @@ fn main() {
             // Initialize persistent session process manager
             app.manage(session_manager::SessionProcessManagerState::default());
 
+            // Set the app/dock icon explicitly (needed for dev mode on macOS)
+            #[cfg(target_os = "macos")]
+            {
+                let icon_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("icons/128x128@2x.png");
+                if icon_path.exists() {
+                    if let Ok(bytes) = std::fs::read(&icon_path) {
+                        use cocoa::appkit::{NSApp, NSApplication, NSImage};
+                        use cocoa::base::nil;
+                        use cocoa::foundation::{NSData, NSSize};
+                        unsafe {
+                            let ns_app = NSApp();
+                            let data = NSData::dataWithBytes_length_(
+                                nil,
+                                bytes.as_ptr() as *const std::ffi::c_void,
+                                bytes.len() as u64,
+                            );
+                            let image = NSImage::initWithData_(NSImage::alloc(nil), data);
+                            if image != nil {
+                                // 256px image at 128pt = proper @2x, matching standard app icons
+                                let _: () =
+                                    msg_send![image, setSize: NSSize::new(128.0, 128.0)];
+                                ns_app.setApplicationIconImage_(image);
+                            }
+                        }
+                    }
+                }
+            }
+
             // Apply window vibrancy with rounded corners on macOS
             #[cfg(target_os = "macos")]
             {
@@ -201,6 +240,16 @@ fn main() {
                     )
                     .expect("Failed to apply any window vibrancy");
                 }
+            }
+
+            // Clear dock badge when window is focused
+            {
+                let window = app.get_webview_window("main").unwrap();
+                window.on_window_event(move |event| {
+                    if let tauri::WindowEvent::Focused(true) = event {
+                        session_manager::clear_unread();
+                    }
+                });
             }
 
             Ok(())
