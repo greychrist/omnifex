@@ -83,7 +83,7 @@ class AnalyticsService {
             anonymous: true,
             consent_date: settings.consentDate,
             app_type: 'desktop',
-            app_name: 'opcode',
+            app_name: 'greychrist',
           });
           
           // Set initial screen
@@ -150,7 +150,7 @@ class AnalyticsService {
     const enhancedProperties = {
       ...sanitizedProperties,
       screen_name: this.currentScreen,
-      app_context: 'opcode_desktop',
+      app_context: 'greychrist_desktop',
     };
     
     // Create event
@@ -234,7 +234,7 @@ class AnalyticsService {
           ...event.properties,
           $session_id: event.sessionId,
           timestamp: event.timestamp,
-          $current_url: `opcode://${event.properties?.screen_name || 'unknown'}`,
+          $current_url: `greychrist://${event.properties?.screen_name || 'unknown'}`,
         });
       }
     });

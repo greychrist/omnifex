@@ -28,6 +28,7 @@ import { StorageTab } from "./StorageTab";
 import { HooksEditor } from "./HooksEditor";
 import { SlashCommandsManager } from "./SlashCommandsManager";
 import { ProxySettings } from "./ProxySettings";
+import { LogTab } from "./LogTab";
 import { useTheme, useTrackEvent } from "@/hooks";
 import { analytics } from "@/lib/analytics";
 import { TabPersistenceService } from "@/services/tabPersistence";
@@ -420,7 +421,7 @@ export const Settings: React.FC<SettingsProps> = ({
       ) : (
         <div className="flex-1 overflow-y-auto p-6">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid grid-cols-9 w-full mb-6 h-auto p-1">
+            <TabsList className="grid grid-cols-10 w-full mb-6 h-auto p-1">
               <TabsTrigger value="general" className="py-2.5 px-3">General</TabsTrigger>
               <TabsTrigger value="accounts" className="py-2.5 px-3">Accounts</TabsTrigger>
               <TabsTrigger value="permissions" className="py-2.5 px-3">Permissions</TabsTrigger>
@@ -430,6 +431,7 @@ export const Settings: React.FC<SettingsProps> = ({
               <TabsTrigger value="commands" className="py-2.5 px-3">Commands</TabsTrigger>
               <TabsTrigger value="storage" className="py-2.5 px-3">Storage</TabsTrigger>
               <TabsTrigger value="proxy" className="py-2.5 px-3">Proxy</TabsTrigger>
+              <TabsTrigger value="log" className="py-2.5 px-3">Log</TabsTrigger>
             </TabsList>
 
             {/* Account selector for account-specific tabs */}
@@ -1111,7 +1113,12 @@ export const Settings: React.FC<SettingsProps> = ({
                 />
               </Card>
             </TabsContent>
-            
+
+            {/* Log Tab */}
+            <TabsContent value="log">
+              <LogTab />
+            </TabsContent>
+
           </Tabs>
         </div>
       )}

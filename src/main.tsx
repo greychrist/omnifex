@@ -8,9 +8,25 @@ import { PostHogProvider } from "posthog-js/react";
 import "./assets/shimmer.css";
 import "./styles.css";
 import AppIcon from "./assets/nfo/asterisk-logo.png";
+import { logService } from "./lib/logService";
+import { api } from "./lib/api";
 
 // Initialize analytics before rendering
 analytics.initialize();
+
+// Initialize structured logging
+logService.initialize();
+
+// Check log count and warn if excessive
+api.logCount().then((count) => {
+  if (count > 5000) {
+    console.warn(
+      `You have ${count.toLocaleString()} log entries. Review and prune old records in Settings → Log.`
+    );
+  }
+}).catch(() => {
+  // Ignore — DB may not be ready yet
+});
 
 // Start resource monitoring (check every 2 minutes)
 resourceMonitor.startMonitoring(120000);

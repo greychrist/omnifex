@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Allow opcode to work with multiple Claude accounts (e.g., claude-personal and claude-work) by making the config directory account-aware, with per-project account binding via path prefix rules.
+**Goal:** Allow GreyChrist to work with multiple Claude accounts (e.g., claude-personal and claude-work) by making the config directory account-aware, with per-project account binding via path prefix rules.
 
 **Architecture:** New `AccountManager` Tauri managed state resolves which `CLAUDE_CONFIG_DIR` to use for a given project path. Resolution uses a three-table model: explicit per-project overrides, path prefix rules, and a default account fallback. All existing commands that hardcode `~/.claude` are updated to resolve through the AccountManager. The frontend adds account badges to projects, a picker dialog for unresolved projects, and an Accounts settings tab.
 

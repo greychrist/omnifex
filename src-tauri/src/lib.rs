@@ -5,6 +5,7 @@ pub mod accounts;
 pub mod checkpoint;
 pub mod claude_binary;
 pub mod commands;
+pub mod logging;
 pub mod process;
 pub mod session_manager;
 pub mod web_server;

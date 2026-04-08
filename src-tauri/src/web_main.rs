@@ -9,8 +9,8 @@ mod session_manager;
 mod web_server;
 
 #[derive(Parser)]
-#[command(name = "opcode-web")]
-#[command(about = "Opcode Web Server - Access Opcode from your phone")]
+#[command(name = "greychrist-web")]
+#[command(about = "GreyChrist Web Server - Access GreyChrist from your phone")]
 struct Args {
     /// Port to run the web server on
     #[arg(short, long, default_value = "8080")]
@@ -27,7 +27,7 @@ async fn main() {
 
     let args = Args::parse();
 
-    println!("🚀 Starting Opcode Web Server...");
+    println!("🚀 Starting GreyChrist Web Server...");
     println!(
         "📱 Will be accessible from phones at: http://{}:{}",
         args.host, args.port

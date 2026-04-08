@@ -5,9 +5,9 @@
 
 import type { Tab } from '@/contexts/TabContext';
 
-const STORAGE_KEY = 'opcode_tabs_v2';
-const ACTIVE_TAB_KEY = 'opcode_active_tab_v2';
-const PERSISTENCE_ENABLED_KEY = 'opcode_tab_persistence_enabled';
+const STORAGE_KEY = 'greychrist_tabs_v2';
+const ACTIVE_TAB_KEY = 'greychrist_active_tab_v2';
+const PERSISTENCE_ENABLED_KEY = 'greychrist_tab_persistence_enabled';
 
 interface SerializedTab {
   id: string;
@@ -186,14 +186,28 @@ export class TabPersistenceService {
    */
   static migrateFromOldFormat(): void {
     try {
+      // Migrate from opcode_tabs (v1) format
       const oldKey = 'opcode_tabs';
       const oldData = localStorage.getItem(oldKey);
-      
       if (oldData && !localStorage.getItem(STORAGE_KEY)) {
-        // Attempt to migrate old data
         localStorage.setItem(STORAGE_KEY, oldData);
         localStorage.removeItem(oldKey);
-        console.log('Migrated tab data from old format');
+        console.log('Migrated tab data from v1 format');
+      }
+
+      // Migrate from opcode_* (v2) keys to greychrist_* keys
+      const migrations: [string, string][] = [
+        ['opcode_tabs_v2', STORAGE_KEY],
+        ['opcode_active_tab_v2', ACTIVE_TAB_KEY],
+        ['opcode_tab_persistence_enabled', PERSISTENCE_ENABLED_KEY],
+      ];
+      for (const [oldK, newK] of migrations) {
+        const val = localStorage.getItem(oldK);
+        if (val && !localStorage.getItem(newK)) {
+          localStorage.setItem(newK, val);
+          localStorage.removeItem(oldK);
+          console.log(`Migrated storage key ${oldK} → ${newK}`);
+        }
       }
     } catch (error) {
       console.error('Failed to migrate old tab data:', error);

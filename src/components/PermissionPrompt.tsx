@@ -1,6 +1,5 @@
 import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   ChevronDown,
   ChevronUp,
@@ -26,7 +25,8 @@ const TOOL_ICONS: Record<string, React.ElementType> = {
 };
 
 interface PermissionPromptProps {
-  sessionId: string;
+  tabId: string;
+  requestId: string;
   toolName: string;
   toolInput: Record<string, any>;
   autoAllowedTools: Set<string>;
@@ -35,7 +35,8 @@ interface PermissionPromptProps {
 }
 
 export function PermissionPrompt({
-  sessionId,
+  tabId,
+  requestId,
   toolName,
   toolInput,
   autoAllowedTools,
@@ -44,14 +45,13 @@ export function PermissionPrompt({
 }: PermissionPromptProps) {
   const [expanded, setExpanded] = useState(true);
   const [responding, setResponding] = useState(false);
-  const [textInput, setTextInput] = useState("");
 
   const Icon = TOOL_ICONS[toolName] || Shield;
 
-  const sendResponse = async (response: string) => {
+  const respond = async (behavior: string) => {
     setResponding(true);
     try {
-      await api.sendSessionInput(sessionId, response);
+      await api.respondPermission(tabId, requestId, behavior);
       onResponded();
     } catch (err) {
       console.error("Failed to send permission response:", err);
@@ -60,17 +60,11 @@ export function PermissionPrompt({
     }
   };
 
-  const handleAllow = () => sendResponse("y");
-  const handleDeny = () => sendResponse("n");
+  const handleAllow = () => respond("allow");
+  const handleDeny = () => respond("deny");
   const handleAlwaysAllow = () => {
     onAutoAllow(toolName);
-    sendResponse("y");
-  };
-  const handleTextSubmit = () => {
-    if (textInput.trim()) {
-      sendResponse(textInput.trim());
-      setTextInput("");
-    }
+    respond("allow");
   };
 
   const formatArgs = () => {
@@ -137,25 +131,6 @@ export function PermissionPrompt({
         )}
       </div>
 
-      <div className="flex items-center gap-2 mt-2">
-        <Input
-          value={textInput}
-          onChange={(e) => setTextInput(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && handleTextSubmit()}
-          placeholder="Or type a response..."
-          className="text-sm h-8"
-          disabled={responding}
-        />
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={handleTextSubmit}
-          disabled={responding || !textInput.trim()}
-          className="h-8"
-        >
-          Send
-        </Button>
-      </div>
     </div>
   );
 }

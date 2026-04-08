@@ -138,7 +138,7 @@ export const GitHubAgentBrowser: React.FC<GitHubAgentBrowserProps> = ({
   );
 
   const getAgentDisplayName = (fileName: string) => {
-    return fileName.replace(".opcode.json", "").replace(/-/g, " ")
+    return fileName.replace(".greychrist.json", "").replace(/-/g, " ")
       .split(" ")
       .map(word => word.charAt(0).toUpperCase() + word.slice(1))
       .join(" ");

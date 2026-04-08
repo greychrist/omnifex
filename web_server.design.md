@@ -1,6 +1,6 @@
-# Opcode Web Server Design
+# GreyChrist Web Server Design
 
-This document describes the implementation of Opcode's web server mode, which allows access to Claude Code from mobile devices and browsers while maintaining full functionality.
+This document describes the implementation of GreyChrist's web server mode, which allows access to Claude Code from mobile devices and browsers while maintaining full functionality.
 
 ## Overview
 
@@ -99,7 +99,7 @@ Claude Process → Rust Backend → WebSocket → Browser DOM Events → UI Upda
 ## File Structure
 
 ```
-opcode/
+greychrist/
 ├── src-tauri/src/
 │   └── web_server.rs           # Main web server implementation
 ├── src/

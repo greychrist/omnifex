@@ -59,8 +59,11 @@ interface AgentExecutionProps {
 }
 
 export interface ClaudeStreamMessage {
-  type: "system" | "assistant" | "user" | "result";
+  type: "system" | "assistant" | "user" | "result" | "permission_request";
   subtype?: string;
+  request_id?: string;
+  tool_name?: string;
+  tool_input?: Record<string, any>;
   message?: {
     content?: any[];
     usage?: {

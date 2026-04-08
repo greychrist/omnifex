@@ -139,7 +139,7 @@ mod tests {
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `cargo test --bin opcode test_session_stdin_state_default`
+Run: `cargo test --bin greychrist test_session_stdin_state_default`
 Expected: FAIL — `SessionStdinState` not defined yet
 
 - [ ] **Step 3: Define SessionStdinState**
@@ -166,7 +166,7 @@ Add `use std::collections::HashMap;` to the imports at the top of `claude.rs` if
 
 - [ ] **Step 4: Run the test to verify it passes**
 
-Run: `cargo test --bin opcode test_session_stdin_state_default`
+Run: `cargo test --bin greychrist test_session_stdin_state_default`
 Expected: PASS
 
 - [ ] **Step 5: Add stdin pipe to create_system_command**
@@ -263,7 +263,7 @@ In `src-tauri/src/main.rs`, after line 162 (`app.manage(ClaudeProcessState::defa
 
 - [ ] **Step 9: Build to verify compilation**
 
-Run: `cargo build --bin opcode`
+Run: `cargo build --bin greychrist`
 Expected: Compiles successfully
 
 - [ ] **Step 10: Commit**
@@ -354,7 +354,7 @@ Add to the `commandToEndpoint` map:
 
 - [ ] **Step 5: Build to verify**
 
-Run: `cargo build --bin opcode && npm run build`
+Run: `cargo build --bin greychrist && npm run build`
 Expected: Both compile successfully
 
 - [ ] **Step 6: Commit**
@@ -427,7 +427,7 @@ In `resume_claude_code` (line 1183), remove `--dangerously-skip-permissions`:
 
 - [ ] **Step 4: Build to verify**
 
-Run: `cargo build --bin opcode`
+Run: `cargo build --bin greychrist`
 Expected: Compiles successfully
 
 - [ ] **Step 5: Commit**
@@ -765,7 +765,7 @@ Add to the existing test module in `src-tauri/src/accounts/mod.rs`:
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cargo test --bin opcode resolve_with_explanation`
+Run: `cargo test --bin greychrist resolve_with_explanation`
 Expected: FAIL — method not defined
 
 - [ ] **Step 3: Implement resolve_with_explanation**
@@ -872,7 +872,7 @@ Add after the `resolve` method in `src-tauri/src/accounts/mod.rs`:
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `cargo test --bin opcode resolve_with_explanation`
+Run: `cargo test --bin greychrist resolve_with_explanation`
 Expected: All 3 tests PASS
 
 - [ ] **Step 5: Add the Tauri command**
@@ -935,7 +935,7 @@ In `src/lib/apiAdapter.ts`, add to the endpoint map:
 
 - [ ] **Step 8: Build and test**
 
-Run: `cargo test --bin opcode && cargo build --bin opcode && npm run build`
+Run: `cargo test --bin greychrist && cargo build --bin greychrist && npm run build`
 Expected: All pass
 
 - [ ] **Step 9: Commit**
@@ -1408,7 +1408,7 @@ and why. Also shows all explicit project-to-account overrides."
 
 - [ ] **Step 1: Run full Rust test suite**
 
-Run: `cargo test --bin opcode`
+Run: `cargo test --bin greychrist`
 Expected: All tests pass, including new `resolve_with_explanation` tests
 
 - [ ] **Step 2: Run full frontend build**
@@ -1418,7 +1418,7 @@ Expected: Clean build, no TypeScript errors
 
 - [ ] **Step 3: Run cargo clippy**
 
-Run: `cargo clippy --bin opcode`
+Run: `cargo clippy --bin greychrist`
 Expected: No warnings or errors
 
 - [ ] **Step 4: Run cargo fmt**
@@ -1428,7 +1428,7 @@ Expected: All formatted correctly (run `cargo fmt` if needed)
 
 - [ ] **Step 5: Manual smoke test**
 
-Start the app with `cargo run --bin opcode` and verify:
+Start the app with `cargo run --bin greychrist` and verify:
 1. Session starts and output streams (the ESM import fix works)
 2. Account badge appears in session header
 3. Permission prompts appear when Claude wants to use a tool

@@ -5,8 +5,8 @@
 
 import { api, type Session } from '@/lib/api';
 
-const STORAGE_KEY_PREFIX = 'opcode_session_';
-const SESSION_INDEX_KEY = 'opcode_session_index';
+const STORAGE_KEY_PREFIX = 'greychrist_session_';
+const SESSION_INDEX_KEY = 'greychrist_session_index';
 
 export interface SessionRestoreData {
   sessionId: string;
@@ -156,6 +156,30 @@ export class SessionPersistenceService {
     } catch (error) {
       console.error('Failed to check session restorability:', error);
       return false;
+    }
+  }
+
+  static migrateFromOldKeys(): void {
+    try {
+      // Migrate session index
+      const oldIndex = localStorage.getItem('opcode_session_index');
+      if (oldIndex && !localStorage.getItem(SESSION_INDEX_KEY)) {
+        localStorage.setItem(SESSION_INDEX_KEY, oldIndex);
+        localStorage.removeItem('opcode_session_index');
+      }
+      // Migrate individual session entries
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('opcode_session_') && key !== 'opcode_session_index') {
+          const newKey = key.replace('opcode_session_', 'greychrist_session_');
+          if (!localStorage.getItem(newKey)) {
+            localStorage.setItem(newKey, localStorage.getItem(key)!);
+            localStorage.removeItem(key);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Failed to migrate session keys:', error);
     }
   }
 

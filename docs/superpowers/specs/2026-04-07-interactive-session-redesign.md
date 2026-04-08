@@ -6,7 +6,7 @@
 
 ## Problem Statement
 
-opcode wraps Claude Code CLI as a desktop/web GUI but currently has three critical gaps:
+GreyChrist wraps Claude Code CLI as a desktop/web GUI but currently has three critical gaps:
 
 1. **Broken streaming**: The `ClaudeCodeSession` component uses `require()` to import Tauri's event listener, which fails silently in Vite/ESM. The component falls back to DOM event listeners that never receive Tauri IPC events. Result: users see a spinner but no Claude output.
 
@@ -159,7 +159,7 @@ pub struct AccountResolution {
 ```
 ~/Repos/
   personal/     → personal (path rule)
-    opcode/     → personal (inherited)
+    greychrist/     → personal (inherited)
   work/         → work (path rule)
     project-x/  → work-special (project override)
 ```

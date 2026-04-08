@@ -1,5 +1,5 @@
 [package]
-name = "opcode"
+name = "greychrist"
 version = "0.2.1"
 description = "GreyChrist - Claude Code Desktop"
 authors = ["mufeedvh", "123vviekr"]
@@ -14,11 +14,11 @@ name = "greychrist"
 path = "src/main.rs"
 
 [lib]
-name = "opcode_lib"
+name = "greychrist_lib"
 crate-type = ["lib", "cdylib", "staticlib"]
 
 [[bin]]
-name = "opcode-web"
+name = "greychrist-web"
 path = "src/web_main.rs"
 
 [build-dependencies]

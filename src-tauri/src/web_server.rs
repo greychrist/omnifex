@@ -881,6 +881,6 @@ pub async fn create_web_server(port: u16) -> Result<(), Box<dyn std::error::Erro
 pub async fn start_web_mode(port: Option<u16>) -> Result<(), Box<dyn std::error::Error>> {
     let port = port.unwrap_or(8080);
 
-    println!("🚀 Starting Opcode in web server mode...");
+    println!("🚀 Starting GreyChrist in web server mode...");
     create_web_server(port).await
 }

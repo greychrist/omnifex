@@ -479,10 +479,7 @@ pub fn init_database(app: &AppHandle) -> SqliteResult<Connection> {
     );
 
     // Add claude_binary column to accounts (migration for existing DBs)
-    let _ = conn.execute(
-        "ALTER TABLE accounts ADD COLUMN claude_binary TEXT",
-        [],
-    );
+    let _ = conn.execute("ALTER TABLE accounts ADD COLUMN claude_binary TEXT", []);
 
     Ok(conn)
 }
@@ -2018,7 +2015,7 @@ pub async fn fetch_github_agents() -> Result<Vec<GitHubAgentFile>, String> {
     let response = client
         .get(url)
         .header("Accept", "application/vnd.github+json")
-        .header("User-Agent", "opcode-App")
+        .header("User-Agent", "GreyChrist-App")
         .send()
         .await
         .map_err(|e| format!("Failed to fetch from GitHub: {}", e))?;
@@ -2034,10 +2031,10 @@ pub async fn fetch_github_agents() -> Result<Vec<GitHubAgentFile>, String> {
         .await
         .map_err(|e| format!("Failed to parse GitHub response: {}", e))?;
 
-    // Filter only .opcode.json agent files
+    // Filter only .greychrist.json agent files
     let agent_files: Vec<GitHubAgentFile> = api_files
         .into_iter()
-        .filter(|f| f.name.ends_with(".opcode.json") && f.file_type == "file")
+        .filter(|f| f.name.ends_with(".greychrist.json") && f.file_type == "file")
         .filter_map(|f| {
             f.download_url.map(|download_url| GitHubAgentFile {
                 name: f.name,
@@ -2062,7 +2059,7 @@ pub async fn fetch_github_agent_content(download_url: String) -> Result<AgentExp
     let response = client
         .get(&download_url)
         .header("Accept", "application/json")
-        .header("User-Agent", "opcode-App")
+        .header("User-Agent", "GreyChrist-App")
         .send()
         .await
         .map_err(|e| format!("Failed to download agent: {}", e))?;

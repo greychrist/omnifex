@@ -27,8 +27,7 @@ fn update_dock_badge(count: usize) {
             let _: () = msg_send![dock_tile, setBadgeLabel: empty];
         } else {
             let label = format!("{}", count);
-            let badge =
-                cocoa::foundation::NSString::alloc(cocoa::base::nil).init_str(&label);
+            let badge = cocoa::foundation::NSString::alloc(cocoa::base::nil).init_str(&label);
             let _: () = msg_send![dock_tile, setBadgeLabel: badge];
         }
     }
@@ -138,17 +137,21 @@ pub async fn session_start(
     );
 
     // 2. Find claude binary — prefer account-level setting, fall back to global discovery
-    let claude_path = if let Some(ref binary) = account.as_ref().and_then(|a| a.claude_binary.clone()) {
-        if std::path::Path::new(binary).exists() {
-            log::info!("session_start: using account-configured binary: {}", binary);
-            binary.clone()
+    let claude_path =
+        if let Some(ref binary) = account.as_ref().and_then(|a| a.claude_binary.clone()) {
+            if std::path::Path::new(binary).exists() {
+                log::info!("session_start: using account-configured binary: {}", binary);
+                binary.clone()
+            } else {
+                log::warn!(
+                    "session_start: account binary not found at {}, falling back to discovery",
+                    binary
+                );
+                crate::claude_binary::find_claude_binary(&app)?
+            }
         } else {
-            log::warn!("session_start: account binary not found at {}, falling back to discovery", binary);
             crate::claude_binary::find_claude_binary(&app)?
-        }
-    } else {
-        crate::claude_binary::find_claude_binary(&app)?
-    };
+        };
     log::info!("session_start: using claude binary at {}", claude_path);
 
     // 3. Build args for persistent mode (matches VS Code extension flags)
@@ -336,16 +339,13 @@ pub async fn session_start(
                     // Send native macOS notification under GreyChrist identity
                     #[cfg(target_os = "macos")]
                     {
-                        let truncated_body: String =
-                            body.chars().take(200).collect();
+                        let truncated_body: String = body.chars().take(200).collect();
                         let subtitle = if is_error {
                             "Task Failed"
                         } else {
                             "Task Complete"
                         };
-                        let _ = mac_notification_sys::set_application(
-                            "opcode.asterisk.so",
-                        );
+                        let _ = mac_notification_sys::set_application("greychrist.asterisk.so");
                         let mut notif_opts = mac_notification_sys::Notification::new();
                         notif_opts.default_sound();
                         if let Err(e) = mac_notification_sys::send_notification(

@@ -488,6 +488,29 @@ export interface ImportServerResult {
   error?: string;
 }
 
+export interface LogEntry {
+  id?: number;
+  timestamp: string;
+  level: string;
+  source: string;
+  category?: string;
+  message: string;
+  metadata?: string;
+}
+
+export interface LogQueryFilters {
+  level?: string;
+  source?: string;
+  search?: string;
+  limit: number;
+  offset: number;
+}
+
+export interface LogQueryResult {
+  entries: LogEntry[];
+  total: number;
+}
+
 /**
  * API client for interacting with the Rust backend
  */
@@ -1135,6 +1158,30 @@ export const api = {
 
   async getSessionInfo(tabId: string): Promise<any | null> {
     return apiCall("session_get_info", { tabId });
+  },
+
+  // ─── Logging API ────────────────────────────────────────────────
+
+  async logWriteBatch(entries: LogEntry[]): Promise<void> {
+    return apiCall("log_write_batch", { entries });
+  },
+
+  async logQuery(filters: LogQueryFilters): Promise<LogQueryResult> {
+    return apiCall("log_query", {
+      level: filters.level,
+      source: filters.source,
+      search: filters.search,
+      limit: filters.limit,
+      offset: filters.offset,
+    });
+  },
+
+  async logPrune(olderThan?: string): Promise<number> {
+    return apiCall("log_prune", { olderThan });
+  },
+
+  async logCount(): Promise<number> {
+    return apiCall("log_count");
   },
 
   /**

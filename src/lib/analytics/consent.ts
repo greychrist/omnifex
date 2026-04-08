@@ -1,6 +1,6 @@
 import type { AnalyticsSettings } from './types';
 
-const ANALYTICS_STORAGE_KEY = 'opcode-analytics-settings';
+const ANALYTICS_STORAGE_KEY = 'greychrist-analytics-settings';
 
 export class ConsentManager {
   private static instance: ConsentManager;
@@ -17,6 +17,13 @@ export class ConsentManager {
   
   async initialize(): Promise<AnalyticsSettings> {
     try {
+      // One-time migration from old analytics key
+      const oldSettings = localStorage.getItem('opcode-analytics-settings');
+      if (oldSettings && !localStorage.getItem('greychrist-analytics-settings')) {
+        localStorage.setItem('greychrist-analytics-settings', oldSettings);
+        localStorage.removeItem('opcode-analytics-settings');
+      }
+
       // Try to load from localStorage first
       const stored = localStorage.getItem(ANALYTICS_STORAGE_KEY);
       if (stored) {

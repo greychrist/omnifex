@@ -9,6 +9,7 @@ mod accounts;
 mod checkpoint;
 mod claude_binary;
 mod commands;
+mod logging;
 mod process;
 mod session_manager;
 
@@ -74,12 +75,12 @@ async fn reveal_path_in_finder(path: String) -> Result<(), String> {
 
 fn main() {
     // Initialize logger
-    env_logger::init();
+    logging::init_logger();
 
     // Register app identity for macOS notifications
     #[cfg(target_os = "macos")]
     {
-        let _ = mac_notification_sys::set_application("opcode.asterisk.so");
+        let _ = mac_notification_sys::set_application("greychrist.asterisk.so");
     }
 
     tauri::Builder::default()
@@ -88,6 +89,9 @@ fn main() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
+            // Wire up the log bridge so error/warn messages reach the frontend
+            logging::set_app_handle(app.handle().clone());
+
             // Initialize agents database
             let conn = init_database(&app.handle()).expect("Failed to initialize agents database");
 
@@ -147,6 +151,8 @@ fn main() {
 
             // Re-open the connection for the app to manage
             let conn = init_database(&app.handle()).expect("Failed to initialize agents database");
+            commands::logging::create_app_logs_table(&conn)
+                .expect("Failed to create app_logs table");
             app.manage(AgentDb(Mutex::new(conn)));
 
             // Initialize AccountManager with its own DB connection
@@ -215,8 +221,7 @@ fn main() {
                             let image = NSImage::initWithData_(NSImage::alloc(nil), data);
                             if image != nil {
                                 // 256px image at 128pt = proper @2x, matching standard app icons
-                                let _: () =
-                                    msg_send![image, setSize: NSSize::new(128.0, 128.0)];
+                                let _: () = msg_send![image, setSize: NSSize::new(128.0, 128.0)];
                                 ns_app.setApplicationIconImage_(image);
                             }
                         }
@@ -397,6 +402,11 @@ fn main() {
             commands::accounts::list_project_overrides,
             commands::accounts::discover_accounts,
             commands::accounts::explain_account_resolution,
+            // Logging
+            commands::logging::log_write_batch,
+            commands::logging::log_query,
+            commands::logging::log_prune,
+            commands::logging::log_count,
             // Utility
             reveal_path_in_finder,
         ])

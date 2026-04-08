@@ -138,6 +138,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   // Permission prompt state
   const [waitingForPermission, setWaitingForPermission] = useState(false);
   const [pendingToolUse, setPendingToolUse] = useState<{ name: string; input: Record<string, any> } | null>(null);
+  const [pendingRequestId, setPendingRequestId] = useState<string | null>(null);
   const [autoAllowedTools, setAutoAllowedTools] = useState<Set<string>>(new Set());
 
   const parentRef = useRef<HTMLDivElement>(null);
@@ -451,19 +452,17 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
         sessionMetrics.current.errorsEncountered += 1;
       }
 
-      // Detect permission prompt (tool_use with stop_reason)
-      if (message.type === 'assistant' && message.stop_reason === 'tool_use') {
-        const toolUses = message.message?.content?.filter((c: any) => c.type === 'tool_use') || [];
-        if (toolUses.length > 0) {
-          const lastTool = toolUses[toolUses.length - 1];
-          if (autoAllowedTools.has(lastTool.name)) {
-            // Auto-approve via persistent session API
-            const tid = tabIdRef.current;
-            api.respondPermission(tid, 'auto', 'allow').catch(console.error);
-          } else {
-            setPendingToolUse({ name: lastTool.name, input: lastTool.input || {} });
-            setWaitingForPermission(true);
-          }
+      // Detect permission request from --permission-prompt-tool stdio
+      if (message.type === 'permission_request' && message.request_id) {
+        const toolName = message.tool_name || 'Unknown';
+        const toolInput = message.tool_input || {};
+        if (autoAllowedTools.has(toolName)) {
+          const tid = tabIdRef.current;
+          api.respondPermission(tid, message.request_id, 'allow').catch(console.error);
+        } else {
+          setPendingToolUse({ name: toolName, input: toolInput });
+          setPendingRequestId(message.request_id);
+          setWaitingForPermission(true);
         }
       }
 
@@ -1452,14 +1451,15 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             </motion.div>
           )}
 
-          {waitingForPermission && pendingToolUse && claudeSessionId && (
+          {waitingForPermission && pendingToolUse && pendingRequestId && (
             <div className={cn(
               "fixed bottom-6 left-0 right-0 z-[60] px-4",
               showTimeline && "sm:right-96"
             )}>
               <div className="max-w-3xl mx-auto">
                 <PermissionPrompt
-                  sessionId={claudeSessionId}
+                  tabId={tabIdRef.current}
+                  requestId={pendingRequestId}
                   toolName={pendingToolUse.name}
                   toolInput={pendingToolUse.input}
                   autoAllowedTools={autoAllowedTools}
@@ -1467,6 +1467,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                   onResponded={() => {
                     setWaitingForPermission(false);
                     setPendingToolUse(null);
+                    setPendingRequestId(null);
                   }}
                 />
               </div>
