@@ -1,6 +1,5 @@
 import { useEffect, useRef } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { onAction } from "@tauri-apps/plugin-notification";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 interface NotificationPayload {
@@ -13,7 +12,7 @@ interface NotificationPayload {
 /**
  * Listens for claude-notification events and:
  * 1. Marks non-active tabs with hasUnreadResult for badge display
- * 2. Handles notification click to navigate to the correct tab
+ * 2. Brings app to front when notification arrives for non-active tab
  *
  * Native OS notifications are sent from the Rust backend directly.
  */
@@ -33,7 +32,6 @@ export function useNotifications(
 
   useEffect(() => {
     let unlistenNotification: UnlistenFn | null = null;
-    let unlistenAction: (() => void) | null = null;
     let mounted = true;
 
     async function setup() {
@@ -44,25 +42,15 @@ export function useNotifications(
         "claude-notification",
         (event) => {
           const { tab_id } = event.payload;
+          console.log('[Notifications] received claude-notification for tab:', tab_id, 'active:', activeTabIdRef.current);
 
           // Mark non-active tabs with unread badge
           if (tab_id !== activeTabIdRef.current) {
+            console.log('[Notifications] marking tab as unread:', tab_id);
             updateTabRef.current(tab_id, { hasUnreadResult: true });
           }
         }
       );
-
-      // Handle notification click — navigate to the correct tab
-      const listener = await onAction((notification) => {
-        const tabId =
-          notification.extra && (notification.extra as Record<string, string>).tab_id;
-        if (tabId) {
-          setActiveTabRef.current(tabId);
-          // Bring window to front
-          getCurrentWindow().setFocus().catch(console.error);
-        }
-      });
-      unlistenAction = () => listener.unregister();
     }
 
     setup().catch(console.error);
@@ -70,7 +58,6 @@ export function useNotifications(
     return () => {
       mounted = false;
       if (unlistenNotification) unlistenNotification();
-      if (unlistenAction) unlistenAction();
     };
   }, []);
 }

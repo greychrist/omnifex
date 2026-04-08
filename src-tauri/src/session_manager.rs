@@ -346,11 +346,13 @@ pub async fn session_start(
                         let _ = mac_notification_sys::set_application(
                             "opcode.asterisk.so",
                         );
+                        let mut notif_opts = mac_notification_sys::Notification::new();
+                        notif_opts.default_sound();
                         if let Err(e) = mac_notification_sys::send_notification(
                             &title,
                             Some(subtitle),
                             &truncated_body,
-                            None,
+                            Some(&notif_opts),
                         ) {
                             log::warn!("Failed to send notification: {:?}", e);
                         }

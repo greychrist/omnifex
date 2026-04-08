@@ -119,11 +119,19 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
           .map((c: any) => typeof c.text === 'string' ? c.text : '')
           .join('');
         if (assistantText) {
-          const msgIndex = streamMessages.indexOf(message);
-          for (let i = msgIndex + 1; i < Math.min(streamMessages.length, msgIndex + 5); i++) {
-            const next = streamMessages[i];
-            if (next.type === 'result' && next.result && next.result.trim() === assistantText.trim()) {
-              return null; // Suppress — Execution Complete card shows this text
+          // Use indexOf first, fall back to findIndex for reference mismatches
+          let msgIndex = streamMessages.indexOf(message);
+          if (msgIndex === -1) {
+            msgIndex = streamMessages.findIndex(
+              (m) => m === message || (m.type === message.type && m.message === message.message)
+            );
+          }
+          if (msgIndex !== -1) {
+            for (let i = msgIndex + 1; i < Math.min(streamMessages.length, msgIndex + 5); i++) {
+              const next = streamMessages[i];
+              if (next.type === 'result' && next.result && next.result.trim() === assistantText.trim()) {
+                return null; // Suppress — Execution Complete card shows this text
+              }
             }
           }
         }

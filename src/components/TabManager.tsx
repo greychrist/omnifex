@@ -47,9 +47,14 @@ const TabItem: React.FC<TabItemProps> = ({ tab, isActive, onClose, onClick, isDr
   };
 
   const getStatusIcon = () => {
-    // Unread result badge takes priority
+    // Unread result badge takes priority — pulsing dot for visibility
     if (tab.hasUnreadResult) {
-      return <CheckCircle2 className="w-3.5 h-3.5 text-green-500" />;
+      return (
+        <span className="relative flex h-2.5 w-2.5">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
+          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500" />
+        </span>
+      );
     }
     switch (tab.status) {
       case 'running':
