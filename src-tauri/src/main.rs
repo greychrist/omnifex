@@ -57,6 +57,21 @@ use tauri::Manager;
 #[cfg(target_os = "macos")]
 use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial};
 
+#[tauri::command]
+async fn reveal_path_in_finder(path: String) -> Result<(), String> {
+    let dir = std::path::Path::new(&path);
+    let target = if dir.is_file() {
+        dir.parent().unwrap_or(dir)
+    } else {
+        dir
+    };
+    std::process::Command::new("open")
+        .arg(target)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 fn main() {
     // Initialize logger
     env_logger::init();
@@ -71,6 +86,7 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             // Initialize agents database
             let conn = init_database(&app.handle()).expect("Failed to initialize agents database");
@@ -381,6 +397,8 @@ fn main() {
             commands::accounts::list_project_overrides,
             commands::accounts::discover_accounts,
             commands::accounts::explain_account_resolution,
+            // Utility
+            reveal_path_in_finder,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -647,7 +647,7 @@ export const Settings: React.FC<SettingsProps> = ({
                       </div>
                       <Switch
                         id="coauthored"
-                        checked={settings?.includeCoAuthoredBy !== false}
+                        checked={settings?.includeCoAuthoredBy === true}
                         onCheckedChange={(checked) => updateSetting("includeCoAuthoredBy", checked)}
                       />
                     </div>

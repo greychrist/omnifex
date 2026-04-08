@@ -6,7 +6,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Label } from "@/components/ui/label";
 import { api, type ClaudeInstallation } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { CheckCircle, HardDrive, Settings, Terminal, Info } from "lucide-react";
+import { CheckCircle, FolderOpen, HardDrive, Settings, Terminal, Info } from "lucide-react";
+import { invoke } from "@tauri-apps/api/core";
 
 interface ClaudeVersionSelectorProps {
   /**
@@ -101,6 +102,10 @@ export const ClaudeVersionSelector: React.FC<ClaudeVersionSelectorProps> = ({
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleRevealInFinder = async (path: string) => {
+    await invoke("reveal_path_in_finder", { path }).catch(console.error);
   };
 
   const handleInstallationChange = (installationPath: string) => {
@@ -255,11 +260,20 @@ export const ClaudeVersionSelector: React.FC<ClaudeVersionSelectorProps> = ({
         </Select>
         
         {selectedInstallation && (
-          <div className="flex items-start gap-2 p-2 bg-muted/50 rounded-md">
-            <Info className="h-3.5 w-3.5 text-muted-foreground mt-0.5" />
-            <div className="text-xs text-muted-foreground">
-              <span className="font-medium">Path:</span> <code className="font-mono">{selectedInstallation.path}</code>
+          <div className="flex items-center gap-2 p-2 bg-muted/50 rounded-md">
+            <Info className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+            <div className="text-xs text-muted-foreground flex-1 min-w-0">
+              <span className="font-medium">Path:</span> <code className="font-mono truncate">{selectedInstallation.path}</code>
             </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 w-6 p-0 flex-shrink-0"
+              onClick={() => handleRevealInFinder(selectedInstallation.path)}
+              title="Reveal in Finder"
+            >
+              <FolderOpen className="h-3.5 w-3.5" />
+            </Button>
           </div>
         )}
       </div>
@@ -349,9 +363,20 @@ export const ClaudeVersionSelector: React.FC<ClaudeVersionSelectorProps> = ({
           <div className="p-3 bg-muted rounded-lg space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium">Selected Installation</span>
-              <Badge variant={getInstallationTypeColor(selectedInstallation)} className="text-xs">
-                {selectedInstallation.installation_type}
-              </Badge>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 px-2 text-xs"
+                  onClick={() => handleRevealInFinder(selectedInstallation.path)}
+                >
+                  <FolderOpen className="h-3.5 w-3.5 mr-1" />
+                  Reveal
+                </Button>
+                <Badge variant={getInstallationTypeColor(selectedInstallation)} className="text-xs">
+                  {selectedInstallation.installation_type}
+                </Badge>
+              </div>
             </div>
             <div className="text-sm text-muted-foreground">
               <div><strong>Path:</strong> {selectedInstallation.path}</div>
