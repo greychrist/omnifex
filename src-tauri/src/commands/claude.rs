@@ -688,14 +688,19 @@ pub async fn get_project_sessions(
 pub async fn get_claude_settings(
     account_state: tauri::State<'_, AccountManagerState>,
     project_path: Option<String>,
+    config_dir: Option<String>,
 ) -> Result<ClaudeSettings, String> {
     log::info!("Reading Claude settings");
 
-    let claude_dir = match project_path {
-        Some(ref pp) => {
-            get_claude_dir_for_project(&account_state, pp).map_err(|e| e.to_string())?
+    let claude_dir = if let Some(ref dir) = config_dir {
+        PathBuf::from(dir)
+    } else {
+        match project_path {
+            Some(ref pp) => {
+                get_claude_dir_for_project(&account_state, pp).map_err(|e| e.to_string())?
+            }
+            None => get_default_account_dir(&account_state)?,
         }
-        None => get_default_account_dir(&account_state)?,
     };
     let settings_path = claude_dir.join("settings.json");
 
@@ -901,14 +906,19 @@ pub async fn save_claude_settings(
     account_state: tauri::State<'_, AccountManagerState>,
     settings: serde_json::Value,
     project_path: Option<String>,
+    config_dir: Option<String>,
 ) -> Result<String, String> {
     log::info!("Saving Claude settings");
 
-    let claude_dir = match project_path {
-        Some(ref pp) => {
-            get_claude_dir_for_project(&account_state, pp).map_err(|e| e.to_string())?
+    let claude_dir = if let Some(ref dir) = config_dir {
+        PathBuf::from(dir)
+    } else {
+        match project_path {
+            Some(ref pp) => {
+                get_claude_dir_for_project(&account_state, pp).map_err(|e| e.to_string())?
+            }
+            None => get_default_account_dir(&account_state)?,
         }
-        None => get_default_account_dir(&account_state)?,
     };
     let settings_path = claude_dir.join("settings.json");
 

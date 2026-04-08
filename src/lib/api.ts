@@ -593,17 +593,20 @@ export const api = {
    * Reads the Claude settings file
    * @returns Promise resolving to the settings object
    */
-  async getClaudeSettings(): Promise<ClaudeSettings> {
+  async getClaudeSettings(opts?: { projectPath?: string; configDir?: string }): Promise<ClaudeSettings> {
     try {
-      const result = await apiCall<{ data: ClaudeSettings }>("get_claude_settings");
+      const params: Record<string, unknown> = {};
+      if (opts?.projectPath !== undefined) params.projectPath = opts.projectPath;
+      if (opts?.configDir !== undefined) params.configDir = opts.configDir;
+      const result = await apiCall<{ data: ClaudeSettings }>("get_claude_settings", params);
       console.log("Raw result from get_claude_settings:", result);
-      
+
       // The Rust backend returns ClaudeSettings { data: ... }
       // We need to extract the data field
       if (result && typeof result === 'object' && 'data' in result) {
         return result.data;
       }
-      
+
       // If the result is already the settings object, return it
       return result as ClaudeSettings;
     } catch (error) {
@@ -671,9 +674,12 @@ export const api = {
    * @param settings - The settings object to save
    * @returns Promise resolving when the settings are saved
    */
-  async saveClaudeSettings(settings: ClaudeSettings): Promise<string> {
+  async saveClaudeSettings(settings: ClaudeSettings, opts?: { projectPath?: string; configDir?: string }): Promise<string> {
     try {
-      return await apiCall<string>("save_claude_settings", { settings });
+      const params: Record<string, unknown> = { settings };
+      if (opts?.projectPath !== undefined) params.projectPath = opts.projectPath;
+      if (opts?.configDir !== undefined) params.configDir = opts.configDir;
+      return await apiCall<string>("save_claude_settings", params);
     } catch (error) {
       console.error("Failed to save Claude settings:", error);
       throw error;

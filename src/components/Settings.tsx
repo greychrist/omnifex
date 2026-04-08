@@ -124,6 +124,13 @@ export const Settings: React.FC<SettingsProps> = ({
     })();
   }, []);
 
+  // Reload settings when selected account changes
+  useEffect(() => {
+    if (selectedAccountId != null) {
+      loadSettings();
+    }
+  }, [selectedAccountId]);
+
   /**
    * Loads analytics settings
    */
@@ -149,11 +156,17 @@ export const Settings: React.FC<SettingsProps> = ({
   /**
    * Loads the current Claude settings
    */
+  const getSelectedConfigDir = () => {
+    if (selectedAccountId == null) return undefined;
+    return accounts.find(a => a.id === selectedAccountId)?.config_dir;
+  };
+
   const loadSettings = async () => {
     try {
       setLoading(true);
       setError(null);
-      const loadedSettings = await api.getClaudeSettings();
+      const configDir = getSelectedConfigDir();
+      const loadedSettings = await api.getClaudeSettings(configDir ? { configDir } : undefined);
       
       // Ensure loadedSettings is an object
       if (!loadedSettings || typeof loadedSettings !== 'object') {
@@ -227,7 +240,8 @@ export const Settings: React.FC<SettingsProps> = ({
         }, {} as Record<string, string>),
       };
 
-      await api.saveClaudeSettings(updatedSettings);
+      const configDir = getSelectedConfigDir();
+      await api.saveClaudeSettings(updatedSettings, configDir ? { configDir } : undefined);
       setSettings(updatedSettings);
 
       // Save Claude binary path if changed
@@ -419,7 +433,7 @@ export const Settings: React.FC<SettingsProps> = ({
             </TabsList>
 
             {/* Account selector for account-specific tabs */}
-            {["environment", "advanced", "hooks", "commands"].includes(activeTab) && accounts.length > 0 && (
+            {["environment", "advanced", "hooks", "commands", "permissions"].includes(activeTab) && accounts.length > 0 && (
               <div className="flex items-center gap-2 mb-4 p-3 rounded-lg border border-border/50 bg-muted/30">
                 <Label className="text-xs text-foreground/60 whitespace-nowrap">Editing settings for:</Label>
                 <select
