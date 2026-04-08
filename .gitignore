@@ -33,17 +33,7 @@ AGENTS.md
 *_TASK.md
 
 # Claude project-specific files
-.claude/*
-!.claude/settings.json
-!.claude/commands/
-!.claude/commands/**
-!.claude/agents/
-!.claude/agents/**
-!.claude/hooks/
-!.claude/hooks/**
-!.claude/skills/
-!.claude/skills/**
-.claude/settings.local.json
+.claude/
 
 .superpowers/
 .env.superpowers/
