@@ -169,24 +169,19 @@ fn get_claude_dir_for_project(
 }
 
 /// Gets the default account's config dir. Used for operations that aren't project-specific.
-/// Never falls back to ~/.claude.
+/// Falls back to the first account if no default is set — settings loading and other
+/// non-project operations shouldn't hard-error just because no default is configured.
 pub fn get_default_account_dir(account_mgr: &AccountManagerState) -> Result<PathBuf, String> {
     let accounts = account_mgr.0.list_accounts().map_err(|e| e.to_string())?;
+    if accounts.is_empty() {
+        return Err("No accounts configured. Set up accounts in Settings > Accounts.".to_string());
+    }
     // Try default account first
     if let Some(default_acct) = accounts.iter().find(|a| a.is_default) {
         return Ok(PathBuf::from(&default_acct.config_dir));
     }
-    // If only one account, use it
-    if accounts.len() == 1 {
-        return Ok(PathBuf::from(&accounts[0].config_dir));
-    }
-    if accounts.is_empty() {
-        return Err("No accounts configured. Set up accounts in Settings > Accounts.".to_string());
-    }
-    Err(
-        "Multiple accounts exist but none is set as default. Set a default in Settings > Accounts."
-            .to_string(),
-    )
+    // Fall back to first account for non-project operations
+    Ok(PathBuf::from(&accounts[0].config_dir))
 }
 
 /// Finds the config dir containing a given project_id by:

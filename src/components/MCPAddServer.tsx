@@ -7,7 +7,6 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { SelectComponent } from "@/components/ui/select";
 import { Card } from "@/components/ui/card";
 import { api } from "@/lib/api";
-import { useTrackEvent } from "@/hooks";
 
 interface MCPAddServerProps {
   /**
@@ -36,10 +35,7 @@ export const MCPAddServer: React.FC<MCPAddServerProps> = ({
 }) => {
   const [transport, setTransport] = useState<"stdio" | "sse">("stdio");
   const [saving, setSaving] = useState(false);
-  
-  // Analytics tracking
-  const trackEvent = useTrackEvent();
-  
+
   // Stdio server state
   const [stdioName, setStdioName] = useState("");
   const [stdioCommand, setStdioCommand] = useState("");
@@ -135,12 +131,6 @@ export const MCPAddServer: React.FC<MCPAddServerProps> = ({
       );
       
       if (result.success) {
-        // Track server added
-        trackEvent.mcpServerAdded({
-          server_type: "stdio",
-          configuration_method: "manual"
-        });
-        
         // Reset form
         setStdioName("");
         setStdioCommand("");
@@ -195,12 +185,6 @@ export const MCPAddServer: React.FC<MCPAddServerProps> = ({
       );
       
       if (result.success) {
-        // Track server added
-        trackEvent.mcpServerAdded({
-          server_type: "sse",
-          configuration_method: "manual"
-        });
-        
         // Reset form
         setSseName("");
         setSseUrl("");

@@ -29,6 +29,7 @@ interface PermissionPromptProps {
   requestId: string;
   toolName: string;
   toolInput: Record<string, any>;
+  autoAllowEnabled: boolean;
   autoAllowedTools: Set<string>;
   onAutoAllow: (toolName: string) => void;
   onResponded: () => void;
@@ -39,6 +40,7 @@ export function PermissionPrompt({
   requestId,
   toolName,
   toolInput,
+  autoAllowEnabled,
   autoAllowedTools,
   onAutoAllow,
   onResponded,
@@ -118,7 +120,7 @@ export function PermissionPrompt({
           <ShieldX className="w-3 h-3 mr-1" />
           Deny
         </Button>
-        {!autoAllowedTools.has(toolName) && (
+        {autoAllowEnabled && !autoAllowedTools.has(toolName) && (
           <Button
             size="sm"
             variant="outline"

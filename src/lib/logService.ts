@@ -12,6 +12,9 @@ const NOISE_PATTERNS = [
   /\[vite\]/,
   /Warning: ReactDOM\.render is no longer supported/,
   /act\(\) is not supported in production/,
+  /AnimatePresence.*mode is set to "wait"/,
+  /\[PostHog\.js\]/,
+  /Failed to set up Tauri drag-drop listener/,
 ];
 
 class LogService {

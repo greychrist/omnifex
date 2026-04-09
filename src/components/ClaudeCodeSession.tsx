@@ -31,7 +31,6 @@ import type { ClaudeStreamMessage } from "./AgentExecution";
 import { PermissionPrompt } from "./PermissionPrompt";
 import { SessionHeader } from "./SessionHeader";
 // Virtualizer removed — flat list for reliable scrolling
-import { useTrackEvent, useComponentMetrics, useWorkflowTracking } from "@/hooks";
 import { SessionPersistenceService } from "@/services/sessionPersistence";
 
 interface ClaudeCodeSessionProps {
@@ -139,6 +138,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   const [waitingForPermission, setWaitingForPermission] = useState(false);
   const [pendingToolUse, setPendingToolUse] = useState<{ name: string; input: Record<string, any> } | null>(null);
   const [pendingRequestId, setPendingRequestId] = useState<string | null>(null);
+  const [autoAllowEnabled, setAutoAllowEnabled] = useState(false);
   const [autoAllowedTools, setAutoAllowedTools] = useState<Set<string>>(new Set());
 
   const parentRef = useRef<HTMLDivElement>(null);
@@ -148,7 +148,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   const floatingPromptRef = useRef<FloatingPromptInputRef>(null);
   const queuedPromptsRef = useRef<Array<{ id: string; prompt: string; model: string }>>([]);
   const isMountedRef = useRef(true);
-  const sessionStartTime = useRef<number>(Date.now());
   const isIMEComposingRef = useRef(false);
   const messagesRef = useRef<ClaudeStreamMessage[]>([]);
   const isNearBottomRef = useRef(true);
@@ -171,12 +170,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     modelChanges: [] as Array<{ from: string; to: string; timestamp: number }>,
   });
 
-  // Analytics tracking
-  const trackEvent = useTrackEvent();
-  useComponentMetrics('ClaudeCodeSession');
-  // const aiTracking = useAIInteractionTracking('sonnet'); // Default model
-  const workflowTracking = useWorkflowTracking('claude_session');
-  
   // Call onProjectPathChange when component mounts with initial path
   useEffect(() => {
     if (onProjectPathChange && projectPath) {
@@ -406,7 +399,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             sessionMetrics.current.filesDeleted += 1;
           }
 
-          workflowTracking.trackStep(toolUse.name);
         });
       }
 
@@ -418,18 +410,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           if (isError) {
             sessionMetrics.current.toolsFailed += 1;
             sessionMetrics.current.errorsEncountered += 1;
-
-            trackEvent.enhancedError({
-              error_type: 'tool_execution',
-              error_code: 'tool_failed',
-              error_message: result.content,
-              context: `Tool execution failed`,
-              user_action_before_error: 'executing_tool',
-              recovery_attempted: false,
-              recovery_successful: false,
-              error_frequency: 1,
-              stack_trace_hash: undefined
-            });
           }
         });
       }
@@ -456,7 +436,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       if (message.type === 'permission_request' && message.request_id) {
         const toolName = message.tool_name || 'Unknown';
         const toolInput = message.tool_input || {};
-        if (autoAllowedTools.has(toolName)) {
+        if (autoAllowEnabled && autoAllowedTools.has(toolName)) {
           const tid = tabIdRef.current;
           api.respondPermission(tid, message.request_id, 'allow').catch(console.error);
         } else {
@@ -552,7 +532,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     } catch (err) {
       console.error('Failed to parse message:', err, payload);
     }
-  }, [projectPath, effectiveSession, extractedSessionInfo, autoAllowedTools, trackEvent, workflowTracking]);
+  }, [projectPath, effectiveSession, extractedSessionInfo, autoAllowedTools]);
 
   // Start a persistent stream-json session, setting up listeners ONCE
   const startPersistentSession = async (resumeId?: string) => {
@@ -580,50 +560,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
         setIsLoading(false);
         persistentSessionRef.current = false;
 
-        // Track enhanced session stopped metrics
-        if (effectiveSession && claudeSessionId) {
-          const sessionStartTimeValue = messages.length > 0 ? messages[0].timestamp || Date.now() : Date.now();
-          const duration = Date.now() - sessionStartTimeValue;
-          const metrics = sessionMetrics.current;
-          const timeToFirstMessage = metrics.firstMessageTime
-            ? metrics.firstMessageTime - sessionStartTime.current
-            : undefined;
-          const idleTime = Date.now() - metrics.lastActivityTime;
-          const avgResponseTime = metrics.toolExecutionTimes.length > 0
-            ? metrics.toolExecutionTimes.reduce((a, b) => a + b, 0) / metrics.toolExecutionTimes.length
-            : undefined;
-
-          trackEvent.enhancedSessionStopped({
-            duration_ms: duration,
-            messages_count: messages.length,
-            reason: 'completed',
-            time_to_first_message_ms: timeToFirstMessage,
-            average_response_time_ms: avgResponseTime,
-            idle_time_ms: idleTime,
-            prompts_sent: metrics.promptsSent,
-            tools_executed: metrics.toolsExecuted,
-            tools_failed: metrics.toolsFailed,
-            files_created: metrics.filesCreated,
-            files_modified: metrics.filesModified,
-            files_deleted: metrics.filesDeleted,
-            total_tokens_used: totalTokens,
-            code_blocks_generated: metrics.codeBlocksGenerated,
-            errors_encountered: metrics.errorsEncountered,
-            model: metrics.modelChanges.length > 0
-              ? metrics.modelChanges[metrics.modelChanges.length - 1].to
-              : 'sonnet',
-            has_checkpoints: metrics.checkpointCount > 0,
-            checkpoint_count: metrics.checkpointCount,
-            was_resumed: metrics.wasResumed,
-            agent_type: undefined,
-            agent_name: undefined,
-            agent_success: true,
-            stop_source: 'completed',
-            final_state: 'success',
-            has_pending_prompts: queuedPrompts.length > 0,
-            pending_prompts_count: queuedPrompts.length,
-          });
-        }
       }
     });
 
@@ -709,26 +645,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           timestamp: Date.now()
         });
       }
-
-      // Track enhanced prompt submission
-      const codeBlockMatches = prompt.match(/```[\s\S]*?```/g) || [];
-      const hasCode = codeBlockMatches.length > 0;
-      const conversationDepth = messages.filter(m => m.user_message).length;
-      const sessionAge = sessionStartTime.current ? Date.now() - sessionStartTime.current : 0;
-      const wordCount = prompt.split(/\s+/).filter(word => word.length > 0).length;
-
-      trackEvent.enhancedPromptSubmitted({
-        prompt_length: prompt.length,
-        model: model,
-        has_attachments: false,
-        source: 'keyboard',
-        word_count: wordCount,
-        conversation_depth: conversationDepth,
-        prompt_complexity: wordCount < 20 ? 'simple' : wordCount < 100 ? 'moderate' : 'complex',
-        contains_code: hasCode,
-        language_detected: hasCode ? codeBlockMatches?.[0]?.match(/```(\w+)/)?.[1] : undefined,
-        session_age_ms: sessionAge
-      });
 
       // Send the message via stdin to the persistent process
       await api.sendMessage(tid, prompt);
@@ -835,52 +751,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     const tid = tabIdRef.current;
 
     try {
-      const sessionStartTimeValue = messages.length > 0 ? messages[0].timestamp || Date.now() : Date.now();
-      const duration = Date.now() - sessionStartTimeValue;
-
       await api.stopSession(tid);
-
-      // Calculate metrics for enhanced analytics
-      const metrics = sessionMetrics.current;
-      const timeToFirstMessage = metrics.firstMessageTime
-        ? metrics.firstMessageTime - sessionStartTime.current
-        : undefined;
-      const idleTime = Date.now() - metrics.lastActivityTime;
-      const avgResponseTime = metrics.toolExecutionTimes.length > 0
-        ? metrics.toolExecutionTimes.reduce((a, b) => a + b, 0) / metrics.toolExecutionTimes.length
-        : undefined;
-
-      // Track enhanced session stopped
-      trackEvent.enhancedSessionStopped({
-        duration_ms: duration,
-        messages_count: messages.length,
-        reason: 'user_stopped',
-        time_to_first_message_ms: timeToFirstMessage,
-        average_response_time_ms: avgResponseTime,
-        idle_time_ms: idleTime,
-        prompts_sent: metrics.promptsSent,
-        tools_executed: metrics.toolsExecuted,
-        tools_failed: metrics.toolsFailed,
-        files_created: metrics.filesCreated,
-        files_modified: metrics.filesModified,
-        files_deleted: metrics.filesDeleted,
-        total_tokens_used: totalTokens,
-        code_blocks_generated: metrics.codeBlocksGenerated,
-        errors_encountered: metrics.errorsEncountered,
-        model: metrics.modelChanges.length > 0
-          ? metrics.modelChanges[metrics.modelChanges.length - 1].to
-          : 'sonnet',
-        has_checkpoints: metrics.checkpointCount > 0,
-        checkpoint_count: metrics.checkpointCount,
-        was_resumed: metrics.wasResumed,
-        agent_type: undefined,
-        agent_name: undefined,
-        agent_success: undefined,
-        stop_source: 'user_button',
-        final_state: 'cancelled',
-        has_pending_prompts: queuedPrompts.length > 0,
-        pending_prompts_count: queuedPrompts.length,
-      });
 
       // Clean up listeners
       unlistenRefs.current.forEach(unlisten => unlisten());
@@ -1006,35 +877,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     return () => {
       console.log('[ClaudeCodeSession] Component unmounting, cleaning up');
       isMountedRef.current = false;
-
-      // Track session completion with engagement metrics
-      if (effectiveSession) {
-        trackEvent.sessionCompleted();
-
-        const sessionDuration = sessionStartTime.current ? Date.now() - sessionStartTime.current : 0;
-        const messageCount = messages.filter(m => m.user_message).length;
-        const toolsUsed = new Set<string>();
-        messages.forEach(msg => {
-          if (msg.type === 'assistant' && msg.message?.content) {
-            const tools = msg.message.content.filter((c: any) => c.type === 'tool_use');
-            tools.forEach((tool: any) => toolsUsed.add(tool.name));
-          }
-        });
-
-        const engagementScore = Math.min(100,
-          (messageCount * 10) +
-          (toolsUsed.size * 5) +
-          (sessionDuration > 300000 ? 20 : sessionDuration / 15000)
-        );
-
-        trackEvent.sessionEngagement({
-          session_duration_ms: sessionDuration,
-          messages_sent: messageCount,
-          tools_used: Array.from(toolsUsed),
-          files_modified: 0,
-          engagement_score: Math.round(engagementScore)
-        });
-      }
 
       // Stop the persistent process if the tab is being closed mid-session
       const tid = tabIdRef.current;
@@ -1259,6 +1101,33 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                 </p>
               </div>
 
+              {/* Auto-allow toggle — only shown in default permission mode */}
+              {permissionMode === "default" && (
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label className="text-xs text-foreground/60">Auto-Allow Tools</Label>
+                    <p className="text-[10px] text-foreground/40">
+                      {autoAllowEnabled
+                        ? "\"Always Allow\" option shown on permission prompts"
+                        : "Every tool use requires explicit approval"}
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant={autoAllowEnabled ? "default" : "outline"}
+                    onClick={() => {
+                      setAutoAllowEnabled(prev => {
+                        if (prev) setAutoAllowedTools(new Set());
+                        return !prev;
+                      });
+                    }}
+                    className="text-xs"
+                  >
+                    {autoAllowEnabled ? "On" : "Off"}
+                  </Button>
+                </div>
+              )}
+
               <Button
                 className="w-full"
                 onClick={() => setSessionStarted(true)}
@@ -1462,6 +1331,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                   requestId={pendingRequestId}
                   toolName={pendingToolUse.name}
                   toolInput={pendingToolUse.input}
+                  autoAllowEnabled={autoAllowEnabled}
                   autoAllowedTools={autoAllowedTools}
                   onAutoAllow={(tool) => setAutoAllowedTools(prev => new Set([...prev, tool]))}
                   onResponded={() => {

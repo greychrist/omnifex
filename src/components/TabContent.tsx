@@ -1,12 +1,12 @@
 import React, { Suspense, lazy, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTabState } from '@/hooks/useTabState';
-import { useScreenTracking } from '@/hooks/useAnalytics';
 import { Tab } from '@/contexts/TabContext';
 import { Loader2, Plus, ArrowLeft } from 'lucide-react';
 import { api, type Project, type Session, type ClaudeMdFile } from '@/lib/api';
 import { ProjectList } from '@/components/ProjectList';
 import { SessionList } from '@/components/SessionList';
+import { AccountPickerDialog } from '@/components/AccountPickerDialog';
 import { Button } from '@/components/ui/button';
 
 // Lazy load heavy components
@@ -35,9 +35,9 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
   const [sessions, setSessions] = React.useState<Session[]>([]);
   const [loading, setLoading] = React.useState(false);
   
-  // Track screen when tab becomes active
-  useScreenTracking(isActive ? tab.type : undefined, isActive ? tab.id : undefined);
   const [error, setError] = React.useState<string | null>(null);
+  const [showAccountPicker, setShowAccountPicker] = React.useState(false);
+  const [pendingProjectPath, setPendingProjectPath] = React.useState<string>('');
   
   // Load projects when tab becomes active and is of type 'projects'
   useEffect(() => {
@@ -82,9 +82,7 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
   };
 
   const handleOpenProject = async () => {
-    console.log('handleOpenProject called');
     try {
-      // Use native dialog to pick folder
       const { open } = await import('@tauri-apps/plugin-dialog');
       const selected = await open({
         directory: true,
@@ -92,11 +90,16 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
         title: 'Select Project Folder',
         defaultPath: await api.getHomeDirectory(),
       });
-      
-      console.log('Selected folder:', selected);
-      
+
       if (selected && typeof selected === 'string') {
-        // Create or open project for the selected directory
+        // Check if account can be resolved for this path
+        const account = await api.resolveAccountForProject(selected);
+        if (account === null) {
+          // No matching rule — prompt user to pick account
+          setPendingProjectPath(selected);
+          setShowAccountPicker(true);
+          return;
+        }
         const project = await api.createProject(selected);
         await loadProjects();
         await handleProjectClick(project);
@@ -272,6 +275,21 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                   />
                 </div>
               )}
+              <AccountPickerDialog
+                open={showAccountPicker}
+                onOpenChange={setShowAccountPicker}
+                projectPath={pendingProjectPath}
+                onAccountSelected={async () => {
+                  try {
+                    const project = await api.createProject(pendingProjectPath);
+                    await loadProjects();
+                    await handleProjectClick(project);
+                  } catch (err) {
+                    console.error('Failed to create project after account selection:', err);
+                    setError('Failed to create project for the selected directory.');
+                  }
+                }}
+              />
           </div>
         );
       

@@ -197,7 +197,7 @@ export const LogTab: React.FC = () => {
             </div>
           ) : (
             <table className="w-full text-sm">
-              <thead className="bg-muted/50 sticky top-0">
+              <thead className="bg-muted sticky top-0">
                 <tr>
                   <th className="text-left px-3 py-2 font-medium w-40">Time</th>
                   <th className="text-left px-3 py-2 font-medium w-16">Level</th>
