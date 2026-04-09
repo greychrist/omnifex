@@ -1,6 +1,14 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, dialog } from 'electron';
 import os from 'node:os';
 import path from 'node:path';
+
+// Suppress error dialogs in dev — log to console instead
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught exception:', err.message);
+});
+process.on('unhandledRejection', (err) => {
+  console.error('Unhandled rejection:', err);
+});
 import { createDatabase } from './services/database';
 import { createAccountsService } from './services/accounts';
 import { createClaudeBinaryService } from './services/claude-binary';

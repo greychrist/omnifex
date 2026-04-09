@@ -158,7 +158,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
       !ALLOWED_EVENT_CHANNELS.has(channel) &&
       !channel.startsWith('session-') &&
       !channel.startsWith('agent-output:') &&
-      !channel.startsWith('claude-output:')
+      !channel.startsWith('agent-error:') &&
+      !channel.startsWith('agent-complete:') &&
+      !channel.startsWith('agent-cancelled:') &&
+      !channel.startsWith('claude-output:') &&
+      !channel.startsWith('claude-error:') &&
+      !channel.startsWith('claude-complete:') &&
+      !channel.startsWith('claude-notification') &&
+      !channel.startsWith('claude-stream') &&
+      !channel.startsWith('backend-log')
     ) {
       throw new Error(`Blocked IPC event channel: ${channel}`);
     }
