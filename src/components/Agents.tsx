@@ -13,8 +13,6 @@ import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { Toast } from '@/components/ui/toast';
 import { api, type Agent, type AgentRunWithMetrics } from '@/lib/api';
-import { open as openDialog, save } from '@tauri-apps/plugin-dialog';
-import { invoke } from '@tauri-apps/api/core';
 import { GitHubAgentBrowser } from '@/components/GitHubAgentBrowser';
 import { CreateAgent } from '@/components/CreateAgent';
 import { useTabState } from '@/hooks/useTabState';
@@ -74,18 +72,16 @@ export const Agents: React.FC = () => {
       setToast({ message: 'Agent ID is missing', type: 'error' });
       return;
     }
-    
-    // Import the dialog function
-    const { open } = await import('@tauri-apps/plugin-dialog');
-    
+
     try {
       // Prompt user to select a project directory
-      const projectPath = await open({
-        directory: true,
-        multiple: false,
+      const paths = await window.electronAPI.showOpenDialog({
+        properties: ['openDirectory'],
         title: `Select project directory for ${agent.name}`
-      });
-      
+      }) as string[] | null;
+
+      const projectPath = paths?.[0] ?? null;
+
       if (!projectPath) {
         // User cancelled
         return;
@@ -121,16 +117,18 @@ export const Agents: React.FC = () => {
 
   const handleImportFromFile = async () => {
     try {
-      const selected = await openDialog({
+      const paths = await window.electronAPI.showOpenDialog({
+        properties: ['openFile'],
         filters: [
-          { name: 'GreyChrist Agent', extensions: ['greychrist.json', 'json'] },
+          { name: 'GreyChrist Agent', extensions: ['json'] },
           { name: 'All Files', extensions: ['*'] }
         ],
-        multiple: false,
-      });
+      }) as string[] | null;
+
+      const selected = paths?.[0] ?? null;
 
       if (selected) {
-        const importedAgent = await api.importAgentFromFile(selected as string);
+        const importedAgent = await api.importAgentFromFile(selected);
         setToast({ message: `Imported agent: ${importedAgent.name}`, type: 'success' });
         loadAgents();
       }
@@ -142,15 +140,15 @@ export const Agents: React.FC = () => {
 
   const handleExportAgent = async (agent: Agent) => {
     try {
-      const path = await save({
+      const path = await window.electronAPI.showSaveDialog({
         defaultPath: `${agent.name.toLowerCase().replace(/\s+/g, '-')}.greychrist.json`,
         filters: [
-          { name: 'GreyChrist Agent', extensions: ['greychrist.json'] }
+          { name: 'GreyChrist Agent', extensions: ['json'] }
         ]
-      });
+      }) as string | null;
 
       if (path && agent.id) {
-        await invoke('export_agent_to_file', { id: agent.id, filePath: path });
+        await window.electronAPI.invoke('export_agent_to_file', { id: agent.id, filePath: path });
         setToast({ message: `Exported agent: ${agent.name}`, type: 'success' });
       }
     } catch (error) {

@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "framer-motion";
-import GreyChristLogo from "../../src-tauri/icons/icon.png";
+import GreyChristLogo from "../../icons/icon.png";
 import type { CSSProperties } from "react";
 
 /**

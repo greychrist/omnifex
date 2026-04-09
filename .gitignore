@@ -13,8 +13,9 @@ dist-ssr
 *.local
 *.bun-build
 
-# Tauri binaries (built executables)
-src-tauri/binaries/
+# Electron build outputs
+out/
+.vite/
 
 # Editor directories and files
 .vscode/*
@@ -39,5 +40,5 @@ AGENTS.md
 .env.superpowers/
 .mcp.json
 CLAUDE.md
-src-tauri/CLAUDE.md
+electron/CLAUDE.md
 src/CLAUDE.md

@@ -14,14 +14,12 @@ const ACCOUNT_TYPES = [
 
 async function pickFolder(defaultPath?: string): Promise<string | null> {
   try {
-    const { open } = await import("@tauri-apps/plugin-dialog");
-    const selected = await open({
-      directory: true,
-      multiple: false,
+    const paths = await window.electronAPI.showOpenDialog({
+      properties: ['openDirectory'],
       title: "Select Folder",
       defaultPath: defaultPath || (await api.getHomeDirectory()),
-    });
-    return typeof selected === "string" ? selected : null;
+    }) as string[] | null;
+    return paths?.[0] ?? null;
   } catch {
     return null;
   }

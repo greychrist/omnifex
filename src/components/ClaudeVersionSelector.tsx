@@ -7,7 +7,6 @@ import { Label } from "@/components/ui/label";
 import { api, type ClaudeInstallation } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { CheckCircle, FolderOpen, HardDrive, Settings, Terminal, Info } from "lucide-react";
-import { invoke } from "@tauri-apps/api/core";
 
 interface ClaudeVersionSelectorProps {
   /**
@@ -105,7 +104,7 @@ export const ClaudeVersionSelector: React.FC<ClaudeVersionSelectorProps> = ({
   };
 
   const handleRevealInFinder = async (path: string) => {
-    await invoke("reveal_path_in_finder", { path }).catch(console.error);
+    await window.electronAPI.invoke("reveal_path_in_finder", { path }).catch(console.error);
   };
 
   const handleInstallationChange = (installationPath: string) => {

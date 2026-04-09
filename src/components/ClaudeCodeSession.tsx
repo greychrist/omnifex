@@ -16,7 +16,6 @@ import { Popover } from "@/components/ui/popover";
 import { api, type Session } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { AccountBadge } from "@/components/AccountBadge";
-import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { StreamMessage } from "./StreamMessage";
 import { FloatingPromptInput, type FloatingPromptInputRef } from "./FloatingPromptInput";
 import { ErrorBoundary } from "./ErrorBoundary";
@@ -142,7 +141,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   const [autoAllowedTools, setAutoAllowedTools] = useState<Set<string>>(new Set());
 
   const parentRef = useRef<HTMLDivElement>(null);
-  const unlistenRefs = useRef<UnlistenFn[]>([]);
+  const unlistenRefs = useRef<(() => void)[]>([]);
   const persistentSessionRef = useRef(false);
   const tabIdRef = useRef(tabId || 'default');
   const floatingPromptRef = useRef<FloatingPromptInputRef>(null);
@@ -545,16 +544,16 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     unlistenRefs.current = [];
 
     // Set up listeners ONCE — scoped to tab_id
-    const outputUnlisten = await listen(`claude-output:${tid}`, (evt: any) => {
-      handleStreamMessage(evt.payload);
+    const outputUnlisten = window.electronAPI.onEvent(`claude-output:${tid}`, (payload: any) => {
+      handleStreamMessage(payload);
     });
 
-    const errorUnlisten = await listen(`claude-error:${tid}`, (evt: any) => {
-      if (isIgnorableStderr(evt.payload)) return;
-      console.error('[ClaudeCodeSession] stderr:', evt.payload);
+    const errorUnlisten = window.electronAPI.onEvent(`claude-error:${tid}`, (payload: any) => {
+      if (isIgnorableStderr(payload)) return;
+      console.error('[ClaudeCodeSession] stderr:', payload);
     });
 
-    const completeUnlisten = await listen(`claude-complete:${tid}`, () => {
+    const completeUnlisten = window.electronAPI.onEvent(`claude-complete:${tid}`, () => {
       console.log('[ClaudeCodeSession] Process exited');
       if (isMountedRef.current) {
         setIsLoading(false);

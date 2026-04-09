@@ -1,5 +1,4 @@
 import { useEffect, useRef } from "react";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 interface NotificationPayload {
   tab_id: string;
@@ -30,33 +29,23 @@ export function useNotifications(
   updateTabRef.current = updateTab;
 
   useEffect(() => {
-    let unlistenNotification: UnlistenFn | null = null;
-    let mounted = true;
+    // Listen for notification events from backend to update tab badges
+    const unlistenNotification = window.electronAPI.onEvent(
+      "claude-notification",
+      (payload: any) => {
+        const { tab_id } = payload as NotificationPayload;
+        console.log('[Notifications] received claude-notification for tab:', tab_id, 'active:', activeTabIdRef.current);
 
-    async function setup() {
-      if (!mounted) return;
-
-      // Listen for notification events from backend to update tab badges
-      unlistenNotification = await listen<NotificationPayload>(
-        "claude-notification",
-        (event) => {
-          const { tab_id } = event.payload;
-          console.log('[Notifications] received claude-notification for tab:', tab_id, 'active:', activeTabIdRef.current);
-
-          // Mark non-active tabs with unread badge
-          if (tab_id !== activeTabIdRef.current) {
-            console.log('[Notifications] marking tab as unread:', tab_id);
-            updateTabRef.current(tab_id, { hasUnreadResult: true });
-          }
+        // Mark non-active tabs with unread badge
+        if (tab_id !== activeTabIdRef.current) {
+          console.log('[Notifications] marking tab as unread:', tab_id);
+          updateTabRef.current(tab_id, { hasUnreadResult: true });
         }
-      );
-    }
-
-    setup().catch(console.error);
+      }
+    );
 
     return () => {
-      mounted = false;
-      if (unlistenNotification) unlistenNotification();
+      unlistenNotification();
     };
   }, []);
 }

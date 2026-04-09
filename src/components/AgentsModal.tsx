@@ -22,8 +22,6 @@ import { Toast } from '@/components/ui/toast';
 import { api, type Agent, type AgentRunWithMetrics } from '@/lib/api';
 import { useTabState } from '@/hooks/useTabState';
 import { formatISOTimestamp } from '@/lib/date-utils';
-import { open as openDialog, save } from '@tauri-apps/plugin-dialog';
-import { invoke } from '@tauri-apps/api/core';
 import { GitHubAgentBrowser } from '@/components/GitHubAgentBrowser';
 
 interface AgentsModalProps {
@@ -94,16 +92,14 @@ export const AgentsModal: React.FC<AgentsModalProps> = ({ open, onOpenChange }) 
   };
 
   const handleRunAgent = async (agent: Agent) => {
-    // Open directory picker for project path
-    const { open } = await import('@tauri-apps/plugin-dialog');
-    
     try {
-      const projectPath = await open({
-        directory: true,
-        multiple: false,
+      const paths = await window.electronAPI.showOpenDialog({
+        properties: ['openDirectory'],
         title: `Select project directory for ${agent.name}`
-      });
-      
+      }) as string[] | null;
+
+      const projectPath = paths?.[0] ?? null;
+
       if (!projectPath) {
         // User cancelled
         return;
@@ -156,16 +152,18 @@ export const AgentsModal: React.FC<AgentsModalProps> = ({ open, onOpenChange }) 
 
   const handleImportFromFile = async () => {
     try {
-      const filePath = await openDialog({
-        multiple: false,
+      const paths = await window.electronAPI.showOpenDialog({
+        properties: ['openFile'],
         filters: [{
           name: 'JSON',
           extensions: ['json']
         }]
-      });
-      
+      }) as string[] | null;
+
+      const filePath = paths?.[0] ?? null;
+
       if (filePath) {
-        const agent = await api.importAgentFromFile(filePath as string);
+        const agent = await api.importAgentFromFile(filePath);
         loadAgents(); // Refresh list
         setToast({ message: `Agent "${agent.name}" imported successfully`, type: "success" });
       }
@@ -182,16 +180,16 @@ export const AgentsModal: React.FC<AgentsModalProps> = ({ open, onOpenChange }) 
   const handleExportAgent = async (agent: Agent) => {
     try {
       const exportData = await api.exportAgent(agent.id!);
-      const filePath = await save({
+      const filePath = await window.electronAPI.showSaveDialog({
         defaultPath: `${agent.name.toLowerCase().replace(/\s+/g, '-')}.json`,
         filters: [{
           name: 'JSON',
           extensions: ['json']
         }]
-      });
-      
+      }) as string | null;
+
       if (filePath) {
-        await invoke('write_file', { path: filePath, content: JSON.stringify(exportData, null, 2) });
+        await window.electronAPI.invoke('write_file', { path: filePath, content: JSON.stringify(exportData, null, 2) });
         setToast({ message: "Agent exported successfully", type: "success" });
       }
     } catch (error) {

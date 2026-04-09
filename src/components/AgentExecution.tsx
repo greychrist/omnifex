@@ -26,7 +26,6 @@ import {
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { api, type Agent } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { StreamMessage } from "./StreamMessage";
 import { ExecutionControlBar } from "./ExecutionControlBar";
 import { ErrorBoundary } from "./ErrorBoundary";
@@ -121,7 +120,7 @@ export const AgentExecution: React.FC<AgentExecutionProps> = ({
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const fullscreenScrollRef = useRef<HTMLDivElement>(null);
   const fullscreenMessagesEndRef = useRef<HTMLDivElement>(null);
-  const unlistenRefs = useRef<UnlistenFn[]>([]);
+  const unlistenRefs = useRef<(() => void)[]>([]);
   const elapsedTimeIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const [runId, setRunId] = useState<number | null>(null);
 
@@ -306,28 +305,28 @@ export const AgentExecution: React.FC<AgentExecutionProps> = ({
       setRunId(executionRunId);
 
       // Set up event listeners with run ID isolation
-      const outputUnlisten = await listen<string>(`agent-output:${executionRunId}`, (event) => {
+      const outputUnlisten = window.electronAPI.onEvent(`agent-output:${executionRunId}`, (payload: any) => {
         try {
           // Store raw JSONL
-          setRawJsonlOutput(prev => [...prev, event.payload]);
-          
+          setRawJsonlOutput(prev => [...prev, payload]);
+
           // Parse and display
-          const message = JSON.parse(event.payload) as ClaudeStreamMessage;
+          const message = JSON.parse(payload) as ClaudeStreamMessage;
           setMessages(prev => [...prev, message]);
         } catch (err) {
-          console.error("Failed to parse message:", err, event.payload);
+          console.error("Failed to parse message:", err, payload);
         }
       });
 
-      const errorUnlisten = await listen<string>(`agent-error:${executionRunId}`, (event) => {
-        console.error("Agent error:", event.payload);
-        setError(event.payload);
+      const errorUnlisten = window.electronAPI.onEvent(`agent-error:${executionRunId}`, (payload: any) => {
+        console.error("Agent error:", payload);
+        setError(payload);
       });
 
-      const completeUnlisten = await listen<boolean>(`agent-complete:${executionRunId}`, (event) => {
+      const completeUnlisten = window.electronAPI.onEvent(`agent-complete:${executionRunId}`, (payload: any) => {
         setIsRunning(false);
         setExecutionStartTime(null);
-        if (!event.payload) {
+        if (!payload) {
           setError("Agent execution failed");
           // Update tab status to error
           if (tabId) {
@@ -341,7 +340,7 @@ export const AgentExecution: React.FC<AgentExecutionProps> = ({
         }
       });
 
-      const cancelUnlisten = await listen<boolean>(`agent-cancelled:${executionRunId}`, () => {
+      const cancelUnlisten = window.electronAPI.onEvent(`agent-cancelled:${executionRunId}`, () => {
         setIsRunning(false);
         setExecutionStartTime(null);
         setError("Agent execution was cancelled");

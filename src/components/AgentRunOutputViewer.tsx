@@ -20,7 +20,6 @@ import { Toast, ToastContainer } from '@/components/ui/toast';
 import { Popover } from '@/components/ui/popover';
 import { api, type AgentRunWithMetrics } from '@/lib/api';
 import { useOutputCache } from '@/lib/outputCache';
-import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { StreamMessage } from './StreamMessage';
 import { ErrorBoundary } from './ErrorBoundary';
 import { formatISOTimestamp } from '@/lib/date-utils';
@@ -76,7 +75,7 @@ export function AgentRunOutputViewer({
   const outputEndRef = useRef<HTMLDivElement>(null);
   const fullscreenScrollRef = useRef<HTMLDivElement>(null);
   const fullscreenMessagesEndRef = useRef<HTMLDivElement>(null);
-  const unlistenRefs = useRef<UnlistenFn[]>([]);
+  const unlistenRefs = useRef<(() => void)[]>([]);
   const { getCachedOutput, setCachedOutput } = useOutputCache();
 
   // Auto-scroll logic
@@ -261,61 +260,57 @@ export function AgentRunOutputViewer({
   };
 
   // Set up live event listeners for running sessions
-  const setupLiveEventListeners = async () => {
+  const setupLiveEventListeners = () => {
     if (!run?.id || hasSetupListenersRef.current) return;
-    
-    try {
-      // Clean up existing listeners
-      unlistenRefs.current.forEach(unlisten => unlisten());
-      unlistenRefs.current = [];
 
-      // Mark that we've set up listeners
-      hasSetupListenersRef.current = true;
-      
-      // After setup, we're no longer in initial load
-      // Small delay to ensure any pending messages are processed
-      setTimeout(() => {
-        isInitialLoadRef.current = false;
-      }, 100);
+    // Clean up existing listeners
+    unlistenRefs.current.forEach(unlisten => unlisten());
+    unlistenRefs.current = [];
 
-      // Set up live event listeners with run ID isolation
-      const outputUnlisten = await listen<string>(`agent-output:${run!.id}`, (event) => {
-        try {
-          // Skip messages during initial load phase
-          if (isInitialLoadRef.current) {
-            console.log('[AgentRunOutputViewer] Skipping message during initial load');
-            return;
-          }
-          
-          // Store raw JSONL
-          setRawJsonlOutput(prev => [...prev, event.payload]);
-          
-          // Parse and display
-          const message = JSON.parse(event.payload) as ClaudeStreamMessage;
-          setMessages(prev => [...prev, message]);
-        } catch (err) {
-          console.error("[AgentRunOutputViewer] Failed to parse message:", err, event.payload);
+    // Mark that we've set up listeners
+    hasSetupListenersRef.current = true;
+
+    // After setup, we're no longer in initial load
+    // Small delay to ensure any pending messages are processed
+    setTimeout(() => {
+      isInitialLoadRef.current = false;
+    }, 100);
+
+    // Set up live event listeners with run ID isolation
+    const outputUnlisten = window.electronAPI.onEvent(`agent-output:${run!.id}`, (payload: any) => {
+      try {
+        // Skip messages during initial load phase
+        if (isInitialLoadRef.current) {
+          console.log('[AgentRunOutputViewer] Skipping message during initial load');
+          return;
         }
-      });
 
-      const errorUnlisten = await listen<string>(`agent-error:${run!.id}`, (event) => {
-        console.error("[AgentRunOutputViewer] Agent error:", event.payload);
-        setToast({ message: event.payload, type: 'error' });
-      });
+        // Store raw JSONL
+        setRawJsonlOutput(prev => [...prev, payload]);
 
-      const completeUnlisten = await listen<boolean>(`agent-complete:${run!.id}`, () => {
-        setToast({ message: 'Agent execution completed', type: 'success' });
-        // Don't set status here as the parent component should handle it
-      });
+        // Parse and display
+        const message = JSON.parse(payload) as ClaudeStreamMessage;
+        setMessages(prev => [...prev, message]);
+      } catch (err) {
+        console.error("[AgentRunOutputViewer] Failed to parse message:", err, payload);
+      }
+    });
 
-      const cancelUnlisten = await listen<boolean>(`agent-cancelled:${run!.id}`, () => {
-        setToast({ message: 'Agent execution was cancelled', type: 'error' });
-      });
+    const errorUnlisten = window.electronAPI.onEvent(`agent-error:${run!.id}`, (payload: any) => {
+      console.error("[AgentRunOutputViewer] Agent error:", payload);
+      setToast({ message: payload, type: 'error' });
+    });
 
-      unlistenRefs.current = [outputUnlisten, errorUnlisten, completeUnlisten, cancelUnlisten];
-    } catch (error) {
-      console.error('[AgentRunOutputViewer] Failed to set up live event listeners:', error);
-    }
+    const completeUnlisten = window.electronAPI.onEvent(`agent-complete:${run!.id}`, () => {
+      setToast({ message: 'Agent execution completed', type: 'success' });
+      // Don't set status here as the parent component should handle it
+    });
+
+    const cancelUnlisten = window.electronAPI.onEvent(`agent-cancelled:${run!.id}`, () => {
+      setToast({ message: 'Agent execution was cancelled', type: 'error' });
+    });
+
+    unlistenRefs.current = [outputUnlisten, errorUnlisten, completeUnlisten, cancelUnlisten];
   };
 
   // Copy functionality

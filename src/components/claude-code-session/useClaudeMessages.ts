@@ -1,7 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { listen } from '@tauri-apps/api/event';
 import { api } from '@/lib/api';
-import { getEnvironmentInfo } from '@/lib/apiAdapter';
 import type { ClaudeStreamMessage } from '../AgentExecution';
 
 interface UseClaudeMessagesOptions {
@@ -116,65 +114,25 @@ export function useClaudeMessages(options: UseClaudeMessagesOptions = {}) {
 
   // Set up event listener
   useEffect(() => {
-    const setupListener = async () => {
-      console.log('[TRACE] useClaudeMessages setupListener called');
-      if (eventListenerRef.current) {
-        console.log('[TRACE] Cleaning up existing event listener');
-        eventListenerRef.current();
-      }
-      
-      const envInfo = getEnvironmentInfo();
-      console.log('[TRACE] Environment info:', envInfo);
-      
-      if (envInfo.isTauri) {
-        // Tauri mode - use Tauri's event system
-        console.log('[TRACE] Setting up Tauri event listener for claude-stream');
-        eventListenerRef.current = await listen("claude-stream", (event: any) => {
-          console.log('[TRACE] Tauri event received:', event);
-          try {
-            const message = JSON.parse(event.payload) as ClaudeStreamMessage;
-            console.log('[TRACE] Parsed Tauri message:', message);
-            handleMessage(message);
-          } catch (error) {
-            console.error("[TRACE] Failed to parse Claude stream message:", error);
-          }
-        });
-        console.log('[TRACE] Tauri event listener setup complete');
-      } else {
-        // Web mode - use DOM events (these are dispatched by our WebSocket handler)
-        console.log('[TRACE] Setting up web event listener for claude-output');
-        const webEventHandler = (event: any) => {
-          console.log('[TRACE] Web event received:', event);
-          console.log('[TRACE] Event detail:', event.detail);
-          try {
-            const message = event.detail as ClaudeStreamMessage;
-            console.log('[TRACE] Calling handleMessage with:', message);
-            handleMessage(message);
-          } catch (error) {
-            console.error("[TRACE] Failed to parse Claude stream message:", error);
-          }
-        };
-        
-        window.addEventListener('claude-output', webEventHandler);
-        console.log('[TRACE] Web event listener added for claude-output');
-        console.log('[TRACE] Event listener function:', webEventHandler);
-        
-        // Test if event listener is working
-        setTimeout(() => {
-          console.log('[TRACE] Testing event dispatch...');
-          window.dispatchEvent(new CustomEvent('claude-output', {
-            detail: { type: 'test', message: 'test event' }
-          }));
-        }, 1000);
-        
-        eventListenerRef.current = () => {
-          console.log('[TRACE] Removing web event listener');
-          window.removeEventListener('claude-output', webEventHandler);
-        };
-      }
-    };
+    console.log('[TRACE] useClaudeMessages setupListener called');
+    if (eventListenerRef.current) {
+      console.log('[TRACE] Cleaning up existing event listener');
+      eventListenerRef.current();
+    }
 
-    setupListener();
+    // Electron mode - use electronAPI IPC events
+    console.log('[TRACE] Setting up Electron event listener for claude-stream');
+    eventListenerRef.current = window.electronAPI.onEvent("claude-stream", (payload: any) => {
+      console.log('[TRACE] Electron IPC event received:', payload);
+      try {
+        const message = JSON.parse(payload) as ClaudeStreamMessage;
+        console.log('[TRACE] Parsed message:', message);
+        handleMessage(message);
+      } catch (error) {
+        console.error("[TRACE] Failed to parse Claude stream message:", error);
+      }
+    });
+    console.log('[TRACE] Electron event listener setup complete');
 
     return () => {
       console.log('[TRACE] useClaudeMessages cleanup');

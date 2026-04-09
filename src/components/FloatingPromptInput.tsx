@@ -25,18 +25,6 @@ import { SlashCommandPicker } from "./SlashCommandPicker";
 import { ImagePreview } from "./ImagePreview";
 import { type FileEntry, type SlashCommand } from "@/lib/api";
 
-// Conditional import for Tauri webview window
-let tauriGetCurrentWebviewWindow: any;
-try {
-  if (typeof window !== 'undefined' && window.__TAURI__) {
-    tauriGetCurrentWebviewWindow = require("@tauri-apps/api/webviewWindow").getCurrentWebviewWindow;
-  }
-} catch (e) {
-  console.log('[FloatingPromptInput] Tauri webview API not available, using web mode');
-}
-
-// Web-compatible replacement
-const getCurrentWebviewWindow = tauriGetCurrentWebviewWindow || (() => ({ listen: () => Promise.resolve(() => {}) }));
 
 interface FloatingPromptInputProps {
   /**
@@ -259,7 +247,6 @@ const FloatingPromptInputInner = (
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const expandedTextareaRef = useRef<HTMLTextAreaElement>(null);
-  const unlistenDragDropRef = useRef<(() => void) | null>(null);
   const [textareaHeight, setTextareaHeight] = useState<number>(48);
   const isIMEComposingRef = useRef(false);
 
@@ -377,83 +364,81 @@ const FloatingPromptInputInner = (
     }
   }, [prompt, projectPath, isExpanded]);
 
-  // Set up Tauri drag-drop event listener
+  // Set up native browser drag-drop event listeners (Electron-compatible)
   useEffect(() => {
-    // This effect runs only once on component mount to set up the listener.
     let lastDropTime = 0;
 
-    const setupListener = async () => {
-      try {
-        // If a listener from a previous mount/render is still around, clean it up.
-        if (unlistenDragDropRef.current) {
-          unlistenDragDropRef.current();
-        }
+    const handleDragEnter = (e: DragEvent) => {
+      e.preventDefault();
+      setDragActive(true);
+    };
 
-        const webview = getCurrentWebviewWindow();
-        unlistenDragDropRef.current = await webview.onDragDropEvent((event: any) => {
-          if (event.payload.type === 'enter' || event.payload.type === 'over') {
-            setDragActive(true);
-          } else if (event.payload.type === 'leave') {
-            setDragActive(false);
-          } else if (event.payload.type === 'drop' && event.payload.paths) {
-            setDragActive(false);
+    const handleDragOver = (e: DragEvent) => {
+      e.preventDefault();
+      setDragActive(true);
+    };
 
-            const currentTime = Date.now();
-            if (currentTime - lastDropTime < 200) {
-              // This debounce is crucial to handle the storm of drop events
-              // that Tauri/OS can fire for a single user action.
-              return;
-            }
-            lastDropTime = currentTime;
+    const handleDragLeave = (e: DragEvent) => {
+      e.preventDefault();
+      setDragActive(false);
+    };
 
-            const droppedPaths = event.payload.paths as string[];
-            const imagePaths = droppedPaths.filter(isImageFile);
+    const handleDrop = (e: DragEvent) => {
+      e.preventDefault();
+      setDragActive(false);
 
-            if (imagePaths.length > 0) {
-              setPrompt(currentPrompt => {
-                const existingPaths = extractImagePaths(currentPrompt);
-                const newPaths = imagePaths.filter(p => !existingPaths.includes(p));
+      const currentTime = Date.now();
+      if (currentTime - lastDropTime < 200) {
+        return;
+      }
+      lastDropTime = currentTime;
 
-                if (newPaths.length === 0) {
-                  return currentPrompt; // All dropped images are already in the prompt
-                }
+      const files = Array.from(e.dataTransfer?.files ?? []);
+      const imagePaths = files
+        .filter(f => isImageFile(f.name))
+        .map(f => (f as any).path as string)
+        .filter(Boolean);
 
-                // Wrap paths with spaces in quotes for clarity
-                const mentionsToAdd = newPaths.map(p => {
-                  // If path contains spaces, wrap in quotes
-                  if (p.includes(' ')) {
-                    return `@"${p}"`;
-                  }
-                  return `@${p}`;
-                }).join(' ');
-                const newPrompt = currentPrompt + (currentPrompt.endsWith(' ') || currentPrompt === '' ? '' : ' ') + mentionsToAdd + ' ';
+      if (imagePaths.length > 0) {
+        setPrompt(currentPrompt => {
+          const existingPaths = extractImagePaths(currentPrompt);
+          const newPaths = imagePaths.filter((p: string) => !existingPaths.includes(p));
 
-                setTimeout(() => {
-                  const target = isExpanded ? expandedTextareaRef.current : textareaRef.current;
-                  target?.focus();
-                  target?.setSelectionRange(newPrompt.length, newPrompt.length);
-                }, 0);
-
-                return newPrompt;
-              });
-            }
+          if (newPaths.length === 0) {
+            return currentPrompt;
           }
+
+          const mentionsToAdd = newPaths.map((p: string) => {
+            if (p.includes(' ')) {
+              return `@"${p}"`;
+            }
+            return `@${p}`;
+          }).join(' ');
+          const newPrompt = currentPrompt + (currentPrompt.endsWith(' ') || currentPrompt === '' ? '' : ' ') + mentionsToAdd + ' ';
+
+          setTimeout(() => {
+            const target = isExpanded ? expandedTextareaRef.current : textareaRef.current;
+            target?.focus();
+            target?.setSelectionRange(newPrompt.length, newPrompt.length);
+          }, 0);
+
+          return newPrompt;
         });
-      } catch (error) {
-        console.error('Failed to set up Tauri drag-drop listener:', error);
       }
     };
 
-    setupListener();
+    document.addEventListener('dragenter', handleDragEnter);
+    document.addEventListener('dragover', handleDragOver);
+    document.addEventListener('dragleave', handleDragLeave);
+    document.addEventListener('drop', handleDrop);
 
     return () => {
-      // On unmount, ensure we clean up the listener.
-      if (unlistenDragDropRef.current) {
-        unlistenDragDropRef.current();
-        unlistenDragDropRef.current = null;
-      }
+      document.removeEventListener('dragenter', handleDragEnter);
+      document.removeEventListener('dragover', handleDragOver);
+      document.removeEventListener('dragleave', handleDragLeave);
+      document.removeEventListener('drop', handleDrop);
     };
-  }, []); // Empty dependency array ensures this runs only on mount/unmount.
+  }, [isExpanded]); // isExpanded needed for ref selection in drop handler
 
   useEffect(() => {
     // Focus the appropriate textarea when expanded state changes

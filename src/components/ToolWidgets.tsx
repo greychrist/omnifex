@@ -59,7 +59,6 @@ import * as Diff from 'diff';
 import { Card, CardContent } from "@/components/ui/card";
 import { detectLinks, makeLinksClickable } from "@/lib/linkDetector";
 import ReactMarkdown from "react-markdown";
-import { open } from "@tauri-apps/plugin-shell";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { motion, AnimatePresence } from "framer-motion";
@@ -2195,7 +2194,7 @@ export const WebSearchWidget: React.FC<{
   
   const handleLinkClick = async (url: string) => {
     try {
-      await open(url);
+      await window.electronAPI.openExternal(url);
     } catch (error) {
       console.error('Failed to open URL:', error);
     }
@@ -2415,7 +2414,7 @@ export const WebFetchWidget: React.FC<{
   
   const handleUrlClick = async () => {
     try {
-      await open(url);
+      await window.electronAPI.openExternal(url);
     } catch (error) {
       console.error('Failed to open URL:', error);
     }

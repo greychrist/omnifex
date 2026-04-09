@@ -70,24 +70,23 @@ class LogService {
 
     // Listen for backend log events
     try {
-      const { listen } = await import('@tauri-apps/api/event');
-      this.tauriUnlisten = await listen('backend-log', (event: any) => {
-        const payload = event.payload as {
+      this.tauriUnlisten = window.electronAPI.onEvent('backend-log', (payload: any) => {
+        const { level, category, message, timestamp } = payload as {
           level: string;
           category: string;
           message: string;
           timestamp: string;
         };
         this.addEntry({
-          timestamp: payload.timestamp,
-          level: payload.level,
+          timestamp,
+          level,
           source: 'backend',
-          category: payload.category,
-          message: payload.message,
+          category,
+          message,
         });
       });
     } catch {
-      // Not in Tauri environment (web mode) — skip backend events
+      // electronAPI not available — skip backend events
     }
 
     // Start periodic flush

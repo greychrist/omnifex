@@ -3,7 +3,6 @@ import { X, Maximize2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { motion, AnimatePresence } from "framer-motion";
-import { convertFileSrc } from "@tauri-apps/api/core";
 
 interface ImagePreviewProps {
   /**
@@ -58,12 +57,15 @@ export const ImagePreview: React.FC<ImagePreviewProps> = ({
 
   // Helper to get the image source - handles both file paths and data URLs
   const getImageSrc = (imagePath: string): string => {
-    // If it's already a data URL, return as-is
-    if (imagePath.startsWith('data:')) {
+    // If it's already a data URL or URL, return as-is
+    if (imagePath.startsWith('data:') || imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
       return imagePath;
     }
-    // Otherwise, convert the file path
-    return convertFileSrc(imagePath);
+    // Convert local file path to file:// URL for Electron
+    if (imagePath.startsWith('/')) {
+      return `file://${imagePath}`;
+    }
+    return imagePath;
   };
 
   if (displayImages.length === 0) return null;

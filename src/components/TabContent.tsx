@@ -83,15 +83,15 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
 
   const handleOpenProject = async () => {
     try {
-      const { open } = await import('@tauri-apps/plugin-dialog');
-      const selected = await open({
-        directory: true,
-        multiple: false,
+      const paths = await window.electronAPI.showOpenDialog({
+        properties: ['openDirectory'],
         title: 'Select Project Folder',
         defaultPath: await api.getHomeDirectory(),
-      });
+      }) as string[] | null;
 
-      if (selected && typeof selected === 'string') {
+      const selected = paths?.[0] ?? null;
+
+      if (selected) {
         // Check if account can be resolved for this path
         const account = await api.resolveAccountForProject(selected);
         if (account === null) {
