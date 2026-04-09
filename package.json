@@ -3,7 +3,6 @@
   "private": true,
   "version": "0.2.1",
   "license": "AGPL-3.0",
-  "type": "module",
   "main": ".vite/build/main.js",
   "scripts": {
     "start": "electron-forge start",
@@ -34,6 +33,7 @@
     "@radix-ui/react-toast": "^1.2.3",
     "@radix-ui/react-tooltip": "^1.1.5",
     "@tailwindcss/cli": "^4.1.8",
+    "@tailwindcss/postcss": "^4.2.2",
     "@tailwindcss/vite": "^4.1.8",
     "@tanstack/react-virtual": "^3.13.10",
     "@types/diff": "^8.0.0",
