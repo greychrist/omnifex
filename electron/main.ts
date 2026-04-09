@@ -105,17 +105,17 @@ app.whenReady().then(() => {
       create: (data: any) =>
         accountsService.createAccount(
           data.name,
-          data.config_dir,
-          data.is_default ?? false,
-          data.account_type,
+          data.configDir ?? data.config_dir,
+          data.isDefault ?? data.is_default ?? false,
+          data.accountType ?? data.account_type,
         ),
       update: (_id: any, data: any) =>
-        accountsService.updateAccount(data.id, data.name, data.config_dir, data.account_type),
+        accountsService.updateAccount(data.id, data.name, data.configDir ?? data.config_dir, data.accountType ?? data.account_type),
       delete: (id: any) => accountsService.deleteAccount(id),
       setDefault: (id: any) => accountsService.setDefaultAccount(id),
       listPathRules: () => accountsService.listPathRules(),
       addPathRule: (rule: any) =>
-        accountsService.addPathRule(rule.account_id, rule.path_prefix, rule.priority),
+        accountsService.addPathRule(rule.accountId ?? rule.account_id, rule.pathPrefix ?? rule.path_prefix, rule.priority),
       removePathRule: (id: any) => accountsService.removePathRule(id),
       resolveForProject: (projectPath: string) => accountsService.resolve(projectPath),
       setProjectOverride: (projectPath: string, accountId: any) =>
