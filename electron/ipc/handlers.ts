@@ -169,28 +169,28 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     set_default_account: wrapWith((p: Record<string, unknown>) => accounts?.setDefault(p?.id) ?? null),
     list_path_rules: wrap(() => accounts?.listPathRules() ?? null),
     add_path_rule: wrapWith((p: Record<string, unknown>) => accounts?.addPathRule(p) ?? null),
-    remove_path_rule: wrapWith((p: Record<string, unknown>) => accounts?.removePathRule(p?.id) ?? null),
-    resolve_account_for_project: wrapWith((p: Record<string, unknown>) => accounts?.resolveForProject(p?.project_path as string) ?? null),
-    set_project_account_override: wrapWith((p: Record<string, unknown>) => accounts?.setProjectOverride(p?.project_path as string, p?.account_id) ?? null),
+    remove_path_rule: wrapWith((p: Record<string, unknown>) => accounts?.removePathRule(p?.ruleId ?? p?.id) ?? null),
+    resolve_account_for_project: wrapWith((p: Record<string, unknown>) => accounts?.resolveForProject((p?.projectPath ?? p?.project_path) as string) ?? null),
+    set_project_account_override: wrapWith((p: Record<string, unknown>) => accounts?.setProjectOverride((p?.projectPath ?? p?.project_path) as string, p?.accountId ?? p?.account_id) ?? null),
     list_project_overrides: wrap(() => accounts?.listProjectOverrides() ?? null),
     discover_accounts: wrap(() => accounts?.discoverAccounts() ?? null),
-    explain_account_resolution: wrapWith((p: Record<string, unknown>) => accounts?.explainResolution(p?.project_path as string) ?? null),
+    explain_account_resolution: wrapWith((p: Record<string, unknown>) => accounts?.explainResolution((p?.projectPath ?? p?.project_path) as string) ?? null),
 
     // ── Claude ────────────────────────────────────────────────────────────────
     list_projects: wrapWith((p: Record<string, unknown>) => claude?.listProjects(p?.config_dir as string | undefined) ?? null),
     create_project: wrapWith((p: Record<string, unknown>) => claude?.createProject(p) ?? null),
-    get_project_sessions: wrapWith((p: Record<string, unknown>) => claude?.getProjectSessions(p?.project_id as string) ?? null),
-    load_session_history: wrapWith((p: Record<string, unknown>) => claude?.loadSessionHistory(p?.session_id as string, p?.project_id as string) ?? null),
-    load_agent_session_history: wrapWith((p: Record<string, unknown>) => claude?.loadAgentSessionHistory(p?.session_id as string) ?? null),
+    get_project_sessions: wrapWith((p: Record<string, unknown>) => claude?.getProjectSessions((p?.projectId ?? p?.project_id) as string) ?? null),
+    load_session_history: wrapWith((p: Record<string, unknown>) => claude?.loadSessionHistory((p?.sessionId ?? p?.session_id) as string, (p?.projectId ?? p?.project_id) as string) ?? null),
+    load_agent_session_history: wrapWith((p: Record<string, unknown>) => claude?.loadAgentSessionHistory((p?.sessionId ?? p?.session_id) as string) ?? null),
     get_home_directory: wrap(() => claude?.getHomeDirectory() ?? null),
     get_claude_settings: wrap(() => claude?.getSettings() ?? null),
     save_claude_settings: wrapWith((p: Record<string, unknown>) => claude?.saveSettings(p) ?? null),
     get_system_prompt: wrap(() => claude?.getSystemPrompt() ?? null),
-    save_system_prompt: wrapWith((p: Record<string, unknown>) => claude?.saveSystemPrompt(p?.prompt) ?? null),
+    save_system_prompt: wrapWith((p: Record<string, unknown>) => claude?.saveSystemPrompt(p?.content ?? p?.prompt) ?? null),
     check_claude_version: wrap(() => claude?.checkVersion() ?? null),
-    find_claude_md_files: wrapWith((p: Record<string, unknown>) => claude?.findClaudeMdFiles(p?.project_path as string) ?? null),
-    read_claude_md_file: wrapWith((p: Record<string, unknown>) => claude?.readClaudeMdFile(p?.file_path as string) ?? null),
-    save_claude_md_file: wrapWith((p: Record<string, unknown>) => claude?.saveClaudeMdFile(p?.file_path as string, p?.content as string) ?? null),
+    find_claude_md_files: wrapWith((p: Record<string, unknown>) => claude?.findClaudeMdFiles((p?.projectPath ?? p?.project_path) as string) ?? null),
+    read_claude_md_file: wrapWith((p: Record<string, unknown>) => claude?.readClaudeMdFile((p?.filePath ?? p?.file_path) as string) ?? null),
+    save_claude_md_file: wrapWith((p: Record<string, unknown>) => claude?.saveClaudeMdFile((p?.filePath ?? p?.file_path) as string, p?.content as string) ?? null),
     get_hooks_config: wrap(() => claude?.getHooksConfig() ?? null),
     update_hooks_config: wrapWith((p: Record<string, unknown>) => claude?.updateHooksConfig(p) ?? null),
     validate_hook_command: wrapWith((p: Record<string, unknown>) => claude?.validateHookCommand(p?.command as string) ?? null),
@@ -198,10 +198,10 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
 
     // ── Sessions ──────────────────────────────────────────────────────────────
     session_start: wrapWith((p: Record<string, unknown>) => sessions?.start(p) ?? null),
-    session_send_message: wrapWith((p: Record<string, unknown>) => sessions?.sendMessage(p?.session_id as string, p?.message) ?? null),
-    session_respond_permission: wrapWith((p: Record<string, unknown>) => sessions?.respondPermission(p?.session_id as string, p?.response) ?? null),
-    session_stop: wrapWith((p: Record<string, unknown>) => sessions?.stop(p?.session_id as string) ?? null),
-    session_get_info: wrapWith((p: Record<string, unknown>) => sessions?.getInfo(p?.session_id as string) ?? null),
+    session_send_message: wrapWith((p: Record<string, unknown>) => sessions?.sendMessage((p?.tabId ?? p?.session_id) as string, (p?.prompt ?? p?.message) as string) ?? null),
+    session_respond_permission: wrapWith((p: Record<string, unknown>) => sessions?.respondPermission((p?.tabId ?? p?.session_id) as string, p?.behavior as string, p?.updatedInput as Record<string, unknown> | undefined) ?? null),
+    session_stop: wrapWith((p: Record<string, unknown>) => sessions?.stop((p?.tabId ?? p?.session_id) as string) ?? null),
+    session_get_info: wrapWith((p: Record<string, unknown>) => sessions?.getInfo((p?.tabId ?? p?.session_id) as string) ?? null),
 
     // ── Agents ────────────────────────────────────────────────────────────────
     list_agents: wrap(() => agents?.list() ?? null),
@@ -211,16 +211,16 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     get_agent: wrapWith((p: Record<string, unknown>) => agents?.get(p?.id) ?? null),
     export_agent: wrapWith((p: Record<string, unknown>) => agents?.export(p?.id) ?? null),
     import_agent: wrapWith((p: Record<string, unknown>) => agents?.import(p) ?? null),
-    execute_agent: wrapWith((p: Record<string, unknown>) => agents?.execute(p?.agent_id, p) ?? null),
+    execute_agent: wrapWith((p: Record<string, unknown>) => agents?.execute(p?.agentId ?? p?.agent_id, p) ?? null),
     list_agent_runs: wrap(() => agents?.listRuns() ?? null),
     get_agent_run: wrapWith((p: Record<string, unknown>) => agents?.getRun(p?.id) ?? null),
     get_agent_run_with_real_time_metrics: wrapWith((p: Record<string, unknown>) => agents?.getRunWithMetrics(p?.id) ?? null),
-    kill_agent_session: wrapWith((p: Record<string, unknown>) => agents?.killSession(p?.run_id) ?? null),
-    get_session_status: wrapWith((p: Record<string, unknown>) => agents?.getSessionStatus(p?.run_id) ?? null),
+    kill_agent_session: wrapWith((p: Record<string, unknown>) => agents?.killSession(p?.runId ?? p?.run_id) ?? null),
+    get_session_status: wrapWith((p: Record<string, unknown>) => agents?.getSessionStatus(p?.runId ?? p?.run_id) ?? null),
     cleanup_finished_processes: wrap(() => agents?.cleanupFinished() ?? null),
-    get_session_output: wrapWith((p: Record<string, unknown>) => agents?.getSessionOutput(p?.run_id) ?? null),
-    get_live_session_output: wrapWith((p: Record<string, unknown>) => agents?.getLiveSessionOutput(p?.run_id) ?? null),
-    stream_session_output: wrapWith((p: Record<string, unknown>) => agents?.streamSessionOutput(p?.run_id) ?? null),
+    get_session_output: wrapWith((p: Record<string, unknown>) => agents?.getSessionOutput(p?.runId ?? p?.run_id) ?? null),
+    get_live_session_output: wrapWith((p: Record<string, unknown>) => agents?.getLiveSessionOutput(p?.runId ?? p?.run_id) ?? null),
+    stream_session_output: wrapWith((p: Record<string, unknown>) => agents?.streamSessionOutput(p?.runId ?? p?.run_id) ?? null),
     fetch_github_agents: wrap(() => agents?.fetchGithubAgents() ?? null),
     fetch_github_agent_content: wrapWith((p: Record<string, unknown>) => agents?.fetchGithubAgentContent(p) ?? null),
     import_agent_from_github: wrapWith((p: Record<string, unknown>) => agents?.importFromGithub(p) ?? null),
@@ -261,9 +261,9 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
 
     // ── Slash Commands ────────────────────────────────────────────────────────
     slash_commands_list: wrap(() => slashCommands?.list() ?? null),
-    slash_command_get: wrapWith((p: Record<string, unknown>) => slashCommands?.get(p?.command_id as string) ?? null),
+    slash_command_get: wrapWith((p: Record<string, unknown>) => slashCommands?.get((p?.commandId ?? p?.command_id) as string) ?? null),
     slash_command_save: wrapWith((p: Record<string, unknown>) => slashCommands?.save(p) ?? null),
-    slash_command_delete: wrapWith((p: Record<string, unknown>) => slashCommands?.delete(p?.command_id as string) ?? null),
+    slash_command_delete: wrapWith((p: Record<string, unknown>) => slashCommands?.delete((p?.commandId ?? p?.command_id) as string, (p?.projectPath ?? p?.project_path) as string | undefined) ?? null),
 
     // ── Logging ───────────────────────────────────────────────────────────────
     log_write_batch: wrapWith((p: Record<string, unknown>) => logging?.writeBatch(p?.entries) ?? null),
@@ -277,31 +277,69 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     }),
     storage_read_table: wrapWith((p: Record<string, unknown>) => {
       if (!database) return null;
-      const table = p?.table_name as string;
-      return database.raw.prepare(`SELECT * FROM ${table}`).all();
+      const table = (p?.tableName ?? p?.table_name) as string;
+      if (!table) return { rows: [], columns: [], total: 0 };
+      const page = (p?.page as number) || 1;
+      const pageSize = (p?.pageSize as number) || 50;
+      const offset = (page - 1) * pageSize;
+      const searchQuery = p?.searchQuery as string | undefined;
+
+      try {
+        // Get columns
+        const colInfo = database.raw.prepare(`PRAGMA table_info("${table}")`).all() as { name: string; type: string }[];
+        const columns = colInfo.map(c => ({ name: c.name, type: c.type }));
+
+        // Build query
+        let whereClause = '';
+        const params: unknown[] = [];
+        if (searchQuery) {
+          const textCols = colInfo.filter(c => c.type.includes('TEXT') || c.type === '');
+          if (textCols.length > 0) {
+            whereClause = 'WHERE ' + textCols.map(c => `"${c.name}" LIKE ?`).join(' OR ');
+            params.push(...textCols.map(() => `%${searchQuery}%`));
+          }
+        }
+
+        const countRow = database.raw.prepare(`SELECT COUNT(*) as cnt FROM "${table}" ${whereClause}`).get(...params) as { cnt: number };
+        const rows = database.raw.prepare(`SELECT * FROM "${table}" ${whereClause} LIMIT ? OFFSET ?`).all(...params, pageSize, offset);
+        return { rows, columns, total: countRow.cnt, page, pageSize };
+      } catch (err) {
+        return { rows: [], columns: [], total: 0, error: String(err) };
+      }
     }),
     storage_update_row: wrapWith((p: Record<string, unknown>) => {
       if (!database) return null;
-      const { table_name, id, data } = p as { table_name: string; id: unknown; data: Record<string, unknown> };
-      const sets = Object.keys(data).map(k => `${k} = ?`).join(', ');
-      const values = [...Object.values(data), id];
-      return database.raw.prepare(`UPDATE ${table_name} SET ${sets} WHERE id = ?`).run(...values);
+      const table = (p?.tableName ?? p?.table_name) as string;
+      const primaryKeyValues = p?.primaryKeyValues as Record<string, unknown>;
+      const updates = p?.updates as Record<string, unknown>;
+      if (!table || !primaryKeyValues || !updates) return null;
+      const sets = Object.keys(updates).map(k => `"${k}" = ?`).join(', ');
+      const wheres = Object.keys(primaryKeyValues).map(k => `"${k}" = ?`).join(' AND ');
+      const values = [...Object.values(updates), ...Object.values(primaryKeyValues)];
+      return database.raw.prepare(`UPDATE "${table}" SET ${sets} WHERE ${wheres}`).run(...values);
     }),
     storage_delete_row: wrapWith((p: Record<string, unknown>) => {
       if (!database) return null;
-      const { table_name, id } = p as { table_name: string; id: unknown };
-      return database.raw.prepare(`DELETE FROM ${table_name} WHERE id = ?`).run(id);
+      const table = (p?.tableName ?? p?.table_name) as string;
+      const primaryKeyValues = p?.primaryKeyValues as Record<string, unknown>;
+      if (!table || !primaryKeyValues) return null;
+      const wheres = Object.keys(primaryKeyValues).map(k => `"${k}" = ?`).join(' AND ');
+      return database.raw.prepare(`DELETE FROM "${table}" WHERE ${wheres}`).run(...Object.values(primaryKeyValues));
     }),
     storage_insert_row: wrapWith((p: Record<string, unknown>) => {
       if (!database) return null;
-      const { table_name, data } = p as { table_name: string; data: Record<string, unknown> };
-      const cols = Object.keys(data).join(', ');
-      const placeholders = Object.keys(data).map(() => '?').join(', ');
-      return database.raw.prepare(`INSERT INTO ${table_name} (${cols}) VALUES (${placeholders})`).run(...Object.values(data));
+      const table = (p?.tableName ?? p?.table_name) as string;
+      const values = (p?.values ?? p?.data) as Record<string, unknown>;
+      if (!table || !values) return null;
+      const cols = Object.keys(values).map(k => `"${k}"`).join(', ');
+      const placeholders = Object.keys(values).map(() => '?').join(', ');
+      return database.raw.prepare(`INSERT INTO "${table}" (${cols}) VALUES (${placeholders})`).run(...Object.values(values));
     }),
     storage_execute_sql: wrapWith((p: Record<string, unknown>) => {
       if (!database) return null;
-      return database.raw.prepare(p?.sql as string).all();
+      const sql = (p?.query ?? p?.sql) as string;
+      if (!sql) return null;
+      return database.raw.prepare(sql).all();
     }),
     storage_reset_database: wrap(() => null), // intentionally noop until implemented
     get_setting: wrapWith((p: Record<string, unknown>) => database?.getSetting(p?.key as string) ?? null),
