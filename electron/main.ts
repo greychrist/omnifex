@@ -2,9 +2,9 @@ import { app, BrowserWindow, dialog } from 'electron';
 import os from 'node:os';
 import path from 'node:path';
 
-// Suppress error dialogs in dev — log to console instead
+// Log errors to console and show dialog
 process.on('uncaughtException', (err) => {
-  console.error('Uncaught exception:', err.message);
+  console.error('Uncaught exception:', err);
 });
 process.on('unhandledRejection', (err) => {
   console.error('Unhandled rejection:', err);

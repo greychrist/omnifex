@@ -1,6 +1,7 @@
 import React, { createContext, useState, useContext, useCallback, useEffect, useRef } from 'react';
 import { TabPersistenceService } from '@/services/tabPersistence';
 import { SessionPersistenceService } from '@/services/sessionPersistence';
+import { api } from '@/lib/api';
 
 export interface Tab {
   id: string;
@@ -81,11 +82,23 @@ export const TabProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setTabs(restoredTabs);
       setActiveTabId(savedActiveTabId);
     } else {
-      // Create default projects tab if no saved tabs
+      // Check if any accounts exist — if not, default to Settings
+      let defaultType: Tab['type'] = 'projects';
+      let defaultTitle = 'Projects';
+      try {
+        const accounts = await api.listAccounts();
+        if (accounts.length === 0) {
+          defaultType = 'settings';
+          defaultTitle = 'Settings';
+        }
+      } catch {
+        // If account check fails, fall back to projects
+      }
+
       const defaultTab: Tab = {
         id: generateTabId(),
-        type: 'projects',
-        title: 'Projects',
+        type: defaultType,
+        title: defaultTitle,
         status: 'idle',
         hasUnsavedChanges: false,
         order: 0,

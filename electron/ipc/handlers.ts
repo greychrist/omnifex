@@ -376,11 +376,13 @@ export function registerIpcHandlers(services: Services = {}): void {
 
   // ── Dialog handlers ────────────────────────────────────────────────────────
   ipcMain.handle('dialog:open', async (_event, options: Electron.OpenDialogOptions) => {
-    return dialog.showOpenDialog(options);
+    const result = await dialog.showOpenDialog(options);
+    return result.canceled ? null : result.filePaths;
   });
 
   ipcMain.handle('dialog:save', async (_event, options: Electron.SaveDialogOptions) => {
-    return dialog.showSaveDialog(options);
+    const result = await dialog.showSaveDialog(options);
+    return result.canceled ? null : result.filePath;
   });
 
   // ── Shell handler ──────────────────────────────────────────────────────────
