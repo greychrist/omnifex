@@ -51,22 +51,6 @@ describe('accounts service', () => {
       expect(accounts.listAccounts()).toHaveLength(0);
     });
 
-    it('sets default account (clears previous default)', () => {
-      accounts.createAccount('A', '/home/user/.claude-a', true, 'pro');
-      accounts.createAccount('B', '/home/user/.claude-b', false, 'pro');
-
-      const [a, b] = accounts.listAccounts().sort((x, y) => x.name.localeCompare(y.name));
-
-      accounts.setDefaultAccount(b.id);
-
-      const updated = accounts.listAccounts();
-      const aUpdated = updated.find((x) => x.id === a.id)!;
-      const bUpdated = updated.find((x) => x.id === b.id)!;
-
-      expect(aUpdated.is_default).toBe(false);
-      expect(bUpdated.is_default).toBe(true);
-    });
-
     it('enforces unique name constraint', () => {
       accounts.createAccount('Dup', '/home/user/.claude', false, 'pro');
       expect(() => {
@@ -135,14 +119,12 @@ describe('accounts service', () => {
       expect(resolved!.id).toBe(oss.id);
     });
 
-    it('resolves via default account when no rule matches', () => {
+    it('returns null when no override or path rule matches (no default fallback)', () => {
       accounts.createAccount('Default', '/home/user/.claude', true, 'pro');
       accounts.createAccount('Work', '/home/user/.claude-work', false, 'team');
-      const [def] = accounts.listAccounts().filter((a) => a.name === 'Default');
 
       const resolved = accounts.resolve('/home/user/personal/myrepo');
-      expect(resolved).not.toBeNull();
-      expect(resolved!.id).toBe(def.id);
+      expect(resolved).toBeNull();
     });
 
     it('returns null when nothing matches', () => {

@@ -17,6 +17,9 @@ dist-ssr
 out/
 .vite/
 
+# Vitest coverage reports
+coverage/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
