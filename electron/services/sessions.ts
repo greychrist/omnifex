@@ -8,11 +8,9 @@ import path from 'node:path';
 import { createAsyncChannel, type AsyncChannel } from './async-channel';
 
 // ---------------------------------------------------------------------------
-// SDK imports — use `any` for types that may not export cleanly at runtime
+// SDK imports
 // ---------------------------------------------------------------------------
 
-// The SDK types reference zod/v4 which conflicts with the project's zod v3.
-// We import only what we need and fall back to `any` where necessary.
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import type {
   SDKMessage,
