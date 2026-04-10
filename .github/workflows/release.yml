@@ -1,120 +1,119 @@
 name: Release
 
+# Tag-triggered release builds. Produces UNSIGNED installers on Linux, macOS,
+# and Windows and attaches them to a GitHub Release for the pushed tag.
+#
+# Signing: this workflow does NOT sign the artifacts. macOS output will be
+# blocked by Gatekeeper on first launch; Windows will be warned by SmartScreen.
+# Swap in APPLE_ID / APPLE_ID_PASSWORD / APPLE_TEAM_ID + Windows cert secrets
+# and wire them into forge.config.ts once signing credentials are in place —
+# the release signing memory in the personal memory dir tracks when this gets
+# unblocked.
+
 on:
   push:
     tags:
-      - 'v*'
-  workflow_dispatch:
-    inputs:
-      version:
-        description: 'Version to release (e.g., v1.0.0)'
-        required: true
-        type: string
+      - 'v*.*.*'
 
 permissions:
-  contents: write
+  contents: write  # needed to create the GitHub Release
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  # Build jobs for each platform
-  build-linux:
-    uses: ./.github/workflows/build-linux.yml
-    secrets: inherit
-  
-  build-macos:
-    uses: ./.github/workflows/build-macos.yml
-    secrets: inherit
-  
-
-  # Create release after all builds complete
-  create-release:
-    name: Create Release
-    needs: [build-linux, build-macos]
-    runs-on: ubuntu-latest
-    
+  build:
+    name: Build (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Determine version
-        id: version
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript check
+        run: npm run check
+
+      - name: Tests with coverage gate
+        run: npm run test:coverage
+
+      - name: Build installers — UNSIGNED
+        run: npm run make
+
+      - name: Collect installer artifacts
+        shell: bash
         run: |
-          if [ "${{ github.event_name }}" = "push" ]; then
-            VERSION="${GITHUB_REF#refs/tags/}"
-          else
-            VERSION="${{ inputs.version }}"
-          fi
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Version: $VERSION"
-      
-      - name: Download all artifacts
+          mkdir -p dist-artifacts
+          # Electron Forge writes makers' output under out/make/**
+          find out/make -type f \( \
+            -name '*.dmg' -o \
+            -name '*.zip' -o \
+            -name '*.exe' -o \
+            -name '*.nupkg' -o \
+            -name '*.deb' -o \
+            -name '*.rpm' -o \
+            -name '*.AppImage' \
+          \) -exec cp {} dist-artifacts/ \;
+          ls -la dist-artifacts/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: greychrist-${{ matrix.os }}-${{ github.ref_name }}
+          path: dist-artifacts/**
+
+  release:
+    name: Publish GitHub Release
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all build artifacts
         uses: actions/download-artifact@v4
         with:
-          path: artifacts
-      
-      - name: Prepare release assets
+          path: release-assets
+          pattern: greychrist-*
+          merge-multiple: true
+
+      - name: Extract release notes for this tag
+        shell: bash
         run: |
-          mkdir -p release-assets
-          
-          # Linux artifacts
-          if [ -d "artifacts/linux-x86_64" ]; then
-            cp artifacts/linux-x86_64/*.deb release-assets/greychrist_${{ steps.version.outputs.version }}_linux_x86_64.deb || true
-            cp artifacts/linux-x86_64/*.AppImage release-assets/greychrist_${{ steps.version.outputs.version }}_linux_x86_64.AppImage || true
+          TAG="${GITHUB_REF_NAME#v}"
+          # Pull the section between `## [X.Y.Z]` and the next `## [`
+          awk -v tag="$TAG" '
+            $0 ~ "^## \\[" tag "\\]" { capture=1; next }
+            capture && /^## \[/ { capture=0 }
+            capture { print }
+          ' CHANGELOG.md > release-body.md
+          if [ ! -s release-body.md ]; then
+            echo "Release $TAG" > release-body.md
+            echo "" >> release-body.md
+            echo "No CHANGELOG entry found — see commit history." >> release-body.md
           fi
-          
-          # macOS artifacts
-          if [ -d "artifacts/macos-universal" ]; then
-            cp artifacts/macos-universal/greychrist.dmg release-assets/greychrist_${{ steps.version.outputs.version }}_macos_universal.dmg || true
-            cp artifacts/macos-universal/greychrist.app.zip release-assets/greychrist_${{ steps.version.outputs.version }}_macos_universal.app.tar.gz || true
-          fi
-          
-          # Create source code archives
-          # Clean version without 'v' prefix for archive names
-          CLEAN_VERSION="${{ steps.version.outputs.version }}"
-          CLEAN_VERSION="${CLEAN_VERSION#v}"
-          
-          # Create source code archives (excluding .git and other unnecessary files)
-          echo "Creating source code archives..."
-          
-          # Create a clean export of the repository
-          git archive --format=tar.gz --prefix=greychrist-${CLEAN_VERSION}/ -o release-assets/greychrist-${CLEAN_VERSION}.tar.gz HEAD
-          git archive --format=zip --prefix=greychrist-${CLEAN_VERSION}/ -o release-assets/greychrist-${CLEAN_VERSION}.zip HEAD
+          echo "" >> release-body.md
+          echo "---" >> release-body.md
+          echo "" >> release-body.md
+          echo "> ⚠ **Unsigned build.** macOS will require right-click → Open on first launch; Windows SmartScreen will warn. Signing is not yet configured." >> release-body.md
 
-          # Generate signatures for all files
-          cd release-assets
-          for file in *; do
-            if [ -f "$file" ]; then
-              sha256sum "$file" > "$file.sha256"
-            fi
-          done
-          cd ..
-      
-      - name: Create Release
-        uses: softprops/action-gh-release@v1
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.version.outputs.version }}
-          name: GreyChrist ${{ steps.version.outputs.version }}
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          body_path: release-body.md
           draft: true
-          prerelease: false
-          generate_release_notes: true
-          files: release-assets/*
-          body: |
-            <div align="center">
-              <img src="https://raw.githubusercontent.com/${{ github.repository }}/${{ steps.version.outputs.version }}/src-tauri/icons/icon.png" alt="GreyChrist Logo" width="128" height="128">
-            </div>
-
-            ## GreyChrist ${{ steps.version.outputs.version }}
-
-            This release was built and signed by CI. Artifacts for macOS and Linux are attached below.
-
-            - Auto-generated release notes are included below (commits, PRs, and contributors).
-            - Checksums (`.sha256`) are provided for all assets.
-
-            ### Downloads
-
-            - macOS: `.dmg`, `.app.tar.gz` (Universal: Apple Silicon + Intel)
-            - Linux: `.AppImage`, `.deb`
-
-            ### Installation
-
-            - macOS: Open the `.dmg` and drag GreyChrist to Applications.
-            - Linux: `chmod +x` the `.AppImage` and run it, or install the `.deb` on Debian/Ubuntu.
-            
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          files: release-assets/**
