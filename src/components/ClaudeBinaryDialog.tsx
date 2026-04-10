@@ -2,7 +2,8 @@ import { useState, useEffect } from "react";
 import { api, type ClaudeInstallation } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ExternalLink, FileQuestion, Terminal, AlertCircle, Loader2 } from "lucide-react";
+import { ExternalLink, FileQuestion, Terminal, AlertCircle } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 import { ClaudeVersionSelector } from "./ClaudeVersionSelector";
 
 interface ClaudeBinaryDialogProps {
@@ -67,7 +68,7 @@ export function ClaudeBinaryDialog({ open, onOpenChange, onSuccess, onError }: C
           <DialogDescription className="space-y-3 mt-4">
             {checkingInstallations ? (
               <div className="flex items-center justify-center py-8">
-                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                <Spinner className="size-6 text-muted-foreground" />
                 <span className="ml-2 text-sm text-muted-foreground">Searching for Claude installations...</span>
               </div>
             ) : hasInstallations ? (

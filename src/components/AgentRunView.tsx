@@ -10,6 +10,7 @@ import {
   Bot,
   StopCircle
 } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -225,7 +226,7 @@ export const AgentRunView: React.FC<AgentRunViewProps> = ({
   if (loading) {
     return (
       <div className={cn("flex items-center justify-center h-full", className)}>
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+        <Spinner className="size-8 text-primary" />
       </div>
     );
   }

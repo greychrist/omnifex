@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Play, Loader2, Terminal, AlertCircle } from "lucide-react";
+import { Play, Terminal, AlertCircle } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { api, type ProcessInfo, type Session } from "@/lib/api";
@@ -76,7 +77,7 @@ export const RunningClaudeSessions: React.FC<RunningClaudeSessionsProps> = ({
   if (loading && runningSessions.length === 0) {
     return (
       <div className={cn("flex items-center justify-center py-4", className)}>
-        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+        <Spinner className="text-muted-foreground" />
       </div>
     );
   }

@@ -47,6 +47,7 @@ export interface Account {
   is_default: boolean;
   /** Account type: "max" (no cost), "enterprise", "pro", "free" */
   account_type: string;
+  color: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -622,7 +623,6 @@ export const api = {
       if (opts?.projectPath !== undefined) params.projectPath = opts.projectPath;
       if (opts?.configDir !== undefined) params.configDir = opts.configDir;
       const result = await apiCall<{ data: ClaudeSettings }>("get_claude_settings", params);
-      console.log("Raw result from get_claude_settings:", result);
 
       // The Rust backend returns ClaudeSettings { data: ... }
       // We need to extract the data field
@@ -1140,12 +1140,16 @@ export const api = {
 
   // ─── Persistent Session API ───────────────────────────────────────
 
-  async startSession(tabId: string, projectPath: string, model: string, permissionMode: string, resumeSessionId?: string): Promise<void> {
-    return apiCall("session_start", { tabId, projectPath, model, permissionMode, resumeSessionId });
+  async startSession(tabId: string, projectPath: string, model: string, permissionMode: string, resumeSessionId?: string, configDir?: string): Promise<void> {
+    return apiCall("session_start", { tabId, projectPath, model, permissionMode, resumeSessionId, configDir });
   },
 
   async sendMessage(tabId: string, prompt: string): Promise<void> {
     return apiCall("session_send_message", { tabId, prompt });
+  },
+
+  async sendStructuredMessage(tabId: string, content: Array<Record<string, unknown>>): Promise<void> {
+    return apiCall("session_send_structured_message", { tabId, content });
   },
 
   async respondPermission(tabId: string, requestId: string, behavior: string, updatedInput?: any): Promise<void> {
@@ -1558,9 +1562,7 @@ export const api = {
    */
   async mcpList(): Promise<MCPServer[]> {
     try {
-      console.log("API: Calling mcp_list...");
       const result = await apiCall<MCPServer[]>("mcp_list");
-      console.log("API: mcp_list returned:", result);
       return result;
     } catch (error) {
       console.error("API: Failed to list MCP servers:", error);
@@ -2080,24 +2082,22 @@ export const api = {
     return apiCall<Account[]>('list_accounts');
   },
 
-  async createAccount(name: string, configDir: string, isDefault: boolean, accountType?: string): Promise<Account> {
+  async createAccount(name: string, configDir: string, isDefault: boolean, accountType?: string, color?: string): Promise<Account> {
     const params: Record<string, any> = { name, configDir, isDefault };
     if (accountType) params.accountType = accountType;
+    if (color) params.color = color;
     return apiCall<Account>('create_account', params);
   },
 
-  async updateAccount(id: number, name: string, configDir: string, accountType?: string): Promise<void> {
+  async updateAccount(id: number, name: string, configDir: string, accountType?: string, color?: string): Promise<void> {
     const params: Record<string, any> = { id, name, configDir };
     if (accountType) params.accountType = accountType;
+    if (color !== undefined) params.color = color;
     return apiCall<void>('update_account', params);
   },
 
   async deleteAccount(id: number): Promise<void> {
     return apiCall<void>('delete_account', { id });
-  },
-
-  async setDefaultAccount(id: number): Promise<void> {
-    return apiCall<void>('set_default_account', { id });
   },
 
   async listPathRules(): Promise<PathRule[]> {

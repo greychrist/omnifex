@@ -7,11 +7,11 @@ import {
   X,
   Minimize2,
   Maximize2,
-  Loader2,
   AlertCircle,
   Globe,
   Home,
 } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -198,7 +198,7 @@ const WebviewPreviewComponent: React.FC<WebviewPreviewProps> = ({
             <Globe className="h-4 w-4 text-muted-foreground" />
             <span className="text-sm font-medium">Preview</span>
             {isLoading && (
-              <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+              <Spinner className="size-3 text-muted-foreground" />
             )}
           </div>
           
@@ -315,7 +315,7 @@ const WebviewPreviewComponent: React.FC<WebviewPreviewProps> = ({
               className="absolute inset-0 bg-background/80 backdrop-blur-sm z-10 flex items-center justify-center"
             >
               <div className="flex flex-col items-center gap-3">
-                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                <Spinner className="size-8 text-primary" />
                 <p className="text-sm text-muted-foreground">Loading preview...</p>
               </div>
             </motion.div>

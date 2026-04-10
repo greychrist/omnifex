@@ -80,7 +80,7 @@ export const AccountPickerDialog: React.FC<AccountPickerDialogProps> = ({
                   : "border-border hover:border-primary/50 hover:bg-muted/50"
               )}
             >
-              <AccountBadge name={account.name} />
+              <AccountBadge name={account.name} color={account.color} />
               <span className="text-xs text-muted-foreground truncate">
                 {account.config_dir}
               </span>

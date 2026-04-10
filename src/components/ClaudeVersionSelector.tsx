@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { api, type ClaudeInstallation } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { CheckCircle, FolderOpen, HardDrive, Settings, Terminal, Info } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 
 interface ClaudeVersionSelectorProps {
   /**
@@ -143,7 +144,7 @@ export const ClaudeVersionSelector: React.FC<ClaudeVersionSelectorProps> = ({
         <div className="space-y-2">
           <Label className="text-sm font-medium">Claude Installation</Label>
           <div className="flex items-center justify-center py-3 border rounded-lg">
-            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
+            <Spinner className="text-primary" />
           </div>
         </div>
       );
@@ -156,7 +157,7 @@ export const ClaudeVersionSelector: React.FC<ClaudeVersionSelectorProps> = ({
         </CardHeader>
         <CardContent>
           <div className="flex items-center justify-center py-4">
-            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
+            <Spinner className="size-6 text-primary" />
           </div>
         </CardContent>
       </Card>

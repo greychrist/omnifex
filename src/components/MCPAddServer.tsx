@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { Plus, Terminal, Globe, Trash2, Info, Loader2 } from "lucide-react";
+import { Plus, Terminal, Globe, Trash2, Info } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -344,7 +345,7 @@ export const MCPAddServer: React.FC<MCPAddServerProps> = ({
               >
                 {saving ? (
                   <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <Spinner />
                     Adding Server...
                   </>
                 ) : (
@@ -413,7 +414,7 @@ export const MCPAddServer: React.FC<MCPAddServerProps> = ({
               >
                 {saving ? (
                   <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <Spinner />
                     Adding Server...
                   </>
                 ) : (

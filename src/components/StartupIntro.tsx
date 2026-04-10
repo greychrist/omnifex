@@ -96,7 +96,7 @@ export default StartupIntro;
 
 function BrandText() {
   return (
-    <div className="text-5xl font-extrabold tracking-tight brand-text">
+    <div className="text-5xl font-extrabold tracking-tight brand-text pb-2">
       <span className="brand-text-solid">GreyChrist</span>
       <span aria-hidden="true" className="brand-text-shimmer">GreyChrist</span>
     </div>

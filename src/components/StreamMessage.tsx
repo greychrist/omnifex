@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from "react";
-import { 
-  Terminal, 
-  User, 
-  Bot, 
-  AlertCircle, 
+import {
+  Terminal,
+  User,
+  Bot,
+  AlertCircle,
   CheckCircle2
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
@@ -138,9 +138,10 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
       }
 
       let renderedSomething = false;
-      
+
       const renderedCard = (
-        <Card className={cn("border-primary/20 bg-primary/5", className)}>
+        <div className="flex justify-start">
+        <Card className={cn("border-primary/20 bg-primary/5 w-[95%]", className)}>
           <CardContent className="p-4">
             <div className="flex items-start gap-3">
               <Bot className="h-5 w-5 text-primary mt-0.5" />
@@ -336,8 +337,9 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
             </div>
           </CardContent>
         </Card>
+        </div>
       );
-      
+
       if (!renderedSomething) return null;
       return renderedCard;
     }
@@ -378,7 +380,8 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
         : <User className="h-6 w-6 text-violet-500 mt-0.5" />;
 
       const renderedCard = (
-        <Card className={cardStyle.className} style={cardStyle.style}>
+        <div className={isToolResultOnly ? "" : "flex justify-end"}>
+        <Card className={cn(cardStyle.className, !isToolResultOnly && "w-[95%]")} style={cardStyle.style}>
           <CardContent className="p-4">
             <div className="flex items-start gap-3">
               {cardIcon}
@@ -410,15 +413,38 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                       return <CommandOutputWidget output={output} onLinkDetected={onLinkDetected} />;
                     }
 
-                    // Otherwise render as plain user text
+                    // Extract @-mentioned image paths and render them inline
+                    const imagePathRegex = /@(\/[^\s@]+\.(?:png|jpe?g|gif|webp|svg))/gi;
+                    const imagePaths: string[] = [];
+                    let textWithoutImages = contentStr;
+                    let match;
+                    while ((match = imagePathRegex.exec(contentStr)) !== null) {
+                      imagePaths.push(match[1]);
+                    }
+                    textWithoutImages = contentStr.replace(imagePathRegex, '').trim();
+
                     return (
                       <div>
                         <div className="flex items-center gap-2 mb-1">
                           <span className="text-xs font-medium text-muted-foreground">You</span>
                         </div>
-                        <div className="text-sm">
-                          {contentStr}
-                        </div>
+                        {textWithoutImages && (
+                          <div className="text-sm mb-2">
+                            {textWithoutImages}
+                          </div>
+                        )}
+                        {imagePaths.length > 0 && (
+                          <div className="flex flex-wrap gap-2">
+                            {imagePaths.map((p, i) => (
+                              <img
+                                key={i}
+                                src={`greychrist-file://${encodeURI(p)}`}
+                                alt="Pasted image"
+                                className="max-w-sm max-h-64 rounded-md border border-border object-contain"
+                              />
+                            ))}
+                          </div>
+                        )}
                       </div>
                     );
                   })()
@@ -426,6 +452,28 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
 
                 {/* Handle content that is an array of parts */}
                 {Array.isArray(msg.content) && msg.content.map((content: any, idx: number) => {
+                  // Text block
+                  if (content.type === "text") {
+                    renderedSomething = true;
+                    return (
+                      <div key={idx} className="text-sm whitespace-pre-wrap">
+                        {content.text}
+                      </div>
+                    );
+                  }
+                  // Image block (base64)
+                  if (content.type === "image" && content.source?.type === "base64") {
+                    renderedSomething = true;
+                    const dataUrl = `data:${content.source.media_type};base64,${content.source.data}`;
+                    return (
+                      <img
+                        key={idx}
+                        src={dataUrl}
+                        alt="Pasted image"
+                        className="max-w-sm max-h-64 rounded-md border border-border object-contain"
+                      />
+                    );
+                  }
                   // Tool result
                   if (content.type === "tool_result") {
                     // Skip duplicate tool_result if a dedicated widget is present
@@ -692,6 +740,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
             </div>
           </CardContent>
         </Card>
+        </div>
       );
       if (!renderedSomething) return null;
       return renderedCard;

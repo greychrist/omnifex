@@ -13,6 +13,7 @@ import {
   DollarSign,
   StopCircle
 } from 'lucide-react';
+import { Spinner } from '@/components/ui/spinner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -529,7 +530,7 @@ export function AgentRunOutputViewer({
     return (
       <div className="flex items-center justify-center h-full">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+          <Spinner className="size-8 text-primary mx-auto mb-4" />
           <p className="text-muted-foreground">Loading agent run...</p>
         </div>
       </div>

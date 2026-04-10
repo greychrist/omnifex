@@ -1,20 +1,17 @@
 import React from "react";
 import { cn } from "@/lib/utils";
-
-const ACCOUNT_COLORS: Record<string, string> = {
-  personal: "bg-blue-500/20 text-blue-400 border-blue-500/30",
-  work: "bg-purple-500/20 text-purple-400 border-purple-500/30",
-};
+import { useAccounts } from "@/contexts/AccountsContext";
 
 const FALLBACK_COLORS = [
+  "bg-blue-500/20 text-blue-400 border-blue-500/30",
+  "bg-purple-500/20 text-purple-400 border-purple-500/30",
   "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
   "bg-amber-500/20 text-amber-400 border-amber-500/30",
   "bg-rose-500/20 text-rose-400 border-rose-500/30",
   "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
 ];
 
-function getColorForAccount(name: string): string {
-  if (ACCOUNT_COLORS[name]) return ACCOUNT_COLORS[name];
+function getFallbackColor(name: string): string {
   let hash = 0;
   for (let i = 0; i < name.length; i++) {
     hash = name.charCodeAt(i) + ((hash << 5) - hash);
@@ -24,16 +21,38 @@ function getColorForAccount(name: string): string {
 
 interface AccountBadgeProps {
   name: string;
+  color?: string | null;
   className?: string;
 }
 
-export const AccountBadge: React.FC<AccountBadgeProps> = ({ name, className }) => {
-  const colorClass = getColorForAccount(name);
+export const AccountBadge: React.FC<AccountBadgeProps> = ({ name, color: colorProp, className }) => {
+  const { getColor } = useAccounts();
+  const color = colorProp ?? getColor(name);
+
+  if (color) {
+    return (
+      <span
+        className={cn(
+          "inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium",
+          className
+        )}
+        style={{
+          backgroundColor: `${color}33`,
+          color: color,
+          borderColor: `${color}4d`,
+        }}
+      >
+        {name}
+      </span>
+    );
+  }
+
+  const fallbackClass = getFallbackColor(name);
   return (
     <span
       className={cn(
         "inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium",
-        colorClass,
+        fallbackClass,
         className
       )}
     >

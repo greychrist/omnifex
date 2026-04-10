@@ -14,6 +14,7 @@ import {
   FileJson,
   ChevronDown
 } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import {
@@ -375,7 +376,7 @@ export const CCAgents: React.FC<CCAgentsProps> = ({ onBack, className }) => {
               <div>
                 {loading ? (
                   <div className="flex items-center justify-center h-64">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                    <Spinner className="size-8 text-primary" />
                   </div>
                 ) : agents.length === 0 ? (
                   <div className="flex flex-col items-center justify-center h-64 text-center">
@@ -498,7 +499,7 @@ export const CCAgents: React.FC<CCAgentsProps> = ({ onBack, className }) => {
                   </div>
                   {runsLoading ? (
                     <div className="flex items-center justify-center h-32">
-                      <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
+                      <Spinner className="size-6 text-primary" />
                     </div>
                   ) : (
                     <AgentRunsList 
@@ -564,7 +565,7 @@ export const CCAgents: React.FC<CCAgentsProps> = ({ onBack, className }) => {
             >
               {isDeleting ? (
                 <>
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
+                  <Spinner className="mr-2" />
                   Deleting...
                 </>
               ) : (

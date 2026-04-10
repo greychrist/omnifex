@@ -61,9 +61,9 @@ export const ImagePreview: React.FC<ImagePreviewProps> = ({
     if (imagePath.startsWith('data:') || imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
       return imagePath;
     }
-    // Convert local file path to file:// URL for Electron
+    // Use custom protocol to bypass Electron's file:// security
     if (imagePath.startsWith('/')) {
-      return `file://${imagePath}`;
+      return `greychrist-file://${encodeURI(imagePath)}`;
     }
     return imagePath;
   };

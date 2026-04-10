@@ -14,8 +14,8 @@ import {
   Check,
   X,
   Table,
-  Loader2,
 } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -555,7 +555,7 @@ export const StorageTab: React.FC = () => {
       {/* Loading State */}
       {loading && (
         <div className="flex items-center justify-center py-12">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          <Spinner className="size-8 text-muted-foreground" />
         </div>
       )}
 
@@ -637,7 +637,7 @@ export const StorageTab: React.FC = () => {
               disabled={loading}
             >
               {loading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <Spinner />
               ) : (
                 "Update"
               )}
@@ -711,7 +711,7 @@ export const StorageTab: React.FC = () => {
               disabled={loading}
             >
               {loading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <Spinner />
               ) : (
                 "Insert"
               )}
@@ -758,7 +758,7 @@ export const StorageTab: React.FC = () => {
               disabled={loading}
             >
               {loading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <Spinner />
               ) : (
                 "Delete"
               )}
@@ -798,7 +798,7 @@ export const StorageTab: React.FC = () => {
               disabled={loading}
             >
               {loading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <Spinner />
               ) : (
                 "Reset Database"
               )}
@@ -932,7 +932,7 @@ export const StorageTab: React.FC = () => {
               disabled={loading || !sqlQuery.trim()}
             >
               {loading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <Spinner />
               ) : (
                 "Execute"
               )}

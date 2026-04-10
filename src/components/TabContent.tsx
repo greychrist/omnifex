@@ -1,12 +1,14 @@
 import React, { Suspense, lazy, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { useTabState } from '@/hooks/useTabState';
 import { Tab } from '@/contexts/TabContext';
-import { Loader2, Plus, ArrowLeft } from 'lucide-react';
+import { Plus, ArrowLeft } from 'lucide-react';
+import { Spinner } from '@/components/ui/spinner';
 import { api, type Project, type Session, type ClaudeMdFile } from '@/lib/api';
 import { ProjectList } from '@/components/ProjectList';
 import { SessionList } from '@/components/SessionList';
 import { AccountPickerDialog } from '@/components/AccountPickerDialog';
+import { AccountBadge } from '@/components/AccountBadge';
 import { Button } from '@/components/ui/button';
 
 // Lazy load heavy components
@@ -38,6 +40,7 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
   const [error, setError] = React.useState<string | null>(null);
   const [showAccountPicker, setShowAccountPicker] = React.useState(false);
   const [pendingProjectPath, setPendingProjectPath] = React.useState<string>('');
+  const [projectAccountName, setProjectAccountName] = React.useState<string | null>(null);
   
   // Load projects when tab becomes active and is of type 'projects'
   useEffect(() => {
@@ -68,14 +71,26 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
       setSessions(sessionList);
       setSelectedProject(project);
 
+      // Use account name from project if available, otherwise resolve
+      const accountName = project.account_name;
+      if (accountName) {
+        setProjectAccountName(accountName);
+        updateTab(tab.id, { accountName });
+      } else {
+        api.resolveAccountForProject(project.path).then((account) => {
+          setProjectAccountName(account?.name ?? null);
+          if (account) updateTab(tab.id, { accountName: account.name });
+        }).catch(() => setProjectAccountName(null));
+      }
+
       // Update tab title to show project name
       const projectName = project.path.split('/').pop() || 'Project';
       updateTab(tab.id, {
         title: projectName
       });
     } catch (err) {
-      console.error("Failed to load sessions:", err);
-      setError("Failed to load sessions for this project.");
+      console.error("Failed to load sessions:", err, "project:", JSON.stringify(project));
+      setError(`Failed to load sessions: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setLoading(false);
     }
@@ -184,8 +199,9 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                             </Button>
                           </motion.div>
                           <div>
-                            <h1 className="text-3xl font-bold tracking-tight">
+                            <h1 className="text-3xl font-bold tracking-tight flex items-center gap-3">
                               {selectedProject.path.split('/').pop()}
+                              {projectAccountName && <AccountBadge name={projectAccountName} />}
                             </h1>
                             <p className="mt-1 text-sm text-muted-foreground">
                               {`${sessions.length} session${sessions.length !== 1 ? 's' : ''}`}
@@ -222,7 +238,7 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                     {/* Loading state */}
                     {loading && (
                       <div className="flex items-center justify-center py-8">
-                        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                        <Spinner className="size-6 text-muted-foreground" />
                       </div>
                     )}
 
@@ -436,7 +452,7 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
         <Suspense
           fallback={
             <div className="flex items-center justify-center h-full">
-              <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+              <Spinner className="size-8 text-muted-foreground" />
             </div>
           }
         >
@@ -563,15 +579,13 @@ export const TabContent: React.FC = () => {
   
   return (
     <div className="flex-1 h-full relative">
-      <AnimatePresence mode="wait">
-        {tabs.map((tab) => (
-          <TabPanel
-            key={tab.id}
-            tab={tab}
-            isActive={tab.id === activeTabId}
-          />
-        ))}
-      </AnimatePresence>
+      {tabs.map((tab) => (
+        <TabPanel
+          key={tab.id}
+          tab={tab}
+          isActive={tab.id === activeTabId}
+        />
+      ))}
       
       {tabs.length === 0 && (
         <div className="flex items-center justify-center h-full text-muted-foreground">

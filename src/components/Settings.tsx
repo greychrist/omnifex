@@ -2,13 +2,13 @@ import React, { useState, useEffect } from "react";
 import { AccountSettings } from "@/components/AccountSettings";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
-  Plus, 
-  Trash2, 
-  Save, 
+  Plus,
+  Trash2,
+  Save,
   AlertCircle,
-  Loader2,
   Check,
 } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -366,7 +366,7 @@ export const Settings: React.FC<SettingsProps> = ({
               >
                 {saving ? (
                   <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    <Spinner className="mr-2" />
                     Saving...
                   </>
                 ) : (
@@ -399,24 +399,25 @@ export const Settings: React.FC<SettingsProps> = ({
       {/* Content */}
       {loading ? (
         <div className="flex-1 flex items-center justify-center">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          <Spinner className="size-8 text-muted-foreground" />
         </div>
       ) : (
-        <div className="flex-1 overflow-y-auto p-6">
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid grid-cols-10 w-full mb-6 h-auto p-1">
-              <TabsTrigger value="general" className="py-2.5 px-3">General</TabsTrigger>
-              <TabsTrigger value="accounts" className="py-2.5 px-3">Accounts</TabsTrigger>
-              <TabsTrigger value="permissions" className="py-2.5 px-3">Permissions</TabsTrigger>
-              <TabsTrigger value="environment" className="py-2.5 px-3">Environment</TabsTrigger>
-              <TabsTrigger value="advanced" className="py-2.5 px-3">Advanced</TabsTrigger>
-              <TabsTrigger value="hooks" className="py-2.5 px-3">Hooks</TabsTrigger>
-              <TabsTrigger value="commands" className="py-2.5 px-3">Commands</TabsTrigger>
-              <TabsTrigger value="storage" className="py-2.5 px-3">Storage</TabsTrigger>
-              <TabsTrigger value="proxy" className="py-2.5 px-3">Proxy</TabsTrigger>
-              <TabsTrigger value="log" className="py-2.5 px-3">Log</TabsTrigger>
+        <div className="flex-1 flex flex-col overflow-hidden p-6">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full flex flex-col flex-1 overflow-hidden">
+            <TabsList className="flex w-full mb-6 h-auto p-1 shrink-0">
+              <TabsTrigger value="general" className="flex-1 py-2 text-xs">General</TabsTrigger>
+              <TabsTrigger value="accounts" className="flex-1 py-2 text-xs">Accounts</TabsTrigger>
+              <TabsTrigger value="permissions" className="flex-1 py-2 text-xs">Permissions</TabsTrigger>
+              <TabsTrigger value="environment" className="flex-1 py-2 text-xs">Environment</TabsTrigger>
+              <TabsTrigger value="advanced" className="flex-1 py-2 text-xs">Advanced</TabsTrigger>
+              <TabsTrigger value="hooks" className="flex-1 py-2 text-xs">Hooks</TabsTrigger>
+              <TabsTrigger value="commands" className="flex-1 py-2 text-xs">Commands</TabsTrigger>
+              <TabsTrigger value="storage" className="flex-1 py-2 text-xs">Storage</TabsTrigger>
+              <TabsTrigger value="proxy" className="flex-1 py-2 text-xs">Proxy</TabsTrigger>
+              <TabsTrigger value="log" className="flex-1 py-2 text-xs">Log</TabsTrigger>
             </TabsList>
 
+            <div className="flex-1 overflow-y-auto">
             {/* Account selector for account-specific tabs */}
             {["environment", "advanced", "hooks", "commands", "permissions"].includes(activeTab) && accounts.length > 0 && (
               <div className="flex items-center gap-2 mb-4 p-3 rounded-lg border border-border/50 bg-muted/30">
@@ -1055,6 +1056,7 @@ export const Settings: React.FC<SettingsProps> = ({
             <TabsContent value="log">
               <LogTab />
             </TabsContent>
+            </div>
 
           </Tabs>
         </div>

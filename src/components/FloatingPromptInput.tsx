@@ -30,7 +30,7 @@ interface FloatingPromptInputProps {
   /**
    * Callback when prompt is sent
    */
-  onSend: (prompt: string, model: string) => void;
+  onSend: (prompt: string, model: string, images?: string[]) => void;
   /**
    * Whether the input is loading
    */
@@ -233,6 +233,11 @@ const FloatingPromptInputInner = (
 ) => {
   const [prompt, setPrompt] = useState("");
   const [selectedModel, setSelectedModel] = useState<string>(defaultModel);
+
+  // Sync internal model state when the parent changes defaultModel
+  useEffect(() => {
+    setSelectedModel(defaultModel);
+  }, [defaultModel]);
   const [selectedThinkingMode, setSelectedThinkingMode] = useState<ThinkingMode>("auto");
   const [isExpanded, setIsExpanded] = useState(false);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
@@ -243,6 +248,8 @@ const FloatingPromptInputInner = (
   const [slashCommandQuery, setSlashCommandQuery] = useState("");
   const [cursorPosition, setCursorPosition] = useState(0);
   const [embeddedImages, setEmbeddedImages] = useState<string[]>([]);
+  // Pasted images held as base64 data URLs (in-memory, not on disk)
+  const [pastedImages, setPastedImages] = useState<string[]>([]);
   const [dragActive, setDragActive] = useState(false);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -292,66 +299,40 @@ const FloatingPromptInputInner = (
 
   // Extract image paths from prompt text
   const extractImagePaths = (text: string): string[] => {
-    console.log('[extractImagePaths] Input text length:', text.length);
-    
-    // Updated regex to handle both quoted and unquoted paths
-    // Pattern 1: @"path with spaces or data URLs" - quoted paths
-    // Pattern 2: @path - unquoted paths (continues until @ or end)
     const quotedRegex = /@"([^"]+)"/g;
     const unquotedRegex = /@([^@\n\s]+)/g;
-    
-    const pathsSet = new Set<string>(); // Use Set to ensure uniqueness
-    
-    // First, extract quoted paths (including data URLs)
+    const pathsSet = new Set<string>();
+
+    // Quoted paths (including data URLs)
     let matches = Array.from(text.matchAll(quotedRegex));
-    console.log('[extractImagePaths] Quoted matches:', matches.length);
-    
     for (const match of matches) {
-      const path = match[1]; // No need to trim, quotes preserve exact path
-      console.log('[extractImagePaths] Processing quoted path:', path.startsWith('data:') ? 'data URL' : path);
-      
-      // For data URLs, use as-is; for file paths, convert to absolute
-      const fullPath = path.startsWith('data:') 
-        ? path 
+      const path = match[1];
+      const fullPath = path.startsWith('data:')
+        ? path
         : (path.startsWith('/') ? path : (projectPath ? `${projectPath}/${path}` : path));
-      
-      if (isImageFile(fullPath)) {
-        pathsSet.add(fullPath);
-      }
-    }
-    
-    // Remove quoted mentions from text to avoid double-matching
-    let textWithoutQuoted = text.replace(quotedRegex, '');
-    
-    // Then extract unquoted paths (typically file paths)
-    matches = Array.from(textWithoutQuoted.matchAll(unquotedRegex));
-    console.log('[extractImagePaths] Unquoted matches:', matches.length);
-    
-    for (const match of matches) {
-      const path = match[1].trim();
-      // Skip if it looks like a data URL fragment (shouldn't happen with proper quoting)
-      if (path.includes('data:')) continue;
-      
-      console.log('[extractImagePaths] Processing unquoted path:', path);
-      
-      // Convert relative path to absolute if needed
-      const fullPath = path.startsWith('/') ? path : (projectPath ? `${projectPath}/${path}` : path);
-      
       if (isImageFile(fullPath)) {
         pathsSet.add(fullPath);
       }
     }
 
-    const uniquePaths = Array.from(pathsSet);
-    console.log('[extractImagePaths] Final extracted paths (unique):', uniquePaths.length);
-    return uniquePaths;
+    // Unquoted paths
+    const textWithoutQuoted = text.replace(quotedRegex, '');
+    matches = Array.from(textWithoutQuoted.matchAll(unquotedRegex));
+    for (const match of matches) {
+      const path = match[1].trim();
+      if (path.includes('data:')) continue;
+      const fullPath = path.startsWith('/') ? path : (projectPath ? `${projectPath}/${path}` : path);
+      if (isImageFile(fullPath)) {
+        pathsSet.add(fullPath);
+      }
+    }
+
+    return Array.from(pathsSet);
   };
 
   // Update embedded images when prompt changes
   useEffect(() => {
-    console.log('[useEffect] Prompt changed:', prompt);
     const imagePaths = extractImagePaths(prompt);
-    console.log('[useEffect] Setting embeddedImages to:', imagePaths);
     setEmbeddedImages(imagePaths);
     
     // Auto-resize on prompt change (handles paste, programmatic changes, etc.)
@@ -701,7 +682,7 @@ const FloatingPromptInputInner = (
       return;
     }
 
-    if (prompt.trim() && !disabled) {
+    if ((prompt.trim() || pastedImages.length > 0) && !disabled) {
       let finalPrompt = prompt.trim();
 
       // Append thinking phrase if not auto mode
@@ -710,9 +691,10 @@ const FloatingPromptInputInner = (
         finalPrompt = `${finalPrompt}.\n\n${thinkingMode.phrase}.`;
       }
 
-      onSend(finalPrompt, selectedModel);
+      onSend(finalPrompt, selectedModel, pastedImages.length > 0 ? pastedImages : undefined);
       setPrompt("");
       setEmbeddedImages([]);
+      setPastedImages([]);
       setTextareaHeight(48); // Reset height after sending
     }
   };
@@ -761,34 +743,17 @@ const FloatingPromptInputInner = (
     for (const item of items) {
       if (item.type.startsWith('image/')) {
         e.preventDefault();
-        
-        // Get the image blob
+
         const blob = item.getAsFile();
         if (!blob) continue;
 
         try {
-          // Convert blob to base64
           const reader = new FileReader();
           reader.onload = () => {
-            const base64Data = reader.result as string;
-            
-            // Add the base64 data URL directly to the prompt
-            setPrompt(currentPrompt => {
-              // Use the data URL directly as the image reference
-              const mention = `@"${base64Data}"`;
-              const newPrompt = currentPrompt + (currentPrompt.endsWith(' ') || currentPrompt === '' ? '' : ' ') + mention + ' ';
-              
-              // Focus the textarea and move cursor to end
-              setTimeout(() => {
-                const target = isExpanded ? expandedTextareaRef.current : textareaRef.current;
-                target?.focus();
-                target?.setSelectionRange(newPrompt.length, newPrompt.length);
-              }, 0);
-
-              return newPrompt;
-            });
+            const dataUrl = reader.result as string;
+            // Store the base64 data URL in memory — no file, no mention in text
+            setPastedImages(prev => [...prev, dataUrl]);
           };
-          
           reader.readAsDataURL(blob);
         } catch (error) {
           console.error('Failed to paste image:', error);
@@ -1078,6 +1043,13 @@ const FloatingPromptInputInner = (
             <ImagePreview
               images={embeddedImages}
               onRemove={handleRemoveImage}
+              className="border-b border-border"
+            />
+          )}
+          {pastedImages.length > 0 && (
+            <ImagePreview
+              images={pastedImages}
+              onRemove={(index) => setPastedImages(prev => prev.filter((_, i) => i !== index))}
               className="border-b border-border"
             />
           )}

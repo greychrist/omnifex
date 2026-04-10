@@ -1,13 +1,15 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { 
+import {
   Copy,
   ChevronDown,
   GitBranch,
   ChevronUp,
   X,
   Hash,
-  Wrench
+  Wrench,
+  AlertCircle,
+  Send
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,7 +29,6 @@ import { TooltipProvider, TooltipSimple } from "@/components/ui/tooltip-modern";
 import { SplitPane } from "@/components/ui/split-pane";
 import { WebviewPreview } from "./WebviewPreview";
 import type { ClaudeStreamMessage } from "./AgentExecution";
-import { PermissionPrompt } from "./PermissionPrompt";
 import { SessionHeader } from "./SessionHeader";
 // Virtualizer removed — flat list for reliable scrolling
 import { SessionPersistenceService } from "@/services/sessionPersistence";
@@ -84,6 +85,24 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   const [projectPath] = useState(initialProjectPath || session?.project_path || "");
   const [messages, setMessages] = useState<ClaudeStreamMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [_loadingStartTime, setLoadingStartTime] = useState<number | null>(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [timedOutMessageIndex, setTimedOutMessageIndex] = useState<number | null>(null);
+  const [currentActivity, setCurrentActivity] = useState<string>("Honking");
+  const [thinkingSeconds, setThinkingSeconds] = useState<number>(0);
+  const [liveThinking, setLiveThinking] = useState<string>("");
+  const lastPromptRef = useRef<{ prompt: string; model: string } | null>(null);
+  const thinkingStartRef = useRef<number | null>(null);
+  const RESPONSE_TIMEOUT_MS = 60_000;
+
+  // Random gerund words like Claude Code CLI
+  const GERUNDS = [
+    "Honking", "Pondering", "Musing", "Cogitating", "Ruminating", "Brewing",
+    "Noodling", "Puzzling", "Tinkering", "Scheming", "Conjuring", "Percolating",
+    "Deliberating", "Contemplating", "Hatching", "Weaving", "Forging", "Crafting",
+    "Kneading", "Sifting", "Plotting", "Wrangling"
+  ];
+  const pickGerund = () => GERUNDS[Math.floor(Math.random() * GERUNDS.length)];
   const [error, setError] = useState<string | null>(null);
   const [rawJsonlOutput, setRawJsonlOutput] = useState<string[]>([]);
   const [copyPopoverOpen, setCopyPopoverOpen] = useState(false);
@@ -263,18 +282,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Debug logging
-  useEffect(() => {
-    console.log('[ClaudeCodeSession] State update:', {
-      projectPath,
-      session,
-      extractedSessionInfo,
-      effectiveSession,
-      messagesCount: messages.length,
-      isLoading
-    });
-  }, [projectPath, session, extractedSessionInfo, effectiveSession, messages.length, isLoading]);
-
   // Load session history if resuming
   useEffect(() => {
     if (session) {
@@ -289,6 +296,32 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   useEffect(() => {
     onStreamingChange?.(isLoading, claudeSessionId);
   }, [isLoading, claudeSessionId, onStreamingChange]);
+
+  // Track elapsed time while loading + response timeout
+  useEffect(() => {
+    if (isLoading) {
+      setLoadingStartTime(Date.now());
+      setElapsedSeconds(0);
+      const interval = setInterval(() => {
+        setElapsedSeconds(prev => prev + 1);
+      }, 1000);
+      const timeout = setTimeout(() => {
+        // Find the last user message index
+        const lastUserIdx = [...messages].reverse().findIndex(m => m.type === 'user' && !m.isMeta);
+        if (lastUserIdx !== -1) {
+          setTimedOutMessageIndex(messages.length - 1 - lastUserIdx);
+        }
+        setIsLoading(false);
+        setError(null); // Don't show the generic error bar
+        // Reset persistent session so a retry starts a fresh one
+        persistentSessionRef.current = false;
+      }, RESPONSE_TIMEOUT_MS);
+      return () => { clearInterval(interval); clearTimeout(timeout); };
+    } else {
+      setLoadingStartTime(null);
+      setElapsedSeconds(0);
+    }
+  }, [isLoading, messages.length]);
 
   // Auto-scroll to bottom when new messages arrive, but only if already near the bottom
   useEffect(() => {
@@ -377,7 +410,56 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
         rawPayload = JSON.stringify(payload);
       }
 
-      console.log('[ClaudeCodeSession] handleStreamMessage - message type:', message.type);
+
+      // Update current activity and track thinking duration based on message content
+      if (message.type === 'assistant' && message.message?.content) {
+        const content = Array.isArray(message.message.content) ? message.message.content : [];
+        for (const block of content) {
+          if (block?.type === 'thinking') {
+            if (thinkingStartRef.current === null) {
+              thinkingStartRef.current = Date.now();
+            }
+            if (block.thinking) {
+              setLiveThinking(block.thinking);
+            }
+            setCurrentActivity(pickGerund());
+            break;
+          } else if (block?.type === 'tool_use' && block.name) {
+            if (thinkingStartRef.current !== null) {
+              setThinkingSeconds(Math.floor((Date.now() - thinkingStartRef.current) / 1000));
+              thinkingStartRef.current = null;
+            }
+            // Build a descriptive label based on tool + input
+            const name = block.name;
+            const input = block.input || {};
+            let label = `Running ${name}`;
+            if (name === 'Grep') label = `Searching for ${input.pattern ? `"${String(input.pattern).slice(0, 40)}"` : 'pattern'}`;
+            else if (name === 'Glob') label = `Finding files ${input.pattern ? `matching ${input.pattern}` : ''}`;
+            else if (name === 'Read') label = `Reading ${input.file_path ? String(input.file_path).split('/').pop() : 'file'}`;
+            else if (name === 'Write') label = `Writing ${input.file_path ? String(input.file_path).split('/').pop() : 'file'}`;
+            else if (name === 'Edit' || name === 'MultiEdit') label = `Editing ${input.file_path ? String(input.file_path).split('/').pop() : 'file'}`;
+            else if (name === 'Bash') label = `Running command${input.description ? `: ${String(input.description).slice(0, 60)}` : ''}`;
+            else if (name === 'WebFetch') label = `Fetching ${input.url ? String(input.url).slice(0, 50) : 'URL'}`;
+            else if (name === 'WebSearch') label = `Searching web${input.query ? `: "${String(input.query).slice(0, 40)}"` : ''}`;
+            else if (name === 'Task') label = `Running agent${input.subagent_type ? ` (${input.subagent_type})` : ''}`;
+            else if (name === 'TodoWrite') label = 'Updating todos';
+            setCurrentActivity(label);
+            break;
+          } else if (block?.type === 'text') {
+            if (thinkingStartRef.current !== null) {
+              setThinkingSeconds(Math.floor((Date.now() - thinkingStartRef.current) / 1000));
+              thinkingStartRef.current = null;
+            }
+            setCurrentActivity(pickGerund());
+            break;
+          }
+        }
+      } else if (message.type === 'user' && message.message?.content) {
+        const content = Array.isArray(message.message.content) ? message.message.content : [];
+        if (content.some((b: any) => b?.type === 'tool_result')) {
+          setCurrentActivity(pickGerund());
+        }
+      }
 
       // Store raw JSONL
       setRawJsonlOutput((prev) => [...prev, rawPayload]);
@@ -478,7 +560,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           (m) => m.type === 'system' && m.subtype === 'init'
         );
         if (alreadyHasInit) {
-          console.log('[ClaudeCodeSession] Skipping duplicate system:init');
           return;
         }
         setMessages((prev) => {
@@ -554,7 +635,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     });
 
     const completeUnlisten = window.electronAPI.onEvent(`claude-complete:${tid}`, () => {
-      console.log('[ClaudeCodeSession] Process exited');
       if (isMountedRef.current) {
         setIsLoading(false);
         persistentSessionRef.current = false;
@@ -564,14 +644,24 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
 
     unlistenRefs.current = [outputUnlisten, errorUnlisten, completeUnlisten];
 
-    // Start the persistent process
+    // Resolve account fresh at session start (the cached state may not be ready yet)
     const mode = permissionMode === "skip" ? "bypassPermissions" : "default";
-    await api.startSession(tid, projectPath, selectedModel, mode, resumeId);
+    let configDir = accountResolution?.account.config_dir;
+    if (!configDir && projectPath) {
+      try {
+        const resolved = await api.resolveAccountForProject(projectPath);
+        if (resolved) {
+          configDir = resolved.config_dir;
+        }
+      } catch (e) {
+        console.error('[startPersistentSession] resolve error:', e);
+      }
+    }
+    await api.startSession(tid, projectPath, selectedModel, mode, resumeId, configDir);
     persistentSessionRef.current = true;
   };
 
-  const handleSendPrompt = async (prompt: string, model: string) => {
-    console.log('[ClaudeCodeSession] handleSendPrompt called with:', { prompt, model, projectPath, claudeSessionId, effectiveSession });
+  const handleSendPrompt = async (prompt: string, model: string, images?: string[]) => {
 
     if (!projectPath) {
       setError("Please select a project directory first");
@@ -592,6 +682,12 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     try {
       setIsLoading(true);
       setError(null);
+      setTimedOutMessageIndex(null);
+      setCurrentActivity(pickGerund());
+      setThinkingSeconds(0);
+      setLiveThinking("");
+      thinkingStartRef.current = null;
+      lastPromptRef.current = { prompt, model };
 
       const tid = tabIdRef.current;
 
@@ -611,17 +707,31 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
         await startPersistentSession(resumeId);
       }
 
-      // Add user message immediately
+      // Build content blocks: text + any pasted images
+      const contentBlocks: Array<Record<string, unknown>> = [];
+      if (prompt) {
+        contentBlocks.push({ type: "text", text: prompt });
+      }
+      if (images && images.length > 0) {
+        for (const dataUrl of images) {
+          // dataUrl is like "data:image/png;base64,xxxxx"
+          const match = dataUrl.match(/^data:(image\/[\w+]+);base64,(.+)$/);
+          if (!match) continue;
+          contentBlocks.push({
+            type: "image",
+            source: {
+              type: "base64",
+              media_type: match[1],
+              data: match[2],
+            },
+          });
+        }
+      }
+
+      // Add user message immediately for UI display
       const userMessage: ClaudeStreamMessage = {
         type: "user",
-        message: {
-          content: [
-            {
-              type: "text",
-              text: prompt
-            }
-          ]
-        }
+        message: { content: contentBlocks },
       };
       setMessages((prev) => [...prev, userMessage]);
 
@@ -646,7 +756,11 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       }
 
       // Send the message via stdin to the persistent process
-      await api.sendMessage(tid, prompt);
+      if (images && images.length > 0) {
+        await api.sendStructuredMessage(tid, contentBlocks);
+      } else {
+        await api.sendMessage(tid, prompt);
+      }
     } catch (err) {
       console.error("Failed to send prompt:", err);
       setError(String(err) || "Failed to send prompt");
@@ -857,7 +971,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   };
 
   const handlePreviewUrlChange = (url: string) => {
-    console.log('[ClaudeCodeSession] Preview URL changed to:', url);
     setPreviewUrl(url);
   };
 
@@ -874,13 +987,11 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     isMountedRef.current = true;
 
     return () => {
-      console.log('[ClaudeCodeSession] Component unmounting, cleaning up');
       isMountedRef.current = false;
 
       // Stop the persistent process if the tab is being closed mid-session
       const tid = tabIdRef.current;
       if (tid && persistentSessionRef.current) {
-        console.log('[ClaudeCodeSession] Stopping persistent session on unmount:', tid);
         api.stopSession(tid).catch(err => {
           console.error("Failed to stop session on unmount:", err);
         });
@@ -906,6 +1017,19 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     isNearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 150;
   }, []);
 
+  const handleRetryTimedOut = useCallback(() => {
+    if (!lastPromptRef.current) return;
+    setTimedOutMessageIndex(null);
+    // Remove the timed-out user message so it gets re-added by handleSendPrompt
+    setMessages(prev => {
+      const last = [...prev].reverse().findIndex(m => m.type === 'user' && !m.isMeta);
+      if (last === -1) return prev;
+      const idx = prev.length - 1 - last;
+      return [...prev.slice(0, idx), ...prev.slice(idx + 1)];
+    });
+    handleSendPrompt(lastPromptRef.current.prompt, lastPromptRef.current.model);
+  }, [handleSendPrompt]);
+
   const messagesList = (
     <div
       ref={parentRef}
@@ -916,27 +1040,67 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       }}
     >
       <div className="w-full max-w-6xl mx-auto px-4 pt-8 pb-4 space-y-4">
-          {displayableMessages.map((message, idx) => (
-            <div key={idx}>
-              <StreamMessage
-                message={message}
-                streamMessages={messages}
-                onLinkDetected={handleLinkDetected}
-              />
-            </div>
-          ))}
+          {displayableMessages.map((message, idx) => {
+            // Check if this is the last user message and it timed out
+            const isTimedOut = timedOutMessageIndex !== null
+              && message.type === 'user'
+              && !message.isMeta
+              && idx === displayableMessages.length - 1;
+
+            return (
+              <div key={idx}>
+                <StreamMessage
+                  message={message}
+                  streamMessages={messages}
+                  onLinkDetected={handleLinkDetected}
+                />
+                {isTimedOut && (
+                  <div className="flex items-center justify-end gap-1.5 mt-1 pr-1">
+                    <span className="text-xs text-destructive font-medium">Response timed out</span>
+                    <button
+                      onClick={handleRetryTimedOut}
+                      className="text-destructive hover:text-destructive/80 transition-colors"
+                      title="Tap to retry"
+                    >
+                      <AlertCircle className="size-5" />
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
           <div ref={messagesEndRef} />
       </div>
 
-      {/* Loading indicator under the latest message */}
+      {/* Loading indicator under the latest message — iMessage-style typing bubble */}
       {isLoading && (
         <motion.div
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.15 }}
-          className="flex items-center justify-center py-4 mb-20"
+          className="flex justify-start w-full max-w-6xl mx-auto px-4 mb-20"
         >
-          <div className="rotating-symbol text-primary" />
+          <div className="max-w-[95%] space-y-2">
+            <div className="flex items-center gap-3">
+              <div className="inline-flex items-center gap-1 rounded-2xl rounded-bl-sm bg-primary/10 border border-primary/20 px-4 py-3">
+                <span className="typing-dot" />
+                <span className="typing-dot" style={{ animationDelay: '0.15s' }} />
+                <span className="typing-dot" style={{ animationDelay: '0.3s' }} />
+              </div>
+              <div className="flex items-baseline gap-2 text-xs font-mono">
+                <span className="text-primary">✶</span>
+                <span className="text-muted-foreground">{currentActivity}...</span>
+                <span className="text-muted-foreground/60">
+                  ({elapsedSeconds}s · ↓ {totalTokens.toLocaleString()} tokens{thinkingSeconds > 0 ? ` · thought for ${thinkingSeconds}s` : ''})
+                </span>
+              </div>
+            </div>
+            {liveThinking && (
+              <div className="px-3 py-2 text-xs text-muted-foreground italic whitespace-pre-wrap border-l-2 border-muted-foreground/20 max-h-48 overflow-y-auto">
+                {liveThinking}
+              </div>
+            )}
+          </div>
         </motion.div>
       )}
 
@@ -1225,24 +1389,50 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                         <div className="flex items-center gap-2 mb-1">
                           <span className="text-xs font-medium text-muted-foreground">#{index + 1}</span>
                           <span className="text-xs px-1.5 py-0.5 bg-primary/10 text-primary rounded">
-                            {queuedPrompt.model === "opus" ? "Opus" : "Sonnet"}
+                            {queuedPrompt.model === "opus[1m]" ? "Opus (1M)" : queuedPrompt.model === "opus" ? "Opus" : "Sonnet"}
                           </span>
                         </div>
                         <p className="text-sm line-clamp-2 break-words">{queuedPrompt.prompt}</p>
                       </div>
-                      <motion.div
-                        whileTap={{ scale: 0.97 }}
-                        transition={{ duration: 0.15 }}
-                      >
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6 flex-shrink-0"
-                          onClick={() => setQueuedPrompts(prev => prev.filter(p => p.id !== queuedPrompt.id))}
+                      <div className="flex items-center gap-1">
+                        <motion.div
+                          whileTap={{ scale: 0.97 }}
+                          transition={{ duration: 0.15 }}
                         >
-                          <X className="h-3 w-3" />
-                        </Button>
-                      </motion.div>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 flex-shrink-0 text-primary hover:text-primary"
+                            title="Send now"
+                            onClick={() => {
+                              // Remove from queue and send immediately
+                              setQueuedPrompts(prev => prev.filter(p => p.id !== queuedPrompt.id));
+                              // Force reset loading state so handleSendPrompt doesn't re-queue
+                              setIsLoading(false);
+                              persistentSessionRef.current = false;
+                              setTimeout(() => {
+                                handleSendPrompt(queuedPrompt.prompt, queuedPrompt.model);
+                              }, 50);
+                            }}
+                          >
+                            <Send className="h-3 w-3" />
+                          </Button>
+                        </motion.div>
+                        <motion.div
+                          whileTap={{ scale: 0.97 }}
+                          transition={{ duration: 0.15 }}
+                        >
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 flex-shrink-0"
+                            title="Remove from queue"
+                            onClick={() => setQueuedPrompts(prev => prev.filter(p => p.id !== queuedPrompt.id))}
+                          >
+                            <X className="h-3 w-3" />
+                          </Button>
+                        </motion.div>
+                      </div>
                     </motion.div>
                   ))}
                 </div>
@@ -1319,29 +1509,79 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             </motion.div>
           )}
 
-          {waitingForPermission && pendingToolUse && pendingRequestId && (
-            <div className={cn(
-              "fixed bottom-6 left-0 right-0 z-[60] px-4",
-              showTimeline && "sm:right-96"
-            )}>
-              <div className="max-w-3xl mx-auto">
-                <PermissionPrompt
-                  tabId={tabIdRef.current}
-                  requestId={pendingRequestId}
-                  toolName={pendingToolUse.name}
-                  toolInput={pendingToolUse.input}
-                  autoAllowEnabled={autoAllowEnabled}
-                  autoAllowedTools={autoAllowedTools}
-                  onAutoAllow={(tool) => setAutoAllowedTools(prev => new Set([...prev, tool]))}
-                  onResponded={() => {
+          <Dialog
+            open={waitingForPermission && !!pendingToolUse && !!pendingRequestId}
+            onOpenChange={(open) => {
+              if (!open && pendingRequestId) {
+                // Dismissing the dialog = deny
+                api.respondPermission(tabIdRef.current, pendingRequestId, 'deny').catch(console.error);
+                setWaitingForPermission(false);
+                setPendingToolUse(null);
+                setPendingRequestId(null);
+              }
+            }}
+          >
+            <DialogContent className="sm:max-w-lg">
+              <DialogHeader>
+                <DialogTitle>Permission Required</DialogTitle>
+                <DialogDescription>
+                  Claude wants to use <span className="font-mono font-semibold text-foreground">{pendingToolUse?.name}</span>
+                </DialogDescription>
+              </DialogHeader>
+              {pendingToolUse && (
+                <div className="max-h-64 overflow-auto rounded-md border border-border bg-muted/30 p-3">
+                  <pre className="text-xs font-mono whitespace-pre-wrap break-all">
+                    {JSON.stringify(pendingToolUse.input, null, 2)}
+                  </pre>
+                </div>
+              )}
+              <DialogFooter className="flex-row justify-center gap-2 sm:justify-center sm:space-x-0">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-xs"
+                  onClick={() => {
+                    if (!pendingRequestId) return;
+                    api.respondPermission(tabIdRef.current, pendingRequestId, 'allow').catch(console.error);
                     setWaitingForPermission(false);
                     setPendingToolUse(null);
                     setPendingRequestId(null);
                   }}
-                />
-              </div>
-            </div>
-          )}
+                >
+                  Yes
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    if (!pendingRequestId || !pendingToolUse) return;
+                    setAutoAllowedTools(prev => new Set([...prev, pendingToolUse.name]));
+                    setAutoAllowEnabled(true);
+                    api.respondPermission(tabIdRef.current, pendingRequestId, 'allow').catch(console.error);
+                    setWaitingForPermission(false);
+                    setPendingToolUse(null);
+                    setPendingRequestId(null);
+                  }}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs"
+                >
+                  Yes, and don't ask again for {pendingToolUse?.name}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  className="text-xs"
+                  onClick={() => {
+                    if (!pendingRequestId) return;
+                    api.respondPermission(tabIdRef.current, pendingRequestId, 'deny').catch(console.error);
+                    setWaitingForPermission(false);
+                    setPendingToolUse(null);
+                    setPendingRequestId(null);
+                  }}
+                >
+                  No
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
 
           <div className={cn(
             "fixed bottom-0 left-0 right-0 transition-all duration-300 z-50",

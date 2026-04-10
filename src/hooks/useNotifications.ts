@@ -34,11 +34,8 @@ export function useNotifications(
       "claude-notification",
       (payload: any) => {
         const { tab_id } = payload as NotificationPayload;
-        console.log('[Notifications] received claude-notification for tab:', tab_id, 'active:', activeTabIdRef.current);
-
         // Mark non-active tabs with unread badge
         if (tab_id !== activeTabIdRef.current) {
-          console.log('[Notifications] marking tab as unread:', tab_id);
           updateTabRef.current(tab_id, { hasUnreadResult: true });
         }
       }

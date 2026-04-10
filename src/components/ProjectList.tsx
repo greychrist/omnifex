@@ -182,16 +182,16 @@ export const ProjectList: React.FC<ProjectListProps> = ({
                   transition={{ duration: 0.15 }}
                   className="w-full text-left px-3 py-2 rounded-md hover:bg-accent/50 transition-colors flex items-center justify-between"
                 >
-                  <span className="text-body-small font-medium">
-                    {getProjectName(project.path)}
-                  </span>
                   <span className="flex items-center gap-2">
+                    <span className="text-body-small font-medium">
+                      {getProjectName(project.path)}
+                    </span>
                     {project.account_name && (
                       <AccountBadge name={project.account_name} />
                     )}
-                    <span className="text-caption text-muted-foreground font-mono text-right" style={{ minWidth: '200px' }}>
-                      {getDisplayPath(project.path, 35)}
-                    </span>
+                  </span>
+                  <span className="text-caption text-muted-foreground font-mono text-right" style={{ minWidth: '200px' }}>
+                    {getDisplayPath(project.path, 35)}
                   </span>
                 </motion.button>
               </motion.div>

@@ -13,11 +13,11 @@ import {
   Zap,
   Code,
   AlertCircle,
-  Loader2,
   Search,
   ChevronDown,
   ChevronRight
 } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -347,7 +347,7 @@ export const SlashCommandsManager: React.FC<SlashCommandsManagerProps> = ({
       {/* Commands List */}
       {loading ? (
         <div className="flex items-center justify-center py-8">
-          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          <Spinner className="size-6 text-muted-foreground" />
         </div>
       ) : filteredCommands.length === 0 ? (
         <Card className="p-8">
@@ -654,7 +654,7 @@ export const SlashCommandsManager: React.FC<SlashCommandsManagerProps> = ({
             >
               {saving ? (
                 <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  <Spinner className="mr-2" />
                   Saving...
                 </>
               ) : (
@@ -701,7 +701,7 @@ export const SlashCommandsManager: React.FC<SlashCommandsManagerProps> = ({
             >
               {deleting ? (
                 <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  <Spinner className="mr-2" />
                   Deleting...
                 </>
               ) : (

@@ -5,6 +5,7 @@ import { api, type Project, type Session, type ClaudeMdFile } from "@/lib/api";
 import { initializeWebMode } from "@/lib/apiAdapter";
 import { OutputCacheProvider } from "@/lib/outputCache";
 import { TabProvider, useTabContext } from "@/contexts/TabContext";
+import { AccountsProvider } from "@/contexts/AccountsContext";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { useNotifications } from "@/hooks/useNotifications";
 import { Card } from "@/components/ui/card";
@@ -512,10 +513,12 @@ function App() {
   return (
     <ThemeProvider>
       <OutputCacheProvider>
-        <TabProvider>
-          <AppContent />
-          <StartupIntro visible={showIntro} />
-        </TabProvider>
+        <AccountsProvider>
+          <TabProvider>
+            <AppContent />
+            <StartupIntro visible={showIntro} />
+          </TabProvider>
+        </AccountsProvider>
       </OutputCacheProvider>
     </ThemeProvider>
   );

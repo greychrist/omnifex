@@ -6,9 +6,9 @@ import {
   ChevronRight,
   Trash2,
   AlertTriangle,
-  Loader2,
   ScrollText,
 } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
@@ -181,7 +181,7 @@ export const LogTab: React.FC = () => {
 
         <Button variant="outline" size="sm" onClick={fetchLogs} disabled={loading}>
           {loading ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
+            <Spinner />
           ) : (
             <RefreshCw className="w-4 h-4" />
           )}

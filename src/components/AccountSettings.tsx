@@ -3,7 +3,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { api, type Account, type PathRule } from "@/lib/api";
 import { AccountBadge } from "@/components/AccountBadge";
-import { Trash2, Plus, Star, Pencil, FolderOpen, Check, X } from "lucide-react";
+import { useAccounts } from "@/contexts/AccountsContext";
+import { Trash2, Plus, Pencil, FolderOpen, Check, X } from "lucide-react";
 
 const ACCOUNT_TYPES = [
   { value: "max", label: "Max", desc: "No cost, usage limits only" },
@@ -72,6 +73,7 @@ const TypeSelect: React.FC<{ value: string; onChange: (v: string) => void }> = (
 );
 
 export const AccountSettings: React.FC = () => {
+  const { refresh: refreshAccountsContext } = useAccounts();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [pathRules, setPathRules] = useState<PathRule[]>([]);
   const [overrides, setOverrides] = useState<Array<{project_path: string; account_id: number; account_name: string}>>([]);
@@ -79,7 +81,7 @@ export const AccountSettings: React.FC = () => {
   // Test resolution state
   const [testPath, setTestPath] = useState("");
   const [testResult, setTestResult] = useState<{
-    account: { name: string; account_type: string; config_dir: string };
+    account: { name: string; account_type: string; config_dir: string; color?: string | null };
     match_type: string;
     match_detail: string;
   } | null>(null);
@@ -90,12 +92,14 @@ export const AccountSettings: React.FC = () => {
   const [newName, setNewName] = useState("");
   const [newDir, setNewDir] = useState("");
   const [newType, setNewType] = useState("pro");
+  const [newColor, setNewColor] = useState("#3b82f6");
 
   // Edit account state
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editName, setEditName] = useState("");
   const [editDir, setEditDir] = useState("");
   const [editType, setEditType] = useState("");
+  const [editColor, setEditColor] = useState("#3b82f6");
 
   // Add rule form
   const [showAddRule, setShowAddRule] = useState(false);
@@ -110,6 +114,7 @@ export const AccountSettings: React.FC = () => {
       ]);
       setAccounts(accts);
       setPathRules(rules);
+      refreshAccountsContext();
     } catch (error) {
       console.error("Failed to load account data:", error);
     }
@@ -141,6 +146,7 @@ export const AccountSettings: React.FC = () => {
     setEditName(account.name);
     setEditDir(account.config_dir);
     setEditType(account.account_type);
+    setEditColor(account.color || "#3b82f6");
   };
 
   const cancelEdit = () => {
@@ -150,7 +156,7 @@ export const AccountSettings: React.FC = () => {
   const saveEdit = async () => {
     if (editingId === null || !editName.trim() || !editDir.trim()) return;
     try {
-      await api.updateAccount(editingId, editName.trim(), editDir.trim(), editType);
+      await api.updateAccount(editingId, editName.trim(), editDir.trim(), editType, editColor);
       setEditingId(null);
       await loadData();
     } catch (error) {
@@ -161,10 +167,11 @@ export const AccountSettings: React.FC = () => {
   const handleCreate = async () => {
     if (!newName.trim() || !newDir.trim()) return;
     try {
-      await api.createAccount(newName.trim(), newDir.trim(), accounts.length === 0, newType);
+      await api.createAccount(newName.trim(), newDir.trim(), accounts.length === 0, newType, newColor);
       setNewName("");
       setNewDir("");
       setNewType("pro");
+      setNewColor("#3b82f6");
       setShowAddAccount(false);
       await loadData();
     } catch (error) {
@@ -178,15 +185,6 @@ export const AccountSettings: React.FC = () => {
       await loadData();
     } catch (error) {
       console.error("Failed to delete account:", error);
-    }
-  };
-
-  const handleSetDefault = async (id: number) => {
-    try {
-      await api.setDefaultAccount(id);
-      await loadData();
-    } catch (error) {
-      console.error("Failed to set default:", error);
     }
   };
 
@@ -237,6 +235,15 @@ export const AccountSettings: React.FC = () => {
                   placeholder="Config directory"
                 />
                 <TypeSelect value={editType} onChange={setEditType} />
+                <div className="flex items-center gap-2">
+                  <label className="text-xs text-muted-foreground">Color</label>
+                  <input
+                    type="color"
+                    value={editColor}
+                    onChange={(e) => setEditColor(e.target.value)}
+                    className="w-8 h-8 rounded cursor-pointer border border-border bg-transparent"
+                  />
+                </div>
                 <div className="flex gap-2">
                   <Button size="sm" onClick={saveEdit} className="h-7 text-xs">
                     <Check className="w-3 h-3 mr-1" />
@@ -259,27 +266,13 @@ export const AccountSettings: React.FC = () => {
                 key={account.id}
                 className="flex items-center gap-3 px-3 py-2.5 rounded-lg border border-border bg-muted/30"
               >
-                <AccountBadge name={account.name} />
+                <AccountBadge name={account.name} color={account.color} />
                 <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
                   {account.account_type}
                 </span>
                 <span className="text-xs text-muted-foreground flex-1 truncate">
                   {account.config_dir}
                 </span>
-                {account.is_default && (
-                  <span className="text-[10px] font-medium text-emerald-400">DEFAULT</span>
-                )}
-                {!account.is_default && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 px-2 text-xs text-muted-foreground"
-                    onClick={() => handleSetDefault(account.id)}
-                    title="Set as default"
-                  >
-                    <Star className="w-3 h-3" />
-                  </Button>
-                )}
                 <Button
                   variant="ghost"
                   size="sm"
@@ -317,6 +310,15 @@ export const AccountSettings: React.FC = () => {
               placeholder="Config directory (e.g., ~/.claude-personal)"
             />
             <TypeSelect value={newType} onChange={setNewType} />
+            <div className="flex items-center gap-2">
+              <label className="text-xs text-muted-foreground">Color</label>
+              <input
+                type="color"
+                value={newColor}
+                onChange={(e) => setNewColor(e.target.value)}
+                className="w-8 h-8 rounded cursor-pointer border border-border bg-transparent"
+              />
+            </div>
             <div className="flex gap-2">
               <Button size="sm" onClick={handleCreate} className="h-7 text-xs">
                 Add
@@ -358,7 +360,7 @@ export const AccountSettings: React.FC = () => {
             >
               <code className="text-xs flex-1 text-foreground">{rule.path_prefix}</code>
               <span className="text-muted-foreground text-xs">&rarr;</span>
-              <AccountBadge name={rule.account_name} />
+              <AccountBadge name={rule.account_name} color={accounts.find(a => a.id === rule.account_id)?.color} />
               <Button
                 variant="ghost"
                 size="sm"
@@ -391,7 +393,7 @@ export const AccountSettings: React.FC = () => {
               ))}
             </select>
             <div className="flex gap-2">
-              <Button size="sm" onClick={handleAddRule} className="h-7 text-xs">
+              <Button size="sm" onClick={handleAddRule} className="h-7 text-xs" disabled={!newRulePrefix.trim() || newRuleAccountId === null}>
                 Add
               </Button>
               <Button
@@ -430,7 +432,7 @@ export const AccountSettings: React.FC = () => {
             {overrides.map((override) => (
               <div key={override.project_path} className="flex items-center justify-between text-sm py-1.5 px-2 rounded hover:bg-foreground/5">
                 <span className="font-mono text-xs truncate max-w-[300px]">{override.project_path}</span>
-                <AccountBadge name={override.account_name} />
+                <AccountBadge name={override.account_name} color={accounts.find(a => a.id === override.account_id)?.color} />
               </div>
             ))}
           </div>
@@ -458,7 +460,7 @@ export const AccountSettings: React.FC = () => {
         {testResult && (
           <div className="mt-2 p-3 rounded border border-green-500/30 bg-green-500/5 text-sm">
             <div className="flex items-center gap-2">
-              <AccountBadge name={testResult.account.name} />
+              <AccountBadge name={testResult.account.name} color={testResult.account.color} />
               <span className="text-foreground/50">({testResult.account.account_type})</span>
             </div>
             <div className="text-xs text-foreground/50 mt-1">

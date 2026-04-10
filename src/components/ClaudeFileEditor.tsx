@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from "react";
 import MDEditor from "@uiw/react-md-editor";
 import { motion } from "framer-motion";
-import { ArrowLeft, Save, Loader2 } from "lucide-react";
+import { ArrowLeft, Save } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
 import { Toast, ToastContainer } from "@/components/ui/toast";
 import { api, type ClaudeMdFile } from "@/lib/api";
@@ -125,7 +126,7 @@ export const ClaudeFileEditor: React.FC<ClaudeFileEditorProps> = ({
             size="sm"
           >
             {saving ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              <Spinner className="mr-2" />
             ) : (
               <Save className="mr-2 h-4 w-4" />
             )}
@@ -148,7 +149,7 @@ export const ClaudeFileEditor: React.FC<ClaudeFileEditorProps> = ({
         <div className="flex-1 p-4 overflow-hidden">
           {loading ? (
             <div className="flex items-center justify-center h-full">
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              <Spinner className="size-6 text-muted-foreground" />
             </div>
           ) : (
             <div className="h-full rounded-lg border border-border overflow-hidden shadow-sm" data-color-mode="dark">
