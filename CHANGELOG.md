@@ -53,7 +53,8 @@ First release under the **GreyChrist** name. Ships a full rewrite from Tauri (Ru
 - `pretest` / `pretest:coverage` hooks that rebuild `better-sqlite3` against the current Node ABI so `npm test` Just Works after `electron-forge start` rebuilds for Electron's ABI.
 
 **Developer experience**
-- Single `ci.yml` GitHub workflow replacing the old Tauri/Rust dual workflows: TypeScript check, tests, and renderer bundle build across Linux/macOS/Windows.
+- `ci.yml` GitHub workflow: TypeScript check, Vitest tests, and renderer bundle build across Linux/macOS/Windows on every push and PR, replacing the old Tauri/Rust dual workflows. Cross-platform CI catches regressions cheaply even though only macOS is shipped.
+- `release.yml` GitHub workflow: tag-triggered (`v*.*.*`), runs the full coverage gate then `electron-forge make` on `macos-latest` (Apple Silicon) to produce an unsigned `.dmg` + `.zip`, and publishes a draft GitHub Release with the CHANGELOG body attached.
 - Repo-local commands in `.claude/commands/`: `/verify`, `/commit`, `/resume`, `/account-trace`.
 - Updated `CLAUDE.md`, `src/CLAUDE.md`, and `AGENTS.md` describing the Electron architecture.
 
@@ -98,8 +99,9 @@ First release under the **GreyChrist** name. Ships a full rewrite from Tauri (Ru
 
 ### Known limitations
 
-- **Builds are unsigned.** macOS Gatekeeper will require a right-click → Open on first launch; Windows SmartScreen will warn. Signing will be added once Apple Developer + Windows code signing certs are in place.
+- **macOS-only release.** v0.3.0 ships Apple Silicon (`arm64`) only. Intel macOS, Linux, and Windows are out of scope for the foreseeable future. Intel support would require adding a `macos-13` entry to the release matrix; Linux/Windows would require re-introducing cross-platform release builds.
+- **Unsigned build.** The `.dmg` is not notarized. macOS Gatekeeper will block the first launch — right-click the app → Open → confirm the "unidentified developer" warning. Signing + notarization will be wired in once the Apple Developer ID is set up.
 - A handful of service files (`claude-binary.ts`, `slash-commands.ts`) sit in the 80–88% line coverage range rather than the 90%+ target. Raised in a follow-up.
 
-[0.3.0]: https://github.com/USER/greychrist/releases/tag/v0.3.0
-[0.2.0]: https://github.com/USER/greychrist/releases/tag/v0.2.0
+[0.3.0]: https://github.com/greychrist/GreyChrist/releases/tag/v0.3.0
+[0.2.0]: https://github.com/greychrist/GreyChrist/releases/tag/v0.2.0
