@@ -68,8 +68,8 @@ export function createMCPService(configDir: string): MCPService {
   function list(): any[] {
     const servers = getMcpServers();
     return Object.entries(servers).map(([name, config]) => ({
-      name,
       ...config,
+      name,
     }));
   }
 
@@ -79,7 +79,7 @@ export function createMCPService(configDir: string): MCPService {
     if (!config) {
       throw new Error(`MCP server not found: ${name}`);
     }
-    return { name, ...config };
+    return { ...config, name };
   }
 
   function add(params: any): any {

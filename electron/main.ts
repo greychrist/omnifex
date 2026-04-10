@@ -1,4 +1,5 @@
-import { app, BrowserWindow, dialog } from 'electron';
+import { app, BrowserWindow, dialog, protocol, Notification } from 'electron';
+import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -31,17 +32,30 @@ let mainWindow: BrowserWindow | null = null;
 let _sessionsService: { stopAll(): void } | null = null;
 let _db: { close(): void } | null = null;
 
+// Unread notification count for dock badge
+let unreadCount = 0;
+function updateDockBadge() {
+  if (process.platform === 'darwin' && app.dock) {
+    app.dock.setBadge(unreadCount > 0 ? String(unreadCount) : '');
+  }
+}
+function incrementUnread() {
+  unreadCount += 1;
+  updateDockBadge();
+}
+function clearUnread() {
+  unreadCount = 0;
+  updateDockBadge();
+}
+
 function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
     minWidth: 800,
     minHeight: 600,
-    titleBarStyle: 'hiddenInset',
-    trafficLightPosition: { x: 15, y: 15 },
-    vibrancy: 'under-window',
-    visualEffectState: 'active',
-    backgroundColor: '#00000000',
+    show: true,
+    backgroundColor: '#1a1a2e',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -57,10 +71,12 @@ function createWindow(): void {
     );
   }
 
+  mainWindow.webContents.openDevTools();
+  mainWindow.show();
+
   mainWindow.on('focus', () => {
-    if (process.platform === 'darwin') {
-      app.dock.setBadge('');
-    }
+    // Clear unread badge when user focuses the window
+    clearUnread();
   });
 
   mainWindow.on('closed', () => {
@@ -68,17 +84,102 @@ function createWindow(): void {
   });
 }
 
+// Register custom protocol as privileged so it can load images in the renderer
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'greychrist-file', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
+]);
+
 app.whenReady().then(() => {
+  // Serve local files via greychrist-file:// protocol (bypasses file:// security)
+  protocol.handle('greychrist-file', async (request) => {
+    try {
+      const url = new URL(request.url);
+      const filePath = decodeURIComponent(url.pathname);
+      const data = fs.readFileSync(filePath);
+      // Guess content type from extension
+      const ext = path.extname(filePath).toLowerCase();
+      const contentType =
+        ext === '.png' ? 'image/png' :
+        ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' :
+        ext === '.gif' ? 'image/gif' :
+        ext === '.webp' ? 'image/webp' :
+        ext === '.svg' ? 'image/svg+xml' :
+        'application/octet-stream';
+      return new Response(data, { headers: { 'Content-Type': contentType } });
+    } catch (err) {
+      console.error('[protocol] greychrist-file error:', err);
+      return new Response('Not found', { status: 404 });
+    }
+  });
+
+  createWindow();
+
+  // Clean up pasted images older than 1 hour
+  try {
+    const pasteDir = path.join(os.tmpdir(), 'greychrist-pastes');
+    if (fs.existsSync(pasteDir)) {
+      const maxAge = 60 * 60 * 1000; // 1 hour
+      const cutoff = Date.now() - maxAge;
+      for (const entry of fs.readdirSync(pasteDir)) {
+        const filePath = path.join(pasteDir, entry);
+        try {
+          const stat = fs.statSync(filePath);
+          if (stat.mtimeMs < cutoff) {
+            fs.unlinkSync(filePath);
+          }
+        } catch {
+          // ignore individual file errors
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Failed to clean paste dir:', err);
+  }
+
   const userDataPath = app.getPath('userData');
   const defaultConfigDir = path.join(os.homedir(), '.claude');
 
-  const db = createDatabase(path.join(userDataPath, 'greychrist.db'));
+  let db: ReturnType<typeof createDatabase>;
+  try {
+    db = createDatabase(path.join(userDataPath, 'greychrist.db'));
+  } catch (err) {
+    console.error('Failed to create database:', err);
+    return;
+  }
   _db = db;
   const accountsService = createAccountsService(db);
   const claudeBinaryService = createClaudeBinaryService(db);
-  const sessionsService = _sessionsService = createSessionsService((channel, ...args) => {
-    mainWindow?.webContents.send(channel, ...args);
-  });
+  const sessionsService = _sessionsService = createSessionsService(
+    (channel, ...args) => {
+      mainWindow?.webContents.send(channel, ...args);
+    },
+    {
+      showNotification: (title, body, isError) => {
+        // Skip native notification when the app is already in focus
+        if (mainWindow?.isFocused()) return;
+        if (!Notification.isSupported()) return;
+        const subtitle = isError ? 'Task Failed' : 'Task Complete';
+        const notif = new Notification({
+          title,
+          subtitle,
+          body,
+          silent: false,
+        });
+        notif.on('click', () => {
+          if (mainWindow) {
+            if (mainWindow.isMinimized()) mainWindow.restore();
+            mainWindow.focus();
+          }
+        });
+        notif.show();
+      },
+      incrementUnread: () => {
+        // Only bump the dock badge when the app isn't in focus
+        if (mainWindow?.isFocused()) return;
+        incrementUnread();
+      },
+    },
+  );
   const claudeService = createClaudeService(db, accountsService);
   const processRegistry = createProcessRegistry();
   const agentsService = createAgentsService(
@@ -108,11 +209,11 @@ app.whenReady().then(() => {
           data.configDir ?? data.config_dir,
           data.isDefault ?? data.is_default ?? false,
           data.accountType ?? data.account_type,
+          data.color,
         ),
       update: (_id: any, data: any) =>
-        accountsService.updateAccount(data.id, data.name, data.configDir ?? data.config_dir, data.accountType ?? data.account_type),
+        accountsService.updateAccount(data.id, data.name, data.configDir ?? data.config_dir, data.accountType ?? data.account_type, data.color),
       delete: (id: any) => accountsService.deleteAccount(id),
-      setDefault: (id: any) => accountsService.setDefaultAccount(id),
       listPathRules: () => accountsService.listPathRules(),
       addPathRule: (rule: any) =>
         accountsService.addPathRule(rule.accountId ?? rule.account_id, rule.pathPrefix ?? rule.path_prefix, rule.priority),
@@ -128,8 +229,8 @@ app.whenReady().then(() => {
     // Claude adapter
     claude: {
       listProjects: (_configDir?: string) => claudeService.listProjects(),
-      createProject: (_data: any) => null,
-      getProjectSessions: (projectId: string) => claudeService.getProjectSessions(projectId),
+      createProject: (data: any) => claudeService.createProject(data?.path ?? data),
+      getProjectSessions: (projectId: string, projectPath?: string) => claudeService.getProjectSessions(projectId, projectPath),
       loadSessionHistory: (sessionId: string, projectId: string) =>
         claudeService.loadSessionHistory(sessionId, projectId),
       loadAgentSessionHistory: (sessionId: string) =>
@@ -158,8 +259,10 @@ app.whenReady().then(() => {
           sessionId,
           typeof message === 'string' ? message : String(message ?? ''),
         ),
-      respondPermission: (sessionId: string, response: any) =>
-        sessionsService.respondPermission(sessionId, response?.behavior, response?.updatedInput),
+      sendStructuredMessage: (sessionId: string, content: any) =>
+        sessionsService.sendStructuredMessage(sessionId, content),
+      respondPermission: (sessionId: string, behavior: string, updatedInput?: Record<string, unknown>) =>
+        sessionsService.respondPermission(sessionId, behavior as 'allow' | 'deny', updatedInput),
       stop: (sessionId: string) => sessionsService.stop(sessionId),
       getInfo: (sessionId: string) => sessionsService.getInfo(sessionId),
     },
@@ -249,8 +352,6 @@ app.whenReady().then(() => {
       saveSettings: (data: any) => proxyService.saveSettings(data),
     },
   });
-
-  createWindow();
 });
 
 app.on('before-quit', () => {

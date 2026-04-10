@@ -86,6 +86,7 @@ function initSchema(db: BetterSqlite3.Database): void {
       config_dir TEXT NOT NULL,
       is_default BOOLEAN NOT NULL DEFAULT 0,
       account_type TEXT NOT NULL DEFAULT 'pro',
+      color TEXT,
       claude_binary TEXT,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -119,4 +120,10 @@ function initSchema(db: BetterSqlite3.Database): void {
     CREATE INDEX IF NOT EXISTS idx_app_logs_level ON app_logs(level);
     CREATE INDEX IF NOT EXISTS idx_app_logs_source ON app_logs(source);
   `);
+
+  // Migrations for existing databases
+  const cols = db.prepare("PRAGMA table_info(accounts)").all() as { name: string }[];
+  if (!cols.some(c => c.name === 'color')) {
+    db.exec("ALTER TABLE accounts ADD COLUMN color TEXT");
+  }
 }

@@ -8,7 +8,6 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   'create_account',
   'update_account',
   'delete_account',
-  'set_default_account',
   'list_path_rules',
   'add_path_rule',
   'remove_path_rule',
@@ -41,12 +40,14 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   // Sessions
   'session_start',
   'session_send_message',
+  'session_send_structured_message',
   'session_respond_permission',
   'session_stop',
   'session_get_info',
 
   // Agents
   'list_agents',
+  'list_running_sessions',
   'create_agent',
   'update_agent',
   'delete_agent',
@@ -81,6 +82,7 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   'get_session_timeline',
   'update_checkpoint_settings',
   'get_checkpoint_diff',
+  'clear_checkpoint_manager',
 
   // Claude Binary
   'get_claude_binary_path',
@@ -129,6 +131,7 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   // Electron-specific
   'dialog:open',
   'dialog:save',
+  'save_pasted_image',
   'shell:openExternal',
   'window:minimize',
   'window:maximize',

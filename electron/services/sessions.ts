@@ -2,6 +2,9 @@
 // interactive sessions. Runs in Electron's main process where Node.js APIs
 // and the SDK subprocess launch are available.
 
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { createAsyncChannel, type AsyncChannel } from './async-channel';
 
 // ---------------------------------------------------------------------------
@@ -30,13 +33,13 @@ export interface SessionStartParams {
   configDir: string;
   model: string;
   permissionMode: string;
-  claudeBinaryPath?: string;
   resumeSessionId?: string;
 }
 
 export interface SessionsService {
   start(params: SessionStartParams): void;
   sendMessage(tabId: string, prompt: string): void;
+  sendStructuredMessage(tabId: string, content: Array<Record<string, unknown>>): void;
   respondPermission(
     tabId: string,
     behavior: 'allow' | 'deny',
@@ -53,6 +56,13 @@ export interface SessionsService {
 }
 
 type SendToRenderer = (channel: string, ...args: unknown[]) => void;
+
+interface NotificationHooks {
+  /** Show a native OS notification */
+  showNotification?: (title: string, body: string, isError: boolean) => void;
+  /** Increment unread count / update dock badge */
+  incrementUnread?: () => void;
+}
 
 // ---------------------------------------------------------------------------
 // Internal session handle
@@ -71,13 +81,30 @@ interface SessionHandle {
   permissionResolver: ((decision: PermissionDecision) => void) | null;
   autoAllowEnabled: boolean;
   autoAllowedTools: Set<string>;
+  projectPath: string;
 }
 
 // ---------------------------------------------------------------------------
 // Factory
 // ---------------------------------------------------------------------------
 
-export function createSessionsService(sendToRenderer: SendToRenderer): SessionsService {
+/** Find the system-installed claude binary (needed because the SDK's bundled binary may be missing). */
+function findSystemClaudeBinary(): string | null {
+  const candidates = [
+    `${os.homedir()}/.local/bin/claude`,
+    '/usr/local/bin/claude',
+    '/opt/homebrew/bin/claude',
+  ];
+  for (const p of candidates) {
+    if (fs.existsSync(p)) return p;
+  }
+  return null;
+}
+
+export function createSessionsService(
+  sendToRenderer: SendToRenderer,
+  notificationHooks: NotificationHooks = {},
+): SessionsService {
   const sessions = new Map<string, SessionHandle>();
 
   // -------------------------------------------------------------------------
@@ -99,14 +126,39 @@ export function createSessionsService(sendToRenderer: SendToRenderer): SessionsS
         handle.status = 'running';
 
         // Forward every message to the renderer
-        sendToRenderer(`session-message:${tabId}`, message);
+        sendToRenderer(`claude-output:${tabId}`, message);
+
+        // Emit notification event on result messages (execution complete/failed)
+        if (message.type === 'result') {
+          const msg = message as any;
+          const isError = msg.is_error || msg.subtype === 'error';
+          const projectName = path.basename(handle.projectPath) || 'GreyChrist';
+          const title = `GreyChrist — ${projectName}`;
+          const body = (msg.result || msg.error || (isError ? 'Task failed' : 'Task complete')).slice(0, 200);
+
+          // Emit to renderer for in-app tab badge handling
+          sendToRenderer('claude-notification', {
+            tab_id: tabId,
+            title,
+            body,
+            is_error: isError,
+          });
+
+          // Fire native OS notification + dock badge
+          try {
+            notificationHooks.showNotification?.(title, body, isError);
+            notificationHooks.incrementUnread?.();
+          } catch (e) {
+            console.error('[sessions] notification hook failed:', e);
+          }
+        }
       }
     } catch (err) {
       handle.status = 'error';
-      sendToRenderer(`session-error:${tabId}`, err instanceof Error ? err.message : String(err));
+      sendToRenderer(`claude-error:${tabId}`, err instanceof Error ? err.message : String(err));
     } finally {
       handle.status = 'stopped';
-      sendToRenderer(`session-status:${tabId}`, 'stopped');
+      sendToRenderer(`claude-complete:${tabId}`);
       sessions.delete(tabId);
     }
   }
@@ -122,7 +174,6 @@ export function createSessionsService(sendToRenderer: SendToRenderer): SessionsS
       configDir,
       model,
       permissionMode,
-      claudeBinaryPath,
       resumeSessionId,
     } = params;
 
@@ -147,8 +198,10 @@ export function createSessionsService(sendToRenderer: SendToRenderer): SessionsS
       },
     };
 
-    if (claudeBinaryPath) {
-      options.pathToClaudeCodeExecutable = claudeBinaryPath;
+    // Use system-installed claude binary (account is scoped via CLAUDE_CONFIG_DIR)
+    const binaryPath = findSystemClaudeBinary();
+    if (binaryPath) {
+      options.pathToClaudeCodeExecutable = binaryPath;
     }
 
     if (resumeSessionId) {
@@ -164,6 +217,7 @@ export function createSessionsService(sendToRenderer: SendToRenderer): SessionsS
       permissionResolver: null,
       autoAllowEnabled: false,
       autoAllowedTools: new Set(),
+      projectPath,
     };
 
     // Permission callback: called by the SDK before each tool execution
@@ -174,14 +228,18 @@ export function createSessionsService(sendToRenderer: SendToRenderer): SessionsS
     ) => {
       // Auto-allow if enabled and tool is in the allow-list
       if (handle.autoAllowEnabled && handle.autoAllowedTools.has(toolName)) {
-        return { behavior: 'allow' as const };
+        return { behavior: 'allow' as const, updatedInput: input };
       }
 
-      // Ask the renderer for a permission decision
+      // Ask the renderer for a permission decision by sending a permission_request
+      // message through the normal stream channel (same as all other messages)
       handle.status = 'waiting_permission';
-      sendToRenderer(`session-permission:${tabId}`, {
-        toolName,
-        input,
+      const requestId = `perm-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+      sendToRenderer(`claude-output:${tabId}`, {
+        type: 'permission_request',
+        request_id: requestId,
+        tool_name: toolName,
+        tool_input: input,
         title: opts.title,
         description: opts.description,
         displayName: opts.displayName,
@@ -197,7 +255,8 @@ export function createSessionsService(sendToRenderer: SendToRenderer): SessionsS
       if (decision.behavior === 'allow') {
         return {
           behavior: 'allow' as const,
-          updatedInput: decision.updatedInput,
+          // Fall back to the original input if the UI didn't modify it
+          updatedInput: decision.updatedInput ?? input,
         };
       }
 
@@ -235,6 +294,25 @@ export function createSessionsService(sendToRenderer: SendToRenderer): SessionsS
       message: {
         role: 'user',
         content: prompt,
+      },
+      parent_tool_use_id: null,
+    };
+
+    handle.inputChannel.push(message);
+  }
+
+  function sendStructuredMessage(
+    tabId: string,
+    content: Array<Record<string, unknown>>,
+  ): void {
+    const handle = sessions.get(tabId);
+    if (!handle) return;
+
+    const message: SDKUserMessage = {
+      type: 'user',
+      message: {
+        role: 'user',
+        content: content as any,
       },
       parent_tool_use_id: null,
     };
@@ -321,6 +399,7 @@ export function createSessionsService(sendToRenderer: SendToRenderer): SessionsS
   return {
     start,
     sendMessage,
+    sendStructuredMessage,
     respondPermission,
     setAutoAllow,
     addAutoAllowTool,

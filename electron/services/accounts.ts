@@ -13,7 +13,7 @@ export interface Account {
   config_dir: string;
   is_default: boolean;
   account_type: string;
-  claude_binary: string | null;
+  color: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -34,7 +34,7 @@ export interface ProjectOverride {
 
 export interface ResolutionExplanation {
   account: Account;
-  match_type: 'override' | 'path_rule' | 'default';
+  match_type: 'override' | 'path_rule';
   match_detail: string | null;
 }
 
@@ -45,15 +45,16 @@ export interface AccountsService {
     configDir: string,
     isDefault: boolean,
     accountType?: string,
+    color?: string,
   ): Account;
   updateAccount(
     id: number,
     name: string,
     configDir: string,
     accountType?: string,
+    color?: string,
   ): void;
   deleteAccount(id: number): void;
-  setDefaultAccount(id: number): void;
 
   listPathRules(): PathRule[];
   addPathRule(accountId: number, pathPrefix: string, priority?: number): PathRule;
@@ -77,7 +78,7 @@ interface AccountRow {
   config_dir: string;
   is_default: number; // SQLite stores 0/1
   account_type: string;
-  claude_binary: string | null;
+  color: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -96,9 +97,34 @@ interface PathRuleRow {
 
 function rowToAccount(row: AccountRow): Account {
   return {
-    ...row,
+    id: row.id,
+    name: row.name,
+    config_dir: row.config_dir,
     is_default: row.is_default !== 0,
+    account_type: row.account_type,
+    color: row.color,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Helper: normalize paths so ~/foo and /Users/x/foo match.
+// Uses path.resolve() to handle relative segments, symlinks, and trailing slashes.
+// ---------------------------------------------------------------------------
+
+function normalizePath(p: string): string {
+  let expanded = p;
+  if (p.startsWith('~/') || p === '~') {
+    expanded = path.join(os.homedir(), p.slice(1));
+  }
+  return path.resolve(expanded);
+}
+
+/** True if `child` is `parent` or a descendant of `parent`. */
+function isPathInside(child: string, parent: string): boolean {
+  const rel = path.relative(parent, child);
+  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
 }
 
 // ---------------------------------------------------------------------------
@@ -124,6 +150,7 @@ export function createAccountsService(db: Database): AccountsService {
     configDir: string,
     isDefault: boolean,
     accountType = 'pro',
+    color?: string,
   ): Account {
     if (isDefault) {
       raw.prepare('UPDATE accounts SET is_default = 0').run();
@@ -131,10 +158,10 @@ export function createAccountsService(db: Database): AccountsService {
 
     const info = raw
       .prepare(
-        `INSERT INTO accounts (name, config_dir, is_default, account_type)
-         VALUES (?, ?, ?, ?)`,
+        `INSERT INTO accounts (name, config_dir, is_default, account_type, color)
+         VALUES (?, ?, ?, ?, ?)`,
       )
-      .run(name, configDir, isDefault ? 1 : 0, accountType);
+      .run(name, configDir, isDefault ? 1 : 0, accountType, color ?? null);
 
     const row = raw
       .prepare('SELECT * FROM accounts WHERE id = ?')
@@ -148,37 +175,20 @@ export function createAccountsService(db: Database): AccountsService {
     name: string,
     configDir: string,
     accountType?: string,
+    color?: string,
   ): void {
-    if (accountType !== undefined) {
-      raw
-        .prepare(
-          `UPDATE accounts
-           SET name = ?, config_dir = ?, account_type = ?, updated_at = CURRENT_TIMESTAMP
-           WHERE id = ?`,
-        )
-        .run(name, configDir, accountType, id);
-    } else {
-      raw
-        .prepare(
-          `UPDATE accounts
-           SET name = ?, config_dir = ?, updated_at = CURRENT_TIMESTAMP
-           WHERE id = ?`,
-        )
-        .run(name, configDir, id);
-    }
+    raw
+      .prepare(
+        `UPDATE accounts
+         SET name = ?, config_dir = ?, account_type = COALESCE(?, account_type),
+             color = ?, updated_at = CURRENT_TIMESTAMP
+         WHERE id = ?`,
+      )
+      .run(name, configDir, accountType ?? null, color ?? null, id);
   }
 
   function deleteAccount(id: number): void {
     raw.prepare('DELETE FROM accounts WHERE id = ?').run(id);
-  }
-
-  function setDefaultAccount(id: number): void {
-    raw.prepare('UPDATE accounts SET is_default = 0').run();
-    raw
-      .prepare(
-        'UPDATE accounts SET is_default = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-      )
-      .run(id);
   }
 
   // -------------------------------------------------------------------------
@@ -252,6 +262,8 @@ export function createAccountsService(db: Database): AccountsService {
   // -------------------------------------------------------------------------
 
   function resolve(projectPath: string): Account | null {
+    const normalizedProject = normalizePath(projectPath);
+
     // 1. Explicit project override
     const overrideRow = raw
       .prepare(
@@ -259,7 +271,7 @@ export function createAccountsService(db: Database): AccountsService {
          JOIN accounts a ON a.id = o.account_id
          WHERE o.project_path = ?`,
       )
-      .get(projectPath) as AccountRow | undefined;
+      .get(normalizedProject) as AccountRow | undefined;
 
     if (overrideRow) {
       return rowToAccount(overrideRow);
@@ -274,25 +286,16 @@ export function createAccountsService(db: Database): AccountsService {
       )
       .all() as (AccountRow & { path_prefix: string })[];
 
+    console.log('[accounts.resolve] projectPath:', projectPath, 'normalized:', normalizedProject, 'rules:', rules.map(r => ({ prefix: r.path_prefix, normalized: normalizePath(r.path_prefix), account: r.name })));
+
     for (const rule of rules) {
-      if (
-        projectPath === rule.path_prefix ||
-        projectPath.startsWith(rule.path_prefix + '/')
-      ) {
+      const normalizedPrefix = normalizePath(rule.path_prefix);
+      if (isPathInside(normalizedProject, normalizedPrefix)) {
         return rowToAccount(rule);
       }
     }
 
-    // 3. Default account
-    const defaultRow = raw
-      .prepare('SELECT * FROM accounts WHERE is_default = 1 LIMIT 1')
-      .get() as AccountRow | undefined;
-
-    if (defaultRow) {
-      return rowToAccount(defaultRow);
-    }
-
-    // 4. No match
+    // 3. No match
     return null;
   }
 
@@ -301,6 +304,8 @@ export function createAccountsService(db: Database): AccountsService {
   // -------------------------------------------------------------------------
 
   function explainResolution(projectPath: string): ResolutionExplanation | null {
+    const normalizedProject = normalizePath(projectPath);
+
     // 1. Explicit override
     const overrideRow = raw
       .prepare(
@@ -308,7 +313,7 @@ export function createAccountsService(db: Database): AccountsService {
          JOIN accounts a ON a.id = o.account_id
          WHERE o.project_path = ?`,
       )
-      .get(projectPath) as AccountRow | undefined;
+      .get(normalizedProject) as AccountRow | undefined;
 
     if (overrideRow) {
       return {
@@ -328,29 +333,14 @@ export function createAccountsService(db: Database): AccountsService {
       .all() as (AccountRow & { path_prefix: string; priority: number })[];
 
     for (const rule of rules) {
-      if (
-        projectPath === rule.path_prefix ||
-        projectPath.startsWith(rule.path_prefix + '/')
-      ) {
+      const normalizedPrefix = normalizePath(rule.path_prefix);
+      if (isPathInside(normalizedProject, normalizedPrefix)) {
         return {
           account: rowToAccount(rule),
           match_type: 'path_rule',
           match_detail: rule.path_prefix,
         };
       }
-    }
-
-    // 3. Default account
-    const defaultRow = raw
-      .prepare('SELECT * FROM accounts WHERE is_default = 1 LIMIT 1')
-      .get() as AccountRow | undefined;
-
-    if (defaultRow) {
-      return {
-        account: rowToAccount(defaultRow),
-        match_type: 'default',
-        match_detail: null,
-      };
     }
 
     return null;
@@ -393,7 +383,6 @@ export function createAccountsService(db: Database): AccountsService {
     createAccount,
     updateAccount,
     deleteAccount,
-    setDefaultAccount,
     listPathRules,
     addPathRule,
     removePathRule,

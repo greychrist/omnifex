@@ -18,7 +18,6 @@ export interface Services {
     create(data: unknown): unknown;
     update(id: unknown, data: unknown): unknown;
     delete(id: unknown): unknown;
-    setDefault(id: unknown): unknown;
     listPathRules(): unknown;
     addPathRule(rule: unknown): unknown;
     removePathRule(id: unknown): unknown;
@@ -31,7 +30,7 @@ export interface Services {
   claude?: {
     listProjects(configDir?: string): unknown;
     createProject(data: unknown): unknown;
-    getProjectSessions(projectId: string): unknown;
+    getProjectSessions(projectId: string, projectPath?: string): unknown;
     loadSessionHistory(sessionId: string, projectId: string): unknown;
     loadAgentSessionHistory(sessionId: string): unknown;
     getHomeDirectory(): unknown;
@@ -51,7 +50,8 @@ export interface Services {
   sessions?: {
     start(data: unknown): unknown;
     sendMessage(sessionId: string, message: unknown): unknown;
-    respondPermission(sessionId: string, response: unknown): unknown;
+    sendStructuredMessage(sessionId: string, content: unknown): unknown;
+    respondPermission(sessionId: string, behavior: string, updatedInput?: Record<string, unknown>): unknown;
     stop(sessionId: string): unknown;
     getInfo(sessionId: string): unknown;
   };
@@ -108,14 +108,14 @@ export interface Services {
     testConnection(name: string): unknown;
     resetProjectChoices(): unknown;
     getServerStatus(): unknown;
-    readProjectConfig(): unknown;
+    readProjectConfig(data: unknown): unknown;
     saveProjectConfig(data: unknown): unknown;
   };
   slashCommands?: {
     list(): unknown;
     get(commandId: string): unknown;
     save(data: unknown): unknown;
-    delete(commandId: string): unknown;
+    delete(commandId: string, projectPath?: string): unknown;
   };
   logging?: {
     writeBatch(entries: unknown): unknown;
@@ -166,7 +166,6 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     create_account: wrapWith((p: Record<string, unknown>) => accounts?.create(p) ?? null),
     update_account: wrapWith((p: Record<string, unknown>) => accounts?.update(p?.id, p) ?? null),
     delete_account: wrapWith((p: Record<string, unknown>) => accounts?.delete(p?.id) ?? null),
-    set_default_account: wrapWith((p: Record<string, unknown>) => accounts?.setDefault(p?.id) ?? null),
     list_path_rules: wrap(() => accounts?.listPathRules() ?? null),
     add_path_rule: wrapWith((p: Record<string, unknown>) => accounts?.addPathRule(p) ?? null),
     remove_path_rule: wrapWith((p: Record<string, unknown>) => accounts?.removePathRule(p?.ruleId ?? p?.id) ?? null),
@@ -179,7 +178,7 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     // ── Claude ────────────────────────────────────────────────────────────────
     list_projects: wrapWith((p: Record<string, unknown>) => claude?.listProjects(p?.config_dir as string | undefined) ?? null),
     create_project: wrapWith((p: Record<string, unknown>) => claude?.createProject(p) ?? null),
-    get_project_sessions: wrapWith((p: Record<string, unknown>) => claude?.getProjectSessions((p?.projectId ?? p?.project_id) as string) ?? null),
+    get_project_sessions: wrapWith((p: Record<string, unknown>) => claude?.getProjectSessions((p?.projectId ?? p?.project_id) as string, (p?.projectPath ?? p?.project_path) as string | undefined) ?? null),
     load_session_history: wrapWith((p: Record<string, unknown>) => claude?.loadSessionHistory((p?.sessionId ?? p?.session_id) as string, (p?.projectId ?? p?.project_id) as string) ?? null),
     load_agent_session_history: wrapWith((p: Record<string, unknown>) => claude?.loadAgentSessionHistory((p?.sessionId ?? p?.session_id) as string) ?? null),
     get_home_directory: wrap(() => claude?.getHomeDirectory() ?? null),
@@ -199,6 +198,7 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     // ── Sessions ──────────────────────────────────────────────────────────────
     session_start: wrapWith((p: Record<string, unknown>) => sessions?.start(p) ?? null),
     session_send_message: wrapWith((p: Record<string, unknown>) => sessions?.sendMessage((p?.tabId ?? p?.session_id) as string, (p?.prompt ?? p?.message) as string) ?? null),
+    session_send_structured_message: wrapWith((p: Record<string, unknown>) => sessions?.sendStructuredMessage((p?.tabId ?? p?.session_id) as string, p?.content as Array<Record<string, unknown>>) ?? null),
     session_respond_permission: wrapWith((p: Record<string, unknown>) => sessions?.respondPermission((p?.tabId ?? p?.session_id) as string, p?.behavior as string, p?.updatedInput as Record<string, unknown> | undefined) ?? null),
     session_stop: wrapWith((p: Record<string, unknown>) => sessions?.stop((p?.tabId ?? p?.session_id) as string) ?? null),
     session_get_info: wrapWith((p: Record<string, unknown>) => sessions?.getInfo((p?.tabId ?? p?.session_id) as string) ?? null),
@@ -213,6 +213,7 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     import_agent: wrapWith((p: Record<string, unknown>) => agents?.import(p) ?? null),
     execute_agent: wrapWith((p: Record<string, unknown>) => agents?.execute(p?.agentId ?? p?.agent_id, p) ?? null),
     list_agent_runs: wrap(() => agents?.listRuns() ?? null),
+    list_running_sessions: wrap(() => agents?.listRuns() ?? []),
     get_agent_run: wrapWith((p: Record<string, unknown>) => agents?.getRun(p?.id) ?? null),
     get_agent_run_with_real_time_metrics: wrapWith((p: Record<string, unknown>) => agents?.getRunWithMetrics(p?.id) ?? null),
     kill_agent_session: wrapWith((p: Record<string, unknown>) => agents?.killSession(p?.runId ?? p?.run_id) ?? null),
@@ -239,6 +240,7 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     get_session_timeline: wrapWith((p: Record<string, unknown>) => checkpoints?.getTimeline(p) ?? null),
     update_checkpoint_settings: wrapWith((p: Record<string, unknown>) => checkpoints?.updateSettings(p) ?? null),
     get_checkpoint_diff: wrapWith((p: Record<string, unknown>) => checkpoints?.getDiff(p) ?? null),
+    clear_checkpoint_manager: wrap(() => null),
 
     // ── Claude Binary ─────────────────────────────────────────────────────────
     get_claude_binary_path: wrap(() => claudeBinary?.getPath() ?? null),
@@ -256,7 +258,7 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     mcp_test_connection: wrapWith((p: Record<string, unknown>) => mcp?.testConnection(p?.name as string) ?? null),
     mcp_reset_project_choices: wrap(() => mcp?.resetProjectChoices() ?? null),
     mcp_get_server_status: wrap(() => mcp?.getServerStatus() ?? null),
-    mcp_read_project_config: wrap(() => mcp?.readProjectConfig() ?? null),
+    mcp_read_project_config: wrapWith((p: Record<string, unknown>) => mcp?.readProjectConfig(p) ?? null),
     mcp_save_project_config: wrapWith((p: Record<string, unknown>) => mcp?.saveProjectConfig(p) ?? null),
 
     // ── Slash Commands ────────────────────────────────────────────────────────
@@ -361,7 +363,12 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
  * for dialog, shell, and window controls.
  *
  * This function must only be called from the main process.
+ *
+ * Coverage note: this function is excluded from unit-test coverage because
+ * it requires the real `electron` module, which is not available under Node.
+ * The dispatch logic it wires up is fully covered via `getHandlerMap()` tests.
  */
+/* v8 ignore start */
 export function registerIpcHandlers(services: Services = {}): void {
   // Lazy-require Electron main-process modules so this file can be imported
   // in test environments where `electron` is not available.
@@ -405,4 +412,28 @@ export function registerIpcHandlers(services: Services = {}): void {
   ipcMain.handle('window:close', () => {
     BrowserWindow.getFocusedWindow()?.close();
   });
+
+  // ── File handlers ─────────────────────────────────────────────────────────
+  ipcMain.handle('save_pasted_image', async (_event, params: { dataUrl: string }) => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const fs = require('node:fs') as typeof import('node:fs');
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const path = require('node:path') as typeof import('node:path');
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const os = require('node:os') as typeof import('node:os');
+
+    const { dataUrl } = params;
+    const match = dataUrl.match(/^data:image\/(\w+);base64,(.+)$/);
+    if (!match) throw new Error('Invalid image data URL');
+    const ext = match[1];
+    const base64 = match[2];
+
+    const tmpDir = path.join(os.tmpdir(), 'greychrist-pastes');
+    fs.mkdirSync(tmpDir, { recursive: true });
+    const fileName = `paste-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+    const filePath = path.join(tmpDir, fileName);
+    fs.writeFileSync(filePath, Buffer.from(base64, 'base64'));
+    return filePath;
+  });
 }
+/* v8 ignore stop */

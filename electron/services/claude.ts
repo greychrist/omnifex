@@ -34,8 +34,10 @@ export interface Session {
 }
 
 export interface ClaudeMdFile {
-  filePath: string;
-  exists: boolean;
+  absolute_path: string;
+  relative_path: string;
+  size: number;
+  modified: number;
 }
 
 export interface ClaudeVersionStatus {
@@ -53,6 +55,7 @@ export interface ClaudeService {
   getHomeDirectory(): string;
 
   listProjects(): Promise<Project[]>;
+  createProject(projectPath: string): Project;
   getProjectSessions(projectId: string, projectPath?: string): Promise<Session[]>;
 
   loadSessionHistory(
@@ -180,7 +183,16 @@ function findProjectConfigDir(
  * We reverse: decode '-' as '/' and prepend '/'.
  */
 function decodeProjectId(projectId: string): string {
-  return '/' + projectId.replace(/-/g, '/');
+  // Strip leading dash if present, then replace all dashes with slashes.
+  // Result always starts with "/" so it's an absolute path.
+  const stripped = projectId.replace(/^-+/, '');
+  return '/' + stripped.replace(/-/g, '/');
+}
+
+function encodeProjectId(projectPath: string): string {
+  // Claude Code convention: leading dash + slashes replaced with dashes
+  // e.g., /Users/foo/bar → -Users-foo-bar
+  return projectPath.replace(/\//g, '-');
 }
 
 /** Get the first user/human message text from a JSONL session file. */
@@ -189,27 +201,43 @@ function extractFirstMessage(filePath: string): string | undefined {
   for (const entry of entries) {
     if (typeof entry !== 'object' || entry === null) continue;
     const obj = entry as Record<string, unknown>;
-    if (obj['type'] === 'human' || obj['type'] === 'user') {
-      const content = obj['content'];
-      if (typeof content === 'string') {
-        return content.slice(0, 200);
-      }
-      // content may be an array of blocks
-      if (Array.isArray(content)) {
-        for (const block of content) {
-          if (
-            typeof block === 'object' &&
-            block !== null &&
-            (block as Record<string, unknown>)['type'] === 'text'
-          ) {
-            const text = (block as Record<string, unknown>)['text'];
-            if (typeof text === 'string') {
-              return text.slice(0, 200);
-            }
+
+    // Only user messages with type === 'user', skip meta/system-injected ones
+    if (obj['type'] !== 'user') continue;
+    if (obj['isMeta']) continue;
+
+    // Actual message content is nested under message.content
+    const message = obj['message'] as Record<string, unknown> | undefined;
+    if (!message) continue;
+    const content = message['content'];
+
+    let text: string | undefined;
+    if (typeof content === 'string') {
+      text = content;
+    } else if (Array.isArray(content)) {
+      for (const block of content) {
+        if (typeof block === 'object' && block !== null) {
+          const b = block as Record<string, unknown>;
+          if (b['type'] === 'text' && typeof b['text'] === 'string') {
+            text = b['text'] as string;
+            break;
           }
         }
       }
     }
+
+    if (!text) continue;
+
+    // Skip command caveats, system reminders, tool results, and /exit commands
+    if (
+      text.includes('<local-command-caveat>') ||
+      text.includes('<system-reminder>') ||
+      text.includes('<command-name>')
+    ) {
+      continue;
+    }
+
+    return text.trim().slice(0, 200);
   }
   return undefined;
 }
@@ -234,6 +262,31 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
 
   function getHomeDirectory(): string {
     return os.homedir();
+  }
+
+  // -------------------------------------------------------------------------
+  // createProject
+  // -------------------------------------------------------------------------
+
+  function createProject(projectPath: string): Project {
+    const projectId = encodeProjectId(projectPath);
+
+    // Resolve which account's config dir to use
+    const account = accounts.resolve(projectPath);
+    const configDir = account?.config_dir ?? defaultConfigDir();
+
+    // Ensure the project directory exists
+    const projectDir = path.join(configDir, 'projects', projectId);
+    fs.mkdirSync(projectDir, { recursive: true });
+
+    return {
+      id: projectId,
+      path: projectPath,
+      sessions: [],
+      created_at: Math.floor(Date.now() / 1000),
+      account_id: account?.id,
+      account_name: account?.name,
+    };
   }
 
   // -------------------------------------------------------------------------
@@ -518,30 +571,54 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
   // -------------------------------------------------------------------------
 
   async function findClaudeMdFiles(projectPath: string): Promise<ClaudeMdFile[]> {
-    const candidates: ClaudeMdFile[] = [];
+    const results: ClaudeMdFile[] = [];
+
+    const tryAdd = (absolutePath: string, relativePath: string) => {
+      if (!fs.existsSync(absolutePath)) return;
+      try {
+        const stat = fs.statSync(absolutePath);
+        results.push({
+          absolute_path: absolutePath,
+          relative_path: relativePath,
+          size: stat.size,
+          modified: Math.floor(stat.mtimeMs / 1000),
+        });
+      } catch {
+        // ignore stat errors
+      }
+    };
 
     // 1. Project root CLAUDE.md
-    const projectClaudeMd = path.join(projectPath, 'CLAUDE.md');
-    candidates.push({
-      filePath: projectClaudeMd,
-      exists: fs.existsSync(projectClaudeMd),
-    });
+    tryAdd(path.join(projectPath, 'CLAUDE.md'), 'CLAUDE.md');
 
     // 2. Project .claude/CLAUDE.md
-    const projectDotClaudeMd = path.join(projectPath, '.claude', 'CLAUDE.md');
-    candidates.push({
-      filePath: projectDotClaudeMd,
-      exists: fs.existsSync(projectDotClaudeMd),
-    });
+    tryAdd(path.join(projectPath, '.claude', 'CLAUDE.md'), '.claude/CLAUDE.md');
 
-    // 3. User ~/.claude/CLAUDE.md
-    const userClaudeMd = path.join(defaultConfigDir(), 'CLAUDE.md');
-    candidates.push({
-      filePath: userClaudeMd,
-      exists: fs.existsSync(userClaudeMd),
-    });
+    // 3. Recursive search for CLAUDE.md in src/ and other subdirs (depth-limited)
+    function walk(dir: string, relBase: string, depth: number) {
+      if (depth > 3) return;
+      let entries: fs.Dirent[];
+      try {
+        entries = fs.readdirSync(dir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const entry of entries) {
+        if (entry.name.startsWith('.') || entry.name === 'node_modules' || entry.name === 'dist') continue;
+        const fullPath = path.join(dir, entry.name);
+        const relPath = path.join(relBase, entry.name);
+        if (entry.isDirectory()) {
+          walk(fullPath, relPath, depth + 1);
+        } else if (entry.name === 'CLAUDE.md') {
+          if (!results.some(r => r.absolute_path === fullPath)) {
+            tryAdd(fullPath, relPath);
+          }
+        }
+      }
+    }
+    walk(projectPath, '', 0);
 
-    return candidates;
+    return results;
   }
 
   // -------------------------------------------------------------------------
@@ -667,6 +744,7 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
   return {
     getHomeDirectory,
     listProjects,
+    createProject,
     getProjectSessions,
     loadSessionHistory,
     loadAgentSessionHistory,
