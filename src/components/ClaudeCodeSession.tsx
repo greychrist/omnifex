@@ -915,53 +915,62 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     sessionMetrics.current.checkpointCount += 1;
   };
 
+  // Wave 2.3 — "cancel" is now a soft interrupt. The old behavior called
+  // api.stopSession() which fully tore down the SDK session, killing the
+  // Claude subprocess, losing conversation history, and forcing a restart
+  // on the next prompt. Now we call api.sessionInterrupt() which halts the
+  // current assistant turn but keeps the session alive so the user can
+  // continue typing. If interrupt fails (old SDK, bad state, subprocess
+  // crash), we fall back to the hard stop path to guarantee the UI unsticks.
   const handleCancelExecution = async () => {
     if (!isLoading) return;
 
     const tid = tabIdRef.current;
 
     try {
-      await api.stopSession(tid);
+      await api.sessionInterrupt(tid);
 
-      // Clean up listeners
-      unlistenRefs.current.forEach(unlisten => unlisten());
+      // Session stays alive — don't clean up listeners, don't unset
+      // persistentSessionRef. The SDK will emit a result message with
+      // stop_reason "interrupted" which the normal message loop handles.
+      setIsLoading(false);
+      setError(null);
+      setQueuedPrompts([]);
+
+      const interruptMessage: ClaudeStreamMessage = {
+        type: "system",
+        subtype: "info",
+        result: "Response interrupted — session still active",
+        timestamp: new Date().toISOString(),
+      };
+      setMessages((prev) => [...prev, interruptMessage]);
+    } catch (err) {
+      // Interrupt failed. Fall back to the hard stopSession path so the UI
+      // at least unsticks, even if the session has to be restarted on the
+      // next prompt.
+      console.error("sessionInterrupt failed, falling back to stopSession:", err);
+
+      try {
+        await api.stopSession(tid);
+      } catch (stopErr) {
+        console.error("stopSession also failed:", stopErr);
+      }
+
+      unlistenRefs.current.forEach((unlisten) => unlisten());
       unlistenRefs.current = [];
 
-      // Reset states
       setIsLoading(false);
       persistentSessionRef.current = false;
       setError(null);
-
-      // Clear queued prompts
       setQueuedPrompts([]);
-
-      // Add a message indicating the session was cancelled
-      const cancelMessage: ClaudeStreamMessage = {
-        type: "system",
-        subtype: "info",
-        result: "Session cancelled by user",
-        timestamp: new Date().toISOString()
-      };
-      setMessages(prev => [...prev, cancelMessage]);
-    } catch (err) {
-      console.error("Failed to cancel execution:", err);
 
       const errorMessage: ClaudeStreamMessage = {
         type: "system",
-        subtype: "error",
-        result: `Failed to cancel execution: ${err instanceof Error ? err.message : 'Unknown error'}. The process may still be running in the background.`,
-        timestamp: new Date().toISOString()
+        subtype: "info",
+        result: "Session cancelled by user",
+        timestamp: new Date().toISOString(),
       };
-      setMessages(prev => [...prev, errorMessage]);
-
-      // Clean up listeners anyway
-      unlistenRefs.current.forEach(unlisten => unlisten());
-      unlistenRefs.current = [];
-
-      // Reset states to allow user to continue
-      setIsLoading(false);
-      persistentSessionRef.current = false;
-      setError(null);
+      setMessages((prev) => [...prev, errorMessage]);
     }
   };
 
