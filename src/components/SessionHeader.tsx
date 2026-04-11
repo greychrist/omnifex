@@ -160,8 +160,16 @@ export function SessionHeader({
           const color = pct > 80 ? "text-red-400" : pct > 50 ? "text-yellow-400" : "text-foreground/50";
 
           // Build pie-chart data from SDK categories (descending by tokens).
-          // Add a "Free" slice representing the remaining context so the
-          // chart visualizes the total budget, not just what's been used.
+          //
+          // The SDK usually reports a "Free space" category itself, in which
+          // case the sum of its categories already covers the full budget
+          // and we must NOT synthesize our own Free slice — doing so would
+          // double-count and split the donut in half.
+          //
+          // If the SDK's categories sum to less than maxTokens (older SDK
+          // versions, or edge cases where deferred tokens are omitted) we
+          // fill the remainder with a synthetic "Free" slice so the pie
+          // still visualizes the total budget.
           const sortedCategories =
             useSdk && contextUsage!.categories.length > 0
               ? contextUsage!.categories
@@ -169,19 +177,38 @@ export function SessionHeader({
                   .sort((a, b) => b.tokens - a.tokens)
                   .filter((c) => c.tokens > 0)
               : [];
-          const remainingTokens = Math.max(0, limit - tokens);
-          const pieData = [
-            ...sortedCategories.map((c, i) => ({
-              name: c.name,
-              value: c.tokens,
-              color: CATEGORY_COLORS[i % CATEGORY_COLORS.length],
-            })),
-            {
-              name: "Free",
-              value: remainingTokens,
-              color: "rgba(255,255,255,0.08)",
-            },
-          ];
+
+          const categoriesSum = sortedCategories.reduce(
+            (acc, c) => acc + c.tokens,
+            0,
+          );
+          // Color assignment: "Free-like" categories get the slate backdrop
+          // color, other (used) categories get palette entries in the order
+          // they appear. Using a separate counter for non-free categories so
+          // we don't waste the first palette color on Free space when it
+          // happens to be the largest slice.
+          const FREE_COLOR = "rgba(148, 163, 184, 0.35)"; // slate-400 @35%
+          const isFreeCategory = (name: string) =>
+            /free|remaining|available/i.test(name);
+          let usedColorIdx = 0;
+          const slicesFromCategories = sortedCategories.map((c) => {
+            const free = isFreeCategory(c.name);
+            const color = free
+              ? FREE_COLOR
+              : CATEGORY_COLORS[usedColorIdx++ % CATEGORY_COLORS.length];
+            return { name: c.name, value: c.tokens, color };
+          });
+          const pieData =
+            categoriesSum < limit
+              ? [
+                  ...slicesFromCategories,
+                  {
+                    name: "Free",
+                    value: limit - categoriesSum,
+                    color: FREE_COLOR,
+                  },
+                ]
+              : slicesFromCategories;
 
           return (
             <HoverCard openDelay={80} closeDelay={120}>
@@ -249,25 +276,23 @@ export function SessionHeader({
                         </ResponsiveContainer>
                       </div>
                       <div className="flex flex-col gap-1">
-                        {sortedCategories.map((c, i) => {
-                          const catPct = limit > 0 ? (c.tokens / limit) * 100 : 0;
+                        {pieData.map((slice) => {
+                          const catPct =
+                            limit > 0 ? (slice.value / limit) * 100 : 0;
                           return (
                             <div
-                              key={c.name}
+                              key={slice.name}
                               className="flex items-center gap-2 text-xs"
                             >
                               <span
                                 className="inline-block w-2 h-2 rounded-sm shrink-0"
-                                style={{
-                                  backgroundColor:
-                                    CATEGORY_COLORS[i % CATEGORY_COLORS.length],
-                                }}
+                                style={{ backgroundColor: slice.color }}
                               />
                               <span className="flex-1 truncate text-foreground/80">
-                                {c.name}
+                                {slice.name}
                               </span>
                               <span className="font-mono text-foreground/60 shrink-0">
-                                {c.tokens.toLocaleString()}
+                                {slice.value.toLocaleString()}
                               </span>
                               <span className="font-mono text-foreground/40 shrink-0 w-10 text-right">
                                 {catPct.toFixed(1)}%
