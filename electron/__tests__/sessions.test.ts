@@ -210,6 +210,36 @@ describe('sessions service — full lifecycle', () => {
     expect(typeof options.canUseTool).toBe('function');
   });
 
+  it('start() passes settingSources so the SDK loads project CLAUDE.md, .claude/, and MCP config', () => {
+    const fake = installFakeQuery();
+
+    service.start({
+      tabId: 'tab-sources',
+      projectPath: '/p',
+      configDir: '/c',
+      model: 'sonnet',
+      permissionMode: 'default',
+    });
+
+    const options = fake.getCapturedOptions();
+    expect(options.settingSources).toEqual(['user', 'project', 'local']);
+  });
+
+  it('start() sets strictMcpConfig so invalid MCP configs surface as errors', () => {
+    const fake = installFakeQuery();
+
+    service.start({
+      tabId: 'tab-strict',
+      projectPath: '/p',
+      configDir: '/c',
+      model: 'sonnet',
+      permissionMode: 'default',
+    });
+
+    const options = fake.getCapturedOptions();
+    expect(options.strictMcpConfig).toBe(true);
+  });
+
   it('start() forwards resumeSessionId as options.resume when provided', () => {
     const fake = installFakeQuery();
 
@@ -643,6 +673,66 @@ describe('sessions service — full lifecycle', () => {
       (c) => c[0] === 'claude-output:tab-auto' && (c[1] as any)?.type === 'permission_request',
     );
     expect(permCall).toBeUndefined();
+  });
+
+  // -------------------------------------------------------------------------
+  // stderr wiring — SDK subprocess stderr should flow into the logging service
+  // -------------------------------------------------------------------------
+
+  it('start() wires a stderr callback when a logging service is provided', () => {
+    const writeBatch = vi.fn();
+    const fakeLogging = { writeBatch, query: vi.fn() };
+    const svc = createSessionsService(
+      sendToRenderer as any,
+      {
+        showNotification: showNotification as any,
+        incrementUnread: incrementUnread as any,
+      },
+      fakeLogging as any,
+    );
+    const fake = installFakeQuery();
+
+    svc.start({
+      tabId: 'tab-stderr',
+      projectPath: '/p',
+      configDir: '/c',
+      model: 'sonnet',
+      permissionMode: 'default',
+    });
+
+    const options = fake.getCapturedOptions();
+    expect(typeof options.stderr).toBe('function');
+
+    // Invoking the callback should push a log entry
+    options.stderr('claude: booting\n');
+    expect(writeBatch).toHaveBeenCalledTimes(1);
+    const batch = writeBatch.mock.calls[0][0];
+    expect(Array.isArray(batch)).toBe(true);
+    expect(batch[0]).toMatchObject({
+      source: 'claude-sdk',
+      category: 'session:tab-stderr',
+      message: 'claude: booting\n',
+    });
+    expect(typeof batch[0].level).toBe('string');
+    expect(typeof batch[0].timestamp).toBe('string');
+
+    svc.stopAll();
+  });
+
+  it('start() omits stderr callback when no logging service is provided', () => {
+    // The default `service` fixture above is constructed without a logging dep
+    const fake = installFakeQuery();
+
+    service.start({
+      tabId: 'tab-no-logging',
+      projectPath: '/p',
+      configDir: '/c',
+      model: 'sonnet',
+      permissionMode: 'default',
+    });
+
+    const options = fake.getCapturedOptions();
+    expect(options.stderr).toBeUndefined();
   });
 
   it('auto-allow only skips tools in the per-session allow-list', async () => {

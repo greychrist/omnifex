@@ -149,6 +149,9 @@ app.whenReady().then(() => {
   _db = db;
   const accountsService = createAccountsService(db);
   const claudeBinaryService = createClaudeBinaryService(db);
+  // Logging must be constructed before sessions so the sessions service can
+  // route CLI subprocess stderr into the log store.
+  const loggingService = createLoggingService(db);
   const sessionsService = _sessionsService = createSessionsService(
     (channel, ...args) => {
       mainWindow?.webContents.send(channel, ...args);
@@ -179,6 +182,7 @@ app.whenReady().then(() => {
         incrementUnread();
       },
     },
+    loggingService,
   );
   const claudeService = createClaudeService(db, accountsService);
   const processRegistry = createProcessRegistry();
@@ -193,7 +197,6 @@ app.whenReady().then(() => {
   );
   const checkpointsService = createCheckpointsService(db, accountsService);
   const usageService = createUsageService(accountsService);
-  const loggingService = createLoggingService(db);
   const proxyService = createProxyService(db);
   const mcpService = createMCPService(defaultConfigDir);
   const slashCommandsService = createSlashCommandsService(defaultConfigDir);

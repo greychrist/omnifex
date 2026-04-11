@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createAsyncChannel, type AsyncChannel } from './async-channel';
+import type { LoggingService } from './logging';
 
 // ---------------------------------------------------------------------------
 // SDK imports
@@ -102,6 +103,7 @@ function findSystemClaudeBinary(): string | null {
 export function createSessionsService(
   sendToRenderer: SendToRenderer,
   notificationHooks: NotificationHooks = {},
+  logging: LoggingService | null = null,
 ): SessionsService {
   const sessions = new Map<string, SessionHandle>();
 
@@ -194,7 +196,28 @@ export function createSessionsService(
         ...process.env,
         CLAUDE_CONFIG_DIR: configDir,
       },
+      // Load project CLAUDE.md, .claude/skills/*, .claude/commands/*, .claude/settings.json,
+      // and user ~/.claude/settings.json. Without this the SDK runs in isolation mode and
+      // ignores all filesystem-based project config — defeating the point of a Claude Code GUI.
+      settingSources: ['user', 'project', 'local'],
+      // Surface invalid MCP configs as errors instead of silent warnings.
+      strictMcpConfig: true,
     };
+
+    // Route CLI subprocess stderr into the logging service so it shows up in the Log tab.
+    if (logging) {
+      options.stderr = (data: string) => {
+        logging.writeBatch([
+          {
+            timestamp: new Date().toISOString(),
+            level: 'debug',
+            source: 'claude-sdk',
+            category: `session:${tabId}`,
+            message: data,
+          },
+        ]);
+      };
+    }
 
     // Use system-installed claude binary (account is scoped via CLAUDE_CONFIG_DIR)
     const binaryPath = findSystemClaudeBinary();
