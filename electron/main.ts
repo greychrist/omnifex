@@ -268,6 +268,16 @@ app.whenReady().then(() => {
         sessionsService.respondPermission(sessionId, behavior as 'allow' | 'deny', updatedInput),
       stop: (sessionId: string) => sessionsService.stop(sessionId),
       getInfo: (sessionId: string) => sessionsService.getInfo(sessionId),
+      // Wave 2 — Query-method passthroughs
+      interrupt: (sessionId: string) => sessionsService.interrupt(sessionId),
+      setModel: (sessionId: string, model?: string) => sessionsService.setModel(sessionId, model),
+      setPermissionMode: (sessionId: string, mode: string) =>
+        sessionsService.setPermissionMode(sessionId, mode as any),
+      getAccountInfo: (sessionId: string) => sessionsService.getAccountInfo(sessionId),
+      getContextUsage: (sessionId: string) => sessionsService.getContextUsage(sessionId),
+      getSupportedCommands: (sessionId: string) => sessionsService.getSupportedCommands(sessionId),
+      getSupportedModels: (sessionId: string) => sessionsService.getSupportedModels(sessionId),
+      getSupportedAgents: (sessionId: string) => sessionsService.getSupportedAgents(sessionId),
     },
     // Agents adapter
     agents: {

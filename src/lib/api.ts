@@ -528,6 +528,56 @@ export interface LogQueryResult {
   total: number;
 }
 
+// Wave 2 — SDK Query-method return shapes (mirrored from
+// @anthropic-ai/claude-agent-sdk so the renderer doesn't have to import
+// the SDK types directly). Kept loose so minor SDK additions don't break
+// the frontend.
+
+export interface SessionAccountInfo {
+  email?: string;
+  organization?: string;
+  subscriptionType?: string;
+  tokenSource?: string;
+  apiKeySource?: string;
+  apiProvider?: 'firstParty' | 'bedrock' | 'vertex' | 'foundry' | 'anthropicAws' | 'mantle';
+}
+
+export interface SessionContextUsageCategory {
+  name: string;
+  tokens: number;
+  color: string;
+  isDeferred?: boolean;
+}
+
+export interface SessionContextUsage {
+  categories: SessionContextUsageCategory[];
+  totalTokens: number;
+  maxTokens: number;
+  rawMaxTokens: number;
+  percentage: number;
+  model: string;
+}
+
+export interface SessionSlashCommand {
+  name: string;
+  description: string;
+  argumentHint: string;
+}
+
+export interface SessionModelInfo {
+  value: string;
+  displayName: string;
+  description: string;
+  supportsEffort?: boolean;
+  supportedEffortLevels?: ('low' | 'medium' | 'high' | 'max')[];
+}
+
+export interface SessionAgentInfo {
+  name: string;
+  description: string;
+  model?: string;
+}
+
 /**
  * API client for interacting with the Rust backend
  */
@@ -1178,6 +1228,48 @@ export const api = {
 
   async getSessionInfo(tabId: string): Promise<any | null> {
     return apiCall("session_get_info", { tabId });
+  },
+
+  // ─── Wave 2: Query-method passthroughs ──────────────────────────
+
+  /** Interrupt the current assistant turn without ending the session. */
+  async sessionInterrupt(tabId: string): Promise<void> {
+    return apiCall("session_interrupt", { tabId });
+  },
+
+  /** Switch the model used for subsequent turns in an active session. */
+  async sessionSetModel(tabId: string, model?: string): Promise<void> {
+    return apiCall("session_set_model", { tabId, model });
+  },
+
+  /** Switch permission mode mid-session. */
+  async sessionSetPermissionMode(tabId: string, mode: string): Promise<void> {
+    return apiCall("session_set_permission_mode", { tabId, mode });
+  },
+
+  /** Get the SDK-reported authenticated account for an active session. */
+  async sessionAccountInfo(tabId: string): Promise<SessionAccountInfo | null> {
+    return apiCall("session_account_info", { tabId });
+  },
+
+  /** Get the current context-window usage for an active session. */
+  async sessionContextUsage(tabId: string): Promise<SessionContextUsage | null> {
+    return apiCall("session_context_usage", { tabId });
+  },
+
+  /** Get the list of slash commands the SDK knows about for this session. */
+  async sessionSupportedCommands(tabId: string): Promise<SessionSlashCommand[]> {
+    return apiCall("session_supported_commands", { tabId });
+  },
+
+  /** Get the list of models the SDK knows about for this session. */
+  async sessionSupportedModels(tabId: string): Promise<SessionModelInfo[]> {
+    return apiCall("session_supported_models", { tabId });
+  },
+
+  /** Get the list of subagents the SDK knows about for this session. */
+  async sessionSupportedAgents(tabId: string): Promise<SessionAgentInfo[]> {
+    return apiCall("session_supported_agents", { tabId });
   },
 
   // ─── Logging API ────────────────────────────────────────────────

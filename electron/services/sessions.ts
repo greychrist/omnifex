@@ -14,10 +14,14 @@ import type { LoggingService } from './logging';
 
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import type {
-  SDKMessage,
   SDKUserMessage,
   Query,
   PermissionMode,
+  AccountInfo,
+  AgentInfo,
+  ModelInfo,
+  SlashCommand,
+  SDKControlGetContextUsageResponse,
 } from '@anthropic-ai/claude-agent-sdk';
 
 // ---------------------------------------------------------------------------
@@ -52,6 +56,24 @@ export interface SessionsService {
   getStatus(tabId: string): SessionStatus;
   getInfo(tabId: string): { sessionId: string | null; status: SessionStatus } | null;
   isActive(tabId: string): boolean;
+
+  // --- Wave 2: Query-method passthroughs ----------------------------------
+  /** Interrupt the current assistant turn without ending the session. */
+  interrupt(tabId: string): Promise<void>;
+  /** Switch the model used for subsequent turns. */
+  setModel(tabId: string, model?: string): Promise<void>;
+  /** Switch the permission mode mid-session. */
+  setPermissionMode(tabId: string, mode: PermissionMode): Promise<void>;
+  /** Get the SDK-reported authenticated account for an active tab. Null if the tab isn't running. */
+  getAccountInfo(tabId: string): Promise<AccountInfo | null>;
+  /** Get the current context-window usage breakdown. Null if the tab isn't running. */
+  getContextUsage(tabId: string): Promise<SDKControlGetContextUsageResponse | null>;
+  /** Get the list of slash commands the SDK knows about for this session. Empty if no tab. */
+  getSupportedCommands(tabId: string): Promise<SlashCommand[]>;
+  /** Get the list of models the SDK knows about for this session. Empty if no tab. */
+  getSupportedModels(tabId: string): Promise<ModelInfo[]>;
+  /** Get the list of subagents the SDK knows about for this session. Empty if no tab. */
+  getSupportedAgents(tabId: string): Promise<AgentInfo[]>;
 }
 
 type SendToRenderer = (channel: string, ...args: unknown[]) => void;
@@ -416,6 +438,102 @@ export function createSessionsService(
   }
 
   // -------------------------------------------------------------------------
+  // Wave 2 — Query-method passthroughs
+  //
+  // Each method looks up the session handle for the tab and forwards to the
+  // corresponding SDK Query method. Unknown tabs are no-ops (return null or []
+  // depending on the expected shape). SDK errors are swallowed and reported
+  // as null/[] so a misbehaving subprocess can't crash the IPC layer.
+  // -------------------------------------------------------------------------
+
+  async function interrupt(tabId: string): Promise<void> {
+    const handle = sessions.get(tabId);
+    if (!handle) return;
+    try {
+      await handle.query.interrupt();
+    } catch (err) {
+      console.error(`[sessions] interrupt failed for tab ${tabId}:`, err);
+    }
+  }
+
+  async function setModel(tabId: string, model?: string): Promise<void> {
+    const handle = sessions.get(tabId);
+    if (!handle) return;
+    try {
+      await handle.query.setModel(model);
+    } catch (err) {
+      console.error(`[sessions] setModel failed for tab ${tabId}:`, err);
+    }
+  }
+
+  async function setPermissionMode(tabId: string, mode: PermissionMode): Promise<void> {
+    const handle = sessions.get(tabId);
+    if (!handle) return;
+    try {
+      await handle.query.setPermissionMode(mode);
+    } catch (err) {
+      console.error(`[sessions] setPermissionMode failed for tab ${tabId}:`, err);
+    }
+  }
+
+  async function getAccountInfo(tabId: string): Promise<AccountInfo | null> {
+    const handle = sessions.get(tabId);
+    if (!handle) return null;
+    try {
+      return await handle.query.accountInfo();
+    } catch (err) {
+      console.error(`[sessions] accountInfo failed for tab ${tabId}:`, err);
+      return null;
+    }
+  }
+
+  async function getContextUsage(
+    tabId: string,
+  ): Promise<SDKControlGetContextUsageResponse | null> {
+    const handle = sessions.get(tabId);
+    if (!handle) return null;
+    try {
+      return await handle.query.getContextUsage();
+    } catch (err) {
+      console.error(`[sessions] getContextUsage failed for tab ${tabId}:`, err);
+      return null;
+    }
+  }
+
+  async function getSupportedCommands(tabId: string): Promise<SlashCommand[]> {
+    const handle = sessions.get(tabId);
+    if (!handle) return [];
+    try {
+      return await handle.query.supportedCommands();
+    } catch (err) {
+      console.error(`[sessions] supportedCommands failed for tab ${tabId}:`, err);
+      return [];
+    }
+  }
+
+  async function getSupportedModels(tabId: string): Promise<ModelInfo[]> {
+    const handle = sessions.get(tabId);
+    if (!handle) return [];
+    try {
+      return await handle.query.supportedModels();
+    } catch (err) {
+      console.error(`[sessions] supportedModels failed for tab ${tabId}:`, err);
+      return [];
+    }
+  }
+
+  async function getSupportedAgents(tabId: string): Promise<AgentInfo[]> {
+    const handle = sessions.get(tabId);
+    if (!handle) return [];
+    try {
+      return await handle.query.supportedAgents();
+    } catch (err) {
+      console.error(`[sessions] supportedAgents failed for tab ${tabId}:`, err);
+      return [];
+    }
+  }
+
+  // -------------------------------------------------------------------------
   // Return service
   // -------------------------------------------------------------------------
 
@@ -432,5 +550,13 @@ export function createSessionsService(
     getStatus,
     getInfo,
     isActive,
+    interrupt,
+    setModel,
+    setPermissionMode,
+    getAccountInfo,
+    getContextUsage,
+    getSupportedCommands,
+    getSupportedModels,
+    getSupportedAgents,
   };
 }

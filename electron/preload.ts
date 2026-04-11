@@ -44,6 +44,15 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   'session_respond_permission',
   'session_stop',
   'session_get_info',
+  // Wave 2 — Query-method passthroughs
+  'session_interrupt',
+  'session_set_model',
+  'session_set_permission_mode',
+  'session_account_info',
+  'session_context_usage',
+  'session_supported_commands',
+  'session_supported_models',
+  'session_supported_agents',
 
   // Agents
   'list_agents',

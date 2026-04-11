@@ -45,9 +45,31 @@ function installFakeQuery(): FakeQueryHandle {
       closed = true;
       channel.close();
     },
-    interrupt: vi.fn(),
-    setPermissionMode: vi.fn(),
-    setModel: vi.fn(),
+    interrupt: vi.fn().mockResolvedValue(undefined),
+    setPermissionMode: vi.fn().mockResolvedValue(undefined),
+    setModel: vi.fn().mockResolvedValue(undefined),
+    accountInfo: vi.fn().mockResolvedValue({ email: 'test@example.com', apiProvider: 'firstParty' }),
+    getContextUsage: vi.fn().mockResolvedValue({
+      categories: [{ name: 'messages', tokens: 1000, color: '#0000ff' }],
+      totalTokens: 1000,
+      maxTokens: 200000,
+      rawMaxTokens: 200000,
+      percentage: 0.5,
+      gridRows: [],
+      model: 'claude-sonnet-4-6',
+      memoryFiles: [],
+    }),
+    supportedCommands: vi.fn().mockResolvedValue([
+      { name: 'review', description: 'Review code', argumentHint: '' },
+      { name: 'explain', description: 'Explain code', argumentHint: '<file>' },
+    ]),
+    supportedModels: vi.fn().mockResolvedValue([
+      { value: 'claude-sonnet-4-6', displayName: 'Sonnet 4.6', description: 'Fast' },
+      { value: 'claude-opus-4-6', displayName: 'Opus 4.6', description: 'Deep' },
+    ]),
+    supportedAgents: vi.fn().mockResolvedValue([
+      { name: 'Explore', description: 'Explore codebases' },
+    ]),
   };
 
   mockedQuery.mockImplementation((args: any) => {
@@ -733,6 +755,183 @@ describe('sessions service — full lifecycle', () => {
 
     const options = fake.getCapturedOptions();
     expect(options.stderr).toBeUndefined();
+  });
+
+  // -------------------------------------------------------------------------
+  // Wave 2 — Query-method passthroughs
+  // -------------------------------------------------------------------------
+
+  describe('Wave 2 Query-method passthroughs', () => {
+    it('interrupt() calls the Query.interrupt() for an active tab and is a no-op for an unknown tab', async () => {
+      const fake = installFakeQuery();
+      service.start({
+        tabId: 'w2-int',
+        projectPath: '/p',
+        configDir: '/c',
+        model: 'sonnet',
+        permissionMode: 'default',
+      });
+
+      await service.interrupt('w2-int');
+      expect(fake.query.interrupt).toHaveBeenCalledTimes(1);
+
+      await service.interrupt('unknown-tab'); // must not throw
+      expect(fake.query.interrupt).toHaveBeenCalledTimes(1);
+    });
+
+    it('setModel() forwards the model to Query.setModel()', async () => {
+      const fake = installFakeQuery();
+      service.start({
+        tabId: 'w2-model',
+        projectPath: '/p',
+        configDir: '/c',
+        model: 'sonnet',
+        permissionMode: 'default',
+      });
+
+      await service.setModel('w2-model', 'claude-opus-4-6');
+      expect(fake.query.setModel).toHaveBeenCalledWith('claude-opus-4-6');
+
+      // unknown tab is a no-op
+      await service.setModel('unknown', 'claude-opus-4-6');
+      expect(fake.query.setModel).toHaveBeenCalledTimes(1);
+    });
+
+    it('setPermissionMode() forwards the mode to Query.setPermissionMode()', async () => {
+      const fake = installFakeQuery();
+      service.start({
+        tabId: 'w2-mode',
+        projectPath: '/p',
+        configDir: '/c',
+        model: 'sonnet',
+        permissionMode: 'default',
+      });
+
+      await service.setPermissionMode('w2-mode', 'acceptEdits');
+      expect(fake.query.setPermissionMode).toHaveBeenCalledWith('acceptEdits');
+
+      await service.setPermissionMode('unknown', 'plan'); // no-op
+      expect(fake.query.setPermissionMode).toHaveBeenCalledTimes(1);
+    });
+
+    it('getAccountInfo() returns the SDK-reported account for an active tab and null for unknown', async () => {
+      const fake = installFakeQuery();
+      service.start({
+        tabId: 'w2-acct',
+        projectPath: '/p',
+        configDir: '/c',
+        model: 'sonnet',
+        permissionMode: 'default',
+      });
+
+      const info = await service.getAccountInfo('w2-acct');
+      expect(fake.query.accountInfo).toHaveBeenCalledTimes(1);
+      expect(info).toMatchObject({ email: 'test@example.com' });
+
+      const nothing = await service.getAccountInfo('unknown');
+      expect(nothing).toBeNull();
+    });
+
+    it('getContextUsage() returns the usage breakdown for an active tab', async () => {
+      const fake = installFakeQuery();
+      service.start({
+        tabId: 'w2-ctx',
+        projectPath: '/p',
+        configDir: '/c',
+        model: 'sonnet',
+        permissionMode: 'default',
+      });
+
+      const usage = await service.getContextUsage('w2-ctx');
+      expect(fake.query.getContextUsage).toHaveBeenCalledTimes(1);
+      expect(usage).not.toBeNull();
+      expect(usage!.totalTokens).toBe(1000);
+      expect(usage!.maxTokens).toBe(200000);
+      expect(usage!.percentage).toBe(0.5);
+
+      const nothing = await service.getContextUsage('unknown');
+      expect(nothing).toBeNull();
+    });
+
+    it('getSupportedCommands() returns [] for unknown tab and the SDK list for an active tab', async () => {
+      const fake = installFakeQuery();
+      service.start({
+        tabId: 'w2-cmds',
+        projectPath: '/p',
+        configDir: '/c',
+        model: 'sonnet',
+        permissionMode: 'default',
+      });
+
+      const commands = await service.getSupportedCommands('w2-cmds');
+      expect(fake.query.supportedCommands).toHaveBeenCalledTimes(1);
+      expect(commands).toHaveLength(2);
+      expect(commands.map((c) => c.name)).toEqual(['review', 'explain']);
+
+      const empty = await service.getSupportedCommands('unknown');
+      expect(empty).toEqual([]);
+    });
+
+    it('getSupportedModels() returns [] for unknown tab and the SDK list for an active tab', async () => {
+      const fake = installFakeQuery();
+      service.start({
+        tabId: 'w2-models',
+        projectPath: '/p',
+        configDir: '/c',
+        model: 'sonnet',
+        permissionMode: 'default',
+      });
+
+      const models = await service.getSupportedModels('w2-models');
+      expect(fake.query.supportedModels).toHaveBeenCalledTimes(1);
+      expect(models).toHaveLength(2);
+      expect(models.map((m) => m.value)).toEqual(['claude-sonnet-4-6', 'claude-opus-4-6']);
+
+      const empty = await service.getSupportedModels('unknown');
+      expect(empty).toEqual([]);
+    });
+
+    it('getSupportedAgents() returns [] for unknown tab and the SDK list for an active tab', async () => {
+      const fake = installFakeQuery();
+      service.start({
+        tabId: 'w2-agents',
+        projectPath: '/p',
+        configDir: '/c',
+        model: 'sonnet',
+        permissionMode: 'default',
+      });
+
+      const agents = await service.getSupportedAgents('w2-agents');
+      expect(fake.query.supportedAgents).toHaveBeenCalledTimes(1);
+      expect(agents).toHaveLength(1);
+      expect(agents[0].name).toBe('Explore');
+
+      const empty = await service.getSupportedAgents('unknown');
+      expect(empty).toEqual([]);
+    });
+
+    it('SDK errors inside a Query method propagate as null/[] rather than throwing', async () => {
+      const fake = installFakeQuery();
+      service.start({
+        tabId: 'w2-err',
+        projectPath: '/p',
+        configDir: '/c',
+        model: 'sonnet',
+        permissionMode: 'default',
+      });
+
+      fake.query.accountInfo.mockRejectedValueOnce(new Error('CLI subprocess crashed'));
+      const info = await service.getAccountInfo('w2-err');
+      expect(info).toBeNull();
+
+      fake.query.getContextUsage.mockRejectedValueOnce(new Error('timeout'));
+      const usage = await service.getContextUsage('w2-err');
+      expect(usage).toBeNull();
+
+      fake.query.supportedModels.mockRejectedValueOnce(new Error('fail'));
+      const models = await service.getSupportedModels('w2-err');
+      expect(models).toEqual([]);
+    });
   });
 
   it('auto-allow only skips tools in the per-session allow-list', async () => {

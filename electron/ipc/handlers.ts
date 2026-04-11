@@ -54,6 +54,15 @@ export interface Services {
     respondPermission(sessionId: string, behavior: string, updatedInput?: Record<string, unknown>): unknown;
     stop(sessionId: string): unknown;
     getInfo(sessionId: string): unknown;
+    // Wave 2 — Query-method passthroughs
+    interrupt(sessionId: string): unknown;
+    setModel(sessionId: string, model?: string): unknown;
+    setPermissionMode(sessionId: string, mode: string): unknown;
+    getAccountInfo(sessionId: string): unknown;
+    getContextUsage(sessionId: string): unknown;
+    getSupportedCommands(sessionId: string): unknown;
+    getSupportedModels(sessionId: string): unknown;
+    getSupportedAgents(sessionId: string): unknown;
   };
   agents?: {
     list(): unknown;
@@ -205,6 +214,15 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     session_respond_permission: wrapWith((p: Record<string, unknown>) => sessions?.respondPermission((p?.tabId ?? p?.session_id) as string, p?.behavior as string, p?.updatedInput as Record<string, unknown> | undefined) ?? null),
     session_stop: wrapWith((p: Record<string, unknown>) => sessions?.stop((p?.tabId ?? p?.session_id) as string) ?? null),
     session_get_info: wrapWith((p: Record<string, unknown>) => sessions?.getInfo((p?.tabId ?? p?.session_id) as string) ?? null),
+    // Wave 2 — Query-method passthroughs
+    session_interrupt: wrapWith((p: Record<string, unknown>) => sessions?.interrupt((p?.tabId ?? p?.session_id) as string) ?? null),
+    session_set_model: wrapWith((p: Record<string, unknown>) => sessions?.setModel((p?.tabId ?? p?.session_id) as string, p?.model as string | undefined) ?? null),
+    session_set_permission_mode: wrapWith((p: Record<string, unknown>) => sessions?.setPermissionMode((p?.tabId ?? p?.session_id) as string, (p?.mode ?? p?.permissionMode) as string) ?? null),
+    session_account_info: wrapWith((p: Record<string, unknown>) => sessions?.getAccountInfo((p?.tabId ?? p?.session_id) as string) ?? null),
+    session_context_usage: wrapWith((p: Record<string, unknown>) => sessions?.getContextUsage((p?.tabId ?? p?.session_id) as string) ?? null),
+    session_supported_commands: wrapWith((p: Record<string, unknown>) => sessions?.getSupportedCommands((p?.tabId ?? p?.session_id) as string) ?? null),
+    session_supported_models: wrapWith((p: Record<string, unknown>) => sessions?.getSupportedModels((p?.tabId ?? p?.session_id) as string) ?? null),
+    session_supported_agents: wrapWith((p: Record<string, unknown>) => sessions?.getSupportedAgents((p?.tabId ?? p?.session_id) as string) ?? null),
 
     // ── Agents ────────────────────────────────────────────────────────────────
     list_agents: wrap(() => agents?.list() ?? null),
