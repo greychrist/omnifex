@@ -119,16 +119,9 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   // real numbers that include system prompt + tools + memory + MCP tokens.
   const [contextUsage, setContextUsage] = useState<import('@/lib/api').SessionContextUsage | null>(null);
   // Wave 2.5 — live model list fetched via query.supportedModels() once the
-  // session is running. Feeds the model dropdown in SessionHeader; when
-  // empty, the dropdown falls back to not rendering.
+  // session is running. Passed into FloatingPromptInput; when empty, its
+  // picker falls back to the hardcoded MODELS array in that component.
   const [supportedModels, setSupportedModels] = useState<import('@/lib/api').SessionModelInfo[]>([]);
-  // Wave 2.4b — the "live" SDK permission mode for the currently-running
-  // session. Separate from the pre-session permissionMode state (which is
-  // still "default" | "skip" to keep the pre-session picker simple). On
-  // session init we seed this from permissionMode; mid-session changes
-  // from the SessionHeader dropdown update this AND call
-  // api.sessionSetPermissionMode.
-  const [sdkPermissionMode, setSdkPermissionMode] = useState<string>("default");
   const [showTimeline, setShowTimeline] = useState(false);
   const [timelineVersion, setTimelineVersion] = useState(0);
   const [showSettings, setShowSettings] = useState(false);
@@ -145,7 +138,12 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   // Pre-session config: show setup panel for new sessions until user clicks Start
   const [sessionStarted, setSessionStarted] = useState(!!session);
   const [selectedModel, setSelectedModel] = useState<string>("opus[1m]");
-  const [permissionMode, setPermissionMode] = useState<"default" | "skip">("default");
+  // Permission mode — widened to the full SDK set
+  // ("default" | "acceptEdits" | "plan" | "bypassPermissions"). The
+  // pre-session panel still only exposes two buttons ("default" /
+  // "bypassPermissions") and the FloatingPromptInput picker exposes all
+  // four. Single source of truth.
+  const [permissionMode, setPermissionMode] = useState<string>("default");
   const [selectedThinking, setSelectedThinking] = useState<"auto" | "concise" | "verbose">("auto");
 
   // Resolve account explanation for SessionHeader
@@ -609,12 +607,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             console.error('[sessions] sessionSupportedModels failed:', err);
           });
 
-        // Wave 2.4b — seed the live SDK permission mode from whatever the
-        // pre-session picker chose. "skip" maps to the SDK's
-        // "bypassPermissions". From here on, the header dropdown owns it.
-        setSdkPermissionMode(
-          permissionMode === "skip" ? "bypassPermissions" : "default",
-        );
       }
 
       // system:init: skip duplicates, insert before the first user message
@@ -722,7 +714,8 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     unlistenRefs.current = [outputUnlisten, errorUnlisten, completeUnlisten];
 
     // Resolve account fresh at session start (the cached state may not be ready yet)
-    const mode = permissionMode === "skip" ? "bypassPermissions" : "default";
+    // permissionMode is now the full SDK mode string directly — no mapping needed.
+    const mode = permissionMode;
     let configDir = accountResolution?.account.config_dir;
     if (!configDir && projectPath) {
       try {
@@ -1254,30 +1247,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             model={selectedModel}
             sdkAccount={sdkAccountInfo}
             contextUsage={contextUsage}
-            supportedModels={supportedModels}
-            onModelChange={(newModel) => {
-              // Wave 2.5 — in-session model switch. Call the SDK and update
-              // local state in parallel; if the SDK call fails, the state
-              // revert will show on the next turn when streaming catches up.
-              const tid = tabIdRef.current;
-              setSelectedModel(newModel);
-              api.sessionSetModel(tid, newModel).catch((err) => {
-                console.error('[sessions] sessionSetModel failed:', err);
-              });
-            }}
-            permissionMode={sdkPermissionMode}
-            onPermissionModeChange={(mode) => {
-              // Wave 2.4b — in-session permission mode switch. Updates the
-              // SDK first, then local state. If the SDK rejects the mode
-              // (e.g. bypassPermissions without allowDangerouslySkipPermissions),
-              // we swallow the error — the UI just won't reflect the change
-              // and the user can try another mode.
-              const tid = tabIdRef.current;
-              setSdkPermissionMode(mode);
-              api.sessionSetPermissionMode(tid, mode).catch((err) => {
-                console.error('[sessions] sessionSetPermissionMode failed:', err);
-              });
-            }}
             className="mb-2"
           />
         )}
@@ -1357,7 +1326,11 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                 </div>
               </div>
 
-              {/* Permission mode */}
+              {/* Permission mode (pre-session). Binary quick-pick between
+                  Ask and Auto-Approve; the FloatingPromptInput picker
+                  exposes the full four-option set once the session is
+                  running. Kept simple here so new-session setup isn't
+                  overwhelming. Values are full SDK mode strings. */}
               <div className="space-y-1">
                 <Label className="text-xs text-foreground/60">Permissions</Label>
                 <div className="flex gap-2">
@@ -1371,8 +1344,8 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                   </Button>
                   <Button
                     size="sm"
-                    variant={permissionMode === "skip" ? "default" : "outline"}
-                    onClick={() => setPermissionMode("skip")}
+                    variant={permissionMode === "bypassPermissions" ? "default" : "outline"}
+                    onClick={() => setPermissionMode("bypassPermissions")}
                     className="flex-1"
                   >
                     Auto-Approve
@@ -1381,7 +1354,9 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                 <p className="text-[10px] text-foreground/40">
                   {permissionMode === "default"
                     ? "Claude will ask before running tools (same as terminal)"
-                    : "All tool uses auto-approved (--dangerously-skip-permissions)"}
+                    : permissionMode === "bypassPermissions"
+                    ? "All tool uses auto-approved (--dangerously-skip-permissions)"
+                    : `Mid-session override: ${permissionMode}`}
                 </p>
               </div>
 
@@ -1716,8 +1691,34 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
               disabled={!projectPath}
               projectPath={projectPath}
               defaultModel={selectedModel}
+              supportedModels={supportedModels}
+              onLiveModelChange={(newModel) => {
+                // Wave 2.5 — clicking a model in the bottom picker updates
+                // selectedModel AND, if a session is running, pushes the
+                // switch to the SDK immediately via sessionSetModel() so
+                // the user doesn't have to wait until the next send.
+                setSelectedModel(newModel);
+                if (persistentSessionRef.current) {
+                  const tid = tabIdRef.current;
+                  api.sessionSetModel(tid, newModel).catch((err) => {
+                    console.error('[sessions] sessionSetModel failed:', err);
+                  });
+                }
+              }}
               permissionMode={permissionMode}
-              onPermissionModeChange={setPermissionMode}
+              onPermissionModeChange={(mode) => {
+                // Wave 2.4b — update local state AND, if a session is
+                // running, push the change to the SDK via
+                // sessionSetPermissionMode(). Swallow errors so a bad
+                // mode doesn't revert the UI — the user can pick another.
+                setPermissionMode(mode);
+                if (persistentSessionRef.current) {
+                  const tid = tabIdRef.current;
+                  api.sessionSetPermissionMode(tid, mode).catch((err) => {
+                    console.error('[sessions] sessionSetPermissionMode failed:', err);
+                  });
+                }
+              }}
               extraMenuItems={
                 <>
                   {effectiveSession && (

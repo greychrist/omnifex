@@ -14,6 +14,8 @@ import {
   Rocket,
   Shield,
   ShieldOff,
+  FilePen,
+  ClipboardList,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -23,7 +25,7 @@ import { TooltipProvider, TooltipSimple, Tooltip, TooltipTrigger, TooltipContent
 import { FilePicker } from "./FilePicker";
 import { SlashCommandPicker } from "./SlashCommandPicker";
 import { ImagePreview } from "./ImagePreview";
-import { type FileEntry, type SlashCommand } from "@/lib/api";
+import { type FileEntry, type SlashCommand, type SessionModelInfo } from "@/lib/api";
 
 
 interface FloatingPromptInputProps {
@@ -60,13 +62,31 @@ interface FloatingPromptInputProps {
    */
   extraMenuItems?: React.ReactNode;
   /**
-   * Current permission mode
+   * Current permission mode (full SDK range: default | acceptEdits |
+   * plan | bypassPermissions). Widened from the binary "default" | "skip"
+   * legacy shape; callers that still pass "skip" will see it treated as
+   * "bypassPermissions" via the mapping in the permission picker.
    */
-  permissionMode?: "default" | "skip";
+  permissionMode?: string;
   /**
-   * Callback when permission mode changes
+   * Callback when permission mode changes. Receives a full-SDK mode
+   * string. Parents should wire this to api.sessionSetPermissionMode()
+   * when a session is running.
    */
-  onPermissionModeChange?: (mode: "default" | "skip") => void;
+  onPermissionModeChange?: (mode: string) => void;
+  /**
+   * Wave 2.5 — optional live model list from query.supportedModels(),
+   * fetched by the parent after session init. When passed and non-empty,
+   * replaces the hardcoded MODELS fallback in the picker.
+   */
+  supportedModels?: SessionModelInfo[];
+  /**
+   * Wave 2.5 — optional callback fired when the user picks a model in
+   * the dropdown, so the parent can call api.sessionSetModel() to switch
+   * the model live mid-session rather than waiting for the next send.
+   * The existing onSend-with-model path still works when this is absent.
+   */
+  onLiveModelChange?: (model: string) => void;
 }
 
 export interface FloatingPromptInputRef {
@@ -205,6 +225,75 @@ const MODELS: Model[] = [
   }
 ];
 
+// Derive a short 1-2 letter badge from a model display name so the compact
+// picker trigger still renders a shortName when the parent hands us a live
+// model list without shortNames.
+function shortNameFor(displayName: string): string {
+  const cleaned = displayName
+    .replace(/claude\s*/i, "")
+    .replace(/\(.*?\)/g, "")
+    .trim();
+  const firstWord = cleaned.split(/[\s\-]+/)[0] || "";
+  return firstWord.slice(0, 1).toUpperCase() || "?";
+}
+
+type PermissionMode = {
+  id: string;
+  name: string;
+  description: string;
+  shortName: string;
+  /** Lucide icon node */
+  icon: React.ReactNode;
+  /** Tailwind text color for the trigger and legend swatch */
+  color: string;
+};
+
+// Wave 2.4b — full SDK permission mode set. Order follows ascending risk:
+// Ask (safe, green) → Auto Accept edits (yellow) → Plan Only (blue, no
+// execution at all) → Auto Approve all (red, skip everything).
+const PERMISSION_MODES: PermissionMode[] = [
+  {
+    id: "default",
+    name: "Ask",
+    description: "Prompt before every tool use (terminal behavior)",
+    shortName: "ASK",
+    icon: <Shield className="h-3.5 w-3.5" />,
+    color: "text-green-500",
+  },
+  {
+    id: "acceptEdits",
+    name: "Auto Accept",
+    description: "Auto-approve Read/Write/Edit; everything else still prompts",
+    shortName: "EDIT",
+    icon: <FilePen className="h-3.5 w-3.5" />,
+    color: "text-yellow-500",
+  },
+  {
+    id: "plan",
+    name: "Plan Only",
+    description: "Claude plans but never executes tools — plan-then-confirm",
+    shortName: "PLAN",
+    icon: <ClipboardList className="h-3.5 w-3.5" />,
+    color: "text-blue-500",
+  },
+  {
+    id: "bypassPermissions",
+    name: "Auto Approve",
+    description: "Bypass every permission check (destructive ops allowed)",
+    shortName: "ALL",
+    icon: <ShieldOff className="h-3.5 w-3.5" />,
+    color: "text-red-500",
+  },
+];
+
+// Back-compat: the pre-session panel and some older callers use "skip" as
+// a binary alias for bypassPermissions. Map it on read so we don't break
+// anything while the rest of the app migrates to full SDK modes.
+function normalizePermissionMode(mode: string): string {
+  if (mode === "skip") return "bypassPermissions";
+  return mode;
+}
+
 /**
  * FloatingPromptInput component - Fixed position prompt input with model picker
  * 
@@ -228,6 +317,8 @@ const FloatingPromptInputInner = (
     extraMenuItems,
     permissionMode = "default",
     onPermissionModeChange,
+    supportedModels,
+    onLiveModelChange,
   }: FloatingPromptInputProps,
   ref: React.Ref<FloatingPromptInputRef>,
 ) => {
@@ -813,7 +904,33 @@ const FloatingPromptInputInner = (
     setPrompt(newPrompt.trim());
   };
 
-  const selectedModelData = MODELS.find(m => m.id === selectedModel) || MODELS[0];
+  // Build the effective model list. When the parent hands us live models
+  // from query.supportedModels() we convert them to the local Model shape
+  // (default Zap icon, primary color, derived short name) and use that
+  // list; otherwise fall back to the hardcoded MODELS above. This is how
+  // the chat-bar picker gets populated with live SDK model data.
+  const effectiveModels: Model[] =
+    supportedModels && supportedModels.length > 0
+      ? supportedModels.map<Model>((m) => ({
+          id: m.value,
+          name: m.displayName,
+          description: m.description,
+          icon: <Zap className="h-3.5 w-3.5" />,
+          shortName: shortNameFor(m.displayName),
+          color: "text-primary",
+        }))
+      : MODELS;
+  const selectedModelData =
+    effectiveModels.find((m) => m.id === selectedModel) || effectiveModels[0];
+
+  // Resolve the current permission mode to one of the four canonical SDK
+  // entries so the trigger renders the right icon/color even when the
+  // parent still passes the legacy "skip" alias.
+  const normalizedPermissionMode = normalizePermissionMode(permissionMode);
+  const selectedPermissionData =
+    PERMISSION_MODES.find((m) => m.id === normalizedPermissionMode) ||
+    PERMISSION_MODES[0];
+  const [permissionPickerOpen, setPermissionPickerOpen] = useState(false);
 
   return (
     <TooltipProvider>
@@ -900,11 +1017,12 @@ const FloatingPromptInputInner = (
                       }
                       content={
                         <div className="w-[300px] p-1">
-                          {MODELS.map((model) => (
+                          {effectiveModels.map((model) => (
                             <button
                               key={model.id}
                               onClick={() => {
                                 setSelectedModel(model.id);
+                                onLiveModelChange?.(model.id);
                                 setModelPickerOpen(false);
                               }}
                               className={cn(
@@ -1090,11 +1208,12 @@ const FloatingPromptInputInner = (
                   }
                 content={
                   <div className="w-[300px] p-1">
-                    {MODELS.map((model) => (
+                    {effectiveModels.map((model) => (
                       <button
                         key={model.id}
                         onClick={() => {
                           setSelectedModel(model.id);
+                          onLiveModelChange?.(model.id);
                           setModelPickerOpen(false);
                         }}
                         className={cn(
@@ -1191,44 +1310,83 @@ const FloatingPromptInputInner = (
                 side="top"
               />
 
-              {/* Permission Mode Toggle */}
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <motion.div
-                    whileTap={{ scale: 0.97 }}
-                    transition={{ duration: 0.15 }}
-                  >
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      disabled={disabled}
-                      className={cn(
-                        "h-9 px-2 hover:bg-accent/50 gap-1",
-                        permissionMode === "skip" ? "text-yellow-500" : "text-green-500"
-                      )}
-                      onClick={() => {
-                        const next = permissionMode === "default" ? "skip" : "default";
-                        onPermissionModeChange?.(next);
-                      }}
-                    >
-                      {permissionMode === "skip" ? (
-                        <ShieldOff className="h-3.5 w-3.5" />
-                      ) : (
-                        <Shield className="h-3.5 w-3.5" />
-                      )}
-                      <span className="text-[10px] font-bold opacity-70">
-                        {permissionMode === "skip" ? "AUTO" : "ASK"}
-                      </span>
-                    </Button>
-                  </motion.div>
-                </TooltipTrigger>
-                <TooltipContent side="top">
-                  <p className="text-xs font-medium">
-                    {permissionMode === "skip" ? "Auto-Approve (skip permissions)" : "Ask Each Time (terminal behavior)"}
-                  </p>
-                  <p className="text-xs text-muted-foreground">Click to toggle</p>
-                </TooltipContent>
-              </Tooltip>
+              {/* Permission Mode Picker — Popover matching the model /
+                  thinking pickers above. Color-coded by risk level:
+                  green (Ask) → yellow (Auto Accept edits) → blue (Plan) →
+                  red (Auto Approve all). */}
+              <Popover
+                trigger={
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <motion.div
+                        whileTap={{ scale: 0.97 }}
+                        transition={{ duration: 0.15 }}
+                      >
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled={disabled}
+                          className={cn(
+                            "h-9 px-2 hover:bg-accent/50 gap-1",
+                            selectedPermissionData.color,
+                          )}
+                        >
+                          {selectedPermissionData.icon}
+                          <span className="text-[10px] font-bold opacity-70">
+                            {selectedPermissionData.shortName}
+                          </span>
+                          <ChevronUp className="h-3 w-3 ml-0.5 opacity-50" />
+                        </Button>
+                      </motion.div>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">
+                      <p className="text-xs font-medium">
+                        Permissions: {selectedPermissionData.name}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {selectedPermissionData.description}
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                }
+                content={
+                  <div className="w-[300px] p-1">
+                    {PERMISSION_MODES.map((mode) => {
+                      const isActive = mode.id === normalizedPermissionMode;
+                      return (
+                        <button
+                          key={mode.id}
+                          onClick={() => {
+                            onPermissionModeChange?.(mode.id);
+                            setPermissionPickerOpen(false);
+                          }}
+                          className={cn(
+                            "w-full flex items-start gap-3 p-3 rounded-md transition-colors text-left",
+                            "hover:bg-accent",
+                            isActive && "bg-accent",
+                          )}
+                        >
+                          <span className={cn("mt-0.5", mode.color)}>
+                            {mode.icon}
+                          </span>
+                          <div className="flex-1 space-y-1">
+                            <div className={cn("font-medium text-sm", mode.color)}>
+                              {mode.name}
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              {mode.description}
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                }
+                open={permissionPickerOpen}
+                onOpenChange={setPermissionPickerOpen}
+                align="start"
+                side="top"
+              />
 
               </div>
 
