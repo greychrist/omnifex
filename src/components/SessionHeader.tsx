@@ -239,7 +239,7 @@ export function SessionHeader({
                   <span className="text-foreground/30 font-mono">{pct.toFixed(0)}%</span>
                 </div>
               </HoverCardTrigger>
-              <HoverCardContent align="end" className="w-80">
+              <HoverCardContent align="end" className="w-96">
                 <div className="flex flex-col gap-2">
                   <div className="flex items-baseline justify-between">
                     <span className="text-sm font-semibold">Context window</span>
@@ -253,7 +253,7 @@ export function SessionHeader({
 
                   {useSdk && sortedCategories.length > 0 ? (
                     <>
-                      <div className="h-36 -mx-2">
+                      <div className="h-72 -mx-2">
                         <ResponsiveContainer width="100%" height="100%">
                           <PieChart>
                             <Pie
@@ -262,8 +262,8 @@ export function SessionHeader({
                               nameKey="name"
                               cx="50%"
                               cy="50%"
-                              innerRadius={38}
-                              outerRadius={60}
+                              innerRadius={76}
+                              outerRadius={120}
                               paddingAngle={1}
                               stroke="none"
                               isAnimationActive={false}
