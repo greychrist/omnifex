@@ -118,6 +118,17 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   // header's client-side (totalTokens / hardcoded limit) approximation with
   // real numbers that include system prompt + tools + memory + MCP tokens.
   const [contextUsage, setContextUsage] = useState<import('@/lib/api').SessionContextUsage | null>(null);
+  // Wave 2.5 — live model list fetched via query.supportedModels() once the
+  // session is running. Feeds the model dropdown in SessionHeader; when
+  // empty, the dropdown falls back to not rendering.
+  const [supportedModels, setSupportedModels] = useState<import('@/lib/api').SessionModelInfo[]>([]);
+  // Wave 2.4b — the "live" SDK permission mode for the currently-running
+  // session. Separate from the pre-session permissionMode state (which is
+  // still "default" | "skip" to keep the pre-session picker simple). On
+  // session init we seed this from permissionMode; mid-session changes
+  // from the SessionHeader dropdown update this AND call
+  // api.sessionSetPermissionMode.
+  const [sdkPermissionMode, setSdkPermissionMode] = useState<string>("default");
   const [showTimeline, setShowTimeline] = useState(false);
   const [timelineVersion, setTimelineVersion] = useState(0);
   const [showSettings, setShowSettings] = useState(false);
@@ -586,6 +597,24 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           .catch((err) => {
             console.error('[sessions] sessionContextUsage failed:', err);
           });
+
+        // Wave 2.5 — fetch the live model list for the in-session picker.
+        // Only fires once per session; the result stays in state until the
+        // next session init.
+        api.sessionSupportedModels(tidForAccount)
+          .then((models) => {
+            if (models && models.length > 0) setSupportedModels(models);
+          })
+          .catch((err) => {
+            console.error('[sessions] sessionSupportedModels failed:', err);
+          });
+
+        // Wave 2.4b — seed the live SDK permission mode from whatever the
+        // pre-session picker chose. "skip" maps to the SDK's
+        // "bypassPermissions". From here on, the header dropdown owns it.
+        setSdkPermissionMode(
+          permissionMode === "skip" ? "bypassPermissions" : "default",
+        );
       }
 
       // system:init: skip duplicates, insert before the first user message
@@ -1225,6 +1254,30 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             model={selectedModel}
             sdkAccount={sdkAccountInfo}
             contextUsage={contextUsage}
+            supportedModels={supportedModels}
+            onModelChange={(newModel) => {
+              // Wave 2.5 — in-session model switch. Call the SDK and update
+              // local state in parallel; if the SDK call fails, the state
+              // revert will show on the next turn when streaming catches up.
+              const tid = tabIdRef.current;
+              setSelectedModel(newModel);
+              api.sessionSetModel(tid, newModel).catch((err) => {
+                console.error('[sessions] sessionSetModel failed:', err);
+              });
+            }}
+            permissionMode={sdkPermissionMode}
+            onPermissionModeChange={(mode) => {
+              // Wave 2.4b — in-session permission mode switch. Updates the
+              // SDK first, then local state. If the SDK rejects the mode
+              // (e.g. bypassPermissions without allowDangerouslySkipPermissions),
+              // we swallow the error — the UI just won't reflect the change
+              // and the user can try another mode.
+              const tid = tabIdRef.current;
+              setSdkPermissionMode(mode);
+              api.sessionSetPermissionMode(tid, mode).catch((err) => {
+                console.error('[sessions] sessionSetPermissionMode failed:', err);
+              });
+            }}
             className="mb-2"
           />
         )}

@@ -1,13 +1,50 @@
 import { AccountBadge } from "./AccountBadge";
-import { Copy, MapPin, Info, Database, ShieldCheck, ShieldAlert } from "lucide-react";
+import {
+  Copy,
+  MapPin,
+  Info,
+  Database,
+  ShieldCheck,
+  ShieldAlert,
+  ChevronDown,
+  Check,
+  Cpu,
+  Lock,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { SessionAccountInfo, SessionContextUsage } from "@/lib/api";
+import type {
+  SessionAccountInfo,
+  SessionContextUsage,
+  SessionModelInfo,
+} from "@/lib/api";
 import {
   HoverCard,
   HoverCardContent,
   HoverCardTrigger,
 } from "@/components/ui/hover-card";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
+
+// Wave 2.4b — the full set of SDK permission modes. We default to
+// exposing a useful subset in the header dropdown. Users can always
+// configure the full range through Claude Code directly.
+const PERMISSION_MODE_OPTIONS: Array<{
+  value: string;
+  label: string;
+  description: string;
+}> = [
+  { value: "default", label: "Ask each time", description: "Prompt before every tool use" },
+  { value: "acceptEdits", label: "Auto-accept edits", description: "Read/Write/Edit are auto-approved" },
+  { value: "plan", label: "Plan only", description: "No tool execution, plan-then-confirm" },
+  { value: "bypassPermissions", label: "Auto-approve all", description: "Bypass every permission check (destructive ok)" },
+];
 
 // Palette for context-usage categories. Each category comes with its own
 // `color` from the SDK, but those default colors sometimes clash with our
@@ -51,6 +88,26 @@ interface SessionHeaderProps {
    * just the assistant-reported message-token count.
    */
   contextUsage?: SessionContextUsage | null;
+
+  /**
+   * Wave 2.5 — live model list fetched via query.supportedModels() once the
+   * session is running. When non-empty, the header renders a model picker
+   * populated from this list instead of a static label. onModelChange is
+   * called with the model value when the user picks; the parent is
+   * responsible for calling api.sessionSetModel() + updating its own state.
+   */
+  supportedModels?: SessionModelInfo[];
+  onModelChange?: (model: string) => void;
+
+  /**
+   * Wave 2.4b — current permission mode + change callback. When provided,
+   * the header renders a permission-mode dropdown next to the model picker.
+   * The parent should wire onPermissionModeChange to api.sessionSetPermissionMode()
+   * and mirror the result into its own state.
+   */
+  permissionMode?: string;
+  onPermissionModeChange?: (mode: string) => void;
+
   className?: string;
 }
 
@@ -66,8 +123,24 @@ export function SessionHeader({
   model,
   sdkAccount,
   contextUsage,
+  supportedModels,
+  onModelChange,
+  permissionMode,
+  onPermissionModeChange,
   className,
 }: SessionHeaderProps) {
+  // Find the SDK's display name for the current model so the dropdown
+  // trigger shows a human-friendly label (Sonnet 4.6) instead of the raw
+  // value (claude-sonnet-4-6). Fall back to the raw model string.
+  const currentModelLabel =
+    (supportedModels && model &&
+      supportedModels.find((m) => m.value === model)?.displayName) ||
+    model ||
+    "Model";
+
+  const currentPermissionLabel =
+    PERMISSION_MODE_OPTIONS.find((o) => o.value === permissionMode)?.label ??
+    "Permissions";
   const copySessionId = () => {
     if (sessionId) {
       navigator.clipboard.writeText(sessionId);
@@ -144,6 +217,109 @@ export function SessionHeader({
       </div>
 
       <div className="ml-auto flex items-center gap-3">
+        {/* Wave 2.5 — live model picker. Only rendered when the parent
+            hands us a supportedModels list from query.supportedModels()
+            AND a change callback; otherwise the header stays read-only
+            (shows the model as plain text via the context widget's
+            internal usage). */}
+        {supportedModels && supportedModels.length > 0 && onModelChange && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="flex items-center gap-1 px-2 py-0.5 rounded-md hover:bg-foreground/10 transition-colors text-foreground/70"
+                title="Switch model (live — from query.supportedModels())"
+              >
+                <Cpu className="w-3 h-3 text-foreground/40" />
+                <span className="font-mono text-xs truncate max-w-[140px]">
+                  {currentModelLabel}
+                </span>
+                <ChevronDown className="w-3 h-3 text-foreground/40" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-80">
+              <DropdownMenuLabel className="text-[10px] text-muted-foreground uppercase tracking-wider">
+                Switch model
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {supportedModels.map((m) => {
+                const isActive = m.value === model;
+                return (
+                  <DropdownMenuItem
+                    key={m.value}
+                    onClick={() => onModelChange(m.value)}
+                    className="flex items-start gap-2"
+                  >
+                    <Check
+                      className={cn(
+                        "w-3 h-3 mt-1 shrink-0",
+                        isActive ? "text-primary" : "text-transparent",
+                      )}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-medium truncate">
+                        {m.displayName}
+                      </div>
+                      <div className="text-[10px] text-muted-foreground line-clamp-2">
+                        {m.description}
+                      </div>
+                    </div>
+                  </DropdownMenuItem>
+                );
+              })}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+
+        {/* Wave 2.4b — mid-session permission mode picker. Same gating:
+            only rendered when the parent wires a change callback. */}
+        {onPermissionModeChange && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="flex items-center gap-1 px-2 py-0.5 rounded-md hover:bg-foreground/10 transition-colors text-foreground/70"
+                title="Change permission mode (applies to the running session immediately)"
+              >
+                <Lock className="w-3 h-3 text-foreground/40" />
+                <span className="text-xs truncate max-w-[120px]">
+                  {currentPermissionLabel}
+                </span>
+                <ChevronDown className="w-3 h-3 text-foreground/40" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-80">
+              <DropdownMenuLabel className="text-[10px] text-muted-foreground uppercase tracking-wider">
+                Permission mode
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {PERMISSION_MODE_OPTIONS.map((opt) => {
+                const isActive = opt.value === permissionMode;
+                return (
+                  <DropdownMenuItem
+                    key={opt.value}
+                    onClick={() => onPermissionModeChange(opt.value)}
+                    className="flex items-start gap-2"
+                  >
+                    <Check
+                      className={cn(
+                        "w-3 h-3 mt-1 shrink-0",
+                        isActive ? "text-primary" : "text-transparent",
+                      )}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-medium">{opt.label}</div>
+                      <div className="text-[10px] text-muted-foreground">
+                        {opt.description}
+                      </div>
+                    </div>
+                  </DropdownMenuItem>
+                );
+              })}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+
         {(() => {
           // Prefer authoritative numbers from query.getContextUsage() when
           // present; otherwise fall back to the old client-side approximation
