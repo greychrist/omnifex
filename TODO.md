@@ -8,13 +8,28 @@ Gap analysis of `@anthropic-ai/claude-agent-sdk` 0.2.101 usage vs. what the SDK 
 
 ---
 
-## Wave 1 — one-line fixes that close real gaps
+## Wave 1 — one-line fixes that close real gaps ✅ SHIPPED
+
+Landed in `74fe715 feat(sessions): wire SDK settingSources, strictMcpConfig, stderr logging`.
 
 - [x] **1.1** Add `settingSources: ['user', 'project', 'local']` to session options in `electron/services/sessions.ts`. Without this, the SDK runs in isolation mode and ignores project `CLAUDE.md`, `.claude/skills/*`, `.claude/commands/*`, `.claude/settings.json` — a critical gap for a Claude Code GUI.
 - [x] **1.2** Make sure MCP servers configured via our MCP service reach `query()`. **Covered by 1.1:** `settingSources: ['user', ...]` loads `~/.claude/settings.json` (where our `mcp.ts` writes `mcpServers`), and the SDK CLI loads project `.mcp.json` automatically from `cwd`. No explicit `mcpServers` option needed.
-- [x] **1.3** Add `stderr` callback on the session options that pipes the CLI subprocess's stderr into the logging service. Wired via a new optional `logging: LoggingService | null` param on `createSessionsService`. Stderr lines are written as `{ source: 'claude-sdk', category: 'session:<tabId>', level: 'debug' }` log entries.
+- [x] **1.3** Add `stderr` callback on the session options that pipes the CLI subprocess's stderr into the logging service. Wired via a new optional `logging: LoggingService | null` param on `createSessionsService`. Stderr lines are written as `{ source: 'claude-sdk', category: 'session:<tabId>', level: 'debug' }` log entries. **Nuance discovered during verification:** the Claude CLI routes its own `--debug` output to `~/.claude-personal/debug/<sessionId>.txt`, not stderr. The callback still catches *unexpected* stderr (crashes, fatal errors) but won't see routine debug chatter. Clarified in comments in `5798b48`.
 - [x] **1.4** Add `strictMcpConfig: true` so invalid MCP configs surface as errors instead of silent warnings.
-- [x] **1.5** Run full verify gate (`check` ✓ `build` ✓ `test:coverage` ✓ — 292/292 tests, 94.16% line coverage, sessions.ts at 97.84%). Commit pending user approval.
+- [x] **1.5** Run full verify gate. Commits landed:
+  - `74fe715` — Wave 1 SDK options (292/292 tests, 94.16% line coverage, sessions.ts at 97.84%).
+- [x] **1.6** Verify in running app. Confirmed 2026-04-11 04:10 local via `~/.claude-personal/debug/<sessionId>.txt` debug trace:
+  - SDK is loading skills from project `.claude/skills` path → `settingSources` working
+  - 53 permission rules loaded from user settings + 6 from localSettings → all three setting sources honored
+  - No `NODE_MODULE_VERSION` mismatch or `Blocked IPC channel` noise from Wave 1 paths
+
+---
+
+## Wave 1.5 — off-roadmap fixes discovered during Wave 1 verification
+
+- [x] **1.5.1** `get_checkpoint_settings` channel missing end-to-end (service method, handler interface, handler registration, main.ts adapter mapping, preload allow-list). Every session start was logging "Failed to check auto checkpoint: Blocked IPC channel". Fixed in `aa918c3 fix(ipc): wire get_checkpoint_settings channel end-to-end` — 4 new tests, verified gone in app log.
+- [x] **1.5.2** Add `npm run rebuild:electron` dev script that invokes `electron-rebuild -f -w better-sqlite3`. After any vitest run, the `pretest` hook rebuilds better-sqlite3 for system Node's ABI, which crashes Electron on `rs` with `NODE_MODULE_VERSION` mismatch → avalanche of "No handler registered" errors. Script gives a fast (~5s) way to flip the ABI back without killing the app. Landed in `5798b48`.
+- [ ] **1.5.3** `log_count` / `log_prune` channels missing end-to-end. `LogTab.tsx`'s Clear-All button calls `api.logCount()` → shows "blocked IPC channel: log_count" error; then on confirm would call `api.logPrune()` which would also fail. Need: new `count()` and `prune(olderThan?)` methods on `LoggingService`, handler interface + registration, main.ts adapter, preload allow-list, tests. **Still open.**
 
 ---
 
