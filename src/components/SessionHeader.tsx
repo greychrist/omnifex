@@ -2,6 +2,27 @@ import { AccountBadge } from "./AccountBadge";
 import { Copy, MapPin, Info, Database, ShieldCheck, ShieldAlert } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { SessionAccountInfo, SessionContextUsage } from "@/lib/api";
+import {
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+} from "@/components/ui/hover-card";
+import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
+
+// Palette for context-usage categories. Each category comes with its own
+// `color` from the SDK, but those default colors sometimes clash with our
+// dark palette, so we override with our own sequence and fall back to the
+// SDK color if we run out of slots.
+const CATEGORY_COLORS = [
+  "#60a5fa", // blue-400
+  "#a78bfa", // violet-400
+  "#34d399", // emerald-400
+  "#fbbf24", // amber-400
+  "#f472b6", // pink-400
+  "#22d3ee", // cyan-400
+  "#f87171", // red-400
+  "#a3e635", // lime-400
+];
 
 interface SessionHeaderProps {
   accountName: string;
@@ -138,35 +159,140 @@ export function SessionHeader({
           const pct = Math.min(100, (tokens / limit) * 100);
           const color = pct > 80 ? "text-red-400" : pct > 50 ? "text-yellow-400" : "text-foreground/50";
 
-          // Tooltip: detailed breakdown from the SDK when available, plain
-          // totals when not.
-          const breakdown = useSdk && contextUsage!.categories.length > 0
-            ? contextUsage!.categories
-                .slice()
-                .sort((a, b) => b.tokens - a.tokens)
-                .map((c) => `${c.name}: ${c.tokens.toLocaleString()}`)
-                .join("\n")
-            : null;
-          const titleText = useSdk
-            ? `${tokens.toLocaleString()} / ${(limit / 1000).toFixed(0)}k tokens (${pct.toFixed(1)}%)${
-                breakdown ? `\n\n${breakdown}` : ''
-              }\n\nsource: query.getContextUsage()`
-            : `${tokens.toLocaleString()} / ${(limit / 1000).toFixed(0)}k tokens (${pct.toFixed(1)}%)\n\nsource: client-side estimate (totalTokens / ${(limit / 1000).toFixed(0)}k)`;
+          // Build pie-chart data from SDK categories (descending by tokens).
+          // Add a "Free" slice representing the remaining context so the
+          // chart visualizes the total budget, not just what's been used.
+          const sortedCategories =
+            useSdk && contextUsage!.categories.length > 0
+              ? contextUsage!.categories
+                  .slice()
+                  .sort((a, b) => b.tokens - a.tokens)
+                  .filter((c) => c.tokens > 0)
+              : [];
+          const remainingTokens = Math.max(0, limit - tokens);
+          const pieData = [
+            ...sortedCategories.map((c, i) => ({
+              name: c.name,
+              value: c.tokens,
+              color: CATEGORY_COLORS[i % CATEGORY_COLORS.length],
+            })),
+            {
+              name: "Free",
+              value: remainingTokens,
+              color: "rgba(255,255,255,0.08)",
+            },
+          ];
 
           return (
-            <div className="flex items-center gap-1.5" title={titleText}>
-              <Database className={cn("w-3 h-3", useSdk ? "text-foreground/60" : "text-foreground/30")} />
-              <span className={cn("font-mono", color)}>
-                {tokens >= 1000 ? `${(tokens / 1000).toFixed(1)}k` : tokens}
-              </span>
-              <div className="w-16 h-1.5 bg-foreground/10 rounded-full overflow-hidden">
-                <div
-                  className={cn("h-full rounded-full transition-all", pct > 80 ? "bg-red-400" : pct > 50 ? "bg-yellow-400" : "bg-primary/60")}
-                  style={{ width: `${pct}%` }}
-                />
-              </div>
-              <span className="text-foreground/30 font-mono">{pct.toFixed(0)}%</span>
-            </div>
+            <HoverCard openDelay={80} closeDelay={120}>
+              <HoverCardTrigger asChild>
+                <div className="flex items-center gap-1.5 cursor-default">
+                  <Database
+                    className={cn(
+                      "w-3 h-3",
+                      useSdk ? "text-foreground/60" : "text-foreground/30",
+                    )}
+                  />
+                  <span className={cn("font-mono", color)}>
+                    {tokens >= 1000 ? `${(tokens / 1000).toFixed(1)}k` : tokens}
+                  </span>
+                  <div className="w-16 h-1.5 bg-foreground/10 rounded-full overflow-hidden">
+                    <div
+                      className={cn(
+                        "h-full rounded-full transition-all",
+                        pct > 80
+                          ? "bg-red-400"
+                          : pct > 50
+                          ? "bg-yellow-400"
+                          : "bg-primary/60",
+                      )}
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                  <span className="text-foreground/30 font-mono">{pct.toFixed(0)}%</span>
+                </div>
+              </HoverCardTrigger>
+              <HoverCardContent align="end" className="w-80">
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-sm font-semibold">Context window</span>
+                    <span className={cn("font-mono text-sm", color)}>
+                      {pct.toFixed(1)}%
+                    </span>
+                  </div>
+                  <div className="text-xs text-muted-foreground font-mono">
+                    {tokens.toLocaleString()} / {limit.toLocaleString()} tokens
+                  </div>
+
+                  {useSdk && sortedCategories.length > 0 ? (
+                    <>
+                      <div className="h-36 -mx-2">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie
+                              data={pieData}
+                              dataKey="value"
+                              nameKey="name"
+                              cx="50%"
+                              cy="50%"
+                              innerRadius={38}
+                              outerRadius={60}
+                              paddingAngle={1}
+                              stroke="none"
+                              isAnimationActive={false}
+                            >
+                              {pieData.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={entry.color} />
+                              ))}
+                            </Pie>
+                          </PieChart>
+                        </ResponsiveContainer>
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        {sortedCategories.map((c, i) => {
+                          const catPct = limit > 0 ? (c.tokens / limit) * 100 : 0;
+                          return (
+                            <div
+                              key={c.name}
+                              className="flex items-center gap-2 text-xs"
+                            >
+                              <span
+                                className="inline-block w-2 h-2 rounded-sm shrink-0"
+                                style={{
+                                  backgroundColor:
+                                    CATEGORY_COLORS[i % CATEGORY_COLORS.length],
+                                }}
+                              />
+                              <span className="flex-1 truncate text-foreground/80">
+                                {c.name}
+                              </span>
+                              <span className="font-mono text-foreground/60 shrink-0">
+                                {c.tokens.toLocaleString()}
+                              </span>
+                              <span className="font-mono text-foreground/40 shrink-0 w-10 text-right">
+                                {catPct.toFixed(1)}%
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-xs text-muted-foreground italic">
+                      Category breakdown not yet available — waiting for the SDK
+                      to report per-category usage.
+                    </div>
+                  )}
+
+                  <div className="pt-1 mt-1 border-t border-border/50 text-[10px] text-muted-foreground">
+                    source:{" "}
+                    {useSdk
+                      ? "query.getContextUsage()"
+                      : "client-side estimate (fallback)"}
+                  </div>
+                </div>
+              </HoverCardContent>
+            </HoverCard>
           );
         })()}
         {showCost && (
