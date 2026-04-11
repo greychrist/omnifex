@@ -1,70 +1,65 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { EventEmitter } from 'node:events';
-import { PassThrough } from 'node:stream';
 import { createDatabase, type Database } from '../services/database';
 import { createAccountsService, type AccountsService } from '../services/accounts';
 import { createAgentsService, type AgentsService, type Agent } from '../services/agents';
-import { createProcessRegistry, type ProcessRegistry } from '../services/process-registry';
-import { spawn as rawSpawn } from 'node:child_process';
+import {
+  createAgentRunRegistry,
+  type AgentRunRegistry,
+} from '../services/agent-run-registry';
+import { createAsyncChannel } from '../services/async-channel';
+import { query as sdkQuery } from '@anthropic-ai/claude-agent-sdk';
 
 // ---------------------------------------------------------------------------
-// Mocks
+// Mock the Claude Agent SDK (same pattern as sessions.test.ts)
 // ---------------------------------------------------------------------------
 
-vi.mock('node:child_process', () => ({
-  spawn: vi.fn(),
+vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
+  query: vi.fn(),
 }));
 
-const mockedSpawn = vi.mocked(rawSpawn);
+const mockedQuery = vi.mocked(sdkQuery);
 
 // ---------------------------------------------------------------------------
-// Fake child process — minimal shape needed by executeAgent.
-// We use a real PassThrough for stdout so `readline.createInterface` can read
-// from it as if it were a real process stream.
+// Fake SDK Query handle: an async-iterable with a `close()` method, driven
+// by an internal AsyncChannel so tests can push SDKMessage-shaped objects
+// into the stream at will.
 // ---------------------------------------------------------------------------
 
-interface FakeProcessHandle {
-  proc: any;
-  emitClose: (code: number | null) => void;
-  pushLine: (line: string) => void;
-  endStdout: () => void;
+interface FakeQueryHandle {
+  query: any;
+  pushMessage: (msg: unknown) => void;
+  closeMessages: () => void;
+  wasClosed: () => boolean;
+  getCapturedOptions: () => any;
+  getCapturedPrompt: () => any;
 }
 
-function createFakeProcess(opts: { pid?: number | null; noStdout?: boolean } = {}): FakeProcessHandle {
-  const { pid = 9999, noStdout = false } = opts;
-  const emitter = new EventEmitter();
-  const stdout = noStdout ? null : new PassThrough();
+function installFakeQuery(): FakeQueryHandle {
+  const channel = createAsyncChannel<unknown>();
+  let closed = false;
+  let capturedArgs: any = null;
 
-  const fake: any = {
-    pid,
-    stdout,
-    stdin: null,
-    stderr: null,
-    killed: false,
-    exitCode: null,
-    kill: vi.fn((_signal?: string) => {
-      fake.killed = true;
-      return true;
+  const fakeQuery: any = {
+    [Symbol.asyncIterator]: () => channel[Symbol.asyncIterator](),
+    close: vi.fn(() => {
+      closed = true;
+      channel.close();
     }),
-    on: emitter.on.bind(emitter),
-    once: emitter.once.bind(emitter),
-    emit: emitter.emit.bind(emitter),
-    off: emitter.off.bind(emitter),
+    interrupt: vi.fn(),
   };
 
+  mockedQuery.mockImplementation((args: any) => {
+    capturedArgs = args ?? null;
+    return fakeQuery;
+  });
+
   return {
-    proc: fake,
-    emitClose: (code) => {
-      fake.exitCode = code;
-      emitter.emit('close', code);
-    },
-    pushLine: (line) => {
-      if (!stdout) throw new Error('fake process has no stdout');
-      stdout.write(line + '\n');
-    },
-    endStdout: () => {
-      if (stdout) stdout.end();
-    },
+    query: fakeQuery,
+    pushMessage: (msg) => channel.push(msg),
+    closeMessages: () => channel.close(),
+    wasClosed: () => closed,
+    getCapturedOptions: () => capturedArgs?.options ?? null,
+    getCapturedPrompt: () => capturedArgs?.prompt ?? null,
   };
 }
 
@@ -100,17 +95,17 @@ describe('agents service — CRUD', () => {
   let db: Database;
   let accounts: AccountsService;
   let service: AgentsService;
-  let processRegistry: ProcessRegistry;
+  let agentRunRegistry: AgentRunRegistry;
 
   beforeEach(() => {
     db = createDatabase(':memory:');
     accounts = createAccountsService(db);
-    processRegistry = createProcessRegistry();
+    agentRunRegistry = createAgentRunRegistry();
     service = createAgentsService(
       db,
       accounts,
       makeClaudeBinaryService(),
-      processRegistry,
+      agentRunRegistry,
       makeSendToRenderer(),
     );
   });
@@ -267,17 +262,17 @@ describe('agents service — runs', () => {
   let db: Database;
   let accounts: AccountsService;
   let service: AgentsService;
-  let processRegistry: ProcessRegistry;
+  let agentRunRegistry: AgentRunRegistry;
 
   beforeEach(() => {
     db = createDatabase(':memory:');
     accounts = createAccountsService(db);
-    processRegistry = createProcessRegistry();
+    agentRunRegistry = createAgentRunRegistry();
     service = createAgentsService(
       db,
       accounts,
       makeClaudeBinaryService(),
-      processRegistry,
+      agentRunRegistry,
       makeSendToRenderer(),
     );
   });
@@ -387,68 +382,101 @@ describe('agents service — runs', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Process registry
+// Agent run registry (replaces the old ChildProcess-based ProcessRegistry)
 // ---------------------------------------------------------------------------
 
-describe('process registry', () => {
-  it('registers and retrieves a process', () => {
-    const registry = createProcessRegistry();
-    const mockProc = { kill: vi.fn(), exitCode: null, killed: false } as any;
+describe('agent run registry', () => {
+  function makeFakeHandle(): any {
+    return {
+      query: { close: vi.fn() },
+      status: 'running' as const,
+    };
+  }
 
-    registry.register(1, mockProc);
-    expect(registry.get(1)).toBe(mockProc);
+  it('registers and retrieves a handle', () => {
+    const registry = createAgentRunRegistry();
+    const h = makeFakeHandle();
+    registry.register(1, h);
+    expect(registry.get(1)).toBe(h);
   });
 
   it('returns undefined for unregistered run id', () => {
-    const registry = createProcessRegistry();
+    const registry = createAgentRunRegistry();
     expect(registry.get(999)).toBeUndefined();
   });
 
-  it('kill sends SIGTERM and removes from registry', () => {
-    const registry = createProcessRegistry();
-    const mockProc = { kill: vi.fn(), exitCode: null, killed: false } as any;
-    registry.register(42, mockProc);
+  it('kill marks status and calls query.close()', () => {
+    const registry = createAgentRunRegistry();
+    const h = makeFakeHandle();
+    registry.register(42, h);
 
     const result = registry.kill(42);
     expect(result).toBe(true);
-    expect(mockProc.kill).toHaveBeenCalledWith('SIGTERM');
-    expect(registry.get(42)).toBeUndefined();
+    expect(h.query.close).toHaveBeenCalledTimes(1);
+    expect(h.status).toBe('killed');
+    // kill() no longer removes from registry — it leaves the handle so
+    // cleanupFinishedProcesses can include it in the next sweep
+    expect(registry.get(42)).toBe(h);
   });
 
   it('kill returns false for unknown run id', () => {
-    const registry = createProcessRegistry();
+    const registry = createAgentRunRegistry();
     expect(registry.kill(999)).toBe(false);
   });
 
+  it('kill swallows errors from query.close()', () => {
+    const registry = createAgentRunRegistry();
+    const h = {
+      query: { close: vi.fn(() => { throw new Error('already closed'); }) },
+      status: 'running' as const,
+    };
+    registry.register(5, h as any);
+    expect(() => registry.kill(5)).not.toThrow();
+    expect(h.status).toBe('killed');
+  });
+
+  it('setStatus updates the status of an existing entry', () => {
+    const registry = createAgentRunRegistry();
+    const h = makeFakeHandle();
+    registry.register(1, h);
+    registry.setStatus(1, 'completed');
+    expect(h.status).toBe('completed');
+  });
+
+  it('setStatus is a no-op for an unknown run id', () => {
+    const registry = createAgentRunRegistry();
+    expect(() => registry.setStatus(999, 'completed')).not.toThrow();
+  });
+
   it('remove deletes from registry', () => {
-    const registry = createProcessRegistry();
-    const mockProc = { kill: vi.fn(), exitCode: null, killed: false } as any;
-    registry.register(7, mockProc);
+    const registry = createAgentRunRegistry();
+    const h = makeFakeHandle();
+    registry.register(7, h);
     registry.remove(7);
     expect(registry.get(7)).toBeUndefined();
   });
 
-  it('getAll returns all registered processes', () => {
-    const registry = createProcessRegistry();
-    const p1 = { kill: vi.fn(), exitCode: null, killed: false } as any;
-    const p2 = { kill: vi.fn(), exitCode: null, killed: false } as any;
-    registry.register(1, p1);
-    registry.register(2, p2);
+  it('getAll returns all registered handles', () => {
+    const registry = createAgentRunRegistry();
+    const h1 = makeFakeHandle();
+    const h2 = makeFakeHandle();
+    registry.register(1, h1);
+    registry.register(2, h2);
 
     const all = registry.getAll();
     expect(all.size).toBe(2);
-    expect(all.get(1)).toBe(p1);
-    expect(all.get(2)).toBe(p2);
+    expect(all.get(1)).toBe(h1);
+    expect(all.get(2)).toBe(h2);
   });
 
-  it('cleanup removes finished processes and returns their ids', () => {
-    const registry = createProcessRegistry();
-    const running = { kill: vi.fn(), exitCode: null, killed: false } as any;
-    const exited = { kill: vi.fn(), exitCode: 0, killed: false } as any;
-    const killed = { kill: vi.fn(), exitCode: null, killed: true } as any;
+  it('cleanup removes non-running entries and returns their ids', () => {
+    const registry = createAgentRunRegistry();
+    const running = makeFakeHandle();
+    const completed = { ...makeFakeHandle(), status: 'completed' as const };
+    const killed = { ...makeFakeHandle(), status: 'killed' as const };
 
     registry.register(1, running);
-    registry.register(2, exited);
+    registry.register(2, completed);
     registry.register(3, killed);
 
     const cleaned = registry.cleanup();
@@ -467,17 +495,17 @@ describe('agents service — session management', () => {
   let db: Database;
   let accounts: AccountsService;
   let service: AgentsService;
-  let processRegistry: ProcessRegistry;
+  let agentRunRegistry: AgentRunRegistry;
 
   beforeEach(() => {
     db = createDatabase(':memory:');
     accounts = createAccountsService(db);
-    processRegistry = createProcessRegistry();
+    agentRunRegistry = createAgentRunRegistry();
     service = createAgentsService(
       db,
       accounts,
       makeClaudeBinaryService(),
-      processRegistry,
+      agentRunRegistry,
       makeSendToRenderer(),
     );
   });
@@ -504,7 +532,7 @@ describe('agents service — session management', () => {
     expect(service.getSessionStatus(runId)).toBe('completed');
   });
 
-  it('getSessionStatus reflects running process in registry', () => {
+  it('getSessionStatus reflects running handle in registry', () => {
     const agent = service.createAgent({ name: 'A', icon: '🤖', system_prompt: 'P' });
     const info = db.raw
       .prepare(
@@ -515,13 +543,13 @@ describe('agents service — session management', () => {
       .run(agent.id, agent.name, agent.icon, 'T', 'sonnet', '/p', 'sid', 'running');
     const runId = info.lastInsertRowid as number;
 
-    const mockProc = { kill: vi.fn(), exitCode: null, killed: false } as any;
-    processRegistry.register(runId, mockProc);
+    const handle = { query: { close: vi.fn() }, status: 'running' as const } as any;
+    agentRunRegistry.register(runId, handle);
 
     expect(service.getSessionStatus(runId)).toBe('running');
   });
 
-  it('killAgentSession kills process and updates status', () => {
+  it('killAgentSession calls query.close() and updates status', () => {
     const agent = service.createAgent({ name: 'A', icon: '🤖', system_prompt: 'P' });
     const info = db.raw
       .prepare(
@@ -532,12 +560,13 @@ describe('agents service — session management', () => {
       .run(agent.id, agent.name, agent.icon, 'T', 'sonnet', '/p', 'sid', 'running');
     const runId = info.lastInsertRowid as number;
 
-    const mockProc = { kill: vi.fn(), exitCode: null, killed: false } as any;
-    processRegistry.register(runId, mockProc);
+    const close = vi.fn();
+    const handle = { query: { close }, status: 'running' as const } as any;
+    agentRunRegistry.register(runId, handle);
 
     service.killAgentSession(runId);
 
-    expect(mockProc.kill).toHaveBeenCalledWith('SIGTERM');
+    expect(close).toHaveBeenCalledTimes(1);
     const run = service.getAgentRun(runId);
     expect(run!.status).toBe('killed');
   });
@@ -565,8 +594,12 @@ describe('agents service — session management', () => {
       .run(agent.id, agent.name, agent.icon, 'T', 'sonnet', '/p', 'sid', 'running');
     const runId = info.lastInsertRowid as number;
 
-    const exitedProc = { kill: vi.fn(), exitCode: 0, killed: false } as any;
-    processRegistry.register(runId, exitedProc);
+    // Register with non-running status so cleanup picks it up
+    const completedHandle = {
+      query: { close: vi.fn() },
+      status: 'completed' as const,
+    } as any;
+    agentRunRegistry.register(runId, completedHandle);
 
     const cleaned = service.cleanupFinishedProcesses();
     expect(cleaned).toContain(runId);
@@ -584,19 +617,19 @@ describe('agents service — GitHub integration', () => {
   let db: Database;
   let accounts: AccountsService;
   let service: AgentsService;
-  let processRegistry: ProcessRegistry;
+  let agentRunRegistry: AgentRunRegistry;
   let fetchMock: ReturnType<typeof vi.fn>;
   let originalFetch: typeof globalThis.fetch;
 
   beforeEach(() => {
     db = createDatabase(':memory:');
     accounts = createAccountsService(db);
-    processRegistry = createProcessRegistry();
+    agentRunRegistry = createAgentRunRegistry();
     service = createAgentsService(
       db,
       accounts,
       makeClaudeBinaryService(),
-      processRegistry,
+      agentRunRegistry,
       makeSendToRenderer(),
     );
 
@@ -711,11 +744,11 @@ describe('agents service — GitHub integration', () => {
 // executeAgent — the spawn path
 // ---------------------------------------------------------------------------
 
-describe('agents service — executeAgent spawn path', () => {
+describe('agents service — executeAgent SDK path', () => {
   let db: Database;
   let accounts: AccountsService;
   let service: AgentsService;
-  let processRegistry: ProcessRegistry;
+  let agentRunRegistry: AgentRunRegistry;
   let claudeBinary: ReturnType<typeof makeClaudeBinaryService>;
   let sendToRenderer: ReturnType<typeof makeSendToRenderer>;
 
@@ -723,17 +756,17 @@ describe('agents service — executeAgent spawn path', () => {
   const configDir = '/fake/.claude';
 
   beforeEach(() => {
-    mockedSpawn.mockReset();
+    mockedQuery.mockReset();
     db = createDatabase(':memory:');
     accounts = createAccountsService(db);
-    processRegistry = createProcessRegistry();
+    agentRunRegistry = createAgentRunRegistry();
     claudeBinary = makeClaudeBinaryService('/usr/local/bin/claude');
     sendToRenderer = makeSendToRenderer();
     service = createAgentsService(
       db,
       accounts,
       claudeBinary,
-      processRegistry,
+      agentRunRegistry,
       sendToRenderer,
     );
 
@@ -756,7 +789,7 @@ describe('agents service — executeAgent spawn path', () => {
         task: 'doit',
       }),
     ).rejects.toThrow(/Agent 9999 not found/);
-    expect(mockedSpawn).not.toHaveBeenCalled();
+    expect(mockedQuery).not.toHaveBeenCalled();
   });
 
   it('throws when no account resolves for the project path', async () => {
@@ -773,38 +806,19 @@ describe('agents service — executeAgent spawn path', () => {
         task: 'doit',
       }),
     ).rejects.toThrow(/No account resolved/);
-    expect(mockedSpawn).not.toHaveBeenCalled();
-  });
-
-  it('throws when no claude binary can be found', async () => {
-    const agent = service.createAgent({
-      name: 'A',
-      icon: '🤖',
-      system_prompt: 'P',
-    });
-    (claudeBinary.findBestBinary as any).mockReturnValue(null);
-
-    await expect(
-      service.executeAgent({
-        agentId: agent.id,
-        projectPath,
-        task: 'doit',
-      }),
-    ).rejects.toThrow(/No Claude binary/);
-    expect(mockedSpawn).not.toHaveBeenCalled();
+    expect(mockedQuery).not.toHaveBeenCalled();
   });
 
   // ---- happy path ----
 
-  it('spawns claude with the agent prompt, model, task, cwd, and CLAUDE_CONFIG_DIR', async () => {
+  it('calls SDK query() with the agent system prompt, model, task, cwd, and CLAUDE_CONFIG_DIR', async () => {
     const agent = service.createAgent({
-      name: 'Spawner',
-      icon: '🚀',
+      name: 'Runner',
+      icon: '🏃',
       system_prompt: 'System prompt text',
       model: 'sonnet',
     });
-    const { proc } = createFakeProcess({ pid: 4242 });
-    mockedSpawn.mockReturnValueOnce(proc);
+    installFakeQuery();
 
     const runId = await service.executeAgent({
       agentId: agent.id,
@@ -813,32 +827,28 @@ describe('agents service — executeAgent spawn path', () => {
       model: 'opus', // override agent default
     });
 
-    // spawn called once with the right arguments
-    expect(mockedSpawn).toHaveBeenCalledTimes(1);
-    const [binary, args, options] = mockedSpawn.mock.calls[0] as any[];
-    expect(binary).toBe('/usr/local/bin/claude');
-    expect(args).toContain('--system-prompt');
-    expect(args).toContain('System prompt text');
-    expect(args).toContain('--model');
-    expect(args).toContain('opus'); // override was honored
-    expect(args).toContain('--output-format');
-    expect(args).toContain('stream-json');
-    expect(args).toContain('-p');
-    expect(args).toContain('run this task');
-    expect(options.cwd).toBe(projectPath);
-    expect(options.env.CLAUDE_CONFIG_DIR).toBe(configDir);
+    expect(mockedQuery).toHaveBeenCalledTimes(1);
+    const callArg = mockedQuery.mock.calls[0][0] as any;
+    expect(callArg.prompt).toBe('run this task');
+    expect(callArg.options.systemPrompt).toBe('System prompt text');
+    expect(callArg.options.model).toBe('opus');
+    expect(callArg.options.cwd).toBe(projectPath);
+    expect(callArg.options.env.CLAUDE_CONFIG_DIR).toBe(configDir);
+    expect(callArg.options.settingSources).toEqual(['user', 'project', 'local']);
+    expect(callArg.options.strictMcpConfig).toBe(true);
 
-    // Run record exists, in running status, with pid
+    // Run record exists, in running status
     const run = service.getAgentRun(runId);
     expect(run).not.toBeNull();
     expect(run!.status).toBe('running');
-    expect(run!.pid).toBe(4242);
     expect(run!.task).toBe('run this task');
     expect(run!.model).toBe('opus');
     expect(run!.project_path).toBe(projectPath);
 
-    // Registered in the process registry
-    expect(processRegistry.get(runId)).toBe(proc);
+    // Registered in the agent-run registry
+    const handle = agentRunRegistry.get(runId);
+    expect(handle).toBeDefined();
+    expect(handle!.status).toBe('running');
   });
 
   it('falls back to the agent default model when params.model is not provided', async () => {
@@ -848,8 +858,7 @@ describe('agents service — executeAgent spawn path', () => {
       system_prompt: 'P',
       model: 'haiku',
     });
-    const { proc } = createFakeProcess();
-    mockedSpawn.mockReturnValueOnce(proc);
+    installFakeQuery();
 
     await service.executeAgent({
       agentId: agent.id,
@@ -857,38 +866,17 @@ describe('agents service — executeAgent spawn path', () => {
       task: 't',
     });
 
-    const [, args] = mockedSpawn.mock.calls[0] as any[];
-    const modelIdx = args.indexOf('--model');
-    expect(args[modelIdx + 1]).toBe('haiku');
+    const callArg = mockedQuery.mock.calls[0][0] as any;
+    expect(callArg.options.model).toBe('haiku');
   });
 
-  it('skips the pid update when the spawned process has no pid', async () => {
-    const agent = service.createAgent({
-      name: 'NoPid',
-      icon: '🔇',
-      system_prompt: 'P',
-    });
-    const { proc } = createFakeProcess({ pid: null });
-    mockedSpawn.mockReturnValueOnce(proc);
-
-    const runId = await service.executeAgent({
-      agentId: agent.id,
-      projectPath,
-      task: 't',
-    });
-
-    const run = service.getAgentRun(runId);
-    expect(run!.pid).toBeNull();
-  });
-
-  it('streams stdout lines to the renderer on claude-output:<runId>', async () => {
+  it('forwards each SDK message to the renderer on agent-output:<runId> as a JSON string', async () => {
     const agent = service.createAgent({
       name: 'Streamer',
       icon: '📡',
       system_prompt: 'P',
     });
-    const handle = createFakeProcess();
-    mockedSpawn.mockReturnValueOnce(handle.proc);
+    const fake = installFakeQuery();
 
     const runId = await service.executeAgent({
       agentId: agent.id,
@@ -896,44 +884,32 @@ describe('agents service — executeAgent spawn path', () => {
       task: 't',
     });
 
-    handle.pushLine('{"type":"text","text":"hi"}');
-    handle.pushLine('{"type":"text","text":"there"}');
+    fake.pushMessage({ type: 'system', subtype: 'init', session_id: 'abc' });
+    fake.pushMessage({
+      type: 'assistant',
+      message: { role: 'assistant', content: [{ type: 'text', text: 'hi' }] },
+    });
     await flush();
 
     const outputCalls = sendToRenderer.mock.calls.filter(
-      (c) => c[0] === `claude-output:${runId}`,
+      (c) => c[0] === `agent-output:${runId}`,
     );
     expect(outputCalls.length).toBeGreaterThanOrEqual(2);
-    expect(outputCalls[0][1]).toBe('{"type":"text","text":"hi"}');
-    expect(outputCalls[1][1]).toBe('{"type":"text","text":"there"}');
+    // Each payload is JSON.stringified so renderer's existing JSON.parse works
+    expect(typeof outputCalls[0][1]).toBe('string');
+    const first = JSON.parse(outputCalls[0][1] as string);
+    expect(first.type).toBe('system');
+    const second = JSON.parse(outputCalls[1][1] as string);
+    expect(second.type).toBe('assistant');
   });
 
-  it('does not install a stdout listener when the process has no stdout', async () => {
-    const agent = service.createAgent({
-      name: 'Silent',
-      icon: '🤫',
-      system_prompt: 'P',
-    });
-    const { proc } = createFakeProcess({ noStdout: true });
-    mockedSpawn.mockReturnValueOnce(proc);
-
-    await expect(
-      service.executeAgent({
-        agentId: agent.id,
-        projectPath,
-        task: 't',
-      }),
-    ).resolves.toBeTypeOf('number');
-  });
-
-  it('marks status as completed when the process exits with code 0', async () => {
+  it('marks status as completed and fires agent-complete when a result message arrives', async () => {
     const agent = service.createAgent({
       name: 'Happy',
       icon: '✅',
       system_prompt: 'P',
     });
-    const handle = createFakeProcess();
-    mockedSpawn.mockReturnValueOnce(handle.proc);
+    const fake = installFakeQuery();
 
     const runId = await service.executeAgent({
       agentId: agent.id,
@@ -941,24 +917,34 @@ describe('agents service — executeAgent spawn path', () => {
       task: 't',
     });
 
-    handle.emitClose(0);
+    fake.pushMessage({ type: 'result', result: 'done', is_error: false });
+    fake.closeMessages();
     await flush();
 
     const run = service.getAgentRun(runId);
     expect(run!.status).toBe('completed');
     expect(run!.completed_at).not.toBeNull();
-    // Process removed from registry
-    expect(processRegistry.get(runId)).toBeUndefined();
+    // agent-complete event fired
+    const completeCalls = sendToRenderer.mock.calls.filter(
+      (c) => c[0] === `agent-complete:${runId}`,
+    );
+    expect(completeCalls.length).toBeGreaterThanOrEqual(1);
   });
 
-  it('marks status as failed when the process exits with a non-zero code', async () => {
+  it('marks status as failed and fires agent-error when the stream throws', async () => {
     const agent = service.createAgent({
       name: 'Sad',
       icon: '❌',
       system_prompt: 'P',
     });
-    const handle = createFakeProcess();
-    mockedSpawn.mockReturnValueOnce(handle.proc);
+    const throwingQuery: any = {
+      async *[Symbol.asyncIterator]() {
+        throw new Error('subprocess blew up');
+      },
+      close: vi.fn(),
+      interrupt: vi.fn(),
+    };
+    mockedQuery.mockReturnValueOnce(throwingQuery);
 
     const runId = await service.executeAgent({
       agentId: agent.id,
@@ -966,21 +952,46 @@ describe('agents service — executeAgent spawn path', () => {
       task: 't',
     });
 
-    handle.emitClose(1);
+    await flush(4);
+
+    const run = service.getAgentRun(runId);
+    expect(run!.status).toBe('failed');
+    const errorCalls = sendToRenderer.mock.calls.filter(
+      (c) => c[0] === `agent-error:${runId}`,
+    );
+    expect(errorCalls.length).toBeGreaterThanOrEqual(1);
+    expect(String(errorCalls[0][1])).toContain('subprocess blew up');
+  });
+
+  it('marks a result with is_error=true as failed', async () => {
+    const agent = service.createAgent({
+      name: 'Err',
+      icon: '⚠️',
+      system_prompt: 'P',
+    });
+    const fake = installFakeQuery();
+
+    const runId = await service.executeAgent({
+      agentId: agent.id,
+      projectPath,
+      task: 't',
+    });
+
+    fake.pushMessage({ type: 'result', error: 'something broke', is_error: true });
+    fake.closeMessages();
     await flush();
 
     const run = service.getAgentRun(runId);
     expect(run!.status).toBe('failed');
   });
 
-  it('killing a spawned run via killAgentSession sends SIGTERM and updates status', async () => {
+  it('killing a running agent via killAgentSession calls query.close() and fires agent-cancelled', async () => {
     const agent = service.createAgent({
       name: 'Killable',
       icon: '🗡️',
       system_prompt: 'P',
     });
-    const handle = createFakeProcess();
-    mockedSpawn.mockReturnValueOnce(handle.proc);
+    const fake = installFakeQuery();
 
     const runId = await service.executeAgent({
       agentId: agent.id,
@@ -990,8 +1001,12 @@ describe('agents service — executeAgent spawn path', () => {
 
     service.killAgentSession(runId);
 
-    expect(handle.proc.kill).toHaveBeenCalledWith('SIGTERM');
+    expect(fake.query.close).toHaveBeenCalledTimes(1);
     const run = service.getAgentRun(runId);
     expect(run!.status).toBe('killed');
+    const cancelledCalls = sendToRenderer.mock.calls.filter(
+      (c) => c[0] === `agent-cancelled:${runId}`,
+    );
+    expect(cancelledCalls.length).toBeGreaterThanOrEqual(1);
   });
 });

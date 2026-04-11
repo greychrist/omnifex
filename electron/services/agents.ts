@@ -1,10 +1,9 @@
-import { spawn } from 'node:child_process';
-import { createInterface } from 'node:readline';
 import crypto from 'node:crypto';
+import { query as sdkQuery } from '@anthropic-ai/claude-agent-sdk';
 import type { Database } from './database';
 import type { AccountsService } from './accounts';
 import type { ClaudeBinaryService } from './claude-binary';
-import type { ProcessRegistry } from './process-registry';
+import type { AgentRunRegistry } from './agent-run-registry';
 
 // ---------------------------------------------------------------------------
 // Public interfaces
@@ -145,7 +144,7 @@ export function createAgentsService(
   db: Database,
   accounts: AccountsService,
   claudeBinary: ClaudeBinaryService,
-  processRegistry: ProcessRegistry,
+  agentRunRegistry: AgentRunRegistry,
   sendToRenderer: (channel: string, ...args: unknown[]) => void,
 ): AgentsService {
   const raw = db.raw;
@@ -262,8 +261,11 @@ export function createAgentsService(
     const account = accounts.resolve(params.projectPath);
     if (!account) throw new Error(`No account resolved for path: ${params.projectPath}`);
 
+    // The claude binary path is no longer required — the SDK finds it itself.
+    // We still call findBestBinary() as a soft probe (the result goes into
+    // pathToClaudeCodeExecutable if present so we can pin a specific binary
+    // when the user has multiple installs, e.g. Greg's dual-account setup).
     const binaryPath = claudeBinary.findBestBinary();
-    if (!binaryPath) throw new Error('No Claude binary found');
 
     const sessionId = crypto.randomUUID();
     const model = params.model ?? agent.model;
@@ -287,54 +289,99 @@ export function createAgentsService(
 
     const runId = info.lastInsertRowid as number;
 
-    // Spawn the process
-    const args = [
-      '--system-prompt', agent.system_prompt,
-      '--model', model,
-      '--output-format', 'stream-json',
-      '-p', params.task,
-    ];
-
-    const proc = spawn(binaryPath, args, {
+    // Build SDK options — mirror the interactive-session path in
+    // electron/services/sessions.ts so agent runs and interactive sessions
+    // behave consistently. CLAUDE_CONFIG_DIR pins the session to the
+    // resolved account; settingSources loads CLAUDE.md + skills + commands;
+    // strictMcpConfig surfaces bad MCP configs instead of swallowing them.
+    const options: Record<string, unknown> = {
+      systemPrompt: agent.system_prompt,
+      model,
+      cwd: params.projectPath,
       env: {
         ...process.env,
         CLAUDE_CONFIG_DIR: account.config_dir,
       },
-      cwd: params.projectPath,
-    });
-
-    // Update PID
-    if (proc.pid) {
-      raw
-        .prepare(
-          `UPDATE agent_runs SET pid = ?, process_started_at = CURRENT_TIMESTAMP WHERE id = ?`,
-        )
-        .run(proc.pid, runId);
+      settingSources: ['user', 'project', 'local'],
+      strictMcpConfig: true,
+    };
+    if (binaryPath) {
+      options.pathToClaudeCodeExecutable = binaryPath;
     }
 
-    // Register in process registry
-    processRegistry.register(runId, proc);
+    // Mark process start timestamp (pid column stays NULL — the SDK doesn't
+    // give us a PID directly, and we use the Query handle for kill/interrupt
+    // instead).
+    raw
+      .prepare(
+        `UPDATE agent_runs SET process_started_at = CURRENT_TIMESTAMP WHERE id = ?`,
+      )
+      .run(runId);
 
-    // Stream stdout line-by-line
-    if (proc.stdout) {
-      const rl = createInterface({ input: proc.stdout, crlfDelay: Infinity });
-      rl.on('line', (line) => {
-        sendToRenderer(`claude-output:${runId}`, line);
-      });
-    }
-
-    // On exit, update status
-    proc.on('close', (code) => {
-      const status = code === 0 ? 'completed' : 'failed';
-      raw
-        .prepare(
-          `UPDATE agent_runs SET status = ?, completed_at = CURRENT_TIMESTAMP WHERE id = ?`,
-        )
-        .run(status, runId);
-      processRegistry.remove(runId);
+    // Kick off the SDK query. One-shot prompt (not a streaming channel) —
+    // agents run to completion on a single task.
+    const q = sdkQuery({
+      prompt: params.task,
+      options: options as any,
     });
+
+    // Register in the agent-run registry with running status. killAgentSession
+    // will flip status → 'killed' and call q.close().
+    agentRunRegistry.register(runId, { query: q, status: 'running' });
+
+    // Start the async listener. Fire-and-forget; the listener updates status
+    // + DB when the stream ends, either naturally or via throw.
+    void listenToAgentStream(runId, q);
 
     return runId;
+  }
+
+  async function listenToAgentStream(runId: number, q: any): Promise<void> {
+    let finalStatus: 'completed' | 'failed' = 'completed';
+    try {
+      for await (const message of q) {
+        // Forward every SDK message to the renderer as a JSON string so the
+        // existing AgentExecution/SessionOutputViewer/AgentRunOutputViewer
+        // parse path (JSON.parse(payload)) keeps working. Note the channel
+        // name is agent-output:<runId> — the pre-migration code was sending
+        // claude-output:<runId> which the renderers never listened to, so
+        // agent output has been invisible until now.
+        try {
+          sendToRenderer(`agent-output:${runId}`, JSON.stringify(message));
+        } catch (err) {
+          console.error('[agents] failed to stringify SDK message:', err);
+        }
+
+        // Determine final status from the result message, same as sessions.ts.
+        if (message && (message as any).type === 'result') {
+          const msg = message as any;
+          if (msg.is_error || msg.subtype === 'error') {
+            finalStatus = 'failed';
+          }
+        }
+      }
+    } catch (err) {
+      finalStatus = 'failed';
+      const errMsg = err instanceof Error ? err.message : String(err);
+      sendToRenderer(`agent-error:${runId}`, errMsg);
+      console.error(`[agents] stream error for run ${runId}:`, err);
+    }
+
+    // Check if the run was killed — if so, preserve the killed status.
+    const handle = agentRunRegistry.get(runId);
+    if (handle && handle.status === 'killed') {
+      // killAgentSession already updated the DB status; don't overwrite.
+      sendToRenderer(`agent-complete:${runId}`);
+      return;
+    }
+
+    agentRunRegistry.setStatus(runId, finalStatus);
+    raw
+      .prepare(
+        `UPDATE agent_runs SET status = ?, completed_at = CURRENT_TIMESTAMP WHERE id = ?`,
+      )
+      .run(finalStatus, runId);
+    sendToRenderer(`agent-complete:${runId}`);
   }
 
   // -------------------------------------------------------------------------
@@ -366,29 +413,33 @@ export function createAgentsService(
   }
 
   function killAgentSession(runId: number): void {
-    processRegistry.kill(runId);
+    // kill() on the registry flips status → 'killed' and calls query.close().
+    // It returns false if the run isn't registered, in which case we just
+    // update the DB (the run might have already finished; this is idempotent).
+    const wasRegistered = agentRunRegistry.kill(runId);
     raw
       .prepare(
         `UPDATE agent_runs SET status = 'killed', completed_at = CURRENT_TIMESTAMP WHERE id = ?`,
       )
       .run(runId);
+    if (wasRegistered) {
+      sendToRenderer(`agent-cancelled:${runId}`);
+    }
   }
 
   function getSessionStatus(runId: number): string {
-    const proc = processRegistry.get(runId);
-    if (proc) {
-      if (proc.killed) return 'killed';
-      if (proc.exitCode !== null) return proc.exitCode === 0 ? 'completed' : 'failed';
-      return 'running';
-    }
+    const handle = agentRunRegistry.get(runId);
+    if (handle) return handle.status;
     // Check the database
     const run = getAgentRun(runId);
     return run?.status ?? 'unknown';
   }
 
   function cleanupFinishedProcesses(): number[] {
-    const cleaned = processRegistry.cleanup();
-    // Update status for all cleaned runs
+    const cleaned = agentRunRegistry.cleanup();
+    // Update status for all cleaned runs — match what the registry reported.
+    // (The status should already be updated at this point for normal runs;
+    // this is defensive for cases where cleanup races a status update.)
     for (const runId of cleaned) {
       const run = getAgentRun(runId);
       if (run && run.status === 'running') {

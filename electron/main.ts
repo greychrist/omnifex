@@ -16,7 +16,7 @@ import { createClaudeBinaryService } from './services/claude-binary';
 import { createSessionsService } from './services/sessions';
 import { createClaudeService } from './services/claude';
 import { createAgentsService } from './services/agents';
-import { createProcessRegistry } from './services/process-registry';
+import { createAgentRunRegistry } from './services/agent-run-registry';
 import { createCheckpointsService } from './services/checkpoints';
 import { createUsageService } from './services/usage';
 import { createLoggingService } from './services/logging';
@@ -185,12 +185,12 @@ app.whenReady().then(() => {
     loggingService,
   );
   const claudeService = createClaudeService(db, accountsService);
-  const processRegistry = createProcessRegistry();
+  const agentRunRegistry = createAgentRunRegistry();
   const agentsService = createAgentsService(
     db,
     accountsService,
     claudeBinaryService,
-    processRegistry,
+    agentRunRegistry,
     (channel, ...args) => {
       mainWindow?.webContents.send(channel, ...args);
     },
