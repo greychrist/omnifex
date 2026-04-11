@@ -1,3 +1,4 @@
+import * as React from "react";
 import { AccountBadge } from "./AccountBadge";
 import {
   Copy,
@@ -8,11 +9,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { SessionAccountInfo, SessionContextUsage } from "@/lib/api";
-import {
-  HoverCard,
-  HoverCardContent,
-  HoverCardTrigger,
-} from "@/components/ui/hover-card";
+import { Popover } from "@/components/ui/popover";
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 
 // Palette for context-usage categories. Each category comes with its own
@@ -75,6 +72,11 @@ export function SessionHeader({
   contextUsage,
   className,
 }: SessionHeaderProps) {
+  // Local open state for the two Popovers so they're click-driven and
+  // we control close-on-select etc.
+  const [accountPopoverOpen, setAccountPopoverOpen] = React.useState(false);
+  const [contextPopoverOpen, setContextPopoverOpen] = React.useState(false);
+
   const copySessionId = () => {
     if (sessionId) {
       navigator.clipboard.writeText(sessionId);
@@ -140,23 +142,109 @@ export function SessionHeader({
         </div>
       )}
 
-      {/* Config directory + "matched by" reason, consolidated into a
-          HoverCard so the header stays compact. Trigger is a small Info
-          chip; hover reveals the full config dir, match type, and match
-          detail (e.g. which path-rule prefix fired or which project
-          override was set). */}
-      <HoverCard openDelay={80} closeDelay={120}>
-        <HoverCardTrigger asChild>
+      {/* Account + config + matched-by popover. Click the Info chip to
+          reveal:
+            - SDK-reported account verification (email / org / subscription
+              / apiProvider / tokenSource) — the full set so the details
+              flash-shown inline are retained somewhere persistent
+            - Config directory (full path)
+            - Matched by (path rule prefix / project override / default)
+              with the exact detail
+          Uses the existing custom Popover which has framer-motion
+          scale/opacity entrance so the card "grows into place". Click the
+          chip again (or outside, or Escape) to close. */}
+      <Popover
+        open={accountPopoverOpen}
+        onOpenChange={setAccountPopoverOpen}
+        align="start"
+        side="bottom"
+        className="w-96"
+        trigger={
           <button
             type="button"
-            className="flex items-center gap-1 px-2 py-0.5 rounded-md hover:bg-foreground/10 transition-colors text-foreground/50 cursor-default"
+            className="flex items-center gap-1 px-2 py-0.5 rounded-md hover:bg-foreground/10 transition-colors text-foreground/50"
+            title="Click for account, config, and match details"
           >
             <Info className="w-3 h-3" />
             <span className="text-[11px]">Matched by: {matchLabel}</span>
           </button>
-        </HoverCardTrigger>
-        <HoverCardContent align="start" className="w-96">
-          <div className="flex flex-col gap-3">
+        }
+        content={
+          <div className="flex flex-col gap-3 text-left">
+            {/* SDK account verification — retained detail. If the SDK has
+                reported account info we show ALL fields here so the
+                verification flash in the inline chip is backed by a
+                persistent, clickable record. */}
+            {sdkAccount && (
+              <div>
+                <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1 flex items-center gap-1">
+                  {sdkMismatch ? (
+                    <ShieldAlert className="w-3 h-3 text-yellow-400" />
+                  ) : sdkVerified ? (
+                    <ShieldCheck className="w-3 h-3 text-green-400" />
+                  ) : null}
+                  SDK-reported account
+                </div>
+                <div className="flex flex-col gap-1 text-xs">
+                  {sdkAccount.email && (
+                    <div className="flex justify-between gap-2">
+                      <span className="text-foreground/50">Email</span>
+                      <span className="font-mono text-foreground/90 truncate">
+                        {sdkAccount.email}
+                      </span>
+                    </div>
+                  )}
+                  {sdkAccount.organization && (
+                    <div className="flex justify-between gap-2">
+                      <span className="text-foreground/50">Organization</span>
+                      <span className="font-mono text-foreground/90 truncate">
+                        {sdkAccount.organization}
+                      </span>
+                    </div>
+                  )}
+                  {sdkAccount.subscriptionType && (
+                    <div className="flex justify-between gap-2">
+                      <span className="text-foreground/50">Subscription</span>
+                      <span className="font-mono text-foreground/90 uppercase">
+                        {sdkAccount.subscriptionType}
+                      </span>
+                    </div>
+                  )}
+                  {sdkAccount.apiProvider && (
+                    <div className="flex justify-between gap-2">
+                      <span className="text-foreground/50">API provider</span>
+                      <span
+                        className={cn(
+                          "font-mono",
+                          sdkMismatch
+                            ? "text-yellow-400"
+                            : "text-foreground/90",
+                        )}
+                      >
+                        {sdkAccount.apiProvider}
+                      </span>
+                    </div>
+                  )}
+                  {sdkAccount.tokenSource && (
+                    <div className="flex justify-between gap-2">
+                      <span className="text-foreground/50">Token source</span>
+                      <span className="font-mono text-foreground/90">
+                        {sdkAccount.tokenSource}
+                      </span>
+                    </div>
+                  )}
+                  {sdkAccount.apiKeySource && (
+                    <div className="flex justify-between gap-2">
+                      <span className="text-foreground/50">API key source</span>
+                      <span className="font-mono text-foreground/90">
+                        {sdkAccount.apiKeySource}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             <div>
               <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
                 Config directory
@@ -165,6 +253,7 @@ export function SessionHeader({
                 {configDir}
               </div>
             </div>
+
             <div>
               <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
                 Matched by
@@ -177,8 +266,8 @@ export function SessionHeader({
               </div>
             </div>
           </div>
-        </HoverCardContent>
-      </HoverCard>
+        }
+      />
 
       <div className="ml-auto flex items-center gap-3">
         {(() => {
@@ -248,9 +337,14 @@ export function SessionHeader({
               : slicesFromCategories;
 
           return (
-            <HoverCard openDelay={80} closeDelay={120}>
-              <HoverCardTrigger asChild>
-                <div className="flex items-center gap-1.5 cursor-default">
+            <Popover
+              open={contextPopoverOpen}
+              onOpenChange={setContextPopoverOpen}
+              align="end"
+              side="bottom"
+              className="w-96"
+              trigger={
+                <div className="flex items-center gap-1.5 cursor-pointer">
                   <Database
                     className={cn(
                       "w-3 h-3",
@@ -275,9 +369,9 @@ export function SessionHeader({
                   </div>
                   <span className="text-foreground/30 font-mono">{pct.toFixed(0)}%</span>
                 </div>
-              </HoverCardTrigger>
-              <HoverCardContent align="end" className="w-96">
-                <div className="flex flex-col gap-2">
+              }
+              content={
+                <div className="flex flex-col gap-2 text-left">
                   <div className="flex items-baseline justify-between">
                     <span className="text-sm font-semibold">Context window</span>
                     <span className={cn("font-mono text-sm", color)}>
@@ -353,8 +447,8 @@ export function SessionHeader({
                       : "client-side estimate (fallback)"}
                   </div>
                 </div>
-              </HoverCardContent>
-            </HoverCard>
+              }
+            />
           );
         })()}
         {showCost && (
