@@ -204,7 +204,9 @@ export function createSessionsService(
       strictMcpConfig: true,
     };
 
-    // Route CLI subprocess stderr into the logging service so it shows up in the Log tab.
+    // Route CLI subprocess stderr into the logging service. Note the CLI routes its
+    // own `--debug` output to ~/.claude-personal/debug/<sessionId>.txt (not stderr),
+    // so this callback only catches unexpected stderr (crashes, fatal errors).
     if (logging) {
       options.stderr = (data: string) => {
         logging.writeBatch([

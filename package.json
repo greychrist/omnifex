@@ -12,6 +12,7 @@
     "build": "tsc && vite build --config vite.renderer.config.ts",
     "preview": "vite preview",
     "check": "tsc --noEmit && tsc --noEmit -p tsconfig.electron.json",
+    "rebuild:electron": "electron-rebuild -f -w better-sqlite3",
     "pretest": "npm rebuild better-sqlite3",
     "test": "vitest run",
     "pretest:watch": "npm rebuild better-sqlite3",
