@@ -559,6 +559,26 @@ export const TabContent: React.FC = () => {
       }
     };
 
+    // When ClaudeCodeSession fires back-to-project, revert the current
+    // chat tab to a projects tab. Mirrors the mutation that happens in
+    // handleClaudeSessionSelected — except in reverse. The user ends up
+    // on the session list for the same project, preserving their
+    // navigation flow instead of having to close and reopen the tab.
+    const handleBackToProject = () => {
+      const currentTab = tabs.find((t) => t.id === activeTabId);
+      if (currentTab && currentTab.type === 'chat') {
+        updateTab(currentTab.id, {
+          type: 'projects',
+          title: 'Projects',
+          icon: 'folder',
+          status: 'idle',
+          sessionId: undefined,
+          sessionData: undefined,
+          initialProjectPath: undefined,
+        });
+      }
+    };
+
     window.addEventListener('open-session-in-tab', handleOpenSessionInTab as EventListener);
     window.addEventListener('open-claude-file', handleOpenClaudeFile as EventListener);
     window.addEventListener('open-agent-execution', handleOpenAgentExecution as EventListener);
@@ -566,6 +586,7 @@ export const TabContent: React.FC = () => {
     window.addEventListener('open-import-agent-tab', handleOpenImportAgentTab);
     window.addEventListener('close-tab', handleCloseTab as EventListener);
     window.addEventListener('claude-session-selected', handleClaudeSessionSelected as EventListener);
+    window.addEventListener('back-to-project', handleBackToProject as EventListener);
     return () => {
       window.removeEventListener('open-session-in-tab', handleOpenSessionInTab as EventListener);
       window.removeEventListener('open-claude-file', handleOpenClaudeFile as EventListener);
@@ -574,8 +595,9 @@ export const TabContent: React.FC = () => {
       window.removeEventListener('open-import-agent-tab', handleOpenImportAgentTab);
       window.removeEventListener('close-tab', handleCloseTab as EventListener);
       window.removeEventListener('claude-session-selected', handleClaudeSessionSelected as EventListener);
+      window.removeEventListener('back-to-project', handleBackToProject as EventListener);
     };
-  }, [createChatTab, findTabBySessionId, createClaudeFileTab, createAgentExecutionTab, createCreateAgentTab, createImportAgentTab, closeTab, updateTab]);
+  }, [createChatTab, findTabBySessionId, createClaudeFileTab, createAgentExecutionTab, createCreateAgentTab, createImportAgentTab, closeTab, updateTab, activeTabId, tabs]);
   
   return (
     <div className="flex-1 h-full relative">

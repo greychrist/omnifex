@@ -87,6 +87,13 @@ interface FloatingPromptInputProps {
    * The existing onSend-with-model path still works when this is absent.
    */
   onLiveModelChange?: (model: string) => void;
+  /**
+   * Default thinking mode to seed the picker with. If the parent's
+   * pre-session settings panel picks a thinking mode, threading it through
+   * this prop carries the user's choice into the session instead of the
+   * picker resetting to "auto".
+   */
+  defaultThinkingMode?: ThinkingMode;
 }
 
 export interface FloatingPromptInputRef {
@@ -96,12 +103,12 @@ export interface FloatingPromptInputRef {
 /**
  * Thinking mode type definition
  */
-type ThinkingMode = "auto" | "think" | "think_hard" | "think_harder" | "ultrathink";
+export type ThinkingMode = "auto" | "think" | "think_hard" | "think_harder" | "ultrathink";
 
 /**
  * Thinking mode configuration
  */
-type ThinkingModeConfig = {
+export type ThinkingModeConfig = {
   id: ThinkingMode;
   name: string;
   description: string;
@@ -112,7 +119,7 @@ type ThinkingModeConfig = {
   shortName: string;
 };
 
-const THINKING_MODES: ThinkingModeConfig[] = [
+export const THINKING_MODES: ThinkingModeConfig[] = [
   {
     id: "auto",
     name: "Auto",
@@ -237,7 +244,7 @@ function shortNameFor(displayName: string): string {
   return firstWord.slice(0, 1).toUpperCase() || "?";
 }
 
-type PermissionMode = {
+export type PermissionMode = {
   id: string;
   name: string;
   description: string;
@@ -251,7 +258,7 @@ type PermissionMode = {
 // Wave 2.4b — full SDK permission mode set. Order follows ascending risk:
 // Ask (safe, green) → Auto Accept edits (yellow) → Plan Only (blue, no
 // execution at all) → Auto Approve all (red, skip everything).
-const PERMISSION_MODES: PermissionMode[] = [
+export const PERMISSION_MODES: PermissionMode[] = [
   {
     id: "default",
     name: "Ask",
@@ -319,6 +326,7 @@ const FloatingPromptInputInner = (
     onPermissionModeChange,
     supportedModels,
     onLiveModelChange,
+    defaultThinkingMode = "auto",
   }: FloatingPromptInputProps,
   ref: React.Ref<FloatingPromptInputRef>,
 ) => {
@@ -329,7 +337,12 @@ const FloatingPromptInputInner = (
   useEffect(() => {
     setSelectedModel(defaultModel);
   }, [defaultModel]);
-  const [selectedThinkingMode, setSelectedThinkingMode] = useState<ThinkingMode>("auto");
+  const [selectedThinkingMode, setSelectedThinkingMode] = useState<ThinkingMode>(defaultThinkingMode);
+
+  // Sync thinking mode when the parent's defaultThinkingMode changes
+  useEffect(() => {
+    setSelectedThinkingMode(defaultThinkingMode);
+  }, [defaultThinkingMode]);
   const [isExpanded, setIsExpanded] = useState(false);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [thinkingModePickerOpen, setThinkingModePickerOpen] = useState(false);

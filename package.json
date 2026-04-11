@@ -12,7 +12,7 @@
     "build": "tsc && vite build --config vite.renderer.config.ts",
     "preview": "vite preview",
     "check": "tsc --noEmit && tsc --noEmit -p tsconfig.electron.json",
-    "rebuild:electron": "electron-rebuild -f -w better-sqlite3",
+    "rebuild:electron": "electron-rebuild -f -w better-sqlite3 && node -e \"const p=require('path').resolve('./node_modules/better-sqlite3/build/Release/better_sqlite3.node'); try{process.dlopen({exports:{}},p);process.stderr.write('rebuild:electron FAILED — binary is still Node ABI (NMV 115). Electron will crash on startup.\\n');process.exit(1)}catch(e){if(!e.message.includes('145')){process.stderr.write('rebuild:electron UNEXPECTED: '+e.message+'\\n');process.exit(1)}console.log('verified: better-sqlite3 at NMV 145 (Electron ABI)')}\"",
     "pretest": "npm rebuild better-sqlite3",
     "test": "vitest run",
     "pretest:watch": "npm rebuild better-sqlite3",

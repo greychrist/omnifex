@@ -9,7 +9,8 @@ import {
   Hash,
   Wrench,
   AlertCircle,
-  Send
+  Send,
+  ArrowLeft,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,7 +20,13 @@ import { api, type Session } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { AccountBadge } from "@/components/AccountBadge";
 import { StreamMessage } from "./StreamMessage";
-import { FloatingPromptInput, type FloatingPromptInputRef } from "./FloatingPromptInput";
+import {
+  FloatingPromptInput,
+  type FloatingPromptInputRef,
+  type ThinkingMode,
+  PERMISSION_MODES,
+  THINKING_MODES,
+} from "./FloatingPromptInput";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { TimelineNavigator } from "./TimelineNavigator";
 import { CheckpointSettings } from "./CheckpointSettings";
@@ -138,13 +145,17 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   // Pre-session config: show setup panel for new sessions until user clicks Start
   const [sessionStarted, setSessionStarted] = useState(!!session);
   const [selectedModel, setSelectedModel] = useState<string>("opus[1m]");
-  // Permission mode — widened to the full SDK set
-  // ("default" | "acceptEdits" | "plan" | "bypassPermissions"). The
-  // pre-session panel still only exposes two buttons ("default" /
-  // "bypassPermissions") and the FloatingPromptInput picker exposes all
-  // four. Single source of truth.
-  const [permissionMode, setPermissionMode] = useState<string>("default");
-  const [selectedThinking, setSelectedThinking] = useState<"auto" | "concise" | "verbose">("auto");
+  // Permission mode — the full SDK set ("default" | "acceptEdits" | "plan"
+  // | "bypassPermissions"). Pre-session and in-session pickers both use
+  // the same PERMISSION_MODES constant from FloatingPromptInput.
+  // Default is acceptEdits per user preference — safer than bypass,
+  // smoother than ask-every-time.
+  const [permissionMode, setPermissionMode] = useState<string>("acceptEdits");
+  // Thinking mode — uses the 5-option set from FloatingPromptInput
+  // (auto/think/think_hard/think_harder/ultrathink). Selected pre-session,
+  // threaded into FloatingPromptInput via defaultThinkingMode so the
+  // choice actually takes effect on the first prompt.
+  const [selectedThinking, setSelectedThinking] = useState<ThinkingMode>("auto");
 
   // Resolve account explanation for SessionHeader
   useEffect(() => {
@@ -1231,9 +1242,34 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     );
   }
 
+  // Fire a custom event so TabContent can revert the current tab from
+  // 'chat' back to 'projects'. When SessionList mutates a projects tab
+  // into a chat tab on session-click, there was no way to undo that
+  // mutation from within the chat view. This button is that way back.
+  const handleBackToProject = () => {
+    window.dispatchEvent(new CustomEvent('back-to-project'));
+  };
+
   return (
     <TooltipProvider>
       <div className={cn("flex flex-col h-full bg-background", className)}>
+        <div className="flex items-center gap-2 px-4 py-1.5 border-b border-border/30 bg-background/60 shrink-0">
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={handleBackToProject}
+            className="h-7 px-2 text-xs gap-1 text-muted-foreground hover:text-foreground"
+            title="Back to project sessions list"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+            Back to Project
+          </Button>
+          {projectPath && (
+            <span className="text-xs text-muted-foreground/60 font-mono truncate">
+              {projectPath.replace(/^\/Users\/[^/]+/, '~')}
+            </span>
+          )}
+        </div>
         {accountResolution && (
           <SessionHeader
             accountName={accountResolution.account.name}
@@ -1308,59 +1344,64 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                 </div>
               </div>
 
-              {/* Thinking mode */}
+              {/* Thinking mode — full 5-option set shared with the
+                  FloatingPromptInput picker. Pre-session pick threads
+                  through via defaultThinkingMode so the first prompt
+                  actually uses the chosen depth. */}
               <div className="space-y-1">
                 <Label className="text-xs text-foreground/60">Thinking</Label>
-                <div className="flex gap-2">
-                  {(["auto", "concise", "verbose"] as const).map((mode) => (
+                <div className="grid grid-cols-5 gap-1">
+                  {THINKING_MODES.map((mode) => (
                     <Button
-                      key={mode}
+                      key={mode.id}
                       size="sm"
-                      variant={selectedThinking === mode ? "default" : "outline"}
-                      onClick={() => setSelectedThinking(mode)}
-                      className="flex-1 capitalize"
+                      variant={selectedThinking === mode.id ? "default" : "outline"}
+                      onClick={() => setSelectedThinking(mode.id)}
+                      className="flex-col gap-0.5 h-auto py-2 px-1"
+                      title={mode.description}
                     >
-                      {mode}
+                      <span className={cn("flex items-center", mode.color)}>
+                        {mode.icon}
+                      </span>
+                      <span className="text-[9px] leading-tight">{mode.name}</span>
                     </Button>
                   ))}
                 </div>
-              </div>
-
-              {/* Permission mode (pre-session). Binary quick-pick between
-                  Ask and Auto-Approve; the FloatingPromptInput picker
-                  exposes the full four-option set once the session is
-                  running. Kept simple here so new-session setup isn't
-                  overwhelming. Values are full SDK mode strings. */}
-              <div className="space-y-1">
-                <Label className="text-xs text-foreground/60">Permissions</Label>
-                <div className="flex gap-2">
-                  <Button
-                    size="sm"
-                    variant={permissionMode === "default" ? "default" : "outline"}
-                    onClick={() => setPermissionMode("default")}
-                    className="flex-1"
-                  >
-                    Ask Each Time
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant={permissionMode === "bypassPermissions" ? "default" : "outline"}
-                    onClick={() => setPermissionMode("bypassPermissions")}
-                    className="flex-1"
-                  >
-                    Auto-Approve
-                  </Button>
-                </div>
                 <p className="text-[10px] text-foreground/40">
-                  {permissionMode === "default"
-                    ? "Claude will ask before running tools (same as terminal)"
-                    : permissionMode === "bypassPermissions"
-                    ? "All tool uses auto-approved (--dangerously-skip-permissions)"
-                    : `Mid-session override: ${permissionMode}`}
+                  {THINKING_MODES.find((m) => m.id === selectedThinking)?.description}
                 </p>
               </div>
 
-              {/* Auto-allow toggle — only shown in default permission mode */}
+              {/* Permission mode (pre-session). Full four-option set,
+                  matching the in-session FloatingPromptInput picker so
+                  the user never has to re-learn the layout. Defaults to
+                  "Auto Accept" per user preference. */}
+              <div className="space-y-1">
+                <Label className="text-xs text-foreground/60">Permissions</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  {PERMISSION_MODES.map((mode) => (
+                    <Button
+                      key={mode.id}
+                      size="sm"
+                      variant={permissionMode === mode.id ? "default" : "outline"}
+                      onClick={() => setPermissionMode(mode.id)}
+                      className={cn(
+                        "justify-start gap-2",
+                        permissionMode !== mode.id && mode.color,
+                      )}
+                      title={mode.description}
+                    >
+                      {mode.icon}
+                      <span className="text-xs">{mode.name}</span>
+                    </Button>
+                  ))}
+                </div>
+                <p className="text-[10px] text-foreground/40">
+                  {PERMISSION_MODES.find((m) => m.id === permissionMode)?.description}
+                </p>
+              </div>
+
+              {/* Auto-allow toggle — only shown in default (Ask) permission mode */}
               {permissionMode === "default" && (
                 <div className="flex items-center justify-between">
                   <div>
@@ -1691,6 +1732,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
               disabled={!projectPath}
               projectPath={projectPath}
               defaultModel={selectedModel}
+              defaultThinkingMode={selectedThinking}
               supportedModels={supportedModels}
               onLiveModelChange={(newModel) => {
                 // Wave 2.5 — clicking a model in the bottom picker updates
