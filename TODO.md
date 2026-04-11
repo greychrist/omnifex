@@ -52,7 +52,7 @@ Landed in `74fe715 feat(sessions): wire SDK settingSources, strictMcpConfig, std
 
 - [ ] **3.1** `agents.ts::executeAgent` SDK migration — finally ship the deferred work from `2026-04-09-sdk-integration-design.md`. Switch from raw `spawn()` to `query()` so agent runs get typed messages, proper `canUseTool` permission flow, hooks, and account-scoped config dir handling.
 - [ ] **3.2** `enableFileCheckpointing: true` + `query.rewindFiles(messageId)` — per-message undo UI for Claude-made file edits.
-- [ ] **3.3** Hook callbacks — wire a subset of the 27 available (`PreToolUse`, `PostToolUse`, `SubagentStart`, `SubagentStop`, `PreCompact`, `UserPromptSubmit`) into an audit log and UI notifications.
+- [x] **3.3 (audit-only slice)** Hook callbacks — `PreToolUse`, `PostToolUse`, and `PostToolUseFailure` are now wired in `electron/services/sessions.ts::start()` when a logging service is provided. Each hook writes one entry to the logging service with `source: 'claude-hooks'`, `category: session:<tabId>`, and a cap on metadata size (~4KB) so huge tool responses can't blow up a single log row. PreToolUse messages start with `→`, PostToolUse with `←`, PostToolUseFailure with `✗`. Callbacks return `{}` — audit only, no permission gating. 6 new tests. Other hooks (`SubagentStart/Stop`, `PreCompact`, `UserPromptSubmit`, `FileChanged`, etc.) remain unused and can be added incrementally when there's a UI surface that needs them.
 - [ ] **3.4** Session history via SDK: `listSessions()`, `getSessionMessages()`, `renameSession()` — replace our bespoke session listing in `claude.ts` where it overlaps with the SDK's native support.
 
 ---

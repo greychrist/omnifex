@@ -741,6 +741,251 @@ describe('sessions service — full lifecycle', () => {
     svc.stopAll();
   });
 
+  // -------------------------------------------------------------------------
+  // Wave 3.3 — PreToolUse / PostToolUse / PostToolUseFailure hook callbacks
+  // -------------------------------------------------------------------------
+
+  describe('Wave 3.3 audit hooks', () => {
+    it('start() sets PreToolUse, PostToolUse, and PostToolUseFailure hook matchers when logging is provided', () => {
+      const writeBatch = vi.fn();
+      const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
+      const svc = createSessionsService(
+        sendToRenderer as any,
+        { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
+        fakeLogging as any,
+      );
+      const fake = installFakeQuery();
+      svc.start({
+        tabId: 'hooks-1',
+        projectPath: '/p',
+        configDir: '/c',
+        model: 'sonnet',
+        permissionMode: 'default',
+      });
+
+      const options = fake.getCapturedOptions();
+      expect(options.hooks).toBeDefined();
+      expect(Array.isArray(options.hooks.PreToolUse)).toBe(true);
+      expect(Array.isArray(options.hooks.PostToolUse)).toBe(true);
+      expect(Array.isArray(options.hooks.PostToolUseFailure)).toBe(true);
+      expect(typeof options.hooks.PreToolUse[0].hooks[0]).toBe('function');
+      expect(typeof options.hooks.PostToolUse[0].hooks[0]).toBe('function');
+      expect(typeof options.hooks.PostToolUseFailure[0].hooks[0]).toBe('function');
+
+      svc.stopAll();
+    });
+
+    it('PreToolUse callback logs an info entry with tool name + input + returns {}', async () => {
+      const writeBatch = vi.fn();
+      const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
+      const svc = createSessionsService(
+        sendToRenderer as any,
+        { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
+        fakeLogging as any,
+      );
+      const fake = installFakeQuery();
+      svc.start({
+        tabId: 'hooks-pre',
+        projectPath: '/p',
+        configDir: '/c',
+        model: 'sonnet',
+        permissionMode: 'default',
+      });
+
+      const preHook = fake.getCapturedOptions().hooks.PreToolUse[0].hooks[0];
+      const result = await preHook(
+        {
+          session_id: 'sess-abc',
+          transcript_path: '/t',
+          cwd: '/p',
+          hook_event_name: 'PreToolUse',
+          tool_name: 'Bash',
+          tool_input: { command: 'ls -la' },
+          tool_use_id: 'tu-1',
+        },
+        'tu-1',
+        { signal: new AbortController().signal },
+      );
+
+      expect(result).toEqual({});
+      expect(writeBatch).toHaveBeenCalledTimes(1);
+      const entry = writeBatch.mock.calls[0][0][0];
+      expect(entry).toMatchObject({
+        level: 'info',
+        source: 'claude-hooks',
+        category: 'session:hooks-pre',
+      });
+      expect(entry.message).toContain('Bash');
+      expect(entry.message).toContain('→');
+      expect(typeof entry.metadata).toBe('string');
+      const meta = JSON.parse(entry.metadata);
+      expect(meta.event).toBe('PreToolUse');
+      expect(meta.tool_name).toBe('Bash');
+      expect(meta.tool_input).toEqual({ command: 'ls -la' });
+      expect(meta.tool_use_id).toBe('tu-1');
+
+      svc.stopAll();
+    });
+
+    it('PostToolUse callback logs an info entry with tool name + input + response + returns {}', async () => {
+      const writeBatch = vi.fn();
+      const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
+      const svc = createSessionsService(
+        sendToRenderer as any,
+        { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
+        fakeLogging as any,
+      );
+      const fake = installFakeQuery();
+      svc.start({
+        tabId: 'hooks-post',
+        projectPath: '/p',
+        configDir: '/c',
+        model: 'sonnet',
+        permissionMode: 'default',
+      });
+
+      const postHook = fake.getCapturedOptions().hooks.PostToolUse[0].hooks[0];
+      const result = await postHook(
+        {
+          session_id: 'sess-abc',
+          transcript_path: '/t',
+          cwd: '/p',
+          hook_event_name: 'PostToolUse',
+          tool_name: 'Read',
+          tool_input: { file_path: '/etc/passwd' },
+          tool_response: { content: 'root:x:0:0...' },
+          tool_use_id: 'tu-2',
+        },
+        'tu-2',
+        { signal: new AbortController().signal },
+      );
+
+      expect(result).toEqual({});
+      expect(writeBatch).toHaveBeenCalledTimes(1);
+      const entry = writeBatch.mock.calls[0][0][0];
+      expect(entry).toMatchObject({
+        level: 'info',
+        source: 'claude-hooks',
+        category: 'session:hooks-post',
+      });
+      expect(entry.message).toContain('Read');
+      expect(entry.message).toContain('←');
+      const meta = JSON.parse(entry.metadata);
+      expect(meta.event).toBe('PostToolUse');
+      expect(meta.tool_name).toBe('Read');
+      expect(meta.tool_response).toEqual({ content: 'root:x:0:0...' });
+
+      svc.stopAll();
+    });
+
+    it('PostToolUseFailure callback logs an error entry with the error + returns {}', async () => {
+      const writeBatch = vi.fn();
+      const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
+      const svc = createSessionsService(
+        sendToRenderer as any,
+        { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
+        fakeLogging as any,
+      );
+      const fake = installFakeQuery();
+      svc.start({
+        tabId: 'hooks-err',
+        projectPath: '/p',
+        configDir: '/c',
+        model: 'sonnet',
+        permissionMode: 'default',
+      });
+
+      const failHook = fake.getCapturedOptions().hooks.PostToolUseFailure[0].hooks[0];
+      const result = await failHook(
+        {
+          session_id: 'sess-abc',
+          transcript_path: '/t',
+          cwd: '/p',
+          hook_event_name: 'PostToolUseFailure',
+          tool_name: 'Bash',
+          tool_input: { command: 'nonexistent-cmd' },
+          tool_use_id: 'tu-3',
+          error: 'command not found: nonexistent-cmd',
+        },
+        'tu-3',
+        { signal: new AbortController().signal },
+      );
+
+      expect(result).toEqual({});
+      expect(writeBatch).toHaveBeenCalledTimes(1);
+      const entry = writeBatch.mock.calls[0][0][0];
+      expect(entry).toMatchObject({
+        level: 'error',
+        source: 'claude-hooks',
+        category: 'session:hooks-err',
+      });
+      expect(entry.message).toContain('Bash');
+      expect(entry.message).toContain('✗');
+      expect(entry.message).toContain('command not found');
+      const meta = JSON.parse(entry.metadata);
+      expect(meta.event).toBe('PostToolUseFailure');
+      expect(meta.error).toContain('command not found');
+
+      svc.stopAll();
+    });
+
+    it('hook metadata is truncated if the tool response is huge (no unbounded log rows)', async () => {
+      const writeBatch = vi.fn();
+      const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
+      const svc = createSessionsService(
+        sendToRenderer as any,
+        { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
+        fakeLogging as any,
+      );
+      const fake = installFakeQuery();
+      svc.start({
+        tabId: 'hooks-big',
+        projectPath: '/p',
+        configDir: '/c',
+        model: 'sonnet',
+        permissionMode: 'default',
+      });
+
+      const postHook = fake.getCapturedOptions().hooks.PostToolUse[0].hooks[0];
+      const hugeContent = 'x'.repeat(50_000);
+      await postHook(
+        {
+          session_id: 'sess',
+          transcript_path: '/t',
+          cwd: '/p',
+          hook_event_name: 'PostToolUse',
+          tool_name: 'Read',
+          tool_input: { file_path: '/big' },
+          tool_response: { content: hugeContent },
+          tool_use_id: 'tu-big',
+        },
+        'tu-big',
+        { signal: new AbortController().signal },
+      );
+
+      const entry = writeBatch.mock.calls[0][0][0];
+      // Metadata is capped well below the full 50k payload size
+      expect(entry.metadata.length).toBeLessThanOrEqual(8000);
+
+      svc.stopAll();
+    });
+
+    it('start() omits hooks when no logging service is provided', () => {
+      // The default `service` fixture above is constructed without a logging dep
+      const fake = installFakeQuery();
+      service.start({
+        tabId: 'no-log-hooks',
+        projectPath: '/p',
+        configDir: '/c',
+        model: 'sonnet',
+        permissionMode: 'default',
+      });
+
+      const options = fake.getCapturedOptions();
+      expect(options.hooks).toBeUndefined();
+    });
+  });
+
   it('start() omits stderr callback when no logging service is provided', () => {
     // The default `service` fixture above is constructed without a logging dep
     const fake = installFakeQuery();

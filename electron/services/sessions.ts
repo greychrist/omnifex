@@ -241,6 +241,121 @@ export function createSessionsService(
           },
         ]);
       };
+
+      // Wave 3.3 — audit hooks.
+      //
+      // Register PreToolUse / PostToolUse / PostToolUseFailure callbacks that
+      // write one log entry each to the logging service. Source 'claude-hooks'
+      // so the Log tab can filter them distinctly from 'claude-sdk' (stderr)
+      // and 'frontend' (renderer console). Each entry includes the tool name
+      // in the message (with → / ← / ✗ direction indicators) and the full
+      // tool_input / tool_response / error in the metadata JSON, capped to
+      // ~4KB so a single huge Read response can't blow up a log row.
+      //
+      // The callbacks return `{}` (empty SyncHookJSONOutput) so the SDK
+      // continues tool execution unimpeded — this is audit-only, not a
+      // permission gate.
+
+      const METADATA_CAP = 4000;
+      const stringifyCapped = (obj: unknown): string => {
+        try {
+          const s = JSON.stringify(obj);
+          if (s.length <= METADATA_CAP) return s;
+          return s.slice(0, METADATA_CAP - 20) + '…[truncated]';
+        } catch {
+          return '"[unserializable]"';
+        }
+      };
+
+      options.hooks = {
+        PreToolUse: [
+          {
+            hooks: [
+              async (input: any) => {
+                try {
+                  logging.writeBatch([
+                    {
+                      timestamp: new Date().toISOString(),
+                      level: 'info',
+                      source: 'claude-hooks',
+                      category: `session:${tabId}`,
+                      message: `→ ${input.tool_name}`,
+                      metadata: stringifyCapped({
+                        event: 'PreToolUse',
+                        tool_name: input.tool_name,
+                        tool_input: input.tool_input,
+                        tool_use_id: input.tool_use_id,
+                      }),
+                    },
+                  ]);
+                } catch (err) {
+                  console.error('[sessions] PreToolUse hook logging failed:', err);
+                }
+                return {};
+              },
+            ],
+          },
+        ],
+        PostToolUse: [
+          {
+            hooks: [
+              async (input: any) => {
+                try {
+                  logging.writeBatch([
+                    {
+                      timestamp: new Date().toISOString(),
+                      level: 'info',
+                      source: 'claude-hooks',
+                      category: `session:${tabId}`,
+                      message: `← ${input.tool_name}`,
+                      metadata: stringifyCapped({
+                        event: 'PostToolUse',
+                        tool_name: input.tool_name,
+                        tool_input: input.tool_input,
+                        tool_response: input.tool_response,
+                        tool_use_id: input.tool_use_id,
+                      }),
+                    },
+                  ]);
+                } catch (err) {
+                  console.error('[sessions] PostToolUse hook logging failed:', err);
+                }
+                return {};
+              },
+            ],
+          },
+        ],
+        PostToolUseFailure: [
+          {
+            hooks: [
+              async (input: any) => {
+                try {
+                  const errMsg = typeof input.error === 'string' ? input.error : String(input.error ?? 'unknown error');
+                  logging.writeBatch([
+                    {
+                      timestamp: new Date().toISOString(),
+                      level: 'error',
+                      source: 'claude-hooks',
+                      category: `session:${tabId}`,
+                      message: `✗ ${input.tool_name}: ${errMsg.slice(0, 200)}`,
+                      metadata: stringifyCapped({
+                        event: 'PostToolUseFailure',
+                        tool_name: input.tool_name,
+                        tool_input: input.tool_input,
+                        error: errMsg,
+                        tool_use_id: input.tool_use_id,
+                      }),
+                    },
+                  ]);
+                } catch (err) {
+                  console.error('[sessions] PostToolUseFailure hook logging failed:', err);
+                }
+                return {};
+              },
+            ],
+          },
+        ],
+      };
     }
 
     // Use system-installed claude binary (account is scoped via CLAUDE_CONFIG_DIR)
