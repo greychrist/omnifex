@@ -304,6 +304,7 @@ app.whenReady().then(() => {
       forkFrom: (data: any) => checkpointsService.forkFromCheckpoint(data),
       getTimeline: (data: any) => checkpointsService.getSessionTimeline(data),
       updateSettings: (data: any) => checkpointsService.updateCheckpointSettings(data),
+      getSettings: (data: any) => checkpointsService.getCheckpointSettings(data),
       getDiff: (data: any) => checkpointsService.getCheckpointDiff(data),
     },
     // Usage adapter

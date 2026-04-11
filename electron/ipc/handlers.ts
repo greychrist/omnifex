@@ -90,6 +90,7 @@ export interface Services {
     forkFrom(data: unknown): unknown;
     getTimeline(data: unknown): unknown;
     updateSettings(data: unknown): unknown;
+    getSettings(data: unknown): unknown;
     getDiff(data: unknown): unknown;
   };
   claudeBinary?: {
@@ -239,6 +240,7 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     fork_from_checkpoint: wrapWith((p: Record<string, unknown>) => checkpoints?.forkFrom(p) ?? null),
     get_session_timeline: wrapWith((p: Record<string, unknown>) => checkpoints?.getTimeline(p) ?? null),
     update_checkpoint_settings: wrapWith((p: Record<string, unknown>) => checkpoints?.updateSettings(p) ?? null),
+    get_checkpoint_settings: wrapWith((p: Record<string, unknown>) => checkpoints?.getSettings(p) ?? null),
     get_checkpoint_diff: wrapWith((p: Record<string, unknown>) => checkpoints?.getDiff(p) ?? null),
     clear_checkpoint_manager: wrap(() => null),
 

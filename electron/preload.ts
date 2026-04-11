@@ -81,6 +81,7 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   'fork_from_checkpoint',
   'get_session_timeline',
   'update_checkpoint_settings',
+  'get_checkpoint_settings',
   'get_checkpoint_diff',
   'clear_checkpoint_manager',
 

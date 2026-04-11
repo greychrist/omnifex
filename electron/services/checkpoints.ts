@@ -85,6 +85,17 @@ export interface CheckpointsService {
     checkpointStrategy: string;
   }): void;
 
+  getCheckpointSettings(params: {
+    sessionId: string;
+    projectId: string;
+    projectPath: string;
+  }): {
+    auto_checkpoint_enabled: boolean;
+    checkpoint_strategy: string;
+    total_checkpoints: number;
+    current_checkpoint_id?: string;
+  };
+
   getCheckpointDiff(params: {
     fromCheckpointId: string;
     toCheckpointId: string;
@@ -445,6 +456,48 @@ export function createCheckpointsService(
   }
 
   // -------------------------------------------------------------------------
+  // getCheckpointSettings
+  // -------------------------------------------------------------------------
+
+  function getCheckpointSettings(params: {
+    sessionId: string;
+    projectId: string;
+    projectPath: string;
+  }): {
+    auto_checkpoint_enabled: boolean;
+    checkpoint_strategy: string;
+    total_checkpoints: number;
+    current_checkpoint_id?: string;
+  } {
+    const { sessionId, projectPath } = params;
+    const dir = sessionCheckpointDir(projectPath, sessionId);
+    const settingsPath = path.join(dir, SETTINGS_FILE);
+
+    // Default to auto-checkpoint off + manual strategy until explicitly set.
+    let autoCheckpointEnabled = false;
+    let checkpointStrategy = 'manual';
+
+    try {
+      const raw = fs.readFileSync(settingsPath, 'utf8');
+      const saved = JSON.parse(raw) as CheckpointSettings;
+      autoCheckpointEnabled = Boolean(saved.autoCheckpointEnabled);
+      if (typeof saved.checkpointStrategy === 'string') {
+        checkpointStrategy = saved.checkpointStrategy;
+      }
+    } catch {
+      // Settings file doesn't exist yet — use defaults.
+    }
+
+    const checkpointList = listCheckpoints(params);
+
+    return {
+      auto_checkpoint_enabled: autoCheckpointEnabled,
+      checkpoint_strategy: checkpointStrategy,
+      total_checkpoints: checkpointList.length,
+    };
+  }
+
+  // -------------------------------------------------------------------------
   // getCheckpointDiff
   // -------------------------------------------------------------------------
 
@@ -499,6 +552,7 @@ export function createCheckpointsService(
     forkFromCheckpoint,
     getSessionTimeline,
     updateCheckpointSettings,
+    getCheckpointSettings,
     getCheckpointDiff,
   };
 }

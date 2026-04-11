@@ -314,6 +314,61 @@ describe('checkpoints service', () => {
   });
 
   // -------------------------------------------------------------------------
+  // getCheckpointSettings
+  // -------------------------------------------------------------------------
+
+  describe('getCheckpointSettings()', () => {
+    it('returns sensible defaults when no settings file exists yet', () => {
+      const result = checkpoints.getCheckpointSettings(baseParams());
+      expect(result.auto_checkpoint_enabled).toBe(false);
+      expect(typeof result.checkpoint_strategy).toBe('string');
+      expect(result.total_checkpoints).toBe(0);
+      expect(result.current_checkpoint_id).toBeUndefined();
+    });
+
+    it('returns persisted settings after updateCheckpointSettings', () => {
+      checkpoints.updateCheckpointSettings({
+        ...baseParams(),
+        autoCheckpointEnabled: true,
+        checkpointStrategy: 'per-message',
+      });
+
+      const result = checkpoints.getCheckpointSettings(baseParams());
+      expect(result.auto_checkpoint_enabled).toBe(true);
+      expect(result.checkpoint_strategy).toBe('per-message');
+    });
+
+    it('counts existing checkpoints in the session directory', () => {
+      // Create two checkpoints so total_checkpoints reflects them
+      checkpoints.createCheckpoint({
+        ...baseParams(),
+        messageIndex: 0,
+        description: 'first',
+      });
+      checkpoints.createCheckpoint({
+        ...baseParams(),
+        messageIndex: 1,
+        description: 'second',
+      });
+
+      const result = checkpoints.getCheckpointSettings(baseParams());
+      expect(result.total_checkpoints).toBe(2);
+    });
+
+    it('excludes settings.json from the checkpoint count', () => {
+      checkpoints.updateCheckpointSettings({
+        ...baseParams(),
+        autoCheckpointEnabled: false,
+        checkpointStrategy: 'manual',
+      });
+
+      const result = checkpoints.getCheckpointSettings(baseParams());
+      // settings.json exists but should not count as a checkpoint
+      expect(result.total_checkpoints).toBe(0);
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // getCheckpointDiff
   // -------------------------------------------------------------------------
 
