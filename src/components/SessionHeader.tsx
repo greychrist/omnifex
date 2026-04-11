@@ -1,7 +1,7 @@
 import { AccountBadge } from "./AccountBadge";
 import { Copy, MapPin, Info, Database, ShieldCheck, ShieldAlert } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { SessionAccountInfo } from "@/lib/api";
+import type { SessionAccountInfo, SessionContextUsage } from "@/lib/api";
 
 interface SessionHeaderProps {
   accountName: string;
@@ -21,6 +21,15 @@ interface SessionHeaderProps {
    * subprocess bound to the account we resolved from the project path.
    */
   sdkAccount?: SessionAccountInfo | null;
+  /**
+   * Authoritative context-window usage from query.getContextUsage(), fetched
+   * at session init and at the end of every turn. When present, the widget
+   * uses totalTokens/maxTokens/categories from this object instead of the
+   * client-side (totalTokens / hardcoded limit) approximation — which gives
+   * real numbers for system prompt, tools, memory, MCP, etc. rather than
+   * just the assistant-reported message-token count.
+   */
+  contextUsage?: SessionContextUsage | null;
   className?: string;
 }
 
@@ -35,6 +44,7 @@ export function SessionHeader({
   totalTokens,
   model,
   sdkAccount,
+  contextUsage,
   className,
 }: SessionHeaderProps) {
   const copySessionId = () => {
@@ -113,15 +123,41 @@ export function SessionHeader({
       </div>
 
       <div className="ml-auto flex items-center gap-3">
-        {totalTokens > 0 && (() => {
-          const contextLimit = model?.includes("[1m]") ? 1_000_000 : 200_000;
-          const pct = Math.min(100, (totalTokens / contextLimit) * 100);
+        {(() => {
+          // Prefer authoritative numbers from query.getContextUsage() when
+          // present; otherwise fall back to the old client-side approximation
+          // (messages totalTokens / hardcoded context limit for the model).
+          const useSdk = contextUsage !== undefined && contextUsage !== null;
+          const tokens = useSdk ? contextUsage!.totalTokens : totalTokens;
+          const limit = useSdk
+            ? contextUsage!.maxTokens
+            : model?.includes("[1m]")
+            ? 1_000_000
+            : 200_000;
+          if (tokens <= 0 || limit <= 0) return null;
+          const pct = Math.min(100, (tokens / limit) * 100);
           const color = pct > 80 ? "text-red-400" : pct > 50 ? "text-yellow-400" : "text-foreground/50";
+
+          // Tooltip: detailed breakdown from the SDK when available, plain
+          // totals when not.
+          const breakdown = useSdk && contextUsage!.categories.length > 0
+            ? contextUsage!.categories
+                .slice()
+                .sort((a, b) => b.tokens - a.tokens)
+                .map((c) => `${c.name}: ${c.tokens.toLocaleString()}`)
+                .join("\n")
+            : null;
+          const titleText = useSdk
+            ? `${tokens.toLocaleString()} / ${(limit / 1000).toFixed(0)}k tokens (${pct.toFixed(1)}%)${
+                breakdown ? `\n\n${breakdown}` : ''
+              }\n\nsource: query.getContextUsage()`
+            : `${tokens.toLocaleString()} / ${(limit / 1000).toFixed(0)}k tokens (${pct.toFixed(1)}%)\n\nsource: client-side estimate (totalTokens / ${(limit / 1000).toFixed(0)}k)`;
+
           return (
-            <div className="flex items-center gap-1.5" title={`${totalTokens.toLocaleString()} / ${(contextLimit / 1000).toFixed(0)}k tokens (${pct.toFixed(1)}%)`}>
-              <Database className="w-3 h-3 text-foreground/40" />
+            <div className="flex items-center gap-1.5" title={titleText}>
+              <Database className={cn("w-3 h-3", useSdk ? "text-foreground/60" : "text-foreground/30")} />
               <span className={cn("font-mono", color)}>
-                {totalTokens >= 1000 ? `${(totalTokens / 1000).toFixed(1)}k` : totalTokens}
+                {tokens >= 1000 ? `${(tokens / 1000).toFixed(1)}k` : tokens}
               </span>
               <div className="w-16 h-1.5 bg-foreground/10 rounded-full overflow-hidden">
                 <div

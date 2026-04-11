@@ -113,6 +113,11 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   // system:init message arrives. Used to verify end-to-end that the CLI
   // subprocess is authenticated against the account we resolved.
   const [sdkAccountInfo, setSdkAccountInfo] = useState<import('@/lib/api').SessionAccountInfo | null>(null);
+  // Wave 2.2 — authoritative context-window usage from the SDK. Fetched
+  // after init and at the end of every turn (result message). Replaces the
+  // header's client-side (totalTokens / hardcoded limit) approximation with
+  // real numbers that include system prompt + tools + memory + MCP tokens.
+  const [contextUsage, setContextUsage] = useState<import('@/lib/api').SessionContextUsage | null>(null);
   const [showTimeline, setShowTimeline] = useState(false);
   const [timelineVersion, setTimelineVersion] = useState(0);
   const [showSettings, setShowSettings] = useState(false);
@@ -570,6 +575,17 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           .catch((err) => {
             console.error('[sessions] sessionAccountInfo failed:', err);
           });
+
+        // Wave 2.2 — also fetch the initial context-usage snapshot so the
+        // header shows real numbers (system prompt / tools / memory) from
+        // the very first render instead of starting at 0 and approximating.
+        api.sessionContextUsage(tidForAccount)
+          .then((usage) => {
+            if (usage) setContextUsage(usage);
+          })
+          .catch((err) => {
+            console.error('[sessions] sessionContextUsage failed:', err);
+          });
       }
 
       // system:init: skip duplicates, insert before the first user message
@@ -595,6 +611,20 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       // result messages mean "turn complete, waiting for next input" — NOT process exit
       if (message.type === 'result') {
         setIsLoading(false);
+
+        // Wave 2.2 — refresh context usage at the end of every turn so the
+        // header reflects the tokens this turn consumed. Fire-and-forget;
+        // errors are swallowed because stale usage is strictly better than
+        // breaking the turn flow.
+        const tidForUsage = tabIdRef.current;
+        api.sessionContextUsage(tidForUsage)
+          .then((usage) => {
+            if (usage) setContextUsage(usage);
+          })
+          .catch((err) => {
+            console.error('[sessions] sessionContextUsage refresh failed:', err);
+          });
+
         // Process queued prompts after turn completion
         if (queuedPromptsRef.current.length > 0) {
           const [nextPrompt, ...remainingPrompts] = queuedPromptsRef.current;
@@ -1185,6 +1215,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             totalTokens={totalTokens}
             model={selectedModel}
             sdkAccount={sdkAccountInfo}
+            contextUsage={contextUsage}
             className="mb-2"
           />
         )}
