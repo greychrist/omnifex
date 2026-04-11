@@ -691,12 +691,21 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
 
       const tid = tabIdRef.current;
 
-      // Model change requires restart
+      // Mid-session model change: use the SDK's Query.setModel() rather than
+      // tearing down and restarting the session. The old code called
+      // api.stopSession() + restart which lost conversation context and cost
+      // the user a round trip. setModel() switches the model for the *next*
+      // turn while keeping the current session and its full history intact.
       if (persistentSessionRef.current && model !== selectedModel) {
-        await api.stopSession(tid);
-        persistentSessionRef.current = false;
-        unlistenRefs.current.forEach(u => u());
-        unlistenRefs.current = [];
+        try {
+          await api.sessionSetModel(tid, model);
+        } catch (e) {
+          console.error('[sessions] sessionSetModel failed, falling back to restart:', e);
+          await api.stopSession(tid);
+          persistentSessionRef.current = false;
+          unlistenRefs.current.forEach(u => u());
+          unlistenRefs.current = [];
+        }
         setSelectedModel(model);
       }
 

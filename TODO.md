@@ -35,11 +35,14 @@ Landed in `74fe715 feat(sessions): wire SDK settingSources, strictMcpConfig, std
 
 ## Wave 2 — high-leverage `Query` methods (each a small feature)
 
-- [ ] **2.1** `query.accountInfo()` — after session start, display the SDK's reported account alongside our resolved account badge. Smoke-tests the multi-account flow end-to-end.
-- [ ] **2.2** `query.getContextUsage()` — status-bar widget: `N% context used` with breakdown (system prompt, tools, messages, memory, MCP).
-- [ ] **2.3** `query.interrupt()` — "stop response" button, distinct from "end session" (which calls `close()`).
-- [ ] **2.4** `query.setModel()` + `query.setPermissionMode()` — change mid-session without restarting. Wire to existing model/mode pickers.
-- [ ] **2.5** `query.supportedAgents()` / `supportedCommands()` / `supportedModels()` — replace any hardcoded lists with live introspection.
+**Backend shipped** in `78d6107 feat(sessions): Wave 2 backend — 8 SDK Query-method passthroughs`. All 8 methods exposed in `SessionsService`, wired through IPC (handler interface, registration, main.ts adapter, preload allow-list, `api.ts` typed wrappers). 9 new unit tests. Renderer wiring lands piecewise.
+
+- [x] **2.4a** `sessionSetModel` wired in `ClaudeCodeSession.tsx`: switching models mid-conversation no longer tears down and restarts the session. The old code called `stopSession()` + `startPersistentSession()` (losing conversation context and costing a round trip). Now calls `api.sessionSetModel(tabId, model)` and keeps the session + full history. Falls back to the old restart path if `setModel()` throws.
+- [ ] **2.4b** Expose permission-mode mid-session switching. Current UI only has a binary "default" / "skip" toggle that's applied on session start; extend it to call `api.sessionSetPermissionMode(tabId, mode)` and optionally expose the full `'default' | 'acceptEdits' | 'plan' | 'bypassPermissions' | 'dontAsk'` set.
+- [ ] **2.1** `query.accountInfo()` — after session start, display the SDK's reported account alongside our resolved account badge. Smoke-tests the multi-account flow end-to-end. **Backend ready, UI pending.**
+- [ ] **2.2** `query.getContextUsage()` — status-bar widget: `N% context used` with breakdown (system prompt, tools, messages, memory, MCP). **Backend ready, needs a new component.**
+- [ ] **2.3** `query.interrupt()` — "stop response" button, distinct from "end session" (which calls `close()`). Current `handleCancelExecution` calls `stopSession()` which is destructive; add a softer "interrupt current turn" path (or change cancel button behavior with user approval). **Backend ready, UI pending.**
+- [ ] **2.5** `query.supportedAgents()` / `supportedCommands()` / `supportedModels()` — replace any hardcoded lists with live introspection. Model picker at `ClaudeCodeSession.tsx:1190+` is currently three hardcoded buttons (`opus[1m]`, `opus`, `sonnet`). **Backend ready, UI pending.**
 
 ---
 
