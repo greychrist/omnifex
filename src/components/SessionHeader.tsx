@@ -1,6 +1,7 @@
 import { AccountBadge } from "./AccountBadge";
-import { Copy, MapPin, Info, Database } from "lucide-react";
+import { Copy, MapPin, Info, Database, ShieldCheck, ShieldAlert } from "lucide-react";
 import { cn } from "@/lib/utils";
+import type { SessionAccountInfo } from "@/lib/api";
 
 interface SessionHeaderProps {
   accountName: string;
@@ -12,6 +13,14 @@ interface SessionHeaderProps {
   cost: number;
   totalTokens: number;
   model?: string;
+  /**
+   * The SDK's own account-info report fetched via query.accountInfo() after
+   * the session initialized. Undefined before the call resolves; null if it
+   * failed. When present, rendered as a small verification indicator next to
+   * the account badge — this is the authoritative proof that the CLI
+   * subprocess bound to the account we resolved from the project path.
+   */
+  sdkAccount?: SessionAccountInfo | null;
   className?: string;
 }
 
@@ -25,6 +34,7 @@ export function SessionHeader({
   cost,
   totalTokens,
   model,
+  sdkAccount,
   className,
 }: SessionHeaderProps) {
   const copySessionId = () => {
@@ -32,6 +42,23 @@ export function SessionHeader({
       navigator.clipboard.writeText(sessionId);
     }
   };
+
+  // Derive a human-friendly identifier for the SDK-reported account and
+  // decide whether it agrees with our resolved account. Agreement is noisy
+  // because Greg's local accounts are named "Personal" / "Work" while the
+  // SDK reports email / org — we treat "reported something" as confirmation
+  // unless the apiProvider indicates an unexpected backend.
+  const sdkIdentifier =
+    sdkAccount?.email ??
+    sdkAccount?.organization ??
+    sdkAccount?.subscriptionType ??
+    null;
+  const sdkVerified = sdkAccount !== undefined && sdkAccount !== null && Boolean(sdkIdentifier);
+  const sdkMismatch =
+    sdkAccount !== undefined &&
+    sdkAccount !== null &&
+    sdkAccount.apiProvider !== undefined &&
+    sdkAccount.apiProvider !== 'firstParty';
 
   const matchLabel = matchType === "path_rule"
     ? "path rule"
@@ -48,6 +75,32 @@ export function SessionHeader({
     )}>
       <AccountBadge name={accountName} />
       <span className="text-foreground/50 uppercase tracking-wide">{accountType}</span>
+
+      {/* Wave 2.1 — SDK-reported account verification indicator. A shield
+          with check confirms the CLI subprocess is actually bound to
+          something; a shield with alert indicates a third-party API
+          backend (Bedrock/Vertex/etc.) which means this session isn't
+          running against the Anthropic account we resolved. */}
+      {sdkVerified && !sdkMismatch && (
+        <div
+          className="flex items-center gap-1 text-green-400/80"
+          title={`SDK-reported account: ${sdkIdentifier}${
+            sdkAccount?.subscriptionType ? ` (${sdkAccount.subscriptionType})` : ''
+          }`}
+        >
+          <ShieldCheck className="w-3 h-3" />
+          <span className="text-[10px] font-mono truncate max-w-[140px]">{sdkIdentifier}</span>
+        </div>
+      )}
+      {sdkMismatch && (
+        <div
+          className="flex items-center gap-1 text-yellow-400"
+          title={`SDK is using API provider: ${sdkAccount?.apiProvider}. This session is not on a first-party Anthropic account.`}
+        >
+          <ShieldAlert className="w-3 h-3" />
+          <span className="text-[10px] uppercase tracking-wide">{sdkAccount?.apiProvider}</span>
+        </div>
+      )}
 
       <div className="flex items-center gap-1 text-foreground/40" title={configDir}>
         <MapPin className="w-3 h-3" />

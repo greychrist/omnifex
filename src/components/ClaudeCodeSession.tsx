@@ -109,6 +109,10 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   const [totalTokens, setTotalTokens] = useState(0);
   const [extractedSessionInfo, setExtractedSessionInfo] = useState<{ sessionId: string; projectId: string } | null>(null);
   const [claudeSessionId, setClaudeSessionId] = useState<string | null>(null);
+  // Wave 2.1 — SDK-reported account info, fetched after the session's
+  // system:init message arrives. Used to verify end-to-end that the CLI
+  // subprocess is authenticated against the account we resolved.
+  const [sdkAccountInfo, setSdkAccountInfo] = useState<import('@/lib/api').SessionAccountInfo | null>(null);
   const [showTimeline, setShowTimeline] = useState(false);
   const [timelineVersion, setTimelineVersion] = useState(0);
   const [showSettings, setShowSettings] = useState(false);
@@ -552,6 +556,20 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             messages.length
           );
         }
+
+        // Wave 2.1 — fetch the SDK-reported account info now that the
+        // session is initialized. This is the authoritative check that
+        // CLAUDE_CONFIG_DIR routed the CLI subprocess to the account we
+        // think we resolved. If these disagree the SessionHeader flags it
+        // so the user notices before they run anything expensive.
+        const tidForAccount = tabIdRef.current;
+        api.sessionAccountInfo(tidForAccount)
+          .then((info) => {
+            if (info) setSdkAccountInfo(info);
+          })
+          .catch((err) => {
+            console.error('[sessions] sessionAccountInfo failed:', err);
+          });
       }
 
       // system:init: skip duplicates, insert before the first user message
@@ -1166,6 +1184,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             cost={sessionCost}
             totalTokens={totalTokens}
             model={selectedModel}
+            sdkAccount={sdkAccountInfo}
             className="mb-2"
           />
         )}
