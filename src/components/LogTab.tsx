@@ -71,8 +71,8 @@ export const LogTab: React.FC = () => {
     setLoading(true);
     try {
       const result: LogQueryResult = await api.logQuery({
-        level: levelFilter === "all" ? undefined : levelFilter,
-        source: sourceFilter === "all" ? undefined : sourceFilter,
+        levels: levelFilter === "all" ? undefined : [levelFilter],
+        sources: sourceFilter === "all" ? undefined : [sourceFilter],
         search: debouncedSearch || undefined,
         limit: PAGE_SIZE,
         offset: page * PAGE_SIZE,
@@ -97,9 +97,32 @@ export const LogTab: React.FC = () => {
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
 
+  // Compute the ISO cutoff for a relative "olderThan" string so we can ask the
+  // backend for a count of entries that will *actually* be deleted. Keep this
+  // in sync with parseOlderThan() in electron/services/logging.ts — at some
+  // point this should live in a shared module.
+  const olderThanCutoff = (olderThan: string | undefined): string | undefined => {
+    if (!olderThan) return undefined;
+    const now = Date.now();
+    const match = olderThan.match(/^(\d+)([hdwm])$/);
+    if (!match) return undefined;
+    const n = Number(match[1]);
+    const unitMs =
+      match[2] === "h" ? 60 * 60 * 1000 :
+      match[2] === "d" ? 24 * 60 * 60 * 1000 :
+      match[2] === "w" ? 7 * 24 * 60 * 60 * 1000 :
+      match[2] === "m" ? 30 * 24 * 60 * 60 * 1000 :
+      0;
+    if (unitMs === 0) return undefined;
+    return new Date(now - n * unitMs).toISOString();
+  };
+
   const handlePruneClick = async (olderThan: string | undefined, label: string) => {
     try {
-      const count = await api.logCount();
+      // For "older than X" prune, count rows strictly before the cutoff so the
+      // dialog shows an accurate number. For "all", fall back to the unfiltered count.
+      const cutoff = olderThanCutoff(olderThan);
+      const count = await api.logCount(cutoff ? { until: cutoff } : undefined);
       setPruneCount(count);
       setPruneDialog({ open: true, olderThan, label });
     } catch (err) {

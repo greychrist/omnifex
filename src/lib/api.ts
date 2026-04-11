@@ -500,11 +500,27 @@ export interface LogEntry {
 }
 
 export interface LogQueryFilters {
-  level?: string;
-  source?: string;
+  /** Any of these log levels (OR-joined). Omit to match all levels. */
+  levels?: string[];
+  /** Any of these sources (OR-joined). Omit to match all sources. */
+  sources?: string[];
+  /** Case-insensitive LIKE match on message. */
   search?: string;
+  /** ISO timestamp lower bound (inclusive). */
+  since?: string;
+  /** ISO timestamp upper bound (inclusive). */
+  until?: string;
   limit: number;
   offset: number;
+}
+
+/** Filters accepted by logCount(). Same shape as LogQueryFilters but limit/offset are meaningless. */
+export interface LogCountFilters {
+  levels?: string[];
+  sources?: string[];
+  search?: string;
+  since?: string;
+  until?: string;
 }
 
 export interface LogQueryResult {
@@ -1172,9 +1188,11 @@ export const api = {
 
   async logQuery(filters: LogQueryFilters): Promise<LogQueryResult> {
     return apiCall("log_query", {
-      level: filters.level,
-      source: filters.source,
+      levels: filters.levels,
+      sources: filters.sources,
       search: filters.search,
+      since: filters.since,
+      until: filters.until,
       limit: filters.limit,
       offset: filters.offset,
     });
@@ -1184,8 +1202,14 @@ export const api = {
     return apiCall("log_prune", { olderThan });
   },
 
-  async logCount(): Promise<number> {
-    return apiCall("log_count");
+  async logCount(filters?: LogCountFilters): Promise<number> {
+    return apiCall("log_count", {
+      levels: filters?.levels,
+      sources: filters?.sources,
+      search: filters?.search,
+      since: filters?.since,
+      until: filters?.until,
+    });
   },
 
   /**

@@ -107,4 +107,128 @@ describe('logging service', () => {
     expect(result.entries[0].category).toBe('network');
     expect(result.entries[0].metadata).toBe(JSON.stringify({ url: 'https://example.com' }));
   });
+
+  // ---------------------------------------------------------------------------
+  // count()
+  // ---------------------------------------------------------------------------
+
+  describe('count()', () => {
+    it('returns 0 when no entries exist', () => {
+      expect(logging.count({})).toBe(0);
+    });
+
+    it('returns the total count when no filters are applied', () => {
+      logging.writeBatch([
+        { timestamp: '2024-01-01T00:00:00Z', level: 'info', source: 'app', message: 'a' },
+        { timestamp: '2024-01-01T00:00:01Z', level: 'info', source: 'app', message: 'b' },
+        { timestamp: '2024-01-01T00:00:02Z', level: 'info', source: 'app', message: 'c' },
+      ]);
+      expect(logging.count({})).toBe(3);
+    });
+
+    it('accepts the same filter shape as query()', () => {
+      logging.writeBatch([
+        { timestamp: '2024-01-01T00:00:00Z', level: 'info', source: 'frontend', message: 'fe1' },
+        { timestamp: '2024-01-01T00:00:01Z', level: 'error', source: 'frontend', message: 'fe2' },
+        { timestamp: '2024-01-01T00:00:02Z', level: 'error', source: 'backend', message: 'be1' },
+      ]);
+
+      expect(logging.count({ levels: ['error'] })).toBe(2);
+      expect(logging.count({ sources: ['frontend'] })).toBe(2);
+      expect(logging.count({ levels: ['error'], sources: ['backend'] })).toBe(1);
+      expect(logging.count({ search: 'fe' })).toBe(2);
+    });
+
+    it('ignores limit/offset (count is a total, not a page)', () => {
+      logging.writeBatch([
+        { timestamp: '2024-01-01T00:00:00Z', level: 'info', source: 'app', message: 'a' },
+        { timestamp: '2024-01-01T00:00:01Z', level: 'info', source: 'app', message: 'b' },
+        { timestamp: '2024-01-01T00:00:02Z', level: 'info', source: 'app', message: 'c' },
+      ]);
+      expect(logging.count({ limit: 1, offset: 0 })).toBe(3);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // prune()
+  // ---------------------------------------------------------------------------
+
+  describe('prune()', () => {
+    it('deletes all entries when olderThan is undefined and returns the count removed', () => {
+      logging.writeBatch([
+        { timestamp: '2024-01-01T00:00:00Z', level: 'info', source: 'app', message: 'a' },
+        { timestamp: '2024-01-01T00:00:01Z', level: 'info', source: 'app', message: 'b' },
+      ]);
+      expect(logging.prune()).toBe(2);
+      expect(logging.count({})).toBe(0);
+    });
+
+    it('returns 0 when there is nothing to delete', () => {
+      expect(logging.prune()).toBe(0);
+    });
+
+    it('accepts an ISO timestamp as olderThan and only deletes entries strictly older', () => {
+      logging.writeBatch([
+        { timestamp: '2024-01-01T00:00:00Z', level: 'info', source: 'app', message: 'old' },
+        { timestamp: '2024-06-01T00:00:00Z', level: 'info', source: 'app', message: 'cut' },
+        { timestamp: '2024-12-31T00:00:00Z', level: 'info', source: 'app', message: 'keep' },
+      ]);
+
+      const deleted = logging.prune('2024-06-01T00:00:00Z');
+      expect(deleted).toBe(1);
+
+      const remaining = logging.query({});
+      expect(remaining.total).toBe(2);
+      expect(remaining.entries.map((e) => e.message).sort()).toEqual(['cut', 'keep']);
+    });
+
+    it('accepts relative duration strings like "1w" and "1m"', () => {
+      const now = Date.now();
+      const tenDaysAgo = new Date(now - 10 * 24 * 60 * 60 * 1000).toISOString();
+      const fortyDaysAgo = new Date(now - 40 * 24 * 60 * 60 * 1000).toISOString();
+      const nowIso = new Date(now).toISOString();
+
+      logging.writeBatch([
+        { timestamp: fortyDaysAgo, level: 'info', source: 'app', message: 'ancient' },
+        { timestamp: tenDaysAgo, level: 'info', source: 'app', message: 'middle' },
+        { timestamp: nowIso, level: 'info', source: 'app', message: 'fresh' },
+      ]);
+
+      // "1w" = older than 7 days → deletes "ancient" (40d) AND "middle" (10d)
+      const weekDeleted = logging.prune('1w');
+      expect(weekDeleted).toBe(2);
+      expect(logging.count({})).toBe(1);
+      expect(logging.query({}).entries[0].message).toBe('fresh');
+    });
+
+    it('"1m" deletes entries older than one month (30 days)', () => {
+      const now = Date.now();
+      const twentyDaysAgo = new Date(now - 20 * 24 * 60 * 60 * 1000).toISOString();
+      const fortyDaysAgo = new Date(now - 40 * 24 * 60 * 60 * 1000).toISOString();
+      const nowIso = new Date(now).toISOString();
+
+      logging.writeBatch([
+        { timestamp: fortyDaysAgo, level: 'info', source: 'app', message: 'ancient' },
+        { timestamp: twentyDaysAgo, level: 'info', source: 'app', message: 'middle' },
+        { timestamp: nowIso, level: 'info', source: 'app', message: 'fresh' },
+      ]);
+
+      expect(logging.prune('1m')).toBe(1); // only "ancient" is older than 30 days
+      expect(logging.count({})).toBe(2);
+    });
+
+    it('"1d" deletes entries older than one day', () => {
+      const now = Date.now();
+      const twoDaysAgo = new Date(now - 2 * 24 * 60 * 60 * 1000).toISOString();
+      const halfDayAgo = new Date(now - 12 * 60 * 60 * 1000).toISOString();
+
+      logging.writeBatch([
+        { timestamp: twoDaysAgo, level: 'info', source: 'app', message: 'old' },
+        { timestamp: halfDayAgo, level: 'info', source: 'app', message: 'recent' },
+      ]);
+
+      expect(logging.prune('1d')).toBe(1);
+      expect(logging.count({})).toBe(1);
+    });
+  });
 });

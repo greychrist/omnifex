@@ -121,6 +121,8 @@ export interface Services {
   logging?: {
     writeBatch(entries: unknown): unknown;
     query(params: unknown): unknown;
+    count(params: unknown): unknown;
+    prune(olderThan?: string): unknown;
   };
   database?: Database;
   proxy?: {
@@ -272,6 +274,8 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     // ── Logging ───────────────────────────────────────────────────────────────
     log_write_batch: wrapWith((p: Record<string, unknown>) => logging?.writeBatch(p?.entries) ?? null),
     log_query: wrapWith((p: Record<string, unknown>) => logging?.query(p) ?? null),
+    log_count: wrapWith((p: Record<string, unknown>) => logging?.count(p) ?? null),
+    log_prune: wrapWith((p: Record<string, unknown>) => logging?.prune(p?.olderThan as string | undefined) ?? null),
 
     // ── Storage (database) ────────────────────────────────────────────────────
     storage_list_tables: wrap(() => {

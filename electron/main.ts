@@ -349,6 +349,8 @@ app.whenReady().then(() => {
     logging: {
       writeBatch: (entries: any) => loggingService.writeBatch(entries),
       query: (params: any) => loggingService.query(params),
+      count: (params: any) => loggingService.count(params ?? {}),
+      prune: (olderThan?: string) => loggingService.prune(olderThan),
     },
     // Proxy adapter
     proxy: {

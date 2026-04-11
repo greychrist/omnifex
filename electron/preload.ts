@@ -113,6 +113,8 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   // Logging
   'log_write_batch',
   'log_query',
+  'log_count',
+  'log_prune',
 
   // Storage
   'storage_list_tables',
