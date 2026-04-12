@@ -1,10 +1,8 @@
 # SDK Integration Gaps — TODO
 
-Gap analysis of `@anthropic-ai/claude-agent-sdk` 0.2.101 usage vs. what the SDK actually exposes. Written 2026-04-11 after reading `code.claude.com/docs/en/agent-sdk/overview` + the installed type defs in `node_modules/@anthropic-ai/claude-agent-sdk/sdk.d.ts`.
+Gap analysis of `@anthropic-ai/claude-agent-sdk` 0.2.101 usage vs. what the SDK actually exposes. Written 2026-04-11, updated 2026-04-12.
 
-**Current integration surface:** `electron/services/sessions.ts` passes 7 options (`cwd`, `model`, `permissionMode`, `env`, `pathToClaudeCodeExecutable`, `resume`, `canUseTool`). The `Options` type has ~50 fields; the `Query` object has ~20 methods we never call.
-
-**Also note:** `electron/services/agents.ts::executeAgent` doesn't use the SDK at all — it still `spawn()`s the CLI directly. This was deferred during the Tauri→Electron migration (see `docs/superpowers/specs/2026-04-09-sdk-integration-design.md:194`).
+**Current integration surface:** `sessions.ts` passes ~15 options including `settingSources`, `strictMcpConfig`, `betas`, `stderr`, `hooks`, and all Wave 2 Query-method passthroughs. `agents.ts` is fully SDK-based (`query()` with `systemPrompt`, `permissionMode: 'acceptEdits'`, `settingSources`, `strictMcpConfig`, `betas`). Both services share consistent account resolution via `CLAUDE_CONFIG_DIR`.
 
 ---
 
@@ -29,7 +27,7 @@ Landed in `74fe715 feat(sessions): wire SDK settingSources, strictMcpConfig, std
 
 - [x] **1.5.1** `get_checkpoint_settings` channel missing end-to-end (service method, handler interface, handler registration, main.ts adapter mapping, preload allow-list). Every session start was logging "Failed to check auto checkpoint: Blocked IPC channel". Fixed in `aa918c3 fix(ipc): wire get_checkpoint_settings channel end-to-end` — 4 new tests, verified gone in app log.
 - [x] **1.5.2** Add `npm run rebuild:electron` dev script that invokes `electron-rebuild -f -w better-sqlite3`. After any vitest run, the `pretest` hook rebuilds better-sqlite3 for system Node's ABI, which crashes Electron on `rs` with `NODE_MODULE_VERSION` mismatch → avalanche of "No handler registered" errors. Script gives a fast (~5s) way to flip the ABI back without killing the app. Landed in `5798b48`.
-- [ ] **1.5.3** `log_count` / `log_prune` channels missing end-to-end. `LogTab.tsx`'s Clear-All button calls `api.logCount()` → shows "blocked IPC channel: log_count" error; then on confirm would call `api.logPrune()` which would also fail. Need: new `count()` and `prune(olderThan?)` methods on `LoggingService`, handler interface + registration, main.ts adapter, preload allow-list, tests. **Still open.**
+- [x] **1.5.3** `log_count` / `log_prune` channels + filter name mismatch. Shipped in `407dadc`. Added `count()` and `prune(olderThan?)` to `LoggingService` with a shared `buildWhere()` helper. Also fixed the filter name mismatch: `api.ts` had singular `level`/`source` but `logging.ts` expected plural `levels`/`sources` arrays — filters had been silently no-oping since the Electron migration. 10 new logging tests.
 
 ---
 
@@ -62,7 +60,7 @@ Landed in `74fe715 feat(sessions): wire SDK settingSources, strictMcpConfig, std
 - [ ] **4.1** `maxBudgetUsd` — per-session dollar cap (API/free accounts).
 - [ ] **4.2** `maxTurns` — turn cap to stop runaway loops.
 - [ ] **4.3** `additionalDirectories` — monorepo support.
-- [ ] **4.4** `betas: ['context-1m-2025-08-07']` — 1M context on Sonnet 4/4.5.
+- [x] **4.4** `betas: ['context-1m-2025-08-07']` — 1M context on Sonnet 4/4.5. Shipped in `2826d14`. Added to both `sessions.ts` and `agents.ts` query options. Safe to pass unconditionally — models that don't support it ignore the beta header.
 - [ ] **4.5** `promptSuggestions: true` — predicted next-prompt chips.
 - [ ] **4.6** `agentProgressSummaries: true` — live summaries of running subagents.
 - [ ] **4.7** `thinking: { type: 'adaptive' }` + `effort` — explicit reasoning depth control.
