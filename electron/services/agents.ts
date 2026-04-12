@@ -316,6 +316,7 @@ export function createAgentsService(
       },
       settingSources: ['user', 'project', 'local'],
       strictMcpConfig: true,
+      betas: ['context-1m-2025-08-07'],
     };
     if (binaryPath) {
       options.pathToClaudeCodeExecutable = binaryPath;

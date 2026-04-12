@@ -224,6 +224,11 @@ export function createSessionsService(
       settingSources: ['user', 'project', 'local'],
       // Surface invalid MCP configs as errors instead of silent warnings.
       strictMcpConfig: true,
+      // Enable the 1M token context window for Sonnet 4/4.5. Opus 4.6
+      // with [1m] already has 1M natively; this beta flag extends the
+      // same to Sonnet models. Safe to pass unconditionally — models
+      // that don't support it simply ignore the beta header.
+      betas: ['context-1m-2025-08-07'],
     };
 
     // Route CLI subprocess stderr into the logging service. Note the CLI routes its

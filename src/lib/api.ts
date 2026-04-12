@@ -1305,14 +1305,6 @@ export const api = {
   },
 
   /**
-   * Lists all currently running Claude sessions
-   * @returns Promise resolving to list of running Claude sessions
-   */
-  async listRunningClaudeSessions(): Promise<any[]> {
-    return apiCall("list_running_claude_sessions");
-  },
-
-  /**
    * Gets live output from a Claude session
    * @param sessionId - The session ID to get output for
    * @returns Promise resolving to the current live output
