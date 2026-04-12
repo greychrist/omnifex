@@ -851,6 +851,29 @@ describe('agents service — executeAgent SDK path', () => {
     expect(handle!.status).toBe('running');
   });
 
+  it("defaults permissionMode to 'acceptEdits' (not bypassPermissions)", async () => {
+    // Regression guard: we explicitly DO NOT want agents to auto-approve
+    // destructive ops by default. acceptEdits auto-approves Read/Write/Edit
+    // so the agent can make progress, but still prompts for Bash and
+    // other dangerous tools. bypassPermissions would be unsafe.
+    const agent = service.createAgent({
+      name: 'Safe',
+      icon: '🛡️',
+      system_prompt: 'P',
+    });
+    installFakeQuery();
+
+    await service.executeAgent({
+      agentId: agent.id,
+      projectPath,
+      task: 't',
+    });
+
+    const callArg = mockedQuery.mock.calls[0][0] as any;
+    expect(callArg.options.permissionMode).toBe('acceptEdits');
+    expect(callArg.options.permissionMode).not.toBe('bypassPermissions');
+  });
+
   it('falls back to the agent default model when params.model is not provided', async () => {
     const agent = service.createAgent({
       name: 'Defaulty',
@@ -901,6 +924,81 @@ describe('agents service — executeAgent SDK path', () => {
     expect(first.type).toBe('system');
     const second = JSON.parse(outputCalls[1][1] as string);
     expect(second.type).toBe('assistant');
+  });
+
+  it("skips root user messages (parent_tool_use_id null) so the task prompt isn't echoed", async () => {
+    // Regression guard: the SDK's query() emits a type:'user' message at
+    // the top of the stream to represent the initial prompt. For
+    // interactive sessions that's correct (the user did type it), but for
+    // agents it shows up as "you said <the task>" which is confusing. We
+    // filter those out based on parent_tool_use_id === null.
+    const agent = service.createAgent({
+      name: 'Silent',
+      icon: '🤐',
+      system_prompt: 'P',
+    });
+    const fake = installFakeQuery();
+
+    const runId = await service.executeAgent({
+      agentId: agent.id,
+      projectPath,
+      task: 'do the thing',
+    });
+
+    // Root user message — the prompt echo. Should NOT reach the renderer.
+    fake.pushMessage({
+      type: 'user',
+      message: { role: 'user', content: 'do the thing' },
+      parent_tool_use_id: null,
+    });
+    // Assistant reply — should reach the renderer.
+    fake.pushMessage({
+      type: 'assistant',
+      message: { role: 'assistant', content: [{ type: 'text', text: 'on it' }] },
+    });
+    await flush();
+
+    const outputCalls = sendToRenderer.mock.calls.filter(
+      (c) => c[0] === `agent-output:${runId}`,
+    );
+    // Only the assistant message should have been forwarded
+    expect(outputCalls.length).toBe(1);
+    const parsed = JSON.parse(outputCalls[0][1] as string);
+    expect(parsed.type).toBe('assistant');
+  });
+
+  it('forwards user messages that ARE tool results (non-null parent_tool_use_id)', async () => {
+    const agent = service.createAgent({
+      name: 'ToolUser',
+      icon: '🔧',
+      system_prompt: 'P',
+    });
+    const fake = installFakeQuery();
+
+    const runId = await service.executeAgent({
+      agentId: agent.id,
+      projectPath,
+      task: 't',
+    });
+
+    // Tool result user message — SDK wraps tool responses this way.
+    fake.pushMessage({
+      type: 'user',
+      message: {
+        role: 'user',
+        content: [{ type: 'tool_result', tool_use_id: 'tu-1', content: 'output' }],
+      },
+      parent_tool_use_id: 'tu-1',
+    });
+    await flush();
+
+    const outputCalls = sendToRenderer.mock.calls.filter(
+      (c) => c[0] === `agent-output:${runId}`,
+    );
+    expect(outputCalls.length).toBe(1);
+    const parsed = JSON.parse(outputCalls[0][1] as string);
+    expect(parsed.type).toBe('user');
+    expect(parsed.parent_tool_use_id).toBe('tu-1');
   });
 
   it('marks status as completed and fires agent-complete when a result message arrives', async () => {

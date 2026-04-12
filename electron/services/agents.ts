@@ -294,9 +294,21 @@ export function createAgentsService(
     // behave consistently. CLAUDE_CONFIG_DIR pins the session to the
     // resolved account; settingSources loads CLAUDE.md + skills + commands;
     // strictMcpConfig surfaces bad MCP configs instead of swallowing them.
+    //
+    // permissionMode defaults to 'acceptEdits' — the same default as
+    // interactive sessions (ClaudeCodeSession useState). This is critical
+    // for agents specifically: without a permissionMode override AND
+    // without a canUseTool callback, the SDK would default to 'default'
+    // (Ask every time), which would hang the agent run forever waiting
+    // for prompts that have nowhere to surface. acceptEdits auto-approves
+    // Read/Write/Edit so the agent can actually make progress on its task
+    // without surprising the user with destructive-op auto-approval —
+    // that's what bypassPermissions is for, and we deliberately do NOT
+    // want that as the default.
     const options: Record<string, unknown> = {
       systemPrompt: agent.system_prompt,
       model,
+      permissionMode: 'acceptEdits',
       cwd: params.projectPath,
       env: {
         ...process.env,
@@ -340,6 +352,27 @@ export function createAgentsService(
     let finalStatus: 'completed' | 'failed' = 'completed';
     try {
       for await (const message of q) {
+        const msg = message as any;
+
+        // Skip the SDK's echo of our own task prompt. When query() is given
+        // a string prompt, the SDK emits a type:'user' message at the top
+        // of the stream to represent that initial turn — useful for the
+        // interactive session UI where the user *did* type it, but wrong
+        // for agent runs where the task came from the agent service, not
+        // from the user. Without this filter the agent view shows the
+        // task verbatim as if the user sent it.
+        //
+        // We still forward user messages with a non-null parent_tool_use_id
+        // because those are tool results (SDK wraps tool results as user
+        // messages attached to the parent tool_use).
+        if (
+          msg &&
+          msg.type === 'user' &&
+          (msg.parent_tool_use_id === null || msg.parent_tool_use_id === undefined)
+        ) {
+          continue;
+        }
+
         // Forward every SDK message to the renderer as a JSON string so the
         // existing AgentExecution/SessionOutputViewer/AgentRunOutputViewer
         // parse path (JSON.parse(payload)) keeps working. Note the channel
@@ -353,8 +386,7 @@ export function createAgentsService(
         }
 
         // Determine final status from the result message, same as sessions.ts.
-        if (message && (message as any).type === 'result') {
-          const msg = message as any;
+        if (msg.type === 'result') {
           if (msg.is_error || msg.subtype === 'error') {
             finalStatus = 'failed';
           }
