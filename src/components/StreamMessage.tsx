@@ -107,6 +107,35 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
       );
     }
 
+    // SDK notification — compact inline text styled like the "Pondering..."
+    // activity indicator. Yellow for warnings, red for errors, muted for info.
+    if (message.type === "system" && message.subtype === "notification") {
+      const notifType = (message as any).notification_type ?? 'info';
+      const isError = /error/i.test(notifType);
+      const isWarn = /warn/i.test(notifType);
+      const color = isError
+        ? 'text-red-400'
+        : isWarn
+        ? 'text-yellow-400'
+        : 'text-muted-foreground';
+      const symbol = isError ? '✗' : isWarn ? '⚠' : '💬';
+      const borderColor = isError
+        ? 'border-red-500/30'
+        : isWarn
+        ? 'border-yellow-500/30'
+        : 'border-muted-foreground/20';
+
+      return (
+        <div className={cn("flex items-baseline gap-2 text-xs font-mono py-1.5 px-3 border-l-2", borderColor, className)}>
+          <span className={color}>{symbol}</span>
+          <span className={color}>
+            {(message as any).title ? `${(message as any).title}: ` : ''}
+            {(message as any).message ?? ''}
+          </span>
+        </div>
+      );
+    }
+
     // Assistant message
     if (message.type === "assistant" && message.message) {
       const msg = message.message;
