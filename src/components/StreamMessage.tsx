@@ -4,7 +4,8 @@ import {
   User,
   Bot,
   AlertCircle,
-  CheckCircle2
+  CheckCircle2,
+  CircleStop,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -108,26 +109,37 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
     }
 
     // SDK notification — compact inline text styled like the "Pondering..."
-    // activity indicator. Yellow for warnings, red for errors, muted for info.
+    // activity indicator. Color-coded by notification_type:
+    //   error → red     ✗
+    //   warn  → yellow  ⚠
+    //   stop  → red     ⏹ (user-initiated interrupt/cancel)
+    //   info  → muted   💬
     if (message.type === "system" && message.subtype === "notification") {
       const notifType = (message as any).notification_type ?? 'info';
       const isError = /error/i.test(notifType);
       const isWarn = /warn/i.test(notifType);
-      const color = isError
+      const isStop = notifType === 'stop';
+
+      const color = isError || isStop
         ? 'text-red-400'
         : isWarn
         ? 'text-yellow-400'
         : 'text-muted-foreground';
-      const symbol = isError ? '✗' : isWarn ? '⚠' : '💬';
-      const borderColor = isError
+      const borderColor = isError || isStop
         ? 'border-red-500/30'
         : isWarn
         ? 'border-yellow-500/30'
         : 'border-muted-foreground/20';
 
+      const icon = isStop
+        ? <CircleStop className="h-3.5 w-3.5 shrink-0" />
+        : null;
+      const symbol = isError ? '✗' : isWarn ? '⚠' : !isStop ? '💬' : null;
+
       return (
-        <div className={cn("flex items-baseline gap-2 text-xs font-mono py-1.5 px-3 border-l-2", borderColor, className)}>
-          <span className={color}>{symbol}</span>
+        <div className={cn("flex items-center gap-2 text-xs font-mono py-1.5 px-3 border-l-2", borderColor, className)}>
+          {icon}
+          {symbol && <span className={color}>{symbol}</span>}
           <span className={color}>
             {(message as any).title ? `${(message as any).title}: ` : ''}
             {(message as any).message ?? ''}

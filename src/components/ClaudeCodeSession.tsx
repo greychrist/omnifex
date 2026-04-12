@@ -193,6 +193,11 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   const persistentSessionRef = useRef(false);
   const tabIdRef = useRef(tabId || 'default');
   const floatingPromptRef = useRef<FloatingPromptInputRef>(null);
+  // Tracks whether the user just hit the cancel/interrupt button. When true,
+  // the stream listener suppresses the next error-typed result message (which
+  // the SDK emits after interrupt) so "Execution Failed" doesn't flash after
+  // a deliberate cancel. Reset after the first result message is consumed.
+  const userInterruptedRef = useRef(false);
   const queuedPromptsRef = useRef<Array<{ id: string; prompt: string; model: string }>>([]);
   const isMountedRef = useRef(true);
   const isIMEComposingRef = useRef(false);
@@ -642,6 +647,20 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
 
       // result messages mean "turn complete, waiting for next input" — NOT process exit
       if (message.type === 'result') {
+        // If the user just hit cancel/interrupt, the SDK emits an error-
+        // typed result (is_error: true) representing the interrupted turn.
+        // Suppress it so "Execution Failed" doesn't flash after a
+        // deliberate cancel — the user already saw the "Response
+        // interrupted" notification from handleCancelExecution.
+        if (userInterruptedRef.current) {
+          userInterruptedRef.current = false;
+          const isError = (message as any).is_error || (message as any).subtype?.includes('error');
+          if (isError) {
+            setIsLoading(false);
+            return;
+          }
+        }
+
         setIsLoading(false);
 
         // Wave 2.2 — refresh context usage at the end of every turn so the
@@ -961,6 +980,11 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     const tid = tabIdRef.current;
 
     try {
+      // Flag so the stream listener suppresses the next SDK error-result
+      // message (the SDK emits is_error after interrupt and we don't want
+      // an "Execution Failed" card for a deliberate user cancel).
+      userInterruptedRef.current = true;
+
       await api.sessionInterrupt(tid);
 
       // Session stays alive — don't clean up listeners, don't unset
@@ -972,10 +996,11 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
 
       const interruptMessage: ClaudeStreamMessage = {
         type: "system",
-        subtype: "info",
-        result: "Response interrupted — session still active",
+        subtype: "notification",
+        message: "Response interrupted — session still active",
+        notification_type: "stop",
         timestamp: new Date().toISOString(),
-      };
+      } as any;
       setMessages((prev) => [...prev, interruptMessage]);
     } catch (err) {
       // Interrupt failed. Fall back to the hard stopSession path so the UI
@@ -999,10 +1024,11 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
 
       const errorMessage: ClaudeStreamMessage = {
         type: "system",
-        subtype: "info",
-        result: "Session cancelled by user",
+        subtype: "notification",
+        message: "Session cancelled by user",
+        notification_type: "stop",
         timestamp: new Date().toISOString(),
-      };
+      } as any;
       setMessages((prev) => [...prev, errorMessage]);
     }
   };
