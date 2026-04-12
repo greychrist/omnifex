@@ -707,6 +707,21 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
         }
       }
 
+      // Suppress the SDK's "[Request interrupted by user]" echo when the
+      // user just hit cancel. The red stop-notification from
+      // handleCancelExecution already conveys the same info — showing the
+      // SDK echo as a purple user bubble is confusing.
+      if (userInterruptedRef.current && message.type === 'user') {
+        const content = typeof message.message?.content === 'string'
+          ? message.message.content
+          : Array.isArray(message.message?.content)
+            ? message.message.content.map((c: any) => typeof c === 'string' ? c : c.text || '').join('')
+            : '';
+        if (/interrupt/i.test(content)) {
+          return;
+        }
+      }
+
       setMessages((prev) => [...prev, message]);
     } catch (err) {
       console.error('Failed to parse message:', err, payload);
