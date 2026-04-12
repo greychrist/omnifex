@@ -984,6 +984,170 @@ describe('sessions service — full lifecycle', () => {
       const options = fake.getCapturedOptions();
       expect(options.hooks).toBeUndefined();
     });
+
+    // -----------------------------------------------------------------------
+    // Bonus hooks — SubagentStart, SubagentStop, PreCompact, FileChanged
+    // -----------------------------------------------------------------------
+
+    it('SubagentStart hook logs + emits renderer event', async () => {
+      const writeBatch = vi.fn();
+      const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
+      const svc = createSessionsService(
+        sendToRenderer as any,
+        { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
+        fakeLogging as any,
+      );
+      const fake = installFakeQuery();
+      svc.start({
+        tabId: 'hook-sa-start',
+        projectPath: '/p',
+        configDir: '/c',
+        model: 'sonnet',
+        permissionMode: 'default',
+      });
+
+      const options = fake.getCapturedOptions();
+      expect(options.hooks.SubagentStart).toBeDefined();
+      const hook = options.hooks.SubagentStart[0].hooks[0];
+
+      await hook(
+        { hook_event_name: 'SubagentStart', agent_id: 'sa-1', agent_type: 'Explore', session_id: 's', transcript_path: '/t', cwd: '/p' },
+        undefined,
+        { signal: new AbortController().signal },
+      );
+
+      expect(writeBatch).toHaveBeenCalledTimes(1);
+      const entry = writeBatch.mock.calls[0][0][0];
+      expect(entry.source).toBe('claude-hooks');
+      expect(entry.message).toContain('Explore');
+      expect(entry.message).toContain('started');
+
+      // Renderer event
+      const rendererCall = sendToRenderer.mock.calls.find(
+        (c) => typeof c[0] === 'string' && c[0].startsWith('claude-subagent:'),
+      );
+      expect(rendererCall).toBeDefined();
+      expect((rendererCall![1] as any).status).toBe('started');
+      expect((rendererCall![1] as any).agent_type).toBe('Explore');
+
+      svc.stopAll();
+    });
+
+    it('SubagentStop hook logs + emits renderer event with last_assistant_message', async () => {
+      const writeBatch = vi.fn();
+      const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
+      const svc = createSessionsService(
+        sendToRenderer as any,
+        { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
+        fakeLogging as any,
+      );
+      const fake = installFakeQuery();
+      svc.start({
+        tabId: 'hook-sa-stop',
+        projectPath: '/p',
+        configDir: '/c',
+        model: 'sonnet',
+        permissionMode: 'default',
+      });
+
+      const hook = fake.getCapturedOptions().hooks.SubagentStop[0].hooks[0];
+
+      await hook(
+        {
+          hook_event_name: 'SubagentStop',
+          agent_id: 'sa-2',
+          agent_type: 'code-reviewer',
+          stop_hook_active: false,
+          agent_transcript_path: '/t/sa-2.jsonl',
+          last_assistant_message: 'Review complete: 3 issues found.',
+          session_id: 's',
+          transcript_path: '/t',
+          cwd: '/p',
+        },
+        undefined,
+        { signal: new AbortController().signal },
+      );
+
+      const entry = writeBatch.mock.calls[0][0][0];
+      expect(entry.message).toContain('stopped');
+      expect(entry.message).toContain('code-reviewer');
+      const meta = JSON.parse(entry.metadata);
+      expect(meta.last_assistant_message).toContain('3 issues');
+
+      svc.stopAll();
+    });
+
+    it('PreCompact hook logs a warning + emits renderer event', async () => {
+      const writeBatch = vi.fn();
+      const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
+      const svc = createSessionsService(
+        sendToRenderer as any,
+        { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
+        fakeLogging as any,
+      );
+      const fake = installFakeQuery();
+      svc.start({
+        tabId: 'hook-compact',
+        projectPath: '/p',
+        configDir: '/c',
+        model: 'sonnet',
+        permissionMode: 'default',
+      });
+
+      const hook = fake.getCapturedOptions().hooks.PreCompact[0].hooks[0];
+
+      await hook(
+        { hook_event_name: 'PreCompact', trigger: 'auto', custom_instructions: null, session_id: 's', transcript_path: '/t', cwd: '/p' },
+        undefined,
+        { signal: new AbortController().signal },
+      );
+
+      const entry = writeBatch.mock.calls[0][0][0];
+      expect(entry.level).toBe('warn');
+      expect(entry.message).toContain('compact');
+      expect(entry.message).toContain('auto');
+
+      const rendererCall = sendToRenderer.mock.calls.find(
+        (c) => typeof c[0] === 'string' && c[0].startsWith('claude-compact:'),
+      );
+      expect(rendererCall).toBeDefined();
+      expect((rendererCall![1] as any).trigger).toBe('auto');
+
+      svc.stopAll();
+    });
+
+    it('FileChanged hook logs the event + path', async () => {
+      const writeBatch = vi.fn();
+      const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
+      const svc = createSessionsService(
+        sendToRenderer as any,
+        { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
+        fakeLogging as any,
+      );
+      const fake = installFakeQuery();
+      svc.start({
+        tabId: 'hook-file',
+        projectPath: '/p',
+        configDir: '/c',
+        model: 'sonnet',
+        permissionMode: 'default',
+      });
+
+      const hook = fake.getCapturedOptions().hooks.FileChanged[0].hooks[0];
+
+      await hook(
+        { hook_event_name: 'FileChanged', file_path: '/p/src/app.ts', event: 'change', session_id: 's', transcript_path: '/t', cwd: '/p' },
+        undefined,
+        { signal: new AbortController().signal },
+      );
+
+      const entry = writeBatch.mock.calls[0][0][0];
+      expect(entry.source).toBe('claude-hooks');
+      expect(entry.message).toContain('change');
+      expect(entry.message).toContain('/p/src/app.ts');
+
+      svc.stopAll();
+    });
   });
 
   it('start() omits stderr callback when no logging service is provided', () => {

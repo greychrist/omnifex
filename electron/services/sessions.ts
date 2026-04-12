@@ -360,6 +360,131 @@ export function createSessionsService(
             ],
           },
         ],
+
+        // ---- Bonus hooks: SubagentStart, SubagentStop, PreCompact, FileChanged ----
+
+        SubagentStart: [
+          {
+            hooks: [
+              async (input: any) => {
+                try {
+                  logging.writeBatch([
+                    {
+                      timestamp: new Date().toISOString(),
+                      level: 'info',
+                      source: 'claude-hooks',
+                      category: `session:${tabId}`,
+                      message: `🔀 subagent started: ${input.agent_type} (${input.agent_id})`,
+                      metadata: stringifyCapped({
+                        event: 'SubagentStart',
+                        agent_id: input.agent_id,
+                        agent_type: input.agent_type,
+                      }),
+                    },
+                  ]);
+                  sendToRenderer(`claude-subagent:${tabId}`, {
+                    status: 'started',
+                    agent_id: input.agent_id,
+                    agent_type: input.agent_type,
+                  });
+                } catch (err) {
+                  console.error('[sessions] SubagentStart hook failed:', err);
+                }
+                return {};
+              },
+            ],
+          },
+        ],
+        SubagentStop: [
+          {
+            hooks: [
+              async (input: any) => {
+                try {
+                  logging.writeBatch([
+                    {
+                      timestamp: new Date().toISOString(),
+                      level: 'info',
+                      source: 'claude-hooks',
+                      category: `session:${tabId}`,
+                      message: `🔀 subagent stopped: ${input.agent_type} (${input.agent_id})`,
+                      metadata: stringifyCapped({
+                        event: 'SubagentStop',
+                        agent_id: input.agent_id,
+                        agent_type: input.agent_type,
+                        last_assistant_message: input.last_assistant_message,
+                      }),
+                    },
+                  ]);
+                  sendToRenderer(`claude-subagent:${tabId}`, {
+                    status: 'stopped',
+                    agent_id: input.agent_id,
+                    agent_type: input.agent_type,
+                    last_assistant_message: input.last_assistant_message,
+                  });
+                } catch (err) {
+                  console.error('[sessions] SubagentStop hook failed:', err);
+                }
+                return {};
+              },
+            ],
+          },
+        ],
+        PreCompact: [
+          {
+            hooks: [
+              async (input: any) => {
+                try {
+                  logging.writeBatch([
+                    {
+                      timestamp: new Date().toISOString(),
+                      level: 'warn',
+                      source: 'claude-hooks',
+                      category: `session:${tabId}`,
+                      message: `⚠ context compacting (trigger: ${input.trigger})`,
+                      metadata: stringifyCapped({
+                        event: 'PreCompact',
+                        trigger: input.trigger,
+                      }),
+                    },
+                  ]);
+                  sendToRenderer(`claude-compact:${tabId}`, {
+                    trigger: input.trigger,
+                  });
+                } catch (err) {
+                  console.error('[sessions] PreCompact hook failed:', err);
+                }
+                return {};
+              },
+            ],
+          },
+        ],
+        FileChanged: [
+          {
+            hooks: [
+              async (input: any) => {
+                try {
+                  logging.writeBatch([
+                    {
+                      timestamp: new Date().toISOString(),
+                      level: 'info',
+                      source: 'claude-hooks',
+                      category: `session:${tabId}`,
+                      message: `📄 file ${input.event}: ${input.file_path}`,
+                      metadata: stringifyCapped({
+                        event: 'FileChanged',
+                        file_path: input.file_path,
+                        change_event: input.event,
+                      }),
+                    },
+                  ]);
+                } catch (err) {
+                  console.error('[sessions] FileChanged hook failed:', err);
+                }
+                return {};
+              },
+            ],
+          },
+        ],
       };
     }
 

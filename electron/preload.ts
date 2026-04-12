@@ -181,6 +181,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       !channel.startsWith('claude-complete:') &&
       !channel.startsWith('claude-notification') &&
       !channel.startsWith('claude-stream') &&
+      !channel.startsWith('claude-subagent:') &&
+      !channel.startsWith('claude-compact:') &&
       !channel.startsWith('backend-log')
     ) {
       throw new Error(`Blocked IPC event channel: ${channel}`);
