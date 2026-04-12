@@ -1116,6 +1116,105 @@ describe('sessions service — full lifecycle', () => {
       svc.stopAll();
     });
 
+    it('Notification hook logs + emits claude-notification for the tab badge system', async () => {
+      const writeBatch = vi.fn();
+      const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
+      const svc = createSessionsService(
+        sendToRenderer as any,
+        { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
+        fakeLogging as any,
+      );
+      const fake = installFakeQuery();
+      svc.start({
+        tabId: 'hook-notif',
+        projectPath: '/p',
+        configDir: '/c',
+        model: 'sonnet',
+        permissionMode: 'default',
+      });
+
+      const options = fake.getCapturedOptions();
+      expect(options.hooks.Notification).toBeDefined();
+      const hook = options.hooks.Notification[0].hooks[0];
+
+      await hook(
+        {
+          hook_event_name: 'Notification',
+          message: 'MCP server disconnected',
+          title: 'Connection Lost',
+          notification_type: 'warning',
+          session_id: 's',
+          transcript_path: '/t',
+          cwd: '/p',
+        },
+        undefined,
+        { signal: new AbortController().signal },
+      );
+
+      // Logging
+      expect(writeBatch).toHaveBeenCalledTimes(1);
+      const entry = writeBatch.mock.calls[0][0][0];
+      expect(entry.source).toBe('claude-hooks');
+      expect(entry.message).toContain('MCP server disconnected');
+      const meta = JSON.parse(entry.metadata);
+      expect(meta.notification_type).toBe('warning');
+      expect(meta.title).toBe('Connection Lost');
+
+      // Renderer event — uses the existing claude-notification channel so
+      // useNotifications.ts picks it up for tab badges automatically
+      const rendererCall = sendToRenderer.mock.calls.find(
+        (c) => c[0] === 'claude-notification' && (c[1] as any)?.body === 'MCP server disconnected',
+      );
+      expect(rendererCall).toBeDefined();
+      expect((rendererCall![1] as any).tab_id).toBe('hook-notif');
+      expect((rendererCall![1] as any).title).toBe('Connection Lost');
+
+      svc.stopAll();
+    });
+
+    it('Notification hook marks is_error=true for error-type notifications', async () => {
+      const writeBatch = vi.fn();
+      const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
+      const svc = createSessionsService(
+        sendToRenderer as any,
+        { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
+        fakeLogging as any,
+      );
+      const fake = installFakeQuery();
+      svc.start({
+        tabId: 'hook-notif-err',
+        projectPath: '/p',
+        configDir: '/c',
+        model: 'sonnet',
+        permissionMode: 'default',
+      });
+
+      const hook = fake.getCapturedOptions().hooks.Notification[0].hooks[0];
+
+      await hook(
+        {
+          hook_event_name: 'Notification',
+          message: 'Fatal: subprocess crashed',
+          notification_type: 'error',
+          session_id: 's',
+          transcript_path: '/t',
+          cwd: '/p',
+        },
+        undefined,
+        { signal: new AbortController().signal },
+      );
+
+      const entry = writeBatch.mock.calls[0][0][0];
+      expect(entry.level).toBe('error');
+
+      const rendererCall = sendToRenderer.mock.calls.find(
+        (c) => c[0] === 'claude-notification' && (c[1] as any)?.body?.includes('Fatal'),
+      );
+      expect((rendererCall![1] as any).is_error).toBe(true);
+
+      svc.stopAll();
+    });
+
     it('FileChanged hook logs the event + path', async () => {
       const writeBatch = vi.fn();
       const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };

@@ -458,6 +458,46 @@ export function createSessionsService(
             ],
           },
         ],
+        Notification: [
+          {
+            hooks: [
+              async (input: any) => {
+                try {
+                  const isError = /error/i.test(input.notification_type ?? '');
+                  const level = isError ? 'error' : /warn/i.test(input.notification_type ?? '') ? 'warn' : 'info';
+                  logging.writeBatch([
+                    {
+                      timestamp: new Date().toISOString(),
+                      level,
+                      source: 'claude-hooks',
+                      category: `session:${tabId}`,
+                      message: `💬 ${input.message ?? '(no message)'}`,
+                      metadata: stringifyCapped({
+                        event: 'Notification',
+                        notification_type: input.notification_type,
+                        title: input.title,
+                        message: input.message,
+                      }),
+                    },
+                  ]);
+                  // Emit on the existing claude-notification channel so
+                  // useNotifications.ts picks it up for tab badges + bring-
+                  // to-front. The payload shape matches what the listener
+                  // already expects (tab_id, title, body, is_error).
+                  sendToRenderer('claude-notification', {
+                    tab_id: tabId,
+                    title: input.title ?? 'Claude',
+                    body: input.message ?? '',
+                    is_error: isError,
+                  });
+                } catch (err) {
+                  console.error('[sessions] Notification hook failed:', err);
+                }
+                return {};
+              },
+            ],
+          },
+        ],
         FileChanged: [
           {
             hooks: [
