@@ -404,6 +404,27 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
         return <SystemContextWidget content={contentStr} />;
       }
 
+      // SDK-generated bracket messages like "[Request interrupted by user]"
+      // or "[Session resumed]" come through as type:'user' but aren't the
+      // user's words. Detect them (content is a single string wrapped in
+      // square brackets) and render as a system notification so they're
+      // visible but visually distinct from the user's actual input.
+      const trimmed = contentStr.trim();
+      const isSdkSystemMessage = trimmed.startsWith('[') && trimmed.endsWith(']') && trimmed.length < 200;
+      if (isSdkSystemMessage) {
+        // Strip the brackets and render as an info-level notification
+        const inner = trimmed.slice(1, -1);
+        return (
+          <div className={cn(
+            "flex items-center gap-2 text-xs font-mono py-1.5 px-3 border-l-2 border-muted-foreground/30",
+            className,
+          )}>
+            <span className="text-muted-foreground">ℹ</span>
+            <span className="text-muted-foreground">{inner}</span>
+          </div>
+        );
+      }
+
       // Check if this is a tool-result-only message (not a real user message)
       const isToolResultOnly = Array.isArray(msg.content)
         && msg.content.length > 0
