@@ -32,6 +32,7 @@ declare const MAIN_WINDOW_VITE_NAME: string;
 let mainWindow: BrowserWindow | null = null;
 let _sessionsService: { stopAll(): void } | null = null;
 let _db: { close(): void } | null = null;
+let _initialized = false;
 
 // Unread notification count for dock badge
 let unreadCount = 0;
@@ -400,6 +401,7 @@ app.whenReady().then(() => {
 
   // Create the window AFTER all IPC handlers are registered so the renderer
   // cannot fire calls before the main process is ready to handle them.
+  _initialized = true;
   createWindow();
 });
 
@@ -415,7 +417,9 @@ app.on('window-all-closed', () => {
 });
 
 app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) {
+  // Only create a window if initialization completed (handlers registered).
+  // On macOS, activate can fire on first launch before whenReady().then() finishes.
+  if (_initialized && BrowserWindow.getAllWindows().length === 0) {
     createWindow();
   }
 });

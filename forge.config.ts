@@ -1,5 +1,6 @@
 import type { ForgeConfig } from '@electron-forge/shared-types';
 import { VitePlugin } from '@electron-forge/plugin-vite';
+import { execSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -22,7 +23,7 @@ const config: ForgeConfig = {
       unpack: '**/better-sqlite3/**/*.node',
     },
     afterCopy: [
-      (buildPath, _electronVersion, _platform, _arch, callback) => {
+      (buildPath, electronVersion, _platform, _arch, callback) => {
         // Copy better-sqlite3 and its deps (bindings, file-uri-to-path)
         // into the packaged app so the externalized require() works.
         try {
@@ -30,8 +31,17 @@ const config: ForgeConfig = {
           copyNativeModule(buildPath, 'bindings');
           copyNativeModule(buildPath, 'file-uri-to-path');
           console.log('[forge] Copied better-sqlite3 + deps into package');
+
+          // Rebuild better-sqlite3 for Electron's ABI inside the package.
+          // The source node_modules may have Node's ABI (from npm test),
+          // so we must rebuild here regardless.
+          execSync(
+            `npx electron-rebuild -f -v ${electronVersion} -w better-sqlite3 -m "${buildPath}"`,
+            { stdio: 'inherit' },
+          );
+          console.log('[forge] Rebuilt better-sqlite3 for Electron ABI');
         } catch (err) {
-          console.error('[forge] Failed to copy native modules:', err);
+          console.error('[forge] Failed to prepare native modules:', err);
         }
         callback();
       },
