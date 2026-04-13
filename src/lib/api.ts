@@ -2247,4 +2247,35 @@ export const api = {
     return apiCall("explain_account_resolution", { projectPath });
   },
 
+  // ---------------------------------------------------------------------------
+  // Updater
+  // ---------------------------------------------------------------------------
+
+  async getAppVersion(): Promise<string> {
+    return apiCall("get_app_version", {});
+  },
+
+  async checkForUpdate(): Promise<{
+    available: boolean;
+    version: string;
+    downloadUrl: string;
+    assetName: string;
+    releaseUrl: string;
+    releaseNotes?: string;
+  } | null> {
+    return apiCall("updater:check", {});
+  },
+
+  async downloadUpdate(url: string, assetName?: string): Promise<string> {
+    return apiCall("updater:download", { url, assetName });
+  },
+
+  async openUpdate(filePath: string): Promise<void> {
+    return apiCall("updater:open", { filePath });
+  },
+
+  onUpdateProgress(callback: (data: { percent: number; bytesDownloaded: number; totalBytes: number }) => void): () => void {
+    return window.electronAPI.onEvent('updater:progress', callback as any);
+  },
+
 };

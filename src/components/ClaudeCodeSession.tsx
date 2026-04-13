@@ -366,14 +366,14 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     }
   }, [displayableMessages.length]);
 
-  // Calculate total tokens from messages
+  // Calculate total tokens from messages — guard against undefined fields to avoid NaN
   useEffect(() => {
     const tokens = messages.reduce((total, msg) => {
       if (msg.message?.usage) {
-        return total + msg.message.usage.input_tokens + msg.message.usage.output_tokens;
+        return total + (msg.message.usage.input_tokens || 0) + (msg.message.usage.output_tokens || 0);
       }
       if (msg.usage) {
-        return total + msg.usage.input_tokens + msg.usage.output_tokens;
+        return total + (msg.usage.input_tokens || 0) + (msg.usage.output_tokens || 0);
       }
       return total;
     }, 0);
@@ -1138,8 +1138,16 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   const handleScroll = useCallback(() => {
     const el = parentRef.current;
     if (!el) return;
-    // Consider "near bottom" if within 150px of the bottom
-    isNearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 150;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    // Two-threshold hysteresis to prevent false "user scrolled up" detection:
+    // - Within 150px: definitely near bottom, keep auto-scrolling
+    // - Beyond 300px: user intentionally scrolled up, stop auto-scrolling
+    // - 150–300px: no change (dead zone prevents flapping from layout shifts)
+    if (distanceFromBottom < 150) {
+      isNearBottomRef.current = true;
+    } else if (distanceFromBottom > 300) {
+      isNearBottomRef.current = false;
+    }
   }, []);
 
   const handleRetryTimedOut = useCallback(() => {
@@ -1178,6 +1186,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                   message={message}
                   streamMessages={messages}
                   onLinkDetected={handleLinkDetected}
+                  accountType={accountResolution?.account.account_type}
                 />
                 {isTimedOut && (
                   <div className="flex items-center justify-end gap-1.5 mt-1 pr-1">

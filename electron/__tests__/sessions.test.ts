@@ -28,7 +28,7 @@ interface FakeQueryHandle {
   closeMessages: () => void;
   /** Whether `query.close()` was called by the service. */
   wasClosed: () => boolean;
-  /** The options passed to the SDK — captured so tests can poke canUseTool. */
+  /** The options passed to the SDK — captured so tests can poke hooks. */
   getCapturedOptions: () => any;
   /** The prompt async iterable passed to the SDK (the sessions service input channel). */
   getCapturedPrompt: () => any;
@@ -229,7 +229,9 @@ describe('sessions service — full lifecycle', () => {
     expect(options.model).toBe('sonnet');
     expect(options.permissionMode).toBe('default');
     expect(options.env.CLAUDE_CONFIG_DIR).toBe('/custom/.claude');
-    expect(typeof options.canUseTool).toBe('function');
+    // PermissionRequest hook replaces canUseTool
+    expect(options.canUseTool).toBeUndefined();
+    expect(Array.isArray(options.hooks?.PermissionRequest)).toBe(true);
   });
 
   it('start() passes settingSources so the SDK loads project CLAUDE.md, .claude/, and MCP config', () => {
@@ -580,13 +582,20 @@ describe('sessions service — full lifecycle', () => {
   });
 
   // -------------------------------------------------------------------------
-  // Permission flow — exercising canUseTool directly
+  // Permission flow — exercising PermissionRequest hook
   // -------------------------------------------------------------------------
 
-  it('canUseTool emits a permission_request and resolves to allow when respondPermission("allow") is called', async () => {
+  it('PermissionRequest hook emits a permission_request and resolves to allow when respondPermission("allow") is called', async () => {
+    const writeBatch = vi.fn();
+    const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
+    const svc = createSessionsService(
+      sendToRenderer as any,
+      { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
+      fakeLogging as any,
+    );
     const fake = installFakeQuery();
 
-    service.start({
+    svc.start({
       tabId: 'tab-perm',
       projectPath: '/p',
       configDir: '/c',
@@ -594,15 +603,25 @@ describe('sessions service — full lifecycle', () => {
       permissionMode: 'default',
     });
 
-    const options = fake.getCapturedOptions();
-    const decisionPromise = options.canUseTool(
-      'Bash',
-      { command: 'ls -la' },
-      { signal: new AbortController().signal, title: 'Run Bash', description: 'List files' },
+    const hook = fake.getCapturedOptions().hooks.PermissionRequest[0].hooks[0];
+
+    // Fire the hook in the background (it will block awaiting the decision)
+    const decisionPromise = hook(
+      {
+        hook_event_name: 'PermissionRequest',
+        tool_name: 'Bash',
+        tool_input: { command: 'ls -la' },
+        session_id: 's1',
+        transcript_path: '/t',
+        cwd: '/p',
+      },
+      undefined,
+      { signal: new AbortController().signal },
     );
 
     // The request should have been emitted and the session should be waiting
-    expect(service.getStatus('tab-perm')).toBe('waiting_permission');
+    await new Promise((r) => setImmediate(r));
+    expect(svc.getStatus('tab-perm')).toBe('waiting_permission');
     const permCall = sendToRenderer.mock.calls.find(
       (c) => c[0] === 'claude-output:tab-perm' && (c[1] as any)?.type === 'permission_request',
     );
@@ -611,18 +630,28 @@ describe('sessions service — full lifecycle', () => {
     expect((permCall![1] as any).tool_input).toEqual({ command: 'ls -la' });
 
     // Respond with allow + (optional) updated input
-    service.respondPermission('tab-perm', 'allow', { command: 'ls -la --color' });
+    svc.respondPermission('tab-perm', 'allow', { command: 'ls -la --color' });
 
-    const decision = await decisionPromise;
-    expect(decision.behavior).toBe('allow');
-    expect((decision as any).updatedInput).toEqual({ command: 'ls -la --color' });
-    expect(service.getStatus('tab-perm')).toBe('running');
+    const result = await decisionPromise;
+    expect(result.hookSpecificOutput.hookEventName).toBe('PermissionRequest');
+    expect(result.hookSpecificOutput.decision.behavior).toBe('allow');
+    expect(result.hookSpecificOutput.decision.updatedInput).toEqual({ command: 'ls -la --color' });
+    expect(svc.getStatus('tab-perm')).toBe('running');
+
+    svc.stopAll();
   });
 
-  it('canUseTool falls back to the original input when respondPermission is called without updatedInput', async () => {
+  it('PermissionRequest hook resolves to allow without updatedInput when none provided', async () => {
+    const writeBatch = vi.fn();
+    const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
+    const svc = createSessionsService(
+      sendToRenderer as any,
+      { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
+      fakeLogging as any,
+    );
     const fake = installFakeQuery();
 
-    service.start({
+    svc.start({
       tabId: 'tab-perm-fallback',
       projectPath: '/p',
       configDir: '/c',
@@ -630,23 +659,41 @@ describe('sessions service — full lifecycle', () => {
       permissionMode: 'default',
     });
 
-    const options = fake.getCapturedOptions();
-    const originalInput = { command: 'echo hi' };
-    const decisionPromise = options.canUseTool('Bash', originalInput, {
-      signal: new AbortController().signal,
-    });
+    const hook = fake.getCapturedOptions().hooks.PermissionRequest[0].hooks[0];
+    const decisionPromise = hook(
+      {
+        hook_event_name: 'PermissionRequest',
+        tool_name: 'Bash',
+        tool_input: { command: 'echo hi' },
+        session_id: 's1',
+        transcript_path: '/t',
+        cwd: '/p',
+      },
+      undefined,
+      { signal: new AbortController().signal },
+    );
 
-    service.respondPermission('tab-perm-fallback', 'allow');
+    svc.respondPermission('tab-perm-fallback', 'allow');
 
-    const decision = await decisionPromise;
-    expect(decision.behavior).toBe('allow');
-    expect((decision as any).updatedInput).toBe(originalInput);
+    const result = await decisionPromise;
+    expect(result.hookSpecificOutput.decision.behavior).toBe('allow');
+    // No updatedInput key when none provided
+    expect(result.hookSpecificOutput.decision.updatedInput).toBeUndefined();
+
+    svc.stopAll();
   });
 
-  it('canUseTool resolves to deny when respondPermission("deny") is called', async () => {
+  it('PermissionRequest hook resolves to deny when respondPermission("deny") is called', async () => {
+    const writeBatch = vi.fn();
+    const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
+    const svc = createSessionsService(
+      sendToRenderer as any,
+      { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
+      fakeLogging as any,
+    );
     const fake = installFakeQuery();
 
-    service.start({
+    svc.start({
       tabId: 'tab-deny',
       projectPath: '/p',
       configDir: '/c',
@@ -654,23 +701,40 @@ describe('sessions service — full lifecycle', () => {
       permissionMode: 'default',
     });
 
-    const options = fake.getCapturedOptions();
-    const decisionPromise = options.canUseTool(
-      'Write',
-      { path: '/etc/passwd' },
+    const hook = fake.getCapturedOptions().hooks.PermissionRequest[0].hooks[0];
+    const decisionPromise = hook(
+      {
+        hook_event_name: 'PermissionRequest',
+        tool_name: 'Write',
+        tool_input: { path: '/etc/passwd' },
+        session_id: 's1',
+        transcript_path: '/t',
+        cwd: '/p',
+      },
+      undefined,
       { signal: new AbortController().signal },
     );
 
-    service.respondPermission('tab-deny', 'deny');
+    svc.respondPermission('tab-deny', 'deny');
 
-    const decision = await decisionPromise;
-    expect(decision.behavior).toBe('deny');
+    const result = await decisionPromise;
+    expect(result.hookSpecificOutput.decision.behavior).toBe('deny');
+    expect(result.hookSpecificOutput.decision.message).toBe('User denied permission');
+
+    svc.stopAll();
   });
 
-  it('auto-allow short-circuits the permission flow for allow-listed tools', async () => {
+  it('PermissionRequest hook auto-allows when tool is in the allow-list', async () => {
+    const writeBatch = vi.fn();
+    const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
+    const svc = createSessionsService(
+      sendToRenderer as any,
+      { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
+      fakeLogging as any,
+    );
     const fake = installFakeQuery();
 
-    service.start({
+    svc.start({
       tabId: 'tab-auto',
       projectPath: '/p',
       configDir: '/c',
@@ -678,23 +742,132 @@ describe('sessions service — full lifecycle', () => {
       permissionMode: 'default',
     });
 
-    service.setAutoAllow('tab-auto', true);
-    service.addAutoAllowTool('tab-auto', 'Read');
+    svc.setAutoAllow('tab-auto', true);
+    svc.addAutoAllowTool('tab-auto', 'Read');
 
-    const options = fake.getCapturedOptions();
-    const decision = await options.canUseTool(
-      'Read',
-      { path: '/tmp/a.txt' },
+    const hook = fake.getCapturedOptions().hooks.PermissionRequest[0].hooks[0];
+    const result = await hook(
+      {
+        hook_event_name: 'PermissionRequest',
+        tool_name: 'Read',
+        tool_input: { path: '/tmp/a.txt' },
+        session_id: 's1',
+        transcript_path: '/t',
+        cwd: '/p',
+      },
+      undefined,
       { signal: new AbortController().signal },
     );
 
-    expect(decision.behavior).toBe('allow');
-    expect(decision.updatedInput).toEqual({ path: '/tmp/a.txt' });
+    expect(result.hookSpecificOutput.decision.behavior).toBe('allow');
     // No permission_request should have been sent for auto-allowed tools
     const permCall = sendToRenderer.mock.calls.find(
       (c) => c[0] === 'claude-output:tab-auto' && (c[1] as any)?.type === 'permission_request',
     );
     expect(permCall).toBeUndefined();
+
+    svc.stopAll();
+  });
+
+  it('PermissionRequest hook passes through updatedPermissions for "allow & remember"', async () => {
+    const writeBatch = vi.fn();
+    const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
+    const svc = createSessionsService(
+      sendToRenderer as any,
+      { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
+      fakeLogging as any,
+    );
+    const fake = installFakeQuery();
+
+    svc.start({
+      tabId: 'tab-remember',
+      projectPath: '/p',
+      configDir: '/c',
+      model: 'sonnet',
+      permissionMode: 'default',
+    });
+
+    const hook = fake.getCapturedOptions().hooks.PermissionRequest[0].hooks[0];
+    const decisionPromise = hook(
+      {
+        hook_event_name: 'PermissionRequest',
+        tool_name: 'Bash',
+        tool_input: { command: 'git status' },
+        permission_suggestions: [],
+        session_id: 's1',
+        transcript_path: '/t',
+        cwd: '/p',
+      },
+      undefined,
+      { signal: new AbortController().signal },
+    );
+
+    const rules = [
+      {
+        type: 'addRules' as const,
+        rules: [{ toolName: 'Bash', ruleContent: 'git *' }],
+        behavior: 'allow' as const,
+        destination: 'projectSettings' as const,
+      },
+    ];
+    svc.respondPermission('tab-remember', 'allow', undefined, rules);
+
+    const result = await decisionPromise;
+    expect(result.hookSpecificOutput.decision.behavior).toBe('allow');
+    expect(result.hookSpecificOutput.decision.updatedPermissions).toEqual(rules);
+
+    svc.stopAll();
+  });
+
+  it('PermissionRequest hook forwards permission_suggestions to the renderer', async () => {
+    const writeBatch = vi.fn();
+    const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
+    const svc = createSessionsService(
+      sendToRenderer as any,
+      { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
+      fakeLogging as any,
+    );
+    const fake = installFakeQuery();
+
+    svc.start({
+      tabId: 'tab-suggestions',
+      projectPath: '/p',
+      configDir: '/c',
+      model: 'sonnet',
+      permissionMode: 'default',
+    });
+
+    const suggestions = [
+      { type: 'addRules', rules: [{ toolName: 'Bash', ruleContent: 'git status' }], behavior: 'allow', destination: 'projectSettings' },
+    ];
+
+    const hook = fake.getCapturedOptions().hooks.PermissionRequest[0].hooks[0];
+    const decisionPromise = hook(
+      {
+        hook_event_name: 'PermissionRequest',
+        tool_name: 'Bash',
+        tool_input: { command: 'git status' },
+        permission_suggestions: suggestions,
+        session_id: 's1',
+        transcript_path: '/t',
+        cwd: '/p',
+      },
+      undefined,
+      { signal: new AbortController().signal },
+    );
+
+    await new Promise((r) => setImmediate(r));
+
+    const permCall = sendToRenderer.mock.calls.find(
+      (c) => c[0] === 'claude-output:tab-suggestions' && (c[1] as any)?.type === 'permission_request',
+    );
+    expect(permCall).toBeDefined();
+    expect((permCall![1] as any).permission_suggestions).toEqual(suggestions);
+
+    svc.respondPermission('tab-suggestions', 'allow');
+    await decisionPromise;
+
+    svc.stopAll();
   });
 
   // -------------------------------------------------------------------------
@@ -970,7 +1143,7 @@ describe('sessions service — full lifecycle', () => {
       svc.stopAll();
     });
 
-    it('start() omits hooks when no logging service is provided', () => {
+    it('start() omits audit hooks but keeps PermissionRequest when no logging service is provided', () => {
       // The default `service` fixture above is constructed without a logging dep
       const fake = installFakeQuery();
       service.start({
@@ -982,7 +1155,11 @@ describe('sessions service — full lifecycle', () => {
       });
 
       const options = fake.getCapturedOptions();
-      expect(options.hooks).toBeUndefined();
+      // PermissionRequest is always registered (not gated on logging)
+      expect(Array.isArray(options.hooks?.PermissionRequest)).toBe(true);
+      // Audit hooks should not be present without logging
+      expect(options.hooks?.PreToolUse).toBeUndefined();
+      expect(options.hooks?.PostToolUse).toBeUndefined();
     });
 
     // -----------------------------------------------------------------------
@@ -1215,6 +1392,136 @@ describe('sessions service — full lifecycle', () => {
       svc.stopAll();
     });
 
+    it('Notification hook emits inline chat message on claude-output channel', async () => {
+      const writeBatch = vi.fn();
+      const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
+      const svc = createSessionsService(
+        sendToRenderer as any,
+        { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
+        fakeLogging as any,
+      );
+      const fake = installFakeQuery();
+      svc.start({
+        tabId: 'hook-notif-inline',
+        projectPath: '/p',
+        configDir: '/c',
+        model: 'sonnet',
+        permissionMode: 'default',
+      });
+
+      const hook = fake.getCapturedOptions().hooks.Notification[0].hooks[0];
+
+      await hook(
+        {
+          hook_event_name: 'Notification',
+          message: 'MCP server disconnected',
+          title: 'Connection Lost',
+          notification_type: 'warning',
+          session_id: 's',
+          transcript_path: '/t',
+          cwd: '/p',
+        },
+        undefined,
+        { signal: new AbortController().signal },
+      );
+
+      // Should emit on claude-output:<tabId> so it appears in the chat stream
+      const outputCall = sendToRenderer.mock.calls.find(
+        (c) => c[0] === 'claude-output:hook-notif-inline' && (c[1] as any)?.subtype === 'notification',
+      );
+      expect(outputCall).toBeDefined();
+      const msg = outputCall![1] as any;
+      expect(msg.type).toBe('system');
+      expect(msg.subtype).toBe('notification');
+      expect(msg.message).toBe('MCP server disconnected');
+      expect(msg.title).toBe('Connection Lost');
+      expect(msg.notification_type).toBe('warning');
+
+      svc.stopAll();
+    });
+
+    it('Notification hook inline message uses "error" notification_type for errors', async () => {
+      const writeBatch = vi.fn();
+      const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
+      const svc = createSessionsService(
+        sendToRenderer as any,
+        { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
+        fakeLogging as any,
+      );
+      const fake = installFakeQuery();
+      svc.start({
+        tabId: 'hook-notif-inline-err',
+        projectPath: '/p',
+        configDir: '/c',
+        model: 'sonnet',
+        permissionMode: 'default',
+      });
+
+      const hook = fake.getCapturedOptions().hooks.Notification[0].hooks[0];
+
+      await hook(
+        {
+          hook_event_name: 'Notification',
+          message: 'Fatal: subprocess crashed',
+          notification_type: 'error',
+          session_id: 's',
+          transcript_path: '/t',
+          cwd: '/p',
+        },
+        undefined,
+        { signal: new AbortController().signal },
+      );
+
+      const outputCall = sendToRenderer.mock.calls.find(
+        (c) => c[0] === 'claude-output:hook-notif-inline-err' && (c[1] as any)?.subtype === 'notification',
+      );
+      expect(outputCall).toBeDefined();
+      expect((outputCall![1] as any).notification_type).toBe('error');
+
+      svc.stopAll();
+    });
+
+    it('Notification hook inline message defaults to "info" for unknown types', async () => {
+      const writeBatch = vi.fn();
+      const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
+      const svc = createSessionsService(
+        sendToRenderer as any,
+        { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
+        fakeLogging as any,
+      );
+      const fake = installFakeQuery();
+      svc.start({
+        tabId: 'hook-notif-inline-info',
+        projectPath: '/p',
+        configDir: '/c',
+        model: 'sonnet',
+        permissionMode: 'default',
+      });
+
+      const hook = fake.getCapturedOptions().hooks.Notification[0].hooks[0];
+
+      await hook(
+        {
+          hook_event_name: 'Notification',
+          message: 'Something happened',
+          notification_type: 'info',
+          session_id: 's',
+          transcript_path: '/t',
+          cwd: '/p',
+        },
+        undefined,
+        { signal: new AbortController().signal },
+      );
+
+      const outputCall = sendToRenderer.mock.calls.find(
+        (c) => c[0] === 'claude-output:hook-notif-inline-info' && (c[1] as any)?.subtype === 'notification',
+      );
+      expect(outputCall).toBeDefined();
+      expect((outputCall![1] as any).notification_type).toBe('info');
+
+      svc.stopAll();
+    });
+
     it('FileChanged hook logs the event + path', async () => {
       const writeBatch = vi.fn();
       const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
@@ -1244,6 +1551,413 @@ describe('sessions service — full lifecycle', () => {
       expect(entry.source).toBe('claude-hooks');
       expect(entry.message).toContain('change');
       expect(entry.message).toContain('/p/src/app.ts');
+
+      svc.stopAll();
+    });
+
+    // ------------------------------------------------------------------
+    // SessionStart hook
+    // ------------------------------------------------------------------
+
+    it('SessionStart hook logs session lifecycle with source', async () => {
+      const writeBatch = vi.fn();
+      const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
+      const svc = createSessionsService(
+        sendToRenderer as any,
+        { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
+        fakeLogging as any,
+      );
+      const fake = installFakeQuery();
+      svc.start({
+        tabId: 'hook-sess-start',
+        projectPath: '/p',
+        configDir: '/c',
+        model: 'sonnet',
+        permissionMode: 'default',
+      });
+
+      const hook = fake.getCapturedOptions().hooks.SessionStart[0].hooks[0];
+
+      const result = await hook(
+        {
+          hook_event_name: 'SessionStart',
+          source: 'startup',
+          model: 'claude-sonnet-4-6',
+          session_id: 's1',
+          transcript_path: '/t',
+          cwd: '/p',
+        },
+        undefined,
+        { signal: new AbortController().signal },
+      );
+
+      expect(result).toEqual({});
+      const entry = writeBatch.mock.calls[0][0][0];
+      expect(entry.level).toBe('info');
+      expect(entry.source).toBe('claude-hooks');
+      expect(entry.category).toBe('session:hook-sess-start');
+      expect(entry.message).toContain('startup');
+
+      // Should emit on claude-output for inline display
+      const outputCall = sendToRenderer.mock.calls.find(
+        (c) => c[0] === 'claude-output:hook-sess-start' && (c[1] as any)?.subtype === 'session_lifecycle',
+      );
+      expect(outputCall).toBeDefined();
+      expect((outputCall![1] as any).event).toBe('start');
+      expect((outputCall![1] as any).source).toBe('startup');
+
+      svc.stopAll();
+    });
+
+    it('SessionStart hook handles resume source', async () => {
+      const writeBatch = vi.fn();
+      const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
+      const svc = createSessionsService(
+        sendToRenderer as any,
+        { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
+        fakeLogging as any,
+      );
+      const fake = installFakeQuery();
+      svc.start({
+        tabId: 'hook-sess-resume',
+        projectPath: '/p',
+        configDir: '/c',
+        model: 'sonnet',
+        permissionMode: 'default',
+      });
+
+      const hook = fake.getCapturedOptions().hooks.SessionStart[0].hooks[0];
+
+      await hook(
+        {
+          hook_event_name: 'SessionStart',
+          source: 'resume',
+          session_id: 's1',
+          transcript_path: '/t',
+          cwd: '/p',
+        },
+        undefined,
+        { signal: new AbortController().signal },
+      );
+
+      const entry = writeBatch.mock.calls[0][0][0];
+      expect(entry.message).toContain('resume');
+
+      svc.stopAll();
+    });
+
+    // ------------------------------------------------------------------
+    // SessionEnd hook
+    // ------------------------------------------------------------------
+
+    it('SessionEnd hook logs exit reason and emits lifecycle event', async () => {
+      const writeBatch = vi.fn();
+      const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
+      const svc = createSessionsService(
+        sendToRenderer as any,
+        { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
+        fakeLogging as any,
+      );
+      const fake = installFakeQuery();
+      svc.start({
+        tabId: 'hook-sess-end',
+        projectPath: '/p',
+        configDir: '/c',
+        model: 'sonnet',
+        permissionMode: 'default',
+      });
+
+      const hook = fake.getCapturedOptions().hooks.SessionEnd[0].hooks[0];
+
+      const result = await hook(
+        {
+          hook_event_name: 'SessionEnd',
+          reason: 'prompt_input_exit',
+          session_id: 's1',
+          transcript_path: '/t',
+          cwd: '/p',
+        },
+        undefined,
+        { signal: new AbortController().signal },
+      );
+
+      expect(result).toEqual({});
+      const entry = writeBatch.mock.calls[0][0][0];
+      expect(entry.level).toBe('info');
+      expect(entry.source).toBe('claude-hooks');
+      expect(entry.message).toContain('prompt_input_exit');
+
+      const outputCall = sendToRenderer.mock.calls.find(
+        (c) => c[0] === 'claude-output:hook-sess-end' && (c[1] as any)?.subtype === 'session_lifecycle',
+      );
+      expect(outputCall).toBeDefined();
+      expect((outputCall![1] as any).event).toBe('end');
+      expect((outputCall![1] as any).reason).toBe('prompt_input_exit');
+
+      svc.stopAll();
+    });
+
+    // ------------------------------------------------------------------
+    // Stop hook
+    // ------------------------------------------------------------------
+
+    it('Stop hook logs turn completion', async () => {
+      const writeBatch = vi.fn();
+      const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
+      const svc = createSessionsService(
+        sendToRenderer as any,
+        { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
+        fakeLogging as any,
+      );
+      const fake = installFakeQuery();
+      svc.start({
+        tabId: 'hook-stop',
+        projectPath: '/p',
+        configDir: '/c',
+        model: 'sonnet',
+        permissionMode: 'default',
+      });
+
+      const hook = fake.getCapturedOptions().hooks.Stop[0].hooks[0];
+
+      const result = await hook(
+        {
+          hook_event_name: 'Stop',
+          stop_hook_active: false,
+          last_assistant_message: 'Done! I fixed the bug.',
+          session_id: 's1',
+          transcript_path: '/t',
+          cwd: '/p',
+        },
+        undefined,
+        { signal: new AbortController().signal },
+      );
+
+      expect(result).toEqual({});
+      const entry = writeBatch.mock.calls[0][0][0];
+      expect(entry.level).toBe('info');
+      expect(entry.source).toBe('claude-hooks');
+      expect(entry.message).toContain('turn complete');
+
+      const meta = JSON.parse(entry.metadata);
+      expect(meta.event).toBe('Stop');
+      expect(meta.last_assistant_message).toBe('Done! I fixed the bug.');
+
+      svc.stopAll();
+    });
+
+    // ------------------------------------------------------------------
+    // StopFailure hook
+    // ------------------------------------------------------------------
+
+    it('StopFailure hook logs error and emits inline error card', async () => {
+      const writeBatch = vi.fn();
+      const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
+      const svc = createSessionsService(
+        sendToRenderer as any,
+        { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
+        fakeLogging as any,
+      );
+      const fake = installFakeQuery();
+      svc.start({
+        tabId: 'hook-stop-fail',
+        projectPath: '/p',
+        configDir: '/c',
+        model: 'sonnet',
+        permissionMode: 'default',
+      });
+
+      const hook = fake.getCapturedOptions().hooks.StopFailure[0].hooks[0];
+
+      const result = await hook(
+        {
+          hook_event_name: 'StopFailure',
+          error: { type: 'model_error', message: 'Rate limit exceeded' },
+          error_details: 'Too many requests in the last minute',
+          last_assistant_message: 'I was about to...',
+          session_id: 's1',
+          transcript_path: '/t',
+          cwd: '/p',
+        },
+        undefined,
+        { signal: new AbortController().signal },
+      );
+
+      expect(result).toEqual({});
+      const entry = writeBatch.mock.calls[0][0][0];
+      expect(entry.level).toBe('error');
+      expect(entry.source).toBe('claude-hooks');
+
+      // Should emit inline error card
+      const outputCall = sendToRenderer.mock.calls.find(
+        (c) => c[0] === 'claude-output:hook-stop-fail' && (c[1] as any)?.subtype === 'stop_failure',
+      );
+      expect(outputCall).toBeDefined();
+      const msg = outputCall![1] as any;
+      expect(msg.type).toBe('system');
+      expect(msg.subtype).toBe('stop_failure');
+      expect(msg.error_details).toBe('Too many requests in the last minute');
+
+      svc.stopAll();
+    });
+
+    it('StopFailure hook handles string error gracefully', async () => {
+      const writeBatch = vi.fn();
+      const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
+      const svc = createSessionsService(
+        sendToRenderer as any,
+        { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
+        fakeLogging as any,
+      );
+      const fake = installFakeQuery();
+      svc.start({
+        tabId: 'hook-stop-fail-str',
+        projectPath: '/p',
+        configDir: '/c',
+        model: 'sonnet',
+        permissionMode: 'default',
+      });
+
+      const hook = fake.getCapturedOptions().hooks.StopFailure[0].hooks[0];
+
+      await hook(
+        {
+          hook_event_name: 'StopFailure',
+          error: 'something broke',
+          session_id: 's1',
+          transcript_path: '/t',
+          cwd: '/p',
+        },
+        undefined,
+        { signal: new AbortController().signal },
+      );
+
+      const entry = writeBatch.mock.calls[0][0][0];
+      expect(entry.level).toBe('error');
+      expect(entry.message).toContain('something broke');
+
+      svc.stopAll();
+    });
+
+    // ------------------------------------------------------------------
+    // PostCompact hook
+    // ------------------------------------------------------------------
+
+    it('PostCompact hook logs summary and emits inline message', async () => {
+      const writeBatch = vi.fn();
+      const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
+      const svc = createSessionsService(
+        sendToRenderer as any,
+        { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
+        fakeLogging as any,
+      );
+      const fake = installFakeQuery();
+      svc.start({
+        tabId: 'hook-postcompact',
+        projectPath: '/p',
+        configDir: '/c',
+        model: 'sonnet',
+        permissionMode: 'default',
+      });
+
+      const hook = fake.getCapturedOptions().hooks.PostCompact[0].hooks[0];
+
+      const result = await hook(
+        {
+          hook_event_name: 'PostCompact',
+          trigger: 'auto',
+          compact_summary: 'Retained: session context about bug fix in auth module',
+          session_id: 's1',
+          transcript_path: '/t',
+          cwd: '/p',
+        },
+        undefined,
+        { signal: new AbortController().signal },
+      );
+
+      expect(result).toEqual({});
+      const entry = writeBatch.mock.calls[0][0][0];
+      expect(entry.level).toBe('info');
+      expect(entry.source).toBe('claude-hooks');
+      expect(entry.message).toContain('compacted');
+
+      const meta = JSON.parse(entry.metadata);
+      expect(meta.compact_summary).toContain('auth module');
+
+      // Should emit on claude-output for inline display
+      const outputCall = sendToRenderer.mock.calls.find(
+        (c) => c[0] === 'claude-output:hook-postcompact' && (c[1] as any)?.subtype === 'post_compact',
+      );
+      expect(outputCall).toBeDefined();
+      const msg = outputCall![1] as any;
+      expect(msg.type).toBe('system');
+      expect(msg.subtype).toBe('post_compact');
+      expect(msg.trigger).toBe('auto');
+      expect(msg.compact_summary).toContain('auth module');
+
+      svc.stopAll();
+    });
+
+    // ------------------------------------------------------------------
+    // PermissionDenied hook
+    // ------------------------------------------------------------------
+
+    it('PermissionDenied hook logs denial and emits inline card', async () => {
+      const writeBatch = vi.fn();
+      const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
+      const svc = createSessionsService(
+        sendToRenderer as any,
+        { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
+        fakeLogging as any,
+      );
+      const fake = installFakeQuery();
+      svc.start({
+        tabId: 'hook-perm-denied',
+        projectPath: '/p',
+        configDir: '/c',
+        model: 'sonnet',
+        permissionMode: 'default',
+      });
+
+      const hook = fake.getCapturedOptions().hooks.PermissionDenied[0].hooks[0];
+
+      const result = await hook(
+        {
+          hook_event_name: 'PermissionDenied',
+          tool_name: 'Bash',
+          tool_input: { command: 'rm -rf /' },
+          tool_use_id: 'tu-deny-1',
+          reason: 'User denied permission',
+          session_id: 's1',
+          transcript_path: '/t',
+          cwd: '/p',
+        },
+        'tu-deny-1',
+        { signal: new AbortController().signal },
+      );
+
+      expect(result).toEqual({});
+      const entry = writeBatch.mock.calls[0][0][0];
+      expect(entry.level).toBe('warn');
+      expect(entry.source).toBe('claude-hooks');
+      expect(entry.message).toContain('Bash');
+      expect(entry.message).toContain('denied');
+
+      const meta = JSON.parse(entry.metadata);
+      expect(meta.event).toBe('PermissionDenied');
+      expect(meta.tool_name).toBe('Bash');
+      expect(meta.reason).toBe('User denied permission');
+
+      // Should emit inline denial card
+      const outputCall = sendToRenderer.mock.calls.find(
+        (c) => c[0] === 'claude-output:hook-perm-denied' && (c[1] as any)?.subtype === 'permission_denied',
+      );
+      expect(outputCall).toBeDefined();
+      const msg = outputCall![1] as any;
+      expect(msg.type).toBe('system');
+      expect(msg.subtype).toBe('permission_denied');
+      expect(msg.tool_name).toBe('Bash');
+      expect(msg.reason).toBe('User denied permission');
 
       svc.stopAll();
     });
@@ -1443,9 +2157,16 @@ describe('sessions service — full lifecycle', () => {
   });
 
   it('auto-allow only skips tools in the per-session allow-list', async () => {
+    const writeBatch = vi.fn();
+    const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
+    const svc = createSessionsService(
+      sendToRenderer as any,
+      { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
+      fakeLogging as any,
+    );
     const fake = installFakeQuery();
 
-    service.start({
+    svc.start({
       tabId: 'tab-auto-partial',
       projectPath: '/p',
       configDir: '/c',
@@ -1453,21 +2174,31 @@ describe('sessions service — full lifecycle', () => {
       permissionMode: 'default',
     });
 
-    service.setAutoAllow('tab-auto-partial', true);
-    service.addAutoAllowTool('tab-auto-partial', 'Read');
+    svc.setAutoAllow('tab-auto-partial', true);
+    svc.addAutoAllowTool('tab-auto-partial', 'Read');
 
-    const options = fake.getCapturedOptions();
+    const hook = fake.getCapturedOptions().hooks.PermissionRequest[0].hooks[0];
     // Bash is NOT in the allow-list → should emit a permission_request
-    const pending = options.canUseTool(
-      'Bash',
-      { command: 'ls' },
+    const pending = hook(
+      {
+        hook_event_name: 'PermissionRequest',
+        tool_name: 'Bash',
+        tool_input: { command: 'ls' },
+        session_id: 's1',
+        transcript_path: '/t',
+        cwd: '/p',
+      },
+      undefined,
       { signal: new AbortController().signal },
     );
 
-    expect(service.getStatus('tab-auto-partial')).toBe('waiting_permission');
+    await new Promise((r) => setImmediate(r));
+    expect(svc.getStatus('tab-auto-partial')).toBe('waiting_permission');
 
     // Clean up the pending promise so the session can shut down cleanly
-    service.respondPermission('tab-auto-partial', 'deny');
+    svc.respondPermission('tab-auto-partial', 'deny');
     await pending;
+
+    svc.stopAll();
   });
 });

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, protocol, Notification } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, protocol, Notification, shell } from 'electron';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -23,6 +23,7 @@ import { createLoggingService } from './services/logging';
 import { createProxyService } from './services/proxy';
 import { createMCPService } from './services/mcp';
 import { createSlashCommandsService } from './services/slash-commands';
+import { createUpdaterService } from './services/updater';
 import { registerIpcHandlers } from './ipc/handlers';
 
 declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string | undefined;
@@ -367,6 +368,34 @@ app.whenReady().then(() => {
       getSettings: () => proxyService.getSettings(),
       saveSettings: (data: any) => proxyService.saveSettings(data),
     },
+  });
+
+  ipcMain.handle('get_app_version', () => app.getVersion());
+
+  // --- Updater IPC (registered separately because it uses ipcMain directly) ---
+  const updaterService = createUpdaterService(app.getVersion(), {
+    downloadsPath: app.getPath('downloads'),
+    getToken: () => db.getSetting('github_token'),
+  });
+
+  ipcMain.handle('updater:check', async () => {
+    return updaterService.checkForUpdate();
+  });
+
+  ipcMain.handle('updater:download', async (_event, data: any) => {
+    const url: string = data?.url ?? data;
+    const assetName: string | undefined = data?.assetName ?? data?.asset_name;
+    return updaterService.downloadUpdate(url, (progress) => {
+      mainWindow?.webContents.send('updater:progress', progress);
+    }, assetName);
+  });
+
+  ipcMain.handle('updater:open', async (_event, data: any) => {
+    const filePath: string = data?.filePath ?? data?.file_path ?? data;
+    const errMsg = await shell.openPath(filePath);
+    if (errMsg) throw new Error(errMsg);
+    // Give the DMG a moment to mount, then quit so the user can drag-install
+    setTimeout(() => app.quit(), 1500);
   });
 });
 

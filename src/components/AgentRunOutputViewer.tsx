@@ -79,13 +79,14 @@ export function AgentRunOutputViewer({
   const unlistenRefs = useRef<(() => void)[]>([]);
   const { getCachedOutput, setCachedOutput } = useOutputCache();
 
-  // Auto-scroll logic
+  // Auto-scroll logic — uses 150px "near bottom" threshold to avoid false negatives
+  // from layout shifts, smooth-scroll animations, or content reflows during streaming.
   const isAtBottom = () => {
     const container = isFullscreen ? fullscreenScrollRef.current : scrollAreaRef.current;
     if (container) {
       const { scrollTop, scrollHeight, clientHeight } = container;
       const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
-      return distanceFromBottom < 1;
+      return distanceFromBottom < 150;
     }
     return true;
   };
@@ -441,7 +442,13 @@ export function AgentRunOutputViewer({
     const target = e.currentTarget;
     const { scrollTop, scrollHeight, clientHeight } = target;
     const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
-    setHasUserScrolled(distanceFromBottom > 50);
+    // Two-threshold hysteresis: only flag as "scrolled up" past 300px,
+    // re-enable auto-scroll within 150px. The dead zone prevents flapping.
+    if (distanceFromBottom < 150) {
+      setHasUserScrolled(false);
+    } else if (distanceFromBottom > 300) {
+      setHasUserScrolled(true);
+    }
   };
 
   // Load output on mount

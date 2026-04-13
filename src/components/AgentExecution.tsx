@@ -216,15 +216,28 @@ export const AgentExecution: React.FC<AgentExecutionProps> = ({
     };
   }, []);
 
-  // Check if user is at the very bottom of the scrollable container
+  // Check if user is near the bottom of the scrollable container.
+  // Uses a generous 150px threshold to avoid false negatives from layout shifts,
+  // smooth-scroll animations, or content reflows during streaming.
   const isAtBottom = () => {
     const container = isFullscreenModalOpen ? fullscreenScrollRef.current : scrollContainerRef.current;
     if (container) {
       const { scrollTop, scrollHeight, clientHeight } = container;
       const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
-      return distanceFromBottom < 1;
+      return distanceFromBottom < 150;
     }
     return true;
+  };
+
+  // Check if user has intentionally scrolled up (past the hysteresis dead zone)
+  const isScrolledUp = () => {
+    const container = isFullscreenModalOpen ? fullscreenScrollRef.current : scrollContainerRef.current;
+    if (container) {
+      const { scrollTop, scrollHeight, clientHeight } = container;
+      const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+      return distanceFromBottom > 300;
+    }
+    return false;
   };
 
   useEffect(() => {
@@ -698,14 +711,13 @@ export const AgentExecution: React.FC<AgentExecutionProps> = ({
               ref={scrollContainerRef}
               className="h-full overflow-y-auto p-6 space-y-8"
               onScroll={() => {
-                // Mark that user has scrolled manually
-                if (!hasUserScrolled) {
-                  setHasUserScrolled(true);
-                }
-                
-                // If user scrolls back to bottom, re-enable auto-scroll
+                // Two-threshold hysteresis: only disable auto-scroll if user scrolled up
+                // past 300px; re-enable when they return within 150px of bottom.
+                // The 150–300px dead zone prevents flapping from layout shifts.
                 if (isAtBottom()) {
                   setHasUserScrolled(false);
+                } else if (isScrolledUp()) {
+                  setHasUserScrolled(true);
                 }
               }}
             >
@@ -840,14 +852,11 @@ export const AgentExecution: React.FC<AgentExecutionProps> = ({
               ref={fullscreenScrollRef}
               className="h-full overflow-y-auto space-y-8"
               onScroll={() => {
-                // Mark that user has scrolled manually
-                if (!hasUserScrolled) {
-                  setHasUserScrolled(true);
-                }
-                
-                // If user scrolls back to bottom, re-enable auto-scroll
+                // Two-threshold hysteresis (same as main scroll container)
                 if (isAtBottom()) {
                   setHasUserScrolled(false);
+                } else if (isScrolledUp()) {
+                  setHasUserScrolled(true);
                 }
               }}
             >

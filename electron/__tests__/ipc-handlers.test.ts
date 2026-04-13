@@ -743,7 +743,7 @@ describe('ipc handlers — storage channels', () => {
       pageSize: 10,
     })) as any;
 
-    expect(result.total).toBe(3);
+    expect(result.total_rows).toBe(3);
     expect(result.rows).toHaveLength(3);
     expect(result.columns.map((c: any) => c.name)).toEqual(['id', 'name', 'value']);
   });
@@ -770,21 +770,21 @@ describe('ipc handlers — storage channels', () => {
       searchQuery: 'alpha',
     })) as any;
     // Should match both "alpha" and "alphabet"
-    expect(result.total).toBe(2);
+    expect(result.total_rows).toBe(2);
   });
 
   it('storage_read_table handles missing table name gracefully', async () => {
     const result = (await invoke(handlers, 'storage_read_table', {})) as any;
     expect(result.rows).toEqual([]);
     expect(result.columns).toEqual([]);
-    expect(result.total).toBe(0);
+    expect(result.total_rows).toBe(0);
   });
 
   it('storage_read_table returns error shape for a nonexistent table', async () => {
     const result = (await invoke(handlers, 'storage_read_table', {
       tableName: 'does_not_exist',
     })) as any;
-    expect(result.total).toBe(0);
+    expect(result.total_rows).toBe(0);
     expect(typeof result.error).toBe('string');
   });
 
@@ -797,7 +797,7 @@ describe('ipc handlers — storage channels', () => {
     const result = (await invoke(handlers, 'storage_read_table', {
       tableName: 'items',
     })) as any;
-    expect(result.total).toBe(4);
+    expect(result.total_rows).toBe(4);
   });
 
   it('storage_update_row modifies an existing row', async () => {

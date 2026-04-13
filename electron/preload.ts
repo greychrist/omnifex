@@ -140,11 +140,17 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   'get_proxy_settings',
   'save_proxy_settings',
 
+  // Updater
+  'updater:check',
+  'updater:download',
+  'updater:open',
+
   // Electron-specific
   'dialog:open',
   'dialog:save',
   'save_pasted_image',
   'shell:openExternal',
+  'get_app_version',
   'window:minimize',
   'window:maximize',
   'window:close',
@@ -183,7 +189,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       !channel.startsWith('claude-stream') &&
       !channel.startsWith('claude-subagent:') &&
       !channel.startsWith('claude-compact:') &&
-      !channel.startsWith('backend-log')
+      !channel.startsWith('backend-log') &&
+      !channel.startsWith('updater:')
     ) {
       throw new Error(`Blocked IPC event channel: ${channel}`);
     }

@@ -1,7 +1,8 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { motion } from 'framer-motion';
-import { Settings, Minus, Square, X, Bot, BarChart3, FileText, Network, Info, MoreVertical } from 'lucide-react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Settings, Bot, BarChart3, FileText, Network, Info, MoreVertical, Download, Loader2, CheckCircle, AlertCircle, RefreshCw } from 'lucide-react';
 import { TooltipProvider, TooltipSimple } from '@/components/ui/tooltip-modern';
+import { api } from '@/lib/api';
 
 interface CustomTitlebarProps {
   onSettingsClick?: () => void;
@@ -20,9 +21,20 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
   onMCPClick,
   onInfoClick
 }) => {
-  const [isHovered, setIsHovered] = useState(false);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const [appVersion, setAppVersion] = useState<string>('');
+
+  // --- Update state ---
+  type UpdateState =
+    | { status: 'idle' }
+    | { status: 'checking' }
+    | { status: 'up-to-date' }
+    | { status: 'available'; version: string; downloadUrl: string; assetName: string; releaseUrl: string }
+    | { status: 'downloading'; percent: number }
+    | { status: 'ready'; filePath: string; version: string }
+    | { status: 'error'; downloadUrl: string; assetName: string; releaseUrl: string };
+  const [updateState, setUpdateState] = useState<UpdateState>({ status: 'idle' });
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -35,100 +47,142 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const handleMinimize = async () => {
+  // Reusable check-for-update function
+  const checkForUpdate = useCallback(async () => {
+    setUpdateState({ status: 'checking' });
     try {
-      await window.electronAPI.invoke('window:minimize');
-      console.log('Window minimized successfully');
-    } catch (error) {
-      console.error('Failed to minimize window:', error);
+      const info = await api.checkForUpdate();
+      if (info?.available) {
+        setUpdateState({
+          status: 'available',
+          version: info.version,
+          downloadUrl: info.downloadUrl,
+          assetName: info.assetName,
+          releaseUrl: info.releaseUrl,
+        });
+      } else {
+        setUpdateState({ status: 'up-to-date' });
+        // Auto-dismiss "up to date" after 3 seconds
+        setTimeout(() => {
+          setUpdateState((prev) => prev.status === 'up-to-date' ? { status: 'idle' } : prev);
+        }, 3000);
+      }
+    } catch {
+      setUpdateState({ status: 'idle' });
     }
-  };
+  }, []);
 
-  const handleMaximize = async () => {
-    try {
-      await window.electronAPI.invoke('window:maximize');
-      console.log('Window maximized/unmaximized successfully');
-    } catch (error) {
-      console.error('Failed to maximize/unmaximize window:', error);
-    }
-  };
+  // Fetch app version + check for updates on mount
+  useEffect(() => {
+    api.getAppVersion().then(setAppVersion).catch(() => {});
+    checkForUpdate();
 
-  const handleClose = async () => {
-    try {
-      await window.electronAPI.invoke('window:close');
-      console.log('Window closed successfully');
-    } catch (error) {
-      console.error('Failed to close window:', error);
+    // Listen for download progress
+    const cleanup = api.onUpdateProgress((data: { percent: number }) => {
+      setUpdateState((prev) =>
+        prev.status === 'downloading' ? { ...prev, percent: data.percent } : prev,
+      );
+    });
+    return cleanup;
+  }, [checkForUpdate]);
+
+  const handleUpdateClick = async () => {
+    if (updateState.status === 'available') {
+      const { downloadUrl, assetName, releaseUrl, version } = updateState;
+      setUpdateState({ status: 'downloading', percent: 0 });
+      try {
+        const filePath = await api.downloadUpdate(downloadUrl, assetName);
+        setUpdateState({ status: 'ready', filePath, version });
+      } catch {
+        setUpdateState({ status: 'error', downloadUrl, assetName, releaseUrl });
+      }
+    } else if (updateState.status === 'ready') {
+      await api.openUpdate(updateState.filePath);
+    } else if (updateState.status === 'error') {
+      const { downloadUrl, assetName, releaseUrl } = updateState;
+      setUpdateState({ status: 'downloading', percent: 0 });
+      try {
+        const filePath = await api.downloadUpdate(downloadUrl, assetName);
+        setUpdateState({ status: 'ready', filePath, version: '' });
+      } catch {
+        setUpdateState({ status: 'error', downloadUrl, assetName, releaseUrl });
+      }
     }
   };
 
   return (
     <TooltipProvider>
-    <div 
+    <div
       className="relative z-[200] h-11 bg-background/95 backdrop-blur-sm flex items-center justify-between select-none border-b border-border/50 tauri-drag"
       data-tauri-drag-region
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
     >
-      {/* Left side - macOS Traffic Light buttons */}
-      <div className="flex items-center space-x-2 pl-5">
-        <div className="flex items-center space-x-2">
-          {/* Close button */}
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              handleClose();
-            }}
-            className="group relative w-3 h-3 rounded-full bg-red-500 hover:bg-red-600 transition-all duration-200 flex items-center justify-center tauri-no-drag"
-            title="Close"
-          >
-            {isHovered && (
-              <X size={8} className="text-red-900 opacity-60 group-hover:opacity-100" />
-            )}
-          </button>
-
-          {/* Minimize button */}
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              handleMinimize();
-            }}
-            className="group relative w-3 h-3 rounded-full bg-yellow-500 hover:bg-yellow-600 transition-all duration-200 flex items-center justify-center tauri-no-drag"
-            title="Minimize"
-          >
-            {isHovered && (
-              <Minus size={8} className="text-yellow-900 opacity-60 group-hover:opacity-100" />
-            )}
-          </button>
-
-          {/* Maximize button */}
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              handleMaximize();
-            }}
-            className="group relative w-3 h-3 rounded-full bg-green-500 hover:bg-green-600 transition-all duration-200 flex items-center justify-center tauri-no-drag"
-            title="Maximize"
-          >
-            {isHovered && (
-              <Square size={6} className="text-green-900 opacity-60 group-hover:opacity-100" />
-            )}
-          </button>
-        </div>
+      {/* Left side - version label (native traffic lights are provided by Electron frame) */}
+      <div className="flex items-center pl-20">
+        {appVersion && (
+          <span className="text-[11px] text-muted-foreground/50 font-mono select-none">
+            v{appVersion}
+          </span>
+        )}
       </div>
 
-      {/* Center - Title (hidden) */}
-      {/* <div 
-        className="absolute left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2 pointer-events-none"
-        data-tauri-drag-region
-      >
-        <span className="text-sm font-medium text-foreground/80">{title}</span>
-      </div> */}
-
-      {/* Right side - Navigation icons with improved spacing */}
+      {/* Right side - Navigation icons */}
       <div className="flex items-center pr-5 gap-3 tauri-no-drag">
         {/* Primary actions group */}
         <div className="flex items-center gap-1">
+          {/* Update button — visible during checking, when update available, downloading, ready, up-to-date, or error */}
+          <AnimatePresence>
+          {updateState.status !== 'idle' && (
+            <TooltipSimple
+              content={
+                updateState.status === 'checking' ? 'Checking for updates...' :
+                updateState.status === 'up-to-date' ? 'You\'re up to date' :
+                updateState.status === 'available' ? `v${updateState.version} available` :
+                updateState.status === 'downloading' ? 'Downloading...' :
+                updateState.status === 'ready' ? `Install v${updateState.version}` :
+                'Retry download'
+              }
+              side="bottom"
+            >
+              <motion.button
+                onClick={handleUpdateClick}
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.9 }}
+                whileTap={updateState.status !== 'checking' && updateState.status !== 'up-to-date' ? { scale: 0.97 } : undefined}
+                transition={{ duration: 0.2 }}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors tauri-no-drag ${
+                  updateState.status === 'checking'
+                    ? 'bg-muted text-muted-foreground cursor-wait'
+                    : updateState.status === 'up-to-date'
+                    ? 'bg-green-600/20 text-green-500 cursor-default'
+                    : updateState.status === 'available'
+                    ? 'bg-primary text-primary-foreground animate-pulse hover:bg-primary/90'
+                    : updateState.status === 'downloading'
+                    ? 'bg-primary/80 text-primary-foreground cursor-wait'
+                    : updateState.status === 'ready'
+                    ? 'bg-green-600 text-white hover:bg-green-700'
+                    : 'bg-destructive text-destructive-foreground hover:bg-destructive/90'
+                }`}
+              >
+                {updateState.status === 'checking' && <Loader2 size={13} className="animate-spin" />}
+                {updateState.status === 'up-to-date' && <CheckCircle size={13} />}
+                {updateState.status === 'available' && <Download size={13} />}
+                {updateState.status === 'downloading' && <Loader2 size={13} className="animate-spin" />}
+                {updateState.status === 'ready' && <CheckCircle size={13} />}
+                {updateState.status === 'error' && <AlertCircle size={13} />}
+                <span>
+                  {updateState.status === 'checking' && 'Checking...'}
+                  {updateState.status === 'up-to-date' && 'Up to Date'}
+                  {updateState.status === 'available' && 'Update Available!'}
+                  {updateState.status === 'downloading' && `${Math.round(updateState.percent)}%`}
+                  {updateState.status === 'ready' && 'Install Update'}
+                  {updateState.status === 'error' && 'Retry'}
+                </span>
+              </motion.button>
+            </TooltipSimple>
+          )}
+          </AnimatePresence>
+
           {onAgentsClick && (
             <TooltipSimple content="Agents" side="bottom">
               <motion.button
@@ -216,6 +270,18 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
                     </button>
                   )}
                   
+                  <button
+                    onClick={() => {
+                      checkForUpdate();
+                      setIsDropdownOpen(false);
+                    }}
+                    disabled={updateState.status === 'checking' || updateState.status === 'downloading'}
+                    className="w-full px-4 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground transition-colors flex items-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <RefreshCw size={14} className={updateState.status === 'checking' ? 'animate-spin' : ''} />
+                    <span>{updateState.status === 'checking' ? 'Checking...' : 'Check for Updates'}</span>
+                  </button>
+
                   {onInfoClick && (
                     <button
                       onClick={() => {

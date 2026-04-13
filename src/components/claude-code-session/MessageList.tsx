@@ -12,6 +12,7 @@ interface MessageListProps {
   isStreaming: boolean;
   onLinkDetected?: (url: string) => void;
   className?: string;
+  accountType?: string;
 }
 
 export const MessageList: React.FC<MessageListProps> = React.memo(({
@@ -19,7 +20,8 @@ export const MessageList: React.FC<MessageListProps> = React.memo(({
   projectPath,
   isStreaming,
   onLinkDetected,
-  className
+  className,
+  accountType
 }) => {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const shouldAutoScrollRef = useRef(true);
@@ -41,20 +43,26 @@ export const MessageList: React.FC<MessageListProps> = React.memo(({
     }
   }, [messages]);
 
-  // Handle scroll events to detect user scrolling
+  // Handle scroll events to detect user scrolling.
+  // Two-threshold hysteresis to prevent false "user scrolled up" detection:
+  // - Within 150px of bottom: near bottom, keep/resume auto-scrolling
+  // - Beyond 300px: user intentionally scrolled up, stop auto-scrolling
+  // - 150–300px: dead zone, no change (prevents flapping from layout shifts)
   const handleScroll = () => {
     if (!scrollContainerRef.current) return;
-    
+
     const scrollElement = scrollContainerRef.current;
-    const isAtBottom = 
-      Math.abs(scrollElement.scrollHeight - scrollElement.scrollTop - scrollElement.clientHeight) < 50;
-    
-    if (!isAtBottom) {
+    const distanceFromBottom =
+      scrollElement.scrollHeight - scrollElement.scrollTop - scrollElement.clientHeight;
+
+    if (distanceFromBottom < 150) {
+      if (userHasScrolledRef.current) {
+        shouldAutoScrollRef.current = true;
+        userHasScrolledRef.current = false;
+      }
+    } else if (distanceFromBottom > 300) {
       userHasScrolledRef.current = true;
       shouldAutoScrollRef.current = false;
-    } else if (userHasScrolledRef.current) {
-      shouldAutoScrollRef.current = true;
-      userHasScrolledRef.current = false;
     }
   };
 
@@ -124,10 +132,11 @@ export const MessageList: React.FC<MessageListProps> = React.memo(({
                 }}
               >
                 <div className="px-4 py-2">
-                  <StreamMessage 
+                  <StreamMessage
                     message={message}
                     streamMessages={messages}
                     onLinkDetected={onLinkDetected}
+                    accountType={accountType}
                   />
                 </div>
               </motion.div>

@@ -56,15 +56,27 @@ export function SessionOutputViewer({ session, onClose, className }: SessionOutp
   const unlistenRefs = useRef<(() => void)[]>([]);
   const { getCachedOutput, setCachedOutput } = useOutputCache();
 
-  // Auto-scroll logic similar to AgentExecution
+  // Auto-scroll logic — uses 150px "near bottom" threshold to avoid false negatives
+  // from layout shifts, smooth-scroll animations, or content reflows during streaming.
   const isAtBottom = () => {
     const container = isFullscreen ? fullscreenScrollRef.current : scrollAreaRef.current;
     if (container) {
       const { scrollTop, scrollHeight, clientHeight } = container;
       const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
-      return distanceFromBottom < 1;
+      return distanceFromBottom < 150;
     }
     return true;
+  };
+
+  // Check if user has intentionally scrolled up (past the hysteresis dead zone)
+  const isScrolledUp = () => {
+    const container = isFullscreen ? fullscreenScrollRef.current : scrollAreaRef.current;
+    if (container) {
+      const { scrollTop, scrollHeight, clientHeight } = container;
+      const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+      return distanceFromBottom > 300;
+    }
+    return false;
   };
 
   const scrollToBottom = () => {
@@ -478,14 +490,12 @@ export function SessionOutputViewer({ session, onClose, className }: SessionOutp
                 className="h-full overflow-y-auto p-6 space-y-3" 
                 ref={scrollAreaRef}
                 onScroll={() => {
-                  // Mark that user has scrolled manually
-                  if (!hasUserScrolled) {
-                    setHasUserScrolled(true);
-                  }
-                  
-                  // If user scrolls back to bottom, re-enable auto-scroll
+                  // Two-threshold hysteresis: only disable auto-scroll past 300px,
+                  // re-enable within 150px. Dead zone prevents flapping.
                   if (isAtBottom()) {
                     setHasUserScrolled(false);
+                  } else if (isScrolledUp()) {
+                    setHasUserScrolled(true);
                   }
                 }}
               >
@@ -612,14 +622,11 @@ export function SessionOutputViewer({ session, onClose, className }: SessionOutp
               ref={fullscreenScrollRef}
               className="h-full overflow-y-auto space-y-3"
               onScroll={() => {
-                // Mark that user has scrolled manually
-                if (!hasUserScrolled) {
-                  setHasUserScrolled(true);
-                }
-                
-                // If user scrolls back to bottom, re-enable auto-scroll
+                // Two-threshold hysteresis (same as main scroll container)
                 if (isAtBottom()) {
                   setHasUserScrolled(false);
+                } else if (isScrolledUp()) {
+                  setHasUserScrolled(true);
                 }
               }}
             >

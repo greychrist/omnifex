@@ -657,7 +657,15 @@ export const StorageTab: React.FC = () => {
           </DialogHeader>
           {newRow && tableData && (
             <div className="space-y-4">
-              {tableData.columns.map((column) => (
+              {tableData.columns
+              .filter((col) => {
+                // Skip columns with defaults (e.g. created_at/updated_at with CURRENT_TIMESTAMP)
+                if (col.dflt_value) return false;
+                // Skip integer PKs (autoincrement rowid aliases)
+                if (col.pk && col.type_name.toUpperCase().includes('INT')) return false;
+                return true;
+              })
+              .map((column) => (
                 <div key={column.name} className="space-y-2">
                   <Label htmlFor={`new-${column.name}`}>
                     {column.name}

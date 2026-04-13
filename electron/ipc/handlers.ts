@@ -304,16 +304,25 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     storage_read_table: wrapWith((p: Record<string, unknown>) => {
       if (!database) return null;
       const table = (p?.tableName ?? p?.table_name) as string;
-      if (!table) return { rows: [], columns: [], total: 0 };
       const page = (p?.page as number) || 1;
       const pageSize = (p?.pageSize as number) || 50;
+      if (!table) return { table_name: '', rows: [], columns: [], total_rows: 0, page, page_size: pageSize, total_pages: 1 };
       const offset = (page - 1) * pageSize;
       const searchQuery = p?.searchQuery as string | undefined;
 
       try {
-        // Get columns
-        const colInfo = database.raw.prepare(`PRAGMA table_info("${table}")`).all() as { name: string; type: string }[];
-        const columns = colInfo.map(c => ({ name: c.name, type: c.type }));
+        // Get columns — return full PRAGMA info so the renderer gets pk, type_name, etc.
+        const colInfo = database.raw.prepare(`PRAGMA table_info("${table}")`).all() as {
+          cid: number; name: string; type: string; notnull: number; dflt_value: string | null; pk: number;
+        }[];
+        const columns = colInfo.map(c => ({
+          cid: c.cid,
+          name: c.name,
+          type_name: c.type,
+          notnull: !!c.notnull,
+          dflt_value: c.dflt_value,
+          pk: !!c.pk,
+        }));
 
         // Build query
         let whereClause = '';
@@ -327,10 +336,12 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
         }
 
         const countRow = database.raw.prepare(`SELECT COUNT(*) as cnt FROM "${table}" ${whereClause}`).get(...params) as { cnt: number };
+        const total_rows = countRow.cnt;
+        const total_pages = Math.max(1, Math.ceil(total_rows / pageSize));
         const rows = database.raw.prepare(`SELECT * FROM "${table}" ${whereClause} LIMIT ? OFFSET ?`).all(...params, pageSize, offset);
-        return { rows, columns, total: countRow.cnt, page, pageSize };
+        return { table_name: table, rows, columns, total_rows, page, page_size: pageSize, total_pages };
       } catch (err) {
-        return { rows: [], columns: [], total: 0, error: String(err) };
+        return { table_name: table, rows: [], columns: [], total_rows: 0, page, page_size: pageSize, total_pages: 1, error: String(err) };
       }
     }),
     storage_update_row: wrapWith((p: Record<string, unknown>) => {

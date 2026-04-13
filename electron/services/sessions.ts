@@ -47,6 +47,7 @@ export interface SessionsService {
     tabId: string,
     behavior: 'allow' | 'deny',
     updatedInput?: Record<string, unknown>,
+    updatedPermissions?: PermissionDecision['updatedPermissions'],
   ): void;
   setAutoAllow(tabId: string, enabled: boolean): void;
   addAutoAllowTool(tabId: string, toolName: string): void;
@@ -92,6 +93,13 @@ interface NotificationHooks {
 interface PermissionDecision {
   behavior: 'allow' | 'deny';
   updatedInput?: Record<string, unknown>;
+  /** Permission rule updates to persist (for "Allow & Remember"). */
+  updatedPermissions?: Array<{
+    type: 'addRules';
+    rules: Array<{ toolName: string; ruleContent?: string }>;
+    behavior: 'allow';
+    destination: 'session' | 'projectSettings' | 'userSettings';
+  }>;
 }
 
 interface SessionHandle {
@@ -490,6 +498,15 @@ export function createSessionsService(
                     body: input.message ?? '',
                     is_error: isError,
                   });
+                  // Emit on the chat stream so the notification appears
+                  // inline in the session message list.
+                  sendToRenderer(`claude-output:${tabId}`, {
+                    type: 'system',
+                    subtype: 'notification',
+                    message: input.message ?? '',
+                    title: input.title,
+                    notification_type: input.notification_type ?? 'info',
+                  });
                 } catch (err) {
                   console.error('[sessions] Notification hook failed:', err);
                 }
@@ -525,7 +542,294 @@ export function createSessionsService(
             ],
           },
         ],
+
+        // ---- Session lifecycle hooks ----
+
+        SessionStart: [
+          {
+            hooks: [
+              async (input: any) => {
+                try {
+                  logging.writeBatch([
+                    {
+                      timestamp: new Date().toISOString(),
+                      level: 'info',
+                      source: 'claude-hooks',
+                      category: `session:${tabId}`,
+                      message: `▶ session ${input.source}${input.model ? ` (${input.model})` : ''}`,
+                      metadata: stringifyCapped({
+                        event: 'SessionStart',
+                        source: input.source,
+                        model: input.model,
+                        agent_type: input.agent_type,
+                      }),
+                    },
+                  ]);
+                  sendToRenderer(`claude-output:${tabId}`, {
+                    type: 'system',
+                    subtype: 'session_lifecycle',
+                    event: 'start',
+                    source: input.source,
+                    model: input.model,
+                  });
+                } catch (err) {
+                  console.error('[sessions] SessionStart hook failed:', err);
+                }
+                return {};
+              },
+            ],
+          },
+        ],
+        SessionEnd: [
+          {
+            hooks: [
+              async (input: any) => {
+                try {
+                  logging.writeBatch([
+                    {
+                      timestamp: new Date().toISOString(),
+                      level: 'info',
+                      source: 'claude-hooks',
+                      category: `session:${tabId}`,
+                      message: `■ session ended: ${input.reason}`,
+                      metadata: stringifyCapped({
+                        event: 'SessionEnd',
+                        reason: input.reason,
+                      }),
+                    },
+                  ]);
+                  sendToRenderer(`claude-output:${tabId}`, {
+                    type: 'system',
+                    subtype: 'session_lifecycle',
+                    event: 'end',
+                    reason: input.reason,
+                  });
+                } catch (err) {
+                  console.error('[sessions] SessionEnd hook failed:', err);
+                }
+                return {};
+              },
+            ],
+          },
+        ],
+
+        // ---- Turn boundary hooks ----
+
+        Stop: [
+          {
+            hooks: [
+              async (input: any) => {
+                try {
+                  logging.writeBatch([
+                    {
+                      timestamp: new Date().toISOString(),
+                      level: 'info',
+                      source: 'claude-hooks',
+                      category: `session:${tabId}`,
+                      message: `⏹ turn complete`,
+                      metadata: stringifyCapped({
+                        event: 'Stop',
+                        stop_hook_active: input.stop_hook_active,
+                        last_assistant_message: input.last_assistant_message,
+                      }),
+                    },
+                  ]);
+                } catch (err) {
+                  console.error('[sessions] Stop hook failed:', err);
+                }
+                return {};
+              },
+            ],
+          },
+        ],
+        StopFailure: [
+          {
+            hooks: [
+              async (input: any) => {
+                try {
+                  const errMsg =
+                    typeof input.error === 'string'
+                      ? input.error
+                      : input.error?.message ?? String(input.error ?? 'unknown error');
+                  logging.writeBatch([
+                    {
+                      timestamp: new Date().toISOString(),
+                      level: 'error',
+                      source: 'claude-hooks',
+                      category: `session:${tabId}`,
+                      message: `✗ turn failed: ${errMsg.slice(0, 200)}`,
+                      metadata: stringifyCapped({
+                        event: 'StopFailure',
+                        error: input.error,
+                        error_details: input.error_details,
+                      }),
+                    },
+                  ]);
+                  sendToRenderer(`claude-output:${tabId}`, {
+                    type: 'system',
+                    subtype: 'stop_failure',
+                    error: errMsg,
+                    error_details: input.error_details,
+                  });
+                } catch (err) {
+                  console.error('[sessions] StopFailure hook failed:', err);
+                }
+                return {};
+              },
+            ],
+          },
+        ],
+
+        // ---- PostCompact ----
+
+        PostCompact: [
+          {
+            hooks: [
+              async (input: any) => {
+                try {
+                  logging.writeBatch([
+                    {
+                      timestamp: new Date().toISOString(),
+                      level: 'info',
+                      source: 'claude-hooks',
+                      category: `session:${tabId}`,
+                      message: `✂ context compacted (${input.trigger})`,
+                      metadata: stringifyCapped({
+                        event: 'PostCompact',
+                        trigger: input.trigger,
+                        compact_summary: input.compact_summary,
+                      }),
+                    },
+                  ]);
+                  sendToRenderer(`claude-output:${tabId}`, {
+                    type: 'system',
+                    subtype: 'post_compact',
+                    trigger: input.trigger,
+                    compact_summary: input.compact_summary,
+                  });
+                } catch (err) {
+                  console.error('[sessions] PostCompact hook failed:', err);
+                }
+                return {};
+              },
+            ],
+          },
+        ],
+
+        // ---- Permission audit ----
+
+        PermissionDenied: [
+          {
+            hooks: [
+              async (input: any) => {
+                try {
+                  logging.writeBatch([
+                    {
+                      timestamp: new Date().toISOString(),
+                      level: 'warn',
+                      source: 'claude-hooks',
+                      category: `session:${tabId}`,
+                      message: `🚫 ${input.tool_name} denied: ${(input.reason ?? 'no reason').slice(0, 200)}`,
+                      metadata: stringifyCapped({
+                        event: 'PermissionDenied',
+                        tool_name: input.tool_name,
+                        tool_input: input.tool_input,
+                        tool_use_id: input.tool_use_id,
+                        reason: input.reason,
+                      }),
+                    },
+                  ]);
+                  sendToRenderer(`claude-output:${tabId}`, {
+                    type: 'system',
+                    subtype: 'permission_denied',
+                    tool_name: input.tool_name,
+                    reason: input.reason,
+                  });
+                } catch (err) {
+                  console.error('[sessions] PermissionDenied hook failed:', err);
+                }
+                return {};
+              },
+            ],
+          },
+        ],
+
       };
+    }
+
+    // ---- PermissionRequest: replaces canUseTool with hook-centric flow ----
+    // Always registered (not gated on logging) because permission handling is
+    // essential regardless of whether audit logging is enabled.
+
+    const permissionRequestMatcher = {
+      hooks: [
+        async (input: any) => {
+          try {
+            const toolName: string = input.tool_name ?? 'unknown';
+            const toolInput: Record<string, unknown> = input.tool_input ?? {};
+
+            // Auto-allow short-circuit
+            if (handle.autoAllowEnabled && handle.autoAllowedTools.has(toolName)) {
+              return {
+                hookSpecificOutput: {
+                  hookEventName: 'PermissionRequest',
+                  decision: { behavior: 'allow' },
+                },
+              };
+            }
+
+            // Ask the renderer for a permission decision
+            handle.status = 'waiting_permission';
+            const requestId = `perm-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+            sendToRenderer(`claude-output:${tabId}`, {
+              type: 'permission_request',
+              request_id: requestId,
+              tool_name: toolName,
+              tool_input: toolInput,
+              permission_suggestions: input.permission_suggestions,
+            });
+
+            const decision = await new Promise<PermissionDecision>((resolve) => {
+              handle.permissionResolver = resolve;
+            });
+
+            handle.status = 'running';
+            handle.permissionResolver = null;
+
+            if (decision.behavior === 'allow') {
+              return {
+                hookSpecificOutput: {
+                  hookEventName: 'PermissionRequest',
+                  decision: {
+                    behavior: 'allow',
+                    ...(decision.updatedInput ? { updatedInput: decision.updatedInput } : {}),
+                    ...(decision.updatedPermissions ? { updatedPermissions: decision.updatedPermissions } : {}),
+                  },
+                },
+              };
+            }
+
+            return {
+              hookSpecificOutput: {
+                hookEventName: 'PermissionRequest',
+                decision: {
+                  behavior: 'deny',
+                  message: 'User denied permission',
+                },
+              },
+            };
+          } catch (err) {
+            console.error('[sessions] PermissionRequest hook failed:', err);
+            return {};
+          }
+        },
+      ],
+    };
+
+    if (options.hooks) {
+      (options.hooks as any).PermissionRequest = [permissionRequestMatcher];
+    } else {
+      options.hooks = { PermissionRequest: [permissionRequestMatcher] } as any;
     }
 
     // Use system-installed claude binary (account is scoped via CLAUDE_CONFIG_DIR)
@@ -538,7 +842,7 @@ export function createSessionsService(
       options.resume = resumeSessionId;
     }
 
-    // Create handle first so the canUseTool callback can reference it
+    // Create handle first so the PermissionRequest hook callback can reference it
     const handle: SessionHandle = {
       query: null as any, // set below
       inputChannel,
@@ -548,52 +852,6 @@ export function createSessionsService(
       autoAllowEnabled: false,
       autoAllowedTools: new Set(),
       projectPath,
-    };
-
-    // Permission callback: called by the SDK before each tool execution
-    options.canUseTool = async (
-      toolName: string,
-      input: Record<string, unknown>,
-      opts: { signal: AbortSignal; title?: string; description?: string; displayName?: string },
-    ) => {
-      // Auto-allow if enabled and tool is in the allow-list
-      if (handle.autoAllowEnabled && handle.autoAllowedTools.has(toolName)) {
-        return { behavior: 'allow' as const, updatedInput: input };
-      }
-
-      // Ask the renderer for a permission decision by sending a permission_request
-      // message through the normal stream channel (same as all other messages)
-      handle.status = 'waiting_permission';
-      const requestId = `perm-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-      sendToRenderer(`claude-output:${tabId}`, {
-        type: 'permission_request',
-        request_id: requestId,
-        tool_name: toolName,
-        tool_input: input,
-        title: opts.title,
-        description: opts.description,
-        displayName: opts.displayName,
-      });
-
-      const decision = await new Promise<PermissionDecision>((resolve) => {
-        handle.permissionResolver = resolve;
-      });
-
-      handle.status = 'running';
-      handle.permissionResolver = null;
-
-      if (decision.behavior === 'allow') {
-        return {
-          behavior: 'allow' as const,
-          // Fall back to the original input if the UI didn't modify it
-          updatedInput: decision.updatedInput ?? input,
-        };
-      }
-
-      return {
-        behavior: 'deny' as const,
-        message: 'User denied permission',
-      };
     };
 
     // Start the SDK query with the async input channel
@@ -658,11 +916,12 @@ export function createSessionsService(
     tabId: string,
     behavior: 'allow' | 'deny',
     updatedInput?: Record<string, unknown>,
+    updatedPermissions?: PermissionDecision['updatedPermissions'],
   ): void {
     const handle = sessions.get(tabId);
     if (!handle || !handle.permissionResolver) return;
 
-    handle.permissionResolver({ behavior, updatedInput });
+    handle.permissionResolver({ behavior, updatedInput, updatedPermissions });
   }
 
   // -------------------------------------------------------------------------
