@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, protocol, Notification, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, protocol, Notification, shell } from 'electron';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -72,7 +72,9 @@ function createWindow(): void {
     );
   }
 
-  mainWindow.webContents.openDevTools();
+  if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
+    mainWindow.webContents.openDevTools();
+  }
   mainWindow.show();
 
   mainWindow.on('focus', () => {
@@ -112,8 +114,6 @@ app.whenReady().then(() => {
       return new Response('Not found', { status: 404 });
     }
   });
-
-  createWindow();
 
   // Clean up pasted images older than 1 hour
   try {
@@ -397,6 +397,10 @@ app.whenReady().then(() => {
     // Give the DMG a moment to mount, then quit so the user can drag-install
     setTimeout(() => app.quit(), 1500);
   });
+
+  // Create the window AFTER all IPC handlers are registered so the renderer
+  // cannot fire calls before the main process is ready to handle them.
+  createWindow();
 });
 
 app.on('before-quit', () => {
