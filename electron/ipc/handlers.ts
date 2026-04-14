@@ -54,6 +54,7 @@ export interface Services {
     respondPermission(sessionId: string, behavior: string, updatedInput?: Record<string, unknown>, updatedPermissions?: unknown[]): unknown;
     stop(sessionId: string): unknown;
     getInfo(sessionId: string): unknown;
+    getHealth(sessionId: string): { alive: boolean; status: string; sessionId: string | null };
     // Wave 2 — Query-method passthroughs
     interrupt(sessionId: string): unknown;
     setModel(sessionId: string, model?: string): unknown;
@@ -217,6 +218,7 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     session_respond_permission: wrapWith((p: Record<string, unknown>) => sessions?.respondPermission((p?.tabId ?? p?.session_id) as string, p?.behavior as string, p?.updatedInput as Record<string, unknown> | undefined, p?.updatedPermissions as any) ?? null),
     session_stop: wrapWith((p: Record<string, unknown>) => sessions?.stop((p?.tabId ?? p?.session_id) as string) ?? null),
     session_get_info: wrapWith((p: Record<string, unknown>) => sessions?.getInfo((p?.tabId ?? p?.session_id) as string) ?? null),
+    session_get_health: wrapWith((p: Record<string, unknown>) => sessions?.getHealth((p?.tabId ?? p?.session_id) as string) ?? { alive: false, status: 'stopped', sessionId: null }),
     // Wave 2 — Query-method passthroughs
     session_interrupt: wrapWith((p: Record<string, unknown>) => sessions?.interrupt((p?.tabId ?? p?.session_id) as string) ?? null),
     session_set_model: wrapWith((p: Record<string, unknown>) => sessions?.setModel((p?.tabId ?? p?.session_id) as string, p?.model as string | undefined) ?? null),

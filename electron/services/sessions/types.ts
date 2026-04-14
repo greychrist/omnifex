@@ -68,6 +68,7 @@ export interface SessionsService {
   getSessionId(tabId: string): string | null;
   getStatus(tabId: string): SessionStatus;
   getInfo(tabId: string): { sessionId: string | null; status: SessionStatus } | null;
+  getHealth(tabId: string): { alive: boolean; status: SessionStatus; sessionId: string | null };
   isActive(tabId: string): boolean;
 
   // --- Wave 2: Query-method passthroughs ----------------------------------

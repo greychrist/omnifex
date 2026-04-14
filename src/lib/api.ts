@@ -1243,6 +1243,10 @@ export const api = {
     return apiCall("session_get_info", { tabId });
   },
 
+  async sessionGetHealth(tabId: string): Promise<{ alive: boolean; status: string; sessionId: string | null }> {
+    return apiCall("session_get_health", { tabId });
+  },
+
   // ─── Wave 2: Query-method passthroughs ──────────────────────────
 
   /** Interrupt the current assistant turn without ending the session. */

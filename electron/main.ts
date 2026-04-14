@@ -290,6 +290,7 @@ app.whenReady().then(() => {
         sessionsService.respondPermission(sessionId, behavior as 'allow' | 'deny', updatedInput, updatedPermissions),
       stop: (sessionId: string) => sessionsService.stop(sessionId),
       getInfo: (sessionId: string) => sessionsService.getInfo(sessionId),
+      getHealth: (sessionId: string) => sessionsService.getHealth(sessionId),
       // Wave 2 — Query-method passthroughs
       interrupt: (sessionId: string) => sessionsService.interrupt(sessionId),
       setModel: (sessionId: string, model?: string) => sessionsService.setModel(sessionId, model),
