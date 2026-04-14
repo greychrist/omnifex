@@ -19,7 +19,12 @@ const config: ForgeConfig = {
     executableName: 'greychrist',
     appBundleId: 'com.greychrist.app',
     icon: './icons/icon',
-    extraResource: ['./assets'],
+    extraResource: [
+      './assets',
+      // Also placed at Contents/Resources/ top-level so macOS NSSound
+      // soundNamed: can resolve it for native Notification sound playback.
+      './assets/greychrist_success.aiff',
+    ],
     asar: {
       unpack: '**/better-sqlite3/**/*.node',
     },

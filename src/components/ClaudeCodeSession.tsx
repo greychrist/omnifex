@@ -25,9 +25,10 @@ import { StreamMessage } from "./StreamMessage";
 import {
   FloatingPromptInput,
   type FloatingPromptInputRef,
-  type ThinkingMode,
+  type EffortLevel,
+  type ThinkingConfig,
   PERMISSION_MODES,
-  THINKING_MODES,
+  EFFORT_LEVELS,
 } from "./FloatingPromptInput";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { TimelineNavigator } from "./TimelineNavigator";
@@ -101,10 +102,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [timedOutMessageIndex, setTimedOutMessageIndex] = useState<number | null>(null);
   const [currentActivity, setCurrentActivity] = useState<string>("Honking");
-  const [thinkingSeconds, setThinkingSeconds] = useState<number>(0);
-  const [liveThinking, setLiveThinking] = useState<string>("");
   const lastPromptRef = useRef<{ prompt: string; model: string } | null>(null);
-  const thinkingStartRef = useRef<number | null>(null);
   const RESPONSE_TIMEOUT_MS = 60_000;
   const INACTIVITY_TIMEOUT_MS = 15_000;
   const lastMessageTimeRef = useRef<number>(Date.now());
@@ -160,11 +158,12 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   // Default is acceptEdits per user preference — safer than bypass,
   // smoother than ask-every-time.
   const [permissionMode, setPermissionMode] = useState<string>("acceptEdits");
-  // Thinking mode — uses the 5-option set from FloatingPromptInput
-  // (auto/think/think_hard/think_harder/ultrathink). Selected pre-session,
-  // threaded into FloatingPromptInput via defaultThinkingMode so the
-  // choice actually takes effect on the first prompt.
-  const [selectedThinking, setSelectedThinking] = useState<ThinkingMode>("auto");
+  // Effort level — maps to the SDK's reasoning_effort parameter.
+  const [effort, setEffort] = useState<EffortLevel>('auto');
+  // Thinking config — controls extended thinking behavior.
+  const [thinkingConfig, setThinkingConfig] = useState<ThinkingConfig>('adaptive');
+  // Git branch for the project directory, shown in SessionHeader badge.
+  const [gitBranch, setGitBranch] = useState<string | null>(null);
 
   // Resolve account explanation for SessionHeader
   useEffect(() => {
@@ -174,6 +173,13 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           setAccountResolution(result);
         }
       }).catch(console.error);
+    }
+  }, [projectPath]);
+
+  // Fetch git branch for the project directory (displayed in SessionHeader).
+  useEffect(() => {
+    if (projectPath) {
+      api.getGitBranch(projectPath).then(setGitBranch).catch(() => setGitBranch(null));
     }
   }, [projectPath]);
 
@@ -495,19 +501,9 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
         const content = Array.isArray(message.message.content) ? message.message.content : [];
         for (const block of content) {
           if (block?.type === 'thinking') {
-            if (thinkingStartRef.current === null) {
-              thinkingStartRef.current = Date.now();
-            }
-            if (block.thinking) {
-              setLiveThinking(block.thinking);
-            }
             setCurrentActivity(pickGerund());
             break;
           } else if (block?.type === 'tool_use' && block.name) {
-            if (thinkingStartRef.current !== null) {
-              setThinkingSeconds(Math.floor((Date.now() - thinkingStartRef.current) / 1000));
-              thinkingStartRef.current = null;
-            }
             // Build a descriptive label based on tool + input
             const name = block.name;
             const input = block.input || {};
@@ -525,10 +521,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             setCurrentActivity(label);
             break;
           } else if (block?.type === 'text') {
-            if (thinkingStartRef.current !== null) {
-              setThinkingSeconds(Math.floor((Date.now() - thinkingStartRef.current) / 1000));
-              thinkingStartRef.current = null;
-            }
             setCurrentActivity(pickGerund());
             break;
           }
@@ -803,7 +795,13 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
         console.error('[startPersistentSession] resolve error:', e);
       }
     }
-    await api.startSession(tid, projectPath, selectedModel, mode, resumeId, configDir);
+    const sdkEffort = effort === 'auto' ? undefined : effort;
+    const sdkThinking = thinkingConfig === 'adaptive'
+      ? { type: 'adaptive' as const }
+      : thinkingConfig === 'disabled'
+      ? { type: 'disabled' as const }
+      : { type: 'enabled' as const, budgetTokens: 10000 };
+    await api.startSession(tid, projectPath, selectedModel, mode, resumeId, configDir, sdkEffort, sdkThinking);
     persistentSessionRef.current = true;
 
     // Fetch session details immediately (don't wait for first prompt).
@@ -885,9 +883,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       setError(null);
       setTimedOutMessageIndex(null);
       setCurrentActivity(pickGerund());
-      setThinkingSeconds(0);
-      setLiveThinking("");
-      thinkingStartRef.current = null;
       lastPromptRef.current = { prompt, model };
 
       const tid = tabIdRef.current;
@@ -1326,15 +1321,10 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                 <span className="text-primary">✶</span>
                 <span className="text-muted-foreground">{currentActivity}...</span>
                 <span className="text-muted-foreground/60">
-                  ({elapsedSeconds}s · ↓ {totalTokens.toLocaleString()} tokens{thinkingSeconds > 0 ? ` · thought for ${thinkingSeconds}s` : ''})
+                  ({elapsedSeconds}s · ↓ {totalTokens.toLocaleString()} tokens)
                 </span>
               </div>
             </div>
-            {liveThinking && (
-              <div className="px-3 py-2 text-xs text-muted-foreground italic whitespace-pre-wrap border-l-2 border-muted-foreground/20 max-h-48 overflow-y-auto">
-                {liveThinking}
-              </div>
-            )}
           </div>
         </motion.div>
       )}
@@ -1433,6 +1423,10 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             model={selectedModel}
             sdkAccount={sdkAccountInfo}
             contextUsage={contextUsage}
+            effortLevel={effort}
+            thinkingConfig={thinkingConfig}
+            permissionMode={permissionMode}
+            gitBranch={gitBranch ?? undefined}
             className="mb-2"
           />
         )}
@@ -1494,31 +1488,30 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                 </div>
               </div>
 
-              {/* Thinking mode — full 5-option set shared with the
-                  FloatingPromptInput picker. Pre-session pick threads
-                  through via defaultThinkingMode so the first prompt
-                  actually uses the chosen depth. */}
+              {/* Effort level — maps to the SDK's reasoning_effort parameter.
+                  Pre-session pick threads through to startSession so the
+                  first prompt uses the chosen effort level. */}
               <div className="space-y-1">
-                <Label className="text-xs text-foreground/60">Thinking</Label>
+                <Label className="text-xs text-foreground/60">Effort</Label>
                 <div className="grid grid-cols-5 gap-1">
-                  {THINKING_MODES.map((mode) => (
+                  {EFFORT_LEVELS.map((level) => (
                     <Button
-                      key={mode.id}
+                      key={level.id}
                       size="sm"
-                      variant={selectedThinking === mode.id ? "default" : "outline"}
-                      onClick={() => setSelectedThinking(mode.id)}
+                      variant={effort === level.id ? "default" : "outline"}
+                      onClick={() => setEffort(level.id)}
                       className="flex-col gap-0.5 h-auto py-2 px-1"
-                      title={mode.description}
+                      title={level.description}
                     >
-                      <span className={cn("flex items-center", mode.color)}>
-                        {mode.icon}
+                      <span className={cn("text-xs font-bold", level.color)}>
+                        {level.shortName}
                       </span>
-                      <span className="text-[9px] leading-tight">{mode.name}</span>
+                      <span className="text-[9px] leading-tight">{level.name}</span>
                     </Button>
                   ))}
                 </div>
                 <p className="text-[10px] text-foreground/40">
-                  {THINKING_MODES.find((m) => m.id === selectedThinking)?.description}
+                  {EFFORT_LEVELS.find((e) => e.id === effort)?.description}
                 </p>
               </div>
 
@@ -1818,6 +1811,8 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
               setWaitingForPermission(false);
               setPendingToolUse(null);
               setPendingRequestId(null);
+              // Reset inactivity timer — tool execution after permission may take time
+              lastMessageTimeRef.current = Date.now();
             }}
             onDeny={() => {
               if (!pendingRequestId) return;
@@ -1825,6 +1820,8 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
               setWaitingForPermission(false);
               setPendingToolUse(null);
               setPendingRequestId(null);
+              // Reset inactivity timer
+              lastMessageTimeRef.current = Date.now();
             }}
           />
 
@@ -1840,7 +1837,31 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
               disabled={!projectPath}
               projectPath={projectPath}
               defaultModel={selectedModel}
-              defaultThinkingMode={selectedThinking}
+              effort={effort}
+              onEffortChange={(level) => {
+                setEffort(level);
+                if (persistentSessionRef.current) {
+                  const tid = tabIdRef.current;
+                  api.sessionSetEffort(tid, level === 'auto' ? null : level).catch((err) => {
+                    console.error('[sessions] sessionSetEffort failed:', err);
+                  });
+                }
+              }}
+              thinkingConfig={thinkingConfig}
+              onThinkingConfigChange={(config) => {
+                setThinkingConfig(config);
+                if (persistentSessionRef.current) {
+                  const tid = tabIdRef.current;
+                  const sdkConfig = config === 'adaptive'
+                    ? { type: 'adaptive' as const }
+                    : config === 'disabled'
+                    ? { type: 'disabled' as const }
+                    : { type: 'enabled' as const, budgetTokens: 10000 };
+                  api.sessionSetThinking(tid, sdkConfig).catch((err) => {
+                    console.error('[sessions] sessionSetThinking failed:', err);
+                  });
+                }
+              }}
               supportedModels={supportedModels}
               onLiveModelChange={(newModel) => {
                 // Wave 2.5 — clicking a model in the bottom picker updates

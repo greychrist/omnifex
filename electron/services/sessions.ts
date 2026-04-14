@@ -38,6 +38,10 @@ export interface SessionStartParams {
   model: string;
   permissionMode: string;
   resumeSessionId?: string;
+  effort?: 'low' | 'medium' | 'high' | 'max';
+  thinking?: { type: 'adaptive'; display?: 'summarized' | 'omitted' }
+    | { type: 'enabled'; budgetTokens?: number; display?: 'summarized' | 'omitted' }
+    | { type: 'disabled' };
 }
 
 export interface SessionsService {
@@ -66,6 +70,10 @@ export interface SessionsService {
   setModel(tabId: string, model?: string): Promise<void>;
   /** Switch the permission mode mid-session. */
   setPermissionMode(tabId: string, mode: PermissionMode): Promise<void>;
+  /** Change effort level mid-session. null = auto (clear setting). */
+  setEffort(tabId: string, level: 'low' | 'medium' | 'high' | 'max' | null): Promise<void>;
+  /** Change thinking mode mid-session. */
+  setThinking(tabId: string, config: SessionStartParams['thinking']): Promise<void>;
   /** Get the SDK-reported authenticated account for an active tab. Null if the tab isn't running. */
   getAccountInfo(tabId: string): Promise<AccountInfo | null>;
   /** Get the current context-window usage breakdown. Null if the tab isn't running. */
@@ -122,6 +130,8 @@ interface SessionHandle {
   autoAllowedTools: Set<string>;
   projectPath: string;
   configDir: string;
+  /** Saved SDK options so we can restart the query after a stream error. */
+  sdkOptions: Record<string, unknown>;
 }
 
 // ---------------------------------------------------------------------------
@@ -195,6 +205,8 @@ export function createSessionsService(
         }
       }
     } catch (err) {
+      // Stream error — keep the session alive so the user can retry.
+      // The next sendMessage() will restart the SDK query transparently.
       handle.status = 'error';
       const errMsg = err instanceof Error ? err.message : String(err);
       sendToRenderer(`claude-error:${tabId}`, errMsg);
@@ -203,13 +215,41 @@ export function createSessionsService(
         subtype: 'notification',
         notification_type: 'error',
         title: 'Session Error',
-        message: `Session ended unexpectedly: ${errMsg.slice(0, 200)}. Send a new message to restart.`,
+        message: `Error: ${errMsg.slice(0, 200)}`,
       });
-    } finally {
-      handle.status = 'stopped';
+      // Stop the loading indicator but keep the session in the map
       sendToRenderer(`claude-complete:${tabId}`);
-      sessions.delete(tabId);
+      return;
     }
+    // Normal stream close — clean up
+    handle.status = 'stopped';
+    sendToRenderer(`claude-complete:${tabId}`);
+    sessions.delete(tabId);
+  }
+
+  // -------------------------------------------------------------------------
+  // Internal: restart a dead query (after stream error) so the session resumes
+  // -------------------------------------------------------------------------
+
+  function restartQuery(tabId: string, handle: SessionHandle): void {
+    const newInputChannel = createAsyncChannel<SDKUserMessage>();
+    const opts = { ...handle.sdkOptions };
+    if (handle.sessionId) {
+      opts.resume = handle.sessionId;
+    }
+
+    const q = query({
+      prompt: newInputChannel,
+      options: opts as any,
+    });
+
+    handle.inputChannel = newInputChannel;
+    handle.query = q;
+    handle.status = 'starting';
+
+    listenToMessages(tabId, handle).catch((err) => {
+      console.error(`[sessions] Unhandled error in listenToMessages for tab ${tabId}:`, err);
+    });
   }
 
   // -------------------------------------------------------------------------
@@ -224,6 +264,8 @@ export function createSessionsService(
       model,
       permissionMode,
       resumeSessionId,
+      effort,
+      thinking,
     } = params;
 
     // Close any existing session for this tab
@@ -259,15 +301,24 @@ export function createSessionsService(
       onElicitation: async () => ({ action: 'accept' as const }),
     };
 
+    if (effort) {
+      options.effort = effort;
+    }
+    if (thinking) {
+      options.thinking = thinking;
+    }
+
     // Route CLI subprocess stderr into the logging service. Note the CLI routes its
     // own `--debug` output to ~/.claude-personal/debug/<sessionId>.txt (not stderr),
     // so this callback only catches unexpected stderr (crashes, fatal errors).
     if (logging) {
       options.stderr = (data: string) => {
+        // Detect error-like patterns in stderr and log at appropriate level
+        const isError = /^error[:\s]|Error in hook callback|stream closed|FATAL|panic/i.test(data);
         logging.writeBatch([
           {
             timestamp: new Date().toISOString(),
-            level: 'debug',
+            level: isError ? 'error' : 'debug',
             source: 'claude-sdk',
             category: `session:${tabId}`,
             message: data,
@@ -1054,6 +1105,18 @@ export function createSessionsService(
         if (handle.permissionQueue.length === 1) {
           handle.status = 'waiting_permission';
           sendToRenderer(`claude-output:${tabId}`, payload);
+
+          // Notify the user that a permission decision is needed
+          const projectName = path.basename(handle.projectPath) || 'GreyChrist';
+          const title = `GreyChrist — ${projectName}`;
+          const body = `Permission requested: ${toolName}`;
+          sendToRenderer('claude-notification', { tab_id: tabId, title, body, is_error: false });
+          try {
+            notificationHooks.showNotification?.(title, body, false);
+            notificationHooks.incrementUnread?.();
+          } catch (e) {
+            console.error('[sessions] permission notification hook failed:', e);
+          }
         }
         // Otherwise it waits — sendNextPermission will show it when the current one resolves
       });
@@ -1132,6 +1195,7 @@ export function createSessionsService(
       autoAllowedTools: new Set(),
       projectPath,
       configDir: configDir || path.join(os.homedir(), '.claude'),
+      sdkOptions: options,
     };
 
     // Start the SDK query with the async input channel
@@ -1157,6 +1221,11 @@ export function createSessionsService(
     const handle = sessions.get(tabId);
     if (!handle) return;
 
+    // If the previous stream errored, restart the SDK query transparently
+    if (handle.status === 'error') {
+      restartQuery(tabId, handle);
+    }
+
     const message: SDKUserMessage = {
       type: 'user',
       message: {
@@ -1175,6 +1244,11 @@ export function createSessionsService(
   ): void {
     const handle = sessions.get(tabId);
     if (!handle) return;
+
+    // If the previous stream errored, restart the SDK query transparently
+    if (handle.status === 'error') {
+      restartQuery(tabId, handle);
+    }
 
     const message: SDKUserMessage = {
       type: 'user',
@@ -1208,7 +1282,20 @@ export function createSessionsService(
     // Show the next queued request, if any
     if (handle.permissionQueue.length > 0) {
       const next = handle.permissionQueue[0];
-      sendToRenderer(`claude-output:${tabId}`, (next as any).payload);
+      const nextPayload = (next as any).payload;
+      sendToRenderer(`claude-output:${tabId}`, nextPayload);
+
+      // Notify the user about the next permission in the queue
+      const projectName = path.basename(handle.projectPath) || 'GreyChrist';
+      const title = `GreyChrist — ${projectName}`;
+      const body = `Permission requested: ${nextPayload.tool_name}`;
+      sendToRenderer('claude-notification', { tab_id: tabId, title, body, is_error: false });
+      try {
+        notificationHooks.showNotification?.(title, body, false);
+        notificationHooks.incrementUnread?.();
+      } catch (e) {
+        console.error('[sessions] permission notification hook failed:', e);
+      }
     } else {
       handle.status = 'running';
     }
@@ -1310,6 +1397,32 @@ export function createSessionsService(
     }
   }
 
+  async function setEffort(tabId: string, level: 'low' | 'medium' | 'high' | 'max' | null): Promise<void> {
+    const handle = sessions.get(tabId);
+    if (!handle) return;
+    try {
+      await handle.query.applyFlagSettings({ effortLevel: level ?? undefined } as any);
+    } catch (err) {
+      console.error(`[sessions] setEffort failed for tab ${tabId}:`, err);
+    }
+  }
+
+  async function setThinking(tabId: string, config: SessionStartParams['thinking']): Promise<void> {
+    const handle = sessions.get(tabId);
+    if (!handle) return;
+    try {
+      if (!config || config.type === 'disabled') {
+        await handle.query.setMaxThinkingTokens(0);
+      } else if (config.type === 'adaptive') {
+        await handle.query.setMaxThinkingTokens(null);
+      } else if (config.type === 'enabled') {
+        await handle.query.setMaxThinkingTokens(config.budgetTokens ?? null);
+      }
+    } catch (err) {
+      console.error(`[sessions] setThinking failed for tab ${tabId}:`, err);
+    }
+  }
+
   async function getAccountInfo(tabId: string): Promise<AccountInfo | null> {
     const handle = sessions.get(tabId);
     if (!handle) return null;
@@ -1404,6 +1517,8 @@ export function createSessionsService(
     interrupt,
     setModel,
     setPermissionMode,
+    setEffort,
+    setThinking,
     getAccountInfo,
     getContextUsage,
     getSupportedCommands,

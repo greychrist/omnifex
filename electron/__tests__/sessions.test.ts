@@ -70,6 +70,8 @@ function installFakeQuery(): FakeQueryHandle {
     supportedAgents: vi.fn().mockResolvedValue([
       { name: 'Explore', description: 'Explore codebases' },
     ]),
+    setMaxThinkingTokens: vi.fn().mockResolvedValue(undefined),
+    applyFlagSettings: vi.fn().mockResolvedValue(undefined),
   };
 
   mockedQuery.mockImplementation((args: any) => {
@@ -279,6 +281,40 @@ describe('sessions service — full lifecycle', () => {
     expect(options.resume).toBe('old-session-id');
   });
 
+  it('passes effort and thinking options to the SDK query when provided', () => {
+    const fake = installFakeQuery();
+    service.start({
+      tabId: 'tab-effort',
+      projectPath: '/p',
+      configDir: '/c',
+      model: 'sonnet',
+      permissionMode: 'default',
+      effort: 'high',
+      thinking: { type: 'adaptive' },
+    });
+
+    const options = fake.getCapturedOptions();
+    expect(options.effort).toBe('high');
+    expect(options.thinking).toEqual({ type: 'adaptive' });
+    service.stopAll();
+  });
+
+  it('omits effort and thinking from SDK query when not provided (auto behavior)', () => {
+    const fake = installFakeQuery();
+    service.start({
+      tabId: 'tab-auto',
+      projectPath: '/p',
+      configDir: '/c',
+      model: 'sonnet',
+      permissionMode: 'default',
+    });
+
+    const options = fake.getCapturedOptions();
+    expect(options.effort).toBeUndefined();
+    expect(options.thinking).toBeUndefined();
+    service.stopAll();
+  });
+
   it('tracks session state: isActive + getInfo + getStatus after start()', () => {
     installFakeQuery();
 
@@ -413,7 +449,7 @@ describe('sessions service — full lifecycle', () => {
     expect(service.isActive('tab-hook-err')).toBe(false);
   });
 
-  it('sends claude-error + cleans up when the stream throws', async () => {
+  it('keeps the session alive when the stream throws (does not delete)', async () => {
     const channel = createAsyncChannel<unknown>();
     const fakeQuery: any = {
       async *[Symbol.asyncIterator]() {
@@ -433,14 +469,100 @@ describe('sessions service — full lifecycle', () => {
 
     await flush(4);
 
+    // Error is sent to renderer
     expect(sendToRenderer).toHaveBeenCalledWith(
       'claude-error:tab-throw',
       'stream blew up',
     );
+    // An inline error notification is sent
+    expect(sendToRenderer).toHaveBeenCalledWith(
+      'claude-output:tab-throw',
+      expect.objectContaining({
+        type: 'system',
+        subtype: 'notification',
+        notification_type: 'error',
+      }),
+    );
+    // Loading indicator is stopped
     expect(sendToRenderer).toHaveBeenCalledWith('claude-complete:tab-throw');
-    expect(service.isActive('tab-throw')).toBe(false);
+    // Session stays alive in error state — NOT deleted
+    expect(service.isActive('tab-throw')).toBe(true);
+    expect(service.getStatus('tab-throw')).toBe('error');
     // Keep the channel referenced so TS doesn't complain about the unused var
     channel.close();
+  });
+
+  it('recovers from stream error when user sends a new message', async () => {
+    // First query: throw immediately
+    let callCount = 0;
+    const errorChannel = createAsyncChannel<unknown>();
+    const errorQuery: any = {
+      async *[Symbol.asyncIterator]() {
+        throw new Error('Stream closed');
+      },
+      close: vi.fn(),
+    };
+
+    // Second query: works normally
+    const recoveryChannel = createAsyncChannel<unknown>();
+    const recoveryQuery: any = {
+      [Symbol.asyncIterator]: () => recoveryChannel[Symbol.asyncIterator](),
+      close: vi.fn(),
+      interrupt: vi.fn().mockResolvedValue(undefined),
+      setPermissionMode: vi.fn().mockResolvedValue(undefined),
+      setModel: vi.fn().mockResolvedValue(undefined),
+      accountInfo: vi.fn().mockResolvedValue({ email: 'test@example.com', apiProvider: 'firstParty' }),
+      getContextUsage: vi.fn().mockResolvedValue(null),
+      supportedCommands: vi.fn().mockResolvedValue([]),
+      supportedModels: vi.fn().mockResolvedValue([]),
+      supportedAgents: vi.fn().mockResolvedValue([]),
+      setMaxThinkingTokens: vi.fn().mockResolvedValue(undefined),
+      applyFlagSettings: vi.fn().mockResolvedValue(undefined),
+    };
+
+    mockedQuery.mockImplementation((args: any) => {
+      callCount++;
+      if (callCount === 1) return errorQuery;
+      return recoveryQuery;
+    });
+
+    service.start({
+      tabId: 'tab-recover',
+      projectPath: '/project',
+      configDir: '/config',
+      model: 'sonnet',
+      permissionMode: 'default',
+    });
+
+    await flush(4);
+
+    // Session is in error state but still tracked
+    expect(service.getStatus('tab-recover')).toBe('error');
+    expect(service.isActive('tab-recover')).toBe(true);
+
+    // User sends a new message — should trigger query restart
+    service.sendMessage('tab-recover', 'try again');
+    await flush(4);
+
+    // SDK query() should have been called a second time (the restart)
+    expect(callCount).toBe(2);
+    expect(mockedQuery).toHaveBeenCalledTimes(2);
+
+    // Push a message through the recovery stream to confirm the loop is alive
+    recoveryChannel.push({ type: 'assistant', message: { role: 'assistant', content: 'recovered' } });
+    await flush();
+
+    // The new listenToMessages loop sets status to 'running' on first message
+    expect(service.getStatus('tab-recover')).toBe('running');
+    expect(sendToRenderer).toHaveBeenCalledWith(
+      'claude-output:tab-recover',
+      expect.objectContaining({ type: 'assistant' }),
+    );
+
+    // Clean up
+    recoveryChannel.close();
+    errorChannel.close();
+    await flush();
   });
 
   it('closes out the session when the stream ends cleanly', async () => {
@@ -626,6 +748,42 @@ describe('sessions service — full lifecycle', () => {
     svc.stopAll();
   });
 
+  it('canUseTool fires native notification + incrementUnread when permission request is shown', async () => {
+    const writeBatch = vi.fn();
+    const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
+    const svc = createSessionsService(
+      sendToRenderer as any,
+      { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
+      fakeLogging as any,
+    );
+    const fake = installFakeQuery();
+
+    svc.start({ tabId: 'tab-perm-notif', projectPath: '/tmp/my-project', configDir: '/c', model: 'sonnet', permissionMode: 'default' });
+
+    const canUseTool = fake.getCapturedOptions().canUseTool;
+    const decisionPromise = canUseTool('Bash', { command: 'rm -rf /' }, {
+      signal: new AbortController().signal,
+      toolUseID: 'tu-notif',
+      title: 'Run rm -rf /',
+      displayName: 'Bash',
+    });
+
+    await new Promise((r) => setImmediate(r));
+
+    // Should fire native notification for the permission request
+    expect(showNotification).toHaveBeenCalledWith(
+      expect.stringContaining('my-project'),
+      expect.stringContaining('Bash'),
+      false,
+    );
+    expect(incrementUnread).toHaveBeenCalled();
+
+    // Clean up — resolve the permission so the promise settles
+    svc.respondPermission('tab-perm-notif', 'deny');
+    await decisionPromise;
+    svc.stopAll();
+  });
+
   it('canUseTool resolves to allow without updatedInput when none provided', async () => {
     const writeBatch = vi.fn();
     const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
@@ -795,6 +953,44 @@ describe('sessions service — full lifecycle', () => {
     });
     expect(typeof batch[0].level).toBe('string');
     expect(typeof batch[0].timestamp).toBe('string');
+
+    svc.stopAll();
+  });
+
+  it('start() logs error-like stderr at error level, not debug', () => {
+    const writeBatch = vi.fn();
+    const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
+    const svc = createSessionsService(
+      sendToRenderer as any,
+      {
+        showNotification: showNotification as any,
+        incrementUnread: incrementUnread as any,
+      },
+      fakeLogging as any,
+    );
+    const fake = installFakeQuery();
+
+    svc.start({
+      tabId: 'tab-stderr-err',
+      projectPath: '/p',
+      configDir: '/c',
+      model: 'sonnet',
+      permissionMode: 'default',
+    });
+
+    const options = fake.getCapturedOptions();
+
+    // Normal debug output → debug level
+    options.stderr('claude: booting\n');
+    expect(writeBatch.mock.calls[0][0][0].level).toBe('debug');
+
+    // Error in hook callback → error level
+    options.stderr('Error in hook callback hook_9: Stream closed');
+    expect(writeBatch.mock.calls[1][0][0].level).toBe('error');
+
+    // Generic error line → error level
+    options.stderr('error: something broke');
+    expect(writeBatch.mock.calls[2][0][0].level).toBe('error');
 
     svc.stopAll();
   });
@@ -2067,6 +2263,86 @@ describe('sessions service — full lifecycle', () => {
 
       await service.setPermissionMode('unknown', 'plan'); // no-op
       expect(fake.query.setPermissionMode).toHaveBeenCalledTimes(1);
+    });
+
+    it('setEffort calls applyFlagSettings with effortLevel', async () => {
+      const fake = installFakeQuery();
+      service.start({
+        tabId: 'tab-set-effort',
+        projectPath: '/p',
+        configDir: '/c',
+        model: 'sonnet',
+        permissionMode: 'default',
+      });
+
+      await service.setEffort('tab-set-effort', 'max');
+      expect(fake.query.applyFlagSettings).toHaveBeenCalledWith({ effortLevel: 'max' });
+
+      service.stopAll();
+    });
+
+    it('setEffort with null clears effortLevel', async () => {
+      const fake = installFakeQuery();
+      service.start({
+        tabId: 'tab-clear-effort',
+        projectPath: '/p',
+        configDir: '/c',
+        model: 'sonnet',
+        permissionMode: 'default',
+      });
+
+      await service.setEffort('tab-clear-effort', null);
+      expect(fake.query.applyFlagSettings).toHaveBeenCalledWith({ effortLevel: undefined });
+
+      service.stopAll();
+    });
+
+    it('setThinking("disabled") calls setMaxThinkingTokens(0)', async () => {
+      const fake = installFakeQuery();
+      service.start({
+        tabId: 'tab-think-off',
+        projectPath: '/p',
+        configDir: '/c',
+        model: 'sonnet',
+        permissionMode: 'default',
+      });
+
+      await service.setThinking('tab-think-off', { type: 'disabled' });
+      expect(fake.query.setMaxThinkingTokens).toHaveBeenCalledWith(0);
+
+      service.stopAll();
+    });
+
+    it('setThinking("adaptive") calls setMaxThinkingTokens(null)', async () => {
+      const fake = installFakeQuery();
+      service.start({
+        tabId: 'tab-think-adapt',
+        projectPath: '/p',
+        configDir: '/c',
+        model: 'sonnet',
+        permissionMode: 'default',
+      });
+
+      await service.setThinking('tab-think-adapt', { type: 'adaptive' });
+      expect(fake.query.setMaxThinkingTokens).toHaveBeenCalledWith(null);
+
+      service.stopAll();
+    });
+
+    it('setThinking("enabled", budget) calls setMaxThinkingTokens(budget)', async () => {
+      const fake = installFakeQuery();
+      service.start({
+        tabId: 'tab-think-budget',
+        projectPath: '/p',
+        configDir: '/c',
+        model: 'sonnet',
+        permissionMode: 'default',
+      });
+
+      await service.setThinking('tab-think-budget', { type: 'enabled', budgetTokens: 10000 });
+      expect(fake.query.setMaxThinkingTokens).toHaveBeenCalledWith(10000);
+
+      service.stopAll();
     });
 
     it('getAccountInfo() returns the SDK-reported account for an active tab and null for unknown', async () => {

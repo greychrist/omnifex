@@ -4,6 +4,7 @@ import {
   Copy,
   Info,
   Database,
+  GitBranch,
   ShieldCheck,
   ShieldAlert,
 } from "lucide-react";
@@ -54,6 +55,10 @@ interface SessionHeaderProps {
    * just the assistant-reported message-token count.
    */
   contextUsage?: SessionContextUsage | null;
+  effortLevel?: string;
+  thinkingConfig?: string;
+  permissionMode?: string;
+  gitBranch?: string;
 
   className?: string;
 }
@@ -70,6 +75,10 @@ export function SessionHeader({
   model,
   sdkAccount,
   contextUsage,
+  effortLevel,
+  thinkingConfig,
+  permissionMode,
+  gitBranch,
   className,
 }: SessionHeaderProps) {
   // Local open state for the two Popovers so they're click-driven and
@@ -268,6 +277,28 @@ export function SessionHeader({
           </div>
         }
       />
+
+      {permissionMode && (
+        <span className="px-1.5 py-0.5 rounded text-[10px] font-mono uppercase tracking-wide bg-foreground/5 text-foreground/50">
+          {permissionMode === 'default' ? 'ask' : permissionMode === 'acceptEdits' ? 'auto-edit' : permissionMode === 'plan' ? 'plan' : permissionMode === 'bypassPermissions' ? 'yolo' : permissionMode}
+        </span>
+      )}
+      {effortLevel && effortLevel !== 'auto' && (
+        <span className="px-1.5 py-0.5 rounded text-[10px] font-mono uppercase tracking-wide bg-foreground/5 text-foreground/50">
+          effort: {effortLevel}
+        </span>
+      )}
+      {thinkingConfig && thinkingConfig !== 'adaptive' && (
+        <span className="px-1.5 py-0.5 rounded text-[10px] font-mono uppercase tracking-wide bg-foreground/5 text-foreground/50">
+          thinking: {thinkingConfig === 'disabled' ? 'off' : thinkingConfig}
+        </span>
+      )}
+      {gitBranch && (
+        <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-foreground/5 text-foreground/50 flex items-center gap-1">
+          <GitBranch className="w-3 h-3" />
+          {gitBranch}
+        </span>
+      )}
 
       <div className="ml-auto flex items-center gap-3">
         {(() => {

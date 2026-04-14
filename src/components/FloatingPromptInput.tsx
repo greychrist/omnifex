@@ -5,13 +5,8 @@ import {
   Maximize2,
   Minimize2,
   ChevronUp,
-  Sparkles,
   Zap,
   Square,
-  Brain,
-  Lightbulb,
-  Cpu,
-  Rocket,
   Shield,
   ShieldOff,
   FilePen,
@@ -27,6 +22,29 @@ import { SlashCommandPicker } from "./SlashCommandPicker";
 import { ImagePreview } from "./ImagePreview";
 import { type FileEntry, type SlashCommand, type SessionModelInfo } from "@/lib/api";
 
+/**
+ * Effort level — maps to the SDK's reasoning_effort parameter.
+ */
+export type EffortLevel = 'auto' | 'low' | 'medium' | 'high' | 'max';
+
+export const EFFORT_LEVELS: { id: EffortLevel; name: string; description: string; shortName: string; color: string }[] = [
+  { id: 'auto', name: 'Auto', description: 'Let the model decide (default)', shortName: 'A', color: 'text-muted-foreground' },
+  { id: 'low', name: 'Low', description: 'Minimal thinking, fastest responses', shortName: 'Lo', color: 'text-green-500' },
+  { id: 'medium', name: 'Medium', description: 'Moderate thinking', shortName: 'Med', color: 'text-yellow-500' },
+  { id: 'high', name: 'High', description: 'Deep reasoning', shortName: 'Hi', color: 'text-orange-500' },
+  { id: 'max', name: 'Max', description: 'Maximum effort (Opus only)', shortName: 'Max', color: 'text-red-500' },
+];
+
+/**
+ * Thinking config — controls extended thinking behavior.
+ */
+export type ThinkingConfig = 'adaptive' | 'budget' | 'disabled';
+
+export const THINKING_CONFIGS: { id: ThinkingConfig; name: string; description: string; shortName: string }[] = [
+  { id: 'adaptive', name: 'Adaptive', description: 'Claude decides when and how much to think', shortName: 'On' },
+  { id: 'budget', name: 'Budget', description: 'Fixed thinking token budget', shortName: 'Budg' },
+  { id: 'disabled', name: 'Off', description: 'No extended thinking', shortName: 'Off' },
+];
 
 interface FloatingPromptInputProps {
   /**
@@ -87,114 +105,19 @@ interface FloatingPromptInputProps {
    * The existing onSend-with-model path still works when this is absent.
    */
   onLiveModelChange?: (model: string) => void;
-  /**
-   * Default thinking mode to seed the picker with. If the parent's
-   * pre-session settings panel picks a thinking mode, threading it through
-   * this prop carries the user's choice into the session instead of the
-   * picker resetting to "auto".
-   */
-  defaultThinkingMode?: ThinkingMode;
+  /** Current effort level. Controlled by parent. */
+  effort?: EffortLevel;
+  /** Callback when effort level changes. */
+  onEffortChange?: (level: EffortLevel) => void;
+  /** Current thinking config. Controlled by parent. */
+  thinkingConfig?: ThinkingConfig;
+  /** Callback when thinking config changes. */
+  onThinkingConfigChange?: (config: ThinkingConfig) => void;
 }
 
 export interface FloatingPromptInputRef {
   addImage: (imagePath: string) => void;
 }
-
-/**
- * Thinking mode type definition
- */
-export type ThinkingMode = "auto" | "think" | "think_hard" | "think_harder" | "ultrathink";
-
-/**
- * Thinking mode configuration
- */
-export type ThinkingModeConfig = {
-  id: ThinkingMode;
-  name: string;
-  description: string;
-  level: number; // 0-4 for visual indicator
-  phrase?: string; // The phrase to append
-  icon: React.ReactNode;
-  color: string;
-  shortName: string;
-};
-
-export const THINKING_MODES: ThinkingModeConfig[] = [
-  {
-    id: "auto",
-    name: "Auto",
-    description: "Let Claude decide",
-    level: 0,
-    icon: <Sparkles className="h-3.5 w-3.5" />,
-    color: "text-muted-foreground",
-    shortName: "A"
-  },
-  {
-    id: "think",
-    name: "Think",
-    description: "Basic reasoning",
-    level: 1,
-    phrase: "think",
-    icon: <Lightbulb className="h-3.5 w-3.5" />,
-    color: "text-primary",
-    shortName: "T"
-  },
-  {
-    id: "think_hard",
-    name: "Think Hard",
-    description: "Deeper analysis",
-    level: 2,
-    phrase: "think hard",
-    icon: <Brain className="h-3.5 w-3.5" />,
-    color: "text-primary",
-    shortName: "T+"
-  },
-  {
-    id: "think_harder",
-    name: "Think Harder",
-    description: "Extensive reasoning",
-    level: 3,
-    phrase: "think harder",
-    icon: <Cpu className="h-3.5 w-3.5" />,
-    color: "text-primary",
-    shortName: "T++"
-  },
-  {
-    id: "ultrathink",
-    name: "Ultrathink",
-    description: "Maximum computation",
-    level: 4,
-    phrase: "ultrathink",
-    icon: <Rocket className="h-3.5 w-3.5" />,
-    color: "text-primary",
-    shortName: "Ultra"
-  }
-];
-
-/**
- * ThinkingModeIndicator component - Shows visual indicator bars for thinking level
- */
-const ThinkingModeIndicator: React.FC<{ level: number; color?: string }> = ({ level, color: _color }) => {
-  const getBarColor = (barIndex: number) => {
-    if (barIndex > level) return "bg-muted";
-    return "bg-primary";
-  };
-  
-  return (
-    <div className="flex items-center gap-0.5">
-      {[1, 2, 3, 4].map((i) => (
-        <div
-          key={i}
-          className={cn(
-            "w-1 h-3 rounded-full transition-all duration-200",
-            getBarColor(i),
-            i <= level && "shadow-sm"
-          )}
-        />
-      ))}
-    </div>
-  );
-};
 
 type Model = {
   id: string;
@@ -326,7 +249,10 @@ const FloatingPromptInputInner = (
     onPermissionModeChange,
     supportedModels,
     onLiveModelChange,
-    defaultThinkingMode = "auto",
+    effort = 'auto',
+    onEffortChange,
+    // thinkingConfig and onThinkingConfigChange are exposed as props but
+    // not yet wired to a picker — the parent manages them directly.
   }: FloatingPromptInputProps,
   ref: React.Ref<FloatingPromptInputRef>,
 ) => {
@@ -337,15 +263,9 @@ const FloatingPromptInputInner = (
   useEffect(() => {
     setSelectedModel(defaultModel);
   }, [defaultModel]);
-  const [selectedThinkingMode, setSelectedThinkingMode] = useState<ThinkingMode>(defaultThinkingMode);
-
-  // Sync thinking mode when the parent's defaultThinkingMode changes
-  useEffect(() => {
-    setSelectedThinkingMode(defaultThinkingMode);
-  }, [defaultThinkingMode]);
   const [isExpanded, setIsExpanded] = useState(false);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
-  const [thinkingModePickerOpen, setThinkingModePickerOpen] = useState(false);
+  const [effortPickerOpen, setEffortPickerOpen] = useState(false);
   const [showFilePicker, setShowFilePicker] = useState(false);
   const [filePickerQuery, setFilePickerQuery] = useState("");
   const [showSlashCommandPicker, setShowSlashCommandPicker] = useState(false);
@@ -787,13 +707,7 @@ const FloatingPromptInputInner = (
     }
 
     if ((prompt.trim() || pastedImages.length > 0) && !disabled) {
-      let finalPrompt = prompt.trim();
-
-      // Append thinking phrase if not auto mode
-      const thinkingMode = THINKING_MODES.find(m => m.id === selectedThinkingMode);
-      if (thinkingMode && thinkingMode.phrase) {
-        finalPrompt = `${finalPrompt}.\n\n${thinkingMode.phrase}.`;
-      }
+      const finalPrompt = prompt.trim();
 
       onSend(finalPrompt, selectedModel, pastedImages.length > 0 ? pastedImages : undefined);
       setPrompt("");
@@ -1067,64 +981,56 @@ const FloatingPromptInputInner = (
                   </div>
 
                   <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground">Thinking:</span>
+                    <span className="text-xs text-muted-foreground">Effort:</span>
                     <Popover
                       trigger={
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <Button
                               variant="outline"
-                                size="sm"
-                                onClick={() => setThinkingModePickerOpen(!thinkingModePickerOpen)}
-                                className="gap-2"
-                              >
-                                <span className={THINKING_MODES.find(m => m.id === selectedThinkingMode)?.color}>
-                                  {THINKING_MODES.find(m => m.id === selectedThinkingMode)?.icon}
-                                </span>
-                                <ThinkingModeIndicator 
-                                  level={THINKING_MODES.find(m => m.id === selectedThinkingMode)?.level || 0} 
-                                />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              <p className="font-medium">{THINKING_MODES.find(m => m.id === selectedThinkingMode)?.name || "Auto"}</p>
-                              <p className="text-xs text-muted-foreground">{THINKING_MODES.find(m => m.id === selectedThinkingMode)?.description}</p>
-                            </TooltipContent>
-                          </Tooltip>
+                              size="sm"
+                              onClick={() => setEffortPickerOpen(!effortPickerOpen)}
+                              className="gap-1"
+                            >
+                              <span className={cn("text-xs font-semibold", EFFORT_LEVELS.find(e => e.id === effort)?.color)}>
+                                {EFFORT_LEVELS.find(e => e.id === effort)?.shortName}
+                              </span>
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p className="font-medium">Effort: {EFFORT_LEVELS.find(e => e.id === effort)?.name}</p>
+                            <p className="text-xs text-muted-foreground">{EFFORT_LEVELS.find(e => e.id === effort)?.description}</p>
+                          </TooltipContent>
+                        </Tooltip>
                       }
                       content={
                         <div className="w-[280px] p-1">
-                          {THINKING_MODES.map((mode) => (
+                          {EFFORT_LEVELS.map((level) => (
                             <button
-                              key={mode.id}
+                              key={level.id}
                               onClick={() => {
-                                setSelectedThinkingMode(mode.id);
-                                setThinkingModePickerOpen(false);
+                                onEffortChange?.(level.id);
+                                setEffortPickerOpen(false);
                               }}
                               className={cn(
                                 "w-full flex items-start gap-3 p-3 rounded-md transition-colors text-left",
                                 "hover:bg-accent",
-                                selectedThinkingMode === mode.id && "bg-accent"
+                                effort === level.id && "bg-accent"
                               )}
                             >
-                              <span className={cn("mt-0.5", mode.color)}>
-                                {mode.icon}
+                              <span className={cn("text-sm font-bold mt-0.5", level.color)}>
+                                {level.shortName}
                               </span>
                               <div className="flex-1 space-y-1">
-                                <div className="font-medium text-sm">
-                                  {mode.name}
-                                </div>
-                                <div className="text-xs text-muted-foreground">
-                                  {mode.description}
-                                </div>
+                                <div className="font-medium text-sm">{level.name}</div>
+                                <div className="text-xs text-muted-foreground">{level.description}</div>
                               </div>
-                              <ThinkingModeIndicator level={mode.level} />
                             </button>
                           ))}
                         </div>
                       }
-                      open={thinkingModePickerOpen}
-                      onOpenChange={setThinkingModePickerOpen}
+                      open={effortPickerOpen}
+                      onOpenChange={setEffortPickerOpen}
                       align="start"
                       side="top"
                     />
@@ -1262,66 +1168,58 @@ const FloatingPromptInputInner = (
                       <TooltipTrigger asChild>
                         <motion.div
                           whileTap={{ scale: 0.97 }}
-                            transition={{ duration: 0.15 }}
+                          transition={{ duration: 0.15 }}
+                        >
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={disabled}
+                            className="h-9 px-2 hover:bg-accent/50 gap-1"
                           >
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              disabled={disabled}
-                              className="h-9 px-2 hover:bg-accent/50 gap-1"
-                            >
-                              <span className={THINKING_MODES.find(m => m.id === selectedThinkingMode)?.color}>
-                                {THINKING_MODES.find(m => m.id === selectedThinkingMode)?.icon}
-                              </span>
-                              <span className="text-[10px] font-semibold opacity-70">
-                                {THINKING_MODES.find(m => m.id === selectedThinkingMode)?.shortName}
-                              </span>
-                              <ChevronUp className="h-3 w-3 ml-0.5 opacity-50" />
-                            </Button>
-                          </motion.div>
-                        </TooltipTrigger>
-                        <TooltipContent side="top">
-                          <p className="text-xs font-medium">Thinking: {THINKING_MODES.find(m => m.id === selectedThinkingMode)?.name || "Auto"}</p>
-                          <p className="text-xs text-muted-foreground">{THINKING_MODES.find(m => m.id === selectedThinkingMode)?.description}</p>
-                        </TooltipContent>
-                      </Tooltip>
+                            <span className={cn("text-[10px] font-bold", EFFORT_LEVELS.find(e => e.id === effort)?.color)}>
+                              {EFFORT_LEVELS.find(e => e.id === effort)?.shortName}
+                            </span>
+                            <ChevronUp className="h-3 w-3 ml-0.5 opacity-50" />
+                          </Button>
+                        </motion.div>
+                      </TooltipTrigger>
+                      <TooltipContent side="top">
+                        <p className="text-xs font-medium">Effort: {EFFORT_LEVELS.find(e => e.id === effort)?.name}</p>
+                        <p className="text-xs text-muted-foreground">{EFFORT_LEVELS.find(e => e.id === effort)?.description}</p>
+                      </TooltipContent>
+                    </Tooltip>
                   }
-                content={
-                  <div className="w-[280px] p-1">
-                    {THINKING_MODES.map((mode) => (
-                      <button
-                        key={mode.id}
-                        onClick={() => {
-                          setSelectedThinkingMode(mode.id);
-                          setThinkingModePickerOpen(false);
-                        }}
-                        className={cn(
-                          "w-full flex items-start gap-3 p-3 rounded-md transition-colors text-left",
-                          "hover:bg-accent",
-                          selectedThinkingMode === mode.id && "bg-accent"
-                        )}
-                      >
-                        <span className={cn("mt-0.5", mode.color)}>
-                          {mode.icon}
-                        </span>
-                        <div className="flex-1 space-y-1">
-                          <div className="font-medium text-sm">
-                            {mode.name}
+                  content={
+                    <div className="w-[280px] p-1">
+                      {EFFORT_LEVELS.map((level) => (
+                        <button
+                          key={level.id}
+                          onClick={() => {
+                            onEffortChange?.(level.id);
+                            setEffortPickerOpen(false);
+                          }}
+                          className={cn(
+                            "w-full flex items-start gap-3 p-3 rounded-md transition-colors text-left",
+                            "hover:bg-accent",
+                            effort === level.id && "bg-accent"
+                          )}
+                        >
+                          <span className={cn("text-sm font-bold mt-0.5", level.color)}>
+                            {level.shortName}
+                          </span>
+                          <div className="flex-1 space-y-1">
+                            <div className="font-medium text-sm">{level.name}</div>
+                            <div className="text-xs text-muted-foreground">{level.description}</div>
                           </div>
-                          <div className="text-xs text-muted-foreground">
-                            {mode.description}
-                          </div>
-                        </div>
-                        <ThinkingModeIndicator level={mode.level} />
-                      </button>
-                    ))}
-                  </div>
-                }
-                open={thinkingModePickerOpen}
-                onOpenChange={setThinkingModePickerOpen}
-                align="start"
-                side="top"
-              />
+                        </button>
+                      ))}
+                    </div>
+                  }
+                  open={effortPickerOpen}
+                  onOpenChange={setEffortPickerOpen}
+                  align="start"
+                  side="top"
+                />
 
               {/* Permission Mode Picker — Popover matching the model /
                   thinking pickers above. Color-coded by risk level:

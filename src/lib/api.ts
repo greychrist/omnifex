@@ -1219,8 +1219,8 @@ export const api = {
 
   // ─── Persistent Session API ───────────────────────────────────────
 
-  async startSession(tabId: string, projectPath: string, model: string, permissionMode: string, resumeSessionId?: string, configDir?: string): Promise<void> {
-    return apiCall("session_start", { tabId, projectPath, model, permissionMode, resumeSessionId, configDir });
+  async startSession(tabId: string, projectPath: string, model: string, permissionMode: string, resumeSessionId?: string, configDir?: string, effort?: string, thinking?: Record<string, unknown>): Promise<void> {
+    return apiCall("session_start", { tabId, projectPath, model, permissionMode, resumeSessionId, configDir, effort, thinking });
   },
 
   async sendMessage(tabId: string, prompt: string): Promise<void> {
@@ -1258,6 +1258,16 @@ export const api = {
   /** Switch permission mode mid-session. */
   async sessionSetPermissionMode(tabId: string, mode: string): Promise<void> {
     return apiCall("session_set_permission_mode", { tabId, mode });
+  },
+
+  /** Change the effort level for subsequent turns in an active session. */
+  async sessionSetEffort(tabId: string, level: 'low' | 'medium' | 'high' | 'max' | null): Promise<void> {
+    return apiCall("session_set_effort", { tabId, level });
+  },
+
+  /** Change the thinking configuration for subsequent turns in an active session. */
+  async sessionSetThinking(tabId: string, config: { type: 'adaptive' } | { type: 'enabled'; budgetTokens?: number } | { type: 'disabled' } | null): Promise<void> {
+    return apiCall("session_set_thinking", { tabId, config });
   },
 
   /** Get the SDK-reported authenticated account for an active session. */
@@ -1866,6 +1876,17 @@ export const api = {
       console.error("Failed to list Claude installations:", error);
       throw error;
     }
+  },
+
+  // ── Git ──────────────────────────────────────────────────────────────────
+
+  /**
+   * Get the current git branch for a project path.
+   * @param projectPath - The project directory to check
+   * @returns Promise resolving to the branch name or null if not a git repo
+   */
+  async getGitBranch(projectPath: string): Promise<string | null> {
+    return apiCall("get_git_branch", { projectPath });
   },
 
   // Storage API methods

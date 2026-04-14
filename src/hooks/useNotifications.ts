@@ -12,7 +12,7 @@ interface NotificationPayload {
  * 1. Marks non-active tabs with hasUnreadResult for badge display
  * 2. Brings app to front when notification arrives for non-active tab
  *
- * Native OS notifications are sent from the Rust backend directly.
+ * Native OS notifications are sent from the main process directly.
  */
 export function useNotifications(
   activeTabId: string | null,

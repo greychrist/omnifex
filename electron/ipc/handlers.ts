@@ -58,6 +58,8 @@ export interface Services {
     interrupt(sessionId: string): unknown;
     setModel(sessionId: string, model?: string): unknown;
     setPermissionMode(sessionId: string, mode: string): unknown;
+    setEffort(sessionId: string, level: unknown): unknown;
+    setThinking(sessionId: string, config: unknown): unknown;
     getAccountInfo(sessionId: string): unknown;
     getContextUsage(sessionId: string): unknown;
     getSupportedCommands(sessionId: string): unknown;
@@ -219,6 +221,8 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     session_interrupt: wrapWith((p: Record<string, unknown>) => sessions?.interrupt((p?.tabId ?? p?.session_id) as string) ?? null),
     session_set_model: wrapWith((p: Record<string, unknown>) => sessions?.setModel((p?.tabId ?? p?.session_id) as string, p?.model as string | undefined) ?? null),
     session_set_permission_mode: wrapWith((p: Record<string, unknown>) => sessions?.setPermissionMode((p?.tabId ?? p?.session_id) as string, (p?.mode ?? p?.permissionMode) as string) ?? null),
+    session_set_effort: wrapWith((p: Record<string, unknown>) => sessions?.setEffort((p?.tabId ?? p?.session_id) as string, (p?.level ?? p?.effort) as any) ?? null),
+    session_set_thinking: wrapWith((p: Record<string, unknown>) => sessions?.setThinking((p?.tabId ?? p?.session_id) as string, (p?.config ?? p?.thinking) as any) ?? null),
     session_account_info: wrapWith((p: Record<string, unknown>) => sessions?.getAccountInfo((p?.tabId ?? p?.session_id) as string) ?? null),
     session_context_usage: wrapWith((p: Record<string, unknown>) => sessions?.getContextUsage((p?.tabId ?? p?.session_id) as string) ?? null),
     session_supported_commands: wrapWith((p: Record<string, unknown>) => sessions?.getSupportedCommands((p?.tabId ?? p?.session_id) as string) ?? null),
@@ -467,6 +471,16 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     save_setting: wrapWith((p: Record<string, unknown>) => {
       database?.saveSetting(p?.key as string, p?.value as string);
       return null;
+    }),
+
+    // ── Git ──────────────────────────────────────────────────────────────────
+    get_git_branch: wrapWith(async (p: Record<string, unknown>) => {
+      const projectPath = (p?.projectPath ?? p?.project_path) as string;
+      if (!projectPath) return null;
+      try {
+        const { execFileSync } = require('node:child_process') as typeof import('node:child_process');
+        return execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: projectPath, encoding: 'utf8' }).trim();
+      } catch { return null; }
     }),
 
     // ── Proxy ─────────────────────────────────────────────────────────────────

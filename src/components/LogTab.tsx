@@ -38,6 +38,12 @@ const LEVEL_COLORS: Record<string, string> = {
   debug: "text-gray-400",
 };
 
+const SOURCE_COLORS: Record<string, string> = {
+  frontend: "bg-sky-500/20 text-sky-300",
+  "claude-sdk": "bg-amber-500/20 text-amber-300",
+  "claude-hooks": "bg-emerald-500/20 text-emerald-300",
+};
+
 const LEVEL_BG: Record<string, string> = {
   error: "bg-red-500/10",
   warn: "bg-yellow-500/10",
@@ -188,7 +194,8 @@ export const LogTab: React.FC = () => {
           <SelectContent>
             <SelectItem value="all">All Sources</SelectItem>
             <SelectItem value="frontend">Frontend</SelectItem>
-            <SelectItem value="backend">Backend</SelectItem>
+            <SelectItem value="claude-sdk">Claude SDK</SelectItem>
+            <SelectItem value="claude-hooks">Claude Hooks</SelectItem>
           </SelectContent>
         </Select>
 
@@ -246,9 +253,7 @@ export const LogTab: React.FC = () => {
                       </td>
                       <td className="px-3 py-2">
                         <span className={`text-xs px-1.5 py-0.5 rounded ${
-                          entry.source === "backend"
-                            ? "bg-purple-500/20 text-purple-300"
-                            : "bg-sky-500/20 text-sky-300"
+                          SOURCE_COLORS[entry.source] || "bg-foreground/10 text-foreground/60"
                         }`}>
                           {entry.source}
                         </span>

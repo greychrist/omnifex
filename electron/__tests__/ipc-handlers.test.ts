@@ -62,6 +62,8 @@ function buildMockServices() {
       'respondPermission',
       'stop',
       'getInfo',
+      'setEffort',
+      'setThinking',
     ] as const),
     agents: mockService([
       'list',
@@ -202,6 +204,8 @@ describe('ipc handlers — structure', () => {
       'session_respond_permission',
       'session_stop',
       'session_get_info',
+      'session_set_effort',
+      'session_set_thinking',
       'session_mcp_server_status',
       'session_get_permissions',
       'session_update_permission',
@@ -237,6 +241,8 @@ describe('ipc handlers — structure', () => {
       'save_setting',
       // Proxy
       'get_proxy_settings',
+      // Git
+      'get_git_branch',
     ];
 
     for (const channel of required) {
@@ -440,6 +446,22 @@ describe('ipc handlers — dispatch to services', () => {
     await invoke(handlers, 'session_get_info', { session_id: 'b' });
     expect(services.sessions.stop).toHaveBeenCalledWith('a');
     expect(services.sessions.getInfo).toHaveBeenCalledWith('b');
+  });
+
+  it('session_set_effort accepts tabId or session_id and level or effort', async () => {
+    await invoke(handlers, 'session_set_effort', { tabId: 't1', level: 'high' });
+    await invoke(handlers, 'session_set_effort', { session_id: 's2', effort: 'low' });
+    expect(services.sessions.setEffort).toHaveBeenNthCalledWith(1, 't1', 'high');
+    expect(services.sessions.setEffort).toHaveBeenNthCalledWith(2, 's2', 'low');
+  });
+
+  it('session_set_thinking accepts tabId or session_id and config or thinking', async () => {
+    const adaptive = { type: 'adaptive' };
+    const enabled = { type: 'enabled', budgetTokens: 10000 };
+    await invoke(handlers, 'session_set_thinking', { tabId: 't1', config: adaptive });
+    await invoke(handlers, 'session_set_thinking', { session_id: 's2', thinking: enabled });
+    expect(services.sessions.setThinking).toHaveBeenNthCalledWith(1, 't1', adaptive);
+    expect(services.sessions.setThinking).toHaveBeenNthCalledWith(2, 's2', enabled);
   });
 
   // ── Session Permissions (file-based) ────────────────────────────────────
@@ -734,6 +756,30 @@ describe('ipc handlers — dispatch to services', () => {
     const params = { level: 'error', limit: 10 };
     await invoke(handlers, 'log_query', params);
     expect(services.logging.query).toHaveBeenCalledWith(params);
+  });
+
+  // ── Git Branch ──────────────────────────────────────────────────────────
+
+  it('get_git_branch returns the current branch for a git repo', async () => {
+    const result = await invoke(handlers, 'get_git_branch', { projectPath: process.cwd() }) as string | null;
+    expect(typeof result).toBe('string');
+    expect(result!.length).toBeGreaterThan(0);
+  });
+
+  it('get_git_branch accepts snake_case project_path param', async () => {
+    const result = await invoke(handlers, 'get_git_branch', { project_path: process.cwd() });
+    expect(typeof result).toBe('string');
+  });
+
+  it('get_git_branch returns null when projectPath is missing', async () => {
+    const result = await invoke(handlers, 'get_git_branch', {});
+    expect(result).toBeNull();
+  });
+
+  it('get_git_branch returns null for a non-git directory', async () => {
+    const os = await import('node:os');
+    const result = await invoke(handlers, 'get_git_branch', { projectPath: os.tmpdir() });
+    expect(result).toBeNull();
   });
 
   // ── Proxy ───────────────────────────────────────────────────────────────

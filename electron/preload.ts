@@ -48,6 +48,8 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   'session_interrupt',
   'session_set_model',
   'session_set_permission_mode',
+  'session_set_effort',
+  'session_set_thinking',
   'session_account_info',
   'session_context_usage',
   'session_supported_commands',
@@ -138,6 +140,9 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   'storage_reset_database',
   'get_setting',
   'save_setting',
+
+  // Git
+  'get_git_branch',
 
   // Proxy
   'get_proxy_settings',

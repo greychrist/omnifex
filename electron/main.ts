@@ -162,29 +162,33 @@ app.whenReady().then(() => {
       showNotification: (title, body, isError) => {
         if (!Notification.isSupported()) return;
 
-        const { execFile } = require('node:child_process') as typeof import('node:child_process');
-        const successSound = app.isPackaged
-          ? path.join(process.resourcesPath, 'assets', 'success_notification_v2.aiff')
-          : path.join(__dirname, '..', '..', 'assets', 'success_notification_v2.aiff');
+        const successSound = 'greychrist_success';
+        const focused = mainWindow?.isFocused() ?? false;
 
-        if (mainWindow?.isFocused()) {
-          // Focused: play sound only (no visual banner needed)
-          execFile('afplay', [isError ? '/System/Library/Sounds/Basso.aiff' : successSound]);
+        if (focused) {
+          // User is looking at the app — just play the sound, no notification.
+          const soundPath = isError
+            ? '/System/Library/Sounds/Basso.aiff'
+            : (app.isPackaged
+              ? path.join(process.resourcesPath, 'assets', `${successSound}.aiff`)
+              : path.join(app.getAppPath(), 'assets', `${successSound}.aiff`));
+          const { execFile } = require('node:child_process') as typeof import('node:child_process');
+          execFile('afplay', [soundPath], (err: Error | null) => {
+            if (err) console.error('[notification] afplay failed:', err.message);
+          });
         } else {
-          // Unfocused: native notification handles the sound
+          // User isn't looking — show macOS notification with sound.
+          // Packaged: .aiff is at Contents/Resources/ via extraResource.
+          // Dev: .aiff is in ~/Library/Sounds/ (installed manually).
+          // Both are in NSSound soundNamed: search paths.
           const subtitle = isError ? 'Task Failed' : 'Task Complete';
           const notif = new Notification({
             title,
             subtitle,
             body,
             silent: false,
-            sound: isError ? 'Basso' : undefined,
+            sound: isError ? 'Basso' : successSound,
           });
-          // For success, play custom sound since Notification.sound only supports system sounds
-          if (!isError) {
-            execFile('afplay', [successSound]);
-            notif.silent = true;
-          }
           notif.on('click', () => {
             if (mainWindow) {
               if (mainWindow.isMinimized()) mainWindow.restore();
@@ -291,6 +295,8 @@ app.whenReady().then(() => {
       setModel: (sessionId: string, model?: string) => sessionsService.setModel(sessionId, model),
       setPermissionMode: (sessionId: string, mode: string) =>
         sessionsService.setPermissionMode(sessionId, mode as any),
+      setEffort: (sessionId: string, level: unknown) => sessionsService.setEffort(sessionId, level as any),
+      setThinking: (sessionId: string, config: unknown) => sessionsService.setThinking(sessionId, config as any),
       getAccountInfo: (sessionId: string) => sessionsService.getAccountInfo(sessionId),
       getContextUsage: (sessionId: string) => sessionsService.getContextUsage(sessionId),
       getSupportedCommands: (sessionId: string) => sessionsService.getSupportedCommands(sessionId),

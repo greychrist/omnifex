@@ -74,24 +74,20 @@ export function PermissionDialog({
     });
   };
 
-  /** Get the display string for a suggestion: ToolName(ruleContent) */
-  const getDisplayRule = (idx: number): string => {
+  /** Get the full rule string for a suggestion: ToolName(ruleContent) or ToolName */
+  const getRuleString = (idx: number): string => {
+    if (editedContent.has(idx)) return editedContent.get(idx)!;
     const s = suggestions[idx];
     if (!s.rules || s.rules.length === 0) return '';
     const r = s.rules[0];
-    const content = editedContent.has(idx) ? editedContent.get(idx)! : (r.ruleContent ?? '');
-    return content ? `${r.toolName}(${content})` : r.toolName;
+    return r.ruleContent ? `${r.toolName}(${r.ruleContent})` : r.toolName;
   };
 
-  /** Get the editable ruleContent for a suggestion */
-  const getRuleContent = (idx: number): string => {
-    if (editedContent.has(idx)) return editedContent.get(idx)!;
-    const s = suggestions[idx];
-    return s.rules?.[0]?.ruleContent ?? '';
-  };
-
-  const getToolName = (idx: number): string => {
-    return suggestions[idx].rules?.[0]?.toolName ?? '';
+  /** Parse a rule string like "Bash(git:*)" into { toolName, ruleContent } */
+  const parseRuleString = (rule: string): { toolName: string; ruleContent?: string } => {
+    const match = rule.match(/^([A-Za-z_][A-Za-z0-9_]*)\((.+)\)$/);
+    if (match) return { toolName: match[1], ruleContent: match[2] };
+    return { toolName: rule.trim() };
   };
 
   const getDest = (idx: number): string => {
@@ -103,12 +99,11 @@ export function PermissionDialog({
   const buildEdited = (idx: number): PermissionSuggestion => {
     const original = suggestions[idx];
     const dest = getDest(idx);
-    const content = getRuleContent(idx);
-    const tName = getToolName(idx);
+    const parsed = parseRuleString(getRuleString(idx));
     return {
       ...original,
       type: 'addRules',
-      rules: [{ toolName: tName, ruleContent: content || undefined }],
+      rules: [{ toolName: parsed.toolName, ruleContent: parsed.ruleContent }],
       destination: dest,
     };
   };
@@ -166,9 +161,7 @@ export function PermissionDialog({
             {suggestions.map((suggestion, idx) => {
               const isSelected = selectedSuggestions.has(idx);
               const dest = getDest(idx);
-              const tName = getToolName(idx);
-              const content = getRuleContent(idx);
-              const displayRule = getDisplayRule(idx);
+              const ruleString = getRuleString(idx);
 
               return (
                 <div
@@ -189,17 +182,13 @@ export function PermissionDialog({
                     <div className="flex-1 min-w-0">
                       {isSelected ? (
                         <div className="space-y-1.5">
-                          <div className="flex items-center gap-1">
-                            <span className="text-xs font-mono text-muted-foreground shrink-0">{tName}(</span>
-                            <Input
-                              value={content}
-                              onChange={(e) => setEditedContent((prev) => new Map(prev).set(idx, e.target.value))}
-                              onClick={(e) => e.stopPropagation()}
-                              className="h-7 text-xs font-mono flex-1"
-                              placeholder="e.g. git:* or *"
-                            />
-                            <span className="text-xs font-mono text-muted-foreground shrink-0">)</span>
-                          </div>
+                          <Input
+                            value={ruleString}
+                            onChange={(e) => setEditedContent((prev) => new Map(prev).set(idx, e.target.value))}
+                            onClick={(e) => e.stopPropagation()}
+                            className="h-7 text-xs font-mono"
+                            placeholder="e.g. Bash(git:*) or Read"
+                          />
                           <div className="flex items-center gap-2">
                             <span className="text-[10px] text-muted-foreground">{suggestion.behavior}</span>
                             <select
@@ -216,7 +205,7 @@ export function PermissionDialog({
                         </div>
                       ) : (
                         <>
-                          <div className="text-xs font-mono truncate">{displayRule}</div>
+                          <div className="text-xs font-mono truncate">{ruleString}</div>
                           <div className="text-[10px] text-muted-foreground mt-0.5">
                             {suggestion.behavior} &middot; {formatDestination(dest)}
                           </div>
