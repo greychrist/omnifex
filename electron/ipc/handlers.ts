@@ -51,7 +51,7 @@ export interface Services {
     start(data: unknown): unknown;
     sendMessage(sessionId: string, message: unknown): unknown;
     sendStructuredMessage(sessionId: string, content: unknown): unknown;
-    respondPermission(sessionId: string, behavior: string, updatedInput?: Record<string, unknown>): unknown;
+    respondPermission(sessionId: string, behavior: string, updatedInput?: Record<string, unknown>, updatedPermissions?: unknown[]): unknown;
     stop(sessionId: string): unknown;
     getInfo(sessionId: string): unknown;
     // Wave 2 — Query-method passthroughs
@@ -63,6 +63,7 @@ export interface Services {
     getSupportedCommands(sessionId: string): unknown;
     getSupportedModels(sessionId: string): unknown;
     getSupportedAgents(sessionId: string): unknown;
+    getMcpServerStatus(sessionId: string): unknown;
   };
   agents?: {
     list(): unknown;
@@ -211,7 +212,7 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     session_start: wrapWith((p: Record<string, unknown>) => sessions?.start(p) ?? null),
     session_send_message: wrapWith((p: Record<string, unknown>) => sessions?.sendMessage((p?.tabId ?? p?.session_id) as string, (p?.prompt ?? p?.message) as string) ?? null),
     session_send_structured_message: wrapWith((p: Record<string, unknown>) => sessions?.sendStructuredMessage((p?.tabId ?? p?.session_id) as string, p?.content as Array<Record<string, unknown>>) ?? null),
-    session_respond_permission: wrapWith((p: Record<string, unknown>) => sessions?.respondPermission((p?.tabId ?? p?.session_id) as string, p?.behavior as string, p?.updatedInput as Record<string, unknown> | undefined) ?? null),
+    session_respond_permission: wrapWith((p: Record<string, unknown>) => sessions?.respondPermission((p?.tabId ?? p?.session_id) as string, p?.behavior as string, p?.updatedInput as Record<string, unknown> | undefined, p?.updatedPermissions as any) ?? null),
     session_stop: wrapWith((p: Record<string, unknown>) => sessions?.stop((p?.tabId ?? p?.session_id) as string) ?? null),
     session_get_info: wrapWith((p: Record<string, unknown>) => sessions?.getInfo((p?.tabId ?? p?.session_id) as string) ?? null),
     // Wave 2 — Query-method passthroughs
@@ -223,6 +224,89 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     session_supported_commands: wrapWith((p: Record<string, unknown>) => sessions?.getSupportedCommands((p?.tabId ?? p?.session_id) as string) ?? null),
     session_supported_models: wrapWith((p: Record<string, unknown>) => sessions?.getSupportedModels((p?.tabId ?? p?.session_id) as string) ?? null),
     session_supported_agents: wrapWith((p: Record<string, unknown>) => sessions?.getSupportedAgents((p?.tabId ?? p?.session_id) as string) ?? null),
+    session_mcp_server_status: wrapWith((p: Record<string, unknown>) => sessions?.getMcpServerStatus((p?.tabId ?? p?.session_id) as string) ?? null),
+
+    // ── Session Permissions (reads/writes settings files directly) ─────────
+    session_get_permissions: wrapWith((p: Record<string, unknown>) => {
+      const fs = require('node:fs') as typeof import('node:fs');
+      const path = require('node:path') as typeof import('node:path');
+      const os = require('node:os') as typeof import('node:os');
+      const configDir = (p?.configDir ?? p?.config_dir ?? path.join(os.homedir(), '.claude')) as string;
+      const projectPath = (p?.projectPath ?? p?.project_path ?? '') as string;
+
+      const readPerms = (filePath: string) => {
+        try {
+          const content = fs.readFileSync(filePath, 'utf-8');
+          const parsed = JSON.parse(content);
+          return parsed.permissions ?? {};
+        } catch { return {}; }
+      };
+
+      const levels: Array<{ label: string; scope: string; path: string; allow: string[]; deny: string[] }> = [];
+
+      // User level
+      const userPath = path.join(configDir, 'settings.json');
+      const userPerms = readPerms(userPath);
+      levels.push({ label: 'User Settings', scope: 'user', path: userPath, allow: userPerms.allow ?? [], deny: userPerms.deny ?? [] });
+
+      // Project level
+      if (projectPath) {
+        const projPath = path.join(projectPath, '.claude', 'settings.json');
+        const projPerms = readPerms(projPath);
+        levels.push({ label: 'Project Settings', scope: 'project', path: projPath, allow: projPerms.allow ?? [], deny: projPerms.deny ?? [] });
+      }
+
+      // Local level
+      if (projectPath) {
+        const localPath = path.join(projectPath, '.claude', 'settings.local.json');
+        const localPerms = readPerms(localPath);
+        levels.push({ label: 'Local Settings', scope: 'local', path: localPath, allow: localPerms.allow ?? [], deny: localPerms.deny ?? [] });
+      }
+
+      return levels;
+    }),
+
+    session_update_permission: wrapWith((p: Record<string, unknown>) => {
+      const fs = require('node:fs') as typeof import('node:fs');
+      const path = require('node:path') as typeof import('node:path');
+      const os = require('node:os') as typeof import('node:os');
+      const configDir = (p?.configDir ?? p?.config_dir ?? path.join(os.homedir(), '.claude')) as string;
+      const projectPath = (p?.projectPath ?? p?.project_path ?? '') as string;
+      const scope = p?.scope as string;
+      const action = p?.action as string;
+      const behavior = p?.behavior as string;
+      const rule = p?.rule as string;
+
+      let filePath: string;
+      if (scope === 'user') filePath = path.join(configDir, 'settings.json');
+      else if (scope === 'project') filePath = path.join(projectPath, '.claude', 'settings.json');
+      else filePath = path.join(projectPath, '.claude', 'settings.local.json');
+
+      // Read existing settings
+      let settings: Record<string, any> = {};
+      try { settings = JSON.parse(fs.readFileSync(filePath, 'utf-8')); } catch { /* new file */ }
+
+      if (!settings.permissions) settings.permissions = {};
+      if (!settings.permissions.allow) settings.permissions.allow = [];
+      if (!settings.permissions.deny) settings.permissions.deny = [];
+
+      const list: string[] = settings.permissions[behavior] ?? [];
+
+      if (action === 'add') {
+        if (!list.includes(rule)) list.push(rule);
+      } else if (action === 'remove') {
+        const idx = list.indexOf(rule);
+        if (idx >= 0) list.splice(idx, 1);
+      }
+
+      settings.permissions[behavior] = list;
+
+      // Write back
+      const dir = path.dirname(filePath);
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(filePath, JSON.stringify(settings, null, 2), 'utf-8');
+      return null;
+    }),
 
     // ── Agents ────────────────────────────────────────────────────────────────
     list_agents: wrap(() => agents?.list() ?? null),

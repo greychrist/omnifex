@@ -19,6 +19,7 @@ const config: ForgeConfig = {
     executableName: 'greychrist',
     appBundleId: 'com.greychrist.app',
     icon: './icons/icon',
+    extraResource: ['./assets'],
     asar: {
       unpack: '**/better-sqlite3/**/*.node',
     },

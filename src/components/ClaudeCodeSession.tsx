@@ -8,6 +8,8 @@ import {
   X,
   Hash,
   Wrench,
+  Plug,
+  Shield,
   AlertCircle,
   Send,
   ArrowLeft,
@@ -31,6 +33,9 @@ import { ErrorBoundary } from "./ErrorBoundary";
 import { TimelineNavigator } from "./TimelineNavigator";
 import { CheckpointSettings } from "./CheckpointSettings";
 import { SlashCommandsManager } from "./SlashCommandsManager";
+import { SessionMCPStatus } from "./SessionMCPStatus";
+import { PermissionDialog } from "./PermissionDialog";
+import { SessionPermissionsEditor } from "./SessionPermissionsEditor";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { TooltipProvider, TooltipSimple } from "@/components/ui/tooltip-modern";
 import { SplitPane } from "@/components/ui/split-pane";
@@ -101,6 +106,8 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   const lastPromptRef = useRef<{ prompt: string; model: string } | null>(null);
   const thinkingStartRef = useRef<number | null>(null);
   const RESPONSE_TIMEOUT_MS = 60_000;
+  const INACTIVITY_TIMEOUT_MS = 15_000;
+  const lastMessageTimeRef = useRef<number>(Date.now());
 
   // Random gerund words like Claude Code CLI
   const GERUNDS = [
@@ -130,6 +137,8 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   // picker falls back to the hardcoded MODELS array in that component.
   const [supportedModels, setSupportedModels] = useState<import('@/lib/api').SessionModelInfo[]>([]);
   const [showTimeline, setShowTimeline] = useState(false);
+  const [showMCPPanel, setShowMCPPanel] = useState(false);
+  const [showPermissionsPanel, setShowPermissionsPanel] = useState(false);
   const [timelineVersion, setTimelineVersion] = useState(0);
   const [showSettings, setShowSettings] = useState(false);
   const [showForkDialog, setShowForkDialog] = useState(false);
@@ -183,7 +192,20 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
 
   // Permission prompt state
   const [waitingForPermission, setWaitingForPermission] = useState(false);
-  const [pendingToolUse, setPendingToolUse] = useState<{ name: string; input: Record<string, any> } | null>(null);
+  const [pendingToolUse, setPendingToolUse] = useState<{
+    name: string;
+    input: Record<string, any>;
+    title?: string;
+    displayName?: string;
+    description?: string;
+    decisionReason?: string;
+    suggestions: Array<{
+      type: string;
+      rules?: Array<{ toolName: string; ruleContent?: string }>;
+      behavior?: string;
+      destination?: string;
+    }>;
+  } | null>(null);
   const [pendingRequestId, setPendingRequestId] = useState<string | null>(null);
   const [autoAllowEnabled, setAutoAllowEnabled] = useState(false);
   const [autoAllowedTools, setAutoAllowedTools] = useState<Set<string>>(new Set());
@@ -357,14 +379,36 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     }
   }, [isLoading, messages.length]);
 
-  // Auto-scroll to bottom when new messages arrive, but only if already near the bottom
+  // Inactivity detection — if loading and no stream messages for 15s, the session
+  // may be hung. Reset so the next prompt auto-restarts the session.
   useEffect(() => {
-    if (displayableMessages.length > 0 && isNearBottomRef.current) {
+    if (!isLoading) return;
+    const check = setInterval(() => {
+      const idle = Date.now() - lastMessageTimeRef.current;
+      if (idle >= INACTIVITY_TIMEOUT_MS && !waitingForPermission) {
+        setIsLoading(false);
+        persistentSessionRef.current = false;
+        setMessages((prev) => [...prev, {
+          type: 'system' as const,
+          subtype: 'notification',
+          notification_type: 'warn',
+          title: 'Session Inactive',
+          message: 'No response received. Send a message to restart the session.',
+        } as any]);
+      }
+    }, 3000);
+    return () => clearInterval(check);
+  }, [isLoading, waitingForPermission]);
+
+  // Auto-scroll to bottom when new messages arrive, but only if already near the bottom.
+  // Always scroll when waiting for permission so the user sees the latest context.
+  useEffect(() => {
+    if (displayableMessages.length > 0 && (isNearBottomRef.current || waitingForPermission)) {
       requestAnimationFrame(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
       });
     }
-  }, [displayableMessages.length]);
+  }, [displayableMessages.length, waitingForPermission]);
 
   // Calculate total tokens from messages — guard against undefined fields to avoid NaN
   useEffect(() => {
@@ -432,6 +476,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     try {
       // Don't process if component unmounted
       if (!isMountedRef.current) return;
+      lastMessageTimeRef.current = Date.now();
 
       let message: ClaudeStreamMessage;
       let rawPayload: string;
@@ -547,18 +592,19 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
         sessionMetrics.current.errorsEncountered += 1;
       }
 
-      // Detect permission request from --permission-prompt-tool stdio
+      // Detect permission request from SDK canUseTool callback
       if (message.type === 'permission_request' && message.request_id) {
-        const toolName = message.tool_name || 'Unknown';
-        const toolInput = message.tool_input || {};
-        if (autoAllowEnabled && autoAllowedTools.has(toolName)) {
-          const tid = tabIdRef.current;
-          api.respondPermission(tid, message.request_id, 'allow').catch(console.error);
-        } else {
-          setPendingToolUse({ name: toolName, input: toolInput });
-          setPendingRequestId(message.request_id);
-          setWaitingForPermission(true);
-        }
+        setPendingToolUse({
+          name: message.tool_name || 'Unknown',
+          input: message.tool_input || {},
+          title: message.title,
+          displayName: message.display_name,
+          description: message.description,
+          decisionReason: message.decision_reason,
+          suggestions: message.permission_suggestions || [],
+        });
+        setPendingRequestId(message.request_id);
+        setWaitingForPermission(true);
       }
 
       // Track cost from usage data
@@ -759,6 +805,61 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     }
     await api.startSession(tid, projectPath, selectedModel, mode, resumeId, configDir);
     persistentSessionRef.current = true;
+
+    // Fetch session details immediately (don't wait for first prompt).
+    // The SDK subprocess needs a moment to initialize, so retry a few times.
+    // Once ready, build a synthetic "System Initialized" message so the user
+    // sees session info right away.
+    const fetchInitInfo = async (retries = 8) => {
+      for (let i = 0; i < retries; i++) {
+        try {
+          const info = await api.sessionAccountInfo(tid);
+          if (info) {
+            setSdkAccountInfo(info);
+
+            // Fetch supporting data in parallel
+            const [models, mcpServers, contextUsage] = await Promise.all([
+              api.sessionSupportedModels(tid).catch(() => []),
+              api.sessionMcpServerStatus(tid).catch(() => []),
+              api.sessionContextUsage(tid).catch(() => null),
+            ]);
+            if (models?.length) setSupportedModels(models);
+            if (contextUsage) setContextUsage(contextUsage as any);
+
+            // Build tool list: standard tools + MCP tools from connected servers
+            const standardTools = [
+              'Task', 'AskUserQuestion', 'Bash', 'CronCreate', 'CronList',
+              'Edit', 'EnterPlanMode', 'EnterWorktree', 'ExitPlanMode',
+              'ExitWorktree', 'Glob', 'Grep', 'ListMcpResourcesTool', 'LSP',
+              'Monitor', 'NotebookEdit', 'NotebookRead', 'Read',
+              'ReadMcpResourceTool', 'RemoteTrigger', 'ScheduleWakeup',
+              'SendMessage', 'Skill', 'TaskOutput', 'TaskStop', 'TeamCreate',
+              'TeamDelete', 'TodoRead', 'TodoWrite', 'Toolbox',
+              'WebFetch', 'WebSearch', 'Write',
+            ];
+            const mcpToolNames = (mcpServers || [])
+              .filter((s: any) => s.status === 'connected')
+              .flatMap((s: any) => (s.tools || []).map((t: any) => `mcp__${s.name.replace(/[^a-zA-Z0-9]/g, '_')}__${t.name}`));
+            const allTools = [...standardTools, ...mcpToolNames];
+
+            setMessages((prev) => {
+              if (prev.some((m) => m.type === 'system' && m.subtype === 'init')) return prev;
+              return [{
+                type: 'system' as const,
+                subtype: 'init',
+                session_id: '',
+                model: selectedModel,
+                cwd: projectPath,
+                tools: allTools,
+              } as any, ...prev];
+            });
+            return;
+          }
+        } catch { /* subprocess not ready yet */ }
+        await new Promise((r) => setTimeout(r, 1500));
+      }
+    };
+    fetchInitInfo();
   };
 
   const handleSendPrompt = async (prompt: string, model: string, images?: string[]) => {
@@ -1304,6 +1405,20 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
               {projectPath.replace(/^\/Users\/[^/]+/, '~')}
             </span>
           )}
+          {sessionStarted && (() => {
+            const isActive = persistentSessionRef.current && (isLoading || waitingForPermission);
+            const isEnded = !persistentSessionRef.current && !isLoading;
+            const color = isActive ? 'bg-emerald-500' : isEnded ? 'bg-red-500' : 'bg-yellow-500';
+            const label = isActive ? 'Active' : isEnded ? 'Ended' : 'Idle';
+            return (
+              <TooltipSimple content={`Session: ${label}`} side="bottom">
+                <span className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                  <span className={cn("h-2 w-2 rounded-full", color)} />
+                  {label}
+                </span>
+              </TooltipSimple>
+            );
+          })()}
         </div>
         {accountResolution && (
           <SessionHeader
@@ -1465,7 +1580,10 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
 
               <Button
                 className="w-full"
-                onClick={() => setSessionStarted(true)}
+                onClick={() => {
+                  setSessionStarted(true);
+                  startPersistentSession();
+                }}
               >
                 Start Session
               </Button>
@@ -1477,7 +1595,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
         {/* Main Content Area */}
         <div className={cn(
           "flex-1 overflow-hidden transition-all duration-300",
-          showTimeline && "sm:mr-96"
+          (showTimeline || showMCPPanel || showPermissionsPanel) && "sm:mr-96"
         )}>
           {showPreview ? (
             // Split pane layout when preview is active
@@ -1681,83 +1799,38 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             </motion.div>
           )}
 
-          <Dialog
+          <PermissionDialog
             open={waitingForPermission && !!pendingToolUse && !!pendingRequestId}
-            onOpenChange={(open) => {
-              if (!open && pendingRequestId) {
-                // Dismissing the dialog = deny
-                api.respondPermission(tabIdRef.current, pendingRequestId, 'deny').catch(console.error);
-                setWaitingForPermission(false);
-                setPendingToolUse(null);
-                setPendingRequestId(null);
-              }
+            toolName={pendingToolUse?.name ?? ''}
+            toolInput={pendingToolUse?.input ?? {}}
+            title={pendingToolUse?.title}
+            displayName={pendingToolUse?.displayName}
+            description={pendingToolUse?.description}
+            decisionReason={pendingToolUse?.decisionReason}
+            suggestions={pendingToolUse?.suggestions ?? []}
+            onAllow={(selectedSuggestions) => {
+              if (!pendingRequestId) return;
+              api.respondPermission(
+                tabIdRef.current, pendingRequestId, 'allow',
+                undefined,
+                selectedSuggestions.length > 0 ? selectedSuggestions : undefined,
+              ).catch(console.error);
+              setWaitingForPermission(false);
+              setPendingToolUse(null);
+              setPendingRequestId(null);
             }}
-          >
-            <DialogContent className="sm:max-w-lg">
-              <DialogHeader>
-                <DialogTitle>Permission Required</DialogTitle>
-                <DialogDescription>
-                  Claude wants to use <span className="font-mono font-semibold text-foreground">{pendingToolUse?.name}</span>
-                </DialogDescription>
-              </DialogHeader>
-              {pendingToolUse && (
-                <div className="max-h-64 overflow-auto rounded-md border border-border bg-muted/30 p-3">
-                  <pre className="text-xs font-mono whitespace-pre-wrap break-all">
-                    {JSON.stringify(pendingToolUse.input, null, 2)}
-                  </pre>
-                </div>
-              )}
-              <DialogFooter className="flex-row justify-center gap-2 sm:justify-center sm:space-x-0">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="text-xs"
-                  onClick={() => {
-                    if (!pendingRequestId) return;
-                    api.respondPermission(tabIdRef.current, pendingRequestId, 'allow').catch(console.error);
-                    setWaitingForPermission(false);
-                    setPendingToolUse(null);
-                    setPendingRequestId(null);
-                  }}
-                >
-                  Yes
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    if (!pendingRequestId || !pendingToolUse) return;
-                    setAutoAllowedTools(prev => new Set([...prev, pendingToolUse.name]));
-                    setAutoAllowEnabled(true);
-                    api.respondPermission(tabIdRef.current, pendingRequestId, 'allow').catch(console.error);
-                    setWaitingForPermission(false);
-                    setPendingToolUse(null);
-                    setPendingRequestId(null);
-                  }}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs"
-                >
-                  Yes, and don't ask again for {pendingToolUse?.name}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="destructive"
-                  className="text-xs"
-                  onClick={() => {
-                    if (!pendingRequestId) return;
-                    api.respondPermission(tabIdRef.current, pendingRequestId, 'deny').catch(console.error);
-                    setWaitingForPermission(false);
-                    setPendingToolUse(null);
-                    setPendingRequestId(null);
-                  }}
-                >
-                  No
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+            onDeny={() => {
+              if (!pendingRequestId) return;
+              api.respondPermission(tabIdRef.current, pendingRequestId, 'deny').catch(console.error);
+              setWaitingForPermission(false);
+              setPendingToolUse(null);
+              setPendingRequestId(null);
+            }}
+          />
 
           <div className={cn(
             "fixed bottom-0 left-0 right-0 transition-all duration-300 z-50",
-            showTimeline && "sm:right-96"
+            (showTimeline || showMCPPanel || showPermissionsPanel) && "sm:right-96"
           )}>
             <FloatingPromptInput
               ref={floatingPromptRef}
@@ -1807,7 +1880,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                         <Button
                           variant="ghost"
                           size="icon"
-                          onClick={() => setShowTimeline(!showTimeline)}
+                          onClick={() => { setShowTimeline(!showTimeline); if (!showTimeline) { setShowMCPPanel(false); setShowPermissionsPanel(false); } }}
                           className="h-9 w-9 text-muted-foreground hover:text-foreground"
                         >
                           <GitBranch className={cn("h-3.5 w-3.5", showTimeline && "text-primary")} />
@@ -1859,6 +1932,36 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                       align="end"
                     />
                   )}
+                  <TooltipSimple content="MCP Servers" side="top">
+                    <motion.div
+                      whileTap={{ scale: 0.97 }}
+                      transition={{ duration: 0.15 }}
+                    >
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => { setShowMCPPanel(!showMCPPanel); if (!showMCPPanel) { setShowTimeline(false); setShowPermissionsPanel(false); } }}
+                        className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                      >
+                        <Plug className={cn("h-3.5 w-3.5", showMCPPanel && "text-primary")} />
+                      </Button>
+                    </motion.div>
+                  </TooltipSimple>
+                  <TooltipSimple content="Permissions" side="top">
+                    <motion.div
+                      whileTap={{ scale: 0.97 }}
+                      transition={{ duration: 0.15 }}
+                    >
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => { setShowPermissionsPanel(!showPermissionsPanel); if (!showPermissionsPanel) { setShowTimeline(false); setShowMCPPanel(false); } }}
+                        className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                      >
+                        <Shield className={cn("h-3.5 w-3.5", showPermissionsPanel && "text-primary")} />
+                      </Button>
+                    </motion.div>
+                  </TooltipSimple>
                   <TooltipSimple content="Checkpoint Settings" side="top">
                     <motion.div
                       whileTap={{ scale: 0.97 }}
@@ -1937,6 +2040,70 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                     onFork={handleFork}
                     onCheckpointCreated={handleCheckpointCreated}
                     refreshVersion={timelineVersion}
+                  />
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* MCP Servers Panel */}
+        <AnimatePresence>
+          {showMCPPanel && (
+            <motion.div
+              initial={{ x: "100%" }}
+              animate={{ x: 0 }}
+              exit={{ x: "100%" }}
+              transition={{ duration: 0.2, ease: "easeOut" }}
+              className="fixed right-0 top-0 h-full w-full sm:w-96 bg-background border-l border-border shadow-xl z-30 overflow-hidden"
+            >
+              <div className="h-full flex flex-col">
+                <div className="flex items-center justify-between p-4 border-b border-border">
+                  <h3 className="text-lg font-semibold">MCP Servers</h3>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setShowMCPPanel(false)}
+                    className="h-8 w-8"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+                <div className="flex-1 overflow-y-auto">
+                  <SessionMCPStatus tabId={tabIdRef.current} />
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Permissions Panel */}
+        <AnimatePresence>
+          {showPermissionsPanel && (
+            <motion.div
+              initial={{ x: "100%" }}
+              animate={{ x: 0 }}
+              exit={{ x: "100%" }}
+              transition={{ duration: 0.2, ease: "easeOut" }}
+              className="fixed right-0 top-0 h-full w-full sm:w-96 bg-background border-l border-border shadow-xl z-30 overflow-hidden"
+            >
+              <div className="h-full flex flex-col">
+                <div className="flex items-center justify-between p-4 border-b border-border">
+                  <h3 className="text-lg font-semibold">Permissions</h3>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setShowPermissionsPanel(false)}
+                    className="h-8 w-8"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+                <div className="flex-1 overflow-y-auto">
+                  <SessionPermissionsEditor
+                    tabId={tabIdRef.current}
+                    projectPath={projectPath}
+                    configDir={accountResolution?.account.config_dir || ''}
                   />
                 </div>
               </div>

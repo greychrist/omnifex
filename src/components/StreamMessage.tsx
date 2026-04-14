@@ -6,6 +6,8 @@ import {
   AlertCircle,
   CheckCircle2,
   CircleStop,
+  Copy,
+  Check,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -58,6 +60,7 @@ interface StreamMessageProps {
 const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, className, streamMessages, onLinkDetected, accountType }) => {
   // State to track tool results mapped by tool call ID
   const [toolResults, setToolResults] = useState<Map<string, any>>(new Map());
+  const [copied, setCopied] = useState(false);
   
   // Get current theme
   const { theme } = useTheme();
@@ -182,9 +185,29 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
 
       let renderedSomething = false;
 
+      const copyAssistantText = () => {
+        if (!msg.content || !Array.isArray(msg.content)) return;
+        const text = msg.content
+          .filter((c: any) => c.type === 'text')
+          .map((c: any) => typeof c.text === 'string' ? c.text : '')
+          .join('\n');
+        if (text) {
+          navigator.clipboard.writeText(text);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        }
+      };
+
       const renderedCard = (
         <div className="flex justify-start">
-        <Card className={cn("border-primary/20 bg-primary/5 w-[95%]", className)}>
+        <Card className={cn("border-primary/20 bg-primary/5 w-[95%] group/card relative", className)}>
+          <button
+            onClick={copyAssistantText}
+            className="absolute top-1 right-1 p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 opacity-0 group-hover/card:opacity-100 transition-opacity z-10"
+            title="Copy response"
+          >
+            {copied ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
+          </button>
           <CardContent className="p-4">
             <div className="flex items-start gap-3">
               <Bot className="h-5 w-5 text-primary mt-0.5" />

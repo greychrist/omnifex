@@ -23,23 +23,23 @@ All hooks receive shared `BaseHookInput` fields: `session_id`, `transcript_path`
 | 13 | **PostCompact** | ✅ | After context compaction finishes | Audit log with `compact_summary`. Inline `post_compact` card with summary. |
 | 14 | **PermissionRequest** | ✅ | Claude requests permission to execute a tool (before user sees prompt) | Replaces `canUseTool`. Emits `permission_request` to renderer with `permission_suggestions`. Awaits user decision. Returns `hookSpecificOutput` with `allow`/`deny` + `updatedPermissions` for rule persistence at session/project/account scope. |
 | 15 | **PermissionDenied** | ✅ | After a tool permission request is denied | Warn-level log. Inline `permission_denied` card with tool name and reason. |
-| 16 | **UserPromptSubmit** | ❌ | User submits a prompt (before Claude processes it) | Inject account/project context. Auto-set session titles. Log prompt submissions. Could implement prompt templates/macros. |
-| 17 | **Setup** | ❌ | Session initialization (`init`) or periodic maintenance | Inject account-aware setup context. Log init/maintenance cycles. |
+| 16 | **UserPromptSubmit** | ✅ | User submits a prompt (before Claude processes it) | Audit log (prompt length + session title). Inline `user_prompt_submit` event to renderer. |
+| 17 | **Setup** | ✅ | Session initialization (`init`) or periodic maintenance | Audit log (trigger). Inline notification to renderer. |
 | 18 | **TeammateIdle** | ❌ | A teammate in a team session becomes idle | Future multi-agent UI: teammate status indicators, idle logging. |
-| 19 | **TaskCreated** | ❌ | A task is created (team/multi-agent context) | Future task sidebar: show active tasks across teammates. |
-| 20 | **TaskCompleted** | ❌ | A task completes | Update task sidebar. Trigger notifications when background tasks finish. |
-| 21 | **Elicitation** | ❌ | MCP server requests user input; hooks can auto-respond | Render Electron dialog for MCP elicitation instead of terminal prompts. Auto-approve known MCP servers by account policy. `mode: 'url'` opens browser for OAuth. |
-| 22 | **ElicitationResult** | ❌ | User responds to MCP elicitation (before response reaches server) | Audit log. Validate/modify responses before they reach MCP server. |
-| 23 | **ConfigChange** | ❌ | Claude Code config changes (settings, skills, etc.) | Log config changes. Trigger UI refresh on project settings change. Detect mid-session CLAUDE.md edits. |
+| 19 | **TaskCreated** | ✅ | A task is created (team/multi-agent context) | Audit log + inline `task_event` (created) to renderer with task details. |
+| 20 | **TaskCompleted** | ✅ | A task completes | Audit log + inline `task_event` (completed) + native OS notification + dock badge. |
+| 21 | **Elicitation** | ✅ | MCP server requests user input; hooks can auto-respond | Audit log. Auto-accept. URL mode opens browser for OAuth. `onElicitation` fallback when logging disabled. |
+| 22 | **ElicitationResult** | ✅ | User responds to MCP elicitation (before response reaches server) | Audit log (server name + action + content). |
+| 23 | **ConfigChange** | ✅ | Claude Code config changes (settings, skills, etc.) | Audit log + inline `config_change` event to renderer with source + file path. |
 | 24 | **WorktreeCreate** | ❌ | Git worktree created during a session | Track active worktrees per session. Worktree indicator in session header. |
 | 25 | **WorktreeRemove** | ❌ | Git worktree removed | Clean up worktree tracking state. |
-| 26 | **InstructionsLoaded** | ❌ | Claude loads instruction files (CLAUDE.md, etc.) | Show active instruction files in diagnostics panel. Debug "why did Claude do that?" Log instruction loading with `memory_type` and `load_reason`. |
+| 26 | **InstructionsLoaded** | ✅ | Claude loads instruction files (CLAUDE.md, etc.) | Audit log (file path + memory type + load reason). Inline `instructions_loaded` event to renderer. |
 | 27 | **CwdChanged** | ❌ | Session working directory changes | Update session header. Re-resolve account if new cwd falls under a different path rule. |
 
 ## Priority
 
 | Tier | Hooks | Rationale |
 |------|-------|-----------|
-| **High** | ~~SessionStart~~, ~~SessionEnd~~, ~~Stop~~, ~~StopFailure~~, ~~PostCompact~~, ~~PermissionDenied~~ | All wired -- session lifecycle, error surfacing, compaction visibility, audit trail |
-| **Medium** | UserPromptSubmit, CwdChanged, InstructionsLoaded, ConfigChange | Context injection, live config awareness |
-| **Future** | Setup, TeammateIdle, TaskCreated, TaskCompleted, Elicitation, ElicitationResult, WorktreeCreate, WorktreeRemove | Multi-agent team UI, MCP elicitation dialogs, worktree tracking |
+| **High** | ~~SessionStart~~, ~~SessionEnd~~, ~~Stop~~, ~~StopFailure~~, ~~PostCompact~~, ~~PermissionDenied~~ | All wired — session lifecycle, error surfacing, compaction visibility, audit trail |
+| **Medium** | ~~UserPromptSubmit~~, CwdChanged, ~~InstructionsLoaded~~, ~~ConfigChange~~ | Context injection, live config awareness. CwdChanged still TODO. |
+| **Done** | ~~Setup~~, TeammateIdle, ~~TaskCreated~~, ~~TaskCompleted~~, ~~Elicitation~~, ~~ElicitationResult~~, WorktreeCreate, WorktreeRemove | TeammateIdle, WorktreeCreate, WorktreeRemove still TODO. |

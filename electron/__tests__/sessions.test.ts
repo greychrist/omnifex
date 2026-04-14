@@ -229,9 +229,8 @@ describe('sessions service — full lifecycle', () => {
     expect(options.model).toBe('sonnet');
     expect(options.permissionMode).toBe('default');
     expect(options.env.CLAUDE_CONFIG_DIR).toBe('/custom/.claude');
-    // PermissionRequest hook replaces canUseTool
-    expect(options.canUseTool).toBeUndefined();
-    expect(Array.isArray(options.hooks?.PermissionRequest)).toBe(true);
+    // canUseTool is the SDK's primary permission callback
+    expect(typeof options.canUseTool).toBe('function');
   });
 
   it('start() passes settingSources so the SDK loads project CLAUDE.md, .claude/, and MCP config', () => {
@@ -249,11 +248,11 @@ describe('sessions service — full lifecycle', () => {
     expect(options.settingSources).toEqual(['user', 'project', 'local']);
   });
 
-  it('start() sets strictMcpConfig so invalid MCP configs surface as errors', () => {
+  it('start() sets enableAllProjectMcpServers so .mcp.json servers auto-connect', () => {
     const fake = installFakeQuery();
 
     service.start({
-      tabId: 'tab-strict',
+      tabId: 'tab-mcp',
       projectPath: '/p',
       configDir: '/c',
       model: 'sonnet',
@@ -261,7 +260,7 @@ describe('sessions service — full lifecycle', () => {
     });
 
     const options = fake.getCapturedOptions();
-    expect(options.strictMcpConfig).toBe(true);
+    expect(options.settings?.enableAllProjectMcpServers).toBe(true);
   });
 
   it('start() forwards resumeSessionId as options.resume when provided', () => {
@@ -582,10 +581,10 @@ describe('sessions service — full lifecycle', () => {
   });
 
   // -------------------------------------------------------------------------
-  // Permission flow — exercising PermissionRequest hook
+  // Permission flow — exercising canUseTool callback
   // -------------------------------------------------------------------------
 
-  it('PermissionRequest hook emits a permission_request and resolves to allow when respondPermission("allow") is called', async () => {
+  it('canUseTool emits permission_request and resolves to allow with updatedInput', async () => {
     const writeBatch = vi.fn();
     const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
     const svc = createSessionsService(
@@ -595,31 +594,19 @@ describe('sessions service — full lifecycle', () => {
     );
     const fake = installFakeQuery();
 
-    svc.start({
-      tabId: 'tab-perm',
-      projectPath: '/p',
-      configDir: '/c',
-      model: 'sonnet',
-      permissionMode: 'default',
+    svc.start({ tabId: 'tab-perm', projectPath: '/p', configDir: '/c', model: 'sonnet', permissionMode: 'default' });
+
+    const canUseTool = fake.getCapturedOptions().canUseTool;
+    expect(typeof canUseTool).toBe('function');
+
+    const decisionPromise = canUseTool('Bash', { command: 'ls -la' }, {
+      signal: new AbortController().signal,
+      toolUseID: 'tu-1',
+      title: 'Run ls -la',
+      displayName: 'Bash',
+      suggestions: [],
     });
 
-    const hook = fake.getCapturedOptions().hooks.PermissionRequest[0].hooks[0];
-
-    // Fire the hook in the background (it will block awaiting the decision)
-    const decisionPromise = hook(
-      {
-        hook_event_name: 'PermissionRequest',
-        tool_name: 'Bash',
-        tool_input: { command: 'ls -la' },
-        session_id: 's1',
-        transcript_path: '/t',
-        cwd: '/p',
-      },
-      undefined,
-      { signal: new AbortController().signal },
-    );
-
-    // The request should have been emitted and the session should be waiting
     await new Promise((r) => setImmediate(r));
     expect(svc.getStatus('tab-perm')).toBe('waiting_permission');
     const permCall = sendToRenderer.mock.calls.find(
@@ -628,20 +615,18 @@ describe('sessions service — full lifecycle', () => {
     expect(permCall).toBeDefined();
     expect((permCall![1] as any).tool_name).toBe('Bash');
     expect((permCall![1] as any).tool_input).toEqual({ command: 'ls -la' });
+    expect((permCall![1] as any).title).toBe('Run ls -la');
 
-    // Respond with allow + (optional) updated input
     svc.respondPermission('tab-perm', 'allow', { command: 'ls -la --color' });
-
     const result = await decisionPromise;
-    expect(result.hookSpecificOutput.hookEventName).toBe('PermissionRequest');
-    expect(result.hookSpecificOutput.decision.behavior).toBe('allow');
-    expect(result.hookSpecificOutput.decision.updatedInput).toEqual({ command: 'ls -la --color' });
+    expect(result.behavior).toBe('allow');
+    expect(result.updatedInput).toEqual({ command: 'ls -la --color' });
     expect(svc.getStatus('tab-perm')).toBe('running');
 
     svc.stopAll();
   });
 
-  it('PermissionRequest hook resolves to allow without updatedInput when none provided', async () => {
+  it('canUseTool resolves to allow without updatedInput when none provided', async () => {
     const writeBatch = vi.fn();
     const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
     const svc = createSessionsService(
@@ -651,39 +636,25 @@ describe('sessions service — full lifecycle', () => {
     );
     const fake = installFakeQuery();
 
-    svc.start({
-      tabId: 'tab-perm-fallback',
-      projectPath: '/p',
-      configDir: '/c',
-      model: 'sonnet',
-      permissionMode: 'default',
+    svc.start({ tabId: 'tab-perm-fb', projectPath: '/p', configDir: '/c', model: 'sonnet', permissionMode: 'default' });
+
+    const canUseTool = fake.getCapturedOptions().canUseTool;
+    const decisionPromise = canUseTool('Bash', { command: 'echo hi' }, {
+      signal: new AbortController().signal,
+      toolUseID: 'tu-2',
     });
 
-    const hook = fake.getCapturedOptions().hooks.PermissionRequest[0].hooks[0];
-    const decisionPromise = hook(
-      {
-        hook_event_name: 'PermissionRequest',
-        tool_name: 'Bash',
-        tool_input: { command: 'echo hi' },
-        session_id: 's1',
-        transcript_path: '/t',
-        cwd: '/p',
-      },
-      undefined,
-      { signal: new AbortController().signal },
-    );
-
-    svc.respondPermission('tab-perm-fallback', 'allow');
-
+    await new Promise((r) => setImmediate(r));
+    svc.respondPermission('tab-perm-fb', 'allow');
     const result = await decisionPromise;
-    expect(result.hookSpecificOutput.decision.behavior).toBe('allow');
-    // No updatedInput key when none provided
-    expect(result.hookSpecificOutput.decision.updatedInput).toBeUndefined();
+    expect(result.behavior).toBe('allow');
+    // Falls back to original toolInput when no updatedInput from user
+    expect(result.updatedInput).toEqual({ command: 'echo hi' });
 
     svc.stopAll();
   });
 
-  it('PermissionRequest hook resolves to deny when respondPermission("deny") is called', async () => {
+  it('canUseTool resolves to deny when respondPermission("deny") is called', async () => {
     const writeBatch = vi.fn();
     const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
     const svc = createSessionsService(
@@ -693,38 +664,24 @@ describe('sessions service — full lifecycle', () => {
     );
     const fake = installFakeQuery();
 
-    svc.start({
-      tabId: 'tab-deny',
-      projectPath: '/p',
-      configDir: '/c',
-      model: 'sonnet',
-      permissionMode: 'default',
+    svc.start({ tabId: 'tab-deny', projectPath: '/p', configDir: '/c', model: 'sonnet', permissionMode: 'default' });
+
+    const canUseTool = fake.getCapturedOptions().canUseTool;
+    const decisionPromise = canUseTool('Write', { path: '/etc/passwd' }, {
+      signal: new AbortController().signal,
+      toolUseID: 'tu-3',
     });
 
-    const hook = fake.getCapturedOptions().hooks.PermissionRequest[0].hooks[0];
-    const decisionPromise = hook(
-      {
-        hook_event_name: 'PermissionRequest',
-        tool_name: 'Write',
-        tool_input: { path: '/etc/passwd' },
-        session_id: 's1',
-        transcript_path: '/t',
-        cwd: '/p',
-      },
-      undefined,
-      { signal: new AbortController().signal },
-    );
-
+    await new Promise((r) => setImmediate(r));
     svc.respondPermission('tab-deny', 'deny');
-
     const result = await decisionPromise;
-    expect(result.hookSpecificOutput.decision.behavior).toBe('deny');
-    expect(result.hookSpecificOutput.decision.message).toBe('User denied permission');
+    expect(result.behavior).toBe('deny');
+    expect(result.message).toBe('User denied permission');
 
     svc.stopAll();
   });
 
-  it('PermissionRequest hook auto-allows when tool is in the allow-list', async () => {
+  it('canUseTool passes through updatedPermissions for "allow & remember"', async () => {
     const writeBatch = vi.fn();
     const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
     const svc = createSessionsService(
@@ -734,92 +691,28 @@ describe('sessions service — full lifecycle', () => {
     );
     const fake = installFakeQuery();
 
-    svc.start({
-      tabId: 'tab-auto',
-      projectPath: '/p',
-      configDir: '/c',
-      model: 'sonnet',
-      permissionMode: 'default',
+    svc.start({ tabId: 'tab-remember', projectPath: '/p', configDir: '/c', model: 'sonnet', permissionMode: 'default' });
+
+    const canUseTool = fake.getCapturedOptions().canUseTool;
+    const decisionPromise = canUseTool('Bash', { command: 'git status' }, {
+      signal: new AbortController().signal,
+      toolUseID: 'tu-4',
+      suggestions: [{ type: 'addRules', rules: [{ toolName: 'Bash', ruleContent: 'git *' }], behavior: 'allow', destination: 'projectSettings' }],
     });
 
-    svc.setAutoAllow('tab-auto', true);
-    svc.addAutoAllowTool('tab-auto', 'Read');
-
-    const hook = fake.getCapturedOptions().hooks.PermissionRequest[0].hooks[0];
-    const result = await hook(
-      {
-        hook_event_name: 'PermissionRequest',
-        tool_name: 'Read',
-        tool_input: { path: '/tmp/a.txt' },
-        session_id: 's1',
-        transcript_path: '/t',
-        cwd: '/p',
-      },
-      undefined,
-      { signal: new AbortController().signal },
-    );
-
-    expect(result.hookSpecificOutput.decision.behavior).toBe('allow');
-    // No permission_request should have been sent for auto-allowed tools
-    const permCall = sendToRenderer.mock.calls.find(
-      (c) => c[0] === 'claude-output:tab-auto' && (c[1] as any)?.type === 'permission_request',
-    );
-    expect(permCall).toBeUndefined();
-
-    svc.stopAll();
-  });
-
-  it('PermissionRequest hook passes through updatedPermissions for "allow & remember"', async () => {
-    const writeBatch = vi.fn();
-    const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
-    const svc = createSessionsService(
-      sendToRenderer as any,
-      { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
-      fakeLogging as any,
-    );
-    const fake = installFakeQuery();
-
-    svc.start({
-      tabId: 'tab-remember',
-      projectPath: '/p',
-      configDir: '/c',
-      model: 'sonnet',
-      permissionMode: 'default',
-    });
-
-    const hook = fake.getCapturedOptions().hooks.PermissionRequest[0].hooks[0];
-    const decisionPromise = hook(
-      {
-        hook_event_name: 'PermissionRequest',
-        tool_name: 'Bash',
-        tool_input: { command: 'git status' },
-        permission_suggestions: [],
-        session_id: 's1',
-        transcript_path: '/t',
-        cwd: '/p',
-      },
-      undefined,
-      { signal: new AbortController().signal },
-    );
-
+    await new Promise((r) => setImmediate(r));
     const rules = [
-      {
-        type: 'addRules' as const,
-        rules: [{ toolName: 'Bash', ruleContent: 'git *' }],
-        behavior: 'allow' as const,
-        destination: 'projectSettings' as const,
-      },
+      { type: 'addRules' as const, rules: [{ toolName: 'Bash', ruleContent: 'git *' }], behavior: 'allow' as const, destination: 'projectSettings' as const },
     ];
     svc.respondPermission('tab-remember', 'allow', undefined, rules);
-
     const result = await decisionPromise;
-    expect(result.hookSpecificOutput.decision.behavior).toBe('allow');
-    expect(result.hookSpecificOutput.decision.updatedPermissions).toEqual(rules);
+    expect(result.behavior).toBe('allow');
+    expect(result.updatedPermissions).toEqual(rules);
 
     svc.stopAll();
   });
 
-  it('PermissionRequest hook forwards permission_suggestions to the renderer', async () => {
+  it('canUseTool forwards suggestions and rich metadata to the renderer', async () => {
     const writeBatch = vi.fn();
     const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
     const svc = createSessionsService(
@@ -829,42 +722,34 @@ describe('sessions service — full lifecycle', () => {
     );
     const fake = installFakeQuery();
 
-    svc.start({
-      tabId: 'tab-suggestions',
-      projectPath: '/p',
-      configDir: '/c',
-      model: 'sonnet',
-      permissionMode: 'default',
-    });
+    svc.start({ tabId: 'tab-sug', projectPath: '/p', configDir: '/c', model: 'sonnet', permissionMode: 'default' });
 
     const suggestions = [
       { type: 'addRules', rules: [{ toolName: 'Bash', ruleContent: 'git status' }], behavior: 'allow', destination: 'projectSettings' },
     ];
 
-    const hook = fake.getCapturedOptions().hooks.PermissionRequest[0].hooks[0];
-    const decisionPromise = hook(
-      {
-        hook_event_name: 'PermissionRequest',
-        tool_name: 'Bash',
-        tool_input: { command: 'git status' },
-        permission_suggestions: suggestions,
-        session_id: 's1',
-        transcript_path: '/t',
-        cwd: '/p',
-      },
-      undefined,
-      { signal: new AbortController().signal },
-    );
+    const canUseTool = fake.getCapturedOptions().canUseTool;
+    const decisionPromise = canUseTool('Bash', { command: 'git status' }, {
+      signal: new AbortController().signal,
+      toolUseID: 'tu-5',
+      title: 'Run git status',
+      displayName: 'Bash',
+      description: 'Execute a shell command',
+      decisionReason: 'Bash commands require approval',
+      suggestions,
+    });
 
     await new Promise((r) => setImmediate(r));
-
     const permCall = sendToRenderer.mock.calls.find(
-      (c) => c[0] === 'claude-output:tab-suggestions' && (c[1] as any)?.type === 'permission_request',
+      (c) => c[0] === 'claude-output:tab-sug' && (c[1] as any)?.type === 'permission_request',
     );
     expect(permCall).toBeDefined();
     expect((permCall![1] as any).permission_suggestions).toEqual(suggestions);
+    expect((permCall![1] as any).title).toBe('Run git status');
+    expect((permCall![1] as any).display_name).toBe('Bash');
+    expect((permCall![1] as any).description).toBe('Execute a shell command');
 
-    svc.respondPermission('tab-suggestions', 'allow');
+    svc.respondPermission('tab-sug', 'allow');
     await decisionPromise;
 
     svc.stopAll();
@@ -1143,7 +1028,7 @@ describe('sessions service — full lifecycle', () => {
       svc.stopAll();
     });
 
-    it('start() omits audit hooks but keeps PermissionRequest when no logging service is provided', () => {
+    it('start() omits audit hooks but keeps canUseTool when no logging service is provided', () => {
       // The default `service` fixture above is constructed without a logging dep
       const fake = installFakeQuery();
       service.start({
@@ -1155,8 +1040,8 @@ describe('sessions service — full lifecycle', () => {
       });
 
       const options = fake.getCapturedOptions();
-      // PermissionRequest is always registered (not gated on logging)
-      expect(Array.isArray(options.hooks?.PermissionRequest)).toBe(true);
+      // canUseTool is always registered (not gated on logging)
+      expect(typeof options.canUseTool).toBe('function');
       // Audit hooks should not be present without logging
       expect(options.hooks?.PreToolUse).toBeUndefined();
       expect(options.hooks?.PostToolUse).toBeUndefined();
@@ -1961,6 +1846,154 @@ describe('sessions service — full lifecycle', () => {
 
       svc.stopAll();
     });
+
+    // -------------------------------------------------------------------
+    // New hooks: #16, #17, #19, #20, #21, #22, #23, #26
+    // -------------------------------------------------------------------
+
+    it('UserPromptSubmit hook logs prompt and emits renderer event', async () => {
+      const writeBatch = vi.fn();
+      const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
+      const svc = createSessionsService(sendToRenderer as any, { showNotification: showNotification as any, incrementUnread: incrementUnread as any }, fakeLogging as any);
+      const fake = installFakeQuery();
+      svc.start({ tabId: 'h-ups', projectPath: '/p', configDir: '/c', model: 'sonnet', permissionMode: 'default' });
+
+      const hook = fake.getCapturedOptions().hooks.UserPromptSubmit[0].hooks[0];
+      const result = await hook({ hook_event_name: 'UserPromptSubmit', prompt: 'hello world', session_title: 'My Session', session_id: 's', transcript_path: '/t', cwd: '/p' }, undefined, { signal: new AbortController().signal });
+
+      expect(result).toEqual({});
+      expect(writeBatch).toHaveBeenCalled();
+      const entry = writeBatch.mock.calls[0][0][0];
+      expect(entry.message).toContain('prompt submitted');
+      expect(entry.source).toBe('claude-hooks');
+      const outputCall = sendToRenderer.mock.calls.find((c) => c[0] === 'claude-output:h-ups' && (c[1] as any)?.subtype === 'user_prompt_submit');
+      expect(outputCall).toBeDefined();
+
+      svc.stopAll();
+    });
+
+    it('Setup hook logs trigger and emits renderer notification', async () => {
+      const writeBatch = vi.fn();
+      const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
+      const svc = createSessionsService(sendToRenderer as any, { showNotification: showNotification as any, incrementUnread: incrementUnread as any }, fakeLogging as any);
+      const fake = installFakeQuery();
+      svc.start({ tabId: 'h-setup', projectPath: '/p', configDir: '/c', model: 'sonnet', permissionMode: 'default' });
+
+      const hook = fake.getCapturedOptions().hooks.Setup[0].hooks[0];
+      const result = await hook({ hook_event_name: 'Setup', trigger: 'init', session_id: 's', transcript_path: '/t', cwd: '/p' }, undefined, { signal: new AbortController().signal });
+
+      expect(result).toEqual({});
+      expect(writeBatch).toHaveBeenCalled();
+      expect(writeBatch.mock.calls[0][0][0].message).toContain('setup: init');
+
+      svc.stopAll();
+    });
+
+    it('TaskCreated hook logs + emits task_event', async () => {
+      const writeBatch = vi.fn();
+      const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
+      const svc = createSessionsService(sendToRenderer as any, { showNotification: showNotification as any, incrementUnread: incrementUnread as any }, fakeLogging as any);
+      const fake = installFakeQuery();
+      svc.start({ tabId: 'h-tc', projectPath: '/p', configDir: '/c', model: 'sonnet', permissionMode: 'default' });
+
+      const hook = fake.getCapturedOptions().hooks.TaskCreated[0].hooks[0];
+      await hook({ hook_event_name: 'TaskCreated', task_id: 't1', task_subject: 'Fix bug', teammate_name: 'Explorer', session_id: 's', transcript_path: '/t', cwd: '/p' }, undefined, { signal: new AbortController().signal });
+
+      expect(writeBatch.mock.calls[0][0][0].message).toContain('task created: Fix bug');
+      const outputCall = sendToRenderer.mock.calls.find((c) => c[0] === 'claude-output:h-tc' && (c[1] as any)?.subtype === 'task_event' && (c[1] as any)?.event === 'created');
+      expect(outputCall).toBeDefined();
+      expect((outputCall![1] as any).task_subject).toBe('Fix bug');
+
+      svc.stopAll();
+    });
+
+    it('TaskCompleted hook logs + emits task_event + triggers notification', async () => {
+      const writeBatch = vi.fn();
+      const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
+      const svc = createSessionsService(sendToRenderer as any, { showNotification: showNotification as any, incrementUnread: incrementUnread as any }, fakeLogging as any);
+      const fake = installFakeQuery();
+      svc.start({ tabId: 'h-tcomp', projectPath: '/p', configDir: '/c', model: 'sonnet', permissionMode: 'default' });
+
+      const hook = fake.getCapturedOptions().hooks.TaskCompleted[0].hooks[0];
+      await hook({ hook_event_name: 'TaskCompleted', task_id: 't1', task_subject: 'Fix bug', teammate_name: 'Explorer', session_id: 's', transcript_path: '/t', cwd: '/p' }, undefined, { signal: new AbortController().signal });
+
+      expect(writeBatch.mock.calls[0][0][0].message).toContain('task completed: Fix bug');
+      const outputCall = sendToRenderer.mock.calls.find((c) => c[0] === 'claude-output:h-tcomp' && (c[1] as any)?.subtype === 'task_event' && (c[1] as any)?.event === 'completed');
+      expect(outputCall).toBeDefined();
+      expect(showNotification).toHaveBeenCalled();
+
+      svc.stopAll();
+    });
+
+    it('Elicitation hook logs + returns accept action', async () => {
+      const writeBatch = vi.fn();
+      const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
+      const svc = createSessionsService(sendToRenderer as any, { showNotification: showNotification as any, incrementUnread: incrementUnread as any }, fakeLogging as any);
+      const fake = installFakeQuery();
+      svc.start({ tabId: 'h-elicit', projectPath: '/p', configDir: '/c', model: 'sonnet', permissionMode: 'default' });
+
+      const hook = fake.getCapturedOptions().hooks.Elicitation[0].hooks[0];
+      const result = await hook({ hook_event_name: 'Elicitation', mcp_server_name: 'github', message: 'Authenticate', mode: 'form', session_id: 's', transcript_path: '/t', cwd: '/p' }, undefined, { signal: new AbortController().signal });
+
+      expect(writeBatch).toHaveBeenCalled();
+      expect(writeBatch.mock.calls[0][0][0].message).toContain('elicitation from github');
+      expect(result.hookSpecificOutput.hookEventName).toBe('Elicitation');
+      expect(result.hookSpecificOutput.action).toBe('accept');
+
+      svc.stopAll();
+    });
+
+    it('ElicitationResult hook logs the action', async () => {
+      const writeBatch = vi.fn();
+      const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
+      const svc = createSessionsService(sendToRenderer as any, { showNotification: showNotification as any, incrementUnread: incrementUnread as any }, fakeLogging as any);
+      const fake = installFakeQuery();
+      svc.start({ tabId: 'h-er', projectPath: '/p', configDir: '/c', model: 'sonnet', permissionMode: 'default' });
+
+      const hook = fake.getCapturedOptions().hooks.ElicitationResult[0].hooks[0];
+      await hook({ hook_event_name: 'ElicitationResult', mcp_server_name: 'github', action: 'accept', session_id: 's', transcript_path: '/t', cwd: '/p' }, undefined, { signal: new AbortController().signal });
+
+      expect(writeBatch.mock.calls[0][0][0].message).toContain('elicitation result: github → accept');
+
+      svc.stopAll();
+    });
+
+    it('ConfigChange hook logs + emits renderer event', async () => {
+      const writeBatch = vi.fn();
+      const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
+      const svc = createSessionsService(sendToRenderer as any, { showNotification: showNotification as any, incrementUnread: incrementUnread as any }, fakeLogging as any);
+      const fake = installFakeQuery();
+      svc.start({ tabId: 'h-cc', projectPath: '/p', configDir: '/c', model: 'sonnet', permissionMode: 'default' });
+
+      const hook = fake.getCapturedOptions().hooks.ConfigChange[0].hooks[0];
+      await hook({ hook_event_name: 'ConfigChange', source: 'project_settings', file_path: '/p/.claude/settings.json', session_id: 's', transcript_path: '/t', cwd: '/p' }, undefined, { signal: new AbortController().signal });
+
+      expect(writeBatch.mock.calls[0][0][0].message).toContain('config changed: project_settings');
+      const outputCall = sendToRenderer.mock.calls.find((c) => c[0] === 'claude-output:h-cc' && (c[1] as any)?.subtype === 'config_change');
+      expect(outputCall).toBeDefined();
+      expect((outputCall![1] as any).source).toBe('project_settings');
+
+      svc.stopAll();
+    });
+
+    it('InstructionsLoaded hook logs + emits renderer event', async () => {
+      const writeBatch = vi.fn();
+      const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
+      const svc = createSessionsService(sendToRenderer as any, { showNotification: showNotification as any, incrementUnread: incrementUnread as any }, fakeLogging as any);
+      const fake = installFakeQuery();
+      svc.start({ tabId: 'h-il', projectPath: '/p', configDir: '/c', model: 'sonnet', permissionMode: 'default' });
+
+      const hook = fake.getCapturedOptions().hooks.InstructionsLoaded[0].hooks[0];
+      await hook({ hook_event_name: 'InstructionsLoaded', file_path: '/p/CLAUDE.md', memory_type: 'Project', load_reason: 'session_start', session_id: 's', transcript_path: '/t', cwd: '/p' }, undefined, { signal: new AbortController().signal });
+
+      expect(writeBatch.mock.calls[0][0][0].message).toContain('instructions loaded: /p/CLAUDE.md');
+      const outputCall = sendToRenderer.mock.calls.find((c) => c[0] === 'claude-output:h-il' && (c[1] as any)?.subtype === 'instructions_loaded');
+      expect(outputCall).toBeDefined();
+      expect((outputCall![1] as any).memory_type).toBe('Project');
+      expect((outputCall![1] as any).load_reason).toBe('session_start');
+
+      svc.stopAll();
+    });
   });
 
   it('start() omits stderr callback when no logging service is provided', () => {
@@ -2156,7 +2189,7 @@ describe('sessions service — full lifecycle', () => {
     });
   });
 
-  it('auto-allow only skips tools in the per-session allow-list', async () => {
+  it('canUseTool always prompts (SDK handles pre-approval internally)', async () => {
     const writeBatch = vi.fn();
     const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
     const svc = createSessionsService(
@@ -2174,28 +2207,17 @@ describe('sessions service — full lifecycle', () => {
       permissionMode: 'default',
     });
 
-    svc.setAutoAllow('tab-auto-partial', true);
-    svc.addAutoAllowTool('tab-auto-partial', 'Read');
-
-    const hook = fake.getCapturedOptions().hooks.PermissionRequest[0].hooks[0];
-    // Bash is NOT in the allow-list → should emit a permission_request
-    const pending = hook(
-      {
-        hook_event_name: 'PermissionRequest',
-        tool_name: 'Bash',
-        tool_input: { command: 'ls' },
-        session_id: 's1',
-        transcript_path: '/t',
-        cwd: '/p',
-      },
-      undefined,
-      { signal: new AbortController().signal },
-    );
+    const canUseTool = fake.getCapturedOptions().canUseTool;
+    // canUseTool always emits a permission_request — the SDK only calls it
+    // when it needs a decision (pre-approved tools never reach this callback)
+    const pending = canUseTool('Bash', { command: 'ls' }, {
+      signal: new AbortController().signal,
+      toolUseID: 'tu-auto',
+    });
 
     await new Promise((r) => setImmediate(r));
     expect(svc.getStatus('tab-auto-partial')).toBe('waiting_permission');
 
-    // Clean up the pending promise so the session can shut down cleanly
     svc.respondPermission('tab-auto-partial', 'deny');
     await pending;
 

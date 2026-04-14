@@ -417,6 +417,19 @@ export interface ServerStatus {
 }
 
 /**
+ * Live MCP server status from the SDK during an active session.
+ */
+export interface SessionMcpServerStatus {
+  name: string;
+  status: 'connected' | 'failed' | 'needs-auth' | 'pending' | 'disabled';
+  serverInfo?: { name: string; version: string };
+  error?: string;
+  config?: Record<string, unknown>;
+  scope?: string;
+  tools?: { name: string; description?: string }[];
+}
+
+/**
  * MCP configuration for project scope (.mcp.json)
  */
 export interface MCPProjectConfig {
@@ -1218,8 +1231,8 @@ export const api = {
     return apiCall("session_send_structured_message", { tabId, content });
   },
 
-  async respondPermission(tabId: string, requestId: string, behavior: string, updatedInput?: any): Promise<void> {
-    return apiCall("session_respond_permission", { tabId, requestId, behavior, updatedInput });
+  async respondPermission(tabId: string, requestId: string, behavior: string, updatedInput?: any, updatedPermissions?: any[]): Promise<void> {
+    return apiCall("session_respond_permission", { tabId, requestId, behavior, updatedInput, updatedPermissions });
   },
 
   async stopSession(tabId: string): Promise<void> {
@@ -1270,6 +1283,23 @@ export const api = {
   /** Get the list of subagents the SDK knows about for this session. */
   async sessionSupportedAgents(tabId: string): Promise<SessionAgentInfo[]> {
     return apiCall("session_supported_agents", { tabId });
+  },
+
+  async sessionMcpServerStatus(tabId: string): Promise<SessionMcpServerStatus[]> {
+    return apiCall("session_mcp_server_status", { tabId });
+  },
+
+  async sessionGetPermissions(tabId: string, projectPath: string, configDir: string): Promise<any[]> {
+    return apiCall("session_get_permissions", { tabId, projectPath, configDir });
+  },
+
+  async sessionUpdatePermission(tabId: string, projectPath: string, configDir: string, update: {
+    action: "add" | "remove";
+    scope: string;
+    behavior: "allow" | "deny";
+    rule: string;
+  }): Promise<void> {
+    return apiCall("session_update_permission", { tabId, projectPath, configDir, ...update });
   },
 
   // ─── Logging API ────────────────────────────────────────────────

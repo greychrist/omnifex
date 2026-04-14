@@ -160,23 +160,39 @@ app.whenReady().then(() => {
     },
     {
       showNotification: (title, body, isError) => {
-        // Skip native notification when the app is already in focus
-        if (mainWindow?.isFocused()) return;
         if (!Notification.isSupported()) return;
-        const subtitle = isError ? 'Task Failed' : 'Task Complete';
-        const notif = new Notification({
-          title,
-          subtitle,
-          body,
-          silent: false,
-        });
-        notif.on('click', () => {
-          if (mainWindow) {
-            if (mainWindow.isMinimized()) mainWindow.restore();
-            mainWindow.focus();
+
+        const { execFile } = require('node:child_process') as typeof import('node:child_process');
+        const successSound = app.isPackaged
+          ? path.join(process.resourcesPath, 'assets', 'success_notification_v2.aiff')
+          : path.join(__dirname, '..', '..', 'assets', 'success_notification_v2.aiff');
+
+        if (mainWindow?.isFocused()) {
+          // Focused: play sound only (no visual banner needed)
+          execFile('afplay', [isError ? '/System/Library/Sounds/Basso.aiff' : successSound]);
+        } else {
+          // Unfocused: native notification handles the sound
+          const subtitle = isError ? 'Task Failed' : 'Task Complete';
+          const notif = new Notification({
+            title,
+            subtitle,
+            body,
+            silent: false,
+            sound: isError ? 'Basso' : undefined,
+          });
+          // For success, play custom sound since Notification.sound only supports system sounds
+          if (!isError) {
+            execFile('afplay', [successSound]);
+            notif.silent = true;
           }
-        });
-        notif.show();
+          notif.on('click', () => {
+            if (mainWindow) {
+              if (mainWindow.isMinimized()) mainWindow.restore();
+              mainWindow.focus();
+            }
+          });
+          notif.show();
+        }
       },
       incrementUnread: () => {
         // Only bump the dock badge when the app isn't in focus
@@ -266,8 +282,8 @@ app.whenReady().then(() => {
         ),
       sendStructuredMessage: (sessionId: string, content: any) =>
         sessionsService.sendStructuredMessage(sessionId, content),
-      respondPermission: (sessionId: string, behavior: string, updatedInput?: Record<string, unknown>) =>
-        sessionsService.respondPermission(sessionId, behavior as 'allow' | 'deny', updatedInput),
+      respondPermission: (sessionId: string, behavior: string, updatedInput?: Record<string, unknown>, updatedPermissions?: any[]) =>
+        sessionsService.respondPermission(sessionId, behavior as 'allow' | 'deny', updatedInput, updatedPermissions),
       stop: (sessionId: string) => sessionsService.stop(sessionId),
       getInfo: (sessionId: string) => sessionsService.getInfo(sessionId),
       // Wave 2 — Query-method passthroughs
@@ -280,6 +296,7 @@ app.whenReady().then(() => {
       getSupportedCommands: (sessionId: string) => sessionsService.getSupportedCommands(sessionId),
       getSupportedModels: (sessionId: string) => sessionsService.getSupportedModels(sessionId),
       getSupportedAgents: (sessionId: string) => sessionsService.getSupportedAgents(sessionId),
+      getMcpServerStatus: (sessionId: string) => sessionsService.getMcpServerStatus(sessionId),
     },
     // Agents adapter
     agents: {

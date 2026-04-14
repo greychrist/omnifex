@@ -23,6 +23,7 @@ import type {
   SlashCommand,
   SDKControlGetContextUsageResponse,
 } from '@anthropic-ai/claude-agent-sdk';
+import type { McpServerStatus } from '@anthropic-ai/claude-agent-sdk';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -75,6 +76,8 @@ export interface SessionsService {
   getSupportedModels(tabId: string): Promise<ModelInfo[]>;
   /** Get the list of subagents the SDK knows about for this session. Empty if no tab. */
   getSupportedAgents(tabId: string): Promise<AgentInfo[]>;
+  /** Get live MCP server status for an active session. Empty if no tab. */
+  getMcpServerStatus(tabId: string): Promise<McpServerStatus[]>;
 }
 
 type SendToRenderer = (channel: string, ...args: unknown[]) => void;
@@ -102,15 +105,23 @@ interface PermissionDecision {
   }>;
 }
 
+interface PendingPermission {
+  requestId: string;
+  resolve: (decision: PermissionDecision) => void;
+}
+
 interface SessionHandle {
   query: Query;
   inputChannel: AsyncChannel<SDKUserMessage>;
   sessionId: string | null;
   status: SessionStatus;
   permissionResolver: ((decision: PermissionDecision) => void) | null;
+  /** Queue of permission requests waiting for user response */
+  permissionQueue: PendingPermission[];
   autoAllowEnabled: boolean;
   autoAllowedTools: Set<string>;
   projectPath: string;
+  configDir: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -185,7 +196,15 @@ export function createSessionsService(
       }
     } catch (err) {
       handle.status = 'error';
-      sendToRenderer(`claude-error:${tabId}`, err instanceof Error ? err.message : String(err));
+      const errMsg = err instanceof Error ? err.message : String(err);
+      sendToRenderer(`claude-error:${tabId}`, errMsg);
+      sendToRenderer(`claude-output:${tabId}`, {
+        type: 'system',
+        subtype: 'notification',
+        notification_type: 'error',
+        title: 'Session Error',
+        message: `Session ended unexpectedly: ${errMsg.slice(0, 200)}. Send a new message to restart.`,
+      });
     } finally {
       handle.status = 'stopped';
       sendToRenderer(`claude-complete:${tabId}`);
@@ -230,13 +249,14 @@ export function createSessionsService(
       // and user ~/.claude/settings.json. Without this the SDK runs in isolation mode and
       // ignores all filesystem-based project config — defeating the point of a Claude Code GUI.
       settingSources: ['user', 'project', 'local'],
-      // Surface invalid MCP configs as errors instead of silent warnings.
-      strictMcpConfig: true,
-      // Enable the 1M token context window for Sonnet 4/4.5. Opus 4.6
-      // with [1m] already has 1M natively; this beta flag extends the
-      // same to Sonnet models. Safe to pass unconditionally — models
-      // that don't support it simply ignore the beta header.
-      betas: ['context-1m-2025-08-07'],
+      // Auto-approve all project .mcp.json servers so they connect without
+      // interactive approval (which the SDK would otherwise silently decline).
+      settings: {
+        enableAllProjectMcpServers: true,
+      },
+      // Elicitation is handled by the Elicitation hook (when logging is enabled)
+      // or this fallback (when logging is disabled). Both auto-accept.
+      onElicitation: async () => ({ action: 'accept' as const }),
     };
 
     // Route CLI subprocess stderr into the logging service. Note the CLI routes its
@@ -754,83 +774,341 @@ export function createSessionsService(
           },
         ],
 
+        // ---- #16 UserPromptSubmit ----
+        UserPromptSubmit: [
+          {
+            hooks: [
+              async (input: any) => {
+                try {
+                  logging.writeBatch([{
+                    timestamp: new Date().toISOString(),
+                    level: 'info',
+                    source: 'claude-hooks',
+                    category: `session:${tabId}`,
+                    message: `📝 prompt submitted (${(input.prompt ?? '').length} chars)`,
+                    metadata: stringifyCapped({ event: 'UserPromptSubmit', prompt: input.prompt, session_title: input.session_title }),
+                  }]);
+                  sendToRenderer(`claude-output:${tabId}`, {
+                    type: 'system', subtype: 'user_prompt_submit',
+                    prompt_length: (input.prompt ?? '').length,
+                    session_title: input.session_title,
+                  });
+                } catch (err) { console.error('[sessions] UserPromptSubmit hook failed:', err); }
+                return {};
+              },
+            ],
+          },
+        ],
+
+        // ---- #17 Setup ----
+        Setup: [
+          {
+            hooks: [
+              async (input: any) => {
+                try {
+                  logging.writeBatch([{
+                    timestamp: new Date().toISOString(),
+                    level: 'info',
+                    source: 'claude-hooks',
+                    category: `session:${tabId}`,
+                    message: `⚙ setup: ${input.trigger}`,
+                    metadata: stringifyCapped({ event: 'Setup', trigger: input.trigger }),
+                  }]);
+                  sendToRenderer(`claude-output:${tabId}`, {
+                    type: 'system', subtype: 'notification', notification_type: 'info',
+                    title: 'Setup',
+                    message: `Session ${input.trigger === 'init' ? 'initializing' : 'maintenance running'}`,
+                  });
+                } catch (err) { console.error('[sessions] Setup hook failed:', err); }
+                return {};
+              },
+            ],
+          },
+        ],
+
+        // ---- #19 TaskCreated ----
+        TaskCreated: [
+          {
+            hooks: [
+              async (input: any) => {
+                try {
+                  logging.writeBatch([{
+                    timestamp: new Date().toISOString(),
+                    level: 'info',
+                    source: 'claude-hooks',
+                    category: `session:${tabId}`,
+                    message: `📋 task created: ${input.task_subject}${input.teammate_name ? ` (${input.teammate_name})` : ''}`,
+                    metadata: stringifyCapped({ event: 'TaskCreated', task_id: input.task_id, task_subject: input.task_subject, task_description: input.task_description, teammate_name: input.teammate_name, team_name: input.team_name }),
+                  }]);
+                  sendToRenderer(`claude-output:${tabId}`, {
+                    type: 'system', subtype: 'task_event', event: 'created',
+                    task_id: input.task_id, task_subject: input.task_subject,
+                    task_description: input.task_description,
+                    teammate_name: input.teammate_name, team_name: input.team_name,
+                  });
+                } catch (err) { console.error('[sessions] TaskCreated hook failed:', err); }
+                return {};
+              },
+            ],
+          },
+        ],
+
+        // ---- #20 TaskCompleted ----
+        TaskCompleted: [
+          {
+            hooks: [
+              async (input: any) => {
+                try {
+                  logging.writeBatch([{
+                    timestamp: new Date().toISOString(),
+                    level: 'info',
+                    source: 'claude-hooks',
+                    category: `session:${tabId}`,
+                    message: `✅ task completed: ${input.task_subject}${input.teammate_name ? ` (${input.teammate_name})` : ''}`,
+                    metadata: stringifyCapped({ event: 'TaskCompleted', task_id: input.task_id, task_subject: input.task_subject, task_description: input.task_description, teammate_name: input.teammate_name, team_name: input.team_name }),
+                  }]);
+                  sendToRenderer(`claude-output:${tabId}`, {
+                    type: 'system', subtype: 'task_event', event: 'completed',
+                    task_id: input.task_id, task_subject: input.task_subject,
+                    task_description: input.task_description,
+                    teammate_name: input.teammate_name, team_name: input.team_name,
+                  });
+                  try {
+                    notificationHooks.showNotification?.(`Task Complete: ${input.task_subject}`, input.teammate_name ? `Completed by ${input.teammate_name}` : 'Task finished', false);
+                    notificationHooks.incrementUnread?.();
+                  } catch { /* notification optional */ }
+                } catch (err) { console.error('[sessions] TaskCompleted hook failed:', err); }
+                return {};
+              },
+            ],
+          },
+        ],
+
+        // ---- #21 Elicitation ----
+        Elicitation: [
+          {
+            hooks: [
+              async (input: any) => {
+                try {
+                  logging.writeBatch([{
+                    timestamp: new Date().toISOString(),
+                    level: 'info',
+                    source: 'claude-hooks',
+                    category: `session:${tabId}`,
+                    message: `🔑 elicitation from ${input.mcp_server_name}: ${(input.message ?? '').slice(0, 100)}`,
+                    metadata: stringifyCapped({ event: 'Elicitation', mcp_server_name: input.mcp_server_name, message: input.message, mode: input.mode, url: input.url, elicitation_id: input.elicitation_id, requested_schema: input.requested_schema }),
+                  }]);
+                  // URL mode: open browser for OAuth
+                  if (input.mode === 'url' && input.url) {
+                    try {
+                      const { shell } = require('electron') as typeof import('electron');
+                      shell.openExternal(input.url);
+                    } catch { /* best effort */ }
+                  }
+                } catch (err) { console.error('[sessions] Elicitation hook failed:', err); }
+                // Accept elicitation so MCP servers can connect
+                return { hookSpecificOutput: { hookEventName: 'Elicitation', action: 'accept' } };
+              },
+            ],
+          },
+        ],
+
+        // ---- #22 ElicitationResult ----
+        ElicitationResult: [
+          {
+            hooks: [
+              async (input: any) => {
+                try {
+                  logging.writeBatch([{
+                    timestamp: new Date().toISOString(),
+                    level: 'info',
+                    source: 'claude-hooks',
+                    category: `session:${tabId}`,
+                    message: `🔑 elicitation result: ${input.mcp_server_name} → ${input.action}`,
+                    metadata: stringifyCapped({ event: 'ElicitationResult', mcp_server_name: input.mcp_server_name, elicitation_id: input.elicitation_id, mode: input.mode, action: input.action, content: input.content }),
+                  }]);
+                } catch (err) { console.error('[sessions] ElicitationResult hook failed:', err); }
+                return {};
+              },
+            ],
+          },
+        ],
+
+        // ---- #23 ConfigChange ----
+        ConfigChange: [
+          {
+            hooks: [
+              async (input: any) => {
+                try {
+                  logging.writeBatch([{
+                    timestamp: new Date().toISOString(),
+                    level: 'info',
+                    source: 'claude-hooks',
+                    category: `session:${tabId}`,
+                    message: `🔧 config changed: ${input.source}${input.file_path ? ` (${input.file_path})` : ''}`,
+                    metadata: stringifyCapped({ event: 'ConfigChange', source: input.source, file_path: input.file_path }),
+                  }]);
+                  sendToRenderer(`claude-output:${tabId}`, {
+                    type: 'system', subtype: 'config_change',
+                    source: input.source, file_path: input.file_path,
+                  });
+                } catch (err) { console.error('[sessions] ConfigChange hook failed:', err); }
+                return {};
+              },
+            ],
+          },
+        ],
+
+        // ---- #26 InstructionsLoaded ----
+        InstructionsLoaded: [
+          {
+            hooks: [
+              async (input: any) => {
+                try {
+                  logging.writeBatch([{
+                    timestamp: new Date().toISOString(),
+                    level: 'info',
+                    source: 'claude-hooks',
+                    category: `session:${tabId}`,
+                    message: `📄 instructions loaded: ${input.file_path} (${input.memory_type}, ${input.load_reason})`,
+                    metadata: stringifyCapped({ event: 'InstructionsLoaded', file_path: input.file_path, memory_type: input.memory_type, load_reason: input.load_reason, globs: input.globs, trigger_file_path: input.trigger_file_path, parent_file_path: input.parent_file_path }),
+                  }]);
+                  sendToRenderer(`claude-output:${tabId}`, {
+                    type: 'system', subtype: 'instructions_loaded',
+                    file_path: input.file_path, memory_type: input.memory_type,
+                    load_reason: input.load_reason,
+                  });
+                } catch (err) { console.error('[sessions] InstructionsLoaded hook failed:', err); }
+                return {};
+              },
+            ],
+          },
+        ],
+
       };
     }
 
-    // ---- PermissionRequest: replaces canUseTool with hook-centric flow ----
-    // Always registered (not gated on logging) because permission handling is
-    // essential regardless of whether audit logging is enabled.
+    // ---- canUseTool: primary permission handler ----
+    // Called by the SDK before each tool execution. The SDK may call this
+    // concurrently for parallel tool use — we queue requests and show them
+    // one at a time so the user isn't overwhelmed.
 
-    const permissionRequestMatcher = {
-      hooks: [
-        async (input: any) => {
-          try {
-            const toolName: string = input.tool_name ?? 'unknown';
-            const toolInput: Record<string, unknown> = input.tool_input ?? {};
+    options.canUseTool = async (
+      toolName: string,
+      toolInput: Record<string, unknown>,
+      toolOptions: {
+        signal: AbortSignal;
+        suggestions?: any[];
+        blockedPath?: string;
+        decisionReason?: string;
+        title?: string;
+        displayName?: string;
+        description?: string;
+        toolUseID: string;
+        agentID?: string;
+      },
+    ): Promise<any> => {
+      const requestId = `perm-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 
-            // Auto-allow short-circuit
-            if (handle.autoAllowEnabled && handle.autoAllowedTools.has(toolName)) {
-              return {
-                hookSpecificOutput: {
-                  hookEventName: 'PermissionRequest',
-                  decision: { behavior: 'allow' },
-                },
-              };
+      // If the SDK doesn't provide suggestions, generate a sensible default
+      // from the tool name and input so the user can still save a rule.
+      try { fs.appendFileSync('/tmp/gc-perm-debug.log', `[${new Date().toISOString()}] canUseTool: ${toolName} sdk_suggestions=${JSON.stringify(toolOptions.suggestions)}\n`); } catch {}
+      let suggestions = toolOptions.suggestions;
+      if (!suggestions || suggestions.length === 0) {
+        let ruleContent: string | undefined;
+        if (toolName === 'Bash' && typeof toolInput.command === 'string') {
+          // Extract the base command for a wildcard rule: "git status" → "git:*"
+          const cmd = (toolInput.command as string).trim();
+          const base = cmd.split(/[\s;|&]/)[0];
+          ruleContent = base ? `${base}:*` : cmd;
+        } else if (toolName === 'Write' || toolName === 'Edit' || toolName === 'Read') {
+          ruleContent = typeof toolInput.file_path === 'string' ? toolInput.file_path : undefined;
+        }
+        if (ruleContent) {
+          suggestions = [{
+            type: 'addRules',
+            rules: [{ toolName, ruleContent }],
+            behavior: 'allow',
+            destination: 'localSettings',
+          }];
+        }
+      }
+
+      const payload = {
+        type: 'permission_request',
+        request_id: requestId,
+        tool_name: toolName,
+        tool_input: toolInput,
+        title: toolOptions.title,
+        display_name: toolOptions.displayName,
+        description: toolOptions.description,
+        decision_reason: toolOptions.decisionReason,
+        blocked_path: toolOptions.blockedPath,
+        permission_suggestions: suggestions,
+      };
+
+      const decision = await new Promise<PermissionDecision>((resolve) => {
+        const entry: PendingPermission & { payload: any } = { requestId, resolve, payload };
+        handle.permissionQueue.push(entry);
+        // If this is the only item in the queue, show it immediately
+        if (handle.permissionQueue.length === 1) {
+          handle.status = 'waiting_permission';
+          sendToRenderer(`claude-output:${tabId}`, payload);
+        }
+        // Otherwise it waits — sendNextPermission will show it when the current one resolves
+      });
+
+      const debugPerm = (msg: string) => {
+        try { fs.appendFileSync('/tmp/gc-perm-debug.log', `[${new Date().toISOString()}] ${msg}\n`); } catch {}
+      };
+
+      if (decision.behavior === 'allow') {
+        // updatedInput is REQUIRED and must be the original tool input
+        // (or a modified version). Passing {} breaks the SDK.
+        const result: Record<string, unknown> = {
+          behavior: 'allow',
+          updatedInput: decision.updatedInput ?? toolInput,
+        };
+        if (decision.updatedPermissions && decision.updatedPermissions.length > 0) {
+          result.updatedPermissions = decision.updatedPermissions;
+          debugPerm(`ALLOW ${toolName} with ${decision.updatedPermissions.length} permission updates: ${JSON.stringify(decision.updatedPermissions)}`);
+        } else {
+          debugPerm(`ALLOW ${toolName} (session only, no rules saved)`);
+        }
+
+        // Verify save after a short delay — read the target file to confirm
+        if (decision.updatedPermissions && decision.updatedPermissions.length > 0) {
+          setTimeout(() => {
+            for (const perm of decision.updatedPermissions!) {
+              try {
+                let filePath: string;
+                const dest = (perm as any).destination;
+                if (dest === 'userSettings') filePath = path.join(handle.configDir, 'settings.json');
+                else if (dest === 'projectSettings') filePath = path.join(handle.projectPath, '.claude', 'settings.json');
+                else if (dest === 'localSettings') filePath = path.join(handle.projectPath, '.claude', 'settings.local.json');
+                else { debugPerm(`VERIFY skip: destination=${dest}`); continue; }
+                const content = fs.readFileSync(filePath, 'utf-8');
+                const parsed = JSON.parse(content);
+                const allow = parsed.permissions?.allow ?? [];
+                const ruleStr = ((perm as any).rules ?? []).map((r: any) => r.ruleContent ? `${r.toolName}(${r.ruleContent})` : r.toolName).join(', ');
+                const found = allow.some((a: string) => ruleStr && a.includes((perm as any).rules?.[0]?.ruleContent ?? ''));
+                debugPerm(`VERIFY ${filePath}: looking for "${ruleStr}" → ${found ? 'FOUND' : 'NOT FOUND'} (allow has ${allow.length} rules: ${JSON.stringify(allow)})`);
+              } catch (e) {
+                debugPerm(`VERIFY error: ${e}`);
+              }
             }
+          }, 1000);
+        }
 
-            // Ask the renderer for a permission decision
-            handle.status = 'waiting_permission';
-            const requestId = `perm-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-            sendToRenderer(`claude-output:${tabId}`, {
-              type: 'permission_request',
-              request_id: requestId,
-              tool_name: toolName,
-              tool_input: toolInput,
-              permission_suggestions: input.permission_suggestions,
-            });
+        return result;
+      }
 
-            const decision = await new Promise<PermissionDecision>((resolve) => {
-              handle.permissionResolver = resolve;
-            });
-
-            handle.status = 'running';
-            handle.permissionResolver = null;
-
-            if (decision.behavior === 'allow') {
-              return {
-                hookSpecificOutput: {
-                  hookEventName: 'PermissionRequest',
-                  decision: {
-                    behavior: 'allow',
-                    ...(decision.updatedInput ? { updatedInput: decision.updatedInput } : {}),
-                    ...(decision.updatedPermissions ? { updatedPermissions: decision.updatedPermissions } : {}),
-                  },
-                },
-              };
-            }
-
-            return {
-              hookSpecificOutput: {
-                hookEventName: 'PermissionRequest',
-                decision: {
-                  behavior: 'deny',
-                  message: 'User denied permission',
-                },
-              },
-            };
-          } catch (err) {
-            console.error('[sessions] PermissionRequest hook failed:', err);
-            return {};
-          }
-        },
-      ],
+      debugPerm(`DENY ${toolName}`);
+      return {
+        behavior: 'deny' as const,
+        message: 'User denied permission',
+      };
     };
-
-    if (options.hooks) {
-      (options.hooks as any).PermissionRequest = [permissionRequestMatcher];
-    } else {
-      options.hooks = { PermissionRequest: [permissionRequestMatcher] } as any;
-    }
 
     // Use system-installed claude binary (account is scoped via CLAUDE_CONFIG_DIR)
     const binaryPath = findSystemClaudeBinary();
@@ -849,9 +1127,11 @@ export function createSessionsService(
       sessionId: null,
       status: 'starting',
       permissionResolver: null,
+      permissionQueue: [],
       autoAllowEnabled: false,
       autoAllowedTools: new Set(),
       projectPath,
+      configDir: configDir || path.join(os.homedir(), '.claude'),
     };
 
     // Start the SDK query with the async input channel
@@ -919,9 +1199,19 @@ export function createSessionsService(
     updatedPermissions?: PermissionDecision['updatedPermissions'],
   ): void {
     const handle = sessions.get(tabId);
-    if (!handle || !handle.permissionResolver) return;
+    if (!handle || handle.permissionQueue.length === 0) return;
 
-    handle.permissionResolver({ behavior, updatedInput, updatedPermissions });
+    // Resolve the front of the queue
+    const current = handle.permissionQueue.shift()!;
+    current.resolve({ behavior, updatedInput, updatedPermissions });
+
+    // Show the next queued request, if any
+    if (handle.permissionQueue.length > 0) {
+      const next = handle.permissionQueue[0];
+      sendToRenderer(`claude-output:${tabId}`, (next as any).payload);
+    } else {
+      handle.status = 'running';
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -1077,6 +1367,23 @@ export function createSessionsService(
     }
   }
 
+  async function getMcpServerStatus(tabId: string): Promise<McpServerStatus[]> {
+    const handle = sessions.get(tabId);
+    if (!handle) return [];
+
+    // Ask the SDK for live MCP server status (includes tools, versions, scopes).
+    // Times out after 3s so the panel doesn't hang if the session is still starting.
+    try {
+      const result = await Promise.race([
+        handle.query.mcpServerStatus(),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000)),
+      ]);
+      if (result && result.length > 0) return result;
+    } catch { /* SDK not ready */ }
+
+    return [];
+  }
+
   // -------------------------------------------------------------------------
   // Return service
   // -------------------------------------------------------------------------
@@ -1102,5 +1409,6 @@ export function createSessionsService(
     getSupportedCommands,
     getSupportedModels,
     getSupportedAgents,
+    getMcpServerStatus,
   };
 }

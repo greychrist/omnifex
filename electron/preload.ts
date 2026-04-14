@@ -53,6 +53,9 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   'session_supported_commands',
   'session_supported_models',
   'session_supported_agents',
+  'session_mcp_server_status',
+  'session_get_permissions',
+  'session_update_permission',
 
   // Agents
   'list_agents',

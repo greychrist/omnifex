@@ -5,6 +5,7 @@
   "license": "AGPL-3.0",
   "main": ".vite/build/main.js",
   "scripts": {
+    "prestart": "electron-rebuild -f -w better-sqlite3 2>/dev/null || true",
     "start": "electron-forge start",
     "package": "electron-forge package",
     "make": "electron-forge make",

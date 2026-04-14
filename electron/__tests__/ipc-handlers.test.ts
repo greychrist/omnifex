@@ -202,6 +202,9 @@ describe('ipc handlers — structure', () => {
       'session_respond_permission',
       'session_stop',
       'session_get_info',
+      'session_mcp_server_status',
+      'session_get_permissions',
+      'session_update_permission',
       // Agents
       'list_agents',
       'create_agent',
@@ -417,16 +420,18 @@ describe('ipc handlers — dispatch to services', () => {
     expect(services.sessions.sendStructuredMessage).toHaveBeenCalledWith('t', content);
   });
 
-  it('session_respond_permission forwards tabId, behavior, and updatedInput', async () => {
+  it('session_respond_permission forwards tabId, behavior, updatedInput, and updatedPermissions', async () => {
     await invoke(handlers, 'session_respond_permission', {
       tabId: 't',
       behavior: 'allow',
       updatedInput: { a: 1 },
+      updatedPermissions: [{ type: 'addRules', rules: [{ toolName: 'Bash' }], behavior: 'allow', destination: 'session' }],
     });
     expect(services.sessions.respondPermission).toHaveBeenCalledWith(
       't',
       'allow',
       { a: 1 },
+      [{ type: 'addRules', rules: [{ toolName: 'Bash' }], behavior: 'allow', destination: 'session' }],
     );
   });
 
@@ -435,6 +440,83 @@ describe('ipc handlers — dispatch to services', () => {
     await invoke(handlers, 'session_get_info', { session_id: 'b' });
     expect(services.sessions.stop).toHaveBeenCalledWith('a');
     expect(services.sessions.getInfo).toHaveBeenCalledWith('b');
+  });
+
+  // ── Session Permissions (file-based) ────────────────────────────────────
+
+  it('session_get_permissions reads from user, project, and local settings files', async () => {
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const os = await import('node:os');
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-perm-test-'));
+    const projDir = path.join(tmpDir, 'project');
+    fs.mkdirSync(path.join(projDir, '.claude'), { recursive: true });
+
+    // Write user settings
+    fs.writeFileSync(path.join(tmpDir, 'settings.json'), JSON.stringify({ permissions: { allow: ['Bash(*)'], deny: ['Write(/etc/*)'] } }));
+    // Write project settings
+    fs.writeFileSync(path.join(projDir, '.claude', 'settings.json'), JSON.stringify({ permissions: { allow: ['Read(*)'] } }));
+    // Write local settings
+    fs.writeFileSync(path.join(projDir, '.claude', 'settings.local.json'), JSON.stringify({ permissions: { allow: ['Edit(*)'], deny: [] } }));
+
+    const result = await invoke(handlers, 'session_get_permissions', { configDir: tmpDir, projectPath: projDir }) as any[];
+    expect(result).toHaveLength(3);
+    expect(result[0].scope).toBe('user');
+    expect(result[0].allow).toContain('Bash(*)');
+    expect(result[0].deny).toContain('Write(/etc/*)');
+    expect(result[1].scope).toBe('project');
+    expect(result[1].allow).toContain('Read(*)');
+    expect(result[2].scope).toBe('local');
+    expect(result[2].allow).toContain('Edit(*)');
+
+    fs.rmSync(tmpDir, { recursive: true });
+  });
+
+  it('session_update_permission adds a rule to the correct file', async () => {
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const os = await import('node:os');
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-perm-upd-'));
+    const projDir = path.join(tmpDir, 'project');
+    fs.mkdirSync(path.join(projDir, '.claude'), { recursive: true });
+    fs.writeFileSync(path.join(projDir, '.claude', 'settings.local.json'), JSON.stringify({ permissions: { allow: ['Bash(git:*)'] } }));
+
+    await invoke(handlers, 'session_update_permission', {
+      configDir: tmpDir,
+      projectPath: projDir,
+      scope: 'local',
+      action: 'add',
+      behavior: 'allow',
+      rule: 'Bash(npm:*)',
+    });
+
+    const updated = JSON.parse(fs.readFileSync(path.join(projDir, '.claude', 'settings.local.json'), 'utf-8'));
+    expect(updated.permissions.allow).toContain('Bash(git:*)');
+    expect(updated.permissions.allow).toContain('Bash(npm:*)');
+
+    fs.rmSync(tmpDir, { recursive: true });
+  });
+
+  it('session_update_permission removes a rule', async () => {
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const os = await import('node:os');
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-perm-rm-'));
+    fs.writeFileSync(path.join(tmpDir, 'settings.json'), JSON.stringify({ permissions: { allow: ['Bash(*)', 'Read(*)'] } }));
+
+    await invoke(handlers, 'session_update_permission', {
+      configDir: tmpDir,
+      projectPath: '',
+      scope: 'user',
+      action: 'remove',
+      behavior: 'allow',
+      rule: 'Bash(*)',
+    });
+
+    const updated = JSON.parse(fs.readFileSync(path.join(tmpDir, 'settings.json'), 'utf-8'));
+    expect(updated.permissions.allow).toEqual(['Read(*)']);
+
+    fs.rmSync(tmpDir, { recursive: true });
   });
 
   // ── Agents ──────────────────────────────────────────────────────────────
