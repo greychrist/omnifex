@@ -4,7 +4,7 @@ export interface AsyncChannel<T> {
   [Symbol.asyncIterator](): AsyncIterator<T>;
 }
 
-export function createAsyncChannel<T>(): AsyncChannel<T> {
+export function createAsyncChannel<T>(maxSize?: number): AsyncChannel<T> {
   const queue: T[] = [];
   let resolve: ((result: IteratorResult<T>) => void) | null = null;
   let closed = false;
@@ -17,6 +17,12 @@ export function createAsyncChannel<T>(): AsyncChannel<T> {
         resolve = null;
         r({ value, done: false });
       } else {
+        if (maxSize !== undefined && queue.length >= maxSize) {
+          console.warn(
+            `[AsyncChannel] Queue reached maxSize=${maxSize}; dropping oldest item.`,
+          );
+          queue.shift();
+        }
         queue.push(value);
       }
     },

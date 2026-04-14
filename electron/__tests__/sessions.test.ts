@@ -139,6 +139,47 @@ describe('async channel', () => {
     ch.close();
     ch.push(1); // should not throw
   });
+
+  it('bounded: drops oldest item when maxSize is exceeded', async () => {
+    const ch = createAsyncChannel<number>(3);
+    ch.push(1);
+    ch.push(2);
+    ch.push(3);
+    // This push exceeds maxSize=3, so item 1 (oldest) is dropped
+    ch.push(4);
+    ch.close();
+
+    const values: number[] = [];
+    for await (const v of ch) {
+      values.push(v);
+    }
+    expect(values).toEqual([2, 3, 4]);
+  });
+
+  it('bounded: no drop when queue is below maxSize', async () => {
+    const ch = createAsyncChannel<number>(5);
+    ch.push(10);
+    ch.push(20);
+    ch.close();
+
+    const values: number[] = [];
+    for await (const v of ch) {
+      values.push(v);
+    }
+    expect(values).toEqual([10, 20]);
+  });
+
+  it('unbounded: behavior unchanged when maxSize is omitted', async () => {
+    const ch = createAsyncChannel<number>();
+    for (let i = 0; i < 10; i++) ch.push(i);
+    ch.close();
+
+    const values: number[] = [];
+    for await (const v of ch) {
+      values.push(v);
+    }
+    expect(values).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -2498,5 +2539,42 @@ describe('sessions service — full lifecycle', () => {
     await pending;
 
     svc.stopAll();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getHealth()
+// ---------------------------------------------------------------------------
+
+describe('sessions service — getHealth', () => {
+  let service: SessionsService;
+  let sendToRenderer: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    mockedQuery.mockReset();
+    sendToRenderer = vi.fn();
+    service = createSessionsService(sendToRenderer as any);
+  });
+
+  it('returns alive:false, status:stopped, sessionId:null for unknown tab', () => {
+    const health = service.getHealth('unknown-tab');
+    expect(health).toEqual({ alive: false, status: 'stopped', sessionId: null });
+  });
+
+  it('returns alive:true with current status and sessionId for an active session', () => {
+    installFakeQuery();
+
+    service.start({
+      tabId: 'health-tab',
+      projectPath: '/p',
+      configDir: '/c',
+      model: 'sonnet',
+      permissionMode: 'default',
+    });
+
+    const health = service.getHealth('health-tab');
+    expect(health.alive).toBe(true);
+    expect(health.status).toBe('starting');
+    expect(health.sessionId).toBeNull(); // no init message yet
   });
 });

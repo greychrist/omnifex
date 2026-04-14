@@ -131,7 +131,7 @@ export function createSessionsService(
   // -------------------------------------------------------------------------
 
   function restartQuery(tabId: string, handle: SessionHandle): void {
-    const newInputChannel = createAsyncChannel<SDKUserMessage>();
+    const newInputChannel = createAsyncChannel<SDKUserMessage>(1000);
     const opts = { ...handle.sdkOptions };
     if (handle.sessionId) {
       opts.resume = handle.sessionId;
@@ -175,7 +175,7 @@ export function createSessionsService(
       sessions.delete(tabId);
     }
 
-    const inputChannel = createAsyncChannel<SDKUserMessage>();
+    const inputChannel = createAsyncChannel<SDKUserMessage>(1000);
 
     // Build the SDK options
     const options: Record<string, unknown> = {
@@ -399,6 +399,12 @@ export function createSessionsService(
     return sessions.has(tabId);
   }
 
+  function getHealth(tabId: string): { alive: boolean; status: SessionStatus; sessionId: string | null } {
+    const handle = sessions.get(tabId);
+    if (!handle) return { alive: false, status: 'stopped', sessionId: null };
+    return { alive: true, status: handle.status, sessionId: handle.sessionId };
+  }
+
   // -------------------------------------------------------------------------
   // Return service
   // -------------------------------------------------------------------------
@@ -415,6 +421,7 @@ export function createSessionsService(
     getSessionId,
     getStatus,
     getInfo,
+    getHealth,
     isActive,
     ...createQueryPassthroughs(sessions),
   };
