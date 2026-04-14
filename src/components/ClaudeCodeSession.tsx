@@ -103,7 +103,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   const [timedOutMessageIndex, setTimedOutMessageIndex] = useState<number | null>(null);
   const [currentActivity, setCurrentActivity] = useState<string>("Honking");
   const lastPromptRef = useRef<{ prompt: string; model: string } | null>(null);
-  const RESPONSE_TIMEOUT_MS = 60_000;
+  const RESPONSE_TIMEOUT_MS = 30_000;
   const INACTIVITY_TIMEOUT_MS = 15_000;
   const lastMessageTimeRef = useRef<number>(Date.now());
 
@@ -367,15 +367,30 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       const interval = setInterval(() => {
         setElapsedSeconds(prev => prev + 1);
       }, 1000);
-      const timeout = setTimeout(() => {
-        // Find the last user message index
+      const timeout = setTimeout(async () => {
+        // Check if the main process session is still alive before killing
+        try {
+          const health = await api.sessionGetHealth(tabIdRef.current);
+          if (health.alive && health.status !== 'error') {
+            // Session is alive — show warning but don't kill it
+            setMessages((prev) => [...prev, {
+              type: 'system' as const,
+              subtype: 'notification',
+              notification_type: 'warn',
+              title: 'Slow Response',
+              message: 'Session is still active but no response yet. Waiting...',
+            } as any]);
+            return;
+          }
+        } catch { /* health check failed — treat as dead */ }
+
+        // Session is dead or errored — reset
         const lastUserIdx = [...messages].reverse().findIndex(m => m.type === 'user' && !m.isMeta);
         if (lastUserIdx !== -1) {
           setTimedOutMessageIndex(messages.length - 1 - lastUserIdx);
         }
         setIsLoading(false);
-        setError(null); // Don't show the generic error bar
-        // Reset persistent session so a retry starts a fresh one
+        setError(null);
         persistentSessionRef.current = false;
       }, RESPONSE_TIMEOUT_MS);
       return () => { clearInterval(interval); clearTimeout(timeout); };
@@ -389,17 +404,39 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   // may be hung. Reset so the next prompt auto-restarts the session.
   useEffect(() => {
     if (!isLoading) return;
-    const check = setInterval(() => {
+    const check = setInterval(async () => {
       const idle = Date.now() - lastMessageTimeRef.current;
       if (idle >= INACTIVITY_TIMEOUT_MS && !waitingForPermission) {
+        // Check health before killing
+        try {
+          const health = await api.sessionGetHealth(tabIdRef.current);
+          if (health.alive && health.status !== 'error') {
+            // Session is alive — show warning but keep waiting
+            setMessages((prev) => {
+              // Don't spam warnings
+              const lastMsg = prev[prev.length - 1];
+              if (lastMsg?.title === 'Session May Be Unresponsive') return prev;
+              return [...prev, {
+                type: 'system' as const,
+                subtype: 'notification',
+                notification_type: 'warn',
+                title: 'Session May Be Unresponsive',
+                message: 'No messages received recently, but session is still alive.',
+              } as any];
+            });
+            return;
+          }
+        } catch { /* health check failed — treat as dead */ }
+
+        // Session is dead — reset
         setIsLoading(false);
         persistentSessionRef.current = false;
         setMessages((prev) => [...prev, {
           type: 'system' as const,
           subtype: 'notification',
           notification_type: 'warn',
-          title: 'Session Inactive',
-          message: 'No response received. Send a message to restart the session.',
+          title: 'Session Lost',
+          message: 'Session is no longer active. Send a message to restart.',
         } as any]);
       }
     }, 3000);
