@@ -323,6 +323,14 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                   title: 'Projects',
                 });
               }}
+              onStreamingChange={(isStreaming, sessionId) => {
+                // Persist the SDK session ID to the tab so it survives app restart
+                if (sessionId) {
+                  updateTab(tab.id, { sessionId, status: isStreaming ? 'running' : 'idle' });
+                } else {
+                  updateTab(tab.id, { status: isStreaming ? 'running' : 'idle' });
+                }
+              }}
               onProjectPathChange={(path: string) => {
                 // Update tab title with directory name
                 const dirName = path.split('/').pop() || path.split('\\').pop() || 'Session';
