@@ -195,4 +195,90 @@ describe('mcp service', () => {
       fs.rmSync(freshDir, { recursive: true, force: true });
     }
   });
+
+  describe('multi-account isolation', () => {
+    let accountA: string;
+    let accountB: string;
+
+    beforeEach(() => {
+      accountA = fs.mkdtempSync(path.join(os.tmpdir(), 'greychrist-mcp-acctA-'));
+      accountB = fs.mkdtempSync(path.join(os.tmpdir(), 'greychrist-mcp-acctB-'));
+      // Initialise both dirs with empty mcpServers
+      fs.writeFileSync(path.join(accountA, 'settings.json'), JSON.stringify({ mcpServers: {} }), 'utf-8');
+      fs.writeFileSync(path.join(accountB, 'settings.json'), JSON.stringify({ mcpServers: {} }), 'utf-8');
+    });
+
+    afterEach(() => {
+      fs.rmSync(accountA, { recursive: true, force: true });
+      fs.rmSync(accountB, { recursive: true, force: true });
+    });
+
+    it('list with per-call configDir reads the correct account settings', () => {
+      // Add a server directly to accountA's settings
+      fs.writeFileSync(
+        path.join(accountA, 'settings.json'),
+        JSON.stringify({ mcpServers: { 'acct-a-server': { command: 'node', args: [] } } }),
+        'utf-8',
+      );
+
+      const servers = mcp.list(accountA);
+      expect(servers).toHaveLength(1);
+      expect(servers[0].name).toBe('acct-a-server');
+
+      // accountB should remain empty
+      expect(mcp.list(accountB)).toHaveLength(0);
+    });
+
+    it('add with configDir in params writes to the correct account', () => {
+      mcp.add({ name: 'server-for-a', command: 'node', args: [], configDir: accountA });
+      mcp.add({ name: 'server-for-b', command: 'deno', args: [], configDir: accountB });
+
+      expect(mcp.list(accountA)).toHaveLength(1);
+      expect(mcp.list(accountA)[0].name).toBe('server-for-a');
+
+      expect(mcp.list(accountB)).toHaveLength(1);
+      expect(mcp.list(accountB)[0].name).toBe('server-for-b');
+    });
+
+    it('get with configDir retrieves from the correct account', () => {
+      mcp.add({ name: 'shared-name', command: 'node', args: ['a.js'], configDir: accountA });
+      mcp.add({ name: 'shared-name', command: 'deno', args: ['b.ts'], configDir: accountB });
+
+      const serverA = mcp.get('shared-name', accountA);
+      expect(serverA.command).toBe('node');
+
+      const serverB = mcp.get('shared-name', accountB);
+      expect(serverB.command).toBe('deno');
+    });
+
+    it('remove with configDir only removes from the targeted account', () => {
+      mcp.add({ name: 'shared-name', command: 'node', args: [], configDir: accountA });
+      mcp.add({ name: 'shared-name', command: 'deno', args: [], configDir: accountB });
+
+      mcp.remove('shared-name', accountA);
+
+      expect(mcp.list(accountA)).toHaveLength(0);
+      expect(mcp.list(accountB)).toHaveLength(1);
+    });
+
+    it('getServerStatus with configDir returns status for the correct account', () => {
+      mcp.add({ name: 'alpha', command: 'node', args: [], configDir: accountA });
+
+      const statusA = mcp.getServerStatus(accountA);
+      expect(statusA.alpha).toEqual({ status: 'unknown', pid: null });
+
+      const statusB = mcp.getServerStatus(accountB);
+      expect(Object.keys(statusB)).toHaveLength(0);
+    });
+
+    it('falls back to defaultConfigDir when configDir is omitted', () => {
+      // Add to the default dir (mcp was created with configDir = tmpDir)
+      mcp.add({ name: 'default-server', command: 'node', args: [] });
+
+      // list() with no arg should see it
+      expect(mcp.list()).toHaveLength(1);
+      // list() with explicit accountA should not see it
+      expect(mcp.list(accountA)).toHaveLength(0);
+    });
+  });
 });

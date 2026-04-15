@@ -15,15 +15,15 @@ export interface MCPServerEntry {
 
 export interface MCPService {
   add(params: any): any;
-  list(): any[];
-  get(name: string): any;
-  remove(name: string): string;
+  list(configDir?: string): any[];
+  get(name: string, configDir?: string): any;
+  remove(name: string, configDir?: string): string;
   addJson(params: any): any;
-  addFromClaudeDesktop(scope?: string): any;
+  addFromClaudeDesktop(scope?: string, configDir?: string): any;
   serve(): string;
-  testConnection(name: string): string;
+  testConnection(name: string, configDir?: string): string;
   resetProjectChoices(): string;
-  getServerStatus(): Record<string, any>;
+  getServerStatus(configDir?: string): Record<string, any>;
   readProjectConfig(projectPath: string): any;
   saveProjectConfig(projectPath: string, config: any): string;
 }
@@ -51,30 +51,33 @@ function writeSettings(settingsPath: string, settings: Record<string, any>): voi
 // Factory
 // ---------------------------------------------------------------------------
 
-export function createMCPService(configDir: string): MCPService {
-  const settingsPath = path.join(configDir, 'settings.json');
+export function createMCPService(defaultConfigDir: string): MCPService {
+  function getSettingsPath(configDir?: string): string {
+    return path.join(configDir ?? defaultConfigDir, 'settings.json');
+  }
 
-  function getMcpServers(): Record<string, MCPServerEntry> {
-    const settings = readSettings(settingsPath);
+  function getMcpServers(configDir?: string): Record<string, MCPServerEntry> {
+    const settings = readSettings(getSettingsPath(configDir));
     return (settings.mcpServers as Record<string, MCPServerEntry>) ?? {};
   }
 
-  function saveMcpServers(servers: Record<string, MCPServerEntry>): void {
+  function saveMcpServers(servers: Record<string, MCPServerEntry>, configDir?: string): void {
+    const settingsPath = getSettingsPath(configDir);
     const settings = readSettings(settingsPath);
     settings.mcpServers = servers;
     writeSettings(settingsPath, settings);
   }
 
-  function list(): any[] {
-    const servers = getMcpServers();
+  function list(configDir?: string): any[] {
+    const servers = getMcpServers(configDir);
     return Object.entries(servers).map(([name, config]) => ({
       ...config,
       name,
     }));
   }
 
-  function get(name: string): any {
-    const servers = getMcpServers();
+  function get(name: string, configDir?: string): any {
+    const servers = getMcpServers(configDir);
     const config = servers[name];
     if (!config) {
       throw new Error(`MCP server not found: ${name}`);
@@ -83,39 +86,39 @@ export function createMCPService(configDir: string): MCPService {
   }
 
   function add(params: any): any {
-    const { name, ...config } = params;
+    const { name, configDir: cd, ...config } = params;
     if (!name) {
       throw new Error('MCP server name is required');
     }
-    const servers = getMcpServers();
+    const servers = getMcpServers(cd);
     servers[name] = config as MCPServerEntry;
-    saveMcpServers(servers);
+    saveMcpServers(servers, cd);
     return { name, ...config };
   }
 
-  function remove(name: string): string {
-    const servers = getMcpServers();
+  function remove(name: string, configDir?: string): string {
+    const servers = getMcpServers(configDir);
     if (!(name in servers)) {
       throw new Error(`MCP server not found: ${name}`);
     }
     delete servers[name];
-    saveMcpServers(servers);
+    saveMcpServers(servers, configDir);
     return `Removed MCP server: ${name}`;
   }
 
   function addJson(params: any): any {
     // Parse JSON string config and add
-    const { name, json } = params;
+    const { name, json, configDir: cd } = params;
     let config: any;
     try {
       config = typeof json === 'string' ? JSON.parse(json) : json;
     } catch {
       throw new Error('Invalid JSON configuration');
     }
-    return add({ name, ...config });
+    return add({ name, ...config, configDir: cd });
   }
 
-  function addFromClaudeDesktop(scope?: string): any {
+  function addFromClaudeDesktop(scope?: string, _configDir?: string): any {
     // Stub: reads Claude Desktop config and imports MCP servers
     return { imported: 0, scope: scope ?? 'global', message: 'Claude Desktop import not yet implemented' };
   }
@@ -125,10 +128,10 @@ export function createMCPService(configDir: string): MCPService {
     return 'MCP serve not yet implemented';
   }
 
-  function testConnection(name: string): string {
+  function testConnection(name: string, configDir?: string): string {
     // Stub: testing live connections requires running processes
     try {
-      get(name); // Validate server exists
+      get(name, configDir); // Validate server exists
       return `Connection test for "${name}": stub response (not yet implemented)`;
     } catch (e: any) {
       return `Error: ${e.message}`;
@@ -140,9 +143,9 @@ export function createMCPService(configDir: string): MCPService {
     return 'Project choices reset (not yet implemented)';
   }
 
-  function getServerStatus(): Record<string, any> {
+  function getServerStatus(configDir?: string): Record<string, any> {
     // Stub: returns status of running MCP processes
-    const servers = getMcpServers();
+    const servers = getMcpServers(configDir);
     const status: Record<string, any> = {};
     for (const name of Object.keys(servers)) {
       status[name] = { status: 'unknown', pid: null };
