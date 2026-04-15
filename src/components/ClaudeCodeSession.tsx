@@ -43,6 +43,12 @@ import { SplitPane } from "@/components/ui/split-pane";
 import { WebviewPreview } from "./WebviewPreview";
 import type { ClaudeStreamMessage } from "./AgentExecution";
 import { SessionHeader } from "./SessionHeader";
+import { filterDisplayableMessages } from "@/lib/messageFilters";
+import { exportAsJsonl, exportAsMarkdown } from "@/lib/sessionExporters";
+import { useSessionTimeouts } from "@/hooks/useSessionTimeouts";
+import { usePermissions } from "@/hooks/usePermissions";
+import { useSessionLifecycle } from "@/hooks/useSessionLifecycle";
+import { useSendPrompt } from "@/hooks/useSendPrompt";
 // Virtualizer removed — flat list for reliable scrolling
 import { SessionPersistenceService } from "@/services/sessionPersistence";
 
@@ -98,14 +104,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   const [projectPath] = useState(initialProjectPath || session?.project_path || "");
   const [messages, setMessages] = useState<ClaudeStreamMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [_loadingStartTime, setLoadingStartTime] = useState<number | null>(null);
-  const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  const [timedOutMessageIndex, setTimedOutMessageIndex] = useState<number | null>(null);
   const [currentActivity, setCurrentActivity] = useState<string>("Honking");
-  const lastPromptRef = useRef<{ prompt: string; model: string } | null>(null);
-  const RESPONSE_TIMEOUT_MS = 30_000;
-  const INACTIVITY_TIMEOUT_MS = 15_000;
-  const lastMessageTimeRef = useRef<number>(Date.now());
 
   // Random gerund words like Claude Code CLI
   const GERUNDS = [
@@ -183,9 +182,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     }
   }, [projectPath]);
 
-  // Queued prompts state
-  const [queuedPrompts, setQueuedPrompts] = useState<Array<{ id: string; prompt: string; model: string }>>([]);
-  
   // New state for preview feature
   const [showPreview, setShowPreview] = useState(false);
   const [previewUrl, setPreviewUrl] = useState("");
@@ -197,27 +193,22 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   const [queuedPromptsCollapsed, setQueuedPromptsCollapsed] = useState(false);
 
   // Permission prompt state
-  const [waitingForPermission, setWaitingForPermission] = useState(false);
-  const [pendingToolUse, setPendingToolUse] = useState<{
-    name: string;
-    input: Record<string, any>;
-    title?: string;
-    displayName?: string;
-    description?: string;
-    decisionReason?: string;
-    suggestions: Array<{
-      type: string;
-      rules?: Array<{ toolName: string; ruleContent?: string }>;
-      behavior?: string;
-      destination?: string;
-    }>;
-  } | null>(null);
-  const [pendingRequestId, setPendingRequestId] = useState<string | null>(null);
-  const [autoAllowEnabled, setAutoAllowEnabled] = useState(false);
-  const [autoAllowedTools, setAutoAllowedTools] = useState<Set<string>>(new Set());
+  const {
+    waitingForPermission,
+    setWaitingForPermission,
+    pendingToolUse,
+    setPendingToolUse,
+    pendingRequestId,
+    setPendingRequestId,
+    autoAllowEnabled,
+    setAutoAllowEnabled,
+    autoAllowedTools,
+    setAutoAllowedTools,
+    handlePermissionAllow,
+    handlePermissionDeny,
+  } = usePermissions();
 
   const parentRef = useRef<HTMLDivElement>(null);
-  const unlistenRefs = useRef<(() => void)[]>([]);
   const persistentSessionRef = useRef(false);
   const tabIdRef = useRef(tabId || 'default');
   const floatingPromptRef = useRef<FloatingPromptInputRef>(null);
@@ -226,8 +217,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   // the SDK emits after interrupt) so "Execution Failed" doesn't flash after
   // a deliberate cancel. Reset after the first result message is consumed.
   const userInterruptedRef = useRef(false);
-  const queuedPromptsRef = useRef<Array<{ id: string; prompt: string; model: string }>>([]);
-  const isMountedRef = useRef(true);
   const isIMEComposingRef = useRef(false);
   const messagesRef = useRef<ClaudeStreamMessage[]>([]);
   const isNearBottomRef = useRef(true);
@@ -259,9 +248,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   
   // Keep refs in sync with state
   useEffect(() => {
-    queuedPromptsRef.current = queuedPrompts;
-  }, [queuedPrompts]);
-  useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
 
@@ -280,67 +266,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   }, [session, extractedSessionInfo, projectPath]);
 
   // Filter out messages that shouldn't be displayed
-  const displayableMessages = useMemo(() => {
-    return messages.filter((message, index) => {
-      // Skip meta messages that don't have meaningful content
-      if (message.isMeta && !message.leafUuid && !message.summary) {
-        return false;
-      }
-
-      // Skip user messages that only contain tool results that are already displayed
-      if (message.type === "user" && message.message) {
-        if (message.isMeta) return false;
-
-        const msg = message.message;
-        if (!msg.content || (Array.isArray(msg.content) && msg.content.length === 0)) {
-          return false;
-        }
-
-        if (Array.isArray(msg.content)) {
-          let hasVisibleContent = false;
-          for (const content of msg.content) {
-            if (content.type === "text") {
-              hasVisibleContent = true;
-              break;
-            }
-            if (content.type === "tool_result") {
-              let willBeSkipped = false;
-              if (content.tool_use_id) {
-                // Look for the matching tool_use in previous assistant messages
-                for (let i = index - 1; i >= 0; i--) {
-                  const prevMsg = messages[i];
-                  if (prevMsg.type === 'assistant' && prevMsg.message?.content && Array.isArray(prevMsg.message.content)) {
-                    const toolUse = prevMsg.message.content.find((c: any) => 
-                      c.type === 'tool_use' && c.id === content.tool_use_id
-                    );
-                    if (toolUse) {
-                      const toolName = toolUse.name?.toLowerCase();
-                      const toolsWithWidgets = [
-                        'task', 'edit', 'multiedit', 'todowrite', 'ls', 'read', 
-                        'glob', 'bash', 'write', 'grep'
-                      ];
-                      if (toolsWithWidgets.includes(toolName) || toolUse.name?.startsWith('mcp__')) {
-                        willBeSkipped = true;
-                      }
-                      break;
-                    }
-                  }
-                }
-              }
-              if (!willBeSkipped) {
-                hasVisibleContent = true;
-                break;
-              }
-            }
-          }
-          if (!hasVisibleContent) {
-            return false;
-          }
-        }
-      }
-      return true;
-    });
-  }, [messages]);
+  const displayableMessages = useMemo(() => filterDisplayableMessages(messages), [messages]);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -359,89 +285,17 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     onStreamingChange?.(isLoading, claudeSessionId);
   }, [isLoading, claudeSessionId, onStreamingChange]);
 
-  // Track elapsed time while loading + response timeout
-  useEffect(() => {
-    if (isLoading) {
-      setLoadingStartTime(Date.now());
-      setElapsedSeconds(0);
-      const interval = setInterval(() => {
-        setElapsedSeconds(prev => prev + 1);
-      }, 1000);
-      const timeout = setTimeout(async () => {
-        // Check if the main process session is still alive before killing
-        try {
-          const health = await api.sessionGetHealth(tabIdRef.current);
-          if (health.alive && health.status !== 'error') {
-            // Session is alive — show warning but don't kill it
-            setMessages((prev) => [...prev, {
-              type: 'system' as const,
-              subtype: 'notification',
-              notification_type: 'warn',
-              title: 'Slow Response',
-              message: 'Session is still active but no response yet. Waiting...',
-            } as any]);
-            return;
-          }
-        } catch { /* health check failed — treat as dead */ }
-
-        // Session is dead or errored — reset
-        const lastUserIdx = [...messages].reverse().findIndex(m => m.type === 'user' && !m.isMeta);
-        if (lastUserIdx !== -1) {
-          setTimedOutMessageIndex(messages.length - 1 - lastUserIdx);
-        }
-        setIsLoading(false);
-        setError(null);
-        persistentSessionRef.current = false;
-      }, RESPONSE_TIMEOUT_MS);
-      return () => { clearInterval(interval); clearTimeout(timeout); };
-    } else {
-      setLoadingStartTime(null);
-      setElapsedSeconds(0);
-    }
-  }, [isLoading, messages.length]);
-
-  // Inactivity detection — if loading and no stream messages for 15s, the session
-  // may be hung. Reset so the next prompt auto-restarts the session.
-  useEffect(() => {
-    if (!isLoading) return;
-    const check = setInterval(async () => {
-      const idle = Date.now() - lastMessageTimeRef.current;
-      if (idle >= INACTIVITY_TIMEOUT_MS && !waitingForPermission) {
-        // Check health before killing
-        try {
-          const health = await api.sessionGetHealth(tabIdRef.current);
-          if (health.alive && health.status !== 'error') {
-            // Session is alive — show warning but keep waiting
-            setMessages((prev) => {
-              // Don't spam warnings
-              const lastMsg = prev[prev.length - 1];
-              if (lastMsg?.title === 'Session May Be Unresponsive') return prev;
-              return [...prev, {
-                type: 'system' as const,
-                subtype: 'notification',
-                notification_type: 'warn',
-                title: 'Session May Be Unresponsive',
-                message: 'No messages received recently, but session is still alive.',
-              } as any];
-            });
-            return;
-          }
-        } catch { /* health check failed — treat as dead */ }
-
-        // Session is dead — reset
-        setIsLoading(false);
-        persistentSessionRef.current = false;
-        setMessages((prev) => [...prev, {
-          type: 'system' as const,
-          subtype: 'notification',
-          notification_type: 'warn',
-          title: 'Session Lost',
-          message: 'Session is no longer active. Send a message to restart.',
-        } as any]);
-      }
-    }, 3000);
-    return () => clearInterval(check);
-  }, [isLoading, waitingForPermission]);
+  // Timeout tracking (elapsed time, response timeout, inactivity detection)
+  const { elapsedSeconds, timedOutMessageIndex, setTimedOutMessageIndex, lastMessageTimeRef } = useSessionTimeouts({
+    isLoading,
+    messages,
+    tabId: tabIdRef.current,
+    waitingForPermission,
+    persistentSessionRef,
+    setIsLoading,
+    setMessages,
+    setError,
+  });
 
   // Auto-scroll to bottom when new messages arrive, but only if already near the bottom.
   // Always scroll when waiting for permission so the user sees the latest context.
@@ -505,13 +359,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     } finally {
       setIsLoading(false);
     }
-  };
-
-  // Filter out noisy stderr messages that aren't real errors
-  const isIgnorableStderr = (msg: string) => {
-    if (!msg) return false;
-    return msg.includes("no stdin data received in") ||
-           msg.includes("proceeding without it");
   };
 
   // Helper to process any JSONL stream message string or object
@@ -788,303 +635,58 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     }
   }, [projectPath, effectiveSession, extractedSessionInfo, autoAllowedTools]);
 
-  // Start a persistent stream-json session, setting up listeners ONCE
-  const startPersistentSession = async (resumeId?: string) => {
-    if (persistentSessionRef.current) return; // Already running
+  // Session lifecycle: persistent session management, event listeners, cleanup
+  const { unlistenRefs, isMountedRef, startPersistentSession } = useSessionLifecycle({
+    tabId: tabIdRef.current,
+    projectPath,
+    selectedModel,
+    permissionMode,
+    effort,
+    thinkingConfig,
+    accountResolution,
+    effectiveSession,
+    persistentSessionRef,
+    handleStreamMessage,
+    setIsLoading,
+    setMessages,
+    setSdkAccountInfo,
+    setSupportedModels,
+    setContextUsage,
+  });
 
-    const tid = tabIdRef.current;
+  // Prompt sending and queuing
+  const { handleSendPrompt, queuedPrompts, setQueuedPrompts, queuedPromptsRef, lastPromptRef } = useSendPrompt({
+    projectPath,
+    tabId: tabIdRef.current,
+    isLoading,
+    selectedModel,
+    persistentSessionRef,
+    unlistenRefs,
+    effectiveSession,
+    claudeSessionId,
+    sessionMetrics,
+    startPersistentSession,
+    pickGerund,
+    setIsLoading,
+    setError,
+    setTimedOutMessageIndex,
+    setCurrentActivity,
+    setSelectedModel,
+    setMessages,
+  });
 
-    // Clean up any old listeners
-    unlistenRefs.current.forEach(u => u());
-    unlistenRefs.current = [];
-
-    // Set up listeners ONCE — scoped to tab_id
-    const outputUnlisten = window.electronAPI.onEvent(`claude-output:${tid}`, (payload: any) => {
-      handleStreamMessage(payload);
-    });
-
-    const errorUnlisten = window.electronAPI.onEvent(`claude-error:${tid}`, (payload: any) => {
-      if (isIgnorableStderr(payload)) return;
-      console.error('[ClaudeCodeSession] stderr:', payload);
-    });
-
-    const completeUnlisten = window.electronAPI.onEvent(`claude-complete:${tid}`, () => {
-      if (isMountedRef.current) {
-        setIsLoading(false);
-        persistentSessionRef.current = false;
-
-      }
-    });
-
-    unlistenRefs.current = [outputUnlisten, errorUnlisten, completeUnlisten];
-
-    // Resolve account fresh at session start (the cached state may not be ready yet)
-    // permissionMode is now the full SDK mode string directly — no mapping needed.
-    const mode = permissionMode;
-    let configDir = accountResolution?.account.config_dir;
-    if (!configDir && projectPath) {
-      try {
-        const resolved = await api.resolveAccountForProject(projectPath);
-        if (resolved) {
-          configDir = resolved.config_dir;
-        }
-      } catch (e) {
-        console.error('[startPersistentSession] resolve error:', e);
-      }
-    }
-    const sdkEffort = effort === 'auto' ? undefined : effort;
-    const sdkThinking = thinkingConfig === 'adaptive'
-      ? { type: 'adaptive' as const }
-      : thinkingConfig === 'disabled'
-      ? { type: 'disabled' as const }
-      : { type: 'enabled' as const, budgetTokens: 10000 };
-    await api.startSession(tid, projectPath, selectedModel, mode, resumeId, configDir, sdkEffort, sdkThinking);
-    persistentSessionRef.current = true;
-
-    // Fetch session details immediately (don't wait for first prompt).
-    // The SDK subprocess needs a moment to initialize, so retry a few times.
-    // Once ready, build a synthetic "System Initialized" message so the user
-    // sees session info right away.
-    const fetchInitInfo = async (retries = 8) => {
-      for (let i = 0; i < retries; i++) {
-        try {
-          const info = await api.sessionAccountInfo(tid);
-          if (info) {
-            setSdkAccountInfo(info);
-
-            // Fetch supporting data in parallel
-            const [models, mcpServers, contextUsage] = await Promise.all([
-              api.sessionSupportedModels(tid).catch(() => []),
-              api.sessionMcpServerStatus(tid).catch(() => []),
-              api.sessionContextUsage(tid).catch(() => null),
-            ]);
-            if (models?.length) setSupportedModels(models);
-            if (contextUsage) setContextUsage(contextUsage as any);
-
-            // Build tool list: standard tools + MCP tools from connected servers
-            const standardTools = [
-              'Task', 'AskUserQuestion', 'Bash', 'CronCreate', 'CronList',
-              'Edit', 'EnterPlanMode', 'EnterWorktree', 'ExitPlanMode',
-              'ExitWorktree', 'Glob', 'Grep', 'ListMcpResourcesTool', 'LSP',
-              'Monitor', 'NotebookEdit', 'NotebookRead', 'Read',
-              'ReadMcpResourceTool', 'RemoteTrigger', 'ScheduleWakeup',
-              'SendMessage', 'Skill', 'TaskOutput', 'TaskStop', 'TeamCreate',
-              'TeamDelete', 'TodoRead', 'TodoWrite', 'Toolbox',
-              'WebFetch', 'WebSearch', 'Write',
-            ];
-            const mcpToolNames = (mcpServers || [])
-              .filter((s: any) => s.status === 'connected')
-              .flatMap((s: any) => (s.tools || []).map((t: any) => `mcp__${s.name.replace(/[^a-zA-Z0-9]/g, '_')}__${t.name}`));
-            const allTools = [...standardTools, ...mcpToolNames];
-
-            setMessages((prev) => {
-              if (prev.some((m) => m.type === 'system' && m.subtype === 'init')) return prev;
-              return [{
-                type: 'system' as const,
-                subtype: 'init',
-                session_id: '',
-                model: selectedModel,
-                cwd: projectPath,
-                tools: allTools,
-              } as any, ...prev];
-            });
-            return;
-          }
-        } catch { /* subprocess not ready yet */ }
-        await new Promise((r) => setTimeout(r, 1500));
-      }
-    };
-    fetchInitInfo();
-  };
-
-  const handleSendPrompt = async (prompt: string, model: string, images?: string[]) => {
-
-    if (!projectPath) {
-      setError("Please select a project directory first");
-      return;
-    }
-
-    // If already loading, queue the prompt
-    if (isLoading) {
-      const newPrompt = {
-        id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        prompt,
-        model
-      };
-      setQueuedPrompts(prev => [...prev, newPrompt]);
-      return;
-    }
-
-    try {
-      setIsLoading(true);
-      setError(null);
-      setTimedOutMessageIndex(null);
-      setCurrentActivity(pickGerund());
-      lastPromptRef.current = { prompt, model };
-
-      const tid = tabIdRef.current;
-
-      // Mid-session model change: use the SDK's Query.setModel() rather than
-      // tearing down and restarting the session. The old code called
-      // api.stopSession() + restart which lost conversation context and cost
-      // the user a round trip. setModel() switches the model for the *next*
-      // turn while keeping the current session and its full history intact.
-      if (persistentSessionRef.current && model !== selectedModel) {
-        try {
-          await api.sessionSetModel(tid, model);
-        } catch (e) {
-          console.error('[sessions] sessionSetModel failed, falling back to restart:', e);
-          await api.stopSession(tid);
-          persistentSessionRef.current = false;
-          unlistenRefs.current.forEach(u => u());
-          unlistenRefs.current = [];
-        }
-        setSelectedModel(model);
-      }
-
-      // Start session if not running
-      if (!persistentSessionRef.current) {
-        const resumeId = effectiveSession?.id || claudeSessionId || undefined;
-        setSelectedModel(model);
-        await startPersistentSession(resumeId);
-      }
-
-      // Build content blocks: text + any pasted images
-      const contentBlocks: Array<Record<string, unknown>> = [];
-      if (prompt) {
-        contentBlocks.push({ type: "text", text: prompt });
-      }
-      if (images && images.length > 0) {
-        for (const dataUrl of images) {
-          // dataUrl is like "data:image/png;base64,xxxxx"
-          const match = dataUrl.match(/^data:(image\/[\w+]+);base64,(.+)$/);
-          if (!match) continue;
-          contentBlocks.push({
-            type: "image",
-            source: {
-              type: "base64",
-              media_type: match[1],
-              data: match[2],
-            },
-          });
-        }
-      }
-
-      // Add user message immediately for UI display
-      const userMessage: ClaudeStreamMessage = {
-        type: "user",
-        message: { content: contentBlocks },
-      };
-      setMessages((prev) => [...prev, userMessage]);
-
-      // Update session metrics
-      sessionMetrics.current.promptsSent += 1;
-      sessionMetrics.current.lastActivityTime = Date.now();
-      if (!sessionMetrics.current.firstMessageTime) {
-        sessionMetrics.current.firstMessageTime = Date.now();
-      }
-
-      // Track model changes
-      const lastModel = sessionMetrics.current.modelChanges.length > 0
-        ? sessionMetrics.current.modelChanges[sessionMetrics.current.modelChanges.length - 1].to
-        : (sessionMetrics.current.wasResumed ? 'sonnet' : model);
-
-      if (lastModel !== model) {
-        sessionMetrics.current.modelChanges.push({
-          from: lastModel,
-          to: model,
-          timestamp: Date.now()
-        });
-      }
-
-      // Send the message via stdin to the persistent process
-      if (images && images.length > 0) {
-        await api.sendStructuredMessage(tid, contentBlocks);
-      } else {
-        await api.sendMessage(tid, prompt);
-      }
-    } catch (err) {
-      console.error("Failed to send prompt:", err);
-      setError(String(err) || "Failed to send prompt");
-      setIsLoading(false);
-    }
-  };
+  // Keep queuedPromptsRef in sync with state
+  useEffect(() => {
+    queuedPromptsRef.current = queuedPrompts;
+  }, [queuedPrompts]);
 
   const handleCopyAsJsonl = async () => {
-    const jsonl = rawJsonlOutput.join('\n');
-    await navigator.clipboard.writeText(jsonl);
+    await exportAsJsonl(rawJsonlOutput);
     setCopyPopoverOpen(false);
   };
 
   const handleCopyAsMarkdown = async () => {
-    let markdown = `# Claude Code Session\n\n`;
-    markdown += `**Project:** ${projectPath}\n`;
-    markdown += `**Date:** ${new Date().toISOString()}\n\n`;
-    markdown += `---\n\n`;
-
-    for (const msg of messages) {
-      if (msg.type === "system" && msg.subtype === "init") {
-        markdown += `## System Initialization\n\n`;
-        markdown += `- Session ID: \`${msg.session_id || 'N/A'}\`\n`;
-        markdown += `- Model: \`${msg.model || 'default'}\`\n`;
-        if (msg.cwd) markdown += `- Working Directory: \`${msg.cwd}\`\n`;
-        if (msg.tools?.length) markdown += `- Tools: ${msg.tools.join(', ')}\n`;
-        markdown += `\n`;
-      } else if (msg.type === "assistant" && msg.message) {
-        markdown += `## Assistant\n\n`;
-        for (const content of msg.message.content || []) {
-          if (content.type === "text") {
-            const textContent = typeof content.text === 'string' 
-              ? content.text 
-              : (content.text?.text || JSON.stringify(content.text || content));
-            markdown += `${textContent}\n\n`;
-          } else if (content.type === "tool_use") {
-            markdown += `### Tool: ${content.name}\n\n`;
-            markdown += `\`\`\`json\n${JSON.stringify(content.input, null, 2)}\n\`\`\`\n\n`;
-          }
-        }
-        if (msg.message.usage) {
-          markdown += `*Tokens: ${msg.message.usage.input_tokens} in, ${msg.message.usage.output_tokens} out*\n\n`;
-        }
-      } else if (msg.type === "user" && msg.message) {
-        markdown += `## User\n\n`;
-        for (const content of msg.message.content || []) {
-          if (content.type === "text") {
-            const textContent = typeof content.text === 'string' 
-              ? content.text 
-              : (content.text?.text || JSON.stringify(content.text));
-            markdown += `${textContent}\n\n`;
-          } else if (content.type === "tool_result") {
-            markdown += `### Tool Result\n\n`;
-            let contentText = '';
-            if (typeof content.content === 'string') {
-              contentText = content.content;
-            } else if (content.content && typeof content.content === 'object') {
-              if (content.content.text) {
-                contentText = content.content.text;
-              } else if (Array.isArray(content.content)) {
-                contentText = content.content
-                  .map((c: any) => (typeof c === 'string' ? c : c.text || JSON.stringify(c)))
-                  .join('\n');
-              } else {
-                contentText = JSON.stringify(content.content, null, 2);
-              }
-            }
-            markdown += `\`\`\`\n${contentText}\n\`\`\`\n\n`;
-          }
-        }
-      } else if (msg.type === "result") {
-        markdown += `## Execution Result\n\n`;
-        if (msg.result) {
-          markdown += `${msg.result}\n\n`;
-        }
-        if (msg.error) {
-          markdown += `**Error:** ${msg.error}\n\n`;
-        }
-      }
-    }
-
-    await navigator.clipboard.writeText(markdown);
+    await exportAsMarkdown(messages, projectPath);
     setCopyPopoverOpen(false);
   };
 
@@ -1239,34 +841,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       setSplitPosition(50);
     }
   };
-
-  // Cleanup event listeners and track mount state
-  useEffect(() => {
-    isMountedRef.current = true;
-
-    return () => {
-      isMountedRef.current = false;
-
-      // Stop the persistent process if the tab is being closed mid-session
-      const tid = tabIdRef.current;
-      if (tid && persistentSessionRef.current) {
-        api.stopSession(tid).catch(err => {
-          console.error("Failed to stop session on unmount:", err);
-        });
-      }
-
-      // Clean up listeners
-      unlistenRefs.current.forEach(unlisten => unlisten());
-      unlistenRefs.current = [];
-
-      // Clear checkpoint manager when session ends
-      if (effectiveSession) {
-        api.clearCheckpointManager(effectiveSession.id).catch(err => {
-          console.error("Failed to clear checkpoint manager:", err);
-        });
-      }
-    };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- cleanup must only run on unmount
 
   const handleScroll = useCallback(() => {
     const el = parentRef.current;
@@ -1839,26 +1413,10 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             decisionReason={pendingToolUse?.decisionReason}
             suggestions={pendingToolUse?.suggestions ?? []}
             onAllow={(selectedSuggestions) => {
-              if (!pendingRequestId) return;
-              api.respondPermission(
-                tabIdRef.current, pendingRequestId, 'allow',
-                undefined,
-                selectedSuggestions.length > 0 ? selectedSuggestions : undefined,
-              ).catch(console.error);
-              setWaitingForPermission(false);
-              setPendingToolUse(null);
-              setPendingRequestId(null);
-              // Reset inactivity timer — tool execution after permission may take time
-              lastMessageTimeRef.current = Date.now();
+              handlePermissionAllow(tabIdRef.current, selectedSuggestions, lastMessageTimeRef);
             }}
             onDeny={() => {
-              if (!pendingRequestId) return;
-              api.respondPermission(tabIdRef.current, pendingRequestId, 'deny').catch(console.error);
-              setWaitingForPermission(false);
-              setPendingToolUse(null);
-              setPendingRequestId(null);
-              // Reset inactivity timer
-              lastMessageTimeRef.current = Date.now();
+              handlePermissionDeny(tabIdRef.current, lastMessageTimeRef);
             }}
           />
 
