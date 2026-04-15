@@ -110,10 +110,10 @@ export const Popover: React.FC<PopoverProps> = ({
         {trigger}
       </div>
       
-      <AnimatePresence>
+      <AnimatePresence mode="wait">
         {open && (
           <motion.div
-            ref={contentRef}
+            key="popover-content"
             initial={{ opacity: 0, scale: 0.95, y: animationY.initial }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: animationY.exit }}
@@ -124,6 +124,7 @@ export const Popover: React.FC<PopoverProps> = ({
               alignClass,
               className
             )}
+            ref={contentRef}
           >
             {content}
           </motion.div>

@@ -2,7 +2,6 @@ import * as React from "react";
 import { AccountBadge } from "./AccountBadge";
 import {
   Copy,
-  Info,
   Database,
   GitBranch,
   ShieldCheck,
@@ -38,6 +37,8 @@ interface SessionHeaderProps {
   cost: number;
   totalTokens: number;
   model?: string;
+  /** Session status indicator — 'active' | 'idle' | 'ended' */
+  sessionStatus?: 'active' | 'idle' | 'ended';
   /**
    * The SDK's own account-info report fetched via query.accountInfo() after
    * the session initialized. Undefined before the call resolves; null if it
@@ -78,6 +79,7 @@ export function SessionHeader({
   effortLevel,
   thinkingConfig,
   permissionMode,
+  sessionStatus,
   gitBranch,
   className,
 }: SessionHeaderProps) {
@@ -102,7 +104,6 @@ export function SessionHeader({
     sdkAccount?.organization ??
     sdkAccount?.subscriptionType ??
     null;
-  const sdkVerified = sdkAccount !== undefined && sdkAccount !== null && Boolean(sdkIdentifier);
   const sdkMismatch =
     sdkAccount !== undefined &&
     sdkAccount !== null &&
@@ -125,158 +126,109 @@ export function SessionHeader({
       <AccountBadge name={accountName} />
       <span className="text-foreground/50 uppercase tracking-wide">{accountType}</span>
 
-      {/* Wave 2.1 — SDK-reported account verification indicator. A shield
-          with check confirms the CLI subprocess is actually bound to
-          something; a shield with alert indicates a third-party API
-          backend (Bedrock/Vertex/etc.) which means this session isn't
-          running against the Anthropic account we resolved. */}
-      {sdkVerified && !sdkMismatch && (
-        <div
-          className="flex items-center gap-1 text-green-400/80"
-          title={`SDK-reported account: ${sdkIdentifier}${
-            sdkAccount?.subscriptionType ? ` (${sdkAccount.subscriptionType})` : ''
-          }`}
-        >
-          <ShieldCheck className="w-3 h-3" />
-          <span className="text-[10px] font-mono truncate max-w-[140px]">{sdkIdentifier}</span>
-        </div>
-      )}
-      {sdkMismatch && (
-        <div
-          className="flex items-center gap-1 text-yellow-400"
-          title={`SDK is using API provider: ${sdkAccount?.apiProvider}. This session is not on a first-party Anthropic account.`}
-        >
-          <ShieldAlert className="w-3 h-3" />
-          <span className="text-[10px] uppercase tracking-wide">{sdkAccount?.apiProvider}</span>
-        </div>
+      {/* Session status indicator */}
+      {sessionStatus && (
+        <span className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+          <span className={cn(
+            "h-2 w-2 rounded-full",
+            sessionStatus === 'active' ? 'bg-emerald-500' : sessionStatus === 'ended' ? 'bg-red-500' : 'bg-yellow-500',
+          )} />
+          {sessionStatus === 'active' ? 'Active' : sessionStatus === 'ended' ? 'Ended' : 'Idle'}
+        </span>
       )}
 
-      {/* Account + config + matched-by popover. Click the Info chip to
-          reveal:
-            - SDK-reported account verification (email / org / subscription
-              / apiProvider / tokenSource) — the full set so the details
-              flash-shown inline are retained somewhere persistent
-            - Config directory (full path)
-            - Matched by (path rule prefix / project override / default)
-              with the exact detail
-          Uses the existing custom Popover which has framer-motion
-          scale/opacity entrance so the card "grows into place". Click the
-          chip again (or outside, or Escape) to close. */}
-      <Popover
-        open={accountPopoverOpen}
-        onOpenChange={setAccountPopoverOpen}
-        align="start"
-        side="bottom"
-        className="w-96"
-        trigger={
-          <button
-            type="button"
-            className="flex items-center gap-1 px-2 py-0.5 rounded-md hover:bg-foreground/10 transition-colors text-foreground/50"
-            title="Click for account, config, and match details"
-          >
-            <Info className="w-3 h-3" />
-            <span className="text-[11px]">Matched by: {matchLabel}</span>
-          </button>
-        }
-        content={
-          <div className="flex flex-col gap-3 text-left">
-            {/* SDK account verification — retained detail. If the SDK has
-                reported account info we show ALL fields here so the
-                verification flash in the inline chip is backed by a
-                persistent, clickable record. */}
-            {sdkAccount && (
+      {/* SDK account email — clickable to show account details popover */}
+      {sdkIdentifier && (
+        <Popover
+          open={accountPopoverOpen}
+          onOpenChange={setAccountPopoverOpen}
+          align="start"
+          side="bottom"
+          className="w-96"
+          trigger={
+            <button
+              type="button"
+              className={cn(
+                "flex items-center gap-1 px-2 py-0.5 rounded-md hover:bg-foreground/10 transition-colors",
+                sdkMismatch ? "text-yellow-400" : "text-green-400/80",
+              )}
+              title="Click for account details"
+            >
+              {sdkMismatch ? <ShieldAlert className="w-3 h-3" /> : <ShieldCheck className="w-3 h-3" />}
+              <span className="text-[10px] font-mono truncate max-w-[140px]">{sdkIdentifier}</span>
+            </button>
+          }
+          content={
+            <div className="flex flex-col gap-3 text-left">
+              {sdkAccount && (
+                <div>
+                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1 flex items-center gap-1">
+                    {sdkMismatch ? (
+                      <ShieldAlert className="w-3 h-3 text-yellow-400" />
+                    ) : (
+                      <ShieldCheck className="w-3 h-3 text-green-400" />
+                    )}
+                    SDK-reported account
+                  </div>
+                  <div className="flex flex-col gap-1 text-xs">
+                    {sdkAccount.email && (
+                      <div className="flex justify-between gap-2">
+                        <span className="text-foreground/50">Email</span>
+                        <span className="font-mono text-foreground/90 truncate">{sdkAccount.email}</span>
+                      </div>
+                    )}
+                    {sdkAccount.organization && (
+                      <div className="flex justify-between gap-2">
+                        <span className="text-foreground/50">Organization</span>
+                        <span className="font-mono text-foreground/90 truncate">{sdkAccount.organization}</span>
+                      </div>
+                    )}
+                    {sdkAccount.subscriptionType && (
+                      <div className="flex justify-between gap-2">
+                        <span className="text-foreground/50">Subscription</span>
+                        <span className="font-mono text-foreground/90 uppercase">{sdkAccount.subscriptionType}</span>
+                      </div>
+                    )}
+                    {sdkAccount.apiProvider && (
+                      <div className="flex justify-between gap-2">
+                        <span className="text-foreground/50">API provider</span>
+                        <span className={cn("font-mono", sdkMismatch ? "text-yellow-400" : "text-foreground/90")}>
+                          {sdkAccount.apiProvider}
+                        </span>
+                      </div>
+                    )}
+                    {sdkAccount.tokenSource && (
+                      <div className="flex justify-between gap-2">
+                        <span className="text-foreground/50">Token source</span>
+                        <span className="font-mono text-foreground/90">{sdkAccount.tokenSource}</span>
+                      </div>
+                    )}
+                    {sdkAccount.apiKeySource && (
+                      <div className="flex justify-between gap-2">
+                        <span className="text-foreground/50">API key source</span>
+                        <span className="font-mono text-foreground/90">{sdkAccount.apiKeySource}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
               <div>
-                <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1 flex items-center gap-1">
-                  {sdkMismatch ? (
-                    <ShieldAlert className="w-3 h-3 text-yellow-400" />
-                  ) : sdkVerified ? (
-                    <ShieldCheck className="w-3 h-3 text-green-400" />
-                  ) : null}
-                  SDK-reported account
-                </div>
-                <div className="flex flex-col gap-1 text-xs">
-                  {sdkAccount.email && (
-                    <div className="flex justify-between gap-2">
-                      <span className="text-foreground/50">Email</span>
-                      <span className="font-mono text-foreground/90 truncate">
-                        {sdkAccount.email}
-                      </span>
-                    </div>
-                  )}
-                  {sdkAccount.organization && (
-                    <div className="flex justify-between gap-2">
-                      <span className="text-foreground/50">Organization</span>
-                      <span className="font-mono text-foreground/90 truncate">
-                        {sdkAccount.organization}
-                      </span>
-                    </div>
-                  )}
-                  {sdkAccount.subscriptionType && (
-                    <div className="flex justify-between gap-2">
-                      <span className="text-foreground/50">Subscription</span>
-                      <span className="font-mono text-foreground/90 uppercase">
-                        {sdkAccount.subscriptionType}
-                      </span>
-                    </div>
-                  )}
-                  {sdkAccount.apiProvider && (
-                    <div className="flex justify-between gap-2">
-                      <span className="text-foreground/50">API provider</span>
-                      <span
-                        className={cn(
-                          "font-mono",
-                          sdkMismatch
-                            ? "text-yellow-400"
-                            : "text-foreground/90",
-                        )}
-                      >
-                        {sdkAccount.apiProvider}
-                      </span>
-                    </div>
-                  )}
-                  {sdkAccount.tokenSource && (
-                    <div className="flex justify-between gap-2">
-                      <span className="text-foreground/50">Token source</span>
-                      <span className="font-mono text-foreground/90">
-                        {sdkAccount.tokenSource}
-                      </span>
-                    </div>
-                  )}
-                  {sdkAccount.apiKeySource && (
-                    <div className="flex justify-between gap-2">
-                      <span className="text-foreground/50">API key source</span>
-                      <span className="font-mono text-foreground/90">
-                        {sdkAccount.apiKeySource}
-                      </span>
-                    </div>
-                  )}
+                <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">Config directory</div>
+                <div className="font-mono text-xs break-all text-foreground/90">{configDir}</div>
+              </div>
+
+              <div>
+                <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">Matched by</div>
+                <div className="text-xs text-foreground/90 flex flex-col gap-0.5">
+                  <span className="font-medium">{matchLabel}</span>
+                  <span className="text-foreground/60 font-mono break-all">{matchDetail}</span>
                 </div>
               </div>
-            )}
-
-            <div>
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
-                Config directory
-              </div>
-              <div className="font-mono text-xs break-all text-foreground/90">
-                {configDir}
-              </div>
             </div>
-
-            <div>
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
-                Matched by
-              </div>
-              <div className="text-xs text-foreground/90 flex flex-col gap-0.5">
-                <span className="font-medium">{matchLabel}</span>
-                <span className="text-foreground/60 font-mono break-all">
-                  {matchDetail}
-                </span>
-              </div>
-            </div>
-          </div>
-        }
-      />
+          }
+        />
+      )}
 
       {permissionMode && (
         <span className="px-1.5 py-0.5 rounded text-[10px] font-mono uppercase tracking-wide bg-foreground/5 text-foreground/50">

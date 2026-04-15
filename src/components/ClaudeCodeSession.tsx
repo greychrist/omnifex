@@ -1006,20 +1006,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
               {projectPath.replace(/^\/Users\/[^/]+/, '~')}
             </span>
           )}
-          {sessionStarted && (() => {
-            const isActive = persistentSessionRef.current && (isLoading || waitingForPermission);
-            const isEnded = !persistentSessionRef.current && !isLoading;
-            const color = isActive ? 'bg-emerald-500' : isEnded ? 'bg-red-500' : 'bg-yellow-500';
-            const label = isActive ? 'Active' : isEnded ? 'Ended' : 'Idle';
-            return (
-              <TooltipSimple content={`Session: ${label}`} side="bottom">
-                <span className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-                  <span className={cn("h-2 w-2 rounded-full", color)} />
-                  {label}
-                </span>
-              </TooltipSimple>
-            );
-          })()}
         </div>
         {accountResolution && (
           <SessionHeader
@@ -1037,6 +1023,15 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             effortLevel={effort}
             thinkingConfig={thinkingConfig}
             permissionMode={permissionMode}
+            sessionStatus={
+              sessionStarted
+                ? persistentSessionRef.current && (isLoading || waitingForPermission)
+                  ? 'active'
+                  : !persistentSessionRef.current && !isLoading
+                  ? 'ended'
+                  : 'idle'
+                : undefined
+            }
             gitBranch={gitBranch ?? undefined}
             className="mb-2"
           />
