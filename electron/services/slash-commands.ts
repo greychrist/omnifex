@@ -24,13 +24,14 @@ export interface SaveParams {
   description: string;
   allowedTools: string;
   projectPath?: string;
+  configDir?: string;
 }
 
 export interface SlashCommandsService {
-  list(projectPath?: string): SlashCommand[];
-  get(commandId: string): SlashCommand;
+  list(projectPath?: string, configDir?: string): SlashCommand[];
+  get(commandId: string, configDir?: string): SlashCommand;
   save(params: SaveParams): SlashCommand;
-  delete(commandId: string, projectPath?: string): string;
+  delete(commandId: string, projectPath?: string, configDir?: string): string;
 }
 
 // ---------------------------------------------------------------------------
@@ -136,14 +137,16 @@ function scanDirectory(
 // Factory
 // ---------------------------------------------------------------------------
 
-export function createSlashCommandsService(configDir: string): SlashCommandsService {
-  const globalCommandsDir = path.join(configDir, 'commands');
+export function createSlashCommandsService(defaultConfigDir: string): SlashCommandsService {
+  function getCommandsDir(configDir?: string): string {
+    return path.join(configDir ?? defaultConfigDir, 'commands');
+  }
 
-  function list(projectPath?: string): SlashCommand[] {
+  function list(projectPath?: string, configDir?: string): SlashCommand[] {
     const commands: SlashCommand[] = [];
 
-    // Global commands
-    commands.push(...scanDirectory(globalCommandsDir, 'user', 'user'));
+    // Global (user) commands
+    commands.push(...scanDirectory(getCommandsDir(configDir), 'user', 'user'));
 
     // Project-local commands
     if (projectPath) {
@@ -154,7 +157,7 @@ export function createSlashCommandsService(configDir: string): SlashCommandsServ
     return commands;
   }
 
-  function get(commandId: string): SlashCommand {
+  function get(commandId: string, configDir?: string): SlashCommand {
     // commandId format: scope:namespace:name
     const parts = commandId.split(':');
     if (parts.length < 3) {
@@ -162,14 +165,10 @@ export function createSlashCommandsService(configDir: string): SlashCommandsServ
     }
     const [scope, namespace, name] = parts;
 
-    let dir: string;
-    if (scope === 'project') {
-      // We don't have a project path here — search the global dir
-      // For project commands, id encodes which dir via the file_path scanning
-      dir = globalCommandsDir; // fallback
-    } else {
-      dir = globalCommandsDir;
-    }
+    // For user-scoped commands use the (possibly per-call) commands dir.
+    // For project-scoped commands we don't have the project path in the id,
+    // so we fall through to the same dir as a best-effort lookup.
+    const dir = getCommandsDir(configDir);
 
     const filePath = path.join(dir, `${name}.md`);
     const cmd = commandFromFile(filePath, scope, namespace);
@@ -180,13 +179,14 @@ export function createSlashCommandsService(configDir: string): SlashCommandsServ
   }
 
   function save(params: SaveParams): SlashCommand {
-    const { scope, name, namespace, content, description, allowedTools, projectPath } = params;
+    const { scope, name, namespace, content, description, allowedTools, projectPath, configDir } =
+      params;
 
     let dir: string;
     if (scope === 'project' && projectPath) {
       dir = path.join(projectPath, '.claude', 'commands');
     } else {
-      dir = globalCommandsDir;
+      dir = getCommandsDir(configDir);
     }
 
     fs.mkdirSync(dir, { recursive: true });
@@ -213,7 +213,7 @@ export function createSlashCommandsService(configDir: string): SlashCommandsServ
     };
   }
 
-  function deleteCommand(commandId: string, projectPath?: string): string {
+  function deleteCommand(commandId: string, projectPath?: string, configDir?: string): string {
     // commandId format: scope:namespace:name
     const parts = commandId.split(':');
     if (parts.length < 3) {
@@ -225,7 +225,7 @@ export function createSlashCommandsService(configDir: string): SlashCommandsServ
     if (scope === 'project' && projectPath) {
       filePath = path.join(projectPath, '.claude', 'commands', `${name}.md`);
     } else {
-      filePath = path.join(globalCommandsDir, `${name}.md`);
+      filePath = path.join(getCommandsDir(configDir), `${name}.md`);
     }
 
     try {
