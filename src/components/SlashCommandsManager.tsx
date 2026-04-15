@@ -121,10 +121,10 @@ export const SlashCommandsManager: React.FC<SlashCommandsManagerProps> = ({
   const [commandToDelete, setCommandToDelete] = useState<SlashCommand | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  // Load commands on mount
+  // Load commands on mount or when configDir changes
   useEffect(() => {
     loadCommands();
-  }, [projectPath]);
+  }, [projectPath, configDir]);
 
   const loadCommands = async () => {
     try {

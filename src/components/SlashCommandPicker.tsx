@@ -93,10 +93,10 @@ export const SlashCommandPicker: React.FC<SlashCommandPickerProps> = ({
   
   const commandListRef = useRef<HTMLDivElement>(null);
   
-  // Load commands on mount or when project path changes
+  // Load commands on mount or when project path / configDir changes
   useEffect(() => {
     loadCommands();
-  }, [projectPath]);
+  }, [projectPath, configDir]);
   
   // Filter commands based on search query and active tab
   useEffect(() => {
