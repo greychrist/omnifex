@@ -280,10 +280,15 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     }
   }, [session]);
 
-  // Report streaming state changes
+  // Report streaming state changes — onStreamingChange is excluded from deps
+  // because it's an event callback from the parent that may not be memoized.
+  // Including it causes infinite re-render loops when the parent recreates
+  // the callback on state change.
+  const onStreamingChangeRef = useRef(onStreamingChange);
+  onStreamingChangeRef.current = onStreamingChange;
   useEffect(() => {
-    onStreamingChange?.(isLoading, claudeSessionId);
-  }, [isLoading, claudeSessionId, onStreamingChange]);
+    onStreamingChangeRef.current?.(isLoading, claudeSessionId);
+  }, [isLoading, claudeSessionId]);
 
   // Timeout tracking (elapsed time, response timeout, inactivity detection)
   const { elapsedSeconds, timedOutMessageIndex, setTimedOutMessageIndex, lastMessageTimeRef } = useSessionTimeouts({
