@@ -35,18 +35,18 @@ export interface Services {
     loadSessionHistory(sessionId: string, projectId: string): unknown;
     loadAgentSessionHistory(sessionId: string): unknown;
     getHomeDirectory(): unknown;
-    getSettings(): unknown;
-    saveSettings(settings: unknown): unknown;
-    getSystemPrompt(): unknown;
-    saveSystemPrompt(prompt: unknown): unknown;
+    getSettings(opts?: unknown): unknown;
+    saveSettings(settings: unknown, opts?: unknown): unknown;
+    getSystemPrompt(opts?: unknown): unknown;
+    saveSystemPrompt(prompt: unknown, opts?: unknown): unknown;
     checkVersion(): unknown;
     findClaudeMdFiles(projectPath: string): unknown;
     readClaudeMdFile(filePath: string): unknown;
     saveClaudeMdFile(filePath: string, content: string): unknown;
-    getHooksConfig(): unknown;
-    updateHooksConfig(config: unknown): unknown;
+    getHooksConfig(scope: string, opts?: unknown): unknown;
+    updateHooksConfig(scope: string, config: unknown, opts?: unknown): unknown;
     validateHookCommand(command: string): unknown;
-    getMergedHooksConfig(): unknown;
+    getMergedHooksConfig(projectPath: string, opts?: unknown): unknown;
   };
   sessions?: {
     start(data: unknown): unknown;
@@ -200,18 +200,46 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     load_session_history: wrapWith((p: Record<string, unknown>) => claude?.loadSessionHistory((p?.sessionId ?? p?.session_id) as string, (p?.projectId ?? p?.project_id) as string) ?? null),
     load_agent_session_history: wrapWith((p: Record<string, unknown>) => claude?.loadAgentSessionHistory((p?.sessionId ?? p?.session_id) as string) ?? null),
     get_home_directory: wrap(() => claude?.getHomeDirectory() ?? null),
-    get_claude_settings: wrap(() => claude?.getSettings() ?? null),
-    save_claude_settings: wrapWith((p: Record<string, unknown>) => claude?.saveSettings(p) ?? null),
-    get_system_prompt: wrap(() => claude?.getSystemPrompt() ?? null),
-    save_system_prompt: wrapWith((p: Record<string, unknown>) => claude?.saveSystemPrompt(p?.content ?? p?.prompt) ?? null),
+    get_claude_settings: wrapWith((p: Record<string, unknown>) => {
+      const configDir = (p?.configDir ?? p?.config_dir) as string | undefined;
+      return claude?.getSettings(configDir ? { configDir } : undefined) ?? null;
+    }),
+    save_claude_settings: wrapWith((p: Record<string, unknown>) => {
+      const configDir = (p?.configDir ?? p?.config_dir) as string | undefined;
+      const settings = p?.settings ?? p;
+      return claude?.saveSettings(settings, configDir ? { configDir } : undefined) ?? null;
+    }),
+    get_system_prompt: wrapWith((p: Record<string, unknown>) => {
+      const configDir = (p?.configDir ?? p?.config_dir) as string | undefined;
+      return claude?.getSystemPrompt(configDir ? { configDir } : undefined) ?? null;
+    }),
+    save_system_prompt: wrapWith((p: Record<string, unknown>) => {
+      const configDir = (p?.configDir ?? p?.config_dir) as string | undefined;
+      return claude?.saveSystemPrompt(p?.content ?? p?.prompt, configDir ? { configDir } : undefined) ?? null;
+    }),
     check_claude_version: wrap(() => claude?.checkVersion() ?? null),
     find_claude_md_files: wrapWith((p: Record<string, unknown>) => claude?.findClaudeMdFiles((p?.projectPath ?? p?.project_path) as string) ?? null),
     read_claude_md_file: wrapWith((p: Record<string, unknown>) => claude?.readClaudeMdFile((p?.filePath ?? p?.file_path) as string) ?? null),
     save_claude_md_file: wrapWith((p: Record<string, unknown>) => claude?.saveClaudeMdFile((p?.filePath ?? p?.file_path) as string, p?.content as string) ?? null),
-    get_hooks_config: wrap(() => claude?.getHooksConfig() ?? null),
-    update_hooks_config: wrapWith((p: Record<string, unknown>) => claude?.updateHooksConfig(p) ?? null),
+    get_hooks_config: wrapWith((p: Record<string, unknown>) => {
+      const scope = (p?.scope as string) || 'user';
+      const configDir = (p?.configDir ?? p?.config_dir) as string | undefined;
+      const projectPath = (p?.projectPath ?? p?.project_path) as string | undefined;
+      return claude?.getHooksConfig(scope, { configDir, projectPath }) ?? null;
+    }),
+    update_hooks_config: wrapWith((p: Record<string, unknown>) => {
+      const scope = (p?.scope as string) || 'user';
+      const configDir = (p?.configDir ?? p?.config_dir) as string | undefined;
+      const projectPath = (p?.projectPath ?? p?.project_path) as string | undefined;
+      const hooks = p?.hooks ?? p?.config ?? p;
+      return claude?.updateHooksConfig(scope, hooks, { configDir, projectPath }) ?? null;
+    }),
     validate_hook_command: wrapWith((p: Record<string, unknown>) => claude?.validateHookCommand(p?.command as string) ?? null),
-    get_merged_hooks_config: wrap(() => claude?.getMergedHooksConfig() ?? null),
+    get_merged_hooks_config: wrapWith((p: Record<string, unknown>) => {
+      const projectPath = (p?.projectPath ?? p?.project_path) as string ?? '';
+      const configDir = (p?.configDir ?? p?.config_dir) as string | undefined;
+      return claude?.getMergedHooksConfig(projectPath, configDir ? { configDir } : undefined) ?? null;
+    }),
 
     // ── Sessions ──────────────────────────────────────────────────────────────
     session_start: wrapWith((p: Record<string, unknown>) => sessions?.start(p) ?? null),

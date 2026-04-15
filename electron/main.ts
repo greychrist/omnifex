@@ -263,20 +263,20 @@ app.whenReady().then(() => {
       loadAgentSessionHistory: (sessionId: string) =>
         claudeService.loadAgentSessionHistory(sessionId),
       getHomeDirectory: () => claudeService.getHomeDirectory(),
-      getSettings: () => claudeService.getClaudeSettings(),
-      saveSettings: (settings: any) => claudeService.saveClaudeSettings(settings),
-      getSystemPrompt: () => claudeService.getSystemPrompt(),
-      saveSystemPrompt: (prompt: any) =>
-        claudeService.saveSystemPrompt(typeof prompt === 'string' ? prompt : String(prompt ?? '')),
+      getSettings: (opts?: any) => claudeService.getClaudeSettings(opts),
+      saveSettings: (settings: any, opts?: any) => claudeService.saveClaudeSettings(settings, opts),
+      getSystemPrompt: (opts?: any) => claudeService.getSystemPrompt(opts),
+      saveSystemPrompt: (prompt: any, opts?: any) =>
+        claudeService.saveSystemPrompt(typeof prompt === 'string' ? prompt : String(prompt ?? ''), opts),
       checkVersion: () => claudeService.checkClaudeVersion(),
       findClaudeMdFiles: (projectPath: string) => claudeService.findClaudeMdFiles(projectPath),
       readClaudeMdFile: (filePath: string) => claudeService.readClaudeMdFile(filePath),
       saveClaudeMdFile: (filePath: string, content: string) =>
         claudeService.saveClaudeMdFile(filePath, content),
-      getHooksConfig: () => claudeService.getHooksConfig('user'),
-      updateHooksConfig: (config: any) => claudeService.updateHooksConfig('user', config),
+      getHooksConfig: (scope: string, opts?: any) => claudeService.getHooksConfig(scope as 'user' | 'project', opts),
+      updateHooksConfig: (scope: string, config: any, opts?: any) => claudeService.updateHooksConfig(scope as 'user' | 'project', config, opts),
       validateHookCommand: (command: string) => claudeService.validateHookCommand(command),
-      getMergedHooksConfig: () => claudeService.getMergedHooksConfig(''),
+      getMergedHooksConfig: (projectPath: string, opts?: any) => claudeService.getMergedHooksConfig(projectPath, opts),
     },
     // Sessions adapter
     sessions: {

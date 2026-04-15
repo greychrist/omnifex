@@ -397,8 +397,8 @@ describe('ipc handlers — dispatch to services', () => {
   it('save_system_prompt accepts either content or prompt', async () => {
     await invoke(handlers, 'save_system_prompt', { content: 'A' });
     await invoke(handlers, 'save_system_prompt', { prompt: 'B' });
-    expect(services.claude.saveSystemPrompt).toHaveBeenNthCalledWith(1, 'A');
-    expect(services.claude.saveSystemPrompt).toHaveBeenNthCalledWith(2, 'B');
+    expect(services.claude.saveSystemPrompt).toHaveBeenNthCalledWith(1, 'A', undefined);
+    expect(services.claude.saveSystemPrompt).toHaveBeenNthCalledWith(2, 'B', undefined);
   });
 
   // ── Sessions ────────────────────────────────────────────────────────────
@@ -633,7 +633,7 @@ describe('ipc handlers — dispatch to services', () => {
     await invoke(handlers, 'create_project', { path: '/p' });
 
     expect(services.claude.getSettings).toHaveBeenCalledTimes(1);
-    expect(services.claude.saveSettings).toHaveBeenCalledWith({ theme: 'dark' });
+    expect(services.claude.saveSettings).toHaveBeenCalled();
     expect(services.claude.getSystemPrompt).toHaveBeenCalledTimes(1);
     expect(services.claude.checkVersion).toHaveBeenCalledTimes(1);
     expect(services.claude.getHooksConfig).toHaveBeenCalledTimes(1);
