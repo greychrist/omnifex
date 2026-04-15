@@ -316,7 +316,7 @@ describe('claude service', () => {
 
   describe('getMergedHooksConfig', () => {
     it('returns an object', async () => {
-      const result = await service.getMergedHooksConfig('/some/project/path');
+      const result = await service.getMergedHooksConfig('/some/project/path', { configDir: tmpDir });
       expect(typeof result).toBe('object');
     });
   });
@@ -343,13 +343,10 @@ describe('claude service', () => {
       expect(fs.existsSync(path.join(configDir, 'projects', project.id))).toBe(true);
     });
 
-    it('falls back to ~/.claude when no account resolves for the project', () => {
-      // No accounts, no rules — resolve() returns null, createProject uses default dir
+    it('throws when no account resolves for the project', () => {
+      // No accounts, no rules — resolve() returns null, createProject should throw
       const projectPath = path.join(tmpDir, 'unresolved');
-      const project = service.createProject(projectPath);
-
-      expect(project.account_id).toBeUndefined();
-      expect(project.path).toBe(projectPath);
+      expect(() => service.createProject(projectPath)).toThrow(/No account resolved/);
     });
   });
 
@@ -505,11 +502,14 @@ describe('claude service', () => {
 
   describe('getSystemPrompt / saveSystemPrompt', () => {
     it('round-trips by delegating to readClaudeMdFile/saveClaudeMdFile', async () => {
-      // These functions hardcode ~/.claude/CLAUDE.md — we can't safely write
-      // into the real home dir, but we can at least exercise the read path and
-      // confirm it returns a string without throwing.
-      const content = await service.getSystemPrompt();
-      expect(typeof content).toBe('string');
+      // Write a CLAUDE.md into tmpDir and read it back
+      fs.writeFileSync(path.join(tmpDir, 'CLAUDE.md'), '# Test prompt', 'utf-8');
+      const content = await service.getSystemPrompt({ configDir: tmpDir });
+      expect(content).toBe('# Test prompt');
+    });
+
+    it('throws when configDir is not provided', async () => {
+      await expect(service.getSystemPrompt()).rejects.toThrow(/configDir is required/);
     });
   });
 
@@ -607,7 +607,7 @@ describe('claude service', () => {
         { projectPath },
       );
 
-      const merged = await service.getMergedHooksConfig(projectPath);
+      const merged = await service.getMergedHooksConfig(projectPath, { configDir: userConfigDir });
       // Project override wins for PreToolUse
       expect((merged as any).PreToolUse).toEqual([{ source: 'project' }]);
     });

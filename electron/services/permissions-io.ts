@@ -1,6 +1,5 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import os from 'node:os';
 
 // ---------------------------------------------------------------------------
 // Public interfaces
@@ -62,9 +61,9 @@ function resolveFilePath(
 export function createPermissionsIOService(): PermissionsIOService {
   function getPermissions(configDir: string, projectPath?: string): PermissionLevel[] {
     if (!configDir) {
-      console.warn('[permissions-io] No configDir provided — falling back to ~/.claude');
+      throw new Error('configDir is required for getPermissions');
     }
-    const resolvedConfigDir = configDir || path.join(os.homedir(), '.claude');
+    const resolvedConfigDir = configDir;
     const levels: PermissionLevel[] = [];
 
     // User level
@@ -118,9 +117,9 @@ export function createPermissionsIOService(): PermissionsIOService {
     } = params;
 
     if (!configDir) {
-      console.warn('[permissions-io] No configDir provided for updatePermission — falling back to ~/.claude');
+      throw new Error('configDir is required for updatePermission');
     }
-    const resolvedConfigDir = configDir || path.join(os.homedir(), '.claude');
+    const resolvedConfigDir = configDir;
     const filePath = resolveFilePath(scope, resolvedConfigDir, projectPath);
 
     // Read existing settings

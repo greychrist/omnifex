@@ -90,7 +90,7 @@ export interface ClaudeService {
     opts?: ClaudeSettingsOpts & { projectPath?: string },
   ): Promise<void>;
   validateHookCommand(command: string): { valid: boolean; message: string };
-  getMergedHooksConfig(projectPath: string): Promise<Record<string, unknown>>;
+  getMergedHooksConfig(projectPath: string, opts?: ClaudeSettingsOpts): Promise<Record<string, unknown>>;
 }
 
 // ---------------------------------------------------------------------------
@@ -274,9 +274,9 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
     // Resolve which account's config dir to use
     const account = accounts.resolve(projectPath);
     if (!account) {
-      console.warn(`[claude] No account resolved for project ${projectPath} — falling back to ~/.claude`);
+      throw new Error(`No account resolved for project ${projectPath}. Configure an account or path rule first.`);
     }
-    const configDir = account?.config_dir ?? defaultConfigDir();
+    const configDir = account.config_dir;
 
     // Ensure the project directory exists
     const projectDir = path.join(configDir, 'projects', projectId);
@@ -487,7 +487,10 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
   async function getClaudeSettings(
     opts?: ClaudeSettingsOpts,
   ): Promise<Record<string, unknown>> {
-    const configDir = opts?.configDir ?? defaultConfigDir();
+    if (!opts?.configDir) {
+      throw new Error('configDir is required for getClaudeSettings');
+    }
+    const configDir = opts.configDir;
     const settingsPath = path.join(configDir, 'settings.json');
 
     if (!fs.existsSync(settingsPath)) return {};
@@ -508,7 +511,10 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
     settings: Record<string, unknown>,
     opts?: ClaudeSettingsOpts,
   ): Promise<void> {
-    const configDir = opts?.configDir ?? defaultConfigDir();
+    if (!opts?.configDir) {
+      throw new Error('configDir is required for saveClaudeSettings');
+    }
+    const configDir = opts.configDir;
     const settingsPath = path.join(configDir, 'settings.json');
 
     try {
@@ -524,14 +530,18 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
   // -------------------------------------------------------------------------
 
   async function getSystemPrompt(opts?: ClaudeSettingsOpts): Promise<string> {
-    const configDir = opts?.configDir ?? defaultConfigDir();
-    const filePath = path.join(configDir, 'CLAUDE.md');
+    if (!opts?.configDir) {
+      throw new Error('configDir is required for getSystemPrompt');
+    }
+    const filePath = path.join(opts.configDir, 'CLAUDE.md');
     return readClaudeMdFile(filePath);
   }
 
   async function saveSystemPrompt(content: string, opts?: ClaudeSettingsOpts): Promise<void> {
-    const configDir = opts?.configDir ?? defaultConfigDir();
-    const filePath = path.join(configDir, 'CLAUDE.md');
+    if (!opts?.configDir) {
+      throw new Error('configDir is required for saveSystemPrompt');
+    }
+    const filePath = path.join(opts.configDir, 'CLAUDE.md');
     return saveClaudeMdFile(filePath, content);
   }
 
@@ -734,9 +744,10 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
 
   async function getMergedHooksConfig(
     projectPath: string,
+    opts?: ClaudeSettingsOpts,
   ): Promise<Record<string, unknown>> {
-    const userHooks = await getHooksConfig('user');
-    const projectHooks = await getHooksConfig('project', { projectPath });
+    const userHooks = await getHooksConfig('user', opts);
+    const projectHooks = await getHooksConfig('project', { ...opts, projectPath });
 
     // Shallow merge: project hooks override user hooks per key
     return { ...userHooks, ...projectHooks };

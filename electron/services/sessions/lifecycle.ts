@@ -246,9 +246,9 @@ export function createSessionsService(
       autoAllowEnabled: false,
       autoAllowedTools: new Set(),
       projectPath,
-      configDir: configDir || (() => {
-        console.warn(`[sessions] No configDir for tab ${tabId} — falling back to ~/.claude. This should not happen in multi-account mode.`);
-        return path.join(os.homedir(), '.claude');
+      configDir: (() => {
+        if (!configDir) throw new Error(`configDir is required to start session for tab ${tabId}`);
+        return configDir;
       })(),
       sdkOptions: options,
     };
