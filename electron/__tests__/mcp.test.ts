@@ -89,7 +89,7 @@ describe('mcp service', () => {
     // Re-create the service with the same configDir
     const mcp2 = createMCPService(configDir);
     const servers = mcp2.list();
-    expect(servers.some((s: any) => s.name === 'persistent')).toBe(true);
+    expect(servers.some(s => s.name === 'persistent')).toBe(true);
   });
 
   it('getServerStatus returns stub data', () => {
