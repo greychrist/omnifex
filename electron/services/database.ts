@@ -7,12 +7,62 @@ export interface Database {
   close(): void;
 }
 
+interface Migration {
+  version: number;
+  description: string;
+  up: (db: BetterSqlite3.Database) => void;
+}
+
+const migrations: Migration[] = [
+  {
+    version: 1,
+    description: 'Add color column to accounts',
+    up: (db) => {
+      const cols = db.pragma('table_info(accounts)') as { name: string }[];
+      if (!cols.some((c) => c.name === 'color')) {
+        db.exec('ALTER TABLE accounts ADD COLUMN color TEXT');
+      }
+    },
+  },
+];
+
+export function runMigrations(db: BetterSqlite3.Database): void {
+  // Ensure schema_version table exists (safe to call multiple times).
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS schema_version (
+      version INTEGER PRIMARY KEY,
+      applied_at TEXT NOT NULL
+    );
+  `);
+
+  const row = db
+    .prepare('SELECT MAX(version) AS max_version FROM schema_version')
+    .get() as { max_version: number | null };
+  const currentVersion = row.max_version ?? 0;
+
+  const pending = migrations
+    .filter((m) => m.version > currentVersion)
+    .sort((a, b) => a.version - b.version);
+
+  for (const migration of pending) {
+    const runOne = db.transaction(() => {
+      migration.up(db);
+      db.prepare('INSERT INTO schema_version (version, applied_at) VALUES (?, ?)').run(
+        migration.version,
+        new Date().toISOString()
+      );
+    });
+    runOne();
+  }
+}
+
 export function createDatabase(dbPath: string): Database {
   const raw = new BetterSqlite3(dbPath);
   raw.pragma('journal_mode = WAL');
   raw.pragma('foreign_keys = ON');
 
   initSchema(raw);
+  runMigrations(raw);
 
   return {
     raw,
@@ -120,10 +170,4 @@ function initSchema(db: BetterSqlite3.Database): void {
     CREATE INDEX IF NOT EXISTS idx_app_logs_level ON app_logs(level);
     CREATE INDEX IF NOT EXISTS idx_app_logs_source ON app_logs(source);
   `);
-
-  // Migrations for existing databases
-  const cols = db.prepare("PRAGMA table_info(accounts)").all() as { name: string }[];
-  if (!cols.some(c => c.name === 'color')) {
-    db.exec("ALTER TABLE accounts ADD COLUMN color TEXT");
-  }
 }
