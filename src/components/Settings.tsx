@@ -84,18 +84,17 @@ export const Settings: React.FC<SettingsProps> = ({
     }).catch(console.error);
   }, []);
 
-  // Load settings on mount
-  useEffect(() => {
-    loadSettings();
-    loadClaudeBinaryPath();
-  }, []);
-
-  // Reload settings when selected account changes
+  // Load settings when selected account is ready (or changes)
   useEffect(() => {
     if (selectedAccountId != null) {
       loadSettings();
     }
   }, [selectedAccountId]);
+
+  // Load binary path on mount (not account-dependent)
+  useEffect(() => {
+    loadClaudeBinaryPath();
+  }, []);
 
   const loadClaudeBinaryPath = async () => {
     try {
