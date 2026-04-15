@@ -1,35 +1,33 @@
 import React, { useState, useEffect } from "react";
 import { AccountSettings } from "@/components/AccountSettings";
 import { motion, AnimatePresence } from "framer-motion";
-import { 
-  Plus,
-  Trash2,
-  Save,
-  AlertCircle,
-  Check,
-} from "lucide-react";
+import { Save, AlertCircle } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
-import { Card } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { 
-  api, 
+import { Card } from "@/components/ui/card";
+import {
+  api,
   type ClaudeSettings,
-  type ClaudeInstallation
+  type ClaudeInstallation,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Toast, ToastContainer } from "@/components/ui/toast";
-import { ClaudeVersionSelector } from "./ClaudeVersionSelector";
 import { StorageTab } from "./StorageTab";
-import { HooksEditor } from "./HooksEditor";
-import { SlashCommandsManager } from "./SlashCommandsManager";
-import { ProxySettings } from "./ProxySettings";
 import { LogTab } from "./LogTab";
-import { useTheme } from "@/hooks";
-import { TabPersistenceService } from "@/services/tabPersistence";
+import {
+  GeneralSettings,
+  PermissionsSettings,
+  EnvironmentSettings,
+  AdvancedSettings,
+  HooksSettings,
+  CommandsSettings,
+  ProxySettingsPanel,
+  type PermissionRule,
+  type EnvironmentVariable,
+  type ToastState,
+} from "./settings-panels";
 
 interface SettingsProps {
   /**
@@ -42,20 +40,9 @@ interface SettingsProps {
   className?: string;
 }
 
-interface PermissionRule {
-  id: string;
-  value: string;
-}
-
-interface EnvironmentVariable {
-  id: string;
-  key: string;
-  value: string;
-}
-
 /**
- * Comprehensive Settings UI for managing Claude Code settings
- * Provides a no-code interface for editing the settings.json file
+ * Comprehensive Settings UI for managing Claude Code settings.
+ * Thin shell that owns shared state and delegates to per-tab panel components.
  */
 export const Settings: React.FC<SettingsProps> = ({
   className,
@@ -68,30 +55,22 @@ export const Settings: React.FC<SettingsProps> = ({
   const [currentBinaryPath, setCurrentBinaryPath] = useState<string | null>(null);
   const [selectedInstallation, setSelectedInstallation] = useState<ClaudeInstallation | null>(null);
   const [binaryPathChanged, setBinaryPathChanged] = useState(false);
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
-  
+  const [toast, setToast] = useState<ToastState | null>(null);
+
   // Permission rules state
   const [allowRules, setAllowRules] = useState<PermissionRule[]>([]);
   const [denyRules, setDenyRules] = useState<PermissionRule[]>([]);
-  
+
   // Environment variables state
   const [envVars, setEnvVars] = useState<EnvironmentVariable[]>([]);
-  
+
   // Hooks state
   const [userHooksChanged, setUserHooksChanged] = useState(false);
   const getUserHooks = React.useRef<(() => any) | null>(null);
-  
-  // Theme hook
-  const { theme, setTheme, customColors, setCustomColors } = useTheme();
-  
+
   // Proxy state
   const [proxySettingsChanged, setProxySettingsChanged] = useState(false);
   const saveProxySettings = React.useRef<(() => Promise<void>) | null>(null);
-  
-  // Tab persistence state
-  const [tabPersistenceEnabled, setTabPersistenceEnabled] = useState(true);
-  // Startup intro preference
-  const [startupIntroEnabled, setStartupIntroEnabled] = useState(true);
 
   // Account selector for account-specific settings tabs
   const [accounts, setAccounts] = useState<Array<{ id: number; name: string; config_dir: string; is_default: boolean }>>([]);
@@ -109,13 +88,6 @@ export const Settings: React.FC<SettingsProps> = ({
   useEffect(() => {
     loadSettings();
     loadClaudeBinaryPath();
-    // Load tab persistence setting
-    setTabPersistenceEnabled(TabPersistenceService.isEnabled());
-    // Load startup intro setting (default to true if not set)
-    (async () => {
-      const pref = await api.getSetting('startup_intro_enabled');
-      setStartupIntroEnabled(pref === null ? true : pref === 'true');
-    })();
   }, []);
 
   // Reload settings when selected account changes
@@ -125,9 +97,6 @@ export const Settings: React.FC<SettingsProps> = ({
     }
   }, [selectedAccountId]);
 
-  /**
-   * Loads the current Claude binary path
-   */
   const loadClaudeBinaryPath = async () => {
     try {
       const path = await api.getClaudeBinaryPath();
@@ -137,9 +106,6 @@ export const Settings: React.FC<SettingsProps> = ({
     }
   };
 
-  /**
-   * Loads the current Claude settings
-   */
   const getSelectedConfigDir = () => {
     if (selectedAccountId == null) return undefined;
     return accounts.find(a => a.id === selectedAccountId)?.config_dir;
@@ -151,14 +117,13 @@ export const Settings: React.FC<SettingsProps> = ({
       setError(null);
       const configDir = getSelectedConfigDir();
       const loadedSettings = await api.getClaudeSettings(configDir ? { configDir } : undefined);
-      
-      // Ensure loadedSettings is an object
+
       if (!loadedSettings || typeof loadedSettings !== 'object') {
         console.warn("Loaded settings is not an object:", loadedSettings);
         setSettings({});
         return;
       }
-      
+
       setSettings(loadedSettings);
 
       // Parse permissions
@@ -200,16 +165,12 @@ export const Settings: React.FC<SettingsProps> = ({
     }
   };
 
-  /**
-   * Saves the current settings
-   */
   const saveSettings = async () => {
     try {
       setSaving(true);
       setError(null);
       setToast(null);
 
-      // Build the settings object
       const updatedSettings: ClaudeSettings = {
         ...settings,
         permissions: {
@@ -228,21 +189,18 @@ export const Settings: React.FC<SettingsProps> = ({
       await api.saveClaudeSettings(updatedSettings, configDir ? { configDir } : undefined);
       setSettings(updatedSettings);
 
-      // Save Claude binary path if changed
       if (binaryPathChanged && selectedInstallation) {
         await api.setClaudeBinaryPath(selectedInstallation.path);
         setCurrentBinaryPath(selectedInstallation.path);
         setBinaryPathChanged(false);
       }
 
-      // Save user hooks if changed
       if (userHooksChanged && getUserHooks.current) {
         const hooks = getUserHooks.current();
         await api.updateHooksConfig('user', hooks);
         setUserHooksChanged(false);
       }
 
-      // Save proxy settings if changed
       if (proxySettingsChanged && saveProxySettings.current) {
         await saveProxySettings.current();
         setProxySettingsChanged(false);
@@ -258,86 +216,10 @@ export const Settings: React.FC<SettingsProps> = ({
     }
   };
 
-  /**
-   * Updates a simple setting value
-   */
   const updateSetting = (key: string, value: any) => {
     setSettings(prev => ({ ...prev, [key]: value }));
   };
 
-  /**
-   * Adds a new permission rule
-   */
-  const addPermissionRule = (type: "allow" | "deny") => {
-    const newRule: PermissionRule = {
-      id: `${type}-${Date.now()}`,
-      value: "",
-    };
-    
-    if (type === "allow") {
-      setAllowRules(prev => [...prev, newRule]);
-    } else {
-      setDenyRules(prev => [...prev, newRule]);
-    }
-  };
-
-  /**
-   * Updates a permission rule
-   */
-  const updatePermissionRule = (type: "allow" | "deny", id: string, value: string) => {
-    if (type === "allow") {
-      setAllowRules(prev => prev.map(rule => 
-        rule.id === id ? { ...rule, value } : rule
-      ));
-    } else {
-      setDenyRules(prev => prev.map(rule => 
-        rule.id === id ? { ...rule, value } : rule
-      ));
-    }
-  };
-
-  /**
-   * Removes a permission rule
-   */
-  const removePermissionRule = (type: "allow" | "deny", id: string) => {
-    if (type === "allow") {
-      setAllowRules(prev => prev.filter(rule => rule.id !== id));
-    } else {
-      setDenyRules(prev => prev.filter(rule => rule.id !== id));
-    }
-  };
-
-  /**
-   * Adds a new environment variable
-   */
-  const addEnvVar = () => {
-    const newVar: EnvironmentVariable = {
-      id: `env-${Date.now()}`,
-      key: "",
-      value: "",
-    };
-    setEnvVars(prev => [...prev, newVar]);
-  };
-
-  /**
-   * Updates an environment variable
-   */
-  const updateEnvVar = (id: string, field: "key" | "value", value: string) => {
-    setEnvVars(prev => prev.map(envVar => 
-      envVar.id === id ? { ...envVar, [field]: value } : envVar
-    ));
-  };
-
-  /**
-   * Removes an environment variable
-   */
-  const removeEnvVar = (id: string) => {
-    setEnvVars(prev => prev.filter(envVar => envVar.id !== id));
-  };
-
-  /**
-   * Handle Claude installation selection
-   */
   const handleClaudeInstallationSelect = (installation: ClaudeInstallation) => {
     setSelectedInstallation(installation);
     setBinaryPathChanged(installation.path !== currentBinaryPath);
@@ -379,7 +261,7 @@ export const Settings: React.FC<SettingsProps> = ({
             </motion.div>
           </div>
         </div>
-      
+
       {/* Error message */}
       <AnimatePresence>
         {error && (
@@ -395,7 +277,7 @@ export const Settings: React.FC<SettingsProps> = ({
           </motion.div>
         )}
       </AnimatePresence>
-      
+
       {/* Content */}
       {loading ? (
         <div className="flex-1 flex items-center justify-center">
@@ -445,611 +327,72 @@ export const Settings: React.FC<SettingsProps> = ({
 
             {/* General Settings */}
             <TabsContent value="general" className="space-y-6 mt-6">
-              <Card className="p-6 space-y-6">
-                <div>
-                  <h3 className="text-heading-4 mb-4">General Settings</h3>
-                  
-                  <div className="space-y-4">
-                    {/* Theme Selector */}
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <Label>Theme</Label>
-                        <p className="text-caption text-muted-foreground mt-1">
-                          Choose your preferred color theme
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-1 p-1 bg-muted/30 rounded-lg">
-                        <button
-                          onClick={() => setTheme('dark')}
-                          className={cn(
-                            "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all",
-                            theme === 'dark' 
-                              ? "bg-background shadow-sm" 
-                              : "hover:bg-background/50"
-                          )}
-                        >
-                          {theme === 'dark' && <Check className="h-3 w-3" />}
-                          Dark
-                        </button>
-                        <button
-                          onClick={() => setTheme('gray')}
-                          className={cn(
-                            "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all",
-                            theme === 'gray' 
-                              ? "bg-background shadow-sm" 
-                              : "hover:bg-background/50"
-                          )}
-                        >
-                          {theme === 'gray' && <Check className="h-3 w-3" />}
-                          Gray
-                        </button>
-                        <button
-                          onClick={() => setTheme('light')}
-                          className={cn(
-                            "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all",
-                            theme === 'light' 
-                              ? "bg-background shadow-sm" 
-                              : "hover:bg-background/50"
-                          )}
-                        >
-                          {theme === 'light' && <Check className="h-3 w-3" />}
-                          Light
-                        </button>
-                        <button
-                          onClick={() => setTheme('custom')}
-                          className={cn(
-                            "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all",
-                            theme === 'custom' 
-                              ? "bg-background shadow-sm" 
-                              : "hover:bg-background/50"
-                          )}
-                        >
-                          {theme === 'custom' && <Check className="h-3 w-3" />}
-                          Custom
-                        </button>
-                      </div>
-                    </div>
-                    
-                    {/* Custom Color Editor */}
-                    {theme === 'custom' && (
-                      <div className="space-y-4 p-4 border rounded-lg bg-muted/20">
-                        <h4 className="text-label">Custom Theme Colors</h4>
-                        
-                        <div className="grid grid-cols-2 gap-4">
-                          {/* Background Color */}
-                          <div className="space-y-2">
-                            <Label htmlFor="color-background" className="text-caption">Background</Label>
-                            <div className="flex gap-2">
-                              <Input
-                                id="color-background"
-                                type="text"
-                                value={customColors.background}
-                                onChange={(e) => setCustomColors({ background: e.target.value })}
-                                placeholder="oklch(0.12 0.01 240)"
-                                className="font-mono text-xs"
-                              />
-                              <div 
-                                className="w-10 h-10 rounded border"
-                                style={{ backgroundColor: customColors.background }}
-                              />
-                            </div>
-                          </div>
-                          
-                          {/* Foreground Color */}
-                          <div className="space-y-2">
-                            <Label htmlFor="color-foreground" className="text-caption">Foreground</Label>
-                            <div className="flex gap-2">
-                              <Input
-                                id="color-foreground"
-                                type="text"
-                                value={customColors.foreground}
-                                onChange={(e) => setCustomColors({ foreground: e.target.value })}
-                                placeholder="oklch(0.98 0.01 240)"
-                                className="font-mono text-xs"
-                              />
-                              <div 
-                                className="w-10 h-10 rounded border"
-                                style={{ backgroundColor: customColors.foreground }}
-                              />
-                            </div>
-                          </div>
-                          
-                          {/* Primary Color */}
-                          <div className="space-y-2">
-                            <Label htmlFor="color-primary" className="text-caption">Primary</Label>
-                            <div className="flex gap-2">
-                              <Input
-                                id="color-primary"
-                                type="text"
-                                value={customColors.primary}
-                                onChange={(e) => setCustomColors({ primary: e.target.value })}
-                                placeholder="oklch(0.98 0.01 240)"
-                                className="font-mono text-xs"
-                              />
-                              <div 
-                                className="w-10 h-10 rounded border"
-                                style={{ backgroundColor: customColors.primary }}
-                              />
-                            </div>
-                          </div>
-                          
-                          {/* Card Color */}
-                          <div className="space-y-2">
-                            <Label htmlFor="color-card" className="text-caption">Card</Label>
-                            <div className="flex gap-2">
-                              <Input
-                                id="color-card"
-                                type="text"
-                                value={customColors.card}
-                                onChange={(e) => setCustomColors({ card: e.target.value })}
-                                placeholder="oklch(0.14 0.01 240)"
-                                className="font-mono text-xs"
-                              />
-                              <div 
-                                className="w-10 h-10 rounded border"
-                                style={{ backgroundColor: customColors.card }}
-                              />
-                            </div>
-                          </div>
-                          
-                          {/* Accent Color */}
-                          <div className="space-y-2">
-                            <Label htmlFor="color-accent" className="text-caption">Accent</Label>
-                            <div className="flex gap-2">
-                              <Input
-                                id="color-accent"
-                                type="text"
-                                value={customColors.accent}
-                                onChange={(e) => setCustomColors({ accent: e.target.value })}
-                                placeholder="oklch(0.16 0.01 240)"
-                                className="font-mono text-xs"
-                              />
-                              <div 
-                                className="w-10 h-10 rounded border"
-                                style={{ backgroundColor: customColors.accent }}
-                              />
-                            </div>
-                          </div>
-                          
-                          {/* Destructive Color */}
-                          <div className="space-y-2">
-                            <Label htmlFor="color-destructive" className="text-caption">Destructive</Label>
-                            <div className="flex gap-2">
-                              <Input
-                                id="color-destructive"
-                                type="text"
-                                value={customColors.destructive}
-                                onChange={(e) => setCustomColors({ destructive: e.target.value })}
-                                placeholder="oklch(0.6 0.2 25)"
-                                className="font-mono text-xs"
-                              />
-                              <div 
-                                className="w-10 h-10 rounded border"
-                                style={{ backgroundColor: customColors.destructive }}
-                              />
-                            </div>
-                          </div>
-                        </div>
-                        
-                        <p className="text-caption text-muted-foreground">
-                          Use CSS color values (hex, rgb, oklch, etc.). Changes apply immediately.
-                        </p>
-                      </div>
-                    )}
-                    
-                    {/* Include Co-authored By */}
-                    <div className="flex items-center justify-between">
-                      <div className="space-y-0.5 flex-1">
-                        <Label htmlFor="coauthored">Include "Co-authored by Claude"</Label>
-                        <p className="text-caption text-muted-foreground">
-                          Add Claude attribution to git commits and pull requests
-                        </p>
-                      </div>
-                      <Switch
-                        id="coauthored"
-                        checked={settings?.includeCoAuthoredBy === true}
-                        onCheckedChange={(checked) => updateSetting("includeCoAuthoredBy", checked)}
-                      />
-                    </div>
-                    
-                    {/* Verbose Output */}
-                    <div className="flex items-center justify-between">
-                      <div className="space-y-0.5 flex-1">
-                        <Label htmlFor="verbose">Verbose Output</Label>
-                        <p className="text-caption text-muted-foreground">
-                          Show full bash and command outputs
-                        </p>
-                      </div>
-                      <Switch
-                        id="verbose"
-                        checked={settings?.verbose === true}
-                        onCheckedChange={(checked) => updateSetting("verbose", checked)}
-                      />
-                    </div>
-                    
-                    {/* Cleanup Period */}
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <div className="flex-1">
-                          <Label htmlFor="cleanup">Chat Transcript Retention (days)</Label>
-                          <p className="text-caption text-muted-foreground mt-1">
-                            How long to retain chat transcripts locally (default: 30 days)
-                          </p>
-                        </div>
-                        <Input
-                          id="cleanup"
-                          type="number"
-                          min="1"
-                          placeholder="30"
-                          value={settings?.cleanupPeriodDays || ""}
-                          onChange={(e) => {
-                            const value = e.target.value ? parseInt(e.target.value) : undefined;
-                            updateSetting("cleanupPeriodDays", value);
-                          }}
-                          className="w-24"
-                        />
-                      </div>
-                    </div>
-                    
-                    {/* Claude Binary Path Selector */}
-                    <div className="space-y-3">
-                      <ClaudeVersionSelector
-                        selectedPath={currentBinaryPath}
-                        onSelect={handleClaudeInstallationSelect}
-                        simplified={true}
-                      />
-                      {binaryPathChanged && (
-                        <p className="text-caption text-amber-600 dark:text-amber-400 flex items-center gap-1">
-                          <AlertCircle className="h-3 w-3" />
-                          Changes will be applied when you save settings.
-                        </p>
-                      )}
-                    </div>
-
-                    {/* Separator */}
-                    <div className="border-t border-border pt-4 mt-6" />
-
-                    {/* Tab Persistence Toggle */}
-                    <div className="flex items-center justify-between">
-                      <div className="space-y-1">
-                        <Label htmlFor="tab-persistence">Remember Open Tabs</Label>
-                        <p className="text-caption text-muted-foreground">
-                          Restore your tabs when you restart the app
-                        </p>
-                      </div>
-                      <Switch
-                        id="tab-persistence"
-                        checked={tabPersistenceEnabled}
-                        onCheckedChange={(checked) => {
-                          TabPersistenceService.setEnabled(checked);
-                          setTabPersistenceEnabled(checked);
-                          setToast({
-                            message: checked 
-                              ? "Tab persistence enabled - your tabs will be restored on restart" 
-                              : "Tab persistence disabled - tabs will not be saved", 
-                            type: "success" 
-                          });
-                        }}
-                      />
-                    </div>
-
-                    {/* Startup Intro Toggle */}
-                    <div className="flex items-center justify-between">
-                      <div className="space-y-1">
-                        <Label htmlFor="startup-intro">Show Welcome Intro on Startup</Label>
-                        <p className="text-caption text-muted-foreground">
-                          Display a brief welcome animation when the app launches
-                        </p>
-                      </div>
-                      <Switch
-                        id="startup-intro"
-                        checked={startupIntroEnabled}
-                        onCheckedChange={async (checked) => {
-                          setStartupIntroEnabled(checked);
-                          try {
-                            await api.saveSetting('startup_intro_enabled', checked ? 'true' : 'false');
-                            setToast({
-                              message: checked 
-                                ? 'Welcome intro enabled' 
-                                : 'Welcome intro disabled', 
-                              type: 'success' 
-                            });
-                          } catch (e) {
-                            setToast({ message: 'Failed to update preference', type: 'error' });
-                          }
-                        }}
-                      />
-                    </div>
-                  </div>
-                </div>
-              </Card>
+              <GeneralSettings
+                settings={settings}
+                updateSetting={updateSetting}
+                setToast={setToast}
+                currentBinaryPath={currentBinaryPath}
+                binaryPathChanged={binaryPathChanged}
+                onClaudeInstallationSelect={handleClaudeInstallationSelect}
+              />
             </TabsContent>
-            
+
             {/* Permissions Settings */}
             <TabsContent value="permissions" className="space-y-6">
-              <Card className="p-6">
-                <div className="space-y-6">
-                  <div>
-                    <h3 className="text-heading-4 mb-2">Permission Rules</h3>
-                    <p className="text-body-small text-muted-foreground mb-4">
-                      Control which tools Claude Code can use without manual approval
-                    </p>
-                  </div>
-                  
-                  {/* Allow Rules */}
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <Label className="text-label text-green-500">Allow Rules</Label>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => addPermissionRule("allow")}
-                        className="gap-2 hover:border-green-500/50 hover:text-green-500"
-                      >
-                        <Plus className="h-3 w-3" />
-                        Add Rule
-                      </Button>
-                    </div>
-                    <div className="space-y-2">
-                      {allowRules.length === 0 ? (
-                        <p className="text-xs text-muted-foreground py-2">
-                          No allow rules configured. Claude will ask for approval for all tools.
-                        </p>
-                      ) : (
-                        allowRules.map((rule) => (
-                          <motion.div
-                            key={rule.id}
-                            initial={{ opacity: 0, x: -8 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            transition={{ duration: 0.15 }}
-                            className="flex items-center gap-2"
-                          >
-                            <Input
-                              placeholder="e.g., Bash(npm run test:*)"
-                              value={rule.value}
-                              onChange={(e) => updatePermissionRule("allow", rule.id, e.target.value)}
-                              className="flex-1"
-                            />
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => removePermissionRule("allow", rule.id)}
-                              className="h-8 w-8"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </motion.div>
-                        ))
-                      )}
-                    </div>
-                  </div>
-                  
-                  {/* Deny Rules */}
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <Label className="text-label text-red-500">Deny Rules</Label>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => addPermissionRule("deny")}
-                        className="gap-2 hover:border-red-500/50 hover:text-red-500"
-                      >
-                        <Plus className="h-3 w-3" />
-                        Add Rule
-                      </Button>
-                    </div>
-                    <div className="space-y-2">
-                      {denyRules.length === 0 ? (
-                        <p className="text-xs text-muted-foreground py-2">
-                          No deny rules configured.
-                        </p>
-                      ) : (
-                        denyRules.map((rule) => (
-                          <motion.div
-                            key={rule.id}
-                            initial={{ opacity: 0, x: -8 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            transition={{ duration: 0.15 }}
-                            className="flex items-center gap-2"
-                          >
-                            <Input
-                              placeholder="e.g., Bash(curl:*)"
-                              value={rule.value}
-                              onChange={(e) => updatePermissionRule("deny", rule.id, e.target.value)}
-                              className="flex-1"
-                            />
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => removePermissionRule("deny", rule.id)}
-                              className="h-8 w-8"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </motion.div>
-                        ))
-                      )}
-                    </div>
-                  </div>
-                  
-                  <div className="pt-2 space-y-2">
-                    <p className="text-xs text-muted-foreground">
-                      <strong>Examples:</strong>
-                    </p>
-                    <ul className="text-caption text-muted-foreground space-y-1 ml-4">
-                      <li>• <code className="px-1 py-0.5 rounded bg-green-500/10 text-green-600 dark:text-green-400">Bash</code> - Allow all bash commands</li>
-                      <li>• <code className="px-1 py-0.5 rounded bg-green-500/10 text-green-600 dark:text-green-400">Bash(npm run build)</code> - Allow exact command</li>
-                      <li>• <code className="px-1 py-0.5 rounded bg-green-500/10 text-green-600 dark:text-green-400">Bash(npm run test:*)</code> - Allow commands with prefix</li>
-                      <li>• <code className="px-1 py-0.5 rounded bg-green-500/10 text-green-600 dark:text-green-400">Read(~/.zshrc)</code> - Allow reading specific file</li>
-                      <li>• <code className="px-1 py-0.5 rounded bg-green-500/10 text-green-600 dark:text-green-400">Edit(docs/**)</code> - Allow editing files in docs directory</li>
-                    </ul>
-                  </div>
-                </div>
-              </Card>
+              <PermissionsSettings
+                allowRules={allowRules}
+                denyRules={denyRules}
+                setAllowRules={setAllowRules}
+                setDenyRules={setDenyRules}
+              />
             </TabsContent>
-            
+
             {/* Environment Variables */}
             <TabsContent value="environment" className="space-y-6">
-              <Card className="p-6">
-                <div className="space-y-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="text-heading-4">Environment Variables</h3>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        Environment variables applied to every Claude Code session
-                      </p>
-                    </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={addEnvVar}
-                      className="gap-2"
-                    >
-                      <Plus className="h-3 w-3" />
-                      Add Variable
-                    </Button>
-                  </div>
-                  
-                  <div className="space-y-3">
-                    {envVars.length === 0 ? (
-                      <p className="text-xs text-muted-foreground py-2">
-                        No environment variables configured.
-                      </p>
-                    ) : (
-                      envVars.map((envVar) => (
-                        <motion.div
-                          key={envVar.id}
-                          initial={{ opacity: 0, x: -20 }}
-                          animate={{ opacity: 1, x: 0 }}
-                          className="flex items-center gap-2"
-                        >
-                          <Input
-                            placeholder="KEY"
-                            value={envVar.key}
-                            onChange={(e) => updateEnvVar(envVar.id, "key", e.target.value)}
-                            className="flex-1 font-mono text-sm"
-                          />
-                          <span className="text-muted-foreground">=</span>
-                          <Input
-                            placeholder="value"
-                            value={envVar.value}
-                            onChange={(e) => updateEnvVar(envVar.id, "value", e.target.value)}
-                            className="flex-1 font-mono text-sm"
-                          />
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => removeEnvVar(envVar.id)}
-                            className="h-8 w-8 hover:text-destructive"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </motion.div>
-                      ))
-                    )}
-                  </div>
-                  
-                  <div className="pt-2 space-y-2">
-                    <p className="text-xs text-muted-foreground">
-                      <strong>Common variables:</strong>
-                    </p>
-                    <ul className="text-caption text-muted-foreground space-y-1 ml-4">
-                      <li>• <code className="px-1 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400">CLAUDE_CODE_ENABLE_TELEMETRY</code> - Enable/disable telemetry (0 or 1)</li>
-                      <li>• <code className="px-1 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400">ANTHROPIC_MODEL</code> - Custom model name</li>
-                      <li>• <code className="px-1 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400">DISABLE_COST_WARNINGS</code> - Disable cost warnings (1)</li>
-                    </ul>
-                  </div>
-                </div>
-              </Card>
+              <EnvironmentSettings
+                envVars={envVars}
+                setEnvVars={setEnvVars}
+              />
             </TabsContent>
+
             {/* Advanced Settings */}
             <TabsContent value="advanced" className="space-y-6">
-              <Card className="p-6">
-                <div className="space-y-6">
-                  <div>
-                    <h3 className="text-base font-semibold mb-4">Advanced Settings</h3>
-                    <p className="text-sm text-muted-foreground mb-6">
-                      Additional configuration options for advanced users
-                    </p>
-                  </div>
-                  
-                  {/* API Key Helper */}
-                  <div className="space-y-2">
-                    <Label htmlFor="apiKeyHelper">API Key Helper Script</Label>
-                    <Input
-                      id="apiKeyHelper"
-                      placeholder="/path/to/generate_api_key.sh"
-                      value={settings?.apiKeyHelper || ""}
-                      onChange={(e) => updateSetting("apiKeyHelper", e.target.value || undefined)}
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Custom script to generate auth values for API requests
-                    </p>
-                  </div>
-                  
-                  {/* Raw JSON Editor */}
-                  <div className="space-y-2">
-                    <Label>Raw Settings (JSON)</Label>
-                    <div className="p-3 rounded-md bg-muted font-mono text-xs overflow-x-auto whitespace-pre-wrap">
-                      <pre>{JSON.stringify(settings, null, 2)}</pre>
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      This shows the raw JSON that will be saved to ~/.claude/settings.json
-                    </p>
-                  </div>
-                </div>
-              </Card>
+              <AdvancedSettings
+                settings={settings}
+                updateSetting={updateSetting}
+              />
             </TabsContent>
-            
+
             {/* Hooks Settings */}
             <TabsContent value="hooks" className="space-y-6">
-              <Card className="p-6">
-                <div className="space-y-4">
-                  <div>
-                    <h3 className="text-base font-semibold mb-2">User Hooks</h3>
-                    <p className="text-body-small text-muted-foreground mb-4">
-                      Configure hooks that apply to all Claude Code sessions for your user account.
-                      These are stored in <code className="mx-1 px-2 py-1 bg-muted rounded text-xs">~/.claude/settings.json</code>
-                    </p>
-                  </div>
-                  
-                  <HooksEditor
-                    key={activeTab}
-                    scope="user"
-                    className="border-0"
-                    hideActions={true}
-                    onChange={(hasChanges, getHooks) => {
-                      setUserHooksChanged(hasChanges);
-                      getUserHooks.current = getHooks;
-                    }}
-                  />
-                </div>
-              </Card>
+              <HooksSettings
+                activeTab={activeTab}
+                onHooksChange={(hasChanges: boolean, getHooks: () => any) => {
+                  setUserHooksChanged(hasChanges);
+                  getUserHooks.current = getHooks;
+                }}
+              />
             </TabsContent>
-            
+
             {/* Commands Tab */}
             <TabsContent value="commands">
-              <Card className="p-6">
-                <SlashCommandsManager className="p-0" />
-              </Card>
+              <CommandsSettings />
             </TabsContent>
-            
+
             {/* Storage Tab */}
             <TabsContent value="storage">
               <StorageTab />
             </TabsContent>
-            
+
             {/* Proxy Settings */}
             <TabsContent value="proxy">
-              <Card className="p-6">
-                <ProxySettings 
-                  setToast={setToast}
-                  onChange={(hasChanges, _getSettings, save) => {
-                    setProxySettingsChanged(hasChanges);
-                    saveProxySettings.current = save;
-                  }}
-                />
-              </Card>
+              <ProxySettingsPanel
+                setToast={setToast}
+                onProxyChange={(hasChanges: boolean, save: () => Promise<void>) => {
+                  setProxySettingsChanged(hasChanges);
+                  saveProxySettings.current = save;
+                }}
+              />
             </TabsContent>
 
             {/* Log Tab */}
@@ -1062,7 +405,7 @@ export const Settings: React.FC<SettingsProps> = ({
         </div>
       )}
       </div>
-      
+
       {/* Toast Notification */}
       <ToastContainer>
         {toast && (
@@ -1073,8 +416,8 @@ export const Settings: React.FC<SettingsProps> = ({
           />
         )}
       </ToastContainer>
-      
-      
+
+
     </div>
   );
-}; 
+};
