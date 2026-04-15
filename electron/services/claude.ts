@@ -273,6 +273,9 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
 
     // Resolve which account's config dir to use
     const account = accounts.resolve(projectPath);
+    if (!account) {
+      console.warn(`[claude] No account resolved for project ${projectPath} — falling back to ~/.claude`);
+    }
     const configDir = account?.config_dir ?? defaultConfigDir();
 
     // Ensure the project directory exists
