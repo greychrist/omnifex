@@ -37,8 +37,8 @@ interface SessionHeaderProps {
   cost: number;
   totalTokens: number;
   model?: string;
-  /** Session status indicator — 'active' | 'idle' | 'ended' */
-  sessionStatus?: 'active' | 'idle' | 'ended';
+  /** Session status indicator — 'active' (subprocess alive) | 'ended' (no subprocess) */
+  sessionStatus?: 'active' | 'ended';
   /**
    * The SDK's own account-info report fetched via query.accountInfo() after
    * the session initialized. Undefined before the call resolves; null if it
@@ -131,9 +131,9 @@ export function SessionHeader({
         <span className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
           <span className={cn(
             "h-2 w-2 rounded-full",
-            sessionStatus === 'active' ? 'bg-emerald-500' : sessionStatus === 'ended' ? 'bg-red-500' : 'bg-yellow-500',
+            sessionStatus === 'active' ? 'bg-emerald-500' : 'bg-red-500',
           )} />
-          {sessionStatus === 'active' ? 'Active' : sessionStatus === 'ended' ? 'Ended' : 'Idle'}
+          {sessionStatus === 'active' ? 'Active' : 'Closed'}
         </span>
       )}
 

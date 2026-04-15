@@ -1025,11 +1025,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             permissionMode={permissionMode}
             sessionStatus={
               sessionStarted
-                ? persistentSessionRef.current && (isLoading || waitingForPermission)
-                  ? 'active'
-                  : !persistentSessionRef.current && !isLoading
-                  ? 'ended'
-                  : 'idle'
+                ? persistentSessionRef.current ? 'active' : 'ended'
                 : undefined
             }
             gitBranch={gitBranch ?? undefined}
