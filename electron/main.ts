@@ -23,6 +23,7 @@ import { createLoggingService } from './services/logging';
 import { createProxyService } from './services/proxy';
 import { createMCPService } from './services/mcp';
 import { createSlashCommandsService } from './services/slash-commands';
+import { createPermissionsIOService } from './services/permissions-io';
 import { createUpdaterService } from './services/updater';
 import { registerIpcHandlers } from './ipc/handlers';
 
@@ -222,6 +223,7 @@ app.whenReady().then(() => {
   const proxyService = createProxyService(db);
   const mcpService = createMCPService(defaultConfigDir);
   const slashCommandsService = createSlashCommandsService(defaultConfigDir);
+  const permissionsIOService = createPermissionsIOService();
 
   registerIpcHandlers({
     database: db,
@@ -393,6 +395,8 @@ app.whenReady().then(() => {
       getSettings: () => proxyService.getSettings(),
       saveSettings: (data: any) => proxyService.saveSettings(data),
     },
+    // Permissions I/O adapter
+    permissionsIO: permissionsIOService,
   });
 
   ipcMain.handle('get_app_version', () => app.getVersion());

@@ -9,6 +9,7 @@
  */
 
 import type { Database } from '../services/database';
+import type { PermissionsIOService } from '../services/permissions-io';
 
 // Services parameter type — each property is optional so we can add services
 // one task at a time without breaking the registration call.
@@ -142,6 +143,7 @@ export interface Services {
     getSettings(): unknown;
     saveSettings(data: unknown): unknown;
   };
+  permissionsIO?: PermissionsIOService;
 }
 
 // The handler type used in the map — receives the IPC event plus the params
@@ -174,7 +176,7 @@ function wrapWith<P>(fn: (params: P) => unknown): HandlerFn {
  * renderer gets a defined (but empty) response rather than a blocked channel.
  */
 export function getHandlerMap(services: Services = {}): Record<string, HandlerFn> {
-  const { accounts, claude, sessions, agents, usage, checkpoints, claudeBinary, mcp, slashCommands, logging, database, proxy } = services;
+  const { accounts, claude, sessions, agents, usage, checkpoints, claudeBinary, mcp, slashCommands, logging, database, proxy, permissionsIO } = services;
 
   const map: Record<string, HandlerFn> = {
     // ── Accounts ──────────────────────────────────────────────────────────────
@@ -232,85 +234,22 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     session_supported_agents: wrapWith((p: Record<string, unknown>) => sessions?.getSupportedAgents((p?.tabId ?? p?.session_id) as string) ?? null),
     session_mcp_server_status: wrapWith((p: Record<string, unknown>) => sessions?.getMcpServerStatus((p?.tabId ?? p?.session_id) as string) ?? null),
 
-    // ── Session Permissions (reads/writes settings files directly) ─────────
+    // ── Session Permissions ────────────────────────────────────────────────
     session_get_permissions: wrapWith((p: Record<string, unknown>) => {
-      const fs = require('node:fs') as typeof import('node:fs');
-      const path = require('node:path') as typeof import('node:path');
-      const os = require('node:os') as typeof import('node:os');
-      const configDir = (p?.configDir ?? p?.config_dir ?? path.join(os.homedir(), '.claude')) as string;
-      const projectPath = (p?.projectPath ?? p?.project_path ?? '') as string;
-
-      const readPerms = (filePath: string) => {
-        try {
-          const content = fs.readFileSync(filePath, 'utf-8');
-          const parsed = JSON.parse(content);
-          return parsed.permissions ?? {};
-        } catch { return {}; }
-      };
-
-      const levels: Array<{ label: string; scope: string; path: string; allow: string[]; deny: string[] }> = [];
-
-      // User level
-      const userPath = path.join(configDir, 'settings.json');
-      const userPerms = readPerms(userPath);
-      levels.push({ label: 'User Settings', scope: 'user', path: userPath, allow: userPerms.allow ?? [], deny: userPerms.deny ?? [] });
-
-      // Project level
-      if (projectPath) {
-        const projPath = path.join(projectPath, '.claude', 'settings.json');
-        const projPerms = readPerms(projPath);
-        levels.push({ label: 'Project Settings', scope: 'project', path: projPath, allow: projPerms.allow ?? [], deny: projPerms.deny ?? [] });
-      }
-
-      // Local level
-      if (projectPath) {
-        const localPath = path.join(projectPath, '.claude', 'settings.local.json');
-        const localPerms = readPerms(localPath);
-        levels.push({ label: 'Local Settings', scope: 'local', path: localPath, allow: localPerms.allow ?? [], deny: localPerms.deny ?? [] });
-      }
-
-      return levels;
+      const configDir = (p?.configDir ?? p?.config_dir ?? '') as string;
+      const projectPath = (p?.projectPath ?? p?.project_path) as string | undefined;
+      return permissionsIO?.getPermissions(configDir, projectPath) ?? null;
     }),
 
     session_update_permission: wrapWith((p: Record<string, unknown>) => {
-      const fs = require('node:fs') as typeof import('node:fs');
-      const path = require('node:path') as typeof import('node:path');
-      const os = require('node:os') as typeof import('node:os');
-      const configDir = (p?.configDir ?? p?.config_dir ?? path.join(os.homedir(), '.claude')) as string;
-      const projectPath = (p?.projectPath ?? p?.project_path ?? '') as string;
-      const scope = p?.scope as string;
-      const action = p?.action as string;
-      const behavior = p?.behavior as string;
-      const rule = p?.rule as string;
-
-      let filePath: string;
-      if (scope === 'user') filePath = path.join(configDir, 'settings.json');
-      else if (scope === 'project') filePath = path.join(projectPath, '.claude', 'settings.json');
-      else filePath = path.join(projectPath, '.claude', 'settings.local.json');
-
-      // Read existing settings
-      let settings: Record<string, any> = {};
-      try { settings = JSON.parse(fs.readFileSync(filePath, 'utf-8')); } catch { /* new file */ }
-
-      if (!settings.permissions) settings.permissions = {};
-      if (!settings.permissions.allow) settings.permissions.allow = [];
-      if (!settings.permissions.deny) settings.permissions.deny = [];
-
-      const list: string[] = settings.permissions[behavior] ?? [];
-
-      if (action === 'add') {
-        if (!list.includes(rule)) list.push(rule);
-      } else if (action === 'remove') {
-        const idx = list.indexOf(rule);
-        if (idx >= 0) list.splice(idx, 1);
-      }
-
-      settings.permissions[behavior] = list;
-
-      // Write back
-      const dir = path.dirname(filePath);
-      fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(filePath, JSON.stringify(settings, null, 2), 'utf-8');
+      permissionsIO?.updatePermission({
+        configDir: (p?.configDir ?? p?.config_dir) as string | undefined,
+        projectPath: (p?.projectPath ?? p?.project_path) as string | undefined,
+        scope: p?.scope as 'user' | 'project' | 'local',
+        action: p?.action as 'add' | 'remove',
+        behavior: p?.behavior as 'allow' | 'deny',
+        rule: p?.rule as string,
+      });
       return null;
     }),
 

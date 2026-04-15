@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { getHandlerMap } from '../ipc/handlers';
 import { createDatabase, type Database } from '../services/database';
+import { createPermissionsIOService } from '../services/permissions-io';
 
 // ---------------------------------------------------------------------------
 // Helpers: build a `Services` object where every service method is a vi.fn
@@ -129,6 +130,7 @@ function buildMockServices() {
     ] as const),
     logging: mockService(['writeBatch', 'query'] as const),
     proxy: mockService(['getSettings', 'saveSettings'] as const),
+    permissionsIO: createPermissionsIOService(),
   };
 }
 
