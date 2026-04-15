@@ -47,6 +47,11 @@ export const TabProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const isInitialized = useRef(false);
   const saveTimeoutRef = useRef<NodeJS.Timeout>();
+  // Stable ref for tabs — used by lookup functions so they don't need
+  // tabs in their dependency arrays (which would cascade new references
+  // through useTabState on every tabs change and cause infinite loops).
+  const tabsRef = useRef(tabs);
+  tabsRef.current = tabs;
 
   // Load tabs from storage on mount
   useEffect(() => {
@@ -210,7 +215,7 @@ export const TabProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   const setActiveTab = useCallback((id: string) => {
-    if (tabs.find(tab => tab.id === id)) {
+    if (tabsRef.current.find(tab => tab.id === id)) {
       setActiveTabId(id);
       // Clear unread badge when switching to a tab
       setTabs(prev => prev.map(tab =>
@@ -219,7 +224,7 @@ export const TabProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           : tab
       ));
     }
-  }, [tabs]);
+  }, []);
 
   const reorderTabs = useCallback((startIndex: number, endIndex: number) => {
     setTabs(prevTabs => {
@@ -236,8 +241,8 @@ export const TabProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   const getTabById = useCallback((id: string): Tab | undefined => {
-    return tabs.find(tab => tab.id === id);
-  }, [tabs]);
+    return tabsRef.current.find(tab => tab.id === id);
+  }, []);
 
   const closeAllTabs = useCallback(() => {
     setTabs([]);
@@ -246,8 +251,8 @@ export const TabProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   const getTabsByType = useCallback((type: 'chat' | 'agent'): Tab[] => {
-    return tabs.filter(tab => tab.type === type);
-  }, [tabs]);
+    return tabsRef.current.filter(tab => tab.type === type);
+  }, []);
 
   const value: TabContextType = {
     tabs,
