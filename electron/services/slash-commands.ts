@@ -8,6 +8,7 @@ import path from 'node:path';
 export interface SlashCommand {
   id: string;
   name: string;
+  full_command: string;
   namespace: string;
   scope: string;
   content: string;
@@ -98,6 +99,7 @@ function commandFromFile(
   return {
     id,
     name: fileName,
+    full_command: `/${fileName}`,
     namespace,
     scope,
     content,
@@ -204,6 +206,7 @@ export function createSlashCommandsService(defaultConfigDir: string): SlashComma
     return {
       id,
       name,
+      full_command: `/${name}`,
       namespace,
       scope,
       content,
