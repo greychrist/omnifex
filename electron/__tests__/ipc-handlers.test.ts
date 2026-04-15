@@ -715,16 +715,16 @@ describe('ipc handlers — dispatch to services', () => {
     await invoke(handlers, 'mcp_save_project_config', { path: '/p' });
 
     expect(services.mcp.add).toHaveBeenCalledWith({ name: 'srv' });
-    expect(services.mcp.list).toHaveBeenCalledTimes(1);
-    expect(services.mcp.get).toHaveBeenCalledWith('srv');
-    expect(services.mcp.remove).toHaveBeenCalledWith('srv');
+    expect(services.mcp.list).toHaveBeenCalledWith(undefined);
+    expect(services.mcp.get).toHaveBeenCalledWith('srv', undefined);
+    expect(services.mcp.remove).toHaveBeenCalledWith('srv', undefined);
     expect(services.mcp.addJson).toHaveBeenCalled();
-    expect(services.mcp.addFromClaudeDesktop).toHaveBeenCalledTimes(1);
+    expect(services.mcp.addFromClaudeDesktop).toHaveBeenCalledWith(undefined, undefined);
     expect(services.mcp.serve).toHaveBeenCalledTimes(1);
-    expect(services.mcp.testConnection).toHaveBeenCalledWith('srv');
+    expect(services.mcp.testConnection).toHaveBeenCalledWith('srv', undefined);
     expect(services.mcp.resetProjectChoices).toHaveBeenCalledTimes(1);
-    expect(services.mcp.getServerStatus).toHaveBeenCalledTimes(1);
-    expect(services.mcp.readProjectConfig).toHaveBeenCalledTimes(1);
+    expect(services.mcp.getServerStatus).toHaveBeenCalledWith(undefined);
+    expect(services.mcp.readProjectConfig).toHaveBeenCalledWith(undefined);
     expect(services.mcp.saveProjectConfig).toHaveBeenCalled();
   });
 
@@ -737,11 +737,11 @@ describe('ipc handlers — dispatch to services', () => {
     await invoke(handlers, 'slash_command_save', { id: 'z' });
     await invoke(handlers, 'slash_command_delete', { commandId: 'x' });
 
-    expect(services.slashCommands.list).toHaveBeenCalledTimes(1);
-    expect(services.slashCommands.get).toHaveBeenNthCalledWith(1, 'x');
-    expect(services.slashCommands.get).toHaveBeenNthCalledWith(2, 'y');
+    expect(services.slashCommands.list).toHaveBeenCalledWith(undefined, undefined);
+    expect(services.slashCommands.get).toHaveBeenNthCalledWith(1, 'x', undefined);
+    expect(services.slashCommands.get).toHaveBeenNthCalledWith(2, 'y', undefined);
     expect(services.slashCommands.save).toHaveBeenCalled();
-    expect(services.slashCommands.delete).toHaveBeenCalledWith('x', undefined);
+    expect(services.slashCommands.delete).toHaveBeenCalledWith('x', undefined, undefined);
   });
 
   // ── Logging ─────────────────────────────────────────────────────────────

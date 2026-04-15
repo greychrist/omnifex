@@ -361,25 +361,25 @@ app.whenReady().then(() => {
     // MCP adapter — service methods match handler interface names exactly
     mcp: {
       add: (data: any) => mcpService.add(data),
-      list: () => mcpService.list(),
-      get: (name: string) => mcpService.get(name),
-      remove: (name: string) => mcpService.remove(name),
+      list: (configDir?: string) => mcpService.list(configDir),
+      get: (name: string, configDir?: string) => mcpService.get(name, configDir),
+      remove: (name: string, configDir?: string) => mcpService.remove(name, configDir),
       addJson: (data: any) => mcpService.addJson(data),
-      addFromClaudeDesktop: () => mcpService.addFromClaudeDesktop(),
-      serve: (data: any) => mcpService.serve(),
-      testConnection: (name: string) => mcpService.testConnection(name),
+      addFromClaudeDesktop: (scope?: string, configDir?: string) => mcpService.addFromClaudeDesktop(scope, configDir),
+      serve: () => mcpService.serve(),
+      testConnection: (name: string, configDir?: string) => mcpService.testConnection(name, configDir),
       resetProjectChoices: () => mcpService.resetProjectChoices(),
-      getServerStatus: () => mcpService.getServerStatus(),
-      readProjectConfig: (data: any) => mcpService.readProjectConfig(data?.project_path ?? ''),
-      saveProjectConfig: (data: any) =>
-        mcpService.saveProjectConfig(data?.project_path ?? '', data?.config),
+      getServerStatus: (configDir?: string) => mcpService.getServerStatus(configDir),
+      readProjectConfig: (projectPath: string) => mcpService.readProjectConfig(projectPath),
+      saveProjectConfig: (projectPath: string, config: any) =>
+        mcpService.saveProjectConfig(projectPath, config),
     },
     // Slash commands adapter
     slashCommands: {
-      list: () => slashCommandsService.list(),
-      get: (commandId: string) => slashCommandsService.get(commandId),
+      list: (projectPath?: string, configDir?: string) => slashCommandsService.list(projectPath, configDir),
+      get: (commandId: string, configDir?: string) => slashCommandsService.get(commandId, configDir),
       save: (data: any) => slashCommandsService.save(data),
-      delete: (commandId: string) => slashCommandsService.delete(commandId),
+      delete: (commandId: string, projectPath?: string, configDir?: string) => slashCommandsService.delete(commandId, projectPath, configDir),
     },
     // Logging adapter
     logging: {

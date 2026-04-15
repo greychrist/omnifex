@@ -113,23 +113,23 @@ export interface Services {
   };
   mcp?: {
     add(data: unknown): unknown;
-    list(): unknown;
-    get(name: string): unknown;
-    remove(name: string): unknown;
+    list(configDir?: string): unknown;
+    get(name: string, configDir?: string): unknown;
+    remove(name: string, configDir?: string): unknown;
     addJson(data: unknown): unknown;
-    addFromClaudeDesktop(): unknown;
-    serve(data: unknown): unknown;
-    testConnection(name: string): unknown;
+    addFromClaudeDesktop(scope?: string, configDir?: string): unknown;
+    serve(): unknown;
+    testConnection(name: string, configDir?: string): unknown;
     resetProjectChoices(): unknown;
-    getServerStatus(): unknown;
-    readProjectConfig(data: unknown): unknown;
-    saveProjectConfig(data: unknown): unknown;
+    getServerStatus(configDir?: string): unknown;
+    readProjectConfig(projectPath: string): unknown;
+    saveProjectConfig(projectPath: string, config: unknown): unknown;
   };
   slashCommands?: {
-    list(): unknown;
-    get(commandId: string): unknown;
+    list(projectPath?: string, configDir?: string): unknown;
+    get(commandId: string, configDir?: string): unknown;
     save(data: unknown): unknown;
-    delete(commandId: string, projectPath?: string): unknown;
+    delete(commandId: string, projectPath?: string, configDir?: string): unknown;
   };
   logging?: {
     writeBatch(entries: unknown): unknown;
@@ -361,23 +361,33 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
 
     // ── MCP ───────────────────────────────────────────────────────────────────
     mcp_add: wrapWith((p: Record<string, unknown>) => mcp?.add(p) ?? null),
-    mcp_list: wrap(() => mcp?.list() ?? null),
-    mcp_get: wrapWith((p: Record<string, unknown>) => mcp?.get(p?.name as string) ?? null),
-    mcp_remove: wrapWith((p: Record<string, unknown>) => mcp?.remove(p?.name as string) ?? null),
+    mcp_list: wrapWith((p: Record<string, unknown>) => mcp?.list((p?.configDir ?? p?.config_dir) as string | undefined) ?? null),
+    mcp_get: wrapWith((p: Record<string, unknown>) => mcp?.get(p?.name as string, (p?.configDir ?? p?.config_dir) as string | undefined) ?? null),
+    mcp_remove: wrapWith((p: Record<string, unknown>) => mcp?.remove(p?.name as string, (p?.configDir ?? p?.config_dir) as string | undefined) ?? null),
     mcp_add_json: wrapWith((p: Record<string, unknown>) => mcp?.addJson(p) ?? null),
-    mcp_add_from_claude_desktop: wrap(() => mcp?.addFromClaudeDesktop() ?? null),
-    mcp_serve: wrapWith((p: Record<string, unknown>) => mcp?.serve(p) ?? null),
-    mcp_test_connection: wrapWith((p: Record<string, unknown>) => mcp?.testConnection(p?.name as string) ?? null),
+    mcp_add_from_claude_desktop: wrapWith((p: Record<string, unknown>) => mcp?.addFromClaudeDesktop(p?.scope as string | undefined, (p?.configDir ?? p?.config_dir) as string | undefined) ?? null),
+    mcp_serve: wrapWith((p: Record<string, unknown>) => mcp?.serve() ?? null),
+    mcp_test_connection: wrapWith((p: Record<string, unknown>) => mcp?.testConnection(p?.name as string, (p?.configDir ?? p?.config_dir) as string | undefined) ?? null),
     mcp_reset_project_choices: wrap(() => mcp?.resetProjectChoices() ?? null),
-    mcp_get_server_status: wrap(() => mcp?.getServerStatus() ?? null),
-    mcp_read_project_config: wrapWith((p: Record<string, unknown>) => mcp?.readProjectConfig(p) ?? null),
-    mcp_save_project_config: wrapWith((p: Record<string, unknown>) => mcp?.saveProjectConfig(p) ?? null),
+    mcp_get_server_status: wrapWith((p: Record<string, unknown>) => mcp?.getServerStatus((p?.configDir ?? p?.config_dir) as string | undefined) ?? null),
+    mcp_read_project_config: wrapWith((p: Record<string, unknown>) => mcp?.readProjectConfig((p?.projectPath ?? p?.project_path) as string) ?? null),
+    mcp_save_project_config: wrapWith((p: Record<string, unknown>) => mcp?.saveProjectConfig((p?.projectPath ?? p?.project_path) as string, p?.config) ?? null),
 
     // ── Slash Commands ────────────────────────────────────────────────────────
-    slash_commands_list: wrap(() => slashCommands?.list() ?? null),
-    slash_command_get: wrapWith((p: Record<string, unknown>) => slashCommands?.get((p?.commandId ?? p?.command_id) as string) ?? null),
-    slash_command_save: wrapWith((p: Record<string, unknown>) => slashCommands?.save(p) ?? null),
-    slash_command_delete: wrapWith((p: Record<string, unknown>) => slashCommands?.delete((p?.commandId ?? p?.command_id) as string, (p?.projectPath ?? p?.project_path) as string | undefined) ?? null),
+    slash_commands_list: wrapWith((p: Record<string, unknown>) => slashCommands?.list(
+      (p?.projectPath ?? p?.project_path) as string | undefined,
+      (p?.configDir ?? p?.config_dir) as string | undefined,
+    ) ?? null),
+    slash_command_get: wrapWith((p: Record<string, unknown>) => slashCommands?.get(
+      (p?.commandId ?? p?.command_id) as string,
+      (p?.configDir ?? p?.config_dir) as string | undefined,
+    ) ?? null),
+    slash_command_save: wrapWith((p: Record<string, unknown>) => slashCommands?.save(p as any) ?? null),
+    slash_command_delete: wrapWith((p: Record<string, unknown>) => slashCommands?.delete(
+      (p?.commandId ?? p?.command_id) as string,
+      (p?.projectPath ?? p?.project_path) as string | undefined,
+      (p?.configDir ?? p?.config_dir) as string | undefined,
+    ) ?? null),
 
     // ── Logging ───────────────────────────────────────────────────────────────
     log_write_batch: wrapWith((p: Record<string, unknown>) => logging?.writeBatch(p?.entries) ?? null),
