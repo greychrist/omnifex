@@ -368,7 +368,7 @@ export function SessionHeader({
                   {useSdk && sortedCategories.length > 0 ? (
                     <>
                       <div className="h-72 -mx-2">
-                        <ResponsiveContainer width="100%" height="100%">
+                        <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                           <PieChart>
                             <Pie
                               data={pieData}
