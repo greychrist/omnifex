@@ -1691,7 +1691,8 @@ export const api = {
     args: string[] = [],
     env: Record<string, string> = {},
     url?: string,
-    scope: string = "local"
+    scope: string = "local",
+    configDir?: string
   ): Promise<AddServerResult> {
     try {
       return await apiCall<AddServerResult>("mcp_add", {
@@ -1701,7 +1702,8 @@ export const api = {
         args,
         env,
         url,
-        scope
+        scope,
+        configDir
       });
     } catch (error) {
       console.error("Failed to add MCP server:", error);
@@ -1712,9 +1714,9 @@ export const api = {
   /**
    * Lists all configured MCP servers
    */
-  async mcpList(): Promise<MCPServer[]> {
+  async mcpList(configDir?: string): Promise<MCPServer[]> {
     try {
-      const result = await apiCall<MCPServer[]>("mcp_list");
+      const result = await apiCall<MCPServer[]>("mcp_list", { configDir });
       return result;
     } catch (error) {
       console.error("API: Failed to list MCP servers:", error);
@@ -1725,9 +1727,9 @@ export const api = {
   /**
    * Gets details for a specific MCP server
    */
-  async mcpGet(name: string): Promise<MCPServer> {
+  async mcpGet(name: string, configDir?: string): Promise<MCPServer> {
     try {
-      return await apiCall<MCPServer>("mcp_get", { name });
+      return await apiCall<MCPServer>("mcp_get", { name, configDir });
     } catch (error) {
       console.error("Failed to get MCP server:", error);
       throw error;
@@ -1737,9 +1739,9 @@ export const api = {
   /**
    * Removes an MCP server
    */
-  async mcpRemove(name: string): Promise<string> {
+  async mcpRemove(name: string, configDir?: string): Promise<string> {
     try {
-      return await apiCall<string>("mcp_remove", { name });
+      return await apiCall<string>("mcp_remove", { name, configDir });
     } catch (error) {
       console.error("Failed to remove MCP server:", error);
       throw error;
@@ -1749,9 +1751,9 @@ export const api = {
   /**
    * Adds an MCP server from JSON configuration
    */
-  async mcpAddJson(name: string, jsonConfig: string, scope: string = "local"): Promise<AddServerResult> {
+  async mcpAddJson(name: string, jsonConfig: string, scope: string = "local", configDir?: string): Promise<AddServerResult> {
     try {
-      return await apiCall<AddServerResult>("mcp_add_json", { name, jsonConfig, scope });
+      return await apiCall<AddServerResult>("mcp_add_json", { name, jsonConfig, scope, configDir });
     } catch (error) {
       console.error("Failed to add MCP server from JSON:", error);
       throw error;
@@ -1761,9 +1763,9 @@ export const api = {
   /**
    * Imports MCP servers from Claude Desktop
    */
-  async mcpAddFromClaudeDesktop(scope: string = "local"): Promise<ImportResult> {
+  async mcpAddFromClaudeDesktop(scope: string = "local", configDir?: string): Promise<ImportResult> {
     try {
-      return await apiCall<ImportResult>("mcp_add_from_claude_desktop", { scope });
+      return await apiCall<ImportResult>("mcp_add_from_claude_desktop", { scope, configDir });
     } catch (error) {
       console.error("Failed to import from Claude Desktop:", error);
       throw error;
@@ -1785,9 +1787,9 @@ export const api = {
   /**
    * Tests connection to an MCP server
    */
-  async mcpTestConnection(name: string): Promise<string> {
+  async mcpTestConnection(name: string, configDir?: string): Promise<string> {
     try {
-      return await apiCall<string>("mcp_test_connection", { name });
+      return await apiCall<string>("mcp_test_connection", { name, configDir });
     } catch (error) {
       console.error("Failed to test MCP connection:", error);
       throw error;
@@ -1809,9 +1811,9 @@ export const api = {
   /**
    * Gets the status of MCP servers
    */
-  async mcpGetServerStatus(): Promise<Record<string, ServerStatus>> {
+  async mcpGetServerStatus(configDir?: string): Promise<Record<string, ServerStatus>> {
     try {
-      return await apiCall<Record<string, ServerStatus>>("mcp_get_server_status");
+      return await apiCall<Record<string, ServerStatus>>("mcp_get_server_status", { configDir });
     } catch (error) {
       console.error("Failed to get server status:", error);
       throw error;
@@ -2165,9 +2167,9 @@ export const api = {
    * @param projectPath - Optional project path to include project-specific commands
    * @returns Promise resolving to array of slash commands
    */
-  async slashCommandsList(projectPath?: string): Promise<SlashCommand[]> {
+  async slashCommandsList(projectPath?: string, configDir?: string): Promise<SlashCommand[]> {
     try {
-      return await apiCall<SlashCommand[]>("slash_commands_list", { projectPath });
+      return await apiCall<SlashCommand[]>("slash_commands_list", { projectPath, configDir });
     } catch (error) {
       console.error("Failed to list slash commands:", error);
       throw error;
@@ -2179,9 +2181,9 @@ export const api = {
    * @param commandId - Unique identifier of the command
    * @returns Promise resolving to the slash command
    */
-  async slashCommandGet(commandId: string): Promise<SlashCommand> {
+  async slashCommandGet(commandId: string, configDir?: string): Promise<SlashCommand> {
     try {
-      return await apiCall<SlashCommand>("slash_command_get", { commandId });
+      return await apiCall<SlashCommand>("slash_command_get", { commandId, configDir });
     } catch (error) {
       console.error("Failed to get slash command:", error);
       throw error;
@@ -2206,7 +2208,8 @@ export const api = {
     content: string,
     description: string | undefined,
     allowedTools: string[],
-    projectPath?: string
+    projectPath?: string,
+    configDir?: string
   ): Promise<SlashCommand> {
     try {
       return await apiCall<SlashCommand>("slash_command_save", {
@@ -2216,7 +2219,8 @@ export const api = {
         content,
         description,
         allowedTools,
-        projectPath
+        projectPath,
+        configDir
       });
     } catch (error) {
       console.error("Failed to save slash command:", error);
@@ -2230,9 +2234,9 @@ export const api = {
    * @param projectPath - Optional project path for deleting project commands
    * @returns Promise resolving to deletion message
    */
-  async slashCommandDelete(commandId: string, projectPath?: string): Promise<string> {
+  async slashCommandDelete(commandId: string, projectPath?: string, configDir?: string): Promise<string> {
     try {
-      return await apiCall<string>("slash_command_delete", { commandId, projectPath });
+      return await apiCall<string>("slash_command_delete", { commandId, projectPath, configDir });
     } catch (error) {
       console.error("Failed to delete slash command:", error);
       throw error;
