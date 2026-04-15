@@ -876,7 +876,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       className="flex-1 overflow-y-auto relative pb-20"
       onScroll={handleScroll}
       style={{
-        contain: 'strict',
+        contain: 'paint',
       }}
     >
       <div className="w-full max-w-6xl mx-auto px-4 pt-8 pb-4 space-y-4">
