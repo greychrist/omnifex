@@ -34,6 +34,10 @@ interface SlashCommandsManagerProps {
   projectPath?: string;
   className?: string;
   scopeFilter?: 'project' | 'user' | 'all';
+  /**
+   * Optional config directory for account-scoped slash command operations
+   */
+  configDir?: string;
 }
 
 interface CommandForm {
@@ -90,6 +94,7 @@ export const SlashCommandsManager: React.FC<SlashCommandsManagerProps> = ({
   projectPath,
   className,
   scopeFilter = 'all',
+  configDir,
 }) => {
   const [commands, setCommands] = useState<SlashCommand[]>([]);
   const [loading, setLoading] = useState(true);
@@ -125,7 +130,7 @@ export const SlashCommandsManager: React.FC<SlashCommandsManagerProps> = ({
     try {
       setLoading(true);
       setError(null);
-      const loadedCommands = await api.slashCommandsList(projectPath);
+      const loadedCommands = await api.slashCommandsList(projectPath, configDir);
       setCommands(loadedCommands);
     } catch (err) {
       console.error("Failed to load slash commands:", err);
@@ -173,7 +178,8 @@ export const SlashCommandsManager: React.FC<SlashCommandsManagerProps> = ({
         commandForm.content,
         commandForm.description || undefined,
         commandForm.allowedTools,
-        commandForm.scope === 'project' ? projectPath : undefined
+        commandForm.scope === 'project' ? projectPath : undefined,
+        configDir
       );
 
       setEditDialogOpen(false);
@@ -197,7 +203,7 @@ export const SlashCommandsManager: React.FC<SlashCommandsManagerProps> = ({
     try {
       setDeleting(true);
       setError(null);
-      await api.slashCommandDelete(commandToDelete.id, projectPath);
+      await api.slashCommandDelete(commandToDelete.id, projectPath, configDir);
       setDeleteDialogOpen(false);
       setCommandToDelete(null);
       await loadCommands();

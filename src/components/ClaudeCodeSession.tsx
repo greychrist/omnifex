@@ -1873,6 +1873,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
               isLoading={isLoading}
               disabled={!projectPath}
               projectPath={projectPath}
+              configDir={accountResolution?.account.config_dir}
               defaultModel={selectedModel}
               effort={effort}
               onEffortChange={(level) => {
@@ -2245,7 +2246,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
               </DialogDescription>
             </DialogHeader>
             <div className="flex-1 overflow-y-auto">
-              <SlashCommandsManager projectPath={projectPath} />
+              <SlashCommandsManager projectPath={projectPath} configDir={accountResolution?.account.config_dir} />
             </div>
           </DialogContent>
         </Dialog>

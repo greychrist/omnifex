@@ -19,6 +19,10 @@ interface MCPManagerProps {
    * Optional className for styling
    */
   className?: string;
+  /**
+   * Optional config directory for account-scoped MCP operations
+   */
+  configDir?: string;
 }
 
 /**
@@ -27,6 +31,7 @@ interface MCPManagerProps {
  */
 export const MCPManager: React.FC<MCPManagerProps> = ({
   className: _className,
+  configDir,
 }) => {
   const [activeTab, setActiveTab] = useState("servers");
   const [servers, setServers] = useState<MCPServer[]>([]);
@@ -48,7 +53,7 @@ export const MCPManager: React.FC<MCPManagerProps> = ({
       setLoading(true);
       setError(null);
       console.log("MCPManager: Loading servers...");
-      const serverList = await api.mcpList();
+      const serverList = await api.mcpList(configDir);
       console.log("MCPManager: Received server list:", serverList);
       console.log("MCPManager: Server count:", serverList.length);
       setServers(serverList);
@@ -153,6 +158,7 @@ export const MCPManager: React.FC<MCPManagerProps> = ({
                     loading={false}
                     onServerRemoved={handleServerRemoved}
                     onRefresh={loadServers}
+                    configDir={configDir}
                   />
                 </Card>
               </TabsContent>
@@ -163,6 +169,7 @@ export const MCPManager: React.FC<MCPManagerProps> = ({
                   <MCPAddServer
                     onServerAdded={handleServerAdded}
                     onError={(message: string) => setToast({ message, type: "error" })}
+                    configDir={configDir}
                   />
                 </Card>
               </TabsContent>
@@ -173,6 +180,7 @@ export const MCPManager: React.FC<MCPManagerProps> = ({
                   <MCPImportExport
                     onImportCompleted={handleImportCompleted}
                     onError={(message: string) => setToast({ message, type: "error" })}
+                    configDir={configDir}
                   />
                 </Card>
               </TabsContent>

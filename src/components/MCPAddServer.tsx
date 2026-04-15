@@ -18,6 +18,10 @@ interface MCPAddServerProps {
    * Callback for error messages
    */
   onError: (message: string) => void;
+  /**
+   * Optional config directory for account-scoped MCP operations
+   */
+  configDir?: string;
 }
 
 interface EnvironmentVariable {
@@ -33,6 +37,7 @@ interface EnvironmentVariable {
 export const MCPAddServer: React.FC<MCPAddServerProps> = ({
   onServerAdded,
   onError,
+  configDir,
 }) => {
   const [transport, setTransport] = useState<"stdio" | "sse">("stdio");
   const [saving, setSaving] = useState(false);
@@ -128,7 +133,8 @@ export const MCPAddServer: React.FC<MCPAddServerProps> = ({
         args,
         env,
         undefined,
-        stdioScope
+        stdioScope,
+        configDir
       );
       
       if (result.success) {
@@ -182,7 +188,8 @@ export const MCPAddServer: React.FC<MCPAddServerProps> = ({
         [],
         env,
         sseUrl,
-        sseScope
+        sseScope,
+        configDir
       );
       
       if (result.success) {

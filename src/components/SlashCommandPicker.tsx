@@ -40,6 +40,10 @@ interface SlashCommandPickerProps {
    * Optional className for styling
    */
   className?: string;
+  /**
+   * Optional config directory for account-scoped slash command operations
+   */
+  configDir?: string;
 }
 
 // Get icon for command based on its properties
@@ -77,6 +81,7 @@ export const SlashCommandPicker: React.FC<SlashCommandPickerProps> = ({
   onClose,
   initialQuery = "",
   className,
+  configDir,
 }) => {
   const [commands, setCommands] = useState<SlashCommand[]>([]);
   const [filteredCommands, setFilteredCommands] = useState<SlashCommand[]>([]);
@@ -207,7 +212,7 @@ export const SlashCommandPicker: React.FC<SlashCommandPickerProps> = ({
       setError(null);
       
       // Always load fresh commands from filesystem
-      const loadedCommands = await api.slashCommandsList(projectPath);
+      const loadedCommands = await api.slashCommandsList(projectPath, configDir);
       setCommands(loadedCommands);
     } catch (err) {
       console.error("Failed to load slash commands:", err);

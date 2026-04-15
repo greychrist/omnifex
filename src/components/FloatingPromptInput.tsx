@@ -113,6 +113,8 @@ interface FloatingPromptInputProps {
   thinkingConfig?: ThinkingConfig;
   /** Callback when thinking config changes. */
   onThinkingConfigChange?: (config: ThinkingConfig) => void;
+  /** Optional config directory for account-scoped slash command operations */
+  configDir?: string;
 }
 
 export interface FloatingPromptInputRef {
@@ -253,6 +255,7 @@ const FloatingPromptInputInner = (
     onEffortChange,
     // thinkingConfig and onThinkingConfigChange are exposed as props but
     // not yet wired to a picker — the parent manages them directly.
+    configDir,
   }: FloatingPromptInputProps,
   ref: React.Ref<FloatingPromptInputRef>,
 ) => {
@@ -1392,6 +1395,7 @@ const FloatingPromptInputInner = (
                       onSelect={handleSlashCommandSelect}
                       onClose={handleSlashCommandPickerClose}
                       initialQuery={slashCommandQuery}
+                      configDir={configDir}
                     />
                   )}
                 </AnimatePresence>

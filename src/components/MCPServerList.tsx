@@ -37,6 +37,10 @@ interface MCPServerListProps {
    * Callback to refresh the server list
    */
   onRefresh: () => void;
+  /**
+   * Optional config directory for account-scoped MCP operations
+   */
+  configDir?: string;
 }
 
 /**
@@ -48,6 +52,7 @@ export const MCPServerList: React.FC<MCPServerListProps> = ({
   loading,
   onServerRemoved,
   onRefresh,
+  configDir,
 }) => {
   const [removingServer, setRemovingServer] = useState<string | null>(null);
   const [testingServer, setTestingServer] = useState<string | null>(null);
@@ -96,7 +101,7 @@ export const MCPServerList: React.FC<MCPServerListProps> = ({
     try {
       setRemovingServer(name);
 
-      await api.mcpRemove(name);
+      await api.mcpRemove(name, configDir);
 
       onServerRemoved(name);
     } catch (error) {
@@ -112,7 +117,7 @@ export const MCPServerList: React.FC<MCPServerListProps> = ({
   const handleTestConnection = async (name: string) => {
     try {
       setTestingServer(name);
-      const result = await api.mcpTestConnection(name);
+      const result = await api.mcpTestConnection(name, configDir);
 
       // TODO: Show result in a toast or modal
       console.log("Test result:", result);

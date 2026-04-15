@@ -16,6 +16,10 @@ interface MCPImportExportProps {
    * Callback for error messages
    */
   onError: (message: string) => void;
+  /**
+   * Optional config directory for account-scoped MCP operations
+   */
+  configDir?: string;
 }
 
 /**
@@ -24,6 +28,7 @@ interface MCPImportExportProps {
 export const MCPImportExport: React.FC<MCPImportExportProps> = ({
   onImportCompleted,
   onError,
+  configDir,
 }) => {
   const [importingDesktop, setImportingDesktop] = useState(false);
   const [importingJson, setImportingJson] = useState(false);
@@ -36,7 +41,7 @@ export const MCPImportExport: React.FC<MCPImportExportProps> = ({
     try {
       setImportingDesktop(true);
       // Always use "user" scope for Claude Desktop imports (was previously "global")
-      const result = await api.mcpAddFromClaudeDesktop("user");
+      const result = await api.mcpAddFromClaudeDesktop("user", configDir);
       
       // Show detailed results if available
       if (result.servers && result.servers.length > 0) {
@@ -104,7 +109,7 @@ export const MCPImportExport: React.FC<MCPImportExportProps> = ({
               env: (config as any).env || {}
             };
             
-            const result = await api.mcpAddJson(name, JSON.stringify(serverConfig), importScope);
+            const result = await api.mcpAddJson(name, JSON.stringify(serverConfig), importScope, configDir);
             if (result.success) {
               imported++;
             } else {
@@ -121,7 +126,7 @@ export const MCPImportExport: React.FC<MCPImportExportProps> = ({
         const name = prompt("Enter a name for this server:");
         if (!name) return;
 
-        const result = await api.mcpAddJson(name, content, importScope);
+        const result = await api.mcpAddJson(name, content, importScope, configDir);
         if (result.success) {
           onImportCompleted(1, 0);
         } else {
