@@ -1,5 +1,5 @@
 import * as React from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 
 interface PopoverProps {
@@ -110,26 +110,29 @@ export const Popover: React.FC<PopoverProps> = ({
         {trigger}
       </div>
       
-      <AnimatePresence mode="wait">
-        {open && (
+      {open && (
+        <div
+          ref={contentRef}
+          className={cn(
+            "absolute z-50 min-w-[200px]",
+            sideClass,
+            alignClass,
+          )}
+        >
           <motion.div
-            key="popover-content"
             initial={{ opacity: 0, scale: 0.95, y: animationY.initial }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: animationY.exit }}
             transition={{ duration: 0.15 }}
             className={cn(
-              "absolute z-50 min-w-[200px] rounded-md border border-border bg-popover p-4 text-popover-foreground shadow-md",
-              sideClass,
-              alignClass,
+              "rounded-md border border-border bg-popover p-4 text-popover-foreground shadow-md",
               className
             )}
-            ref={contentRef}
           >
             {content}
           </motion.div>
-        )}
-      </AnimatePresence>
+        </div>
+      )}
     </div>
   );
 }; 
