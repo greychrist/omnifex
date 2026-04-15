@@ -246,7 +246,10 @@ export function createSessionsService(
       autoAllowEnabled: false,
       autoAllowedTools: new Set(),
       projectPath,
-      configDir: configDir || path.join(os.homedir(), '.claude'),
+      configDir: configDir || (() => {
+        console.warn(`[sessions] No configDir for tab ${tabId} — falling back to ~/.claude. This should not happen in multi-account mode.`);
+        return path.join(os.homedir(), '.claude');
+      })(),
       sdkOptions: options,
     };
 

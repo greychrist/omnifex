@@ -61,6 +61,9 @@ function resolveFilePath(
 
 export function createPermissionsIOService(): PermissionsIOService {
   function getPermissions(configDir: string, projectPath?: string): PermissionLevel[] {
+    if (!configDir) {
+      console.warn('[permissions-io] No configDir provided — falling back to ~/.claude');
+    }
     const resolvedConfigDir = configDir || path.join(os.homedir(), '.claude');
     const levels: PermissionLevel[] = [];
 
@@ -114,6 +117,9 @@ export function createPermissionsIOService(): PermissionsIOService {
       rule,
     } = params;
 
+    if (!configDir) {
+      console.warn('[permissions-io] No configDir provided for updatePermission — falling back to ~/.claude');
+    }
     const resolvedConfigDir = configDir || path.join(os.homedir(), '.claude');
     const filePath = resolveFilePath(scope, resolvedConfigDir, projectPath);
 

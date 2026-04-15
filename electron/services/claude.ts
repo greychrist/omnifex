@@ -71,8 +71,8 @@ export interface ClaudeService {
     opts?: ClaudeSettingsOpts,
   ): Promise<void>;
 
-  getSystemPrompt(): Promise<string>;
-  saveSystemPrompt(content: string): Promise<void>;
+  getSystemPrompt(opts?: ClaudeSettingsOpts): Promise<string>;
+  saveSystemPrompt(content: string, opts?: ClaudeSettingsOpts): Promise<void>;
 
   checkClaudeVersion(): Promise<ClaudeVersionStatus>;
 
@@ -520,13 +520,15 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
   // getSystemPrompt / saveSystemPrompt
   // -------------------------------------------------------------------------
 
-  async function getSystemPrompt(): Promise<string> {
-    const filePath = path.join(defaultConfigDir(), 'CLAUDE.md');
+  async function getSystemPrompt(opts?: ClaudeSettingsOpts): Promise<string> {
+    const configDir = opts?.configDir ?? defaultConfigDir();
+    const filePath = path.join(configDir, 'CLAUDE.md');
     return readClaudeMdFile(filePath);
   }
 
-  async function saveSystemPrompt(content: string): Promise<void> {
-    const filePath = path.join(defaultConfigDir(), 'CLAUDE.md');
+  async function saveSystemPrompt(content: string, opts?: ClaudeSettingsOpts): Promise<void> {
+    const configDir = opts?.configDir ?? defaultConfigDir();
+    const filePath = path.join(configDir, 'CLAUDE.md');
     return saveClaudeMdFile(filePath, content);
   }
 
