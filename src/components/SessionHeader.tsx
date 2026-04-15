@@ -87,6 +87,15 @@ export function SessionHeader({
   // we control close-on-select etc.
   const [accountPopoverOpen, setAccountPopoverOpen] = React.useState(false);
   const [contextPopoverOpen, setContextPopoverOpen] = React.useState(false);
+  // Defer chart rendering by one frame so the popover container has dimensions
+  const [chartReady, setChartReady] = React.useState(false);
+  React.useEffect(() => {
+    if (contextPopoverOpen) {
+      const id = requestAnimationFrame(() => setChartReady(true));
+      return () => { cancelAnimationFrame(id); setChartReady(false); };
+    }
+    setChartReady(false);
+  }, [contextPopoverOpen]);
 
   const copySessionId = () => {
     if (sessionId) {
@@ -365,7 +374,7 @@ export function SessionHeader({
                     {tokens.toLocaleString()} / {limit.toLocaleString()} tokens
                   </div>
 
-                  {useSdk && sortedCategories.length > 0 && contextPopoverOpen ? (
+                  {useSdk && sortedCategories.length > 0 && chartReady ? (
                     <>
                       <div className="h-72 -mx-2">
                         <ResponsiveContainer width="100%" height="100%">
