@@ -126,19 +126,24 @@ export const Settings: React.FC<SettingsProps> = ({
 
       setSettings(loadedSettings);
 
+      // The settings file has a nested "settings" key:
+      // { settings: { permissions: {...}, env: {...}, ... } }
+      const inner = (loadedSettings.settings ?? loadedSettings) as Record<string, unknown>;
+
       // Parse permissions
-      if (loadedSettings.permissions && typeof loadedSettings.permissions === 'object') {
-        if (Array.isArray(loadedSettings.permissions.allow)) {
+      const perms = inner.permissions as Record<string, unknown> | undefined;
+      if (perms && typeof perms === 'object') {
+        if (Array.isArray(perms.allow)) {
           setAllowRules(
-            loadedSettings.permissions.allow.map((rule: string, index: number) => ({
+            perms.allow.map((rule: string, index: number) => ({
               id: `allow-${index}`,
               value: rule,
             }))
           );
         }
-        if (Array.isArray(loadedSettings.permissions.deny)) {
+        if (Array.isArray(perms.deny)) {
           setDenyRules(
-            loadedSettings.permissions.deny.map((rule: string, index: number) => ({
+            perms.deny.map((rule: string, index: number) => ({
               id: `deny-${index}`,
               value: rule,
             }))
@@ -147,9 +152,10 @@ export const Settings: React.FC<SettingsProps> = ({
       }
 
       // Parse environment variables
-      if (loadedSettings.env && typeof loadedSettings.env === 'object' && !Array.isArray(loadedSettings.env)) {
+      const env = inner.env as Record<string, string> | undefined;
+      if (env && typeof env === 'object' && !Array.isArray(env)) {
         setEnvVars(
-          Object.entries(loadedSettings.env).map(([key, value], index) => ({
+          Object.entries(env).map(([key, value], index) => ({
             id: `env-${index}`,
             key,
             value: value as string,
@@ -171,8 +177,10 @@ export const Settings: React.FC<SettingsProps> = ({
       setError(null);
       setToast(null);
 
-      const updatedSettings: ClaudeSettings = {
-        ...settings,
+      // Preserve the nested "settings" key structure that Claude's settings.json uses
+      const existingInner = ((settings as any)?.settings ?? settings) as Record<string, unknown>;
+      const updatedInner = {
+        ...existingInner,
         permissions: {
           allow: allowRules.map(rule => rule.value).filter(v => v && String(v).trim()),
           deny: denyRules.map(rule => rule.value).filter(v => v && String(v).trim()),
@@ -184,6 +192,9 @@ export const Settings: React.FC<SettingsProps> = ({
           return acc;
         }, {} as Record<string, string>),
       };
+      const updatedSettings: ClaudeSettings = (settings as any)?.settings
+        ? { ...settings, settings: updatedInner }
+        : updatedInner;
 
       const configDir = getSelectedConfigDir();
       await api.saveClaudeSettings(updatedSettings, configDir ? { configDir } : undefined);
