@@ -1004,6 +1004,15 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
               {projectPath.replace(/^\/Users\/[^/]+/, '~')}
             </span>
           )}
+          {gitBranch && (
+            <span
+              className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono bg-foreground/5 text-foreground/60"
+              title={`Git branch: ${gitBranch}`}
+            >
+              <GitBranch className="w-3 h-3" />
+              {gitBranch}
+            </span>
+          )}
           {accountResolution?.account.account_type === 'max' && (
             <div className="ml-auto">
               <Popover
@@ -1067,7 +1076,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
               ? persistentSessionRef.current ? 'active' : 'ended'
               : undefined
           }
-          gitBranch={gitBranch ?? undefined}
           className="mb-2"
         />
         {!sessionStarted && (

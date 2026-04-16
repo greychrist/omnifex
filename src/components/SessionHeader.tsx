@@ -3,7 +3,6 @@ import { AccountBadge } from "./AccountBadge";
 import {
   Copy,
   Database,
-  GitBranch,
   ShieldCheck,
   ShieldAlert,
 } from "lucide-react";
@@ -65,7 +64,6 @@ interface SessionHeaderProps {
   effortLevel?: string;
   thinkingConfig?: string;
   permissionMode?: string;
-  gitBranch?: string;
 
   className?: string;
 }
@@ -86,7 +84,6 @@ export function SessionHeader({
   thinkingConfig,
   permissionMode,
   sessionStatus,
-  gitBranch,
   className,
 }: SessionHeaderProps) {
   // Local open state for the two Popovers so they're click-driven and
@@ -251,16 +248,22 @@ export function SessionHeader({
         const mode = PERMISSION_MODES.find((m) => m.id === normalized);
         if (!mode) return null;
         return (
-          <span
-            className={cn(
-              "flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold uppercase tracking-wide bg-foreground/5",
-              mode.color,
-            )}
-            title={`Permissions: ${mode.name} — ${mode.description}`}
-          >
-            {mode.icon}
-            {mode.shortName}
-          </span>
+          <>
+            <span aria-hidden="true" className="h-4 w-px bg-border/60 shrink-0" />
+            <div className="flex items-center gap-1.5">
+              <span className="text-[9px] uppercase tracking-wider text-muted-foreground/60">permissions</span>
+              <span
+                className={cn(
+                  "flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold uppercase tracking-wide bg-foreground/5",
+                  mode.color,
+                )}
+                title={`Permissions: ${mode.name} — ${mode.description}`}
+              >
+                {mode.icon}
+                {mode.shortName}
+              </span>
+            </div>
+          </>
         );
       })()}
       {/* Effort pill — always shown now (no more auto sentinel). */}
@@ -268,39 +271,47 @@ export function SessionHeader({
         const level = EFFORT_LEVELS.find((l) => l.id === effortLevel);
         if (!level) return null;
         return (
-          <span
-            className={cn(
-              "px-1.5 py-0.5 rounded text-[10px] font-mono font-bold uppercase tracking-wide bg-foreground/5",
-              level.color,
-            )}
-            title={`Effort: ${level.name} — ${level.description}`}
-          >
-            {level.shortName}
-          </span>
+          <>
+            <span aria-hidden="true" className="h-4 w-px bg-border/60 shrink-0" />
+            <div className="flex items-center gap-1.5">
+              <span className="text-[9px] uppercase tracking-wider text-muted-foreground/60">effort</span>
+              <span
+                className={cn(
+                  "px-1.5 py-0.5 rounded text-[10px] font-mono font-bold uppercase tracking-wide bg-foreground/5",
+                  level.color,
+                )}
+                title={`Effort: ${level.name} — ${level.description}`}
+              >
+                {level.shortName}
+              </span>
+            </div>
+          </>
         );
       })()}
-      {/* Thinking pill — always shown, color-coded per THINKING_CONFIGS. */}
+      {/* Thinking pill — labelled "adaptive" per Anthropic's docs terminology
+          (https://docs.anthropic.com/en/docs/build-with-claude/adaptive-thinking).
+          The pill's value (On / Budg / Off) describes the state of adaptive thinking. */}
       {thinkingConfig && (() => {
         const cfg = THINKING_CONFIGS.find((c) => c.id === thinkingConfig);
         if (!cfg) return null;
         return (
-          <span
-            className={cn(
-              "px-1.5 py-0.5 rounded text-[10px] font-mono font-bold uppercase tracking-wide bg-foreground/5",
-              cfg.color,
-            )}
-            title={`Thinking: ${cfg.name} — ${cfg.description}`}
-          >
-            {cfg.shortName}
-          </span>
+          <>
+            <span aria-hidden="true" className="h-4 w-px bg-border/60 shrink-0" />
+            <div className="flex items-center gap-1.5">
+              <span className="text-[9px] uppercase tracking-wider text-muted-foreground/60">adaptive</span>
+              <span
+                className={cn(
+                  "px-1.5 py-0.5 rounded text-[10px] font-mono font-bold uppercase tracking-wide bg-foreground/5",
+                  cfg.color,
+                )}
+                title={`Adaptive thinking: ${cfg.name} — ${cfg.description}`}
+              >
+                {cfg.shortName}
+              </span>
+            </div>
+          </>
         );
       })()}
-      {gitBranch && (
-        <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-foreground/5 text-foreground/50 flex items-center gap-1">
-          <GitBranch className="w-3 h-3" />
-          {gitBranch}
-        </span>
-      )}
 
       <div className="ml-auto flex items-center gap-3">
         {(() => {
