@@ -61,6 +61,7 @@ interface FloatingPromptInputProps {
   thinkingConfig?: ThinkingConfig;
   onThinkingConfigChange?: (config: ThinkingConfig) => void;
   configDir?: string;
+  tabId?: string;
 }
 
 export interface FloatingPromptInputRef {
@@ -84,6 +85,7 @@ const FloatingPromptInputInner = (
     effort = 'auto',
     onEffortChange,
     configDir,
+    tabId,
   }: FloatingPromptInputProps,
   ref: React.Ref<FloatingPromptInputRef>,
 ) => {
@@ -638,6 +640,7 @@ const FloatingPromptInputInner = (
                   {slash.showSlashCommandPicker && (
                     <SlashCommandPicker
                       projectPath={projectPath}
+                      tabId={tabId}
                       onSelect={(cmd: SlashCommand) =>
                         slash.handleSlashCommandSelect(cmd, prompt, cursorPosition, setPrompt, activeTextarea())
                       }

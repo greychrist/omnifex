@@ -1428,6 +1428,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
               disabled={!projectPath}
               projectPath={projectPath}
               configDir={accountResolution?.account.config_dir}
+              tabId={tabIdRef.current}
               defaultModel={selectedModel}
               effort={effort}
               onEffortChange={(level) => {

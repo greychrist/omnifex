@@ -2,9 +2,9 @@ import React, { useState, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { api } from "@/lib/api";
-import { 
-  X, 
+import { api, type SlashCommand } from "@/lib/api";
+import {
+  X,
   Command,
   Search,
   Globe,
@@ -16,7 +16,6 @@ import {
   User,
   Building2
 } from "lucide-react";
-import type { SlashCommand } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 interface SlashCommandPickerProps {
@@ -24,6 +23,10 @@ interface SlashCommandPickerProps {
    * The project path for loading project-specific commands
    */
   projectPath?: string;
+  /**
+   * Active session tab ID for loading SDK built-in commands
+   */
+  tabId?: string;
   /**
    * Callback when a command is selected
    */
@@ -77,6 +80,7 @@ const getCommandIcon = (command: SlashCommand) => {
  */
 export const SlashCommandPicker: React.FC<SlashCommandPickerProps> = ({
   projectPath,
+  tabId,
   onSelect,
   onClose,
   initialQuery = "",
@@ -93,10 +97,10 @@ export const SlashCommandPicker: React.FC<SlashCommandPickerProps> = ({
   
   const commandListRef = useRef<HTMLDivElement>(null);
   
-  // Load commands on mount or when project path / configDir changes
+  // Load commands on mount or when dependencies change
   useEffect(() => {
     loadCommands();
-  }, [projectPath, configDir]);
+  }, [projectPath, configDir, tabId]);
   
   // Filter commands based on search query and active tab
   useEffect(() => {
@@ -210,10 +214,35 @@ export const SlashCommandPicker: React.FC<SlashCommandPickerProps> = ({
     try {
       setIsLoading(true);
       setError(null);
-      
-      // Always load fresh commands from filesystem
-      const loadedCommands = await api.slashCommandsList(projectPath, configDir);
-      setCommands(loadedCommands);
+
+      // Load custom commands from filesystem
+      const customCommands = await api.slashCommandsList(projectPath, configDir);
+
+      // Load built-in commands from the SDK session (if active)
+      let defaultCommands: SlashCommand[] = [];
+      if (tabId) {
+        try {
+          const sdkCommands = await api.sessionSupportedCommands(tabId);
+          defaultCommands = (sdkCommands || []).map(cmd => ({
+            id: `default::${cmd.name}`,
+            name: cmd.name,
+            full_command: `/${cmd.name}`,
+            namespace: '',
+            scope: 'default',
+            content: '',
+            description: cmd.description || '',
+            allowed_tools: [] as string[],
+            file_path: '',
+            has_bash_commands: false,
+            has_file_references: false,
+            accepts_arguments: !!cmd.argumentHint,
+          }));
+        } catch {
+          // Session may not be ready yet — show custom commands only
+        }
+      }
+
+      setCommands([...defaultCommands, ...customCommands]);
     } catch (err) {
       console.error("Failed to load slash commands:", err);
       setError(err instanceof Error ? err.message : 'Failed to load commands');
