@@ -1,7 +1,35 @@
 import { app, BrowserWindow, ipcMain, protocol, Notification, shell } from 'electron';
+import { execSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+
+// ---------------------------------------------------------------------------
+// Fix PATH for packaged apps
+// When launched from Finder on macOS, Electron inherits a minimal environment
+// (/usr/bin:/bin:/usr/sbin:/sbin). Tools installed via nvm, homebrew, etc.
+// aren't found, which breaks MCP servers and the Claude CLI. Read the user's
+// login shell PATH and merge it into process.env before anything else runs.
+// ---------------------------------------------------------------------------
+function fixPath(): void {
+  if (process.platform !== 'darwin' && process.platform !== 'linux') return;
+  try {
+    const userShell = process.env.SHELL || '/bin/zsh';
+    const result = execSync(`${userShell} -ilc 'echo "__PATH__=$PATH"`, {
+      encoding: 'utf-8',
+      timeout: 5000,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    const match = result.match(/__PATH__=(.+)/);
+    if (match) {
+      process.env.PATH = match[1];
+      console.log('[main] Fixed PATH from shell:', match[1].split(':').length, 'entries');
+    }
+  } catch (err) {
+    console.warn('[main] Failed to fix PATH from shell:', (err as Error).message);
+  }
+}
+fixPath();
 
 // Log errors to console and show dialog
 process.on('uncaughtException', (err) => {
