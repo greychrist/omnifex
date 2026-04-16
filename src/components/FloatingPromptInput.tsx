@@ -84,7 +84,7 @@ const FloatingPromptInputInner = (
     onPermissionModeChange,
     supportedModels,
     onLiveModelChange,
-    effort = 'auto',
+    effort = 'high',
     onEffortChange,
     configDir,
     tabId,

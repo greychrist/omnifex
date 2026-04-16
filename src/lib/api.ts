@@ -588,7 +588,7 @@ export interface SessionModelInfo {
   displayName: string;
   description: string;
   supportsEffort?: boolean;
-  supportedEffortLevels?: ('low' | 'medium' | 'high' | 'max')[];
+  supportedEffortLevels?: ('low' | 'medium' | 'high' | 'xhigh' | 'max')[];
 }
 
 export interface SessionAgentInfo {
@@ -1275,7 +1275,7 @@ export const api = {
   },
 
   /** Change the effort level for subsequent turns in an active session. */
-  async sessionSetEffort(tabId: string, level: 'low' | 'medium' | 'high' | 'max' | null): Promise<void> {
+  async sessionSetEffort(tabId: string, level: 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null): Promise<void> {
     return apiCall("session_set_effort", { tabId, level });
   },
 

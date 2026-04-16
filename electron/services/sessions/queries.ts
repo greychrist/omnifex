@@ -53,7 +53,7 @@ export function createQueryPassthroughs(sessions: Map<string, SessionHandle>) {
     }
   }
 
-  async function setEffort(tabId: string, level: 'low' | 'medium' | 'high' | 'max' | null): Promise<void> {
+  async function setEffort(tabId: string, level: 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null): Promise<void> {
     const handle = sessions.get(tabId);
     if (!handle) return;
     try {

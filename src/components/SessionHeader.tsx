@@ -11,6 +11,12 @@ import { cn } from "@/lib/utils";
 import type { SessionAccountInfo, SessionContextUsage } from "@/lib/api";
 import { Popover } from "@/components/ui/popover";
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
+import {
+  EFFORT_LEVELS,
+  PERMISSION_MODES,
+  THINKING_CONFIGS,
+  normalizePermissionMode,
+} from "./ControlBar";
 
 // Palette for context-usage categories. Each category comes with its own
 // `color` from the SDK, but those default colors sometimes clash with our
@@ -239,21 +245,56 @@ export function SessionHeader({
         />
       )}
 
-      {permissionMode && (
-        <span className="px-1.5 py-0.5 rounded text-[10px] font-mono uppercase tracking-wide bg-foreground/5 text-foreground/50">
-          {permissionMode === 'default' ? 'ask' : permissionMode === 'acceptEdits' ? 'auto-edit' : permissionMode === 'plan' ? 'plan' : permissionMode === 'bypassPermissions' ? 'yolo' : permissionMode}
-        </span>
-      )}
-      {effortLevel && effortLevel !== 'auto' && (
-        <span className="px-1.5 py-0.5 rounded text-[10px] font-mono uppercase tracking-wide bg-foreground/5 text-foreground/50">
-          effort: {effortLevel}
-        </span>
-      )}
-      {thinkingConfig && thinkingConfig !== 'adaptive' && (
-        <span className="px-1.5 py-0.5 rounded text-[10px] font-mono uppercase tracking-wide bg-foreground/5 text-foreground/50">
-          thinking: {thinkingConfig === 'disabled' ? 'off' : thinkingConfig}
-        </span>
-      )}
+      {/* Permissions pill — matches the chat-bar PermissionPicker (icon + shortName + color). */}
+      {permissionMode && (() => {
+        const normalized = normalizePermissionMode(permissionMode);
+        const mode = PERMISSION_MODES.find((m) => m.id === normalized);
+        if (!mode) return null;
+        return (
+          <span
+            className={cn(
+              "flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold uppercase tracking-wide bg-foreground/5",
+              mode.color,
+            )}
+            title={`Permissions: ${mode.name} — ${mode.description}`}
+          >
+            {mode.icon}
+            {mode.shortName}
+          </span>
+        );
+      })()}
+      {/* Effort pill — always shown now (no more auto sentinel). */}
+      {effortLevel && (() => {
+        const level = EFFORT_LEVELS.find((l) => l.id === effortLevel);
+        if (!level) return null;
+        return (
+          <span
+            className={cn(
+              "px-1.5 py-0.5 rounded text-[10px] font-mono font-bold uppercase tracking-wide bg-foreground/5",
+              level.color,
+            )}
+            title={`Effort: ${level.name} — ${level.description}`}
+          >
+            {level.shortName}
+          </span>
+        );
+      })()}
+      {/* Thinking pill — always shown, color-coded per THINKING_CONFIGS. */}
+      {thinkingConfig && (() => {
+        const cfg = THINKING_CONFIGS.find((c) => c.id === thinkingConfig);
+        if (!cfg) return null;
+        return (
+          <span
+            className={cn(
+              "px-1.5 py-0.5 rounded text-[10px] font-mono font-bold uppercase tracking-wide bg-foreground/5",
+              cfg.color,
+            )}
+            title={`Thinking: ${cfg.name} — ${cfg.description}`}
+          >
+            {cfg.shortName}
+          </span>
+        );
+      })()}
       {gitBranch && (
         <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-foreground/5 text-foreground/50 flex items-center gap-1">
           <GitBranch className="w-3 h-3" />

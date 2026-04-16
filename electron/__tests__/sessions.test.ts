@@ -340,6 +340,22 @@ describe('sessions service — full lifecycle', () => {
     service.stopAll();
   });
 
+  it('passes effort: xhigh through to the SDK query (SDK-supported Opus 4.7 level)', () => {
+    const fake = installFakeQuery();
+    service.start({
+      tabId: 'tab-xhigh',
+      projectPath: '/p',
+      configDir: '/c',
+      model: 'sonnet',
+      permissionMode: 'default',
+      effort: 'xhigh',
+    });
+
+    const options = fake.getCapturedOptions();
+    expect(options.effort).toBe('xhigh');
+    service.stopAll();
+  });
+
   it('omits effort and thinking from SDK query when not provided (auto behavior)', () => {
     const fake = installFakeQuery();
     service.start({
@@ -2366,6 +2382,22 @@ describe('sessions service — full lifecycle', () => {
 
       await service.setEffort('tab-set-effort', 'max');
       expect(fake.query.applyFlagSettings).toHaveBeenCalledWith({ effortLevel: 'max' });
+
+      service.stopAll();
+    });
+
+    it('setEffort accepts xhigh (SDK EffortLevel includes xhigh)', async () => {
+      const fake = installFakeQuery();
+      service.start({
+        tabId: 'tab-xhigh-set',
+        projectPath: '/p',
+        configDir: '/c',
+        model: 'sonnet',
+        permissionMode: 'default',
+      });
+
+      await service.setEffort('tab-xhigh-set', 'xhigh');
+      expect(fake.query.applyFlagSettings).toHaveBeenCalledWith({ effortLevel: 'xhigh' });
 
       service.stopAll();
     });

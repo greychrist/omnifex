@@ -16,15 +16,22 @@ import { motion } from "framer-motion";
 
 /**
  * Effort level — maps to the SDK's reasoning_effort parameter.
+ *
+ * Mirrors the SDK's `EffortLevel` type exactly (`low | medium | high | xhigh | max`).
+ * No `auto` — the SDK has no `'auto'` value, so it was a renderer-only sentinel
+ * that meant "don't set effort, let the SDK default (high) apply." Removed
+ * 2026-04-16 in favor of an explicit default of `high`.
+ *
+ * @see https://docs.anthropic.com/en/docs/build-with-claude/effort
  */
-export type EffortLevel = 'auto' | 'low' | 'medium' | 'high' | 'max';
+export type EffortLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
 export const EFFORT_LEVELS: { id: EffortLevel; name: string; description: string; shortName: string; color: string }[] = [
-  { id: 'auto', name: 'Auto', description: 'Let the model decide (default)', shortName: 'A', color: 'text-muted-foreground' },
-  { id: 'low', name: 'Low', description: 'Minimal thinking, fastest responses', shortName: 'Lo', color: 'text-green-500' },
-  { id: 'medium', name: 'Medium', description: 'Moderate thinking', shortName: 'Med', color: 'text-yellow-500' },
-  { id: 'high', name: 'High', description: 'Deep reasoning', shortName: 'Hi', color: 'text-orange-500' },
-  { id: 'max', name: 'Max', description: 'Maximum effort (Opus only)', shortName: 'Max', color: 'text-red-500' },
+  { id: 'low', name: 'Low', description: 'Minimal thinking, fastest responses', shortName: 'Lo', color: 'text-blue-500' },
+  { id: 'medium', name: 'Medium', description: 'Moderate thinking', shortName: 'Med', color: 'text-green-500' },
+  { id: 'high', name: 'High', description: 'Deep reasoning (SDK default)', shortName: 'Hi', color: 'text-yellow-500' },
+  { id: 'xhigh', name: 'Extra High', description: 'Deeper than high (Opus 4.7 only; falls back to High elsewhere)', shortName: 'Xhi', color: 'text-orange-500' },
+  { id: 'max', name: 'Max', description: 'Maximum effort (Opus 4.6/4.7 only)', shortName: 'Max', color: 'text-red-500' },
 ];
 
 // ── Thinking ────────────────────────────────────────────────────────────
@@ -34,10 +41,10 @@ export const EFFORT_LEVELS: { id: EffortLevel; name: string; description: string
  */
 export type ThinkingConfig = 'adaptive' | 'budget' | 'disabled';
 
-export const THINKING_CONFIGS: { id: ThinkingConfig; name: string; description: string; shortName: string }[] = [
-  { id: 'adaptive', name: 'Adaptive', description: 'Claude decides when and how much to think', shortName: 'On' },
-  { id: 'budget', name: 'Budget', description: 'Fixed thinking token budget', shortName: 'Budg' },
-  { id: 'disabled', name: 'Off', description: 'No extended thinking', shortName: 'Off' },
+export const THINKING_CONFIGS: { id: ThinkingConfig; name: string; description: string; shortName: string; color: string }[] = [
+  { id: 'adaptive', name: 'Adaptive', description: 'Claude decides when and how much to think', shortName: 'On', color: 'text-sky-400' },
+  { id: 'budget', name: 'Budget', description: 'Fixed thinking token budget', shortName: 'Budg', color: 'text-violet-400' },
+  { id: 'disabled', name: 'Off', description: 'No extended thinking', shortName: 'Off', color: 'text-muted-foreground' },
 ];
 
 // ── Permission ──────────────────────────────────────────────────────────

@@ -110,7 +110,9 @@ export function useSessionLifecycle({
         console.error("[startPersistentSession] resolve error:", e);
       }
     }
-    const sdkEffort = effort === "auto" ? undefined : effort;
+    // Effort is always an SDK-supported level now (low/medium/high/xhigh/max) —
+    // no more 'auto' sentinel that needed stripping.
+    const sdkEffort = effort;
     const sdkThinking =
       thinkingConfig === "adaptive"
         ? { type: "adaptive" as const }

@@ -163,7 +163,9 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   // smoother than ask-every-time.
   const [permissionMode, setPermissionMode] = useState<string>("acceptEdits");
   // Effort level — maps to the SDK's reasoning_effort parameter.
-  const [effort, setEffort] = useState<EffortLevel>('auto');
+  // Default 'high' matches the SDK's own default (sdk.d.ts EffortLevel docs).
+  // There is no 'auto' — the SDK's EffortLevel is strictly low/medium/high/xhigh/max.
+  const [effort, setEffort] = useState<EffortLevel>('high');
   // Thinking config — controls extended thinking behavior.
   const [thinkingConfig, setThinkingConfig] = useState<ThinkingConfig>('adaptive');
   // Git branch for the project directory, shown in SessionHeader badge.
@@ -1482,7 +1484,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                 setEffort(level);
                 if (persistentSessionRef.current) {
                   const tid = tabIdRef.current;
-                  api.sessionSetEffort(tid, level === 'auto' ? null : level).catch((err) => {
+                  api.sessionSetEffort(tid, level).catch((err) => {
                     console.error('[sessions] sessionSetEffort failed:', err);
                   });
                 }

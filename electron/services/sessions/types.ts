@@ -45,7 +45,7 @@ export interface SessionStartParams {
   model: string;
   permissionMode: string;
   resumeSessionId?: string;
-  effort?: 'low' | 'medium' | 'high' | 'max';
+  effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
   thinking?: { type: 'adaptive'; display?: 'summarized' | 'omitted' }
     | { type: 'enabled'; budgetTokens?: number; display?: 'summarized' | 'omitted' }
     | { type: 'disabled' };
@@ -83,8 +83,8 @@ export interface SessionsService {
   setModel(tabId: string, model?: string): Promise<void>;
   /** Switch the permission mode mid-session. */
   setPermissionMode(tabId: string, mode: PermissionMode): Promise<void>;
-  /** Change effort level mid-session. null = auto (clear setting). */
-  setEffort(tabId: string, level: 'low' | 'medium' | 'high' | 'max' | null): Promise<void>;
+  /** Change effort level mid-session. null clears the override and reverts to the SDK default. */
+  setEffort(tabId: string, level: 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null): Promise<void>;
   /** Change thinking mode mid-session. */
   setThinking(tabId: string, config: SessionStartParams['thinking']): Promise<void>;
   /** Get the SDK-reported authenticated account for an active tab. Null if the tab isn't running. */
