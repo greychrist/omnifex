@@ -1012,31 +1012,29 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             </span>
           )}
         </div>
-        {accountResolution && (
-          <SessionHeader
-            accountName={accountResolution.account.name}
-            accountType={accountResolution.account.account_type}
-            configDir={accountResolution.account.config_dir}
-            matchType={accountResolution.match_type}
-            matchDetail={accountResolution.match_detail}
-            sessionId={claudeSessionId}
-            cost={sessionCost}
-            totalTokens={totalTokens}
-            model={selectedModel}
-            sdkAccount={sdkAccountInfo}
-            contextUsage={contextUsage}
-            effortLevel={effort}
-            thinkingConfig={thinkingConfig}
-            permissionMode={permissionMode}
-            sessionStatus={
-              sessionStarted
-                ? persistentSessionRef.current ? 'active' : 'ended'
-                : undefined
-            }
-            gitBranch={gitBranch ?? undefined}
-            className="mb-2"
-          />
-        )}
+        <SessionHeader
+          accountName={accountResolution?.account.name ?? ''}
+          accountType={accountResolution?.account.account_type ?? ''}
+          configDir={accountResolution?.account.config_dir ?? ''}
+          matchType={accountResolution?.match_type ?? ''}
+          matchDetail={accountResolution?.match_detail ?? ''}
+          sessionId={claudeSessionId}
+          cost={sessionCost}
+          totalTokens={totalTokens}
+          model={selectedModel}
+          sdkAccount={sdkAccountInfo}
+          contextUsage={contextUsage}
+          effortLevel={effort}
+          thinkingConfig={thinkingConfig}
+          permissionMode={permissionMode}
+          sessionStatus={
+            sessionStarted
+              ? persistentSessionRef.current ? 'active' : 'ended'
+              : undefined
+          }
+          gitBranch={gitBranch ?? undefined}
+          className="mb-2"
+        />
         {!sessionStarted && (
           <div className="flex-1 flex items-center justify-center p-8">
             <div className="border border-border/50 rounded-lg p-6 bg-background/80 w-full max-w-md space-y-4">
