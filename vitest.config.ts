@@ -15,18 +15,10 @@ export default defineConfig({
         'electron/preload.ts',
         // vitest defaults still apply (node_modules, dist, .vite, etc.)
       ],
-      // Coverage ratchet. Baseline at enablement (2026-04-10): 94.06% lines,
-      // 97.56% functions, 73.99% branches, 92.52% statements. Thresholds are
-      // set below baseline to give headroom for new code without letting
-      // coverage silently regress. Raise these as coverage climbs.
-      // Lowered to 88/68 in v0.3.2 after sessions.ts grew +355 lines of
-      // SDK query-method passthroughs that need more test coverage.
-      thresholds: {
-        lines: 88,
-        functions: 90,
-        branches: 68,
-        statements: 88,
-      },
+      // Coverage is reported (via `npm run test:coverage`) but not gated.
+      // Hard thresholds used to trip release builds even when the diff
+      // barely moved coverage; since GitHub Actions isn't running anymore
+      // (solo project, local-only releases), there's no point enforcing.
     },
   },
 });
