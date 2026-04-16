@@ -883,9 +883,10 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   }, []);
 
   const messagesList = (
+    <div className="flex-1 min-h-0 px-10 py-2 bg-muted/30">
     <div
       ref={parentRef}
-      className="flex-1 overflow-y-auto relative"
+      className="h-full overflow-y-auto relative border border-border/50 rounded-lg bg-background"
       onScroll={handleScroll}
       style={{
         contain: 'paint',
@@ -945,6 +946,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           {error}
         </motion.div>
       )}
+    </div>
     </div>
   );
 

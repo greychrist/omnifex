@@ -568,13 +568,13 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
         ? { className: cn("border-border/30 bg-muted/30", className), style: undefined }
         : isSubagentPrompt
         ? { className: cn("border-amber-500/30", className), style: { backgroundColor: 'rgba(245, 158, 11, 0.12)' } as React.CSSProperties }
-        : { className: cn("border-violet-500/30", className), style: { backgroundColor: 'rgba(139, 92, 246, 0.15)' } as React.CSSProperties };
+        : { className: cn("border-blue-400/30", className), style: { backgroundColor: 'rgba(96, 165, 250, 0.10)' } as React.CSSProperties };
 
       const cardIcon = isToolResultOnly
         ? <Terminal className="h-5 w-5 text-muted-foreground mt-0.5" />
         : isSubagentPrompt
         ? <Bot className="h-5 w-5 text-amber-500 mt-0.5" />
-        : <User className="h-6 w-6 text-violet-500 mt-0.5" />;
+        : <User className="h-6 w-6 text-blue-400 mt-0.5" />;
 
       const renderedCard = (
         <div className={isToolResultOnly ? "" : "flex justify-end"}>
