@@ -995,7 +995,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   return (
     <TooltipProvider>
       <div className={cn("flex flex-col h-full bg-background", className)}>
-        <div className="flex items-center gap-2 px-4 py-1.5 border-b border-border/30 bg-background/60 shrink-0">
+        <div className="flex items-center gap-2 px-4 py-1.5 border-b border-border/30 bg-muted shrink-0">
           <Button
             size="sm"
             variant="ghost"
@@ -1188,7 +1188,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             </div>
           </div>
         )}
-        <div className="w-full h-full flex flex-col">
+        <div className="flex-1 min-h-0 w-full flex flex-col relative">
 
         {/* Main Content Area */}
         <div className={cn(
@@ -1246,7 +1246,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: 20 }}
-                className="fixed bottom-24 left-1/2 -translate-x-1/2 z-30 w-full max-w-3xl px-4"
+                className="absolute bottom-24 left-1/2 -translate-x-1/2 z-30 w-full max-w-3xl px-4"
               >
                 <div className="bg-background/95 backdrop-blur-md border rounded-lg shadow-lg p-3 space-y-2">
                   <div className="flex items-center justify-between">
@@ -1335,7 +1335,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.8 }}
               transition={{ delay: 0.5 }}
-              className="fixed bottom-32 right-6 z-50"
+              className="absolute bottom-32 right-6 z-50"
             >
               <div className="flex items-center bg-background/95 backdrop-blur-md border rounded-full shadow-lg overflow-hidden">
                 <TooltipSimple content="Scroll to top" side="top">
@@ -1415,7 +1415,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           />
 
           <div className={cn(
-            "fixed bottom-0 left-0 right-0 transition-all duration-300 z-50",
+            "absolute bottom-0 left-0 right-0 transition-all duration-300 z-50",
             (showTimeline || showMCPPanel || showPermissionsPanel) && "sm:right-96"
           )}>
             <FloatingPromptInput
@@ -1596,7 +1596,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
 
           {/* Token Counter - positioned under the Send button */}
           {totalTokens > 0 && (
-            <div className="fixed bottom-0 left-0 right-0 z-30 pointer-events-none">
+            <div className="absolute bottom-0 left-0 right-0 z-30 pointer-events-none">
               <div className="max-w-6xl mx-auto">
                 <div className="flex justify-end px-4 pb-2">
                   <motion.div

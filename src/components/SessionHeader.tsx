@@ -129,7 +129,7 @@ export function SessionHeader({
 
   return (
     <div className={cn(
-      "flex items-center gap-3 px-4 py-2 border-b border-border/50 bg-background/50 text-xs shrink-0",
+      "flex items-center gap-3 px-4 py-2 border-b border-border/50 bg-muted text-xs shrink-0",
       className
     )}>
       <AccountBadge name={accountName} />
