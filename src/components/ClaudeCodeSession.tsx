@@ -878,7 +878,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   const messagesList = (
     <div
       ref={parentRef}
-      className="flex-1 overflow-y-auto relative pb-20"
+      className="flex-1 overflow-y-auto relative pb-40"
       onScroll={handleScroll}
       style={{
         contain: 'paint',
