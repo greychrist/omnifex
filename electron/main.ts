@@ -441,9 +441,10 @@ app.whenReady().then(() => {
   ipcMain.handle('get_app_version', () => app.getVersion());
 
   // --- Updater IPC (registered separately because it uses ipcMain directly) ---
+  // Reads the user-configured local update folder from app_settings on every
+  // check so that changes in the Settings UI take effect without restarting.
   const updaterService = createUpdaterService(app.getVersion(), {
-    downloadsPath: app.getPath('downloads'),
-    getToken: () => db.getSetting('github_token'),
+    getLocalUpdateDir: () => db.getSetting('local_update_dir'),
   });
 
   ipcMain.handle('updater:check', async () => {

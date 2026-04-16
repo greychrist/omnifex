@@ -1,18 +1,26 @@
-// Updater service — checks GitHub releases for a newer version, downloads
-// the DMG asset, and opens it for the user to install.
+// Updater service — scans a local folder for newer GreyChrist DMG builds and
+// returns update info pointing at the file on disk.
+//
+// GreyChrist is a solo project with local-only releases (`npm run make`). The
+// old GitHub-release-polling updater was retired in v0.3.12 in favor of this
+// folder-scanning approach, which needs no network and no Actions budget. See
+// CHANGELOG.md v0.3.12 and the `local_update_dir` app setting for how the
+// folder is configured.
 
 import path from 'node:path';
 
 // ---------------------------------------------------------------------------
-// Public types
+// Public types — stable; the renderer (src/lib/api.ts, CustomTitlebar.tsx)
+// consumes these unchanged across the GitHub → local migration.
 // ---------------------------------------------------------------------------
 
 export interface UpdateInfo {
   available: boolean;
   version: string;
+  /** Absolute local file path. Kept named `downloadUrl` for renderer compatibility. */
   downloadUrl: string;
-  assetName: string;       // e.g. "GreyChrist-0.4.0-arm64.dmg"
-  releaseUrl: string;
+  assetName: string;           // e.g. "GreyChrist-0.4.0-arm64.dmg"
+  releaseUrl: string;          // Empty for local source; kept for renderer compatibility.
   releaseNotes?: string;
 }
 
@@ -24,7 +32,11 @@ export interface ProgressData {
 
 export interface UpdaterService {
   checkForUpdate(): Promise<UpdateInfo | null>;
-  downloadUpdate(url: string, onProgress: (data: ProgressData) => void, assetName?: string): Promise<string>;
+  downloadUpdate(
+    url: string,
+    onProgress: (data: ProgressData) => void,
+    assetName?: string,
+  ): Promise<string>;
 }
 
 // ---------------------------------------------------------------------------
@@ -32,14 +44,17 @@ export interface UpdaterService {
 // ---------------------------------------------------------------------------
 
 interface UpdaterDeps {
-  downloadsPath?: string;
-  writeFile?: (filePath: string, data: Buffer) => Promise<void>;
-  /** GitHub personal access token for private repo access. */
-  getToken?: () => string | null;
+  /** Reads the configured local-update directory (from the `local_update_dir`
+   *  app setting). Called on every checkForUpdate so the user's setting change
+   *  takes effect without restarting the app. Return null or '' to disable. */
+  getLocalUpdateDir: () => string | null;
+  /** Injectable readdir for tests. Defaults to node:fs/promises.readdir. */
+  readdir?: (dir: string) => Promise<string[]>;
 }
 
 // ---------------------------------------------------------------------------
-// Version comparison (simple semver: major.minor.patch)
+// Version comparison (simple semver: major.minor.patch — matches the previous
+// implementation's behavior and the install pattern in filenames.)
 // ---------------------------------------------------------------------------
 
 function parseVersion(v: string): [number, number, number] | null {
@@ -57,101 +72,89 @@ function isNewer(remote: string, local: string): boolean {
   return r[2] > l[2];
 }
 
+function compareVersion(a: string, b: string): number {
+  const pa = parseVersion(a);
+  const pb = parseVersion(b);
+  if (!pa || !pb) return 0;
+  for (let i = 0; i < 3; i++) {
+    if (pa[i] !== pb[i]) return pa[i] - pb[i];
+  }
+  return 0;
+}
+
+// ---------------------------------------------------------------------------
+// Filename pattern — `GreyChrist-<major>.<minor>.<patch>-arm64.dmg`, anchored
+// so version-suffix filenames like `GreyChrist-0.3.6a-arm64.dmg` don't match
+// (they predate the strict naming and are intentionally excluded).
+// ---------------------------------------------------------------------------
+
+const DMG_RE = /^GreyChrist-(\d+\.\d+\.\d+)-arm64\.dmg$/;
+
 // ---------------------------------------------------------------------------
 // Factory
 // ---------------------------------------------------------------------------
 
-const REPO = 'greychrist/GreyChrist';
-const API_URL = `https://api.github.com/repos/${REPO}/releases`;
-
 export function createUpdaterService(
   currentVersion: string,
-  deps?: UpdaterDeps,
+  deps: UpdaterDeps,
 ): UpdaterService {
-  const downloadsPath = deps?.downloadsPath ?? '';
-  const writeFile = deps?.writeFile;
-  const getToken = deps?.getToken;
+  const getLocalUpdateDir = deps.getLocalUpdateDir;
+  const readdir =
+    deps.readdir ??
+    (async (dir: string) => {
+      const fs = await import('node:fs/promises');
+      return fs.readdir(dir);
+    });
 
   async function checkForUpdate(): Promise<UpdateInfo | null> {
+    const dir = getLocalUpdateDir();
+    if (!dir) return null;
+
+    let entries: string[];
     try {
-      const headers: Record<string, string> = { Accept: 'application/vnd.github+json' };
-      const token = getToken?.();
-      if (token) headers.Authorization = `token ${token}`;
-      const res = await fetch(API_URL, { headers });
-      if (!res.ok) return null;
-
-      const releases: any[] = await res.json();
-      if (!Array.isArray(releases) || releases.length === 0) return null;
-
-      // Find the first non-draft, non-prerelease release
-      const release = releases.find((r: any) => !r.draft && !r.prerelease);
-      if (!release) return null;
-
-      const remoteVersion = (release.tag_name ?? '').replace(/^v/, '');
-      const available = isNewer(remoteVersion, currentVersion);
-
-      // Select asset: prefer DMG, fall back to ZIP
-      const assets: any[] = release.assets ?? [];
-      const dmg = assets.find((a: any) => /\.dmg$/i.test(a.name));
-      const zip = assets.find((a: any) => /\.zip$/i.test(a.name));
-      const asset = dmg ?? zip;
-
-      // Use the API URL (asset.url) for downloads — browser_download_url
-      // fails for private repos because fetch strips the Authorization header
-      // on the cross-origin redirect to S3.  The API URL returns a 302 to a
-      // pre-signed S3 URL that needs no auth header.
-      return {
-        available,
-        version: remoteVersion,
-        downloadUrl: asset?.url ?? '',
-        assetName: asset?.name ?? '',
-        releaseUrl: release.html_url ?? '',
-        releaseNotes: release.body ?? undefined,
-      };
+      entries = await readdir(dir);
     } catch {
+      // Directory missing, unreadable, or any other IO error — treat as
+      // "no update available" rather than a hard failure. The user will
+      // see the app as up-to-date; if the dir is misconfigured, the
+      // Settings UI is where they fix it.
       return null;
     }
+
+    const candidates: Array<{ version: string; filename: string }> = [];
+    for (const name of entries) {
+      const m = DMG_RE.exec(name);
+      if (!m) continue;
+      candidates.push({ version: m[1], filename: name });
+    }
+
+    if (candidates.length === 0) return null;
+
+    // Highest version wins.
+    candidates.sort((a, b) => compareVersion(b.version, a.version));
+    const best = candidates[0];
+
+    if (!isNewer(best.version, currentVersion)) return null;
+
+    return {
+      available: true,
+      version: best.version,
+      downloadUrl: path.join(dir, best.filename),
+      assetName: best.filename,
+      releaseUrl: '',
+    };
   }
 
   async function downloadUpdate(
     url: string,
     onProgress: (data: ProgressData) => void,
-    assetName?: string,
+    _assetName?: string,
   ): Promise<string> {
-    const dlHeaders: Record<string, string> = { Accept: 'application/octet-stream' };
-    const dlToken = getToken?.();
-    if (dlToken) dlHeaders.Authorization = `token ${dlToken}`;
-    const res = await fetch(url, { headers: dlHeaders });
-    if (!res.ok) {
-      throw new Error(`Download failed: ${res.status}`);
-    }
-
-    const totalBytes = Number(res.headers.get('content-length') ?? 0);
-    const reader = res.body!.getReader();
-    const chunks: Uint8Array[] = [];
-    let bytesDownloaded = 0;
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      chunks.push(value);
-      bytesDownloaded += value.byteLength;
-      const percent = totalBytes > 0 ? Math.round((bytesDownloaded / totalBytes) * 100) : 0;
-      onProgress({ percent, bytesDownloaded, totalBytes });
-    }
-
-    const buffer = Buffer.concat(chunks);
-    const fileName = assetName || path.basename(new URL(url).pathname) || 'GreyChrist-update.dmg';
-    const filePath = path.join(downloadsPath, fileName);
-
-    if (writeFile) {
-      await writeFile(filePath, buffer);
-    } else {
-      const fs = await import('node:fs/promises');
-      await fs.writeFile(filePath, buffer);
-    }
-
-    return filePath;
+    // The file is already on disk — nothing to fetch. Fire a single
+    // 100%-complete progress tick so the renderer's download UI (progress bar
+    // etc.) completes naturally instead of hanging at 0%.
+    onProgress({ percent: 100, bytesDownloaded: 0, totalBytes: 0 });
+    return url;
   }
 
   return { checkForUpdate, downloadUpdate };

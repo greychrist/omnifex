@@ -1,29 +1,26 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { createUpdaterService } from '../services/updater';
 
 // ---------------------------------------------------------------------------
-// Mock fetch globally
+// Helpers for the local-folder updater
 // ---------------------------------------------------------------------------
 
-const mockFetch = vi.fn();
-vi.stubGlobal('fetch', mockFetch);
+/**
+ * Build a fake readdir that returns the given filenames for one directory.
+ * Real fs operations are never performed in tests.
+ */
+function makeReaddir(files: string[]): (dir: string) => Promise<string[]> {
+  return async () => files;
+}
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function makeRelease(tag: string, opts?: { draft?: boolean; prerelease?: boolean; assets?: Array<{ name: string; url?: string; browser_download_url: string; size: number }> }) {
-  const defaultAssets = [
-    { name: `GreyChrist-${tag.replace('v', '')}-arm64.dmg`, url: `https://api.github.com/repos/greychrist/GreyChrist/releases/assets/dmg-${tag}`, browser_download_url: `https://github.com/download/${tag}/GreyChrist.dmg`, size: 100_000_000 },
-    { name: `GreyChrist-darwin-arm64-${tag.replace('v', '')}.zip`, url: `https://api.github.com/repos/greychrist/GreyChrist/releases/assets/zip-${tag}`, browser_download_url: `https://github.com/download/${tag}/GreyChrist.zip`, size: 110_000_000 },
-  ];
-  return {
-    tag_name: tag,
-    draft: opts?.draft ?? false,
-    prerelease: opts?.prerelease ?? false,
-    html_url: `https://github.com/greychrist/GreyChrist/releases/tag/${tag}`,
-    body: `Release notes for ${tag}`,
-    assets: opts?.assets ?? defaultAssets,
+/**
+ * Build a fake readdir that throws ENOENT (directory does not exist).
+ */
+function makeMissingReaddir(): (dir: string) => Promise<string[]> {
+  return async () => {
+    const err = new Error('ENOENT: no such file or directory');
+    (err as any).code = 'ENOENT';
+    throw err;
   };
 }
 
@@ -31,246 +28,154 @@ function makeRelease(tag: string, opts?: { draft?: boolean; prerelease?: boolean
 // Tests
 // ---------------------------------------------------------------------------
 
-describe('updater service', () => {
-  beforeEach(() => {
-    mockFetch.mockReset();
-  });
-
+describe('updater service (local folder source)', () => {
   describe('checkForUpdate()', () => {
-    it('returns available: true when remote version is newer', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => [makeRelease('v0.4.0')],
+    it('returns null when no local update directory is configured', async () => {
+      const svc = createUpdaterService('0.3.12', {
+        getLocalUpdateDir: () => null,
+        readdir: makeReaddir(['GreyChrist-0.4.0-arm64.dmg']), // should never be read
       });
 
-      const svc = createUpdaterService('0.3.0');
+      const result = await svc.checkForUpdate();
+
+      expect(result).toBeNull();
+    });
+
+    it('returns null when local update directory is empty string', async () => {
+      const svc = createUpdaterService('0.3.12', {
+        getLocalUpdateDir: () => '',
+        readdir: makeReaddir(['GreyChrist-0.4.0-arm64.dmg']),
+      });
+
+      const result = await svc.checkForUpdate();
+
+      expect(result).toBeNull();
+    });
+
+    it('returns null when the local directory does not exist (ENOENT)', async () => {
+      const svc = createUpdaterService('0.3.12', {
+        getLocalUpdateDir: () => '/nonexistent/path',
+        readdir: makeMissingReaddir(),
+      });
+
+      const result = await svc.checkForUpdate();
+
+      expect(result).toBeNull();
+    });
+
+    it('returns null when the directory contains no matching DMG files', async () => {
+      const svc = createUpdaterService('0.3.12', {
+        getLocalUpdateDir: () => '/tmp/updates',
+        readdir: makeReaddir(['README.txt', 'random.dmg', 'GreyChrist.dmg']),
+      });
+
+      const result = await svc.checkForUpdate();
+
+      expect(result).toBeNull();
+    });
+
+    it('returns null when all local DMGs are the same as or older than current version', async () => {
+      const svc = createUpdaterService('0.3.12', {
+        getLocalUpdateDir: () => '/tmp/updates',
+        readdir: makeReaddir([
+          'GreyChrist-0.3.10-arm64.dmg',
+          'GreyChrist-0.3.11-arm64.dmg',
+          'GreyChrist-0.3.12-arm64.dmg', // exact match to current
+        ]),
+      });
+
+      const result = await svc.checkForUpdate();
+
+      expect(result).toBeNull();
+    });
+
+    it('returns UpdateInfo for the newest DMG when one exists that is newer than current', async () => {
+      const svc = createUpdaterService('0.3.12', {
+        getLocalUpdateDir: () => '/tmp/updates',
+        readdir: makeReaddir([
+          'GreyChrist-0.3.10-arm64.dmg',
+          'GreyChrist-0.3.12-arm64.dmg',
+          'GreyChrist-0.4.0-arm64.dmg',
+          'GreyChrist-0.3.15-arm64.dmg',
+        ]),
+      });
+
       const result = await svc.checkForUpdate();
 
       expect(result).not.toBeNull();
       expect(result!.available).toBe(true);
       expect(result!.version).toBe('0.4.0');
-      expect(result!.downloadUrl).toContain('api.github.com');
-      expect(result!.downloadUrl).toContain('dmg-v0.4.0');
-      expect(result!.releaseUrl).toContain('v0.4.0');
+      expect(result!.assetName).toBe('GreyChrist-0.4.0-arm64.dmg');
+      // downloadUrl is an absolute path to the local file (or a file:// URL)
+      expect(result!.downloadUrl).toContain('GreyChrist-0.4.0-arm64.dmg');
+      expect(result!.downloadUrl).toContain('/tmp/updates');
     });
 
-    it('returns available: false when versions match', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => [makeRelease('v0.3.0')],
+    it('ignores files that do not match the GreyChrist-<semver>-arm64.dmg pattern', async () => {
+      const svc = createUpdaterService('0.3.12', {
+        getLocalUpdateDir: () => '/tmp/updates',
+        readdir: makeReaddir([
+          'GreyChrist-0.4.0-arm64.dmg',   // matches
+          'GreyChrist-0.4.0.dmg',          // no -arm64 suffix
+          'GreyChrist-foo-arm64.dmg',      // not semver
+          'greychrist-0.4.0-arm64.dmg',    // lowercase
+          'OtherApp-0.4.0-arm64.dmg',      // wrong name
+          'GreyChrist-0.4.0-arm64.dmg.txt', // extra extension
+        ]),
       });
 
-      const svc = createUpdaterService('0.3.0');
       const result = await svc.checkForUpdate();
 
       expect(result).not.toBeNull();
-      expect(result!.available).toBe(false);
+      expect(result!.version).toBe('0.4.0');
     });
 
-    it('returns available: false when local version is newer', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => [makeRelease('v0.2.0')],
+    it('supports version suffixes like 0.3.6a in filename parsing', async () => {
+      // Filenames like `GreyChrist-0.3.6a-arm64.dmg` have shown up in the out/
+      // folder historically; the updater should either parse them as 0.3.6 (ignoring
+      // the suffix, like isNewer already does) or reject them — but not crash.
+      const svc = createUpdaterService('0.3.12', {
+        getLocalUpdateDir: () => '/tmp/updates',
+        readdir: makeReaddir(['GreyChrist-0.3.6a-arm64.dmg']), // 0.3.6 < 0.3.12
       });
 
-      const svc = createUpdaterService('0.3.0');
       const result = await svc.checkForUpdate();
 
-      expect(result).not.toBeNull();
-      expect(result!.available).toBe(false);
-    });
-
-    it('returns null on network error', async () => {
-      mockFetch.mockRejectedValueOnce(new Error('Network error'));
-
-      const svc = createUpdaterService('0.3.0');
-      const result = await svc.checkForUpdate();
-
+      // Strict semver + older version → no update
       expect(result).toBeNull();
-    });
-
-    it('returns null on non-OK response', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: false,
-        status: 404,
-      });
-
-      const svc = createUpdaterService('0.3.0');
-      const result = await svc.checkForUpdate();
-
-      expect(result).toBeNull();
-    });
-
-    it('skips draft and prerelease entries', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => [
-          makeRelease('v0.5.0', { draft: true }),
-          makeRelease('v0.4.0', { prerelease: true }),
-          makeRelease('v0.3.1'),
-        ],
-      });
-
-      const svc = createUpdaterService('0.3.0');
-      const result = await svc.checkForUpdate();
-
-      expect(result!.available).toBe(true);
-      expect(result!.version).toBe('0.3.1');
-    });
-
-    it('returns null when no non-draft releases exist', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => [
-          makeRelease('v0.5.0', { draft: true }),
-        ],
-      });
-
-      const svc = createUpdaterService('0.3.0');
-      const result = await svc.checkForUpdate();
-
-      expect(result).toBeNull();
-    });
-
-    it('selects DMG asset over ZIP', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => [makeRelease('v0.4.0')],
-      });
-
-      const svc = createUpdaterService('0.3.0');
-      const result = await svc.checkForUpdate();
-
-      expect(result!.downloadUrl).toContain('dmg-v0.4.0');
-    });
-
-    it('falls back to ZIP when no DMG asset exists', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => [
-          makeRelease('v0.4.0', {
-            assets: [
-              { name: 'GreyChrist-darwin-arm64-0.4.0.zip', url: 'https://api.github.com/repos/greychrist/GreyChrist/releases/assets/zip-only', browser_download_url: 'https://example.com/file.zip', size: 100_000 },
-            ],
-          }),
-        ],
-      });
-
-      const svc = createUpdaterService('0.3.0');
-      const result = await svc.checkForUpdate();
-
-      expect(result!.downloadUrl).toContain('zip-only');
-    });
-
-    it('sets downloadUrl to empty string when no matching assets exist', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => [
-          makeRelease('v0.4.0', {
-            assets: [
-              { name: 'unrelated-file.tar.gz', url: 'https://api.github.com/repos/greychrist/GreyChrist/releases/assets/tar', browser_download_url: 'https://example.com/file.tar.gz', size: 100_000 },
-            ],
-          }),
-        ],
-      });
-
-      const svc = createUpdaterService('0.3.0');
-      const result = await svc.checkForUpdate();
-
-      expect(result!.available).toBe(true);
-      expect(result!.downloadUrl).toBe('');
-    });
-
-    it('returns null when releases array is empty', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => [],
-      });
-
-      const svc = createUpdaterService('0.3.0');
-      const result = await svc.checkForUpdate();
-
-      expect(result).toBeNull();
-    });
-
-    it('strips leading v from tag when comparing versions', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => [makeRelease('v0.3.0')],
-      });
-
-      const svc = createUpdaterService('0.3.0');
-      const result = await svc.checkForUpdate();
-
-      expect(result!.available).toBe(false);
-      expect(result!.version).toBe('0.3.0');
     });
   });
 
   describe('downloadUpdate()', () => {
-    it('streams to a file and reports progress', async () => {
-      const chunks = [new Uint8Array(40), new Uint8Array(60)];
-      let chunkIndex = 0;
-
-      const mockReader = {
-        read: vi.fn().mockImplementation(async () => {
-          if (chunkIndex < chunks.length) {
-            return { done: false, value: chunks[chunkIndex++] };
-          }
-          return { done: true, value: undefined };
-        }),
-      };
-
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        headers: { get: (name: string) => name === 'content-length' ? '100' : null },
-        body: { getReader: () => mockReader },
+    it('returns the local file path immediately (no network fetch)', async () => {
+      const svc = createUpdaterService('0.3.12', {
+        getLocalUpdateDir: () => '/tmp/updates',
+        readdir: makeReaddir([]),
       });
 
-      const writeFileMock = vi.fn().mockResolvedValue(undefined);
-      const svc = createUpdaterService('0.3.0', {
-        downloadsPath: '/tmp/downloads',
-        writeFile: writeFileMock,
-      });
-
-      const progress: number[] = [];
-      const filePath = await svc.downloadUpdate(
-        'https://example.com/GreyChrist-0.4.0-arm64.dmg',
-        (data) => progress.push(data.percent),
+      const progressCalls: Array<{ percent: number }> = [];
+      const result = await svc.downloadUpdate(
+        '/tmp/updates/GreyChrist-0.4.0-arm64.dmg',
+        (data) => progressCalls.push(data),
       );
 
-      expect(filePath).toBe('/tmp/downloads/GreyChrist-0.4.0-arm64.dmg');
-      expect(progress.length).toBe(2);
-      expect(progress[0]).toBe(40);
-      expect(progress[1]).toBe(100);
-      expect(writeFileMock).toHaveBeenCalledWith(
-        '/tmp/downloads/GreyChrist-0.4.0-arm64.dmg',
-        expect.any(Buffer),
-      );
+      expect(result).toBe('/tmp/updates/GreyChrist-0.4.0-arm64.dmg');
     });
 
-    it('throws on network error', async () => {
-      mockFetch.mockRejectedValueOnce(new Error('Network error'));
-
-      const svc = createUpdaterService('0.3.0', { downloadsPath: '/tmp/downloads' });
-
-      await expect(
-        svc.downloadUpdate('https://example.com/file.dmg', () => {}),
-      ).rejects.toThrow('Network error');
-    });
-
-    it('throws on non-OK response', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: false,
-        status: 404,
-        statusText: 'Not Found',
+    it('fires a single onProgress({ percent: 100 }) call for UI parity', async () => {
+      const svc = createUpdaterService('0.3.12', {
+        getLocalUpdateDir: () => '/tmp/updates',
+        readdir: makeReaddir([]),
       });
 
-      const svc = createUpdaterService('0.3.0', { downloadsPath: '/tmp/downloads' });
+      const progressCalls: Array<{ percent: number; bytesDownloaded: number; totalBytes: number }> = [];
+      await svc.downloadUpdate(
+        '/tmp/updates/GreyChrist-0.4.0-arm64.dmg',
+        (data) => progressCalls.push(data),
+      );
 
-      await expect(
-        svc.downloadUpdate('https://example.com/file.dmg', () => {}),
-      ).rejects.toThrow('Download failed: 404');
+      expect(progressCalls).toHaveLength(1);
+      expect(progressCalls[0].percent).toBe(100);
     });
   });
 });

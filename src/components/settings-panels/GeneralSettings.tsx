@@ -7,12 +7,29 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { api, type ClaudeInstallation } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { ClaudeVersionSelector } from "@/components/ClaudeVersionSelector";
 import { useTheme } from "@/hooks";
 import { TabPersistenceService } from "@/services/tabPersistence";
 import type { SettingsPanelProps } from "./types";
+
+// Opens a macOS folder picker and returns the chosen path, or null on cancel.
+// Duplicated from AccountSettings.tsx's pickFolder; pulled inline to keep this
+// settings panel self-contained.
+async function pickFolder(defaultPath?: string): Promise<string | null> {
+  try {
+    const paths = await window.electronAPI.showOpenDialog({
+      properties: ['openDirectory'],
+      title: 'Select Update Source Folder',
+      defaultPath: defaultPath || (await api.getHomeDirectory()),
+    }) as string[] | null;
+    return paths?.[0] ?? null;
+  } catch {
+    return null;
+  }
+}
 
 interface GeneralSettingsProps extends SettingsPanelProps {
   currentBinaryPath: string | null;
@@ -31,14 +48,33 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
   const { theme, setTheme, customColors, setCustomColors } = useTheme();
   const [tabPersistenceEnabled, setTabPersistenceEnabled] = useState(true);
   const [startupIntroEnabled, setStartupIntroEnabled] = useState(true);
+  // The directory the updater scans for newer GreyChrist-<semver>-arm64.dmg
+  // builds. Empty string → updates disabled. Persisted as `local_update_dir`
+  // in app_settings and read lazily by the main-process updater on every
+  // check, so changes here take effect immediately without a restart.
+  const [localUpdateDir, setLocalUpdateDir] = useState<string>('');
 
   useEffect(() => {
     setTabPersistenceEnabled(TabPersistenceService.isEnabled());
     (async () => {
       const pref = await api.getSetting('startup_intro_enabled');
       setStartupIntroEnabled(pref === null ? true : pref === 'true');
+      const dir = await api.getSetting('local_update_dir');
+      setLocalUpdateDir(dir ?? '');
     })();
   }, []);
+
+  const saveLocalUpdateDir = async (next: string) => {
+    try {
+      await api.saveSetting('local_update_dir', next);
+      setToast({
+        message: next ? `Update source set to ${next}` : 'Update source cleared',
+        type: 'success',
+      });
+    } catch {
+      setToast({ message: 'Failed to save update source', type: 'error' });
+    }
+  };
 
   return (
     <Card className="p-6 space-y-6">
@@ -355,6 +391,54 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
                 }
               }}
             />
+          </div>
+
+          {/* Update Source Folder */}
+          <div className="space-y-2">
+            <Label htmlFor="local-update-dir">Update Source Folder</Label>
+            <p className="text-caption text-muted-foreground">
+              Folder that holds locally-built <code>GreyChrist-&lt;version&gt;-arm64.dmg</code> files.
+              GreyChrist scans this folder and offers an update when a newer version is present.
+              Leave empty to disable update checks.
+            </p>
+            <div className="flex items-center gap-2">
+              <Input
+                id="local-update-dir"
+                type="text"
+                value={localUpdateDir}
+                placeholder="/Users/you/Repos/greychrist/out/make"
+                onChange={(e) => setLocalUpdateDir(e.target.value)}
+                onBlur={() => saveLocalUpdateDir(localUpdateDir)}
+                className="flex-1 font-mono text-xs"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={async () => {
+                  const picked = await pickFolder(localUpdateDir || undefined);
+                  if (picked) {
+                    setLocalUpdateDir(picked);
+                    await saveLocalUpdateDir(picked);
+                  }
+                }}
+              >
+                Browse…
+              </Button>
+              {localUpdateDir && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={async () => {
+                    setLocalUpdateDir('');
+                    await saveLocalUpdateDir('');
+                  }}
+                >
+                  Clear
+                </Button>
+              )}
+            </div>
           </div>
         </div>
       </div>
