@@ -15,7 +15,7 @@ function fixPath(): void {
   if (process.platform !== 'darwin' && process.platform !== 'linux') return;
   try {
     const userShell = process.env.SHELL || '/bin/zsh';
-    const result = execSync(`${userShell} -ilc 'echo "__PATH__=$PATH"`, {
+    const result = execSync(`${userShell} -ilc 'echo "__PATH__=$PATH"'`, {
       encoding: 'utf-8',
       timeout: 5000,
       stdio: ['pipe', 'pipe', 'pipe'],
