@@ -50,11 +50,18 @@ export interface UsageEntry {
   timestamp: string;
 }
 
+export interface AccountUsageStats {
+  account_name: string;
+  account_type: string;
+  stats: UsageStats;
+}
+
 export interface UsageService {
   getUsageStats(): UsageStats;
   getUsageByDateRange(startDate: string, endDate: string): UsageStats;
   getSessionStats(since?: string, until?: string, order?: string): ProjectUsage[];
   getUsageDetails(limit?: number): UsageEntry[];
+  getStatsByAccount(startDate?: string, endDate?: string): AccountUsageStats[];
 }
 
 // ---------------------------------------------------------------------------
@@ -87,6 +94,8 @@ interface ParsedUsage {
   cost: number;
   timestamp: string;
   date: string;
+  account_name: string;
+  account_type: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -143,6 +152,8 @@ function readJsonlFile(filePath: string): RawMessage[] {
 
 function scanConfigDir(
   configDir: string,
+  accountName: string,
+  accountType: string,
   filter?: (timestamp: string) => boolean,
 ): ParsedUsage[] {
   const results: ParsedUsage[] = [];
@@ -206,6 +217,8 @@ function scanConfigDir(
           cost,
           timestamp,
           date,
+          account_name: accountName,
+          account_type: accountType,
         });
       }
     }
@@ -347,7 +360,7 @@ export function createUsageService(accounts: AccountsService): UsageService {
   function collectEntries(filter?: (timestamp: string) => boolean): ParsedUsage[] {
     const all: ParsedUsage[] = [];
     for (const account of accounts.listAccounts()) {
-      const entries = scanConfigDir(account.config_dir, filter);
+      const entries = scanConfigDir(account.config_dir, account.name, account.account_type, filter);
       all.push(...entries);
     }
     return all;
@@ -397,10 +410,52 @@ export function createUsageService(accounts: AccountsService): UsageService {
     return usageEntries;
   }
 
+  function getStatsByAccount(startDate?: string, endDate?: string): AccountUsageStats[] {
+    let filter: ((timestamp: string) => boolean) | undefined;
+    if (startDate && endDate) {
+      filter = makeDateRangeFilter(startDate, endDate);
+    }
+
+    const accountList = accounts.listAccounts();
+    console.log(`[usage] getStatsByAccount: ${accountList.length} accounts, dateRange=${startDate ?? 'none'}..${endDate ?? 'none'}`);
+    for (const a of accountList) {
+      console.log(`[usage]   account "${a.name}" config_dir=${a.config_dir}`);
+    }
+
+    const entries = collectEntries(filter);
+    console.log(`[usage] getStatsByAccount: ${entries.length} total entries collected`);
+
+    // Group entries by account name
+    const byAccount = new Map<string, { account_type: string; entries: ParsedUsage[] }>();
+    for (const entry of entries) {
+      const existing = byAccount.get(entry.account_name);
+      if (existing) {
+        existing.entries.push(entry);
+      } else {
+        byAccount.set(entry.account_name, {
+          account_type: entry.account_type,
+          entries: [entry],
+        });
+      }
+    }
+
+    const results: AccountUsageStats[] = [];
+    for (const [accountName, { account_type, entries: accountEntries }] of byAccount) {
+      results.push({
+        account_name: accountName,
+        account_type: account_type,
+        stats: aggregateEntries(accountEntries),
+      });
+    }
+
+    return results;
+  }
+
   return {
     getUsageStats,
     getUsageByDateRange,
     getSessionStats,
     getUsageDetails,
+    getStatsByAccount,
   };
 }

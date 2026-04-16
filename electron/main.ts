@@ -277,6 +277,7 @@ app.whenReady().then(() => {
       updateHooksConfig: (scope: string, config: any, opts?: any) => claudeService.updateHooksConfig(scope as 'user' | 'project', config, opts),
       validateHookCommand: (command: string) => claudeService.validateHookCommand(command),
       getMergedHooksConfig: (projectPath: string, opts?: any) => claudeService.getMergedHooksConfig(projectPath, opts),
+      getCliUsage: (configDir?: string) => claudeService.getCliUsage(configDir),
     },
     // Sessions adapter
     sessions: {
@@ -290,6 +291,8 @@ app.whenReady().then(() => {
         sessionsService.sendStructuredMessage(sessionId, content),
       respondPermission: (sessionId: string, behavior: string, updatedInput?: Record<string, unknown>, updatedPermissions?: any[]) =>
         sessionsService.respondPermission(sessionId, behavior as 'allow' | 'deny', updatedInput, updatedPermissions),
+      respondElicitation: (tabId: string, action: string, content?: Record<string, unknown>) =>
+        sessionsService.respondElicitation(tabId, action as 'accept' | 'decline' | 'cancel', content),
       stop: (sessionId: string) => sessionsService.stop(sessionId),
       getInfo: (sessionId: string) => sessionsService.getInfo(sessionId),
       getHealth: (sessionId: string) => sessionsService.getHealth(sessionId),
@@ -353,6 +356,8 @@ app.whenReady().then(() => {
       getSessionStats: (params?: any) =>
         usageService.getSessionStats(params?.since, params?.until, params?.order),
       getDetails: (params?: any) => usageService.getUsageDetails(params?.limit),
+      getStatsByAccount: (params?: any) =>
+        usageService.getStatsByAccount(params?.start_date, params?.end_date),
     },
     // Claude binary adapter
     claudeBinary: {

@@ -29,6 +29,7 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   'get_system_prompt',
   'save_system_prompt',
   'check_claude_version',
+  'get_cli_usage',
   'find_claude_md_files',
   'read_claude_md_file',
   'save_claude_md_file',
@@ -42,6 +43,7 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   'session_send_message',
   'session_send_structured_message',
   'session_respond_permission',
+  'session_respond_elicitation',
   'session_stop',
   'session_get_info',
   'session_get_health',
@@ -88,6 +90,7 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   'get_usage_by_date_range',
   'get_session_stats',
   'get_usage_details',
+  'get_usage_by_account',
 
   // Checkpoints
   'create_checkpoint',
@@ -198,6 +201,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       !channel.startsWith('claude-stream') &&
       !channel.startsWith('claude-subagent:') &&
       !channel.startsWith('claude-compact:') &&
+      !channel.startsWith('elicitation-request:') &&
       !channel.startsWith('backend-log') &&
       !channel.startsWith('updater:')
     ) {

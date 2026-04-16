@@ -31,6 +31,7 @@ interface UseSessionLifecycleArgs {
   setMessages: React.Dispatch<React.SetStateAction<ClaudeStreamMessage[]>>;
   setSdkAccountInfo: React.Dispatch<React.SetStateAction<import("@/lib/api").SessionAccountInfo | null>>;
   setSupportedModels: React.Dispatch<React.SetStateAction<import("@/lib/api").SessionModelInfo[]>>;
+  setSupportedCommands: React.Dispatch<React.SetStateAction<import("@/lib/api").SessionSlashCommand[]>>;
   setContextUsage: React.Dispatch<React.SetStateAction<import("@/lib/api").SessionContextUsage | null>>;
 }
 
@@ -55,6 +56,7 @@ export function useSessionLifecycle({
   setMessages,
   setSdkAccountInfo,
   setSupportedModels,
+  setSupportedCommands,
   setContextUsage,
 }: UseSessionLifecycleArgs): UseSessionLifecycleReturn {
   const unlistenRefs = useRef<(() => void)[]>([]);
@@ -136,12 +138,18 @@ export function useSessionLifecycle({
             setSdkAccountInfo(info);
 
             // Fetch supporting data in parallel
-            const [models, mcpServers, ctxUsage] = await Promise.all([
+            const [models, mcpServers, ctxUsage, commands] = await Promise.all([
               api.sessionSupportedModels(tabId).catch(() => []),
               api.sessionMcpServerStatus(tabId).catch(() => []),
               api.sessionContextUsage(tabId).catch(() => null),
+              api.sessionSupportedCommands(tabId).catch((err) => {
+                console.error('[fetchInitInfo] supportedCommands call failed:', err);
+                return [];
+              }),
             ]);
+            console.log(`[fetchInitInfo] supportedCommands result: ${commands?.length ?? 0} commands`, commands);
             if (models?.length) setSupportedModels(models);
+            if (commands?.length) setSupportedCommands(commands);
             if (ctxUsage) setContextUsage(ctxUsage as any);
 
             // Build tool list: standard tools + MCP tools from connected servers

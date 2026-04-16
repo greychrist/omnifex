@@ -61,6 +61,11 @@ export interface SessionsService {
     updatedInput?: Record<string, unknown>,
     updatedPermissions?: PermissionDecision['updatedPermissions'],
   ): void;
+  respondElicitation(
+    tabId: string,
+    action: 'accept' | 'decline' | 'cancel',
+    content?: Record<string, unknown>,
+  ): void;
   setAutoAllow(tabId: string, enabled: boolean): void;
   addAutoAllowTool(tabId: string, toolName: string): void;
   stop(tabId: string): void;
@@ -126,6 +131,11 @@ export interface PendingPermission {
   resolve: (decision: PermissionDecision) => void;
 }
 
+export interface ElicitationDecision {
+  action: 'accept' | 'decline' | 'cancel';
+  content?: Record<string, unknown>;
+}
+
 export interface SessionHandle {
   query: Query;
   inputChannel: AsyncChannel<SDKUserMessage>;
@@ -134,6 +144,8 @@ export interface SessionHandle {
   permissionResolver: ((decision: PermissionDecision) => void) | null;
   /** Queue of permission requests waiting for user response */
   permissionQueue: PendingPermission[];
+  /** Resolver for a pending elicitation (MCP server asking the user a question). */
+  elicitationResolver: ((decision: ElicitationDecision) => void) | null;
   autoAllowEnabled: boolean;
   autoAllowedTools: Set<string>;
   projectPath: string;

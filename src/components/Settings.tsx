@@ -309,7 +309,7 @@ export const Settings: React.FC<SettingsProps> = ({
               <TabsTrigger value="log" className="flex-1 py-2 text-xs">Log</TabsTrigger>
             </TabsList>
 
-            <div className="flex-1 overflow-y-auto">
+            <div className={activeTab === "log" ? "flex-1 flex flex-col min-h-0 overflow-hidden" : "flex-1 overflow-y-auto"}>
             {/* Account selector for account-specific tabs */}
             {["environment", "advanced", "hooks", "commands", "permissions"].includes(activeTab) && accounts.length > 0 && (
               <div className="flex items-center gap-2 mb-4 p-3 rounded-lg border border-border/50 bg-muted/30">
@@ -406,7 +406,7 @@ export const Settings: React.FC<SettingsProps> = ({
             </TabsContent>
 
             {/* Log Tab */}
-            <TabsContent value="log">
+            <TabsContent value="log" className="flex-1 flex flex-col min-h-0">
               <LogTab />
             </TabsContent>
             </div>

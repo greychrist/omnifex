@@ -690,4 +690,96 @@ describe('usage service', () => {
       expect(proj).toBeDefined();
     });
   });
+
+  describe('getStatsByAccount()', () => {
+    it('returns per-account stats grouped correctly', () => {
+      const dir1 = makeTmpDir();
+      const dir2 = makeTmpDir();
+
+      // Account 1 has one project with one session
+      const projDir1 = path.join(dir1, 'projects', '-Users-alice-foo');
+      fs.mkdirSync(projDir1, { recursive: true });
+      writeJsonl(path.join(projDir1, 'session-a.jsonl'), [
+        assistantMessage({ model: 'claude-sonnet-4-5-20250514', input: 200, output: 100, timestamp: '2026-04-10T10:00:00Z' }),
+      ]);
+
+      // Account 2 has one project with one session
+      const projDir2 = path.join(dir2, 'projects', '-Users-bob-bar');
+      fs.mkdirSync(projDir2, { recursive: true });
+      writeJsonl(path.join(projDir2, 'session-b.jsonl'), [
+        assistantMessage({ model: 'claude-opus-4-5-20250514', input: 500, output: 300, timestamp: '2026-04-10T11:00:00Z' }),
+      ]);
+
+      const accounts = [
+        makeAccount({ id: 1, name: 'Personal', config_dir: dir1, account_type: 'max' }),
+        makeAccount({ id: 2, name: 'Work', config_dir: dir2, account_type: 'pro' }),
+      ];
+      const svc = createUsageService({
+        listAccounts: () => accounts,
+        createAccount: () => accounts[0],
+        updateAccount: () => {},
+        deleteAccount: () => {},
+        listPathRules: () => [],
+        addPathRule: () => ({ id: 1, account_id: 1, account_name: 'Test', path_prefix: '/', priority: 0 }),
+        removePathRule: () => {},
+        resolve: () => null,
+        setProjectOverride: () => {},
+        listProjectOverrides: () => [],
+        explainResolution: () => null,
+        discoverAccounts: async () => [],
+      });
+
+      const result = svc.getStatsByAccount();
+      expect(result).toHaveLength(2);
+
+      const personal = result.find((r) => r.account_name === 'Personal');
+      const work = result.find((r) => r.account_name === 'Work');
+
+      expect(personal).toBeDefined();
+      expect(personal!.account_type).toBe('max');
+      expect(personal!.stats.total_sessions).toBe(1);
+      expect(personal!.stats.total_tokens).toBe(300); // 200 + 100
+
+      expect(work).toBeDefined();
+      expect(work!.account_type).toBe('pro');
+      expect(work!.stats.total_sessions).toBe(1);
+      expect(work!.stats.total_tokens).toBe(800); // 500 + 300
+
+      fs.rmSync(dir1, { recursive: true, force: true });
+      fs.rmSync(dir2, { recursive: true, force: true });
+    });
+
+    it('respects date range filter', () => {
+      const dir = makeTmpDir();
+      const projDir = path.join(dir, 'projects', '-Users-test-proj');
+      fs.mkdirSync(projDir, { recursive: true });
+      writeJsonl(path.join(projDir, 'session-1.jsonl'), [
+        assistantMessage({ input: 100, output: 50, timestamp: '2026-04-01T10:00:00Z' }),
+        assistantMessage({ input: 200, output: 100, timestamp: '2026-04-10T10:00:00Z' }),
+      ]);
+
+      const accounts = [makeAccount({ id: 1, name: 'Test', config_dir: dir })];
+      const svc = createUsageService({
+        listAccounts: () => accounts,
+        createAccount: () => accounts[0],
+        updateAccount: () => {},
+        deleteAccount: () => {},
+        listPathRules: () => [],
+        addPathRule: () => ({ id: 1, account_id: 1, account_name: 'Test', path_prefix: '/', priority: 0 }),
+        removePathRule: () => {},
+        resolve: () => null,
+        setProjectOverride: () => {},
+        listProjectOverrides: () => [],
+        explainResolution: () => null,
+        discoverAccounts: async () => [],
+      });
+
+      // Only include April 9-15
+      const result = svc.getStatsByAccount('2026-04-09', '2026-04-15');
+      expect(result).toHaveLength(1);
+      expect(result[0].stats.total_tokens).toBe(300); // only the April 10 entry
+
+      fs.rmSync(dir, { recursive: true, force: true });
+    });
+  });
 });

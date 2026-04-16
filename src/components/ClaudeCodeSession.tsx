@@ -6,8 +6,8 @@ import {
   GitBranch,
   ChevronUp,
   X,
-  Hash,
   Wrench,
+  BarChart3,
   Plug,
   Shield,
   AlertCircle,
@@ -36,6 +36,7 @@ import { CheckpointSettings } from "./CheckpointSettings";
 import { SlashCommandsManager } from "./SlashCommandsManager";
 import { SessionMCPStatus } from "./SessionMCPStatus";
 import { PermissionDialog } from "./PermissionDialog";
+import { ElicitationDialog } from "./ElicitationDialog";
 import { SessionPermissionsEditor } from "./SessionPermissionsEditor";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { TooltipProvider, TooltipSimple } from "@/components/ui/tooltip-modern";
@@ -133,12 +134,18 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   // session is running. Passed into FloatingPromptInput; when empty, its
   // picker falls back to the hardcoded MODELS array in that component.
   const [supportedModels, setSupportedModels] = useState<import('@/lib/api').SessionModelInfo[]>([]);
+  // Pre-fetched built-in slash commands from the SDK, loaded alongside models
+  // during session init so the picker has them immediately.
+  const [supportedCommands, setSupportedCommands] = useState<import('@/lib/api').SessionSlashCommand[]>([]);
   const [showTimeline, setShowTimeline] = useState(false);
   const [showMCPPanel, setShowMCPPanel] = useState(false);
   const [showPermissionsPanel, setShowPermissionsPanel] = useState(false);
   const [timelineVersion, setTimelineVersion] = useState(0);
   const [showSettings, setShowSettings] = useState(false);
   const [showForkDialog, setShowForkDialog] = useState(false);
+  const [usagePopoverOpen, setUsagePopoverOpen] = useState(false);
+  const [usageText, setUsageText] = useState<string | null>(null);
+  const [usageLoading, setUsageLoading] = useState(false);
   const [showSlashCommandsSettings, setShowSlashCommandsSettings] = useState(false);
   const [forkCheckpointId, setForkCheckpointId] = useState<string | null>(null);
   const [forkSessionName, setForkSessionName] = useState("");
@@ -207,6 +214,14 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     handlePermissionAllow,
     handlePermissionDeny,
   } = usePermissions();
+
+  // Elicitation state — MCP servers requesting user input
+  const [elicitationRequest, setElicitationRequest] = useState<{
+    serverName: string;
+    message: string;
+    mode?: 'form' | 'url';
+    url?: string;
+  } | null>(null);
 
   const parentRef = useRef<HTMLDivElement>(null);
   const persistentSessionRef = useRef(false);
@@ -656,6 +671,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     setMessages,
     setSdkAccountInfo,
     setSupportedModels,
+    setSupportedCommands,
     setContextUsage,
   });
 
@@ -679,6 +695,26 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     setSelectedModel,
     setMessages,
   });
+
+  // Auto-resume restored sessions — when a tab is opened with an existing
+  // session (from a previous app run or tab restore), start the SDK
+  // subprocess so queries like supportedCommands work immediately.
+  useEffect(() => {
+    if (session && !persistentSessionRef.current) {
+      startPersistentSession(session.id);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Listen for elicitation requests from MCP servers
+  useEffect(() => {
+    const unlisten = window.electronAPI.onEvent(
+      `elicitation-request:${tabIdRef.current}`,
+      (payload: any) => {
+        setElicitationRequest(payload);
+      },
+    );
+    return () => unlisten();
+  }, []);
 
   // Keep queuedPromptsRef in sync with state
   useEffect(() => {
@@ -878,13 +914,13 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   const messagesList = (
     <div
       ref={parentRef}
-      className="flex-1 overflow-y-auto relative pb-40"
+      className="flex-1 overflow-y-auto relative"
       onScroll={handleScroll}
       style={{
         contain: 'paint',
       }}
     >
-      <div className="w-full max-w-6xl mx-auto px-4 pt-8 pb-4 space-y-4">
+      <div className="w-full px-4 pt-8 pb-4 space-y-4">
           {displayableMessages.map((message, idx) => {
             // Check if this is the last user message and it timed out
             const isTimedOut = timedOutMessageIndex !== null
@@ -1010,6 +1046,48 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             <span className="text-xs text-muted-foreground/60 font-mono truncate">
               {projectPath.replace(/^\/Users\/[^/]+/, '~')}
             </span>
+          )}
+          {accountResolution?.account.account_type === 'max' && (
+            <div className="ml-auto">
+              <Popover
+                open={usagePopoverOpen}
+                onOpenChange={(open) => {
+                  setUsagePopoverOpen(open);
+                  if (open && !usageText) {
+                    setUsageLoading(true);
+                    api.getCliUsage(accountResolution.account.config_dir)
+                      .then(setUsageText)
+                      .catch(() => setUsageText('Failed to load usage'))
+                      .finally(() => setUsageLoading(false));
+                  }
+                }}
+                align="end"
+                side="bottom"
+                className="w-80"
+                trigger={
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 px-2 text-xs gap-1 text-muted-foreground hover:text-foreground"
+                    title="Account usage"
+                  >
+                    <BarChart3 className="h-3.5 w-3.5" />
+                    Usage
+                  </Button>
+                }
+                content={
+                  <div className="text-sm">
+                    {usageLoading ? (
+                      <p className="text-muted-foreground">Loading...</p>
+                    ) : (
+                      <pre className="whitespace-pre-wrap text-xs font-mono leading-relaxed">
+                        {usageText}
+                      </pre>
+                    )}
+                  </div>
+                }
+              />
+            </div>
           )}
         </div>
         <SessionHeader
@@ -1192,7 +1270,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
 
         {/* Main Content Area */}
         <div className={cn(
-          "flex-1 overflow-hidden transition-all duration-300",
+          "flex-1 min-h-0 overflow-hidden transition-all duration-300 relative",
           (showTimeline || showMCPPanel || showPermissionsPanel) && "sm:mr-96"
         )}>
           {showPreview ? (
@@ -1220,7 +1298,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             />
           ) : (
             // Original layout when no preview
-            <div className="h-full flex flex-col max-w-6xl mx-auto px-6">
+            <div className="h-full flex flex-col">
               {messagesList}
               
               {isLoading && messages.length === 0 && (
@@ -1235,18 +1313,15 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
               )}
             </div>
           )}
-        </div>
 
-        {/* Floating Prompt Input - Only after session started */}
-        {sessionStarted && <ErrorBoundary>
-          {/* Queued Prompts Display */}
+          {/* Queued Prompts Display — inside content area so bottom offsets are relative to scrollable region */}
           <AnimatePresence>
-            {queuedPrompts.length > 0 && (
+            {sessionStarted && queuedPrompts.length > 0 && (
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: 20 }}
-                className="absolute bottom-24 left-1/2 -translate-x-1/2 z-30 w-full max-w-3xl px-4"
+                className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 w-full max-w-3xl px-4"
               >
                 <div className="bg-background/95 backdrop-blur-md border rounded-lg shadow-lg p-3 space-y-2">
                   <div className="flex items-center justify-between">
@@ -1328,14 +1403,14 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             )}
           </AnimatePresence>
 
-          {/* Navigation Arrows - positioned above prompt bar with spacing */}
-          {displayableMessages.length > 5 && (
+          {/* Navigation Arrows */}
+          {sessionStarted && displayableMessages.length > 5 && (
             <motion.div
               initial={{ opacity: 0, scale: 0.8 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.8 }}
               transition={{ delay: 0.5 }}
-              className="absolute bottom-32 right-6 z-50"
+              className="absolute bottom-4 right-6 z-50"
             >
               <div className="flex items-center bg-background/95 backdrop-blur-md border rounded-full shadow-lg overflow-hidden">
                 <TooltipSimple content="Scroll to top" side="top">
@@ -1396,7 +1471,10 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
               </div>
             </motion.div>
           )}
+        </div>
 
+        {/* Floating Prompt Input - Only after session started */}
+        {sessionStarted && <ErrorBoundary>
           <PermissionDialog
             open={waitingForPermission && !!pendingToolUse && !!pendingRequestId}
             toolName={pendingToolUse?.name ?? ''}
@@ -1414,9 +1492,25 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             }}
           />
 
+          <ElicitationDialog
+            open={!!elicitationRequest}
+            serverName={elicitationRequest?.serverName ?? ''}
+            message={elicitationRequest?.message ?? ''}
+            mode={elicitationRequest?.mode}
+            url={elicitationRequest?.url}
+            onAccept={() => {
+              api.respondElicitation(tabIdRef.current, 'accept');
+              setElicitationRequest(null);
+            }}
+            onDecline={() => {
+              api.respondElicitation(tabIdRef.current, 'decline');
+              setElicitationRequest(null);
+            }}
+          />
+
           <div className={cn(
-            "absolute bottom-0 left-0 right-0 transition-all duration-300 z-50",
-            (showTimeline || showMCPPanel || showPermissionsPanel) && "sm:right-96"
+            "shrink-0 transition-all duration-300 z-50",
+            (showTimeline || showMCPPanel || showPermissionsPanel) && "sm:mr-96"
           )}>
             <FloatingPromptInput
               ref={floatingPromptRef}
@@ -1454,6 +1548,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                 }
               }}
               supportedModels={supportedModels}
+              supportedCommands={supportedCommands}
               onLiveModelChange={(newModel) => {
                 // Wave 2.5 — clicking a model in the bottom picker updates
                 // selectedModel AND, if a session is running, pushes the
@@ -1594,27 +1689,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             />
           </div>
 
-          {/* Token Counter - positioned under the Send button */}
-          {totalTokens > 0 && (
-            <div className="absolute bottom-0 left-0 right-0 z-30 pointer-events-none">
-              <div className="max-w-6xl mx-auto">
-                <div className="flex justify-end px-4 pb-2">
-                  <motion.div
-                    initial={{ opacity: 0, scale: 0.8 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.8 }}
-                    className="bg-background/95 backdrop-blur-md border rounded-full px-3 py-1 shadow-lg pointer-events-auto"
-                  >
-                    <div className="flex items-center gap-1.5 text-xs">
-                      <Hash className="h-3 w-3 text-muted-foreground" />
-                      <span className="font-mono">{totalTokens.toLocaleString()}</span>
-                      <span className="text-muted-foreground">tokens</span>
-                    </div>
-                  </motion.div>
-                </div>
-              </div>
-            </div>
-          )}
         </ErrorBoundary>}
 
         {/* Timeline */}

@@ -2162,7 +2162,7 @@ describe('sessions service — full lifecycle', () => {
       svc.stopAll();
     });
 
-    it('Elicitation hook logs + returns accept action', async () => {
+    it('Elicitation hook logs but does not auto-accept (onElicitation handles user prompt)', async () => {
       const writeBatch = vi.fn();
       const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
       const svc = createSessionsService(sendToRenderer as any, { showNotification: showNotification as any, incrementUnread: incrementUnread as any }, fakeLogging as any);
@@ -2174,8 +2174,56 @@ describe('sessions service — full lifecycle', () => {
 
       expect(writeBatch).toHaveBeenCalled();
       expect(writeBatch.mock.calls[0][0][0].message).toContain('elicitation from github');
-      expect(result.hookSpecificOutput.hookEventName).toBe('Elicitation');
-      expect(result.hookSpecificOutput.action).toBe('accept');
+      // Hook should NOT return an action — onElicitation in lifecycle.ts prompts the user
+      expect(result.hookSpecificOutput).toBeUndefined();
+
+      svc.stopAll();
+    });
+
+    it('onElicitation sends event to renderer and resolves when respondElicitation is called', async () => {
+      const svc = createSessionsService(sendToRenderer as any, { showNotification: showNotification as any, incrementUnread: incrementUnread as any }, null as any);
+      const fake = installFakeQuery();
+      svc.start({ tabId: 'elicit-resolve', projectPath: '/p', configDir: '/c', model: 'sonnet', permissionMode: 'default' });
+
+      const onElicitation = fake.getCapturedOptions().onElicitation;
+      expect(onElicitation).toBeDefined();
+
+      // Call onElicitation in the background — it should block until respondElicitation
+      const resultPromise = onElicitation!(
+        { serverName: 'github', message: 'Authenticate please', mode: 'form' },
+        { signal: new AbortController().signal },
+      );
+
+      // The renderer should have been notified
+      expect(sendToRenderer).toHaveBeenCalledWith(
+        'elicitation-request:elicit-resolve',
+        expect.objectContaining({ serverName: 'github', message: 'Authenticate please' }),
+      );
+
+      // Simulate user clicking Accept
+      svc.respondElicitation('elicit-resolve', 'accept');
+
+      const result = await resultPromise;
+      expect(result.action).toBe('accept');
+
+      svc.stopAll();
+    });
+
+    it('respondElicitation with decline returns decline action', async () => {
+      const svc = createSessionsService(sendToRenderer as any, { showNotification: showNotification as any, incrementUnread: incrementUnread as any }, null as any);
+      const fake = installFakeQuery();
+      svc.start({ tabId: 'elicit-decline', projectPath: '/p', configDir: '/c', model: 'sonnet', permissionMode: 'default' });
+
+      const onElicitation = fake.getCapturedOptions().onElicitation;
+      const resultPromise = onElicitation!(
+        { serverName: 'slack', message: 'Login required', mode: 'url', url: 'https://example.com/auth' },
+        { signal: new AbortController().signal },
+      );
+
+      svc.respondElicitation('elicit-decline', 'decline');
+
+      const result = await resultPromise;
+      expect(result.action).toBe('decline');
 
       svc.stopAll();
     });

@@ -62,6 +62,8 @@ interface FloatingPromptInputProps {
   onThinkingConfigChange?: (config: ThinkingConfig) => void;
   configDir?: string;
   tabId?: string;
+  /** Pre-fetched built-in SDK slash commands (loaded during session init). */
+  supportedCommands?: import("@/lib/api").SessionSlashCommand[];
 }
 
 export interface FloatingPromptInputRef {
@@ -86,6 +88,7 @@ const FloatingPromptInputInner = (
     onEffortChange,
     configDir,
     tabId,
+    supportedCommands,
   }: FloatingPromptInputProps,
   ref: React.Ref<FloatingPromptInputRef>,
 ) => {
@@ -495,7 +498,7 @@ const FloatingPromptInputInner = (
       {/* Fixed Position Input Bar */}
       <div
         className={cn(
-          "absolute bottom-0 left-0 right-0 z-40 bg-muted border-t border-border shadow-lg",
+          "bg-muted border-t border-border shadow-lg",
           dragActive && "ring-2 ring-primary ring-offset-2",
           className
         )}
@@ -641,6 +644,7 @@ const FloatingPromptInputInner = (
                     <SlashCommandPicker
                       projectPath={projectPath}
                       tabId={tabId}
+                      prefetchedCommands={supportedCommands}
                       onSelect={(cmd: SlashCommand) =>
                         slash.handleSlashCommandSelect(cmd, prompt, cursorPosition, setPrompt, activeTextarea())
                       }

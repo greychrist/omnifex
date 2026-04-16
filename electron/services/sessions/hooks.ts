@@ -616,6 +616,7 @@ export function createSessionHooks(
     ],
 
     // ---- #21 Elicitation ----
+    // Logging only — the actual user prompt is handled by onElicitation in lifecycle.ts
     Elicitation: [
       {
         hooks: [
@@ -629,16 +630,9 @@ export function createSessionHooks(
                 message: `🔑 elicitation from ${input.mcp_server_name}: ${(input.message ?? '').slice(0, 100)}`,
                 metadata: stringifyCapped({ event: 'Elicitation', mcp_server_name: input.mcp_server_name, message: input.message, mode: input.mode, url: input.url, elicitation_id: input.elicitation_id, requested_schema: input.requested_schema }),
               }]);
-              // URL mode: open browser for OAuth
-              if (input.mode === 'url' && input.url) {
-                try {
-                  const { shell } = require('electron') as typeof import('electron');
-                  shell.openExternal(input.url);
-                } catch { /* best effort */ }
-              }
             } catch (err) { console.error('[sessions] Elicitation hook failed:', err); }
-            // Accept elicitation so MCP servers can connect
-            return { hookSpecificOutput: { hookEventName: 'Elicitation', action: 'accept' } };
+            // Do NOT return an action — let onElicitation handle the user prompt
+            return {};
           },
         ],
       },

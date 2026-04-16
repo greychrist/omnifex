@@ -47,12 +47,14 @@ export interface Services {
     updateHooksConfig(scope: string, config: unknown, opts?: unknown): unknown;
     validateHookCommand(command: string): unknown;
     getMergedHooksConfig(projectPath: string, opts?: unknown): unknown;
+    getCliUsage(configDir?: string): unknown;
   };
   sessions?: {
     start(data: unknown): unknown;
     sendMessage(sessionId: string, message: unknown): unknown;
     sendStructuredMessage(sessionId: string, content: unknown): unknown;
     respondPermission(sessionId: string, behavior: string, updatedInput?: Record<string, unknown>, updatedPermissions?: unknown[]): unknown;
+    respondElicitation(tabId: string, action: string, content?: Record<string, unknown>): unknown;
     stop(sessionId: string): unknown;
     getInfo(sessionId: string): unknown;
     getHealth(sessionId: string): { alive: boolean; status: string; sessionId: string | null };
@@ -96,6 +98,7 @@ export interface Services {
     getByDateRange(params: unknown): unknown;
     getSessionStats(params?: unknown): unknown;
     getDetails(params?: unknown): unknown;
+    getStatsByAccount(params?: unknown): unknown;
   };
   checkpoints?: {
     create(data: unknown): unknown;
@@ -240,12 +243,14 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
       const configDir = (p?.configDir ?? p?.config_dir) as string | undefined;
       return claude?.getMergedHooksConfig(projectPath, configDir ? { configDir } : undefined) ?? null;
     }),
+    get_cli_usage: wrapWith((p: Record<string, unknown>) => claude?.getCliUsage((p?.configDir ?? p?.config_dir) as string | undefined) ?? null),
 
     // ── Sessions ──────────────────────────────────────────────────────────────
     session_start: wrapWith((p: Record<string, unknown>) => sessions?.start(p) ?? null),
     session_send_message: wrapWith((p: Record<string, unknown>) => sessions?.sendMessage((p?.tabId ?? p?.session_id) as string, (p?.prompt ?? p?.message) as string) ?? null),
     session_send_structured_message: wrapWith((p: Record<string, unknown>) => sessions?.sendStructuredMessage((p?.tabId ?? p?.session_id) as string, p?.content as Array<Record<string, unknown>>) ?? null),
     session_respond_permission: wrapWith((p: Record<string, unknown>) => sessions?.respondPermission((p?.tabId ?? p?.session_id) as string, p?.behavior as string, p?.updatedInput as Record<string, unknown> | undefined, p?.updatedPermissions as any) ?? null),
+    session_respond_elicitation: wrapWith((p: Record<string, unknown>) => sessions?.respondElicitation((p?.tabId ?? p?.tab_id) as string, (p?.action) as string, p?.content as Record<string, unknown> | undefined) ?? null),
     session_stop: wrapWith((p: Record<string, unknown>) => sessions?.stop((p?.tabId ?? p?.session_id) as string) ?? null),
     session_get_info: wrapWith((p: Record<string, unknown>) => sessions?.getInfo((p?.tabId ?? p?.session_id) as string) ?? null),
     session_get_health: wrapWith((p: Record<string, unknown>) => sessions?.getHealth((p?.tabId ?? p?.session_id) as string) ?? { alive: false, status: 'stopped', sessionId: null }),
@@ -309,6 +314,7 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     get_usage_by_date_range: wrapWith((p: Record<string, unknown>) => usage?.getByDateRange(p) ?? null),
     get_session_stats: wrapWith((p: Record<string, unknown>) => usage?.getSessionStats(p) ?? null),
     get_usage_details: wrapWith((p: Record<string, unknown>) => usage?.getDetails(p) ?? null),
+    get_usage_by_account: wrapWith((p: Record<string, unknown>) => usage?.getStatsByAccount(p) ?? null),
 
     // ── Checkpoints ───────────────────────────────────────────────────────────
     create_checkpoint: wrapWith((p: Record<string, unknown>) => checkpoints?.create(p) ?? null),

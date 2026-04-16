@@ -285,6 +285,12 @@ export interface UsageStats {
   by_project: ProjectUsage[];
 }
 
+export interface AccountUsageStats {
+  account_name: string;
+  account_type: string;
+  stats: UsageStats;
+}
+
 /**
  * Represents a checkpoint in the session timeline
  */
@@ -1235,6 +1241,10 @@ export const api = {
     return apiCall("session_respond_permission", { tabId, requestId, behavior, updatedInput, updatedPermissions });
   },
 
+  async respondElicitation(tabId: string, action: 'accept' | 'decline' | 'cancel', content?: Record<string, unknown>): Promise<void> {
+    return apiCall("session_respond_elicitation", { tabId, action, content });
+  },
+
   async stopSession(tabId: string): Promise<void> {
     return apiCall("session_stop", { tabId });
   },
@@ -1435,6 +1445,18 @@ export const api = {
       console.error("Failed to get usage details:", error);
       throw error;
     }
+  },
+
+  async getUsageByAccount(startDate?: string, endDate?: string): Promise<AccountUsageStats[]> {
+    return apiCall("get_usage_by_account", {
+      start_date: startDate,
+      end_date: endDate,
+    });
+  },
+
+  /** Run /usage via the CLI for a specific account. Max accounts only. */
+  async getCliUsage(configDir?: string): Promise<string> {
+    return apiCall("get_cli_usage", { configDir });
   },
 
   /**

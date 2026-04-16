@@ -163,7 +163,7 @@ export const LogTab: React.FC = () => {
   };
 
   return (
-    <Card className="p-6">
+    <Card className="p-6 flex-1 flex flex-col min-h-0">
       <div className="flex items-center gap-2 mb-4">
         <ScrollText className="w-5 h-5 text-foreground/70" />
         <h3 className="text-lg font-semibold">Application Logs</h3>
@@ -219,8 +219,8 @@ export const LogTab: React.FC = () => {
       </div>
 
       {/* Log table */}
-      <div className="border rounded-lg overflow-hidden">
-        <div className="max-h-[500px] overflow-y-auto">
+      <div className="border rounded-lg overflow-hidden flex-1 min-h-0 flex flex-col">
+        <div className="flex-1 overflow-y-auto">
           {entries.length === 0 ? (
             <div className="p-8 text-center text-muted-foreground">
               {loading ? "Loading..." : "No log entries found"}

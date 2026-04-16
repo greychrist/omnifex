@@ -91,6 +91,9 @@ export interface ClaudeService {
   ): Promise<void>;
   validateHookCommand(command: string): { valid: boolean; message: string };
   getMergedHooksConfig(projectPath: string, opts?: ClaudeSettingsOpts): Promise<Record<string, unknown>>;
+
+  /** Run `/usage` via the CLI and return the result text (Max accounts only). */
+  getCliUsage(configDir?: string): Promise<string>;
 }
 
 // ---------------------------------------------------------------------------
@@ -754,6 +757,41 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
   }
 
   // -------------------------------------------------------------------------
+  // CLI usage
+  // -------------------------------------------------------------------------
+
+  async function getCliUsage(configDir?: string): Promise<string> {
+    // Locate the binary the same way checkClaudeVersion does
+    let binary: string | null = null;
+    try {
+      const cmd = process.platform === 'win32' ? 'where claude' : 'which claude';
+      const out = execSync(cmd, EXEC_OPTIONS);
+      if (typeof out === 'string') {
+        const trimmed = out.trim().split('\n')[0].trim();
+        if (trimmed && fs.existsSync(trimmed)) binary = trimmed;
+      }
+    } catch { /* not found */ }
+    if (!binary) return 'Claude CLI not found';
+
+    const env: Record<string, string> = { ...process.env as Record<string, string> };
+    if (configDir) {
+      env['CLAUDE_CONFIG_DIR'] = configDir;
+    }
+
+    try {
+      const output = execSync(
+        `"${binary}" -p "/usage" --output-format json`,
+        { timeout: 15000, encoding: 'utf-8', env, stdio: ['pipe', 'pipe', 'pipe'] },
+      );
+      const parsed = JSON.parse(output.trim());
+      return parsed.result ?? 'No usage data returned';
+    } catch (err: any) {
+      console.error('[claude] getCliUsage failed:', err?.message);
+      return `Failed to fetch usage: ${err?.message ?? 'unknown error'}`;
+    }
+  }
+
+  // -------------------------------------------------------------------------
   // Return service
   // -------------------------------------------------------------------------
 
@@ -776,5 +814,6 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
     updateHooksConfig,
     validateHookCommand,
     getMergedHooksConfig,
+    getCliUsage,
   };
 }

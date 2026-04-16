@@ -195,9 +195,33 @@ export function createSessionsService(
       settings: {
         enableAllProjectMcpServers: true,
       },
-      // Elicitation is handled by the Elicitation hook (when logging is enabled)
-      // or this fallback (when logging is disabled). Both auto-accept.
-      onElicitation: async () => ({ action: 'accept' as const }),
+      // Elicitation: prompt the user via the renderer instead of auto-accepting.
+      onElicitation: async (request: any) => {
+        // URL mode: open browser immediately, then wait for user decision
+        if (request.mode === 'url' && request.url) {
+          try {
+            const { shell } = require('electron') as typeof import('electron');
+            shell.openExternal(request.url);
+          } catch { /* best effort */ }
+        }
+
+        // Send the request to the renderer and wait for the user's decision
+        sendToRenderer(`elicitation-request:${tabId}`, {
+          serverName: request.serverName,
+          message: request.message,
+          mode: request.mode,
+          url: request.url,
+          elicitationId: request.elicitationId,
+          requestedSchema: request.requestedSchema,
+        });
+
+        return new Promise<{ action: 'accept' | 'decline' | 'cancel'; content?: Record<string, unknown> }>((resolve) => {
+          handle.elicitationResolver = (decision) => {
+            handle.elicitationResolver = null;
+            resolve({ action: decision.action, content: decision.content });
+          };
+        });
+      },
     };
 
     if (effort) {
@@ -243,6 +267,7 @@ export function createSessionsService(
       status: 'starting',
       permissionResolver: null,
       permissionQueue: [],
+      elicitationResolver: null,
       autoAllowEnabled: false,
       autoAllowedTools: new Set(),
       projectPath,
@@ -346,6 +371,20 @@ export function createSessionsService(
   }
 
   // -------------------------------------------------------------------------
+  // respondElicitation()
+  // -------------------------------------------------------------------------
+
+  function respondElicitation(
+    tabId: string,
+    action: 'accept' | 'decline' | 'cancel',
+    content?: Record<string, unknown>,
+  ): void {
+    const handle = sessions.get(tabId);
+    if (!handle?.elicitationResolver) return;
+    handle.elicitationResolver({ action, content });
+  }
+
+  // -------------------------------------------------------------------------
   // setAutoAllow() / addAutoAllowTool()
   // -------------------------------------------------------------------------
 
@@ -417,6 +456,7 @@ export function createSessionsService(
     sendMessage,
     sendStructuredMessage,
     respondPermission,
+    respondElicitation,
     setAutoAllow,
     addAutoAllowTool,
     stop,

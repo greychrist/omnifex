@@ -1,86 +1,96 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api, type SlashCommand } from "@/lib/api";
 import {
   X,
   Command,
-  Search,
-  Globe,
-  FolderOpen,
-  Zap,
-  FileCode,
-  Terminal,
+  ChevronDown,
+  ChevronUp,
   AlertCircle,
-  User,
-  Building2
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface SlashCommandPickerProps {
-  /**
-   * The project path for loading project-specific commands
-   */
   projectPath?: string;
-  /**
-   * Active session tab ID for loading SDK built-in commands
-   */
   tabId?: string;
-  /**
-   * Callback when a command is selected
-   */
+  prefetchedCommands?: import("@/lib/api").SessionSlashCommand[];
   onSelect: (command: SlashCommand) => void;
-  /**
-   * Callback to close the picker
-   */
   onClose: () => void;
-  /**
-   * Initial search query (text after /)
-   */
   initialQuery?: string;
-  /**
-   * Optional className for styling
-   */
   className?: string;
-  /**
-   * Optional config directory for account-scoped slash command operations
-   */
   configDir?: string;
 }
 
-// Get icon for command based on its properties
-const getCommandIcon = (command: SlashCommand) => {
-  // If it has bash commands, show terminal icon
-  if (command.has_bash_commands) return Terminal;
-  
-  // If it has file references, show file icon
-  if (command.has_file_references) return FileCode;
-  
-  // If it accepts arguments, show zap icon
-  if (command.accepts_arguments) return Zap;
-  
-  // Based on scope
-  if (command.scope === "project") return FolderOpen;
-  if (command.scope === "user") return Globe;
-  
-  // Default
-  return Command;
+const SCOPE_LABEL: Record<string, string> = {
+  default: "default",
+  project: "project",
+  user: "user",
 };
 
+const SCOPE_COLOR: Record<string, string> = {
+  default: "bg-emerald-500/15 text-emerald-400",
+  project: "bg-blue-500/15 text-blue-400",
+  user: "bg-violet-500/15 text-violet-400",
+};
+
+type ScopeFilter = "all" | "default" | "project";
+
+const SCOPE_FILTERS: { value: ScopeFilter; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "default", label: "Default" },
+  { value: "project", label: "Project" },
+];
+
+const DESCRIPTION_PREVIEW_LENGTH = 60;
+
 /**
- * SlashCommandPicker component - Autocomplete UI for slash commands
- * 
- * @example
- * <SlashCommandPicker
- *   projectPath="/Users/example/project"
- *   onSelect={(command) => console.log('Selected:', command)}
- *   onClose={() => setShowPicker(false)}
- * />
+ * Merge default and custom command lists. When a command name appears in both,
+ * keep a single entry with the project/user scope but fall back to the default
+ * description when the custom one is empty.
  */
+function deduplicateCommands(
+  defaultCommands: SlashCommand[],
+  customCommands: SlashCommand[],
+): SlashCommand[] {
+  // Index defaults by full_command for exact match
+  const defaultByFullCmd = new Map<string, SlashCommand>();
+  for (const cmd of defaultCommands) {
+    defaultByFullCmd.set(cmd.full_command, cmd);
+  }
+
+  const merged: SlashCommand[] = [];
+  const seenFullCmds = new Set<string>();
+
+  // Custom commands take priority — merge in default description if needed
+  for (const cmd of customCommands) {
+    seenFullCmds.add(cmd.full_command);
+    const defaultCmd = defaultByFullCmd.get(cmd.full_command);
+    if (defaultCmd) {
+      merged.push({
+        ...cmd,
+        description: cmd.description || defaultCmd.description,
+      });
+    } else {
+      merged.push(cmd);
+    }
+  }
+
+  // Add default-only commands (not already covered by custom)
+  for (const cmd of defaultCommands) {
+    if (!seenFullCmds.has(cmd.full_command)) {
+      seenFullCmds.add(cmd.full_command);
+      merged.push(cmd);
+    }
+  }
+
+  return merged;
+}
+
 export const SlashCommandPicker: React.FC<SlashCommandPickerProps> = ({
   projectPath,
   tabId,
+  prefetchedCommands,
   onSelect,
   onClose,
   initialQuery = "",
@@ -88,85 +98,62 @@ export const SlashCommandPicker: React.FC<SlashCommandPickerProps> = ({
   configDir,
 }) => {
   const [commands, setCommands] = useState<SlashCommand[]>([]);
-  const [filteredCommands, setFilteredCommands] = useState<SlashCommand[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [searchQuery, setSearchQuery] = useState(initialQuery);
-  const [activeTab, setActiveTab] = useState<string>("custom");
-  
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [scopeFilter, setScopeFilter] = useState<ScopeFilter>("all");
+
   const commandListRef = useRef<HTMLDivElement>(null);
-  
-  // Load commands on mount or when dependencies change
+
+  // Load commands on mount
   useEffect(() => {
     loadCommands();
   }, [projectPath, configDir, tabId]);
-  
-  // Filter commands based on search query and active tab
-  useEffect(() => {
-    if (!commands.length) {
-      setFilteredCommands([]);
-      return;
-    }
-    
+
+  // Filter + sort
+  const filteredCommands = useMemo(() => {
+    if (!commands.length) return [];
+
     const query = searchQuery.toLowerCase();
-    let filteredByTab: SlashCommand[];
-    
-    // Filter by active tab
-    if (activeTab === "default") {
-      // Show default/built-in commands
-      filteredByTab = commands.filter(cmd => cmd.scope === "default");
-    } else {
-      // Show all custom commands (both user and project)
-      filteredByTab = commands.filter(cmd => cmd.scope !== "default");
-    }
-    
-    // Then filter by search query
-    let filtered: SlashCommand[];
-    if (!query) {
-      filtered = filteredByTab;
-    } else {
-      filtered = filteredByTab.filter(cmd => {
-        // Match against command name
-        if (cmd.name.toLowerCase().includes(query)) return true;
-        
-        // Match against full command
-        if (cmd.full_command.toLowerCase().includes(query)) return true;
-        
-        // Match against namespace
-        if (cmd.namespace && cmd.namespace.toLowerCase().includes(query)) return true;
-        
-        // Match against description
-        if (cmd.description && cmd.description.toLowerCase().includes(query)) return true;
-        
-        return false;
-      });
-      
-      // Sort by relevance
-      filtered.sort((a, b) => {
-        // Exact name match first
+    let filtered = commands.filter(cmd => {
+      // Scope filter
+      if (scopeFilter === "default" && cmd.scope !== "default") return false;
+      if (scopeFilter === "project" && cmd.scope !== "project" && cmd.scope !== "user") return false;
+
+      // Text search
+      if (!query) return true;
+      return (
+        cmd.name.toLowerCase().includes(query) ||
+        cmd.full_command.toLowerCase().includes(query) ||
+        (cmd.namespace && cmd.namespace.toLowerCase().includes(query)) ||
+        (cmd.description && cmd.description.toLowerCase().includes(query))
+      );
+    });
+
+    filtered.sort((a, b) => {
+      if (query) {
         const aExact = a.name.toLowerCase() === query;
         const bExact = b.name.toLowerCase() === query;
         if (aExact && !bExact) return -1;
         if (!aExact && bExact) return 1;
-        
-        // Then by name starts with
         const aStarts = a.name.toLowerCase().startsWith(query);
         const bStarts = b.name.toLowerCase().startsWith(query);
         if (aStarts && !bStarts) return -1;
         if (!aStarts && bStarts) return 1;
-        
-        // Then alphabetically
-        return a.name.localeCompare(b.name);
-      });
-    }
-    
-    setFilteredCommands(filtered);
-    
-    // Reset selected index when filtered list changes
+      }
+      return a.name.localeCompare(b.name);
+    });
+
+    return filtered;
+  }, [searchQuery, commands, scopeFilter]);
+
+  // Reset selection when list changes
+  useEffect(() => {
     setSelectedIndex(0);
-  }, [searchQuery, commands, activeTab]);
-  
+  }, [filteredCommands]);
+
   // Keyboard navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -175,74 +162,81 @@ export const SlashCommandPicker: React.FC<SlashCommandPickerProps> = ({
           e.preventDefault();
           onClose();
           break;
-          
         case 'Enter':
           e.preventDefault();
           if (filteredCommands.length > 0 && selectedIndex < filteredCommands.length) {
-            const command = filteredCommands[selectedIndex];
-            onSelect(command);
+            onSelect(filteredCommands[selectedIndex]);
           }
           break;
-          
         case 'ArrowUp':
           e.preventDefault();
           setSelectedIndex(prev => Math.max(0, prev - 1));
           break;
-          
         case 'ArrowDown':
           e.preventDefault();
           setSelectedIndex(prev => Math.min(filteredCommands.length - 1, prev + 1));
           break;
       }
     };
-    
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [filteredCommands, selectedIndex, onSelect, onClose]);
-  
+
   // Scroll selected item into view
   useEffect(() => {
     if (commandListRef.current) {
-      const selectedElement = commandListRef.current.querySelector(`[data-index="${selectedIndex}"]`);
-      if (selectedElement) {
-        selectedElement.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-      }
+      const el = commandListRef.current.querySelector(`[data-index="${selectedIndex}"]`);
+      el?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     }
   }, [selectedIndex]);
-  
+
+  const toSlashCommands = (sdkCommands: import("@/lib/api").SessionSlashCommand[]): SlashCommand[] =>
+    sdkCommands.map(cmd => ({
+      id: `default::${cmd.name}`,
+      name: cmd.name,
+      full_command: `/${cmd.name}`,
+      namespace: '',
+      scope: 'default' as const,
+      content: '',
+      description: cmd.description || '',
+      allowed_tools: [] as string[],
+      file_path: '',
+      has_bash_commands: false,
+      has_file_references: false,
+      accepts_arguments: !!cmd.argumentHint,
+    }));
+
   const loadCommands = async () => {
     try {
       setIsLoading(true);
       setError(null);
 
-      // Load custom commands from filesystem
       const customCommands = await api.slashCommandsList(projectPath, configDir);
 
-      // Load built-in commands from the SDK session (if active)
       let defaultCommands: SlashCommand[] = [];
       if (tabId) {
         try {
           const sdkCommands = await api.sessionSupportedCommands(tabId);
-          defaultCommands = (sdkCommands || []).map(cmd => ({
-            id: `default::${cmd.name}`,
-            name: cmd.name,
-            full_command: `/${cmd.name}`,
-            namespace: '',
-            scope: 'default',
-            content: '',
-            description: cmd.description || '',
-            allowed_tools: [] as string[],
-            file_path: '',
-            has_bash_commands: false,
-            has_file_references: false,
-            accepts_arguments: !!cmd.argumentHint,
-          }));
+          if (sdkCommands?.length) {
+            defaultCommands = toSlashCommands(sdkCommands);
+          }
         } catch {
-          // Session may not be ready yet — show custom commands only
+          // Session may not be ready yet
         }
       }
+      if (!defaultCommands.length && prefetchedCommands?.length) {
+        defaultCommands = toSlashCommands(prefetchedCommands);
+      }
 
-      setCommands([...defaultCommands, ...customCommands]);
+      const merged = deduplicateCommands(defaultCommands, customCommands);
+      // Final safety: deduplicate by full_command in case any slip through
+      const seen = new Set<string>();
+      const unique = merged.filter(cmd => {
+        if (seen.has(cmd.full_command)) return false;
+        seen.add(cmd.full_command);
+        return true;
+      });
+      setCommands(unique);
     } catch (err) {
       console.error("Failed to load slash commands:", err);
       setError(err instanceof Error ? err.message : 'Failed to load commands');
@@ -251,82 +245,72 @@ export const SlashCommandPicker: React.FC<SlashCommandPickerProps> = ({
       setIsLoading(false);
     }
   };
-  
-  const handleCommandClick = (command: SlashCommand) => {
-    onSelect(command);
-  };
-  
-  // Group commands by scope and namespace for the Custom tab
-  const groupedCommands = filteredCommands.reduce((acc, cmd) => {
-    let key: string;
-    if (cmd.scope === "user") {
-      key = cmd.namespace ? `User Commands: ${cmd.namespace}` : "User Commands";
-    } else if (cmd.scope === "project") {
-      key = cmd.namespace ? `Project Commands: ${cmd.namespace}` : "Project Commands";
-    } else {
-      key = cmd.namespace || "Commands";
-    }
-    
-    if (!acc[key]) {
-      acc[key] = [];
-    }
-    acc[key].push(cmd);
-    return acc;
-  }, {} as Record<string, SlashCommand[]>);
-  
+
   // Update search query from parent
   useEffect(() => {
     setSearchQuery(initialQuery);
   }, [initialQuery]);
-  
+
+  const truncateDescription = (desc: string) => {
+    if (desc.length <= DESCRIPTION_PREVIEW_LENGTH) return desc;
+    return desc.slice(0, DESCRIPTION_PREVIEW_LENGTH).trimEnd() + "...";
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
       exit={{ opacity: 0, scale: 0.95 }}
       className={cn(
-        "absolute bottom-full mb-2 left-0 z-50",
-        "w-[600px] h-[400px]",
+        "absolute bottom-full mb-2 left-0 right-0 z-50",
+        "h-[400px]",
         "bg-background border border-border rounded-lg shadow-lg",
         "flex flex-col overflow-hidden",
         className
       )}
     >
       {/* Header */}
-      <div className="border-b border-border p-3">
+      <div className="border-b border-border px-3 py-2 shrink-0">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Command className="h-4 w-4 text-muted-foreground" />
-            <span className="text-sm font-medium">Slash Commands</span>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <Command className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm font-medium">Slash Commands</span>
+              <span className="text-xs text-muted-foreground">
+                ({filteredCommands.length})
+              </span>
+            </div>
             {searchQuery && (
               <span className="text-xs text-muted-foreground">
-                Searching: "{searchQuery}"
+                Searching: &ldquo;{searchQuery}&rdquo;
               </span>
             )}
+            <div className="flex items-center gap-1 ml-2">
+              {SCOPE_FILTERS.map(f => (
+                <button
+                  key={f.value}
+                  type="button"
+                  className={cn(
+                    "text-xs px-2 py-0.5 rounded transition-colors",
+                    scopeFilter === f.value
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                  )}
+                  onClick={() => setScopeFilter(f.value)}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
           </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onClose}
-            className="h-8 w-8"
-          >
+          <Button variant="ghost" size="icon" onClick={onClose} className="h-8 w-8">
             <X className="h-4 w-4" />
           </Button>
-        </div>
-        
-        {/* Tabs */}
-        <div className="mt-3">
-          <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="default">Default</TabsTrigger>
-              <TabsTrigger value="custom">Custom</TabsTrigger>
-            </TabsList>
-          </Tabs>
         </div>
       </div>
 
       {/* Command List */}
-      <div className="flex-1 overflow-y-auto relative">
+      <div className="flex-1 overflow-y-auto" ref={commandListRef}>
         {isLoading && (
           <div className="flex items-center justify-center h-full">
             <span className="text-sm text-muted-foreground">Loading commands...</span>
@@ -340,245 +324,96 @@ export const SlashCommandPicker: React.FC<SlashCommandPickerProps> = ({
           </div>
         )}
 
-        {!isLoading && !error && (
-          <>
-            {/* Default Tab Content */}
-            {activeTab === "default" && (
-              <>
-                {filteredCommands.length === 0 && (
-                  <div className="flex flex-col items-center justify-center h-full">
-                    <Command className="h-8 w-8 text-muted-foreground mb-2" />
-                    <span className="text-sm text-muted-foreground">
-                      {searchQuery ? 'No commands found' : 'No default commands available'}
-                    </span>
-                    {!searchQuery && (
-                      <p className="text-xs text-muted-foreground mt-2 text-center px-4">
-                        Default commands are built-in system commands
-                      </p>
-                    )}
-                  </div>
-                )}
+        {!isLoading && !error && filteredCommands.length === 0 && (
+          <div className="flex flex-col items-center justify-center h-full">
+            <Command className="h-8 w-8 text-muted-foreground mb-2" />
+            <span className="text-sm text-muted-foreground">
+              {searchQuery ? 'No commands found' : 'No commands available'}
+            </span>
+          </div>
+        )}
 
-                {filteredCommands.length > 0 && (
-                  <div className="p-2" ref={commandListRef}>
-                    <div className="space-y-0.5">
-                      {filteredCommands.map((command, index) => {
-                        const Icon = getCommandIcon(command);
-                        const isSelected = index === selectedIndex;
-                        
-                        return (
-                          <button
-                            key={command.id}
-                            data-index={index}
-                            onClick={() => handleCommandClick(command)}
-                            onMouseEnter={() => setSelectedIndex(index)}
-                            className={cn(
-                              "w-full flex items-start gap-3 px-3 py-2 rounded-md",
-                              "hover:bg-accent transition-colors",
-                              "text-left",
-                              isSelected && "bg-accent"
-                            )}
+        {!isLoading && !error && filteredCommands.length > 0 && (
+          <table className="w-full text-sm">
+            <thead className="bg-muted sticky top-0 text-xs text-muted-foreground z-10">
+              <tr>
+                <th className="text-left px-3 py-1.5 font-medium w-44">Command</th>
+                <th className="text-left px-3 py-1.5 font-medium w-20">Type</th>
+                <th className="text-left px-3 py-1.5 font-medium">Description</th>
+                <th className="w-10" />
+              </tr>
+            </thead>
+            <tbody>
+              {filteredCommands.map((command, index) => {
+                const isSelected = index === selectedIndex;
+                const isExpanded = expandedId === command.id;
+
+                return (
+                  <React.Fragment key={command.id}>
+                    <tr
+                      data-index={index}
+                      className={cn(
+                        "cursor-pointer hover:bg-accent transition-colors",
+                        isSelected && "bg-accent"
+                      )}
+                      onMouseEnter={() => setSelectedIndex(index)}
+                      onClick={() => onSelect(command)}
+                    >
+                      <td className="px-3 py-1.5 font-mono text-primary whitespace-nowrap">
+                        {command.full_command}
+                      </td>
+                      <td className="px-3 py-1.5">
+                        <span className={cn(
+                          "text-[10px] px-1.5 py-0.5 rounded font-medium uppercase tracking-wide",
+                          SCOPE_COLOR[command.scope] || "bg-foreground/10 text-foreground/60"
+                        )}>
+                          {SCOPE_LABEL[command.scope] || command.scope}
+                        </span>
+                      </td>
+                      <td className="px-3 py-1.5 text-xs text-muted-foreground truncate max-w-0">
+                        {command.description
+                          ? truncateDescription(command.description)
+                          : "\u2014"}
+                      </td>
+                      <td className="px-1 py-1.5 text-center">
+                        {command.description && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setExpandedId(isExpanded ? null : command.id);
+                            }}
                           >
-                            <Icon className="h-4 w-4 text-muted-foreground mt-1 flex-shrink-0" />
-                            <div className="flex-1 overflow-hidden">
-                              <div className="flex items-center gap-2">
-                                <span className="font-medium">
-                                  {command.full_command}
-                                </span>
-                                <span className="text-xs text-muted-foreground px-1.5 py-0.5 bg-muted rounded">
-                                  {command.scope}
-                                </span>
-                              </div>
-                              {command.description && (
-                                <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-                                  {command.description}
-                                </p>
-                              )}
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-              </>
-            )}
-            
-            {/* Custom Tab Content */}
-            {activeTab === "custom" && (
-              <>
-                {filteredCommands.length === 0 && (
-                  <div className="flex flex-col items-center justify-center h-full">
-                    <Search className="h-8 w-8 text-muted-foreground mb-2" />
-                    <span className="text-sm text-muted-foreground">
-                      {searchQuery ? 'No commands found' : 'No custom commands available'}
-                    </span>
-                    {!searchQuery && (
-                      <p className="text-xs text-muted-foreground mt-2 text-center px-4">
-                        Create commands in <code className="px-1">.claude/commands/</code> or <code className="px-1">~/.claude/commands/</code>
-                      </p>
+                            {isExpanded
+                              ? <ChevronUp className="h-4 w-4" />
+                              : <ChevronDown className="h-4 w-4" />}
+                          </Button>
+                        )}
+                      </td>
+                    </tr>
+                    {isExpanded && command.description && (
+                      <tr className="bg-muted/20">
+                        <td colSpan={4} className="px-3 py-2 text-xs text-muted-foreground leading-relaxed">
+                          {command.description}
+                        </td>
+                      </tr>
                     )}
-                  </div>
-                )}
-
-                {filteredCommands.length > 0 && (
-                  <div className="p-2" ref={commandListRef}>
-                    {/* If no grouping needed, show flat list */}
-                    {Object.keys(groupedCommands).length === 1 ? (
-                      <div className="space-y-0.5">
-                        {filteredCommands.map((command, index) => {
-                          const Icon = getCommandIcon(command);
-                          const isSelected = index === selectedIndex;
-                          
-                          return (
-                            <button
-                              key={command.id}
-                              data-index={index}
-                              onClick={() => handleCommandClick(command)}
-                              onMouseEnter={() => setSelectedIndex(index)}
-                              className={cn(
-                                "w-full flex items-start gap-3 px-3 py-2 rounded-md",
-                                "hover:bg-accent transition-colors",
-                                "text-left",
-                                isSelected && "bg-accent"
-                              )}
-                            >
-                              <Icon className="h-4 w-4 mt-0.5 flex-shrink-0 text-muted-foreground" />
-                              
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-baseline gap-2">
-                                  <span className="font-mono text-sm text-primary">
-                                    {command.full_command}
-                                  </span>
-                                  {command.accepts_arguments && (
-                                    <span className="text-xs text-muted-foreground">
-                                      [args]
-                                    </span>
-                                  )}
-                                </div>
-                                
-                                {command.description && (
-                                  <p className="text-xs text-muted-foreground mt-0.5 truncate">
-                                    {command.description}
-                                  </p>
-                                )}
-                                
-                                <div className="flex items-center gap-3 mt-1">
-                                  {command.allowed_tools.length > 0 && (
-                                    <span className="text-xs text-muted-foreground">
-                                      {command.allowed_tools.length} tool{command.allowed_tools.length === 1 ? '' : 's'}
-                                    </span>
-                                  )}
-                                  
-                                  {command.has_bash_commands && (
-                                    <span className="text-xs text-blue-600 dark:text-blue-400">
-                                      Bash
-                                    </span>
-                                  )}
-                                  
-                                  {command.has_file_references && (
-                                    <span className="text-xs text-green-600 dark:text-green-400">
-                                      Files
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      // Show grouped by scope/namespace
-                      <div className="space-y-4">
-                        {Object.entries(groupedCommands).map(([groupKey, groupCommands]) => (
-                          <div key={groupKey}>
-                            <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider px-3 mb-1 flex items-center gap-2">
-                              {groupKey.startsWith("User Commands") && <User className="h-3 w-3" />}
-                              {groupKey.startsWith("Project Commands") && <Building2 className="h-3 w-3" />}
-                              {groupKey}
-                            </h3>
-                            
-                            <div className="space-y-0.5">
-                              {groupCommands.map((command) => {
-                                const Icon = getCommandIcon(command);
-                                const globalIndex = filteredCommands.indexOf(command);
-                                const isSelected = globalIndex === selectedIndex;
-                                
-                                return (
-                                  <button
-                                    key={command.id}
-                                    data-index={globalIndex}
-                                    onClick={() => handleCommandClick(command)}
-                                    onMouseEnter={() => setSelectedIndex(globalIndex)}
-                                    className={cn(
-                                      "w-full flex items-start gap-3 px-3 py-2 rounded-md",
-                                      "hover:bg-accent transition-colors",
-                                      "text-left",
-                                      isSelected && "bg-accent"
-                                    )}
-                                  >
-                                    <Icon className="h-4 w-4 mt-0.5 flex-shrink-0 text-muted-foreground" />
-                                    
-                                    <div className="flex-1 min-w-0">
-                                      <div className="flex items-baseline gap-2">
-                                        <span className="font-mono text-sm text-primary">
-                                          {command.full_command}
-                                        </span>
-                                        {command.accepts_arguments && (
-                                          <span className="text-xs text-muted-foreground">
-                                            [args]
-                                          </span>
-                                        )}
-                                      </div>
-                                      
-                                      {command.description && (
-                                        <p className="text-xs text-muted-foreground mt-0.5 truncate">
-                                          {command.description}
-                                        </p>
-                                      )}
-                                      
-                                      <div className="flex items-center gap-3 mt-1">
-                                        {command.allowed_tools.length > 0 && (
-                                          <span className="text-xs text-muted-foreground">
-                                            {command.allowed_tools.length} tool{command.allowed_tools.length === 1 ? '' : 's'}
-                                          </span>
-                                        )}
-                                        
-                                        {command.has_bash_commands && (
-                                          <span className="text-xs text-blue-600 dark:text-blue-400">
-                                            Bash
-                                          </span>
-                                        )}
-                                        
-                                        {command.has_file_references && (
-                                          <span className="text-xs text-green-600 dark:text-green-400">
-                                            Files
-                                          </span>
-                                        )}
-                                      </div>
-                                    </div>
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </>
-            )}
-          </>
+                  </React.Fragment>
+                );
+              })}
+            </tbody>
+          </table>
         )}
       </div>
 
       {/* Footer */}
-      <div className="border-t border-border p-2">
+      <div className="border-t border-border p-2 shrink-0">
         <p className="text-xs text-muted-foreground text-center">
-          ↑↓ Navigate • Enter Select • Esc Close
+          ↑↓ Navigate &bull; Enter Select &bull; Esc Close
         </p>
       </div>
     </motion.div>
   );
-}; 
+};
