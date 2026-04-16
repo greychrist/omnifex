@@ -314,7 +314,7 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
           <div className="h-full">
             <ClaudeCodeSession
               session={tab.sessionData} // Pass the full session object if available
-              initialProjectPath={tab.initialProjectPath || tab.sessionId}
+              initialProjectPath={tab.initialProjectPath || ''}
               tabId={tab.id}
               onBack={() => {
                 // Go back to projects view in the same tab
@@ -332,10 +332,10 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                 }
               }}
               onProjectPathChange={(path: string) => {
-                // Update tab title with directory name
+                // Update tab title, project path, and account badge
                 const dirName = path.split('/').pop() || path.split('\\').pop() || 'Session';
-                updateTab(tab.id, { title: dirName });
-                // Also resolve account for tab badge
+                updateTab(tab.id, { title: dirName, initialProjectPath: path });
+                // Resolve account for tab badge
                 api.resolveAccountForProject(path).then((account) => {
                   if (account) updateTab(tab.id, { accountName: account.name });
                 }).catch(() => {});
