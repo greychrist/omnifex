@@ -42,19 +42,21 @@ interface UpdaterDeps {
 // Version comparison (simple semver: major.minor.patch)
 // ---------------------------------------------------------------------------
 
-function parseVersion(v: string): [number, number, number] | null {
-  const m = v.match(/^(\d+)\.(\d+)\.(\d+)/);
+function parseVersion(v: string): { major: number; minor: number; patch: number; suffix: string } | null {
+  const m = v.match(/^(\d+)\.(\d+)\.(\d+)(.*)/);
   if (!m) return null;
-  return [Number(m[1]), Number(m[2]), Number(m[3])];
+  return { major: Number(m[1]), minor: Number(m[2]), patch: Number(m[3]), suffix: m[4] ?? '' };
 }
 
 function isNewer(remote: string, local: string): boolean {
   const r = parseVersion(remote);
   const l = parseVersion(local);
   if (!r || !l) return false;
-  if (r[0] !== l[0]) return r[0] > l[0];
-  if (r[1] !== l[1]) return r[1] > l[1];
-  return r[2] > l[2];
+  if (r.major !== l.major) return r.major > l.major;
+  if (r.minor !== l.minor) return r.minor > l.minor;
+  if (r.patch !== l.patch) return r.patch > l.patch;
+  // Same major.minor.patch — compare suffixes: "a" > "", "b" > "a", etc.
+  return r.suffix > l.suffix;
 }
 
 // ---------------------------------------------------------------------------
