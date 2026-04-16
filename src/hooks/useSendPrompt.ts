@@ -23,7 +23,6 @@ interface UseSendPromptArgs {
   pickGerund: () => string;
   setIsLoading: React.Dispatch<React.SetStateAction<boolean>>;
   setError: React.Dispatch<React.SetStateAction<string | null>>;
-  setTimedOutMessageIndex: React.Dispatch<React.SetStateAction<number | null>>;
   setCurrentActivity: React.Dispatch<React.SetStateAction<string>>;
   setSelectedModel: React.Dispatch<React.SetStateAction<string>>;
   setMessages: React.Dispatch<React.SetStateAction<ClaudeStreamMessage[]>>;
@@ -51,7 +50,6 @@ export function useSendPrompt({
   pickGerund,
   setIsLoading,
   setError,
-  setTimedOutMessageIndex,
   setCurrentActivity,
   setSelectedModel,
   setMessages,
@@ -88,7 +86,6 @@ export function useSendPrompt({
     try {
       setIsLoading(true);
       setError(null);
-      setTimedOutMessageIndex(null);
       setCurrentActivity(pickGerund());
       lastPromptRef.current = { prompt, model };
 

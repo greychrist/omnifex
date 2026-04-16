@@ -10,7 +10,6 @@ import {
   BarChart3,
   Plug,
   Shield,
-  AlertCircle,
   Send,
   ArrowLeft,
 } from "lucide-react";
@@ -46,7 +45,6 @@ import type { ClaudeStreamMessage } from "./AgentExecution";
 import { SessionHeader } from "./SessionHeader";
 import { filterDisplayableMessages } from "@/lib/messageFilters";
 import { exportAsJsonl, exportAsMarkdown } from "@/lib/sessionExporters";
-import { useSessionTimeouts } from "@/hooks/useSessionTimeouts";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useSessionLifecycle } from "@/hooks/useSessionLifecycle";
 import { useSendPrompt } from "@/hooks/useSendPrompt";
@@ -305,18 +303,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     onStreamingChangeRef.current?.(isLoading, claudeSessionId);
   }, [isLoading, claudeSessionId]);
 
-  // Timeout tracking (elapsed time, response timeout, inactivity detection)
-  const { elapsedSeconds, timedOutMessageIndex, setTimedOutMessageIndex, lastMessageTimeRef } = useSessionTimeouts({
-    isLoading,
-    messages,
-    tabId: tabIdRef.current,
-    waitingForPermission,
-    persistentSessionRef,
-    setIsLoading,
-    setMessages,
-    setError,
-  });
-
   // Auto-scroll to bottom when new messages arrive, but only if already near the bottom.
   // Always scroll when waiting for permission so the user sees the latest context.
   useEffect(() => {
@@ -386,7 +372,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     try {
       // Don't process if component unmounted
       if (!isMountedRef.current) return;
-      lastMessageTimeRef.current = Date.now();
 
       let message: ClaudeStreamMessage;
       let rawPayload: string;
@@ -676,7 +661,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   });
 
   // Prompt sending and queuing
-  const { handleSendPrompt, queuedPrompts, setQueuedPrompts, queuedPromptsRef, lastPromptRef } = useSendPrompt({
+  const { handleSendPrompt, queuedPrompts, setQueuedPrompts, queuedPromptsRef } = useSendPrompt({
     projectPath,
     tabId: tabIdRef.current,
     isLoading,
@@ -690,7 +675,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     pickGerund,
     setIsLoading,
     setError,
-    setTimedOutMessageIndex,
     setCurrentActivity,
     setSelectedModel,
     setMessages,
@@ -898,19 +882,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     }
   }, []);
 
-  const handleRetryTimedOut = useCallback(() => {
-    if (!lastPromptRef.current) return;
-    setTimedOutMessageIndex(null);
-    // Remove the timed-out user message so it gets re-added by handleSendPrompt
-    setMessages(prev => {
-      const last = [...prev].reverse().findIndex(m => m.type === 'user' && !m.isMeta);
-      if (last === -1) return prev;
-      const idx = prev.length - 1 - last;
-      return [...prev.slice(0, idx), ...prev.slice(idx + 1)];
-    });
-    handleSendPrompt(lastPromptRef.current.prompt, lastPromptRef.current.model);
-  }, [handleSendPrompt]);
-
   const messagesList = (
     <div
       ref={parentRef}
@@ -922,12 +893,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     >
       <div className="w-full px-4 pt-8 pb-4 space-y-4">
           {displayableMessages.map((message, idx) => {
-            // Check if this is the last user message and it timed out
-            const isTimedOut = timedOutMessageIndex !== null
-              && message.type === 'user'
-              && !message.isMeta
-              && idx === displayableMessages.length - 1;
-
             return (
               <div key={idx}>
                 <StreamMessage
@@ -936,18 +901,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                   onLinkDetected={handleLinkDetected}
                   accountType={accountResolution?.account.account_type}
                 />
-                {isTimedOut && (
-                  <div className="flex items-center justify-end gap-1.5 mt-1 pr-1">
-                    <span className="text-xs text-destructive font-medium">Response timed out</span>
-                    <button
-                      onClick={handleRetryTimedOut}
-                      className="text-destructive hover:text-destructive/80 transition-colors"
-                      title="Tap to retry"
-                    >
-                      <AlertCircle className="size-5" />
-                    </button>
-                  </div>
-                )}
               </div>
             );
           })}
@@ -973,7 +926,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                 <span className="text-primary">✶</span>
                 <span className="text-muted-foreground">{currentActivity}...</span>
                 <span className="text-muted-foreground/60">
-                  ({elapsedSeconds}s · ↓ {totalTokens.toLocaleString()} tokens)
+                  (↓ {totalTokens.toLocaleString()} tokens)
                 </span>
               </div>
             </div>
@@ -1485,10 +1438,10 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             decisionReason={pendingToolUse?.decisionReason}
             suggestions={pendingToolUse?.suggestions ?? []}
             onAllow={(selectedSuggestions) => {
-              handlePermissionAllow(tabIdRef.current, selectedSuggestions, lastMessageTimeRef);
+              handlePermissionAllow(tabIdRef.current, selectedSuggestions);
             }}
             onDeny={() => {
-              handlePermissionDeny(tabIdRef.current, lastMessageTimeRef);
+              handlePermissionDeny(tabIdRef.current);
             }}
           />
 

@@ -45,6 +45,93 @@ import {
   SystemContextWidget
 } from "./ToolWidgets";
 
+/** Extract all meaningful text from a message for copying. */
+function extractCopyText(msg: any): string {
+  const parts: string[] = [];
+  if (msg.content && Array.isArray(msg.content)) {
+    for (const c of msg.content) {
+      if (c.type === 'text' && typeof c.text === 'string') {
+        parts.push(c.text);
+      } else if (c.type === 'tool_use' && c.input) {
+        if (typeof c.input.command === 'string') parts.push(c.input.command);
+        else if (typeof c.input.content === 'string') parts.push(c.input.content);
+        else if (typeof c.input.pattern === 'string') parts.push(c.input.pattern);
+      } else if (c.type === 'tool_result') {
+        if (typeof c.content === 'string') parts.push(c.content);
+        else if (Array.isArray(c.content)) {
+          for (const inner of c.content) {
+            if (typeof inner === 'string') parts.push(inner);
+            else if (typeof inner.text === 'string') parts.push(inner.text);
+          }
+        }
+      }
+    }
+  } else if (typeof msg.content === 'string') {
+    parts.push(msg.content);
+  }
+  return parts.join('\n').trim();
+}
+
+/** Extract text from a tool_use block + its result for copying. */
+function extractToolCopyText(input: any, result: any): string {
+  const parts: string[] = [];
+  if (input) {
+    if (typeof input.command === 'string') parts.push(`$ ${input.command}`);
+    if (typeof input.file_path === 'string') parts.push(input.file_path);
+    if (typeof input.pattern === 'string') parts.push(input.pattern);
+    if (typeof input.content === 'string') parts.push(input.content);
+    if (typeof input.query === 'string') parts.push(input.query);
+    if (typeof input.url === 'string') parts.push(input.url);
+    if (typeof input.prompt === 'string') parts.push(input.prompt);
+    if (typeof input.description === 'string') parts.push(input.description);
+  }
+  if (result) {
+    if (typeof result.content === 'string') parts.push(result.content);
+    else if (Array.isArray(result.content)) {
+      for (const inner of result.content) {
+        if (typeof inner === 'string') parts.push(inner);
+        else if (typeof inner.text === 'string') parts.push(inner.text);
+      }
+    }
+    if (typeof result.output === 'string') parts.push(result.output);
+    if (typeof result.stdout === 'string') parts.push(result.stdout);
+  }
+  return parts.join('\n').trim();
+}
+
+/** Copy button with inline toast feedback. Accepts either a message object or raw text. */
+const CopyCardButton: React.FC<{ message?: any; text?: string }> = ({ message, text }) => {
+  const [copied, setCopied] = React.useState(false);
+  const [toast, setToast] = React.useState(false);
+
+  const handleCopy = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const copyText = text ?? (message ? extractCopyText(message) : '');
+    if (!copyText) return;
+    navigator.clipboard.writeText(copyText);
+    setCopied(true);
+    setToast(true);
+    setTimeout(() => { setCopied(false); setToast(false); }, 2000);
+  };
+
+  return (
+    <>
+      <button
+        onClick={handleCopy}
+        className="absolute top-1 right-1 p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 opacity-0 group-hover/card:opacity-100 transition-opacity z-10"
+        title="Copy content"
+      >
+        {copied ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
+      </button>
+      {toast && (
+        <div className="absolute top-1 right-8 z-20 bg-emerald-900/90 text-emerald-100 text-xs px-2 py-1 rounded shadow-lg max-w-[300px] truncate pointer-events-none">
+          Copied
+        </div>
+      )}
+    </>
+  );
+};
+
 interface StreamMessageProps {
   message: ClaudeStreamMessage;
   className?: string;
@@ -60,7 +147,6 @@ interface StreamMessageProps {
 const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, className, streamMessages, onLinkDetected, accountType }) => {
   // State to track tool results mapped by tool call ID
   const [toolResults, setToolResults] = useState<Map<string, any>>(new Map());
-  const [copied, setCopied] = useState(false);
   
   // Get current theme
   const { theme } = useTheme();
@@ -185,29 +271,9 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
 
       let renderedSomething = false;
 
-      const copyAssistantText = () => {
-        if (!msg.content || !Array.isArray(msg.content)) return;
-        const text = msg.content
-          .filter((c: any) => c.type === 'text')
-          .map((c: any) => typeof c.text === 'string' ? c.text : '')
-          .join('\n');
-        if (text) {
-          navigator.clipboard.writeText(text);
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1500);
-        }
-      };
-
       const renderedCard = (
         <div className="flex justify-start">
-        <Card className={cn("border-primary/20 bg-primary/5 w-[95%] group/card relative", className)}>
-          <button
-            onClick={copyAssistantText}
-            className="absolute top-1 right-1 p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 opacity-0 group-hover/card:opacity-100 transition-opacity z-10"
-            title="Copy response"
-          >
-            {copied ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
-          </button>
+        <Card className={cn("border-primary/20 bg-primary/5 w-[95%]", className)}>
           <CardContent className="p-4">
             <div className="flex items-start gap-3">
               <Bot className="h-5 w-5 text-primary mt-0.5" />
@@ -222,42 +288,46 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                     
                     renderedSomething = true;
                     return (
-                      <div key={idx} className="prose prose-sm dark:prose-invert max-w-none">
-                        <ReactMarkdown
-                          remarkPlugins={[remarkGfm]}
-                          components={{
-                            code({ node, inline, className, children, ...props }: any) {
-                              const match = /language-(\w+)/.exec(className || '');
-                              return !inline && match ? (
-                                <SyntaxHighlighter
-                                  style={syntaxTheme}
-                                  language={match[1]}
-                                  PreTag="div"
-                                  {...props}
-                                >
-                                  {String(children).replace(/\n$/, '')}
-                                </SyntaxHighlighter>
-                              ) : (
-                                <code className={className} {...props}>
-                                  {children}
-                                </code>
-                              );
-                            }
-                          }}
-                        >
-                          {textContent}
-                        </ReactMarkdown>
+                      <div key={idx} className="relative group/card">
+                        <CopyCardButton text={textContent} />
+                        <div className="prose prose-sm dark:prose-invert max-w-none">
+                          <ReactMarkdown
+                            remarkPlugins={[remarkGfm]}
+                            components={{
+                              code({ node, inline, className, children, ...props }: any) {
+                                const match = /language-(\w+)/.exec(className || '');
+                                return !inline && match ? (
+                                  <SyntaxHighlighter
+                                    style={syntaxTheme}
+                                    language={match[1]}
+                                    PreTag="div"
+                                    {...props}
+                                  >
+                                    {String(children).replace(/\n$/, '')}
+                                  </SyntaxHighlighter>
+                                ) : (
+                                  <code className={className} {...props}>
+                                    {children}
+                                  </code>
+                                );
+                              }
+                            }}
+                          >
+                            {textContent}
+                          </ReactMarkdown>
+                        </div>
                       </div>
                     );
                   }
-                  
+
                   // Thinking content - render with ThinkingWidget
                   if (content.type === "thinking") {
                     renderedSomething = true;
                     return (
-                      <div key={idx}>
-                        <ThinkingWidget 
-                          thinking={content.thinking || ''} 
+                      <div key={idx} className="relative group/card">
+                        <CopyCardButton text={content.thinking || ''} />
+                        <ThinkingWidget
+                          thinking={content.thinking || ''}
                           signature={content.signature}
                         />
                       </div>
@@ -367,7 +437,13 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                     const widget = renderToolWidget();
                     if (widget) {
                       renderedSomething = true;
-                      return <div key={idx}>{widget}</div>;
+                      const toolText = extractToolCopyText(input, toolResult);
+                      return (
+                        <div key={idx} className="relative group/card">
+                          {toolText && <CopyCardButton text={toolText} />}
+                          {widget}
+                        </div>
+                      );
                     }
                     
                     // Fallback to basic tool display
@@ -502,7 +578,8 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
 
       const renderedCard = (
         <div className={isToolResultOnly ? "" : "flex justify-end"}>
-        <Card className={cn(cardStyle.className, !isToolResultOnly && "w-[95%]")} style={cardStyle.style}>
+        <Card className={cn(cardStyle.className, !isToolResultOnly && "w-[95%]", "group/card relative")} style={cardStyle.style}>
+          <CopyCardButton message={msg} />
           <CardContent className="p-4">
             <div className="flex items-start gap-3">
               {cardIcon}

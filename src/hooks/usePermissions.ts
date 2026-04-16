@@ -30,11 +30,9 @@ interface UsePermissionsReturn {
   handlePermissionAllow: (
     tabId: string,
     selectedSuggestions: any[],
-    lastMessageTimeRef: React.MutableRefObject<number>,
   ) => void;
   handlePermissionDeny: (
     tabId: string,
-    lastMessageTimeRef: React.MutableRefObject<number>,
   ) => void;
 }
 
@@ -48,7 +46,6 @@ export function usePermissions(): UsePermissionsReturn {
   const handlePermissionAllow = (
     tabId: string,
     selectedSuggestions: any[],
-    lastMessageTimeRef: React.MutableRefObject<number>,
   ) => {
     if (!pendingRequestId) return;
     api
@@ -63,21 +60,16 @@ export function usePermissions(): UsePermissionsReturn {
     setWaitingForPermission(false);
     setPendingToolUse(null);
     setPendingRequestId(null);
-    // Reset inactivity timer — tool execution after permission may take time
-    lastMessageTimeRef.current = Date.now();
   };
 
   const handlePermissionDeny = (
     tabId: string,
-    lastMessageTimeRef: React.MutableRefObject<number>,
   ) => {
     if (!pendingRequestId) return;
     api.respondPermission(tabId, pendingRequestId, "deny").catch(console.error);
     setWaitingForPermission(false);
     setPendingToolUse(null);
     setPendingRequestId(null);
-    // Reset inactivity timer
-    lastMessageTimeRef.current = Date.now();
   };
 
   return {
