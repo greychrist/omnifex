@@ -147,6 +147,9 @@ export interface Services {
     saveSettings(data: unknown): unknown;
   };
   permissionsIO?: PermissionsIOService;
+  models?: {
+    listSupported(configDir: string): unknown;
+  };
 }
 
 // The handler type used in the map — receives the IPC event plus the params
@@ -179,7 +182,7 @@ function wrapWith<P>(fn: (params: P) => unknown): HandlerFn {
  * renderer gets a defined (but empty) response rather than a blocked channel.
  */
 export function getHandlerMap(services: Services = {}): Record<string, HandlerFn> {
-  const { accounts, claude, sessions, agents, usage, checkpoints, claudeBinary, mcp, slashCommands, logging, database, proxy, permissionsIO } = services;
+  const { accounts, claude, sessions, agents, usage, checkpoints, claudeBinary, mcp, slashCommands, logging, database, proxy, permissionsIO, models } = services;
 
   const map: Record<string, HandlerFn> = {
     // ── Accounts ──────────────────────────────────────────────────────────────
@@ -266,6 +269,9 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     session_supported_models: wrapWith((p: Record<string, unknown>) => sessions?.getSupportedModels((p?.tabId ?? p?.session_id) as string) ?? null),
     session_supported_agents: wrapWith((p: Record<string, unknown>) => sessions?.getSupportedAgents((p?.tabId ?? p?.session_id) as string) ?? null),
     session_mcp_server_status: wrapWith((p: Record<string, unknown>) => sessions?.getMcpServerStatus((p?.tabId ?? p?.session_id) as string) ?? null),
+
+    // ── Standalone model list (no active session required) ─────────────────
+    list_supported_models: wrapWith((p: Record<string, unknown>) => models?.listSupported((p?.configDir ?? p?.config_dir) as string) ?? []),
 
     // ── Session Permissions ────────────────────────────────────────────────
     session_get_permissions: wrapWith((p: Record<string, unknown>) => {

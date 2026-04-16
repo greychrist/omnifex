@@ -50,6 +50,7 @@ import { createUsageService } from './services/usage';
 import { createLoggingService } from './services/logging';
 import { createProxyService } from './services/proxy';
 import { createMCPService } from './services/mcp';
+import { createModelsService } from './services/models';
 import { createSlashCommandsService } from './services/slash-commands';
 import { createPermissionsIOService } from './services/permissions-io';
 import { createUpdaterService } from './services/updater';
@@ -252,6 +253,7 @@ app.whenReady().then(() => {
   const mcpService = createMCPService(defaultConfigDir);
   const slashCommandsService = createSlashCommandsService(defaultConfigDir);
   const permissionsIOService = createPermissionsIOService();
+  const modelsService = createModelsService();
 
   registerIpcHandlers({
     database: db,
@@ -430,6 +432,10 @@ app.whenReady().then(() => {
     },
     // Permissions I/O adapter
     permissionsIO: permissionsIOService,
+    // Models adapter — standalone model catalog lookup (no active session)
+    models: {
+      listSupported: (configDir: string) => modelsService.listSupported(configDir),
+    },
   });
 
   ipcMain.handle('get_app_version', () => app.getVersion());

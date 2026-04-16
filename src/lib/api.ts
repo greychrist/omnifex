@@ -1304,6 +1304,15 @@ export const api = {
     return apiCall("session_supported_models", { tabId });
   },
 
+  /**
+   * Get the SDK's model catalog for a given account without starting a session.
+   * Spins up an ephemeral query() scoped to `configDir` just long enough to
+   * read the init handshake.
+   */
+  async listSupportedModels(configDir: string): Promise<SessionModelInfo[]> {
+    return apiCall("list_supported_models", { configDir });
+  },
+
   /** Get the list of subagents the SDK knows about for this session. */
   async sessionSupportedAgents(tabId: string): Promise<SessionAgentInfo[]> {
     return apiCall("session_supported_agents", { tabId });
