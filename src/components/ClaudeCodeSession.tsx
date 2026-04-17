@@ -307,13 +307,38 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
 
   // Auto-scroll to bottom when new messages arrive, but only if already near the bottom.
   // Always scroll when waiting for permission so the user sees the latest context.
+  // Uses `behavior: 'auto'` (instant) during streaming — smooth scroll lags behind
+  // rapid SDK message bursts and gets visually "stuck" mid-scroll.
   useEffect(() => {
     if (displayableMessages.length > 0 && (isNearBottomRef.current || waitingForPermission)) {
       requestAnimationFrame(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        messagesEndRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' });
       });
     }
   }, [displayableMessages.length, waitingForPermission]);
+
+  // Second-order auto-scroll: watch the message-list container for height changes
+  // that don't coincide with a new message arriving. Without this, rendering a
+  // large code block, a syntax-highlighted diff, or a lazy-loading image pushes
+  // content below the viewport AFTER the length-change effect already fired, and
+  // the chat looks "stuck" a few hundred pixels above the real bottom.
+  const contentRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const contentEl = contentRef.current;
+    const scrollEl = parentRef.current;
+    if (!contentEl || !scrollEl || typeof ResizeObserver === 'undefined') return;
+
+    const observer = new ResizeObserver(() => {
+      if (isNearBottomRef.current || waitingForPermission) {
+        // Direct scrollTop assignment — cheaper than scrollIntoView and doesn't
+        // fight the smooth-scroll animation the length-change effect may have
+        // just kicked off in the same frame.
+        scrollEl.scrollTop = scrollEl.scrollHeight;
+      }
+    });
+    observer.observe(contentEl);
+    return () => observer.disconnect();
+  }, [waitingForPermission]);
 
   // Calculate total tokens from messages — guard against undefined fields to avoid NaN
   useEffect(() => {
@@ -663,7 +688,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   });
 
   // Prompt sending and queuing
-  const { handleSendPrompt, queuedPrompts, setQueuedPrompts, queuedPromptsRef } = useSendPrompt({
+  const { handleSendPrompt: sendPromptRaw, queuedPrompts, setQueuedPrompts, queuedPromptsRef } = useSendPrompt({
     projectPath,
     tabId: tabIdRef.current,
     isLoading,
@@ -681,6 +706,17 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     setSelectedModel,
     setMessages,
   });
+
+  // Wrap sendPrompt so that sending a new prompt always re-engages bottom-stickiness.
+  // If the user was scrolled up reading history and sends a new message, they expect
+  // the view to follow their new activity rather than leave them stranded.
+  const handleSendPrompt = useCallback(
+    (prompt: string, model: string, images?: string[]) => {
+      isNearBottomRef.current = true;
+      return sendPromptRaw(prompt, model, images);
+    },
+    [sendPromptRaw],
+  );
 
   // Auto-resume restored sessions — when a tab is opened with an existing
   // session (from a previous app run or tab restore), start the SDK
@@ -873,13 +909,16 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     const el = parentRef.current;
     if (!el) return;
     const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    // Two-threshold hysteresis to prevent false "user scrolled up" detection:
-    // - Within 150px: definitely near bottom, keep auto-scrolling
-    // - Beyond 300px: user intentionally scrolled up, stop auto-scrolling
-    // - 150–300px: no change (dead zone prevents flapping from layout shifts)
-    if (distanceFromBottom < 150) {
+    // Two-threshold hysteresis to prevent false "user scrolled up" detection.
+    // Wider-than-you'd-expect thresholds so content-height jitter (code blocks
+    // finishing layout, images loading) doesn't disengage stickiness, and the
+    // user has real room to scroll back without the view yanking to the bottom:
+    // - Within 400px: near bottom, keep auto-scrolling
+    // - Beyond 800px: user is reading history, stop auto-scrolling
+    // - 400–800px: dead zone (no state change)
+    if (distanceFromBottom < 400) {
       isNearBottomRef.current = true;
-    } else if (distanceFromBottom > 300) {
+    } else if (distanceFromBottom > 800) {
       isNearBottomRef.current = false;
     }
   }, []);
@@ -894,7 +933,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
         contain: 'paint',
       }}
     >
-      <div className="w-full px-4 pt-8 pb-4 space-y-4">
+      <div ref={contentRef} className="w-full px-4 pt-8 pb-4 space-y-4">
           {displayableMessages.map((message, idx) => {
             return (
               <div key={idx}>
