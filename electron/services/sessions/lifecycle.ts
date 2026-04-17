@@ -197,8 +197,12 @@ export function createSessionsService(
       settingSources: ['user', 'project', 'local'],
       // Auto-approve all project .mcp.json servers so they connect without
       // interactive approval (which the SDK would otherwise silently decline).
+      // `showThinkingSummaries: true` opts out of the CLI's default redact-thinking
+      // beta header so the API returns summary text in thinking blocks (otherwise
+      // we get signature-only blocks with empty `thinking` text).
       settings: {
         enableAllProjectMcpServers: true,
+        showThinkingSummaries: true,
       },
       // Elicitation: prompt the user via the renderer instead of auto-accepting.
       onElicitation: async (request: any) => {

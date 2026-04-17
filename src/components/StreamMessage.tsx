@@ -320,14 +320,18 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                     );
                   }
 
-                  // Thinking content - render with ThinkingWidget
+                  // Thinking content - render with ThinkingWidget.
+                  // Skip signature-only blocks (SDK returns { thinking: "", signature: "..." }
+                  // when showThinkingSummaries is off — there's nothing to display).
                   if (content.type === "thinking") {
+                    const thinkingText = typeof content.thinking === 'string' ? content.thinking.trim() : '';
+                    if (!thinkingText) return null;
                     renderedSomething = true;
                     return (
                       <div key={idx} className="relative group/card">
-                        <CopyCardButton text={content.thinking || ''} />
+                        <CopyCardButton text={thinkingText} />
                         <ThinkingWidget
-                          thinking={content.thinking || ''}
+                          thinking={content.thinking}
                           signature={content.signature}
                         />
                       </div>
