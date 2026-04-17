@@ -1,6 +1,39 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { AccountsService } from './accounts';
+import type { LoggingService } from './logging';
+
+// ---------------------------------------------------------------------------
+// Logging helpers — piped in from the factory so we can log, not swallow, IO
+// failures during usage scans. All log helpers are no-ops when the logger is
+// unavailable (tests that don't care about logging can omit the parameter).
+// ---------------------------------------------------------------------------
+
+function logWarn(
+  logging: LoggingService | null | undefined,
+  message: string,
+  metadata?: Record<string, unknown>,
+): void {
+  if (!logging) return;
+  try {
+    logging.writeBatch([
+      {
+        timestamp: new Date().toISOString(),
+        level: 'warn',
+        source: 'usage',
+        message,
+        metadata: metadata ? JSON.stringify(metadata) : undefined,
+      },
+    ]);
+  } catch {
+    // Never let logging failures escape the usage scan.
+  }
+}
+
+function errString(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  return String(err);
+}
 
 // ---------------------------------------------------------------------------
 // Public interfaces
@@ -134,14 +167,21 @@ function parseJsonlLine(line: string): RawMessage | null {
   }
 }
 
-function readJsonlFile(filePath: string): RawMessage[] {
+function readJsonlFile(
+  filePath: string,
+  logging?: LoggingService | null,
+): RawMessage[] {
   try {
     const content = fs.readFileSync(filePath, 'utf8');
     return content
       .split('\n')
       .map(parseJsonlLine)
       .filter((msg): msg is RawMessage => msg !== null);
-  } catch {
+  } catch (err) {
+    logWarn(logging, `usage: failed to read session JSONL at ${filePath}`, {
+      filePath,
+      error: errString(err),
+    });
     return [];
   }
 }
@@ -155,6 +195,7 @@ function scanConfigDir(
   accountName: string,
   accountType: string,
   filter?: (timestamp: string) => boolean,
+  logging?: LoggingService | null,
 ): ParsedUsage[] {
   const results: ParsedUsage[] = [];
   const projectsDir = path.join(configDir, 'projects');
@@ -162,7 +203,12 @@ function scanConfigDir(
   let projectEntries: fs.Dirent[];
   try {
     projectEntries = fs.readdirSync(projectsDir, { withFileTypes: true });
-  } catch {
+  } catch (err) {
+    logWarn(logging, `usage: failed to scan projects dir ${projectsDir}`, {
+      configDir,
+      accountName,
+      error: errString(err),
+    });
     return results;
   }
 
@@ -176,7 +222,12 @@ function scanConfigDir(
     let sessionFiles: fs.Dirent[];
     try {
       sessionFiles = fs.readdirSync(projectDir, { withFileTypes: true });
-    } catch {
+    } catch (err) {
+      logWarn(logging, `usage: failed to scan project session dir ${projectDir}`, {
+        projectDir,
+        accountName,
+        error: errString(err),
+      });
       continue;
     }
 
@@ -185,7 +236,7 @@ function scanConfigDir(
 
       const sessionFile = path.join(projectDir, sessionEntry.name);
       const sessionId = path.basename(sessionEntry.name, '.jsonl');
-      const messages = readJsonlFile(sessionFile);
+      const messages = readJsonlFile(sessionFile, logging);
 
       for (const msg of messages) {
         if (msg.type !== 'assistant') continue;
@@ -356,11 +407,20 @@ function makeUntilFilter(until: string): (timestamp: string) => boolean {
 // Factory
 // ---------------------------------------------------------------------------
 
-export function createUsageService(accounts: AccountsService): UsageService {
+export function createUsageService(
+  accounts: AccountsService,
+  logging?: LoggingService | null,
+): UsageService {
   function collectEntries(filter?: (timestamp: string) => boolean): ParsedUsage[] {
     const all: ParsedUsage[] = [];
     for (const account of accounts.listAccounts()) {
-      const entries = scanConfigDir(account.config_dir, account.name, account.account_type, filter);
+      const entries = scanConfigDir(
+        account.config_dir,
+        account.name,
+        account.account_type,
+        filter,
+        logging,
+      );
       all.push(...entries);
     }
     return all;

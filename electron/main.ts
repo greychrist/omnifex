@@ -182,8 +182,15 @@ app.whenReady().then(() => {
 
   // Seed first-run defaults. Empty-string values (user deliberately cleared)
   // are preserved; only truly-missing keys get the default.
+  //
+  // `local_update_dir` defaults to `<cwd>/out/make` only in dev mode. That path
+  // is where `npm run make` drops .dmg builds, so `npm start` picks up local
+  // builds for update checks without configuration. In packaged installs
+  // `app.isPackaged` is true and `process.cwd()` is meaningless, so we leave
+  // the setting empty — the user configures it in Settings → General if they
+  // want to check a specific folder for updates.
   ensureDefaultSettings(db, {
-    local_update_dir: '/Users/gregorychristie/Repos/personal/greychrist/out/make',
+    local_update_dir: app.isPackaged ? '' : path.join(process.cwd(), 'out', 'make'),
   });
   const accountsService = createAccountsService(db);
   const claudeBinaryService = createClaudeBinaryService(db);
@@ -254,7 +261,7 @@ app.whenReady().then(() => {
     },
   );
   const checkpointsService = createCheckpointsService(db, accountsService);
-  const usageService = createUsageService(accountsService);
+  const usageService = createUsageService(accountsService, loggingService);
   const proxyService = createProxyService(db);
   const mcpService = createMCPService(defaultConfigDir);
   const slashCommandsService = createSlashCommandsService(defaultConfigDir);

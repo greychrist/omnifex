@@ -2385,4 +2385,34 @@ export const api = {
     return window.electronAPI.onEvent('updater:progress', callback as any);
   },
 
+  // ---------------------------------------------------------------------------
+  // Agent run event subscriptions
+  //
+  // Thin typed wrappers over `window.electronAPI.onEvent('agent-*:<runId>', …)`.
+  // Each helper returns the unsubscribe function from the preload bridge. Lets
+  // feature components avoid reaching for `window.electronAPI` directly (per
+  // `src/CLAUDE.md`), and gives us one place to change if the event channel
+  // names ever move.
+  // ---------------------------------------------------------------------------
+
+  /** Subscribe to stdout/stream output from an agent run. */
+  onAgentOutput(runId: number, callback: (payload: string) => void): () => void {
+    return window.electronAPI.onEvent(`agent-output:${runId}`, callback as any);
+  },
+
+  /** Subscribe to stderr/error output from an agent run. */
+  onAgentError(runId: number, callback: (payload: string) => void): () => void {
+    return window.electronAPI.onEvent(`agent-error:${runId}`, callback as any);
+  },
+
+  /** Subscribe to the "run finished normally" signal for an agent run. */
+  onAgentComplete(runId: number, callback: (payload?: unknown) => void): () => void {
+    return window.electronAPI.onEvent(`agent-complete:${runId}`, callback as any);
+  },
+
+  /** Subscribe to the "run was interrupted/killed" signal for an agent run. */
+  onAgentCancelled(runId: number, callback: () => void): () => void {
+    return window.electronAPI.onEvent(`agent-cancelled:${runId}`, callback as any);
+  },
+
 };

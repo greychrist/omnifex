@@ -96,6 +96,30 @@ function buildConfigDir(configDir: string, projects: { name: string; sessions: o
 }
 
 // ---------------------------------------------------------------------------
+// Fake LoggingService — collects writeBatch calls for assertions
+// ---------------------------------------------------------------------------
+
+interface FakeLogger {
+  writeBatch: (entries: unknown[]) => void;
+  query: () => never;
+  count: () => never;
+  prune: () => never;
+  /** Test-only: the entries the service under test passed to writeBatch. */
+  getEntries: () => any[];
+}
+
+function makeFakeLogger(): FakeLogger {
+  const collected: any[] = [];
+  return {
+    writeBatch: (entries: any[]) => collected.push(...entries),
+    query: () => { throw new Error('not expected in test'); },
+    count: () => { throw new Error('not expected in test'); },
+    prune: () => { throw new Error('not expected in test'); },
+    getEntries: () => collected,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -117,6 +141,68 @@ describe('usage service', () => {
       }
     }
     tmpDirs = [];
+  });
+
+  // -------------------------------------------------------------------------
+  // 0. Error logging — IO failures surface via LoggingService, not silently swallowed
+  // -------------------------------------------------------------------------
+
+  describe('IO error logging', () => {
+    it('logs a warn entry when an account configDir is missing/unreadable', () => {
+      // Point the account at a path that doesn't exist so the projects/ readdirSync throws.
+      const accounts = makeAccountsService(['/this/path/definitely/does/not/exist']);
+      const logger = makeFakeLogger();
+      const service = createUsageService(accounts, logger);
+
+      const stats = service.getUsageStats();
+
+      // Still returns cleanly — missing configDir isn't a crashy error.
+      expect(stats.total_sessions).toBe(0);
+
+      // But the failure should have been logged.
+      const entries = logger.getEntries();
+      expect(entries.length).toBeGreaterThan(0);
+      const match = entries.find((e) => String(e.source) === 'usage');
+      expect(match).toBeDefined();
+      expect(match.level).toBe('warn');
+      expect(String(match.message)).toMatch(/projects|readdir|scan/i);
+    });
+
+    it('logs when a project session dir is unreadable', () => {
+      const configDir = makeTmp();
+      // Create projects/ with one entry that is a file, not a dir — the outer
+      // readdir succeeds, but the inner iteration skips non-dir entries. That's
+      // fine; to actually trigger the inner catch we create a dir then chmod 0
+      // so readdirSync on it throws EACCES. Skip on non-POSIX (Windows CI).
+      const projectsDir = path.join(configDir, 'projects');
+      const lockedProject = path.join(projectsDir, '-Users-greg-locked');
+      fs.mkdirSync(lockedProject, { recursive: true });
+      if (process.platform === 'win32') {
+        // chmod on Windows doesn't reliably revoke read — punt.
+        return;
+      }
+      fs.chmodSync(lockedProject, 0o000);
+
+      try {
+        const accounts = makeAccountsService([configDir]);
+        const logger = makeFakeLogger();
+        const service = createUsageService(accounts, logger);
+
+        service.getUsageStats();
+
+        const entries = logger.getEntries();
+        const match = entries.find(
+          (e) =>
+            String(e.source) === 'usage' &&
+            /project session dir/i.test(String(e.message)),
+        );
+        expect(match).toBeDefined();
+        expect(match.level).toBe('warn');
+      } finally {
+        // Restore perms so afterEach cleanup works.
+        fs.chmodSync(lockedProject, 0o700);
+      }
+    });
   });
 
   // -------------------------------------------------------------------------

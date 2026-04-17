@@ -279,7 +279,7 @@ export function AgentRunOutputViewer({
     }, 100);
 
     // Set up live event listeners with run ID isolation
-    const outputUnlisten = window.electronAPI.onEvent(`agent-output:${run!.id}`, (payload: any) => {
+    const outputUnlisten = api.onAgentOutput(run!.id, (payload) => {
       try {
         // Skip messages during initial load phase
         if (isInitialLoadRef.current) {
@@ -298,17 +298,17 @@ export function AgentRunOutputViewer({
       }
     });
 
-    const errorUnlisten = window.electronAPI.onEvent(`agent-error:${run!.id}`, (payload: any) => {
+    const errorUnlisten = api.onAgentError(run!.id, (payload) => {
       console.error("[AgentRunOutputViewer] Agent error:", payload);
       setToast({ message: payload, type: 'error' });
     });
 
-    const completeUnlisten = window.electronAPI.onEvent(`agent-complete:${run!.id}`, () => {
+    const completeUnlisten = api.onAgentComplete(run!.id, () => {
       setToast({ message: 'Agent execution completed', type: 'success' });
       // Don't set status here as the parent component should handle it
     });
 
-    const cancelUnlisten = window.electronAPI.onEvent(`agent-cancelled:${run!.id}`, () => {
+    const cancelUnlisten = api.onAgentCancelled(run!.id, () => {
       setToast({ message: 'Agent execution was cancelled', type: 'error' });
     });
 

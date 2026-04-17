@@ -215,7 +215,7 @@ export function SessionOutputViewer({ session, onClose, className }: SessionOutp
     unlistenRefs.current = [];
 
     // Set up live event listeners with run ID isolation
-    const outputUnlisten = window.electronAPI.onEvent(`agent-output:${session.id}`, (payload: any) => {
+    const outputUnlisten = api.onAgentOutput(session.id, (payload) => {
       try {
         // Store raw JSONL
         setRawJsonlOutput(prev => [...prev, payload]);
@@ -228,17 +228,17 @@ export function SessionOutputViewer({ session, onClose, className }: SessionOutp
       }
     });
 
-    const errorUnlisten = window.electronAPI.onEvent(`agent-error:${session.id}`, (payload: any) => {
+    const errorUnlisten = api.onAgentError(session.id, (payload) => {
       console.error("Agent error:", payload);
       setToast({ message: payload, type: 'error' });
     });
 
-    const completeUnlisten = window.electronAPI.onEvent(`agent-complete:${session.id}`, () => {
+    const completeUnlisten = api.onAgentComplete(session.id, () => {
       setToast({ message: 'Agent execution completed', type: 'success' });
       // Don't set status here as the parent component should handle it
     });
 
-    const cancelUnlisten = window.electronAPI.onEvent(`agent-cancelled:${session.id}`, () => {
+    const cancelUnlisten = api.onAgentCancelled(session.id, () => {
       setToast({ message: 'Agent execution was cancelled', type: 'error' });
     });
 

@@ -318,7 +318,7 @@ export const AgentExecution: React.FC<AgentExecutionProps> = ({
       setRunId(executionRunId);
 
       // Set up event listeners with run ID isolation
-      const outputUnlisten = window.electronAPI.onEvent(`agent-output:${executionRunId}`, (payload: any) => {
+      const outputUnlisten = api.onAgentOutput(executionRunId, (payload) => {
         try {
           // Store raw JSONL
           setRawJsonlOutput(prev => [...prev, payload]);
@@ -331,12 +331,12 @@ export const AgentExecution: React.FC<AgentExecutionProps> = ({
         }
       });
 
-      const errorUnlisten = window.electronAPI.onEvent(`agent-error:${executionRunId}`, (payload: any) => {
+      const errorUnlisten = api.onAgentError(executionRunId, (payload) => {
         console.error("Agent error:", payload);
         setError(payload);
       });
 
-      const completeUnlisten = window.electronAPI.onEvent(`agent-complete:${executionRunId}`, (payload: any) => {
+      const completeUnlisten = api.onAgentComplete(executionRunId, (payload) => {
         setIsRunning(false);
         setExecutionStartTime(null);
         if (!payload) {
@@ -353,7 +353,7 @@ export const AgentExecution: React.FC<AgentExecutionProps> = ({
         }
       });
 
-      const cancelUnlisten = window.electronAPI.onEvent(`agent-cancelled:${executionRunId}`, () => {
+      const cancelUnlisten = api.onAgentCancelled(executionRunId, () => {
         setIsRunning(false);
         setExecutionStartTime(null);
         setError("Agent execution was cancelled");
