@@ -66,3 +66,32 @@ Landed in `74fe715 feat(sessions): wire SDK settingSources, strictMcpConfig, std
 - [ ] **4.7** `thinking: { type: 'adaptive' }` + `effort` — explicit reasoning depth control.
 - [ ] **4.8** `query.setMcpServers()` / `reconnectMcpServer()` / `toggleMcpServer()` / `mcpServerStatus()` — live MCP management UI.
 - [ ] **4.9** `query.seedReadState()` — re-seed file-read cache after UI snip/compact so Edit doesn't fail "file not read yet".
+
+---
+
+## Wave 5 — architecture audit punch list (2026-04-17)
+
+Findings from a broad architecture audit run after v0.3.15. Grouped by priority; file:line anchors point at the specific hole. Fix P0 first, then P1; P2 can batch opportunistically.
+
+### P0 — actively broken
+
+- [x] **5.1** **Unreachable IPC channels.** Shipped. Added `agentsService.exportAgentToFile(id, filePath)` + `reveal_path_in_finder` handler (wrapping `shell.showItemInFolder`). Both channels allow-listed in `electron/preload.ts`; typed `api.exportAgentToFile` / `api.revealPathInFinder` in `src/lib/api.ts`. Migrated `CCAgents.tsx`, `Agents.tsx`, `AgentsModal.tsx`, `ClaudeVersionSelector.tsx` to the typed API (AgentsModal's stray `write_file` call is now gone — it uses `exportAgentToFile` too). 2 new agents tests.
+- [ ] **5.2** **Hardcoded Greg-specific path in `local_update_dir` default.** `electron/main.ts:186` seeds `/Users/gregorychristie/Repos/personal/greychrist/out/make` on first run. Known-intentional while Greg is the sole user (see memory note `project_hardcoded_update_dir`), but MUST be removed before shipping to anyone else — on a non-Greg machine the updater silently no-ops. Fix: remove the default and gate update checks on an explicit, user-set path, or detect-and-skip if the path doesn't exist.
+
+### P1 — real gaps likely to bite
+
+- [x] **5.3** **`strictMcpConfig` missing on sessions.** Shipped. Added `strictMcpConfig: true` to session SDK options in `lifecycle.ts`. 1 new sessions test pins it.
+- [ ] **5.4** **Usage service silently swallows parse/IO errors.** `electron/services/usage.ts:131-146` (`parseJsonlLine`) and `usage.ts:163-180` (`scanConfigDir`) use bare `catch { return [] }` / `catch { return null }`. Violates the "never silent-on-success" rule (project memory `feedback_dumb_hooks`). Fix: route caught errors to `LoggingService` at `debug` or `warn` level so "why is usage empty" is diagnosable.
+- [x] **5.5** **Hooks config falls back to `~/.claude` when `configDir` is missing.** Shipped. Explicit `configDir` guards added to `getHooksConfig(user)`, `updateHooksConfig(user)`, and `getMergedHooksConfig`. Also found and fixed the renderer side: `api.getHooksConfig` / `api.updateHooksConfig` / `api.getMergedHooksConfig` didn't accept `configDir` at all, so user-scope hook saves in `Settings.tsx` had been broken since `07178d9` landed the throws. Threaded `configDir` through `Settings.tsx` → `HooksSettings` → `HooksEditor`. 3 new claude tests pin the throw contract.
+- [ ] **5.6** **Event subscriptions bypass `src/lib/api.ts`.** `src/components/AgentRunOutputViewer.tsx`, `SessionOutputViewer.tsx`, and `AgentExecution.tsx` subscribe to `agent-output:${id}`, `agent-error:${id}`, etc. via `window.electronAPI.onEvent()` directly. `src/CLAUDE.md` says feature components should go through `src/lib/api.ts`. Fix: add typed helpers to `src/lib/api.ts` (e.g., `subscribeToAgentOutput(id, cb)`, `subscribeToAgentError(id, cb)`), and migrate the three components.
+
+### P2 — notable, batch when convenient
+
+- [ ] **5.7** Updater silently no-ops when `local_update_dir` doesn't exist or is unreadable (`electron/services/updater.ts:115-150`). Add a `debug` log so it's visible in the app's log panel.
+- [ ] **5.8** **Sessions service has no tests.** `electron/services/sessions/` is five files (`lifecycle.ts`, `hooks.ts`, `permissions.ts`, `queries.ts`, `types.ts`) with zero test coverage. SDK integration here is non-trivial (hooks, permissions, elicitation, streaming, resume-after-error). Add at minimum: session start, message send, permission decision, hook-fire, and stream-error-recovery tests.
+- [ ] **5.9** **Migration framework is in place but only has the baseline migration** (`electron/services/database.ts:16-27`). First real schema change will be the first time the runner is exercised against live data. Add a test that exercises a no-op migration end-to-end so the dance is proven before we need it.
+- [ ] **5.10** **better-sqlite3 ABI dance is fragile.** If a developer runs `npm run dev` (Vite renderer only) without a prior `npm start` or `npm test`, the first main-process DB access crashes with a cryptic `NODE_MODULE_VERSION` mismatch. `package.json:8,16-21` handles the start/test paths. Fix: add an ABI check in `createDatabase()` that throws a clear "run `npm run rebuild:electron`" error instead of the native-module fault.
+
+### Overall
+
+Audit conclusion: architecture is healthier than expected. Account scoping is mostly honored end-to-end, IPC layering is solid, recent decomposition refactors paid off. The two items to prioritize: **5.1** (unreachable channels — silent IPC failures are the worst class of bug) and **5.5** (hooks `configDir` fallback — completes the "no silent `~/.claude` fallback" work).

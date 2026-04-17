@@ -149,7 +149,7 @@ export const Agents: React.FC = () => {
       }) as string | null;
 
       if (path && agent.id) {
-        await window.electronAPI.invoke('export_agent_to_file', { id: agent.id, filePath: path });
+        await api.exportAgentToFile(agent.id, path);
         setToast({ message: `Exported agent: ${agent.name}`, type: 'success' });
       }
     } catch (error) {

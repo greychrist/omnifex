@@ -4,11 +4,14 @@ import { HooksEditor } from "@/components/HooksEditor";
 
 interface HooksSettingsProps {
   activeTab: string;
+  /** Account config directory. Required so user-scope reads/writes don't silently fall back to ~/.claude. */
+  configDir?: string;
   onHooksChange: (hasChanges: boolean, getHooks: () => any) => void;
 }
 
 export const HooksSettings: React.FC<HooksSettingsProps> = ({
   activeTab,
+  configDir,
   onHooksChange,
 }) => {
   return (
@@ -25,6 +28,7 @@ export const HooksSettings: React.FC<HooksSettingsProps> = ({
         <HooksEditor
           key={activeTab}
           scope="user"
+          configDir={configDir}
           className="border-0"
           hideActions={true}
           onChange={(hasChanges, getHooks) => {

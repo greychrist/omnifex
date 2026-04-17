@@ -354,6 +354,8 @@ app.whenReady().then(() => {
       delete: (id: any) => agentsService.deleteAgent(id),
       get: (id: any) => agentsService.getAgent(id),
       export: (id: any) => agentsService.exportAgent(id),
+      exportToFile: (data: any) =>
+        agentsService.exportAgentToFile(data?.id, data?.filePath ?? data?.file_path),
       import: (data: any) =>
         agentsService.importAgent(typeof data === 'string' ? data : JSON.stringify(data)),
       execute: (agentId: any, data: any) =>

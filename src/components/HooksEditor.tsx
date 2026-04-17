@@ -63,6 +63,11 @@ import {
 
 interface HooksEditorProps {
   projectPath?: string;
+  /**
+   * Absolute path to the Claude config directory (the account's `config_dir`).
+   * Required for the `user` scope so we never silently read/write ~/.claude.
+   */
+  configDir?: string;
   scope: 'project' | 'local' | 'user';
   readOnly?: boolean;
   className?: string;
@@ -110,6 +115,7 @@ const EVENT_INFO: Record<HookEvent, { label: string; description: string; icon: 
 
 export const HooksEditor: React.FC<HooksEditorProps> = ({
   projectPath,
+  configDir,
   scope,
   readOnly = false,
   className,
@@ -185,7 +191,7 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
       setIsLoading(true);
       setLoadError(null);
       
-      api.getHooksConfig(scope, projectPath)
+      api.getHooksConfig(scope, projectPath, configDir)
         .then((config) => {
           setHooks(config || {});
           setHasUnsavedChanges(false);
@@ -318,7 +324,7 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
     });
     
     try {
-      await api.updateHooksConfig(scope, newHooks, projectPath);
+      await api.updateHooksConfig(scope, newHooks, projectPath, configDir);
       setHooks(newHooks);
       setHasUnsavedChanges(false);
     } catch (error) {

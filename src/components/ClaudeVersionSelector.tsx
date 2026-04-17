@@ -105,7 +105,7 @@ export const ClaudeVersionSelector: React.FC<ClaudeVersionSelectorProps> = ({
   };
 
   const handleRevealInFinder = async (path: string) => {
-    await window.electronAPI.invoke("reveal_path_in_finder", { path }).catch(console.error);
+    await api.revealPathInFinder(path).catch(console.error);
   };
 
   const handleInstallationChange = (installationPath: string) => {

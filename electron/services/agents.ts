@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import fs from 'node:fs';
 import { query as sdkQuery } from '@anthropic-ai/claude-agent-sdk';
 import type { Database } from './database';
 import type { AccountsService } from './accounts';
@@ -66,6 +67,7 @@ export interface AgentsService {
   deleteAgent(id: number): void;
   getAgent(id: number): Agent | null;
   exportAgent(id: number): string;
+  exportAgentToFile(id: number, filePath: string): void;
   importAgent(jsonData: string): Agent;
 
   // Execution
@@ -231,6 +233,11 @@ export function createAgentsService(
     const agent = getAgent(id);
     if (!agent) throw new Error(`Agent ${id} not found`);
     return JSON.stringify(agent, null, 2);
+  }
+
+  function exportAgentToFile(id: number, filePath: string): void {
+    const json = exportAgent(id);
+    fs.writeFileSync(filePath, json, 'utf-8');
   }
 
   function importAgent(jsonData: string): Agent {
@@ -538,6 +545,7 @@ export function createAgentsService(
     deleteAgent,
     getAgent,
     exportAgent,
+    exportAgentToFile,
     importAgent,
     executeAgent,
     listAgentRuns,

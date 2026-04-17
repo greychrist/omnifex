@@ -292,6 +292,16 @@ describe('claude service', () => {
       const result = await service.getHooksConfig('user', { configDir });
       expect(result).toEqual(hooks);
     });
+
+    it('getHooksConfig throws for user scope when configDir is missing', async () => {
+      await expect(service.getHooksConfig('user')).rejects.toThrow(/configDir is required/i);
+      await expect(service.getHooksConfig('user', {})).rejects.toThrow(/configDir is required/i);
+    });
+
+    it('updateHooksConfig throws for user scope when configDir is missing', async () => {
+      await expect(service.updateHooksConfig('user', {})).rejects.toThrow(/configDir is required/i);
+      await expect(service.updateHooksConfig('user', {}, {})).rejects.toThrow(/configDir is required/i);
+    });
   });
 
   // -------------------------------------------------------------------------
@@ -318,6 +328,11 @@ describe('claude service', () => {
     it('returns an object', async () => {
       const result = await service.getMergedHooksConfig('/some/project/path', { configDir: tmpDir });
       expect(typeof result).toBe('object');
+    });
+
+    it('throws when configDir is missing (no silent fallback to ~/.claude)', async () => {
+      await expect(service.getMergedHooksConfig('/some/project')).rejects.toThrow(/configDir is required/i);
+      await expect(service.getMergedHooksConfig('/some/project', {})).rejects.toThrow(/configDir is required/i);
     });
   });
 

@@ -204,6 +204,9 @@ export function createSessionsService(
         enableAllProjectMcpServers: true,
         showThinkingSummaries: true,
       },
+      // Surface malformed MCP configs as startup errors instead of swallowing
+      // them as silent warnings. Matches the behaviour used by agents.ts.
+      strictMcpConfig: true,
       // Elicitation: prompt the user via the renderer instead of auto-accepting.
       onElicitation: async (request: any) => {
         // URL mode: open browser immediately, then wait for user decision

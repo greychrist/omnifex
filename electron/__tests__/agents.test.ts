@@ -204,6 +204,53 @@ describe('agents service — CRUD', () => {
     expect(() => service.exportAgent(9999)).toThrow(/not found/i);
   });
 
+  it('exportAgentToFile writes the agent JSON to the given path', () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const fs = require('node:fs') as typeof import('node:fs');
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const os = require('node:os') as typeof import('node:os');
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const path = require('node:path') as typeof import('node:path');
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'greychrist-agent-export-'));
+    const target = path.join(tmpDir, 'agent.greychrist.json');
+
+    try {
+      const agent = service.createAgent({
+        name: 'Exportable',
+        icon: '📤',
+        system_prompt: 'Export me.',
+        model: 'haiku',
+      });
+
+      service.exportAgentToFile(agent.id, target);
+
+      const written = fs.readFileSync(target, 'utf-8');
+      const parsed = JSON.parse(written) as Agent;
+      expect(parsed.name).toBe('Exportable');
+      expect(parsed.system_prompt).toBe('Export me.');
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('exportAgentToFile throws for unknown id without writing', () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const fs = require('node:fs') as typeof import('node:fs');
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const os = require('node:os') as typeof import('node:os');
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const path = require('node:path') as typeof import('node:path');
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'greychrist-agent-export-'));
+    const target = path.join(tmpDir, 'missing.json');
+
+    try {
+      expect(() => service.exportAgentToFile(9999, target)).toThrow(/not found/i);
+      expect(fs.existsSync(target)).toBe(false);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
   it('importAgent from JSON string creates a new agent', () => {
     const original = service.createAgent({
       name: 'Template',

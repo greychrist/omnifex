@@ -321,6 +321,21 @@ describe('sessions service — full lifecycle', () => {
     expect(options.settings?.enableAllProjectMcpServers).toBe(true);
   });
 
+  it('start() sets strictMcpConfig so malformed MCP configs surface as errors instead of silent warnings', () => {
+    const fake = installFakeQuery();
+
+    service.start({
+      tabId: 'tab-strict-mcp',
+      projectPath: '/p',
+      configDir: '/c',
+      model: 'sonnet',
+      permissionMode: 'default',
+    });
+
+    const options = fake.getCapturedOptions();
+    expect(options.strictMcpConfig).toBe(true);
+  });
+
   it('start() forwards resumeSessionId as options.resume when provided', () => {
     const fake = installFakeQuery();
 

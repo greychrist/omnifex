@@ -207,7 +207,7 @@ export const Settings: React.FC<SettingsProps> = ({
 
       if (userHooksChanged && getUserHooks.current) {
         const hooks = getUserHooks.current();
-        await api.updateHooksConfig('user', hooks);
+        await api.updateHooksConfig('user', hooks, undefined, configDir);
         setUserHooksChanged(false);
       }
 
@@ -377,6 +377,7 @@ export const Settings: React.FC<SettingsProps> = ({
             <TabsContent value="hooks" className="space-y-6">
               <HooksSettings
                 activeTab={activeTab}
+                configDir={getSelectedConfigDir()}
                 onHooksChange={(hasChanges: boolean, getHooks: () => any) => {
                   setUserHooksChanged(hasChanges);
                   getUserHooks.current = getHooks;

@@ -669,6 +669,11 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
     scope: 'user' | 'project',
     opts?: ClaudeSettingsOpts & { projectPath?: string },
   ): Promise<Record<string, unknown>> {
+    // Require configDir for the user scope so we never silently read ~/.claude.
+    // Project scope doesn't need it — it reads <projectPath>/.claude/settings.json.
+    if (scope === 'user' && !opts?.configDir) {
+      throw new Error('configDir is required for getHooksConfig(user)');
+    }
     if (scope === 'project' && opts?.projectPath) {
       // Read from project .claude/settings.json
       const settingsPath = path.join(opts.projectPath, '.claude', 'settings.json');
@@ -695,6 +700,9 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
     hooks: Record<string, unknown>,
     opts?: ClaudeSettingsOpts & { projectPath?: string },
   ): Promise<void> {
+    if (scope === 'user' && !opts?.configDir) {
+      throw new Error('configDir is required for updateHooksConfig(user)');
+    }
     if (scope === 'project' && opts?.projectPath) {
       const settingsDir = path.join(opts.projectPath, '.claude');
       const settingsPath = path.join(settingsDir, 'settings.json');
@@ -749,6 +757,9 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
     projectPath: string,
     opts?: ClaudeSettingsOpts,
   ): Promise<Record<string, unknown>> {
+    if (!opts?.configDir) {
+      throw new Error('configDir is required for getMergedHooksConfig');
+    }
     const userHooks = await getHooksConfig('user', opts);
     const projectHooks = await getHooksConfig('project', { ...opts, projectPath });
 

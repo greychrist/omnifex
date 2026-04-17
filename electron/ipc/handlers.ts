@@ -78,6 +78,7 @@ export interface Services {
     delete(id: unknown): unknown;
     get(id: unknown): unknown;
     export(id: unknown): unknown;
+    exportToFile(data: unknown): unknown;
     import(data: unknown): unknown;
     execute(agentId: unknown, data: unknown): unknown;
     listRuns(): unknown;
@@ -299,6 +300,10 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     delete_agent: wrapWith((p: Record<string, unknown>) => agents?.delete(p?.id) ?? null),
     get_agent: wrapWith((p: Record<string, unknown>) => agents?.get(p?.id) ?? null),
     export_agent: wrapWith((p: Record<string, unknown>) => agents?.export(p?.id) ?? null),
+    export_agent_to_file: wrapWith((p: Record<string, unknown>) => {
+      agents?.exportToFile(p);
+      return null;
+    }),
     import_agent: wrapWith((p: Record<string, unknown>) => agents?.import(p) ?? null),
     execute_agent: wrapWith((p: Record<string, unknown>) => agents?.execute(p?.agentId ?? p?.agent_id, p) ?? null),
     list_agent_runs: wrap(() => agents?.listRuns() ?? null),
@@ -519,6 +524,13 @@ export function registerIpcHandlers(services: Services = {}): void {
   // ── Shell handler ──────────────────────────────────────────────────────────
   ipcMain.handle('shell:openExternal', async (_event, url: string) => {
     return shell.openExternal(url);
+  });
+
+  ipcMain.handle('reveal_path_in_finder', async (_event, data: any) => {
+    const p: string = data?.path ?? data;
+    if (!p || typeof p !== 'string') throw new Error('reveal_path_in_finder: path is required');
+    shell.showItemInFolder(p);
+    return null;
   });
 
   // ── Window control handlers ────────────────────────────────────────────────

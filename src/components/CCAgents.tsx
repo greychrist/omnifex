@@ -203,10 +203,7 @@ export const CCAgents: React.FC<CCAgentsProps> = ({ onBack, className }) => {
       }
 
       // Export the agent to the selected file
-      await window.electronAPI.invoke('export_agent_to_file', {
-        id: agent.id!,
-        filePath
-      });
+      await api.exportAgentToFile(agent.id!, filePath);
 
       setToast({ message: `Agent "${agent.name}" exported successfully`, type: "success" });
     } catch (err) {

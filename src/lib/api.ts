@@ -964,6 +964,33 @@ export const api = {
   },
 
   /**
+   * Exports a single agent directly to a file on disk.
+   * @param id - The agent ID to export
+   * @param filePath - Absolute path to write the JSON to
+   */
+  async exportAgentToFile(id: number, filePath: string): Promise<void> {
+    try {
+      await apiCall<void>('export_agent_to_file', { id, filePath });
+    } catch (error) {
+      console.error("Failed to export agent to file:", error);
+      throw error;
+    }
+  },
+
+  /**
+   * Reveals a filesystem path in the native file manager (Finder on macOS).
+   * @param path - Absolute path to reveal
+   */
+  async revealPathInFinder(path: string): Promise<void> {
+    try {
+      await apiCall<void>('reveal_path_in_finder', { path });
+    } catch (error) {
+      console.error("Failed to reveal path:", error);
+      throw error;
+    }
+  },
+
+  /**
    * Imports an agent from JSON data
    * @param jsonData - The JSON string containing the agent export
    * @returns Promise resolving to the imported agent
@@ -2112,14 +2139,16 @@ export const api = {
   },
 
   /**
-   * Get hooks configuration for a specific scope
-   * @param scope - The configuration scope: 'user', 'project', or 'local'
-   * @param projectPath - Project path (required for project and local scopes)
-   * @returns Promise resolving to the hooks configuration
+   * Get hooks configuration for a specific scope.
+   * `configDir` is required for the `user` scope so we never silently read ~/.claude.
    */
-  async getHooksConfig(scope: 'user' | 'project' | 'local', projectPath?: string): Promise<HooksConfiguration> {
+  async getHooksConfig(
+    scope: 'user' | 'project' | 'local',
+    projectPath?: string,
+    configDir?: string
+  ): Promise<HooksConfiguration> {
     try {
-      return await apiCall<HooksConfiguration>("get_hooks_config", { scope, projectPath });
+      return await apiCall<HooksConfiguration>("get_hooks_config", { scope, projectPath, configDir });
     } catch (error) {
       console.error("Failed to get hooks config:", error);
       throw error;
@@ -2127,19 +2156,17 @@ export const api = {
   },
 
   /**
-   * Update hooks configuration for a specific scope
-   * @param scope - The configuration scope: 'user', 'project', or 'local'
-   * @param hooks - The hooks configuration to save
-   * @param projectPath - Project path (required for project and local scopes)
-   * @returns Promise resolving to success message
+   * Update hooks configuration for a specific scope.
+   * `configDir` is required for the `user` scope so we never silently write to ~/.claude.
    */
   async updateHooksConfig(
     scope: 'user' | 'project' | 'local',
     hooks: HooksConfiguration,
-    projectPath?: string
+    projectPath?: string,
+    configDir?: string
   ): Promise<string> {
     try {
-      return await apiCall<string>("update_hooks_config", { scope, projectPath, hooks });
+      return await apiCall<string>("update_hooks_config", { scope, projectPath, hooks, configDir });
     } catch (error) {
       console.error("Failed to update hooks config:", error);
       throw error;
@@ -2161,16 +2188,15 @@ export const api = {
   },
 
   /**
-   * Get merged hooks configuration (respecting priority)
-   * @param projectPath - The project path
-   * @returns Promise resolving to merged hooks configuration
+   * Get merged hooks configuration (respecting priority).
+   * `configDir` is required so the user-scope read doesn't silently fall back to ~/.claude.
    */
-  async getMergedHooksConfig(projectPath: string): Promise<HooksConfiguration> {
+  async getMergedHooksConfig(projectPath: string, configDir?: string): Promise<HooksConfiguration> {
     try {
       const [userHooks, projectHooks, localHooks] = await Promise.all([
-        this.getHooksConfig('user'),
-        this.getHooksConfig('project', projectPath),
-        this.getHooksConfig('local', projectPath)
+        this.getHooksConfig('user', undefined, configDir),
+        this.getHooksConfig('project', projectPath, configDir),
+        this.getHooksConfig('local', projectPath, configDir)
       ]);
 
       // Import HooksManager for merging

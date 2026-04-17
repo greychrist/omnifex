@@ -180,7 +180,6 @@ export const AgentsModal: React.FC<AgentsModalProps> = ({ open, onOpenChange }) 
 
   const handleExportAgent = async (agent: Agent) => {
     try {
-      const exportData = await api.exportAgent(agent.id!);
       const filePath = await window.electronAPI.showSaveDialog({
         defaultPath: `${agent.name.toLowerCase().replace(/\s+/g, '-')}.json`,
         filters: [{
@@ -190,7 +189,7 @@ export const AgentsModal: React.FC<AgentsModalProps> = ({ open, onOpenChange }) 
       }) as string | null;
 
       if (filePath) {
-        await window.electronAPI.invoke('write_file', { path: filePath, content: JSON.stringify(exportData, null, 2) });
+        await api.exportAgentToFile(agent.id!, filePath);
         setToast({ message: "Agent exported successfully", type: "success" });
       }
     } catch (error) {
