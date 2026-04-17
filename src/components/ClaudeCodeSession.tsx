@@ -42,6 +42,7 @@ import { TooltipProvider, TooltipSimple } from "@/components/ui/tooltip-modern";
 import { SplitPane } from "@/components/ui/split-pane";
 import { WebviewPreview } from "./WebviewPreview";
 import type { ClaudeStreamMessage } from "./AgentExecution";
+import { synthesizeResultMessages } from "@/lib/synthesizeResults";
 import { SessionHeader } from "./SessionHeader";
 import { filterDisplayableMessages } from "@/lib/messageFilters";
 import { exportAsJsonl, exportAsMarkdown } from "@/lib/sessionExporters";
@@ -378,8 +379,15 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
         ...entry,
         type: entry.type || "assistant"
       }));
-      
-      setMessages(loadedMessages);
+
+      // The Claude CLI's JSONL session file does not persist live SDK
+      // `result` messages. Synthesize them from per-turn data so the
+      // "Execution Complete" card appears for every completed turn when a
+      // session is resumed. Live sessions are unaffected — this only runs
+      // on the historical load.
+      const messagesWithResults = synthesizeResultMessages(loadedMessages);
+
+      setMessages(messagesWithResults);
       setRawJsonlOutput(history.map(h => JSON.stringify(h)));
       
       // Scroll to bottom after loading history
