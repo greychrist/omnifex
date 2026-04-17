@@ -43,6 +43,8 @@ import { SplitPane } from "@/components/ui/split-pane";
 import { WebviewPreview } from "./WebviewPreview";
 import type { ClaudeStreamMessage } from "./AgentExecution";
 import { synthesizeResultMessages } from "@/lib/synthesizeResults";
+import { SessionViewToggle, type ViewMode } from "./SessionViewToggle";
+import { CollapsibleGroup, isBoundaryMessage } from "./CollapsibleGroup";
 import { SessionHeader } from "./SessionHeader";
 import { filterDisplayableMessages } from "@/lib/messageFilters";
 import { exportAsJsonl, exportAsMarkdown } from "@/lib/sessionExporters";
@@ -283,6 +285,8 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
 
   // Filter out messages that shouldn't be displayed
   const displayableMessages = useMemo(() => filterDisplayableMessages(messages), [messages]);
+
+  const [viewMode, setViewMode] = useState<ViewMode>('compact');
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -942,18 +946,55 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       }}
     >
       <div ref={contentRef} className="w-full px-4 pt-8 pb-4 space-y-4">
-          {displayableMessages.map((message, idx) => {
-            return (
-              <div key={idx}>
-                <StreamMessage
-                  message={message}
-                  streamMessages={messages}
-                  onLinkDetected={handleLinkDetected}
-                  accountType={accountResolution?.account.account_type}
-                />
-              </div>
-            );
-          })}
+          {viewMode === 'verbose'
+            ? displayableMessages.map((message, idx) => (
+                <div key={idx}>
+                  <StreamMessage
+                    message={message}
+                    streamMessages={messages}
+                    onLinkDetected={handleLinkDetected}
+                    accountType={accountResolution?.account.account_type}
+                  />
+                </div>
+              ))
+            : (() => {
+                const items: Array<
+                  | { kind: 'single'; message: ClaudeStreamMessage; key: string }
+                  | { kind: 'group'; messages: ClaudeStreamMessage[]; key: string }
+                > = [];
+                displayableMessages.forEach((message, idx) => {
+                  if (isBoundaryMessage(message)) {
+                    items.push({ kind: 'single', message, key: `m-${idx}` });
+                  } else {
+                    const last = items[items.length - 1];
+                    if (last && last.kind === 'group') {
+                      last.messages.push(message);
+                    } else {
+                      items.push({ kind: 'group', messages: [message], key: `g-${idx}` });
+                    }
+                  }
+                });
+                return items.map((item) =>
+                  item.kind === 'single' ? (
+                    <div key={item.key}>
+                      <StreamMessage
+                        message={item.message}
+                        streamMessages={messages}
+                        onLinkDetected={handleLinkDetected}
+                        accountType={accountResolution?.account.account_type}
+                      />
+                    </div>
+                  ) : (
+                    <CollapsibleGroup
+                      key={item.key}
+                      messages={item.messages}
+                      streamMessages={messages}
+                      accountType={accountResolution?.account.account_type}
+                      onLinkDetected={handleLinkDetected}
+                    />
+                  ),
+                );
+              })()}
           <div ref={messagesEndRef} />
       </div>
 
@@ -1123,6 +1164,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
               ? persistentSessionRef.current ? 'active' : 'ended'
               : undefined
           }
+          viewModeControl={<SessionViewToggle mode={viewMode} onChange={setViewMode} />}
           className="mb-2"
         />
         {!sessionStarted && (
