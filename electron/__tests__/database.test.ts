@@ -1,6 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import BetterSqlite3 from 'better-sqlite3';
-import { createDatabase, runMigrations, ensureDefaultSettings, type Database } from '../services/database';
+import {
+  createDatabase,
+  runMigrations,
+  ensureDefaultSettings,
+  toActionableNativeModuleError,
+  type Database,
+  type Migration,
+} from '../services/database';
 
 describe('database', () => {
   let db: Database;
@@ -155,6 +162,82 @@ describe('runMigrations', () => {
     expect(colsAfter.some((c) => c.name === 'color')).toBe(true);
   });
 
+  it('runs a synthetic migration end-to-end (applies up + records version)', () => {
+    let upCalls = 0;
+    const synthetic: Migration[] = [
+      {
+        version: 99,
+        description: 'synthetic test migration',
+        up: (db) => {
+          upCalls++;
+          db.exec('CREATE TABLE synthetic_marker (id INTEGER PRIMARY KEY)');
+        },
+      },
+    ];
+
+    runMigrations(raw, synthetic);
+
+    expect(upCalls).toBe(1);
+
+    // schema_version row recorded for the synthetic migration.
+    const row = raw
+      .prepare('SELECT applied_at FROM schema_version WHERE version = 99')
+      .get() as { applied_at: string } | undefined;
+    expect(row).toBeDefined();
+    expect(row!.applied_at).toBeTruthy();
+
+    // Second run is a no-op — version already applied.
+    runMigrations(raw, synthetic);
+    expect(upCalls).toBe(1);
+
+    // Sanity: the `up` actually ran against the real DB.
+    const tables = raw
+      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='synthetic_marker'")
+      .all() as { name: string }[];
+    expect(tables.length).toBe(1);
+  });
+
+  it('rolls back a throwing migration (no schema_version row, no partial side-effects)', () => {
+    const bad: Migration[] = [
+      {
+        version: 42,
+        description: 'deliberately failing migration',
+        up: (db) => {
+          // Create a table first so we can verify it's rolled back with the throw.
+          db.exec('CREATE TABLE should_not_exist (id INTEGER PRIMARY KEY)');
+          throw new Error('migration boom');
+        },
+      },
+    ];
+
+    expect(() => runMigrations(raw, bad)).toThrow(/migration boom/);
+
+    // No schema_version row for the failed migration.
+    const row = raw
+      .prepare('SELECT version FROM schema_version WHERE version = 42')
+      .get() as { version: number } | undefined;
+    expect(row).toBeUndefined();
+
+    // And the partial table write was rolled back with the transaction.
+    const tables = raw
+      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='should_not_exist'")
+      .all() as { name: string }[];
+    expect(tables.length).toBe(0);
+  });
+
+  it('runs multiple synthetic migrations in ascending version order even when passed out of order', () => {
+    const callOrder: number[] = [];
+    const synthetic: Migration[] = [
+      { version: 3, description: 'third', up: () => { callOrder.push(3); } },
+      { version: 1, description: 'first', up: () => { callOrder.push(1); } },
+      { version: 2, description: 'second', up: () => { callOrder.push(2); } },
+    ];
+
+    runMigrations(raw, synthetic);
+
+    expect(callOrder).toEqual([1, 2, 3]);
+  });
+
   it('migration 1 is skipped when color column already exists', () => {
     // Add the color column manually to simulate a database that already had it.
     raw.exec('ALTER TABLE accounts ADD COLUMN color TEXT');
@@ -167,6 +250,37 @@ describe('runMigrations', () => {
       .prepare('SELECT version FROM schema_version WHERE version = 1')
       .get();
     expect(row).toBeDefined();
+  });
+});
+
+describe('toActionableNativeModuleError', () => {
+  it('wraps a NODE_MODULE_VERSION mismatch with a clear rebuild hint', () => {
+    const original = new Error(
+      "The module '/path/better_sqlite3.node' was compiled against a different Node.js " +
+        'version using NODE_MODULE_VERSION 145. This version of Node.js requires ' +
+        'NODE_MODULE_VERSION 115. Please try re-compiling or re-installing the module.',
+    );
+
+    const wrapped = toActionableNativeModuleError(original);
+
+    expect(wrapped).not.toBe(original);
+    expect(wrapped.message).toMatch(/npm run rebuild:electron/);
+    expect(wrapped.message).toMatch(/npm test/);
+    expect(wrapped.message).toContain('Original error:');
+  });
+
+  it('passes non-ABI errors through unchanged', () => {
+    const original = new Error('unable to open database file');
+
+    const result = toActionableNativeModuleError(original);
+
+    expect(result).toBe(original);
+  });
+
+  it('wraps non-Error throwables into an Error', () => {
+    const result = toActionableNativeModuleError('something went wrong');
+    expect(result).toBeInstanceOf(Error);
+    expect(result.message).toBe('something went wrong');
   });
 });
 

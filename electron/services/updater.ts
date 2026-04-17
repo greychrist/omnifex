@@ -8,6 +8,7 @@
 // folder is configured.
 
 import path from 'node:path';
+import type { LoggingService } from './logging';
 
 // ---------------------------------------------------------------------------
 // Public types — stable; the renderer (src/lib/api.ts, CustomTitlebar.tsx)
@@ -50,6 +51,11 @@ interface UpdaterDeps {
   getLocalUpdateDir: () => string | null;
   /** Injectable readdir for tests. Defaults to node:fs/promises.readdir. */
   readdir?: (dir: string) => Promise<string[]>;
+  /** Optional logger. When provided, readdir failures (misconfigured path,
+   *  missing folder, permission error) are recorded at `debug` level so the
+   *  user can diagnose "why isn't it finding my update?" without seeing log
+   *  noise when the feature is simply off (empty `local_update_dir`). */
+  logging?: LoggingService | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -99,12 +105,30 @@ export function createUpdaterService(
   deps: UpdaterDeps,
 ): UpdaterService {
   const getLocalUpdateDir = deps.getLocalUpdateDir;
+  const logging = deps.logging ?? null;
   const readdir =
     deps.readdir ??
     (async (dir: string) => {
       const fs = await import('node:fs/promises');
       return fs.readdir(dir);
     });
+
+  function logDebug(message: string, metadata?: Record<string, unknown>): void {
+    if (!logging) return;
+    try {
+      logging.writeBatch([
+        {
+          timestamp: new Date().toISOString(),
+          level: 'debug',
+          source: 'updater',
+          message,
+          metadata: metadata ? JSON.stringify(metadata) : undefined,
+        },
+      ]);
+    } catch {
+      // Never let a logging failure escape an update check.
+    }
+  }
 
   async function checkForUpdate(): Promise<UpdateInfo | null> {
     const dir = getLocalUpdateDir();
@@ -113,11 +137,16 @@ export function createUpdaterService(
     let entries: string[];
     try {
       entries = await readdir(dir);
-    } catch {
+    } catch (err) {
       // Directory missing, unreadable, or any other IO error — treat as
       // "no update available" rather than a hard failure. The user will
       // see the app as up-to-date; if the dir is misconfigured, the
-      // Settings UI is where they fix it.
+      // Settings UI is where they fix it. Log at debug so "why isn't it
+      // picking up my build?" is answerable without spamming the log panel.
+      logDebug(`local_update_dir readdir failed: ${dir}`, {
+        dir,
+        error: err instanceof Error ? err.message : String(err),
+      });
       return null;
     }
 

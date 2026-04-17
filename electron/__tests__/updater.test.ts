@@ -63,6 +63,51 @@ describe('updater service (local folder source)', () => {
       expect(result).toBeNull();
     });
 
+    it('writes a debug log entry when the configured update dir is unreadable', async () => {
+      const collected: any[] = [];
+      const fakeLogger: any = {
+        writeBatch: (entries: any[]) => collected.push(...entries),
+        query: () => { throw new Error('not used'); },
+        count: () => { throw new Error('not used'); },
+        prune: () => { throw new Error('not used'); },
+      };
+
+      const svc = createUpdaterService('0.3.12', {
+        getLocalUpdateDir: () => '/nonexistent/path',
+        readdir: makeMissingReaddir(),
+        logging: fakeLogger,
+      });
+
+      await svc.checkForUpdate();
+
+      const match = collected.find(
+        (e) => String(e.source) === 'updater' && /local_update_dir|readdir|scan/i.test(String(e.message)),
+      );
+      expect(match).toBeDefined();
+      expect(match.level).toBe('debug');
+    });
+
+    it('does NOT log when local_update_dir is disabled (null/empty)', async () => {
+      const collected: any[] = [];
+      const fakeLogger: any = {
+        writeBatch: (entries: any[]) => collected.push(...entries),
+        query: () => { throw new Error('not used'); },
+        count: () => { throw new Error('not used'); },
+        prune: () => { throw new Error('not used'); },
+      };
+
+      const svc = createUpdaterService('0.3.12', {
+        getLocalUpdateDir: () => '',
+        readdir: makeReaddir([]),
+        logging: fakeLogger,
+      });
+
+      await svc.checkForUpdate();
+
+      // Empty = deliberately disabled; don't spam the log panel on every check.
+      expect(collected.length).toBe(0);
+    });
+
     it('returns null when the directory contains no matching DMG files', async () => {
       const svc = createUpdaterService('0.3.12', {
         getLocalUpdateDir: () => '/tmp/updates',

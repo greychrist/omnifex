@@ -1000,6 +1000,78 @@ describe('sessions service — full lifecycle', () => {
     svc.stopAll();
   });
 
+  it('permission queue emits the next payload to the renderer after the first resolves', async () => {
+    const writeBatch = vi.fn();
+    const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
+    const svc = createSessionsService(
+      sendToRenderer as any,
+      { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
+      fakeLogging as any,
+    );
+    const fake = installFakeQuery();
+
+    svc.start({ tabId: 'tab-queue', projectPath: '/p', configDir: '/c', model: 'sonnet', permissionMode: 'default' });
+    const canUseTool = fake.getCapturedOptions().canUseTool;
+
+    // Kick off two permission requests back-to-back. The second should queue.
+    const firstPromise = canUseTool('Bash', { command: 'ls' }, {
+      signal: new AbortController().signal,
+      toolUseID: 'tu-q1',
+    });
+    const secondPromise = canUseTool('Write', { file_path: '/tmp/x' }, {
+      signal: new AbortController().signal,
+      toolUseID: 'tu-q2',
+    });
+
+    // Let both callbacks register in the queue.
+    await new Promise((r) => setImmediate(r));
+    await new Promise((r) => setImmediate(r));
+
+    // Renderer should have received exactly one permission_request (the first).
+    const permRequests = sendToRenderer.mock.calls.filter(
+      (c) => c[0] === 'claude-output:tab-queue' && (c[1] as any)?.type === 'permission_request',
+    );
+    expect(permRequests.length).toBe(1);
+    expect((permRequests[0][1] as any).tool_name).toBe('Bash');
+
+    // Resolve the first — the second should now be emitted to the renderer.
+    svc.respondPermission('tab-queue', 'allow');
+    await firstPromise;
+
+    const permRequestsAfter = sendToRenderer.mock.calls.filter(
+      (c) => c[0] === 'claude-output:tab-queue' && (c[1] as any)?.type === 'permission_request',
+    );
+    expect(permRequestsAfter.length).toBe(2);
+    expect((permRequestsAfter[1][1] as any).tool_name).toBe('Write');
+
+    // A second notification should have fired for the queued request.
+    expect(showNotification.mock.calls.length).toBeGreaterThanOrEqual(2);
+
+    svc.respondPermission('tab-queue', 'deny');
+    await secondPromise;
+    svc.stopAll();
+  });
+
+  it('setAutoAllow / addAutoAllowTool mutate the session handle state', () => {
+    const svc = createSessionsService(
+      sendToRenderer as any,
+      { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
+    );
+    installFakeQuery();
+    svc.start({ tabId: 'tab-auto', projectPath: '/p', configDir: '/c', model: 'sonnet', permissionMode: 'default' });
+
+    // No-ops that shouldn't throw even after state changes.
+    expect(() => svc.setAutoAllow('tab-auto', true)).not.toThrow();
+    expect(() => svc.addAutoAllowTool('tab-auto', 'Bash')).not.toThrow();
+    expect(() => svc.setAutoAllow('tab-auto', false)).not.toThrow();
+
+    // Unknown tabs are a silent no-op (existing behaviour).
+    expect(() => svc.setAutoAllow('unknown', true)).not.toThrow();
+    expect(() => svc.addAutoAllowTool('unknown', 'Read')).not.toThrow();
+
+    svc.stopAll();
+  });
+
   // -------------------------------------------------------------------------
   // stderr wiring — SDK subprocess stderr should flow into the logging service
   // -------------------------------------------------------------------------

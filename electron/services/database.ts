@@ -1,5 +1,29 @@
 import BetterSqlite3 from 'better-sqlite3';
 
+/**
+ * Wrap the cryptic `NODE_MODULE_VERSION` error that better-sqlite3 throws when
+ * its compiled ABI doesn't match the current runtime with a clear, actionable
+ * message. The most common way to hit this is running `npm run dev` (Vite-only,
+ * no pre-hook rebuild) after a prior `npm test` (which rebuilds for Node) —
+ * the first DB access in Electron crashes with a native-module fault that
+ * doesn't mention the real fix.
+ *
+ * Exported so it's unit-testable without needing to induce a real ABI mismatch.
+ */
+export function toActionableNativeModuleError(err: unknown): Error {
+  const msg = err instanceof Error ? err.message : String(err);
+  if (/NODE_MODULE_VERSION/.test(msg)) {
+    const hint =
+      'better-sqlite3 was built for the wrong runtime ABI. ' +
+      'Run `npm run rebuild:electron` before `npm start`, ' +
+      'or run `npm test` first (its pretest hook rebuilds for Node).';
+    const wrapped = new Error(`${hint}\n\nOriginal error: ${msg}`);
+    (wrapped as any).cause = err;
+    return wrapped;
+  }
+  return err instanceof Error ? err : new Error(msg);
+}
+
 export interface Database {
   raw: BetterSqlite3.Database;
   getSetting(key: string): string | null;
@@ -7,7 +31,7 @@ export interface Database {
   close(): void;
 }
 
-interface Migration {
+export interface Migration {
   version: number;
   description: string;
   up: (db: BetterSqlite3.Database) => void;
@@ -26,7 +50,23 @@ const migrations: Migration[] = [
   },
 ];
 
-export function runMigrations(db: BetterSqlite3.Database): void {
+/**
+ * Run any migrations whose `version` is greater than the highest version
+ * recorded in `schema_version`. Each migration runs inside its own transaction
+ * together with the `schema_version` row insert, so a crashing migration
+ * leaves the DB in a clean pre-migration state.
+ *
+ * `migrationsOverride` is for tests only — production callers pass no argument
+ * and use the module-level `migrations` list. Exposing the override lets tests
+ * exercise the runner against a synthetic migration (no-op, throwing, etc.)
+ * without having to land a real schema change first.
+ */
+export function runMigrations(
+  db: BetterSqlite3.Database,
+  migrationsOverride?: Migration[],
+): void {
+  const migrationsToRun = migrationsOverride ?? migrations;
+
   // Ensure schema_version table exists (safe to call multiple times).
   db.exec(`
     CREATE TABLE IF NOT EXISTS schema_version (
@@ -40,7 +80,7 @@ export function runMigrations(db: BetterSqlite3.Database): void {
     .get() as { max_version: number | null };
   const currentVersion = row.max_version ?? 0;
 
-  const pending = migrations
+  const pending = migrationsToRun
     .filter((m) => m.version > currentVersion)
     .sort((a, b) => a.version - b.version);
 
@@ -57,7 +97,12 @@ export function runMigrations(db: BetterSqlite3.Database): void {
 }
 
 export function createDatabase(dbPath: string): Database {
-  const raw = new BetterSqlite3(dbPath);
+  let raw: BetterSqlite3.Database;
+  try {
+    raw = new BetterSqlite3(dbPath);
+  } catch (err) {
+    throw toActionableNativeModuleError(err);
+  }
   raw.pragma('journal_mode = WAL');
   raw.pragma('foreign_keys = ON');
 

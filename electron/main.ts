@@ -460,6 +460,7 @@ app.whenReady().then(() => {
   // check so that changes in the Settings UI take effect without restarting.
   const updaterService = createUpdaterService(app.getVersion(), {
     getLocalUpdateDir: () => db.getSetting('local_update_dir'),
+    logging: loggingService,
   });
 
   ipcMain.handle('updater:check', async () => {
