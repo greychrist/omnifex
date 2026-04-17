@@ -110,7 +110,7 @@ export const CollapsibleGroup: React.FC<GroupProps> = ({
         </span>
       </button>
       {expanded && (
-        <div className="mt-2 ml-[0.3125rem] pl-4 border-l-2 border-border/60 space-y-4">
+        <div className="mt-2 ml-[0.3125rem] pl-8 border-l-2 border-border/60 space-y-4">
           {messages.map((message, idx) => (
             <StreamMessage
               key={idx}
