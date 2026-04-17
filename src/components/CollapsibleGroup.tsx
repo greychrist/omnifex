@@ -40,8 +40,49 @@ export function isBoundaryMessage(msg: ClaudeStreamMessage): boolean {
   return false;
 }
 
+const MAX_ACTION_LEN = 48;
+const MAX_ACTIONS_SHOWN = 5;
+
+function clip(s: string, max = MAX_ACTION_LEN): string {
+  if (!s) return '';
+  const oneLine = s.replace(/\s+/g, ' ').trim();
+  return oneLine.length <= max ? oneLine : oneLine.slice(0, max) + '…';
+}
+
+function basename(p: string): string {
+  if (!p) return '';
+  const parts = p.split('/').filter(Boolean);
+  return parts[parts.length - 1] ?? p;
+}
+
+function actionLabel(name: string, input: any): string {
+  const i = input ?? {};
+  const lower = (name ?? '').toLowerCase();
+  if (lower === 'bash') return `Ran: ${clip(i.command ?? i.description ?? '')}`;
+  if (lower === 'read') return `Read ${basename(i.filePath ?? i.file_path ?? '')}`;
+  if (lower === 'write') return `Wrote ${basename(i.filePath ?? i.file_path ?? '')}`;
+  if (lower === 'edit') return `Edited ${basename(i.file_path ?? '')}`;
+  if (lower === 'multiedit') {
+    const n = Array.isArray(i.edits) ? i.edits.length : 0;
+    const base = basename(i.file_path ?? '');
+    return n > 0 ? `Edited ${base} (${n})` : `Edited ${base}`;
+  }
+  if (lower === 'grep') return `Searched "${clip(i.pattern ?? '', 30)}"`;
+  if (lower === 'glob') return `Glob ${clip(i.pattern ?? '', 30)}`;
+  if (lower === 'ls') return `Listed ${basename(i.path ?? '')}`;
+  if (lower === 'todowrite') {
+    const n = Array.isArray(i.todos) ? i.todos.length : 0;
+    return `Updated todos (${n})`;
+  }
+  if (lower === 'task') return `Dispatched: ${clip(i.description ?? '')}`;
+  if (lower === 'websearch') return `Searched web: "${clip(i.query ?? '', 30)}"`;
+  if (lower === 'webfetch') return `Fetched ${clip(i.url ?? '', 40)}`;
+  if (name?.startsWith?.('mcp__')) return name;
+  return name ?? 'tool';
+}
+
 function summarizeGroup(messages: ClaudeStreamMessage[]): string {
-  const toolNames: string[] = [];
+  const actions: string[] = [];
   let thinkingCount = 0;
   let systemCount = 0;
 
@@ -54,21 +95,25 @@ function summarizeGroup(messages: ClaudeStreamMessage[]): string {
     if (!Array.isArray(content)) continue;
     for (const b of content) {
       if (b?.type === 'tool_use' && typeof b.name === 'string') {
-        toolNames.push(b.name);
+        actions.push(clip(actionLabel(b.name, b.input), 60));
       } else if (b?.type === 'thinking') {
         thinkingCount += 1;
       }
     }
   }
 
+  const shown = actions.slice(0, MAX_ACTIONS_SHOWN);
+  const overflow = actions.length - shown.length;
+
   const parts: string[] = [];
   if (thinkingCount > 0) {
     parts.push(`${thinkingCount} thought${thinkingCount === 1 ? '' : 's'}`);
   }
-  if (toolNames.length > 0) {
-    parts.push(toolNames.join(' · '));
+  if (shown.length > 0) {
+    const joined = shown.join(' · ');
+    parts.push(overflow > 0 ? `${joined} · +${overflow} more` : joined);
   }
-  if (systemCount > 0 && parts.length === 0) {
+  if (parts.length === 0 && systemCount > 0) {
     parts.push(`${systemCount} system event${systemCount === 1 ? '' : 's'}`);
   }
 
