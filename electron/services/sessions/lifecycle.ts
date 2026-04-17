@@ -186,9 +186,14 @@ export function createSessionsService(
         ...process.env,
         CLAUDE_CONFIG_DIR: configDir,
       },
+      // Use the full Claude Code CLI system prompt. Without this the SDK ships a minimal
+      // prompt and sessions lose the plan-first / ask-clarifying-questions / tool-use
+      // conventions that make Claude Code feel like Claude Code.
+      systemPrompt: { type: 'preset', preset: 'claude_code' },
       // Load project CLAUDE.md, .claude/skills/*, .claude/commands/*, .claude/settings.json,
       // and user ~/.claude/settings.json. Without this the SDK runs in isolation mode and
       // ignores all filesystem-based project config — defeating the point of a Claude Code GUI.
+      // Note: the claude_code preset alone does NOT load CLAUDE.md — settingSources is required.
       settingSources: ['user', 'project', 'local'],
       // Auto-approve all project .mcp.json servers so they connect without
       // interactive approval (which the SDK would otherwise silently decline).

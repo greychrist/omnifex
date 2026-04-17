@@ -38,7 +38,7 @@ process.on('uncaughtException', (err) => {
 process.on('unhandledRejection', (err) => {
   console.error('Unhandled rejection:', err);
 });
-import { createDatabase } from './services/database';
+import { createDatabase, ensureDefaultSettings } from './services/database';
 import { createAccountsService } from './services/accounts';
 import { createClaudeBinaryService } from './services/claude-binary';
 import { createSessionsService } from './services/sessions';
@@ -179,6 +179,12 @@ app.whenReady().then(() => {
     return;
   }
   _db = db;
+
+  // Seed first-run defaults. Empty-string values (user deliberately cleared)
+  // are preserved; only truly-missing keys get the default.
+  ensureDefaultSettings(db, {
+    local_update_dir: '/Users/gregorychristie/Repos/personal/greychrist/out/make',
+  });
   const accountsService = createAccountsService(db);
   const claudeBinaryService = createClaudeBinaryService(db);
   // Logging must be constructed before sessions so the sessions service can

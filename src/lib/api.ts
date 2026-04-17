@@ -2064,23 +2064,26 @@ export const api = {
   // Theme settings helpers
 
   /**
-   * Gets a setting from the app_settings table
-   * @param key - The setting key to retrieve
-   * @returns Promise resolving to the setting value or null if not found
+   * Gets a setting from the app_settings table via the dedicated
+   * `get_setting` IPC channel (which hits `db.getSetting` directly).
+   *
+   * Previously this went through `storageReadTable('app_settings', ...)` which
+   * worked, but the paired `saveSetting` used `storageUpdateRow` which
+   * silently no-ops for missing keys — so new keys never got persisted. Now
+   * both sides use the upsert-safe `get_setting`/`save_setting` pair.
+   *
+   * localStorage mirror is kept as a startup-flicker fast-path.
    */
   async getSetting(key: string): Promise<string | null> {
     try {
-      // Fast path: check localStorage mirror to avoid startup flicker
       if (typeof window !== 'undefined' && 'localStorage' in window) {
         const cached = window.localStorage.getItem(`app_setting:${key}`);
         if (cached !== null) {
           return cached;
         }
       }
-      // Use storageReadTable to safely query the app_settings table
-      const result = await this.storageReadTable('app_settings', 1, 1000);
-      const setting = result?.data?.find((row: any) => row.key === key);
-      return setting?.value || null;
+      const value = await apiCall<string | null>('get_setting', { key });
+      return value ?? null;
     } catch (error) {
       console.error(`Failed to get setting ${key}:`, error);
       return null;
@@ -2088,14 +2091,12 @@ export const api = {
   },
 
   /**
-   * Saves a setting to the app_settings table (insert or update)
-   * @param key - The setting key
-   * @param value - The setting value
-   * @returns Promise resolving when the setting is saved
+   * Saves a setting to the app_settings table via the `save_setting` IPC
+   * channel, which uses `INSERT ... ON CONFLICT(key) DO UPDATE` and handles
+   * both first-insert and update correctly.
    */
   async saveSetting(key: string, value: string): Promise<void> {
     try {
-      // Mirror to localStorage for instant availability on next startup
       if (typeof window !== 'undefined' && 'localStorage' in window) {
         try {
           window.localStorage.setItem(`app_setting:${key}`, value);
@@ -2103,17 +2104,7 @@ export const api = {
           // best-effort; continue to persist in DB
         }
       }
-      // Try to update first
-      try {
-        await this.storageUpdateRow(
-          'app_settings',
-          { key },
-          { value }
-        );
-      } catch (updateError) {
-        // If update fails (row doesn't exist), insert new row
-        await this.storageInsertRow('app_settings', { key, value });
-      }
+      await apiCall('save_setting', { key, value });
     } catch (error) {
       console.error(`Failed to save setting ${key}:`, error);
       throw error;

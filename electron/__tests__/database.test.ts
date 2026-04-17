@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import BetterSqlite3 from 'better-sqlite3';
-import { createDatabase, runMigrations, type Database } from '../services/database';
+import { createDatabase, runMigrations, ensureDefaultSettings, type Database } from '../services/database';
 
 describe('database', () => {
   let db: Database;
@@ -167,5 +167,52 @@ describe('runMigrations', () => {
       .prepare('SELECT version FROM schema_version WHERE version = 1')
       .get();
     expect(row).toBeDefined();
+  });
+});
+
+describe('ensureDefaultSettings', () => {
+  let db: Database;
+
+  beforeEach(() => {
+    db = createDatabase(':memory:');
+  });
+
+  afterEach(() => {
+    db.close();
+  });
+
+  it('writes a default value when the setting does not exist', () => {
+    expect(db.getSetting('local_update_dir')).toBeNull();
+
+    ensureDefaultSettings(db, { local_update_dir: '/Users/me/out/make' });
+
+    expect(db.getSetting('local_update_dir')).toBe('/Users/me/out/make');
+  });
+
+  it('does not overwrite a user-set value', () => {
+    db.saveSetting('local_update_dir', '/custom/path');
+
+    ensureDefaultSettings(db, { local_update_dir: '/default/path' });
+
+    expect(db.getSetting('local_update_dir')).toBe('/custom/path');
+  });
+
+  it('supports multiple defaults at once and only fills missing keys', () => {
+    db.saveSetting('foo', 'existing');
+
+    ensureDefaultSettings(db, { foo: 'default_foo', bar: 'default_bar' });
+
+    expect(db.getSetting('foo')).toBe('existing');
+    expect(db.getSetting('bar')).toBe('default_bar');
+  });
+
+  it('treats an empty-string stored value as a user-set value (does not overwrite)', () => {
+    // An empty string means the user deliberately cleared the setting
+    // (disabling local updates). Do not re-write the default over that.
+    db.saveSetting('local_update_dir', '');
+
+    ensureDefaultSettings(db, { local_update_dir: '/default/path' });
+
+    expect(db.getSetting('local_update_dir')).toBe('');
   });
 });

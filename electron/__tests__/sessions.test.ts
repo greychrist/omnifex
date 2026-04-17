@@ -291,6 +291,21 @@ describe('sessions service — full lifecycle', () => {
     expect(options.settingSources).toEqual(['user', 'project', 'local']);
   });
 
+  it("start() passes systemPrompt preset so the SDK uses Claude Code's full system prompt (plan-first, asks clarifying questions, etc.)", () => {
+    const fake = installFakeQuery();
+
+    service.start({
+      tabId: 'tab-preset',
+      projectPath: '/p',
+      configDir: '/c',
+      model: 'sonnet',
+      permissionMode: 'default',
+    });
+
+    const options = fake.getCapturedOptions();
+    expect(options.systemPrompt).toEqual({ type: 'preset', preset: 'claude_code' });
+  });
+
   it('start() sets enableAllProjectMcpServers so .mcp.json servers auto-connect', () => {
     const fake = installFakeQuery();
 

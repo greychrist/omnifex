@@ -89,6 +89,22 @@ export function createDatabase(dbPath: string): Database {
   };
 }
 
+/**
+ * Write default values for app_settings keys that don't yet have a stored
+ * value. Called from `main.ts` on app startup — gives new installs sensible
+ * defaults without clobbering user-edited values.
+ *
+ * An empty string counts as user-set ("I deliberately cleared this"); only
+ * truly-missing keys (getSetting returns null) get filled.
+ */
+export function ensureDefaultSettings(db: Database, defaults: Record<string, string>): void {
+  for (const [key, value] of Object.entries(defaults)) {
+    if (db.getSetting(key) === null) {
+      db.saveSetting(key, value);
+    }
+  }
+}
+
 function initSchema(db: BetterSqlite3.Database): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS agents (
