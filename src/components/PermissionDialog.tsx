@@ -205,7 +205,7 @@ export function PermissionDialog({
                         </div>
                       ) : (
                         <>
-                          <div className="text-xs font-mono truncate">{ruleString}</div>
+                          <div className="text-xs font-mono break-all">{ruleString}</div>
                           <div className="text-[10px] text-muted-foreground mt-0.5">
                             {suggestion.behavior} &middot; {formatDestination(dest)}
                           </div>
