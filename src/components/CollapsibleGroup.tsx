@@ -150,7 +150,7 @@ export const CollapsibleGroup: React.FC<GroupProps> = ({
             expanded && 'rotate-90',
           )}
         />
-        <span className="font-mono text-xs text-muted-foreground truncate">
+        <span className="font-mono text-xs text-muted-foreground break-words whitespace-normal">
           {summarizeGroup(messages)}
         </span>
       </button>
