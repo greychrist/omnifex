@@ -48,6 +48,8 @@ import { CollapsibleGroup } from "./CollapsibleGroup";
 import { buildCompactItems } from "@/lib/compactGrouping";
 import { SessionHeader } from "./SessionHeader";
 import { filterDisplayableMessages } from "@/lib/messageFilters";
+import { deriveSubagents } from "@/lib/subagentStreams";
+import { SubagentBar } from "./SubagentBar";
 import { exportAsJsonl, exportAsMarkdown } from "@/lib/sessionExporters";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useSessionLifecycle } from "@/hooks/useSessionLifecycle";
@@ -286,6 +288,32 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
 
   // Filter out messages that shouldn't be displayed
   const displayableMessages = useMemo(() => filterDisplayableMessages(messages), [messages]);
+
+  // Subagent (background task) state, derived from the raw stream.
+  // Rendered above the prompt input so parallel Agent/Task dispatches are visible.
+  const [dismissedSubagents, setDismissedSubagents] = useState<Set<string>>(new Set());
+  const subagents = useMemo(() => {
+    const all = deriveSubagents(messages);
+    return dismissedSubagents.size === 0
+      ? all
+      : all.filter((s) => !dismissedSubagents.has(s.toolUseId));
+  }, [messages, dismissedSubagents]);
+  const dismissSubagent = useCallback((toolUseId: string) => {
+    setDismissedSubagents((prev) => {
+      const next = new Set(prev);
+      next.add(toolUseId);
+      return next;
+    });
+  }, []);
+  const dismissAllCompletedSubagents = useCallback(() => {
+    setDismissedSubagents((prev) => {
+      const next = new Set(prev);
+      for (const s of subagents) {
+        if (s.status !== 'running') next.add(s.toolUseId);
+      }
+      return next;
+    });
+  }, [subagents]);
 
   const [viewMode, setViewMode] = useState<ViewMode>('compact');
 
@@ -1571,6 +1599,11 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             "shrink-0 transition-all duration-300 z-50",
             (showTimeline || showMCPPanel || showPermissionsPanel) && "sm:mr-96"
           )}>
+            <SubagentBar
+              subagents={subagents}
+              onDismiss={dismissSubagent}
+              onDismissAllCompleted={dismissAllCompletedSubagents}
+            />
             <FloatingPromptInput
               ref={floatingPromptRef}
               onSend={handleSendPrompt}

@@ -1,4 +1,5 @@
-import { app, BrowserWindow, ipcMain, protocol, Notification, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, protocol, Notification, shell, Menu, clipboard } from 'electron';
+import type { MenuItemConstructorOptions } from 'electron';
 import { execSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -115,6 +116,34 @@ function createWindow(): void {
     clearUnread();
     // Dismiss any macOS notifications we've posted — user is looking at the app.
     _notificationsService?.dismissAll();
+  });
+
+  mainWindow.webContents.on('context-menu', (_event, params) => {
+    const { selectionText, editFlags, isEditable, linkURL } = params;
+    const hasText = typeof selectionText === 'string' && selectionText.trim().length > 0;
+    const template: MenuItemConstructorOptions[] = [];
+
+    if (linkURL) {
+      template.push({ label: 'Open Link', click: () => shell.openExternal(linkURL) });
+      template.push({ label: 'Copy Link', click: () => clipboard.writeText(linkURL) });
+      template.push({ type: 'separator' });
+    }
+
+    if (isEditable) {
+      template.push({ role: 'cut', enabled: !!editFlags.canCut });
+      template.push({ role: 'copy', enabled: !!editFlags.canCopy });
+      template.push({ role: 'paste', enabled: !!editFlags.canPaste });
+      template.push({ type: 'separator' });
+      template.push({ role: 'selectAll', enabled: !!editFlags.canSelectAll });
+    } else if (hasText) {
+      template.push({ role: 'copy' });
+      template.push({ type: 'separator' });
+      template.push({ role: 'selectAll' });
+    } else {
+      template.push({ role: 'selectAll' });
+    }
+
+    Menu.buildFromTemplate(template).popup({ window: mainWindow ?? undefined });
   });
 
   mainWindow.on('closed', () => {

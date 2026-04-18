@@ -1,4 +1,5 @@
 import type { ClaudeStreamMessage } from "@/components/AgentExecution";
+import { isTaskLifecycleMarker } from "@/lib/subagentStreams";
 
 /**
  * Filters out messages that shouldn't be displayed in the session UI.
@@ -7,6 +8,8 @@ import type { ClaudeStreamMessage } from "@/components/AgentExecution";
  * - Meta messages without meaningful content (no leafUuid or summary)
  * - User messages that only contain tool results already rendered by
  *   tool-specific widgets (e.g. Bash, Edit, Read, Grep, etc.)
+ * - Subagent task lifecycle markers (task_started / task_progress /
+ *   task_notification) — those are rendered in the SubagentBar.
  */
 export function filterDisplayableMessages(
   messages: ClaudeStreamMessage[],
@@ -14,6 +17,11 @@ export function filterDisplayableMessages(
   return messages.filter((message, index) => {
     // Skip meta messages that don't have meaningful content
     if (message.isMeta && !message.leafUuid && !message.summary) {
+      return false;
+    }
+
+    // Skip subagent lifecycle markers — shown in SubagentBar instead
+    if (isTaskLifecycleMarker(message)) {
       return false;
     }
 
