@@ -42,6 +42,7 @@ import { createDatabase, ensureDefaultSettings } from './services/database';
 import { createAccountsService } from './services/accounts';
 import { createClaudeBinaryService } from './services/claude-binary';
 import { createSessionsService } from './services/sessions';
+import { createNotificationsService } from './services/notifications';
 import { createClaudeService } from './services/claude';
 import { createAgentsService } from './services/agents';
 import { createAgentRunRegistry } from './services/agent-run-registry';
@@ -61,6 +62,7 @@ declare const MAIN_WINDOW_VITE_NAME: string;
 
 let mainWindow: BrowserWindow | null = null;
 let _sessionsService: { stopAll(): void } | null = null;
+let _notificationsService: { dismissAll(): void } | null = null;
 let _db: { close(): void } | null = null;
 let _initialized = false;
 
@@ -111,6 +113,8 @@ function createWindow(): void {
   mainWindow.on('focus', () => {
     // Clear unread badge when user focuses the window
     clearUnread();
+    // Dismiss any macOS notifications we've posted — user is looking at the app.
+    _notificationsService?.dismissAll();
   });
 
   mainWindow.on('closed', () => {
@@ -197,49 +201,36 @@ app.whenReady().then(() => {
   // Logging must be constructed before sessions so the sessions service can
   // route CLI subprocess stderr into the log store.
   const loggingService = createLoggingService(db);
+  const successSound = 'greychrist_success';
+  const notificationsService = _notificationsService = createNotificationsService({
+    isSupported: () => Notification.isSupported(),
+    isWindowFocused: () => mainWindow?.isFocused() ?? false,
+    focusWindow: () => {
+      if (!mainWindow) return;
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    },
+    getSoundPath: (isError) =>
+      isError
+        ? '/System/Library/Sounds/Basso.aiff'
+        : app.isPackaged
+          ? path.join(process.resourcesPath, 'assets', `${successSound}.aiff`)
+          : path.join(app.getAppPath(), 'assets', `${successSound}.aiff`),
+    playSound: (soundPath) => {
+      const { execFile } = require('node:child_process') as typeof import('node:child_process');
+      execFile('afplay', [soundPath], (err: Error | null) => {
+        if (err) console.error('[notification] afplay failed:', err.message);
+      });
+    },
+    createNotification: (opts) => new Notification(opts),
+  });
   const sessionsService = _sessionsService = createSessionsService(
     (channel, ...args) => {
       mainWindow?.webContents.send(channel, ...args);
     },
     {
       showNotification: (title, body, isError) => {
-        if (!Notification.isSupported()) return;
-
-        const successSound = 'greychrist_success';
-        const focused = mainWindow?.isFocused() ?? false;
-
-        if (focused) {
-          // User is looking at the app — just play the sound, no notification.
-          const soundPath = isError
-            ? '/System/Library/Sounds/Basso.aiff'
-            : (app.isPackaged
-              ? path.join(process.resourcesPath, 'assets', `${successSound}.aiff`)
-              : path.join(app.getAppPath(), 'assets', `${successSound}.aiff`));
-          const { execFile } = require('node:child_process') as typeof import('node:child_process');
-          execFile('afplay', [soundPath], (err: Error | null) => {
-            if (err) console.error('[notification] afplay failed:', err.message);
-          });
-        } else {
-          // User isn't looking — show macOS notification with sound.
-          // Packaged: .aiff is at Contents/Resources/ via extraResource.
-          // Dev: .aiff is in ~/Library/Sounds/ (installed manually).
-          // Both are in NSSound soundNamed: search paths.
-          const subtitle = isError ? 'Task Failed' : 'Task Complete';
-          const notif = new Notification({
-            title,
-            subtitle,
-            body,
-            silent: false,
-            sound: isError ? 'Basso' : successSound,
-          });
-          notif.on('click', () => {
-            if (mainWindow) {
-              if (mainWindow.isMinimized()) mainWindow.restore();
-              mainWindow.focus();
-            }
-          });
-          notif.show();
-        }
+        notificationsService.show(title, body, isError);
       },
       incrementUnread: () => {
         // Only bump the dock badge when the app isn't in focus
