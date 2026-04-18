@@ -44,7 +44,8 @@ import { WebviewPreview } from "./WebviewPreview";
 import type { ClaudeStreamMessage } from "./AgentExecution";
 import { synthesizeResultMessages } from "@/lib/synthesizeResults";
 import { SessionViewToggle, type ViewMode } from "./SessionViewToggle";
-import { CollapsibleGroup, isBoundaryMessage } from "./CollapsibleGroup";
+import { CollapsibleGroup } from "./CollapsibleGroup";
+import { buildCompactItems } from "@/lib/compactGrouping";
 import { SessionHeader } from "./SessionHeader";
 import { filterDisplayableMessages } from "@/lib/messageFilters";
 import { exportAsJsonl, exportAsMarkdown } from "@/lib/sessionExporters";
@@ -958,22 +959,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                 </div>
               ))
             : (() => {
-                const items: Array<
-                  | { kind: 'single'; message: ClaudeStreamMessage; key: string }
-                  | { kind: 'group'; messages: ClaudeStreamMessage[]; key: string }
-                > = [];
-                displayableMessages.forEach((message, idx) => {
-                  if (isBoundaryMessage(message)) {
-                    items.push({ kind: 'single', message, key: `m-${idx}` });
-                  } else {
-                    const last = items[items.length - 1];
-                    if (last && last.kind === 'group') {
-                      last.messages.push(message);
-                    } else {
-                      items.push({ kind: 'group', messages: [message], key: `g-${idx}` });
-                    }
-                  }
-                });
+                const items = buildCompactItems(displayableMessages);
                 return items.map((item) =>
                   item.kind === 'single' ? (
                     <div key={item.key}>

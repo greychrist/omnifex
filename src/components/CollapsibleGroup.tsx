@@ -4,42 +4,6 @@ import { cn } from '@/lib/utils';
 import { StreamMessage } from './StreamMessage';
 import type { ClaudeStreamMessage } from './AgentExecution';
 
-/**
- * True when the message should render fully on every view — it's either
- * a user-typed prompt, a final assistant response that ends a turn, an
- * Execution Complete card (real or synthesized), or a permission request
- * that needs user action.
- *
- * Everything else (mid-turn tool_use, tool_result replies, thinking,
- * system init) is part of the "between-prompts" interior of a turn and
- * can be collapsed behind a summary in Compact mode.
- */
-export function isBoundaryMessage(msg: ClaudeStreamMessage): boolean {
-  if (msg.type === 'permission_request') return true;
-  if (msg.type === 'result') return true;
-
-  if (msg.type === 'user') {
-    const content: unknown = msg.message?.content;
-    if (typeof content === 'string') return content.length > 0;
-    if (!Array.isArray(content)) return false;
-    return content.some((c: any) => c?.type === 'text');
-  }
-
-  if (msg.type === 'assistant') {
-    const stop = (msg.message as any)?.stop_reason;
-    if (stop === 'end_turn') return true;
-    // Safety net for assistant messages that lack stop_reason but carry
-    // only a text response — treat as a final Claude-to-user message.
-    const content = msg.message?.content;
-    if (!Array.isArray(content) || content.length === 0) return false;
-    const hasText = content.some((c: any) => c?.type === 'text');
-    const hasNonText = content.some((c: any) => c?.type !== 'text');
-    return hasText && !hasNonText;
-  }
-
-  return false;
-}
-
 const MAX_ACTION_LEN = 48;
 const MAX_ACTIONS_SHOWN = 5;
 
