@@ -995,47 +995,51 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                   ),
                 );
               })()}
+
+          {/* Loading indicator under the latest message — iMessage-style typing bubble.
+              Rendered inside contentRef (and before messagesEndRef) so the ResizeObserver
+              on contentRef catches its appearance/height changes, and scrollIntoView on
+              messagesEndRef scrolls past it instead of leaving it below the viewport. */}
+          {isLoading && (
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.15 }}
+              className="flex justify-start w-full max-w-6xl mx-auto px-4 mb-20"
+            >
+              <div className="max-w-[95%] space-y-2">
+                <div className="flex items-center gap-3">
+                  <div className="inline-flex items-center gap-1 rounded-2xl rounded-bl-sm bg-primary/10 border border-primary/20 px-4 py-3">
+                    <span className="typing-dot" />
+                    <span className="typing-dot" style={{ animationDelay: '0.15s' }} />
+                    <span className="typing-dot" style={{ animationDelay: '0.3s' }} />
+                  </div>
+                  <div className="flex items-baseline gap-2 text-xs font-mono">
+                    <span className="text-primary">✶</span>
+                    <span className="text-muted-foreground">{currentActivity}...</span>
+                    <span className="text-muted-foreground/60">
+                      (↓ {totalTokens.toLocaleString()} tokens)
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+          {/* Error indicator */}
+          {error && (
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.15 }}
+              className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive mb-20 w-full max-w-6xl mx-auto"
+            >
+              {error}
+            </motion.div>
+          )}
+
           <div ref={messagesEndRef} />
       </div>
-
-      {/* Loading indicator under the latest message — iMessage-style typing bubble */}
-      {isLoading && (
-        <motion.div
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.15 }}
-          className="flex justify-start w-full max-w-6xl mx-auto px-4 mb-20"
-        >
-          <div className="max-w-[95%] space-y-2">
-            <div className="flex items-center gap-3">
-              <div className="inline-flex items-center gap-1 rounded-2xl rounded-bl-sm bg-primary/10 border border-primary/20 px-4 py-3">
-                <span className="typing-dot" />
-                <span className="typing-dot" style={{ animationDelay: '0.15s' }} />
-                <span className="typing-dot" style={{ animationDelay: '0.3s' }} />
-              </div>
-              <div className="flex items-baseline gap-2 text-xs font-mono">
-                <span className="text-primary">✶</span>
-                <span className="text-muted-foreground">{currentActivity}...</span>
-                <span className="text-muted-foreground/60">
-                  (↓ {totalTokens.toLocaleString()} tokens)
-                </span>
-              </div>
-            </div>
-          </div>
-        </motion.div>
-      )}
-
-      {/* Error indicator */}
-      {error && (
-        <motion.div
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.15 }}
-          className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive mb-20 w-full max-w-6xl mx-auto"
-        >
-          {error}
-        </motion.div>
-      )}
     </div>
     </div>
   );
