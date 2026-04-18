@@ -592,6 +592,21 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
 
       }
 
+      // system:compact_boundary — SDK emits this after a manual or auto
+      // compaction. The SDK's internal context is already the compacted
+      // state, so refresh the header popover immediately instead of
+      // waiting for the next turn's result to settle.
+      if (message.type === 'system' && message.subtype === 'compact_boundary') {
+        const tidForCompact = tabIdRef.current;
+        api.sessionContextUsage(tidForCompact)
+          .then((usage) => {
+            if (usage) setContextUsage(usage);
+          })
+          .catch((err) => {
+            console.error('[sessions] sessionContextUsage post-compact refresh failed:', err);
+          });
+      }
+
       // system:init: skip duplicates, insert before the first user message
       if (message.type === 'system' && message.subtype === 'init') {
         const alreadyHasInit = messagesRef.current.some(
