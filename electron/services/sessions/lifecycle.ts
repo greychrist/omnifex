@@ -19,6 +19,7 @@ import type {
   NotificationHooks,
   PermissionDecision,
   LoggingService,
+  SessionOwnership,
 } from './types';
 import { createSessionHooks } from './hooks';
 import {
@@ -54,6 +55,7 @@ export function createSessionsService(
   sendToRenderer: SendToRenderer,
   notificationHooks: NotificationHooks = {},
   logging: LoggingService | null = null,
+  ownership: SessionOwnership | null = null,
 ): SessionsService {
   const sessions = new Map<string, SessionHandle>();
 
@@ -124,6 +126,7 @@ export function createSessionsService(
     handle.status = 'stopped';
     sendToRenderer(`claude-complete:${tabId}`);
     sessions.delete(tabId);
+    ownership?.unregister(tabId);
   }
 
   // -------------------------------------------------------------------------
@@ -173,6 +176,7 @@ export function createSessionsService(
       existing.inputChannel.close();
       existing.query.close();
       sessions.delete(tabId);
+      ownership?.unregister(tabId);
     }
 
     const inputChannel = createAsyncChannel<SDKUserMessage>(1000);
@@ -310,6 +314,9 @@ export function createSessionsService(
 
     handle.query = q;
     sessions.set(tabId, handle);
+    if (params.ownerWebContentsId !== undefined) {
+      ownership?.register(tabId, params.ownerWebContentsId);
+    }
 
     // Start listening in the background (don't await — fire and forget)
     listenToMessages(tabId, handle).catch((err) => {
@@ -423,6 +430,7 @@ export function createSessionsService(
     handle.inputChannel.close();
     handle.query.close();
     sessions.delete(tabId);
+    ownership?.unregister(tabId);
   }
 
   function stopAll(): void {

@@ -57,16 +57,50 @@ import { createSlashCommandsService } from './services/slash-commands';
 import { createPermissionsIOService } from './services/permissions-io';
 import { createUpdaterService } from './services/updater';
 import { registerIpcHandlers } from './ipc/handlers';
-import { launchNewInstance } from './new-instance';
+import { createWindowRouter } from './window-router';
 
 declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string | undefined;
 declare const MAIN_WINDOW_VITE_NAME: string;
 
-let mainWindow: BrowserWindow | null = null;
+const windows = new Set<BrowserWindow>();
+const router = createWindowRouter();
 let _sessionsService: { stopAll(): void } | null = null;
 let _notificationsService: { dismissAll(): void } | null = null;
 let _db: { close(): void } | null = null;
 let _initialized = false;
+
+function anyWindowFocused(): boolean {
+  for (const w of windows) {
+    if (!w.isDestroyed() && w.isFocused()) return true;
+  }
+  return false;
+}
+
+function focusAnyWindow(): void {
+  for (const w of windows) {
+    if (w.isDestroyed()) continue;
+    if (w.isMinimized()) w.restore();
+    w.focus();
+    return;
+  }
+}
+
+function sendToRenderer(channel: string, ...args: unknown[]): void {
+  const target = router.resolveTarget(channel);
+  if (target.kind === 'owner') {
+    for (const w of windows) {
+      if (!w.isDestroyed() && w.webContents.id === target.ownerId) {
+        w.webContents.send(channel, ...args);
+        return;
+      }
+    }
+    // Owner window has been closed — drop the event.
+    return;
+  }
+  for (const w of windows) {
+    if (!w.isDestroyed()) w.webContents.send(channel, ...args);
+  }
+}
 
 // Unread notification count for dock badge
 let unreadCount = 0;
@@ -84,17 +118,6 @@ function clearUnread() {
   updateDockBadge();
 }
 
-function openNewInstance(): void {
-  const result = launchNewInstance({
-    platform: process.platform,
-    isPackaged: app.isPackaged,
-    execPath: process.execPath,
-  });
-  if (!result.ok) {
-    console.warn('[main] New Window refused:', result.reason);
-  }
-}
-
 function installAppMenu(): void {
   const template: MenuItemConstructorOptions[] = [];
   if (process.platform === 'darwin') {
@@ -106,7 +129,7 @@ function installAppMenu(): void {
       {
         label: 'New Window',
         accelerator: 'CmdOrCtrl+N',
-        click: () => openNewInstance(),
+        click: () => createWindow(),
       },
       { type: 'separator' },
       process.platform === 'darwin' ? { role: 'close' } : { role: 'quit' },
@@ -120,14 +143,14 @@ function installAppMenu(): void {
   if (process.platform === 'darwin' && app.dock) {
     app.dock.setMenu(
       Menu.buildFromTemplate([
-        { label: 'New Window', click: () => openNewInstance() },
+        { label: 'New Window', click: () => createWindow() },
       ]),
     );
   }
 }
 
-function createWindow(): void {
-  mainWindow = new BrowserWindow({
+function createWindow(): BrowserWindow {
+  const win = new BrowserWindow({
     width: 1400,
     height: 900,
     minWidth: 800,
@@ -140,28 +163,29 @@ function createWindow(): void {
       nodeIntegration: false,
     },
   });
+  windows.add(win);
 
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
-    mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
+    win.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
   } else {
-    mainWindow.loadFile(
+    win.loadFile(
       path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`)
     );
   }
 
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
-    mainWindow.webContents.openDevTools();
+    win.webContents.openDevTools();
   }
-  mainWindow.show();
+  win.show();
 
-  mainWindow.on('focus', () => {
-    // Clear unread badge when user focuses the window
+  win.on('focus', () => {
+    // Clear unread badge when user focuses any window
     clearUnread();
     // Dismiss any macOS notifications we've posted — user is looking at the app.
     _notificationsService?.dismissAll();
   });
 
-  mainWindow.webContents.on('context-menu', (_event, params) => {
+  win.webContents.on('context-menu', (_event, params) => {
     const { selectionText, editFlags, isEditable, linkURL } = params;
     const hasText = typeof selectionText === 'string' && selectionText.trim().length > 0;
     const template: MenuItemConstructorOptions[] = [];
@@ -186,12 +210,14 @@ function createWindow(): void {
       template.push({ role: 'selectAll' });
     }
 
-    Menu.buildFromTemplate(template).popup({ window: mainWindow ?? undefined });
+    Menu.buildFromTemplate(template).popup({ window: win });
   });
 
-  mainWindow.on('closed', () => {
-    mainWindow = null;
+  win.on('closed', () => {
+    windows.delete(win);
   });
+
+  return win;
 }
 
 // Register custom protocol as privileged so it can load images in the renderer
@@ -276,12 +302,8 @@ app.whenReady().then(() => {
   const successSound = 'greychrist_success';
   const notificationsService = _notificationsService = createNotificationsService({
     isSupported: () => Notification.isSupported(),
-    isWindowFocused: () => mainWindow?.isFocused() ?? false,
-    focusWindow: () => {
-      if (!mainWindow) return;
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.focus();
-    },
+    isWindowFocused: () => anyWindowFocused(),
+    focusWindow: () => focusAnyWindow(),
     getSoundPath: (isError) =>
       isError
         ? '/System/Library/Sounds/Basso.aiff'
@@ -297,20 +319,22 @@ app.whenReady().then(() => {
     createNotification: (opts) => new Notification(opts),
   });
   const sessionsService = _sessionsService = createSessionsService(
-    (channel, ...args) => {
-      mainWindow?.webContents.send(channel, ...args);
-    },
+    sendToRenderer,
     {
       showNotification: (title, body, isError) => {
         notificationsService.show(title, body, isError);
       },
       incrementUnread: () => {
-        // Only bump the dock badge when the app isn't in focus
-        if (mainWindow?.isFocused()) return;
+        // Only bump the dock badge when no window is focused
+        if (anyWindowFocused()) return;
         incrementUnread();
       },
     },
     loggingService,
+    {
+      register: (tabId, ownerId) => router.registerTabOwner(tabId, ownerId),
+      unregister: (tabId) => router.unregisterTabOwner(tabId),
+    },
   );
   const claudeService = createClaudeService(db, accountsService);
   const agentRunRegistry = createAgentRunRegistry();
@@ -319,8 +343,10 @@ app.whenReady().then(() => {
     accountsService,
     claudeBinaryService,
     agentRunRegistry,
-    (channel, ...args) => {
-      mainWindow?.webContents.send(channel, ...args);
+    sendToRenderer,
+    {
+      register: (runId, ownerId) => router.registerRunOwner(runId, ownerId),
+      unregister: (runId) => router.unregisterRunOwner(runId),
     },
   );
   const checkpointsService = createCheckpointsService(db, accountsService);
@@ -530,11 +556,14 @@ app.whenReady().then(() => {
     return updaterService.checkForUpdate();
   });
 
-  ipcMain.handle('updater:download', async (_event, data: any) => {
+  ipcMain.handle('updater:download', async (event, data: any) => {
     const url: string = data?.url ?? data;
     const assetName: string | undefined = data?.assetName ?? data?.asset_name;
     return updaterService.downloadUpdate(url, (progress) => {
-      mainWindow?.webContents.send('updater:progress', progress);
+      // Send progress only to the window that initiated the download.
+      if (!event.sender.isDestroyed()) {
+        event.sender.send('updater:progress', progress);
+      }
     }, assetName);
   });
 
@@ -573,6 +602,6 @@ app.on('activate', () => {
   }
 });
 
-export function getMainWindow(): BrowserWindow | null {
-  return mainWindow;
+export function getAllWindows(): BrowserWindow[] {
+  return Array.from(windows);
 }

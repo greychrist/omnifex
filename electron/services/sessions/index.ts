@@ -2,4 +2,4 @@
 // Extracted from electron/services/sessions.ts (pure refactor)
 
 export { createSessionsService } from './lifecycle';
-export type { SessionsService, SessionStartParams, SessionStatus } from './types';
+export type { SessionsService, SessionStartParams, SessionStatus, SessionOwnership } from './types';

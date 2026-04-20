@@ -2760,3 +2760,63 @@ describe('sessions service — getHealth', () => {
     expect(health.sessionId).toBeNull(); // no init message yet
   });
 });
+
+// ---------------------------------------------------------------------------
+// Sessions service — per-window ownership hooks
+// ---------------------------------------------------------------------------
+
+describe('sessions service — ownership hook', () => {
+  let service: SessionsService;
+  let sendToRenderer: ReturnType<typeof vi.fn>;
+  let ownership: { register: ReturnType<typeof vi.fn>; unregister: ReturnType<typeof vi.fn> };
+
+  beforeEach(() => {
+    mockedQuery.mockReset();
+    sendToRenderer = vi.fn();
+    ownership = { register: vi.fn(), unregister: vi.fn() };
+    service = createSessionsService(sendToRenderer as any, {}, null, ownership as any);
+  });
+
+  afterEach(() => {
+    service.stopAll();
+  });
+
+  it('registers the owner webContents id on start when provided', () => {
+    installFakeQuery();
+    service.start({
+      tabId: 'tab-A',
+      projectPath: '/p',
+      configDir: '/c',
+      model: 'sonnet',
+      permissionMode: 'default',
+      ownerWebContentsId: 7,
+    });
+    expect(ownership.register).toHaveBeenCalledWith('tab-A', 7);
+  });
+
+  it('does not register when ownerWebContentsId is omitted', () => {
+    installFakeQuery();
+    service.start({
+      tabId: 'tab-B',
+      projectPath: '/p',
+      configDir: '/c',
+      model: 'sonnet',
+      permissionMode: 'default',
+    });
+    expect(ownership.register).not.toHaveBeenCalled();
+  });
+
+  it('unregisters the owner on stop()', () => {
+    installFakeQuery();
+    service.start({
+      tabId: 'tab-C',
+      projectPath: '/p',
+      configDir: '/c',
+      model: 'sonnet',
+      permissionMode: 'default',
+      ownerWebContentsId: 11,
+    });
+    service.stop('tab-C');
+    expect(ownership.unregister).toHaveBeenCalledWith('tab-C');
+  });
+});

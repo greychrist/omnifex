@@ -1155,3 +1155,72 @@ describe('agents service — executeAgent SDK path', () => {
     expect(cancelledCalls.length).toBeGreaterThanOrEqual(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Per-window ownership hook
+// ---------------------------------------------------------------------------
+
+describe('agents service — ownership hook', () => {
+  let db: Database;
+  let accounts: AccountsService;
+  let service: AgentsService;
+  let agentRunRegistry: AgentRunRegistry;
+  let ownership: { register: ReturnType<typeof vi.fn>; unregister: ReturnType<typeof vi.fn> };
+
+  beforeEach(() => {
+    db = createDatabase(':memory:');
+    accounts = createAccountsService(db);
+    agentRunRegistry = createAgentRunRegistry();
+    ownership = { register: vi.fn(), unregister: vi.fn() };
+    service = createAgentsService(
+      db,
+      accounts,
+      makeClaudeBinaryService(),
+      agentRunRegistry,
+      makeSendToRenderer(),
+      ownership as any,
+    );
+    const account = accounts.createAccount('Default', '/config', true, 'pro');
+    accounts.addPathRule(account.id, '/p');
+  });
+
+  afterEach(() => {
+    db.close();
+  });
+
+  it('registers the owner when executeAgent is given ownerWebContentsId', async () => {
+    installFakeQuery();
+    const agent = service.createAgent({ name: 'A', icon: '🤖', system_prompt: 'P' });
+    const runId = await service.executeAgent({
+      agentId: agent.id,
+      projectPath: '/p',
+      task: 'do it',
+      ownerWebContentsId: 42,
+    });
+    expect(ownership.register).toHaveBeenCalledWith(String(runId), 42);
+  });
+
+  it('unregisters on killAgentSession', async () => {
+    installFakeQuery();
+    const agent = service.createAgent({ name: 'A', icon: '🤖', system_prompt: 'P' });
+    const runId = await service.executeAgent({
+      agentId: agent.id,
+      projectPath: '/p',
+      task: 'do it',
+      ownerWebContentsId: 42,
+    });
+    service.killAgentSession(runId);
+    expect(ownership.unregister).toHaveBeenCalledWith(String(runId));
+  });
+
+  it('does not register when ownerWebContentsId is omitted', async () => {
+    installFakeQuery();
+    const agent = service.createAgent({ name: 'A', icon: '🤖', system_prompt: 'P' });
+    await service.executeAgent({
+      agentId: agent.id,
+      projectPath: '/p',
+      task: 'do it',
+    });
+    expect(ownership.register).not.toHaveBeenCalled();
+  });
+});

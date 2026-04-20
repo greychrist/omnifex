@@ -76,6 +76,8 @@ export interface AgentsService {
     projectPath: string;
     task: string;
     model?: string;
+    /** webContents.id of the window that initiated this run — used to route agent events back to that window only. */
+    ownerWebContentsId?: number;
   }): Promise<number>;
 
   // Runs
@@ -142,12 +144,18 @@ const GITHUB_AGENTS_PATH = 'agents';
 // Factory
 // ---------------------------------------------------------------------------
 
+export interface AgentRunOwnership {
+  register(runId: string, ownerWebContentsId: number): void;
+  unregister(runId: string): void;
+}
+
 export function createAgentsService(
   db: Database,
   accounts: AccountsService,
   claudeBinary: ClaudeBinaryService,
   agentRunRegistry: AgentRunRegistry,
   sendToRenderer: (channel: string, ...args: unknown[]) => void,
+  ownership: AgentRunOwnership | null = null,
 ): AgentsService {
   const raw = db.raw;
 
@@ -261,6 +269,7 @@ export function createAgentsService(
     projectPath: string;
     task: string;
     model?: string;
+    ownerWebContentsId?: number;
   }): Promise<number> {
     const agent = getAgent(params.agentId);
     if (!agent) throw new Error(`Agent ${params.agentId} not found`);
@@ -295,6 +304,9 @@ export function createAgentsService(
       );
 
     const runId = info.lastInsertRowid as number;
+    if (params.ownerWebContentsId !== undefined) {
+      ownership?.register(String(runId), params.ownerWebContentsId);
+    }
 
     // Build SDK options — mirror the interactive-session path in
     // electron/services/sessions.ts so agent runs and interactive sessions
@@ -412,6 +424,7 @@ export function createAgentsService(
     if (handle && handle.status === 'killed') {
       // killAgentSession already updated the DB status; don't overwrite.
       sendToRenderer(`agent-complete:${runId}`);
+      ownership?.unregister(String(runId));
       return;
     }
 
@@ -422,6 +435,7 @@ export function createAgentsService(
       )
       .run(finalStatus, runId);
     sendToRenderer(`agent-complete:${runId}`);
+    ownership?.unregister(String(runId));
   }
 
   // -------------------------------------------------------------------------
@@ -465,6 +479,7 @@ export function createAgentsService(
     if (wasRegistered) {
       sendToRenderer(`agent-cancelled:${runId}`);
     }
+    ownership?.unregister(String(runId));
   }
 
   function getSessionStatus(runId: number): string {

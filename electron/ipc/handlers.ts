@@ -506,8 +506,24 @@ export function registerIpcHandlers(services: Services = {}): void {
 
   const handlerMap = getHandlerMap(services);
 
+  // Channels that should have the caller's webContents.id injected into their
+  // params so the corresponding service can register per-window event routing.
+  // (Session and agent event channels are window-scoped so streams don't leak
+  // into other windows when the user has multiple open.)
+  const OWNER_INJECTED_CHANNELS = new Set(['session_start', 'execute_agent']);
+
   for (const [channel, handler] of Object.entries(handlerMap)) {
-    ipcMain.handle(channel, handler);
+    if (OWNER_INJECTED_CHANNELS.has(channel)) {
+      ipcMain.handle(channel, async (event, params) => {
+        const augmented = {
+          ...(params ?? {}),
+          ownerWebContentsId: event.sender.id,
+        };
+        return handler(event, augmented);
+      });
+    } else {
+      ipcMain.handle(channel, handler);
+    }
   }
 
   // ── Dialog handlers ────────────────────────────────────────────────────────

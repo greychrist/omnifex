@@ -49,6 +49,14 @@ export interface SessionStartParams {
   thinking?: { type: 'adaptive'; display?: 'summarized' | 'omitted' }
     | { type: 'enabled'; budgetTokens?: number; display?: 'summarized' | 'omitted' }
     | { type: 'disabled' };
+  /** webContents.id of the window that started this session — used to route tab-scoped events back to that window only. */
+  ownerWebContentsId?: number;
+}
+
+/** Lets the service tell the main process which window owns each tab, so tab-scoped events are routed per-window. */
+export interface SessionOwnership {
+  register(tabId: string, ownerWebContentsId: number): void;
+  unregister(tabId: string): void;
 }
 
 export interface SessionsService {
