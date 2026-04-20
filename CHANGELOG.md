@@ -5,6 +5,25 @@ All notable changes to GreyChrist are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.25] — 2026-04-20
+
+Cmd+R no longer breaks the active session, and the project view no longer hides the new-session form behind an extra click. Installers remain **unsigned**.
+
+### Added
+
+- **`session_rebind` IPC for re-claiming an in-flight session after a renderer reload** (`c8af874`). New `sessions.rebind(tabId, ownerWebContentsId)` method on the sessions service re-registers per-window event ownership without touching the SDK query, returning `false` when no live session exists for that tab. Wired through `electron/ipc/handlers.ts` (with `ownerWebContentsId` injection), `electron/preload.ts` (allow-list), and `src/lib/api.ts` (`api.sessionRebind`). +3 unit tests covering unknown-tab false return, ownership re-registration on a healthy tab, and no second SDK subprocess spawn on rebind.
+- **`NewSessionForm` reusable component** (`c8af874`). Extracted the model/effort/permissions/auto-allow panel out of `ClaudeCodeSession.tsx` so it can render in two places with the same controlled state surface.
+- **`initialSessionConfig` field on `Tab`** (`c8af874`). New optional `{ model, effort, permissionMode, autoAllowEnabled? }` shape; `ClaudeCodeSession` seeds its state from it on mount and auto-starts the session, so a Start click in the project view doesn't need a second click in the chat tab.
+
+### Changed
+
+- **Project view shows the new-session form inline above the session history** (`c8af874`). The "+ New session" button and `handleNewSession` indirection are gone from `src/components/TabContent.tsx`. The form sits at the top, with CLAUDE.md memories and past sessions below — Start swaps the tab to chat with the chosen config baked in via `initialSessionConfig`. `api.explainAccountResolution` now runs when a project is opened so the form's Account/Config/Matched-by block is populated.
+- **`useSessionLifecycle` exposes `rebindPersistentSession()` and split listener-attach / init-info-fetch helpers** (`c8af874`). The auto-resume effect in `ClaudeCodeSession` now tries `rebindPersistentSession` first and only falls back to the existing `startPersistentSession(session.id)` resume path when the main process has no live session for that tab. Same effect also handles the new "auto-start from `initialSessionConfig`" path.
+
+### Fixed
+
+- **Cmd+R reload while a session is running no longer leaves prompts stuck on a spinner** (`c8af874`). The auto-resume effect used to call `api.startSession(...)` unconditionally on every remount, which closed the healthy SDK query in the main process and replaced it with a fresh `resume:` query — and the new query's input channel wasn't always wired up before the next prompt arrived. Status read "active" but new prompts produced no output. Now the renderer rebinds to the existing session through `session_rebind` and only restarts when the main side actually has nothing live.
+
 ## [0.3.24] — 2026-04-19
 
 Second-window UX: one dock icon with multiple windows, and stuck subagent rows now clean themselves up. Installers remain **unsigned**.
