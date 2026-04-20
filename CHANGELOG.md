@@ -5,6 +5,19 @@ All notable changes to GreyChrist are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.28] — 2026-04-20
+
+Adds a Plugins side panel alongside the existing MCP Servers panel and reworks the MCP panel to group by scope with richer per-server details. Also bumps the Claude Agent SDK to 0.2.116. Installers remain **unsigned**.
+
+### Added
+
+- **Plugins panel in the session sidebar, sibling to the MCP Servers panel** (`3cc75db`). New `Package`-icon button on the session toolbar opens a slide-in panel that lists every plugin the SDK reports for the active session. Each row shows name, version, marketplace source, and description; expanding a row reveals scope, author (name + email), full path, and the marketplace id. Plugins are grouped by inferred scope (User / Project / Local / Other) — scope is derived from the plugin's path vs. the session's `configDir` and `projectPath`. Powered by a new `session_plugins` IPC channel that calls the SDK's `query.reloadPlugins()`, enriches each entry by reading `<path>/.claude-plugin/plugin.json` for `version` / `description` / `author`, and caches the result per tab so reopening the panel doesn't re-trigger a reload. The panel's refresh button forces a live fetch.
+
+### Changed
+
+- **MCP Servers panel now groups by scope and promotes key fields to the row header** (`3cc75db`). Servers are grouped under User / Project / Local / claude.ai / Managed / Other headings (sorted in that order). The row header now shows name, `v<version>` from the SDK's `serverInfo`, and a transport-type badge (`HTTP` / `STDIO`). The expanded details pane is a labeled key/value list — Scope, Version, Command + args, URL, Env (keys only; values redacted), and Tools — instead of the ad-hoc text blobs from before.
+- **Bumped `@anthropic-ai/claude-agent-sdk` from 0.2.114 to 0.2.116** (`ffacf39`). Upstream patch bump for parity with Claude Code v2.1.116. No API changes affecting our `query()` consumers in `electron/services/sessions/`, `electron/services/agents.ts`, or `electron/services/mcp.ts`.
+
 ## [0.3.27] — 2026-04-20
 
 Fixes MCP servers silently disabled in every session since v0.3.0-era, and makes the session-status badge honest about the Claude Code 0.2.114 control-channel warmup delay. Installers remain **unsigned**.
