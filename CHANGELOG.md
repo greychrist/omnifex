@@ -5,7 +5,20 @@ All notable changes to GreyChrist are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.3.26] — 2026-04-20
+## [0.3.27] — 2026-04-20
+
+Fixes MCP servers silently disabled in every session since v0.3.0-era, and makes the session-status badge honest about the Claude Code 0.2.114 control-channel warmup delay. Installers remain **unsigned**.
+
+### Fixed
+
+- **MCP servers defined in `~/.claude.json` and `.mcp.json` no longer silently disappear from sessions and agent runs** (`ce15fd8`). `electron/services/sessions/lifecycle.ts` and `electron/services/agents.ts` were passing `strictMcpConfig: true` intending the SDK JSDoc's "invalid MCP configs become hard errors instead of warnings" behavior. The underlying Claude CLI `--strict-mcp-config` flag actually means "only use MCP servers from `--mcp-config`, ignore every other source" — so with no `mcpConfig` passed programmatically, user-scope (`claude_ai_Atlassian` etc.) and project-scope MCP servers were getting ignored by the CLI entirely, and `enableAllProjectMcpServers: true` couldn't override it. Removed the flag from both call sites; flipped the two tests that were pinning the buggy behavior to assert it stays falsy, so this can't silently regress again.
+- **Session-status badge in `SessionHeader` now distinguishes three states: Starting… (amber, pulsing) / Active (green) / Closed (red)** (`b893bea`). Claude Code CLI 0.2.114's control channel (`accountInfo`, `mcpServerStatus`, `supportedCommands`, `contextUsage`) doesn't answer queries until the subprocess has processed a first user message. The old two-state badge went straight from `undefined` to "Closed" and stayed there until the first prompt, even though the session handle in main was alive. Split `persistentSessionRef` into `isSessionStarting` + `isSessionActive` React state so the badge tracks reality: Starting… fires when `api.startSession` kicks off, Active fires only when `fetchInitInfo` gets a real control-channel response, Closed fires on `claude-complete` / cancel fallback / force-send-from-queue.
+- **MCP panel no longer stays stuck on "No MCP servers active" when opened right after Start** (`b893bea`). `SessionMCPStatus` now polls `sessionMcpServerStatus` every 2 s until it gets a non-empty result or the panel unmounts (was a single-shot fetch). So when the SDK control channel finally answers — which happens post-first-prompt in 0.2.114 — the panel picks it up automatically instead of requiring a Refresh click.
+- **Chat view no longer looks blank between Start and first prompt** (`b893bea`). `useSessionLifecycle` now synthesizes a `system:init` message (model, cwd, standard tool list) the moment `api.startSession` resolves, instead of waiting for the hanging `sessionAccountInfo` call to return before showing anything. `fetchInitInfo` then merges MCP tool names into that existing init message in-place via a new `upsertInitMessage` helper once the control channel responds, replacing the dedup-skip path that used to drop MCP tools on the floor.
+- **`fetchInitInfo` no longer pins the retry loop on a hung first `await`** (`b893bea`). `api.sessionAccountInfo` is now wrapped in a 2 s `Promise.race` timeout (was unbounded, so the control-channel hang meant the retry loop never iterated), and polls indefinitely while `isMountedRef` is true, so late warmups after the first prompt still populate.
+- **Auto-start promise rejections are surfaced to devtools** (`b893bea`). `ClaudeCodeSession`'s mount effect now chains `.catch(console.error)` on both the rebind-then-resume path and the fresh-start path, so silent failures during auto-start show up instead of disappearing into unhandled rejections.
+
+
 
 Upgrades `@anthropic-ai/claude-agent-sdk` to 0.2.114 and teaches the Electron Forge build about the SDK's new per-platform native binary so packaged apps stay self-contained. Installers remain **unsigned**.
 
