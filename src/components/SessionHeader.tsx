@@ -42,8 +42,15 @@ interface SessionHeaderProps {
   cost: number;
   totalTokens: number;
   model?: string;
-  /** Session status indicator — 'active' (subprocess alive) | 'ended' (no subprocess) */
-  sessionStatus?: 'active' | 'ended';
+  /**
+   * Session status indicator:
+   *  - 'starting' — subprocess is up but the SDK control channel hasn't
+   *    answered yet (Claude Code 0.2.114 only responds after the first user
+   *    message, so MCP list / account info / tool list are still empty).
+   *  - 'active' — control channel responded, metadata is fully populated.
+   *  - 'ended' — subprocess closed or session was stopped.
+   */
+  sessionStatus?: 'starting' | 'active' | 'ended';
   /**
    * The SDK's own account-info report fetched via query.accountInfo() after
    * the session initialized. Undefined before the call resolves; null if it
@@ -146,9 +153,13 @@ export function SessionHeader({
         <span className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
           <span className={cn(
             "h-2 w-2 rounded-full",
-            sessionStatus === 'active' ? 'bg-emerald-500' : 'bg-red-500',
+            sessionStatus === 'active' && 'bg-emerald-500',
+            sessionStatus === 'starting' && 'bg-amber-500 animate-pulse',
+            sessionStatus === 'ended' && 'bg-red-500',
           )} />
-          {sessionStatus === 'active' ? 'Active' : 'Closed'}
+          {sessionStatus === 'active' && 'Active'}
+          {sessionStatus === 'starting' && 'Starting…'}
+          {sessionStatus === 'ended' && 'Closed'}
         </span>
       )}
 

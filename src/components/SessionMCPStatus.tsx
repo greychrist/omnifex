@@ -43,15 +43,33 @@ export const SessionMCPStatus: React.FC<SessionMCPStatusProps> = ({ tabId }) => 
     try {
       const result = await api.sessionMcpServerStatus(tabId);
       setServers(result ?? []);
+      return (result ?? []).length > 0;
     } catch (err) {
       console.error("[SessionMCPStatus] Failed to load MCP server status:", err);
+      return false;
     } finally {
       setLoading(false);
     }
   }, [tabId]);
 
+  // Poll for MCP status while the panel is open and no servers have been
+  // reported yet. The SDK's control channel doesn't reply until the CLI has
+  // processed its first stdin message, so opening this panel right after a
+  // Start click would otherwise land on an empty list and stay there even
+  // after the user sends their first prompt. Polling ends as soon as we get
+  // a non-empty result or the panel unmounts.
   useEffect(() => {
-    loadStatus();
+    let cancelled = false;
+    (async () => {
+      while (!cancelled) {
+        const ok = await loadStatus();
+        if (ok || cancelled) return;
+        await new Promise((r) => setTimeout(r, 2000));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [loadStatus]);
 
   const toggleExpanded = (name: string) => {

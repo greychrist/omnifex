@@ -244,6 +244,16 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
 
   const parentRef = useRef<HTMLDivElement>(null);
   const persistentSessionRef = useRef(false);
+  // Two distinct states for the status badge:
+  //  - isSessionStarting: true between api.startSession firing and the SDK
+  //    control channel answering. Maps to 'Starting…' in the header.
+  //  - isSessionActive: true once fetchInitInfo receives a response (account
+  //    info, MCP tools). Maps to 'Active'.
+  // persistentSessionRef stays the source of truth for synchronous checks
+  // inside async handlers (e.g. whether to start a session on first prompt);
+  // these states are the UI-reactive mirror so the badge rerenders.
+  const [isSessionStarting, setIsSessionStarting] = useState(false);
+  const [isSessionActive, setIsSessionActive] = useState(false);
   const tabIdRef = useRef(tabId || 'default');
   const floatingPromptRef = useRef<FloatingPromptInputRef>(null);
   // Tracks whether the user just hit the cancel/interrupt button. When true,
@@ -747,6 +757,8 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     accountResolution,
     effectiveSession,
     persistentSessionRef,
+    setIsSessionStarting,
+    setIsSessionActive,
     handleStreamMessage,
     setIsLoading,
     setMessages,
@@ -809,9 +821,11 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
         if (!rebound) {
           await startPersistentSession(session.id);
         }
-      })();
+      })().catch((err) => console.error("[auto-start] resume/rebind failed:", err));
     } else if (initialSessionConfig) {
-      startPersistentSession();
+      startPersistentSession().catch((err) =>
+        console.error("[auto-start] fresh start failed:", err),
+      );
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -905,6 +919,8 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
 
       setIsLoading(false);
       persistentSessionRef.current = false;
+      setIsSessionStarting(false);
+      setIsSessionActive(false);
       setError(null);
       setQueuedPrompts([]);
 
@@ -1225,9 +1241,13 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           thinkingConfig={thinkingConfig}
           permissionMode={permissionMode}
           sessionStatus={
-            sessionStarted
-              ? persistentSessionRef.current ? 'active' : 'ended'
-              : undefined
+            !sessionStarted
+              ? undefined
+              : isSessionActive
+                ? 'active'
+                : isSessionStarting
+                  ? 'starting'
+                  : 'ended'
           }
           viewModeControl={<SessionViewToggle mode={viewMode} onChange={setViewMode} />}
           className="mb-2"
@@ -1361,6 +1381,8 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                               // Force reset loading state so handleSendPrompt doesn't re-queue
                               setIsLoading(false);
                               persistentSessionRef.current = false;
+                              setIsSessionStarting(false);
+                              setIsSessionActive(false);
                               setTimeout(() => {
                                 handleSendPrompt(queuedPrompt.prompt, queuedPrompt.model);
                               }, 50);

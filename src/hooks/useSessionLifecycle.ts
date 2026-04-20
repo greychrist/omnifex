@@ -26,6 +26,16 @@ interface UseSessionLifecycleArgs {
   } | null;
   effectiveSession: Session | null;
   persistentSessionRef: React.MutableRefObject<boolean>;
+  /**
+   * Header badge states. Split so the UI can distinguish "subprocess is up
+   * but SDK control channel hasn't answered yet" (Starting…) from "SDK is
+   * fully warm and metadata is populated" (Active). `setIsSessionStarting`
+   * flips true as soon as api.startSession resolves; `setIsSessionActive`
+   * flips true only once fetchInitInfo receives a real control-channel
+   * response. Both flip false when the session ends.
+   */
+  setIsSessionStarting: React.Dispatch<React.SetStateAction<boolean>>;
+  setIsSessionActive: React.Dispatch<React.SetStateAction<boolean>>;
   handleStreamMessage: (payload: string | ClaudeStreamMessage) => void;
   setIsLoading: React.Dispatch<React.SetStateAction<boolean>>;
   setMessages: React.Dispatch<React.SetStateAction<ClaudeStreamMessage[]>>;
@@ -57,6 +67,8 @@ export function useSessionLifecycle({
   accountResolution,
   effectiveSession,
   persistentSessionRef,
+  setIsSessionStarting,
+  setIsSessionActive,
   handleStreamMessage,
   setIsLoading,
   setMessages,
@@ -95,6 +107,8 @@ export function useSessionLifecycle({
         if (isMountedRef.current) {
           setIsLoading(false);
           persistentSessionRef.current = false;
+          setIsSessionStarting(false);
+          setIsSessionActive(false);
         }
       },
     );
@@ -102,15 +116,64 @@ export function useSessionLifecycle({
     unlistenRefs.current = [outputUnlisten, errorUnlisten, completeUnlisten];
   };
 
+  // Standard tool names — Claude Code's always-on tools. MCP tool names get
+  // appended in fetchInitInfo once the SDK control channel responds.
+  const STANDARD_TOOLS = [
+    "Task", "AskUserQuestion", "Bash", "CronCreate", "CronList", "Edit",
+    "EnterPlanMode", "EnterWorktree", "ExitPlanMode", "ExitWorktree", "Glob",
+    "Grep", "ListMcpResourcesTool", "LSP", "Monitor", "NotebookEdit",
+    "NotebookRead", "Read", "ReadMcpResourceTool", "RemoteTrigger",
+    "ScheduleWakeup", "SendMessage", "Skill", "TaskOutput", "TaskStop",
+    "TeamCreate", "TeamDelete", "TodoRead", "TodoWrite", "Toolbox", "WebFetch",
+    "WebSearch", "Write",
+  ];
+
+  // Synthesize/update the synthetic system:init message. Called twice:
+  //   1. Immediately after api.startSession resolves, with standard tools
+  //      only — so the chat renders the session header right away instead
+  //      of looking blank while the CLI subprocess warms up.
+  //   2. From fetchInitInfo once the SDK control channel answers — merges
+  //      in MCP tool names. Replaces the existing init message in-place
+  //      instead of adding a second one.
+  const upsertInitMessage = (tools: string[]) => {
+    setMessages((prev) => {
+      const idx = prev.findIndex(
+        (m) => m.type === "system" && (m as any).subtype === "init",
+      );
+      const init = {
+        type: "system" as const,
+        subtype: "init",
+        session_id: "",
+        model: selectedModel,
+        cwd: projectPath,
+        tools,
+      } as any;
+      if (idx >= 0) {
+        const next = [...prev];
+        next[idx] = { ...next[idx], ...init };
+        return next;
+      }
+      return [init, ...prev];
+    });
+  };
+
   // Fetch SDK-derived metadata (account info, supported models/commands, MCP
-  // tool list, context usage) and synthesize an init message so the renderer
-  // can render the session header even before the next stream event.
-  const fetchInitInfo = async (retries = 8) => {
-    for (let i = 0; i < retries; i++) {
+  // tool list, context usage) once the CLI subprocess is responsive on its
+  // control channel. Claude Code's CLI doesn't answer control queries until
+  // after it has processed a first stdin message, so this polls indefinitely
+  // (bounded only by component unmount via isMountedRef). Flips the session
+  // status badge from 'Starting…' to 'Active' the moment the first response
+  // lands so the UI matches reality.
+  const fetchInitInfo = async () => {
+    while (isMountedRef.current) {
       try {
-        const info = await api.sessionAccountInfo(tabId);
+        const info = await Promise.race([
+          api.sessionAccountInfo(tabId),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 2000)),
+        ]);
         if (info) {
           setSdkAccountInfo(info);
+          setIsSessionActive(true);
 
           const [models, mcpServers, ctxUsage, commands] = await Promise.all([
             api.sessionSupportedModels(tabId).catch(() => []),
@@ -125,41 +188,6 @@ export function useSessionLifecycle({
           if (commands?.length) setSupportedCommands(commands);
           if (ctxUsage) setContextUsage(ctxUsage as any);
 
-          const standardTools = [
-            "Task",
-            "AskUserQuestion",
-            "Bash",
-            "CronCreate",
-            "CronList",
-            "Edit",
-            "EnterPlanMode",
-            "EnterWorktree",
-            "ExitPlanMode",
-            "ExitWorktree",
-            "Glob",
-            "Grep",
-            "ListMcpResourcesTool",
-            "LSP",
-            "Monitor",
-            "NotebookEdit",
-            "NotebookRead",
-            "Read",
-            "ReadMcpResourceTool",
-            "RemoteTrigger",
-            "ScheduleWakeup",
-            "SendMessage",
-            "Skill",
-            "TaskOutput",
-            "TaskStop",
-            "TeamCreate",
-            "TeamDelete",
-            "TodoRead",
-            "TodoWrite",
-            "Toolbox",
-            "WebFetch",
-            "WebSearch",
-            "Write",
-          ];
           const mcpToolNames = (mcpServers || [])
             .filter((s: any) => s.status === "connected")
             .flatMap((s: any) =>
@@ -168,28 +196,13 @@ export function useSessionLifecycle({
                   `mcp__${s.name.replace(/[^a-zA-Z0-9]/g, "_")}__${t.name}`,
               ),
             );
-          const allTools = [...standardTools, ...mcpToolNames];
-
-          setMessages((prev) => {
-            if (prev.some((m) => m.type === "system" && m.subtype === "init"))
-              return prev;
-            return [
-              {
-                type: "system" as const,
-                subtype: "init",
-                session_id: "",
-                model: selectedModel,
-                cwd: projectPath,
-                tools: allTools,
-              } as any,
-              ...prev,
-            ];
-          });
+          upsertInitMessage([...STANDARD_TOOLS, ...mcpToolNames]);
           return;
         }
       } catch {
         /* subprocess not ready yet */
       }
+      if (!isMountedRef.current) return;
       await new Promise((r) => setTimeout(r, 1500));
     }
   };
@@ -206,6 +219,10 @@ export function useSessionLifecycle({
     if (!rebound) return false;
     attachStreamListeners();
     persistentSessionRef.current = true;
+    // A successful rebind means the main-process session was already fully
+    // warm before the renderer reloaded — jump straight to 'Active'.
+    setIsSessionStarting(false);
+    setIsSessionActive(true);
     fetchInitInfo();
     return true;
   };
@@ -213,6 +230,9 @@ export function useSessionLifecycle({
   const startPersistentSession = async (resumeId?: string) => {
     if (persistentSessionRef.current) return; // Already running
 
+    // Show 'Starting…' badge immediately — the main-process session handle
+    // doesn't exist yet but the user has kicked off a start.
+    setIsSessionStarting(true);
     attachStreamListeners();
 
     // Resolve account fresh at session start (the cached state may not be ready yet)
@@ -248,8 +268,19 @@ export function useSessionLifecycle({
       sdkThinking,
     );
     persistentSessionRef.current = true;
+    // Intentionally NOT flipping isSessionActive here — fetchInitInfo flips
+    // it once the SDK control channel actually answers, which matches what
+    // the user sees in the MCP / account / tools panels.
 
-    // Fetch session details immediately (don't wait for first prompt).
+    // Render a synthetic system:init right away so the chat header + tool
+    // list appear immediately. The Claude Code CLI subprocess doesn't answer
+    // control-channel queries (accountInfo, mcpServerStatus, supportedCommands)
+    // until after it's processed a first stdin message, so without this the
+    // chat would look blank until the user sends their first prompt.
+    upsertInitMessage([...STANDARD_TOOLS]);
+
+    // Enrich the init message with MCP tools + account info as soon as the
+    // control channel starts responding.
     fetchInitInfo();
   };
 
