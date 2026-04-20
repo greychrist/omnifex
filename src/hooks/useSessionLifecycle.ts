@@ -39,6 +39,12 @@ interface UseSessionLifecycleReturn {
   unlistenRefs: React.MutableRefObject<(() => void)[]>;
   isMountedRef: React.MutableRefObject<boolean>;
   startPersistentSession: (resumeId?: string) => Promise<void>;
+  /**
+   * Re-attach to an in-flight session in the main process (no SDK restart).
+   * Returns true if a live session existed and was reclaimed, false otherwise.
+   * Used after a renderer reload (Cmd+R) so prompts keep flowing.
+   */
+  rebindPersistentSession: () => Promise<boolean>;
 }
 
 export function useSessionLifecycle({
@@ -62,14 +68,12 @@ export function useSessionLifecycle({
   const unlistenRefs = useRef<(() => void)[]>([]);
   const isMountedRef = useRef(true);
 
-  const startPersistentSession = async (resumeId?: string) => {
-    if (persistentSessionRef.current) return; // Already running
-
-    // Clean up any old listeners
+  // Attach the tab-scoped event listeners. Idempotent: tears down any prior
+  // listeners first. Used both for fresh-start and for rebind-after-reload.
+  const attachStreamListeners = () => {
     unlistenRefs.current.forEach((u) => u());
     unlistenRefs.current = [];
 
-    // Set up listeners ONCE — scoped to tab_id
     const outputUnlisten = window.electronAPI.onEvent(
       `claude-output:${tabId}`,
       (payload: any) => {
@@ -96,6 +100,120 @@ export function useSessionLifecycle({
     );
 
     unlistenRefs.current = [outputUnlisten, errorUnlisten, completeUnlisten];
+  };
+
+  // Fetch SDK-derived metadata (account info, supported models/commands, MCP
+  // tool list, context usage) and synthesize an init message so the renderer
+  // can render the session header even before the next stream event.
+  const fetchInitInfo = async (retries = 8) => {
+    for (let i = 0; i < retries; i++) {
+      try {
+        const info = await api.sessionAccountInfo(tabId);
+        if (info) {
+          setSdkAccountInfo(info);
+
+          const [models, mcpServers, ctxUsage, commands] = await Promise.all([
+            api.sessionSupportedModels(tabId).catch(() => []),
+            api.sessionMcpServerStatus(tabId).catch(() => []),
+            api.sessionContextUsage(tabId).catch(() => null),
+            api.sessionSupportedCommands(tabId).catch((err) => {
+              console.error('[fetchInitInfo] supportedCommands call failed:', err);
+              return [];
+            }),
+          ]);
+          if (models?.length) setSupportedModels(models);
+          if (commands?.length) setSupportedCommands(commands);
+          if (ctxUsage) setContextUsage(ctxUsage as any);
+
+          const standardTools = [
+            "Task",
+            "AskUserQuestion",
+            "Bash",
+            "CronCreate",
+            "CronList",
+            "Edit",
+            "EnterPlanMode",
+            "EnterWorktree",
+            "ExitPlanMode",
+            "ExitWorktree",
+            "Glob",
+            "Grep",
+            "ListMcpResourcesTool",
+            "LSP",
+            "Monitor",
+            "NotebookEdit",
+            "NotebookRead",
+            "Read",
+            "ReadMcpResourceTool",
+            "RemoteTrigger",
+            "ScheduleWakeup",
+            "SendMessage",
+            "Skill",
+            "TaskOutput",
+            "TaskStop",
+            "TeamCreate",
+            "TeamDelete",
+            "TodoRead",
+            "TodoWrite",
+            "Toolbox",
+            "WebFetch",
+            "WebSearch",
+            "Write",
+          ];
+          const mcpToolNames = (mcpServers || [])
+            .filter((s: any) => s.status === "connected")
+            .flatMap((s: any) =>
+              (s.tools || []).map(
+                (t: any) =>
+                  `mcp__${s.name.replace(/[^a-zA-Z0-9]/g, "_")}__${t.name}`,
+              ),
+            );
+          const allTools = [...standardTools, ...mcpToolNames];
+
+          setMessages((prev) => {
+            if (prev.some((m) => m.type === "system" && m.subtype === "init"))
+              return prev;
+            return [
+              {
+                type: "system" as const,
+                subtype: "init",
+                session_id: "",
+                model: selectedModel,
+                cwd: projectPath,
+                tools: allTools,
+              } as any,
+              ...prev,
+            ];
+          });
+          return;
+        }
+      } catch {
+        /* subprocess not ready yet */
+      }
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+  };
+
+  const rebindPersistentSession = async (): Promise<boolean> => {
+    if (persistentSessionRef.current) return true;
+    let rebound = false;
+    try {
+      rebound = await api.sessionRebind(tabId);
+    } catch (e) {
+      console.error("[rebindPersistentSession] sessionRebind failed:", e);
+      return false;
+    }
+    if (!rebound) return false;
+    attachStreamListeners();
+    persistentSessionRef.current = true;
+    fetchInitInfo();
+    return true;
+  };
+
+  const startPersistentSession = async (resumeId?: string) => {
+    if (persistentSessionRef.current) return; // Already running
+
+    attachStreamListeners();
 
     // Resolve account fresh at session start (the cached state may not be ready yet)
     const mode = permissionMode;
@@ -132,97 +250,6 @@ export function useSessionLifecycle({
     persistentSessionRef.current = true;
 
     // Fetch session details immediately (don't wait for first prompt).
-    const fetchInitInfo = async (retries = 8) => {
-      for (let i = 0; i < retries; i++) {
-        try {
-          const info = await api.sessionAccountInfo(tabId);
-          if (info) {
-            setSdkAccountInfo(info);
-
-            // Fetch supporting data in parallel
-            const [models, mcpServers, ctxUsage, commands] = await Promise.all([
-              api.sessionSupportedModels(tabId).catch(() => []),
-              api.sessionMcpServerStatus(tabId).catch(() => []),
-              api.sessionContextUsage(tabId).catch(() => null),
-              api.sessionSupportedCommands(tabId).catch((err) => {
-                console.error('[fetchInitInfo] supportedCommands call failed:', err);
-                return [];
-              }),
-            ]);
-            console.log(`[fetchInitInfo] supportedCommands result: ${commands?.length ?? 0} commands`, commands);
-            if (models?.length) setSupportedModels(models);
-            if (commands?.length) setSupportedCommands(commands);
-            if (ctxUsage) setContextUsage(ctxUsage as any);
-
-            // Build tool list: standard tools + MCP tools from connected servers
-            const standardTools = [
-              "Task",
-              "AskUserQuestion",
-              "Bash",
-              "CronCreate",
-              "CronList",
-              "Edit",
-              "EnterPlanMode",
-              "EnterWorktree",
-              "ExitPlanMode",
-              "ExitWorktree",
-              "Glob",
-              "Grep",
-              "ListMcpResourcesTool",
-              "LSP",
-              "Monitor",
-              "NotebookEdit",
-              "NotebookRead",
-              "Read",
-              "ReadMcpResourceTool",
-              "RemoteTrigger",
-              "ScheduleWakeup",
-              "SendMessage",
-              "Skill",
-              "TaskOutput",
-              "TaskStop",
-              "TeamCreate",
-              "TeamDelete",
-              "TodoRead",
-              "TodoWrite",
-              "Toolbox",
-              "WebFetch",
-              "WebSearch",
-              "Write",
-            ];
-            const mcpToolNames = (mcpServers || [])
-              .filter((s: any) => s.status === "connected")
-              .flatMap((s: any) =>
-                (s.tools || []).map(
-                  (t: any) =>
-                    `mcp__${s.name.replace(/[^a-zA-Z0-9]/g, "_")}__${t.name}`,
-                ),
-              );
-            const allTools = [...standardTools, ...mcpToolNames];
-
-            setMessages((prev) => {
-              if (prev.some((m) => m.type === "system" && m.subtype === "init"))
-                return prev;
-              return [
-                {
-                  type: "system" as const,
-                  subtype: "init",
-                  session_id: "",
-                  model: selectedModel,
-                  cwd: projectPath,
-                  tools: allTools,
-                } as any,
-                ...prev,
-              ];
-            });
-            return;
-          }
-        } catch {
-          /* subprocess not ready yet */
-        }
-        await new Promise((r) => setTimeout(r, 1500));
-      }
-    };
     fetchInitInfo();
   };
 
@@ -257,5 +284,6 @@ export function useSessionLifecycle({
     unlistenRefs,
     isMountedRef,
     startPersistentSession,
+    rebindPersistentSession,
   };
 }

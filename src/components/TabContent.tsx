@@ -10,6 +10,8 @@ import { SessionList } from '@/components/SessionList';
 import { AccountPickerDialog } from '@/components/AccountPickerDialog';
 import { AccountBadge } from '@/components/AccountBadge';
 import { Button } from '@/components/ui/button';
+import { NewSessionForm, type NewSessionFormAccountResolution } from '@/components/NewSessionForm';
+import type { EffortLevel } from '@/components/FloatingPromptInput';
 
 // Lazy load heavy components
 const ClaudeCodeSession = lazy(() => import('@/components/ClaudeCodeSession').then(m => ({ default: m.ClaudeCodeSession })));
@@ -41,6 +43,15 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
   const [showAccountPicker, setShowAccountPicker] = React.useState(false);
   const [pendingProjectPath, setPendingProjectPath] = React.useState<string>('');
   const [projectAccountName, setProjectAccountName] = React.useState<string | null>(null);
+  // Inline new-session form state for the project view. Lives here (not in
+  // ClaudeCodeSession) so the user can pick model/effort/permissions before
+  // a chat tab even exists. On Start, these get baked into initialSessionConfig
+  // and ClaudeCodeSession seeds its state from them.
+  const [formModel, setFormModel] = React.useState<string>('opus[1m]');
+  const [formEffort, setFormEffort] = React.useState<EffortLevel>('high');
+  const [formPermissionMode, setFormPermissionMode] = React.useState<string>('acceptEdits');
+  const [formAutoAllowEnabled, setFormAutoAllowEnabled] = React.useState<boolean>(false);
+  const [projectAccountResolution, setProjectAccountResolution] = React.useState<NewSessionFormAccountResolution | null>(null);
   
   // Load projects when tab becomes active and is of type 'projects'
   useEffect(() => {
@@ -82,6 +93,13 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
           if (account) updateTab(tab.id, { accountName: account.name });
         }).catch(() => setProjectAccountName(null));
       }
+
+      // Resolve full account info (with match_type / match_detail) so the
+      // inline new-session form can show the same Account/Config/Matched-by
+      // block that ClaudeCodeSession's panel shows.
+      api.explainAccountResolution(project.path).then((res) => {
+        setProjectAccountResolution(res ?? null);
+      }).catch(() => setProjectAccountResolution(null));
 
       // Update tab title to show project name
       const projectName = project.path.split('/').pop() || 'Project';
@@ -125,30 +143,26 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
     }
   };
   
-  const handleNewSession = () => {
-    // Update current tab to show new chat session instead of creating a new tab
-    if (selectedProject) {
-      const projectName = selectedProject.path.split('/').pop() || 'Session';
-      updateTab(tab.id, {
-        type: 'chat',
-        title: projectName,
-        sessionId: undefined,
-        sessionData: undefined,
-        initialProjectPath: selectedProject.path
-      });
-      // Resolve account name for the tab badge
-      api.resolveAccountForProject(selectedProject.path).then((account) => {
-        if (account) updateTab(tab.id, { accountName: account.name });
-      }).catch(() => {});
-    } else {
-      updateTab(tab.id, {
-        type: 'chat',
-        title: 'New Session',
-        sessionId: undefined,
-        sessionData: undefined,
-        initialProjectPath: undefined
-      });
-    }
+  const handleStartNewSession = () => {
+    if (!selectedProject) return;
+    const projectName = selectedProject.path.split('/').pop() || 'Session';
+    updateTab(tab.id, {
+      type: 'chat',
+      title: projectName,
+      sessionId: undefined,
+      sessionData: undefined,
+      initialProjectPath: selectedProject.path,
+      initialSessionConfig: {
+        model: formModel,
+        effort: formEffort,
+        permissionMode: formPermissionMode,
+        autoAllowEnabled: formAutoAllowEnabled,
+      },
+    });
+    // Resolve account name for the tab badge
+    api.resolveAccountForProject(selectedProject.path).then((account) => {
+      if (account) updateTab(tab.id, { accountName: account.name });
+    }).catch(() => {});
   };
   
   // Resolve account badge for chat tabs on mount
@@ -208,19 +222,25 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                             </p>
                           </div>
                         </div>
-                        <motion.div
-                          whileTap={{ scale: 0.97 }}
-                          transition={{ duration: 0.15 }}
-                        >
-                          <Button
-                            onClick={handleNewSession}
-                            size="default"
-                          >
-                            <Plus className="mr-2 h-4 w-4" />
-                            New session
-                          </Button>
-                        </motion.div>
                       </div>
+                    </div>
+
+                    {/* Inline new-session form — same panel that used to live
+                        behind the "+ New session" button, now always visible
+                        above the session history. */}
+                    <div className="mb-6 flex justify-center">
+                      <NewSessionForm
+                        accountResolution={projectAccountResolution}
+                        selectedModel={formModel}
+                        setSelectedModel={setFormModel}
+                        effort={formEffort}
+                        setEffort={setFormEffort}
+                        permissionMode={formPermissionMode}
+                        setPermissionMode={setFormPermissionMode}
+                        autoAllowEnabled={formAutoAllowEnabled}
+                        setAutoAllowEnabled={setFormAutoAllowEnabled}
+                        onStart={handleStartNewSession}
+                      />
                     </div>
 
                     {/* Error display */}
@@ -316,6 +336,7 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
               session={tab.sessionData} // Pass the full session object if available
               initialProjectPath={tab.initialProjectPath || ''}
               tabId={tab.id}
+              initialSessionConfig={tab.initialSessionConfig}
               onBack={() => {
                 // Go back to projects view in the same tab
                 updateTab(tab.id, {

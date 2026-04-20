@@ -13,6 +13,18 @@ export interface Tab {
   agentData?: any; // for agent-execution tabs
   claudeFileId?: string; // for claude-file tabs
   initialProjectPath?: string; // for chat tabs
+  /**
+   * Pre-filled session configuration for a chat tab that was started from
+   * the project view's inline new-session form. ClaudeCodeSession seeds its
+   * state with these values and auto-starts the session, so the user doesn't
+   * have to click "Start Session" again.
+   */
+  initialSessionConfig?: {
+    model: string;
+    effort: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+    permissionMode: string;
+    autoAllowEnabled?: boolean;
+  };
   projectPath?: string; // for agent-execution tabs
   accountName?: string; // for chat tabs - resolved account name
   status: 'active' | 'idle' | 'running' | 'complete' | 'error';

@@ -414,6 +414,8 @@ app.whenReady().then(() => {
     // Sessions adapter
     sessions: {
       start: (data: any) => sessionsService.start(data),
+      rebind: (tabId: string, ownerWebContentsId: number) =>
+        sessionsService.rebind(tabId, ownerWebContentsId),
       sendMessage: (sessionId: string, message: any) =>
         sessionsService.sendMessage(
           sessionId,

@@ -2820,3 +2820,69 @@ describe('sessions service — ownership hook', () => {
     expect(ownership.unregister).toHaveBeenCalledWith('tab-C');
   });
 });
+
+// ---------------------------------------------------------------------------
+// rebind() — re-attach an existing session to a (new) owner webContents
+// without tearing down the SDK query. Used when the renderer reloads (Cmd+R)
+// and needs to re-claim its in-flight sessions instead of restarting them.
+// ---------------------------------------------------------------------------
+
+describe('sessions service — rebind', () => {
+  let service: SessionsService;
+  let sendToRenderer: ReturnType<typeof vi.fn>;
+  let ownership: { register: ReturnType<typeof vi.fn>; unregister: ReturnType<typeof vi.fn> };
+
+  beforeEach(() => {
+    mockedQuery.mockReset();
+    sendToRenderer = vi.fn();
+    ownership = { register: vi.fn(), unregister: vi.fn() };
+    service = createSessionsService(sendToRenderer as any, {}, null, ownership as any);
+  });
+
+  afterEach(() => {
+    service.stopAll();
+  });
+
+  it('returns false for an unknown tab and does not register ownership', () => {
+    const ok = service.rebind('nope', 42);
+    expect(ok).toBe(false);
+    expect(ownership.register).not.toHaveBeenCalled();
+  });
+
+  it('returns true and re-registers ownership for an active tab without closing the query', () => {
+    const fake = installFakeQuery();
+    service.start({
+      tabId: 'tab-rebind',
+      projectPath: '/p',
+      configDir: '/c',
+      model: 'sonnet',
+      permissionMode: 'default',
+      ownerWebContentsId: 7,
+    });
+    expect(ownership.register).toHaveBeenLastCalledWith('tab-rebind', 7);
+
+    const ok = service.rebind('tab-rebind', 99);
+
+    expect(ok).toBe(true);
+    expect(fake.wasClosed()).toBe(false);
+    expect(service.isActive('tab-rebind')).toBe(true);
+    expect(ownership.register).toHaveBeenLastCalledWith('tab-rebind', 99);
+  });
+
+  it('does not call the SDK query factory again on rebind (no new subprocess)', () => {
+    installFakeQuery();
+    service.start({
+      tabId: 'tab-noop',
+      projectPath: '/p',
+      configDir: '/c',
+      model: 'sonnet',
+      permissionMode: 'default',
+      ownerWebContentsId: 1,
+    });
+    expect(mockedQuery).toHaveBeenCalledTimes(1);
+
+    service.rebind('tab-noop', 2);
+
+    expect(mockedQuery).toHaveBeenCalledTimes(1);
+  });
+});

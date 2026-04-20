@@ -51,6 +51,7 @@ export interface Services {
   };
   sessions?: {
     start(data: unknown): unknown;
+    rebind(tabId: string, ownerWebContentsId: number): boolean;
     sendMessage(sessionId: string, message: unknown): unknown;
     sendStructuredMessage(sessionId: string, content: unknown): unknown;
     respondPermission(sessionId: string, behavior: string, updatedInput?: Record<string, unknown>, updatedPermissions?: unknown[]): unknown;
@@ -251,6 +252,12 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
 
     // ── Sessions ──────────────────────────────────────────────────────────────
     session_start: wrapWith((p: Record<string, unknown>) => sessions?.start(p) ?? null),
+    session_rebind: wrapWith((p: Record<string, unknown>) => {
+      const tabId = (p?.tabId ?? p?.session_id) as string;
+      const ownerWebContentsId = p?.ownerWebContentsId as number | undefined;
+      if (!tabId || ownerWebContentsId === undefined) return false;
+      return sessions?.rebind(tabId, ownerWebContentsId) ?? false;
+    }),
     session_send_message: wrapWith((p: Record<string, unknown>) => sessions?.sendMessage((p?.tabId ?? p?.session_id) as string, (p?.prompt ?? p?.message) as string) ?? null),
     session_send_structured_message: wrapWith((p: Record<string, unknown>) => sessions?.sendStructuredMessage((p?.tabId ?? p?.session_id) as string, p?.content as Array<Record<string, unknown>>) ?? null),
     session_respond_permission: wrapWith((p: Record<string, unknown>) => sessions?.respondPermission((p?.tabId ?? p?.session_id) as string, p?.behavior as string, p?.updatedInput as Record<string, unknown> | undefined, p?.updatedPermissions as any) ?? null),
@@ -510,7 +517,7 @@ export function registerIpcHandlers(services: Services = {}): void {
   // params so the corresponding service can register per-window event routing.
   // (Session and agent event channels are window-scoped so streams don't leak
   // into other windows when the user has multiple open.)
-  const OWNER_INJECTED_CHANNELS = new Set(['session_start', 'execute_agent']);
+  const OWNER_INJECTED_CHANNELS = new Set(['session_start', 'session_rebind', 'execute_agent']);
 
   for (const [channel, handler] of Object.entries(handlerMap)) {
     if (OWNER_INJECTED_CHANNELS.has(channel)) {

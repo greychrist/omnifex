@@ -374,6 +374,17 @@ export function createSessionsService(
   }
 
   // -------------------------------------------------------------------------
+  // rebind()
+  // -------------------------------------------------------------------------
+
+  function rebind(tabId: string, ownerWebContentsId: number): boolean {
+    const handle = sessions.get(tabId);
+    if (!handle) return false;
+    ownership?.register(tabId, ownerWebContentsId);
+    return true;
+  }
+
+  // -------------------------------------------------------------------------
   // respondPermission()
   // -------------------------------------------------------------------------
 
@@ -473,6 +484,7 @@ export function createSessionsService(
 
   return {
     start,
+    rebind,
     sendMessage,
     sendStructuredMessage,
     respondPermission,

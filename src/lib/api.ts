@@ -1256,6 +1256,17 @@ export const api = {
     return apiCall("session_start", { tabId, projectPath, model, permissionMode, resumeSessionId, configDir, effort, thinking });
   },
 
+  /**
+   * Re-claim ownership of an in-flight session for this window without
+   * restarting it. Returns true if the main process had a live session for
+   * this tabId (and rebound event routing to this window), false otherwise.
+   * Use after a renderer reload (Cmd+R) to avoid tearing down a healthy SDK
+   * query and replacing it with a fresh resume.
+   */
+  async sessionRebind(tabId: string): Promise<boolean> {
+    return apiCall("session_rebind", { tabId });
+  },
+
   async sendMessage(tabId: string, prompt: string): Promise<void> {
     return apiCall("session_send_message", { tabId, prompt });
   },

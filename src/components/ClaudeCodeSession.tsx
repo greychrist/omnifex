@@ -19,15 +19,13 @@ import { Label } from "@/components/ui/label";
 import { Popover } from "@/components/ui/popover";
 import { api, type Session } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { AccountBadge } from "@/components/AccountBadge";
+import { NewSessionForm } from "./NewSessionForm";
 import { StreamMessage } from "./StreamMessage";
 import {
   FloatingPromptInput,
   type FloatingPromptInputRef,
   type EffortLevel,
   type ThinkingConfig,
-  PERMISSION_MODES,
-  EFFORT_LEVELS,
 } from "./FloatingPromptInput";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { TimelineNavigator } from "./TimelineNavigator";
@@ -71,6 +69,18 @@ interface ClaudeCodeSessionProps {
    */
   tabId?: string;
   /**
+   * Pre-filled session configuration when the chat tab was started from
+   * the project view's inline form. When present, the New Session panel is
+   * skipped and the session is started immediately on mount with these
+   * values seeded into the session state.
+   */
+  initialSessionConfig?: {
+    model: string;
+    effort: EffortLevel;
+    permissionMode: string;
+    autoAllowEnabled?: boolean;
+  };
+  /**
    * Callback to go back
    */
   onBack: () => void;
@@ -102,6 +112,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   session,
   initialProjectPath = "",
   tabId,
+  initialSessionConfig,
   className,
   onStreamingChange,
   onProjectPathChange,
@@ -159,19 +170,21 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     match_detail: string;
   } | null>(null);
   const [sessionCost, setSessionCost] = useState(0);
-  // Pre-session config: show setup panel for new sessions until user clicks Start
-  const [sessionStarted, setSessionStarted] = useState(!!session);
-  const [selectedModel, setSelectedModel] = useState<string>("opus[1m]");
+  // Pre-session config: show setup panel for new sessions until user clicks
+  // Start. When the tab was opened from the project view's inline form,
+  // initialSessionConfig is set and we skip the panel entirely.
+  const [sessionStarted, setSessionStarted] = useState(!!session || !!initialSessionConfig);
+  const [selectedModel, setSelectedModel] = useState<string>(initialSessionConfig?.model ?? "opus[1m]");
   // Permission mode — the full SDK set ("default" | "acceptEdits" | "plan"
   // | "bypassPermissions"). Pre-session and in-session pickers both use
   // the same PERMISSION_MODES constant from FloatingPromptInput.
   // Default is acceptEdits per user preference — safer than bypass,
   // smoother than ask-every-time.
-  const [permissionMode, setPermissionMode] = useState<string>("acceptEdits");
+  const [permissionMode, setPermissionMode] = useState<string>(initialSessionConfig?.permissionMode ?? "acceptEdits");
   // Effort level — maps to the SDK's reasoning_effort parameter.
   // Default 'high' matches the SDK's own default (sdk.d.ts EffortLevel docs).
   // There is no 'auto' — the SDK's EffortLevel is strictly low/medium/high/xhigh/max.
-  const [effort, setEffort] = useState<EffortLevel>('high');
+  const [effort, setEffort] = useState<EffortLevel>(initialSessionConfig?.effort ?? 'high');
   // Thinking config — controls extended thinking behavior.
   const [thinkingConfig, setThinkingConfig] = useState<ThinkingConfig>('adaptive');
   // Git branch for the project directory, shown in SessionHeader badge.
@@ -724,7 +737,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   }, [projectPath, effectiveSession, extractedSessionInfo, autoAllowedTools]);
 
   // Session lifecycle: persistent session management, event listeners, cleanup
-  const { unlistenRefs, isMountedRef, startPersistentSession } = useSessionLifecycle({
+  const { unlistenRefs, isMountedRef, startPersistentSession, rebindPersistentSession } = useSessionLifecycle({
     tabId: tabIdRef.current,
     projectPath,
     selectedModel,
@@ -774,12 +787,31 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     [sendPromptRaw],
   );
 
-  // Auto-resume restored sessions — when a tab is opened with an existing
-  // session (from a previous app run or tab restore), start the SDK
-  // subprocess so queries like supportedCommands work immediately.
+  // Auto-resume / auto-start. Three distinct cases:
+  //   1. Renderer reload (Cmd+R) while a session is running in the main
+  //      process — rebind to it so the in-flight SDK query keeps streaming
+  //      and prompts still reach the open subprocess. Tearing down a
+  //      healthy session here used to leave the new query unable to
+  //      receive input (spinner stuck, no output).
+  //   2. Cold tab restore from a previous app run — no live session in
+  //      main, so spawn a fresh resume from the persisted session id.
+  //   3. New session started from the project view's inline form — no
+  //      session id to resume from, just spawn a fresh one with the
+  //      pre-filled config the user already chose. Skips the second click.
   useEffect(() => {
-    if (session && !persistentSessionRef.current) {
-      startPersistentSession(session.id);
+    if (persistentSessionRef.current) return;
+    if (initialSessionConfig?.autoAllowEnabled) {
+      setAutoAllowEnabled(true);
+    }
+    if (session) {
+      (async () => {
+        const rebound = await rebindPersistentSession();
+        if (!rebound) {
+          await startPersistentSession(session.id);
+        }
+      })();
+    } else if (initialSessionConfig) {
+      startPersistentSession();
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1202,155 +1234,24 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
         />
         {!sessionStarted && (
           <div className="flex-1 flex items-center justify-center p-8">
-            <div className="border border-border/50 rounded-lg p-6 bg-background/80 w-full max-w-md space-y-4">
-              <h3 className="text-base font-medium">New Session</h3>
-
-              {/* Account info */}
-              {accountResolution && (
-                <div className="space-y-1 text-sm">
-                  <div className="flex items-center gap-2">
-                    <span className="text-foreground/40 w-24 shrink-0">Account:</span>
-                    <AccountBadge name={accountResolution.account.name} />
-                    <span className="text-foreground/50 text-xs">({accountResolution.account.account_type})</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-foreground/40 w-24 shrink-0">Config:</span>
-                    <span className="font-mono text-xs text-foreground/50 truncate">{accountResolution.account.config_dir}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-foreground/40 w-24 shrink-0">Matched by:</span>
-                    <span className="text-xs text-foreground/60">
-                      {accountResolution.match_type === 'path_rule' ? 'Path rule' : accountResolution.match_type === 'project_override' ? 'Project override' : 'Default account'}
-                      {' — '}{accountResolution.match_detail}
-                    </span>
-                  </div>
-                </div>
-              )}
-
-              {/* Model selector */}
-              <div className="space-y-1">
-                <Label className="text-xs text-foreground/60">Model</Label>
-                <div className="flex gap-2">
-                  <Button
-                    size="sm"
-                    variant={selectedModel === "opus[1m]" ? "default" : "outline"}
-                    onClick={() => setSelectedModel("opus[1m]")}
-                    className="flex-1"
-                  >
-                    Opus 1M
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant={selectedModel === "opus" ? "default" : "outline"}
-                    onClick={() => setSelectedModel("opus")}
-                    className="flex-1"
-                  >
-                    Opus
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant={selectedModel === "sonnet" ? "default" : "outline"}
-                    onClick={() => setSelectedModel("sonnet")}
-                    className="flex-1"
-                  >
-                    Sonnet
-                  </Button>
-                </div>
-              </div>
-
-              {/* Effort level — maps to the SDK's reasoning_effort parameter.
-                  Pre-session pick threads through to startSession so the
-                  first prompt uses the chosen effort level. */}
-              <div className="space-y-1">
-                <Label className="text-xs text-foreground/60">Effort</Label>
-                <div className="grid grid-cols-5 gap-1">
-                  {EFFORT_LEVELS.map((level) => (
-                    <Button
-                      key={level.id}
-                      size="sm"
-                      variant={effort === level.id ? "default" : "outline"}
-                      onClick={() => setEffort(level.id)}
-                      className="flex-col gap-0.5 h-auto py-2 px-1"
-                      title={level.description}
-                    >
-                      <span className={cn("text-xs font-bold", level.color)}>
-                        {level.shortName}
-                      </span>
-                      <span className="text-[9px] leading-tight">{level.name}</span>
-                    </Button>
-                  ))}
-                </div>
-                <p className="text-[10px] text-foreground/40">
-                  {EFFORT_LEVELS.find((e) => e.id === effort)?.description}
-                </p>
-              </div>
-
-              {/* Permission mode (pre-session). Full four-option set,
-                  matching the in-session FloatingPromptInput picker so
-                  the user never has to re-learn the layout. Defaults to
-                  "Auto Accept" per user preference. */}
-              <div className="space-y-1">
-                <Label className="text-xs text-foreground/60">Permissions</Label>
-                <div className="grid grid-cols-2 gap-2">
-                  {PERMISSION_MODES.map((mode) => (
-                    <Button
-                      key={mode.id}
-                      size="sm"
-                      variant={permissionMode === mode.id ? "default" : "outline"}
-                      onClick={() => setPermissionMode(mode.id)}
-                      className={cn(
-                        "justify-start gap-2",
-                        permissionMode !== mode.id && mode.color,
-                      )}
-                      title={mode.description}
-                    >
-                      {mode.icon}
-                      <span className="text-xs">{mode.name}</span>
-                    </Button>
-                  ))}
-                </div>
-                <p className="text-[10px] text-foreground/40">
-                  {PERMISSION_MODES.find((m) => m.id === permissionMode)?.description}
-                </p>
-              </div>
-
-              {/* Auto-allow toggle — only shown in default (Ask) permission mode */}
-              {permissionMode === "default" && (
-                <div className="flex items-center justify-between">
-                  <div>
-                    <Label className="text-xs text-foreground/60">Auto-Allow Tools</Label>
-                    <p className="text-[10px] text-foreground/40">
-                      {autoAllowEnabled
-                        ? "\"Always Allow\" option shown on permission prompts"
-                        : "Every tool use requires explicit approval"}
-                    </p>
-                  </div>
-                  <Button
-                    size="sm"
-                    variant={autoAllowEnabled ? "default" : "outline"}
-                    onClick={() => {
-                      setAutoAllowEnabled(prev => {
-                        if (prev) setAutoAllowedTools(new Set());
-                        return !prev;
-                      });
-                    }}
-                    className="text-xs"
-                  >
-                    {autoAllowEnabled ? "On" : "Off"}
-                  </Button>
-                </div>
-              )}
-
-              <Button
-                className="w-full"
-                onClick={() => {
-                  setSessionStarted(true);
-                  startPersistentSession();
-                }}
-              >
-                Start Session
-              </Button>
-            </div>
+            <NewSessionForm
+              accountResolution={accountResolution}
+              selectedModel={selectedModel}
+              setSelectedModel={setSelectedModel}
+              effort={effort}
+              setEffort={setEffort}
+              permissionMode={permissionMode}
+              setPermissionMode={setPermissionMode}
+              autoAllowEnabled={autoAllowEnabled}
+              setAutoAllowEnabled={(next) => {
+                setAutoAllowEnabled(next);
+                if (!next) setAutoAllowedTools(new Set());
+              }}
+              onStart={() => {
+                setSessionStarted(true);
+                startPersistentSession();
+              }}
+            />
           </div>
         )}
         <div className="flex-1 min-h-0 w-full flex flex-col relative">

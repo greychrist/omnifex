@@ -40,6 +40,7 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
 
   // Sessions
   'session_start',
+  'session_rebind',
   'session_send_message',
   'session_send_structured_message',
   'session_respond_permission',

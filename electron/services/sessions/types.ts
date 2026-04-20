@@ -61,6 +61,13 @@ export interface SessionOwnership {
 
 export interface SessionsService {
   start(params: SessionStartParams): void;
+  /**
+   * Re-attach an existing session to a (new) owner webContents without tearing
+   * down the SDK query. Returns true if a session was found and re-bound,
+   * false if no session exists for that tabId. Used when the renderer reloads
+   * (Cmd+R) and needs to re-claim its in-flight sessions.
+   */
+  rebind(tabId: string, ownerWebContentsId: number): boolean;
   sendMessage(tabId: string, prompt: string): void;
   sendStructuredMessage(tabId: string, content: Array<Record<string, unknown>>): void;
   respondPermission(
