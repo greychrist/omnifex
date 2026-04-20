@@ -5,6 +5,19 @@ All notable changes to GreyChrist are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.24] — 2026-04-19
+
+Second-window UX: one dock icon with multiple windows, and stuck subagent rows now clean themselves up. Installers remain **unsigned**.
+
+### Changed
+
+- **File → New Window now opens a second in-process window instead of a second app instance** (`f7ea3d2`). The previous implementation shelled out to `open -n <bundle>` so each new window got its own dock icon and its own isolated process. It now calls `createWindow()` inside the existing main process, so all windows share one dock icon and appear together under the macOS Window menu and the dock's right-click list — the standard Ghostty/Safari/VS Code pattern. The singleton `mainWindow` state in `electron/main.ts` was refactored into a `Set<BrowserWindow>`; dock-badge focus tracking, notification-focus checks, and context-menu popups now operate on the set rather than a fixed window. `electron/new-instance.ts` and its 9 tests were removed.
+- **Session and agent stream events route per-window instead of broadcasting to a single assumed main window** (`f7ea3d2`). New `electron/window-router.ts` tracks which window started each session (`tabId`) or agent run (`runId`) and routes `claude-output/error/complete/subagent/compact:*`, `elicitation-request:*`, and `agent-output/error/complete/cancelled:*` events only to the owning window. App-wide events (`claude-notification`, `updater:progress`) broadcast to every open window. `SessionStartParams` and `executeAgent()` accept a new optional `ownerWebContentsId`, and `electron/ipc/handlers.ts` injects `event.sender.id` automatically for the `session_start` and `execute_agent` channels so renderers don't need to be aware of the routing. `updater:download` progress goes only to the window that initiated the download. +9 router tests, +6 ownership-hook tests across sessions and agents.
+
+### Fixed
+
+- **SubagentBar rows no longer get stuck on "running" when the SDK skips `task_notification`** (`8a38697`). Some parent-session streams deliver the subagent's `tool_result` block without a corresponding `task_notification` system message, which left the row in its loading state indefinitely and blocked the per-row ✕ dismiss button and the "Clear done" control. `deriveSubagents` now scans user messages for `tool_result` blocks matching each subagent's `tool_use_id` and flips status to `completed` (or `failed` when `is_error: true`) as a fallback. A real `task_notification` still wins when both arrive so the richer summary and usage data survive. +4 unit tests.
+
 ## [0.3.23] — 2026-04-19
 
 You can now run multiple GreyChrist windows at once. Installers remain **unsigned**.
