@@ -5,6 +5,16 @@ All notable changes to GreyChrist are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.26] — 2026-04-20
+
+Upgrades `@anthropic-ai/claude-agent-sdk` to 0.2.114 and teaches the Electron Forge build about the SDK's new per-platform native binary so packaged apps stay self-contained. Installers remain **unsigned**.
+
+### Changed
+
+- **Bumped `@anthropic-ai/claude-agent-sdk` from 0.2.112 to 0.2.114** (`f7600c7`). The SDK's 0.2.113 release stopped bundling its CLI in JavaScript and instead spawns a per-platform native binary shipped in an optional sibling package (e.g. `@anthropic-ai/claude-agent-sdk-darwin-arm64`). It also reverted `options.env` to replace `process.env` instead of overlaying it — no behavior change for us since all three `query()` call sites already pass `{ ...process.env, CLAUDE_CONFIG_DIR }`. Also picks up the new additive APIs (`sessionStore`, `deleteSession`, `title`, OTel trace-context propagation) even though we don't use them yet.
+- **`forge.config.ts` now copies the SDK's per-platform binary subpackage(s) into the packaged app and `asarUnpack`s them** (`f7600c7`). Without this, `npm run make` builds would ship an SDK that couldn't find its own CLI for fresh-install users who don't have Claude Code on their PATH. A new `copySdkPlatformBinaries()` helper walks `node_modules/@anthropic-ai/claude-agent-sdk-*` during `afterCopy`; the `asar.unpack` glob now lifts both `better-sqlite3` `.node` addons and the SDK's native binary out of `app.asar` so `spawn()` can execute them.
+- **`electron/services/claude-binary.ts` gained `findBundledSdkBinary()` and `findBundledSdkBinaryAuto()`** (`f7600c7`). Pure resolver (platform + arch + candidate node_modules roots) with 6 unit tests, plus a thin auto-configured wrapper that knows about dev (`./node_modules`) and packaged (`app.asar.unpacked/node_modules`) layouts. Wired in as a final fallback inside `findBestBinary()` and inside the local resolvers in `sessions/lifecycle.ts` and `models.ts`, so system installs like `~/.local/bin/claude` still win when present.
+
 ## [0.3.25] — 2026-04-20
 
 Cmd+R no longer breaks the active session, and the project view no longer hides the new-session form behind an extra click. Installers remain **unsigned**.
