@@ -882,7 +882,7 @@ describe('agents service — executeAgent SDK path', () => {
     expect(callArg.options.cwd).toBe(projectPath);
     expect(callArg.options.env.CLAUDE_CONFIG_DIR).toBe(configDir);
     expect(callArg.options.settingSources).toEqual(['user', 'project', 'local']);
-    expect(callArg.options.strictMcpConfig).toBe(true);
+    expect(callArg.options.strictMcpConfig).toBeFalsy();
 
     // Run record exists, in running status
     const run = service.getAgentRun(runId);

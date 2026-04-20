@@ -311,8 +311,7 @@ export function createAgentsService(
     // Build SDK options — mirror the interactive-session path in
     // electron/services/sessions.ts so agent runs and interactive sessions
     // behave consistently. CLAUDE_CONFIG_DIR pins the session to the
-    // resolved account; settingSources loads CLAUDE.md + skills + commands;
-    // strictMcpConfig surfaces bad MCP configs instead of swallowing them.
+    // resolved account; settingSources loads CLAUDE.md + skills + commands.
     //
     // permissionMode defaults to 'acceptEdits' — the same default as
     // interactive sessions (ClaudeCodeSession useState). This is critical
@@ -334,7 +333,6 @@ export function createAgentsService(
         CLAUDE_CONFIG_DIR: account.config_dir,
       },
       settingSources: ['user', 'project', 'local'],
-      strictMcpConfig: true,
       betas: ['context-1m-2025-08-07'],
     };
     if (binaryPath) {

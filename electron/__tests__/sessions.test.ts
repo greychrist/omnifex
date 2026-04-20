@@ -321,7 +321,7 @@ describe('sessions service — full lifecycle', () => {
     expect(options.settings?.enableAllProjectMcpServers).toBe(true);
   });
 
-  it('start() sets strictMcpConfig so malformed MCP configs surface as errors instead of silent warnings', () => {
+  it('start() does NOT set strictMcpConfig — that flag tells the CLI to ignore all MCP configs except --mcp-config, which would disable every user/project MCP server', () => {
     const fake = installFakeQuery();
 
     service.start({
@@ -333,7 +333,7 @@ describe('sessions service — full lifecycle', () => {
     });
 
     const options = fake.getCapturedOptions();
-    expect(options.strictMcpConfig).toBe(true);
+    expect(options.strictMcpConfig).toBeFalsy();
   });
 
   it('start() forwards resumeSessionId as options.resume when provided', () => {
