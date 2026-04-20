@@ -57,6 +57,7 @@ import { createSlashCommandsService } from './services/slash-commands';
 import { createPermissionsIOService } from './services/permissions-io';
 import { createUpdaterService } from './services/updater';
 import { registerIpcHandlers } from './ipc/handlers';
+import { launchNewInstance } from './new-instance';
 
 declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string | undefined;
 declare const MAIN_WINDOW_VITE_NAME: string;
@@ -81,6 +82,48 @@ function incrementUnread() {
 function clearUnread() {
   unreadCount = 0;
   updateDockBadge();
+}
+
+function openNewInstance(): void {
+  const result = launchNewInstance({
+    platform: process.platform,
+    isPackaged: app.isPackaged,
+    execPath: process.execPath,
+  });
+  if (!result.ok) {
+    console.warn('[main] New Window refused:', result.reason);
+  }
+}
+
+function installAppMenu(): void {
+  const template: MenuItemConstructorOptions[] = [];
+  if (process.platform === 'darwin') {
+    template.push({ role: 'appMenu' });
+  }
+  template.push({
+    label: 'File',
+    submenu: [
+      {
+        label: 'New Window',
+        accelerator: 'CmdOrCtrl+N',
+        click: () => openNewInstance(),
+      },
+      { type: 'separator' },
+      process.platform === 'darwin' ? { role: 'close' } : { role: 'quit' },
+    ],
+  });
+  template.push({ role: 'editMenu' });
+  template.push({ role: 'viewMenu' });
+  template.push({ role: 'windowMenu' });
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+
+  if (process.platform === 'darwin' && app.dock) {
+    app.dock.setMenu(
+      Menu.buildFromTemplate([
+        { label: 'New Window', click: () => openNewInstance() },
+      ]),
+    );
+  }
 }
 
 function createWindow(): void {
@@ -502,6 +545,8 @@ app.whenReady().then(() => {
     // Give the DMG a moment to mount, then quit so the user can drag-install
     setTimeout(() => app.quit(), 1500);
   });
+
+  installAppMenu();
 
   // Create the window AFTER all IPC handlers are registered so the renderer
   // cannot fire calls before the main process is ready to handle them.
