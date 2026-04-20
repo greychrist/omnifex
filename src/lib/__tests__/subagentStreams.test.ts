@@ -76,6 +76,26 @@ function taskNotification(
   } as unknown as ClaudeStreamMessage;
 }
 
+function toolResult(
+  toolUseId: string,
+  isError = false,
+  text = 'result text',
+): ClaudeStreamMessage {
+  return {
+    type: 'user',
+    message: {
+      content: [
+        {
+          type: 'tool_result',
+          tool_use_id: toolUseId,
+          is_error: isError,
+          content: text,
+        },
+      ],
+    },
+  } as unknown as ClaudeStreamMessage;
+}
+
 describe('isTaskLifecycleMarker', () => {
   it('matches task_started/progress/notification', () => {
     expect(isTaskLifecycleMarker({ type: 'system', subtype: 'task_started' })).toBe(true);
@@ -170,6 +190,42 @@ describe('deriveSubagents', () => {
       taskNotification(TOOL_USE_ID, 'failed', 'boom'),
     ]);
     expect(subs[0].status).toBe('failed');
+  });
+
+  it('marks completed when only a tool_result arrives (no task_notification)', () => {
+    const subs = deriveSubagents([
+      agentToolUse(TOOL_USE_ID),
+      taskStarted(TOOL_USE_ID),
+      taskProgress(TOOL_USE_ID, 'half way'),
+      toolResult(TOOL_USE_ID),
+    ]);
+    expect(subs[0].status).toBe('completed');
+  });
+
+  it('marks failed when tool_result has is_error=true and no task_notification', () => {
+    const subs = deriveSubagents([
+      agentToolUse(TOOL_USE_ID),
+      toolResult(TOOL_USE_ID, true, 'crashed'),
+    ]);
+    expect(subs[0].status).toBe('failed');
+  });
+
+  it('task_notification status wins over tool_result if both are present', () => {
+    const subs = deriveSubagents([
+      agentToolUse(TOOL_USE_ID),
+      toolResult(TOOL_USE_ID, true), // would imply failed
+      taskNotification(TOOL_USE_ID, 'completed', 'actually fine'),
+    ]);
+    expect(subs[0].status).toBe('completed');
+  });
+
+  it('leaves the subagent running when no tool_result and no notification', () => {
+    const subs = deriveSubagents([
+      agentToolUse(TOOL_USE_ID),
+      taskStarted(TOOL_USE_ID),
+      taskProgress(TOOL_USE_ID, 'still going'),
+    ]);
+    expect(subs[0].status).toBe('running');
   });
 
   it('handles two parallel subagents as distinct entries', () => {

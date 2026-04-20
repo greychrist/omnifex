@@ -61,6 +61,11 @@ function ensureSubagent(
 
 export function deriveSubagents(messages: ClaudeStreamMessage[]): Subagent[] {
   const byToolUseId = new Map<string, Subagent>();
+  // Subagents for which task_notification already set a final status — used
+  // so a later (or earlier) tool_result doesn't overwrite richer notification
+  // data. The SDK's notification carries the summary + usage; tool_result only
+  // tells us "the subagent returned."
+  const notificationFinalized = new Set<string>();
 
   for (const raw of messages) {
     const m = raw as any;
@@ -77,7 +82,25 @@ export function deriveSubagents(messages: ClaudeStreamMessage[]): Subagent[] {
       continue;
     }
 
-    // 2. Task lifecycle markers (task_started / task_progress / task_notification)
+    // 2. Tool results for a subagent tool_use — the parent session received the
+    //    subagent's return value, so the subagent has finished. Only used as a
+    //    fallback when task_notification never arrives (some streams emit the
+    //    tool_result but not the richer lifecycle marker).
+    if (m?.type === 'user' && Array.isArray(m.message?.content)) {
+      for (const block of m.message.content) {
+        if (block?.type !== 'tool_result') continue;
+        const id: string | undefined = block.tool_use_id;
+        if (!id) continue;
+        const sub = byToolUseId.get(id);
+        if (!sub) continue;
+        if (notificationFinalized.has(id)) continue;
+        sub.status = block.is_error ? 'failed' : 'completed';
+        sub.endedAt = sub.endedAt ?? new Date().toISOString();
+      }
+      continue;
+    }
+
+    // 3. Task lifecycle markers (task_started / task_progress / task_notification)
     if (isTaskLifecycleMarker(m)) {
       const id: string | undefined = m.tool_use_id;
       if (!id) continue;
@@ -110,6 +133,7 @@ export function deriveSubagents(messages: ClaudeStreamMessage[]): Subagent[] {
         };
         sub.events.push(finalEvent);
         sub.latest = finalEvent;
+        notificationFinalized.add(id);
       }
     }
   }
