@@ -7,6 +7,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import type { ModelInfo } from '@anthropic-ai/claude-agent-sdk';
+import { findBundledSdkBinaryAuto } from './claude-binary';
 
 export interface ModelsService {
   listSupported(configDir: string): Promise<ModelInfo[]>;
@@ -26,7 +27,8 @@ function findSystemClaudeBinary(): string | null {
   for (const p of candidates) {
     if (fs.existsSync(p)) return p;
   }
-  return null;
+  // Fall back to the per-platform binary bundled with @anthropic-ai/claude-agent-sdk.
+  return findBundledSdkBinaryAuto();
 }
 
 export function createModelsService(opts: ModelsServiceOptions = {}): ModelsService {

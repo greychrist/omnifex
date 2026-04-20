@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createAsyncChannel } from '../async-channel';
+import { findBundledSdkBinaryAuto } from '../claude-binary';
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import type {
   SDKUserMessage,
@@ -34,7 +35,12 @@ import { createQueryPassthroughs } from './queries';
 // findSystemClaudeBinary
 // ---------------------------------------------------------------------------
 
-/** Find the system-installed claude binary (needed because the SDK's bundled binary may be missing). */
+/**
+ * Resolve a claude binary: prefer a system install (matches Greg's dual-account
+ * setup), fall back to the per-platform binary bundled with the SDK
+ * (@anthropic-ai/claude-agent-sdk-{platform}-{arch}/claude) so packaged builds
+ * still work for users without Claude Code installed system-wide.
+ */
 function findSystemClaudeBinary(): string | null {
   const candidates = [
     `${os.homedir()}/.local/bin/claude`,
@@ -44,7 +50,7 @@ function findSystemClaudeBinary(): string | null {
   for (const p of candidates) {
     if (fs.existsSync(p)) return p;
   }
-  return null;
+  return findBundledSdkBinaryAuto();
 }
 
 // ---------------------------------------------------------------------------

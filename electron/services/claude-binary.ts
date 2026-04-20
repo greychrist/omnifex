@@ -133,6 +133,66 @@ function findStandardInstallations(): string[] {
 }
 
 // ---------------------------------------------------------------------------
+// SDK-bundled per-platform binary lookup
+// ---------------------------------------------------------------------------
+
+export interface FindBundledSdkBinaryOptions {
+  platform: NodeJS.Platform;
+  arch: string;
+  /** node_modules directories to search, in priority order. */
+  roots: string[];
+}
+
+/**
+ * Locate the per-platform Claude Code binary that ships with
+ * @anthropic-ai/claude-agent-sdk (since v0.2.113). Pure function — caller
+ * supplies the candidate node_modules roots so this works in dev (project
+ * node_modules) and in packaged builds (app.asar.unpacked/node_modules).
+ */
+export function findBundledSdkBinary(opts: FindBundledSdkBinaryOptions): string | null {
+  const ext = opts.platform === 'win32' ? '.exe' : '';
+  const pkgs =
+    opts.platform === 'linux'
+      ? [
+          `@anthropic-ai/claude-agent-sdk-linux-${opts.arch}-musl`,
+          `@anthropic-ai/claude-agent-sdk-linux-${opts.arch}`,
+        ]
+      : [`@anthropic-ai/claude-agent-sdk-${opts.platform}-${opts.arch}`];
+
+  for (const root of opts.roots) {
+    for (const pkg of pkgs) {
+      const candidate = path.join(root, pkg, `claude${ext}`);
+      if (fs.existsSync(candidate)) return candidate;
+    }
+  }
+  return null;
+}
+
+/**
+ * Resolve the SDK-bundled binary using the running process's platform/arch
+ * and the standard candidate roots: app.asar.unpacked/node_modules in packaged
+ * builds, then the project's local node_modules in dev.
+ */
+export function findBundledSdkBinaryAuto(): string | null {
+  const roots: string[] = [];
+  // Packaged Electron build: forge.config.ts copies the per-platform subpackage
+  // into the app and asarUnpack lifts it out to app.asar.unpacked.
+  // (process.resourcesPath is an Electron-augmented field; not in @types/node.)
+  const resourcesPath = (process as { resourcesPath?: string }).resourcesPath;
+  if (resourcesPath) {
+    roots.push(path.join(resourcesPath, 'app.asar.unpacked', 'node_modules'));
+  }
+  // Dev / unit-test runs.
+  roots.push(path.resolve('node_modules'));
+
+  return findBundledSdkBinary({
+    platform: process.platform,
+    arch: process.arch,
+    roots,
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Factory
 // ---------------------------------------------------------------------------
 
@@ -203,7 +263,9 @@ export function createClaudeBinaryService(db: Database): ClaudeBinaryService {
       return standardPaths[0];
     }
 
-    return null;
+    // 5. Per-platform binary bundled with @anthropic-ai/claude-agent-sdk.
+    //    Final fallback — used when the user has no system Claude Code install.
+    return findBundledSdkBinaryAuto();
   }
 
   return { getPath, setPath, listInstallations, findBestBinary };
