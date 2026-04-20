@@ -18,7 +18,7 @@ Fixes MCP servers silently disabled in every session since v0.3.0-era, and makes
 - **`fetchInitInfo` no longer pins the retry loop on a hung first `await`** (`b893bea`). `api.sessionAccountInfo` is now wrapped in a 2 s `Promise.race` timeout (was unbounded, so the control-channel hang meant the retry loop never iterated), and polls indefinitely while `isMountedRef` is true, so late warmups after the first prompt still populate.
 - **Auto-start promise rejections are surfaced to devtools** (`b893bea`). `ClaudeCodeSession`'s mount effect now chains `.catch(console.error)` on both the rebind-then-resume path and the fresh-start path, so silent failures during auto-start show up instead of disappearing into unhandled rejections.
 
-
+## [0.3.26] — 2026-04-20
 
 Upgrades `@anthropic-ai/claude-agent-sdk` to 0.2.114 and teaches the Electron Forge build about the SDK's new per-platform native binary so packaged apps stay self-contained. Installers remain **unsigned**.
 
