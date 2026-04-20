@@ -5,6 +5,14 @@ All notable changes to GreyChrist are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.23] — 2026-04-19
+
+You can now run multiple GreyChrist windows at once. Installers remain **unsigned**.
+
+### Added
+
+- **File → New Window (⌘N) and a dock-menu entry** (`32705e7`). The app previously had no single-instance lock but also no visible way to launch a second instance — the Dock right-click menu was empty and there was no application menu. `electron/main.ts` now installs a composed application menu (appMenu + File + edit/view/window roles) with a "New Window" item bound to ⌘N, plus a custom dock menu with the same item. Both shell out to `open -n <bundle>` so each new window is a fully isolated process with its own SDK sessions. A new `electron/new-instance.ts` module handles bundle-path resolution (walks up from `process.execPath` to the outermost `.app`) and gates launches to packaged macOS builds only — dev mode logs and refuses so `npm start` doesn't try to relaunch a non-existent bundle. +9 unit tests covering bundle resolution and refusal paths.
+
 ## [0.3.22] — 2026-04-18
 
 Subagent (background task) activity now has its own colored status bar above the prompt input, and right-click finally works on session output. Installers remain **unsigned**.
