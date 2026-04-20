@@ -45,3 +45,7 @@ AGENTS.md
 CLAUDE.md
 electron/CLAUDE.md
 src/CLAUDE.md
+
+# Local-only subagent-stream sanity-check fixture — see
+# src/lib/__tests__/subagentStreams.test.ts (the test skipIf()s when absent).
+session_json/
