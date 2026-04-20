@@ -443,6 +443,7 @@ app.whenReady().then(() => {
       getSupportedModels: (sessionId: string) => sessionsService.getSupportedModels(sessionId),
       getSupportedAgents: (sessionId: string) => sessionsService.getSupportedAgents(sessionId),
       getMcpServerStatus: (sessionId: string) => sessionsService.getMcpServerStatus(sessionId),
+      getPlugins: (sessionId: string, force?: boolean) => sessionsService.getPlugins(sessionId, force),
     },
     // Agents adapter
     agents: {

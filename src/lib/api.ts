@@ -436,6 +436,21 @@ export interface SessionMcpServerStatus {
 }
 
 /**
+ * Loaded plugin in an active session, enriched with .claude-plugin/plugin.json
+ * manifest fields when available.
+ */
+export interface SessionPluginInfo {
+  name: string;
+  path: string;
+  source?: string;
+  scope: 'user' | 'project' | 'local' | 'unknown';
+  version?: string;
+  description?: string;
+  author?: string;
+  authorEmail?: string;
+}
+
+/**
  * MCP configuration for project scope (.mcp.json)
  */
 export interface MCPProjectConfig {
@@ -1358,6 +1373,10 @@ export const api = {
 
   async sessionMcpServerStatus(tabId: string): Promise<SessionMcpServerStatus[]> {
     return apiCall("session_mcp_server_status", { tabId });
+  },
+
+  async sessionPlugins(tabId: string, force = false): Promise<SessionPluginInfo[]> {
+    return apiCall("session_plugins", { tabId, force });
   },
 
   async sessionGetPermissions(tabId: string, projectPath: string, configDir: string): Promise<any[]> {

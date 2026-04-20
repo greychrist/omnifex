@@ -9,6 +9,7 @@ import {
   Wrench,
   BarChart3,
   Plug,
+  Package,
   Shield,
   Send,
   ArrowLeft,
@@ -32,6 +33,7 @@ import { TimelineNavigator } from "./TimelineNavigator";
 import { CheckpointSettings } from "./CheckpointSettings";
 import { SlashCommandsManager } from "./SlashCommandsManager";
 import { SessionMCPStatus } from "./SessionMCPStatus";
+import { SessionPluginStatus } from "./SessionPluginStatus";
 import { PermissionDialog } from "./PermissionDialog";
 import { ElicitationDialog } from "./ElicitationDialog";
 import { SessionPermissionsEditor } from "./SessionPermissionsEditor";
@@ -154,6 +156,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   const [supportedCommands, setSupportedCommands] = useState<import('@/lib/api').SessionSlashCommand[]>([]);
   const [showTimeline, setShowTimeline] = useState(false);
   const [showMCPPanel, setShowMCPPanel] = useState(false);
+  const [showPluginsPanel, setShowPluginsPanel] = useState(false);
   const [showPermissionsPanel, setShowPermissionsPanel] = useState(false);
   const [timelineVersion, setTimelineVersion] = useState(0);
   const [showSettings, setShowSettings] = useState(false);
@@ -1279,7 +1282,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
         {/* Main Content Area */}
         <div className={cn(
           "flex-1 min-h-0 overflow-hidden transition-all duration-300 relative",
-          (showTimeline || showMCPPanel || showPermissionsPanel) && "sm:mr-96"
+          (showTimeline || showMCPPanel || showPluginsPanel || showPermissionsPanel) && "sm:mr-96"
         )}>
           {showPreview ? (
             // Split pane layout when preview is active
@@ -1520,7 +1523,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
 
           <div className={cn(
             "shrink-0 transition-all duration-300 z-50",
-            (showTimeline || showMCPPanel || showPermissionsPanel) && "sm:mr-96"
+            (showTimeline || showMCPPanel || showPluginsPanel || showPermissionsPanel) && "sm:mr-96"
           )}>
             <SubagentBar
               subagents={subagents}
@@ -1662,10 +1665,25 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                       <Button
                         variant="ghost"
                         size="icon"
-                        onClick={() => { setShowMCPPanel(!showMCPPanel); if (!showMCPPanel) { setShowTimeline(false); setShowPermissionsPanel(false); } }}
+                        onClick={() => { setShowMCPPanel(!showMCPPanel); if (!showMCPPanel) { setShowTimeline(false); setShowPluginsPanel(false); setShowPermissionsPanel(false); } }}
                         className="h-8 w-8 text-muted-foreground hover:text-foreground"
                       >
                         <Plug className={cn("h-3.5 w-3.5", showMCPPanel && "text-primary")} />
+                      </Button>
+                    </motion.div>
+                  </TooltipSimple>
+                  <TooltipSimple content="Plugins" side="top">
+                    <motion.div
+                      whileTap={{ scale: 0.97 }}
+                      transition={{ duration: 0.15 }}
+                    >
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => { setShowPluginsPanel(!showPluginsPanel); if (!showPluginsPanel) { setShowTimeline(false); setShowMCPPanel(false); setShowPermissionsPanel(false); } }}
+                        className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                      >
+                        <Package className={cn("h-3.5 w-3.5", showPluginsPanel && "text-primary")} />
                       </Button>
                     </motion.div>
                   </TooltipSimple>
@@ -1677,7 +1695,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                       <Button
                         variant="ghost"
                         size="icon"
-                        onClick={() => { setShowPermissionsPanel(!showPermissionsPanel); if (!showPermissionsPanel) { setShowTimeline(false); setShowMCPPanel(false); } }}
+                        onClick={() => { setShowPermissionsPanel(!showPermissionsPanel); if (!showPermissionsPanel) { setShowTimeline(false); setShowMCPPanel(false); setShowPluginsPanel(false); } }}
                         className="h-8 w-8 text-muted-foreground hover:text-foreground"
                       >
                         <Shield className={cn("h-3.5 w-3.5", showPermissionsPanel && "text-primary")} />
@@ -1772,6 +1790,36 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                 </div>
                 <div className="flex-1 overflow-y-auto">
                   <SessionMCPStatus tabId={tabIdRef.current} />
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Plugins Panel */}
+        <AnimatePresence>
+          {showPluginsPanel && (
+            <motion.div
+              initial={{ x: "100%" }}
+              animate={{ x: 0 }}
+              exit={{ x: "100%" }}
+              transition={{ duration: 0.2, ease: "easeOut" }}
+              className="fixed right-0 top-0 h-full w-full sm:w-96 bg-background border-l border-border shadow-xl z-30 overflow-hidden"
+            >
+              <div className="h-full flex flex-col">
+                <div className="flex items-center justify-between p-4 border-b border-border">
+                  <h3 className="text-lg font-semibold">Plugins</h3>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setShowPluginsPanel(false)}
+                    className="h-8 w-8"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+                <div className="flex-1 overflow-y-auto">
+                  <SessionPluginStatus tabId={tabIdRef.current} />
                 </div>
               </div>
             </motion.div>

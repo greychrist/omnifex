@@ -209,6 +209,7 @@ describe('ipc handlers — structure', () => {
       'session_set_effort',
       'session_set_thinking',
       'session_mcp_server_status',
+      'session_plugins',
       'session_get_permissions',
       'session_update_permission',
       // Agents

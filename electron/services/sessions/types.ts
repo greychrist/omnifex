@@ -114,6 +114,8 @@ export interface SessionsService {
   getSupportedAgents(tabId: string): Promise<AgentInfo[]>;
   /** Get live MCP server status for an active session. Empty if no tab. */
   getMcpServerStatus(tabId: string): Promise<McpServerStatus[]>;
+  /** Get loaded plugins for an active session, enriched with manifest data. */
+  getPlugins(tabId: string, force?: boolean): Promise<import('./plugins').EnrichedPlugin[]>;
 }
 
 export type SendToRenderer = (channel: string, ...args: unknown[]) => void;

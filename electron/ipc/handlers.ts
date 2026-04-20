@@ -71,6 +71,7 @@ export interface Services {
     getSupportedModels(sessionId: string): unknown;
     getSupportedAgents(sessionId: string): unknown;
     getMcpServerStatus(sessionId: string): unknown;
+    getPlugins(sessionId: string, force?: boolean): unknown;
   };
   agents?: {
     list(): unknown;
@@ -277,6 +278,7 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     session_supported_models: wrapWith((p: Record<string, unknown>) => sessions?.getSupportedModels((p?.tabId ?? p?.session_id) as string) ?? null),
     session_supported_agents: wrapWith((p: Record<string, unknown>) => sessions?.getSupportedAgents((p?.tabId ?? p?.session_id) as string) ?? null),
     session_mcp_server_status: wrapWith((p: Record<string, unknown>) => sessions?.getMcpServerStatus((p?.tabId ?? p?.session_id) as string) ?? null),
+    session_plugins: wrapWith((p: Record<string, unknown>) => sessions?.getPlugins((p?.tabId ?? p?.session_id) as string, Boolean(p?.force)) ?? null),
 
     // ── Standalone model list (no active session required) ─────────────────
     list_supported_models: wrapWith((p: Record<string, unknown>) => models?.listSupported((p?.configDir ?? p?.config_dir) as string) ?? []),

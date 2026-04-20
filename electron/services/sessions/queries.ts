@@ -12,6 +12,7 @@ import type {
   SDKControlGetContextUsageResponse,
   McpServerStatus,
 } from './types';
+import { enrichPlugin, type EnrichedPlugin } from './plugins';
 
 // ---------------------------------------------------------------------------
 // createQueryPassthroughs
@@ -158,6 +159,40 @@ export function createQueryPassthroughs(sessions: Map<string, SessionHandle>) {
     return [];
   }
 
+  // reloadPlugins is a side-effectful SDK call, so cache per-tab and only
+  // refresh when the caller explicitly asks. Cache is keyed by tabId; stale
+  // entries from closed tabs are harmless.
+  const pluginCache = new Map<string, EnrichedPlugin[]>();
+
+  async function getPlugins(tabId: string, force = false): Promise<EnrichedPlugin[]> {
+    const handle = sessions.get(tabId);
+    if (!handle) return [];
+    if (!force) {
+      const cached = pluginCache.get(tabId);
+      if (cached) return cached;
+    }
+
+    try {
+      const result = await Promise.race([
+        handle.query.reloadPlugins(),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000)),
+      ]);
+      if (!result) return pluginCache.get(tabId) ?? [];
+
+      const enriched = result.plugins.map((p) =>
+        enrichPlugin(p, {
+          configDir: handle.configDir,
+          projectPath: handle.projectPath,
+        }),
+      );
+      pluginCache.set(tabId, enriched);
+      return enriched;
+    } catch (err) {
+      console.error(`[sessions] reloadPlugins failed for tab ${tabId}:`, err);
+      return pluginCache.get(tabId) ?? [];
+    }
+  }
+
   return {
     interrupt,
     setModel,
@@ -170,5 +205,6 @@ export function createQueryPassthroughs(sessions: Map<string, SessionHandle>) {
     getSupportedModels,
     getSupportedAgents,
     getMcpServerStatus,
+    getPlugins,
   };
 }
