@@ -5,6 +5,22 @@ All notable changes to GreyChrist are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.30] — 2026-04-21
+
+Fixes the Referenced SDK titlebar badge going blank in packaged builds, slims the titlebar dropdown, and prunes unused theme options. Installers remain **unsigned**.
+
+### Fixed
+
+- **Referenced SDK badge was blank in packaged app** (`f23caf5`). The runtime `fs` read of `node_modules/@anthropic-ai/claude-agent-sdk/package.json` fails in release builds because Vite tree-shakes the SDK into `main.js` and its `package.json` isn't shipped as a loose file. The SDK version is now baked into the main bundle at build time via a `__GREYCHRIST_REFERENCED_SDK_VERSION__` define in `vite.main.config.ts`, with the runtime fs read kept as a dev fallback.
+- **Empty pill rendered next to "Claude Installation" in General Settings** (`f23caf5`). The simplified `ClaudeVersionSelector` layout was rendering a `<Badge>` keyed on `installation.installation_type`, but the main-process `listInstallations()` in `electron/services/claude-binary.ts` never populates that field — so the badge showed as a blank rectangle. Removed the badge; the installation source/version are already visible in the row below.
+
+### Changed
+
+- **Titlebar dropdown no longer lists CLAUDE.md or MCP Servers** (`f23caf5`). Both are reachable elsewhere (project actions / session sidebar panels); the dropdown now shows only Check for Updates and About. `App.tsx` drops the now-unused `onClaudeClick` / `onMCPClick` props on `CustomTitlebar`.
+- **Theme system now offers only Gray and Light** (`f23caf5`). Dropped the unused `dark`, `white`, and `custom` themes and the whole custom-color editor from General Settings. Legacy stored preferences normalize to Gray; stale inline `--color-*` CSS variables from the old custom theme are cleared on every theme apply so they can't linger. The Gray / Light toggle in General Settings replaces the previous four-way switcher.
+- **Light-theme contrast polish on session header and ControlBar pills** (`f23caf5`). Effort / thinking / permission label colors shifted from `-500` to `-600` weights; the permission, effort, and adaptive badges in `SessionHeader` now carry an explicit `border` + `bg-foreground/10` so the pill shape stays visible against light backgrounds. The account-type chip picks up the same border/bg treatment and only renders when there's a value.
+- **Current SDK badge shows a spinner while the npm version fetch is in flight** (`f23caf5`). The badge previously read `—` until the first fetch resolved; it now starts in a checking state, and the dropdown's Check for Updates button refreshes the SDK badge too (previously only the app-update check ran).
+
 ## [0.3.29] — 2026-04-21
 
 Adds SDK-version visibility in the titlebar, routes OS notification clicks to the originating tab, and makes the session header's branch badge update live when you switch branches outside the app. Installers remain **unsigned**.
