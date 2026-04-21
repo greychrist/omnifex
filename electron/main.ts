@@ -141,7 +141,21 @@ function installAppMenu(): void {
     ],
   });
   template.push({ role: 'editMenu' });
-  template.push({ role: 'viewMenu' });
+  // Custom View menu that mirrors Electron's default `viewMenu` role minus
+  // Reload (Cmd+R) and Force Reload (Cmd+Shift+R). Greg lost work to an
+  // accidental Cmd+R; neither accelerator has a legitimate use in this app.
+  template.push({
+    label: 'View',
+    submenu: [
+      { role: 'toggleDevTools' },
+      { type: 'separator' },
+      { role: 'resetZoom' },
+      { role: 'zoomIn' },
+      { role: 'zoomOut' },
+      { type: 'separator' },
+      { role: 'togglefullscreen' },
+    ],
+  });
   template.push({ role: 'windowMenu' });
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 
