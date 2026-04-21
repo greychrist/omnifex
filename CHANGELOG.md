@@ -5,7 +5,22 @@ All notable changes to GreyChrist are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.3.28] — 2026-04-20
+## [0.3.29] — 2026-04-21
+
+Adds SDK-version visibility in the titlebar, routes OS notification clicks to the originating tab, and makes the session header's branch badge update live when you switch branches outside the app. Installers remain **unsigned**.
+
+### Added
+
+- **Titlebar now shows three version badges: GreyChrist, Referenced SDK, Current SDK** (`0181cbd`). The Referenced badge reads `@anthropic-ai/claude-agent-sdk`'s version directly from the installed `node_modules/@anthropic-ai/claude-agent-sdk/package.json` (the exact pinned version, not the caret range in `package.json`). The Current badge polls `https://registry.npmjs.org/@anthropic-ai/claude-agent-sdk/latest` on launch and every 60 minutes after; it renders green when it matches Referenced, red when a newer SDK has shipped, or neutral `—` when offline. Tooltips explain each state. Implemented as a new `sdk-version` service (`electron/services/sdk-version.ts`) with two IPC channels and 7 unit tests.
+- **Clicking a macOS notification now opens the tab that produced it** (`0181cbd`). `NotificationsService.show()` gained an optional `{ tabId }` payload that's forwarded to the click handler; on click the main process emits a `notification-clicked` event and `TabProvider` calls `setActiveTab(tabId)` if that tab still exists. The four session call sites (`lifecycle.ts`, `permissions.ts` twice, `hooks.ts`) all pass the current tabId through. If the tab was closed between fire and click, the window still focuses but no tab switch happens.
+- **Session header's branch badge live-updates on external `git checkout`** (`0181cbd`). New `git-watcher` service (`electron/services/git-watcher.ts`) watches `<projectPath>/.git` via `fs.watch`, resolves `.git`-as-file for worktrees/submodules, debounces bursts by 50ms, and emits short SHAs for detached HEAD. `ClaudeCodeSession` subscribes via a pair of `start_git_branch_watch` / `stop_git_branch_watch` IPC channels plus a per-watcher `git-branch-changed:<watchId>` event. Watchers dispose on app quit.
+
+### Changed
+
+- **Branch badge visual treatment** (`0181cbd`). `main`/`master` render solid black with white text and a border; any other branch gets a deterministic color from a six-entry palette keyed off the branch name, matching the account-badge fallback palette. Keeps the existing monospace font and `GitBranch` icon.
+- **Titlebar version badges use the same squircle shape as the branch badge** (`0181cbd`). Account badges remain pills.
+
+
 
 Adds a Plugins side panel alongside the existing MCP Servers panel and reworks the MCP panel to group by scope with richer per-server details. Also bumps the Claude Agent SDK to 0.2.116. Installers remain **unsigned**.
 
