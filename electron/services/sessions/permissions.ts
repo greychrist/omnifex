@@ -103,7 +103,7 @@ export function createCanUseTool(
         const body = `Permission requested: ${toolName}`;
         sendToRenderer('claude-notification', { tab_id: tabId, title, body, is_error: false });
         try {
-          notificationHooks.showNotification?.(title, body, false);
+          notificationHooks.showNotification?.(title, body, false, { tabId });
           notificationHooks.incrementUnread?.();
         } catch (e) {
           console.error('[sessions] permission notification hook failed:', e);
@@ -196,7 +196,7 @@ export function respondPermission(
     const body = `Permission requested: ${nextPayload.tool_name}`;
     sendToRenderer('claude-notification', { tab_id: tabId, title, body, is_error: false });
     try {
-      notificationHooks.showNotification?.(title, body, false);
+      notificationHooks.showNotification?.(title, body, false, { tabId });
       notificationHooks.incrementUnread?.();
     } catch (e) {
       console.error('[sessions] permission notification hook failed:', e);

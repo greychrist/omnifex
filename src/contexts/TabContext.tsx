@@ -238,6 +238,24 @@ export const TabProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, []);
 
+  // Route native-notification clicks back to the originating tab.
+  // The main process sends `notification-clicked` with `{ tabId }`; if the tab
+  // still exists, switch to it. Window focus is already handled in the main
+  // process so no extra work is needed here when the tab is gone.
+  useEffect(() => {
+    const unsubscribe = window.electronAPI.onEvent(
+      'notification-clicked',
+      (data: unknown) => {
+        const tabId = (data as { tabId?: string } | undefined)?.tabId;
+        if (!tabId) return;
+        if (tabsRef.current.find(tab => tab.id === tabId)) {
+          setActiveTab(tabId);
+        }
+      },
+    );
+    return unsubscribe;
+  }, [setActiveTab]);
+
   const reorderTabs = useCallback((startIndex: number, endIndex: number) => {
     setTabs(prevTabs => {
       const newTabs = [...prevTabs];

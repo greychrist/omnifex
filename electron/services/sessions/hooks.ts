@@ -605,7 +605,7 @@ export function createSessionHooks(
                 teammate_name: input.teammate_name, team_name: input.team_name,
               });
               try {
-                notificationHooks.showNotification?.(`Task Complete: ${input.task_subject}`, input.teammate_name ? `Completed by ${input.teammate_name}` : 'Task finished', false);
+                notificationHooks.showNotification?.(`Task Complete: ${input.task_subject}`, input.teammate_name ? `Completed by ${input.teammate_name}` : 'Task finished', false, { tabId });
                 notificationHooks.incrementUnread?.();
               } catch { /* notification optional */ }
             } catch (err) { console.error('[sessions] TaskCompleted hook failed:', err); }

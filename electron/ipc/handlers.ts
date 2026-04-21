@@ -153,6 +153,14 @@ export interface Services {
   models?: {
     listSupported(configDir: string): unknown;
   };
+  sdkVersion?: {
+    getReferenced(): Promise<string | null>;
+    getLatest(): Promise<string | null>;
+  };
+  gitWatcher?: {
+    start(projectPath: string): Promise<{ watchId: string; branch: string | null }>;
+    stop(watchId: string): void;
+  };
 }
 
 // The handler type used in the map — receives the IPC event plus the params
@@ -185,7 +193,7 @@ function wrapWith<P>(fn: (params: P) => unknown): HandlerFn {
  * renderer gets a defined (but empty) response rather than a blocked channel.
  */
 export function getHandlerMap(services: Services = {}): Record<string, HandlerFn> {
-  const { accounts, claude, sessions, agents, usage, checkpoints, claudeBinary, mcp, slashCommands, logging, database, proxy, permissionsIO, models } = services;
+  const { accounts, claude, sessions, agents, usage, checkpoints, claudeBinary, mcp, slashCommands, logging, database, proxy, permissionsIO, models, sdkVersion, gitWatcher } = services;
 
   const map: Record<string, HandlerFn> = {
     // ── Accounts ──────────────────────────────────────────────────────────────
@@ -491,6 +499,23 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     // ── Proxy ─────────────────────────────────────────────────────────────────
     get_proxy_settings: wrap(() => proxy?.getSettings() ?? null),
     save_proxy_settings: wrapWith((p: Record<string, unknown>) => proxy?.saveSettings(p) ?? null),
+
+    // ── SDK version ──────────────────────────────────────────────────────────
+    get_referenced_sdk_version: wrap(() => sdkVersion?.getReferenced() ?? null),
+    get_latest_sdk_version: wrap(() => sdkVersion?.getLatest() ?? null),
+
+    // ── Git watcher ──────────────────────────────────────────────────────────
+    start_git_branch_watch: wrapWith(async (p: Record<string, unknown>) => {
+      const projectPath = (p?.projectPath ?? p?.project_path) as string;
+      if (!projectPath || !gitWatcher) return null;
+      return gitWatcher.start(projectPath);
+    }),
+    stop_git_branch_watch: wrapWith(async (p: Record<string, unknown>) => {
+      const watchId = (p?.watchId ?? p?.watch_id) as string;
+      if (!watchId || !gitWatcher) return null;
+      gitWatcher.stop(watchId);
+      return null;
+    }),
   };
 
   return map;

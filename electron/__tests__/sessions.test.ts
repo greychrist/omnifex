@@ -476,6 +476,7 @@ describe('sessions service — full lifecycle', () => {
       expect.stringContaining('my-project'),
       'Everything is fine',
       false,
+      { tabId: 'tab-notify' },
     );
     expect(incrementUnread).toHaveBeenCalledTimes(1);
   });
@@ -510,6 +511,7 @@ describe('sessions service — full lifecycle', () => {
       expect.any(String),
       'Something exploded',
       true,
+      { tabId: 'tab-err' },
     );
   });
 
@@ -862,6 +864,7 @@ describe('sessions service — full lifecycle', () => {
       expect.stringContaining('my-project'),
       expect.stringContaining('Bash'),
       false,
+      { tabId: 'tab-perm-notif' },
     );
     expect(incrementUnread).toHaveBeenCalled();
 

@@ -6,6 +6,10 @@ export interface NotificationLike {
   on(event: 'close' | 'click', cb: () => void): this;
 }
 
+export interface NotificationClickPayload {
+  tabId?: string;
+}
+
 export interface NotificationsDeps {
   createNotification: (opts: NotificationConstructorOptions) => NotificationLike;
   isSupported: () => boolean;
@@ -13,10 +17,11 @@ export interface NotificationsDeps {
   getSoundPath: (isError: boolean) => string;
   isWindowFocused: () => boolean;
   focusWindow: () => void;
+  onNotificationClick?: (payload: NotificationClickPayload) => void;
 }
 
 export interface NotificationsService {
-  show(title: string, body: string, isError: boolean): void;
+  show(title: string, body: string, isError: boolean, payload?: NotificationClickPayload): void;
   dismissAll(): void;
 }
 
@@ -24,7 +29,7 @@ export function createNotificationsService(deps: NotificationsDeps): Notificatio
   const active = new Set<NotificationLike>();
 
   return {
-    show(title, body, isError) {
+    show(title, body, isError, payload) {
       if (!deps.isSupported()) return;
 
       if (deps.isWindowFocused()) {
@@ -47,6 +52,7 @@ export function createNotificationsService(deps: NotificationsDeps): Notificatio
       notif.on('click', () => {
         active.delete(notif);
         deps.focusWindow();
+        deps.onNotificationClick?.(payload ?? {});
       });
       notif.show();
     },

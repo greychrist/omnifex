@@ -46,6 +46,7 @@ interface Harness {
   created: FakeNotification[];
   playSound: ReturnType<typeof vi.fn>;
   focusWindow: ReturnType<typeof vi.fn>;
+  onNotificationClick: ReturnType<typeof vi.fn>;
   setFocused: (focused: boolean) => void;
   setSupported: (supported: boolean) => void;
 }
@@ -56,11 +57,13 @@ function makeHarness(): Harness {
   let supported = true;
   const playSound = vi.fn();
   const focusWindow = vi.fn();
+  const onNotificationClick = vi.fn();
 
   const deps: NotificationsDeps = {
     isSupported: () => supported,
     isWindowFocused: () => focused,
     focusWindow,
+    onNotificationClick,
     playSound,
     getSoundPath: (isError: boolean) => (isError ? '/error.aiff' : '/success.aiff'),
     createNotification: (opts) => {
@@ -75,6 +78,7 @@ function makeHarness(): Harness {
     created,
     playSound,
     focusWindow,
+    onNotificationClick,
     setFocused: (v: boolean) => {
       focused = v;
     },
@@ -137,6 +141,37 @@ describe('notifications service', () => {
       h.service.show('T', 'B', false);
       h.created[0].trigger('click');
       expect(h.focusWindow).toHaveBeenCalled();
+    });
+
+    it('forwards the click payload to onNotificationClick', () => {
+      h.service.show('T', 'B', false, { tabId: 'tab-123' });
+      h.created[0].trigger('click');
+      expect(h.onNotificationClick).toHaveBeenCalledWith({ tabId: 'tab-123' });
+    });
+
+    it('passes an empty payload when show() was called without one', () => {
+      h.service.show('T', 'B', false);
+      h.created[0].trigger('click');
+      expect(h.onNotificationClick).toHaveBeenCalledWith({});
+    });
+
+    it('does not crash when onNotificationClick is not provided', () => {
+      // Constructing a minimal alternative service without the optional dep.
+      const created: FakeNotification[] = [];
+      const svc = createNotificationsService({
+        isSupported: () => true,
+        isWindowFocused: () => false,
+        focusWindow: vi.fn(),
+        playSound: vi.fn(),
+        getSoundPath: () => '/s.aiff',
+        createNotification: (opts) => {
+          const n = makeFakeNotification(opts);
+          created.push(n);
+          return n;
+        },
+      });
+      svc.show('T', 'B', false, { tabId: 'x' });
+      expect(() => created[0].trigger('click')).not.toThrow();
     });
   });
 

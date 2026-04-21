@@ -104,7 +104,7 @@ export function createSessionsService(
 
           // Fire native OS notification + dock badge
           try {
-            notificationHooks.showNotification?.(title, body, isError);
+            notificationHooks.showNotification?.(title, body, isError, { tabId });
             notificationHooks.incrementUnread?.();
           } catch (e) {
             console.error('[sessions] notification hook failed:', e);

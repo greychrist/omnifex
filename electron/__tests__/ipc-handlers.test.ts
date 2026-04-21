@@ -131,6 +131,8 @@ function buildMockServices() {
     logging: mockService(['writeBatch', 'query'] as const),
     proxy: mockService(['getSettings', 'saveSettings'] as const),
     permissionsIO: createPermissionsIOService(),
+    sdkVersion: mockService(['getReferenced', 'getLatest'] as const),
+    gitWatcher: mockService(['start', 'stop'] as const),
   };
 }
 
@@ -246,6 +248,11 @@ describe('ipc handlers — structure', () => {
       'get_proxy_settings',
       // Git
       'get_git_branch',
+      'start_git_branch_watch',
+      'stop_git_branch_watch',
+      // SDK version
+      'get_referenced_sdk_version',
+      'get_latest_sdk_version',
     ];
 
     for (const channel of required) {
@@ -793,6 +800,54 @@ describe('ipc handlers — dispatch to services', () => {
 
     expect(services.proxy.getSettings).toHaveBeenCalledTimes(1);
     expect(services.proxy.saveSettings).toHaveBeenCalledWith({ enabled: true });
+  });
+
+  // ── SDK version ─────────────────────────────────────────────────────────
+
+  it('get_referenced_sdk_version routes through the service', async () => {
+    services.sdkVersion.getReferenced.mockResolvedValueOnce('1.2.3');
+    const result = await invoke(handlers, 'get_referenced_sdk_version');
+    expect(result).toBe('1.2.3');
+    expect(services.sdkVersion.getReferenced).toHaveBeenCalledTimes(1);
+  });
+
+  it('get_latest_sdk_version routes through the service', async () => {
+    services.sdkVersion.getLatest.mockResolvedValueOnce('2.0.0');
+    const result = await invoke(handlers, 'get_latest_sdk_version');
+    expect(result).toBe('2.0.0');
+    expect(services.sdkVersion.getLatest).toHaveBeenCalledTimes(1);
+  });
+
+  // ── Git watcher ─────────────────────────────────────────────────────────
+
+  it('start_git_branch_watch forwards the project path and returns the service result', async () => {
+    services.gitWatcher.start.mockResolvedValueOnce({ watchId: 'w-1', branch: 'main' });
+    const result = await invoke(handlers, 'start_git_branch_watch', { projectPath: '/tmp/x' });
+    expect(result).toEqual({ watchId: 'w-1', branch: 'main' });
+    expect(services.gitWatcher.start).toHaveBeenCalledWith('/tmp/x');
+  });
+
+  it('start_git_branch_watch accepts snake_case project_path param', async () => {
+    services.gitWatcher.start.mockResolvedValueOnce({ watchId: 'w-2', branch: null });
+    await invoke(handlers, 'start_git_branch_watch', { project_path: '/tmp/y' });
+    expect(services.gitWatcher.start).toHaveBeenCalledWith('/tmp/y');
+  });
+
+  it('start_git_branch_watch returns null when projectPath is missing', async () => {
+    const result = await invoke(handlers, 'start_git_branch_watch', {});
+    expect(result).toBeNull();
+    expect(services.gitWatcher.start).not.toHaveBeenCalled();
+  });
+
+  it('stop_git_branch_watch routes through the service', async () => {
+    await invoke(handlers, 'stop_git_branch_watch', { watchId: 'w-1' });
+    expect(services.gitWatcher.stop).toHaveBeenCalledWith('w-1');
+  });
+
+  it('stop_git_branch_watch returns null when watchId is missing', async () => {
+    const result = await invoke(handlers, 'stop_git_branch_watch', {});
+    expect(result).toBeNull();
+    expect(services.gitWatcher.stop).not.toHaveBeenCalled();
   });
 });
 

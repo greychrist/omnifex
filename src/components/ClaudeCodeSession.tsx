@@ -104,9 +104,49 @@ interface ClaudeCodeSessionProps {
   onProjectPathChange?: (path: string) => void;
 }
 
+// Deterministic color palette for non-default branches. Mirrors the fallback
+// palette in AccountBadge so branch badges read the same visual language as
+// account tags.
+const BRANCH_COLORS = [
+  "bg-blue-500/20 text-blue-400 border-blue-500/30",
+  "bg-purple-500/20 text-purple-400 border-purple-500/30",
+  "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
+  "bg-amber-500/20 text-amber-400 border-amber-500/30",
+  "bg-rose-500/20 text-rose-400 border-rose-500/30",
+  "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
+];
+
+function hashBranchColor(name: string): string {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return BRANCH_COLORS[Math.abs(hash) % BRANCH_COLORS.length];
+}
+
+const GitBranchBadge: React.FC<{ name: string }> = ({ name }) => {
+  const isTrunk = name === 'main' || name === 'master';
+  const colorClass = isTrunk
+    ? 'bg-black text-white border-black'
+    : hashBranchColor(name);
+
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] font-mono font-medium',
+        colorClass,
+      )}
+      title={`Git branch: ${name}`}
+    >
+      <GitBranch className="w-3 h-3" />
+      {name}
+    </span>
+  );
+};
+
 /**
  * ClaudeCodeSession component for interactive Claude Code sessions
- * 
+ *
  * @example
  * <ClaudeCodeSession onBack={() => setView('projects')} />
  */
@@ -204,11 +244,38 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     }
   }, [projectPath]);
 
-  // Fetch git branch for the project directory (displayed in SessionHeader).
+  // Watch git branch for the project directory — live-updates the SessionHeader
+  // badge when the user switches branches outside the app.
   useEffect(() => {
-    if (projectPath) {
-      api.getGitBranch(projectPath).then(setGitBranch).catch(() => setGitBranch(null));
-    }
+    if (!projectPath) return;
+    let cancelled = false;
+    let watchId: string | null = null;
+    let unsub: (() => void) | null = null;
+
+    (async () => {
+      try {
+        const result = await api.startGitBranchWatch(projectPath);
+        if (cancelled) {
+          if (result?.watchId) await api.stopGitBranchWatch(result.watchId);
+          return;
+        }
+        if (!result) {
+          setGitBranch(null);
+          return;
+        }
+        watchId = result.watchId;
+        setGitBranch(result.branch);
+        unsub = api.onGitBranchChanged(result.watchId, setGitBranch);
+      } catch {
+        if (!cancelled) setGitBranch(null);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      unsub?.();
+      if (watchId) void api.stopGitBranchWatch(watchId);
+    };
   }, [projectPath]);
 
   // New state for preview feature
@@ -1177,13 +1244,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             </span>
           )}
           {gitBranch && (
-            <span
-              className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono bg-foreground/5 text-foreground/60"
-              title={`Git branch: ${gitBranch}`}
-            >
-              <GitBranch className="w-3 h-3" />
-              {gitBranch}
-            </span>
+            <GitBranchBadge name={gitBranch} />
           )}
           {accountResolution?.account.account_type === 'max' && (
             <div className="ml-auto">

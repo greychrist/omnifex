@@ -151,6 +151,12 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
 
   // Git
   'get_git_branch',
+  'start_git_branch_watch',
+  'stop_git_branch_watch',
+
+  // SDK version
+  'get_referenced_sdk_version',
+  'get_latest_sdk_version',
 
   // Proxy
   'get_proxy_settings',
@@ -208,7 +214,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
       !channel.startsWith('claude-compact:') &&
       !channel.startsWith('elicitation-request:') &&
       !channel.startsWith('backend-log') &&
-      !channel.startsWith('updater:')
+      !channel.startsWith('updater:') &&
+      !channel.startsWith('notification-clicked') &&
+      !channel.startsWith('git-branch-changed:')
     ) {
       throw new Error(`Blocked IPC event channel: ${channel}`);
     }

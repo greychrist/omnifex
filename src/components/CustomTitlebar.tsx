@@ -3,6 +3,15 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Settings, Bot, BarChart3, FileText, Network, Info, MoreVertical, Download, Loader2, CheckCircle, AlertCircle, RefreshCw } from 'lucide-react';
 import { TooltipProvider, TooltipSimple } from '@/components/ui/tooltip-modern';
 import { api } from '@/lib/api';
+import { cn } from '@/lib/utils';
+
+const SDK_POLL_INTERVAL_MS = 60 * 60 * 1000; // 60 minutes
+
+const BADGE_BASE_CLASS =
+  'inline-flex items-center rounded border px-2 py-0.5 text-[11px] font-medium select-none tauri-no-drag';
+const BADGE_NEUTRAL_CLASS = 'bg-muted/40 text-muted-foreground border-border/60';
+const BADGE_GREEN_CLASS = 'bg-green-500/15 text-green-500 border-green-500/30';
+const BADGE_RED_CLASS = 'bg-red-500/15 text-red-500 border-red-500/30';
 
 interface CustomTitlebarProps {
   onSettingsClick?: () => void;
@@ -24,6 +33,8 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const [appVersion, setAppVersion] = useState<string>('');
+  const [referencedSdk, setReferencedSdk] = useState<string | null>(null);
+  const [latestSdk, setLatestSdk] = useState<string | null>(null);
 
   // --- Update state ---
   type UpdateState =
@@ -75,6 +86,7 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
   // Fetch app version + check for updates on mount
   useEffect(() => {
     api.getAppVersion().then(setAppVersion).catch(() => {});
+    api.getReferencedSdkVersion().then(setReferencedSdk).catch(() => setReferencedSdk(null));
     checkForUpdate();
 
     // Listen for download progress
@@ -85,6 +97,25 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
     });
     return cleanup;
   }, [checkForUpdate]);
+
+  // Poll the npm registry for the latest SDK version. Fetch on mount plus
+  // every hour so the badge reflects new releases without a restart.
+  useEffect(() => {
+    let cancelled = false;
+    const fetchLatest = () => {
+      api.getLatestSdkVersion().then((v) => {
+        if (!cancelled) setLatestSdk(v);
+      }).catch(() => {
+        if (!cancelled) setLatestSdk(null);
+      });
+    };
+    fetchLatest();
+    const id = setInterval(fetchLatest, SDK_POLL_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, []);
 
   const handleUpdateClick = async () => {
     if (updateState.status === 'available') {
@@ -116,13 +147,45 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
       className="relative z-[200] h-11 bg-background/95 backdrop-blur-sm flex items-center justify-between select-none border-b border-border/50 tauri-drag"
       data-tauri-drag-region
     >
-      {/* Left side - version label (native traffic lights are provided by Electron frame) */}
-      <div className="flex items-center pl-20">
+      {/* Left side - version badges (native traffic lights are provided by Electron frame) */}
+      <div className="flex items-center pl-20 gap-1.5 tauri-no-drag">
         {appVersion && (
-          <span className="text-[11px] text-muted-foreground/50 font-mono select-none">
-            v{appVersion}
-          </span>
+          <TooltipSimple content="GreyChrist application version" side="bottom">
+            <span className={cn(BADGE_BASE_CLASS, BADGE_NEUTRAL_CLASS)}>
+              GreyChrist {appVersion}
+            </span>
+          </TooltipSimple>
         )}
+        {referencedSdk && (
+          <TooltipSimple content="SDK version this build is tied to" side="bottom">
+            <span className={cn(BADGE_BASE_CLASS, BADGE_NEUTRAL_CLASS)}>
+              Referenced SDK {referencedSdk}
+            </span>
+          </TooltipSimple>
+        )}
+        <TooltipSimple
+          content={
+            latestSdk == null
+              ? 'Latest SDK version unavailable'
+              : referencedSdk && latestSdk === referencedSdk
+                ? 'SDK is up to date'
+                : `Newer SDK available on npm: ${latestSdk}`
+          }
+          side="bottom"
+        >
+          <span
+            className={cn(
+              BADGE_BASE_CLASS,
+              latestSdk == null
+                ? BADGE_NEUTRAL_CLASS
+                : referencedSdk && latestSdk === referencedSdk
+                  ? BADGE_GREEN_CLASS
+                  : BADGE_RED_CLASS,
+            )}
+          >
+            Current SDK {latestSdk ?? '—'}
+          </span>
+        </TooltipSimple>
       </div>
 
       {/* Right side - Navigation icons */}

@@ -1983,6 +1983,48 @@ export const api = {
     return apiCall("get_git_branch", { projectPath });
   },
 
+  /**
+   * Start watching a project's .git/HEAD for branch changes. Returns an initial
+   * branch snapshot and a watchId the caller uses to unsubscribe.
+   */
+  async startGitBranchWatch(projectPath: string): Promise<{ watchId: string; branch: string | null } | null> {
+    return apiCall("start_git_branch_watch", { projectPath });
+  },
+
+  /**
+   * Stop watching a project's .git/HEAD.
+   */
+  async stopGitBranchWatch(watchId: string): Promise<void> {
+    await apiCall("stop_git_branch_watch", { watchId });
+  },
+
+  /**
+   * Subscribe to branch-change events for a specific watch. Returns an
+   * unsubscribe function.
+   */
+  onGitBranchChanged(watchId: string, callback: (branch: string | null) => void): () => void {
+    return window.electronAPI.onEvent(
+      `git-branch-changed:${watchId}`,
+      (data: any) => callback(data?.branch ?? null),
+    );
+  },
+
+  /**
+   * The SDK version the current build is compiled against (installed in
+   * node_modules). Returns null if it cannot be resolved.
+   */
+  async getReferencedSdkVersion(): Promise<string | null> {
+    return apiCall("get_referenced_sdk_version");
+  },
+
+  /**
+   * The latest published SDK version on the npm registry. Returns null on
+   * network failure or parse error.
+   */
+  async getLatestSdkVersion(): Promise<string | null> {
+    return apiCall("get_latest_sdk_version");
+  },
+
   // Storage API methods
 
   /**

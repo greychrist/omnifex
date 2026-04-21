@@ -56,6 +56,8 @@ import { createModelsService } from './services/models';
 import { createSlashCommandsService } from './services/slash-commands';
 import { createPermissionsIOService } from './services/permissions-io';
 import { createUpdaterService } from './services/updater';
+import { createSdkVersionService } from './services/sdk-version';
+import { createGitWatcherService } from './services/git-watcher';
 import { registerIpcHandlers } from './ipc/handlers';
 import { createWindowRouter } from './window-router';
 
@@ -66,6 +68,7 @@ const windows = new Set<BrowserWindow>();
 const router = createWindowRouter();
 let _sessionsService: { stopAll(): void } | null = null;
 let _notificationsService: { dismissAll(): void } | null = null;
+let _gitWatcherService: { disposeAll(): void } | null = null;
 let _db: { close(): void } | null = null;
 let _initialized = false;
 
@@ -304,6 +307,9 @@ app.whenReady().then(() => {
     isSupported: () => Notification.isSupported(),
     isWindowFocused: () => anyWindowFocused(),
     focusWindow: () => focusAnyWindow(),
+    onNotificationClick: ({ tabId }) => {
+      if (tabId) sendToRenderer('notification-clicked', { tabId });
+    },
     getSoundPath: (isError) =>
       isError
         ? '/System/Library/Sounds/Basso.aiff'
@@ -321,8 +327,8 @@ app.whenReady().then(() => {
   const sessionsService = _sessionsService = createSessionsService(
     sendToRenderer,
     {
-      showNotification: (title, body, isError) => {
-        notificationsService.show(title, body, isError);
+      showNotification: (title, body, isError, payload) => {
+        notificationsService.show(title, body, isError, payload);
       },
       incrementUnread: () => {
         // Only bump the dock badge when no window is focused
@@ -356,6 +362,41 @@ app.whenReady().then(() => {
   const slashCommandsService = createSlashCommandsService(defaultConfigDir);
   const permissionsIOService = createPermissionsIOService();
   const modelsService = createModelsService();
+  const sdkVersionService = createSdkVersionService({
+    readSdkPackageJson: async () => {
+      try {
+        const sdkPkgPath = path.join(
+          app.getAppPath(),
+          'node_modules',
+          '@anthropic-ai',
+          'claude-agent-sdk',
+          'package.json',
+        );
+        const raw = await fs.promises.readFile(sdkPkgPath, 'utf8');
+        return JSON.parse(raw) as { version?: string };
+      } catch {
+        return null;
+      }
+    },
+    fetchLatestVersion: async () => {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 10_000);
+      try {
+        const res = await fetch(
+          'https://registry.npmjs.org/@anthropic-ai/claude-agent-sdk/latest',
+          { signal: ctrl.signal },
+        );
+        if (!res.ok) return '';
+        const body = (await res.json()) as { version?: string };
+        return body?.version ?? '';
+      } finally {
+        clearTimeout(timer);
+      }
+    },
+  });
+  const gitWatcherService = _gitWatcherService = createGitWatcherService({
+    sendToRenderer,
+  });
 
   registerIpcHandlers({
     database: db,
@@ -543,6 +584,14 @@ app.whenReady().then(() => {
     models: {
       listSupported: (configDir: string) => modelsService.listSupported(configDir),
     },
+    sdkVersion: {
+      getReferenced: () => sdkVersionService.getReferenced(),
+      getLatest: () => sdkVersionService.getLatest(),
+    },
+    gitWatcher: {
+      start: (projectPath: string) => gitWatcherService.start(projectPath),
+      stop: (watchId: string) => gitWatcherService.stop(watchId),
+    },
   });
 
   ipcMain.handle('get_app_version', () => app.getVersion());
@@ -588,6 +637,7 @@ app.whenReady().then(() => {
 
 app.on('before-quit', () => {
   _sessionsService?.stopAll();
+  _gitWatcherService?.disposeAll();
   _db?.close();
 });
 

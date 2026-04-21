@@ -121,8 +121,17 @@ export interface SessionsService {
 export type SendToRenderer = (channel: string, ...args: unknown[]) => void;
 
 export interface NotificationHooks {
-  /** Show a native OS notification */
-  showNotification?: (title: string, body: string, isError: boolean) => void;
+  /**
+   * Show a native OS notification. The optional `payload` carries context
+   * (currently `{ tabId }`) delivered to the click handler so the renderer
+   * can route the click back to the originating tab.
+   */
+  showNotification?: (
+    title: string,
+    body: string,
+    isError: boolean,
+    payload?: { tabId?: string },
+  ) => void;
   /** Increment unread count / update dock badge */
   incrementUnread?: () => void;
 }
