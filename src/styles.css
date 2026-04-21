@@ -223,38 +223,6 @@ html {
   --color-green-600: oklch(0.64 0.22 142);
 }
 
-/* White Theme (High Contrast Light) */
-.theme-white {
-  --color-background: oklch(0.99 0 240);
-  --color-foreground: oklch(0.10 0 240);
-  --color-card: oklch(1.0 0 240);
-  --color-card-foreground: oklch(0.10 0 240);
-  --color-popover: oklch(1.0 0 240);
-  --color-popover-foreground: oklch(0.10 0 240);
-  --color-primary: oklch(0.10 0 240);
-  --color-primary-foreground: oklch(1.0 0 240);
-  --color-secondary: oklch(0.95 0.01 240);
-  --color-secondary-foreground: oklch(0.10 0 240);
-  --color-muted: oklch(0.93 0.01 240);
-  --color-muted-foreground: oklch(0.40 0.01 240);
-  --color-accent: oklch(0.95 0.01 240);
-  --color-accent-foreground: oklch(0.10 0 240);
-  --color-destructive: oklch(0.55 0.25 25);
-  --color-destructive-foreground: oklch(1.0 0 240);
-  --color-border: oklch(0.88 0.01 240);
-  --color-input: oklch(0.88 0.01 240);
-  --color-ring: oklch(0.45 0.015 240);
-  
-  /* Additional colors for status messages */
-  --color-green-500: oklch(0.55 0.25 142);
-  --color-green-600: oklch(0.47 0.27 142);
-}
-
-/* Custom Theme - CSS variables will be set dynamically by ThemeContext */
-.theme-custom {
-  /* Custom theme variables are applied dynamically via JavaScript */
-}
-
 /* Reset and base styles */
 * {
   border-color: var(--color-border);
@@ -467,7 +435,6 @@ html.is-macos body {
 
 /* Markdown Editor Theme-aware Styles */
 [data-color-mode="dark"],
-.theme-dark [data-color-mode="dark"],
 .theme-gray [data-color-mode="dark"] {
   --color-border-default: rgb(48, 54, 61);
   --color-canvas-default: rgb(13, 17, 23);
@@ -480,8 +447,7 @@ html.is-macos body {
 }
 
 [data-color-mode="light"],
-.theme-light [data-color-mode="light"],
-.theme-white [data-color-mode="light"] {
+.theme-light [data-color-mode="light"] {
   --color-border-default: rgb(216, 222, 228);
   --color-canvas-default: rgb(255, 255, 255);
   --color-canvas-subtle: rgb(246, 248, 250);

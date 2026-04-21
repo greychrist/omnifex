@@ -146,7 +146,11 @@ export function SessionHeader({
       className
     )}>
       <AccountBadge name={accountName} />
-      <span className="text-foreground/50 uppercase tracking-wide">{accountType}</span>
+      {accountType && (
+        <span className="inline-flex items-center rounded border border-foreground/20 bg-foreground/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-foreground/80">
+          {accountType}
+        </span>
+      )}
 
       {/* Session status indicator */}
       {sessionStatus && (
@@ -176,7 +180,7 @@ export function SessionHeader({
               type="button"
               className={cn(
                 "flex items-center gap-1 px-2 py-0.5 rounded-md hover:bg-foreground/10 transition-colors",
-                sdkMismatch ? "text-yellow-400" : "text-green-400/80",
+                sdkMismatch ? "text-yellow-600" : "text-green-600",
               )}
               title="Click for account details"
             >
@@ -265,10 +269,10 @@ export function SessionHeader({
           <>
             <span aria-hidden="true" className="h-4 w-px bg-border/60 shrink-0" />
             <div className="flex items-center gap-1.5">
-              <span className="text-[9px] uppercase tracking-wider text-muted-foreground/60">permissions</span>
+              <span className="text-[9px] uppercase tracking-wider text-muted-foreground">permissions</span>
               <span
                 className={cn(
-                  "flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold uppercase tracking-wide bg-foreground/5",
+                  "flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold uppercase tracking-wide bg-foreground/10 border border-foreground/10",
                   mode.color,
                 )}
                 title={`Permissions: ${mode.name} — ${mode.description}`}
@@ -288,10 +292,10 @@ export function SessionHeader({
           <>
             <span aria-hidden="true" className="h-4 w-px bg-border/60 shrink-0" />
             <div className="flex items-center gap-1.5">
-              <span className="text-[9px] uppercase tracking-wider text-muted-foreground/60">effort</span>
+              <span className="text-[9px] uppercase tracking-wider text-muted-foreground">effort</span>
               <span
                 className={cn(
-                  "px-1.5 py-0.5 rounded text-[10px] font-mono font-bold uppercase tracking-wide bg-foreground/5",
+                  "px-1.5 py-0.5 rounded text-[10px] font-mono font-bold uppercase tracking-wide bg-foreground/10 border border-foreground/10",
                   level.color,
                 )}
                 title={`Effort: ${level.name} — ${level.description}`}
@@ -312,10 +316,10 @@ export function SessionHeader({
           <>
             <span aria-hidden="true" className="h-4 w-px bg-border/60 shrink-0" />
             <div className="flex items-center gap-1.5">
-              <span className="text-[9px] uppercase tracking-wider text-muted-foreground/60">adaptive</span>
+              <span className="text-[9px] uppercase tracking-wider text-muted-foreground">adaptive</span>
               <span
                 className={cn(
-                  "px-1.5 py-0.5 rounded text-[10px] font-mono font-bold uppercase tracking-wide bg-foreground/5",
+                  "px-1.5 py-0.5 rounded text-[10px] font-mono font-bold uppercase tracking-wide bg-foreground/10 border border-foreground/10",
                   cfg.color,
                 )}
                 title={`Adaptive thinking: ${cfg.name} — ${cfg.description}`}

@@ -27,11 +27,11 @@ import { motion } from "framer-motion";
 export type EffortLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
 export const EFFORT_LEVELS: { id: EffortLevel; name: string; description: string; shortName: string; color: string }[] = [
-  { id: 'low', name: 'Low', description: 'Minimal thinking, fastest responses', shortName: 'Lo', color: 'text-blue-500' },
-  { id: 'medium', name: 'Medium', description: 'Moderate thinking', shortName: 'Med', color: 'text-green-500' },
-  { id: 'high', name: 'High', description: 'Deep reasoning (SDK default)', shortName: 'Hi', color: 'text-yellow-500' },
-  { id: 'xhigh', name: 'Extra High', description: 'Deeper than high (Opus 4.7 only; falls back to High elsewhere)', shortName: 'Xhi', color: 'text-orange-500' },
-  { id: 'max', name: 'Max', description: 'Maximum effort (Opus 4.6/4.7 only)', shortName: 'Max', color: 'text-red-500' },
+  { id: 'low', name: 'Low', description: 'Minimal thinking, fastest responses', shortName: 'Lo', color: 'text-blue-600' },
+  { id: 'medium', name: 'Medium', description: 'Moderate thinking', shortName: 'Med', color: 'text-green-600' },
+  { id: 'high', name: 'High', description: 'Deep reasoning (SDK default)', shortName: 'Hi', color: 'text-yellow-600' },
+  { id: 'xhigh', name: 'Extra High', description: 'Deeper than high (Opus 4.7 only; falls back to High elsewhere)', shortName: 'Xhi', color: 'text-orange-600' },
+  { id: 'max', name: 'Max', description: 'Maximum effort (Opus 4.6/4.7 only)', shortName: 'Max', color: 'text-red-600' },
 ];
 
 // ── Thinking ────────────────────────────────────────────────────────────
@@ -42,9 +42,9 @@ export const EFFORT_LEVELS: { id: EffortLevel; name: string; description: string
 export type ThinkingConfig = 'adaptive' | 'budget' | 'disabled';
 
 export const THINKING_CONFIGS: { id: ThinkingConfig; name: string; description: string; shortName: string; color: string }[] = [
-  { id: 'adaptive', name: 'Adaptive', description: 'Claude decides when and how much to think', shortName: 'On', color: 'text-sky-400' },
-  { id: 'budget', name: 'Budget', description: 'Fixed thinking token budget', shortName: 'Budg', color: 'text-violet-400' },
-  { id: 'disabled', name: 'Off', description: 'No extended thinking', shortName: 'Off', color: 'text-muted-foreground' },
+  { id: 'adaptive', name: 'Adaptive', description: 'Claude decides when and how much to think', shortName: 'On', color: 'text-sky-600' },
+  { id: 'budget', name: 'Budget', description: 'Fixed thinking token budget', shortName: 'Budg', color: 'text-violet-600' },
+  { id: 'disabled', name: 'Off', description: 'No extended thinking', shortName: 'Off', color: 'text-foreground/70' },
 ];
 
 // ── Permission ──────────────────────────────────────────────────────────
@@ -70,7 +70,7 @@ export const PERMISSION_MODES: PermissionMode[] = [
     description: "Prompt before every tool use (terminal behavior)",
     shortName: "ASK",
     icon: <Shield className="h-3.5 w-3.5" />,
-    color: "text-green-500",
+    color: "text-green-600",
   },
   {
     id: "acceptEdits",
@@ -78,7 +78,7 @@ export const PERMISSION_MODES: PermissionMode[] = [
     description: "Auto-approve Read/Write/Edit; everything else still prompts",
     shortName: "EDIT",
     icon: <FilePen className="h-3.5 w-3.5" />,
-    color: "text-yellow-500",
+    color: "text-yellow-600",
   },
   {
     id: "plan",
@@ -86,7 +86,7 @@ export const PERMISSION_MODES: PermissionMode[] = [
     description: "Claude plans but never executes tools — plan-then-confirm",
     shortName: "PLAN",
     icon: <ClipboardList className="h-3.5 w-3.5" />,
-    color: "text-blue-500",
+    color: "text-blue-600",
   },
   {
     id: "bypassPermissions",
@@ -94,7 +94,7 @@ export const PERMISSION_MODES: PermissionMode[] = [
     description: "Bypass every permission check (destructive ops allowed)",
     shortName: "ALL",
     icon: <ShieldOff className="h-3.5 w-3.5" />,
-    color: "text-red-500",
+    color: "text-red-600",
   },
 ];
 
@@ -205,7 +205,7 @@ export function EffortPicker({ effort, onEffortChange, open, onOpenChange, disab
                 <span className={cn("text-[10px] font-bold", currentLevel?.color)}>
                   {currentLevel?.shortName}
                 </span>
-                <ChevronUp className="h-3 w-3 ml-0.5 opacity-50" />
+                <ChevronUp className="h-3 w-3 ml-0.5 opacity-70" />
               </Button>
             </motion.div>
           </TooltipTrigger>
@@ -257,10 +257,10 @@ export function PermissionPicker({ permissionMode, onPermissionModeChange, open,
                 )}
               >
                 {selectedData.icon}
-                <span className="text-[10px] font-bold opacity-70">
+                <span className="text-[10px] font-bold">
                   {selectedData.shortName}
                 </span>
-                <ChevronUp className="h-3 w-3 ml-0.5 opacity-50" />
+                <ChevronUp className="h-3 w-3 ml-0.5 opacity-70" />
               </Button>
             </motion.div>
           </TooltipTrigger>

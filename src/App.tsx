@@ -50,7 +50,7 @@ type View =
  */
 function AppContent() {
   const [view, setView] = useState<View>("tabs");
-  const { createClaudeMdTab, createSettingsTab, createUsageTab, createMCPTab, createAgentsTab } = useTabState();
+  const { createSettingsTab, createUsageTab, createAgentsTab } = useTabState();
   const { activeTabId, setActiveTab, updateTab } = useTabContext();
   useNotifications(activeTabId, setActiveTab, updateTab);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -367,8 +367,6 @@ function AppContent() {
       <CustomTitlebar
         onAgentsClick={() => createAgentsTab()}
         onUsageClick={() => createUsageTab()}
-        onClaudeClick={() => createClaudeMdTab()}
-        onMCPClick={() => createMCPTab()}
         onSettingsClick={() => createSettingsTab()}
         onInfoClick={() => setShowNFO(true)}
       />

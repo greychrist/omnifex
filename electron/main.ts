@@ -63,6 +63,8 @@ import { createWindowRouter } from './window-router';
 
 declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string | undefined;
 declare const MAIN_WINDOW_VITE_NAME: string;
+// Baked in at build time by vite.main.config.ts — see resolveReferencedSdkVersion.
+declare const __GREYCHRIST_REFERENCED_SDK_VERSION__: string;
 
 const windows = new Set<BrowserWindow>();
 const router = createWindowRouter();
@@ -364,6 +366,16 @@ app.whenReady().then(() => {
   const modelsService = createModelsService();
   const sdkVersionService = createSdkVersionService({
     readSdkPackageJson: async () => {
+      // Prefer the value baked in at build time — it's the exact version
+      // Vite resolved when bundling main.js, and it's the only source that
+      // works in the packaged app (where node_modules is tree-shaken away).
+      if (typeof __GREYCHRIST_REFERENCED_SDK_VERSION__ === 'string'
+          && __GREYCHRIST_REFERENCED_SDK_VERSION__.length > 0) {
+        return { version: __GREYCHRIST_REFERENCED_SDK_VERSION__ };
+      }
+      // Dev fallback: read the installed package.json directly if the
+      // build-time constant wasn't defined for some reason (e.g. running
+      // main.ts outside of Vite).
       try {
         const sdkPkgPath = path.join(
           app.getAppPath(),

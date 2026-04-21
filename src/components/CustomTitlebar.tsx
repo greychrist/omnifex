@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Settings, Bot, BarChart3, FileText, Network, Info, MoreVertical, Download, Loader2, CheckCircle, AlertCircle, RefreshCw } from 'lucide-react';
+import { Settings, Bot, BarChart3, Info, MoreVertical, Download, Loader2, CheckCircle, AlertCircle, RefreshCw } from 'lucide-react';
 import { TooltipProvider, TooltipSimple } from '@/components/ui/tooltip-modern';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -17,8 +17,6 @@ interface CustomTitlebarProps {
   onSettingsClick?: () => void;
   onAgentsClick?: () => void;
   onUsageClick?: () => void;
-  onClaudeClick?: () => void;
-  onMCPClick?: () => void;
   onInfoClick?: () => void;
 }
 
@@ -26,8 +24,6 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
   onSettingsClick,
   onAgentsClick,
   onUsageClick,
-  onClaudeClick,
-  onMCPClick,
   onInfoClick
 }) => {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -35,6 +31,10 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
   const [appVersion, setAppVersion] = useState<string>('');
   const [referencedSdk, setReferencedSdk] = useState<string | null>(null);
   const [latestSdk, setLatestSdk] = useState<string | null>(null);
+  // True while an SDK version fetch is in-flight. Starts true so the badge
+  // shows its spinner on the very first paint, before the initial check has
+  // had a chance to complete.
+  const [checkingSdk, setCheckingSdk] = useState(true);
 
   // --- Update state ---
   type UpdateState =
@@ -83,39 +83,50 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
     }
   }, []);
 
-  // Fetch app version + check for updates on mount
+  // Reusable SDK-version check. Flips `checkingSdk` so the badge can show a
+  // spinner while the npm registry fetch is in flight, and updates
+  // `latestSdk` with the result (or null on failure).
+  const checkSdkVersion = useCallback(async () => {
+    setCheckingSdk(true);
+    try {
+      const v = await api.getLatestSdkVersion();
+      setLatestSdk(v);
+    } catch {
+      setLatestSdk(null);
+    } finally {
+      setCheckingSdk(false);
+    }
+  }, []);
+
+  // Combined one-click refresh for the dropdown's "Check for Updates" button:
+  // app update check AND SDK version check kick off in parallel.
+  const checkEverything = useCallback(() => {
+    void checkForUpdate();
+    void checkSdkVersion();
+  }, [checkForUpdate, checkSdkVersion]);
+
+  // Fetch app version + check for updates + check SDK on mount
   useEffect(() => {
     api.getAppVersion().then(setAppVersion).catch(() => {});
     api.getReferencedSdkVersion().then(setReferencedSdk).catch(() => setReferencedSdk(null));
-    checkForUpdate();
+    void checkForUpdate();
+    void checkSdkVersion();
+
+    // Re-check the SDK hourly so the badge reflects new releases without a
+    // restart. (The app-update check is manual only after mount.)
+    const sdkTimer = setInterval(() => { void checkSdkVersion(); }, SDK_POLL_INTERVAL_MS);
 
     // Listen for download progress
-    const cleanup = api.onUpdateProgress((data: { percent: number }) => {
+    const cleanupProgress = api.onUpdateProgress((data: { percent: number }) => {
       setUpdateState((prev) =>
         prev.status === 'downloading' ? { ...prev, percent: data.percent } : prev,
       );
     });
-    return cleanup;
-  }, [checkForUpdate]);
-
-  // Poll the npm registry for the latest SDK version. Fetch on mount plus
-  // every hour so the badge reflects new releases without a restart.
-  useEffect(() => {
-    let cancelled = false;
-    const fetchLatest = () => {
-      api.getLatestSdkVersion().then((v) => {
-        if (!cancelled) setLatestSdk(v);
-      }).catch(() => {
-        if (!cancelled) setLatestSdk(null);
-      });
-    };
-    fetchLatest();
-    const id = setInterval(fetchLatest, SDK_POLL_INTERVAL_MS);
     return () => {
-      cancelled = true;
-      clearInterval(id);
+      clearInterval(sdkTimer);
+      cleanupProgress();
     };
-  }, []);
+  }, [checkForUpdate, checkSdkVersion]);
 
   const handleUpdateClick = async () => {
     if (updateState.status === 'available') {
@@ -165,25 +176,31 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
         )}
         <TooltipSimple
           content={
-            latestSdk == null
-              ? 'Latest SDK version unavailable'
-              : referencedSdk && latestSdk === referencedSdk
-                ? 'SDK is up to date'
-                : `Newer SDK available on npm: ${latestSdk}`
+            checkingSdk
+              ? 'Checking npm for latest SDK version…'
+              : latestSdk == null
+                ? 'Latest SDK version unavailable'
+                : referencedSdk && latestSdk === referencedSdk
+                  ? 'SDK is up to date'
+                  : `Newer SDK available on npm: ${latestSdk}`
           }
           side="bottom"
         >
           <span
             className={cn(
               BADGE_BASE_CLASS,
-              latestSdk == null
-                ? BADGE_NEUTRAL_CLASS
-                : referencedSdk && latestSdk === referencedSdk
-                  ? BADGE_GREEN_CLASS
-                  : BADGE_RED_CLASS,
+              'gap-1',
+              // Default to green — only flip to red when we have a confirmed
+              // mismatch against the referenced version.
+              referencedSdk && latestSdk && latestSdk !== referencedSdk
+                ? BADGE_RED_CLASS
+                : BADGE_GREEN_CLASS,
             )}
           >
-            Current SDK {latestSdk ?? '—'}
+            <span>Current SDK</span>
+            {checkingSdk
+              ? <Loader2 size={10} className="animate-spin" />
+              : <span>{latestSdk ?? '—'}</span>}
           </span>
         </TooltipSimple>
       </div>
@@ -307,42 +324,16 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
             {isDropdownOpen && (
               <div className="absolute right-0 mt-2 w-48 bg-popover border border-border rounded-lg shadow-lg z-[250]">
                 <div className="py-1">
-                  {onClaudeClick && (
-                    <button
-                      onClick={() => {
-                        onClaudeClick();
-                        setIsDropdownOpen(false);
-                      }}
-                      className="w-full px-4 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground transition-colors flex items-center gap-3"
-                    >
-                      <FileText size={14} />
-                      <span>CLAUDE.md</span>
-                    </button>
-                  )}
-                  
-                  {onMCPClick && (
-                    <button
-                      onClick={() => {
-                        onMCPClick();
-                        setIsDropdownOpen(false);
-                      }}
-                      className="w-full px-4 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground transition-colors flex items-center gap-3"
-                    >
-                      <Network size={14} />
-                      <span>MCP Servers</span>
-                    </button>
-                  )}
-                  
                   <button
                     onClick={() => {
-                      checkForUpdate();
+                      checkEverything();
                       setIsDropdownOpen(false);
                     }}
-                    disabled={updateState.status === 'checking' || updateState.status === 'downloading'}
+                    disabled={updateState.status === 'checking' || updateState.status === 'downloading' || checkingSdk}
                     className="w-full px-4 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground transition-colors flex items-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    <RefreshCw size={14} className={updateState.status === 'checking' ? 'animate-spin' : ''} />
-                    <span>{updateState.status === 'checking' ? 'Checking...' : 'Check for Updates'}</span>
+                    <RefreshCw size={14} className={updateState.status === 'checking' || checkingSdk ? 'animate-spin' : ''} />
+                    <span>{updateState.status === 'checking' || checkingSdk ? 'Checking...' : 'Check for Updates'}</span>
                   </button>
 
                   {onInfoClick && (

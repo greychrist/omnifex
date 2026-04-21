@@ -201,18 +201,11 @@ export const ClaudeVersionSelector: React.FC<ClaudeVersionSelectorProps> = ({
   if (simplified) {
     return (
       <div className={cn("space-y-3", className)}>
-        <div className="flex items-center justify-between">
-          <div className="space-y-0.5">
-            <Label htmlFor="claude-installation" className="text-sm font-medium">Claude Installation</Label>
-            <p className="text-xs text-muted-foreground">
-              Select which version of Claude to use
-            </p>
-          </div>
-          {selectedInstallation && (
-            <Badge variant={getInstallationTypeColor(selectedInstallation)} className="text-xs">
-              {selectedInstallation.installation_type}
-            </Badge>
-          )}
+        <div>
+          <Label htmlFor="claude-installation" className="text-sm font-medium">Claude Installation</Label>
+          <p className="text-xs text-muted-foreground">
+            Select which version of Claude to use
+          </p>
         </div>
         
         <Select value={selectedInstallation?.path || ""} onValueChange={handleInstallationChange}>
