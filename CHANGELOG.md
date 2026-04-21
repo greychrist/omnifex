@@ -20,7 +20,7 @@ Adds SDK-version visibility in the titlebar, routes OS notification clicks to th
 - **Branch badge visual treatment** (`0181cbd`). `main`/`master` render solid black with white text and a border; any other branch gets a deterministic color from a six-entry palette keyed off the branch name, matching the account-badge fallback palette. Keeps the existing monospace font and `GitBranch` icon.
 - **Titlebar version badges use the same squircle shape as the branch badge** (`0181cbd`). Account badges remain pills.
 
-
+## [0.3.28] — 2026-04-20
 
 Adds a Plugins side panel alongside the existing MCP Servers panel and reworks the MCP panel to group by scope with richer per-server details. Also bumps the Claude Agent SDK to 0.2.116. Installers remain **unsigned**.
 
