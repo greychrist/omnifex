@@ -5,6 +5,14 @@ All notable changes to GreyChrist are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.31] — 2026-04-21
+
+Single-fix patch: Cmd+R no longer reloads the app. Installers remain **unsigned**.
+
+### Fixed
+
+- **Cmd+R and Cmd+Shift+R no longer reload the window** (`7a87819`). Electron's default `viewMenu` role bound these accelerators to Reload / Force Reload, which would wipe the streaming state, session log, and any unsaved input of an in-flight Claude session. `installAppMenu()` in `electron/main.ts` now builds a custom View submenu that keeps Toggle DevTools, the zoom controls, and fullscreen but omits both reload entries — so Cmd+R is a no-op.
+
 ## [0.3.30] — 2026-04-21
 
 Fixes the Referenced SDK titlebar badge going blank in packaged builds, slims the titlebar dropdown, and prunes unused theme options. Installers remain **unsigned**.
