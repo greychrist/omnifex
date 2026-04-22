@@ -1003,6 +1003,149 @@ describe('sessions service — full lifecycle', () => {
     svc.stopAll();
   });
 
+  it('canUseTool logs a permission.request entry through the logger', async () => {
+    const writeBatch = vi.fn();
+    const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
+    const svc = createSessionsService(
+      sendToRenderer as any,
+      { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
+      fakeLogging as any,
+    );
+    const fake = installFakeQuery();
+
+    svc.start({ tabId: 'tab-log-req', projectPath: '/p', configDir: '/c', model: 'sonnet', permissionMode: 'default' });
+
+    const canUseTool = fake.getCapturedOptions().canUseTool;
+    const decisionPromise = canUseTool('Bash', { command: 'git status' }, {
+      signal: new AbortController().signal,
+      toolUseID: 'tu-log-req',
+    });
+
+    await new Promise((r) => setImmediate(r));
+
+    const requestEntry = writeBatch.mock.calls
+      .map((c) => c[0][0])
+      .find((e) => e.category === 'permission' && /request/i.test(e.message));
+    expect(requestEntry).toBeDefined();
+    expect(requestEntry.source).toBe('claude-sdk');
+    expect(requestEntry.level).toBe('info');
+    const meta = JSON.parse(requestEntry.metadata);
+    expect(meta.event).toBe('permission.request');
+    expect(meta.tool_name).toBe('Bash');
+
+    svc.respondPermission('tab-log-req', 'allow');
+    await decisionPromise;
+    svc.stopAll();
+  });
+
+  it('canUseTool logs a permission.decision entry with persisted=false when no rules are sent', async () => {
+    const writeBatch = vi.fn();
+    const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
+    const svc = createSessionsService(
+      sendToRenderer as any,
+      { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
+      fakeLogging as any,
+    );
+    const fake = installFakeQuery();
+
+    svc.start({ tabId: 'tab-log-session', projectPath: '/p', configDir: '/c', model: 'sonnet', permissionMode: 'default' });
+
+    const canUseTool = fake.getCapturedOptions().canUseTool;
+    const decisionPromise = canUseTool('Bash', { command: 'git status' }, {
+      signal: new AbortController().signal,
+      toolUseID: 'tu-log-session',
+    });
+
+    await new Promise((r) => setImmediate(r));
+    svc.respondPermission('tab-log-session', 'allow');
+    await decisionPromise;
+
+    const decisionEntry = writeBatch.mock.calls
+      .map((c) => c[0][0])
+      .find((e) => e.category === 'permission' && /decision/i.test(e.message));
+    expect(decisionEntry).toBeDefined();
+    const meta = JSON.parse(decisionEntry.metadata);
+    expect(meta.event).toBe('permission.decision');
+    expect(meta.behavior).toBe('allow');
+    expect(meta.persisted).toBe(false);
+    expect(meta.tool_name).toBe('Bash');
+
+    svc.stopAll();
+  });
+
+  it('canUseTool logs a permission.decision entry with persisted=true when updatedPermissions are sent', async () => {
+    const writeBatch = vi.fn();
+    const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
+    const svc = createSessionsService(
+      sendToRenderer as any,
+      { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
+      fakeLogging as any,
+    );
+    const fake = installFakeQuery();
+
+    svc.start({ tabId: 'tab-log-saved', projectPath: '/p', configDir: '/c', model: 'sonnet', permissionMode: 'default' });
+
+    const canUseTool = fake.getCapturedOptions().canUseTool;
+    const decisionPromise = canUseTool('Bash', { command: 'git status' }, {
+      signal: new AbortController().signal,
+      toolUseID: 'tu-log-saved',
+    });
+
+    await new Promise((r) => setImmediate(r));
+    const rules = [
+      { type: 'addRules' as const, rules: [{ toolName: 'Bash', ruleContent: 'git:*' }], behavior: 'allow' as const, destination: 'localSettings' as const },
+    ];
+    svc.respondPermission('tab-log-saved', 'allow', undefined, rules);
+    await decisionPromise;
+
+    const decisionEntry = writeBatch.mock.calls
+      .map((c) => c[0][0])
+      .find((e) => e.category === 'permission' && /decision/i.test(e.message));
+    expect(decisionEntry).toBeDefined();
+    const meta = JSON.parse(decisionEntry.metadata);
+    expect(meta.event).toBe('permission.decision');
+    expect(meta.behavior).toBe('allow');
+    expect(meta.persisted).toBe(true);
+    expect(meta.destination).toBe('localSettings');
+    expect(meta.rules).toEqual([{ toolName: 'Bash', ruleContent: 'git:*' }]);
+
+    svc.stopAll();
+  });
+
+  it('canUseTool logs a permission.decision entry with behavior=deny', async () => {
+    const writeBatch = vi.fn();
+    const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
+    const svc = createSessionsService(
+      sendToRenderer as any,
+      { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
+      fakeLogging as any,
+    );
+    const fake = installFakeQuery();
+
+    svc.start({ tabId: 'tab-log-deny', projectPath: '/p', configDir: '/c', model: 'sonnet', permissionMode: 'default' });
+
+    const canUseTool = fake.getCapturedOptions().canUseTool;
+    const decisionPromise = canUseTool('Write', { file_path: '/etc/passwd' }, {
+      signal: new AbortController().signal,
+      toolUseID: 'tu-log-deny',
+    });
+
+    await new Promise((r) => setImmediate(r));
+    svc.respondPermission('tab-log-deny', 'deny');
+    await decisionPromise;
+
+    const decisionEntry = writeBatch.mock.calls
+      .map((c) => c[0][0])
+      .find((e) => e.category === 'permission' && /decision/i.test(e.message));
+    expect(decisionEntry).toBeDefined();
+    const meta = JSON.parse(decisionEntry.metadata);
+    expect(meta.event).toBe('permission.decision');
+    expect(meta.behavior).toBe('deny');
+    expect(meta.persisted).toBe(false);
+
+    svc.stopAll();
+  });
+
   it('permission queue emits the next payload to the renderer after the first resolves', async () => {
     const writeBatch = vi.fn();
     const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };

@@ -297,7 +297,7 @@ export function createSessionsService(
       sdkOptions: options,
     };
 
-    options.canUseTool = createCanUseTool(handle, tabId, sendToRenderer, notificationHooks);
+    options.canUseTool = createCanUseTool(handle, tabId, sendToRenderer, notificationHooks, logging);
 
     // Use system-installed claude binary (account is scoped via CLAUDE_CONFIG_DIR)
     const binaryPath = findSystemClaudeBinary();

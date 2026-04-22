@@ -147,8 +147,11 @@ export function createLoggingService(db: Database): LoggingService {
     }
 
     if (filters.search) {
-      conditions.push(`message LIKE ?`);
-      params.push(`%${filters.search}%`);
+      conditions.push(
+        `(message LIKE ? OR metadata LIKE ? OR category LIKE ?)`
+      );
+      const like = `%${filters.search}%`;
+      params.push(like, like, like);
     }
 
     if (filters.since) {

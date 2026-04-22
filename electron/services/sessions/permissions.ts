@@ -1,8 +1,8 @@
 // Sessions module — permission handling
 // Extracted from electron/services/sessions.ts (pure refactor)
 
-import fs from 'node:fs';
 import path from 'node:path';
+import type { LoggingService } from '../logging';
 import type {
   SessionHandle,
   PermissionDecision,
@@ -20,6 +20,7 @@ export function createCanUseTool(
   tabId: string,
   sendToRenderer: SendToRenderer,
   notificationHooks: NotificationHooks,
+  logging: LoggingService | null = null,
 ): (
   toolName: string,
   toolInput: Record<string, unknown>,
@@ -35,6 +36,28 @@ export function createCanUseTool(
     agentID?: string;
   },
 ) => Promise<any> {
+  const logEntry = (entry: {
+    level: 'info' | 'warn' | 'error';
+    message: string;
+    metadata: Record<string, unknown>;
+  }) => {
+    if (!logging) return;
+    try {
+      logging.writeBatch([
+        {
+          timestamp: new Date().toISOString(),
+          level: entry.level,
+          source: 'claude-sdk',
+          category: 'permission',
+          message: entry.message,
+          metadata: JSON.stringify(entry.metadata),
+        },
+      ]);
+    } catch (err) {
+      console.error('[sessions] permission logging failed:', err);
+    }
+  };
+
   return async (
     toolName: string,
     toolInput: Record<string, unknown>,
@@ -54,7 +77,6 @@ export function createCanUseTool(
 
     // If the SDK doesn't provide suggestions, generate a sensible default
     // from the tool name and input so the user can still save a rule.
-    try { fs.appendFileSync('/tmp/gc-perm-debug.log', `[${new Date().toISOString()}] canUseTool: ${toolName} sdk_suggestions=${JSON.stringify(toolOptions.suggestions)}\n`); } catch {}
     let suggestions = toolOptions.suggestions;
     if (!suggestions || suggestions.length === 0) {
       let ruleContent: string | undefined;
@@ -89,6 +111,19 @@ export function createCanUseTool(
       permission_suggestions: suggestions,
     };
 
+    logEntry({
+      level: 'info',
+      message: `permission request: ${toolName}`,
+      metadata: {
+        event: 'permission.request',
+        tool_name: toolName,
+        tool_use_id: toolOptions.toolUseID,
+        tool_input: toolInput,
+        request_id: requestId,
+        suggestions,
+      },
+    });
+
     const decision = await new Promise<PermissionDecision>((resolve) => {
       const entry: PendingPermission & { payload: any } = { requestId, resolve, payload };
       handle.permissionQueue.push(entry);
@@ -112,10 +147,6 @@ export function createCanUseTool(
       // Otherwise it waits — sendNextPermission will show it when the current one resolves
     });
 
-    const debugPerm = (msg: string) => {
-      try { fs.appendFileSync('/tmp/gc-perm-debug.log', `[${new Date().toISOString()}] ${msg}\n`); } catch {}
-    };
-
     if (decision.behavior === 'allow') {
       // updatedInput is REQUIRED and must be the original tool input
       // (or a modified version). Passing {} breaks the SDK.
@@ -123,41 +154,41 @@ export function createCanUseTool(
         behavior: 'allow',
         updatedInput: decision.updatedInput ?? toolInput,
       };
-      if (decision.updatedPermissions && decision.updatedPermissions.length > 0) {
+      const persisted =
+        !!decision.updatedPermissions && decision.updatedPermissions.length > 0;
+      if (persisted) {
         result.updatedPermissions = decision.updatedPermissions;
-        debugPerm(`ALLOW ${toolName} with ${decision.updatedPermissions.length} permission updates: ${JSON.stringify(decision.updatedPermissions)}`);
-      } else {
-        debugPerm(`ALLOW ${toolName} (session only, no rules saved)`);
       }
 
-      // Verify save after a short delay — read the target file to confirm
-      if (decision.updatedPermissions && decision.updatedPermissions.length > 0) {
-        setTimeout(() => {
-          for (const perm of decision.updatedPermissions!) {
-            try {
-              let filePath: string;
-              const dest = (perm as any).destination;
-              if (dest === 'userSettings') filePath = path.join(handle.configDir, 'settings.json');
-              else if (dest === 'projectSettings') filePath = path.join(handle.projectPath, '.claude', 'settings.json');
-              else if (dest === 'localSettings') filePath = path.join(handle.projectPath, '.claude', 'settings.local.json');
-              else { debugPerm(`VERIFY skip: destination=${dest}`); continue; }
-              const content = fs.readFileSync(filePath, 'utf-8');
-              const parsed = JSON.parse(content);
-              const allow = parsed.permissions?.allow ?? [];
-              const ruleStr = ((perm as any).rules ?? []).map((r: any) => r.ruleContent ? `${r.toolName}(${r.ruleContent})` : r.toolName).join(', ');
-              const found = allow.some((a: string) => ruleStr && a.includes((perm as any).rules?.[0]?.ruleContent ?? ''));
-              debugPerm(`VERIFY ${filePath}: looking for "${ruleStr}" → ${found ? 'FOUND' : 'NOT FOUND'} (allow has ${allow.length} rules: ${JSON.stringify(allow)})`);
-            } catch (e) {
-              debugPerm(`VERIFY error: ${e}`);
-            }
-          }
-        }, 1000);
-      }
+      const firstPerm = decision.updatedPermissions?.[0];
+      logEntry({
+        level: 'info',
+        message: `permission decision: allow ${toolName}${persisted ? ' (saved)' : ' (session only)'}`,
+        metadata: {
+          event: 'permission.decision',
+          tool_name: toolName,
+          tool_use_id: toolOptions.toolUseID,
+          behavior: 'allow',
+          persisted,
+          destination: firstPerm?.destination,
+          rules: firstPerm?.rules,
+        },
+      });
 
       return result;
     }
 
-    debugPerm(`DENY ${toolName}`);
+    logEntry({
+      level: 'info',
+      message: `permission decision: deny ${toolName}`,
+      metadata: {
+        event: 'permission.decision',
+        tool_name: toolName,
+        tool_use_id: toolOptions.toolUseID,
+        behavior: 'deny',
+        persisted: false,
+      },
+    });
     return {
       behavior: 'deny' as const,
       message: 'User denied permission',

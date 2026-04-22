@@ -148,7 +148,7 @@ export interface PermissionDecision {
     type: 'addRules';
     rules: Array<{ toolName: string; ruleContent?: string }>;
     behavior: 'allow';
-    destination: 'session' | 'projectSettings' | 'userSettings';
+    destination: 'session' | 'projectSettings' | 'userSettings' | 'localSettings';
   }>;
 }
 

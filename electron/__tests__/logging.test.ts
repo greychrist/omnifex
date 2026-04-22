@@ -64,6 +64,96 @@ describe('logging service', () => {
     expect(result.entries[0].message).toBe('banana split');
   });
 
+  it('query search also matches metadata JSON', () => {
+    logging.writeBatch([
+      {
+        timestamp: '2024-01-01T00:00:00Z',
+        level: 'info',
+        source: 'app',
+        message: 'permission decision',
+        metadata: JSON.stringify({ toolName: 'Bash', ruleContent: 'git:*' }),
+      },
+      {
+        timestamp: '2024-01-01T00:00:01Z',
+        level: 'info',
+        source: 'app',
+        message: 'unrelated event',
+        metadata: JSON.stringify({ toolName: 'Read' }),
+      },
+    ]);
+
+    const result = logging.query({ search: 'git:*' });
+    expect(result.total).toBe(1);
+    expect(result.entries[0].message).toBe('permission decision');
+  });
+
+  it('query search also matches category', () => {
+    logging.writeBatch([
+      {
+        timestamp: '2024-01-01T00:00:00Z',
+        level: 'info',
+        source: 'app',
+        category: 'permission',
+        message: 'some event',
+      },
+      {
+        timestamp: '2024-01-01T00:00:01Z',
+        level: 'info',
+        source: 'app',
+        category: 'session',
+        message: 'another event',
+      },
+    ]);
+
+    const result = logging.query({ search: 'permission' });
+    expect(result.total).toBe(1);
+    expect(result.entries[0].category).toBe('permission');
+  });
+
+  it('query search still matches message when metadata and category are empty', () => {
+    logging.writeBatch([
+      { timestamp: '2024-01-01T00:00:00Z', level: 'info', source: 'app', message: 'banana split' },
+      { timestamp: '2024-01-01T00:00:01Z', level: 'info', source: 'app', message: 'apple pie' },
+    ]);
+
+    const result = logging.query({ search: 'apple' });
+    expect(result.total).toBe(1);
+    expect(result.entries[0].message).toBe('apple pie');
+  });
+
+  it('count respects broadened search across message, metadata, and category', () => {
+    logging.writeBatch([
+      {
+        timestamp: '2024-01-01T00:00:00Z',
+        level: 'info',
+        source: 'app',
+        category: 'permission',
+        message: 'msg a',
+      },
+      {
+        timestamp: '2024-01-01T00:00:01Z',
+        level: 'info',
+        source: 'app',
+        message: 'permission thing',
+      },
+      {
+        timestamp: '2024-01-01T00:00:02Z',
+        level: 'info',
+        source: 'app',
+        message: 'other',
+        metadata: JSON.stringify({ note: 'permission snapshot' }),
+      },
+      {
+        timestamp: '2024-01-01T00:00:03Z',
+        level: 'info',
+        source: 'app',
+        message: 'unrelated',
+      },
+    ]);
+
+    expect(logging.count({ search: 'permission' })).toBe(3);
+  });
+
   it('query supports pagination via limit and offset', () => {
     logging.writeBatch([
       { timestamp: '2024-01-01T00:00:00Z', level: 'info', source: 'app', message: 'a' },
