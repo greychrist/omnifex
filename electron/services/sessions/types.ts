@@ -38,6 +38,8 @@ export type {
 
 export type SessionStatus = 'starting' | 'running' | 'waiting_permission' | 'stopped' | 'error';
 
+export type SessionMode = 'sdk' | 'tui';
+
 export interface SessionStartParams {
   tabId: string;
   projectPath: string;
@@ -116,6 +118,10 @@ export interface SessionsService {
   getMcpServerStatus(tabId: string): Promise<McpServerStatus[]>;
   /** Get loaded plugins for an active session, enriched with manifest data. */
   getPlugins(tabId: string, force?: boolean): Promise<import('./plugins').EnrichedPlugin[]>;
+  setMode(tabId: string, mode: SessionMode): Promise<void>;
+  tuiWrite(tabId: string, data: string): void;
+  tuiResize(tabId: string, cols: number, rows: number): void;
+  getMode(tabId: string): SessionMode | null;
 }
 
 export type SendToRenderer = (channel: string, ...args: unknown[]) => void;
@@ -167,6 +173,10 @@ export interface SessionHandle {
   inputChannel: AsyncChannel<SDKUserMessage>;
   sessionId: string | null;
   status: SessionStatus;
+  mode: SessionMode;
+  tui: import('./tui').TuiSession | null;
+  /** Cleanup hook that detaches the current tui's data/exit forwarders. */
+  tuiDetach: (() => void) | null;
   permissionResolver: ((decision: PermissionDecision) => void) | null;
   /** Queue of permission requests waiting for user response */
   permissionQueue: PendingPermission[];

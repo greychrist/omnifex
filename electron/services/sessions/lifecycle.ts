@@ -15,6 +15,7 @@ import type {
   SessionHandle,
   SessionStartParams,
   SessionStatus,
+  SessionMode,
   SessionsService,
   SendToRenderer,
   NotificationHooks,
@@ -284,6 +285,9 @@ export function createSessionsService(
       inputChannel,
       sessionId: null,
       status: 'starting',
+      mode: 'sdk',
+      tui: null,
+      tuiDetach: null,
       permissionResolver: null,
       permissionQueue: [],
       elicitationResolver: null,
@@ -481,6 +485,24 @@ export function createSessionsService(
     return { alive: true, status: handle.status, sessionId: handle.sessionId };
   }
 
+  async function setMode(tabId: string, mode: SessionMode): Promise<void> {
+    // Task 5: Implement mode switching
+  }
+
+  function tuiWrite(tabId: string, data: string): void {
+    // Task 5: Forward data to active TUI session
+  }
+
+  function tuiResize(tabId: string, cols: number, rows: number): void {
+    // Task 5: Forward resize to active TUI session
+  }
+
+  function getMode(tabId: string): SessionMode | null {
+    const handle = sessions.get(tabId);
+    if (!handle) return null;
+    return handle.mode;
+  }
+
   // -------------------------------------------------------------------------
   // Return service
   // -------------------------------------------------------------------------
@@ -501,6 +523,10 @@ export function createSessionsService(
     getInfo,
     getHealth,
     isActive,
+    setMode,
+    tuiWrite,
+    tuiResize,
+    getMode,
     ...createQueryPassthroughs(sessions),
   };
 }
