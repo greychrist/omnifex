@@ -448,6 +448,7 @@ export function createSessionsService(
     const handle = sessions.get(tabId);
     if (!handle) return;
 
+    handle.tuiDetach?.();
     handle.inputChannel.close();
     handle.query.close();
     sessions.delete(tabId);

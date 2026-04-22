@@ -2925,6 +2925,31 @@ describe('sessions service — full lifecycle', () => {
     svc.respondPermission('tab-gate', 'deny');
     svc.stopAll();
   });
+
+  it('stop() kills the TUI pty if the session is in tui mode', async () => {
+    const killSpy = vi.fn();
+    mockedCreateTuiSession.mockReturnValue({
+      write: vi.fn(), resize: vi.fn(), kill: killSpy,
+      onData: vi.fn(), onExit: vi.fn(),
+    });
+
+    const svc = createSessionsService(
+      sendToRenderer as any,
+      { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
+    );
+    const fake = installFakeQuery();
+    svc.start({ tabId: 'tab-stop-tui', projectPath: '/p', configDir: '/c', model: 'sonnet', permissionMode: 'default' });
+
+    fake.pushMessage({ type: 'system', subtype: 'init', session_id: 'sess-stop' });
+    await new Promise((r) => setImmediate(r));
+
+    await svc.setMode('tab-stop-tui', 'tui');
+    svc.stop('tab-stop-tui');
+
+    expect(killSpy).toHaveBeenCalled();
+
+    mockedCreateTuiSession.mockReset();
+  });
 });
 
 // ---------------------------------------------------------------------------
