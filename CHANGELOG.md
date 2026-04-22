@@ -5,6 +5,30 @@ All notable changes to GreyChrist are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.32] — 2026-04-21
+
+Permission events now surface in the Logs tab, log search covers metadata and category, and the bundled Claude Agent SDK is bumped to 0.2.117. Installers remain **unsigned**.
+
+### Fixed
+
+- **"Always Allow" persistence was invisible** (`8ccdbbd`). Permission decisions were only written to `/tmp/gc-perm-debug.log` via `fs.appendFileSync`, so nothing showed up in the LogTab and you couldn't tell whether a rule had been saved. `canUseTool` in `electron/services/sessions/permissions.ts` now writes `permission.request` and `permission.decision` entries through the `LoggingService` with `category='permission'`. Decision metadata includes `persisted: true/false`, `destination`, and the saved rules so you can verify at a glance. The stale `setTimeout(1000)` file-read verify hack is gone — the plumbing tests already confirm `updatedPermissions` reaches the SDK.
+- **`localSettings` missing from the `PermissionDecision` destination union** (`8ccdbbd`). The `PermissionDialog` defaults new rule suggestions to `localSettings`, but the TypeScript union in `electron/services/sessions/types.ts` only listed `session | projectSettings | userSettings`. Added `localSettings`.
+
+### Changed
+
+- **Log search now matches message, metadata, and category** (`8ccdbbd`). Previously `search` in `electron/services/logging.ts` only matched the `message` column, so permission events (and any structured event whose interesting detail lives in `metadata`) weren't filterable. The query now does `(message LIKE ? OR metadata LIKE ? OR category LIKE ?)`; no renderer change needed.
+- **Claude Agent SDK bumped to 0.2.117** (`0c7a803`). Parity with Claude Code 2.1.117. Relevant to GreyChrist: Opus 4.7 sessions no longer show inflated `/context` percentages (the SDK was computing against a 200K window instead of Opus 4.7's native 1M), concurrent MCP server connect at startup, `reload_plugins` no longer reconnects user MCP servers serially, and MCP `elicitation/create` no longer auto-cancels in print/SDK mode when the server finishes connecting mid-turn. No breaking API changes in our `query()` / `canUseTool` paths.
+
+### Removed
+
+- **Dead `src/components/PermissionPrompt.tsx`** (`8ccdbbd`). The live dialog is `PermissionDialog.tsx` (rendered by `ClaudeCodeSession`) and has been for a while; the stale `PermissionPrompt` component was never imported and its misleading in-memory-only "Always Allow" implementation was a real-world diagnostic detour when investigating this release's permission-persistence report.
+
+### Tests
+
+- 4 new `logging.test.ts` cases covering metadata search, category search, message-only still working, and `count()` respecting the broadened search.
+- 4 new `sessions.test.ts` cases covering `permission.request` logged, and `permission.decision` logged for allow-session / allow-saved / deny.
+- `permissions.ts` 95.08% line coverage, `logging.ts` 96.66% line coverage. Suite: 563 passed, 1 skipped.
+
 ## [0.3.31] — 2026-04-21
 
 Single-fix patch: Cmd+R no longer reloads the app. Installers remain **unsigned**.
