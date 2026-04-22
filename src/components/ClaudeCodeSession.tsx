@@ -44,6 +44,8 @@ import { WebviewPreview } from "./WebviewPreview";
 import type { ClaudeStreamMessage } from "./AgentExecution";
 import { synthesizeResultMessages } from "@/lib/synthesizeResults";
 import { SessionViewToggle, type ViewMode } from "./SessionViewToggle";
+import { SessionModeToggle } from './SessionModeToggle';
+import { TerminalView } from './TerminalView';
 import { CollapsibleGroup } from "./CollapsibleGroup";
 import { buildCompactItems } from "@/lib/compactGrouping";
 import { SessionHeader } from "./SessionHeader";
@@ -324,6 +326,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   // these states are the UI-reactive mirror so the badge rerenders.
   const [isSessionStarting, setIsSessionStarting] = useState(false);
   const [isSessionActive, setIsSessionActive] = useState(false);
+  const [sessionMode, setSessionMode] = useState<'sdk' | 'tui'>('sdk');
   const tabIdRef = useRef(tabId || 'default');
   const floatingPromptRef = useRef<FloatingPromptInputRef>(null);
   // Tracks whether the user just hit the cancel/interrupt button. When true,
@@ -910,6 +913,20 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     return () => unlisten();
   }, []);
 
+  // Listen for session mode changes from main process
+  useEffect(() => {
+    const unlisten = window.electronAPI.onEvent(
+      `session-mode:${tabIdRef.current}`,
+      (...args: unknown[]) => {
+        const payload = args[0] as { mode?: 'sdk' | 'tui' } | undefined;
+        if (payload?.mode === 'sdk' || payload?.mode === 'tui') {
+          setSessionMode(payload.mode);
+        }
+      },
+    );
+    return () => unlisten();
+  }, []);
+
   // Keep queuedPromptsRef in sync with state
   useEffect(() => {
     queuedPromptsRef.current = queuedPrompts;
@@ -1224,6 +1241,15 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     window.dispatchEvent(new CustomEvent('back-to-project'));
   };
 
+  const modeToggleDisabled = !isSessionActive || isSessionStarting || waitingForPermission;
+  const modeToggleReason = !isSessionActive
+    ? 'Start a session first'
+    : waitingForPermission
+      ? 'Resolve the permission dialog first'
+      : isSessionStarting
+        ? 'Session is starting'
+        : undefined;
+
   return (
     <TooltipProvider>
       <div className={cn("flex flex-col h-full bg-background", className)}>
@@ -1313,6 +1339,18 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                   ? 'starting'
                   : 'ended'
           }
+          modeControl={
+            <SessionModeToggle
+              mode={sessionMode}
+              disabled={modeToggleDisabled}
+              disabledReason={modeToggleReason}
+              onChange={(next) => {
+                api.setSessionMode(tabIdRef.current, next).catch((err) => {
+                  console.error('Failed to switch mode:', err);
+                });
+              }}
+            />
+          }
           viewModeControl={<SessionViewToggle mode={viewMode} onChange={setViewMode} />}
           className="mb-2"
         />
@@ -1350,7 +1388,11 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             <SplitPane
               left={
                 <div className="h-full flex flex-col">
-                  {messagesList}
+                  {sessionMode === 'tui' ? (
+                    <TerminalView tabId={tabIdRef.current} />
+                  ) : (
+                    messagesList
+                  )}
                 </div>
               }
               right={
@@ -1371,7 +1413,11 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           ) : (
             // Original layout when no preview
             <div className="h-full flex flex-col">
-              {messagesList}
+              {sessionMode === 'tui' ? (
+                <TerminalView tabId={tabIdRef.current} />
+              ) : (
+                messagesList
+              )}
               
               {isLoading && messages.length === 0 && (
                 <div className="flex items-center justify-center h-full">
