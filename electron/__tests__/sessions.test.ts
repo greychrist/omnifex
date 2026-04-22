@@ -2984,6 +2984,7 @@ describe('sessions service — full lifecycle', () => {
     expect(mockedQuery).toHaveBeenCalledTimes(1);
     const restartCall = restartFake.getCapturedOptions();
     expect(restartCall.resume).toBe('sess-round');
+    expect(svc.getStatus('rt')).toBe('starting');
 
     svc.stopAll();
     mockedCreateTuiSession.mockReset();
