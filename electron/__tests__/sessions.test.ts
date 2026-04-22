@@ -2950,6 +2950,44 @@ describe('sessions service — full lifecycle', () => {
 
     mockedCreateTuiSession.mockReset();
   });
+
+  // -------------------------------------------------------------------------
+  // Task 6 — TUI → SDK restart via restartSdkQuery
+  // -------------------------------------------------------------------------
+
+  it('setMode("sdk") after tui re-enters the SDK with resume=sessionId and status=starting', async () => {
+    mockedCreateTuiSession.mockReturnValue({
+      write: vi.fn(), resize: vi.fn(), kill: vi.fn(),
+      onData: vi.fn(), onExit: vi.fn(),
+    });
+
+    const svc = createSessionsService(
+      sendToRenderer as any,
+      { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
+    );
+    const fake = installFakeQuery();
+    svc.start({ tabId: 'rt', projectPath: '/p', configDir: '/c', model: 'sonnet', permissionMode: 'default' });
+
+    fake.pushMessage({ type: 'system', subtype: 'init', session_id: 'sess-round' });
+    await new Promise((r) => setImmediate(r));
+
+    await svc.setMode('rt', 'tui');
+    expect(svc.getMode('rt')).toBe('tui');
+
+    // Reset the SDK query mock so we observe only the restart call
+    mockedQuery.mockClear();
+    const restartFake = installFakeQuery();
+
+    await svc.setMode('rt', 'sdk');
+
+    expect(svc.getMode('rt')).toBe('sdk');
+    expect(mockedQuery).toHaveBeenCalledTimes(1);
+    const restartCall = restartFake.getCapturedOptions();
+    expect(restartCall.resume).toBe('sess-round');
+
+    svc.stopAll();
+    mockedCreateTuiSession.mockReset();
+  });
 });
 
 // ---------------------------------------------------------------------------

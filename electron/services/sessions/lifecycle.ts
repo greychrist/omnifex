@@ -489,9 +489,11 @@ export function createSessionsService(
     return { alive: true, status: handle.status, sessionId: handle.sessionId };
   }
 
-  async function restartSdkQuery(_handle: SessionHandle): Promise<void> {
-    // Task 6: extract buildAndStartQuery + resume. For now, no-op so the
-    // setMode("sdk") path doesn't crash in tests; real impl lands next task.
+  function restartSdkQuery(tabId: string, handle: SessionHandle): void {
+    // Re-enter the SDK query on the same sessionId so the conversation
+    // continues where TUI mode left off. restartQuery already handles the
+    // resume + new input channel + listenToMessages re-wire.
+    restartQuery(tabId, handle);
   }
 
   async function setMode(tabId: string, mode: SessionMode): Promise<void> {
@@ -550,7 +552,7 @@ export function createSessionsService(
 
       // Re-start the SDK query on the same session id. Re-use the original
       // start params captured on the handle (Task 6 implements this).
-      await restartSdkQuery(handle);
+      restartSdkQuery(tabId, handle);
     }
   }
 
