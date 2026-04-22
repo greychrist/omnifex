@@ -24,7 +24,7 @@ export function SessionModeToggle({
         disabled={disabled}
         onClick={() => onChange('sdk')}
         className={cn(
-          'flex items-center gap-1 px-2 py-1 text-xs rounded',
+          'flex items-center gap-1 px-2 py-1 text-xs rounded disabled:pointer-events-none',
           mode === 'sdk' ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground',
         )}
       >
@@ -36,7 +36,7 @@ export function SessionModeToggle({
         disabled={disabled}
         onClick={() => onChange('tui')}
         className={cn(
-          'flex items-center gap-1 px-2 py-1 text-xs rounded',
+          'flex items-center gap-1 px-2 py-1 text-xs rounded disabled:pointer-events-none',
           mode === 'tui' ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground',
         )}
       >
