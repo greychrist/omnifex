@@ -39,6 +39,7 @@ function actionLabel(name: string, input: any): string {
     return `Updated todos (${n})`;
   }
   if (lower === 'task') return `Dispatched: ${clip(i.description ?? '')}`;
+  if (lower === 'skill') return `Skill: ${clip(i.skill ?? i.name ?? '', 40)}`;
   if (lower === 'websearch') return `Searched web: "${clip(i.query ?? '', 30)}"`;
   if (lower === 'webfetch') return `Fetched ${clip(i.url ?? '', 40)}`;
   if (name?.startsWith?.('mcp__')) return name;

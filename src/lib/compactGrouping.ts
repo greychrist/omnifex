@@ -1,4 +1,5 @@
 import type { ClaudeStreamMessage } from '@/components/AgentExecution';
+import { detectSkillInjection } from './skillDetection';
 
 /**
  * True when the message should render fully on every view — it's either
@@ -7,18 +8,32 @@ import type { ClaudeStreamMessage } from '@/components/AgentExecution';
  * that needs user action.
  *
  * Everything else (mid-turn tool_use, tool_result replies, thinking,
- * system init) is part of the "between-prompts" interior of a turn and
- * can be collapsed behind a summary in Compact mode.
+ * system init, skill-injected user bodies) is part of the "between-prompts"
+ * interior of a turn and can be collapsed behind a summary in Compact mode.
+ *
+ * Pass `allMessages` so skill-injected user messages (which look like user
+ * text but were produced by the Skill tool) can be recognized via the
+ * preceding tool_use. Without context they can't be distinguished from a
+ * real typed prompt.
  */
-export function isBoundaryMessage(msg: ClaudeStreamMessage): boolean {
+export function isBoundaryMessage(
+  msg: ClaudeStreamMessage,
+  allMessages?: ClaudeStreamMessage[],
+): boolean {
   if (msg.type === 'permission_request') return true;
   if (msg.type === 'result') return true;
 
   if (msg.type === 'user') {
     const content: unknown = msg.message?.content;
-    if (typeof content === 'string') return content.length > 0;
-    if (!Array.isArray(content)) return false;
-    return content.some((c: any) => c?.type === 'text');
+    if (typeof content === 'string') {
+      if (content.length === 0) return false;
+    } else if (!Array.isArray(content)) {
+      return false;
+    } else if (!content.some((c: any) => c?.type === 'text')) {
+      return false;
+    }
+    if (allMessages && detectSkillInjection(msg, allMessages)) return false;
+    return true;
   }
 
   if (msg.type === 'assistant') {
@@ -65,7 +80,7 @@ export function buildCompactItems(messages: ClaudeStreamMessage[]): CompactItem[
 
   messages.forEach((message, idx) => {
     const isPromoted = idx === latestTodoIdx;
-    if (isBoundaryMessage(message) || isPromoted) {
+    if (isBoundaryMessage(message, messages) || isPromoted) {
       items.push({ kind: 'single', message, key: `m-${idx}` });
       return;
     }

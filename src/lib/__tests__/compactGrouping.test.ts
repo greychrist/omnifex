@@ -16,10 +16,10 @@ function toolUseMsg(name: string, input: any = {}): ClaudeStreamMessage {
   } as unknown as ClaudeStreamMessage;
 }
 
-function toolResultMsg(): ClaudeStreamMessage {
+function toolResultMsg(toolUseId = 'tu_x'): ClaudeStreamMessage {
   return {
     type: 'user',
-    message: { content: [{ type: 'tool_result', content: 'ok' }] },
+    message: { content: [{ type: 'tool_result', tool_use_id: toolUseId, content: 'ok' }] },
   } as unknown as ClaudeStreamMessage;
 }
 
@@ -140,5 +140,31 @@ describe('buildCompactItems', () => {
     ];
     const items = buildCompactItems(msgs);
     expect(items.map((i: CompactItem) => i.kind)).toEqual(['single', 'group', 'single']);
+  });
+
+  it('collapses skill-injected user messages into the preceding group', () => {
+    const skillTU = {
+      type: 'assistant',
+      message: {
+        content: [{ type: 'tool_use', id: 'tu_skill', name: 'Skill', input: { skill: 'foo' } }],
+        stop_reason: 'tool_use',
+      },
+    } as unknown as ClaudeStreamMessage;
+    const skillBody = userText('# Foo\n\nDo a thing.');
+    const msgs = [
+      userText('/foo'),
+      skillTU,
+      toolResultMsg('tu_skill'),
+      skillBody,
+      assistantEndTurn('ok'),
+    ];
+    const items = buildCompactItems(msgs);
+    // real user(single) + group(Skill TU + result + skill body) + assistant(single)
+    expect(items.map((i: CompactItem) => i.kind)).toEqual(['single', 'group', 'single']);
+    const group = items[1];
+    if (group.kind === 'group') {
+      expect(group.messages).toContain(skillBody);
+      expect(group.messages.length).toBe(3);
+    }
   });
 });
