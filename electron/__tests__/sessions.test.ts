@@ -2989,6 +2989,59 @@ describe('sessions service — full lifecycle', () => {
     svc.stopAll();
     mockedCreateTuiSession.mockReset();
   });
+
+  it('tui exit auto-reverts the session to sdk mode', async () => {
+    // NB: this test depends on the vi.mock of '../services/sessions/tui' already
+    // established by earlier tests in this file. The same mocked createTuiSession
+    // returns an object whose onExit is a vi.fn — we capture the registered
+    // callback and invoke it to simulate the pty exiting (user typed /exit).
+    mockedCreateTuiSession.mockReturnValue({
+      write: vi.fn(), resize: vi.fn(), kill: vi.fn(),
+      onData: vi.fn(), onExit: vi.fn(),
+    });
+
+    const svc = createSessionsService(
+      sendToRenderer as any,
+      { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
+    );
+    const fake = installFakeQuery();
+    svc.start({ tabId: 'auto', projectPath: '/p', configDir: '/c', model: 'sonnet', permissionMode: 'default' });
+
+    // Drive into running state
+    fake.pushMessage({ type: 'system', subtype: 'init', session_id: 'sess-auto' });
+    await new Promise((r) => setImmediate(r));
+
+    // Reset the mock history before setMode so we can read the fresh call
+    mockedCreateTuiSession.mockClear();
+    // Re-supply the implementation after mockClear resets it
+    mockedCreateTuiSession.mockReturnValue({
+      write: vi.fn(), resize: vi.fn(), kill: vi.fn(),
+      onData: vi.fn(), onExit: vi.fn(),
+    });
+
+    // Prime the query mock for the subsequent TUI->SDK restart
+    mockedQuery.mockClear();
+    installFakeQuery();
+
+    await svc.setMode('auto', 'tui');
+    expect(svc.getMode('auto')).toBe('tui');
+
+    // Grab the pty mock returned from the most recent createTuiSession call
+    const ptyMock = mockedCreateTuiSession.mock.results[0].value as {
+      onExit: ReturnType<typeof vi.fn>;
+    };
+    // Extract the registered exit callback
+    const exitCallback = ptyMock.onExit.mock.calls[0][0] as (r: { exitCode: number }) => void;
+
+    // Simulate the pty exiting (user typed /exit)
+    exitCallback({ exitCode: 0 });
+    await new Promise((r) => setImmediate(r));
+
+    expect(svc.getMode('auto')).toBe('sdk');
+
+    svc.stopAll();
+    mockedCreateTuiSession.mockReset();
+  });
 });
 
 // ---------------------------------------------------------------------------
