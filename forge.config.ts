@@ -57,6 +57,10 @@ const config: ForgeConfig = {
           copyNativeModule(buildPath, 'file-uri-to-path');
           console.log('[forge] Copied better-sqlite3 + deps into package');
           copyNativeModule(buildPath, 'node-pty');
+          // node-pty's binding.gyp requires node-addon-api at rebuild time.
+          // Without this, electron-rebuild fails with "Cannot find module
+          // 'node-addon-api'" inside the packaged app.
+          copyNativeModule(buildPath, 'node-addon-api');
           console.log('[forge] Copied node-pty + deps into package');
 
           // Copy SDK per-platform binary subpackages (see helper for context).
