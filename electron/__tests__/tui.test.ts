@@ -54,4 +54,55 @@ describe('TuiSession', () => {
     expect((opts as any).cwd).toBe('/Users/test/proj');
     expect((opts as any).env.CLAUDE_CONFIG_DIR).toBe('/Users/test/.claude-alice');
   });
+
+  it('forwards pty data chunks to the onData callback', () => {
+    const fake = makeFakePty();
+    mockedSpawn.mockReturnValue(fake as any);
+
+    const tui = createTuiSession({
+      tabId: 't2', projectPath: '/p', configDir: '/c', sessionId: 's',
+      claudeBinaryPath: '/usr/local/bin/claude',
+    });
+    const received: string[] = [];
+    tui.onData((d) => received.push(d));
+
+    fake._emitData('hello');
+    fake._emitData(' world');
+
+    expect(received).toEqual(['hello', ' world']);
+  });
+
+  it('forwards pty exit to the onExit callback', () => {
+    const fake = makeFakePty();
+    mockedSpawn.mockReturnValue(fake as any);
+
+    const tui = createTuiSession({
+      tabId: 't3', projectPath: '/p', configDir: '/c', sessionId: 's',
+      claudeBinaryPath: '/usr/local/bin/claude',
+    });
+    const exits: any[] = [];
+    tui.onExit((r) => exits.push(r));
+
+    fake._emitExit({ exitCode: 0 });
+
+    expect(exits).toEqual([{ exitCode: 0 }]);
+  });
+
+  it('passes write / resize / kill through to the pty', () => {
+    const fake = makeFakePty();
+    mockedSpawn.mockReturnValue(fake as any);
+
+    const tui = createTuiSession({
+      tabId: 't4', projectPath: '/p', configDir: '/c', sessionId: 's',
+      claudeBinaryPath: '/usr/local/bin/claude',
+    });
+
+    tui.write('ls\n');
+    tui.resize(120, 40);
+    tui.kill();
+
+    expect(fake.write).toHaveBeenCalledWith('ls\n');
+    expect(fake.resize).toHaveBeenCalledWith(120, 40);
+    expect(fake.kill).toHaveBeenCalled();
+  });
 });
