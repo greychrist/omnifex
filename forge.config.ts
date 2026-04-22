@@ -45,7 +45,7 @@ const config: ForgeConfig = {
       // - claude-agent-sdk-*: the SDK's per-platform claude binary, which the
       //   SDK spawns as a subprocess; binaries inside asar can't be exec'd, so
       //   we lift the whole subpackage to app.asar.unpacked.
-      unpack: '{**/better-sqlite3/**/*.node,**/@anthropic-ai/claude-agent-sdk-*/**}',
+      unpack: '{**/better-sqlite3/**/*.node,**/node-pty/**/*.node,**/@anthropic-ai/claude-agent-sdk-*/**}',
     },
     afterCopy: [
       (buildPath, electronVersion, _platform, _arch, callback) => {
@@ -56,6 +56,8 @@ const config: ForgeConfig = {
           copyNativeModule(buildPath, 'bindings');
           copyNativeModule(buildPath, 'file-uri-to-path');
           console.log('[forge] Copied better-sqlite3 + deps into package');
+          copyNativeModule(buildPath, 'node-pty');
+          console.log('[forge] Copied node-pty + deps into package');
 
           // Copy SDK per-platform binary subpackages (see helper for context).
           copySdkPlatformBinaries(buildPath);
@@ -64,10 +66,10 @@ const config: ForgeConfig = {
           // The source node_modules may have Node's ABI (from npm test),
           // so we must rebuild here regardless.
           execSync(
-            `npx electron-rebuild -f -v ${electronVersion} -w better-sqlite3 -m "${buildPath}"`,
+            `npx electron-rebuild -f -v ${electronVersion} -w better-sqlite3,node-pty -m "${buildPath}"`,
             { stdio: 'inherit' },
           );
-          console.log('[forge] Rebuilt better-sqlite3 for Electron ABI');
+          console.log('[forge] Rebuilt better-sqlite3 + node-pty for Electron ABI');
         } catch (err) {
           console.error('[forge] Failed to prepare native modules:', err);
         }
