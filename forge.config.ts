@@ -72,6 +72,8 @@ const config: ForgeConfig = {
           console.log('[forge] Rebuilt better-sqlite3 + node-pty for Electron ABI');
         } catch (err) {
           console.error('[forge] Failed to prepare native modules:', err);
+          callback(err instanceof Error ? err : new Error(String(err)));
+          return;
         }
         callback();
       },
