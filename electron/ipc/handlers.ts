@@ -292,16 +292,22 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     session_mcp_server_status: wrapWith((p: Record<string, unknown>) => sessions?.getMcpServerStatus((p?.tabId ?? p?.session_id) as string) ?? null),
     session_plugins: wrapWith((p: Record<string, unknown>) => sessions?.getPlugins((p?.tabId ?? p?.session_id) as string, Boolean(p?.force)) ?? null),
     session_set_mode: wrapWith((p: Record<string, unknown>) =>
-      sessions?.setMode((p?.tabId ?? p?.session_id) as string, p?.mode as 'sdk' | 'tui') ?? null
+      sessions?.setMode(
+        (p?.tabId ?? p?.session_id) as string,
+        (p?.mode ?? p?.session_mode) as 'sdk' | 'tui',
+      ) ?? null
     ),
     session_tui_write: wrapWith((p: Record<string, unknown>) =>
-      sessions?.tuiWrite((p?.tabId ?? p?.session_id) as string, p?.data as string) ?? null
+      sessions?.tuiWrite(
+        (p?.tabId ?? p?.session_id) as string,
+        (p?.data ?? p?.tui_data) as string,
+      ) ?? null
     ),
     session_tui_resize: wrapWith((p: Record<string, unknown>) =>
       sessions?.tuiResize(
         (p?.tabId ?? p?.session_id) as string,
-        p?.cols as number,
-        p?.rows as number,
+        (p?.cols ?? p?.num_cols) as number,
+        (p?.rows ?? p?.num_rows) as number,
       ) ?? null
     ),
 
