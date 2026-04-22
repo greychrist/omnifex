@@ -511,6 +511,11 @@ app.whenReady().then(() => {
       getSupportedAgents: (sessionId: string) => sessionsService.getSupportedAgents(sessionId),
       getMcpServerStatus: (sessionId: string) => sessionsService.getMcpServerStatus(sessionId),
       getPlugins: (sessionId: string, force?: boolean) => sessionsService.getPlugins(sessionId, force),
+      setMode: (tabId: string, mode: 'sdk' | 'tui') => sessionsService.setMode(tabId, mode),
+      tuiWrite: (tabId: string, data: string) => sessionsService.tuiWrite(tabId, data),
+      tuiResize: (tabId: string, cols: number, rows: number) =>
+        sessionsService.tuiResize(tabId, cols, rows),
+      getMode: (tabId: string) => sessionsService.getMode(tabId),
     },
     // Agents adapter
     agents: {

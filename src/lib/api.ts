@@ -1383,6 +1383,21 @@ export const api = {
     return apiCall("session_get_permissions", { tabId, projectPath, configDir });
   },
 
+  /** Switch the session between SDK mode and TUI mode. */
+  async setSessionMode(tabId: string, mode: 'sdk' | 'tui'): Promise<void> {
+    return apiCall('session_set_mode', { tabId, mode });
+  },
+
+  /** Write raw bytes to the TUI pty (only valid in TUI mode). */
+  async tuiWrite(tabId: string, data: string): Promise<void> {
+    return apiCall('session_tui_write', { tabId, data });
+  },
+
+  /** Notify the TUI pty of a terminal resize. */
+  async tuiResize(tabId: string, cols: number, rows: number): Promise<void> {
+    return apiCall('session_tui_resize', { tabId, cols, rows });
+  },
+
   async sessionUpdatePermission(tabId: string, projectPath: string, configDir: string, update: {
     action: "add" | "remove";
     scope: string;

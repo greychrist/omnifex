@@ -72,6 +72,10 @@ export interface Services {
     getSupportedAgents(sessionId: string): unknown;
     getMcpServerStatus(sessionId: string): unknown;
     getPlugins(sessionId: string, force?: boolean): unknown;
+    setMode(tabId: string, mode: 'sdk' | 'tui'): Promise<unknown>;
+    tuiWrite(tabId: string, data: string): unknown;
+    tuiResize(tabId: string, cols: number, rows: number): unknown;
+    getMode(tabId: string): unknown;
   };
   agents?: {
     list(): unknown;
@@ -287,6 +291,19 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     session_supported_agents: wrapWith((p: Record<string, unknown>) => sessions?.getSupportedAgents((p?.tabId ?? p?.session_id) as string) ?? null),
     session_mcp_server_status: wrapWith((p: Record<string, unknown>) => sessions?.getMcpServerStatus((p?.tabId ?? p?.session_id) as string) ?? null),
     session_plugins: wrapWith((p: Record<string, unknown>) => sessions?.getPlugins((p?.tabId ?? p?.session_id) as string, Boolean(p?.force)) ?? null),
+    session_set_mode: wrapWith((p: Record<string, unknown>) =>
+      sessions?.setMode((p?.tabId ?? p?.session_id) as string, p?.mode as 'sdk' | 'tui') ?? null
+    ),
+    session_tui_write: wrapWith((p: Record<string, unknown>) =>
+      sessions?.tuiWrite((p?.tabId ?? p?.session_id) as string, p?.data as string) ?? null
+    ),
+    session_tui_resize: wrapWith((p: Record<string, unknown>) =>
+      sessions?.tuiResize(
+        (p?.tabId ?? p?.session_id) as string,
+        p?.cols as number,
+        p?.rows as number,
+      ) ?? null
+    ),
 
     // ── Standalone model list (no active session required) ─────────────────
     list_supported_models: wrapWith((p: Record<string, unknown>) => models?.listSupported((p?.configDir ?? p?.config_dir) as string) ?? []),

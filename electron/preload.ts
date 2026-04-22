@@ -64,6 +64,9 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   'session_plugins',
   'session_get_permissions',
   'session_update_permission',
+  'session_set_mode',
+  'session_tui_write',
+  'session_tui_resize',
 
   // Agents
   'list_agents',
