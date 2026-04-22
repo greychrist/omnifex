@@ -910,6 +910,31 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     return () => unlisten();
   }, []);
 
+  // Ref-indirected reload so the session-mode effect can stay [] while
+  // reading the latest claudeSessionId / projectId / projectPath.
+  const reloadHistoryRef = useRef<() => void>(() => {});
+  useEffect(() => {
+    reloadHistoryRef.current = () => {
+      if (!claudeSessionId || !extractedSessionInfo?.projectId) return;
+      api.loadSessionHistory(
+        claudeSessionId,
+        extractedSessionInfo.projectId,
+        projectPath,
+      )
+        .then((history) => {
+          if (!history || history.length === 0) return;
+          const loaded: ClaudeStreamMessage[] = history.map((entry: any) => ({
+            ...entry,
+            type: entry.type || 'assistant',
+          }));
+          setMessages(synthesizeResultMessages(loaded));
+        })
+        .catch((err) => {
+          console.error('Failed to reload history on TUI->SDK:', err);
+        });
+    };
+  }, [claudeSessionId, extractedSessionInfo, projectPath]);
+
   // Listen for session mode changes from main process
   useEffect(() => {
     const unlisten = window.electronAPI.onEvent(
@@ -923,6 +948,12 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           // rather than dropping back to 'Starting…' while the restarted
           // SDK query waits for its first message.
           setIsSessionActive(true);
+          // On return to SDK mode, reload history from the JSONL file.
+          // TUI-mode turns wrote to the session file but never flowed
+          // through our claude-output events, so they're missing from
+          // messages[]. The ref indirection keeps this stable across
+          // the effect's [] deps while reading live state.
+          if (payload.mode === 'sdk') reloadHistoryRef.current();
         }
       },
     );
