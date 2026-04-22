@@ -118,14 +118,11 @@ const FloatingPromptInputInner = (
   const slash = useSlashCommandAutocomplete();
 
   // -- Image drop zone hook --
-  const extractPathsForPrompt = (text: string) => extractImagePaths(text, projectPath);
-  const { dragActive } = useImageDropZone(
-    isExpanded,
-    textareaRef,
-    expandedTextareaRef,
-    setPrompt,
-    extractPathsForPrompt,
-  );
+  // Dropped images flow through the same base64 state as pasted ones.
+  const handleImageDropped = React.useCallback((dataUrl: string) => {
+    setPastedImages(prev => [...prev, dataUrl]);
+  }, []);
+  const { dragActive } = useImageDropZone(handleImageDropped);
 
   // Expose addImage via ref
   React.useImperativeHandle(

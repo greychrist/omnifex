@@ -114,18 +114,33 @@ export function removeImageFromPrompt(
 // ── Drop zone hook ──────────────────────────────────────────────────────
 
 /**
- * useImageDropZone — sets up native browser drag-drop event listeners on
- * `document` for image file drops (Electron-compatible).
+ * Read a File as a data URL. Returns null if the file can't be read.
+ */
+function readFileAsDataUrl(file: File): Promise<string | null> {
+  return new Promise((resolve) => {
+    try {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(file);
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
+/**
+ * useImageDropZone — sets up document-level drag-drop listeners for
+ * dropped image files. Dropped images are converted to base64 data URLs
+ * via FileReader and passed to `onImageDropped` (same shape as paste).
  *
- * Returns `dragActive` for visual feedback and calls `onDrop` with new
- * image paths when the user drops image files.
+ * We intentionally do NOT use `File.path` — Electron removed that property
+ * in v32+ for security, so the old path-based approach silently dropped
+ * every dragged image. Data URLs work for files dragged from Finder,
+ * browsers, screenshot tools, Slack, etc.
  */
 export function useImageDropZone(
-  isExpanded: boolean,
-  textareaRef: React.RefObject<HTMLTextAreaElement | null>,
-  expandedTextareaRef: React.RefObject<HTMLTextAreaElement | null>,
-  setPrompt: React.Dispatch<React.SetStateAction<string>>,
-  extractPaths: (text: string) => string[],
+  onImageDropped: (dataUrl: string) => void,
 ): { dragActive: boolean; setDragActive: React.Dispatch<React.SetStateAction<boolean>> } {
   const [dragActive, setDragActive] = React.useState(false);
 
@@ -147,47 +162,22 @@ export function useImageDropZone(
       setDragActive(false);
     };
 
-    const handleDrop = (e: DragEvent) => {
+    const handleDrop = async (e: DragEvent) => {
       e.preventDefault();
       setDragActive(false);
 
       const currentTime = Date.now();
-      if (currentTime - lastDropTime < 200) {
-        return;
-      }
+      if (currentTime - lastDropTime < 200) return;
       lastDropTime = currentTime;
 
-      const files = Array.from(e.dataTransfer?.files ?? []);
-      const imagePaths = files
-        .filter(f => isImageFile(f.name))
-        .map(f => (f as any).path as string)
-        .filter(Boolean);
+      const files = Array.from(e.dataTransfer?.files ?? []).filter((f) =>
+        f.type.startsWith('image/') || isImageFile(f.name),
+      );
+      if (files.length === 0) return;
 
-      if (imagePaths.length > 0) {
-        setPrompt(currentPrompt => {
-          const existingPaths = extractPaths(currentPrompt);
-          const newPaths = imagePaths.filter((p: string) => !existingPaths.includes(p));
-
-          if (newPaths.length === 0) {
-            return currentPrompt;
-          }
-
-          const mentionsToAdd = newPaths.map((p: string) => {
-            if (p.includes(' ')) {
-              return `@"${p}"`;
-            }
-            return `@${p}`;
-          }).join(' ');
-          const newPrompt = currentPrompt + (currentPrompt.endsWith(' ') || currentPrompt === '' ? '' : ' ') + mentionsToAdd + ' ';
-
-          setTimeout(() => {
-            const target = isExpanded ? expandedTextareaRef.current : textareaRef.current;
-            target?.focus();
-            target?.setSelectionRange(newPrompt.length, newPrompt.length);
-          }, 0);
-
-          return newPrompt;
-        });
+      for (const file of files) {
+        const dataUrl = await readFileAsDataUrl(file);
+        if (dataUrl) onImageDropped(dataUrl);
       }
     };
 
@@ -202,7 +192,7 @@ export function useImageDropZone(
       document.removeEventListener('dragleave', handleDragLeave);
       document.removeEventListener('drop', handleDrop);
     };
-  }, [isExpanded]); // isExpanded needed for ref selection in drop handler
+  }, [onImageDropped]);
 
   return { dragActive, setDragActive };
 }
