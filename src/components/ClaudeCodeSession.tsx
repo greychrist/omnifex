@@ -7,7 +7,6 @@ import {
   ChevronUp,
   X,
   Wrench,
-  BarChart3,
   Plug,
   Package,
   Shield,
@@ -43,8 +42,8 @@ import { SplitPane } from "@/components/ui/split-pane";
 import { WebviewPreview } from "./WebviewPreview";
 import type { ClaudeStreamMessage } from "./AgentExecution";
 import { synthesizeResultMessages } from "@/lib/synthesizeResults";
-import { type ViewMode } from "./SessionViewToggle";
-import { useSessionUiStore } from '@/stores/sessionUiStore';
+import { SessionModeToggle } from "./SessionModeToggle";
+import { SessionViewToggle, type ViewMode } from "./SessionViewToggle";
 import { TerminalView } from './TerminalView';
 import { CollapsibleGroup } from "./CollapsibleGroup";
 import { buildCompactItems } from "@/lib/compactGrouping";
@@ -203,9 +202,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   const [timelineVersion, setTimelineVersion] = useState(0);
   const [showSettings, setShowSettings] = useState(false);
   const [showForkDialog, setShowForkDialog] = useState(false);
-  const [usagePopoverOpen, setUsagePopoverOpen] = useState(false);
-  const [usageText, setUsageText] = useState<string | null>(null);
-  const [usageLoading, setUsageLoading] = useState(false);
+
   const [showSlashCommandsSettings, setShowSlashCommandsSettings] = useState(false);
   const [forkCheckpointId, setForkCheckpointId] = useState<string | null>(null);
   const [forkSessionName, setForkSessionName] = useState("");
@@ -1248,35 +1245,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       ? 'Resolve the permission dialog first'
       : undefined;
 
-  // Publish current UI state to the app-level store so the titlebar can read it.
-  useEffect(() => {
-    const tid = tabIdRef.current;
-    useSessionUiStore.getState().publish(
-      tid,
-      {
-        mode: sessionMode,
-        modeDisabled: modeToggleDisabled,
-        modeDisabledReason: modeToggleReason,
-        viewMode,
-      },
-      {
-        onModeChange: (next) => {
-          api.setSessionMode(tid, next).catch((err) => {
-            console.error('Failed to switch mode:', err);
-          });
-        },
-        onViewModeChange: (next) => setViewMode(next),
-      },
-    );
-  }, [sessionMode, viewMode, modeToggleDisabled, modeToggleReason]);
-
-  // Clear from the store on unmount.
-  useEffect(() => {
-    const tid = tabIdRef.current;
-    return () => {
-      useSessionUiStore.getState().clear(tid);
-    };
-  }, []);
 
   return (
     <TooltipProvider>
@@ -1300,48 +1268,19 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           {gitBranch && (
             <GitBranchBadge name={gitBranch} />
           )}
-          {accountResolution?.account.account_type === 'max' && (
-            <div className="ml-auto">
-              <Popover
-                open={usagePopoverOpen}
-                onOpenChange={(open) => {
-                  setUsagePopoverOpen(open);
-                  if (open && !usageText) {
-                    setUsageLoading(true);
-                    api.getCliUsage(accountResolution.account.config_dir)
-                      .then(setUsageText)
-                      .catch(() => setUsageText('Failed to load usage'))
-                      .finally(() => setUsageLoading(false));
-                  }
-                }}
-                align="end"
-                side="bottom"
-                className="w-80"
-                trigger={
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-7 px-2 text-xs gap-1 text-muted-foreground hover:text-foreground"
-                    title="Account usage"
-                  >
-                    <BarChart3 className="h-3.5 w-3.5" />
-                    Usage
-                  </Button>
-                }
-                content={
-                  <div className="text-sm">
-                    {usageLoading ? (
-                      <p className="text-muted-foreground">Loading...</p>
-                    ) : (
-                      <pre className="whitespace-pre-wrap text-xs font-mono leading-relaxed">
-                        {usageText}
-                      </pre>
-                    )}
-                  </div>
-                }
-              />
-            </div>
-          )}
+          <div className="ml-auto flex items-center gap-2">
+            <SessionModeToggle
+              mode={sessionMode}
+              onChange={(next) => {
+                api.setSessionMode(tabIdRef.current, next).catch((err) => {
+                  console.error('Failed to switch mode:', err);
+                });
+              }}
+              disabled={modeToggleDisabled}
+              disabledReason={modeToggleReason}
+            />
+            <SessionViewToggle mode={viewMode} onChange={setViewMode} />
+          </div>
         </div>
         <SessionHeader
           accountName={accountResolution?.account.name ?? ''}

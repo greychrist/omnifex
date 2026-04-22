@@ -4,11 +4,6 @@ import { Settings, Bot, Info, MoreVertical, Download, Loader2, CheckCircle, Aler
 import { TooltipProvider, TooltipSimple } from '@/components/ui/tooltip-modern';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import { SessionModeToggle } from './SessionModeToggle';
-import { SessionViewToggle } from './SessionViewToggle';
-import { useSessionUiStore } from '@/stores/sessionUiStore';
-import { useTabContext } from '@/contexts/TabContext';
-
 const SDK_POLL_INTERVAL_MS = 60 * 60 * 1000; // 60 minutes
 
 const BADGE_BASE_CLASS =
@@ -23,23 +18,6 @@ interface CustomTitlebarProps {
   onInfoClick?: () => void;
 }
 
-function SessionTitlebarControls() {
-  const { activeTabId } = useTabContext();
-  const ui = useSessionUiStore((s) => (activeTabId ? s.byTab[activeTabId] : undefined));
-  const handlers = useSessionUiStore((s) => (activeTabId ? s.handlers[activeTabId] : undefined));
-  if (!ui || !handlers || !activeTabId) return null;
-  return (
-    <div className="flex items-center gap-2 tauri-no-drag">
-      <SessionModeToggle
-        mode={ui.mode}
-        onChange={handlers.onModeChange}
-        disabled={ui.modeDisabled}
-        disabledReason={ui.modeDisabledReason}
-      />
-      <SessionViewToggle mode={ui.viewMode} onChange={handlers.onViewModeChange} />
-    </div>
-  );
-}
 
 export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
   onSettingsClick,
@@ -296,7 +274,6 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
             </TooltipSimple>
           )}
           
-          <SessionTitlebarControls />
         </div>
 
         {/* Visual separator */}
