@@ -11,7 +11,14 @@ vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
   query: vi.fn(),
 }));
 
+vi.mock('../services/sessions/tui', () => ({
+  createTuiSession: vi.fn(),
+}));
+
 const mockedQuery = vi.mocked(sdkQuery);
+
+import { createTuiSession as _createTuiSession } from '../services/sessions/tui';
+const mockedCreateTuiSession = vi.mocked(_createTuiSession);
 
 // ---------------------------------------------------------------------------
 // A controllable fake `Query`. The sessions service treats the return value of
@@ -2866,6 +2873,56 @@ describe('sessions service — full lifecycle', () => {
     svc.respondPermission('tab-auto-partial', 'deny');
     await pending;
 
+    svc.stopAll();
+  });
+
+  // -------------------------------------------------------------------------
+  // Task 5 — setMode / tuiWrite / tuiResize
+  // -------------------------------------------------------------------------
+
+  it('setMode("tui") spawns a TuiSession when status is running', async () => {
+    mockedCreateTuiSession.mockReturnValue({
+      write: vi.fn(), resize: vi.fn(), kill: vi.fn(),
+      onData: vi.fn(), onExit: vi.fn(),
+    });
+
+    const svc = createSessionsService(
+      sendToRenderer as any,
+      { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
+    );
+    const fake = installFakeQuery();
+    svc.start({ tabId: 'tab-mode', projectPath: '/p', configDir: '/c', model: 'sonnet', permissionMode: 'default' });
+
+    // Force handle into 'running' via a system:init message
+    fake.pushMessage({ type: 'system', subtype: 'init', session_id: 'session-xyz' });
+    await new Promise((r) => setImmediate(r));
+
+    await svc.setMode('tab-mode', 'tui');
+
+    expect(mockedCreateTuiSession).toHaveBeenCalledTimes(1);
+    expect(mockedCreateTuiSession.mock.calls[0][0].sessionId).toBe('session-xyz');
+    expect(svc.getMode('tab-mode')).toBe('tui');
+
+    svc.stopAll();
+    mockedCreateTuiSession.mockReset();
+  });
+
+  it('setMode("tui") rejects when session is waiting_permission', async () => {
+    const svc = createSessionsService(
+      sendToRenderer as any,
+      { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
+    );
+    const fake = installFakeQuery();
+    svc.start({ tabId: 'tab-gate', projectPath: '/p', configDir: '/c', model: 'sonnet', permissionMode: 'default' });
+
+    // Force into waiting_permission
+    const canUseTool = fake.getCapturedOptions().canUseTool;
+    canUseTool('Bash', { command: 'ls' }, { signal: new AbortController().signal, toolUseID: 'tu' });
+    await new Promise((r) => setImmediate(r));
+
+    await expect(svc.setMode('tab-gate', 'tui')).rejects.toThrow(/not allowed/i);
+
+    svc.respondPermission('tab-gate', 'deny');
     svc.stopAll();
   });
 });

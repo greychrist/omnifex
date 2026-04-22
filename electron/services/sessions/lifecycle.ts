@@ -31,6 +31,7 @@ import {
   addAutoAllowTool as addAutoAllowToolImpl,
 } from './permissions';
 import { createQueryPassthroughs } from './queries';
+import { createTuiSession } from './tui';
 
 // ---------------------------------------------------------------------------
 // findSystemClaudeBinary
@@ -129,7 +130,9 @@ export function createSessionsService(
       sendToRenderer(`claude-complete:${tabId}`);
       return;
     }
-    // Normal stream close — clean up
+    // Normal stream close — clean up (unless we're mid-switch to TUI mode,
+    // in which case the session stays alive and mode handles its own lifecycle)
+    if (handle.mode === 'tui') return;
     handle.status = 'stopped';
     sendToRenderer(`claude-complete:${tabId}`);
     sessions.delete(tabId);
@@ -485,22 +488,81 @@ export function createSessionsService(
     return { alive: true, status: handle.status, sessionId: handle.sessionId };
   }
 
+  async function restartSdkQuery(_handle: SessionHandle): Promise<void> {
+    // Task 6: extract buildAndStartQuery + resume. For now, no-op so the
+    // setMode("sdk") path doesn't crash in tests; real impl lands next task.
+  }
+
   async function setMode(tabId: string, mode: SessionMode): Promise<void> {
-    // Task 5: Implement mode switching
+    const handle = sessions.get(tabId);
+    if (!handle) throw new Error(`setMode: unknown tab ${tabId}`);
+    if (handle.mode === mode) return;
+
+    // Gate: only allow switch when SDK is at rest between turns.
+    if (handle.status !== 'running') {
+      throw new Error(`setMode: not allowed while status is "${handle.status}" (need "running")`);
+    }
+
+    if (mode === 'tui') {
+      if (!handle.sessionId) {
+        throw new Error('setMode("tui"): session has no sessionId yet');
+      }
+
+      const binaryPath = findSystemClaudeBinary();
+      if (!binaryPath) throw new Error('setMode("tui"): claude binary not found');
+
+      // Mark as tui BEFORE closing the SDK query so that the listenToMessages
+      // cleanup guard sees mode === 'tui' and skips the session deletion.
+      handle.mode = 'tui';
+
+      // Close the SDK query cleanly.
+      try { handle.query?.close?.(); } catch {}
+      handle.inputChannel.close();
+
+      const tui = createTuiSession({
+        tabId,
+        projectPath: handle.projectPath,
+        configDir: handle.configDir,
+        sessionId: handle.sessionId,
+        claudeBinaryPath: binaryPath,
+      });
+
+      tui.onData((data: string) => sendToRenderer(`session-tui-data:${tabId}`, data));
+      tui.onExit((r: { exitCode: number }) => {
+        sendToRenderer(`session-tui-exit:${tabId}`, r);
+        // Auto-revert to SDK mode.
+        void setMode(tabId, 'sdk').catch((e) =>
+          console.error('[sessions] auto-revert to sdk failed:', e)
+        );
+      });
+
+      handle.tui = tui;
+      handle.tuiDetach = () => { try { tui.kill(); } catch {} };
+      sendToRenderer(`session-mode:${tabId}`, { mode: 'tui' });
+    } else {
+      // tui -> sdk: kill the pty, then re-start the SDK query with resume.
+      handle.tuiDetach?.();
+      handle.tui = null;
+      handle.tuiDetach = null;
+      handle.mode = 'sdk';
+      sendToRenderer(`session-mode:${tabId}`, { mode: 'sdk' });
+
+      // Re-start the SDK query on the same session id. Re-use the original
+      // start params captured on the handle (Task 6 implements this).
+      await restartSdkQuery(handle);
+    }
   }
 
   function tuiWrite(tabId: string, data: string): void {
-    // Task 5: Forward data to active TUI session
+    sessions.get(tabId)?.tui?.write(data);
   }
 
   function tuiResize(tabId: string, cols: number, rows: number): void {
-    // Task 5: Forward resize to active TUI session
+    sessions.get(tabId)?.tui?.resize(cols, rows);
   }
 
   function getMode(tabId: string): SessionMode | null {
-    const handle = sessions.get(tabId);
-    if (!handle) return null;
-    return handle.mode;
+    return sessions.get(tabId)?.mode ?? null;
   }
 
   // -------------------------------------------------------------------------
