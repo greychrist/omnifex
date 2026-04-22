@@ -38,7 +38,7 @@ export function TerminalView({ tabId }: TerminalViewProps) {
     const unlistenData = window.electronAPI.onEvent(
       `session-tui-data:${tabId}`,
       (...args: unknown[]) => {
-        const data = args[0] as string;
+        const data = args[0];
         if (typeof data === 'string') term.write(data);
       },
     );
