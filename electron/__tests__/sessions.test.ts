@@ -1153,6 +1153,133 @@ describe('sessions service — full lifecycle', () => {
     svc.stopAll();
   });
 
+  it('respondPermission writes persistent rules to disk via persistRule callback', async () => {
+    const persistRule = vi.fn();
+    const svc = createSessionsService(
+      sendToRenderer as any,
+      { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
+      null,
+      null,
+      persistRule,
+    );
+    const fake = installFakeQuery();
+
+    svc.start({ tabId: 'tab-persist', projectPath: '/proj', configDir: '/cfg', model: 'sonnet', permissionMode: 'default' });
+
+    const canUseTool = fake.getCapturedOptions().canUseTool;
+    const decisionPromise = canUseTool('Edit', { file_path: '/proj/foo.ts' }, {
+      signal: new AbortController().signal,
+      toolUseID: 'tu-persist',
+    });
+
+    await new Promise((r) => setImmediate(r));
+    svc.respondPermission('tab-persist', 'allow', undefined, [
+      {
+        type: 'addRules',
+        rules: [{ toolName: 'Edit', ruleContent: '/proj/**' }],
+        behavior: 'allow',
+        destination: 'localSettings',
+      },
+    ]);
+    await decisionPromise;
+
+    expect(persistRule).toHaveBeenCalledTimes(1);
+    expect(persistRule).toHaveBeenCalledWith({
+      scope: 'local',
+      behavior: 'allow',
+      rule: 'Edit(/proj/**)',
+      configDir: '/cfg',
+      projectPath: '/proj',
+    });
+
+    svc.stopAll();
+  });
+
+  it('respondPermission maps userSettings/projectSettings destinations to the right scope', async () => {
+    const persistRule = vi.fn();
+    const svc = createSessionsService(
+      sendToRenderer as any,
+      { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
+      null,
+      null,
+      persistRule,
+    );
+    const fake = installFakeQuery();
+
+    svc.start({ tabId: 'tab-scope', projectPath: '/proj', configDir: '/cfg', model: 'sonnet', permissionMode: 'default' });
+    const canUseTool = fake.getCapturedOptions().canUseTool;
+    const p = canUseTool('Bash', { command: 'git status' }, {
+      signal: new AbortController().signal,
+      toolUseID: 'tu-scope',
+    });
+    await new Promise((r) => setImmediate(r));
+    svc.respondPermission('tab-scope', 'allow', undefined, [
+      { type: 'addRules', rules: [{ toolName: 'Bash', ruleContent: 'git:*' }], behavior: 'allow', destination: 'userSettings' },
+      { type: 'addRules', rules: [{ toolName: 'WebSearch' }], behavior: 'allow', destination: 'projectSettings' },
+    ]);
+    await p;
+
+    expect(persistRule).toHaveBeenCalledTimes(2);
+    expect(persistRule).toHaveBeenNthCalledWith(1, expect.objectContaining({ scope: 'user', rule: 'Bash(git:*)' }));
+    expect(persistRule).toHaveBeenNthCalledWith(2, expect.objectContaining({ scope: 'project', rule: 'WebSearch' }));
+
+    svc.stopAll();
+  });
+
+  it('respondPermission does NOT persist when destination is "session"', async () => {
+    const persistRule = vi.fn();
+    const svc = createSessionsService(
+      sendToRenderer as any,
+      { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
+      null,
+      null,
+      persistRule,
+    );
+    const fake = installFakeQuery();
+
+    svc.start({ tabId: 'tab-session', projectPath: '/proj', configDir: '/cfg', model: 'sonnet', permissionMode: 'default' });
+    const canUseTool = fake.getCapturedOptions().canUseTool;
+    const p = canUseTool('Bash', { command: 'ls' }, {
+      signal: new AbortController().signal,
+      toolUseID: 'tu-sess',
+    });
+    await new Promise((r) => setImmediate(r));
+    svc.respondPermission('tab-session', 'allow', undefined, [
+      { type: 'addRules', rules: [{ toolName: 'Bash', ruleContent: 'ls' }], behavior: 'allow', destination: 'session' },
+    ]);
+    await p;
+
+    expect(persistRule).not.toHaveBeenCalled();
+
+    svc.stopAll();
+  });
+
+  it('respondPermission does NOT persist on deny', async () => {
+    const persistRule = vi.fn();
+    const svc = createSessionsService(
+      sendToRenderer as any,
+      { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
+      null,
+      null,
+      persistRule,
+    );
+    const fake = installFakeQuery();
+
+    svc.start({ tabId: 'tab-deny2', projectPath: '/proj', configDir: '/cfg', model: 'sonnet', permissionMode: 'default' });
+    const canUseTool = fake.getCapturedOptions().canUseTool;
+    const p = canUseTool('Bash', { command: 'rm -rf /' }, {
+      signal: new AbortController().signal,
+      toolUseID: 'tu-deny2',
+    });
+    await new Promise((r) => setImmediate(r));
+    svc.respondPermission('tab-deny2', 'deny');
+    await p;
+
+    expect(persistRule).not.toHaveBeenCalled();
+
+    svc.stopAll();
+  });
+
   it('permission queue emits the next payload to the renderer after the first resolves', async () => {
     const writeBatch = vi.fn();
     const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };

@@ -340,6 +340,7 @@ app.whenReady().then(() => {
     },
     createNotification: (opts) => new Notification(opts),
   });
+  const permissionsIOService = createPermissionsIOService();
   const sessionsService = _sessionsService = createSessionsService(
     sendToRenderer,
     {
@@ -357,6 +358,14 @@ app.whenReady().then(() => {
       register: (tabId, ownerId) => router.registerTabOwner(tabId, ownerId),
       unregister: (tabId) => router.unregisterTabOwner(tabId),
     },
+    (params) => permissionsIOService.updatePermission({
+      scope: params.scope,
+      action: 'add',
+      behavior: params.behavior,
+      rule: params.rule,
+      configDir: params.configDir,
+      projectPath: params.projectPath,
+    }),
   );
   const claudeService = createClaudeService(db, accountsService);
   const agentRunRegistry = createAgentRunRegistry();
@@ -376,7 +385,6 @@ app.whenReady().then(() => {
   const proxyService = createProxyService(db);
   const mcpService = createMCPService(defaultConfigDir);
   const slashCommandsService = createSlashCommandsService(defaultConfigDir);
-  const permissionsIOService = createPermissionsIOService();
   const modelsService = createModelsService();
   const sdkVersionService = createSdkVersionService({
     readSdkPackageJson: async () => {

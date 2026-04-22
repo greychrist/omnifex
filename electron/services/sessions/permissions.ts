@@ -9,7 +9,32 @@ import type {
   PendingPermission,
   SendToRenderer,
   NotificationHooks,
+  PersistPermissionRuleFn,
 } from './types';
+
+/** Map the SDK's destination string to our settings-file scope. */
+function scopeForDestination(
+  dest: string | undefined,
+): 'user' | 'project' | 'local' | null {
+  switch (dest) {
+    case 'userSettings':
+      return 'user';
+    case 'projectSettings':
+      return 'project';
+    case 'localSettings':
+      return 'local';
+    case 'session':
+    case undefined:
+      return null;
+    default:
+      return null;
+  }
+}
+
+/** Stringify a rule entry as it appears in .claude/settings.*.json. */
+function formatRule(r: { toolName: string; ruleContent?: string }): string {
+  return r.ruleContent ? `${r.toolName}(${r.ruleContent})` : r.toolName;
+}
 
 // ---------------------------------------------------------------------------
 // createCanUseTool — the SDK's canUseTool callback
@@ -75,23 +100,60 @@ export function createCanUseTool(
   ): Promise<any> => {
     const requestId = `perm-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 
-    // If the SDK doesn't provide suggestions, generate a sensible default
-    // from the tool name and input so the user can still save a rule.
-    let suggestions = toolOptions.suggestions;
-    if (!suggestions || suggestions.length === 0) {
-      let ruleContent: string | undefined;
+    // Build a sensible default rule from the tool name and input. Used when
+    // the SDK gives us nothing OR gives us a suggestion with an empty rules
+    // array (which would otherwise render as a blank row in the dialog).
+    const buildDefaultRule = (): { toolName: string; ruleContent?: string } | null => {
       if (toolName === 'Bash' && typeof toolInput.command === 'string') {
-        // Extract the base command for a wildcard rule: "git status" → "git:*"
         const cmd = (toolInput.command as string).trim();
         const base = cmd.split(/[\s;|&]/)[0];
-        ruleContent = base ? `${base}:*` : cmd;
-      } else if (toolName === 'Write' || toolName === 'Edit' || toolName === 'Read') {
-        ruleContent = typeof toolInput.file_path === 'string' ? toolInput.file_path : undefined;
+        return { toolName, ruleContent: base ? `${base}:*` : cmd };
       }
-      if (ruleContent) {
+      if (
+        toolName === 'Write' ||
+        toolName === 'Edit' ||
+        toolName === 'MultiEdit' ||
+        toolName === 'Read' ||
+        toolName === 'NotebookEdit'
+      ) {
+        const fp = typeof toolInput.file_path === 'string' ? toolInput.file_path : undefined;
+        return fp ? { toolName, ruleContent: fp } : { toolName };
+      }
+      if (toolName === 'Glob' || toolName === 'Grep') {
+        const pattern = typeof toolInput.pattern === 'string' ? toolInput.pattern : undefined;
+        return pattern ? { toolName, ruleContent: pattern } : { toolName };
+      }
+      if (toolName === 'WebFetch' && typeof toolInput.url === 'string') {
+        try {
+          const u = new URL(toolInput.url as string);
+          return { toolName, ruleContent: `domain:${u.hostname}` };
+        } catch {
+          return { toolName };
+        }
+      }
+      // Any tool can be allowed by bare name as a last resort.
+      return { toolName };
+    };
+
+    let suggestions = toolOptions.suggestions;
+    const needsDefault =
+      !suggestions ||
+      suggestions.length === 0 ||
+      suggestions.every(
+        (s: any) =>
+          !s ||
+          !Array.isArray(s.rules) ||
+          s.rules.length === 0 ||
+          s.rules.every(
+            (r: any) => !r || typeof r.toolName !== 'string' || !r.toolName.trim(),
+          ),
+      );
+    if (needsDefault) {
+      const defaultRule = buildDefaultRule();
+      if (defaultRule) {
         suggestions = [{
           type: 'addRules',
-          rules: [{ toolName, ruleContent }],
+          rules: [defaultRule],
           behavior: 'allow',
           destination: 'localSettings',
         }];
@@ -208,12 +270,39 @@ export function respondPermission(
   behavior: 'allow' | 'deny',
   updatedInput?: Record<string, unknown>,
   updatedPermissions?: PermissionDecision['updatedPermissions'],
+  persistPermissionRule?: PersistPermissionRuleFn | null,
 ): void {
   if (handle.permissionQueue.length === 0) return;
 
   // Resolve the front of the queue
   const current = handle.permissionQueue.shift()!;
   current.resolve({ behavior, updatedInput, updatedPermissions });
+
+  // Persist any rules whose destination isn't "session" — the SDK may also
+  // write these internally, but we persist ourselves so rules always land on
+  // disk regardless of SDK behavior.
+  if (behavior === 'allow' && persistPermissionRule && updatedPermissions) {
+    for (const suggestion of updatedPermissions) {
+      const scope = scopeForDestination((suggestion as any).destination);
+      if (!scope) continue;
+      const rules = (suggestion as any).rules ?? [];
+      const suggBehavior = (suggestion as any).behavior === 'deny' ? 'deny' : 'allow';
+      for (const r of rules) {
+        if (!r || typeof r.toolName !== 'string' || !r.toolName.trim()) continue;
+        try {
+          persistPermissionRule({
+            scope,
+            behavior: suggBehavior,
+            rule: formatRule(r),
+            configDir: handle.configDir,
+            projectPath: handle.projectPath,
+          });
+        } catch (e) {
+          console.error('[sessions] persistPermissionRule failed:', e);
+        }
+      }
+    }
+  }
 
   // Show the next queued request, if any
   if (handle.permissionQueue.length > 0) {

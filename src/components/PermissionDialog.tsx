@@ -74,13 +74,17 @@ export function PermissionDialog({
     });
   };
 
-  /** Get the full rule string for a suggestion: ToolName(ruleContent) or ToolName */
+  /** Get the full rule string for a suggestion: ToolName(ruleContent) or ToolName.
+   *  Falls back to the current toolName when the SDK suggestion is empty so
+   *  the dialog never shows a blank row. */
   const getRuleString = (idx: number): string => {
     if (editedContent.has(idx)) return editedContent.get(idx)!;
     const s = suggestions[idx];
-    if (!s.rules || s.rules.length === 0) return '';
-    const r = s.rules[0];
-    return r.ruleContent ? `${r.toolName}(${r.ruleContent})` : r.toolName;
+    const r = s?.rules?.[0];
+    if (r && r.toolName) {
+      return r.ruleContent ? `${r.toolName}(${r.ruleContent})` : r.toolName;
+    }
+    return toolName || '';
   };
 
   /** Parse a rule string like "Bash(git:*)" into { toolName, ruleContent } */

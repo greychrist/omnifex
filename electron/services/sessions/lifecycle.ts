@@ -22,6 +22,7 @@ import type {
   PermissionDecision,
   LoggingService,
   SessionOwnership,
+  PersistPermissionRuleFn,
 } from './types';
 import { createSessionHooks } from './hooks';
 import {
@@ -64,6 +65,7 @@ export function createSessionsService(
   notificationHooks: NotificationHooks = {},
   logging: LoggingService | null = null,
   ownership: SessionOwnership | null = null,
+  persistPermissionRule: PersistPermissionRuleFn | null = null,
 ): SessionsService {
   const sessions = new Map<string, SessionHandle>();
 
@@ -411,7 +413,16 @@ export function createSessionsService(
     const handle = sessions.get(tabId);
     if (!handle || handle.permissionQueue.length === 0) return;
 
-    respondPermissionImpl(handle, tabId, sendToRenderer, notificationHooks, behavior, updatedInput, updatedPermissions);
+    respondPermissionImpl(
+      handle,
+      tabId,
+      sendToRenderer,
+      notificationHooks,
+      behavior,
+      updatedInput,
+      updatedPermissions,
+      persistPermissionRule,
+    );
   }
 
   // -------------------------------------------------------------------------

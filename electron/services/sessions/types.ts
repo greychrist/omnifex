@@ -190,5 +190,19 @@ export interface SessionHandle {
   sdkOptions: Record<string, unknown>;
 }
 
+/**
+ * Optional callback the sessions service calls to persist an accepted
+ * permission rule to disk. Main.ts wires this to permissions-io's
+ * updatePermission; tests pass a vi.fn(). Omitted / null → rules are only
+ * handed to the SDK (in-memory for the session).
+ */
+export type PersistPermissionRuleFn = (params: {
+  scope: 'user' | 'project' | 'local';
+  behavior: 'allow' | 'deny';
+  rule: string;
+  configDir: string;
+  projectPath: string;
+}) => void;
+
 // Re-export LoggingService so other modules in this folder can import from types
 export type { LoggingService };
