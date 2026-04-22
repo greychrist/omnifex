@@ -30,11 +30,19 @@ export function createTuiSession(params: TuiSessionParams): TuiSession {
     }
   );
 
+  const disposables: import('node-pty').IDisposable[] = [];
+
   return {
     write: (data) => pty.write(data),
     resize: (cols, rows) => pty.resize(cols, rows),
-    kill: () => pty.kill(),
-    onData: (cb) => { pty.onData(cb); },
-    onExit: (cb) => { pty.onExit(cb); },
+    kill: () => {
+      for (const d of disposables) {
+        try { d.dispose(); } catch {}
+      }
+      disposables.length = 0;
+      pty.kill();
+    },
+    onData: (cb) => { disposables.push(pty.onData(cb)); },
+    onExit: (cb) => { disposables.push(pty.onExit(cb)); },
   };
 }
