@@ -114,6 +114,10 @@ export function createSessionsService(
         }
       }
     } catch (err) {
+      // If we're mid-switch to TUI, swallow whatever the old stream threw —
+      // the mode handler owns lifecycle from here. Do NOT fire claude-error /
+      // claude-complete, which would wipe renderer state (isSessionActive).
+      if (handle.mode === 'tui') return;
       // Stream error — keep the session alive so the user can retry.
       // The next sendMessage() will restart the SDK query transparently.
       handle.status = 'error';

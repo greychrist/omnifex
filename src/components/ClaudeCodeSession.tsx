@@ -918,6 +918,11 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
         const payload = args[0] as { mode?: 'sdk' | 'tui' } | undefined;
         if (payload?.mode === 'sdk' || payload?.mode === 'tui') {
           setSessionMode(payload.mode);
+          // A mode switch means the main process has a live session handle
+          // on the other side of the toggle. Keep the header badge 'Active'
+          // rather than dropping back to 'Starting…' while the restarted
+          // SDK query waits for its first message.
+          setIsSessionActive(true);
         }
       },
     );
