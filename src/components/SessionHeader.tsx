@@ -72,9 +72,6 @@ interface SessionHeaderProps {
   thinkingConfig?: string;
   permissionMode?: string;
 
-  modeControl?: React.ReactNode;
-  viewModeControl?: React.ReactNode;
-
   className?: string;
 }
 
@@ -94,8 +91,6 @@ export function SessionHeader({
   thinkingConfig,
   permissionMode,
   sessionStatus,
-  modeControl,
-  viewModeControl,
   className,
 }: SessionHeaderProps) {
   // Local open state for the two Popovers so they're click-driven and
@@ -334,8 +329,6 @@ export function SessionHeader({
       })()}
 
       <div className="ml-auto flex items-center gap-3">
-        {modeControl}
-        {viewModeControl}
         {(() => {
           // Prefer authoritative numbers from query.getContextUsage() when
           // present; otherwise fall back to the old client-side approximation

@@ -1,9 +1,13 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Settings, Bot, BarChart3, Info, MoreVertical, Download, Loader2, CheckCircle, AlertCircle, RefreshCw } from 'lucide-react';
+import { Settings, Bot, Info, MoreVertical, Download, Loader2, CheckCircle, AlertCircle, RefreshCw } from 'lucide-react';
 import { TooltipProvider, TooltipSimple } from '@/components/ui/tooltip-modern';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import { SessionModeToggle } from './SessionModeToggle';
+import { SessionViewToggle } from './SessionViewToggle';
+import { useSessionUiStore } from '@/stores/sessionUiStore';
+import { useTabContext } from '@/contexts/TabContext';
 
 const SDK_POLL_INTERVAL_MS = 60 * 60 * 1000; // 60 minutes
 
@@ -16,14 +20,30 @@ const BADGE_RED_CLASS = 'bg-red-500/15 text-red-500 border-red-500/30';
 interface CustomTitlebarProps {
   onSettingsClick?: () => void;
   onAgentsClick?: () => void;
-  onUsageClick?: () => void;
   onInfoClick?: () => void;
+}
+
+function SessionTitlebarControls() {
+  const { activeTabId } = useTabContext();
+  const ui = useSessionUiStore((s) => (activeTabId ? s.byTab[activeTabId] : undefined));
+  const handlers = useSessionUiStore((s) => (activeTabId ? s.handlers[activeTabId] : undefined));
+  if (!ui || !handlers || !activeTabId) return null;
+  return (
+    <div className="flex items-center gap-2 tauri-no-drag">
+      <SessionModeToggle
+        mode={ui.mode}
+        onChange={handlers.onModeChange}
+        disabled={ui.modeDisabled}
+        disabledReason={ui.modeDisabledReason}
+      />
+      <SessionViewToggle mode={ui.viewMode} onChange={handlers.onViewModeChange} />
+    </div>
+  );
 }
 
 export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
   onSettingsClick,
   onAgentsClick,
-  onUsageClick,
   onInfoClick
 }) => {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -276,18 +296,7 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
             </TooltipSimple>
           )}
           
-          {onUsageClick && (
-            <TooltipSimple content="Usage Dashboard" side="bottom">
-              <motion.button
-                onClick={onUsageClick}
-                whileTap={{ scale: 0.97 }}
-                transition={{ duration: 0.15 }}
-                className="p-2 rounded-md hover:bg-accent hover:text-accent-foreground transition-colors tauri-no-drag"
-              >
-                <BarChart3 size={16} />
-              </motion.button>
-            </TooltipSimple>
-          )}
+          <SessionTitlebarControls />
         </div>
 
         {/* Visual separator */}

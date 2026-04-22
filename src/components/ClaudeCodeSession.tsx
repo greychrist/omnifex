@@ -43,8 +43,8 @@ import { SplitPane } from "@/components/ui/split-pane";
 import { WebviewPreview } from "./WebviewPreview";
 import type { ClaudeStreamMessage } from "./AgentExecution";
 import { synthesizeResultMessages } from "@/lib/synthesizeResults";
-import { SessionViewToggle, type ViewMode } from "./SessionViewToggle";
-import { SessionModeToggle } from './SessionModeToggle';
+import { type ViewMode } from "./SessionViewToggle";
+import { useSessionUiStore } from '@/stores/sessionUiStore';
 import { TerminalView } from './TerminalView';
 import { CollapsibleGroup } from "./CollapsibleGroup";
 import { buildCompactItems } from "@/lib/compactGrouping";
@@ -1248,6 +1248,36 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       ? 'Resolve the permission dialog first'
       : undefined;
 
+  // Publish current UI state to the app-level store so the titlebar can read it.
+  useEffect(() => {
+    const tid = tabIdRef.current;
+    useSessionUiStore.getState().publish(
+      tid,
+      {
+        mode: sessionMode,
+        modeDisabled: modeToggleDisabled,
+        modeDisabledReason: modeToggleReason,
+        viewMode,
+      },
+      {
+        onModeChange: (next) => {
+          api.setSessionMode(tid, next).catch((err) => {
+            console.error('Failed to switch mode:', err);
+          });
+        },
+        onViewModeChange: (next) => setViewMode(next),
+      },
+    );
+  }, [sessionMode, viewMode, modeToggleDisabled, modeToggleReason]);
+
+  // Clear from the store on unmount.
+  useEffect(() => {
+    const tid = tabIdRef.current;
+    return () => {
+      useSessionUiStore.getState().clear(tid);
+    };
+  }, []);
+
   return (
     <TooltipProvider>
       <div className={cn("flex flex-col h-full bg-background", className)}>
@@ -1337,19 +1367,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                   ? 'starting'
                   : 'ended'
           }
-          modeControl={
-            <SessionModeToggle
-              mode={sessionMode}
-              disabled={modeToggleDisabled}
-              disabledReason={modeToggleReason}
-              onChange={(next) => {
-                api.setSessionMode(tabIdRef.current, next).catch((err) => {
-                  console.error('Failed to switch mode:', err);
-                });
-              }}
-            />
-          }
-          viewModeControl={<SessionViewToggle mode={viewMode} onChange={setViewMode} />}
           className="mb-2"
         />
         {!sessionStarted && (
