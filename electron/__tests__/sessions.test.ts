@@ -2926,6 +2926,45 @@ describe('sessions service — full lifecycle', () => {
     svc.stopAll();
   });
 
+  it('setMode("tui") is allowed while status is "starting" (post-restart window)', async () => {
+    const svc = createSessionsService(
+      sendToRenderer as any,
+      { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
+    );
+    const fake = installFakeQuery();
+    svc.start({ tabId: 'tab-starting', projectPath: '/p', configDir: '/c', model: 'sonnet', permissionMode: 'default' });
+
+    // Drive into running + get a sessionId
+    fake.pushMessage({ type: 'system', subtype: 'init', session_id: 'sess-starting' });
+    await new Promise((r) => setImmediate(r));
+
+    // Prime a fresh mocked pty so setMode('tui') succeeds
+    mockedCreateTuiSession.mockClear();
+    mockedCreateTuiSession.mockReturnValue({
+      write: vi.fn(), resize: vi.fn(), kill: vi.fn(),
+      onData: vi.fn(), onExit: vi.fn(),
+    });
+    await svc.setMode('tab-starting', 'tui');
+
+    // Go back to SDK — restartQuery sets status to 'starting'
+    mockedQuery.mockClear();
+    mockedQuery.mockReturnValue(installFakeQuery().query);
+    await svc.setMode('tab-starting', 'sdk');
+    expect(svc.getStatus('tab-starting')).toBe('starting');
+
+    // Now re-switch to TUI BEFORE the first post-restart message arrives.
+    // With the relaxed gate this should succeed.
+    mockedCreateTuiSession.mockClear();
+    mockedCreateTuiSession.mockReturnValue({
+      write: vi.fn(), resize: vi.fn(), kill: vi.fn(),
+      onData: vi.fn(), onExit: vi.fn(),
+    });
+    await expect(svc.setMode('tab-starting', 'tui')).resolves.toBeUndefined();
+    expect(svc.getMode('tab-starting')).toBe('tui');
+
+    svc.stopAll();
+  });
+
   it('stop() kills the TUI pty if the session is in tui mode', async () => {
     const killSpy = vi.fn();
     mockedCreateTuiSession.mockReturnValue({

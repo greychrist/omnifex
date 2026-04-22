@@ -501,9 +501,11 @@ export function createSessionsService(
     if (!handle) throw new Error(`setMode: unknown tab ${tabId}`);
     if (handle.mode === mode) return;
 
-    // Gate: only allow switch when SDK is at rest between turns.
-    if (handle.status !== 'running') {
-      throw new Error(`setMode: not allowed while status is "${handle.status}" (need "running")`);
+    // Gate: allow switching while the SDK is running or in the transient
+    // 'starting' state (post-restart, before the first message arrives).
+    // Block only when a permission dialog is open or the session is dead.
+    if (handle.status !== 'running' && handle.status !== 'starting') {
+      throw new Error(`setMode: not allowed while status is "${handle.status}"`);
     }
 
     if (mode === 'tui') {
