@@ -5,6 +5,37 @@ All notable changes to GreyChrist are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.33] — 2026-04-22
+
+Big one: each session now has a **SDK / Terminal mode toggle**. SDK mode is the existing custom UI; Terminal mode drops you into the full Claude Code TUI (every slash command, plugin, `/model`, etc.) on the same conversation. Switch back and forth freely between turns — both sides read and write the same JSONL file. The Compact / Verbose toggle and the mode toggle now live on the project header row; the broken Usage button has been removed. Installers remain **unsigned**.
+
+### Added
+
+- **SDK ↔ Terminal mode toggle per session** (`ab7e996`, `40f8296`, `6b844bd`, `7423bb2`, `9840caf`, `ce4c0b6`, `becbfa3`, `2d43302`, `f243604`). Clicking **Terminal** in the project header cleanly closes the SDK query, spawns `claude --resume <sessionId>` in a `node-pty` terminal rendered via `xterm.js` + the fit addon, and forwards `CLAUDE_CONFIG_DIR` so multi-account routing survives the handoff. `/exit` in the TUI auto-reverts to SDK mode; manual switching works the same way. The idle gate only blocks during `waiting_permission` and on dead sessions — switching is allowed during the transient `starting` window too. Conversation persists because both surfaces read/write the same session JSONL.
+- **Mode + view toggles moved to the project-header row** (`f5138c6`). Adjacent to the Back / path / branch controls at the top of the session, right-aligned. The Usage popover button (`BarChart3`) that used to live there has been deleted — it didn't work. `getCliUsage` is retained in the main-process service (no other callers for now, but unused is cheaper than the wrong thing).
+- **TuiSession service with full node-pty lifecycle** (`ab7e996`, `2228212`, `dbc080f`). `electron/services/sessions/tui.ts` owns spawn / write / resize / kill / onData / onExit. Disposables from `pty.onData` / `pty.onExit` are collected and disposed in `kill()` so listeners can't outlive the pty. Covered by 4 tests.
+
+### Fixed
+
+- **TUI-mode turns invisible in SDK view after return** (`cfe9f42`). A message sent in Terminal mode wrote to the JSONL file but never flowed through our `claude-output` event stream, so `messages[]` in the renderer missed it. Every TUI→SDK mode flip now reloads the session history from the JSONL via `api.loadSessionHistory` and replaces `messages[]`. Ref-indirected so the event subscription effect can stay `[]` while reading fresh `claudeSessionId` / `projectId` / `projectPath`.
+- **Session shown as "Starting…" after returning from Terminal mode until the first prompt** (`be40e04`). Two culprits: the `listenToMessages` error path emitted `claude-complete` without the mode guard, so a throw during `query.close()` wiped the renderer's `isSessionActive` flag; and the renderer never re-asserted active on `session-mode:<tabId>` events. The error path is now guarded the same way the normal-close path is, and the mode event now sets `isSessionActive=true` — the badge stays "Active" across the flip.
+- **Mode toggle stuck disabled forever** (`2e758ec`). `isSessionStarting` never resets once a session is running — it only flips false on `claude-complete`. The toggle gate relied on it and therefore was always disabled. `isSessionActive` alone already means the SDK is warm and responsive; dropped the redundant check.
+- **`setMode("tui")` rejected during the transient post-restart window** (`1c118e6`). After TUI→SDK, `restartQuery` sets `handle.status = 'starting'` until the first SDK message arrives. The gate only accepted `'running'`, so the user could not flip back to Terminal without first sending a prompt. Gate now accepts both `'starting'` and `'running'`; permission / stopped / error states still block.
+- **`stop()` orphaned the TUI pty** (`567abcc`). When the tab was closed, `stop()` tore down the SDK handle but never called `handle.tuiDetach?.()`, leaving the spawned `claude` process running. `stopAll()` cascades through `stop()`, so both paths are now covered.
+- **node-pty failed to load in the packaged / bundled main process** (`cbf8070`). Rollup was bundling `node-pty` into `main.js`, which broke its runtime dynamic `require('./prebuilds/darwin-arm64/pty.node')` — the app couldn't start at all. Externalized alongside `better-sqlite3` in `vite.main.config.ts`.
+- **node-pty verification in `rebuild:electron` threw on missing directory** (`15af2a1`). The inline verifier called `readdirSync('./node_modules/node-pty/bin')` without try/catch. Now matches the `better-sqlite3` half: wrapped, clean error message, consistent exit code.
+- **forge `afterCopy` swallowed rebuild failures** (`15af2a1`). The catch block called `callback()` with no argument after logging, so a broken rebuild silently produced a shippable package. Propagates the error now.
+
+### Changed
+
+- **Dependency additions for TUI mode** (`c86acb1`). `node-pty@^1.1.0`, `@xterm/xterm@^6.0.0`, `@xterm/addon-fit@^0.11.0`. `node-pty` joins `better-sqlite3` as a native module — the `rebuild:electron`, `prestart`, and three `pretest*` scripts now rebuild both, and `forge.config.ts` copies + rebuilds both when packaging. `asar.unpack` pattern extended to include `**/node-pty/**/*.node`.
+- **Session handle carries mode state** (`40f8296`). New `SessionMode = 'sdk' | 'tui'` type, new `mode`, `tui`, `tuiDetach` fields on `SessionHandle`, four new methods on `SessionsService` (`setMode`, `tuiWrite`, `tuiResize`, `getMode`). `listenToMessages` skips its normal-close cleanup when `handle.mode === 'tui'` so a deliberate SDK query close during a TUI handoff doesn't wipe the session handle.
+- **IPC surface for mode switching** (`ce4c0b6`, `a1dee82`). New invoke channels `session_set_mode`, `session_tui_write`, `session_tui_resize` and event channels `session-mode:<tabId>`, `session-tui-data:<tabId>`, `session-tui-exit:<tabId>` (covered by the existing `session-` event prefix). Handlers apply the dual-key convention (`p?.mode ?? p?.session_mode`, etc.).
+
+### Removed
+
+- **Titlebar Usage button + `onUsageClick` prop path** (`3099f25`). The titlebar path was the first wrong location for the toggles and it's not needed any more; the broken button is gone from `CustomTitlebar`, along with its `BarChart3` import and the `onUsageClick` props in `App.tsx`. `UsageDashboard` view and `createUsageTab` are still wired for future reachability.
+
 ## [0.3.32] — 2026-04-21
 
 Permission events now surface in the Logs tab, log search covers metadata and category, and the bundled Claude Agent SDK is bumped to 0.2.117. Installers remain **unsigned**.
