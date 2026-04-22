@@ -1241,14 +1241,12 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     window.dispatchEvent(new CustomEvent('back-to-project'));
   };
 
-  const modeToggleDisabled = !isSessionActive || isSessionStarting || waitingForPermission;
+  const modeToggleDisabled = !isSessionActive || waitingForPermission;
   const modeToggleReason = !isSessionActive
     ? 'Start a session first'
     : waitingForPermission
       ? 'Resolve the permission dialog first'
-      : isSessionStarting
-        ? 'Session is starting'
-        : undefined;
+      : undefined;
 
   return (
     <TooltipProvider>
