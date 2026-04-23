@@ -5,6 +5,14 @@ All notable changes to GreyChrist are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.39] — 2026-04-23
+
+Bundles the 0.3.38 UX fixes with a patch bump of the Claude Agent SDK. The v0.3.38 draft was discarded in favor of this rolled-up release. Installers remain **unsigned**.
+
+### Changed
+
+- **`@anthropic-ai/claude-agent-sdk` upgraded to 0.2.119** (`959a0de`). Patch bump, no GreyChrist code changes required. Upstream: `excludeDynamicSections` now keeps static auto-memory instructions in the cacheable system-prompt block (only the per-user memory dir path and per-machine env values move to the first user message); long-running SDK sessions reconnect claude.ai-proxied MCP servers after transport-stream aborts; `SessionStore.append()` failures are retried 3× with short backoff before the batch is dropped and `mirror_error` is emitted. None of these surface new APIs that GreyChrist consumes — the improvements apply automatically to sessions spawned via `query()`.
+
 ## [0.3.38] — 2026-04-23
 
 Two UX fixes that stop the app from hijacking your session. Clicking a link in the app no longer turns the window into a browser, and the permission prompt is no longer a modal that blocks every tab and window while one session waits for approval. Installers remain **unsigned**.
