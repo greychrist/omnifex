@@ -135,19 +135,19 @@ const CopyCardButton: React.FC<{ message?: any; text?: string }> = ({ message, t
   );
 };
 
-/** MM/DD/YYYY H:MM:SS AM/PM in the user's local timezone. */
+/** M/D/YY H:MM:SS AM/PM in the user's local timezone. */
 function formatLocalTimestamp(iso: string): string | null {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return null;
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  const yyyy = d.getFullYear();
+  const m = d.getMonth() + 1;
+  const day = d.getDate();
+  const yy = String(d.getFullYear() % 100).padStart(2, '0');
   let h = d.getHours();
   const ampm = h >= 12 ? 'PM' : 'AM';
   h = h % 12 || 12;
   const mins = String(d.getMinutes()).padStart(2, '0');
   const secs = String(d.getSeconds()).padStart(2, '0');
-  return `${mm}/${dd}/${yyyy} ${h}:${mins}:${secs} ${ampm}`;
+  return `${m}/${day}/${yy} ${h}:${mins}:${secs} ${ampm}`;
 }
 
 /** Small bottom-right timestamp badge for a message card. Absent when the

@@ -135,10 +135,14 @@ export function useSendPrompt({
         }
       }
 
-      // Add user message immediately for UI display
+      // Add user message immediately for UI display.
+      // Stamp with receivedAt so StreamMessage renders a card timestamp the
+      // same way it does for SDK-forwarded messages (main-process stamps
+      // those in lifecycle.ts#listenToMessages).
       const userMessage: ClaudeStreamMessage = {
         type: "user",
         message: { content: contentBlocks },
+        receivedAt: new Date().toISOString(),
       };
       setMessages((prev) => [...prev, userMessage]);
 

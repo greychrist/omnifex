@@ -7,11 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.34] — 2026-04-22
 
-Skill invocations now render distinctly in the chat transcript, drag-dropped images actually land in the prompt, and the Permission Required dialog both pre-fills a sensible rule and persists the save. Installers remain **unsigned**.
+Skill invocations now render distinctly in the chat transcript, drag-dropped images actually land in the prompt, the Permission Required dialog both pre-fills a sensible rule and persists the save, and every message card carries a local-time timestamp. Installers remain **unsigned**.
 
 ### Added
 
 - **Skill-injected messages render as a purple Sparkles card** (`995c84a`). When Claude invokes the `Skill` tool, the SDK re-injects the skill's `SKILL.md` body as a user-role message. Previously it was indistinguishable from a prompt the user actually typed (same blue `User` icon and tint). The new branch in `StreamMessage.tsx` detects the injection by walking back to the matching `tool_use`, renders a `border-purple-500/30` card with a `Sparkles` icon and a `Skill: <name>` header, and — in Compact view — collapses the body into the preceding tool group so the transcript stays readable. New util `src/lib/skillDetection.ts` with 6 tests; `compactGrouping.ts` no longer treats the injected body as a boundary; `CollapsibleGroup` now emits a `Skill: <name>` action label in group summaries.
+- **Per-card timestamp on every message** (`13fbd47`, `e6f8b9e`). Each message card now shows a dimmed bottom-right timestamp formatted as `M/D/YY H:MM:SS AM/PM` in the user's local timezone — covers assistant messages, user prompts (both typed and streamed back from the SDK), Execution Complete / Failed cards, and the error fallback. Main process stamps live SDK messages with `receivedAt` (ISO) as they arrive in `listenToMessages`; optimistic user-message append in `useSendPrompt` stamps its own. Reloaded-from-JSONL messages show nothing (the SDK's session history has no per-message timestamp; an honest blank beats a misleading load-time stamp). Hover reveals the raw ISO.
+- **Shared `formatDurationMs` helper** (`e6f8b9e`). Durations over a minute now read as `1m 15.55s` instead of `75.55s`, and above an hour as `1h 5m 22.00s`. Replaces five inline `toFixed(2)` sites (StreamMessage Execution Complete, AgentExecution + AgentRunOutputViewer markdown exports, AgentRunView badge, Agents run row).
+
+### Removed
+
+- **Floating scroll-to-top / scroll-to-bottom FAB.** 68 lines of `motion.div` + `Button` + `TooltipSimple` JSX in the bottom-right of `ClaudeCodeSession` — never load-bearing, and the virtualizer scroll was buggy enough that clicking it sometimes did nothing. Built-in scrolling is sufficient.
 
 ### Fixed
 
