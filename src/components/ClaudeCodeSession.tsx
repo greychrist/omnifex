@@ -1202,7 +1202,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.15 }}
-              className="flex justify-start w-full max-w-6xl mx-auto px-4 mb-20"
+              className="flex justify-start mb-20"
             >
               <div className="max-w-[95%] space-y-2">
                 <div className="flex items-center gap-3">
