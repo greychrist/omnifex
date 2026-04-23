@@ -19,6 +19,10 @@ Skill invocations now render distinctly in the chat transcript, drag-dropped ima
 
 - **Floating scroll-to-top / scroll-to-bottom FAB.** 68 lines of `motion.div` + `Button` + `TooltipSimple` JSX in the bottom-right of `ClaudeCodeSession` — never load-bearing, and the virtualizer scroll was buggy enough that clicking it sometimes did nothing. Built-in scrolling is sufficient.
 
+### Changed
+
+- **Claude Agent SDK bumped to 0.2.118.** Parity with Claude Code 2.1.118. Adds `Options.managedSettings` for embedders to pass policy-tier settings to the spawned CLI in-memory (honored below IT-controlled managed sources). GreyChrist doesn't use it yet; no API surface touched by this repo changed.
+
 ### Fixed
 
 - **Permission Required dialog opened with an empty rule row** (`93565fb`). When the Agent SDK returned a suggestion with an empty `rules` array (or no suggestion at all for tools we hadn't special-cased), `PermissionDialog.getRuleString()` produced `''` and rendered a blank row — you had to type the rule from scratch. `createCanUseTool` in `electron/services/sessions/permissions.ts` now synthesizes a default rule for `Bash` / `Read` / `Write` / `Edit` / `MultiEdit` / `NotebookEdit` / `Glob` / `Grep` / `WebFetch` (with a `domain:<host>` form pulled from the URL), falling back to the bare tool name so no row is ever blank. The dialog has a second-layer safety net too: if a suggestion somehow still has no rule, it prefills with `toolName`.
