@@ -3,6 +3,7 @@
 
 import path from 'node:path';
 import type { LoggingService } from '../logging';
+import { formatFilePathForRule } from './rule-paths';
 import type {
   SessionHandle,
   PermissionDecision,
@@ -117,7 +118,13 @@ export function createCanUseTool(
         toolName === 'NotebookEdit'
       ) {
         const fp = typeof toolInput.file_path === 'string' ? toolInput.file_path : undefined;
-        return fp ? { toolName, ruleContent: fp } : { toolName };
+        if (!fp) return { toolName };
+        // Format per Claude Code's gitignore-style rule syntax: prefer a
+        // project-anchored relative path ("/rel/path") when the file lives
+        // inside the session root, fall back to double-slash absolute
+        // ("//abs/path") otherwise. A naive single-slash absolute path is
+        // SILENTLY ineffective — it would be parsed as project-relative.
+        return { toolName, ruleContent: formatFilePathForRule(fp, handle.projectPath) };
       }
       if (toolName === 'Glob' || toolName === 'Grep') {
         const pattern = typeof toolInput.pattern === 'string' ? toolInput.pattern : undefined;
