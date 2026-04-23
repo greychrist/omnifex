@@ -5,6 +5,16 @@ All notable changes to GreyChrist are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.35] — 2026-04-22
+
+Sibling git worktrees are now auto-admitted to the SDK sandbox at session start, so `/work-on-ticket`-style flows that create a feature worktree and edit inside it no longer trip "Path is outside allowed working directories" on every write. Installers remain **unsigned**.
+
+### Fixed
+
+- **"Path is outside allowed working directories" fired for every cross-worktree write.** The Agent SDK enforces a working-directory sandbox that's independent of `permissions.allow` rules — a `Write(/.../worktrees/<repo>/**)` entry in `settings.local.json` does not open the sandbox for paths outside the session's CWD. So a session rooted at `~/Repos/personal/<repo>/` (main checkout) kept tripping the Permission Required dialog on writes into `~/Repos/personal/worktrees/<repo>/<feature>/`, no matter how many rules you added. At session start we now shell out to `git -C <cwd> worktree list --porcelain`, parse the output, filter out the cwd itself + any stale paths, and pass the remaining registered worktree paths as `options.additionalDirectories`. Discovery is fire-and-forget on failure (not a git repo, git missing, timeout) — returns `[]` and leaves the session unchanged.
+  - New service: `electron/services/git-worktrees.ts` with `discoverWorktrees(cwd)` + a pure `parseWorktreeListPorcelain(output)` parser. 11 unit tests covering canonical output, detached HEADs, bare + locked worktrees, dedup, stale-path filtering, and both git-errors (non-repo + ENOENT).
+  - Logged per session-start: `admitting N sibling worktree(s)` with the path list in metadata, so you can confirm which worktrees were admitted.
+
 ## [0.3.34] — 2026-04-22
 
 Skill invocations now render distinctly in the chat transcript, drag-dropped images actually land in the prompt, the Permission Required dialog both pre-fills a sensible rule and persists the save, and every message card carries a local-time timestamp. Installers remain **unsigned**.
