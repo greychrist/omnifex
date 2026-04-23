@@ -1,7 +1,7 @@
 {
   "name": "greychrist",
   "private": true,
-  "version": "0.3.35",
+  "version": "0.3.36",
   "license": "AGPL-3.0",
   "main": ".vite/build/main.js",
   "scripts": {

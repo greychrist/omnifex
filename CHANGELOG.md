@@ -5,6 +5,22 @@ All notable changes to GreyChrist are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.36] — 2026-04-22
+
+New **Appearance** settings tab lets you retint every message type in the session view and toggle compact-mode visibility, with live preview and a full-turn compact-vs-verbose preview. Typing-indicator bubble no longer sits ~280px to the right of the other cards. Installers remain **unsigned**.
+
+### Added
+
+- **Configurable message rendering — new Settings → Appearance tab** (`f6310e8`). All ~20 distinct message kinds in the session view (user prompts, assistant text, tool use, tool results, subagent prompts, system init, SDK notifications, Execution Complete/Failed, permission requests, compaction summaries) now pull their accent color from a user-editable config. Master-detail UI: kind tree on the left (grouped by origin: User / Assistant / Tool / System / Subagent), per-kind editor in the middle (icon picker from an allow-listed Lucide set, palette-name color selector, header-label override, hide-in-compact toggle — locked for boundary kinds), live sample card on the right. A separate "Turn preview" panel flips between compact and verbose on a canned fake turn so you can see the grouping behavior without leaving Settings.
+- **Expanded palette.** Added eight new color options on top of the existing set: purple, orange, teal, pink, indigo, cyan, yellow, lime. Each palette name is a single source of truth — edit the swatch once and every kind assigned to that name retints coherently.
+- **Live application without restart.** New `MessageRenderingProvider` context loads the config on app start and broadcasts edits to `StreamMessage` in real time, so changes in Settings apply to the running session on the next render. Config persists to `app_settings` under key `message_rendering_config` (JSON, schema-drift tolerant — unknown kinds and palette keys are silently dropped, missing fields fall back to defaults). Hard-filter toggles (drop meta / drop task-lifecycle / drop empty-user) and import/export/reset are exposed in the Global section.
+- **Design reference at `docs/message-rendering-config.yaml`.** Captures the full schema that informed the data model — one block per message kind listing match discriminators, classification (origin / isBoundary / isMeta), visual fields, compact behavior, and widget dispatch for per-tool cards. Useful when adding a new message kind.
+
+### Fixed
+
+- **Typing indicator aligned with message cards** (`6101eb3`). The "✶ Plotting…" bubble had its own `w-full max-w-6xl mx-auto px-4` wrapper on top of the parent content's `w-full px-4`. In wide viewports the `max-w-6xl mx-auto` centering pushed it ~280px right of every other card; on any viewport it picked up an extra 16px of left padding. Dropping the redundant wrapper puts the typing bubble flush with user/assistant cards on the same left edge.
+- **Card style merge.** `components/ui/card.tsx` was overwriting its own default `{ borderColor, backgroundColor, color }` style whenever a caller passed `style={...}`. Now it spreads caller-supplied style over the defaults, so callers can tint borders/backgrounds without losing the text color fallback. No behavior change for existing callers that didn't pass a style.
+
 ## [0.3.35] — 2026-04-22
 
 Sibling git worktrees are now auto-admitted to the SDK sandbox at session start, so `/work-on-ticket`-style flows that create a feature worktree and edit inside it no longer trip "Path is outside allowed working directories" on every write. Installers remain **unsigned**.
