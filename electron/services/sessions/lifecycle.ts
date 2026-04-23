@@ -25,6 +25,7 @@ import type {
   PersistPermissionRuleFn,
 } from './types';
 import { createSessionHooks } from './hooks';
+import { discoverWorktrees } from '../git-worktrees';
 import {
   createCanUseTool,
   respondPermission as respondPermissionImpl,
@@ -264,6 +265,29 @@ export function createSessionsService(
     }
     if (thinking) {
       options.thinking = thinking;
+    }
+
+    // Admit sibling git worktrees into the SDK sandbox so a session rooted
+    // at one checkout can touch files in related worktrees (e.g. Greg's
+    // feature-branch worktrees under ~/Repos/personal/worktrees/<project>/).
+    // Without this every cross-worktree write trips the "Path is outside
+    // allowed working directories" dialog regardless of permissions.allow
+    // rules. Discovery is fire-and-forget on failure (returns []).
+    const siblingWorktrees = discoverWorktrees(projectPath);
+    if (siblingWorktrees.length > 0) {
+      options.additionalDirectories = siblingWorktrees;
+      if (logging) {
+        logging.writeBatch([
+          {
+            timestamp: new Date().toISOString(),
+            level: 'info',
+            source: 'claude-sdk',
+            category: `session:${tabId}`,
+            message: `admitting ${siblingWorktrees.length} sibling worktree${siblingWorktrees.length === 1 ? '' : 's'}`,
+            metadata: JSON.stringify({ event: 'session.start.worktrees', paths: siblingWorktrees }),
+          },
+        ]);
+      }
     }
 
     // Route CLI subprocess stderr into the logging service. Note the CLI routes its
