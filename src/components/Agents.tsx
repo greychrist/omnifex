@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Bot, Play, Clock, CheckCircle, XCircle, Trash2, Import, ChevronDown, ChevronRight, FileJson, Globe, Download, Plus, History, Edit } from 'lucide-react';
 import { Spinner } from '@/components/ui/spinner';
+import { formatDurationMs } from '@/lib/duration';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -449,7 +450,7 @@ export const Agents: React.FC = () => {
                         </div>
                         <div>
                           <span className="text-muted-foreground">Duration:</span>
-                          <p className="font-medium">{run.metrics?.duration_ms ? `${(run.metrics.duration_ms / 1000).toFixed(1)}s` : run.duration_ms ? `${(run.duration_ms / 1000).toFixed(1)}s` : '—'}</p>
+                          <p className="font-medium">{run.metrics?.duration_ms ? formatDurationMs(run.metrics.duration_ms) : run.duration_ms ? formatDurationMs(run.duration_ms) : '—'}</p>
                         </div>
                         <div>
                           <span className="text-muted-foreground">Tokens:</span>

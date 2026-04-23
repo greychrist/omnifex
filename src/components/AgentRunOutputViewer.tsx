@@ -14,6 +14,7 @@ import {
   StopCircle
 } from 'lucide-react';
 import { Spinner } from '@/components/ui/spinner';
+import { formatDurationMs } from '@/lib/duration';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -329,7 +330,7 @@ export function AgentRunOutputViewer({
     markdown += `**Task:** ${run.task}\n`;
     markdown += `**Model:** ${run.model === 'opus' ? 'Claude 4 Opus' : 'Claude 4 Sonnet'}\n`;
     markdown += `**Date:** ${formatISOTimestamp(run.created_at)}\n`;
-    if (run.metrics?.duration_ms) markdown += `**Duration:** ${(run.metrics.duration_ms / 1000).toFixed(2)}s\n`;
+    if (run.metrics?.duration_ms) markdown += `**Duration:** ${formatDurationMs(run.metrics.duration_ms)}\n`;
     if (run.metrics?.total_tokens) markdown += `**Total Tokens:** ${run.metrics.total_tokens}\n`;
     if (run.metrics?.cost_usd) markdown += `**Cost:** $${run.metrics.cost_usd.toFixed(4)} USD\n`;
     markdown += `\n---\n\n`;

@@ -11,6 +11,7 @@ import {
   StopCircle
 } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
+import { formatDurationMs } from "@/lib/duration";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -341,7 +342,7 @@ export const AgentRunView: React.FC<AgentRunViewProps> = ({
                 {run.metrics?.duration_ms && (
                   <div className="flex items-center gap-1">
                     <Clock className="h-3 w-3" />
-                    <span>{(run.metrics.duration_ms / 1000).toFixed(2)}s</span>
+                    <span>{formatDurationMs(run.metrics.duration_ms)}</span>
                   </div>
                 )}
                 

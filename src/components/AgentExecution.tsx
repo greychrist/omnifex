@@ -13,6 +13,7 @@ import {
   Settings2
 } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
+import { formatDurationMs } from "@/lib/duration";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -73,6 +74,10 @@ export interface ClaudeStreamMessage {
     input_tokens: number;
     output_tokens: number;
   };
+  /** ISO timestamp stamped by the main process as the message was received
+   *  from the SDK stream. Absent on messages loaded from a session's JSONL
+   *  (the SDK's history has no per-message timestamp). */
+  receivedAt?: string;
   [key: string]: any;
 }
 
@@ -497,7 +502,7 @@ export const AgentExecution: React.FC<AgentExecutionProps> = ({
           markdown += `- **Cost:** $${msg.cost_usd.toFixed(4)} USD\n`;
         }
         if (msg.duration_ms !== undefined) {
-          markdown += `- **Duration:** ${(msg.duration_ms / 1000).toFixed(2)}s\n`;
+          markdown += `- **Duration:** ${formatDurationMs(msg.duration_ms)}\n`;
         }
         if (msg.num_turns !== undefined) {
           markdown += `- **Turns:** ${msg.num_turns}\n`;
