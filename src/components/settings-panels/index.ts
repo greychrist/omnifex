@@ -1,4 +1,5 @@
 export { GeneralSettings } from "./GeneralSettings";
+export { AppearanceSettings } from "./AppearanceSettings";
 export { PermissionsSettings } from "./PermissionsSettings";
 export { EnvironmentSettings } from "./EnvironmentSettings";
 export { AdvancedSettings } from "./AdvancedSettings";

@@ -18,6 +18,7 @@ import { StorageTab } from "./StorageTab";
 import { LogTab } from "./LogTab";
 import {
   GeneralSettings,
+  AppearanceSettings,
   PermissionsSettings,
   EnvironmentSettings,
   AdvancedSettings,
@@ -298,6 +299,7 @@ export const Settings: React.FC<SettingsProps> = ({
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full flex flex-col flex-1 overflow-hidden">
             <TabsList className="flex w-full mb-6 h-auto p-1 shrink-0">
               <TabsTrigger value="general" className="flex-1 py-2 text-xs">General</TabsTrigger>
+              <TabsTrigger value="appearance" className="flex-1 py-2 text-xs">Appearance</TabsTrigger>
               <TabsTrigger value="accounts" className="flex-1 py-2 text-xs">Accounts</TabsTrigger>
               <TabsTrigger value="permissions" className="flex-1 py-2 text-xs">Permissions</TabsTrigger>
               <TabsTrigger value="environment" className="flex-1 py-2 text-xs">Environment</TabsTrigger>
@@ -333,6 +335,11 @@ export const Settings: React.FC<SettingsProps> = ({
               <Card className="p-6">
                 <AccountSettings />
               </Card>
+            </TabsContent>
+
+            {/* Appearance Settings */}
+            <TabsContent value="appearance" className="space-y-6 mt-6">
+              <AppearanceSettings setToast={setToast} />
             </TabsContent>
 
             {/* General Settings */}

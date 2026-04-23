@@ -7,6 +7,7 @@ import { OutputCacheProvider } from "@/lib/outputCache";
 import { TabProvider, useTabContext } from "@/contexts/TabContext";
 import { AccountsProvider } from "@/contexts/AccountsContext";
 import { ThemeProvider } from "@/contexts/ThemeContext";
+import { MessageRenderingProvider } from "@/contexts/MessageRenderingContext";
 import { useNotifications } from "@/hooks/useNotifications";
 import { Card } from "@/components/ui/card";
 import { ProjectList } from "@/components/ProjectList";
@@ -509,14 +510,16 @@ function App() {
 
   return (
     <ThemeProvider>
-      <OutputCacheProvider>
-        <AccountsProvider>
-          <TabProvider>
-            <AppContent />
-            <StartupIntro visible={showIntro} />
-          </TabProvider>
-        </AccountsProvider>
-      </OutputCacheProvider>
+      <MessageRenderingProvider>
+        <OutputCacheProvider>
+          <AccountsProvider>
+            <TabProvider>
+              <AppContent />
+              <StartupIntro visible={showIntro} />
+            </TabProvider>
+          </AccountsProvider>
+        </OutputCacheProvider>
+      </MessageRenderingProvider>
     </ThemeProvider>
   );
 }
