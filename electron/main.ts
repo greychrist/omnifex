@@ -60,6 +60,7 @@ import { createSdkVersionService } from './services/sdk-version';
 import { createGitWatcherService } from './services/git-watcher';
 import { registerIpcHandlers } from './ipc/handlers';
 import { createWindowRouter } from './window-router';
+import { classifyNavigation } from './navigation-policy';
 
 declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string | undefined;
 declare const MAIN_WINDOW_VITE_NAME: string;
@@ -202,6 +203,23 @@ function createWindow(): BrowserWindow {
     clearUnread();
     // Dismiss any macOS notifications we've posted — user is looking at the app.
     _notificationsService?.dismissAll();
+  });
+
+  // Route link clicks: in-app navigation away from the renderer would turn the
+  // window into a browser and lose session state. Send external URLs to the OS
+  // browser instead; deny unknown protocols.
+  const devServerUrl = MAIN_WINDOW_VITE_DEV_SERVER_URL;
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (classifyNavigation(url, { devServerUrl }) === 'external') {
+      shell.openExternal(url);
+    }
+    return { action: 'deny' };
+  });
+  win.webContents.on('will-navigate', (event, url) => {
+    const decision = classifyNavigation(url, { devServerUrl });
+    if (decision === 'allow') return;
+    event.preventDefault();
+    if (decision === 'external') shell.openExternal(url);
   });
 
   win.webContents.on('context-menu', (_event, params) => {
