@@ -5,6 +5,15 @@ All notable changes to GreyChrist are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.37] — 2026-04-23
+
+Fixes a subtle rule-format bug that has made **every file-path-based "Always Allow" silently ineffective** since permission persistence shipped in 0.3.34. Installers remain **unsigned**.
+
+### Fixed
+
+- **`Edit(/Users/...)` rules never matched anything.** Claude Code permission rules use gitignore-style syntax with four path prefixes: `//abs`, `~/home`, `/project-rel`, and bare `rel`. A single leading `/` on an absolute-looking path is interpreted as **project-root-relative**, not absolute — so a rule like `Edit(/Users/alice/proj/src/foo.ts)` tells the matcher to look for `<project-root>/Users/alice/proj/src/foo.ts` (which doesn't exist) and never fires. GreyChrist's `createCanUseTool` fallback synthesized rules from the tool's raw `file_path` without the required `//` prefix, and `respondPermission` persisted them verbatim. Every "Always Allow" click since 0.3.34 saved a rule that looked correct but was silently ineffective — each session start re-asked for the same permission. New util `electron/services/sessions/rule-paths.ts#formatFilePathForRule(fp, projectPath)` now prefers project-anchored relative paths (`/src/foo.ts`) when the file is inside the session root, and falls back to the mandatory double-slash absolute form (`//Users/alice/elsewhere.ts`) when it isn't. 9 unit tests cover: inside/outside project, exact-root, trailing slash, prefix-collision (`/proj-other` is NOT inside `/proj`), sibling-worktree paths, home-relative, already-relative.
+  - **Existing broken rules are not rewritten.** If your `settings.local.json` or `settings.json` files already contain rules like `Edit(/Users/...)` (single slash + absolute-looking), they'll stay broken. Manual fix: prepend another `/` to each one (`"Edit(/Users/...` → `"Edit(//Users/...`), **or** rewrite to project-relative form once your session is rooted at the containing project. Going forward, GreyChrist will suggest the correct form automatically.
+
 ## [0.3.36] — 2026-04-22
 
 New **Appearance** settings tab lets you retint every message type in the session view and toggle compact-mode visibility, with live preview and a full-turn compact-vs-verbose preview. Typing-indicator bubble no longer sits ~280px to the right of the other cards. Installers remain **unsigned**.
