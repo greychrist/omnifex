@@ -33,7 +33,7 @@ import { CheckpointSettings } from "./CheckpointSettings";
 import { SlashCommandsManager } from "./SlashCommandsManager";
 import { SessionMCPStatus } from "./SessionMCPStatus";
 import { SessionPluginStatus } from "./SessionPluginStatus";
-import { PermissionDialog } from "./PermissionDialog";
+import { PermissionCard } from "./PermissionCard";
 import { ElicitationDialog } from "./ElicitationDialog";
 import { SessionPermissionsEditor } from "./SessionPermissionsEditor";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -1517,23 +1517,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
 
         {/* Floating Prompt Input - Only after session started */}
         {sessionStarted && <ErrorBoundary>
-          <PermissionDialog
-            open={waitingForPermission && !!pendingToolUse && !!pendingRequestId}
-            toolName={pendingToolUse?.name ?? ''}
-            toolInput={pendingToolUse?.input ?? {}}
-            title={pendingToolUse?.title}
-            displayName={pendingToolUse?.displayName}
-            description={pendingToolUse?.description}
-            decisionReason={pendingToolUse?.decisionReason}
-            suggestions={pendingToolUse?.suggestions ?? []}
-            onAllow={(selectedSuggestions) => {
-              handlePermissionAllow(tabIdRef.current, selectedSuggestions);
-            }}
-            onDeny={() => {
-              handlePermissionDeny(tabIdRef.current);
-            }}
-          />
-
           <ElicitationDialog
             open={!!elicitationRequest}
             serverName={elicitationRequest?.serverName ?? ''}
@@ -1554,6 +1537,23 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             "shrink-0 transition-all duration-300 z-50",
             (showTimeline || showMCPPanel || showPluginsPanel || showPermissionsPanel) && "sm:mr-96"
           )}>
+            {waitingForPermission && pendingToolUse && pendingRequestId && (
+              <PermissionCard
+                toolName={pendingToolUse.name}
+                toolInput={pendingToolUse.input}
+                title={pendingToolUse.title}
+                displayName={pendingToolUse.displayName}
+                description={pendingToolUse.description}
+                decisionReason={pendingToolUse.decisionReason}
+                suggestions={pendingToolUse.suggestions}
+                onAllow={(selectedSuggestions) => {
+                  handlePermissionAllow(tabIdRef.current, selectedSuggestions);
+                }}
+                onDeny={() => {
+                  handlePermissionDeny(tabIdRef.current);
+                }}
+              />
+            )}
             <SubagentBar
               subagents={subagents}
               onDismiss={dismissSubagent}

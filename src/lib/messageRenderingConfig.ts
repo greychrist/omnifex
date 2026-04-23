@@ -349,7 +349,7 @@ export const DEFAULT_KINDS: MessageKindConfig[] = [
     alignment: "full",
     hiddenInCompact: false,
     compactBoundaryLocked: true,
-    widget: "PermissionDialog",
+    widget: "PermissionCard",
   },
   {
     id: "summary.compaction",
