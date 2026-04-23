@@ -11,6 +11,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { detectSkillInjection } from "@/lib/skillDetection";
+import { formatDurationMs } from "@/lib/duration";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import ReactMarkdown from "react-markdown";
@@ -131,6 +132,37 @@ const CopyCardButton: React.FC<{ message?: any; text?: string }> = ({ message, t
         </div>
       )}
     </>
+  );
+};
+
+/** MM/DD/YYYY H:MM:SS AM/PM in the user's local timezone. */
+function formatLocalTimestamp(iso: string): string | null {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  const yyyy = d.getFullYear();
+  let h = d.getHours();
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  h = h % 12 || 12;
+  const mins = String(d.getMinutes()).padStart(2, '0');
+  const secs = String(d.getSeconds()).padStart(2, '0');
+  return `${mm}/${dd}/${yyyy} ${h}:${mins}:${secs} ${ampm}`;
+}
+
+/** Small bottom-right timestamp badge for a message card. Absent when the
+ *  message has no receivedAt (e.g. reloaded from JSONL history). */
+const CardTimestamp: React.FC<{ receivedAt?: string }> = ({ receivedAt }) => {
+  if (!receivedAt) return null;
+  const formatted = formatLocalTimestamp(receivedAt);
+  if (!formatted) return null;
+  return (
+    <div
+      className="absolute bottom-1 right-2 text-[10px] text-muted-foreground/70 font-mono pointer-events-none select-none"
+      title={receivedAt}
+    >
+      {formatted}
+    </div>
   );
 };
 
@@ -275,7 +307,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
 
       const renderedCard = (
         <div className="flex justify-start">
-        <Card className={cn("border-primary/20 bg-primary/5 w-[95%]", className)}>
+        <Card className={cn("border-primary/20 bg-primary/5 w-[95%] relative", className)}>
           <CardContent className="p-4">
             <div className="flex items-start gap-3">
               <Bot className="h-5 w-5 text-primary mt-0.5" />
@@ -484,6 +516,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
               </div>
             </div>
           </CardContent>
+          <CardTimestamp receivedAt={message.receivedAt} />
         </Card>
         </div>
       );
@@ -957,6 +990,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
               </div>
             </div>
           </CardContent>
+          <CardTimestamp receivedAt={message.receivedAt} />
         </Card>
         </div>
       );
@@ -971,6 +1005,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
       return (
         <Card className={cn(
           isError ? "border-destructive/20 bg-destructive/5" : "border-green-500/20 bg-green-500/5",
+          "relative",
           className
         )}>
           <CardContent className="p-4">
@@ -1024,7 +1059,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                     <div>Cost: ${((message.cost_usd || message.total_cost_usd)!).toFixed(4)} USD</div>
                   )}
                   {message.duration_ms !== undefined && (
-                    <div>Duration: {(message.duration_ms / 1000).toFixed(2)}s</div>
+                    <div>Duration: {formatDurationMs(message.duration_ms)}</div>
                   )}
                   {message.num_turns !== undefined && (
                     <div>Turns: {message.num_turns}</div>
@@ -1039,6 +1074,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
               </div>
             </div>
           </CardContent>
+          <CardTimestamp receivedAt={message.receivedAt} />
         </Card>
       );
     }
@@ -1049,7 +1085,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
     // If any error occurs during rendering, show a safe error message
     console.error("Error rendering stream message:", error, message);
     return (
-      <Card className={cn("border-destructive/20 bg-destructive/5", className)}>
+      <Card className={cn("border-destructive/20 bg-destructive/5 relative", className)}>
         <CardContent className="p-4">
           <div className="flex items-start gap-3">
             <AlertCircle className="h-5 w-5 text-destructive mt-0.5" />
@@ -1061,6 +1097,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
             </div>
           </div>
         </CardContent>
+        <CardTimestamp receivedAt={message.receivedAt} />
       </Card>
     );
   }

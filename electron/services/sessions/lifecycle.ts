@@ -87,6 +87,12 @@ export function createSessionsService(
 
         handle.status = 'running';
 
+        // Stamp each live message with the wall-clock time we received it,
+        // so the renderer can show a per-card timestamp. Reloaded-from-JSONL
+        // messages won't have this field (the SDK's JSONL has no timestamp),
+        // and the renderer treats that case as "no timestamp".
+        (message as any).receivedAt = new Date().toISOString();
+
         // Forward every message to the renderer
         sendToRenderer(`claude-output:${tabId}`, message);
 

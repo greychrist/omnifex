@@ -1153,6 +1153,36 @@ describe('sessions service — full lifecycle', () => {
     svc.stopAll();
   });
 
+  it('stamps each forwarded message with a receivedAt ISO timestamp', async () => {
+    const svc = createSessionsService(
+      sendToRenderer as any,
+      { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
+    );
+    const fake = installFakeQuery();
+
+    svc.start({ tabId: 'tab-ts', projectPath: '/p', configDir: '/c', model: 'sonnet', permissionMode: 'default' });
+
+    const before = Date.now();
+    fake.pushMessage({ type: 'system', subtype: 'init', session_id: 'sid-ts' });
+    fake.pushMessage({ type: 'assistant', message: { content: [{ type: 'text', text: 'hello' }] } });
+    await new Promise((r) => setImmediate(r));
+    const after = Date.now();
+
+    const forwarded = sendToRenderer.mock.calls
+      .filter((c) => c[0] === 'claude-output:tab-ts')
+      .map((c) => c[1] as any);
+    expect(forwarded.length).toBeGreaterThanOrEqual(2);
+    for (const msg of forwarded) {
+      expect(typeof msg.receivedAt).toBe('string');
+      const t = Date.parse(msg.receivedAt);
+      expect(Number.isFinite(t)).toBe(true);
+      expect(t).toBeGreaterThanOrEqual(before);
+      expect(t).toBeLessThanOrEqual(after + 5);
+    }
+
+    svc.stopAll();
+  });
+
   it('respondPermission writes persistent rules to disk via persistRule callback', async () => {
     const persistRule = vi.fn();
     const svc = createSessionsService(
