@@ -5,6 +5,22 @@ All notable changes to GreyChrist are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.38] — 2026-04-23
+
+Two UX fixes that stop the app from hijacking your session. Clicking a link in the app no longer turns the window into a browser, and the permission prompt is no longer a modal that blocks every tab and window while one session waits for approval. Installers remain **unsigned**.
+
+### Changed
+
+- **Permission prompt is now an inline card, not a modal** (`e296726`). The old `PermissionDialog` was a `Dialog` component — blocking every tab in every window for a request belonging to a single session. Replaced with an inline `PermissionCard` docked above the composer in the waiting session only; other sessions and windows stay fully interactive. Layout: editable rule field (monospace, black background so its editability is visually obvious), a scope combobox with label + one-line description per option (**Me, Here** → `.claude/settings.local.json`, default; **Me, Everywhere** → `~/.claude/settings.json`; **Team** → `.claude/settings.json`), and a three-button row — **Deny** (red), **Save for Session** (outline; allow once, persist nothing), **Save Permission** (green; persist the edited rule at the selected scope). Card border and fill come from the palette-driven accent of the `permission.request` message kind, so Appearance settings retint it along with the stream-log entry. Pure logic (rule parse/format, suggestion builder, scope options) lives in `src/lib/permissionCardLogic.ts` with 19 unit tests.
+
+### Fixed
+
+- **External links no longer hijack the app window** (`c948f36`). Clicking an `http:` / `https:` link inside the renderer used to navigate the window away — effectively turning GreyChrist into a browser and losing all session state. Added `setWindowOpenHandler` (catches `target="_blank"` / `window.open`) and `will-navigate` guards on every `BrowserWindow`; decision logic lives in a pure `classifyNavigation()` helper covered by 10 unit tests. External URLs open in the OS default browser via `shell.openExternal`; internal URLs (dev-server same-origin, `file://` for packaged load, `greychrist-file://` for local assets, `about:blank`) pass through; unknown protocols (`javascript:`, `data:`) are denied.
+
+### Added
+
+- **`docs/permission-syntax.md`** — reference doc for Claude Code's permission-rule syntax (gitignore-style paths, `/` vs `//`, `Bash(cmd:*)` shorthand, shell-operator boundaries, MCP `mcp__server__tool` form, settings precedence, silent-filter gotchas). Links back to the upstream source at `https://code.claude.com/docs/en/permissions`. Exists to stop permissions regressions from recurring — every permission bug in 0.3.34–0.3.37 traced back to a misunderstanding of this syntax.
+
 ## [0.3.37] — 2026-04-23
 
 Fixes a subtle rule-format bug that has made **every file-path-based "Always Allow" silently ineffective** since permission persistence shipped in 0.3.34. Installers remain **unsigned**.
