@@ -1,5 +1,7 @@
 import type { ClaudeStreamMessage } from '@/components/AgentExecution';
 import { detectSkillInjection } from './skillDetection';
+import type { MessageRenderingConfig } from './messageRenderingConfig';
+import { classifyStandaloneKind } from './messageKind';
 
 /**
  * True when the message should render fully on every view — it's either
@@ -73,14 +75,30 @@ export type CompactItem =
  * consecutive non-boundary messages collapse into groups. The most recent
  * TodoWrite tool_use is additionally promoted to a top-level single so the
  * live todo list stays visible instead of hiding behind a group summary.
+ *
+ * When a `config` is passed, standalone-classifiable messages (system init,
+ * notifications, summaries, etc.) whose kind has `hiddenInCompact: false`
+ * are also promoted to singles — otherwise unhiding them in Appearance has
+ * no visible effect because they'd just sit collapsed inside a group.
  */
-export function buildCompactItems(messages: ClaudeStreamMessage[]): CompactItem[] {
+export function buildCompactItems(
+  messages: ClaudeStreamMessage[],
+  config?: MessageRenderingConfig,
+): CompactItem[] {
   const latestTodoIdx = findLastTodoWriteIndex(messages);
   const items: CompactItem[] = [];
 
   messages.forEach((message, idx) => {
     const isPromoted = idx === latestTodoIdx;
-    if (isBoundaryMessage(message, messages) || isPromoted) {
+    let isUnhiddenStandalone = false;
+    if (config) {
+      const kindId = classifyStandaloneKind(message, messages);
+      if (kindId) {
+        const kind = config.kinds[kindId];
+        if (kind && !kind.hiddenInCompact) isUnhiddenStandalone = true;
+      }
+    }
+    if (isBoundaryMessage(message, messages) || isPromoted || isUnhiddenStandalone) {
       items.push({ kind: 'single', message, key: `m-${idx}` });
       return;
     }

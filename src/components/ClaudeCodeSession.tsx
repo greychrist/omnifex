@@ -1181,7 +1181,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                 </div>
               ))
             : (() => {
-                const items = buildCompactItems(compactVisibleMessages);
+                const items = buildCompactItems(compactVisibleMessages, renderConfig);
                 return items.map((item) =>
                   item.kind === 'single' ? (
                     <div key={item.key}>

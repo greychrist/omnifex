@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { ClaudeStreamMessage } from '@/components/AgentExecution';
 import { buildCompactItems, isBoundaryMessage, type CompactItem } from '../compactGrouping';
+import { createDefaultConfig } from '../messageRenderingConfig';
 
 function userText(text: string): ClaudeStreamMessage {
   return { type: 'user', message: { content: [{ type: 'text', text }] } } as ClaudeStreamMessage;
@@ -139,6 +140,55 @@ describe('buildCompactItems', () => {
       assistantEndTurn('done'),
     ];
     const items = buildCompactItems(msgs);
+    expect(items.map((i: CompactItem) => i.kind)).toEqual(['single', 'group', 'single']);
+  });
+
+  it('promotes standalone kinds to singles when hiddenInCompact=false in config', () => {
+    const sysInit = {
+      type: 'system',
+      subtype: 'init',
+      session_id: 'abc',
+      model: 'claude',
+      cwd: '/x',
+      tools: [],
+    } as unknown as ClaudeStreamMessage;
+    const cfg = createDefaultConfig();
+    cfg.kinds['system.init'] = { ...cfg.kinds['system.init'], hiddenInCompact: false };
+    const msgs = [
+      userText('hi'),
+      sysInit,
+      toolUseMsg('Read', { file_path: '/a' }),
+      toolResultMsg(),
+      assistantEndTurn('done'),
+    ];
+    const items = buildCompactItems(msgs, cfg);
+    // user(single) + sysInit(single, promoted) + group(Read+result) + assistant(single)
+    expect(items.map((i: CompactItem) => i.kind)).toEqual(['single', 'single', 'group', 'single']);
+    const promoted = items[1];
+    expect(promoted.kind).toBe('single');
+    if (promoted.kind === 'single') {
+      expect(promoted.message).toBe(sysInit);
+    }
+  });
+
+  it('keeps standalone kinds inside groups when no config is passed (back-compat)', () => {
+    const sysInit = {
+      type: 'system',
+      subtype: 'init',
+      session_id: 'abc',
+      model: 'claude',
+      cwd: '/x',
+      tools: [],
+    } as unknown as ClaudeStreamMessage;
+    const msgs = [
+      userText('hi'),
+      sysInit,
+      toolUseMsg('Read', { file_path: '/a' }),
+      toolResultMsg(),
+      assistantEndTurn('done'),
+    ];
+    const items = buildCompactItems(msgs);
+    // Without config: sysInit stays in the group with the tool_use/result.
     expect(items.map((i: CompactItem) => i.kind)).toEqual(['single', 'group', 'single']);
   });
 
