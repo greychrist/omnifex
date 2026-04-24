@@ -5,6 +5,15 @@ All notable changes to GreyChrist are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.40] — 2026-04-24
+
+Fixes two bugs in the Appearance settings: the "Hidden in compact" toggle now actually affects the transcript, and the System Initialized / System Context / System Reminder widgets now follow the palette you pick instead of their old hardcoded blue/gray/yellow. Installers remain **unsigned**.
+
+### Fixed
+
+- **`hiddenInCompact` toggle is now wired into the compact renderer** (`ad01b27`). The setting was only read by the Appearance settings UI itself; `ClaudeCodeSession` ignored it when building the compact message list, so toggling `system.init` (or any other standalone kind) had zero visible effect. New `src/lib/messageKind.ts` introduces `classifyStandaloneKind(msg, all)` — returns a kind ID for messages whose rendering is a single unit (system init, SDK notifications, execution result, permission request, compaction summary) and `null` for mixed-content assistant/user messages (which need per-content-block rendering). `filterCompactHidden(messages, config)` drops any message whose classified kind is marked `hiddenInCompact` and isn't boundary-locked. `ClaudeCodeSession` now runs this filter before `buildCompactItems`, so compact view respects the toggle; verbose view is unchanged. 9 unit tests cover the classifier + filter, including boundary-lock defense and notification-subtype mapping.
+- **System widgets follow the Appearance palette** (`ad01b27`). `SystemInitializedWidget`, `SystemContextWidget`, and `SystemReminderWidget` were hardcoded to `blue-500`, `gray-500`, and a content-keyword-driven blue/yellow/destructive scheme respectively. All three now read the palette via `useMessageRenderingConfig()` and style themselves with `accentStyleFor`/`swatchFor`, keyed to their owning kind (`system.init`, `user.systemContext`, `tool.result.systemReminder`). Severity variants in `SystemReminderWidget` additionally borrow `system.notification.warn` / `system.notification.error` palette entries when the reminder text contains "warning" or "error", so the warn/error signal stays visible under any palette.
+
 ## [0.3.39] — 2026-04-23
 
 Bundles the 0.3.38 UX fixes with a patch bump of the Claude Agent SDK. The v0.3.38 draft was discarded in favor of this rolled-up release. Installers remain **unsigned**.
