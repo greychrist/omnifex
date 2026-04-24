@@ -5,6 +5,14 @@ All notable changes to GreyChrist are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.41] — 2026-04-24
+
+Follow-up to the 0.3.40 Appearance fix: turning off "Hide in compact" for a standalone kind (System Initialized, notifications, results, summaries, permission requests) now actually shows that message inline in compact mode instead of leaving it buried inside a collapsed group marker. Installers remain **unsigned**.
+
+### Fixed
+
+- **Unhidden standalone kinds are now promoted to singles in compact mode** (`33c94b1`). In 0.3.40, `filterCompactHidden` correctly dropped kinds with `hiddenInCompact: true`, but when the toggle was off, `buildCompactItems` still treated the message as non-boundary and collapsed it into a `CollapsibleGroup` (collapsed by default), so from the user's POV the toggle did nothing. `buildCompactItems` now accepts the rendering config and — for any message whose `classifyStandaloneKind` returns a kind with `hiddenInCompact: false` — emits a top-level `single` item instead of folding it into the surrounding group. Back-compat preserved: callers that pass no config keep the old grouping. Two new unit tests in `compactGrouping.test.ts` cover both the promote-when-unhidden case and the no-config baseline.
+
 ## [0.3.40] — 2026-04-24
 
 Fixes two bugs in the Appearance settings: the "Hidden in compact" toggle now actually affects the transcript, and the System Initialized / System Context / System Reminder widgets now follow the palette you pick instead of their old hardcoded blue/gray/yellow. Installers remain **unsigned**.
