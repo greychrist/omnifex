@@ -5,6 +5,8 @@ import {
   parseConfig,
   serializeConfig,
   DEFAULT_KINDS,
+  DEFAULT_PALETTE,
+  DEFAULT_TYPOGRAPHY,
 } from "../messageRenderingConfig";
 
 describe("messageRenderingConfig", () => {
@@ -106,6 +108,48 @@ describe("messageRenderingConfig", () => {
       const cfg = mergeConfig({ hardFilters: { dropMeta: false } });
       expect(cfg.hardFilters.dropMeta).toBe(false);
       expect(cfg.hardFilters.dropTaskLifecycle).toBe(true);
+    });
+
+    it("exposes the new palette entries (brown/chocolate/tan/black)", () => {
+      expect(DEFAULT_PALETTE.brown).toBeDefined();
+      expect(DEFAULT_PALETTE.chocolate).toBeDefined();
+      expect(DEFAULT_PALETTE.tan).toBeDefined();
+      expect(DEFAULT_PALETTE.black).toBeDefined();
+      const cfg = createDefaultConfig();
+      expect(cfg.palette.brown.swatch).toBe("#92400e");
+      expect(cfg.palette.black.swatch).toBe("#171717");
+    });
+
+    it("merges typography overrides safely", () => {
+      const cfg = mergeConfig({
+        typography: {
+          header: { family: "serif", size: "lg", weight: "bold", italic: true },
+          content: { family: "mono" },
+        },
+      });
+      expect(cfg.typography.header).toEqual({
+        family: "serif",
+        size: "lg",
+        weight: "bold",
+        italic: true,
+      });
+      // partial override preserves defaults for other fields
+      expect(cfg.typography.content.family).toBe("mono");
+      expect(cfg.typography.content.size).toBe(DEFAULT_TYPOGRAPHY.content.size);
+    });
+
+    it("rejects invalid typography values", () => {
+      const cfg = mergeConfig({
+        typography: {
+          header: { family: "comic-sans", size: "huge", weight: "ultra", italic: "sometimes" },
+        },
+      });
+      expect(cfg.typography.header).toEqual(DEFAULT_TYPOGRAPHY.header);
+    });
+
+    it("returns defaults when typography is entirely absent", () => {
+      const cfg = mergeConfig({});
+      expect(cfg.typography).toEqual(DEFAULT_TYPOGRAPHY);
     });
   });
 

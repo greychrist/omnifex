@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Download, RotateCcw, Upload } from "lucide-react";
+import { Download, RotateCcw, Upload, Save, RefreshCw } from "lucide-react";
+import { api } from "@/lib/api";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -7,12 +8,14 @@ import { Switch } from "@/components/ui/switch";
 import {
   createDefaultConfig,
   parseConfig,
+  serializeConfig,
   DEFAULT_KINDS,
   type MessageRenderingConfig,
   type MessageKindConfig,
   type Palette,
   type PaletteEntry,
   type PaletteName,
+  type Typography,
 } from "@/lib/messageRenderingConfig";
 import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
 import { MessageKindTree } from "./appearance/MessageKindTree";
@@ -20,8 +23,11 @@ import { KindEditor } from "./appearance/KindEditor";
 import { SamplePreview } from "./appearance/SamplePreview";
 import { TurnPreview } from "./appearance/TurnPreview";
 import { PaletteEditor } from "./appearance/PaletteEditor";
+import { TypographyEditor } from "./appearance/TypographyEditor";
 import type { SettingsPanelProps } from "./types";
 import { cn } from "@/lib/utils";
+
+const USER_DEFAULT_KEY = "message_rendering_config_user_default";
 
 type AppearanceSettingsProps = Pick<SettingsPanelProps, "setToast">;
 
@@ -48,7 +54,35 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
   const { config, setConfig: commitConfig } = useMessageRenderingConfig();
   const [selectedId, setSelectedId] = useState<string>(FIRST_KIND_ID);
   const [previewMode, setPreviewMode] = useState<"compact" | "verbose">(config.defaultViewMode);
+  const [hasUserDefault, setHasUserDefault] = useState(false);
   const importInputRef = useRef<HTMLInputElement>(null);
+  const saveToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Load user-default presence on mount so the "Reset to my default" button
+  // only enables once the user has actually saved a personal default.
+  useEffect(() => {
+    api
+      .getSetting(USER_DEFAULT_KEY)
+      .then((raw) => setHasUserDefault(!!raw))
+      .catch(() => setHasUserDefault(false));
+  }, []);
+
+  // Debounced "Saved" toast: every mutate resets the timer; 800ms of quiet
+  // flushes one toast. Prevents a flood during rapid color-picker or slider
+  // edits while still surfacing that autosave happened.
+  const scheduleSavedToast = useCallback(() => {
+    if (saveToastTimerRef.current) clearTimeout(saveToastTimerRef.current);
+    saveToastTimerRef.current = setTimeout(() => {
+      setToast({ message: "Appearance saved", type: "success" });
+      saveToastTimerRef.current = null;
+    }, 800);
+  }, [setToast]);
+
+  useEffect(() => {
+    return () => {
+      if (saveToastTimerRef.current) clearTimeout(saveToastTimerRef.current);
+    };
+  }, []);
 
   // Keep the local preview toggle in sync when the persisted default mode changes.
   useEffect(() => {
@@ -58,9 +92,41 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
   const mutate = useCallback(
     (producer: (prev: MessageRenderingConfig) => MessageRenderingConfig) => {
       commitConfig(producer(config));
+      scheduleSavedToast();
     },
-    [config, commitConfig],
+    [config, commitConfig, scheduleSavedToast],
   );
+
+  const setTypography = useCallback(
+    (next: Typography) => {
+      mutate((prev) => ({ ...prev, typography: next }));
+    },
+    [mutate],
+  );
+
+  const saveAsUserDefault = useCallback(async () => {
+    try {
+      await api.saveSetting(USER_DEFAULT_KEY, serializeConfig(config));
+      setHasUserDefault(true);
+      setToast({ message: "Saved current appearance as your default", type: "success" });
+    } catch {
+      setToast({ message: "Failed to save default", type: "error" });
+    }
+  }, [config, setToast]);
+
+  const resetToUserDefault = useCallback(async () => {
+    try {
+      const raw = await api.getSetting(USER_DEFAULT_KEY);
+      if (!raw) {
+        setToast({ message: "No personal default saved yet", type: "error" });
+        return;
+      }
+      commitConfig(parseConfig(raw));
+      setToast({ message: "Restored your saved default", type: "success" });
+    } catch {
+      setToast({ message: "Failed to restore default", type: "error" });
+    }
+  }, [commitConfig, setToast]);
 
   const selectedKind = config.kinds[selectedId] ?? config.kinds[FIRST_KIND_ID];
 
@@ -170,7 +236,7 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-[220px_minmax(0,1fr)_minmax(280px,1fr)] gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-[220px_minmax(0,1fr)] gap-6">
           <div className="lg:border-r lg:pr-4 lg:border-border">
             <MessageKindTree
               config={config}
@@ -179,23 +245,25 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
             />
           </div>
 
-          <div className="min-w-0">
+          <div className="min-w-0 space-y-4">
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <Label>Sample</Label>
+                <span className="text-caption text-muted-foreground">
+                  Live preview — reflects your edits immediately.
+                </span>
+              </div>
+              <div className="rounded-md border border-border bg-background p-4">
+                <SamplePreview kind={selectedKind} palette={config.palette} />
+              </div>
+            </div>
+
             <KindEditor
               kind={selectedKind}
               palette={config.palette}
               onChange={(patch) => updateKind(selectedKind.id, patch)}
               onResetKind={() => resetKind(selectedKind.id)}
             />
-          </div>
-
-          <div className="min-w-0">
-            <Label className="mb-2 block">Sample</Label>
-            <div className="rounded-md border border-border bg-background p-4">
-              <SamplePreview kind={selectedKind} palette={config.palette} />
-            </div>
-            <p className="text-caption text-muted-foreground mt-2">
-              Live preview. Reflects your current edits immediately.
-            </p>
           </div>
         </div>
       </Card>
@@ -233,6 +301,11 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
       {/* Palette */}
       <Card className="p-6">
         <PaletteEditor palette={config.palette} onChange={updatePalette} />
+      </Card>
+
+      {/* Typography */}
+      <Card className="p-6">
+        <TypographyEditor typography={config.typography} onChange={setTypography} />
       </Card>
 
       {/* Global */}
@@ -300,7 +373,7 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
         </div>
 
         {/* Actions */}
-        <div className="flex items-center gap-2 pt-4 border-t border-border">
+        <div className="flex flex-wrap items-center gap-2 pt-4 border-t border-border">
           <Button type="button" variant="outline" size="sm" onClick={exportConfig}>
             <Download className="h-3.5 w-3.5 mr-1.5" />
             Export JSON
@@ -322,6 +395,21 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
             Import JSON
           </Button>
           <div className="ml-auto" />
+          <Button type="button" variant="outline" size="sm" onClick={saveAsUserDefault}>
+            <Save className="h-3.5 w-3.5 mr-1.5" />
+            Save as my default
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={resetToUserDefault}
+            disabled={!hasUserDefault}
+            title={hasUserDefault ? "Reset to your saved default" : "No personal default saved yet"}
+          >
+            <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+            Reset to my default
+          </Button>
           <Button
             type="button"
             variant="ghost"
@@ -330,14 +418,13 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
             className="text-muted-foreground hover:text-destructive"
           >
             <RotateCcw className="h-3.5 w-3.5 mr-1.5" />
-            Reset all
+            Reset to factory
           </Button>
         </div>
       </Card>
 
       <p className="text-caption text-muted-foreground text-center">
-        Changes save automatically. This UI will drive the message renderer once
-        the config-driven render path lands.
+        Changes save automatically.
       </p>
     </div>
   );

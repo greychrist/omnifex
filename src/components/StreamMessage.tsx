@@ -1,10 +1,7 @@
 import React, { useState, useEffect } from "react";
 import {
   Terminal,
-  User,
-  Bot,
   AlertCircle,
-  CheckCircle2,
   CircleStop,
   Copy,
   Check,
@@ -16,6 +13,10 @@ import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
 import { accentStyleFor, swatchFor } from "@/lib/accentStyle";
+import { headerLabelFor, iconNameFor } from "@/lib/kindPresentation";
+import { contentClassNames } from "@/lib/typographyClasses";
+import { IconRenderer } from "@/components/settings-panels/appearance/iconMap";
+import { KindHeader } from "@/components/KindHeader";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
@@ -175,12 +176,16 @@ interface StreamMessageProps {
   onLinkDetected?: (url: string) => void;
   /** When set, cost is hidden for subscription account types (e.g. "max"). */
   accountType?: string;
+  /** Rendered inside an expanded compact group. Nested collapsibles
+   *  (ThinkingWidget, etc.) default-expand so the content is visible
+   *  without a second click. */
+  inExpandedGroup?: boolean;
 }
 
 /**
  * Component to render a single Claude Code stream message
  */
-const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, className, streamMessages, onLinkDetected, accountType }) => {
+const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, className, streamMessages, onLinkDetected, accountType, inExpandedGroup }) => {
   // State to track tool results mapped by tool call ID
   const [toolResults, setToolResults] = useState<Map<string, any>>(new Map());
   
@@ -285,15 +290,17 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
     if (message.type === "assistant" && message.message) {
       const msg = message.message;
 
-      // Check if a following result message duplicates this assistant's text content
-      // If so, hide this assistant message — the Execution Complete card will show it instead
+      // If a following result message duplicates this assistant's text content,
+      // suppress the duplicated text so only the Execution Complete card shows
+      // it. Keep thinking/tool_use blocks visible — otherwise collapsing the
+      // whole message hides the reasoning the user explicitly asked to see.
+      let suppressTextBlocks = false;
       if (msg.content && Array.isArray(msg.content)) {
         const assistantText = msg.content
           .filter((c: any) => c.type === 'text')
           .map((c: any) => typeof c.text === 'string' ? c.text : '')
           .join('');
         if (assistantText) {
-          // Use indexOf first, fall back to findIndex for reference mismatches
           let msgIndex = streamMessages.indexOf(message);
           if (msgIndex === -1) {
             msgIndex = streamMessages.findIndex(
@@ -304,9 +311,16 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
             for (let i = msgIndex + 1; i < Math.min(streamMessages.length, msgIndex + 5); i++) {
               const next = streamMessages[i];
               if (next.type === 'result' && next.result && next.result.trim() === assistantText.trim()) {
-                return null; // Suppress — Execution Complete card shows this text
+                suppressTextBlocks = true;
+                break;
               }
             }
+          }
+          if (suppressTextBlocks) {
+            const hasOtherContent = msg.content.some(
+              (c: any) => c?.type && c.type !== 'text',
+            );
+            if (!hasOtherContent) return null;
           }
         }
       }
@@ -315,6 +329,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
 
       const assistantStyle = accentStyleFor(renderConfig, "assistant.text");
       const assistantSwatch = swatchFor(renderConfig, "assistant.text");
+      const assistantIconName = iconNameFor(renderConfig, "assistant.text");
       const renderedCard = (
         <div className="flex justify-start">
         <Card
@@ -323,19 +338,23 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
         >
           <CardContent className="p-4">
             <div className="flex items-start gap-3">
-              <Bot
-                className="h-5 w-5 mt-0.5"
-                style={assistantSwatch ? { color: assistantSwatch } : undefined}
-              />
+              <div style={assistantSwatch ? { color: assistantSwatch } : undefined}>
+                <IconRenderer
+                  name={assistantIconName ?? "Bot"}
+                  className="h-5 w-5 mt-0.5"
+                />
+              </div>
               <div className="flex-1 space-y-2 min-w-0">
+                <KindHeader kindId="assistant.text" />
                 {msg.content && Array.isArray(msg.content) && msg.content.map((content: any, idx: number) => {
                   // Text content - render as markdown
                   if (content.type === "text") {
+                    if (suppressTextBlocks) return null;
                     // Ensure we have a string to render
-                    const textContent = typeof content.text === 'string' 
-                      ? content.text 
+                    const textContent = typeof content.text === 'string'
+                      ? content.text
                       : (content.text?.text || JSON.stringify(content.text || content));
-                    
+
                     renderedSomething = true;
                     return (
                       <div key={idx} className="relative group/card">
@@ -383,6 +402,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                         <ThinkingWidget
                           thinking={content.thinking}
                           signature={content.signature}
+                          defaultExpanded={inExpandedGroup}
                         />
                       </div>
                     );
@@ -593,13 +613,35 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
         if (isSdkSystemMessage) {
           // Strip the brackets and render as an info-level notification
           const inner = trimmed.slice(1, -1);
+          const sdkSwatch = swatchFor(renderConfig, "user.sdkSystemBracket");
+          const sdkIconName = iconNameFor(renderConfig, "user.sdkSystemBracket") ?? "ℹ";
+          const sdkHeader = headerLabelFor(renderConfig, "user.sdkSystemBracket");
+          const sdkStyle: React.CSSProperties = sdkSwatch
+            ? { borderColor: sdkSwatch, color: sdkSwatch }
+            : {};
           return (
-            <div className={cn(
-              "flex items-center gap-2 text-xs font-mono py-1.5 px-3 border-l-2 border-muted-foreground/30",
-              className,
-            )}>
-              <span className="text-muted-foreground">ℹ</span>
-              <span className="text-muted-foreground">{inner}</span>
+            <div
+              className={cn(
+                "flex items-center gap-2 text-xs font-mono py-1.5 px-3 border-l-2",
+                !sdkSwatch && "border-muted-foreground/30",
+                className,
+              )}
+              style={sdkStyle}
+            >
+              {sdkIconName !== "none" && (
+                <span
+                  className={sdkSwatch ? "" : "text-muted-foreground"}
+                  style={sdkSwatch ? { color: sdkSwatch } : undefined}
+                >
+                  <IconRenderer name={sdkIconName} className="inline h-3.5 w-3.5" />
+                </span>
+              )}
+              <span
+                className={sdkSwatch ? "" : "text-muted-foreground"}
+                style={sdkSwatch ? { color: sdkSwatch } : undefined}
+              >
+                {sdkHeader ? `${sdkHeader}: ${inner}` : inner}
+              </span>
             </div>
           );
         }
@@ -645,13 +687,21 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
         style: userStyle,
       };
 
+      const userIconName = userKindId ? iconNameFor(renderConfig, userKindId) : null;
+      const showUserHeader = !!userKindId && !isToolResultOnly;
+
       const cardIcon = isToolResultOnly
         ? <Terminal className="h-5 w-5 mt-0.5" style={userSwatch ? { color: userSwatch } : undefined} />
-        : isSubagentPrompt
-        ? <Bot className="h-5 w-5 mt-0.5" style={userSwatch ? { color: userSwatch } : undefined} />
         : skillInjection
         ? <Sparkles className="h-5 w-5 text-purple-500 mt-0.5" />
-        : <User className="h-6 w-6 mt-0.5" style={userSwatch ? { color: userSwatch } : undefined} />;
+        : (
+          <div style={userSwatch ? { color: userSwatch } : undefined}>
+            <IconRenderer
+              name={userIconName ?? (isSubagentPrompt ? "Bot" : "User")}
+              className={isSubagentPrompt ? "h-5 w-5 mt-0.5" : "h-6 w-6 mt-0.5"}
+            />
+          </div>
+        );
 
       const renderedCard = (
         <div className={isToolResultOnly ? "" : "flex justify-end"}>
@@ -705,11 +755,9 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
 
                     return (
                       <div>
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="text-xs font-medium text-muted-foreground">You</span>
-                        </div>
+                        {showUserHeader && userKindId && <KindHeader kindId={userKindId} />}
                         {textWithoutImages && (
-                          <div className="text-sm mb-2">
+                          <div className={cn(contentClassNames(renderConfig), "mb-2")}>
                             {textWithoutImages}
                           </div>
                         )}
@@ -736,8 +784,11 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                   if (content.type === "text") {
                     renderedSomething = true;
                     return (
-                      <div key={idx} className="text-sm whitespace-pre-wrap">
-                        {content.text}
+                      <div key={idx}>
+                        {showUserHeader && userKindId && <KindHeader kindId={userKindId} />}
+                        <div className={cn(contentClassNames(renderConfig), "whitespace-pre-wrap")}>
+                          {content.text}
+                        </div>
                       </div>
                     );
                   }
@@ -803,15 +854,12 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                       const reminderMessage = reminderMatch[1].trim();
                       const beforeReminder = contentText.substring(0, reminderMatch.index || 0).trim();
                       const afterReminder = contentText.substring((reminderMatch.index || 0) + reminderMatch[0].length).trim();
-                      
+
                       renderedSomething = true;
                       return (
                         <div key={idx} className="space-y-2">
-                          <div className="flex items-center gap-2">
-                            <CheckCircle2 className="h-4 w-4 text-green-500" />
-                            <span className="text-sm font-medium">Tool Result</span>
-                          </div>
-                          
+                          <KindHeader kindId="tool.result.generic" fallbackLabel="Tool Result" showIcon />
+
                           {beforeReminder && (
                             <div className="ml-6 p-2 bg-background rounded-md border">
                               <pre className="text-xs font-mono overflow-x-auto whitespace-pre-wrap">
@@ -842,10 +890,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                       renderedSomething = true;
                       return (
                         <div key={idx} className="space-y-2">
-                          <div className="flex items-center gap-2">
-                            <CheckCircle2 className="h-4 w-4 text-green-500" />
-                            <span className="text-sm font-medium">Edit Result</span>
-                          </div>
+                          <KindHeader kindId="tool.result.generic" label="Edit Result" showIcon />
                           <EditResultWidget content={contentText} />
                         </div>
                       );
@@ -860,10 +905,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                       renderedSomething = true;
                       return (
                         <div key={idx} className="space-y-2">
-                          <div className="flex items-center gap-2">
-                            <CheckCircle2 className="h-4 w-4 text-green-500" />
-                            <span className="text-sm font-medium">MultiEdit Result</span>
-                          </div>
+                          <KindHeader kindId="tool.result.generic" label="MultiEdit Result" showIcon />
                           <MultiEditResultWidget content={contentText} />
                         </div>
                       );
@@ -910,10 +952,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                       renderedSomething = true;
                       return (
                         <div key={idx} className="space-y-2">
-                          <div className="flex items-center gap-2">
-                            <CheckCircle2 className="h-4 w-4 text-green-500" />
-                            <span className="text-sm font-medium">Directory Contents</span>
-                          </div>
+                          <KindHeader kindId="tool.result.generic" label="Directory Contents" showIcon />
                           <LSResultWidget content={contentText} />
                         </div>
                       );
@@ -949,42 +988,31 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                       renderedSomething = true;
                       return (
                         <div key={idx} className="space-y-2">
-                          <div className="flex items-center gap-2">
-                            <CheckCircle2 className="h-4 w-4 text-green-500" />
-                            <span className="text-sm font-medium">Read Result</span>
-                          </div>
+                          <KindHeader kindId="tool.result.generic" label="Read Result" showIcon />
                           <ReadResultWidget content={contentText} filePath={filePath} />
                         </div>
                       );
                     }
-                    
+
                     // Handle empty tool results
                     if (!contentText || contentText.trim() === '') {
                       renderedSomething = true;
                       return (
                         <div key={idx} className="space-y-2">
-                          <div className="flex items-center gap-2">
-                            <CheckCircle2 className="h-4 w-4 text-green-500" />
-                            <span className="text-sm font-medium">Tool Result</span>
-                          </div>
+                          <KindHeader kindId="tool.result.generic" fallbackLabel="Tool Result" showIcon />
                           <div className="ml-6 p-3 bg-muted/50 rounded-md border text-sm text-muted-foreground italic">
                             Tool did not return any output
                           </div>
                         </div>
                       );
                     }
-                    
+
                     renderedSomething = true;
                     return (
                       <div key={idx} className="space-y-2">
-                        <div className="flex items-center gap-2">
-                          {content.is_error ? (
-                            <AlertCircle className="h-4 w-4 text-destructive" />
-                          ) : (
-                            <CheckCircle2 className="h-4 w-4 text-green-500" />
-                          )}
-                          <span className="text-sm font-medium">Tool Result</span>
-                        </div>
+                        {content.is_error
+                          ? <KindHeader kindId="result.error" label="Tool Error" fallbackIcon="AlertCircle" showIcon />
+                          : <KindHeader kindId="tool.result.generic" fallbackLabel="Tool Result" showIcon />}
                         <div className="ml-6 p-2 bg-background rounded-md border">
                           <pre className="text-xs font-mono overflow-x-auto whitespace-pre-wrap">
                             {contentText}
@@ -993,27 +1021,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                       </div>
                     );
                   }
-                  
-                  // Text content
-                  if (content.type === "text") {
-                    // Handle both string and object formats
-                    const textContent = typeof content.text === 'string'
-                      ? content.text
-                      : (content.text?.text || JSON.stringify(content.text));
 
-                    renderedSomething = true;
-                    return (
-                      <div key={idx}>
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="text-xs font-medium text-muted-foreground">You</span>
-                        </div>
-                        <div className="text-sm">
-                          {textContent}
-                        </div>
-                      </div>
-                    );
-                  }
-                  
                   return null;
                 })}
               </div>
@@ -1033,26 +1041,19 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
       const resultKindId = isError ? "result.error" : "result.success";
       const resultStyle = accentStyleFor(renderConfig, resultKindId);
       const resultSwatch = swatchFor(renderConfig, resultKindId);
+      const resultIconName = iconNameFor(renderConfig, resultKindId)
+        ?? (isError ? "AlertCircle" : "CheckCircle2");
+      const resultFallbackLabel = isError ? "Execution Failed" : "Execution Complete";
 
       return (
         <Card className={cn("border relative", className)} style={resultStyle}>
           <CardContent className="p-4">
             <div className="flex items-start gap-3">
-              {isError ? (
-                <AlertCircle
-                  className="h-5 w-5 mt-0.5"
-                  style={resultSwatch ? { color: resultSwatch } : undefined}
-                />
-              ) : (
-                <CheckCircle2
-                  className="h-5 w-5 mt-0.5"
-                  style={resultSwatch ? { color: resultSwatch } : undefined}
-                />
-              )}
+              <div style={resultSwatch ? { color: resultSwatch } : undefined}>
+                <IconRenderer name={resultIconName} className="h-5 w-5 mt-0.5" />
+              </div>
               <div className="flex-1 space-y-2">
-                <h4 className="font-semibold text-sm">
-                  {isError ? "Execution Failed" : "Execution Complete"}
-                </h4>
+                <KindHeader kindId={resultKindId} fallbackLabel={resultFallbackLabel} />
 
                 {message.result && (
                   <div className="prose prose-sm dark:prose-invert max-w-none">

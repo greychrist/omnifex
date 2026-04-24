@@ -28,7 +28,11 @@ export type PaletteName =
   | "indigo"
   | "cyan"
   | "yellow"
-  | "lime";
+  | "lime"
+  | "brown"
+  | "chocolate"
+  | "tan"
+  | "black";
 
 export interface PaletteEntry {
   border: string; // tailwind class fragment, e.g. "primary/20"
@@ -56,6 +60,10 @@ export const DEFAULT_PALETTE: Palette = {
   cyan: { border: "cyan-500/30", bg: "cyan-500/5", swatch: "#06b6d4" },
   yellow: { border: "yellow-500/30", bg: "yellow-500/5", swatch: "#eab308" },
   lime: { border: "lime-500/30", bg: "lime-500/5", swatch: "#84cc16" },
+  brown: { border: "amber-900/30", bg: "amber-900/5", swatch: "#92400e" },
+  chocolate: { border: "amber-950/30", bg: "amber-950/5", swatch: "#78350f" },
+  tan: { border: "amber-300/30", bg: "amber-300/5", swatch: "#d4a574" },
+  black: { border: "neutral-900/30", bg: "neutral-900/5", swatch: "#171717" },
 };
 
 // ─── icon allow-list ────────────────────────────────────────────────────────
@@ -65,6 +73,7 @@ export const DEFAULT_PALETTE: Palette = {
 // Lucide icons.
 
 export const ALLOWED_ICONS = [
+  // Originals
   "User",
   "Bot",
   "Terminal",
@@ -84,6 +93,66 @@ export const ALLOWED_ICONS = [
   "Globe",
   "Download",
   "Plug",
+  // People / chat
+  "MessageCircle",
+  "MessageSquare",
+  "Send",
+  "Mail",
+  "AtSign",
+  // Status / feedback
+  "ShieldCheck",
+  "Eye",
+  "EyeOff",
+  "Lock",
+  "Unlock",
+  "Flag",
+  "Bookmark",
+  "Star",
+  "Heart",
+  // Code / tech
+  "Code",
+  "Code2",
+  "Braces",
+  "Hash",
+  "Cpu",
+  "Database",
+  "Server",
+  "GitBranch",
+  "GitCommit",
+  // Creative / thinking
+  "Sparkles",
+  "Lightbulb",
+  "Brain",
+  "Feather",
+  "PenTool",
+  "Palette",
+  // Objects / cards
+  "Package",
+  "Box",
+  "Tag",
+  "Clipboard",
+  "ClipboardList",
+  "BookOpen",
+  "Book",
+  // Fun / personality
+  "Rocket",
+  "Coffee",
+  "Ghost",
+  "Cat",
+  "Dog",
+  "Moon",
+  "Sun",
+  "Wand",
+  "Crown",
+  // Misc symbols
+  "Circle",
+  "Square",
+  "Hexagon",
+  "Triangle",
+  "Zap",
+  "Flame",
+  "Smile",
+  // Unicode fallbacks
   "ℹ",
   "✗",
   "⚠",
@@ -366,6 +435,34 @@ export const DEFAULT_KINDS: MessageKindConfig[] = [
   },
 ];
 
+// ─── typography ─────────────────────────────────────────────────────────────
+//
+// Global typography applied to every message kind. Two style slots — the
+// `header` row that sits above a card's body, and the `content` body text.
+// Per-kind overrides are intentionally out of scope for v1; one pair of
+// sliders keeps the UI simple and the config small.
+
+export type FontFamily = "sans" | "serif" | "mono";
+export type FontSize = "xs" | "sm" | "base" | "lg";
+export type FontWeight = "normal" | "medium" | "semibold" | "bold";
+
+export interface TypographyStyle {
+  family: FontFamily;
+  size: FontSize;
+  weight: FontWeight;
+  italic: boolean;
+}
+
+export interface Typography {
+  header: TypographyStyle;
+  content: TypographyStyle;
+}
+
+export const DEFAULT_TYPOGRAPHY: Typography = {
+  header: { family: "sans", size: "sm", weight: "semibold", italic: false },
+  content: { family: "sans", size: "sm", weight: "normal", italic: false },
+};
+
 // ─── hard filters ───────────────────────────────────────────────────────────
 
 export interface HardFilters {
@@ -388,6 +485,7 @@ export interface MessageRenderingConfig {
   palette: Palette;
   kinds: MessageKindsById;
   hardFilters: HardFilters;
+  typography: Typography;
 }
 
 export function createDefaultConfig(): MessageRenderingConfig {
@@ -399,6 +497,7 @@ export function createDefaultConfig(): MessageRenderingConfig {
     palette: structuredClone(DEFAULT_PALETTE),
     kinds,
     hardFilters: { ...DEFAULT_HARD_FILTERS },
+    typography: structuredClone(DEFAULT_TYPOGRAPHY),
   };
 }
 
@@ -477,7 +576,33 @@ export function mergeConfig(saved: unknown): MessageRenderingConfig {
     };
   }
 
+  if (isRecord(saved.typography)) {
+    const t = saved.typography as Record<string, unknown>;
+    base.typography = {
+      header: mergeTypographyStyle(t.header, base.typography.header),
+      content: mergeTypographyStyle(t.content, base.typography.content),
+    };
+  }
+
   return base;
+}
+
+const FAMILY_VALUES: readonly FontFamily[] = ["sans", "serif", "mono"];
+const SIZE_VALUES: readonly FontSize[] = ["xs", "sm", "base", "lg"];
+const WEIGHT_VALUES: readonly FontWeight[] = ["normal", "medium", "semibold", "bold"];
+
+function mergeTypographyStyle(
+  saved: unknown,
+  base: TypographyStyle,
+): TypographyStyle {
+  if (!isRecord(saved)) return base;
+  const s = saved as Record<string, unknown>;
+  return {
+    family: FAMILY_VALUES.includes(s.family as FontFamily) ? (s.family as FontFamily) : base.family,
+    size: SIZE_VALUES.includes(s.size as FontSize) ? (s.size as FontSize) : base.size,
+    weight: WEIGHT_VALUES.includes(s.weight as FontWeight) ? (s.weight as FontWeight) : base.weight,
+    italic: typeof s.italic === "boolean" ? s.italic : base.italic,
+  };
 }
 
 export function serializeConfig(cfg: MessageRenderingConfig): string {

@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { IconRenderer } from "./iconMap";
+import { TooltipProvider, TooltipSimple } from "@/components/ui/tooltip-modern";
 import { cn } from "@/lib/utils";
 
 interface KindEditorProps {
@@ -96,31 +97,34 @@ export const KindEditor: React.FC<KindEditorProps> = ({
       {/* Icon */}
       <div className="space-y-2">
         <Label>Icon</Label>
-        <div className="flex flex-wrap gap-1.5 max-h-48 overflow-y-auto rounded border border-border p-2 bg-muted/20">
-          {(ALLOWED_ICONS as readonly IconName[]).map((name) => {
-            const active = kind.icon === name;
-            return (
-              <button
-                key={name}
-                type="button"
-                onClick={() => onChange({ icon: name })}
-                title={name}
-                className={cn(
-                  "h-8 w-8 rounded flex items-center justify-center text-foreground/80 transition-colors",
-                  active
-                    ? "bg-primary/20 ring-1 ring-primary/40"
-                    : "hover:bg-muted/60",
-                )}
-              >
-                {name === "none" ? (
-                  <span className="text-[10px] text-muted-foreground">—</span>
-                ) : (
-                  <IconRenderer name={name} className="h-4 w-4" />
-                )}
-              </button>
-            );
-          })}
-        </div>
+        <TooltipProvider delayDuration={200}>
+          <div className="flex flex-wrap gap-1.5 rounded border border-border p-2 bg-muted/20">
+            {(ALLOWED_ICONS as readonly IconName[]).map((name) => {
+              const active = kind.icon === name;
+              return (
+                <TooltipSimple key={name} content={name}>
+                  <button
+                    type="button"
+                    onClick={() => onChange({ icon: name })}
+                    aria-label={name}
+                    className={cn(
+                      "h-8 w-8 rounded flex items-center justify-center text-foreground/80 transition-colors",
+                      active
+                        ? "bg-primary/20 ring-1 ring-primary/40"
+                        : "hover:bg-muted/60",
+                    )}
+                  >
+                    {name === "none" ? (
+                      <span className="text-[10px] text-muted-foreground">—</span>
+                    ) : (
+                      <IconRenderer name={name} className="h-4 w-4" />
+                    )}
+                  </button>
+                </TooltipSimple>
+              );
+            })}
+          </div>
+        </TooltipProvider>
       </div>
 
       {/* Header label override */}

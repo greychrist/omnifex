@@ -46,7 +46,29 @@ function actionLabel(name: string, input: any): string {
   return name ?? 'tool';
 }
 
-function summarizeGroup(messages: ClaudeStreamMessage[]): string {
+function countRenderableContent(messages: ClaudeStreamMessage[]): number {
+  let count = 0;
+  for (const msg of messages) {
+    if (msg.type === 'system') {
+      count += 1;
+      continue;
+    }
+    const content = msg.message?.content;
+    if (!Array.isArray(content)) continue;
+    for (const b of content) {
+      if (b?.type === 'tool_use') count += 1;
+      else if (b?.type === 'tool_result') count += 1;
+      else if (b?.type === 'thinking' && typeof b.thinking === 'string' && b.thinking.trim().length > 0) {
+        count += 1;
+      } else if (b?.type === 'text' && typeof b.text === 'string' && b.text.trim().length > 0) {
+        count += 1;
+      }
+    }
+  }
+  return count;
+}
+
+export function summarizeGroup(messages: ClaudeStreamMessage[]): string {
   const actions: string[] = [];
   let thinkingCount = 0;
   let systemCount = 0;
@@ -62,7 +84,12 @@ function summarizeGroup(messages: ClaudeStreamMessage[]): string {
       if (b?.type === 'tool_use' && typeof b.name === 'string') {
         actions.push(clip(actionLabel(b.name, b.input), 60));
       } else if (b?.type === 'thinking') {
-        thinkingCount += 1;
+        // Only count thinking blocks that have actual content. SDK emits
+        // signature-only { thinking: "", signature: "..." } blocks when the
+        // thinking summary is disabled; the renderer drops those, so counting
+        // them here produced "1 thought" expanders with nothing inside.
+        const text = typeof b.thinking === 'string' ? b.thinking.trim() : '';
+        if (text.length > 0) thinkingCount += 1;
       }
     }
   }
@@ -82,9 +109,14 @@ function summarizeGroup(messages: ClaudeStreamMessage[]): string {
     parts.push(`${systemCount} system event${systemCount === 1 ? '' : 's'}`);
   }
 
-  return parts.length > 0
-    ? parts.join(' + ')
-    : `${messages.length} step${messages.length === 1 ? '' : 's'}`;
+  if (parts.length > 0) return parts.join(' + ');
+
+  // Fallback only counts renderable content blocks. Messages whose content
+  // would all be suppressed by the renderer (empty text, empty thinking)
+  // are excluded so the summary never promises steps the expander can't show.
+  const renderable = countRenderableContent(messages);
+  if (renderable === 0) return '';
+  return `${renderable} step${renderable === 1 ? '' : 's'}`;
 }
 
 interface GroupProps {
@@ -101,6 +133,11 @@ export const CollapsibleGroup: React.FC<GroupProps> = ({
   onLinkDetected,
 }) => {
   const [expanded, setExpanded] = useState(false);
+  const summary = summarizeGroup(messages);
+
+  // If the group has nothing the renderer can actually show, don't emit a
+  // placeholder expander — it would just be an empty disclosure.
+  if (!summary) return null;
 
   return (
     <div className="py-0.5">
@@ -116,7 +153,7 @@ export const CollapsibleGroup: React.FC<GroupProps> = ({
           )}
         />
         <span className="font-mono text-xs text-muted-foreground break-words whitespace-normal">
-          {summarizeGroup(messages)}
+          {summary}
         </span>
       </button>
       {expanded && (
@@ -128,6 +165,7 @@ export const CollapsibleGroup: React.FC<GroupProps> = ({
               streamMessages={streamMessages}
               accountType={accountType}
               onLinkDetected={onLinkDetected}
+              inExpandedGroup
             />
           ))}
         </div>

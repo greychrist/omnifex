@@ -33,6 +33,9 @@ import { cn } from "@/lib/utils";
 import { Card, CardContent } from "@/components/ui/card";
 import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
 import { accentStyleFor, swatchFor } from "@/lib/accentStyle";
+import { headerLabelFor, iconNameFor } from "@/lib/kindPresentation";
+import { IconRenderer } from "@/components/settings-panels/appearance/iconMap";
+import { KindHeader } from "@/components/KindHeader";
 
 /**
  * Widget for displaying system reminders (instead of raw XML)
@@ -75,17 +78,24 @@ export const SystemContextWidget: React.FC<{ content: string }> = ({ content }) 
   const [isExpanded, setIsExpanded] = useState(false);
   const { config } = useMessageRenderingConfig();
 
-  // Determine a short label from the content
-  let label = "System Context";
-  if (content.includes("Base directory for this skill:")) {
-    const skillMatch = content.match(/# (.+)/);
-    label = skillMatch ? `Skill: ${skillMatch[1]}` : "Skill Loaded";
-  } else if (content.includes("CLAUDE.md")) {
-    label = "CLAUDE.md Context";
-  } else if (content.includes("<system-reminder>")) {
-    label = "System Reminder";
+  const configuredHeader = headerLabelFor(config, "user.systemContext");
+  // Fall back to a content-derived label when the config header is the default
+  // "System Context" — so skill loads and CLAUDE.md injections stay legible
+  // rather than all showing the same generic name. If the user has customized
+  // the header to something else, honor their choice verbatim.
+  let label = configuredHeader ?? "System Context";
+  if (configuredHeader === null || configuredHeader === "System Context") {
+    if (content.includes("Base directory for this skill:")) {
+      const skillMatch = content.match(/# (.+)/);
+      label = skillMatch ? `Skill: ${skillMatch[1]}` : "Skill Loaded";
+    } else if (content.includes("CLAUDE.md")) {
+      label = "CLAUDE.md Context";
+    } else if (content.includes("<system-reminder>")) {
+      label = "System Reminder";
+    }
   }
 
+  const iconName = iconNameFor(config, "user.systemContext");
   const style = accentStyleFor(config, "user.systemContext");
   const swatch = swatchFor(config, "user.systemContext");
   const swatchStyle = swatch ? { color: swatch } : undefined;
@@ -97,7 +107,13 @@ export const SystemContextWidget: React.FC<{ content: string }> = ({ content }) 
         className="w-full px-4 py-2 flex items-center justify-between transition-colors"
       >
         <div className="flex items-center gap-2">
-          <Info className="h-4 w-4" style={swatchStyle} />
+          <div style={swatchStyle}>
+            {iconName && iconName !== "none" ? (
+              <IconRenderer name={iconName} className="h-4 w-4" />
+            ) : (
+              <Info className="h-4 w-4" />
+            )}
+          </div>
           <span className="text-xs font-medium" style={swatchStyle}>
             {label}
           </span>
@@ -136,6 +152,7 @@ export const SystemInitializedWidget: React.FC<{
   const { config } = useMessageRenderingConfig();
   const style = accentStyleFor(config, "system.init");
   const swatch = swatchFor(config, "system.init");
+  const iconName = iconNameFor(config, "system.init");
 
   // Separate regular tools from MCP tools
   const regularTools = tools.filter(tool => !tool.startsWith('mcp__'));
@@ -209,12 +226,15 @@ export const SystemInitializedWidget: React.FC<{
     <Card className="border" style={style}>
       <CardContent className="p-4">
         <div className="flex items-start gap-3">
-          <Settings
-            className="h-5 w-5 mt-0.5"
-            style={swatch ? { color: swatch } : undefined}
-          />
+          <div style={swatch ? { color: swatch } : undefined}>
+            {iconName && iconName !== "none" ? (
+              <IconRenderer name={iconName} className="h-5 w-5 mt-0.5" />
+            ) : (
+              <Settings className="h-5 w-5 mt-0.5" />
+            )}
+          </div>
           <div className="flex-1 space-y-4">
-            <h4 className="font-semibold text-sm">System Initialized</h4>
+            <KindHeader kindId="system.init" fallbackLabel="System Initialized" />
 
             {/* Session Info */}
             <div className="space-y-2">
