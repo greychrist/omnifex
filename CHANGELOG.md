@@ -5,6 +5,31 @@ All notable changes to GreyChrist are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.42] — 2026-04-24
+
+Large Appearance pass: every message kind's header label, icon, and accent color is now driven by the config instead of hardcoded per-component. Adds typography controls, more palette and icon options, and a personal-default save/restore workflow. Installers remain **unsigned**.
+
+### Added
+
+- **Configurable typography** (`a301d46`). New `typography` section on `MessageRenderingConfig` with separate header and content styles — each picks family (sans/serif/mono), size (xs/sm/base/lg), weight (normal/medium/semibold/bold), and italic on/off. `src/lib/typographyClasses.ts` maps those values to Tailwind classes; `KindHeader` and user message text read them. A new Typography card in Appearance settings (`TypographyEditor`) exposes the sliders.
+- **Palette additions**: `brown` (#92400e), `chocolate` (#78350f), `tan` (#d4a574), `black` (#171717). Plus 49 new Lucide icons — including `Sparkles`, `Brain`, `Wand`, `Rocket`, `MessageCircle`, `ShieldCheck`, `Code2`, `Package`, `Star`, `Heart`, and categories for chat, status, code/tech, creative/thinking, objects, fun/personality, and misc symbols.
+- **"Save as my default" + "Reset to my default"** (`a301d46`). Stored alongside the live config under a separate settings key so the user-default survives factory resets. Three buttons: save current as default, reset to your saved default (disabled until one exists), and reset to factory defaults.
+- **Icon picker tooltip** — hovering any icon in the Kind Editor shows the icon's name via the app's `TooltipSimple` (200ms delay). Previously only the browser-native `title` attribute fired at ~1s.
+- **Debounced save toast** — Appearance changes auto-save; an "Appearance saved" toast now fires 800ms after the last edit so rapid color-picker adjustments emit one toast instead of many.
+
+### Changed
+
+- **Single `KindHeader` component replaces seven inline header markups** across `StreamMessage`, `SystemInitializedWidget`, `ThinkingWidget`, and the tool-result variants. Sizes and weights are now consistent everywhere — previously "You" rendered at `text-xs font-medium` while "Execution Complete" rendered at `text-sm font-semibold`.
+- **Kind Editor now spans the full editor column** — the 3-column tree/editor/sample layout collapsed to 2 columns, moving Sample to a compact preview at the top of the editor. Icon and color grids wrap across the full width instead of scrolling.
+- **Assistant message header now renders** when `assistant.text.headerLabel` is set (previously the renderer never looked for one, so "Claude Code" and similar customizations were invisible).
+- **`ThinkingWidget` default-expands when rendered inside a collapsed group** — the group expander represents an explicit "show me the contents" action, so hiding the thought behind a second click felt broken. In verbose mode (standalone), thinking still starts collapsed.
+
+### Fixed
+
+- **"1 thought" / "1 step" expanders no longer show empty content** (`a301d46`). `summarizeGroup` previously counted signature-only (empty) thinking blocks and fell back to a raw message count, but the renderer would drop those messages as null. The summary now only counts thinking blocks with non-empty text and only falls back to a step count when the group has renderable content; groups with nothing to show render nothing instead of an empty disclosure.
+- **Duplicated-text suppression no longer nukes thinking/tool_use blocks** on assistant messages whose text repeats the following Execution Complete card. The renderer now skips just the duplicated text blocks and preserves the rest of the message.
+- **"You" header appears on user messages** when the kind's `headerLabel` is set. The previous fix edited an unreachable second text branch in `StreamMessage.tsx`; the reachable array-content branch now renders the header correctly and the dead code was removed.
+
 ## [0.3.41] — 2026-04-24
 
 Follow-up to the 0.3.40 Appearance fix: turning off "Hide in compact" for a standalone kind (System Initialized, notifications, results, summaries, permission requests) now actually shows that message inline in compact mode instead of leaving it buried inside a collapsed group marker. Installers remain **unsigned**.
