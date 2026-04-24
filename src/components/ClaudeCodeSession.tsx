@@ -47,6 +47,8 @@ import { SessionViewToggle, type ViewMode } from "./SessionViewToggle";
 import { TerminalView } from './TerminalView';
 import { CollapsibleGroup } from "./CollapsibleGroup";
 import { buildCompactItems } from "@/lib/compactGrouping";
+import { filterCompactHidden } from "@/lib/messageKind";
+import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
 import { SessionHeader } from "./SessionHeader";
 import { filterDisplayableMessages } from "@/lib/messageFilters";
 import { deriveSubagents } from "@/lib/subagentStreams";
@@ -381,6 +383,15 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
 
   // Filter out messages that shouldn't be displayed
   const displayableMessages = useMemo(() => filterDisplayableMessages(messages), [messages]);
+
+  // Compact mode honors per-kind `hiddenInCompact`. Computed here so the
+  // list passed to the grouper matches what the user would expect from the
+  // Appearance settings (e.g. system.init toggle).
+  const { config: renderConfig } = useMessageRenderingConfig();
+  const compactVisibleMessages = useMemo(
+    () => filterCompactHidden(displayableMessages, renderConfig),
+    [displayableMessages, renderConfig],
+  );
 
   // Subagent (background task) state, derived from the raw stream.
   // Rendered above the prompt input so parallel Agent/Task dispatches are visible.
@@ -1170,7 +1181,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                 </div>
               ))
             : (() => {
-                const items = buildCompactItems(displayableMessages);
+                const items = buildCompactItems(compactVisibleMessages);
                 return items.map((item) =>
                   item.kind === 'single' ? (
                     <div key={item.key}>

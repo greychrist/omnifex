@@ -31,27 +31,38 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { Card, CardContent } from "@/components/ui/card";
+import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
+import { accentStyleFor, swatchFor } from "@/lib/accentStyle";
 
 /**
  * Widget for displaying system reminders (instead of raw XML)
  */
 export const SystemReminderWidget: React.FC<{ message: string }> = ({ message }) => {
-  // Extract icon based on message content
-  let icon = <Info className="h-4 w-4" />;
-  let colorClass = "border-blue-500/20 bg-blue-500/5 text-blue-600";
+  const { config } = useMessageRenderingConfig();
 
-  if (message.toLowerCase().includes("warning")) {
-    icon = <AlertCircle className="h-4 w-4" />;
-    colorClass = "border-yellow-500/20 bg-yellow-500/5 text-yellow-600";
-  } else if (message.toLowerCase().includes("error")) {
-    icon = <AlertCircle className="h-4 w-4" />;
-    colorClass = "border-destructive/20 bg-destructive/5 text-destructive";
-  }
+  // Map content severity to a kind whose palette the widget should borrow.
+  // Warnings/errors escalate to the matching notification kind so the color
+  // scheme drives both the base system-reminder look and severity variants.
+  const kindId = message.toLowerCase().includes("warning")
+    ? "system.notification.warn"
+    : message.toLowerCase().includes("error")
+      ? "system.notification.error"
+      : "tool.result.systemReminder";
+
+  const icon = kindId === "tool.result.systemReminder"
+    ? <Info className="h-4 w-4" />
+    : <AlertCircle className="h-4 w-4" />;
+
+  const style = accentStyleFor(config, kindId);
+  const swatch = swatchFor(config, kindId);
 
   return (
-    <div className={cn("flex items-start gap-2 p-3 rounded-md border", colorClass)}>
-      <div className="mt-0.5">{icon}</div>
-      <div className="flex-1 text-sm">{message}</div>
+    <div
+      className="flex items-start gap-2 p-3 rounded-md border"
+      style={style}
+    >
+      <div className="mt-0.5" style={swatch ? { color: swatch } : undefined}>{icon}</div>
+      <div className="flex-1 text-sm" style={swatch ? { color: swatch } : undefined}>{message}</div>
     </div>
   );
 };
@@ -62,6 +73,7 @@ export const SystemReminderWidget: React.FC<{ message: string }> = ({ message })
  */
 export const SystemContextWidget: React.FC<{ content: string }> = ({ content }) => {
   const [isExpanded, setIsExpanded] = useState(false);
+  const { config } = useMessageRenderingConfig();
 
   // Determine a short label from the content
   let label = "System Context";
@@ -74,27 +86,34 @@ export const SystemContextWidget: React.FC<{ content: string }> = ({ content }) 
     label = "System Reminder";
   }
 
+  const style = accentStyleFor(config, "user.systemContext");
+  const swatch = swatchFor(config, "user.systemContext");
+  const swatchStyle = swatch ? { color: swatch } : undefined;
+
   return (
-    <div className="rounded-lg border border-gray-500/20 bg-gray-500/5 overflow-hidden">
+    <div className="rounded-lg border overflow-hidden" style={style}>
       <button
         onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full px-4 py-2 flex items-center justify-between hover:bg-gray-500/10 transition-colors"
+        className="w-full px-4 py-2 flex items-center justify-between transition-colors"
       >
         <div className="flex items-center gap-2">
-          <Info className="h-4 w-4 text-gray-500" />
-          <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
+          <Info className="h-4 w-4" style={swatchStyle} />
+          <span className="text-xs font-medium" style={swatchStyle}>
             {label}
           </span>
         </div>
-        <ChevronRight className={cn(
-          "h-3 w-3 text-gray-500 transition-transform",
-          isExpanded && "rotate-90"
-        )} />
+        <ChevronRight
+          className={cn("h-3 w-3 transition-transform", isExpanded && "rotate-90")}
+          style={swatchStyle}
+        />
       </button>
 
       {isExpanded && (
-        <div className="px-4 pb-3 pt-1 border-t border-gray-500/20">
-          <pre className="text-xs font-mono text-gray-500 dark:text-gray-400 whitespace-pre-wrap bg-gray-500/5 p-3 rounded-lg max-h-60 overflow-y-auto">
+        <div className="px-4 pb-3 pt-1 border-t" style={style}>
+          <pre
+            className="text-xs font-mono whitespace-pre-wrap p-3 rounded-lg max-h-60 overflow-y-auto"
+            style={{ ...style, ...swatchStyle }}
+          >
             {content.trim()}
           </pre>
         </div>
@@ -114,6 +133,9 @@ export const SystemInitializedWidget: React.FC<{
   tools?: string[];
 }> = ({ sessionId, model, cwd, tools = [] }) => {
   const [mcpExpanded, setMcpExpanded] = useState(false);
+  const { config } = useMessageRenderingConfig();
+  const style = accentStyleFor(config, "system.init");
+  const swatch = swatchFor(config, "system.init");
 
   // Separate regular tools from MCP tools
   const regularTools = tools.filter(tool => !tool.startsWith('mcp__'));
@@ -184,10 +206,13 @@ export const SystemInitializedWidget: React.FC<{
   }, {} as Record<string, string[]>);
 
   return (
-    <Card className="border-blue-500/20 bg-blue-500/5">
+    <Card className="border" style={style}>
       <CardContent className="p-4">
         <div className="flex items-start gap-3">
-          <Settings className="h-5 w-5 text-blue-500 mt-0.5" />
+          <Settings
+            className="h-5 w-5 mt-0.5"
+            style={swatch ? { color: swatch } : undefined}
+          />
           <div className="flex-1 space-y-4">
             <h4 className="font-semibold text-sm">System Initialized</h4>
 
