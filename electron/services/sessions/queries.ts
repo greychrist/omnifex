@@ -64,6 +64,25 @@ export function createQueryPassthroughs(sessions: Map<string, SessionHandle>) {
     }
   }
 
+  // Push rule lists into the live SDK session. Required because the SDK loads
+  // settings files only at session start; rule edits made via the UI later
+  // (settings panel, "Add Rule" sidebar) sit on disk but the running session
+  // never sees them, so it keeps prompting for things the user already allowed.
+  // applyFlagSettings shallow-merges the `permissions` key, so callers must
+  // send the full effective allow/deny list each time, not just the delta.
+  async function applyPermissions(
+    tabId: string,
+    permissions: { allow?: string[]; deny?: string[]; ask?: string[] },
+  ): Promise<void> {
+    const handle = sessions.get(tabId);
+    if (!handle) return;
+    try {
+      await handle.query.applyFlagSettings({ permissions } as any);
+    } catch (err) {
+      console.error(`[sessions] applyPermissions failed for tab ${tabId}:`, err);
+    }
+  }
+
   async function setThinking(tabId: string, config: SessionStartParams['thinking']): Promise<void> {
     const handle = sessions.get(tabId);
     if (!handle) return;
@@ -198,6 +217,7 @@ export function createQueryPassthroughs(sessions: Map<string, SessionHandle>) {
     setModel,
     setPermissionMode,
     setEffort,
+    applyPermissions,
     setThinking,
     getAccountInfo,
     getContextUsage,

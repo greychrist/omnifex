@@ -2830,6 +2830,37 @@ describe('sessions service — full lifecycle', () => {
       service.stopAll();
     });
 
+    it('applyPermissions pushes the rule lists into the live SDK session', async () => {
+      const fake = installFakeQuery();
+      service.start({
+        tabId: 'tab-perm-apply',
+        projectPath: '/p',
+        configDir: '/c',
+        model: 'sonnet',
+        permissionMode: 'default',
+      });
+
+      await service.applyPermissions('tab-perm-apply', {
+        allow: ['Edit(/.claude/commands/*)', 'Bash(npm run test:*)'],
+        deny: ['Bash(rm -rf:*)'],
+      });
+      expect(fake.query.applyFlagSettings).toHaveBeenCalledWith({
+        permissions: {
+          allow: ['Edit(/.claude/commands/*)', 'Bash(npm run test:*)'],
+          deny: ['Bash(rm -rf:*)'],
+        },
+      });
+
+      service.stopAll();
+    });
+
+    it('applyPermissions is a no-op for an unknown tab', async () => {
+      const fake = installFakeQuery();
+      // No service.start() — tab doesn't exist
+      await service.applyPermissions('no-such-tab', { allow: ['Bash'] });
+      expect(fake.query.applyFlagSettings).not.toHaveBeenCalled();
+    });
+
     it('setThinking("disabled") calls setMaxThinkingTokens(0)', async () => {
       const fake = installFakeQuery();
       service.start({

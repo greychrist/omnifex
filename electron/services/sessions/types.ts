@@ -102,6 +102,15 @@ export interface SessionsService {
   setPermissionMode(tabId: string, mode: PermissionMode): Promise<void>;
   /** Change effort level mid-session. null clears the override and reverts to the SDK default. */
   setEffort(tabId: string, level: 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null): Promise<void>;
+  /**
+   * Push permission rule lists into the live SDK session. Send the full
+   * effective allow/deny list — applyFlagSettings shallow-replaces the
+   * `permissions` key, so deltas would lose previously-pushed rules.
+   */
+  applyPermissions(
+    tabId: string,
+    permissions: { allow?: string[]; deny?: string[]; ask?: string[] },
+  ): Promise<void>;
   /** Change thinking mode mid-session. */
   setThinking(tabId: string, config: SessionStartParams['thinking']): Promise<void>;
   /** Get the SDK-reported authenticated account for an active tab. Null if the tab isn't running. */

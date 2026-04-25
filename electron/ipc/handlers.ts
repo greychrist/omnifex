@@ -64,6 +64,7 @@ export interface Services {
     setModel(sessionId: string, model?: string): unknown;
     setPermissionMode(sessionId: string, mode: string): unknown;
     setEffort(sessionId: string, level: unknown): unknown;
+    applyPermissions(sessionId: string, permissions: unknown): unknown;
     setThinking(sessionId: string, config: unknown): unknown;
     getAccountInfo(sessionId: string): unknown;
     getContextUsage(sessionId: string): unknown;
@@ -322,14 +323,36 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     }),
 
     session_update_permission: wrapWith((p: Record<string, unknown>) => {
+      const configDir = (p?.configDir ?? p?.config_dir) as string | undefined;
+      const projectPath = (p?.projectPath ?? p?.project_path) as string | undefined;
+      const tabId = (p?.tabId ?? p?.session_id) as string | undefined;
+
       permissionsIO?.updatePermission({
-        configDir: (p?.configDir ?? p?.config_dir) as string | undefined,
-        projectPath: (p?.projectPath ?? p?.project_path) as string | undefined,
+        configDir,
+        projectPath,
         scope: p?.scope as 'user' | 'project' | 'local',
         action: p?.action as 'add' | 'remove',
         behavior: p?.behavior as 'allow' | 'deny',
         rule: p?.rule as string,
       });
+
+      // Mirror the on-disk change into the live SDK session so the user
+      // doesn't get re-prompted for a rule they just allowed. The SDK
+      // loads settings files only at session start and never re-reads
+      // them, so this push is the only way to keep an active query in
+      // sync with rule edits made via the UI.
+      if (tabId && configDir && sessions && permissionsIO) {
+        try {
+          const levels = permissionsIO.getPermissions(configDir, projectPath);
+          const allow = Array.from(new Set(levels.flatMap((l) => l.allow)));
+          const deny = Array.from(new Set(levels.flatMap((l) => l.deny)));
+          // Fire-and-forget — the service swallows its own errors.
+          void sessions.applyPermissions(tabId, { allow, deny });
+        } catch (err) {
+          console.error('[handlers] applyPermissions push failed:', err);
+        }
+      }
+
       return null;
     }),
 

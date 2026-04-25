@@ -529,6 +529,8 @@ app.whenReady().then(() => {
       setPermissionMode: (sessionId: string, mode: string) =>
         sessionsService.setPermissionMode(sessionId, mode as any),
       setEffort: (sessionId: string, level: unknown) => sessionsService.setEffort(sessionId, level as any),
+      applyPermissions: (sessionId: string, permissions: unknown) =>
+        sessionsService.applyPermissions(sessionId, permissions as any),
       setThinking: (sessionId: string, config: unknown) => sessionsService.setThinking(sessionId, config as any),
       getAccountInfo: (sessionId: string) => sessionsService.getAccountInfo(sessionId),
       getContextUsage: (sessionId: string) => sessionsService.getContextUsage(sessionId),

@@ -65,6 +65,7 @@ function buildMockServices() {
       'getInfo',
       'setEffort',
       'setThinking',
+      'applyPermissions',
     ] as const),
     agents: mockService([
       'list',
@@ -526,6 +527,66 @@ describe('ipc handlers — dispatch to services', () => {
     expect(updated.permissions.allow).toContain('Bash(git:*)');
     expect(updated.permissions.allow).toContain('Bash(npm:*)');
 
+    fs.rmSync(tmpDir, { recursive: true });
+  });
+
+  it('session_update_permission pushes the effective rule lists into the live session when tabId is provided', async () => {
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const os = await import('node:os');
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-perm-push-'));
+    const projDir = path.join(tmpDir, 'project');
+    fs.mkdirSync(path.join(projDir, '.claude'), { recursive: true });
+    // Pre-existing local rule, plus a user rule to prove we send the union.
+    fs.writeFileSync(
+      path.join(projDir, '.claude', 'settings.local.json'),
+      JSON.stringify({ permissions: { allow: ['Edit(/.claude/commands/*)'] } }),
+    );
+    fs.writeFileSync(
+      path.join(tmpDir, 'settings.json'),
+      JSON.stringify({ permissions: { allow: ['Bash(git:*)'], deny: ['Bash(rm -rf:*)'] } }),
+    );
+
+    await invoke(handlers, 'session_update_permission', {
+      tabId: 'tab-live',
+      configDir: tmpDir,
+      projectPath: projDir,
+      scope: 'local',
+      action: 'add',
+      behavior: 'allow',
+      rule: 'Bash(npm:*)',
+    });
+
+    expect(services.sessions.applyPermissions).toHaveBeenCalledTimes(1);
+    const [tabId, perms] = services.sessions.applyPermissions.mock.calls[0];
+    expect(tabId).toBe('tab-live');
+    // Allow list = union of user + local (post-write), deduped.
+    expect((perms as any).allow.sort()).toEqual(
+      ['Bash(git:*)', 'Bash(npm:*)', 'Edit(/.claude/commands/*)'].sort(),
+    );
+    expect((perms as any).deny).toEqual(['Bash(rm -rf:*)']);
+
+    fs.rmSync(tmpDir, { recursive: true });
+  });
+
+  it('session_update_permission does not call applyPermissions when no tabId is provided', async () => {
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const os = await import('node:os');
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-perm-notab-'));
+    fs.writeFileSync(path.join(tmpDir, 'settings.json'), JSON.stringify({}));
+
+    await invoke(handlers, 'session_update_permission', {
+      // No tabId — settings panel rather than session sidebar
+      configDir: tmpDir,
+      projectPath: '',
+      scope: 'user',
+      action: 'add',
+      behavior: 'allow',
+      rule: 'Read(*)',
+    });
+
+    expect(services.sessions.applyPermissions).not.toHaveBeenCalled();
     fs.rmSync(tmpDir, { recursive: true });
   });
 
