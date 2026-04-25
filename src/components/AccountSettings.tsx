@@ -5,6 +5,54 @@ import { api, type Account, type PathRule } from "@/lib/api";
 import { AccountBadge } from "@/components/AccountBadge";
 import { useAccounts } from "@/contexts/AccountsContext";
 import { Trash2, Plus, Pencil, FolderOpen, Check, X } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { IconPicker, ICON_MAP } from "./IconPicker";
+
+const SWATCHES = [
+  "#ef4444", // red
+  "#f59e0b", // amber
+  "#84cc16", // lime
+  "#10b981", // emerald
+  "#06b6d4", // cyan
+  "#3b82f6", // blue
+  "#a78bfa", // violet
+  "#ec4899", // pink
+  "#6b7280", // gray
+];
+
+interface ColorSwatchGridProps {
+  value: string;
+  onChange: (color: string) => void;
+}
+
+const ColorSwatchGrid: React.FC<ColorSwatchGridProps> = ({ value, onChange }) => {
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {SWATCHES.map((swatch) => (
+        <button
+          key={swatch}
+          type="button"
+          onClick={() => onChange(swatch)}
+          className={cn(
+            "w-[22px] h-[22px] rounded cursor-pointer transition-shadow",
+            value.toLowerCase() === swatch.toLowerCase()
+              ? "ring-2 ring-white ring-offset-0"
+              : "ring-1 ring-white/10 hover:ring-white/30",
+          )}
+          style={{ backgroundColor: swatch }}
+          aria-label={`Select color ${swatch}`}
+        />
+      ))}
+      <input
+        type="color"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-[22px] h-[22px] rounded cursor-pointer border border-border bg-transparent"
+        title="Custom color"
+      />
+    </div>
+  );
+};
 
 const ACCOUNT_TYPES = [
   { value: "max", label: "Max", desc: "No cost, usage limits only" },
@@ -93,6 +141,8 @@ export const AccountSettings: React.FC = () => {
   const [newDir, setNewDir] = useState("");
   const [newType, setNewType] = useState("pro");
   const [newColor, setNewColor] = useState("#3b82f6");
+  const [newIcon, setNewIcon] = useState<string>("user");
+  const [showNewIconPicker, setShowNewIconPicker] = useState(false);
 
   // Edit account state
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -100,6 +150,8 @@ export const AccountSettings: React.FC = () => {
   const [editDir, setEditDir] = useState("");
   const [editType, setEditType] = useState("");
   const [editColor, setEditColor] = useState("#3b82f6");
+  const [editIcon, setEditIcon] = useState<string>("user");
+  const [showEditIconPicker, setShowEditIconPicker] = useState(false);
 
   // Add rule form
   const [showAddRule, setShowAddRule] = useState(false);
@@ -147,6 +199,7 @@ export const AccountSettings: React.FC = () => {
     setEditDir(account.config_dir);
     setEditType(account.account_type);
     setEditColor(account.color || "#3b82f6");
+    setEditIcon(account.icon || "user");
   };
 
   const cancelEdit = () => {
@@ -156,7 +209,7 @@ export const AccountSettings: React.FC = () => {
   const saveEdit = async () => {
     if (editingId === null || !editName.trim() || !editDir.trim()) return;
     try {
-      await api.updateAccount(editingId, editName.trim(), editDir.trim(), editType, editColor);
+      await api.updateAccount(editingId, editName.trim(), editDir.trim(), editType, editColor, editIcon);
       setEditingId(null);
       await loadData();
     } catch (error) {
@@ -167,11 +220,12 @@ export const AccountSettings: React.FC = () => {
   const handleCreate = async () => {
     if (!newName.trim() || !newDir.trim()) return;
     try {
-      await api.createAccount(newName.trim(), newDir.trim(), accounts.length === 0, newType, newColor);
+      await api.createAccount(newName.trim(), newDir.trim(), accounts.length === 0, newType, newColor, newIcon);
       setNewName("");
       setNewDir("");
       setNewType("pro");
       setNewColor("#3b82f6");
+      setNewIcon("user");
       setShowAddAccount(false);
       await loadData();
     } catch (error) {
@@ -235,14 +289,39 @@ export const AccountSettings: React.FC = () => {
                   placeholder="Config directory"
                 />
                 <TypeSelect value={editType} onChange={setEditType} />
-                <div className="flex items-center gap-2">
-                  <label className="text-xs text-muted-foreground">Color</label>
-                  <input
-                    type="color"
-                    value={editColor}
-                    onChange={(e) => setEditColor(e.target.value)}
-                    className="w-8 h-8 rounded cursor-pointer border border-border bg-transparent"
-                  />
+                <div className="space-y-2">
+                  <div className="flex items-start gap-3">
+                    <label className="text-xs text-muted-foreground w-14 mt-1">Color</label>
+                    <ColorSwatchGrid value={editColor} onChange={setEditColor} />
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <label className="text-xs text-muted-foreground w-14">Icon</label>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setShowEditIconPicker(true)}
+                      className="h-8 px-2"
+                    >
+                      {(() => {
+                        const IconComponent = ICON_MAP[editIcon] || ICON_MAP.user;
+                        return IconComponent ? <IconComponent className="w-4 h-4" /> : null;
+                      })()}
+                      <span className="ml-2 text-xs">{editIcon}</span>
+                    </Button>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <label className="text-xs text-muted-foreground w-14">Preview</label>
+                    <div className="flex items-center gap-2">
+                      <AccountBadge
+                        name={editName || "Account"}
+                        color={editColor}
+                        icon={editIcon}
+                        variant="compact"
+                      />
+                      <span className="text-xs text-foreground">{editName || "Account"}</span>
+                    </div>
+                  </div>
                 </div>
                 <div className="flex gap-2">
                   <Button size="sm" onClick={saveEdit} className="h-7 text-xs">
@@ -310,14 +389,39 @@ export const AccountSettings: React.FC = () => {
               placeholder="Config directory (e.g., ~/.claude-personal)"
             />
             <TypeSelect value={newType} onChange={setNewType} />
-            <div className="flex items-center gap-2">
-              <label className="text-xs text-muted-foreground">Color</label>
-              <input
-                type="color"
-                value={newColor}
-                onChange={(e) => setNewColor(e.target.value)}
-                className="w-8 h-8 rounded cursor-pointer border border-border bg-transparent"
-              />
+            <div className="space-y-2">
+              <div className="flex items-start gap-3">
+                <label className="text-xs text-muted-foreground w-14 mt-1">Color</label>
+                <ColorSwatchGrid value={newColor} onChange={setNewColor} />
+              </div>
+              <div className="flex items-center gap-3">
+                <label className="text-xs text-muted-foreground w-14">Icon</label>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setShowNewIconPicker(true)}
+                  className="h-8 px-2"
+                >
+                  {(() => {
+                    const IconComponent = ICON_MAP[newIcon] || ICON_MAP.user;
+                    return IconComponent ? <IconComponent className="w-4 h-4" /> : null;
+                  })()}
+                  <span className="ml-2 text-xs">{newIcon}</span>
+                </Button>
+              </div>
+              <div className="flex items-center gap-3">
+                <label className="text-xs text-muted-foreground w-14">Preview</label>
+                <div className="flex items-center gap-2">
+                  <AccountBadge
+                    name={newName || "Account"}
+                    color={newColor}
+                    icon={newIcon}
+                    variant="compact"
+                  />
+                  <span className="text-xs text-foreground">{newName || "Account"}</span>
+                </div>
+              </div>
             </div>
             <div className="flex gap-2">
               <Button size="sm" onClick={handleCreate} className="h-7 text-xs">
@@ -477,6 +581,24 @@ export const AccountSettings: React.FC = () => {
           </div>
         )}
       </div>
+      <IconPicker
+        value={editIcon}
+        onSelect={(name) => {
+          setEditIcon(name);
+          setShowEditIconPicker(false);
+        }}
+        isOpen={showEditIconPicker}
+        onClose={() => setShowEditIconPicker(false)}
+      />
+      <IconPicker
+        value={newIcon}
+        onSelect={(name) => {
+          setNewIcon(name);
+          setShowNewIconPicker(false);
+        }}
+        isOpen={showNewIconPicker}
+        onClose={() => setShowNewIconPicker(false)}
+      />
     </div>
   );
 };
