@@ -48,6 +48,16 @@ const migrations: Migration[] = [
       }
     },
   },
+  {
+    version: 2,
+    description: 'Add icon column to accounts',
+    up: (db) => {
+      const cols = db.pragma('table_info(accounts)') as { name: string }[];
+      if (!cols.some((c) => c.name === 'icon')) {
+        db.exec('ALTER TABLE accounts ADD COLUMN icon TEXT');
+      }
+    },
+  },
 ];
 
 /**
@@ -198,6 +208,7 @@ function initSchema(db: BetterSqlite3.Database): void {
       is_default BOOLEAN NOT NULL DEFAULT 0,
       account_type TEXT NOT NULL DEFAULT 'pro',
       color TEXT,
+      icon TEXT,
       claude_binary TEXT,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP

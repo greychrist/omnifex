@@ -251,6 +251,53 @@ describe('runMigrations', () => {
       .get();
     expect(row).toBeDefined();
   });
+
+  it('migration v2 adds an icon column to accounts', () => {
+    const db = new BetterSqlite3(':memory:');
+    db.exec(`
+      CREATE TABLE accounts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT UNIQUE NOT NULL,
+        config_dir TEXT NOT NULL,
+        is_default BOOLEAN NOT NULL DEFAULT 0,
+        account_type TEXT NOT NULL DEFAULT 'pro',
+        color TEXT,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    runMigrations(db);
+
+    const cols = db.pragma('table_info(accounts)') as { name: string }[];
+    expect(cols.some((c) => c.name === 'icon')).toBe(true);
+    db.close();
+  });
+
+  it('migration v2 is idempotent (running twice does not throw)', () => {
+    const db = new BetterSqlite3(':memory:');
+    db.exec(`
+      CREATE TABLE accounts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT UNIQUE NOT NULL,
+        config_dir TEXT NOT NULL,
+        is_default BOOLEAN NOT NULL DEFAULT 0,
+        account_type TEXT NOT NULL DEFAULT 'pro',
+        color TEXT,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    expect(() => {
+      runMigrations(db);
+      runMigrations(db);
+    }).not.toThrow();
+
+    const cols = db.pragma('table_info(accounts)') as { name: string }[];
+    expect(cols.filter((c) => c.name === 'icon')).toHaveLength(1);
+    db.close();
+  });
 });
 
 describe('toActionableNativeModuleError', () => {
