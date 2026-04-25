@@ -5,6 +5,22 @@ All notable changes to GreyChrist are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.44] — 2026-04-25
+
+Removes the checkpoint subsystem and fixes two rendering gaps: image-only user messages are visible again, and live subagent progress now streams into the SubagentBar expander instead of going dark mid-run. Installers remain **unsigned**.
+
+### Added
+
+- **Live subagent progress streaming** (`abc3bd7`). Both interactive sessions and agent executions now pass `agentProgressSummaries: true` to the Claude Agent SDK. The SDK emits periodic AI-generated `task_progress` summaries for any nested subagent dispatched via the Task tool, populating the SubagentBar expander mid-run instead of showing nothing between `task_started` and `task_notification`.
+
+### Fixed
+
+- **Image-only user messages stay visible in chat** (`ca4f050`). `filterDisplayableMessages` previously dropped any user message whose content array contained no text blocks, so pasting an image with no caption made the entire message disappear from the timeline. The filter now recognizes image blocks as displayable content.
+
+### Removed
+
+- **Checkpoint subsystem deleted** (`b6f5043`). The full timeline/checkpoint feature is gone — service, IPC, UI panels, fork dialog, and hooks (-2754 lines across 12 files). The feature was unfinished and was creating maintenance drag against the rest of the session UX. If checkpointing returns, it will be designed against the current session model rather than retrofitted onto the old one.
+
 ## [0.3.43] — 2026-04-24
 
 Live-session permissions: rule edits made via the in-session sidebar now take effect immediately instead of waiting for a session restart. Plus a small spacing tweak so the message-card timestamp stops crowding the last line of content. Installers remain **unsigned**.
