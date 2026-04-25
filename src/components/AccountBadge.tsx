@@ -1,6 +1,8 @@
 import React from "react";
 import { cn } from "@/lib/utils";
 import { useAccounts } from "@/contexts/AccountsContext";
+import { ICON_MAP } from "./IconPicker";
+import { User } from "lucide-react";
 
 const FALLBACK_COLORS = [
   "bg-blue-500/20 text-blue-400 border-blue-500/30",
@@ -22,19 +24,61 @@ function getFallbackColor(name: string): string {
 interface AccountBadgeProps {
   name: string;
   color?: string | null;
+  icon?: string | null;
+  variant?: "full" | "compact";
   className?: string;
 }
 
-export const AccountBadge: React.FC<AccountBadgeProps> = ({ name, color: colorProp, className }) => {
+export const AccountBadge: React.FC<AccountBadgeProps> = ({
+  name,
+  color: colorProp,
+  icon,
+  variant = "full",
+  className,
+}) => {
   const { getColor } = useAccounts();
   const color = colorProp ?? getColor(name);
+
+  if (variant === "compact") {
+    const IconComponent = (icon && ICON_MAP[icon]) || User;
+    if (color) {
+      return (
+        <span
+          title={name}
+          className={cn(
+            "inline-flex items-center justify-center rounded h-[18px] w-[18px] flex-shrink-0",
+            className,
+          )}
+          style={{
+            backgroundColor: `${color}2e`,
+            color: color,
+            boxShadow: `inset 0 0 0 1px ${color}4d`,
+          }}
+        >
+          <IconComponent className="h-[11px] w-[11px]" strokeWidth={2.2} />
+        </span>
+      );
+    }
+    return (
+      <span
+        title={name}
+        className={cn(
+          "inline-flex items-center justify-center rounded h-[18px] w-[18px] flex-shrink-0",
+          getFallbackColor(name),
+          className,
+        )}
+      >
+        <IconComponent className="h-[11px] w-[11px]" strokeWidth={2.2} />
+      </span>
+    );
+  }
 
   if (color) {
     return (
       <span
         className={cn(
           "inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium",
-          className
+          className,
         )}
         style={{
           backgroundColor: `${color}33`,
@@ -53,7 +97,7 @@ export const AccountBadge: React.FC<AccountBadgeProps> = ({ name, color: colorPr
       className={cn(
         "inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium",
         fallbackClass,
-        className
+        className,
       )}
     >
       {name}
