@@ -30,7 +30,7 @@ Tab strip restyled to a shadcn pill aesthetic, per-account user-pickable icons, 
 
 - **Standalone account-type pill** in `SessionHeader` (`6ed422b`) — replaced by the inline `: <type>` suffix on the AccountBadge.
 
-
+## [0.3.44] — 2026-04-25
 
 Removes the checkpoint subsystem and fixes two rendering gaps: image-only user messages are visible again, and live subagent progress now streams into the SubagentBar expander instead of going dark mid-run. Installers remain **unsigned**.
 
