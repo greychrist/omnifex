@@ -583,19 +583,13 @@ export const AccountSettings: React.FC = () => {
       </div>
       <IconPicker
         value={editIcon}
-        onSelect={(name) => {
-          setEditIcon(name);
-          setShowEditIconPicker(false);
-        }}
+        onSelect={setEditIcon}
         isOpen={showEditIconPicker}
         onClose={() => setShowEditIconPicker(false)}
       />
       <IconPicker
         value={newIcon}
-        onSelect={(name) => {
-          setNewIcon(name);
-          setShowNewIconPicker(false);
-        }}
+        onSelect={setNewIcon}
         isOpen={showNewIconPicker}
         onClose={() => setShowNewIconPicker(false)}
       />

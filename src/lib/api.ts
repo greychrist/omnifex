@@ -2057,7 +2057,7 @@ export const api = {
     const params: Record<string, any> = { name, configDir, isDefault };
     if (accountType) params.accountType = accountType;
     if (color) params.color = color;
-    if (icon) params.icon = icon;
+    if (icon !== undefined) params.icon = icon;
     return apiCall<Account>('create_account', params);
   },
 
