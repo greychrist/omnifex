@@ -142,50 +142,22 @@ export function SessionHeader({
       "flex items-center gap-3 px-4 py-2 border-b border-border/50 bg-muted text-xs shrink-0",
       className
     )}>
-      <AccountBadge name={accountName} />
-      {accountType && (
-        <span className="inline-flex items-center rounded border border-foreground/20 bg-foreground/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-foreground/80">
-          {accountType}
-        </span>
-      )}
-
-      {/* Session status indicator */}
-      {sessionStatus && (
-        <span className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-          <span className={cn(
-            "h-2 w-2 rounded-full",
-            sessionStatus === 'active' && 'bg-emerald-500',
-            sessionStatus === 'starting' && 'bg-amber-500 animate-pulse',
-            sessionStatus === 'ended' && 'bg-red-500',
-          )} />
-          {sessionStatus === 'active' && 'Active'}
-          {sessionStatus === 'starting' && 'Starting…'}
-          {sessionStatus === 'ended' && 'Closed'}
-        </span>
-      )}
-
-      {/* SDK account email — clickable to show account details popover */}
-      {sdkIdentifier && (
-        <Popover
-          open={accountPopoverOpen}
-          onOpenChange={setAccountPopoverOpen}
-          align="start"
-          side="bottom"
-          className="w-96"
-          trigger={
-            <button
-              type="button"
-              className={cn(
-                "flex items-center gap-1 px-2 py-0.5 rounded-md hover:bg-foreground/10 transition-colors",
-                sdkMismatch ? "text-yellow-600" : "text-green-600",
-              )}
-              title="Click for account details"
-            >
-              {sdkMismatch ? <ShieldAlert className="w-3 h-3" /> : <ShieldCheck className="w-3 h-3" />}
-              <span className="text-[10px] font-mono truncate max-w-[140px]">{sdkIdentifier}</span>
-            </button>
-          }
-          content={
+      <Popover
+        open={accountPopoverOpen}
+        onOpenChange={setAccountPopoverOpen}
+        align="start"
+        side="bottom"
+        className="w-96"
+        trigger={
+          <button
+            type="button"
+            className="rounded hover:opacity-80 transition-opacity focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            title="Click for account details"
+          >
+            <AccountBadge name={accountName} />
+          </button>
+        }
+        content={
             <div className="flex flex-col gap-3 text-left">
               {sdkAccount && (
                 <div>
@@ -255,6 +227,45 @@ export function SessionHeader({
             </div>
           }
         />
+      {/* Session status indicator — inline styles so the border picks up the
+          status color the same way AccountBadge does (Tailwind v4's
+          border-{color}/{alpha} utilities desaturate to gray under this theme). */}
+      {sessionStatus && (() => {
+        const statusColor =
+          sessionStatus === 'active' ? '#22c55e' :
+          sessionStatus === 'starting' ? '#f59e0b' :
+          '#ef4444'; // ended
+        return (
+          <span
+            className={cn(
+              "inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+              sessionStatus === 'starting' && 'animate-pulse',
+            )}
+            style={{
+              backgroundColor: `${statusColor}33`,
+              color: statusColor,
+              borderColor: `${statusColor}4d`,
+            }}
+          >
+            {sessionStatus === 'active' && 'Active'}
+            {sessionStatus === 'starting' && 'Starting…'}
+            {sessionStatus === 'ended' && 'Closed'}
+          </span>
+        );
+      })()}
+
+      {/* SDK account email — static indicator (details now live in the AccountBadge popover) */}
+      {sdkIdentifier && (
+        <span
+          className={cn(
+            "flex items-center gap-1 px-2 py-0.5",
+            sdkMismatch ? "text-yellow-600" : "text-green-600",
+          )}
+          title={sdkMismatch ? "SDK account mismatch — click the account badge for details" : "SDK account verified"}
+        >
+          {sdkMismatch ? <ShieldAlert className="w-3 h-3" /> : <ShieldCheck className="w-3 h-3" />}
+          <span className="text-[10px] font-mono truncate max-w-[140px]">{sdkIdentifier}</span>
+        </span>
       )}
 
       {/* Permissions pill — matches the chat-bar PermissionPicker (icon + shortName + color). */}

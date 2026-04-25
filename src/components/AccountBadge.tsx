@@ -25,6 +25,7 @@ interface AccountBadgeProps {
   name: string;
   color?: string | null;
   icon?: string | null;
+  accountType?: string | null;
   variant?: "full" | "compact";
   className?: string;
 }
@@ -33,14 +34,17 @@ export const AccountBadge: React.FC<AccountBadgeProps> = ({
   name,
   color: colorProp,
   icon,
+  accountType: accountTypeProp,
   variant = "full",
   className,
 }) => {
-  const { getColor } = useAccounts();
+  const { getColor, getIcon, getAccountType } = useAccounts();
   const color = colorProp ?? getColor(name);
+  const resolvedIcon = icon ?? getIcon(name);
+  const resolvedType = accountTypeProp ?? getAccountType(name);
+  const IconComponent = (resolvedIcon && ICON_MAP[resolvedIcon]) || User;
 
   if (variant === "compact") {
-    const IconComponent = (icon && ICON_MAP[icon]) || User;
     if (color) {
       return (
         <span
@@ -55,7 +59,7 @@ export const AccountBadge: React.FC<AccountBadgeProps> = ({
             boxShadow: `inset 0 0 0 1px ${color}4d`,
           }}
         >
-          <IconComponent className="h-[11px] w-[11px]" strokeWidth={2.2} />
+          <IconComponent className="h-[13px] w-[13px]" strokeWidth={2.2} />
         </span>
       );
     }
@@ -68,7 +72,7 @@ export const AccountBadge: React.FC<AccountBadgeProps> = ({
           className,
         )}
       >
-        <IconComponent className="h-[11px] w-[11px]" strokeWidth={2.2} />
+        <IconComponent className="h-[13px] w-[13px]" strokeWidth={2.2} />
       </span>
     );
   }
@@ -77,7 +81,7 @@ export const AccountBadge: React.FC<AccountBadgeProps> = ({
     return (
       <span
         className={cn(
-          "inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium",
+          "inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[11px] font-medium",
           className,
         )}
         style={{
@@ -86,7 +90,11 @@ export const AccountBadge: React.FC<AccountBadgeProps> = ({
           borderColor: `${color}4d`,
         }}
       >
+        <IconComponent className="h-[11px] w-[11px]" strokeWidth={2.2} />
         {name}
+        {resolvedType && (
+          <span className="opacity-70">: {resolvedType}</span>
+        )}
       </span>
     );
   }
@@ -95,11 +103,12 @@ export const AccountBadge: React.FC<AccountBadgeProps> = ({
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium",
+        "inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[11px] font-medium",
         fallbackClass,
         className,
       )}
     >
+      <IconComponent className="h-[11px] w-[11px]" strokeWidth={2.2} />
       {name}
     </span>
   );

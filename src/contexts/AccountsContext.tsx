@@ -5,6 +5,8 @@ interface AccountsContextType {
   accounts: Account[];
   refresh: () => Promise<void>;
   getColor: (name: string) => string | null;
+  getIcon: (name: string) => string | null;
+  getAccountType: (name: string) => string | null;
 }
 
 const AccountsContext = createContext<AccountsContextType | undefined>(undefined);
@@ -29,8 +31,16 @@ export const AccountsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     return accounts.find(a => a.name === name)?.color ?? null;
   }, [accounts]);
 
+  const getIcon = useCallback((name: string): string | null => {
+    return accounts.find(a => a.name === name)?.icon ?? null;
+  }, [accounts]);
+
+  const getAccountType = useCallback((name: string): string | null => {
+    return accounts.find(a => a.name === name)?.account_type ?? null;
+  }, [accounts]);
+
   return (
-    <AccountsContext.Provider value={{ accounts, refresh, getColor }}>
+    <AccountsContext.Provider value={{ accounts, refresh, getColor, getIcon, getAccountType }}>
       {children}
     </AccountsContext.Provider>
   );

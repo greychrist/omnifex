@@ -76,12 +76,12 @@ const TabItem: React.FC<TabItemProps> = ({ tab, isActive, onClose, onClick, isDr
       dragListener={true}
       transition={{ duration: 0.1 }}
       className={cn(
-        "relative flex items-center gap-[7px] text-[12.5px] cursor-pointer select-none group",
+        "relative flex items-center gap-[7px] text-sm cursor-pointer select-none group",
         "transition-all duration-100",
         "rounded-md h-[26px] px-[10px]",
         "min-w-[120px] max-w-[220px]",
         isActive
-          ? "text-foreground bg-card shadow-[inset_0_0_0_1px_hsl(var(--border))]"
+          ? "text-foreground bg-background shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_75%,transparent)]"
           : "text-muted-foreground hover:text-foreground hover:bg-white/5",
         isDragging && "shadow-sm",
       )}
@@ -93,7 +93,7 @@ const TabItem: React.FC<TabItemProps> = ({ tab, isActive, onClose, onClick, isDr
     >
       {/* Type icon */}
       <div className="flex-shrink-0">
-        <Icon className={cn("w-[13px] h-[13px]", isActive ? "opacity-100" : "opacity-65")} />
+        <Icon className={cn("w-[15px] h-[15px]", isActive ? "opacity-100" : "opacity-65")} />
       </div>
 
       {/* Title */}
@@ -298,10 +298,10 @@ export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
   };
 
   return (
-    <div className={cn("flex items-stretch bg-muted/15 relative border-b border-border/50", className)}>
+    <div className={cn("flex items-stretch bg-muted/40 relative border-b border-border/50", className)}>
       {/* Left fade gradient */}
       {showLeftScroll && (
-        <div className="absolute left-0 top-0 bottom-0 w-8 bg-gradient-to-r from-muted/15 to-transparent pointer-events-none z-10" />
+        <div className="absolute left-0 top-0 bottom-0 w-8 bg-gradient-to-r from-muted/40 to-transparent pointer-events-none z-10" />
       )}
       
       {/* Left scroll button */}
@@ -375,7 +375,7 @@ export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
 
       {/* Right fade gradient */}
       {showRightScroll && (
-        <div className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-muted/15 to-transparent pointer-events-none z-10" />
+        <div className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-muted/40 to-transparent pointer-events-none z-10" />
       )}
 
       {/* Right scroll button */}
