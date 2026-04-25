@@ -74,16 +74,16 @@ const TabItem: React.FC<TabItemProps> = ({ tab, isActive, onClose, onClick, isDr
       value={tab}
       id={tab.id}
       dragListener={true}
-      transition={{ duration: 0.1 }} // Snappy reorder animation
+      transition={{ duration: 0.1 }}
       className={cn(
-        "relative flex items-center gap-2 text-sm cursor-pointer select-none group",
-        "transition-colors duration-100 overflow-hidden border-r border-border/20",
-        "before:absolute before:bottom-0 before:left-0 before:right-0 before:h-0.5 before:transition-colors before:duration-100",
+        "relative flex items-center gap-[7px] text-[12.5px] cursor-pointer select-none group",
+        "transition-all duration-100",
+        "rounded-md h-[26px] px-[10px]",
+        "min-w-[120px] max-w-[220px]",
         isActive
-          ? "bg-card text-card-foreground before:bg-primary"
-          : "bg-transparent text-muted-foreground hover:bg-muted/40 hover:text-foreground before:bg-transparent",
-        isDragging && "bg-card border-primary/50 shadow-sm z-50",
-        "min-w-[120px] max-w-[220px] h-8 px-3"
+          ? "text-foreground bg-card shadow-[inset_0_0_0_1px_hsl(var(--border))]"
+          : "text-muted-foreground hover:text-foreground hover:bg-white/5",
+        isDragging && "shadow-sm",
       )}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
@@ -91,56 +91,55 @@ const TabItem: React.FC<TabItemProps> = ({ tab, isActive, onClose, onClick, isDr
       onDragStart={() => setDraggedTabId?.(tab.id)}
       onDragEnd={() => setDraggedTabId?.(null)}
     >
-      {/* Tab Icon */}
+      {/* Type icon */}
       <div className="flex-shrink-0">
-        <Icon className="w-4 h-4" />
+        <Icon className={cn("w-[13px] h-[13px]", isActive ? "opacity-100" : "opacity-65")} />
       </div>
-      
-      {/* Tab Title */}
-      <span className="flex-1 truncate text-xs font-medium min-w-0">
+
+      {/* Title */}
+      <span className="flex-1 truncate font-medium min-w-0">
         {tab.title}
       </span>
+
+      {/* Account chip (compact) */}
       {tab.accountName && (
         <AccountBadge
           name={tab.accountName}
-          className={cn("text-[9px] px-1 py-0", tab.accountName === 'no account' && "bg-muted text-muted-foreground border-muted-foreground/30")}
+          icon={tab.accountIcon}
+          color={tab.accountColor}
+          variant="compact"
         />
       )}
 
-      {/* Status Indicators - always takes up space */}
-      <div className="flex items-center gap-1.5 flex-shrink-0 w-6 justify-end">
-        {statusIcon && (
-          <span className="flex items-center justify-center">
-            {statusIcon}
-          </span>
-        )}
-
+      {/* Status indicator (fixed slot) */}
+      <div className="flex items-center justify-center w-[14px] flex-shrink-0">
+        {statusIcon}
         {tab.hasUnsavedChanges && !statusIcon && (
-          <span 
+          <span
             className="w-1.5 h-1.5 bg-primary rounded-full"
             title="Unsaved changes"
           />
         )}
       </div>
 
-      {/* Close Button - Always reserves space */}
+      {/* Close button */}
       <button
         onClick={(e) => {
           e.stopPropagation();
           onClose(tab.id);
         }}
         className={cn(
-          "flex-shrink-0 w-4 h-4 flex items-center justify-center rounded-sm",
+          "flex-shrink-0 w-[14px] h-[14px] flex items-center justify-center rounded-sm",
           "transition-all duration-100 hover:bg-destructive/20 hover:text-destructive",
           "focus:outline-none focus:ring-1 focus:ring-destructive/50",
-          (isHovered || isActive) ? "opacity-100" : "opacity-0"
+          isHovered || isActive ? "opacity-50" : "opacity-0",
+          "hover:opacity-100",
         )}
         title={`Close ${tab.title}`}
         tabIndex={-1}
       >
         <X className="w-3 h-3" />
       </button>
-
     </Reorder.Item>
   );
 };
@@ -333,12 +332,12 @@ export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
         className="flex-1 flex overflow-x-auto scrollbar-hide"
         style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
       >
-        <div className="flex items-stretch h-8">
+        <div className="flex items-center h-9 gap-1 px-2">
           <Reorder.Group
             axis="x"
             values={tabs}
             onReorder={handleReorder}
-            className="flex items-stretch"
+            className="flex items-center gap-1"
             layoutScroll={false}
           >
             {tabs.map((tab) => (
@@ -361,8 +360,8 @@ export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
             whileTap={canAddTab() ? { scale: 0.97 } : {}}
             transition={{ duration: 0.15 }}
             className={cn(
-              "px-2 mx-1 rounded-md flex items-center justify-center flex-shrink-0",
-              "bg-background/50 backdrop-blur-sm h-8",
+              "px-2 rounded-md flex items-center justify-center flex-shrink-0",
+              "bg-background/50 backdrop-blur-sm h-[26px]",
               canAddTab()
                 ? "hover:bg-muted/60 text-muted-foreground hover:text-foreground"
                 : "opacity-50 cursor-not-allowed text-muted-foreground"

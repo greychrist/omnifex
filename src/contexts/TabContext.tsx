@@ -27,6 +27,8 @@ export interface Tab {
   };
   projectPath?: string; // for agent-execution tabs
   accountName?: string; // for chat tabs - resolved account name
+  accountColor?: string | null;  // for chat tabs - resolved account color
+  accountIcon?: string | null;   // for chat tabs - resolved account icon
   status: 'active' | 'idle' | 'running' | 'complete' | 'error';
   hasUnsavedChanges: boolean;
   hasUnreadResult?: boolean;

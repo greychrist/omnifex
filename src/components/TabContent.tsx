@@ -90,7 +90,7 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
       } else {
         api.resolveAccountForProject(project.path).then((account) => {
           setProjectAccountName(account?.name ?? null);
-          if (account) updateTab(tab.id, { accountName: account.name });
+          if (account) updateTab(tab.id, { accountName: account.name, accountColor: account.color, accountIcon: account.icon });
         }).catch(() => setProjectAccountName(null));
       }
 
@@ -161,7 +161,7 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
     });
     // Resolve account name for the tab badge
     api.resolveAccountForProject(selectedProject.path).then((account) => {
-      if (account) updateTab(tab.id, { accountName: account.name });
+      if (account) updateTab(tab.id, { accountName: account.name, accountColor: account.color, accountIcon: account.icon });
     }).catch(() => {});
   };
   
@@ -169,7 +169,11 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
   useEffect(() => {
     if (tab.type === 'chat' && !tab.accountName && tab.initialProjectPath) {
       api.resolveAccountForProject(tab.initialProjectPath).then((account) => {
-        updateTab(tab.id, { accountName: account ? account.name : 'no account' });
+        updateTab(tab.id, {
+          accountName: account ? account.name : 'no account',
+          accountColor: account?.color,
+          accountIcon: account?.icon,
+        });
       }).catch(() => {
         updateTab(tab.id, { accountName: 'no account' });
       });
@@ -277,7 +281,7 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                             initialProjectPath: session.project_path
                           });
                           api.resolveAccountForProject(session.project_path).then((account) => {
-                            if (account) updateTab(tab.id, { accountName: account.name });
+                            if (account) updateTab(tab.id, { accountName: account.name, accountColor: account.color, accountIcon: account.icon });
                           }).catch(() => {});
                         }}
                         onEditClaudeFile={(file: ClaudeMdFile) => {
@@ -358,7 +362,7 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                 updateTab(tab.id, { title: dirName, initialProjectPath: path });
                 // Resolve account for tab badge
                 api.resolveAccountForProject(path).then((account) => {
-                  if (account) updateTab(tab.id, { accountName: account.name });
+                  if (account) updateTab(tab.id, { accountName: account.name, accountColor: account.color, accountIcon: account.icon });
                 }).catch(() => {});
               }}
             />
@@ -522,7 +526,7 @@ export const TabContent: React.FC = () => {
         // Resolve account name for the tab badge
         api.resolveAccountForProject(session.project_path).then((account) => {
           if (account) {
-            updateTab(newTabId, { accountName: account.name });
+            updateTab(newTabId, { accountName: account.name, accountColor: account.color, accountIcon: account.icon });
           }
         }).catch(() => {});
       }
@@ -575,7 +579,7 @@ export const TabContent: React.FC = () => {
             initialProjectPath: session.project_path
           });
           api.resolveAccountForProject(session.project_path).then((account) => {
-            if (account) updateTab(currentTab.id, { accountName: account.name });
+            if (account) updateTab(currentTab.id, { accountName: account.name, accountColor: account.color, accountIcon: account.icon });
           }).catch(() => {});
         } else {
           const projectName = session.project_path.split('/').pop() || 'Session';
