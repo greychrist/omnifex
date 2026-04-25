@@ -113,16 +113,11 @@ export function SessionHeader({
     }
   };
 
-  // Derive a human-friendly identifier for the SDK-reported account and
-  // decide whether it agrees with our resolved account. Agreement is noisy
-  // because Greg's local accounts are named "Personal" / "Work" while the
-  // SDK reports email / org — we treat "reported something" as confirmation
-  // unless the apiProvider indicates an unexpected backend.
-  const sdkIdentifier =
-    sdkAccount?.email ??
-    sdkAccount?.organization ??
-    sdkAccount?.subscriptionType ??
-    null;
+  // Decide whether the SDK-reported account agrees with our resolved
+  // account. Agreement is noisy because Greg's local accounts are named
+  // "Personal" / "Work" while the SDK reports email / org — we treat
+  // "reported something" as confirmation unless the apiProvider indicates
+  // an unexpected backend.
   const sdkMismatch =
     sdkAccount !== undefined &&
     sdkAccount !== null &&
@@ -254,20 +249,6 @@ export function SessionHeader({
         );
       })()}
 
-      {/* SDK account email — static indicator (details now live in the AccountBadge popover) */}
-      {sdkIdentifier && (
-        <span
-          className={cn(
-            "flex items-center gap-1 px-2 py-0.5",
-            sdkMismatch ? "text-yellow-600" : "text-green-600",
-          )}
-          title={sdkMismatch ? "SDK account mismatch — click the account badge for details" : "SDK account verified"}
-        >
-          {sdkMismatch ? <ShieldAlert className="w-3 h-3" /> : <ShieldCheck className="w-3 h-3" />}
-          <span className="text-[10px] font-mono truncate max-w-[140px]">{sdkIdentifier}</span>
-        </span>
-      )}
-
       {/* Permissions pill — matches the chat-bar PermissionPicker (icon + shortName + color). */}
       {permissionMode && (() => {
         const normalized = normalizePermissionMode(permissionMode);
@@ -275,7 +256,7 @@ export function SessionHeader({
         if (!mode) return null;
         return (
           <>
-            <span aria-hidden="true" className="h-4 w-px bg-border/60 shrink-0" />
+            <span aria-hidden="true" className="h-4 w-px bg-foreground/30 shrink-0" />
             <div className="flex items-center gap-1.5">
               <span className="text-[9px] uppercase tracking-wider text-muted-foreground">permissions</span>
               <span
@@ -298,7 +279,7 @@ export function SessionHeader({
         if (!level) return null;
         return (
           <>
-            <span aria-hidden="true" className="h-4 w-px bg-border/60 shrink-0" />
+            <span aria-hidden="true" className="h-4 w-px bg-foreground/30 shrink-0" />
             <div className="flex items-center gap-1.5">
               <span className="text-[9px] uppercase tracking-wider text-muted-foreground">effort</span>
               <span
@@ -322,7 +303,7 @@ export function SessionHeader({
         if (!cfg) return null;
         return (
           <>
-            <span aria-hidden="true" className="h-4 w-px bg-border/60 shrink-0" />
+            <span aria-hidden="true" className="h-4 w-px bg-foreground/30 shrink-0" />
             <div className="flex items-center gap-1.5">
               <span className="text-[9px] uppercase tracking-wider text-muted-foreground">adaptive</span>
               <span
