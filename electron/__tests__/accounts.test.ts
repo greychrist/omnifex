@@ -193,6 +193,31 @@ describe('accounts service', () => {
   });
 
   // -----------------------------------------------------------------------
+  // Icon field
+  // -----------------------------------------------------------------------
+
+  describe('icon field', () => {
+    it('persists icon on create and reads it back via listAccounts', () => {
+      accounts.createAccount('Personal', '/home/user/.claude', false, 'pro', '#a78bfa', 'user');
+      const list = accounts.listAccounts();
+      expect(list[0].icon).toBe('user');
+    });
+
+    it('updates icon via updateAccount', () => {
+      const acct = accounts.createAccount('Work', '/home/user/.claude-work', false, 'team', '#f59e0b', 'briefcase');
+      accounts.updateAccount(acct.id, 'Work', '/home/user/.claude-work', 'team', '#f59e0b', 'rocket');
+      const list = accounts.listAccounts();
+      expect(list[0].icon).toBe('rocket');
+    });
+
+    it('icon is null when not provided on create', () => {
+      accounts.createAccount('NoIcon', '/home/user/.claude', false, 'pro');
+      const list = accounts.listAccounts();
+      expect(list[0].icon).toBeNull();
+    });
+  });
+
+  // -----------------------------------------------------------------------
   // Discovery
   // -----------------------------------------------------------------------
 

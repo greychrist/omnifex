@@ -14,6 +14,7 @@ export interface Account {
   is_default: boolean;
   account_type: string;
   color: string | null;
+  icon: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -46,6 +47,7 @@ export interface AccountsService {
     isDefault: boolean,
     accountType?: string,
     color?: string,
+    icon?: string,
   ): Account;
   updateAccount(
     id: number,
@@ -53,6 +55,7 @@ export interface AccountsService {
     configDir: string,
     accountType?: string,
     color?: string,
+    icon?: string,
   ): void;
   deleteAccount(id: number): void;
 
@@ -79,6 +82,7 @@ interface AccountRow {
   is_default: number; // SQLite stores 0/1
   account_type: string;
   color: string | null;
+  icon: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -103,6 +107,7 @@ function rowToAccount(row: AccountRow): Account {
     is_default: row.is_default !== 0,
     account_type: row.account_type,
     color: row.color,
+    icon: row.icon,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
@@ -151,6 +156,7 @@ export function createAccountsService(db: Database): AccountsService {
     isDefault: boolean,
     accountType = 'pro',
     color?: string,
+    icon?: string,
   ): Account {
     if (isDefault) {
       raw.prepare('UPDATE accounts SET is_default = 0').run();
@@ -158,10 +164,10 @@ export function createAccountsService(db: Database): AccountsService {
 
     const info = raw
       .prepare(
-        `INSERT INTO accounts (name, config_dir, is_default, account_type, color)
-         VALUES (?, ?, ?, ?, ?)`,
+        `INSERT INTO accounts (name, config_dir, is_default, account_type, color, icon)
+         VALUES (?, ?, ?, ?, ?, ?)`,
       )
-      .run(name, configDir, isDefault ? 1 : 0, accountType, color ?? null);
+      .run(name, configDir, isDefault ? 1 : 0, accountType, color ?? null, icon ?? null);
 
     const row = raw
       .prepare('SELECT * FROM accounts WHERE id = ?')
@@ -176,15 +182,16 @@ export function createAccountsService(db: Database): AccountsService {
     configDir: string,
     accountType?: string,
     color?: string,
+    icon?: string,
   ): void {
     raw
       .prepare(
         `UPDATE accounts
          SET name = ?, config_dir = ?, account_type = COALESCE(?, account_type),
-             color = ?, updated_at = CURRENT_TIMESTAMP
+             color = ?, icon = ?, updated_at = CURRENT_TIMESTAMP
          WHERE id = ?`,
       )
-      .run(name, configDir, accountType ?? null, color ?? null, id);
+      .run(name, configDir, accountType ?? null, color ?? null, icon ?? null, id);
   }
 
   function deleteAccount(id: number): void {
