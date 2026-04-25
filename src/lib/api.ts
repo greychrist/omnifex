@@ -48,6 +48,7 @@ export interface Account {
   /** Account type: "max" (no cost), "enterprise", "pro", "free" */
   account_type: string;
   color: string | null;
+  icon: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -2045,17 +2046,33 @@ export const api = {
     return apiCall<Account[]>('list_accounts');
   },
 
-  async createAccount(name: string, configDir: string, isDefault: boolean, accountType?: string, color?: string): Promise<Account> {
+  async createAccount(
+    name: string,
+    configDir: string,
+    isDefault: boolean,
+    accountType?: string,
+    color?: string,
+    icon?: string,
+  ): Promise<Account> {
     const params: Record<string, any> = { name, configDir, isDefault };
     if (accountType) params.accountType = accountType;
     if (color) params.color = color;
+    if (icon) params.icon = icon;
     return apiCall<Account>('create_account', params);
   },
 
-  async updateAccount(id: number, name: string, configDir: string, accountType?: string, color?: string): Promise<void> {
+  async updateAccount(
+    id: number,
+    name: string,
+    configDir: string,
+    accountType?: string,
+    color?: string,
+    icon?: string,
+  ): Promise<void> {
     const params: Record<string, any> = { id, name, configDir };
     if (accountType) params.accountType = accountType;
     if (color !== undefined) params.color = color;
+    if (icon !== undefined) params.icon = icon;
     return apiCall<void>('update_account', params);
   },
 

@@ -460,9 +460,17 @@ app.whenReady().then(() => {
           data.isDefault ?? data.is_default ?? false,
           data.accountType ?? data.account_type,
           data.color,
+          data.icon,
         ),
       update: (_id: any, data: any) =>
-        accountsService.updateAccount(data.id, data.name, data.configDir ?? data.config_dir, data.accountType ?? data.account_type, data.color),
+        accountsService.updateAccount(
+          data.id,
+          data.name,
+          data.configDir ?? data.config_dir,
+          data.accountType ?? data.account_type,
+          data.color,
+          data.icon,
+        ),
       delete: (id: any) => accountsService.deleteAccount(id),
       listPathRules: () => accountsService.listPathRules(),
       addPathRule: (rule: any) =>
