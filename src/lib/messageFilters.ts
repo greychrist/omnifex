@@ -44,6 +44,10 @@ export function filterDisplayableMessages(
             hasVisibleContent = true;
             break;
           }
+          if (content.type === "image") {
+            hasVisibleContent = true;
+            break;
+          }
           if (content.type === "tool_result") {
             let willBeSkipped = false;
             if (content.tool_use_id) {
