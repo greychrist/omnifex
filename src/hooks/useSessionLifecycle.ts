@@ -1,5 +1,5 @@
 import { useRef, useEffect } from "react";
-import { api, type Session } from "@/lib/api";
+import { api } from "@/lib/api";
 import type { ClaudeStreamMessage } from "@/components/AgentExecution";
 import type { EffortLevel, ThinkingConfig } from "@/components/FloatingPromptInput";
 
@@ -24,7 +24,6 @@ interface UseSessionLifecycleArgs {
     match_type: string;
     match_detail: string;
   } | null;
-  effectiveSession: Session | null;
   persistentSessionRef: React.MutableRefObject<boolean>;
   /**
    * Header badge states. Split so the UI can distinguish "subprocess is up
@@ -65,7 +64,6 @@ export function useSessionLifecycle({
   effort,
   thinkingConfig,
   accountResolution,
-  effectiveSession,
   persistentSessionRef,
   setIsSessionStarting,
   setIsSessionActive,
@@ -301,13 +299,6 @@ export function useSessionLifecycle({
       // Clean up listeners
       unlistenRefs.current.forEach((unlisten) => unlisten());
       unlistenRefs.current = [];
-
-      // Clear checkpoint manager when session ends
-      if (effectiveSession) {
-        api.clearCheckpointManager(effectiveSession.id).catch((err) => {
-          console.error("Failed to clear checkpoint manager:", err);
-        });
-      }
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps -- cleanup must only run on unmount
 

@@ -6,7 +6,6 @@ import {
   GitBranch,
   ChevronUp,
   X,
-  Wrench,
   Plug,
   Package,
   Shield,
@@ -14,8 +13,6 @@ import {
   ArrowLeft,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Popover } from "@/components/ui/popover";
 import { api, type Session } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -28,15 +25,13 @@ import {
   type ThinkingConfig,
 } from "./FloatingPromptInput";
 import { ErrorBoundary } from "./ErrorBoundary";
-import { TimelineNavigator } from "./TimelineNavigator";
-import { CheckpointSettings } from "./CheckpointSettings";
 import { SlashCommandsManager } from "./SlashCommandsManager";
 import { SessionMCPStatus } from "./SessionMCPStatus";
 import { SessionPluginStatus } from "./SessionPluginStatus";
 import { PermissionCard } from "./PermissionCard";
 import { ElicitationDialog } from "./ElicitationDialog";
 import { SessionPermissionsEditor } from "./SessionPermissionsEditor";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { TooltipProvider, TooltipSimple } from "@/components/ui/tooltip-modern";
 import { SplitPane } from "@/components/ui/split-pane";
 import { WebviewPreview } from "./WebviewPreview";
@@ -197,17 +192,11 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   // Pre-fetched built-in slash commands from the SDK, loaded alongside models
   // during session init so the picker has them immediately.
   const [supportedCommands, setSupportedCommands] = useState<import('@/lib/api').SessionSlashCommand[]>([]);
-  const [showTimeline, setShowTimeline] = useState(false);
   const [showMCPPanel, setShowMCPPanel] = useState(false);
   const [showPluginsPanel, setShowPluginsPanel] = useState(false);
   const [showPermissionsPanel, setShowPermissionsPanel] = useState(false);
-  const [timelineVersion, setTimelineVersion] = useState(0);
-  const [showSettings, setShowSettings] = useState(false);
-  const [showForkDialog, setShowForkDialog] = useState(false);
 
   const [showSlashCommandsSettings, setShowSlashCommandsSettings] = useState(false);
-  const [forkCheckpointId, setForkCheckpointId] = useState<string | null>(null);
-  const [forkSessionName, setForkSessionName] = useState("");
   const [accountResolution, setAccountResolution] = useState<{
     account: { name: string; account_type: string; config_dir: string };
     match_type: string;
@@ -333,7 +322,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   // the SDK emits after interrupt) so "Execution Failed" doesn't flash after
   // a deliberate cancel. Reset after the first result message is consumed.
   const userInterruptedRef = useRef(false);
-  const isIMEComposingRef = useRef(false);
   const messagesRef = useRef<ClaudeStreamMessage[]>([]);
   const isNearBottomRef = useRef(true);
   
@@ -350,7 +338,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     errorsEncountered: 0,
     lastActivityTime: Date.now(),
     toolExecutionTimes: [] as number[],
-    checkpointCount: 0,
     wasResumed: !!session,
     modelChanges: [] as Array<{ from: string; to: string; timestamp: number }>,
   });
@@ -798,27 +785,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             handleSendPrompt(nextPrompt.prompt, nextPrompt.model);
           }, 100);
         }
-        // Auto-checkpoint after successful turn
-        if (effectiveSession) {
-          api.getCheckpointSettings(
-            effectiveSession.id,
-            effectiveSession.project_id,
-            projectPath
-          ).then((settings) => {
-            if (settings.auto_checkpoint_enabled) {
-              return api.checkAutoCheckpoint(
-                effectiveSession.id,
-                effectiveSession.project_id,
-                projectPath,
-                ''
-              );
-            }
-          }).then(() => {
-            setTimelineVersion((v) => v + 1);
-          }).catch((err) => {
-            console.error('Failed to check auto checkpoint:', err);
-          });
-        }
       }
 
       setMessages((prev) => [...prev, message]);
@@ -836,7 +802,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     effort,
     thinkingConfig,
     accountResolution,
-    effectiveSession,
     persistentSessionRef,
     setIsSessionStarting,
     setIsSessionActive,
@@ -986,18 +951,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     setCopyPopoverOpen(false);
   };
 
-  const handleCheckpointSelect = async () => {
-    // Reload messages from the checkpoint
-    await loadSessionHistory();
-    // Ensure timeline reloads to highlight current checkpoint
-    setTimelineVersion((v) => v + 1);
-  };
-  
-  const handleCheckpointCreated = () => {
-    // Update checkpoint count in session metrics
-    sessionMetrics.current.checkpointCount += 1;
-  };
-
   // Wave 2.3 — "cancel" is now a soft interrupt. The old behavior called
   // api.stopSession() which fully tore down the SDK session, killing the
   // Claude subprocess, losing conversation history, and forcing a restart
@@ -1063,54 +1016,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
         timestamp: new Date().toISOString(),
       } as any;
       setMessages((prev) => [...prev, errorMessage]);
-    }
-  };
-
-  const handleFork = (checkpointId: string) => {
-    setForkCheckpointId(checkpointId);
-    setForkSessionName(`Fork-${new Date().toISOString().slice(0, 10)}`);
-    setShowForkDialog(true);
-  };
-
-  const handleCompositionStart = () => {
-    isIMEComposingRef.current = true;
-  };
-
-  const handleCompositionEnd = () => {
-    setTimeout(() => {
-      isIMEComposingRef.current = false;
-    }, 0);
-  };
-
-  const handleConfirmFork = async () => {
-    if (!forkCheckpointId || !forkSessionName.trim() || !effectiveSession) return;
-    
-    try {
-      setIsLoading(true);
-      setError(null);
-      
-      const newSessionId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-      await api.forkFromCheckpoint(
-        forkCheckpointId,
-        effectiveSession.id,
-        effectiveSession.project_id,
-        projectPath,
-        newSessionId,
-        forkSessionName
-      );
-      
-      // Open the new forked session
-      // You would need to implement navigation to the new session
-      console.log("Forked to new session:", newSessionId);
-      
-      setShowForkDialog(false);
-      setForkCheckpointId(null);
-      setForkSessionName("");
-    } catch (err) {
-      console.error("Failed to fork checkpoint:", err);
-      setError("Failed to fork checkpoint");
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -1382,7 +1287,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
         {/* Main Content Area */}
         <div className={cn(
           "flex-1 min-h-0 overflow-hidden transition-all duration-300 relative",
-          (showTimeline || showMCPPanel || showPluginsPanel || showPermissionsPanel) && "sm:mr-96"
+          (showMCPPanel || showPluginsPanel || showPermissionsPanel) && "sm:mr-96"
         )}>
           {showPreview ? (
             // Split pane layout when preview is active
@@ -1546,7 +1451,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
 
           <div className={cn(
             "shrink-0 transition-all duration-300 z-50",
-            (showTimeline || showMCPPanel || showPluginsPanel || showPermissionsPanel) && "sm:mr-96"
+            (showMCPPanel || showPluginsPanel || showPermissionsPanel) && "sm:mr-96"
           )}>
             {waitingForPermission && pendingToolUse && pendingRequestId && (
               <PermissionCard
@@ -1636,23 +1541,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
               }}
               extraMenuItems={
                 <>
-                  {effectiveSession && (
-                    <TooltipSimple content="Session Timeline" side="top">
-                      <motion.div
-                        whileTap={{ scale: 0.97 }}
-                        transition={{ duration: 0.15 }}
-                      >
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => { setShowTimeline(!showTimeline); if (!showTimeline) { setShowMCPPanel(false); setShowPermissionsPanel(false); } }}
-                          className="h-9 w-9 text-muted-foreground hover:text-foreground"
-                        >
-                          <GitBranch className={cn("h-3.5 w-3.5", showTimeline && "text-primary")} />
-                        </Button>
-                      </motion.div>
-                    </TooltipSimple>
-                  )}
                   {messages.length > 0 && (
                     <Popover
                       trigger={
@@ -1705,7 +1593,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                       <Button
                         variant="ghost"
                         size="icon"
-                        onClick={() => { setShowMCPPanel(!showMCPPanel); if (!showMCPPanel) { setShowTimeline(false); setShowPluginsPanel(false); setShowPermissionsPanel(false); } }}
+                        onClick={() => { setShowMCPPanel(!showMCPPanel); if (!showMCPPanel) { setShowPluginsPanel(false); setShowPermissionsPanel(false); } }}
                         className="h-8 w-8 text-muted-foreground hover:text-foreground"
                       >
                         <Plug className={cn("h-3.5 w-3.5", showMCPPanel && "text-primary")} />
@@ -1720,7 +1608,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                       <Button
                         variant="ghost"
                         size="icon"
-                        onClick={() => { setShowPluginsPanel(!showPluginsPanel); if (!showPluginsPanel) { setShowTimeline(false); setShowMCPPanel(false); setShowPermissionsPanel(false); } }}
+                        onClick={() => { setShowPluginsPanel(!showPluginsPanel); if (!showPluginsPanel) { setShowMCPPanel(false); setShowPermissionsPanel(false); } }}
                         className="h-8 w-8 text-muted-foreground hover:text-foreground"
                       >
                         <Package className={cn("h-3.5 w-3.5", showPluginsPanel && "text-primary")} />
@@ -1735,25 +1623,10 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                       <Button
                         variant="ghost"
                         size="icon"
-                        onClick={() => { setShowPermissionsPanel(!showPermissionsPanel); if (!showPermissionsPanel) { setShowTimeline(false); setShowMCPPanel(false); setShowPluginsPanel(false); } }}
+                        onClick={() => { setShowPermissionsPanel(!showPermissionsPanel); if (!showPermissionsPanel) { setShowMCPPanel(false); setShowPluginsPanel(false); } }}
                         className="h-8 w-8 text-muted-foreground hover:text-foreground"
                       >
                         <Shield className={cn("h-3.5 w-3.5", showPermissionsPanel && "text-primary")} />
-                      </Button>
-                    </motion.div>
-                  </TooltipSimple>
-                  <TooltipSimple content="Checkpoint Settings" side="top">
-                    <motion.div
-                      whileTap={{ scale: 0.97 }}
-                      transition={{ duration: 0.15 }}
-                    >
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => setShowSettings(!showSettings)}
-                        className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                      >
-                        <Wrench className={cn("h-3.5 w-3.5", showSettings && "text-primary")} />
                       </Button>
                     </motion.div>
                   </TooltipSimple>
@@ -1763,48 +1636,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           </div>
 
         </ErrorBoundary>}
-
-        {/* Timeline */}
-        <AnimatePresence>
-          {showTimeline && effectiveSession && (
-            <motion.div
-              initial={{ x: "100%" }}
-              animate={{ x: 0 }}
-              exit={{ x: "100%" }}
-              transition={{ duration: 0.2, ease: "easeOut" }}
-              className="fixed right-0 top-0 h-full w-full sm:w-96 bg-background border-l border-border shadow-xl z-30 overflow-hidden"
-            >
-              <div className="h-full flex flex-col">
-                {/* Timeline Header */}
-                <div className="flex items-center justify-between p-4 border-b border-border">
-                  <h3 className="text-lg font-semibold">Session Timeline</h3>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => setShowTimeline(false)}
-                    className="h-8 w-8"
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                </div>
-                
-                {/* Timeline Content */}
-                <div className="flex-1 overflow-y-auto p-4">
-                  <TimelineNavigator
-                    sessionId={effectiveSession.id}
-                    projectId={effectiveSession.project_id}
-                    projectPath={projectPath}
-                    currentMessageIndex={messages.length - 1}
-                    onCheckpointSelect={handleCheckpointSelect}
-                    onFork={handleFork}
-                    onCheckpointCreated={handleCheckpointCreated}
-                    refreshVersion={timelineVersion}
-                  />
-                </div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
 
         {/* MCP Servers Panel */}
         <AnimatePresence>
@@ -1900,70 +1731,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           )}
         </AnimatePresence>
       </div>
-
-      {/* Fork Dialog */}
-      <Dialog open={showForkDialog} onOpenChange={setShowForkDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Fork Session</DialogTitle>
-            <DialogDescription>
-              Create a new session branch from the selected checkpoint.
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="fork-name">New Session Name</Label>
-              <Input
-                id="fork-name"
-                placeholder="e.g., Alternative approach"
-                value={forkSessionName}
-                onChange={(e) => setForkSessionName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !isLoading) {
-                    if (e.nativeEvent.isComposing || isIMEComposingRef.current) {
-                      return;
-                    }
-                    handleConfirmFork();
-                  }
-                }}
-                onCompositionStart={handleCompositionStart}
-                onCompositionEnd={handleCompositionEnd}
-              />
-            </div>
-          </div>
-          
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setShowForkDialog(false)}
-              disabled={isLoading}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleConfirmFork}
-              disabled={isLoading || !forkSessionName.trim()}
-            >
-              Create Fork
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Settings Dialog */}
-      {showSettings && effectiveSession && (
-        <Dialog open={showSettings} onOpenChange={setShowSettings}>
-          <DialogContent className="max-w-2xl">
-            <CheckpointSettings
-              sessionId={effectiveSession.id}
-              projectId={effectiveSession.project_id}
-              projectPath={projectPath}
-              onClose={() => setShowSettings(false)}
-            />
-          </DialogContent>
-        </Dialog>
-      )}
 
       {/* Slash Commands Settings Dialog */}
       {showSlashCommandsSettings && (

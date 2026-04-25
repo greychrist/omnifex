@@ -95,15 +95,6 @@ function buildMockServices() {
       'getSessionStats',
       'getDetails',
     ] as const),
-    checkpoints: mockService([
-      'create',
-      'restore',
-      'list',
-      'forkFrom',
-      'getTimeline',
-      'updateSettings',
-      'getDiff',
-    ] as const),
     claudeBinary: mockService([
       'getPath',
       'setPath',
@@ -227,10 +218,6 @@ describe('ipc handlers — structure', () => {
       'import_agent_from_github',
       // Usage
       'get_usage_stats',
-      // Checkpoints
-      'create_checkpoint',
-      'list_checkpoints',
-      'clear_checkpoint_manager',
       // Binary
       'get_claude_binary_path',
       // MCP
@@ -270,7 +257,6 @@ describe('ipc handlers — structure', () => {
       { channel: 'get_home_directory' },
       { channel: 'session_start', params: { tabId: 't' } },
       { channel: 'mcp_list' },
-      { channel: 'clear_checkpoint_manager' },
     ];
 
     for (const { channel, params } of samples) {
@@ -729,32 +715,6 @@ describe('ipc handlers — dispatch to services', () => {
     });
     expect(services.usage.getSessionStats).toHaveBeenCalledWith({ order: 'asc' });
     expect(services.usage.getDetails).toHaveBeenCalledWith({ limit: 10 });
-  });
-
-  // ── Checkpoints ─────────────────────────────────────────────────────────
-
-  it('checkpoint channels all route through their methods', async () => {
-    const p = { sessionId: 's' };
-    await invoke(handlers, 'create_checkpoint', p);
-    await invoke(handlers, 'restore_checkpoint', p);
-    await invoke(handlers, 'list_checkpoints', p);
-    await invoke(handlers, 'fork_from_checkpoint', p);
-    await invoke(handlers, 'get_session_timeline', p);
-    await invoke(handlers, 'update_checkpoint_settings', p);
-    await invoke(handlers, 'get_checkpoint_diff', p);
-
-    expect(services.checkpoints.create).toHaveBeenCalledWith(p);
-    expect(services.checkpoints.restore).toHaveBeenCalledWith(p);
-    expect(services.checkpoints.list).toHaveBeenCalledWith(p);
-    expect(services.checkpoints.forkFrom).toHaveBeenCalledWith(p);
-    expect(services.checkpoints.getTimeline).toHaveBeenCalledWith(p);
-    expect(services.checkpoints.updateSettings).toHaveBeenCalledWith(p);
-    expect(services.checkpoints.getDiff).toHaveBeenCalledWith(p);
-  });
-
-  it('clear_checkpoint_manager is a no-op returning null', async () => {
-    const result = await invoke(handlers, 'clear_checkpoint_manager');
-    expect(result).toBeNull();
   });
 
   // ── Claude binary ───────────────────────────────────────────────────────

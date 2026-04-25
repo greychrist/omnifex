@@ -47,7 +47,6 @@ import { createNotificationsService } from './services/notifications';
 import { createClaudeService } from './services/claude';
 import { createAgentsService } from './services/agents';
 import { createAgentRunRegistry } from './services/agent-run-registry';
-import { createCheckpointsService } from './services/checkpoints';
 import { createUsageService } from './services/usage';
 import { createLoggingService } from './services/logging';
 import { createProxyService } from './services/proxy';
@@ -398,7 +397,6 @@ app.whenReady().then(() => {
       unregister: (runId) => router.unregisterRunOwner(runId),
     },
   );
-  const checkpointsService = createCheckpointsService(db, accountsService);
   const usageService = createUsageService(accountsService, loggingService);
   const proxyService = createProxyService(db);
   const mcpService = createMCPService(defaultConfigDir);
@@ -573,17 +571,6 @@ app.whenReady().then(() => {
         agentsService.fetchGitHubAgentContent(data?.download_url ?? data),
       importFromGithub: (data: any) =>
         agentsService.importAgentFromGitHub(data?.download_url ?? data),
-    },
-    // Checkpoints adapter
-    checkpoints: {
-      create: (data: any) => checkpointsService.createCheckpoint(data),
-      restore: (data: any) => checkpointsService.restoreCheckpoint(data),
-      list: (data: any) => checkpointsService.listCheckpoints(data),
-      forkFrom: (data: any) => checkpointsService.forkFromCheckpoint(data),
-      getTimeline: (data: any) => checkpointsService.getSessionTimeline(data),
-      updateSettings: (data: any) => checkpointsService.updateCheckpointSettings(data),
-      getSettings: (data: any) => checkpointsService.getCheckpointSettings(data),
-      getDiff: (data: any) => checkpointsService.getCheckpointDiff(data),
     },
     // Usage adapter
     usage: {

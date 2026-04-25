@@ -108,16 +108,6 @@ export interface Services {
     getDetails(params?: unknown): unknown;
     getStatsByAccount(params?: unknown): unknown;
   };
-  checkpoints?: {
-    create(data: unknown): unknown;
-    restore(data: unknown): unknown;
-    list(data: unknown): unknown;
-    forkFrom(data: unknown): unknown;
-    getTimeline(data: unknown): unknown;
-    updateSettings(data: unknown): unknown;
-    getSettings(data: unknown): unknown;
-    getDiff(data: unknown): unknown;
-  };
   claudeBinary?: {
     getPath(): unknown;
     setPath(path: string): unknown;
@@ -198,7 +188,7 @@ function wrapWith<P>(fn: (params: P) => unknown): HandlerFn {
  * renderer gets a defined (but empty) response rather than a blocked channel.
  */
 export function getHandlerMap(services: Services = {}): Record<string, HandlerFn> {
-  const { accounts, claude, sessions, agents, usage, checkpoints, claudeBinary, mcp, slashCommands, logging, database, proxy, permissionsIO, models, sdkVersion, gitWatcher } = services;
+  const { accounts, claude, sessions, agents, usage, claudeBinary, mcp, slashCommands, logging, database, proxy, permissionsIO, models, sdkVersion, gitWatcher } = services;
 
   const map: Record<string, HandlerFn> = {
     // ── Accounts ──────────────────────────────────────────────────────────────
@@ -389,17 +379,6 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     get_session_stats: wrapWith((p: Record<string, unknown>) => usage?.getSessionStats(p) ?? null),
     get_usage_details: wrapWith((p: Record<string, unknown>) => usage?.getDetails(p) ?? null),
     get_usage_by_account: wrapWith((p: Record<string, unknown>) => usage?.getStatsByAccount(p) ?? null),
-
-    // ── Checkpoints ───────────────────────────────────────────────────────────
-    create_checkpoint: wrapWith((p: Record<string, unknown>) => checkpoints?.create(p) ?? null),
-    restore_checkpoint: wrapWith((p: Record<string, unknown>) => checkpoints?.restore(p) ?? null),
-    list_checkpoints: wrapWith((p: Record<string, unknown>) => checkpoints?.list(p) ?? null),
-    fork_from_checkpoint: wrapWith((p: Record<string, unknown>) => checkpoints?.forkFrom(p) ?? null),
-    get_session_timeline: wrapWith((p: Record<string, unknown>) => checkpoints?.getTimeline(p) ?? null),
-    update_checkpoint_settings: wrapWith((p: Record<string, unknown>) => checkpoints?.updateSettings(p) ?? null),
-    get_checkpoint_settings: wrapWith((p: Record<string, unknown>) => checkpoints?.getSettings(p) ?? null),
-    get_checkpoint_diff: wrapWith((p: Record<string, unknown>) => checkpoints?.getDiff(p) ?? null),
-    clear_checkpoint_manager: wrap(() => null),
 
     // ── Claude Binary ─────────────────────────────────────────────────────────
     get_claude_binary_path: wrap(() => claudeBinary?.getPath() ?? null),

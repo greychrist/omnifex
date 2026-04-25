@@ -99,17 +99,6 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   'get_usage_details',
   'get_usage_by_account',
 
-  // Checkpoints
-  'create_checkpoint',
-  'restore_checkpoint',
-  'list_checkpoints',
-  'fork_from_checkpoint',
-  'get_session_timeline',
-  'update_checkpoint_settings',
-  'get_checkpoint_settings',
-  'get_checkpoint_diff',
-  'clear_checkpoint_manager',
-
   // Claude Binary
   'get_claude_binary_path',
   'set_claude_binary_path',
