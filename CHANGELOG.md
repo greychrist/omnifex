@@ -5,6 +5,15 @@ All notable changes to GreyChrist are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.43] — 2026-04-24
+
+Live-session permissions: rule edits made via the in-session sidebar now take effect immediately instead of waiting for a session restart. Plus a small spacing tweak so the message-card timestamp stops crowding the last line of content. Installers remain **unsigned**.
+
+### Fixed
+
+- **Permission rule edits apply to the live SDK session** (`8f739e2`). Previously, adding or removing a rule via the session sidebar wrote to `.claude/settings.local.json` but the running Claude Agent SDK `Query` never picked it up — `settingSources` is loaded once at session start and never re-read — so users kept getting prompted for permissions they had just allowed. The sessions service now exposes `applyPermissions(tabId, { allow, deny })`, which forwards the on-disk allow/deny union into the live session via `Query.applyFlagSettings({ permissions })`. `session_update_permission` calls it after the disk write whenever a `tabId` is provided, so rule changes from the session sidebar take effect on the next tool call. The global Settings panel (no `tabId`) still writes to disk only, taking effect on next session.
+- **Message-card timestamp no longer crowds content** (`f52939a`). `CardContent` bumped from `p-4` to `p-4 pb-6` across the four message-card variants (assistant, user/tool-result, result-summary, error fallback) so the absolute-positioned timestamp at `bottom-1 right-2` has ~8px of breathing room above it.
+
 ## [0.3.42] — 2026-04-24
 
 Large Appearance pass: every message kind's header label, icon, and accent color is now driven by the config instead of hardcoded per-component. Adds typography controls, more palette and icon options, and a personal-default save/restore workflow. Installers remain **unsigned**.
