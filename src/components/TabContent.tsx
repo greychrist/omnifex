@@ -82,17 +82,14 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
       setSessions(sessionList);
       setSelectedProject(project);
 
-      // Use account name from project if available, otherwise resolve
-      const accountName = project.account_name;
-      if (accountName) {
-        setProjectAccountName(accountName);
-        updateTab(tab.id, { accountName });
-      } else {
-        api.resolveAccountForProject(project.path).then((account) => {
-          setProjectAccountName(account?.name ?? null);
-          if (account) updateTab(tab.id, { accountName: account.name, accountColor: account.color, accountIcon: account.icon });
-        }).catch(() => setProjectAccountName(null));
-      }
+      // Resolve full account info (name + color + icon) for the tab badge.
+      // project.account_name is a fast hint but lacks color/icon, so always
+      // resolve the full Account object so the chip renders correctly.
+      api.resolveAccountForProject(project.path).then((account) => {
+        setProjectAccountName(account?.name ?? project.account_name ?? null);
+        if (account) updateTab(tab.id, { accountName: account.name, accountColor: account.color, accountIcon: account.icon });
+        else if (project.account_name) setProjectAccountName(project.account_name);
+      }).catch(() => setProjectAccountName(project.account_name ?? null));
 
       // Resolve full account info (with match_type / match_detail) so the
       // inline new-session form can show the same Account/Config/Matched-by

@@ -19,6 +19,8 @@ interface SerializedTab {
   initialProjectPath?: string;
   projectPath?: string;
   accountName?: string;
+  accountColor?: string | null;
+  accountIcon?: string | null;
   status: Tab['status'];
   hasUnsavedChanges: boolean;
   order: number;
@@ -78,6 +80,8 @@ export class TabPersistenceService {
         initialProjectPath: tab.initialProjectPath,
         projectPath: tab.projectPath,
         accountName: tab.accountName,
+        accountColor: tab.accountColor,
+        accountIcon: tab.accountIcon,
         status: tab.status === 'running' ? 'idle' : tab.status, // Reset running status
         hasUnsavedChanges: false, // Reset unsaved changes
         order: tab.order,
