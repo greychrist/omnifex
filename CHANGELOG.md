@@ -5,7 +5,28 @@ All notable changes to GreyChrist are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.3.44] — 2026-04-25
+## [0.3.45] — 2026-04-25
+
+Tab strip restyled to a shadcn pill aesthetic, per-account user-pickable icons, and a wave of polish on the session header. The account badge gains an icon + accountType inline and now opens the SDK/config/match popover. Installers remain **unsigned**.
+
+### Added
+
+- **Per-account Lucide icon** (`7dc1f12` → `336ad03`). New `icon` column on the `accounts` table (migration v2, idempotent). `Account.icon: string | null` threaded through service, IPC, and the renderer `Account` type. AccountSettings gets a `IconPicker` button (reuses the existing Lucide picker that custom agents use) plus a swatch-grid color picker (9 fixed colors with a custom-hex fallback). `AccountBadge` grows a `variant="compact"` mode that renders an 18×18 tinted icon-chip in the account's color, defaulting to `User` when no icon is set.
+- **AccountBadge full variant** now renders the account's icon inline before the name (resolved via the new `getIcon` on `AccountsContext`), and an optional `accountType` suffix at 70% opacity (resolved via `getAccountType`) — so the standalone account-type pill in the session header is gone, the type lives inside the badge.
+- **Account-details popover on the badge** (`6ed422b`). Clicking the AccountBadge now opens the SDK-account / config-dir / match-by popover that previously hung off the SDK email button. The email becomes a non-clickable status indicator (shield icon + identifier).
+
+### Changed
+
+- **Tab strip aesthetic** (`a7fcae8`). Active tab is a 1px-outlined rounded pill (`bg-background` + 75%-opacity muted-foreground inset border) instead of a bottom underline; dividers between tabs replaced by a 4px gap; rounded corners; height 32px → 36px; type icon 13px → 15px; font 12.5px → 14px (`text-sm`); strip background `bg-muted/40` for a clearly elevated panel. Account text-pill in the tab is replaced by the new compact icon-chip (icon resolved per account, after the title). All existing affordances retained: drag-to-reorder, status indicator (now in a fixed 14px slot), hover-revealed close, overflow scroll, keyboard shortcuts.
+- **Tab persistence** (`6d92fb1`). `accountColor` and `accountIcon` now serialize alongside `accountName`, so restored tabs render with the correct chip color immediately on app launch instead of falling back to a hashed color until the next session interaction. The `project.account_name` fast-path also resolves the full account so the chip color is correct even when `listProjects` pre-attaches an account.
+- **Session-status badges** (`6ed422b`). Active / Starting… / Closed are now squircle pills tinted in their state color (green / amber / red) using inline hex+alpha (`${color}33` fill / `${color}4d` border / `${color}` text) — the same pattern `AccountBadge` uses, since Tailwind v4's color-utility alpha modifiers were rendering desaturated under this theme's oklch palette.
+- **AccountBadge full variant** is a 4px-radius squircle now (was a fully rounded pill) and shares the icon-chip color convention.
+
+### Removed
+
+- **Standalone account-type pill** in `SessionHeader` (`6ed422b`) — replaced by the inline `: <type>` suffix on the AccountBadge.
+
+
 
 Removes the checkpoint subsystem and fixes two rendering gaps: image-only user messages are visible again, and live subagent progress now streams into the SubagentBar expander instead of going dark mid-run. Installers remain **unsigned**.
 
