@@ -343,6 +343,21 @@ describe('sessions service — full lifecycle', () => {
     expect(options.strictMcpConfig).toBeFalsy();
   });
 
+  it('start() enables agentProgressSummaries so subagent task_progress events stream into the SubagentBar expander', () => {
+    const fake = installFakeQuery();
+
+    service.start({
+      tabId: 'tab-progress',
+      projectPath: '/p',
+      configDir: '/c',
+      model: 'sonnet',
+      permissionMode: 'default',
+    });
+
+    const options = fake.getCapturedOptions();
+    expect(options.agentProgressSummaries).toBe(true);
+  });
+
   it('start() forwards resumeSessionId as options.resume when provided', () => {
     const fake = installFakeQuery();
 

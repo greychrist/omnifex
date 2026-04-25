@@ -921,6 +921,24 @@ describe('agents service — executeAgent SDK path', () => {
     expect(callArg.options.permissionMode).not.toBe('bypassPermissions');
   });
 
+  it('enables agentProgressSummaries so the SDK emits task_progress events for nested subagents', async () => {
+    const agent = service.createAgent({
+      name: 'Progressy',
+      icon: '📈',
+      system_prompt: 'P',
+    });
+    installFakeQuery();
+
+    await service.executeAgent({
+      agentId: agent.id,
+      projectPath,
+      task: 't',
+    });
+
+    const callArg = mockedQuery.mock.calls[0][0] as any;
+    expect(callArg.options.agentProgressSummaries).toBe(true);
+  });
+
   it('falls back to the agent default model when params.model is not provided', async () => {
     const agent = service.createAgent({
       name: 'Defaulty',

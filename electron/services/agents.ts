@@ -334,6 +334,10 @@ export function createAgentsService(
       },
       settingSources: ['user', 'project', 'local'],
       betas: ['context-1m-2025-08-07'],
+      // Stream task_progress summaries for any nested subagents the agent
+      // dispatches via the Task tool, so the SubagentBar expander has live
+      // progress entries instead of waiting silently until completion.
+      agentProgressSummaries: true,
     };
     if (binaryPath) {
       options.pathToClaudeCodeExecutable = binaryPath;
