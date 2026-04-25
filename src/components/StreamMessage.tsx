@@ -336,7 +336,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
           className={cn("border w-[95%] relative", className)}
           style={assistantStyle}
         >
-          <CardContent className="p-4">
+          <CardContent className="p-4 pb-6">
             <div className="flex items-start gap-3">
               <div style={assistantSwatch ? { color: assistantSwatch } : undefined}>
                 <IconRenderer
@@ -707,7 +707,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
         <div className={isToolResultOnly ? "" : "flex justify-end"}>
         <Card className={cn(cardStyle.className, !isToolResultOnly && "w-[95%]", "group/card relative")} style={cardStyle.style}>
           <CopyCardButton message={msg} />
-          <CardContent className="p-4">
+          <CardContent className="p-4 pb-6">
             <div className="flex items-start gap-3">
               {cardIcon}
               <div className="flex-1 space-y-2 min-w-0">
@@ -1047,7 +1047,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
 
       return (
         <Card className={cn("border relative", className)} style={resultStyle}>
-          <CardContent className="p-4">
+          <CardContent className="p-4 pb-6">
             <div className="flex items-start gap-3">
               <div style={resultSwatch ? { color: resultSwatch } : undefined}>
                 <IconRenderer name={resultIconName} className="h-5 w-5 mt-0.5" />
@@ -1123,7 +1123,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
     const errorSwatch = swatchFor(renderConfig, "result.error");
     return (
       <Card className={cn("border relative", className)} style={errorStyle}>
-        <CardContent className="p-4">
+        <CardContent className="p-4 pb-6">
           <div className="flex items-start gap-3">
             <AlertCircle
               className="h-5 w-5 mt-0.5"
