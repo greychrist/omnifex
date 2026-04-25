@@ -5,6 +5,18 @@ All notable changes to GreyChrist are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.47] — 2026-04-25
+
+Trims redundant chrome from the session header now that the AccountBadge popover is the single source of truth for SDK-account details. Installers remain **unsigned**.
+
+### Changed
+
+- **Vertical dividers in the session header** are now `bg-foreground/30` instead of `bg-border/60` — clearly visible against the muted strip background, separating the status row from the permissions, effort, and adaptive sections.
+
+### Removed
+
+- **Static SDK email indicator** in `SessionHeader` (`cbf733d`). The shield-icon + email pill that sat next to the session-status badges is gone — the same email (and the full SDK-reported account block) is already in the popover that opens when you click the AccountBadge. The unused `sdkIdentifier` derivation went with it.
+
 ## [0.3.46] — 2026-04-25
 
 (0.3.45 was tagged but never built — the bump commit landed without the corresponding `package.json` version change, so the release was rolled forward to 0.3.46.)
