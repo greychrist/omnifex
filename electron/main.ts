@@ -1,6 +1,6 @@
 import { app, BrowserWindow, ipcMain, protocol, Notification, shell, Menu, clipboard } from 'electron';
 import type { MenuItemConstructorOptions } from 'electron';
-import { execSync } from 'node:child_process';
+import { execSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -55,6 +55,7 @@ import { createModelsService } from './services/models';
 import { createSlashCommandsService } from './services/slash-commands';
 import { createPermissionsIOService } from './services/permissions-io';
 import { createUpdaterService } from './services/updater';
+import { createInstallerService } from './services/installer';
 import { createSdkVersionService } from './services/sdk-version';
 import { createGitWatcherService } from './services/git-watcher';
 import { registerIpcHandlers } from './ipc/handlers';
@@ -679,6 +680,50 @@ app.whenReady().then(() => {
     if (errMsg) throw new Error(errMsg);
     // Give the DMG a moment to mount, then quit so the user can drag-install
     setTimeout(() => app.quit(), 1500);
+  });
+
+  const installerService = createInstallerService({
+    sessionsService: {
+      listActiveTabIds: () => sessionsService.listActiveTabIds(),
+      stopAll: () => sessionsService.stopAll(),
+    },
+    agentRunRegistry: {
+      listActiveRunIds: () => agentRunRegistry.listActiveRunIds(),
+      killAll: () => agentRunRegistry.killAll(),
+    },
+    appQuit: () => app.quit(),
+    spawn: (cmd, args, opts) => spawn(cmd, args, opts),
+    sendToRenderer: (channel, payload) => {
+      // Send to all renderers — the install flow is global.
+      BrowserWindow.getAllWindows().forEach((w) => w.webContents.send(channel, payload));
+    },
+    execPath: process.execPath,
+  });
+
+  ipcMain.handle('updater:install', async (event, data: any) => {
+    const zipPath: string = data?.zipPath ?? data?.zip_path ?? data?.url ?? data;
+    const expectedVersion: string = data?.version ?? data?.expectedVersion ?? data?.expected_version;
+    const force: boolean = data?.force === true;
+
+    try {
+      const { stagedAppPath } = await installerService.stage(zipPath, expectedVersion);
+      const { targetAppPath } = installerService.resolveTargetApp();
+      // Cast to access ensureTargetWritable (not on public interface).
+      await (installerService as any).ensureTargetWritable(targetAppPath);
+      await installerService.waitForIdle({ force });
+      await installerService.executeInstall(stagedAppPath, targetAppPath);
+      // executeInstall calls app.quit() — we never reach this line in practice.
+      return { success: true };
+    } catch (err: any) {
+      // Surface the error name + message so the renderer can show a specific
+      // message ("Cannot write to /Applications", etc.).
+      throw new Error(`${err.name ?? 'InstallError'}: ${err.message ?? String(err)}`);
+    }
+  });
+
+  ipcMain.handle('updater:install-cancel', async () => {
+    installerService.cancelWait();
+    return { success: true };
   });
 
   installAppMenu();

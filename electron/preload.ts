@@ -158,6 +158,8 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   'updater:check',
   'updater:download',
   'updater:open',
+  'updater:install',
+  'updater:install-cancel',
 
   // Electron-specific
   'dialog:open',
