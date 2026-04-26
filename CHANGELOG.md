@@ -5,6 +5,32 @@ All notable changes to GreyChrist are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.52] — 2026-04-26
+
+Adds a Lima VM viewer for inspecting and controlling local VMs and Docker containers without leaving the app, splits session status into running/idle so the auto-update gate doesn't block on open-but-quiet tabs, and tightens the SubagentBar (collapse-by-default, persistent header, scrollable list capped at half the viewport). Installers remain **unsigned**.
+
+### Added
+
+- **Lima VM viewer** (`00f8063`). New `'lima'` tab type with a HardDrive icon in the titlebar (next to Agents). Master/detail layout: VM cards on the left (status dot, name, color-coded status text, 2x2 metadata grid for arch/cpu/mem/disk, segmented Play/Stop bar) and Docker container cards on the right (image/status/ports stacked, same Play/Stop bar). Lifecycle is non-destructive throughout — `limactl start|stop` for VMs, `docker start|stop` for containers (no recreate, no pull). Empty state with a `brew install lima` hint when `limactl` isn't on PATH. Polled every 5s while the tab is mounted.
+- **`SessionsService.listInFlightTabIds()`** (`00f8063`). Filters to tabs whose status is `'starting'`, `'running'`, or `'waiting_permission'` — used by the installer's wait-for-idle gate so it no longer blocks on tabs that are merely open and waiting on the user.
+- **Continuous gradient on the context bar** in `SessionHeader`. Single green-to-orange-to-red gradient clipped from the right by `clip-path` instead of a stepwise color swap, so the bar reads its position in the warning spectrum at a glance.
+
+### Changed
+
+- **`SessionStatus` enum** gained `'idle'` (`00f8063`). After every `result` SDK message a session moves to `'idle'`; the next user message flips it back to `'running'`. `setMode` now accepts `'idle'` so mode toggles work between turns.
+- **SubagentBar** (`00f8063`):
+  - Collapsed by default; chevron toggle persists in localStorage (`greychrist.subagentBar.collapsed`).
+  - Permanent header row with inline summary (`Subagents (N) · X running · Y done`) so you can see what's pending even while collapsed.
+  - "Clear done" is now a real outlined button — always present, disabled when there's nothing to clear (no more layout shift as completed runs come and go).
+  - List sits inside a `max-h-[50vh]` scroll container so the bar can never push more than half the viewport.
+- **Context-window medium tier** in the session header swapped from yellow to orange — both the count text and (via the new gradient) the bar.
+
+### Internal
+
+- New `electron/services/lima.ts` with injectable `execLimactl` for tests; 18 tests in `electron/__tests__/lima.test.ts` covering happy paths, ENOENT, empty NDJSON output, malformed lines, stopped VMs, and lifecycle errors.
+- New IPC channels: `lima_check_installed`, `lima_list_vms`, `lima_list_containers`, `lima_start_vm`, `lima_stop_vm`, `lima_start_container`, `lima_stop_container` (typed wrappers in `src/lib/api.ts`, allow-listed in `electron/preload.ts`).
+- Installer deps switched from `listActiveTabIds` to `listInFlightTabIds`; existing tests updated to the new fixture shape.
+
 ## [0.3.51] — 2026-04-26
 
 Redesigns the session header so the project folder, branch, and context-window readouts each get their own labeled badge — and adds a thinking-mode picker to the chat-input control row that was missing after the previous release dropped the inline pills. Installers remain **unsigned**.
