@@ -2146,6 +2146,24 @@ export const api = {
     return apiCall("updater:open", { filePath });
   },
 
+  async installUpdate(zipPath: string, version: string, opts?: { force?: boolean }): Promise<void> {
+    return apiCall("updater:install", {
+      zipPath,
+      version,
+      ...(opts?.force ? { force: true } : {}),
+    });
+  },
+
+  async cancelInstall(): Promise<void> {
+    return apiCall("updater:install-cancel", {});
+  },
+
+  onInstallStatus(
+    cb: (data: { phase: 'waiting' | 'installing'; activeSessions?: number; activeAgentRuns?: number }) => void,
+  ): () => void {
+    return window.electronAPI.onEvent('updater:install-status', cb as any);
+  },
+
   onUpdateProgress(callback: (data: { percent: number; bytesDownloaded: number; totalBytes: number }) => void): () => void {
     return window.electronAPI.onEvent('updater:progress', callback as any);
   },
