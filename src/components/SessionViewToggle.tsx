@@ -10,17 +10,17 @@ interface Props {
 
 export const SessionViewToggle: React.FC<Props> = ({ mode, onChange }) => {
   return (
-    <div className="inline-flex rounded-md border border-border/60 bg-background text-[11px] font-mono overflow-hidden">
+    <div className="inline-flex rounded-md border border-border bg-muted/30 p-0.5">
       {(['compact', 'verbose'] as const).map((m) => (
         <button
           key={m}
           type="button"
           onClick={() => onChange(m)}
           className={cn(
-            'px-2 py-0.5 transition-colors',
+            'px-2 py-1 text-xs rounded',
             mode === m
-              ? 'bg-foreground/10 text-foreground'
-              : 'text-muted-foreground hover:bg-foreground/5',
+              ? 'bg-background shadow-sm'
+              : 'text-muted-foreground hover:text-foreground',
           )}
         >
           {m === 'compact' ? 'Compact' : 'Verbose'}
