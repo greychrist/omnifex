@@ -30,6 +30,12 @@ export interface AgentRunRegistry {
   getAll(): Map<number, AgentRunHandle>;
   /** Remove any entries whose status is not 'running'. Returns the removed runIds. */
   cleanup(): number[];
+  /** Return runIds whose status is 'running'. Used by the installer to gate
+   *  auto-update on in-flight work. */
+  listActiveRunIds(): number[];
+  /** Kill every still-running entry. Used by the installer's "Install anyway"
+   *  override. Non-running entries are left alone. */
+  killAll(): void;
 }
 
 export function createAgentRunRegistry(): AgentRunRegistry {
@@ -73,6 +79,26 @@ export function createAgentRunRegistry(): AgentRunRegistry {
         }
       }
       return cleaned;
+    },
+    listActiveRunIds() {
+      const ids: number[] = [];
+      for (const [runId, handle] of runs) {
+        if (handle.status === 'running') ids.push(runId);
+      }
+      return ids;
+    },
+    killAll() {
+      for (const runId of Array.from(runs.keys())) {
+        const handle = runs.get(runId);
+        if (handle?.status === 'running') {
+          handle.status = 'killed';
+          try {
+            handle.query.close();
+          } catch {
+            // close() may throw if the query already ended; ignore
+          }
+        }
+      }
     },
   };
 }
