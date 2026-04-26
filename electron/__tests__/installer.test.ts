@@ -130,3 +130,63 @@ describe('InstallerService.ensureTargetWritable', () => {
     await expect(installer.ensureTargetWritable('/Applications/GreyChrist.app')).resolves.toBeUndefined();
   });
 });
+
+describe('InstallerService.waitForIdle', () => {
+  it('emits installing immediately when nothing is in flight', async () => {
+    const sendToRenderer = vi.fn();
+    const installer = createInstallerService(makeDeps({ sendToRenderer }));
+    await installer.waitForIdle({ force: false });
+    expect(sendToRenderer).toHaveBeenCalledWith('updater:install-status', { phase: 'installing' });
+  });
+
+  it('emits waiting until counts reach zero, then installing', async () => {
+    let activeSessions = 2;
+    const sendToRenderer = vi.fn();
+    const installer = createInstallerService(makeDeps({
+      sendToRenderer,
+      sessionsService: {
+        listActiveTabIds: () => activeSessions > 0 ? new Array(activeSessions).fill('t').map((_, i) => `t-${i}`) : [],
+        stopAll: () => {},
+      },
+    }));
+    // Start the wait, then drain sessions over time
+    const p = installer.waitForIdle({ force: false });
+    setTimeout(() => { activeSessions = 1; }, 1100);
+    setTimeout(() => { activeSessions = 0; }, 2100);
+    await p;
+    const phases = sendToRenderer.mock.calls.map((c) => c[1].phase);
+    expect(phases).toContain('waiting');
+    expect(phases[phases.length - 1]).toBe('installing');
+  });
+
+  it('with force=true calls stopAll and killAll once, then resolves', async () => {
+    const stopAll = vi.fn();
+    const killAll = vi.fn();
+    let activeSessions = 1;
+    const installer = createInstallerService(makeDeps({
+      sessionsService: {
+        listActiveTabIds: () => activeSessions > 0 ? ['t'] : [],
+        stopAll: () => { stopAll(); activeSessions = 0; },
+      },
+      agentRunRegistry: {
+        listActiveRunIds: () => [],
+        killAll: () => { killAll(); },
+      },
+    }));
+    await installer.waitForIdle({ force: true });
+    expect(stopAll).toHaveBeenCalledTimes(1);
+    expect(killAll).toHaveBeenCalledTimes(1);
+  });
+
+  it('cancelWait rejects the in-flight wait with WaitCancelled', async () => {
+    const installer = createInstallerService(makeDeps({
+      sessionsService: {
+        listActiveTabIds: () => ['t'],
+        stopAll: () => {},
+      },
+    }));
+    const p = installer.waitForIdle({ force: false });
+    setTimeout(() => installer.cancelWait(), 100);
+    await expect(p).rejects.toThrow(/WaitCancelled/);
+  });
+});
