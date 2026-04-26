@@ -221,8 +221,8 @@ export const DEFAULT_KINDS: MessageKindConfig[] = [
     headerLabel: null,
     accentColor: "amber",
     alignment: "left",
-    hiddenInCompact: false,
-    compactBoundaryLocked: true,
+    hiddenInCompact: true,
+    compactBoundaryLocked: false,
   },
   {
     id: "user.sdkSystemBracket",

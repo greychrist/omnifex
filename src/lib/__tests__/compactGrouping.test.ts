@@ -50,6 +50,14 @@ describe('isBoundaryMessage', () => {
   it('treats end_turn assistant text as boundary', () => {
     expect(isBoundaryMessage(assistantEndTurn('done'))).toBe(true);
   });
+
+  it('treats subagent prompts (user text with parent_tool_use_id) as non-boundary', () => {
+    const subagent = {
+      ...userText('Investigate the auth middleware'),
+      parent_tool_use_id: 'tu_parent',
+    } as ClaudeStreamMessage;
+    expect(isBoundaryMessage(subagent)).toBe(false);
+  });
 });
 
 describe('buildCompactItems', () => {

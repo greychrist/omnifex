@@ -35,6 +35,7 @@ export function isBoundaryMessage(
       return false;
     }
     if (allMessages && detectSkillInjection(msg, allMessages)) return false;
+    if ((msg as { parent_tool_use_id?: string | null }).parent_tool_use_id != null) return false;
     return true;
   }
 
