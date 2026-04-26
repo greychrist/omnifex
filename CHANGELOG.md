@@ -5,6 +5,31 @@ All notable changes to GreyChrist are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.49] — 2026-04-26
+
+Replaces the manual "mount DMG and drag" install path with a one-click auto-install flow: the titlebar update badge now stages the new ZIP, waits for in-flight sessions and agent runs to finish (with an "Install anyway" override), swaps `GreyChrist.app` in place via a detached helper script, and relaunches. Also lets users hide subagent prompts in Compact mode. Installers remain **unsigned**.
+
+### Added
+
+- **Auto-install update flow** (`ed9066a`, `838a893`, `758dbb3`, `afd529c`, `73f579d`, `cbce43f`, plus tests). Click "Install vX" in the titlebar — GreyChrist validates the new bundle, waits for active sessions/agent runs, and replaces `/Applications/GreyChrist.app` itself, then relaunches. New IPC channels `updater:install`, `updater:install-cancel`, `updater:install-status`. The "Install anyway" button force-stops in-flight work and proceeds; "Cancel" drops back to the ready-to-install state. New states `'waiting'` and `'installing'` extend the existing titlebar update-state machine.
+- **Defensive shell-injection guard** in the helper-script generator (`ed9066a`). Rejects paths containing `"`, `` ` ``, `$`, `\`, newline, tab, or NUL — even though `process.execPath` and `os.tmpdir()` never produce them in practice.
+
+### Changed
+
+- **Updater scans for ZIP artifacts** instead of DMGs (`0abee7c`). Filename pattern is now `GreyChrist-darwin-arm64-X.Y.Z.zip` (matching Electron Forge's zip maker). The DMG is still produced by `npm run make` for users who want the manual install path.
+- **Compact-mode "Subagent prompt"** is hidden by default and toggleable in Settings → Appearance (`38198b0`). Previously the kind was treated as a turn boundary and forced visible; flipping `compactBoundaryLocked` lets subagent prompts collapse into the group marker like other tool-related messages. Existing users with a saved appearance config will see the old visible-by-default behavior until they flip the switch manually.
+
+### Fixed
+
+- **Staged temp directory cleanup** on install failure (`ed9066a`). If `resolveTargetApp`, `waitForIdle`, or user cancel fires after `stage()` extracts the ZIP, the IPC handler now removes the staged dir before surfacing the error — previously every failed attempt leaked a directory in `$TMPDIR`.
+- **Detached helper `unref()`** so Electron quits cleanly (`ed9066a`). Without unref, the parent's event loop held a reference to the still-running helper while the helper was waiting for the parent to exit — soft deadlock until the OS reaped the process. Explicit unref breaks the cycle immediately.
+- **`version` propagation in the renderer's error-retry path** (`ed9066a`). The `'error'` state now carries the version string, so retry-after-failure no longer downloads a fresh ZIP and then fails install with `VersionMismatch` because the version got dropped.
+
+### Internal
+
+- **`SessionsService.listActiveTabIds()`** (`fad5b54`) and **`AgentRunRegistry.listActiveRunIds()` + `killAll()`** (`e360323`) — small enabler methods used by the new installer's wait-for-idle gate.
+- **New `installer.ts` service** with four-step pipeline (`stage`, `resolveTargetApp`, `waitForIdle`, `executeInstall`) plus pre-quit `ensureTargetWritable` check. Covered by 14 unit tests in `electron/__tests__/installer.test.ts` and `installer-helper-script.test.ts`.
+
 ## [0.3.48] — 2026-04-25
 
 Aligns the Compact/Verbose view toggle with the adjacent SDK/Terminal mode toggle so the two reads as one consistent control. Installers remain **unsigned**.
