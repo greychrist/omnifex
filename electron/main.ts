@@ -700,7 +700,7 @@ app.whenReady().then(() => {
     execPath: process.execPath,
   });
 
-  ipcMain.handle('updater:install', async (event, data: any) => {
+  ipcMain.handle('updater:install', async (_event, data: any) => {
     const zipPath: string = data?.zipPath ?? data?.zip_path ?? data?.url ?? data;
     const expectedVersion: string = data?.version ?? data?.expectedVersion ?? data?.expected_version;
     const force: boolean = data?.force === true;
