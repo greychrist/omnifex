@@ -190,3 +190,40 @@ describe('InstallerService.waitForIdle', () => {
     await expect(p).rejects.toThrow(/WaitCancelled/);
   });
 });
+
+describe('InstallerService.executeInstall', () => {
+  let stageDir: string;
+  beforeEach(async () => {
+    stageDir = await fs.mkdtemp(path.join(os.tmpdir(), 'installer-exec-test-'));
+  });
+  afterEach(async () => {
+    await fs.rm(stageDir, { recursive: true, force: true });
+  });
+
+  it('writes a helper script, spawns it detached, and calls appQuit', async () => {
+    const spawn = vi.fn().mockReturnValue({ unref: () => {} });
+    const appQuit = vi.fn();
+    const installer = createInstallerService(makeDeps({ spawn, appQuit }));
+    await installer.executeInstall('/tmp/stage/GreyChrist.app', '/Applications/GreyChrist.app');
+
+    expect(spawn).toHaveBeenCalledTimes(1);
+    const [cmd, args, opts] = spawn.mock.calls[0];
+    expect(cmd).toBe('/bin/sh');
+    expect(args).toHaveLength(1);
+    expect(args[0]).toMatch(/greychrist-installer-\d+\.sh$/);
+    expect(opts).toEqual({ detached: true, stdio: 'ignore' });
+
+    // The helper script should exist on disk and be executable
+    const stat = await fs.stat(args[0]);
+    expect(stat.mode & 0o100).toBeTruthy(); // owner executable bit
+
+    const contents = await fs.readFile(args[0], 'utf8');
+    expect(contents).toContain('TARGET_APP="/Applications/GreyChrist.app"');
+    expect(contents).toContain('STAGED_APP="/tmp/stage/GreyChrist.app"');
+
+    expect(appQuit).toHaveBeenCalledTimes(1);
+
+    // Cleanup the script file we just created
+    await fs.unlink(args[0]).catch(() => {});
+  });
+});
