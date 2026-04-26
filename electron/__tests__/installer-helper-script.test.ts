@@ -17,12 +17,20 @@ describe('buildHelperScript', () => {
     expect(script).toContain('open "$TARGET_APP"');
   });
 
-  it('refuses paths containing double-quotes (defensive)', () => {
-    expect(() => buildHelperScript({
-      parentPid: 1,
-      targetAppPath: '/Applications/Bad"Name.app',
-      stagedAppPath: '/tmp/x',
-    })).toThrow(/quote/i);
+  it('refuses paths containing shell-unsafe characters (defensive)', () => {
+    const bad = (targetAppPath: string, stagedAppPath = '/tmp/x') =>
+      () => buildHelperScript({ parentPid: 1, targetAppPath, stagedAppPath });
+
+    // double-quote
+    expect(bad('/Applications/Bad"Name.app')).toThrow(/shell-unsafe/i);
+    // dollar sign
+    expect(bad('/Applications/Bad$Name.app')).toThrow(/shell-unsafe/i);
+    // backtick
+    expect(bad('/Applications/Bad`Name.app')).toThrow(/shell-unsafe/i);
+    // newline
+    expect(bad('/Applications/Bad\nName.app')).toThrow(/shell-unsafe/i);
+    // also catches dangerous chars in stagedAppPath
+    expect(bad('/Applications/Good.app', '/tmp/bad$path')).toThrow(/shell-unsafe/i);
   });
 
   it('starts with a shebang', () => {

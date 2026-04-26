@@ -23,6 +23,7 @@ export interface InstallStatus {
 export interface InstallerService {
   stage(zipPath: string, expectedVersion: string): Promise<{ stagedAppPath: string }>;
   resolveTargetApp(): { targetAppPath: string };
+  ensureTargetWritable(targetAppPath: string): Promise<void>;
   waitForIdle(opts: { force: boolean }): Promise<void>;
   cancelWait(): void;
   executeInstall(stagedAppPath: string, targetAppPath: string): Promise<void>;
@@ -237,7 +238,8 @@ export function createInstallerService(deps: InstallerDeps): InstallerService {
       stagedAppPath,
     });
     await fs.writeFile(helperPath, script, { mode: 0o755 });
-    deps.spawn('/bin/sh', [helperPath], { detached: true, stdio: 'ignore' });
+    const child = deps.spawn('/bin/sh', [helperPath], { detached: true, stdio: 'ignore' });
+    if (child && typeof child.unref === 'function') child.unref();
     deps.appQuit();
   }
 
@@ -254,11 +256,9 @@ export function createInstallerService(deps: InstallerDeps): InstallerService {
   return {
     stage,
     resolveTargetApp,
+    ensureTargetWritable,
     waitForIdle,
     cancelWait,
     executeInstall,
-    // Exposed via cast for the IPC handler in main.ts; not part of the
-    // public InstallerService interface (callers go through resolveTargetApp).
-    ensureTargetWritable,
-  } as InstallerService & { ensureTargetWritable(p: string): Promise<void> };
+  };
 }

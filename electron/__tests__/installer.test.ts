@@ -114,9 +114,7 @@ describe('InstallerService.ensureTargetWritable', () => {
   it('throws TargetNotWritable when parent dir is read-only', async () => {
     const installer = createInstallerService(makeDeps({
       isWritable: async () => false,
-    })) as ReturnType<typeof createInstallerService> & {
-      ensureTargetWritable(p: string): Promise<void>;
-    };
+    }));
     await expect(installer.ensureTargetWritable('/Applications/GreyChrist.app'))
       .rejects.toThrow(/TargetNotWritable/);
   });
@@ -124,9 +122,7 @@ describe('InstallerService.ensureTargetWritable', () => {
   it('resolves silently when parent dir is writable', async () => {
     const installer = createInstallerService(makeDeps({
       isWritable: async () => true,
-    })) as ReturnType<typeof createInstallerService> & {
-      ensureTargetWritable(p: string): Promise<void>;
-    };
+    }));
     await expect(installer.ensureTargetWritable('/Applications/GreyChrist.app')).resolves.toBeUndefined();
   });
 });

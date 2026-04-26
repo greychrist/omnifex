@@ -705,16 +705,22 @@ app.whenReady().then(() => {
     const expectedVersion: string = data?.version ?? data?.expectedVersion ?? data?.expected_version;
     const force: boolean = data?.force === true;
 
+    let stagedAppPath: string | null = null;
     try {
-      const { stagedAppPath } = await installerService.stage(zipPath, expectedVersion);
+      const staged = await installerService.stage(zipPath, expectedVersion);
+      stagedAppPath = staged.stagedAppPath;
       const { targetAppPath } = installerService.resolveTargetApp();
-      // Cast to access ensureTargetWritable (not on public interface).
-      await (installerService as any).ensureTargetWritable(targetAppPath);
+      await installerService.ensureTargetWritable(targetAppPath);
       await installerService.waitForIdle({ force });
       await installerService.executeInstall(stagedAppPath, targetAppPath);
       // executeInstall calls app.quit() — we never reach this line in practice.
       return { success: true };
     } catch (err: any) {
+      // Clean up the staged temp dir if extraction succeeded but a later step failed.
+      if (stagedAppPath) {
+        const stageRoot = path.dirname(stagedAppPath);
+        await fs.promises.rm(stageRoot, { recursive: true, force: true }).catch(() => {});
+      }
       // Surface the error name + message so the renderer can show a specific
       // message ("Cannot write to /Applications", etc.).
       throw new Error(`${err.name ?? 'InstallError'}: ${err.message ?? String(err)}`);

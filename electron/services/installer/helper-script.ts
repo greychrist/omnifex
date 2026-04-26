@@ -12,11 +12,12 @@ export interface HelperScriptParams {
 }
 
 export function buildHelperScript(params: HelperScriptParams): string {
-  if (params.targetAppPath.includes('"') || params.stagedAppPath.includes('"')) {
-    // Reject quote characters defensively. Paths produced by the installer
-    // come from process.execPath / os.tmpdir() and won't have them, but a
-    // misconfigured local_update_dir shouldn't be able to inject shell.
-    throw new Error('helper-script: refusing path containing double-quote character');
+  const DANGEROUS_CHARS = /["`\\\n\r\t\0$]/;
+  if (DANGEROUS_CHARS.test(params.targetAppPath) || DANGEROUS_CHARS.test(params.stagedAppPath)) {
+    // Reject shell-unsafe characters defensively. Paths produced by the
+    // installer come from process.execPath / os.tmpdir() and won't have them,
+    // but a misconfigured local_update_dir shouldn't be able to inject shell.
+    throw new Error('helper-script: refusing path containing shell-unsafe character');
   }
   return [
     '#!/bin/sh',

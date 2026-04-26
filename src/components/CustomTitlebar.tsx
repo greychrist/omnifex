@@ -44,7 +44,7 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
     | { status: 'ready'; filePath: string; version: string }
     | { status: 'waiting'; version: string; filePath: string; activeSessions: number; activeAgentRuns: number }
     | { status: 'installing'; version: string }
-    | { status: 'error'; downloadUrl: string; assetName: string; releaseUrl: string };
+    | { status: 'error'; downloadUrl: string; assetName: string; releaseUrl: string; version: string };
   const [updateState, setUpdateState] = useState<UpdateState>({ status: 'idle' });
 
   useEffect(() => {
@@ -140,10 +140,7 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
                 };
           }
           if (data.phase === 'installing') {
-            const version = prev.status === 'waiting' || prev.status === 'installing'
-              ? prev.version
-              : prev.version;
-            return { status: 'installing', version };
+            return { status: 'installing', version: prev.version };
           }
         }
         return prev;
@@ -165,7 +162,7 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
         const filePath = await api.downloadUpdate(downloadUrl, assetName);
         setUpdateState({ status: 'ready', filePath, version });
       } catch {
-        setUpdateState({ status: 'error', downloadUrl, assetName, releaseUrl });
+        setUpdateState({ status: 'error', downloadUrl, assetName, releaseUrl, version });
       }
     } else if (updateState.status === 'ready') {
       // Kick off install. Renderer transitions to 'waiting' or 'installing'
@@ -184,16 +181,17 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
           downloadUrl: filePath,
           assetName: '',
           releaseUrl: '',
+          version,
         });
       }
     } else if (updateState.status === 'error') {
-      const { downloadUrl, assetName, releaseUrl } = updateState;
+      const { downloadUrl, assetName, releaseUrl, version } = updateState;
       setUpdateState({ status: 'downloading', percent: 0 });
       try {
         const filePath = await api.downloadUpdate(downloadUrl, assetName);
-        setUpdateState({ status: 'ready', filePath, version: '' });
+        setUpdateState({ status: 'ready', filePath, version });
       } catch {
-        setUpdateState({ status: 'error', downloadUrl, assetName, releaseUrl });
+        setUpdateState({ status: 'error', downloadUrl, assetName, releaseUrl, version });
       }
     }
   };
@@ -209,6 +207,7 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
         downloadUrl: filePath,
         assetName: '',
         releaseUrl: '',
+        version,
       });
     }
   };
