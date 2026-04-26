@@ -5,6 +5,36 @@ All notable changes to GreyChrist are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.53] — 2026-04-26
+
+Removes the in-app agent management system entirely (Claude Code's native subagents already cover the same ground without the parallel format), and replaces the Recent Projects card-list with a sortable / filterable / responsive table. Fixes a session-status bug where every session was stuck reporting `'running'` until its first turn completed. Installers remain **unsigned**.
+
+### Removed
+
+- **In-app agents feature** (`31184a9`). Drops the entire CRUD path, per-run lifecycle, GitHub-import flow (`anthropics/claude-code-agents` was 404'd anyway), the `.greychrist.json` format, the bundled `cc_agents/` directory, and the `agentRunRegistry`. 16 component / service / store files deleted (`Agents.tsx`, `AgentExecution*.tsx`, `AgentRunOutputViewer.tsx`, `AgentRunView.tsx`, `AgentRunsList.tsx`, `AgentsModal.tsx`, `App.cleaned.tsx`, `CCAgents.tsx`, `CreateAgent.tsx`, `GitHubAgentBrowser.tsx`, `SessionOutputViewer.tsx`, `useClaudeMessages.ts`, `outputCache.tsx`, `agentStore.ts`, `electron/services/agents.ts`, `electron/services/agent-run-registry.ts`). 25 IPC channels and 4 event prefixes (`agent-output:`, `agent-error:`, `agent-complete:`, `agent-cancelled:`) trimmed from preload + handlers. Tab union loses `'agent' | 'agents' | 'agent-execution' | 'create-agent' | 'import-agent'`. The Bot button is gone from the titlebar.
+- **Sequence ID readout** in `SessionHeader` — the truncated session ID + copy button on the right of the chat header is gone. The same data is now reachable from the project's session list, where each card's session ID is itself the click-to-copy target.
+
+### Added
+
+- **Recent Projects table** (`Name / Path / Account / Sessions / Last opened`). Click-to-sort headers (default `Last opened ↓`), toggle direction on repeat clicks. Per-account filter dropdown — only shown when more than one account is present, falls back to `(unassigned)` for projects with no resolved account. Count next to the title shows `N of M` while a filter is active.
+- **Click-to-copy session ID** on each session card in `SessionList`. Truncated 8-char tail copies the full UUID; icon swaps `Copy → Check` for 1.5s as feedback. The `e.stopPropagation()` keeps the row's "open session" handler from firing on the same click.
+
+### Changed
+
+- **Recent Projects layout** is now a sticky-header scrollable table inside a flex chain (`h-full flex flex-col` → `flex-1 min-h-0 overflow-y-auto`). The table claims whatever vertical space is left between the page header and the viewport bottom, so it never extends past the screen — and shrinks responsively when you resize the window. Old `(showAll, currentPage, projectsPerPage, totalPages)` pagination is removed.
+- **Session status** state machine: `init` messages now flip the session to `'idle'` instead of `'running'` (only `result` and any non-init message flip to `'running'`). `sendMessage` / `sendStructuredMessage` set `'running'` eagerly so the installer's wait-for-idle gate reacts on user submit, not on first SDK echo. Without this fix every session was stuck on `'running'` until its first turn completed, and the auto-update flow blocked on tabs that were merely open.
+- **`ClaudeStreamMessage` type** moved from `AgentExecution.tsx` (deleted) to `src/types/claudeStream.ts`. The ~20 importers across renderer hooks, components, and lib were rewritten en masse — no behavior change, just a stable home for the type.
+
+### Fixed
+
+- **Agent import-from-file IPC** (now moot since the feature was removed, but landed earlier in the same diff): `import_agent_from_file` had no main-process handler and `importAgent` only handled the flat JSON shape, never the `{ version, agent: { ... } }` bundled format that GreyChrist itself exports. Both fixed before the rip.
+
+### Internal
+
+- Installer's wait-for-idle gate no longer consults `agentRunRegistry`. `InstallStatus` drops `activeAgentRuns`. `CustomTitlebar` and `api.onInstallStatus` follow.
+- `useTabState` interface trimmed of agent helpers (`createAgentTab`, `createAgentsTab`, `createAgentExecutionTab`, `createCreateAgentTab`, `createImportAgentTab`, `findTabByAgentRunId`, `agentTabCount`).
+- 39 test files / 659 tests after the rip (was 41 / 725) — net ~70 agent-only tests removed. The `agents` and `agent_runs` SQLite tables stay in place as zombies; no migration runs.
+
 ## [0.3.52] — 2026-04-26
 
 Adds a Lima VM viewer for inspecting and controlling local VMs and Docker containers without leaving the app, splits session status into running/idle so the auto-update gate doesn't block on open-but-quiet tabs, and tightens the SubagentBar (collapse-by-default, persistent header, scrollable list capped at half the viewport). Installers remain **unsigned**.
