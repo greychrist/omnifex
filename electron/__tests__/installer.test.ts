@@ -82,3 +82,51 @@ describe('InstallerService.stage', () => {
     await fs.access(stagedAppPath); // exists
   });
 });
+
+describe('InstallerService.resolveTargetApp', () => {
+  it('returns the .app bundle ancestor of execPath', () => {
+    const installer = createInstallerService(makeDeps({
+      execPath: '/Applications/GreyChrist.app/Contents/MacOS/GreyChrist',
+    }));
+    expect(installer.resolveTargetApp()).toEqual({
+      targetAppPath: '/Applications/GreyChrist.app',
+    });
+  });
+
+  it('returns .app when execPath is under Electron.app (dev build case)', () => {
+    const installer = createInstallerService(makeDeps({
+      execPath: '/Users/dev/repo/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron',
+    }));
+    expect(installer.resolveTargetApp()).toEqual({
+      targetAppPath: '/Users/dev/repo/node_modules/electron/dist/Electron.app',
+    });
+  });
+
+  it('throws NotPackaged for execPath without any .app ancestor', () => {
+    const installer = createInstallerService(makeDeps({
+      execPath: '/usr/local/bin/some-binary',
+    }));
+    expect(() => installer.resolveTargetApp()).toThrow(/NotPackaged/);
+  });
+});
+
+describe('InstallerService.ensureTargetWritable', () => {
+  it('throws TargetNotWritable when parent dir is read-only', async () => {
+    const installer = createInstallerService(makeDeps({
+      isWritable: async () => false,
+    })) as ReturnType<typeof createInstallerService> & {
+      ensureTargetWritable(p: string): Promise<void>;
+    };
+    await expect(installer.ensureTargetWritable('/Applications/GreyChrist.app'))
+      .rejects.toThrow(/TargetNotWritable/);
+  });
+
+  it('resolves silently when parent dir is writable', async () => {
+    const installer = createInstallerService(makeDeps({
+      isWritable: async () => true,
+    })) as ReturnType<typeof createInstallerService> & {
+      ensureTargetWritable(p: string): Promise<void>;
+    };
+    await expect(installer.ensureTargetWritable('/Applications/GreyChrist.app')).resolves.toBeUndefined();
+  });
+});
