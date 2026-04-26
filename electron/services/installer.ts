@@ -1,0 +1,264 @@
+// Auto-installer for GreyChrist updates. Validates a ZIP, stages it to
+// $TMPDIR, waits for in-flight sessions/agent-runs, then spawns a detached
+// helper script that swaps GreyChrist.app and relaunches.
+//
+// Spec: docs/superpowers/specs/2026-04-25-auto-install-update-design.md
+
+import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
+import * as os from 'node:os';
+import type { ChildProcess } from 'node:child_process';
+import { buildHelperScript } from './installer/helper-script';
+
+// ---------------------------------------------------------------------------
+// Public types
+// ---------------------------------------------------------------------------
+
+export interface InstallStatus {
+  phase: 'waiting' | 'installing';
+  activeSessions?: number;
+  activeAgentRuns?: number;
+}
+
+export interface InstallerService {
+  stage(zipPath: string, expectedVersion: string): Promise<{ stagedAppPath: string }>;
+  resolveTargetApp(): { targetAppPath: string };
+  waitForIdle(opts: { force: boolean }): Promise<void>;
+  cancelWait(): void;
+  executeInstall(stagedAppPath: string, targetAppPath: string): Promise<void>;
+}
+
+// ---------------------------------------------------------------------------
+// Injectable deps
+// ---------------------------------------------------------------------------
+
+export interface InstallerDeps {
+  sessionsService: {
+    listActiveTabIds: () => string[];
+    stopAll: () => void;
+  };
+  agentRunRegistry: {
+    listActiveRunIds: () => number[];
+    killAll: () => void;
+  };
+  appQuit: () => void;
+  spawn: (
+    command: string,
+    args: string[],
+    options: { detached: boolean; stdio: 'ignore' },
+  ) => ChildProcess;
+  sendToRenderer: (channel: string, payload: unknown) => void;
+  /** process.execPath of the running app. Injectable so tests can simulate
+   *  packaged vs dev builds without monkey-patching. */
+  execPath: string;
+  /** Injectable extractor — defaults to `ditto -xk <zip> <dir>`. */
+  extractZip?: (zipPath: string, destDir: string) => Promise<void>;
+  /** Injectable Info.plist version reader — defaults to plutil. */
+  readBundleVersion?: (appPath: string) => Promise<string | null>;
+  /** Injectable writability check — defaults to `fs.access(path, W_OK)`. */
+  isWritable?: (p: string) => Promise<boolean>;
+}
+
+// ---------------------------------------------------------------------------
+// Errors
+// ---------------------------------------------------------------------------
+
+export class UpdateFileNotFound extends Error {
+  constructor(p: string) { super(`UpdateFileNotFound: ${p}`); this.name = 'UpdateFileNotFound'; }
+}
+export class InvalidUpdatePackage extends Error {
+  constructor(reason: string) { super(`InvalidUpdatePackage: ${reason}`); this.name = 'InvalidUpdatePackage'; }
+}
+export class VersionMismatch extends Error {
+  constructor(expected: string, actual: string) {
+    super(`VersionMismatch: expected ${expected}, got ${actual}`);
+    this.name = 'VersionMismatch';
+  }
+}
+export class NotPackaged extends Error {
+  constructor() { super('NotPackaged'); this.name = 'NotPackaged'; }
+}
+export class TargetNotWritable extends Error {
+  constructor(p: string) { super(`TargetNotWritable: ${p}`); this.name = 'TargetNotWritable'; }
+}
+export class WaitCancelled extends Error {
+  constructor() { super('WaitCancelled'); this.name = 'WaitCancelled'; }
+}
+
+// ---------------------------------------------------------------------------
+// Factory
+// ---------------------------------------------------------------------------
+
+export function createInstallerService(deps: InstallerDeps): InstallerService {
+  let cancelToken: { cancelled: boolean } | null = null;
+
+  const extractZip =
+    deps.extractZip ??
+    (async (zipPath, destDir) => {
+      const { spawn } = await import('node:child_process');
+      await new Promise<void>((resolve, reject) => {
+        const proc = spawn('ditto', ['-xk', zipPath, destDir], { stdio: 'ignore' });
+        proc.on('exit', (code) => {
+          if (code === 0) resolve();
+          else reject(new Error(`ditto exited ${code}`));
+        });
+        proc.on('error', reject);
+      });
+    });
+
+  const readBundleVersion =
+    deps.readBundleVersion ??
+    (async (appPath) => {
+      const plistPath = path.join(appPath, 'Contents', 'Info.plist');
+      try {
+        const { spawn } = await import('node:child_process');
+        return await new Promise<string | null>((resolve) => {
+          const out: Buffer[] = [];
+          const proc = spawn('/usr/bin/plutil', [
+            '-extract', 'CFBundleShortVersionString', 'raw', plistPath,
+          ], { stdio: ['ignore', 'pipe', 'ignore'] });
+          proc.stdout?.on('data', (b) => out.push(b));
+          proc.on('exit', (code) => {
+            if (code !== 0) return resolve(null);
+            resolve(Buffer.concat(out).toString('utf8').trim());
+          });
+          proc.on('error', () => resolve(null));
+        });
+      } catch {
+        return null;
+      }
+    });
+
+  const isWritable =
+    deps.isWritable ??
+    (async (p) => {
+      try {
+        await fs.access(p, fs.constants.W_OK);
+        return true;
+      } catch {
+        return false;
+      }
+    });
+
+  async function stage(
+    zipPath: string,
+    expectedVersion: string,
+  ): Promise<{ stagedAppPath: string }> {
+    try {
+      await fs.access(zipPath);
+    } catch {
+      throw new UpdateFileNotFound(zipPath);
+    }
+
+    const destDir = await fs.mkdtemp(path.join(os.tmpdir(), 'greychrist-stage-'));
+    try {
+      await extractZip(zipPath, destDir);
+    } catch (err) {
+      await fs.rm(destDir, { recursive: true, force: true }).catch(() => {});
+      throw new InvalidUpdatePackage(`extraction failed: ${(err as Error).message}`);
+    }
+
+    const stagedAppPath = path.join(destDir, 'GreyChrist.app');
+    const execPath = path.join(stagedAppPath, 'Contents', 'MacOS', 'GreyChrist');
+    try {
+      await fs.access(execPath);
+    } catch {
+      await fs.rm(destDir, { recursive: true, force: true }).catch(() => {});
+      throw new InvalidUpdatePackage('GreyChrist.app/Contents/MacOS/GreyChrist not found in archive');
+    }
+
+    const actualVersion = await readBundleVersion(stagedAppPath);
+    if (actualVersion !== expectedVersion) {
+      await fs.rm(destDir, { recursive: true, force: true }).catch(() => {});
+      throw new VersionMismatch(expectedVersion, actualVersion ?? '<unreadable>');
+    }
+
+    return { stagedAppPath };
+  }
+
+  function resolveTargetApp(): { targetAppPath: string } {
+    // Walk up from execPath to find the .app bundle. Path looks like:
+    //   /Applications/GreyChrist.app/Contents/MacOS/GreyChrist
+    // We want /Applications/GreyChrist.app.
+    let cur = deps.execPath;
+    while (cur !== '/' && cur !== '') {
+      if (cur.endsWith('.app')) {
+        return { targetAppPath: cur };
+      }
+      cur = path.dirname(cur);
+    }
+    throw new NotPackaged();
+  }
+
+  function cancelWait(): void {
+    if (cancelToken) cancelToken.cancelled = true;
+  }
+
+  async function waitForIdle(opts: { force: boolean }): Promise<void> {
+    if (opts.force) {
+      deps.sessionsService.stopAll();
+      deps.agentRunRegistry.killAll();
+    }
+    const token = { cancelled: false };
+    cancelToken = token;
+
+    while (true) {
+      if (token.cancelled) {
+        cancelToken = null;
+        throw new WaitCancelled();
+      }
+      const sessions = deps.sessionsService.listActiveTabIds().length;
+      const runs = deps.agentRunRegistry.listActiveRunIds().length;
+      if (sessions === 0 && runs === 0) {
+        deps.sendToRenderer('updater:install-status', { phase: 'installing' });
+        cancelToken = null;
+        return;
+      }
+      deps.sendToRenderer('updater:install-status', {
+        phase: 'waiting',
+        activeSessions: sessions,
+        activeAgentRuns: runs,
+      });
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+  }
+
+  async function executeInstall(
+    stagedAppPath: string,
+    targetAppPath: string,
+  ): Promise<void> {
+    const helperPath = path.join(
+      os.tmpdir(),
+      `greychrist-installer-${Date.now()}.sh`,
+    );
+    const script = buildHelperScript({
+      parentPid: process.pid,
+      targetAppPath,
+      stagedAppPath,
+    });
+    await fs.writeFile(helperPath, script, { mode: 0o755 });
+    deps.spawn('/bin/sh', [helperPath], { detached: true, stdio: 'ignore' });
+    deps.appQuit();
+  }
+
+  // Pre-quit writability check. resolveTargetApp() does the structural check;
+  // this one ensures we can actually replace the bundle. Called by the IPC
+  // handler before kicking off the install pipeline.
+  async function ensureTargetWritable(targetAppPath: string): Promise<void> {
+    const parent = path.dirname(targetAppPath);
+    if (!(await isWritable(parent))) {
+      throw new TargetNotWritable(parent);
+    }
+  }
+
+  return {
+    stage,
+    resolveTargetApp,
+    waitForIdle,
+    cancelWait,
+    executeInstall,
+    // Exposed via cast for the IPC handler in main.ts; not part of the
+    // public InstallerService interface (callers go through resolveTargetApp).
+    ensureTargetWritable,
+  } as InstallerService & { ensureTargetWritable(p: string): Promise<void> };
+}
