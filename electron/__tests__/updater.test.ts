@@ -33,7 +33,7 @@ describe('updater service (local folder source)', () => {
     it('returns null when no local update directory is configured', async () => {
       const svc = createUpdaterService('0.3.12', {
         getLocalUpdateDir: () => null,
-        readdir: makeReaddir(['GreyChrist-0.4.0-arm64.dmg']), // should never be read
+        readdir: makeReaddir(['GreyChrist-darwin-arm64-0.4.0.zip']), // should never be read
       });
 
       const result = await svc.checkForUpdate();
@@ -44,7 +44,7 @@ describe('updater service (local folder source)', () => {
     it('returns null when local update directory is empty string', async () => {
       const svc = createUpdaterService('0.3.12', {
         getLocalUpdateDir: () => '',
-        readdir: makeReaddir(['GreyChrist-0.4.0-arm64.dmg']),
+        readdir: makeReaddir(['GreyChrist-darwin-arm64-0.4.0.zip']),
       });
 
       const result = await svc.checkForUpdate();
@@ -108,10 +108,10 @@ describe('updater service (local folder source)', () => {
       expect(collected.length).toBe(0);
     });
 
-    it('returns null when the directory contains no matching DMG files', async () => {
+    it('returns null when the directory contains no matching ZIP files', async () => {
       const svc = createUpdaterService('0.3.12', {
         getLocalUpdateDir: () => '/tmp/updates',
-        readdir: makeReaddir(['README.txt', 'random.dmg', 'GreyChrist.dmg']),
+        readdir: makeReaddir(['README.txt', 'random.zip', 'GreyChrist.zip']),
       });
 
       const result = await svc.checkForUpdate();
@@ -119,13 +119,13 @@ describe('updater service (local folder source)', () => {
       expect(result).toBeNull();
     });
 
-    it('returns null when all local DMGs are the same as or older than current version', async () => {
+    it('returns null when all local ZIPs are the same as or older than current version', async () => {
       const svc = createUpdaterService('0.3.12', {
         getLocalUpdateDir: () => '/tmp/updates',
         readdir: makeReaddir([
-          'GreyChrist-0.3.10-arm64.dmg',
-          'GreyChrist-0.3.11-arm64.dmg',
-          'GreyChrist-0.3.12-arm64.dmg', // exact match to current
+          'GreyChrist-darwin-arm64-0.3.10.zip',
+          'GreyChrist-darwin-arm64-0.3.11.zip',
+          'GreyChrist-darwin-arm64-0.3.12.zip', // exact match to current
         ]),
       });
 
@@ -134,14 +134,14 @@ describe('updater service (local folder source)', () => {
       expect(result).toBeNull();
     });
 
-    it('returns UpdateInfo for the newest DMG when one exists that is newer than current', async () => {
+    it('returns UpdateInfo for the newest ZIP when one exists that is newer than current', async () => {
       const svc = createUpdaterService('0.3.12', {
         getLocalUpdateDir: () => '/tmp/updates',
         readdir: makeReaddir([
-          'GreyChrist-0.3.10-arm64.dmg',
-          'GreyChrist-0.3.12-arm64.dmg',
-          'GreyChrist-0.4.0-arm64.dmg',
-          'GreyChrist-0.3.15-arm64.dmg',
+          'GreyChrist-darwin-arm64-0.3.10.zip',
+          'GreyChrist-darwin-arm64-0.3.12.zip',
+          'GreyChrist-darwin-arm64-0.4.0.zip',
+          'GreyChrist-darwin-arm64-0.3.15.zip',
         ]),
       });
 
@@ -150,22 +150,22 @@ describe('updater service (local folder source)', () => {
       expect(result).not.toBeNull();
       expect(result!.available).toBe(true);
       expect(result!.version).toBe('0.4.0');
-      expect(result!.assetName).toBe('GreyChrist-0.4.0-arm64.dmg');
+      expect(result!.assetName).toBe('GreyChrist-darwin-arm64-0.4.0.zip');
       // downloadUrl is an absolute path to the local file (or a file:// URL)
-      expect(result!.downloadUrl).toContain('GreyChrist-0.4.0-arm64.dmg');
+      expect(result!.downloadUrl).toContain('GreyChrist-darwin-arm64-0.4.0.zip');
       expect(result!.downloadUrl).toContain('/tmp/updates');
     });
 
-    it('ignores files that do not match the GreyChrist-<semver>-arm64.dmg pattern', async () => {
+    it('ignores files that do not match the GreyChrist-darwin-arm64-<semver>.zip pattern', async () => {
       const svc = createUpdaterService('0.3.12', {
         getLocalUpdateDir: () => '/tmp/updates',
         readdir: makeReaddir([
-          'GreyChrist-0.4.0-arm64.dmg',   // matches
-          'GreyChrist-0.4.0.dmg',          // no -arm64 suffix
-          'GreyChrist-foo-arm64.dmg',      // not semver
-          'greychrist-0.4.0-arm64.dmg',    // lowercase
-          'OtherApp-0.4.0-arm64.dmg',      // wrong name
-          'GreyChrist-0.4.0-arm64.dmg.txt', // extra extension
+          'GreyChrist-darwin-arm64-0.4.0.zip',   // matches
+          'GreyChrist-0.4.0.zip',                 // missing platform/arch prefix
+          'GreyChrist-darwin-arm64-foo.zip',      // not semver
+          'greychrist-darwin-arm64-0.4.0.zip',    // lowercase
+          'OtherApp-darwin-arm64-0.4.0.zip',      // wrong name
+          'GreyChrist-darwin-arm64-0.4.0.zip.txt', // extra extension
         ]),
       });
 
@@ -176,12 +176,12 @@ describe('updater service (local folder source)', () => {
     });
 
     it('supports version suffixes like 0.3.6a in filename parsing', async () => {
-      // Filenames like `GreyChrist-0.3.6a-arm64.dmg` have shown up in the out/
-      // folder historically; the updater should either parse them as 0.3.6 (ignoring
-      // the suffix, like isNewer already does) or reject them — but not crash.
+      // Filenames like `GreyChrist-darwin-arm64-0.3.6a.zip` could show up; the
+      // updater should either parse them as 0.3.6 (ignoring the suffix, like
+      // isNewer already does) or reject them — but not crash.
       const svc = createUpdaterService('0.3.12', {
         getLocalUpdateDir: () => '/tmp/updates',
-        readdir: makeReaddir(['GreyChrist-0.3.6a-arm64.dmg']), // 0.3.6 < 0.3.12
+        readdir: makeReaddir(['GreyChrist-darwin-arm64-0.3.6a.zip']), // 0.3.6 < 0.3.12
       });
 
       const result = await svc.checkForUpdate();
@@ -200,11 +200,11 @@ describe('updater service (local folder source)', () => {
 
       const progressCalls: Array<{ percent: number }> = [];
       const result = await svc.downloadUpdate(
-        '/tmp/updates/GreyChrist-0.4.0-arm64.dmg',
+        '/tmp/updates/GreyChrist-darwin-arm64-0.4.0.zip',
         (data) => progressCalls.push(data),
       );
 
-      expect(result).toBe('/tmp/updates/GreyChrist-0.4.0-arm64.dmg');
+      expect(result).toBe('/tmp/updates/GreyChrist-darwin-arm64-0.4.0.zip');
     });
 
     it('fires a single onProgress({ percent: 100 }) call for UI parity', async () => {
@@ -215,7 +215,7 @@ describe('updater service (local folder source)', () => {
 
       const progressCalls: Array<{ percent: number; bytesDownloaded: number; totalBytes: number }> = [];
       await svc.downloadUpdate(
-        '/tmp/updates/GreyChrist-0.4.0-arm64.dmg',
+        '/tmp/updates/GreyChrist-darwin-arm64-0.4.0.zip',
         (data) => progressCalls.push(data),
       );
 

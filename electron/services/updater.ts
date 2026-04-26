@@ -1,4 +1,4 @@
-// Updater service — scans a local folder for newer GreyChrist DMG builds and
+// Updater service — scans a local folder for newer GreyChrist ZIP builds and
 // returns update info pointing at the file on disk.
 //
 // GreyChrist is a solo project with local-only releases (`npm run make`). The
@@ -20,7 +20,7 @@ export interface UpdateInfo {
   version: string;
   /** Absolute local file path. Kept named `downloadUrl` for renderer compatibility. */
   downloadUrl: string;
-  assetName: string;           // e.g. "GreyChrist-0.4.0-arm64.dmg"
+  assetName: string;           // e.g. "GreyChrist-darwin-arm64-0.4.0.zip"
   releaseUrl: string;          // Empty for local source; kept for renderer compatibility.
   releaseNotes?: string;
 }
@@ -89,12 +89,13 @@ function compareVersion(a: string, b: string): number {
 }
 
 // ---------------------------------------------------------------------------
-// Filename pattern — `GreyChrist-<major>.<minor>.<patch>-arm64.dmg`, anchored
-// so version-suffix filenames like `GreyChrist-0.3.6a-arm64.dmg` don't match
-// (they predate the strict naming and are intentionally excluded).
+// Filename pattern — `GreyChrist-darwin-arm64-<major>.<minor>.<patch>.zip`,
+// matching the artifact produced by Electron Forge's zip maker.
+// The auto-installer service unpacks this ZIP in place of the manual
+// DMG-drag flow that predated v0.4.0.
 // ---------------------------------------------------------------------------
 
-const DMG_RE = /^GreyChrist-(\d+\.\d+\.\d+)-arm64\.dmg$/;
+const ZIP_RE = /^GreyChrist-darwin-arm64-(\d+\.\d+\.\d+)\.zip$/;
 
 // ---------------------------------------------------------------------------
 // Factory
@@ -152,7 +153,7 @@ export function createUpdaterService(
 
     const candidates: Array<{ version: string; filename: string }> = [];
     for (const name of entries) {
-      const m = DMG_RE.exec(name);
+      const m = ZIP_RE.exec(name);
       if (!m) continue;
       candidates.push({ version: m[1], filename: name });
     }
