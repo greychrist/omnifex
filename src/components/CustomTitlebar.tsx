@@ -42,6 +42,8 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
     | { status: 'available'; version: string; downloadUrl: string; assetName: string; releaseUrl: string }
     | { status: 'downloading'; percent: number }
     | { status: 'ready'; filePath: string; version: string }
+    | { status: 'waiting'; version: string; filePath: string; activeSessions: number; activeAgentRuns: number }
+    | { status: 'installing'; version: string }
     | { status: 'error'; downloadUrl: string; assetName: string; releaseUrl: string };
   const [updateState, setUpdateState] = useState<UpdateState>({ status: 'idle' });
 
@@ -120,9 +122,38 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
         prev.status === 'downloading' ? { ...prev, percent: data.percent } : prev,
       );
     });
+
+    const cleanupInstallStatus = api.onInstallStatus((data) => {
+      setUpdateState((prev) => {
+        if (prev.status === 'waiting' || prev.status === 'installing' || prev.status === 'ready') {
+          if (data.phase === 'waiting') {
+            return prev.status === 'waiting'
+              ? { ...prev, activeSessions: data.activeSessions ?? 0, activeAgentRuns: data.activeAgentRuns ?? 0 }
+              : prev.status === 'installing'
+                ? prev // already past the wait — ignore late waiting events
+                : { // 'ready' transitioning into 'waiting'
+                  status: 'waiting',
+                  version: prev.version,
+                  filePath: prev.filePath,
+                  activeSessions: data.activeSessions ?? 0,
+                  activeAgentRuns: data.activeAgentRuns ?? 0,
+                };
+          }
+          if (data.phase === 'installing') {
+            const version = prev.status === 'waiting' || prev.status === 'installing'
+              ? prev.version
+              : prev.version;
+            return { status: 'installing', version };
+          }
+        }
+        return prev;
+      });
+    });
+
     return () => {
       clearInterval(sdkTimer);
       cleanupProgress();
+      cleanupInstallStatus();
     };
   }, [checkForUpdate, checkSdkVersion]);
 
@@ -137,7 +168,24 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
         setUpdateState({ status: 'error', downloadUrl, assetName, releaseUrl });
       }
     } else if (updateState.status === 'ready') {
-      await api.openUpdate(updateState.filePath);
+      // Kick off install. Renderer transitions to 'waiting' or 'installing'
+      // based on the install-status events the main process emits.
+      const { filePath, version } = updateState;
+      try {
+        await api.installUpdate(filePath, version);
+        // If we get here, the install pipeline returned without quitting —
+        // shouldn't happen in practice; treat as error.
+        setUpdateState({ status: 'idle' });
+      } catch (err: any) {
+        // Pre-quit failure (extraction, version mismatch, target not writable, etc.).
+        // Drop into 'error' so the user can retry or open in Finder.
+        setUpdateState({
+          status: 'error',
+          downloadUrl: filePath,
+          assetName: '',
+          releaseUrl: '',
+        });
+      }
     } else if (updateState.status === 'error') {
       const { downloadUrl, assetName, releaseUrl } = updateState;
       setUpdateState({ status: 'downloading', percent: 0 });
@@ -148,6 +196,29 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
         setUpdateState({ status: 'error', downloadUrl, assetName, releaseUrl });
       }
     }
+  };
+
+  const handleInstallAnyway = async () => {
+    if (updateState.status !== 'waiting') return;
+    const { filePath, version } = updateState;
+    try {
+      await api.installUpdate(filePath, version, { force: true });
+    } catch {
+      setUpdateState({
+        status: 'error',
+        downloadUrl: filePath,
+        assetName: '',
+        releaseUrl: '',
+      });
+    }
+  };
+
+  const handleCancelInstall = async () => {
+    if (updateState.status !== 'waiting') return;
+    await api.cancelInstall().catch(() => {});
+    // Drop back to 'ready' so the user can retry.
+    const { filePath, version } = updateState;
+    setUpdateState({ status: 'ready', filePath, version });
   };
 
   return (
@@ -217,46 +288,88 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
                 updateState.status === 'available' ? `v${updateState.version} available` :
                 updateState.status === 'downloading' ? 'Downloading...' :
                 updateState.status === 'ready' ? `Install v${updateState.version}` :
+                updateState.status === 'waiting' ? `Waiting for ${updateState.activeSessions + updateState.activeAgentRuns} active session(s)` :
+                updateState.status === 'installing' ? `Installing v${updateState.version}…` :
                 'Retry download'
               }
               side="bottom"
             >
-              <motion.button
-                onClick={handleUpdateClick}
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.9 }}
-                whileTap={updateState.status !== 'checking' && updateState.status !== 'up-to-date' ? { scale: 0.97 } : undefined}
-                transition={{ duration: 0.2 }}
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors tauri-no-drag ${
-                  updateState.status === 'checking'
-                    ? 'bg-muted text-muted-foreground cursor-wait'
-                    : updateState.status === 'up-to-date'
-                    ? 'bg-green-600/20 text-green-500 cursor-default'
-                    : updateState.status === 'available'
-                    ? 'bg-primary text-primary-foreground animate-pulse hover:bg-primary/90'
-                    : updateState.status === 'downloading'
-                    ? 'bg-primary/80 text-primary-foreground cursor-wait'
-                    : updateState.status === 'ready'
-                    ? 'bg-green-600 text-white hover:bg-green-700'
-                    : 'bg-destructive text-destructive-foreground hover:bg-destructive/90'
-                }`}
-              >
-                {updateState.status === 'checking' && <Loader2 size={13} className="animate-spin" />}
-                {updateState.status === 'up-to-date' && <CheckCircle size={13} />}
-                {updateState.status === 'available' && <Download size={13} />}
-                {updateState.status === 'downloading' && <Loader2 size={13} className="animate-spin" />}
-                {updateState.status === 'ready' && <CheckCircle size={13} />}
-                {updateState.status === 'error' && <AlertCircle size={13} />}
-                <span>
-                  {updateState.status === 'checking' && 'Checking...'}
-                  {updateState.status === 'up-to-date' && 'Up to Date'}
-                  {updateState.status === 'available' && 'Update Available!'}
-                  {updateState.status === 'downloading' && `${Math.round(updateState.percent)}%`}
-                  {updateState.status === 'ready' && 'Install Update'}
-                  {updateState.status === 'error' && 'Retry'}
-                </span>
-              </motion.button>
+              {updateState.status === 'waiting' ? (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.9 }}
+                  transition={{ duration: 0.2 }}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-amber-600/20 text-amber-500 tauri-no-drag"
+                >
+                  <Loader2 size={13} className="animate-spin" />
+                  <span>
+                    Waiting for sessions… ({updateState.activeSessions + updateState.activeAgentRuns} active)
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleInstallAnyway}
+                    className="ml-1 px-1.5 py-0.5 rounded bg-destructive/80 text-destructive-foreground hover:bg-destructive text-[10px]"
+                  >
+                    Install anyway
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCancelInstall}
+                    className="px-1.5 py-0.5 rounded bg-muted hover:bg-muted/80 text-[10px]"
+                  >
+                    Cancel
+                  </button>
+                </motion.div>
+              ) : (
+                <motion.button
+                  onClick={handleUpdateClick}
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.9 }}
+                  whileTap={
+                    updateState.status !== 'checking' &&
+                    updateState.status !== 'up-to-date' &&
+                    updateState.status !== 'installing'
+                      ? { scale: 0.97 }
+                      : undefined
+                  }
+                  transition={{ duration: 0.2 }}
+                  disabled={updateState.status === 'installing'}
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors tauri-no-drag ${
+                    updateState.status === 'checking'
+                      ? 'bg-muted text-muted-foreground cursor-wait'
+                      : updateState.status === 'up-to-date'
+                      ? 'bg-green-600/20 text-green-500 cursor-default'
+                      : updateState.status === 'available'
+                      ? 'bg-primary text-primary-foreground animate-pulse hover:bg-primary/90'
+                      : updateState.status === 'downloading'
+                      ? 'bg-primary/80 text-primary-foreground cursor-wait'
+                      : updateState.status === 'ready'
+                      ? 'bg-green-600 text-white hover:bg-green-700'
+                      : updateState.status === 'installing'
+                      ? 'bg-green-600/80 text-white cursor-wait'
+                      : 'bg-destructive text-destructive-foreground hover:bg-destructive/90'
+                  }`}
+                >
+                  {updateState.status === 'checking' && <Loader2 size={13} className="animate-spin" />}
+                  {updateState.status === 'up-to-date' && <CheckCircle size={13} />}
+                  {updateState.status === 'available' && <Download size={13} />}
+                  {updateState.status === 'downloading' && <Loader2 size={13} className="animate-spin" />}
+                  {updateState.status === 'ready' && <CheckCircle size={13} />}
+                  {updateState.status === 'installing' && <Loader2 size={13} className="animate-spin" />}
+                  {updateState.status === 'error' && <AlertCircle size={13} />}
+                  <span>
+                    {updateState.status === 'checking' && 'Checking...'}
+                    {updateState.status === 'up-to-date' && 'Up to Date'}
+                    {updateState.status === 'available' && 'Update Available!'}
+                    {updateState.status === 'downloading' && `${Math.round(updateState.percent)}%`}
+                    {updateState.status === 'ready' && 'Install Update'}
+                    {updateState.status === 'installing' && 'Installing…'}
+                    {updateState.status === 'error' && 'Retry'}
+                  </span>
+                </motion.button>
+              )}
             </TooltipSimple>
           )}
           </AnimatePresence>
