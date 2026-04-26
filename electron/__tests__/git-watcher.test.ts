@@ -52,11 +52,59 @@ describe('git-watcher service', () => {
     const repo = makeTempRepo();
     tempDirs.push(repo);
 
-    const { watchId, branch } = await service.start(repo);
+    const { watchId, branch, changed, untracked } = await service.start(repo);
 
     expect(typeof watchId).toBe('string');
     expect(watchId.length).toBeGreaterThan(0);
     expect(branch).toBe('main');
+    expect(changed).toBe(0);
+    expect(untracked).toBe(0);
+  });
+
+  it('returns counts of changed and untracked files on start for a dirty repo', async () => {
+    const repo = makeTempRepo();
+    tempDirs.push(repo);
+
+    // Modify the tracked file (1 changed)
+    fs.writeFileSync(path.join(repo, 'README.md'), 'modified\n');
+    // Add two untracked files
+    fs.writeFileSync(path.join(repo, 'new1.txt'), 'a\n');
+    fs.writeFileSync(path.join(repo, 'new2.txt'), 'b\n');
+
+    const { changed, untracked } = await service.start(repo);
+
+    expect(changed).toBe(1);
+    expect(untracked).toBe(2);
+  });
+
+  it('emits updated counts when the working tree changes', async () => {
+    const repo = makeTempRepo();
+    tempDirs.push(repo);
+
+    service = createGitWatcherService({ sendToRenderer, pollIntervalMs: 100 });
+    const { watchId } = await service.start(repo);
+
+    // Touch the working tree so a poll picks it up
+    fs.writeFileSync(path.join(repo, 'untracked.txt'), 'hi\n');
+
+    const call = await waitFor(() =>
+      sendToRenderer.mock.calls.find(
+        ([channel, payload]) =>
+          channel === `git-branch-changed:${watchId}` &&
+          (payload as { untracked: number }).untracked === 1,
+      ),
+    );
+
+    expect(call[1]).toMatchObject({ branch: 'main', changed: 0, untracked: 1 });
+  });
+
+  it('returns zero counts for a non-git directory', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-not-repo-counts-'));
+    tempDirs.push(dir);
+
+    const { changed, untracked } = await service.start(dir);
+    expect(changed).toBe(0);
+    expect(untracked).toBe(0);
   });
 
   it('returns branch null for a non-git directory', async () => {
@@ -81,7 +129,7 @@ describe('git-watcher service', () => {
       ),
     );
 
-    expect(call[1]).toEqual({ branch: 'feature' });
+    expect(call[1]).toMatchObject({ branch: 'feature' });
   });
 
   it('stops emitting after stop()', async () => {

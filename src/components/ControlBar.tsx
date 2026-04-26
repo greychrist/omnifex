@@ -5,6 +5,7 @@ import {
   ShieldOff,
   FilePen,
   ClipboardList,
+  Brain,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -121,6 +122,9 @@ interface EffortPickerProps {
 function EffortPickerDropdown({ effort, onSelect }: { effort: EffortLevel; onSelect: (level: EffortLevel) => void }) {
   return (
     <div className="w-[280px] p-1">
+      <div className="text-[10px] uppercase tracking-wider text-muted-foreground px-3 pt-2 pb-1.5 border-b border-border/50 mb-1">
+        Effort
+      </div>
       {EFFORT_LEVELS.map((level) => (
         <button
           key={level.id}
@@ -200,7 +204,7 @@ export function EffortPicker({ effort, onEffortChange, open, onOpenChange, disab
                 variant="ghost"
                 size="sm"
                 disabled={disabled}
-                className="h-9 px-2 hover:bg-accent/50 gap-1"
+                className="h-9 px-2 bg-background hover:bg-accent/50 gap-1 shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_30%,transparent)]"
               >
                 <span className={cn("text-[10px] font-bold", currentLevel?.color)}>
                   {currentLevel?.shortName}
@@ -216,6 +220,100 @@ export function EffortPicker({ effort, onEffortChange, open, onOpenChange, disab
         </Tooltip>
       }
       content={<EffortPickerDropdown effort={effort} onSelect={handleSelect} />}
+      open={open}
+      onOpenChange={onOpenChange}
+      align="start"
+      side="top"
+    />
+  );
+}
+
+// ── Thinking Picker ─────────────────────────────────────────────────────
+
+interface ThinkingPickerProps {
+  thinkingConfig: ThinkingConfig;
+  onThinkingConfigChange?: (config: ThinkingConfig) => void;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  disabled?: boolean;
+}
+
+function ThinkingPickerDropdown({
+  thinkingConfig,
+  onSelect,
+}: {
+  thinkingConfig: ThinkingConfig;
+  onSelect: (config: ThinkingConfig) => void;
+}) {
+  return (
+    <div className="w-[280px] p-1">
+      <div className="text-[10px] uppercase tracking-wider text-muted-foreground px-3 pt-2 pb-1.5 border-b border-border/50 mb-1">
+        Thinking
+      </div>
+      {THINKING_CONFIGS.map((cfg) => (
+        <button
+          key={cfg.id}
+          onClick={() => onSelect(cfg.id)}
+          className={cn(
+            "w-full flex items-start gap-3 p-3 rounded-md transition-colors text-left",
+            "hover:bg-accent",
+            thinkingConfig === cfg.id && "bg-accent",
+          )}
+        >
+          <span className={cn("text-sm font-bold mt-0.5", cfg.color)}>
+            {cfg.shortName}
+          </span>
+          <div className="flex-1 space-y-1">
+            <div className="font-medium text-sm">{cfg.name}</div>
+            <div className="text-xs text-muted-foreground">{cfg.description}</div>
+          </div>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+export function ThinkingPicker({
+  thinkingConfig,
+  onThinkingConfigChange,
+  open,
+  onOpenChange,
+  disabled,
+}: ThinkingPickerProps) {
+  const current = THINKING_CONFIGS.find((c) => c.id === thinkingConfig);
+
+  const handleSelect = (config: ThinkingConfig) => {
+    onThinkingConfigChange?.(config);
+    onOpenChange(false);
+  };
+
+  return (
+    <Popover
+      trigger={
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <motion.div whileTap={{ scale: 0.97 }} transition={{ duration: 0.15 }}>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={disabled}
+                className="h-9 px-2 bg-background hover:bg-accent/50 gap-1 shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_30%,transparent)]"
+              >
+                <Brain className="h-3.5 w-3.5 opacity-70" />
+                <span className={cn("text-[10px] font-bold", current?.color)}>
+                  {current?.shortName}
+                </span>
+                <ChevronUp className="h-3 w-3 ml-0.5 opacity-70" />
+              </Button>
+            </motion.div>
+          </TooltipTrigger>
+          <TooltipContent side="top">
+            <p className="text-xs font-medium">Thinking: {current?.name}</p>
+            <p className="text-xs text-muted-foreground">{current?.description}</p>
+          </TooltipContent>
+        </Tooltip>
+      }
+      content={<ThinkingPickerDropdown thinkingConfig={thinkingConfig} onSelect={handleSelect} />}
       open={open}
       onOpenChange={onOpenChange}
       align="start"
@@ -252,7 +350,7 @@ export function PermissionPicker({ permissionMode, onPermissionModeChange, open,
                 size="sm"
                 disabled={disabled}
                 className={cn(
-                  "h-9 px-2 hover:bg-accent/50 gap-1",
+                  "h-9 px-2 bg-background hover:bg-accent/50 gap-1 shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_30%,transparent)]",
                   selectedData.color,
                 )}
               >
@@ -276,6 +374,9 @@ export function PermissionPicker({ permissionMode, onPermissionModeChange, open,
       }
       content={
         <div className="w-[300px] p-1">
+          <div className="text-[10px] uppercase tracking-wider text-muted-foreground px-3 pt-2 pb-1.5 border-b border-border/50 mb-1">
+            Permissions
+          </div>
           {PERMISSION_MODES.map((mode) => {
             const isActive = mode.id === normalizedMode;
             return (

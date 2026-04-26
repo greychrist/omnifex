@@ -83,6 +83,9 @@ interface ModelPickerDropdownProps {
 export function ModelPickerDropdown({ models, selectedModel, onSelect }: ModelPickerDropdownProps) {
   return (
     <div className="w-[300px] p-1">
+      <div className="text-[10px] uppercase tracking-wider text-muted-foreground px-3 pt-2 pb-1.5 border-b border-border/50 mb-1">
+        Model
+      </div>
       {models.map((model) => (
         <button
           key={model.id}
@@ -146,7 +149,7 @@ export function CompactModelPicker({
                 variant="ghost"
                 size="sm"
                 disabled={disabled}
-                className="h-9 px-2 hover:bg-accent/50 gap-1"
+                className="h-9 px-2 bg-background hover:bg-accent/50 gap-1 shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_30%,transparent)]"
               >
                 <span className={selectedModelData.color}>
                   {selectedModelData.icon}

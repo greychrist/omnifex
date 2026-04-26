@@ -29,6 +29,7 @@ import {
   PERMISSION_MODES,
   EffortPicker,
   PermissionPicker,
+  ThinkingPicker,
 } from "./ControlBar";
 import type { PermissionMode } from "./ControlBar";
 import {
@@ -86,6 +87,8 @@ const FloatingPromptInputInner = (
     onLiveModelChange,
     effort = 'high',
     onEffortChange,
+    thinkingConfig = 'adaptive',
+    onThinkingConfigChange,
     configDir,
     tabId,
     supportedCommands,
@@ -102,6 +105,7 @@ const FloatingPromptInputInner = (
   const [isExpanded, setIsExpanded] = useState(false);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [effortPickerOpen, setEffortPickerOpen] = useState(false);
+  const [thinkingPickerOpen, setThinkingPickerOpen] = useState(false);
   const [showFilePicker, setShowFilePicker] = useState(false);
   const [filePickerQuery, setFilePickerQuery] = useState("");
   const [cursorPosition, setCursorPosition] = useState(0);
@@ -540,6 +544,14 @@ const FloatingPromptInputInner = (
                   onEffortChange={onEffortChange}
                   open={effortPickerOpen}
                   onOpenChange={setEffortPickerOpen}
+                  disabled={disabled}
+                />
+
+                <ThinkingPicker
+                  thinkingConfig={thinkingConfig}
+                  onThinkingConfigChange={onThinkingConfigChange}
+                  open={thinkingPickerOpen}
+                  onOpenChange={setThinkingPickerOpen}
                   disabled={disabled}
                 />
 

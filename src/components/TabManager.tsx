@@ -362,6 +362,7 @@ export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
             className={cn(
               "px-2 rounded-md flex items-center justify-center flex-shrink-0",
               "bg-background/50 backdrop-blur-sm h-[26px]",
+              "shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_75%,transparent)]",
               canAddTab()
                 ? "hover:bg-muted/60 text-muted-foreground hover:text-foreground"
                 : "opacity-50 cursor-not-allowed text-muted-foreground"

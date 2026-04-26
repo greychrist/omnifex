@@ -7,15 +7,11 @@ import {
   ShieldAlert,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { SessionAccountInfo, SessionContextUsage } from "@/lib/api";
+import type { SessionAccountInfo, SessionContextUsage, GitBranchSnapshot } from "@/lib/api";
 import { Popover } from "@/components/ui/popover";
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
-import {
-  EFFORT_LEVELS,
-  PERMISSION_MODES,
-  THINKING_CONFIGS,
-  normalizePermissionMode,
-} from "./ControlBar";
+import { ProjectPathBadge } from "./claude-code-session/ProjectPathBadge";
+import { GitBranchBadge } from "./claude-code-session/GitBranchBadge";
 
 // Palette for context-usage categories. Each category comes with its own
 // `color` from the SDK, but those default colors sometimes clash with our
@@ -68,9 +64,10 @@ interface SessionHeaderProps {
    * just the assistant-reported message-token count.
    */
   contextUsage?: SessionContextUsage | null;
-  effortLevel?: string;
-  thinkingConfig?: string;
-  permissionMode?: string;
+  /** Project directory path — rendered as a badge in the header. */
+  projectPath?: string;
+  /** Branch + working-tree status snapshot — rendered as a badge in the header. */
+  gitStatus?: GitBranchSnapshot;
 
   className?: string;
 }
@@ -87,9 +84,8 @@ export function SessionHeader({
   model,
   sdkAccount,
   contextUsage,
-  effortLevel,
-  thinkingConfig,
-  permissionMode,
+  projectPath,
+  gitStatus,
   sessionStatus,
   className,
 }: SessionHeaderProps) {
@@ -137,7 +133,9 @@ export function SessionHeader({
       "flex items-center gap-3 px-4 py-2 border-b border-border/50 bg-muted text-xs shrink-0",
       className
     )}>
-      <Popover
+      <div className="flex flex-col items-start gap-0.5">
+        <span className="text-[9px] tracking-wider text-muted-foreground">account</span>
+        <Popover
         open={accountPopoverOpen}
         onOpenChange={setAccountPopoverOpen}
         align="start"
@@ -222,6 +220,7 @@ export function SessionHeader({
             </div>
           }
         />
+      </div>
       {/* Session status indicator — inline styles so the border picks up the
           status color the same way AccountBadge does (Tailwind v4's
           border-{color}/{alpha} utilities desaturate to gray under this theme). */}
@@ -231,94 +230,46 @@ export function SessionHeader({
           sessionStatus === 'starting' ? '#f59e0b' :
           '#ef4444'; // ended
         return (
-          <span
-            className={cn(
-              "inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
-              sessionStatus === 'starting' && 'animate-pulse',
-            )}
-            style={{
-              backgroundColor: `${statusColor}33`,
-              color: statusColor,
-              borderColor: `${statusColor}4d`,
-            }}
-          >
-            {sessionStatus === 'active' && 'Active'}
-            {sessionStatus === 'starting' && 'Starting…'}
-            {sessionStatus === 'ended' && 'Closed'}
-          </span>
+          <div className="flex flex-col items-start gap-0.5">
+            <span className="text-[9px] tracking-wider text-muted-foreground">status</span>
+            <span
+              className={cn(
+                "inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+                sessionStatus === 'starting' && 'animate-pulse',
+              )}
+              style={{
+                backgroundColor: `${statusColor}33`,
+                color: statusColor,
+                borderColor: `${statusColor}4d`,
+              }}
+            >
+              {sessionStatus === 'active' && 'Active'}
+              {sessionStatus === 'starting' && 'Starting…'}
+              {sessionStatus === 'ended' && 'Closed'}
+            </span>
+          </div>
         );
       })()}
 
-      {/* Permissions pill — matches the chat-bar PermissionPicker (icon + shortName + color). */}
-      {permissionMode && (() => {
-        const normalized = normalizePermissionMode(permissionMode);
-        const mode = PERMISSION_MODES.find((m) => m.id === normalized);
-        if (!mode) return null;
-        return (
-          <>
-            <span aria-hidden="true" className="h-4 w-px bg-foreground/30 shrink-0" />
-            <div className="flex items-center gap-1.5">
-              <span className="text-[9px] uppercase tracking-wider text-muted-foreground">permissions</span>
-              <span
-                className={cn(
-                  "flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold uppercase tracking-wide bg-foreground/10 border border-foreground/10",
-                  mode.color,
-                )}
-                title={`Permissions: ${mode.name} — ${mode.description}`}
-              >
-                {mode.icon}
-                {mode.shortName}
-              </span>
-            </div>
-          </>
-        );
-      })()}
-      {/* Effort pill — always shown now (no more auto sentinel). */}
-      {effortLevel && (() => {
-        const level = EFFORT_LEVELS.find((l) => l.id === effortLevel);
-        if (!level) return null;
-        return (
-          <>
-            <span aria-hidden="true" className="h-4 w-px bg-foreground/30 shrink-0" />
-            <div className="flex items-center gap-1.5">
-              <span className="text-[9px] uppercase tracking-wider text-muted-foreground">effort</span>
-              <span
-                className={cn(
-                  "px-1.5 py-0.5 rounded text-[10px] font-mono font-bold uppercase tracking-wide bg-foreground/10 border border-foreground/10",
-                  level.color,
-                )}
-                title={`Effort: ${level.name} — ${level.description}`}
-              >
-                {level.shortName}
-              </span>
-            </div>
-          </>
-        );
-      })()}
-      {/* Thinking pill — labelled "adaptive" per Anthropic's docs terminology
-          (https://docs.anthropic.com/en/docs/build-with-claude/adaptive-thinking).
-          The pill's value (On / Budg / Off) describes the state of adaptive thinking. */}
-      {thinkingConfig && (() => {
-        const cfg = THINKING_CONFIGS.find((c) => c.id === thinkingConfig);
-        if (!cfg) return null;
-        return (
-          <>
-            <span aria-hidden="true" className="h-4 w-px bg-foreground/30 shrink-0" />
-            <div className="flex items-center gap-1.5">
-              <span className="text-[9px] uppercase tracking-wider text-muted-foreground">adaptive</span>
-              <span
-                className={cn(
-                  "px-1.5 py-0.5 rounded text-[10px] font-mono font-bold uppercase tracking-wide bg-foreground/10 border border-foreground/10",
-                  cfg.color,
-                )}
-                title={`Adaptive thinking: ${cfg.name} — ${cfg.description}`}
-              >
-                {cfg.shortName}
-              </span>
-            </div>
-          </>
-        );
-      })()}
+      {(projectPath || gitStatus?.branch) && (
+        <span aria-hidden="true" className="h-8 w-px bg-foreground/30 shrink-0" />
+      )}
+      {projectPath && (
+        <div className="flex flex-col items-start gap-0.5">
+          <span className="text-[9px] tracking-wider text-muted-foreground">folder</span>
+          <ProjectPathBadge path={projectPath} />
+        </div>
+      )}
+      {gitStatus?.branch && (
+        <div className="flex flex-col items-start gap-0.5">
+          <span className="text-[9px] tracking-wider text-muted-foreground">branch</span>
+          <GitBranchBadge
+            name={gitStatus.branch}
+            changed={gitStatus.changed}
+            untracked={gitStatus.untracked}
+          />
+        </div>
+      )}
 
       <div className="ml-auto flex items-center gap-3">
         {(() => {
@@ -334,7 +285,7 @@ export function SessionHeader({
             : 200_000;
           if (tokens <= 0 || limit <= 0) return null;
           const pct = Math.min(100, (tokens / limit) * 100);
-          const color = pct > 80 ? "text-red-400" : pct > 50 ? "text-yellow-400" : "text-foreground/50";
+          const color = pct > 80 ? "text-red-400" : pct > 50 ? "text-yellow-400" : "text-foreground";
 
           // Build pie-chart data from SDK categories (descending by tokens).
           //
@@ -388,20 +339,23 @@ export function SessionHeader({
               : slicesFromCategories;
 
           return (
-            <Popover
+            <div className="flex flex-col items-start gap-0.5">
+              <span className="text-[9px] tracking-wider text-muted-foreground">context</span>
+              <Popover
               open={contextPopoverOpen}
               onOpenChange={setContextPopoverOpen}
               align="end"
               side="bottom"
               className="w-96"
               trigger={
-                <div className="flex items-center gap-1.5 cursor-pointer">
-                  <Database
-                    className={cn(
-                      "w-3 h-3",
-                      useSdk ? "text-foreground/60" : "text-foreground/30",
-                    )}
-                  />
+                <button
+                  type="button"
+                  className={cn(
+                    "inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-mono font-medium cursor-pointer text-foreground",
+                    "bg-background shadow-[0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_45%,transparent)]",
+                  )}
+                >
+                  <Database className="w-3.5 h-3.5 text-foreground" />
                   <span className={cn("font-mono", color)}>
                     {tokens >= 1000 ? `${(tokens / 1000).toFixed(1)}k` : tokens}
                   </span>
@@ -418,8 +372,8 @@ export function SessionHeader({
                       style={{ width: `${pct}%` }}
                     />
                   </div>
-                  <span className="text-foreground/30 font-mono">{pct.toFixed(0)}%</span>
-                </div>
+                  <span className="text-foreground font-mono">{pct.toFixed(0)}%</span>
+                </button>
               }
               content={
                 <div className="flex flex-col gap-2 text-left">
@@ -500,6 +454,7 @@ export function SessionHeader({
                 </div>
               }
             />
+            </div>
           );
         })()}
         {showCost && (

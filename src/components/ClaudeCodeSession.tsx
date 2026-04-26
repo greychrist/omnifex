@@ -3,7 +3,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Copy,
   ChevronDown,
-  GitBranch,
   ChevronUp,
   X,
   Plug,
@@ -102,46 +101,6 @@ interface ClaudeCodeSessionProps {
   onProjectPathChange?: (path: string) => void;
 }
 
-// Deterministic color palette for non-default branches. Mirrors the fallback
-// palette in AccountBadge so branch badges read the same visual language as
-// account tags.
-const BRANCH_COLORS = [
-  "bg-blue-500/20 text-blue-400 border-blue-500/30",
-  "bg-purple-500/20 text-purple-400 border-purple-500/30",
-  "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
-  "bg-amber-500/20 text-amber-400 border-amber-500/30",
-  "bg-rose-500/20 text-rose-400 border-rose-500/30",
-  "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
-];
-
-function hashBranchColor(name: string): string {
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) {
-    hash = name.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  return BRANCH_COLORS[Math.abs(hash) % BRANCH_COLORS.length];
-}
-
-const GitBranchBadge: React.FC<{ name: string }> = ({ name }) => {
-  const isTrunk = name === 'main' || name === 'master';
-  const colorClass = isTrunk
-    ? 'bg-black text-white border-black'
-    : hashBranchColor(name);
-
-  return (
-    <span
-      className={cn(
-        'inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] font-mono font-medium',
-        colorClass,
-      )}
-      title={`Git branch: ${name}`}
-    >
-      <GitBranch className="w-3 h-3" />
-      {name}
-    </span>
-  );
-};
-
 /**
  * ClaudeCodeSession component for interactive Claude Code sessions
  *
@@ -220,8 +179,13 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   const [effort, setEffort] = useState<EffortLevel>(initialSessionConfig?.effort ?? 'high');
   // Thinking config — controls extended thinking behavior.
   const [thinkingConfig, setThinkingConfig] = useState<ThinkingConfig>('adaptive');
-  // Git branch for the project directory, shown in SessionHeader badge.
-  const [gitBranch, setGitBranch] = useState<string | null>(null);
+  // Git branch + working-tree status for the project directory, shown in
+  // SessionHeader badge.
+  const [gitStatus, setGitStatus] = useState<import('@/lib/api').GitBranchSnapshot>({
+    branch: null,
+    changed: 0,
+    untracked: 0,
+  });
 
   // Resolve account explanation for SessionHeader
   useEffect(() => {
@@ -250,14 +214,18 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           return;
         }
         if (!result) {
-          setGitBranch(null);
+          setGitStatus({ branch: null, changed: 0, untracked: 0 });
           return;
         }
         watchId = result.watchId;
-        setGitBranch(result.branch);
-        unsub = api.onGitBranchChanged(result.watchId, setGitBranch);
+        setGitStatus({
+          branch: result.branch,
+          changed: result.changed,
+          untracked: result.untracked,
+        });
+        unsub = api.onGitBranchChanged(result.watchId, setGitStatus);
       } catch {
-        if (!cancelled) setGitBranch(null);
+        if (!cancelled) setGitStatus({ branch: null, changed: 0, untracked: 0 });
       }
     })();
 
@@ -1204,22 +1172,14 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
         <div className="flex items-center gap-2 px-4 py-1.5 border-b border-border/30 bg-muted shrink-0">
           <Button
             size="sm"
-            variant="ghost"
+            variant="outline"
             onClick={handleBackToProject}
-            className="h-7 px-2 text-xs gap-1 text-muted-foreground hover:text-foreground"
+            className="h-7 px-2 text-xs gap-1"
             title="Back to project sessions list"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
             Back to Project
           </Button>
-          {projectPath && (
-            <span className="text-xs text-muted-foreground/60 font-mono truncate">
-              {projectPath.replace(/^\/Users\/[^/]+/, '~')}
-            </span>
-          )}
-          {gitBranch && (
-            <GitBranchBadge name={gitBranch} />
-          )}
           <div className="ml-auto flex items-center gap-2">
             <SessionModeToggle
               mode={sessionMode}
@@ -1246,9 +1206,8 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           model={selectedModel}
           sdkAccount={sdkAccountInfo}
           contextUsage={contextUsage}
-          effortLevel={effort}
-          thinkingConfig={thinkingConfig}
-          permissionMode={permissionMode}
+          projectPath={projectPath}
+          gitStatus={gitStatus}
           sessionStatus={
             !sessionStarted
               ? undefined
@@ -1552,7 +1511,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-9 w-9 text-muted-foreground hover:text-foreground"
+                              className="h-9 w-9 bg-background text-muted-foreground hover:text-foreground shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_30%,transparent)]"
                             >
                               <Copy className="h-3.5 w-3.5" />
                             </Button>
@@ -1594,7 +1553,10 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                         variant="ghost"
                         size="icon"
                         onClick={() => { setShowMCPPanel(!showMCPPanel); if (!showMCPPanel) { setShowPluginsPanel(false); setShowPermissionsPanel(false); } }}
-                        className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                        className={cn(
+                          "h-8 w-8 text-muted-foreground hover:text-foreground shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_30%,transparent)]",
+                          showMCPPanel ? "bg-accent" : "bg-background",
+                        )}
                       >
                         <Plug className={cn("h-3.5 w-3.5", showMCPPanel && "text-primary")} />
                       </Button>
@@ -1609,7 +1571,10 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                         variant="ghost"
                         size="icon"
                         onClick={() => { setShowPluginsPanel(!showPluginsPanel); if (!showPluginsPanel) { setShowMCPPanel(false); setShowPermissionsPanel(false); } }}
-                        className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                        className={cn(
+                          "h-8 w-8 text-muted-foreground hover:text-foreground shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_30%,transparent)]",
+                          showPluginsPanel ? "bg-accent" : "bg-background",
+                        )}
                       >
                         <Package className={cn("h-3.5 w-3.5", showPluginsPanel && "text-primary")} />
                       </Button>
@@ -1624,7 +1589,10 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                         variant="ghost"
                         size="icon"
                         onClick={() => { setShowPermissionsPanel(!showPermissionsPanel); if (!showPermissionsPanel) { setShowMCPPanel(false); setShowPluginsPanel(false); } }}
-                        className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                        className={cn(
+                          "h-8 w-8 text-muted-foreground hover:text-foreground shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_30%,transparent)]",
+                          showPermissionsPanel ? "bg-accent" : "bg-background",
+                        )}
                       >
                         <Shield className={cn("h-3.5 w-3.5", showPermissionsPanel && "text-primary")} />
                       </Button>

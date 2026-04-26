@@ -101,6 +101,15 @@ export interface ClaudeSettings {
 }
 
 /**
+ * Branch + working-tree status snapshot for a project's git repository.
+ */
+export interface GitBranchSnapshot {
+  branch: string | null;
+  changed: number;
+  untracked: number;
+}
+
+/**
  * Represents the Claude Code version status
  */
 export interface ClaudeVersionStatus {
@@ -1661,28 +1670,36 @@ export const api = {
   },
 
   /**
-   * Start watching a project's .git/HEAD for branch changes. Returns an initial
-   * branch snapshot and a watchId the caller uses to unsubscribe.
+   * Start watching a project's .git/ for branch changes and the working tree
+   * for changed/untracked file counts. Returns an initial snapshot and a
+   * watchId the caller uses to unsubscribe.
    */
-  async startGitBranchWatch(projectPath: string): Promise<{ watchId: string; branch: string | null } | null> {
+  async startGitBranchWatch(projectPath: string): Promise<GitBranchSnapshot & { watchId: string } | null> {
     return apiCall("start_git_branch_watch", { projectPath });
   },
 
   /**
-   * Stop watching a project's .git/HEAD.
+   * Stop watching a project's .git/.
    */
   async stopGitBranchWatch(watchId: string): Promise<void> {
     await apiCall("stop_git_branch_watch", { watchId });
   },
 
   /**
-   * Subscribe to branch-change events for a specific watch. Returns an
+   * Subscribe to branch / status updates for a specific watch. Returns an
    * unsubscribe function.
    */
-  onGitBranchChanged(watchId: string, callback: (branch: string | null) => void): () => void {
+  onGitBranchChanged(
+    watchId: string,
+    callback: (snapshot: GitBranchSnapshot) => void,
+  ): () => void {
     return window.electronAPI.onEvent(
       `git-branch-changed:${watchId}`,
-      (data: any) => callback(data?.branch ?? null),
+      (data: any) => callback({
+        branch: data?.branch ?? null,
+        changed: typeof data?.changed === 'number' ? data.changed : 0,
+        untracked: typeof data?.untracked === 'number' ? data.untracked : 0,
+      }),
     );
   },
 
