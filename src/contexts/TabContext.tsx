@@ -5,7 +5,7 @@ import { api } from '@/lib/api';
 
 export interface Tab {
   id: string;
-  type: 'chat' | 'agent' | 'agents' | 'projects' | 'usage' | 'mcp' | 'settings' | 'claude-md' | 'claude-file' | 'agent-execution' | 'create-agent' | 'import-agent';
+  type: 'chat' | 'agent' | 'agents' | 'projects' | 'usage' | 'mcp' | 'settings' | 'claude-md' | 'claude-file' | 'agent-execution' | 'create-agent' | 'import-agent' | 'lima';
   title: string;
   sessionId?: string;  // for chat tabs
   sessionData?: any; // for chat tabs - stores full session object

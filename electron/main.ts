@@ -58,6 +58,7 @@ import { createUpdaterService } from './services/updater';
 import { createInstallerService } from './services/installer';
 import { createSdkVersionService } from './services/sdk-version';
 import { createGitWatcherService } from './services/git-watcher';
+import { createLimaService } from './services/lima';
 import { registerIpcHandlers } from './ipc/handlers';
 import { createWindowRouter } from './window-router';
 import { classifyNavigation } from './navigation-policy';
@@ -448,6 +449,7 @@ app.whenReady().then(() => {
   const gitWatcherService = _gitWatcherService = createGitWatcherService({
     sendToRenderer,
   });
+  const limaService = createLimaService();
 
   registerIpcHandlers({
     database: db,
@@ -647,6 +649,17 @@ app.whenReady().then(() => {
       start: (projectPath: string) => gitWatcherService.start(projectPath),
       stop: (watchId: string) => gitWatcherService.stop(watchId),
     },
+    lima: {
+      isInstalled: () => limaService.isInstalled(),
+      listVms: () => limaService.listVms(),
+      listContainers: (vmName: string) => limaService.listContainers(vmName),
+      startVm: (vmName: string) => limaService.startVm(vmName),
+      stopVm: (vmName: string) => limaService.stopVm(vmName),
+      startContainer: (vmName: string, containerId: string) =>
+        limaService.startContainer(vmName, containerId),
+      stopContainer: (vmName: string, containerId: string) =>
+        limaService.stopContainer(vmName, containerId),
+    },
   });
 
   ipcMain.handle('get_app_version', () => app.getVersion());
@@ -684,7 +697,7 @@ app.whenReady().then(() => {
 
   const installerService = createInstallerService({
     sessionsService: {
-      listActiveTabIds: () => sessionsService.listActiveTabIds(),
+      listInFlightTabIds: () => sessionsService.listInFlightTabIds(),
       stopAll: () => sessionsService.stopAll(),
     },
     agentRunRegistry: {

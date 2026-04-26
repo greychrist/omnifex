@@ -19,6 +19,7 @@ interface UseTabStateReturn {
   createAgentsTab: () => string | null;
   createUsageTab: () => string | null;
   createMCPTab: () => string | null;
+  createLimaTab: () => string | null;
   createSettingsTab: () => string | null;
   createClaudeMdTab: () => string | null;
   createClaudeFileTab: (fileId: string, fileName: string) => string;
@@ -151,6 +152,23 @@ export const useTabState = (): UseTabStateReturn => {
       status: 'idle',
       hasUnsavedChanges: false,
       icon: 'server'
+    });
+  }, [addTab, tabs, setActiveTab]);
+
+  const createLimaTab = useCallback((): string | null => {
+    // Singleton — reuse the existing tab if one is already open
+    const existingTab = tabs.find(tab => tab.type === 'lima');
+    if (existingTab) {
+      setActiveTab(existingTab.id);
+      return existingTab.id;
+    }
+
+    return addTab({
+      type: 'lima',
+      title: 'Lima',
+      status: 'idle',
+      hasUnsavedChanges: false,
+      icon: 'hard-drive',
     });
   }, [addTab, tabs, setActiveTab]);
 
@@ -339,6 +357,7 @@ export const useTabState = (): UseTabStateReturn => {
     createAgentsTab,
     createUsageTab,
     createMCPTab,
+    createLimaTab,
     createSettingsTab,
     createClaudeMdTab,
     createClaudeFileTab,

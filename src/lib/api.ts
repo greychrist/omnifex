@@ -109,6 +109,27 @@ export interface GitBranchSnapshot {
   untracked: number;
 }
 
+/** Lima VM (parsed from `limactl list --json`). */
+export interface LimaVm {
+  name: string;
+  status: string;
+  arch: string;
+  cpus: number;
+  memoryBytes: number;
+  diskBytes: number;
+  dir: string;
+}
+
+/** Container in a Lima VM (parsed from `docker ps -a --format=json`). */
+export interface LimaDockerContainer {
+  id: string;
+  name: string;
+  image: string;
+  state: string;
+  status: string;
+  ports: string;
+}
+
 /**
  * Represents the Claude Code version status
  */
@@ -1701,6 +1722,47 @@ export const api = {
         untracked: typeof data?.untracked === 'number' ? data.untracked : 0,
       }),
     );
+  },
+
+  // ── Lima (VM viewer) ──────────────────────────────────────────────────────
+
+  /** Check whether `limactl` is on the user's PATH. */
+  async limaCheckInstalled(): Promise<{ installed: boolean }> {
+    return apiCall("lima_check_installed");
+  },
+
+  /** List all Lima VMs (running and stopped). */
+  async limaListVms(): Promise<LimaVm[]> {
+    const result = await apiCall<LimaVm[]>("lima_list_vms");
+    return result ?? [];
+  },
+
+  /** List Docker containers inside a running Lima VM. Returns [] if the VM
+   *  is stopped or doesn't have docker installed. */
+  async limaListContainers(vmName: string): Promise<LimaDockerContainer[]> {
+    const result = await apiCall<LimaDockerContainer[]>("lima_list_containers", { vmName });
+    return result ?? [];
+  },
+
+  /** Start a stopped Lima VM. Resolves when the VM reports ready. */
+  async limaStartVm(vmName: string): Promise<void> {
+    await apiCall("lima_start_vm", { vmName });
+  },
+
+  /** Stop a running Lima VM. Resolves when the VM has fully shut down. */
+  async limaStopVm(vmName: string): Promise<void> {
+    await apiCall("lima_stop_vm", { vmName });
+  },
+
+  /** Non-destructively start a Docker container in a Lima VM (`docker start`).
+   *  Preserves volumes, env, and named state — does not recreate. */
+  async limaStartContainer(vmName: string, containerId: string): Promise<void> {
+    await apiCall("lima_start_container", { vmName, containerId });
+  },
+
+  /** Non-destructively stop a Docker container in a Lima VM (`docker stop`). */
+  async limaStopContainer(vmName: string, containerId: string): Promise<void> {
+    await apiCall("lima_stop_container", { vmName, containerId });
   },
 
   /**

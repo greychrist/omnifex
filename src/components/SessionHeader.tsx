@@ -285,7 +285,7 @@ export function SessionHeader({
             : 200_000;
           if (tokens <= 0 || limit <= 0) return null;
           const pct = Math.min(100, (tokens / limit) * 100);
-          const color = pct > 80 ? "text-red-400" : pct > 50 ? "text-yellow-400" : "text-foreground";
+          const color = pct > 80 ? "text-red-400" : pct > 50 ? "text-orange-400" : "text-foreground";
 
           // Build pie-chart data from SDK categories (descending by tokens).
           //
@@ -359,17 +359,17 @@ export function SessionHeader({
                   <span className={cn("font-mono", color)}>
                     {tokens >= 1000 ? `${(tokens / 1000).toFixed(1)}k` : tokens}
                   </span>
-                  <div className="w-16 h-1.5 bg-foreground/10 rounded-full overflow-hidden">
+                  <div className="w-16 h-1.5 bg-foreground/10 rounded-full overflow-hidden relative">
+                    {/*
+                      The fill is a single full-width gradient (green → orange → red)
+                      clipped from the right by `inset-right: (100 - pct)%`. This way
+                      the visible bar always shows the gradient from 0% to whatever
+                      the current usage is — at 30% the bar is still all-green; at
+                      90% it crosses into the red end. transitions stay smooth.
+                    */}
                     <div
-                      className={cn(
-                        "h-full rounded-full transition-all",
-                        pct > 80
-                          ? "bg-red-400"
-                          : pct > 50
-                          ? "bg-yellow-400"
-                          : "bg-primary/60",
-                      )}
-                      style={{ width: `${pct}%` }}
+                      className="absolute inset-0 rounded-full bg-gradient-to-r from-green-400 via-orange-400 to-red-400 transition-[clip-path]"
+                      style={{ clipPath: `inset(0 ${100 - pct}% 0 0)` }}
                     />
                   </div>
                   <span className="text-foreground font-mono">{pct.toFixed(0)}%</span>

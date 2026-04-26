@@ -23,6 +23,7 @@ const UsageDashboard = lazy(() => import('@/components/UsageDashboard').then(m =
 const MCPManager = lazy(() => import('@/components/MCPManager').then(m => ({ default: m.MCPManager })));
 const Settings = lazy(() => import('@/components/Settings').then(m => ({ default: m.Settings })));
 const MarkdownEditor = lazy(() => import('@/components/MarkdownEditor').then(m => ({ default: m.MarkdownEditor })));
+const LimaViewer = lazy(() => import('@/components/LimaViewer').then(m => ({ default: m.LimaViewer })));
 // const ClaudeFileEditor = lazy(() => import('@/components/ClaudeFileEditor').then(m => ({ default: m.ClaudeFileEditor })));
 
 // Import non-lazy components for projects view
@@ -401,6 +402,13 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
         return (
           <div className="h-full">
             <MCPManager onBack={() => {}} />
+          </div>
+        );
+
+      case 'lima':
+        return (
+          <div className="h-full">
+            <LimaViewer />
           </div>
         );
       

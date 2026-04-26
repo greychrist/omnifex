@@ -156,6 +156,15 @@ export interface Services {
     start(projectPath: string): Promise<{ watchId: string; branch: string | null }>;
     stop(watchId: string): void;
   };
+  lima?: {
+    isInstalled(): Promise<boolean>;
+    listVms(): Promise<unknown[]>;
+    listContainers(vmName: string): Promise<unknown[]>;
+    startVm(vmName: string): Promise<void>;
+    stopVm(vmName: string): Promise<void>;
+    startContainer(vmName: string, containerId: string): Promise<void>;
+    stopContainer(vmName: string, containerId: string): Promise<void>;
+  };
 }
 
 // The handler type used in the map — receives the IPC event plus the params
@@ -188,7 +197,7 @@ function wrapWith<P>(fn: (params: P) => unknown): HandlerFn {
  * renderer gets a defined (but empty) response rather than a blocked channel.
  */
 export function getHandlerMap(services: Services = {}): Record<string, HandlerFn> {
-  const { accounts, claude, sessions, agents, usage, claudeBinary, mcp, slashCommands, logging, database, proxy, permissionsIO, models, sdkVersion, gitWatcher } = services;
+  const { accounts, claude, sessions, agents, usage, claudeBinary, mcp, slashCommands, logging, database, proxy, permissionsIO, models, sdkVersion, gitWatcher, lima } = services;
 
   const map: Record<string, HandlerFn> = {
     // ── Accounts ──────────────────────────────────────────────────────────────
@@ -539,6 +548,44 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
       const watchId = (p?.watchId ?? p?.watch_id) as string;
       if (!watchId || !gitWatcher) return null;
       gitWatcher.stop(watchId);
+      return null;
+    }),
+
+    // ── Lima (VM viewer) ──────────────────────────────────────────────────────
+    lima_check_installed: wrap(async () => {
+      if (!lima) return { installed: false };
+      return { installed: await lima.isInstalled() };
+    }),
+    lima_list_vms: wrap(() => lima?.listVms() ?? []),
+    lima_list_containers: wrapWith(async (p: Record<string, unknown>) => {
+      const vmName = (p?.vmName ?? p?.vm_name) as string;
+      if (!vmName || !lima) return [];
+      return lima.listContainers(vmName);
+    }),
+    lima_start_vm: wrapWith(async (p: Record<string, unknown>) => {
+      const vmName = (p?.vmName ?? p?.vm_name) as string;
+      if (!vmName || !lima) return null;
+      await lima.startVm(vmName);
+      return null;
+    }),
+    lima_stop_vm: wrapWith(async (p: Record<string, unknown>) => {
+      const vmName = (p?.vmName ?? p?.vm_name) as string;
+      if (!vmName || !lima) return null;
+      await lima.stopVm(vmName);
+      return null;
+    }),
+    lima_start_container: wrapWith(async (p: Record<string, unknown>) => {
+      const vmName = (p?.vmName ?? p?.vm_name) as string;
+      const containerId = (p?.containerId ?? p?.container_id) as string;
+      if (!vmName || !containerId || !lima) return null;
+      await lima.startContainer(vmName, containerId);
+      return null;
+    }),
+    lima_stop_container: wrapWith(async (p: Record<string, unknown>) => {
+      const vmName = (p?.vmName ?? p?.vm_name) as string;
+      const containerId = (p?.containerId ?? p?.container_id) as string;
+      if (!vmName || !containerId || !lima) return null;
+      await lima.stopContainer(vmName, containerId);
       return null;
     }),
   };

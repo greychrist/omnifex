@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence, Reorder } from 'framer-motion';
-import { X, Plus, MessageSquare, Bot, AlertCircle, Folder, BarChart, Server, Settings, FileText } from 'lucide-react';
+import { X, Plus, MessageSquare, Bot, AlertCircle, Folder, BarChart, Server, Settings, FileText, HardDrive } from 'lucide-react';
 import { Spinner } from '@/components/ui/spinner';
 import { AccountBadge } from './AccountBadge';
 import { useTabState } from '@/hooks/useTabState';
@@ -32,6 +32,8 @@ const TabItem: React.FC<TabItemProps> = ({ tab, isActive, onClose, onClick, isDr
         return BarChart;
       case 'mcp':
         return Server;
+      case 'lima':
+        return HardDrive;
       case 'settings':
         return Settings;
       case 'claude-md':

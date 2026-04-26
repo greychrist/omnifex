@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
-import { ChevronDown, ChevronRight, Bot, CheckCircle2, AlertCircle, X } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { ChevronDown, ChevronRight, ChevronUp, Bot, CheckCircle2, AlertCircle, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Subagent } from '@/lib/subagentStreams';
+
+const COLLAPSE_STORAGE_KEY = 'greychrist.subagentBar.collapsed';
 
 // Cool palette — kept close to the user-message blue but distinguishable.
 // Each entry: border + bg + dot/accent color. Tailwind-friendly utility strings.
@@ -141,24 +143,68 @@ export const SubagentBar: React.FC<SubagentBarProps> = ({
   onDismiss,
   onDismissAllCompleted,
 }) => {
+  const [collapsed, setCollapsed] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return true;
+    // Collapsed by default; only expand if the user has explicitly stored '0'.
+    return window.localStorage.getItem(COLLAPSE_STORAGE_KEY) !== '0';
+  });
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(COLLAPSE_STORAGE_KEY, collapsed ? '1' : '0');
+  }, [collapsed]);
+
   if (subagents.length === 0) return null;
   const completedCount = subagents.filter((s) => s.status !== 'running').length;
+  const runningCount = subagents.length - completedCount;
+
   return (
-    <div className={cn('shrink-0 border-t border-border/40', className)}>
-      {completedCount >= 2 && onDismissAllCompleted && (
-        <div className="flex justify-end px-3 py-0.5 text-[11px] bg-muted/20">
-          <button
-            type="button"
-            onClick={onDismissAllCompleted}
-            className="text-muted-foreground hover:text-foreground"
-          >
-            Clear done ({completedCount})
-          </button>
+    <div className={cn('shrink-0 border-t border-border/40 flex flex-col', className)}>
+      {/* Header — always visible */}
+      <div className="flex items-center gap-2 px-3 py-1 text-[11px] bg-muted/20 shrink-0">
+        <button
+          type="button"
+          onClick={() => setCollapsed((v) => !v)}
+          className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"
+          title={collapsed ? 'Expand subagents' : 'Collapse subagents'}
+        >
+          {collapsed ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+          <Bot className="h-3.5 w-3.5" />
+          <span className="font-medium">
+            Subagents ({subagents.length})
+          </span>
+          <span className="text-muted-foreground/70">
+            {runningCount > 0 && `${runningCount} running`}
+            {runningCount > 0 && completedCount > 0 && ' · '}
+            {completedCount > 0 && `${completedCount} done`}
+          </span>
+        </button>
+        <div className="ml-auto">
+          {onDismissAllCompleted && (
+            <button
+              type="button"
+              onClick={onDismissAllCompleted}
+              disabled={completedCount === 0}
+              className={cn(
+                'inline-flex items-center px-1.5 py-0.5 rounded border border-border/60 bg-background',
+                'text-muted-foreground hover:text-foreground hover:bg-accent transition-colors',
+                'disabled:opacity-30 disabled:hover:bg-background disabled:cursor-not-allowed',
+              )}
+              title={completedCount > 0 ? `Clear ${completedCount} done` : 'No completed subagents'}
+            >
+              Clear done{completedCount > 0 ? ` (${completedCount})` : ''}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Scrollable list — capped at half the viewport */}
+      {!collapsed && (
+        <div className="overflow-y-auto" style={{ maxHeight: '50vh' }}>
+          {subagents.map((sub) => (
+            <SubagentRow key={sub.toolUseId} sub={sub} onDismiss={onDismiss} />
+          ))}
         </div>
       )}
-      {subagents.map((sub) => (
-        <SubagentRow key={sub.toolUseId} sub={sub} onDismiss={onDismiss} />
-      ))}
     </div>
   );
 };

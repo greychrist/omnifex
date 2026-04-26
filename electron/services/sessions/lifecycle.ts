@@ -120,6 +120,12 @@ export function createSessionsService(
           } catch (e) {
             console.error('[sessions] notification hook failed:', e);
           }
+
+          // Turn is over — flip to 'idle' so the installer's wait-for-idle
+          // gate doesn't block on a tab that's just sitting waiting for the
+          // user. Line 89 above will move us back to 'running' the moment
+          // the next message lands on the stream.
+          handle.status = 'idle';
         }
       }
     } catch (err) {
@@ -537,6 +543,20 @@ export function createSessionsService(
     return Array.from(sessions.keys());
   }
 
+  function listInFlightTabIds(): string[] {
+    const ids: string[] = [];
+    for (const [tabId, handle] of sessions) {
+      if (
+        handle.status === 'starting' ||
+        handle.status === 'running' ||
+        handle.status === 'waiting_permission'
+      ) {
+        ids.push(tabId);
+      }
+    }
+    return ids;
+  }
+
   function getHealth(tabId: string): { alive: boolean; status: SessionStatus; sessionId: string | null } {
     const handle = sessions.get(tabId);
     if (!handle) return { alive: false, status: 'stopped', sessionId: null };
@@ -555,10 +575,15 @@ export function createSessionsService(
     if (!handle) throw new Error(`setMode: unknown tab ${tabId}`);
     if (handle.mode === mode) return;
 
-    // Gate: allow switching while the SDK is running or in the transient
-    // 'starting' state (post-restart, before the first message arrives).
-    // Block only when a permission dialog is open or the session is dead.
-    if (handle.status !== 'running' && handle.status !== 'starting') {
+    // Gate: allow switching while the SDK is running, idle (between turns),
+    // or in the transient 'starting' state (post-restart, before the first
+    // message arrives). Block only when a permission dialog is open or the
+    // session is dead.
+    if (
+      handle.status !== 'running' &&
+      handle.status !== 'idle' &&
+      handle.status !== 'starting'
+    ) {
       throw new Error(`setMode: not allowed while status is "${handle.status}"`);
     }
 
@@ -645,6 +670,7 @@ export function createSessionsService(
     getHealth,
     isActive,
     listActiveTabIds,
+    listInFlightTabIds,
     setMode,
     tuiWrite,
     tuiResize,

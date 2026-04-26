@@ -36,7 +36,22 @@ export type {
 // Public types
 // ---------------------------------------------------------------------------
 
-export type SessionStatus = 'starting' | 'running' | 'waiting_permission' | 'stopped' | 'error';
+/**
+ * Lifecycle states for a session handle.
+ *
+ * 'running' means the SDK turn is in flight — actively producing output, or
+ * about to. 'idle' means the session is alive but the last turn finished
+ * (the SDK emitted a `result` message); we're sitting on the input channel
+ * waiting for the user. The installer's wait-for-idle gate uses this split
+ * to avoid blocking on tabs that are merely open.
+ */
+export type SessionStatus =
+  | 'starting'
+  | 'running'
+  | 'idle'
+  | 'waiting_permission'
+  | 'stopped'
+  | 'error';
 
 export type SessionMode = 'sdk' | 'tui';
 
@@ -92,9 +107,12 @@ export interface SessionsService {
   getInfo(tabId: string): { sessionId: string | null; status: SessionStatus } | null;
   getHealth(tabId: string): { alive: boolean; status: SessionStatus; sessionId: string | null };
   isActive(tabId: string): boolean;
-  /** Return all tab IDs that currently have a registered session handle.
-   *  Used by the installer to gate auto-update on in-flight work. */
+  /** Return all tab IDs that currently have a registered session handle. */
   listActiveTabIds(): string[];
+  /** Return tab IDs whose session is mid-turn — `'starting'`, `'running'`,
+   *  or `'waiting_permission'`. Used by the installer to gate auto-update so
+   *  that idle/open sessions don't block. */
+  listInFlightTabIds(): string[];
 
   // --- Wave 2: Query-method passthroughs ----------------------------------
   /** Interrupt the current assistant turn without ending the session. */

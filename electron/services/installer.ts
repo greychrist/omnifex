@@ -35,7 +35,10 @@ export interface InstallerService {
 
 export interface InstallerDeps {
   sessionsService: {
-    listActiveTabIds: () => string[];
+    /** Tabs whose SDK turn is in flight — `'starting'`, `'running'`, or
+     *  `'waiting_permission'`. Idle/open sessions are excluded so the
+     *  installer doesn't block on tabs sitting at a prompt. */
+    listInFlightTabIds: () => string[];
     stopAll: () => void;
   };
   agentRunRegistry: {
@@ -208,7 +211,7 @@ export function createInstallerService(deps: InstallerDeps): InstallerService {
         cancelToken = null;
         throw new WaitCancelled();
       }
-      const sessions = deps.sessionsService.listActiveTabIds().length;
+      const sessions = deps.sessionsService.listInFlightTabIds().length;
       const runs = deps.agentRunRegistry.listActiveRunIds().length;
       if (sessions === 0 && runs === 0) {
         deps.sendToRenderer('updater:install-status', { phase: 'installing' });

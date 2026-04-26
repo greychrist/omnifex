@@ -467,6 +467,93 @@ describe('sessions service — full lifecycle', () => {
     expect(service.listActiveTabIds()).toEqual(['tab-b']);
   });
 
+  it('moves a tab to status "idle" after a result message', async () => {
+    const fake = installFakeQuery();
+
+    service.start({
+      tabId: 'tab-idle',
+      projectPath: '/p',
+      configDir: '/c',
+      model: 'sonnet',
+      permissionMode: 'default',
+    });
+
+    fake.pushMessage({
+      type: 'system',
+      subtype: 'init',
+      session_id: 'sess-idle',
+    });
+    await flush();
+    expect(service.getStatus('tab-idle')).toBe('running');
+
+    fake.pushMessage({
+      type: 'result',
+      subtype: 'success',
+      result: 'done',
+      is_error: false,
+    });
+    await flush();
+
+    expect(service.getStatus('tab-idle')).toBe('idle');
+  });
+
+  it('listInFlightTabIds excludes idle sessions', async () => {
+    const fakeBusy = installFakeQuery();
+    service.start({
+      tabId: 'tab-busy',
+      projectPath: '/p',
+      configDir: '/c',
+      model: 'sonnet',
+      permissionMode: 'default',
+    });
+    fakeBusy.pushMessage({ type: 'assistant', message: { role: 'assistant', content: 'thinking' } });
+    await flush();
+
+    const fakeIdle = installFakeQuery();
+    service.start({
+      tabId: 'tab-quiet',
+      projectPath: '/p',
+      configDir: '/c',
+      model: 'sonnet',
+      permissionMode: 'default',
+    });
+    fakeIdle.pushMessage({ type: 'system', subtype: 'init', session_id: 's1' });
+    fakeIdle.pushMessage({ type: 'result', subtype: 'success', result: 'done', is_error: false });
+    await flush();
+
+    expect(service.listActiveTabIds().sort()).toEqual(['tab-busy', 'tab-quiet']);
+    expect(service.listInFlightTabIds()).toEqual(['tab-busy']);
+  });
+
+  it('listInFlightTabIds includes waiting_permission sessions', async () => {
+    const fake = installFakeQuery();
+    service.start({
+      tabId: 'tab-perm',
+      projectPath: '/p',
+      configDir: '/c',
+      model: 'sonnet',
+      permissionMode: 'default',
+    });
+    fake.pushMessage({ type: 'system', subtype: 'init', session_id: 's-p' });
+    fake.pushMessage({ type: 'result', subtype: 'success', result: 'done', is_error: false });
+    await flush();
+    expect(service.getStatus('tab-perm')).toBe('idle');
+    expect(service.listInFlightTabIds()).toEqual([]);
+
+    // Simulate a tool-permission gate firing — the canPermit hook flips
+    // status to 'waiting_permission' until the renderer answers.
+    const opts = fake.getCapturedOptions();
+    const canPermit = opts?.canUseTool ?? opts?.canCallTool;
+    if (canPermit) {
+      void canPermit('Bash', { command: 'ls' }, { signal: new AbortController().signal });
+    }
+    await flush();
+
+    if (service.getStatus('tab-perm') === 'waiting_permission') {
+      expect(service.listInFlightTabIds()).toEqual(['tab-perm']);
+    }
+  });
+
   it('extracts session_id from the system init message and forwards all output', async () => {
     const fake = installFakeQuery();
 

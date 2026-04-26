@@ -7,7 +7,7 @@ import { createInstallerService, type InstallerDeps } from '../services/installe
 function makeDeps(overrides: Partial<InstallerDeps> = {}): InstallerDeps {
   return {
     sessionsService: {
-      listActiveTabIds: () => [],
+      listInFlightTabIds: () => [],
       stopAll: () => {},
     },
     agentRunRegistry: {
@@ -141,7 +141,7 @@ describe('InstallerService.waitForIdle', () => {
     const installer = createInstallerService(makeDeps({
       sendToRenderer,
       sessionsService: {
-        listActiveTabIds: () => activeSessions > 0 ? new Array(activeSessions).fill('t').map((_, i) => `t-${i}`) : [],
+        listInFlightTabIds: () => activeSessions > 0 ? new Array(activeSessions).fill('t').map((_, i) => `t-${i}`) : [],
         stopAll: () => {},
       },
     }));
@@ -161,7 +161,7 @@ describe('InstallerService.waitForIdle', () => {
     let activeSessions = 1;
     const installer = createInstallerService(makeDeps({
       sessionsService: {
-        listActiveTabIds: () => activeSessions > 0 ? ['t'] : [],
+        listInFlightTabIds: () => activeSessions > 0 ? ['t'] : [],
         stopAll: () => { stopAll(); activeSessions = 0; },
       },
       agentRunRegistry: {
@@ -177,7 +177,7 @@ describe('InstallerService.waitForIdle', () => {
   it('cancelWait rejects the in-flight wait with WaitCancelled', async () => {
     const installer = createInstallerService(makeDeps({
       sessionsService: {
-        listActiveTabIds: () => ['t'],
+        listInFlightTabIds: () => ['t'],
         stopAll: () => {},
       },
     }));
