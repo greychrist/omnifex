@@ -442,6 +442,31 @@ describe('sessions service — full lifecycle', () => {
     expect(info!.status).toBe('starting');
   });
 
+  it('listActiveTabIds returns all currently-registered tab IDs', () => {
+    installFakeQuery();
+    service.start({
+      tabId: 'tab-a',
+      projectPath: '/tmp/a',
+      configDir: '/c',
+      model: 'sonnet',
+      permissionMode: 'default',
+    });
+
+    installFakeQuery();
+    service.start({
+      tabId: 'tab-b',
+      projectPath: '/tmp/b',
+      configDir: '/c',
+      model: 'sonnet',
+      permissionMode: 'default',
+    });
+
+    expect(service.listActiveTabIds().sort()).toEqual(['tab-a', 'tab-b']);
+
+    service.stop('tab-a');
+    expect(service.listActiveTabIds()).toEqual(['tab-b']);
+  });
+
   it('extracts session_id from the system init message and forwards all output', async () => {
     const fake = installFakeQuery();
 

@@ -92,6 +92,9 @@ export interface SessionsService {
   getInfo(tabId: string): { sessionId: string | null; status: SessionStatus } | null;
   getHealth(tabId: string): { alive: boolean; status: SessionStatus; sessionId: string | null };
   isActive(tabId: string): boolean;
+  /** Return all tab IDs that currently have a registered session handle.
+   *  Used by the installer to gate auto-update on in-flight work. */
+  listActiveTabIds(): string[];
 
   // --- Wave 2: Query-method passthroughs ----------------------------------
   /** Interrupt the current assistant turn without ending the session. */

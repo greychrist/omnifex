@@ -533,6 +533,10 @@ export function createSessionsService(
     return sessions.has(tabId);
   }
 
+  function listActiveTabIds(): string[] {
+    return Array.from(sessions.keys());
+  }
+
   function getHealth(tabId: string): { alive: boolean; status: SessionStatus; sessionId: string | null } {
     const handle = sessions.get(tabId);
     if (!handle) return { alive: false, status: 'stopped', sessionId: null };
@@ -640,6 +644,7 @@ export function createSessionsService(
     getInfo,
     getHealth,
     isActive,
+    listActiveTabIds,
     setMode,
     tuiWrite,
     tuiResize,
