@@ -5,6 +5,14 @@ All notable changes to GreyChrist are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.48] — 2026-04-25
+
+Aligns the Compact/Verbose view toggle with the adjacent SDK/Terminal mode toggle so the two reads as one consistent control. Installers remain **unsigned**.
+
+### Fixed
+
+- **Compact/Verbose toggle styling** in `SessionViewToggle` (`6897104`) now uses the same container (`bg-muted/30` with `p-0.5`) and active-state treatment (`bg-background shadow-sm`) as `SessionModeToggle`, so the active/inactive coloring matches across the two adjacent toggles in the session header.
+
 ## [0.3.47] — 2026-04-25
 
 Trims redundant chrome from the session header now that the AccountBadge popover is the single source of truth for SDK-account details. Installers remain **unsigned**.
