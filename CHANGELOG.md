@@ -5,6 +5,27 @@ All notable changes to GreyChrist are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.50] — 2026-04-26
+
+Redesigns the session header so the project folder, branch, and context-window readouts each get their own labeled badge — and adds a thinking-mode picker to the chat-input control row that was missing after the previous release dropped the inline pills. Installers remain **unsigned**.
+
+### Added
+
+- **Folder + branch badges in the session header** (`13f0bbc`). The header now shows `account / status / folder / branch / context` as labeled badges, replacing the previous permissions/effort/adaptive pills (those controls already lived in the chat-input control bar). The folder badge is the project path with `~` collapsed; the branch badge picks up a hashed color per branch (trunk stays black-on-white) and now shows working-tree counts as `+N` (`FilePen`, green) for changed files and `?N` (`FilePlus`, amber) for untracked files. Counts come from `git status --porcelain=v1 -z`, polled every 3s and refreshed on `.git/` events.
+- **Thinking-mode picker** in `ControlBar` / `FloatingPromptInput` (`13f0bbc`). The bottom row already drove model / effort / permissions through `Query.set*` mid-session; now thinking is wired in too (Brain icon + dropdown matching the other pickers). Selecting `adaptive` / `budget` / `disabled` calls `api.sessionSetThinking` immediately — no session restart.
+
+### Changed
+
+- **All four picker dropdowns get a section title** (Model / Effort / Thinking / Permissions). Small uppercase row above the option list with a divider, matching the new badge labels in the header.
+- **Picker buttons and right-side icon buttons** (Copy / MCP / Plugins / Permissions panel toggles) now share a 1px inset outline in `color-mix(in oklch, var(--color-muted-foreground) 30%, transparent)` over `bg-background`. The MCP / Plugins / Permissions toggles flip to `bg-accent` when their panel is open so the active panel is obvious without changing layout.
+- **New-tab `+` button** picks up the same inset-shadow outline the active tab uses, so it reads as a sibling of the tab strip rather than a floating affordance.
+
+### Internal
+
+- `electron/services/git-watcher.ts` extended from branch-only to `{ branch, changed, untracked }` snapshots; tests cover clean repos, dirty repos, working-tree poll updates, and non-git directories.
+- Extracted `ProjectPathBadge` and `GitBranchBadge` into `src/components/claude-code-session/` so `SessionHeader` can render them without pulling on `ClaudeCodeSession`'s render tree.
+- `src/lib/api.ts` gained a `GitBranchSnapshot` type; `startGitBranchWatch` and `onGitBranchChanged` carry the new fields with defensive defaults if a payload arrives without them.
+
 ## [0.3.49] — 2026-04-26
 
 Replaces the manual "mount DMG and drag" install path with a one-click auto-install flow: the titlebar update badge now stages the new ZIP, waits for in-flight sessions and agent runs to finish (with an "Install anyway" override), swaps `GreyChrist.app` in place via a detached helper script, and relaunches. Also lets users hide subagent prompts in Compact mode. Installers remain **unsigned**.
