@@ -5,7 +5,7 @@ All notable changes to GreyChrist are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.3.50] — 2026-04-26
+## [0.3.51] — 2026-04-26
 
 Redesigns the session header so the project folder, branch, and context-window readouts each get their own labeled badge — and adds a thinking-mode picker to the chat-input control row that was missing after the previous release dropped the inline pills. Installers remain **unsigned**.
 
