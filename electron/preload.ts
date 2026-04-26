@@ -22,7 +22,6 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   'create_project',
   'get_project_sessions',
   'load_session_history',
-  'load_agent_session_history',
   'get_home_directory',
   'get_claude_settings',
   'save_claude_settings',
@@ -58,7 +57,6 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   'session_context_usage',
   'session_supported_commands',
   'session_supported_models',
-  'session_supported_agents',
   'list_supported_models',
   'session_mcp_server_status',
   'session_plugins',
@@ -67,30 +65,6 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   'session_set_mode',
   'session_tui_write',
   'session_tui_resize',
-
-  // Agents
-  'list_agents',
-  'list_running_sessions',
-  'create_agent',
-  'update_agent',
-  'delete_agent',
-  'get_agent',
-  'export_agent',
-  'export_agent_to_file',
-  'import_agent',
-  'execute_agent',
-  'list_agent_runs',
-  'get_agent_run',
-  'get_agent_run_with_real_time_metrics',
-  'kill_agent_session',
-  'get_session_status',
-  'cleanup_finished_processes',
-  'get_session_output',
-  'get_live_session_output',
-  'stream_session_output',
-  'fetch_github_agents',
-  'fetch_github_agent_content',
-  'import_agent_from_github',
 
   // Usage
   'get_usage_stats',
@@ -204,10 +178,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     if (
       !ALLOWED_EVENT_CHANNELS.has(channel) &&
       !channel.startsWith('session-') &&
-      !channel.startsWith('agent-output:') &&
-      !channel.startsWith('agent-error:') &&
-      !channel.startsWith('agent-complete:') &&
-      !channel.startsWith('agent-cancelled:') &&
       !channel.startsWith('claude-output:') &&
       !channel.startsWith('claude-error:') &&
       !channel.startsWith('claude-complete:') &&

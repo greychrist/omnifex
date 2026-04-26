@@ -45,8 +45,6 @@ import { createClaudeBinaryService } from './services/claude-binary';
 import { createSessionsService } from './services/sessions';
 import { createNotificationsService } from './services/notifications';
 import { createClaudeService } from './services/claude';
-import { createAgentsService } from './services/agents';
-import { createAgentRunRegistry } from './services/agent-run-registry';
 import { createUsageService } from './services/usage';
 import { createLoggingService } from './services/logging';
 import { createProxyService } from './services/proxy';
@@ -387,18 +385,6 @@ app.whenReady().then(() => {
     }),
   );
   const claudeService = createClaudeService(db, accountsService);
-  const agentRunRegistry = createAgentRunRegistry();
-  const agentsService = createAgentsService(
-    db,
-    accountsService,
-    claudeBinaryService,
-    agentRunRegistry,
-    sendToRenderer,
-    {
-      register: (runId, ownerId) => router.registerRunOwner(runId, ownerId),
-      unregister: (runId) => router.unregisterRunOwner(runId),
-    },
-  );
   const usageService = createUsageService(accountsService, loggingService);
   const proxyService = createProxyService(db);
   const mcpService = createMCPService(defaultConfigDir);
@@ -494,8 +480,6 @@ app.whenReady().then(() => {
       getProjectSessions: (projectId: string, projectPath?: string) => claudeService.getProjectSessions(projectId, projectPath),
       loadSessionHistory: (sessionId: string, projectId: string) =>
         claudeService.loadSessionHistory(sessionId, projectId),
-      loadAgentSessionHistory: (sessionId: string) =>
-        claudeService.loadAgentSessionHistory(sessionId),
       getHomeDirectory: () => claudeService.getHomeDirectory(),
       getSettings: (opts?: any) => claudeService.getClaudeSettings(opts),
       saveSettings: (settings: any, opts?: any) => claudeService.saveClaudeSettings(settings, opts),
@@ -545,7 +529,6 @@ app.whenReady().then(() => {
       getContextUsage: (sessionId: string) => sessionsService.getContextUsage(sessionId),
       getSupportedCommands: (sessionId: string) => sessionsService.getSupportedCommands(sessionId),
       getSupportedModels: (sessionId: string) => sessionsService.getSupportedModels(sessionId),
-      getSupportedAgents: (sessionId: string) => sessionsService.getSupportedAgents(sessionId),
       getMcpServerStatus: (sessionId: string) => sessionsService.getMcpServerStatus(sessionId),
       getPlugins: (sessionId: string, force?: boolean) => sessionsService.getPlugins(sessionId, force),
       setMode: (tabId: string, mode: 'sdk' | 'tui') => sessionsService.setMode(tabId, mode),
@@ -553,35 +536,6 @@ app.whenReady().then(() => {
       tuiResize: (tabId: string, cols: number, rows: number) =>
         sessionsService.tuiResize(tabId, cols, rows),
       getMode: (tabId: string) => sessionsService.getMode(tabId),
-    },
-    // Agents adapter
-    agents: {
-      list: () => agentsService.listAgents(),
-      create: (data: any) => agentsService.createAgent(data),
-      update: (id: any, data: any) => agentsService.updateAgent({ id, ...data }),
-      delete: (id: any) => agentsService.deleteAgent(id),
-      get: (id: any) => agentsService.getAgent(id),
-      export: (id: any) => agentsService.exportAgent(id),
-      exportToFile: (data: any) =>
-        agentsService.exportAgentToFile(data?.id, data?.filePath ?? data?.file_path),
-      import: (data: any) =>
-        agentsService.importAgent(typeof data === 'string' ? data : JSON.stringify(data)),
-      execute: (agentId: any, data: any) =>
-        agentsService.executeAgent({ agentId, ...data }),
-      listRuns: () => agentsService.listAgentRuns(),
-      getRun: (id: any) => agentsService.getAgentRun(id),
-      getRunWithMetrics: (id: any) => agentsService.getAgentRunWithRealTimeMetrics(id),
-      killSession: (runId: any) => agentsService.killAgentSession(runId),
-      getSessionStatus: (runId: any) => agentsService.getSessionStatus(runId),
-      cleanupFinished: () => agentsService.cleanupFinishedProcesses(),
-      getSessionOutput: (runId: any) => agentsService.getSessionOutput(runId),
-      getLiveSessionOutput: (runId: any) => agentsService.getLiveSessionOutput(runId),
-      streamSessionOutput: (runId: any) => agentsService.streamSessionOutput(runId),
-      fetchGithubAgents: () => agentsService.fetchGitHubAgents(),
-      fetchGithubAgentContent: (data: any) =>
-        agentsService.fetchGitHubAgentContent(data?.download_url ?? data),
-      importFromGithub: (data: any) =>
-        agentsService.importAgentFromGitHub(data?.download_url ?? data),
     },
     // Usage adapter
     usage: {
@@ -699,10 +653,6 @@ app.whenReady().then(() => {
     sessionsService: {
       listInFlightTabIds: () => sessionsService.listInFlightTabIds(),
       stopAll: () => sessionsService.stopAll(),
-    },
-    agentRunRegistry: {
-      listActiveRunIds: () => agentRunRegistry.listActiveRunIds(),
-      killAll: () => agentRunRegistry.killAll(),
     },
     appQuit: () => app.quit(),
     spawn: (cmd, args, opts) => spawn(cmd, args, opts),

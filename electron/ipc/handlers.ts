@@ -33,7 +33,6 @@ export interface Services {
     createProject(data: unknown): unknown;
     getProjectSessions(projectId: string, projectPath?: string): unknown;
     loadSessionHistory(sessionId: string, projectId: string): unknown;
-    loadAgentSessionHistory(sessionId: string): unknown;
     getHomeDirectory(): unknown;
     getSettings(opts?: unknown): unknown;
     saveSettings(settings: unknown, opts?: unknown): unknown;
@@ -70,36 +69,12 @@ export interface Services {
     getContextUsage(sessionId: string): unknown;
     getSupportedCommands(sessionId: string): unknown;
     getSupportedModels(sessionId: string): unknown;
-    getSupportedAgents(sessionId: string): unknown;
     getMcpServerStatus(sessionId: string): unknown;
     getPlugins(sessionId: string, force?: boolean): unknown;
     setMode(tabId: string, mode: 'sdk' | 'tui'): Promise<unknown>;
     tuiWrite(tabId: string, data: string): unknown;
     tuiResize(tabId: string, cols: number, rows: number): unknown;
     getMode(tabId: string): unknown;
-  };
-  agents?: {
-    list(): unknown;
-    create(data: unknown): unknown;
-    update(id: unknown, data: unknown): unknown;
-    delete(id: unknown): unknown;
-    get(id: unknown): unknown;
-    export(id: unknown): unknown;
-    exportToFile(data: unknown): unknown;
-    import(data: unknown): unknown;
-    execute(agentId: unknown, data: unknown): unknown;
-    listRuns(): unknown;
-    getRun(id: unknown): unknown;
-    getRunWithMetrics(id: unknown): unknown;
-    killSession(runId: unknown): unknown;
-    getSessionStatus(runId: unknown): unknown;
-    cleanupFinished(): unknown;
-    getSessionOutput(runId: unknown): unknown;
-    getLiveSessionOutput(runId: unknown): unknown;
-    streamSessionOutput(runId: unknown): unknown;
-    fetchGithubAgents(): unknown;
-    fetchGithubAgentContent(data: unknown): unknown;
-    importFromGithub(data: unknown): unknown;
   };
   usage?: {
     getStats(params?: unknown): unknown;
@@ -197,7 +172,7 @@ function wrapWith<P>(fn: (params: P) => unknown): HandlerFn {
  * renderer gets a defined (but empty) response rather than a blocked channel.
  */
 export function getHandlerMap(services: Services = {}): Record<string, HandlerFn> {
-  const { accounts, claude, sessions, agents, usage, claudeBinary, mcp, slashCommands, logging, database, proxy, permissionsIO, models, sdkVersion, gitWatcher, lima } = services;
+  const { accounts, claude, sessions, usage, claudeBinary, mcp, slashCommands, logging, database, proxy, permissionsIO, models, sdkVersion, gitWatcher, lima } = services;
 
   const map: Record<string, HandlerFn> = {
     // ── Accounts ──────────────────────────────────────────────────────────────
@@ -219,7 +194,6 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     create_project: wrapWith((p: Record<string, unknown>) => claude?.createProject(p) ?? null),
     get_project_sessions: wrapWith((p: Record<string, unknown>) => claude?.getProjectSessions((p?.projectId ?? p?.project_id) as string, (p?.projectPath ?? p?.project_path) as string | undefined) ?? null),
     load_session_history: wrapWith((p: Record<string, unknown>) => claude?.loadSessionHistory((p?.sessionId ?? p?.session_id) as string, (p?.projectId ?? p?.project_id) as string) ?? null),
-    load_agent_session_history: wrapWith((p: Record<string, unknown>) => claude?.loadAgentSessionHistory((p?.sessionId ?? p?.session_id) as string) ?? null),
     get_home_directory: wrap(() => claude?.getHomeDirectory() ?? null),
     get_claude_settings: wrapWith((p: Record<string, unknown>) => {
       const configDir = (p?.configDir ?? p?.config_dir) as string | undefined;
@@ -288,7 +262,6 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     session_context_usage: wrapWith((p: Record<string, unknown>) => sessions?.getContextUsage((p?.tabId ?? p?.session_id) as string) ?? null),
     session_supported_commands: wrapWith((p: Record<string, unknown>) => sessions?.getSupportedCommands((p?.tabId ?? p?.session_id) as string) ?? null),
     session_supported_models: wrapWith((p: Record<string, unknown>) => sessions?.getSupportedModels((p?.tabId ?? p?.session_id) as string) ?? null),
-    session_supported_agents: wrapWith((p: Record<string, unknown>) => sessions?.getSupportedAgents((p?.tabId ?? p?.session_id) as string) ?? null),
     session_mcp_server_status: wrapWith((p: Record<string, unknown>) => sessions?.getMcpServerStatus((p?.tabId ?? p?.session_id) as string) ?? null),
     session_plugins: wrapWith((p: Record<string, unknown>) => sessions?.getPlugins((p?.tabId ?? p?.session_id) as string, Boolean(p?.force)) ?? null),
     session_set_mode: wrapWith((p: Record<string, unknown>) =>
@@ -355,32 +328,6 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
       return null;
     }),
 
-    // ── Agents ────────────────────────────────────────────────────────────────
-    list_agents: wrap(() => agents?.list() ?? null),
-    create_agent: wrapWith((p: Record<string, unknown>) => agents?.create(p) ?? null),
-    update_agent: wrapWith((p: Record<string, unknown>) => agents?.update(p?.id, p) ?? null),
-    delete_agent: wrapWith((p: Record<string, unknown>) => agents?.delete(p?.id) ?? null),
-    get_agent: wrapWith((p: Record<string, unknown>) => agents?.get(p?.id) ?? null),
-    export_agent: wrapWith((p: Record<string, unknown>) => agents?.export(p?.id) ?? null),
-    export_agent_to_file: wrapWith((p: Record<string, unknown>) => {
-      agents?.exportToFile(p);
-      return null;
-    }),
-    import_agent: wrapWith((p: Record<string, unknown>) => agents?.import(p) ?? null),
-    execute_agent: wrapWith((p: Record<string, unknown>) => agents?.execute(p?.agentId ?? p?.agent_id, p) ?? null),
-    list_agent_runs: wrap(() => agents?.listRuns() ?? null),
-    list_running_sessions: wrap(() => agents?.listRuns() ?? []),
-    get_agent_run: wrapWith((p: Record<string, unknown>) => agents?.getRun(p?.id) ?? null),
-    get_agent_run_with_real_time_metrics: wrapWith((p: Record<string, unknown>) => agents?.getRunWithMetrics(p?.id) ?? null),
-    kill_agent_session: wrapWith((p: Record<string, unknown>) => agents?.killSession(p?.runId ?? p?.run_id) ?? null),
-    get_session_status: wrapWith((p: Record<string, unknown>) => agents?.getSessionStatus(p?.runId ?? p?.run_id) ?? null),
-    cleanup_finished_processes: wrap(() => agents?.cleanupFinished() ?? null),
-    get_session_output: wrapWith((p: Record<string, unknown>) => agents?.getSessionOutput(p?.runId ?? p?.run_id) ?? null),
-    get_live_session_output: wrapWith((p: Record<string, unknown>) => agents?.getLiveSessionOutput(p?.runId ?? p?.run_id) ?? null),
-    stream_session_output: wrapWith((p: Record<string, unknown>) => agents?.streamSessionOutput(p?.runId ?? p?.run_id) ?? null),
-    fetch_github_agents: wrap(() => agents?.fetchGithubAgents() ?? null),
-    fetch_github_agent_content: wrapWith((p: Record<string, unknown>) => agents?.fetchGithubAgentContent(p) ?? null),
-    import_agent_from_github: wrapWith((p: Record<string, unknown>) => agents?.importFromGithub(p) ?? null),
 
     // ── Usage ─────────────────────────────────────────────────────────────────
     get_usage_stats: wrapWith((p: Record<string, unknown>) => usage?.getStats(p) ?? null),

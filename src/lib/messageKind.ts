@@ -1,4 +1,4 @@
-import type { ClaudeStreamMessage } from '@/components/AgentExecution';
+import type { ClaudeStreamMessage } from '@/types/claudeStream';
 import type { MessageRenderingConfig } from './messageRenderingConfig';
 
 /**

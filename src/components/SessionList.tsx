@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Clock, MessageSquare } from "lucide-react";
+import { Clock, MessageSquare, Copy, Check } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Pagination } from "@/components/ui/pagination";
 import { ClaudeMemoriesDropdown } from "@/components/ClaudeMemoriesDropdown";
@@ -57,6 +57,17 @@ export const SessionList: React.FC<SessionListProps> = ({
   className,
 }) => {
   const [currentPage, setCurrentPage] = useState(1);
+  /** Most recently copied session ID — drives the "Copied" affordance on the
+   *  copy button. Cleared after a short delay so the icon flips back. */
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const handleCopySessionId = (id: string) => {
+    void navigator.clipboard.writeText(id);
+    setCopiedId(id);
+    setTimeout(() => {
+      setCopiedId((prev) => (prev === id ? null : prev));
+    }, 1500);
+  };
   
   // Calculate pagination
   const totalPages = Math.ceil(sessions.length / ITEMS_PER_PAGE);
@@ -157,12 +168,30 @@ export const SessionList: React.FC<SessionListProps> = ({
                   </div>
                   
                   {/* Metadata footer */}
-                  <div className="flex items-center justify-between pt-2 border-t">
-                    <p className="text-caption text-muted-foreground font-mono">
-                      {session.id.slice(-8)}
-                    </p>
+                  <div className="flex items-center justify-between pt-2 border-t gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-[9px] uppercase tracking-wider text-muted-foreground/70 shrink-0">
+                        session id
+                      </span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleCopySessionId(session.id);
+                        }}
+                        className="inline-flex items-center gap-1 text-caption font-mono text-muted-foreground hover:text-foreground transition-colors min-w-0"
+                        title={`Copy full session ID: ${session.id}`}
+                      >
+                        <span className="truncate">{session.id.slice(-8)}</span>
+                        {copiedId === session.id ? (
+                          <Check className="h-3 w-3 text-green-500 shrink-0" />
+                        ) : (
+                          <Copy className="h-3 w-3 shrink-0" />
+                        )}
+                      </button>
+                    </div>
                     {session.todo_data && (
-                      <MessageSquare className="h-3 w-3 text-primary" />
+                      <MessageSquare className="h-3 w-3 text-primary shrink-0" />
                     )}
                   </div>
                 </div>

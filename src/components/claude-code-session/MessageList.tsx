@@ -4,7 +4,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { StreamMessage } from '../StreamMessage';
 import { Terminal } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { ClaudeStreamMessage } from '../AgentExecution';
+import type { ClaudeStreamMessage } from '@/types/claudeStream';
 
 interface MessageListProps {
   messages: ClaudeStreamMessage[];

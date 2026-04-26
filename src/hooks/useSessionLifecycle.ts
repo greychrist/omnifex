@@ -1,6 +1,6 @@
 import { useRef, useEffect } from "react";
 import { api } from "@/lib/api";
-import type { ClaudeStreamMessage } from "@/components/AgentExecution";
+import type { ClaudeStreamMessage } from "@/types/claudeStream";
 import type { EffortLevel, ThinkingConfig } from "@/components/FloatingPromptInput";
 
 /** Filter out noisy stderr messages that aren't real errors. */

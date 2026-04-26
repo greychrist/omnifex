@@ -41,7 +41,6 @@ function buildMockServices() {
       'createProject',
       'getProjectSessions',
       'loadSessionHistory',
-      'loadAgentSessionHistory',
       'getHomeDirectory',
       'getSettings',
       'saveSettings',
@@ -66,28 +65,6 @@ function buildMockServices() {
       'setEffort',
       'setThinking',
       'applyPermissions',
-    ] as const),
-    agents: mockService([
-      'list',
-      'create',
-      'update',
-      'delete',
-      'get',
-      'export',
-      'import',
-      'execute',
-      'listRuns',
-      'getRun',
-      'getRunWithMetrics',
-      'killSession',
-      'getSessionStatus',
-      'cleanupFinished',
-      'getSessionOutput',
-      'getLiveSessionOutput',
-      'streamSessionOutput',
-      'fetchGithubAgents',
-      'fetchGithubAgentContent',
-      'importFromGithub',
     ] as const),
     usage: mockService([
       'getStats',
@@ -179,7 +156,6 @@ describe('ipc handlers — structure', () => {
       'create_project',
       'get_project_sessions',
       'load_session_history',
-      'load_agent_session_history',
       'get_home_directory',
       'get_claude_settings',
       'save_claude_settings',
@@ -206,16 +182,6 @@ describe('ipc handlers — structure', () => {
       'session_plugins',
       'session_get_permissions',
       'session_update_permission',
-      // Agents
-      'list_agents',
-      'create_agent',
-      'update_agent',
-      'delete_agent',
-      'execute_agent',
-      'list_agent_runs',
-      'kill_agent_session',
-      'fetch_github_agents',
-      'import_agent_from_github',
       // Usage
       'get_usage_stats',
       // Binary
@@ -361,14 +327,12 @@ describe('ipc handlers — dispatch to services', () => {
     expect(services.claude.getProjectSessions).toHaveBeenNthCalledWith(2, 'pid2', '/p2');
   });
 
-  it('load_session_history + load_agent_session_history normalize ids', async () => {
+  it('load_session_history normalizes ids', async () => {
     await invoke(handlers, 'load_session_history', {
       sessionId: 'sid',
       projectId: 'pid',
     });
-    await invoke(handlers, 'load_agent_session_history', { session_id: 'asid' });
     expect(services.claude.loadSessionHistory).toHaveBeenCalledWith('sid', 'pid');
-    expect(services.claude.loadAgentSessionHistory).toHaveBeenCalledWith('asid');
   });
 
   it('find/read/save_claude_md_file route through the claude service', async () => {
@@ -596,79 +560,6 @@ describe('ipc handlers — dispatch to services', () => {
     expect(updated.permissions.allow).toEqual(['Read(*)']);
 
     fs.rmSync(tmpDir, { recursive: true });
-  });
-
-  // ── Agents ──────────────────────────────────────────────────────────────
-
-  it('list_agents, list_agent_runs, list_running_sessions', async () => {
-    await invoke(handlers, 'list_agents');
-    await invoke(handlers, 'list_agent_runs');
-    await invoke(handlers, 'list_running_sessions');
-    expect(services.agents.list).toHaveBeenCalledTimes(1);
-    expect(services.agents.listRuns).toHaveBeenCalledTimes(2);
-  });
-
-  it('update_agent forwards id + params', async () => {
-    await invoke(handlers, 'update_agent', { id: 5, name: 'X' });
-    expect(services.agents.update).toHaveBeenCalledWith(5, { id: 5, name: 'X' });
-  });
-
-  it('execute_agent accepts both case styles for agent id', async () => {
-    await invoke(handlers, 'execute_agent', { agentId: 1, task: 't' });
-    await invoke(handlers, 'execute_agent', { agent_id: 2, task: 't2' });
-    expect(services.agents.execute).toHaveBeenNthCalledWith(1, 1, { agentId: 1, task: 't' });
-    expect(services.agents.execute).toHaveBeenNthCalledWith(2, 2, { agent_id: 2, task: 't2' });
-  });
-
-  it('kill_agent_session and get_session_status accept runId or run_id', async () => {
-    await invoke(handlers, 'kill_agent_session', { runId: 10 });
-    await invoke(handlers, 'kill_agent_session', { run_id: 11 });
-    await invoke(handlers, 'get_session_status', { runId: 20 });
-    await invoke(handlers, 'get_session_status', { run_id: 21 });
-
-    expect(services.agents.killSession).toHaveBeenNthCalledWith(1, 10);
-    expect(services.agents.killSession).toHaveBeenNthCalledWith(2, 11);
-    expect(services.agents.getSessionStatus).toHaveBeenNthCalledWith(1, 20);
-    expect(services.agents.getSessionStatus).toHaveBeenNthCalledWith(2, 21);
-  });
-
-  it('fetch_github_agents + fetch_github_agent_content + import_agent_from_github', async () => {
-    await invoke(handlers, 'fetch_github_agents');
-    await invoke(handlers, 'fetch_github_agent_content', {
-      download_url: 'https://x.test/a.json',
-    });
-    await invoke(handlers, 'import_agent_from_github', {
-      download_url: 'https://x.test/a.json',
-    });
-    expect(services.agents.fetchGithubAgents).toHaveBeenCalledTimes(1);
-    expect(services.agents.fetchGithubAgentContent).toHaveBeenCalled();
-    expect(services.agents.importFromGithub).toHaveBeenCalled();
-  });
-
-  it('simple agent CRUD + metrics + output channels all dispatch', async () => {
-    await invoke(handlers, 'create_agent', { name: 'A', icon: '🤖' });
-    await invoke(handlers, 'get_agent', { id: 1 });
-    await invoke(handlers, 'delete_agent', { id: 1 });
-    await invoke(handlers, 'export_agent', { id: 1 });
-    await invoke(handlers, 'import_agent', { json: '{}' });
-    await invoke(handlers, 'get_agent_run', { id: 7 });
-    await invoke(handlers, 'get_agent_run_with_real_time_metrics', { id: 7 });
-    await invoke(handlers, 'cleanup_finished_processes');
-    await invoke(handlers, 'get_session_output', { runId: 7 });
-    await invoke(handlers, 'get_live_session_output', { run_id: 8 });
-    await invoke(handlers, 'stream_session_output', { runId: 9 });
-
-    expect(services.agents.create).toHaveBeenCalled();
-    expect(services.agents.get).toHaveBeenCalledWith(1);
-    expect(services.agents.delete).toHaveBeenCalledWith(1);
-    expect(services.agents.export).toHaveBeenCalledWith(1);
-    expect(services.agents.import).toHaveBeenCalled();
-    expect(services.agents.getRun).toHaveBeenCalledWith(7);
-    expect(services.agents.getRunWithMetrics).toHaveBeenCalledWith(7);
-    expect(services.agents.cleanupFinished).toHaveBeenCalledTimes(1);
-    expect(services.agents.getSessionOutput).toHaveBeenCalledWith(7);
-    expect(services.agents.getLiveSessionOutput).toHaveBeenCalledWith(8);
-    expect(services.agents.streamSessionOutput).toHaveBeenCalledWith(9);
   });
 
   it('add_path_rule forwards the rule params', async () => {

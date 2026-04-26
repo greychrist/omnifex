@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Settings, Bot, Info, MoreVertical, Download, Loader2, CheckCircle, AlertCircle, RefreshCw, HardDrive } from 'lucide-react';
+import { Settings, Info, MoreVertical, Download, Loader2, CheckCircle, AlertCircle, RefreshCw, HardDrive } from 'lucide-react';
 import { TooltipProvider, TooltipSimple } from '@/components/ui/tooltip-modern';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -14,7 +14,6 @@ const BADGE_RED_CLASS = 'bg-red-500/15 text-red-500 border-red-500/30';
 
 interface CustomTitlebarProps {
   onSettingsClick?: () => void;
-  onAgentsClick?: () => void;
   onLimaClick?: () => void;
   onInfoClick?: () => void;
 }
@@ -22,7 +21,6 @@ interface CustomTitlebarProps {
 
 export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
   onSettingsClick,
-  onAgentsClick,
   onLimaClick,
   onInfoClick
 }) => {
@@ -44,7 +42,7 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
     | { status: 'available'; version: string; downloadUrl: string; assetName: string; releaseUrl: string }
     | { status: 'downloading'; percent: number }
     | { status: 'ready'; filePath: string; version: string }
-    | { status: 'waiting'; version: string; filePath: string; activeSessions: number; activeAgentRuns: number }
+    | { status: 'waiting'; version: string; filePath: string; activeSessions: number }
     | { status: 'installing'; version: string }
     | { status: 'error'; downloadUrl: string; assetName: string; releaseUrl: string; version: string };
   const [updateState, setUpdateState] = useState<UpdateState>({ status: 'idle' });
@@ -130,7 +128,7 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
         if (prev.status === 'waiting' || prev.status === 'installing' || prev.status === 'ready') {
           if (data.phase === 'waiting') {
             return prev.status === 'waiting'
-              ? { ...prev, activeSessions: data.activeSessions ?? 0, activeAgentRuns: data.activeAgentRuns ?? 0 }
+              ? { ...prev, activeSessions: data.activeSessions ?? 0 }
               : prev.status === 'installing'
                 ? prev // already past the wait — ignore late waiting events
                 : { // 'ready' transitioning into 'waiting'
@@ -138,7 +136,6 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
                   version: prev.version,
                   filePath: prev.filePath,
                   activeSessions: data.activeSessions ?? 0,
-                  activeAgentRuns: data.activeAgentRuns ?? 0,
                 };
           }
           if (data.phase === 'installing') {
@@ -289,7 +286,7 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
                 updateState.status === 'available' ? `v${updateState.version} available` :
                 updateState.status === 'downloading' ? 'Downloading...' :
                 updateState.status === 'ready' ? `Install v${updateState.version}` :
-                updateState.status === 'waiting' ? `Waiting for ${updateState.activeSessions + updateState.activeAgentRuns} active session(s)` :
+                updateState.status === 'waiting' ? `Waiting for ${updateState.activeSessions} active session(s)` :
                 updateState.status === 'installing' ? `Installing v${updateState.version}…` :
                 'Retry download'
               }
@@ -305,7 +302,7 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
                 >
                   <Loader2 size={13} className="animate-spin" />
                   <span>
-                    Waiting for sessions… ({updateState.activeSessions + updateState.activeAgentRuns} active)
+                    Waiting for sessions… ({updateState.activeSessions} active)
                   </span>
                   <button
                     type="button"
@@ -374,19 +371,6 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
             </TooltipSimple>
           )}
           </AnimatePresence>
-
-          {onAgentsClick && (
-            <TooltipSimple content="Agents" side="bottom">
-              <motion.button
-                onClick={onAgentsClick}
-                whileTap={{ scale: 0.97 }}
-                transition={{ duration: 0.15 }}
-                className="p-2 rounded-md hover:bg-accent hover:text-accent-foreground transition-colors tauri-no-drag"
-              >
-                <Bot size={16} />
-              </motion.button>
-            </TooltipSimple>
-          )}
 
           {onLimaClick && (
             <TooltipSimple content="Lima VMs" side="bottom">

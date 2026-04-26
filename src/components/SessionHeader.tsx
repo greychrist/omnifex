@@ -1,7 +1,6 @@
 import * as React from "react";
 import { AccountBadge } from "./AccountBadge";
 import {
-  Copy,
   Database,
   ShieldCheck,
   ShieldAlert,
@@ -34,7 +33,6 @@ interface SessionHeaderProps {
   configDir: string;
   matchType: string;
   matchDetail: string;
-  sessionId: string | null;
   cost: number;
   totalTokens: number;
   model?: string;
@@ -78,7 +76,6 @@ export function SessionHeader({
   configDir,
   matchType,
   matchDetail,
-  sessionId,
   cost,
   totalTokens,
   model,
@@ -102,12 +99,6 @@ export function SessionHeader({
     }
     setChartReady(false);
   }, [contextPopoverOpen]);
-
-  const copySessionId = () => {
-    if (sessionId) {
-      navigator.clipboard.writeText(sessionId);
-    }
-  };
 
   // Decide whether the SDK-reported account agrees with our resolved
   // account. Agreement is noisy because Greg's local accounts are named
@@ -461,16 +452,6 @@ export function SessionHeader({
           <span className="text-foreground/50 font-mono">
             ${cost.toFixed(4)}
           </span>
-        )}
-        {sessionId && (
-          <button
-            onClick={copySessionId}
-            className="flex items-center gap-1 text-foreground/30 hover:text-foreground/60 transition-colors"
-            title="Copy session ID"
-          >
-            <span className="font-mono truncate max-w-[80px]">{sessionId.slice(0, 8)}</span>
-            <Copy className="w-3 h-3" />
-          </button>
         )}
       </div>
     </div>

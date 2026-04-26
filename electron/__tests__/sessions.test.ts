@@ -467,6 +467,46 @@ describe('sessions service — full lifecycle', () => {
     expect(service.listActiveTabIds()).toEqual(['tab-b']);
   });
 
+  it('stays "idle" when only the system init message has arrived (no turn yet)', async () => {
+    const fake = installFakeQuery();
+
+    service.start({
+      tabId: 'tab-init-idle',
+      projectPath: '/p',
+      configDir: '/c',
+      model: 'sonnet',
+      permissionMode: 'default',
+    });
+
+    fake.pushMessage({ type: 'system', subtype: 'init', session_id: 'sess-init' });
+    await flush();
+
+    // Init alone doesn't mean a turn is in flight — the session is alive
+    // but the user hasn't sent anything yet. Status must be 'idle' so the
+    // installer's wait-for-idle gate doesn't block on it.
+    expect(service.getStatus('tab-init-idle')).toBe('idle');
+    expect(service.listInFlightTabIds()).not.toContain('tab-init-idle');
+  });
+
+  it('flips to "running" once the user sends a message', async () => {
+    const fake = installFakeQuery();
+
+    service.start({
+      tabId: 'tab-running',
+      projectPath: '/p',
+      configDir: '/c',
+      model: 'sonnet',
+      permissionMode: 'default',
+    });
+
+    fake.pushMessage({ type: 'system', subtype: 'init', session_id: 'sess-r' });
+    await flush();
+    expect(service.getStatus('tab-running')).toBe('idle');
+
+    service.sendMessage('tab-running', 'hello');
+    expect(service.getStatus('tab-running')).toBe('running');
+  });
+
   it('moves a tab to status "idle" after a result message', async () => {
     const fake = installFakeQuery();
 
@@ -483,6 +523,13 @@ describe('sessions service — full lifecycle', () => {
       subtype: 'init',
       session_id: 'sess-idle',
     });
+    await flush();
+    // Init alone leaves the session 'idle' (no turn yet); a turn must
+    // start (sendMessage or an assistant message) to flip 'running'.
+    expect(service.getStatus('tab-idle')).toBe('idle');
+
+    // Simulate a turn: assistant message → result.
+    fake.pushMessage({ type: 'assistant', message: { role: 'assistant', content: 'hi' } });
     await flush();
     expect(service.getStatus('tab-idle')).toBe('running');
 
@@ -573,7 +620,8 @@ describe('sessions service — full lifecycle', () => {
     await flush();
 
     expect(service.getSessionId('tab-init')).toBe('sess-xyz');
-    expect(service.getStatus('tab-init')).toBe('running');
+    // Init alone keeps the session 'idle' — no turn has started yet.
+    expect(service.getStatus('tab-init')).toBe('idle');
     expect(sendToRenderer).toHaveBeenCalledWith(
       'claude-output:tab-init',
       expect.objectContaining({ type: 'system', session_id: 'sess-xyz' }),

@@ -1,5 +1,5 @@
 // Auto-installer for GreyChrist updates. Validates a ZIP, stages it to
-// $TMPDIR, waits for in-flight sessions/agent-runs, then spawns a detached
+// $TMPDIR, waits for in-flight sessions, then spawns a detached
 // helper script that swaps GreyChrist.app and relaunches.
 //
 // Spec: docs/superpowers/specs/2026-04-25-auto-install-update-design.md
@@ -17,7 +17,6 @@ import { buildHelperScript } from './installer/helper-script';
 export interface InstallStatus {
   phase: 'waiting' | 'installing';
   activeSessions?: number;
-  activeAgentRuns?: number;
 }
 
 export interface InstallerService {
@@ -40,10 +39,6 @@ export interface InstallerDeps {
      *  installer doesn't block on tabs sitting at a prompt. */
     listInFlightTabIds: () => string[];
     stopAll: () => void;
-  };
-  agentRunRegistry: {
-    listActiveRunIds: () => number[];
-    killAll: () => void;
   };
   appQuit: () => void;
   spawn: (
@@ -201,7 +196,6 @@ export function createInstallerService(deps: InstallerDeps): InstallerService {
   async function waitForIdle(opts: { force: boolean }): Promise<void> {
     if (opts.force) {
       deps.sessionsService.stopAll();
-      deps.agentRunRegistry.killAll();
     }
     const token = { cancelled: false };
     cancelToken = token;
@@ -212,8 +206,7 @@ export function createInstallerService(deps: InstallerDeps): InstallerService {
         throw new WaitCancelled();
       }
       const sessions = deps.sessionsService.listInFlightTabIds().length;
-      const runs = deps.agentRunRegistry.listActiveRunIds().length;
-      if (sessions === 0 && runs === 0) {
+      if (sessions === 0) {
         deps.sendToRenderer('updater:install-status', { phase: 'installing' });
         cancelToken = null;
         return;
@@ -221,7 +214,6 @@ export function createInstallerService(deps: InstallerDeps): InstallerService {
       deps.sendToRenderer('updater:install-status', {
         phase: 'waiting',
         activeSessions: sessions,
-        activeAgentRuns: runs,
       });
       await new Promise((r) => setTimeout(r, 1000));
     }

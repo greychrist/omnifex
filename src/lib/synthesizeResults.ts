@@ -1,4 +1,4 @@
-import type { ClaudeStreamMessage } from "@/components/AgentExecution";
+import type { ClaudeStreamMessage } from "@/types/claudeStream";
 
 // Rates used by the live session's client-side cost calc
 // (see ClaudeCodeSession.tsx handleStreamMessage). Kept in sync so

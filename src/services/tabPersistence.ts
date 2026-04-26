@@ -14,7 +14,6 @@ interface SerializedTab {
   type: Tab['type'];
   title: string;
   sessionId?: string;
-  agentRunId?: string;
   claudeFileId?: string;
   initialProjectPath?: string;
   projectPath?: string;
@@ -27,7 +26,7 @@ interface SerializedTab {
   icon?: string;
   createdAt: string;
   updatedAt: string;
-  // Note: We don't persist sessionData or agentData as they're complex objects
+  // Note: We don't persist sessionData as it's a complex object
 }
 
 export class TabPersistenceService {
@@ -62,10 +61,7 @@ export class TabPersistenceService {
       const persistableTabs = tabs.filter(tab => {
         // Don't persist tabs with running status (they're likely stale)
         if (tab.status === 'running') return false;
-        
-        // Don't persist create/import agent tabs (they're temporary)
-        if (tab.type === 'create-agent' || tab.type === 'import-agent') return false;
-        
+
         return true;
       });
 
@@ -75,7 +71,6 @@ export class TabPersistenceService {
         type: tab.type,
         title: tab.title,
         sessionId: tab.sessionId,
-        agentRunId: tab.agentRunId,
         claudeFileId: tab.claudeFileId,
         initialProjectPath: tab.initialProjectPath,
         projectPath: tab.projectPath,
@@ -126,7 +121,6 @@ export class TabPersistenceService {
         createdAt: new Date(serialized.createdAt),
         updatedAt: new Date(serialized.updatedAt),
         sessionData: undefined, // Will be loaded when tab is activated
-        agentData: undefined, // Will be loaded when tab is activated
         status: serialized.status === 'running' ? 'idle' : serialized.status // Ensure no running status
       }));
 
@@ -141,13 +135,6 @@ export class TabPersistenceService {
             // Chat tabs without sessionId or projectPath might be invalid
             // But we'll keep them as they might be new sessions
             return true;
-          case 'agent':
-            // Agent tabs need an agentRunId
-            return !!tab.agentRunId;
-          case 'agent-execution':
-            // Agent execution tabs without agentData are invalid
-            // We'll filter these out as they can't be restored properly
-            return false;
           case 'claude-file':
             // Claude file tabs need a file ID
             return !!tab.claudeFileId;

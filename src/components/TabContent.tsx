@@ -15,10 +15,6 @@ import type { EffortLevel } from '@/components/FloatingPromptInput';
 
 // Lazy load heavy components
 const ClaudeCodeSession = lazy(() => import('@/components/ClaudeCodeSession').then(m => ({ default: m.ClaudeCodeSession })));
-const AgentRunOutputViewer = lazy(() => import('@/components/AgentRunOutputViewer'));
-const AgentExecution = lazy(() => import('@/components/AgentExecution').then(m => ({ default: m.AgentExecution })));
-const CreateAgent = lazy(() => import('@/components/CreateAgent').then(m => ({ default: m.CreateAgent })));
-const Agents = lazy(() => import('@/components/Agents').then(m => ({ default: m.Agents })));
 const UsageDashboard = lazy(() => import('@/components/UsageDashboard').then(m => ({ default: m.UsageDashboard })));
 const MCPManager = lazy(() => import('@/components/MCPManager').then(m => ({ default: m.MCPManager })));
 const Settings = lazy(() => import('@/components/Settings').then(m => ({ default: m.Settings })));
@@ -294,23 +290,25 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                 </div>
               ) : (
                 /* Projects List View */
-                <div>
+                <div className="h-full flex flex-col">
                   {error && (
                     <motion.div
                       initial={{ opacity: 0, y: 4 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ duration: 0.15 }}
-                      className="mx-6 mt-4 rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-xs text-destructive"
+                      className="mx-6 mt-4 rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-xs text-destructive shrink-0"
                     >
                       {error}
                     </motion.div>
                   )}
-                  <ProjectList
-                    projects={projects}
-                    onProjectClick={handleProjectClick}
-                    onOpenProject={handleOpenProject}
-                    loading={loading}
-                  />
+                  <div className="flex-1 min-h-0">
+                    <ProjectList
+                      projects={projects}
+                      onProjectClick={handleProjectClick}
+                      onOpenProject={handleOpenProject}
+                      loading={loading}
+                    />
+                  </div>
                 </div>
               )}
               <AccountPickerDialog
@@ -367,30 +365,6 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
           </div>
         );
       
-      case 'agent':
-        if (!tab.agentRunId) {
-          return (
-            <div className="h-full">
-              <div className="p-4">No agent run ID specified</div>
-            </div>
-          );
-        }
-        return (
-          <div className="h-full">
-            <AgentRunOutputViewer
-              agentRunId={tab.agentRunId}
-              tabId={tab.id}
-            />
-          </div>
-        );
-      
-      case 'agents':
-        return (
-          <div className="h-full">
-            <Agents />
-          </div>
-        );
-      
       case 'usage':
         return (
           <div className="h-full">
@@ -434,41 +408,6 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
         // For now, returning a placeholder
         return <div className="p-4">Claude file editor not yet implemented in tabs</div>;
       
-      case 'agent-execution':
-        if (!tab.agentData) {
-          return <div className="p-4">No agent data specified</div>;
-        }
-        return (
-          <AgentExecution
-            agent={tab.agentData}
-            projectPath={tab.projectPath}
-            tabId={tab.id}
-            onBack={() => {}}
-          />
-        );
-      
-      case 'create-agent':
-        return (
-          <CreateAgent
-            onAgentCreated={() => {
-              // Close this tab after agent is created
-              window.dispatchEvent(new CustomEvent('close-tab', { detail: { tabId: tab.id } }));
-            }}
-            onBack={() => {
-              // Close this tab when back is clicked
-              window.dispatchEvent(new CustomEvent('close-tab', { detail: { tabId: tab.id } }));
-            }}
-          />
-        );
-      
-      case 'import-agent':
-        // TODO: Implement import agent component
-        return (
-          <div className="h-full">
-            <div className="p-4">Import agent functionality coming soon...</div>
-          </div>
-        );
-      
       default:
         return (
           <div className="h-full">
@@ -503,7 +442,7 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
 };
 
 export const TabContent: React.FC = () => {
-  const { tabs, activeTabId, createChatTab, createProjectsTab, findTabBySessionId, createClaudeFileTab, createAgentExecutionTab, createCreateAgentTab, createImportAgentTab, closeTab, updateTab } = useTabState();
+  const { tabs, activeTabId, createChatTab, createProjectsTab, findTabBySessionId, createClaudeFileTab, closeTab, updateTab } = useTabState();
   
   // Listen for events to open sessions in tabs
   useEffect(() => {
@@ -540,19 +479,6 @@ export const TabContent: React.FC = () => {
     const handleOpenClaudeFile = (event: CustomEvent) => {
       const { file } = event.detail;
       createClaudeFileTab(file.id, file.name || 'CLAUDE.md');
-    };
-
-    const handleOpenAgentExecution = (event: CustomEvent) => {
-      const { agent, tabId, projectPath } = event.detail;
-      createAgentExecutionTab(agent, tabId, projectPath);
-    };
-
-    const handleOpenCreateAgentTab = () => {
-      createCreateAgentTab();
-    };
-
-    const handleOpenImportAgentTab = () => {
-      createImportAgentTab();
     };
 
     const handleCloseTab = (event: CustomEvent) => {
@@ -619,23 +545,17 @@ export const TabContent: React.FC = () => {
 
     window.addEventListener('open-session-in-tab', handleOpenSessionInTab as EventListener);
     window.addEventListener('open-claude-file', handleOpenClaudeFile as EventListener);
-    window.addEventListener('open-agent-execution', handleOpenAgentExecution as EventListener);
-    window.addEventListener('open-create-agent-tab', handleOpenCreateAgentTab);
-    window.addEventListener('open-import-agent-tab', handleOpenImportAgentTab);
     window.addEventListener('close-tab', handleCloseTab as EventListener);
     window.addEventListener('claude-session-selected', handleClaudeSessionSelected as EventListener);
     window.addEventListener('back-to-project', handleBackToProject as EventListener);
     return () => {
       window.removeEventListener('open-session-in-tab', handleOpenSessionInTab as EventListener);
       window.removeEventListener('open-claude-file', handleOpenClaudeFile as EventListener);
-      window.removeEventListener('open-agent-execution', handleOpenAgentExecution as EventListener);
-      window.removeEventListener('open-create-agent-tab', handleOpenCreateAgentTab);
-      window.removeEventListener('open-import-agent-tab', handleOpenImportAgentTab);
       window.removeEventListener('close-tab', handleCloseTab as EventListener);
       window.removeEventListener('claude-session-selected', handleClaudeSessionSelected as EventListener);
       window.removeEventListener('back-to-project', handleBackToProject as EventListener);
     };
-  }, [createChatTab, findTabBySessionId, createClaudeFileTab, createAgentExecutionTab, createCreateAgentTab, createImportAgentTab, closeTab, updateTab, activeTabId, tabs]);
+  }, [createChatTab, findTabBySessionId, createClaudeFileTab, closeTab, updateTab, activeTabId, tabs]);
   
   return (
     <div className="flex-1 h-full relative">

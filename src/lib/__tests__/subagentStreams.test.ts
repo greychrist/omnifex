@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
-import type { ClaudeStreamMessage } from '@/components/AgentExecution';
+import type { ClaudeStreamMessage } from '@/types/claudeStream';
 import {
   deriveSubagents,
   clearCompleted,

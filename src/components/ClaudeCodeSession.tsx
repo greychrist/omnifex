@@ -10,6 +10,7 @@ import {
   Shield,
   Send,
   ArrowLeft,
+  Eraser,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover } from "@/components/ui/popover";
@@ -34,7 +35,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { TooltipProvider, TooltipSimple } from "@/components/ui/tooltip-modern";
 import { SplitPane } from "@/components/ui/split-pane";
 import { WebviewPreview } from "./WebviewPreview";
-import type { ClaudeStreamMessage } from "./AgentExecution";
+import type { ClaudeStreamMessage } from "@/types/claudeStream";
 import { synthesizeResultMessages } from "@/lib/synthesizeResults";
 import { SessionModeToggle } from "./SessionModeToggle";
 import { SessionViewToggle, type ViewMode } from "./SessionViewToggle";
@@ -987,6 +988,51 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     }
   };
 
+  // Clear the conversation: stop the current SDK session, reset all
+  // renderer-side state, then start a fresh session in the same tab. The
+  // old JSONL transcript stays on disk; this just begins a new session
+  // ID with no resume, mirroring what `/clear` does in the Claude Code
+  // CLI. Only safe to call when nothing is in flight.
+  const handleClear = async () => {
+    if (!isSessionActive || isLoading || waitingForPermission) return;
+    const tid = tabIdRef.current;
+
+    try {
+      await api.stopSession(tid);
+    } catch (err) {
+      console.error('clear: stopSession failed:', err);
+    }
+
+    // Tear down the stream listeners attached to the dead session.
+    unlistenRefs.current.forEach((unlisten) => unlisten());
+    unlistenRefs.current = [];
+
+    // Session-state flags
+    persistentSessionRef.current = false;
+    setIsSessionStarting(false);
+    setIsSessionActive(false);
+    setIsLoading(false);
+    setError(null);
+    setQueuedPrompts([]);
+
+    // Conversation state
+    setMessages([]);
+    setRawJsonlOutput([]);
+    setTotalTokens(0);
+    setSessionCost(0);
+    setClaudeSessionId(null);
+    setContextUsage(null);
+    setSdkAccountInfo(null);
+    setExtractedSessionInfo(null);
+
+    // Spin up a fresh session (no resumeId) so the user can keep typing.
+    try {
+      await startPersistentSession();
+    } catch (err) {
+      console.error('clear: startPersistentSession failed:', err);
+    }
+  };
+
   // Handle URL detection from terminal output
   const handleLinkDetected = (url: string) => {
     if (!showPreview && !showPreviewPrompt) {
@@ -1174,24 +1220,59 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             size="sm"
             variant="outline"
             onClick={handleBackToProject}
-            className="h-7 px-2 text-xs gap-1"
+            className="h-8 px-3 text-sm gap-1.5"
             title="Back to project sessions list"
           >
-            <ArrowLeft className="h-3.5 w-3.5" />
+            <ArrowLeft className="h-4 w-4" />
             Back to Project
           </Button>
-          <div className="ml-auto flex items-center gap-2">
-            <SessionModeToggle
-              mode={sessionMode}
-              onChange={(next) => {
-                api.setSessionMode(tabIdRef.current, next).catch((err) => {
-                  console.error('Failed to switch mode:', err);
-                });
-              }}
-              disabled={modeToggleDisabled}
-              disabledReason={modeToggleReason}
-            />
-            <SessionViewToggle mode={viewMode} onChange={setViewMode} />
+          <div className="ml-auto flex items-center gap-3">
+            {(() => {
+              const clearDisabled =
+                !isSessionActive || isLoading || waitingForPermission || messages.length === 0;
+              const clearReason = !isSessionActive
+                ? 'Start a session first'
+                : isLoading
+                  ? 'Wait for the current turn to finish'
+                  : waitingForPermission
+                    ? 'Resolve the permission dialog first'
+                    : messages.length === 0
+                      ? 'Nothing to clear'
+                      : undefined;
+              return (
+                <div className="flex flex-col items-start gap-0.5">
+                  <span className="text-[9px] tracking-wider text-muted-foreground">restart</span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void handleClear()}
+                    disabled={clearDisabled}
+                    className="h-7 px-2 text-xs gap-1"
+                    title={clearReason ?? 'Clear conversation and start a fresh session'}
+                  >
+                    <Eraser className="h-3.5 w-3.5" />
+                    Clear
+                  </Button>
+                </div>
+              );
+            })()}
+            <div className="flex flex-col items-start gap-0.5">
+              <span className="text-[9px] tracking-wider text-muted-foreground">mode</span>
+              <SessionModeToggle
+                mode={sessionMode}
+                onChange={(next) => {
+                  api.setSessionMode(tabIdRef.current, next).catch((err) => {
+                    console.error('Failed to switch mode:', err);
+                  });
+                }}
+                disabled={modeToggleDisabled}
+                disabledReason={modeToggleReason}
+              />
+            </div>
+            <div className="flex flex-col items-start gap-0.5">
+              <span className="text-[9px] tracking-wider text-muted-foreground">output style</span>
+              <SessionViewToggle mode={viewMode} onChange={setViewMode} />
+            </div>
           </div>
         </div>
         <SessionHeader
@@ -1200,7 +1281,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           configDir={accountResolution?.account.config_dir ?? ''}
           matchType={accountResolution?.match_type ?? ''}
           matchDetail={accountResolution?.match_detail ?? ''}
-          sessionId={claudeSessionId}
           cost={sessionCost}
           totalTokens={totalTokens}
           model={selectedModel}

@@ -9,22 +9,16 @@ interface UseTabStateReturn {
   activeTabId: string | null;
   tabCount: number;
   chatTabCount: number;
-  agentTabCount: number;
-  
+
   // Operations
   createChatTab: (projectId?: string, title?: string, projectPath?: string) => string;
-  createAgentTab: (agentRunId: string, agentName: string) => string;
-  createAgentExecutionTab: (agent: any, tabId: string, projectPath?: string) => string;
   createProjectsTab: () => string | null;
-  createAgentsTab: () => string | null;
   createUsageTab: () => string | null;
   createMCPTab: () => string | null;
   createLimaTab: () => string | null;
   createSettingsTab: () => string | null;
   createClaudeMdTab: () => string | null;
   createClaudeFileTab: (fileId: string, fileName: string) => string;
-  createCreateAgentTab: () => string;
-  createImportAgentTab: () => string;
   closeTab: (id: string, force?: boolean) => Promise<boolean>;
   closeCurrentTab: () => Promise<boolean>;
   switchToTab: (id: string) => void;
@@ -36,7 +30,6 @@ interface UseTabStateReturn {
   updateTabStatus: (id: string, status: Tab['status']) => void;
   markTabAsChanged: (id: string, hasChanges: boolean) => void;
   findTabBySessionId: (sessionId: string) => Tab | undefined;
-  findTabByAgentRunId: (agentRunId: string) => Tab | undefined;
   findTabByType: (type: Tab['type']) => Tab | undefined;
   canAddTab: () => boolean;
 }
@@ -60,7 +53,6 @@ export const useTabState = (): UseTabStateReturn => {
 
   const tabCount = tabs.length;
   const chatTabCount = useMemo(() => getTabsByType('chat').length, [getTabsByType]);
-  const agentTabCount = useMemo(() => getTabsByType('agent').length, [getTabsByType]);
 
   const createChatTab = useCallback((projectId?: string, title?: string, projectPath?: string): string => {
     const tabTitle = title || `Chat ${chatTabCount + 1}`;
@@ -75,24 +67,6 @@ export const useTabState = (): UseTabStateReturn => {
     });
   }, [addTab, chatTabCount]);
 
-  const createAgentTab = useCallback((agentRunId: string, agentName: string): string => {
-    // Check if tab already exists
-    const existingTab = tabs.find(tab => tab.agentRunId === agentRunId);
-    if (existingTab) {
-      setActiveTab(existingTab.id);
-      return existingTab.id;
-    }
-
-    return addTab({
-      type: 'agent',
-      title: agentName,
-      agentRunId,
-      status: 'running',
-      hasUnsavedChanges: false,
-      icon: 'bot'
-    });
-  }, [addTab, tabs, setActiveTab]);
-
   const createProjectsTab = useCallback((): string | null => {
     // Allow multiple projects tabs
     return addTab({
@@ -103,23 +77,6 @@ export const useTabState = (): UseTabStateReturn => {
       icon: 'folder'
     });
   }, [addTab]);
-
-  const createAgentsTab = useCallback((): string | null => {
-    // Check if agents tab already exists (singleton)
-    const existingTab = tabs.find(tab => tab.type === 'agents');
-    if (existingTab) {
-      setActiveTab(existingTab.id);
-      return existingTab.id;
-    }
-
-    return addTab({
-      type: 'agents',
-      title: 'Agents',
-      status: 'idle',
-      hasUnsavedChanges: false,
-      icon: 'bot'
-    });
-  }, [addTab, tabs, setActiveTab]);
 
   const createUsageTab = useCallback((): string | null => {
     // Check if usage tab already exists (singleton)
@@ -224,52 +181,6 @@ export const useTabState = (): UseTabStateReturn => {
     });
   }, [addTab, tabs, setActiveTab]);
 
-  const createAgentExecutionTab = useCallback((agent: any, _tabId: string, projectPath?: string): string => {
-    return addTab({
-      type: 'agent-execution',
-      title: `Run: ${agent.name}`,
-      agentData: agent,
-      projectPath: projectPath,
-      status: 'idle',
-      hasUnsavedChanges: false,
-      icon: 'bot'
-    });
-  }, [addTab]);
-
-  const createCreateAgentTab = useCallback((): string => {
-    // Check if create agent tab already exists (singleton)
-    const existingTab = tabs.find(tab => tab.type === 'create-agent');
-    if (existingTab) {
-      setActiveTab(existingTab.id);
-      return existingTab.id;
-    }
-
-    return addTab({
-      type: 'create-agent',
-      title: 'Create Agent',
-      status: 'idle',
-      hasUnsavedChanges: false,
-      icon: 'plus'
-    });
-  }, [addTab, tabs, setActiveTab]);
-
-  const createImportAgentTab = useCallback((): string => {
-    // Check if import agent tab already exists (singleton)
-    const existingTab = tabs.find(tab => tab.type === 'import-agent');
-    if (existingTab) {
-      setActiveTab(existingTab.id);
-      return existingTab.id;
-    }
-
-    return addTab({
-      type: 'import-agent',
-      title: 'Import Agent',
-      status: 'idle',
-      hasUnsavedChanges: false,
-      icon: 'import'
-    });
-  }, [addTab, tabs, setActiveTab]);
-
   const closeTab = useCallback(async (id: string, force: boolean = false): Promise<boolean> => {
     const tab = getTabById(id);
     if (!tab) return true;
@@ -328,10 +239,6 @@ export const useTabState = (): UseTabStateReturn => {
     return tabs.find(tab => tab.type === 'chat' && tab.sessionId === sessionId);
   }, [tabs]);
 
-  const findTabByAgentRunId = useCallback((agentRunId: string): Tab | undefined => {
-    return tabs.find(tab => tab.type === 'agent' && tab.agentRunId === agentRunId);
-  }, [tabs]);
-
   const findTabByType = useCallback((type: Tab['type']): Tab | undefined => {
     return tabs.find(tab => tab.type === type);
   }, [tabs]);
@@ -347,22 +254,16 @@ export const useTabState = (): UseTabStateReturn => {
     activeTabId,
     tabCount,
     chatTabCount,
-    agentTabCount,
-    
+
     // Operations
     createChatTab,
-    createAgentTab,
-    createAgentExecutionTab,
     createProjectsTab,
-    createAgentsTab,
     createUsageTab,
     createMCPTab,
     createLimaTab,
     createSettingsTab,
     createClaudeMdTab,
     createClaudeFileTab,
-    createCreateAgentTab,
-    createImportAgentTab,
     closeTab,
     closeCurrentTab,
     switchToTab: setActiveTab,
@@ -374,7 +275,6 @@ export const useTabState = (): UseTabStateReturn => {
     updateTabStatus,
     markTabAsChanged,
     findTabBySessionId,
-    findTabByAgentRunId,
     findTabByType,
     canAddTab
   };

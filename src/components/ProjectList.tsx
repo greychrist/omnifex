@@ -1,15 +1,14 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { 
-  FolderOpen,
-  ChevronLeft,
-  ChevronRight
-} from "lucide-react";
+import { FolderOpen, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import type { Project } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { AccountBadge } from "@/components/AccountBadge";
+
+type SortKey = 'name' | 'path' | 'account' | 'sessions' | 'lastOpened';
+type SortDir = 'asc' | 'desc';
 
 interface ProjectListProps {
   /**
@@ -90,33 +89,72 @@ export const ProjectList: React.FC<ProjectListProps> = ({
   onOpenProject,
   className,
 }) => {
-  const [showAll, setShowAll] = useState(false);
-  const [currentPage, setCurrentPage] = useState(1);
-  
-  // Determine how many projects to show
-  const projectsPerPage = showAll ? 10 : 5;
-  const totalPages = Math.ceil(projects.length / projectsPerPage);
-  
-  // Calculate which projects to display
-  const startIndex = showAll ? (currentPage - 1) * projectsPerPage : 0;
-  const endIndex = startIndex + projectsPerPage;
-  const displayedProjects = projects.slice(startIndex, endIndex);
-  
-  const handleViewAll = () => {
-    setShowAll(true);
-    setCurrentPage(1);
+  const [sortKey, setSortKey] = useState<SortKey>('lastOpened');
+  const [sortDir, setSortDir] = useState<SortDir>('desc');
+  const [accountFilter, setAccountFilter] = useState<string>('all');
+
+  // Distinct account names present in the project list — sorted alpha for
+  // a stable dropdown order. `'(unassigned)'` covers projects with no
+  // resolved account so they're filterable too.
+  const accountOptions = useMemo(() => {
+    const names = new Set<string>();
+    for (const p of projects) {
+      names.add(p.account_name ?? '(unassigned)');
+    }
+    return Array.from(names).sort((a, b) => a.localeCompare(b));
+  }, [projects]);
+
+  const visibleProjects = useMemo(() => {
+    const filtered = accountFilter === 'all'
+      ? projects
+      : projects.filter((p) => (p.account_name ?? '(unassigned)') === accountFilter);
+
+    const dir = sortDir === 'asc' ? 1 : -1;
+    const cmp = (a: Project, b: Project): number => {
+      switch (sortKey) {
+        case 'name':
+          return getProjectName(a.path).localeCompare(getProjectName(b.path)) * dir;
+        case 'path':
+          return a.path.localeCompare(b.path) * dir;
+        case 'account':
+          return (a.account_name ?? '').localeCompare(b.account_name ?? '') * dir;
+        case 'sessions':
+          return (a.sessions.length - b.sessions.length) * dir;
+        case 'lastOpened': {
+          const av = a.most_recent_session ?? a.created_at;
+          const bv = b.most_recent_session ?? b.created_at;
+          return (av - bv) * dir;
+        }
+      }
+    };
+    return [...filtered].sort(cmp);
+  }, [projects, accountFilter, sortKey, sortDir]);
+
+  const toggleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(key);
+      // For numeric/date columns the useful default is descending (newest /
+      // most-active first); for string columns ascending reads more naturally.
+      setSortDir(key === 'sessions' || key === 'lastOpened' ? 'desc' : 'asc');
+    }
   };
-  
-  const handleViewLess = () => {
-    setShowAll(false);
-    setCurrentPage(1);
+
+  const SortIcon: React.FC<{ k: SortKey }> = ({ k }) => {
+    if (sortKey !== k) {
+      return <ArrowUpDown className="inline h-3 w-3 ml-1 opacity-30" />;
+    }
+    return sortDir === 'asc'
+      ? <ArrowUp className="inline h-3 w-3 ml-1 opacity-80" />
+      : <ArrowDown className="inline h-3 w-3 ml-1 opacity-80" />;
   };
 
   return (
-    <div className={cn("h-full overflow-y-auto", className)}>
+    <div className={cn("h-full overflow-hidden", className)}>
       <div className="max-w-6xl mx-auto flex flex-col h-full">
         {/* Header */}
-        <div className="p-6">
+        <div className="p-6 shrink-0">
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-3xl font-bold">Projects</h1>
@@ -141,109 +179,109 @@ export const ProjectList: React.FC<ProjectListProps> = ({
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 min-h-0 px-6 pb-6 flex flex-col">
           {/* Recent projects section */}
-          {displayedProjects.length > 0 ? (
-            <Card className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-heading-4">Recent Projects</h2>
-            {!showAll ? (
-              <button 
-                onClick={handleViewAll}
-                className="text-caption text-muted-foreground hover:text-foreground transition-colors"
-              >
-                View all ({projects.length})
-              </button>
-            ) : (
-              <button 
-                onClick={handleViewLess}
-                className="text-caption text-muted-foreground hover:text-foreground transition-colors"
-              >
-                View less
-              </button>
-            )}
-          </div>
-          
-          <div className="space-y-1">
-            {displayedProjects.map((project, index) => (
-              <motion.div
-                key={project.id}
-                initial={{ opacity: 0, y: 4 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{
-                  duration: 0.15,
-                  delay: index * 0.02,
-                }}
-                className="group"
-              >
-                <motion.button
-                  onClick={() => onProjectClick(project)}
-                  whileTap={{ scale: 0.97 }}
-                  transition={{ duration: 0.15 }}
-                  className="w-full text-left px-3 py-2 rounded-md hover:bg-accent/50 transition-colors flex items-center justify-between"
-                >
-                  <span className="flex items-center gap-2">
-                    <span className="text-body-small font-medium">
-                      {getProjectName(project.path)}
-                    </span>
-                    {project.account_name && (
-                      <AccountBadge name={project.account_name} />
-                    )}
+          {projects.length > 0 ? (
+            <Card className="p-6 flex-1 min-h-0 flex flex-col">
+              <div className="flex items-center justify-between mb-4 gap-3 shrink-0">
+                <h2 className="text-heading-4">
+                  Recent Projects
+                  <span className="ml-2 text-caption text-muted-foreground font-normal">
+                    ({visibleProjects.length}{accountFilter !== 'all' ? ` of ${projects.length}` : ''})
                   </span>
-                  <span className="text-caption text-muted-foreground font-mono text-right" style={{ minWidth: '200px' }}>
-                    {getDisplayPath(project.path, 35)}
-                  </span>
-                </motion.button>
-              </motion.div>
-            ))}
-          </div>
-          
-          {/* Pagination controls */}
-          {showAll && totalPages > 1 && (
-            <div className="flex items-center justify-center gap-2 mt-6">
-              <motion.div
-                whileTap={{ scale: 0.97 }}
-                transition={{ duration: 0.15 }}
-              >
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                  disabled={currentPage === 1}
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
-              </motion.div>
-              
-              <div className="flex items-center gap-1">
-                {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
-                  <Button
-                    key={page}
-                    variant={currentPage === page ? "default" : "ghost"}
-                    size="sm"
-                    onClick={() => setCurrentPage(page)}
-                    className="w-8 h-8 p-0"
-                  >
-                    {page}
-                  </Button>
-                ))}
+                </h2>
+                {accountOptions.length > 1 && (
+                  <div className="flex items-center gap-2">
+                    <label className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                      Account
+                    </label>
+                    <select
+                      value={accountFilter}
+                      onChange={(e) => setAccountFilter(e.target.value)}
+                      className="text-xs bg-background border border-border rounded px-2 py-1 cursor-pointer hover:bg-accent transition-colors"
+                    >
+                      <option value="all">All</option>
+                      {accountOptions.map((name) => (
+                        <option key={name} value={name}>{name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
-              
-              <motion.div
-                whileTap={{ scale: 0.97 }}
-                transition={{ duration: 0.15 }}
-              >
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                  disabled={currentPage === totalPages}
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              </motion.div>
-            </div>
-          )}
+          
+          <div className="-mx-2 flex-1 min-h-0 overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-card z-10">
+                <tr className="text-left text-[10px] uppercase tracking-wider text-muted-foreground border-b border-border/50">
+                  <th
+                    className="px-3 py-2 font-medium cursor-pointer hover:text-foreground select-none"
+                    onClick={() => toggleSort('name')}
+                  >
+                    Name<SortIcon k="name" />
+                  </th>
+                  <th
+                    className="px-3 py-2 font-medium cursor-pointer hover:text-foreground select-none"
+                    onClick={() => toggleSort('path')}
+                  >
+                    Path<SortIcon k="path" />
+                  </th>
+                  <th
+                    className="px-3 py-2 font-medium cursor-pointer hover:text-foreground select-none"
+                    onClick={() => toggleSort('account')}
+                  >
+                    Account<SortIcon k="account" />
+                  </th>
+                  <th
+                    className="px-3 py-2 font-medium text-right cursor-pointer hover:text-foreground select-none"
+                    onClick={() => toggleSort('sessions')}
+                  >
+                    Sessions<SortIcon k="sessions" />
+                  </th>
+                  <th
+                    className="px-3 py-2 font-medium text-right cursor-pointer hover:text-foreground select-none"
+                    onClick={() => toggleSort('lastOpened')}
+                  >
+                    Last opened<SortIcon k="lastOpened" />
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {visibleProjects.map((project, index) => {
+                  const last = project.most_recent_session ?? project.created_at;
+                  return (
+                    <motion.tr
+                      key={project.id}
+                      initial={{ opacity: 0, y: 4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.15, delay: index * 0.02 }}
+                      onClick={() => onProjectClick(project)}
+                      className="border-b border-border/30 hover:bg-accent/40 transition-colors cursor-pointer"
+                    >
+                      <td className="px-3 py-2 font-medium">
+                        {getProjectName(project.path)}
+                      </td>
+                      <td className="px-3 py-2 text-muted-foreground font-mono text-xs truncate max-w-[420px]" title={project.path}>
+                        {getDisplayPath(project.path, 60)}
+                      </td>
+                      <td className="px-3 py-2">
+                        {project.account_name && (
+                          <AccountBadge name={project.account_name} />
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-right text-muted-foreground tabular-nums">
+                        {project.sessions.length}
+                      </td>
+                      <td className="px-3 py-2 text-right text-muted-foreground text-xs tabular-nums">
+                        {last
+                          ? new Date(last * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                          : '—'}
+                      </td>
+                    </motion.tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
             </Card>
           ) : (
             <Card className="p-12">

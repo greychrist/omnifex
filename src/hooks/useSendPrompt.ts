@@ -1,6 +1,6 @@
 import { useState, useRef } from "react";
 import { api, type Session } from "@/lib/api";
-import type { ClaudeStreamMessage } from "@/components/AgentExecution";
+import type { ClaudeStreamMessage } from "@/types/claudeStream";
 
 interface UseSendPromptArgs {
   projectPath: string;

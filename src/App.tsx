@@ -3,7 +3,6 @@ import { motion } from "framer-motion";
 import { Bot, FolderCode } from "lucide-react";
 import { api, type Project, type Session, type ClaudeMdFile } from "@/lib/api";
 import { initializeWebMode } from "@/lib/apiAdapter";
-import { OutputCacheProvider } from "@/lib/outputCache";
 import { TabProvider, useTabContext } from "@/contexts/TabContext";
 import { AccountsProvider } from "@/contexts/AccountsContext";
 import { ThemeProvider } from "@/contexts/ThemeContext";
@@ -17,7 +16,6 @@ import { CustomTitlebar } from "@/components/CustomTitlebar";
 import { MarkdownEditor } from "@/components/MarkdownEditor";
 import { ClaudeFileEditor } from "@/components/ClaudeFileEditor";
 import { Settings } from "@/components/Settings";
-import { CCAgents } from "@/components/CCAgents";
 import { UsageDashboard } from "@/components/UsageDashboard";
 import { MCPManager } from "@/components/MCPManager";
 import { NFOCredits } from "@/components/NFOCredits";
@@ -51,7 +49,7 @@ type View =
  */
 function AppContent() {
   const [view, setView] = useState<View>("tabs");
-  const { createSettingsTab, createAgentsTab, createLimaTab } = useTabState();
+  const { createSettingsTab, createLimaTab } = useTabState();
   const { activeTabId, setActiveTab, updateTab } = useTabContext();
   useNotifications(activeTabId, setActiveTab, updateTab);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -279,13 +277,6 @@ function AppContent() {
           </div>
         );
 
-      case "cc-agents":
-        return (
-          <CCAgents 
-            onBack={() => handleViewChange("welcome")} 
-          />
-        );
-
       case "editor":
         return (
           <div className="flex-1 overflow-hidden">
@@ -366,7 +357,6 @@ function AppContent() {
     <div className="h-screen flex flex-col">
       {/* Custom Titlebar */}
       <CustomTitlebar
-        onAgentsClick={() => createAgentsTab()}
         onLimaClick={() => createLimaTab()}
         onSettingsClick={() => createSettingsTab()}
         onInfoClick={() => setShowNFO(true)}
@@ -512,14 +502,12 @@ function App() {
   return (
     <ThemeProvider>
       <MessageRenderingProvider>
-        <OutputCacheProvider>
-          <AccountsProvider>
-            <TabProvider>
-              <AppContent />
-              <StartupIntro visible={showIntro} />
-            </TabProvider>
-          </AccountsProvider>
-        </OutputCacheProvider>
+        <AccountsProvider>
+          <TabProvider>
+            <AppContent />
+            <StartupIntro visible={showIntro} />
+          </TabProvider>
+        </AccountsProvider>
       </MessageRenderingProvider>
     </ThemeProvider>
   );

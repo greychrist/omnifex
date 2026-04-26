@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { api } from "@/lib/api";
-import type { ClaudeStreamMessage } from "@/components/AgentExecution";
+import type { ClaudeStreamMessage } from "@/types/claudeStream";
 
 /** How long to wait for a first response before checking health. */
 export const RESPONSE_TIMEOUT_MS = 30_000;

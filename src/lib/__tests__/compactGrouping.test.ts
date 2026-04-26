@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import type { ClaudeStreamMessage } from '@/components/AgentExecution';
+import type { ClaudeStreamMessage } from '@/types/claudeStream';
 import { buildCompactItems, isBoundaryMessage, type CompactItem } from '../compactGrouping';
 import { createDefaultConfig } from '../messageRenderingConfig';
 

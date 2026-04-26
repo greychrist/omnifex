@@ -78,15 +78,25 @@ export function createSessionsService(
     try {
       for await (const message of handle.query) {
         // Extract session ID from system init message
-        if (
-          message.type === 'system' &&
-          (message as any).subtype === 'init' &&
-          (message as any).session_id
-        ) {
+        const isInit =
+          message.type === 'system' && (message as any).subtype === 'init';
+        if (isInit && (message as any).session_id) {
           handle.sessionId = (message as any).session_id as string;
         }
 
-        handle.status = 'running';
+        // Status transitions:
+        //  - 'init' means the session is alive but no turn is in flight yet
+        //    → 'idle' so the installer's wait-for-idle gate doesn't block.
+        //  - 'result' is handled below (also flips to 'idle').
+        //  - Anything else (assistant / tool_use / tool_result / etc.) means
+        //    the SDK is mid-turn → 'running'.
+        // sendMessage() also sets 'running' eagerly so the gate reacts the
+        // moment the user submits, before the SDK echoes anything.
+        if (isInit) {
+          handle.status = 'idle';
+        } else if (message.type !== 'result') {
+          handle.status = 'running';
+        }
 
         // Stamp each live message with the wall-clock time we received it,
         // so the renderer can show a per-card timestamp. Reloaded-from-JSONL
@@ -394,6 +404,11 @@ export function createSessionsService(
       restartQuery(tabId, handle);
     }
 
+    // Mark the turn as in-flight before the SDK has a chance to echo
+    // anything back, so the installer's wait-for-idle gate reacts to the
+    // user's submit immediately.
+    handle.status = 'running';
+
     const message: SDKUserMessage = {
       type: 'user',
       message: {
@@ -417,6 +432,9 @@ export function createSessionsService(
     if (handle.status === 'error') {
       restartQuery(tabId, handle);
     }
+
+    // See sendMessage() — keep status in sync with submit, not echo.
+    handle.status = 'running';
 
     const message: SDKUserMessage = {
       type: 'user',

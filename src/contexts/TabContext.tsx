@@ -5,12 +5,10 @@ import { api } from '@/lib/api';
 
 export interface Tab {
   id: string;
-  type: 'chat' | 'agent' | 'agents' | 'projects' | 'usage' | 'mcp' | 'settings' | 'claude-md' | 'claude-file' | 'agent-execution' | 'create-agent' | 'import-agent' | 'lima';
+  type: 'chat' | 'projects' | 'usage' | 'mcp' | 'settings' | 'claude-md' | 'claude-file' | 'lima';
   title: string;
   sessionId?: string;  // for chat tabs
   sessionData?: any; // for chat tabs - stores full session object
-  agentRunId?: string; // for agent tabs
-  agentData?: any; // for agent-execution tabs
   claudeFileId?: string; // for claude-file tabs
   initialProjectPath?: string; // for chat tabs
   /**
@@ -25,7 +23,7 @@ export interface Tab {
     permissionMode: string;
     autoAllowEnabled?: boolean;
   };
-  projectPath?: string; // for agent-execution tabs
+  projectPath?: string; // for chat tabs
   accountName?: string; // for chat tabs - resolved account name
   accountColor?: string | null;  // for chat tabs - resolved account color
   accountIcon?: string | null;   // for chat tabs - resolved account icon
@@ -48,7 +46,7 @@ interface TabContextType {
   reorderTabs: (startIndex: number, endIndex: number) => void;
   getTabById: (id: string) => Tab | undefined;
   closeAllTabs: () => void;
-  getTabsByType: (type: 'chat' | 'agent') => Tab[];
+  getTabsByType: (type: 'chat') => Tab[];
 }
 
 const TabContext = createContext<TabContextType | undefined>(undefined);
@@ -282,7 +280,7 @@ export const TabProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     TabPersistenceService.clearTabs();
   }, []);
 
-  const getTabsByType = useCallback((type: 'chat' | 'agent'): Tab[] => {
+  const getTabsByType = useCallback((type: 'chat'): Tab[] => {
     return tabsRef.current.filter(tab => tab.type === type);
   }, []);
 

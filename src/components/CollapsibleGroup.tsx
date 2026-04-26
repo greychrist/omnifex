@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { StreamMessage } from './StreamMessage';
-import type { ClaudeStreamMessage } from './AgentExecution';
+import type { ClaudeStreamMessage } from '@/types/claudeStream';
 
 const MAX_ACTION_LEN = 48;
 const MAX_ACTIONS_SHOWN = 5;

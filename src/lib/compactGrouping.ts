@@ -1,4 +1,4 @@
-import type { ClaudeStreamMessage } from '@/components/AgentExecution';
+import type { ClaudeStreamMessage } from '@/types/claudeStream';
 import { detectSkillInjection } from './skillDetection';
 import type { MessageRenderingConfig } from './messageRenderingConfig';
 import { classifyStandaloneKind } from './messageKind';

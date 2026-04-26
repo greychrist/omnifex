@@ -10,10 +10,6 @@ function makeDeps(overrides: Partial<InstallerDeps> = {}): InstallerDeps {
       listInFlightTabIds: () => [],
       stopAll: () => {},
     },
-    agentRunRegistry: {
-      listActiveRunIds: () => [],
-      killAll: () => {},
-    },
     appQuit: vi.fn(),
     spawn: vi.fn(),
     sendToRenderer: vi.fn(),
@@ -155,23 +151,17 @@ describe('InstallerService.waitForIdle', () => {
     expect(phases[phases.length - 1]).toBe('installing');
   });
 
-  it('with force=true calls stopAll and killAll once, then resolves', async () => {
+  it('with force=true calls stopAll once, then resolves', async () => {
     const stopAll = vi.fn();
-    const killAll = vi.fn();
     let activeSessions = 1;
     const installer = createInstallerService(makeDeps({
       sessionsService: {
         listInFlightTabIds: () => activeSessions > 0 ? ['t'] : [],
         stopAll: () => { stopAll(); activeSessions = 0; },
       },
-      agentRunRegistry: {
-        listActiveRunIds: () => [],
-        killAll: () => { killAll(); },
-      },
     }));
     await installer.waitForIdle({ force: true });
     expect(stopAll).toHaveBeenCalledTimes(1);
-    expect(killAll).toHaveBeenCalledTimes(1);
   });
 
   it('cancelWait rejects the in-flight wait with WaitCancelled', async () => {
