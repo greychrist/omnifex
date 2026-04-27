@@ -95,6 +95,16 @@ const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 5,
+    description: 'Add cli_path column to accounts',
+    up: (db) => {
+      const cols = db.pragma('table_info(accounts)') as { name: string }[];
+      if (!cols.some((c) => c.name === 'cli_path')) {
+        db.exec('ALTER TABLE accounts ADD COLUMN cli_path TEXT');
+      }
+    },
+  },
 ];
 
 /**

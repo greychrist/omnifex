@@ -20,6 +20,11 @@ describe('database', () => {
     db.close();
   });
 
+  it('migration v5 adds cli_path column to accounts', () => {
+    const cols = db.raw.pragma('table_info(accounts)') as { name: string }[];
+    expect(cols.some((c) => c.name === 'cli_path')).toBe(true);
+  });
+
   it('creates all required tables', () => {
     const tables = db.raw
       .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
