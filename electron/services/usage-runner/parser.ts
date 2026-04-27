@@ -24,12 +24,15 @@ export type ParseResult =
   | { ok: true; data: UsageData }
   | { ok: false; reason: string };
 
+// Section headers in the real TUI are indented (~2 spaces). The CLI also
+// emits a row of tab labels (`Status   Config   Usage   Stats`) above the
+// `Session` block, so we anchor on header text rather than column zero.
 const SECTION_HEADERS = {
-  session: /^Session\s*$/m,
-  current_session: /^Current session\s*$/m,
-  week_all_models: /^Current week \(all models\)\s*$/m,
-  week_sonnet: /^Current week \(Sonnet only\)\s*$/m,
-  contributing: /^What's contributing to your limits usage\?\s*$/m,
+  session: /^[ \t]*Session\s*$/m,
+  current_session: /^[ \t]*Current session\s*$/m,
+  week_all_models: /^[ \t]*Current week \(all models\)\s*$/m,
+  week_sonnet: /^[ \t]*Current week \(Sonnet only\)\s*$/m,
+  contributing: /^[ \t]*What's contributing to your limits usage\?\s*$/m,
 };
 
 export function parseUsageOutput(input: string): ParseResult {
@@ -130,27 +133,34 @@ function parseWindow(
 
 function parseContributing(text: string): { headline: string; detail: string }[] {
   const block = sliceSection(text, SECTION_HEADERS.contributing) ?? '';
-  // Each entry starts with a percentage-headed headline at column 0, then one
-  // or more indented detail lines that we collapse into a single paragraph.
+  // Each entry starts with a percent-headed headline (e.g. "86% of your usage
+  // was at >150k context"), followed by one or more wrapped detail lines that
+  // we collapse into a single paragraph. Both headline and detail lines may
+  // be indented; we differentiate by whether the trimmed line begins with a
+  // percentage. Blank lines terminate the current entry.
   const lines = block.split('\n');
   const out: { headline: string; detail: string }[] = [];
   let current: { headline: string; detail: string[] } | null = null;
+  const flush = (): void => {
+    if (!current) return;
+    out.push({ headline: current.headline, detail: current.detail.join(' ').trim() });
+    current = null;
+  };
   for (const raw of lines) {
-    const line = raw.replace(/\s+$/, '');
-    if (!line.trim()) {
-      if (current) {
-        out.push({ headline: current.headline, detail: current.detail.join(' ').trim() });
-        current = null;
-      }
+    const trimmed = raw.trim();
+    if (!trimmed) {
+      flush();
       continue;
     }
-    if (/^\d+%/.test(line)) {
-      if (current) out.push({ headline: current.headline, detail: current.detail.join(' ').trim() });
-      current = { headline: line.trim(), detail: [] };
-    } else if (current && /^\s+/.test(raw)) {
-      current.detail.push(line.trim());
+    if (/^\d+%/.test(trimmed)) {
+      flush();
+      current = { headline: trimmed, detail: [] };
+    } else if (current) {
+      current.detail.push(trimmed);
     }
+    // Lines before the first headline (e.g. the "Approximate, based on…" and
+    // "Last 24h …" preamble) are ignored.
   }
-  if (current) out.push({ headline: current.headline, detail: current.detail.join(' ').trim() });
+  flush();
   return out;
 }
