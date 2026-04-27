@@ -17,6 +17,8 @@ import { Popover } from "@/components/ui/popover";
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import { Button } from "@/components/ui/button";
 import { RateLimitWidget } from "./claude-code-session/RateLimitWidget";
+import { UsageDetailPopover } from "./claude-code-session/UsageDetailPopover";
+import { useUsageAutoRefresh } from "@/hooks/useUsageAutoRefresh";
 
 /**
  * Small uppercase label rendered above each header badge ("account", "branch",
@@ -85,8 +87,6 @@ interface SessionHeaderProps {
   fiveHourRateLimit?: RateLimitSnapshot | null;
   /** Latest 7-day rate-limit snapshot for this session's account, or null. */
   sevenDayRateLimit?: RateLimitSnapshot | null;
-  /** Click handler invoked when a rate-limit pill is clicked (open dashboard). */
-  onRateLimitClick?: () => void;
   /**
    * Click handler for the manual rate-limit refresh button. When provided, a
    * small refresh icon is rendered next to the rate-limit pills; clicking it
@@ -127,7 +127,6 @@ export function SessionHeader({
   contextUsage,
   fiveHourRateLimit,
   sevenDayRateLimit,
-  onRateLimitClick,
   onRefreshRateLimits,
   onClear,
   clearDisabled,
@@ -139,17 +138,25 @@ export function SessionHeader({
   // we control close-on-select etc.
   const [accountPopoverOpen, setAccountPopoverOpen] = React.useState(false);
   const [contextPopoverOpen, setContextPopoverOpen] = React.useState(false);
-  const [refreshing, setRefreshing] = React.useState(false);
+  const [usagePopoverOpen, setUsagePopoverOpen] = React.useState(false);
 
+  // Live `/usage` data: drives both the rate-limit widgets (via the
+  // rate-limits snapshot store, populated by the runner) and the popover
+  // detail view. The hook handles the 5-min visibility-aware refresh.
+  const {
+    data: usageData,
+    loading: usageLoading,
+    refresh: refreshUsage,
+  } = useUsageAutoRefresh(accountName);
+
+  // Manual refresh button next to the 7-day widget. Falls back to the
+  // parent's `onRefreshRateLimits` if provided (back-compat) but the
+  // primary path is the hook's refresh.
   const handleRefreshClick = React.useCallback(async () => {
-    if (!onRefreshRateLimits || refreshing) return;
-    setRefreshing(true);
-    try {
-      await onRefreshRateLimits();
-    } finally {
-      setRefreshing(false);
-    }
-  }, [onRefreshRateLimits, refreshing]);
+    if (usageLoading) return;
+    if (onRefreshRateLimits) await onRefreshRateLimits();
+    await refreshUsage();
+  }, [onRefreshRateLimits, refreshUsage, usageLoading]);
   // Defer chart rendering by one frame so the popover container has dimensions
   const [chartReady, setChartReady] = React.useState(false);
   React.useEffect(() => {
@@ -303,37 +310,47 @@ export function SessionHeader({
       })()}
 
       <span aria-hidden="true" className="self-stretch w-px bg-foreground/30 shrink-0" />
-      <RateLimitWidget
-        snapshot={fiveHourRateLimit ?? null}
-        windowType="five_hour"
-        accountName={accountName}
-        onClick={onRateLimitClick}
+      <UsageDetailPopover
+        open={usagePopoverOpen}
+        onOpenChange={setUsagePopoverOpen}
+        data={usageData}
+        loading={usageLoading}
+        onRefresh={() => void refreshUsage()}
+        align="end"
+        trigger={
+          <div className="flex items-end gap-3">
+            <RateLimitWidget
+              snapshot={fiveHourRateLimit ?? null}
+              windowType="five_hour"
+              accountName={accountName}
+              onClick={() => setUsagePopoverOpen((v) => !v)}
+            />
+            <RateLimitWidget
+              snapshot={sevenDayRateLimit ?? null}
+              windowType="seven_day"
+              accountName={accountName}
+              onClick={() => setUsagePopoverOpen((v) => !v)}
+            />
+          </div>
+        }
       />
-      <RateLimitWidget
-        snapshot={sevenDayRateLimit ?? null}
-        windowType="seven_day"
-        accountName={accountName}
-        onClick={onRateLimitClick}
-      />
-      {onRefreshRateLimits && (
-        <div className="flex flex-col items-start gap-0.5">
-          <HeaderLabel>&nbsp;</HeaderLabel>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => void handleRefreshClick()}
-            disabled={refreshing}
-            className="h-7 w-7 p-0"
-            title={
-              refreshing
-                ? 'Refreshing rate limits…'
-                : 'Refresh rate-limit data via `claude /status`'
-            }
-          >
-            <RefreshCw className={cn('h-3.5 w-3.5', refreshing && 'animate-spin')} />
-          </Button>
-        </div>
-      )}
+      <div className="flex flex-col items-start gap-0.5">
+        <HeaderLabel>&nbsp;</HeaderLabel>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => void handleRefreshClick()}
+          disabled={usageLoading}
+          className="h-7 w-7 p-0"
+          title={
+            usageLoading
+              ? 'Refreshing /usage…'
+              : 'Refresh rate-limit data via /usage'
+          }
+        >
+          <RefreshCw className={cn('h-3.5 w-3.5', usageLoading && 'animate-spin')} />
+        </Button>
+      </div>
 
       <div className="ml-auto flex items-start gap-3">
         {(() => {

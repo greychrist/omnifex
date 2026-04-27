@@ -1428,10 +1428,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           ? 'Nothing to clear'
           : undefined;
 
-  const navigateToUsageDashboard = useCallback(() => {
-    window.dispatchEvent(new CustomEvent('navigate-to-usage-dashboard'));
-  }, []);
-
   const refreshRateLimits = useCallback(async () => {
     if (!activeAccountName) return;
     try {
@@ -1503,7 +1499,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           contextUsage={contextUsage}
           fiveHourRateLimit={rateLimitSnapshots['five_hour'] ?? null}
           sevenDayRateLimit={rateLimitSnapshots['seven_day'] ?? null}
-          onRateLimitClick={navigateToUsageDashboard}
           onRefreshRateLimits={refreshRateLimits}
           onClear={() => void handleClear()}
           clearDisabled={clearButtonDisabled}
