@@ -42,10 +42,13 @@ const config: ForgeConfig = {
     ],
     asar: {
       // - better-sqlite3: native .node addon
+      // - node-pty: native .node addon + spawn-helper (macOS helper binary
+      //   that node-pty exec's via posix_spawnp; must be outside asar or
+      //   posix_spawnp fails with ENOENT on the .asar.unpacked path)
       // - claude-agent-sdk-*: the SDK's per-platform claude binary, which the
       //   SDK spawns as a subprocess; binaries inside asar can't be exec'd, so
       //   we lift the whole subpackage to app.asar.unpacked.
-      unpack: '{**/better-sqlite3/**/*.node,**/node-pty/**/*.node,**/@anthropic-ai/claude-agent-sdk-*/**}',
+      unpack: '{**/better-sqlite3/**/*.node,**/node-pty/**/*.node,**/node-pty/**/spawn-helper,**/@anthropic-ai/claude-agent-sdk-*/**}',
     },
     afterCopy: [
       (buildPath, electronVersion, _platform, _arch, callback) => {

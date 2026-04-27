@@ -1793,6 +1793,9 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                     onChange={(next) => {
                       api.setSessionMode(tabIdRef.current, next).catch((err) => {
                         console.error('Failed to switch mode:', err);
+                        const msg = err instanceof Error ? err.message : String(err);
+                        setError(`Mode switch failed: ${msg}`);
+                        setTimeout(() => setError(null), 5000);
                       });
                     }}
                     disabled={modeToggleDisabled}
