@@ -233,71 +233,76 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                       </div>
                     </div>
 
-                    {/* Inline new-session form — same panel that used to live
-                        behind the "+ New session" button, now always visible
-                        above the session history. */}
-                    <div className="mb-6 flex justify-center">
-                      <NewSessionForm
-                        accountResolution={projectAccountResolution}
-                        selectedModel={formModel}
-                        setSelectedModel={setFormModel}
-                        effort={formEffort}
-                        setEffort={setFormEffort}
-                        thinkingConfig={formThinkingConfig}
-                        setThinkingConfig={setFormThinkingConfig}
-                        permissionMode={formPermissionMode}
-                        setPermissionMode={setFormPermissionMode}
-                        autoAllowEnabled={formAutoAllowEnabled}
-                        setAutoAllowEnabled={setFormAutoAllowEnabled}
-                        onStart={handleStartNewSession}
-                      />
-                    </div>
-
-                    {/* Error display */}
-                    {error && (
-                      <motion.div
-                        initial={{ opacity: 0, y: 4 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.15 }}
-                        className="mb-4 rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-xs text-destructive"
-                      >
-                        {error}
-                      </motion.div>
-                    )}
-
-                    {/* Loading state */}
-                    {loading && (
-                      <div className="flex items-center justify-center py-8">
-                        <Spinner className="size-6 text-muted-foreground" />
+                    {/* Two-column layout: new-session form sticky on the
+                        left, history (errors + loading + session list) flowing
+                        on the right. Stacks vertically on narrow screens so
+                        the form stays usable when there's no horizontal room. */}
+                    <div className="flex flex-col lg:flex-row gap-6 items-start">
+                      <div className="w-full lg:w-[28rem] lg:shrink-0 lg:sticky lg:top-6">
+                        <NewSessionForm
+                          accountResolution={projectAccountResolution}
+                          selectedModel={formModel}
+                          setSelectedModel={setFormModel}
+                          effort={formEffort}
+                          setEffort={setFormEffort}
+                          thinkingConfig={formThinkingConfig}
+                          setThinkingConfig={setFormThinkingConfig}
+                          permissionMode={formPermissionMode}
+                          setPermissionMode={setFormPermissionMode}
+                          autoAllowEnabled={formAutoAllowEnabled}
+                          setAutoAllowEnabled={setFormAutoAllowEnabled}
+                          onStart={handleStartNewSession}
+                        />
                       </div>
-                    )}
 
-                    {/* Session List */}
-                    {!loading && (
-                      <SessionList
-                        sessions={sessions}
-                        projectPath={selectedProject.path}
-                        onSessionClick={(session) => {
-                          // Update current tab to show the selected session
-                          updateTab(tab.id, {
-                            type: 'chat',
-                            title: session.project_path.split('/').pop() || 'Session',
-                            sessionId: session.id,
-                            sessionData: session,
-                            initialProjectPath: session.project_path
-                          });
-                          api.resolveAccountForProject(session.project_path).then((account) => {
-                            if (account) updateTab(tab.id, { accountName: account.name, accountColor: account.color, accountIcon: account.icon });
-                          }).catch(() => {});
-                        }}
-                        onEditClaudeFile={(file: ClaudeMdFile) => {
-                          // Open CLAUDE.md file in a new tab
-                          window.dispatchEvent(new CustomEvent('open-claude-file', { 
-                            detail: { file } 
-                          }));
-                        }}
-                      />
-                    )}
+                      <div className="flex-1 min-w-0 w-full">
+                        {/* Error display */}
+                        {error && (
+                          <motion.div
+                            initial={{ opacity: 0, y: 4 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ duration: 0.15 }}
+                            className="mb-4 rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-xs text-destructive"
+                          >
+                            {error}
+                          </motion.div>
+                        )}
+
+                        {/* Loading state */}
+                        {loading && (
+                          <div className="flex items-center justify-center py-8">
+                            <Spinner className="size-6 text-muted-foreground" />
+                          </div>
+                        )}
+
+                        {/* Session List */}
+                        {!loading && (
+                          <SessionList
+                            sessions={sessions}
+                            projectPath={selectedProject.path}
+                            onSessionClick={(session) => {
+                              // Update current tab to show the selected session
+                              updateTab(tab.id, {
+                                type: 'chat',
+                                title: session.project_path.split('/').pop() || 'Session',
+                                sessionId: session.id,
+                                sessionData: session,
+                                initialProjectPath: session.project_path
+                              });
+                              api.resolveAccountForProject(session.project_path).then((account) => {
+                                if (account) updateTab(tab.id, { accountName: account.name, accountColor: account.color, accountIcon: account.icon });
+                              }).catch(() => {});
+                            }}
+                            onEditClaudeFile={(file: ClaudeMdFile) => {
+                              // Open CLAUDE.md file in a new tab
+                              window.dispatchEvent(new CustomEvent('open-claude-file', {
+                                detail: { file }
+                              }));
+                            }}
+                          />
+                        )}
+                      </div>
+                    </div>
                   </div>
                 </div>
               ) : (
