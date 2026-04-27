@@ -5,6 +5,23 @@ All notable changes to GreyChrist are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.57] — 2026-04-27
+
+Adds rate-limit tracking for the 5-hour and 7-day windows in the session header, and reorganizes the header / chat-bar layout to make room for it. Anthropic's Agent SDK only emits `utilization` for accounts with overage credits unlocked at the org level, so on most accounts today the widget will show `?%` until you cross a 75/90% threshold — the countdown timer and notifications still work. Installers remain **unsigned**.
+
+### Added
+
+- **Rate-limit tracking service** (`ca86d1a`). New `electron/services/rate-limits.ts` captures `SDKRateLimitEvent` messages off the Agent SDK stream and persists per-account snapshots to two new SQLite tables (migration v3): `rate_limit_snapshots` keyed on `(account_name, rate_limit_type)`, and `rate_limit_fired_thresholds` for notification dedup keyed on `(account_name, rate_limit_type, window_resets_at, threshold_key)`. Notifications fire on configurable percent crossings (defaults 75/90 for the 5-hour window) and on Anthropic's own `allowed_warning` / `rejected` status signals — each firing once per window per threshold. Renderer subscribes to a new `rate-limits:updated` event channel for live updates. 26 unit tests covering snapshot upsert, threshold dedup, window roll-over, sticky merging of partial events, multi-account isolation, and settings persistence.
+- **Rate-limit widget** in the session header (`ca86d1a`). New `RateLimitWidget` renders one pill per window (5-hour / 7-day) styled to match the existing `context` widget — Lucide icon, mini gradient bar, percentage, and time-to-reset tail text. Stale-state dimming when the latest snapshot is older than 10 minutes. Click-through opens the Usage Dashboard via a new `navigate-to-usage-dashboard` window event handled in `App.tsx`.
+- **Rate Limits settings tab** (`ca86d1a`). New `RateLimitsSettings` panel with master notifications toggle, editable comma-separated threshold lists for the 5-hour and 7-day windows, and a separate enable for 7-day notifications (defaulted off). Stored as JSON in `app_settings` under the `rate_limit_settings` key.
+- **Manual refresh button** next to the rate-limit pills, with a spinning state while it runs. **Currently non-functional** — wired to `claude -p "/status"`, which the CLI rejects with `"/status isn't available in this environment"` because slash commands aren't supported in print mode. Empirical testing also showed the SDK's streamed `rate_limit_event` itself omits `utilization` for accounts without overage unlocked at the org level. The button stays in place as scaffolding for the eventual statusline-based refresh path.
+
+### Changed
+
+- **Session header layout** (`ca86d1a`). Top row is now `[← Back to Project] | [folder · branch · worktrees]` (the folder/branch/worktrees pills moved up from `SessionHeader`). Bottom row is `[account] [status] [5h pill] [7d pill] [refresh] … [context] [restart]` — the restart Clear button moved down from the top header to pair with the context widget, since restart conceptually clears context. Two pre-existing top-row toggles (mode, output style) moved out of the header entirely.
+- **Mode and output-style toggles** (`ca86d1a`). The SDK ↔ Terminal mode switch now sits in the chat bar above the model / effort / thinking / permission pickers (new `modeToggle` slot on `FloatingPromptInput`). The Compact ↔ Verbose output-style switch sits above the copy / MCP / plugins / permissions buttons (new `outputStyleToggle` slot). Frees the session header to be data-only.
+- **`COALESCE` upsert** for rate-limit snapshots so a follow-up event with no `utilization` doesn't wipe out a prior good reading. Same for `resets_at`. Locked in by two regression tests.
+
 ## [0.3.56] — 2026-04-27
 
 Collapses the upgrade button into a single click and surfaces an active-sessions warning *before* you click, driven by a live in-flight count broadcast from the main process. Installers remain **unsigned**.
