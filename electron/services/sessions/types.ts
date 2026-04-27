@@ -113,6 +113,10 @@ export interface SessionsService {
    *  or `'waiting_permission'`. Used by the installer to gate auto-update so
    *  that idle/open sessions don't block. */
   listInFlightTabIds(): string[];
+  /** Diagnostic: every registered session paired with its current status,
+   *  in-flight or not. The installer logs this on every gate poll so we can
+   *  tell why the gate cleared when the renderer thinks sessions are active. */
+  listSessionStatuses(): Array<{ tabId: string; status: SessionStatus }>;
 
   // --- Wave 2: Query-method passthroughs ----------------------------------
   /** Interrupt the current assistant turn without ending the session. */

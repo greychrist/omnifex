@@ -243,76 +243,123 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     };
   }, [projectPath]);
 
-  // Watch sibling worktrees attached to the same repo. We enumerate once on
-  // project open, then start a separate git-branch watch per worktree so each
-  // gets the same live changed/untracked counts as the main branch badge.
-  // Watches are torn down on project change to avoid leaks across navigations.
+  // Watch sibling worktrees attached to the same repo. We open one
+  // worktree-list watcher (fs.watch on `<commondir>/worktrees/`) so the list
+  // updates live as the user runs `git worktree add`/`remove`, plus a
+  // per-worktree git-branch watch on each peer so changed/untracked counts
+  // stream in the same way as the main branch badge.
   useEffect(() => {
     if (!projectPath) {
       setWorktreeStatuses({});
       return;
     }
     let cancelled = false;
-    const watchIds: string[] = [];
-    const unsubs: Array<() => void> = [];
+    let listWatchId: string | null = null;
+    let listUnsub: (() => void) | null = null;
+    const peerWatchIds = new Map<string, string>(); // path → branch-watch id
+    const peerUnsubs = new Map<string, () => void>();
+
+    const startPeer = async (peerPath: string, peerBranch: string | null) => {
+      if (peerWatchIds.has(peerPath)) return;
+      try {
+        const r = await api.startGitBranchWatch(peerPath);
+        if (cancelled || !r) {
+          if (r?.watchId) await api.stopGitBranchWatch(r.watchId);
+          return;
+        }
+        peerWatchIds.set(peerPath, r.watchId);
+        setWorktreeStatuses((prev) => ({
+          ...prev,
+          [peerPath]: {
+            path: peerPath,
+            branch: r.branch ?? peerBranch,
+            changed: r.changed,
+            untracked: r.untracked,
+          },
+        }));
+        const unsub = api.onGitBranchChanged(r.watchId, (snap) => {
+          setWorktreeStatuses((prev) => ({
+            ...prev,
+            [peerPath]: {
+              path: peerPath,
+              branch: snap.branch ?? peerBranch,
+              changed: snap.changed,
+              untracked: snap.untracked,
+            },
+          }));
+        });
+        peerUnsubs.set(peerPath, unsub);
+      } catch {
+        // best effort — skip this peer
+      }
+    };
+
+    const stopPeer = async (peerPath: string) => {
+      const id = peerWatchIds.get(peerPath);
+      const unsub = peerUnsubs.get(peerPath);
+      unsub?.();
+      peerUnsubs.delete(peerPath);
+      peerWatchIds.delete(peerPath);
+      if (id) await api.stopGitBranchWatch(id);
+      setWorktreeStatuses((prev) => {
+        if (!(peerPath in prev)) return prev;
+        const next = { ...prev };
+        delete next[peerPath];
+        return next;
+      });
+    };
+
+    const reconcile = async (worktrees: import('@/lib/api').WorktreeInfo[]) => {
+      const wanted = new Map(worktrees.map((w) => [w.path, w.branch]));
+      // Add peers that are new
+      for (const wt of worktrees) {
+        if (!peerWatchIds.has(wt.path)) await startPeer(wt.path, wt.branch);
+      }
+      // Drop peers that are gone
+      for (const p of Array.from(peerWatchIds.keys())) {
+        if (!wanted.has(p)) await stopPeer(p);
+      }
+    };
 
     (async () => {
-      let worktrees: import('@/lib/api').WorktreeInfo[] = [];
+      let result: { watchId: string; worktrees: import('@/lib/api').WorktreeInfo[] } | null = null;
       try {
-        worktrees = await api.listGitWorktrees(projectPath);
+        result = await api.startWorktreeListWatch(projectPath);
       } catch {
-        worktrees = [];
+        result = null;
       }
-      if (cancelled) return;
+      if (cancelled) {
+        if (result?.watchId) await api.stopWorktreeListWatch(result.watchId);
+        return;
+      }
+      if (!result) {
+        setWorktreeStatuses({});
+        return;
+      }
+      listWatchId = result.watchId;
 
-      // Seed the state with what we know from enumeration so the UI can show
-      // the badges immediately, before per-worktree watchers report counts.
+      // Seed initial state so the UI renders before per-peer watchers stream.
       const initial: Record<string, import('./SessionHeader').WorktreeSnapshot> = {};
-      for (const wt of worktrees) {
+      for (const wt of result.worktrees) {
         initial[wt.path] = { path: wt.path, branch: wt.branch, changed: 0, untracked: 0 };
       }
       setWorktreeStatuses(initial);
 
-      for (const wt of worktrees) {
-        try {
-          const result = await api.startGitBranchWatch(wt.path);
-          if (cancelled) {
-            if (result?.watchId) await api.stopGitBranchWatch(result.watchId);
-            return;
-          }
-          if (!result) continue;
-          watchIds.push(result.watchId);
-          setWorktreeStatuses((prev) => ({
-            ...prev,
-            [wt.path]: {
-              path: wt.path,
-              branch: result.branch ?? wt.branch,
-              changed: result.changed,
-              untracked: result.untracked,
-            },
-          }));
-          const unsub = api.onGitBranchChanged(result.watchId, (snap) => {
-            setWorktreeStatuses((prev) => ({
-              ...prev,
-              [wt.path]: {
-                path: wt.path,
-                branch: snap.branch ?? wt.branch,
-                changed: snap.changed,
-                untracked: snap.untracked,
-              },
-            }));
-          });
-          unsubs.push(unsub);
-        } catch {
-          // best effort — skip this worktree
-        }
-      }
+      // Open per-peer status watches for the initial set.
+      await reconcile(result.worktrees);
+
+      // Live reconcile when peers come or go.
+      listUnsub = api.onWorktreesChanged(listWatchId, (worktrees) => {
+        void reconcile(worktrees);
+      });
     })();
 
     return () => {
       cancelled = true;
-      for (const u of unsubs) u();
-      for (const id of watchIds) void api.stopGitBranchWatch(id);
+      listUnsub?.();
+      if (listWatchId) void api.stopWorktreeListWatch(listWatchId);
+      for (const u of peerUnsubs.values()) u();
+      for (const id of peerWatchIds.values()) void api.stopGitBranchWatch(id);
     };
   }, [projectPath]);
 

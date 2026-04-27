@@ -131,6 +131,11 @@ export interface Services {
     start(projectPath: string): Promise<{ watchId: string; branch: string | null }>;
     stop(watchId: string): void;
     listWorktrees(projectPath: string): Promise<Array<{ path: string; branch: string | null }>>;
+    startWorktreeListWatch(projectPath: string): Promise<{
+      watchId: string;
+      worktrees: Array<{ path: string; branch: string | null }>;
+    }>;
+    stopWorktreeListWatch(watchId: string): void;
   };
   lima?: {
     isInstalled(): Promise<boolean>;
@@ -502,6 +507,17 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
       const projectPath = (p?.projectPath ?? p?.project_path) as string;
       if (!projectPath || !gitWatcher) return [];
       return gitWatcher.listWorktrees(projectPath);
+    }),
+    start_worktree_list_watch: wrapWith(async (p: Record<string, unknown>) => {
+      const projectPath = (p?.projectPath ?? p?.project_path) as string;
+      if (!projectPath || !gitWatcher) return null;
+      return gitWatcher.startWorktreeListWatch(projectPath);
+    }),
+    stop_worktree_list_watch: wrapWith(async (p: Record<string, unknown>) => {
+      const watchId = (p?.watchId ?? p?.watch_id) as string;
+      if (!watchId || !gitWatcher) return null;
+      gitWatcher.stopWorktreeListWatch(watchId);
+      return null;
     }),
 
     // ── Lima (VM viewer) ──────────────────────────────────────────────────────

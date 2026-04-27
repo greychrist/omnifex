@@ -1220,6 +1220,34 @@ export const api = {
   },
 
   /**
+   * Start watching the shared gitdir's `worktrees/` directory so the renderer
+   * gets a fresh list whenever a peer is added or removed. Returns the
+   * initial list immediately so the UI can render before any event fires.
+   */
+  async startWorktreeListWatch(projectPath: string): Promise<{ watchId: string; worktrees: WorktreeInfo[] } | null> {
+    return apiCall("start_worktree_list_watch", { projectPath });
+  },
+
+  /** Stop a worktree-list watch. */
+  async stopWorktreeListWatch(watchId: string): Promise<void> {
+    await apiCall("stop_worktree_list_watch", { watchId });
+  },
+
+  /**
+   * Subscribe to worktree-list updates for a watch. The callback receives the
+   * full new list each time it changes. Returns an unsubscribe function.
+   */
+  onWorktreesChanged(
+    watchId: string,
+    callback: (worktrees: WorktreeInfo[]) => void,
+  ): () => void {
+    return window.electronAPI.onEvent(
+      `worktrees-changed:${watchId}`,
+      (data: any) => callback(Array.isArray(data) ? data : []),
+    );
+  },
+
+  /**
    * Subscribe to branch / status updates for a specific watch. Returns an
    * unsubscribe function.
    */
@@ -1751,7 +1779,11 @@ export const api = {
   },
 
   onInstallStatus(
-    cb: (data: { phase: 'waiting' | 'installing'; activeSessions?: number }) => void,
+    cb: (data: {
+      phase: 'waiting' | 'installing';
+      activeSessions?: number;
+      tabs?: Array<{ tabId: string; status: string }>;
+    }) => void,
   ): () => void {
     return window.electronAPI.onEvent('updater:install-status', cb as any);
   },

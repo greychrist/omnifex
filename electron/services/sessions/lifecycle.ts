@@ -575,6 +575,14 @@ export function createSessionsService(
     return ids;
   }
 
+  function listSessionStatuses(): Array<{ tabId: string; status: SessionStatus }> {
+    const out: Array<{ tabId: string; status: SessionStatus }> = [];
+    for (const [tabId, handle] of sessions) {
+      out.push({ tabId, status: handle.status });
+    }
+    return out;
+  }
+
   function getHealth(tabId: string): { alive: boolean; status: SessionStatus; sessionId: string | null } {
     const handle = sessions.get(tabId);
     if (!handle) return { alive: false, status: 'stopped', sessionId: null };
@@ -689,6 +697,7 @@ export function createSessionsService(
     isActive,
     listActiveTabIds,
     listInFlightTabIds,
+    listSessionStatuses,
     setMode,
     tuiWrite,
     tuiResize,

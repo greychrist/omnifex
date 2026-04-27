@@ -211,6 +211,127 @@ describe('git-watcher service', () => {
     });
   });
 
+  describe('startWorktreeListWatch', () => {
+    it('returns the initial list of peer worktrees on start', async () => {
+      const repo = makeTempRepo();
+      tempDirs.push(repo);
+
+      const wtRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-wlw-init-'));
+      tempDirs.push(wtRoot);
+      const wt1 = path.join(wtRoot, 'feature-a');
+      execSync(`git worktree add -b feature-a "${wt1}"`, { cwd: repo, stdio: 'pipe' });
+
+      const { watchId, worktrees } = await service.startWorktreeListWatch(repo);
+      expect(typeof watchId).toBe('string');
+      expect(worktrees).toHaveLength(1);
+      expect(worktrees[0].branch).toBe('feature-a');
+    });
+
+    it('emits worktrees-changed after a new worktree is added', async () => {
+      const repo = makeTempRepo();
+      tempDirs.push(repo);
+
+      const { watchId } = await service.startWorktreeListWatch(repo);
+
+      const wtRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-wlw-add-'));
+      tempDirs.push(wtRoot);
+      const wt = path.join(wtRoot, 'feature-new');
+      execSync(`git worktree add -b feature-new "${wt}"`, { cwd: repo, stdio: 'pipe' });
+
+      const call = await waitFor(() =>
+        sendToRenderer.mock.calls.find(
+          ([channel, payload]) =>
+            channel === `worktrees-changed:${watchId}` &&
+            Array.isArray(payload) &&
+            (payload as Array<{ branch: string }>).some((w) => w.branch === 'feature-new'),
+        ),
+      );
+      expect(call).toBeDefined();
+    });
+
+    it('emits worktrees-changed after a worktree is removed', async () => {
+      const repo = makeTempRepo();
+      tempDirs.push(repo);
+
+      const wtRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-wlw-rm-'));
+      tempDirs.push(wtRoot);
+      const wt = path.join(wtRoot, 'feature-doomed');
+      execSync(`git worktree add -b feature-doomed "${wt}"`, { cwd: repo, stdio: 'pipe' });
+
+      const { watchId, worktrees } = await service.startWorktreeListWatch(repo);
+      expect(worktrees).toHaveLength(1);
+
+      execSync(`git worktree remove "${wt}"`, { cwd: repo, stdio: 'pipe' });
+
+      const call = await waitFor(() =>
+        sendToRenderer.mock.calls.find(
+          ([channel, payload]) =>
+            channel === `worktrees-changed:${watchId}` &&
+            Array.isArray(payload) &&
+            (payload as unknown[]).length === 0,
+        ),
+      );
+      expect(call).toBeDefined();
+    });
+
+    it('does not emit when only the main repo HEAD changes', async () => {
+      const repo = makeTempRepo();
+      tempDirs.push(repo);
+
+      const wtRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-wlw-head-'));
+      tempDirs.push(wtRoot);
+      const wt = path.join(wtRoot, 'feature-a');
+      execSync(`git worktree add -b feature-a "${wt}"`, { cwd: repo, stdio: 'pipe' });
+
+      const { watchId } = await service.startWorktreeListWatch(repo);
+
+      // Wait briefly for watchers to settle, then clear any noise from setup
+      await new Promise((r) => setTimeout(r, 150));
+      sendToRenderer.mockClear();
+
+      // Change HEAD on the main repo (should not change the worktree list).
+      execSync('git checkout -b unrelated-branch', { cwd: repo, stdio: 'pipe' });
+
+      // Give the debounced refresh time to fire if it's going to.
+      await new Promise((r) => setTimeout(r, 400));
+
+      const hits = sendToRenderer.mock.calls.filter(
+        ([channel]) => channel === `worktrees-changed:${watchId}`,
+      );
+      expect(hits.length).toBe(0);
+    });
+
+    it('returns a watchId and an empty list for a non-git directory', async () => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-wlw-non-git-'));
+      tempDirs.push(dir);
+
+      const { watchId, worktrees } = await service.startWorktreeListWatch(dir);
+      expect(typeof watchId).toBe('string');
+      expect(worktrees).toEqual([]);
+    });
+
+    it('stops emitting after stopWorktreeListWatch()', async () => {
+      const repo = makeTempRepo();
+      tempDirs.push(repo);
+
+      const { watchId } = await service.startWorktreeListWatch(repo);
+      service.stopWorktreeListWatch(watchId);
+
+      const wtRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-wlw-stop-'));
+      tempDirs.push(wtRoot);
+      const wt = path.join(wtRoot, 'feature-late');
+      execSync(`git worktree add -b feature-late "${wt}"`, { cwd: repo, stdio: 'pipe' });
+
+      // Give fs.watch a chance to fire if it were still attached.
+      await new Promise((r) => setTimeout(r, 250));
+
+      const hits = sendToRenderer.mock.calls.filter(
+        ([channel]) => channel === `worktrees-changed:${watchId}`,
+      );
+      expect(hits.length).toBe(0);
+    });
+  });
+
   it('resolves gitdir from a .git file (worktree-style)', async () => {
     const primary = makeTempRepo();
     tempDirs.push(primary);

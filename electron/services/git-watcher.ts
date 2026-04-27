@@ -19,6 +19,17 @@ export interface GitBranchWatchStart {
 export interface GitWatcherService {
   start(projectPath: string): Promise<GitBranchWatchStart>;
   stop(watchId: string): void;
+  /**
+   * Watch the shared gitdir's `worktrees/` for `git worktree add` / `remove`,
+   * and emit a `worktrees-changed:<watchId>` event with the new list whenever
+   * the set actually changes. Returns the initial list synchronously so the
+   * renderer can render before any event fires.
+   */
+  startWorktreeListWatch(projectPath: string): Promise<{
+    watchId: string;
+    worktrees: WorktreeInfo[];
+  }>;
+  stopWorktreeListWatch(watchId: string): void;
   disposeAll(): void;
 }
 
@@ -195,8 +206,52 @@ function readStatusCounts(projectPath: string, gitdir: string | null): Promise<S
   });
 }
 
+interface ActiveWorktreeListWatch {
+  projectPath: string;
+  watchers: fs.FSWatcher[];
+  lastList: WorktreeInfo[];
+  debounceTimer: NodeJS.Timeout | null;
+}
+
+const WORKTREE_LIST_DEBOUNCE_MS = 100;
+
+function resolveCommondir(projectPath: string, gitdir: string): Promise<string> {
+  return new Promise((resolve) => {
+    execFile(
+      'git',
+      ['rev-parse', '--git-common-dir'],
+      { cwd: projectPath, windowsHide: true },
+      (err, stdout) => {
+        if (err) {
+          resolve(gitdir);
+          return;
+        }
+        const cd = stdout.toString().trim();
+        if (!cd) {
+          resolve(gitdir);
+          return;
+        }
+        resolve(path.isAbsolute(cd) ? cd : path.resolve(projectPath, cd));
+      },
+    );
+  });
+}
+
+function worktreeListsEqual(a: WorktreeInfo[], b: WorktreeInfo[]): boolean {
+  if (a.length !== b.length) return false;
+  const aSorted = [...a].sort((x, y) => x.path.localeCompare(y.path));
+  const bSorted = [...b].sort((x, y) => x.path.localeCompare(y.path));
+  for (let i = 0; i < aSorted.length; i++) {
+    if (aSorted[i].path !== bSorted[i].path || aSorted[i].branch !== bSorted[i].branch) {
+      return false;
+    }
+  }
+  return true;
+}
+
 export function createGitWatcherService(deps: GitWatcherDeps): GitWatcherService {
   const active = new Map<string, ActiveWatch>();
+  const activeWorktreeLists = new Map<string, ActiveWorktreeListWatch>();
   const pollIntervalMs = deps.pollIntervalMs ?? DEFAULT_POLL_MS;
 
   function emit(watchId: string, state: ActiveWatch): void {
@@ -285,8 +340,74 @@ export function createGitWatcherService(deps: GitWatcherDeps): GitWatcherService
       active.delete(watchId);
     },
 
+    async startWorktreeListWatch(projectPath) {
+      const watchId = crypto.randomUUID();
+      const initial = await listWorktrees(projectPath);
+
+      const state: ActiveWorktreeListWatch = {
+        projectPath,
+        watchers: [],
+        lastList: initial,
+        debounceTimer: null,
+      };
+
+      const gitdir = resolveGitdir(projectPath);
+      if (gitdir) {
+        const commondir = await resolveCommondir(projectPath, gitdir);
+
+        const refresh = (): void => {
+          if (state.debounceTimer) clearTimeout(state.debounceTimer);
+          state.debounceTimer = setTimeout(async () => {
+            const next = await listWorktrees(projectPath);
+            if (!worktreeListsEqual(state.lastList, next)) {
+              state.lastList = next;
+              deps.sendToRenderer(`worktrees-changed:${watchId}`, next);
+            }
+          }, WORKTREE_LIST_DEBOUNCE_MS);
+        };
+
+        // Watch the worktrees/ directory itself for child add/remove if it
+        // already exists. Watch the commondir as well so we notice when
+        // worktrees/ is created (the user's first `git worktree add`).
+        try {
+          const cmw = fs.watch(commondir, { persistent: false }, (_e, filename) => {
+            if (filename === 'worktrees' || filename === null) refresh();
+          });
+          cmw.on('error', (err) => console.error('[git-watcher] commondir watch error:', err));
+          state.watchers.push(cmw);
+        } catch (err) {
+          console.error('[git-watcher] failed to watch commondir:', err);
+        }
+
+        const wtDir = path.join(commondir, 'worktrees');
+        if (fs.existsSync(wtDir)) {
+          try {
+            const wtw = fs.watch(wtDir, { persistent: false }, () => refresh());
+            wtw.on('error', (err) => console.error('[git-watcher] worktrees watch error:', err));
+            state.watchers.push(wtw);
+          } catch (err) {
+            console.error('[git-watcher] failed to watch worktrees dir:', err);
+          }
+        }
+      }
+
+      activeWorktreeLists.set(watchId, state);
+      return { watchId, worktrees: initial };
+    },
+
+    stopWorktreeListWatch(watchId) {
+      const state = activeWorktreeLists.get(watchId);
+      if (!state) return;
+      if (state.debounceTimer) clearTimeout(state.debounceTimer);
+      for (const w of state.watchers) {
+        try { w.close(); } catch { /* best effort */ }
+      }
+      activeWorktreeLists.delete(watchId);
+    },
+
     disposeAll() {
       for (const id of Array.from(active.keys())) this.stop(id);
+      for (const id of Array.from(activeWorktreeLists.keys())) this.stopWorktreeListWatch(id);
     },
   };
 }

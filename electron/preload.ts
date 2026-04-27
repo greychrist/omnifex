@@ -120,6 +120,8 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   'start_git_branch_watch',
   'stop_git_branch_watch',
   'list_git_worktrees',
+  'start_worktree_list_watch',
+  'stop_worktree_list_watch',
 
   // Lima (VM viewer)
   'lima_check_installed',
@@ -190,7 +192,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       !channel.startsWith('backend-log') &&
       !channel.startsWith('updater:') &&
       !channel.startsWith('notification-clicked') &&
-      !channel.startsWith('git-branch-changed:')
+      !channel.startsWith('git-branch-changed:') &&
+      !channel.startsWith('worktrees-changed:')
     ) {
       throw new Error(`Blocked IPC event channel: ${channel}`);
     }

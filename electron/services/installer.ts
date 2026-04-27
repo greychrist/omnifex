@@ -17,6 +17,12 @@ import { buildHelperScript } from './installer/helper-script';
 export interface InstallStatus {
   phase: 'waiting' | 'installing';
   activeSessions?: number;
+  /**
+   * Diagnostic snapshot of every session main knows about (in-flight or not).
+   * Surfaced on `phase: 'waiting'` events so the renderer / DevTools can
+   * see exactly what the gate sees when the wait ends or skips.
+   */
+  tabs?: Array<{ tabId: string; status: string }>;
 }
 
 export interface InstallerService {
@@ -38,6 +44,11 @@ export interface InstallerDeps {
      *  `'waiting_permission'`. Idle/open sessions are excluded so the
      *  installer doesn't block on tabs sitting at a prompt. */
     listInFlightTabIds: () => string[];
+    /** Diagnostic: every session main knows about, with its current status,
+     *  whether or not it counts as "in-flight". Used by the gate to log a
+     *  full snapshot when it polls / clears. Optional so existing callers
+     *  (and tests) keep working. */
+    listSessionStatuses?: () => Array<{ tabId: string; status: string }>;
     stopAll: () => void;
   };
   appQuit: () => void;
@@ -205,8 +216,21 @@ export function createInstallerService(deps: InstallerDeps): InstallerService {
         cancelToken = null;
         throw new WaitCancelled();
       }
-      const sessions = deps.sessionsService.listInFlightTabIds().length;
+      const inFlightIds = deps.sessionsService.listInFlightTabIds();
+      const sessions = inFlightIds.length;
+      const allTabs = deps.sessionsService.listSessionStatuses?.() ?? [];
+      // Diagnostic: print every gate poll with the full per-tab status list
+      // so we can tell *why* the gate cleared (no sessions, all idle, force,
+      // etc.) when something looks wrong from the renderer's perspective.
+      // eslint-disable-next-line no-console
+      console.log('[installer] waitForIdle poll', {
+        inFlight: sessions,
+        inFlightIds,
+        all: allTabs,
+      });
       if (sessions === 0) {
+        // eslint-disable-next-line no-console
+        console.log('[installer] gate clear → proceeding to install', { all: allTabs });
         deps.sendToRenderer('updater:install-status', { phase: 'installing' });
         cancelToken = null;
         return;
@@ -214,6 +238,7 @@ export function createInstallerService(deps: InstallerDeps): InstallerService {
       deps.sendToRenderer('updater:install-status', {
         phase: 'waiting',
         activeSessions: sessions,
+        tabs: allTabs,
       });
       await new Promise((r) => setTimeout(r, 1000));
     }

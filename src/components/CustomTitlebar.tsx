@@ -60,9 +60,13 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
 
   // Reusable check-for-update function
   const checkForUpdate = useCallback(async () => {
+    // eslint-disable-next-line no-console
+    console.log('[updater] checkForUpdate() fired');
     setUpdateState({ status: 'checking' });
     try {
       const info = await api.checkForUpdate();
+      // eslint-disable-next-line no-console
+      console.log('[updater] checkForUpdate() result available=' + !!info?.available);
       if (info?.available) {
         setUpdateState({
           status: 'available',
@@ -124,6 +128,11 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
     });
 
     const cleanupInstallStatus = api.onInstallStatus((data) => {
+      // Diagnostic: see exactly what the install gate reports on every tick,
+      // including the per-tab status snapshot. Useful for figuring out why
+      // the wait-for-idle gate cleared when sessions look active in the UI.
+      // eslint-disable-next-line no-console
+      console.log('[updater] install-status', data);
       setUpdateState((prev) => {
         if (prev.status === 'waiting' || prev.status === 'installing' || prev.status === 'ready') {
           if (data.phase === 'waiting') {
@@ -154,16 +163,35 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
   }, [checkForUpdate, checkSdkVersion]);
 
   const handleUpdateClick = async () => {
+    // eslint-disable-next-line no-console
+    console.log('[updater] handleUpdateClick status=' + updateState.status);
     if (updateState.status === 'available') {
+      // eslint-disable-next-line no-console
+      console.log('[updater] branch=available → starting download');
       const { downloadUrl, assetName, releaseUrl, version } = updateState;
       setUpdateState({ status: 'downloading', percent: 0 });
       try {
         const filePath = await api.downloadUpdate(downloadUrl, assetName);
+        // eslint-disable-next-line no-console
+        console.log('[updater] download finished, state→ready filePath=' + filePath);
         setUpdateState({ status: 'ready', filePath, version });
-      } catch {
+        // Chain straight into install — main-process waitForIdle gates on
+        // active sessions and emits 'waiting' / 'installing' status events
+        // that flip the UI into the right state if there's anything to wait
+        // on. Without this chain the user has to click twice (the
+        // local-folder "download" is instant and the second click is
+        // redundant), which is what surfaced this bug.
+        // eslint-disable-next-line no-console
+        console.log('[updater] auto-chain: calling installUpdate (no force)');
+        await api.installUpdate(filePath, version);
+      } catch (e: any) {
+        // eslint-disable-next-line no-console
+        console.log('[updater] available-branch failed message=' + (e?.message ?? String(e)));
         setUpdateState({ status: 'error', downloadUrl, assetName, releaseUrl, version });
       }
     } else if (updateState.status === 'ready') {
+      // eslint-disable-next-line no-console
+      console.log('[updater] branch=ready → calling installUpdate (no force)');
       // Kick off install. Renderer transitions to 'waiting' or 'installing'
       // based on the install-status events the main process emits.
       const { filePath, version } = updateState;
@@ -196,6 +224,8 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
   };
 
   const handleInstallAnyway = async () => {
+    // eslint-disable-next-line no-console
+    console.log('[updater] handleInstallAnyway clicked', { status: updateState.status });
     if (updateState.status !== 'waiting') return;
     const { filePath, version } = updateState;
     try {
