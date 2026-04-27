@@ -46,6 +46,13 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
     | { status: 'installing'; version: string }
     | { status: 'error'; downloadUrl: string; assetName: string; releaseUrl: string; version: string };
   const [updateState, setUpdateState] = useState<UpdateState>({ status: 'idle' });
+  // Live count of sessions whose SDK turn is in flight. Drives the upgrade
+  // button's "active sessions" warning state — when an update is available
+  // and this is > 0, clicking the button installs anyway (force=true).
+  const [activeSessions, setActiveSessions] = useState<number>(0);
+  useEffect(() => {
+    return api.onSessionInFlightCount(setActiveSessions);
+  }, []);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -162,64 +169,64 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
     };
   }, [checkForUpdate, checkSdkVersion]);
 
+  // One-click install. We keep download + install internal so the user only
+  // ever sees one button press. `force` is wired to the live in-flight session
+  // count so clicking the button while sessions are mid-turn calls stopAll()
+  // on the main side and then installs.
+  const runInstall = async (
+    filePath: string,
+    version: string,
+    downloadUrl: string,
+    assetName: string,
+    releaseUrl: string,
+  ): Promise<void> => {
+    const force = activeSessions > 0;
+    // eslint-disable-next-line no-console
+    console.log('[updater] runInstall force=' + force + ' activeSessions=' + activeSessions);
+    try {
+      await api.installUpdate(filePath, version, force ? { force: true } : undefined);
+      // executeInstall calls app.quit() on success — we never reach here.
+      setUpdateState({ status: 'idle' });
+    } catch (err: any) {
+      // eslint-disable-next-line no-console
+      console.log('[updater] installUpdate failed message=' + (err?.message ?? String(err)));
+      setUpdateState({ status: 'error', downloadUrl, assetName, releaseUrl, version });
+    }
+  };
+
   const handleUpdateClick = async () => {
     // eslint-disable-next-line no-console
-    console.log('[updater] handleUpdateClick status=' + updateState.status);
+    console.log('[updater] handleUpdateClick status=' + updateState.status + ' active=' + activeSessions);
     if (updateState.status === 'available') {
-      // eslint-disable-next-line no-console
-      console.log('[updater] branch=available → starting download');
       const { downloadUrl, assetName, releaseUrl, version } = updateState;
       setUpdateState({ status: 'downloading', percent: 0 });
+      let filePath: string;
       try {
-        const filePath = await api.downloadUpdate(downloadUrl, assetName);
-        // eslint-disable-next-line no-console
-        console.log('[updater] download finished, state→ready filePath=' + filePath);
-        setUpdateState({ status: 'ready', filePath, version });
-        // Chain straight into install — main-process waitForIdle gates on
-        // active sessions and emits 'waiting' / 'installing' status events
-        // that flip the UI into the right state if there's anything to wait
-        // on. Without this chain the user has to click twice (the
-        // local-folder "download" is instant and the second click is
-        // redundant), which is what surfaced this bug.
-        // eslint-disable-next-line no-console
-        console.log('[updater] auto-chain: calling installUpdate (no force)');
-        await api.installUpdate(filePath, version);
+        filePath = await api.downloadUpdate(downloadUrl, assetName);
       } catch (e: any) {
         // eslint-disable-next-line no-console
-        console.log('[updater] available-branch failed message=' + (e?.message ?? String(e)));
+        console.log('[updater] download failed message=' + (e?.message ?? String(e)));
         setUpdateState({ status: 'error', downloadUrl, assetName, releaseUrl, version });
+        return;
       }
+      setUpdateState({ status: 'ready', filePath, version });
+      await runInstall(filePath, version, downloadUrl, assetName, releaseUrl);
     } else if (updateState.status === 'ready') {
-      // eslint-disable-next-line no-console
-      console.log('[updater] branch=ready → calling installUpdate (no force)');
-      // Kick off install. Renderer transitions to 'waiting' or 'installing'
-      // based on the install-status events the main process emits.
       const { filePath, version } = updateState;
-      try {
-        await api.installUpdate(filePath, version);
-        // If we get here, the install pipeline returned without quitting —
-        // shouldn't happen in practice; treat as error.
-        setUpdateState({ status: 'idle' });
-      } catch (err: any) {
-        // Pre-quit failure (extraction, version mismatch, target not writable, etc.).
-        // Drop into 'error' so the user can retry or open in Finder.
-        setUpdateState({
-          status: 'error',
-          downloadUrl: filePath,
-          assetName: '',
-          releaseUrl: '',
-          version,
-        });
-      }
+      await runInstall(filePath, version, filePath, '', '');
     } else if (updateState.status === 'error') {
+      // Retry: re-download then install.
       const { downloadUrl, assetName, releaseUrl, version } = updateState;
       setUpdateState({ status: 'downloading', percent: 0 });
+      let filePath: string;
       try {
-        const filePath = await api.downloadUpdate(downloadUrl, assetName);
-        setUpdateState({ status: 'ready', filePath, version });
+        filePath = await api.downloadUpdate(downloadUrl, assetName);
       } catch {
         setUpdateState({ status: 'error', downloadUrl, assetName, releaseUrl, version });
+        return;
       }
+      setUpdateState({ status: 'ready', filePath, version });
+      await runInstall(filePath, version, downloadUrl, assetName, releaseUrl);
     }
   };
 
@@ -369,6 +376,8 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
                       ? 'bg-muted text-muted-foreground cursor-wait'
                       : updateState.status === 'up-to-date'
                       ? 'bg-green-600/20 text-green-500 cursor-default'
+                      : updateState.status === 'available' && activeSessions > 0
+                      ? 'bg-amber-500/20 text-amber-200 hover:bg-amber-500/30 border border-amber-500/40'
                       : updateState.status === 'available'
                       ? 'bg-primary text-primary-foreground animate-pulse hover:bg-primary/90'
                       : updateState.status === 'downloading'
@@ -382,7 +391,8 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
                 >
                   {updateState.status === 'checking' && <Loader2 size={13} className="animate-spin" />}
                   {updateState.status === 'up-to-date' && <CheckCircle size={13} />}
-                  {updateState.status === 'available' && <Download size={13} />}
+                  {updateState.status === 'available' && activeSessions > 0 && <AlertCircle size={13} />}
+                  {updateState.status === 'available' && activeSessions === 0 && <Download size={13} />}
                   {updateState.status === 'downloading' && <Loader2 size={13} className="animate-spin" />}
                   {updateState.status === 'ready' && <CheckCircle size={13} />}
                   {updateState.status === 'installing' && <Loader2 size={13} className="animate-spin" />}
@@ -390,7 +400,9 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
                   <span>
                     {updateState.status === 'checking' && 'Checking...'}
                     {updateState.status === 'up-to-date' && 'Up to Date'}
-                    {updateState.status === 'available' && 'Update Available!'}
+                    {updateState.status === 'available' && activeSessions > 0 &&
+                      `${activeSessions} active — Install Anyway`}
+                    {updateState.status === 'available' && activeSessions === 0 && 'Update Available!'}
                     {updateState.status === 'downloading' && `${Math.round(updateState.percent)}%`}
                     {updateState.status === 'ready' && 'Install Update'}
                     {updateState.status === 'installing' && 'Installing…'}

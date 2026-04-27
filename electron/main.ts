@@ -717,6 +717,25 @@ app.whenReady().then(() => {
     return { success: true };
   });
 
+  // Broadcast in-flight session count so the titlebar can decide, before the
+  // user clicks install, whether to show the plain "Update Available" button
+  // or the active-sessions warning. 1 s poll is plenty — the count only
+  // changes when a session enters/leaves a turn, not per stream message.
+  let lastInFlightCount = -1;
+  const broadcastInFlight = (): void => {
+    const count = sessionsService.listInFlightTabIds().length;
+    if (count === lastInFlightCount) return;
+    lastInFlightCount = count;
+    for (const w of BrowserWindow.getAllWindows()) {
+      w.webContents.send('session-inflight-count', { count });
+    }
+  };
+  const inFlightTimer = setInterval(broadcastInFlight, 1000);
+  if (typeof inFlightTimer.unref === 'function') inFlightTimer.unref();
+  app.on('before-quit', () => clearInterval(inFlightTimer));
+  // Fire one immediately so any newly-created window starts with the right count.
+  broadcastInFlight();
+
   installAppMenu();
 
   // Create the window AFTER all IPC handlers are registered so the renderer

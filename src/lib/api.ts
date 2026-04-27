@@ -1778,6 +1778,19 @@ export const api = {
     return apiCall("updater:install-cancel", {});
   },
 
+  /**
+   * Subscribe to live changes in the count of sessions whose SDK turn is
+   * currently in flight (`'starting' | 'running' | 'waiting_permission'`).
+   * Used by the titlebar to surface a warning on the upgrade button before
+   * the user clicks install.
+   */
+  onSessionInFlightCount(cb: (count: number) => void): () => void {
+    return window.electronAPI.onEvent(
+      'session-inflight-count',
+      (data: any) => cb(typeof data?.count === 'number' ? data.count : 0),
+    );
+  },
+
   onInstallStatus(
     cb: (data: {
       phase: 'waiting' | 'installing';
