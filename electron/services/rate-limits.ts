@@ -51,6 +51,17 @@ export interface RateLimitSettings {
 
 export interface RateLimitsService {
   recordEvent(configDir: string, info: RateLimitInfo): void;
+  /**
+   * Update utilization (and reset time) for a window without overwriting the
+   * SDK-derived `status`. Called by the usage-runner when fresh /usage data
+   * arrives. If no snapshot exists yet, creates one with `status: 'allowed'`.
+   */
+  recordUtilization(
+    configDir: string,
+    rateLimitType: string,
+    utilization: number,
+    resetsAt: number | null,
+  ): void;
   getSnapshots(): RateLimitSnapshot[];
   getSnapshotsByAccount(accountName: string): RateLimitSnapshot[];
   getSettings(): RateLimitSettings;
@@ -272,6 +283,42 @@ export function createRateLimitsService(deps: RateLimitsDeps): RateLimitsService
          ORDER BY rate_limit_type`,
       )
       .all(accountName) as RateLimitSnapshot[];
+  }
+
+  function recordUtilization(
+    configDir: string,
+    rateLimitType: string,
+    utilization: number,
+    resetsAt: number | null,
+  ): void {
+    const account = accounts.listAccounts().find((a) => a.config_dir === configDir);
+    if (!account) {
+      logWarn('recordUtilization: unknown configDir', { configDir });
+      return;
+    }
+    const observedAt = now();
+    // Update only utilization + resets_at; preserve status (and create with
+    // status='allowed' when no row exists yet).
+    db.raw
+      .prepare(
+        `INSERT INTO rate_limit_snapshots
+           (account_name, rate_limit_type, status, utilization, resets_at, payload_json, observed_at)
+         VALUES (?, ?, 'allowed', ?, ?, ?, ?)
+         ON CONFLICT(account_name, rate_limit_type)
+         DO UPDATE SET
+           utilization = excluded.utilization,
+           resets_at = excluded.resets_at,
+           observed_at = excluded.observed_at`,
+      )
+      .run(
+        account.name,
+        rateLimitType,
+        utilization,
+        resetsAt,
+        JSON.stringify({ source: 'usage_cli', utilization, resetsAt }),
+        observedAt,
+      );
+    sendToRenderer('rate_limit_snapshot', { account: account.name, rate_limit_type: rateLimitType });
   }
 
   // -------------------------------------------------------------------------
@@ -611,6 +658,7 @@ export function createRateLimitsService(deps: RateLimitsDeps): RateLimitsService
 
   return {
     recordEvent,
+    recordUtilization,
     getSnapshots,
     getSnapshotsByAccount,
     getSettings,

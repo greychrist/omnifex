@@ -120,6 +120,34 @@ describe('rate-limits service', () => {
     h.db.close();
   });
 
+  describe('recordUtilization', () => {
+    it('preserves SDK-derived status on existing snapshot', () => {
+      h.service.recordEvent('/Users/test/.claude', fiveHourEvent({
+        status: 'rejected',
+        utilization: 100,
+        resetsAt: 1_700_000_000,
+      }));
+      h.service.recordUtilization('/Users/test/.claude', 'five_hour', 60, 9999);
+      const snap = h.service.getSnapshotsByAccount('Personal').find((s) => s.rate_limit_type === 'five_hour')!;
+      expect(snap.utilization).toBe(60);
+      expect(snap.resets_at).toBe(9999);
+      expect(snap.status).toBe('rejected');
+    });
+
+    it('creates new snapshot with status=allowed when none exists', () => {
+      h.service.recordUtilization('/Users/test/.claude', 'seven_day_sonnet', 6, 5555);
+      const snap = h.service.getSnapshotsByAccount('Personal').find((s) => s.rate_limit_type === 'seven_day_sonnet')!;
+      expect(snap.utilization).toBe(6);
+      expect(snap.resets_at).toBe(5555);
+      expect(snap.status).toBe('allowed');
+    });
+
+    it('ignores unknown configDir', () => {
+      h.service.recordUtilization('/no/such/dir', 'five_hour', 50, null);
+      expect(h.service.getSnapshots()).toHaveLength(0);
+    });
+  });
+
   describe('recordEvent — snapshot persistence', () => {
     it('records a snapshot resolved by configDir', () => {
       h.service.recordEvent('/Users/test/.claude', fiveHourEvent({ utilization: 30 }));
