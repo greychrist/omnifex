@@ -5,6 +5,15 @@ All notable changes to GreyChrist are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.60] — 2026-04-27
+
+Fixes the PTY spawn failure introduced with the 0.3.59 usage runner. Installers remain **unsigned**.
+
+### Fixed
+
+- **node-pty spawn-helper missing from asar unpack** (`d728d4c`). On macOS, node-pty exec's a `spawn-helper` binary via `posix_spawnp` before forking the target process; it rewrites the helper path from `app.asar` → `app.asar.unpacked` at runtime. The asar unpack pattern only extracted `*.node` files, leaving `spawn-helper` trapped inside the archive where `posix_spawnp` fails with ENOENT. This caused "spawn failed: posix_spawnp failed." in both the usage runner and TUI-mode switching. Added `**/node-pty/**/spawn-helper` to the unpack glob.
+- **Silent mode-switch errors** (`d728d4c`). TUI / SDK mode toggle failures now surface a 5-second error banner instead of silently swallowing the exception.
+
 ## [0.3.59] — 2026-04-27
 
 Headline: a PTY-based **Usage CLI runner** that actually populates the 5-hour / 7-day rate-limit pills introduced in 0.3.57. Those pills were stuck on `?%` for most accounts because Anthropic's Agent SDK only streams `utilization` to accounts with overage unlocked at the org level. The runner sidesteps that by interactively executing `/usage` in a real Claude CLI session and parsing the TUI output. Installers remain **unsigned**.
