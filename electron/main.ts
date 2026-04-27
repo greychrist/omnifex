@@ -459,6 +459,7 @@ app.whenReady().then(() => {
           data.accountType ?? data.account_type,
           data.color,
           data.icon,
+          data.sessionDefaults ?? data.session_defaults,
         ),
       update: (_id: any, data: any) =>
         accountsService.updateAccount(
@@ -468,6 +469,9 @@ app.whenReady().then(() => {
           data.accountType ?? data.account_type,
           data.color,
           data.icon,
+          'sessionDefaults' in data || 'session_defaults' in data
+            ? (data.sessionDefaults ?? data.session_defaults)
+            : undefined,
         ),
       delete: (id: any) => accountsService.deleteAccount(id),
       listPathRules: () => accountsService.listPathRules(),

@@ -24,6 +24,13 @@ export interface Project {
 /**
  * Represents a Claude account (e.g., personal, work)
  */
+export interface SessionDefaults {
+  model?: string;
+  thinkingConfig?: 'adaptive' | 'budget' | 'disabled';
+  permissionMode?: string;
+  effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+}
+
 export interface Account {
   id: number;
   name: string;
@@ -33,6 +40,7 @@ export interface Account {
   account_type: string;
   color: string | null;
   icon: string | null;
+  session_defaults?: SessionDefaults;
   created_at: string;
   updated_at: string;
 }
@@ -1724,11 +1732,13 @@ export const api = {
     accountType?: string,
     color?: string,
     icon?: string,
+    sessionDefaults?: SessionDefaults,
   ): Promise<Account> {
     const params: Record<string, any> = { name, configDir, isDefault };
     if (accountType) params.accountType = accountType;
     if (color) params.color = color;
     if (icon !== undefined) params.icon = icon;
+    if (sessionDefaults !== undefined) params.sessionDefaults = sessionDefaults;
     return apiCall<Account>('create_account', params);
   },
 
@@ -1739,11 +1749,13 @@ export const api = {
     accountType?: string,
     color?: string,
     icon?: string,
+    sessionDefaults?: SessionDefaults | null,
   ): Promise<void> {
     const params: Record<string, any> = { id, name, configDir };
     if (accountType) params.accountType = accountType;
     if (color !== undefined) params.color = color;
     if (icon !== undefined) params.icon = icon;
+    if (sessionDefaults !== undefined) params.sessionDefaults = sessionDefaults;
     return apiCall<void>('update_account', params);
   },
 

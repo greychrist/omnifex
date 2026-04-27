@@ -20,6 +20,7 @@ export interface Tab {
   initialSessionConfig?: {
     model: string;
     effort: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+    thinkingConfig?: 'adaptive' | 'budget' | 'disabled';
     permissionMode: string;
     autoAllowEnabled?: boolean;
   };

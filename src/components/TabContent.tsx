@@ -11,7 +11,7 @@ import { AccountPickerDialog } from '@/components/AccountPickerDialog';
 import { AccountBadge } from '@/components/AccountBadge';
 import { Button } from '@/components/ui/button';
 import { NewSessionForm, type NewSessionFormAccountResolution } from '@/components/NewSessionForm';
-import type { EffortLevel } from '@/components/FloatingPromptInput';
+import type { EffortLevel, ThinkingConfig } from '@/components/FloatingPromptInput';
 
 // Lazy load heavy components
 const ClaudeCodeSession = lazy(() => import('@/components/ClaudeCodeSession').then(m => ({ default: m.ClaudeCodeSession })));
@@ -46,6 +46,7 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
   // and ClaudeCodeSession seeds its state from them.
   const [formModel, setFormModel] = React.useState<string>('opus[1m]');
   const [formEffort, setFormEffort] = React.useState<EffortLevel>('high');
+  const [formThinkingConfig, setFormThinkingConfig] = React.useState<ThinkingConfig>('adaptive');
   const [formPermissionMode, setFormPermissionMode] = React.useState<string>('acceptEdits');
   const [formAutoAllowEnabled, setFormAutoAllowEnabled] = React.useState<boolean>(false);
   const [projectAccountResolution, setProjectAccountResolution] = React.useState<NewSessionFormAccountResolution | null>(null);
@@ -90,9 +91,17 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
 
       // Resolve full account info (with match_type / match_detail) so the
       // inline new-session form can show the same Account/Config/Matched-by
-      // block that ClaudeCodeSession's panel shows.
+      // block that ClaudeCodeSession's panel shows. Also seeds form defaults
+      // from the account's session_defaults if set.
       api.explainAccountResolution(project.path).then((res) => {
         setProjectAccountResolution(res ?? null);
+        const d = res?.account?.session_defaults;
+        if (d) {
+          if (d.model) setFormModel(d.model);
+          if (d.effort) setFormEffort(d.effort);
+          if (d.thinkingConfig) setFormThinkingConfig(d.thinkingConfig);
+          if (d.permissionMode) setFormPermissionMode(d.permissionMode);
+        }
       }).catch(() => setProjectAccountResolution(null));
 
       // Update tab title to show project name
@@ -149,6 +158,7 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
       initialSessionConfig: {
         model: formModel,
         effort: formEffort,
+        thinkingConfig: formThinkingConfig,
         permissionMode: formPermissionMode,
         autoAllowEnabled: formAutoAllowEnabled,
       },
@@ -233,6 +243,8 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                         setSelectedModel={setFormModel}
                         effort={formEffort}
                         setEffort={setFormEffort}
+                        thinkingConfig={formThinkingConfig}
+                        setThinkingConfig={setFormThinkingConfig}
                         permissionMode={formPermissionMode}
                         setPermissionMode={setFormPermissionMode}
                         autoAllowEnabled={formAutoAllowEnabled}

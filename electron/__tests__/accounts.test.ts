@@ -42,6 +42,62 @@ describe('accounts service', () => {
       expect(updated.account_type).toBe('team');
     });
 
+    it('stores and returns session_defaults on create', () => {
+      accounts.createAccount('Personal', '/home/user/.claude', false, 'pro', undefined, undefined, {
+        model: 'sonnet',
+        thinkingConfig: 'disabled',
+        permissionMode: 'acceptEdits',
+      });
+      const [acct] = accounts.listAccounts();
+      expect(acct.session_defaults).toEqual({
+        model: 'sonnet',
+        thinkingConfig: 'disabled',
+        permissionMode: 'acceptEdits',
+      });
+    });
+
+    it('stores and returns session_defaults on update', () => {
+      accounts.createAccount('Personal', '/home/user/.claude', false, 'pro');
+      const [acct] = accounts.listAccounts();
+
+      accounts.updateAccount(acct.id, 'Personal', '/home/user/.claude', 'pro', undefined, undefined, {
+        model: 'opus[1m]',
+        thinkingConfig: 'adaptive',
+        permissionMode: 'default',
+      });
+
+      const updated = accounts.listAccounts().find((a) => a.id === acct.id)!;
+      expect(updated.session_defaults).toEqual({
+        model: 'opus[1m]',
+        thinkingConfig: 'adaptive',
+        permissionMode: 'default',
+      });
+    });
+
+    it('preserves existing session_defaults when update omits them', () => {
+      accounts.createAccount('Personal', '/home/user/.claude', false, 'pro', undefined, undefined, {
+        model: 'sonnet',
+      });
+      const [acct] = accounts.listAccounts();
+
+      accounts.updateAccount(acct.id, 'Personal Renamed', '/home/user/.claude');
+
+      const updated = accounts.listAccounts().find((a) => a.id === acct.id)!;
+      expect(updated.session_defaults).toEqual({ model: 'sonnet' });
+    });
+
+    it('clears session_defaults when explicitly set to null', () => {
+      accounts.createAccount('Personal', '/home/user/.claude', false, 'pro', undefined, undefined, {
+        model: 'sonnet',
+      });
+      const [acct] = accounts.listAccounts();
+
+      accounts.updateAccount(acct.id, 'Personal', '/home/user/.claude', undefined, undefined, undefined, null);
+
+      const updated = accounts.listAccounts().find((a) => a.id === acct.id)!;
+      expect(updated.session_defaults).toBeUndefined();
+    });
+
     it('deletes an account', () => {
       accounts.createAccount('ToDelete', '/home/user/.claude', false, 'pro');
       const [acct] = accounts.listAccounts();

@@ -78,6 +78,7 @@ interface ClaudeCodeSessionProps {
   initialSessionConfig?: {
     model: string;
     effort: EffortLevel;
+    thinkingConfig?: ThinkingConfig;
     permissionMode: string;
     autoAllowEnabled?: boolean;
   };
@@ -159,7 +160,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
 
   const [showSlashCommandsSettings, setShowSlashCommandsSettings] = useState(false);
   const [accountResolution, setAccountResolution] = useState<{
-    account: { name: string; account_type: string; config_dir: string };
+    account: { name: string; account_type: string; config_dir: string; session_defaults?: import('@/lib/api').SessionDefaults };
     match_type: string;
     match_detail: string;
   } | null>(null);
@@ -190,7 +191,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   // There is no 'auto' — the SDK's EffortLevel is strictly low/medium/high/xhigh/max.
   const [effort, setEffort] = useState<EffortLevel>(initialSessionConfig?.effort ?? 'high');
   // Thinking config — controls extended thinking behavior.
-  const [thinkingConfig, setThinkingConfig] = useState<ThinkingConfig>('adaptive');
+  const [thinkingConfig, setThinkingConfig] = useState<ThinkingConfig>(initialSessionConfig?.thinkingConfig ?? 'adaptive');
   // Git branch + working-tree status for the project directory, shown in
   // SessionHeader badge.
   const [gitStatus, setGitStatus] = useState<import('@/lib/api').GitBranchSnapshot>({
@@ -215,6 +216,20 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       }).catch(console.error);
     }
   }, [projectPath]);
+
+  // Apply per-account session defaults once when the account first resolves,
+  // but only for new sessions (not when resuming or launched with explicit config).
+  const accountDefaultsApplied = useRef(false);
+  useEffect(() => {
+    if (!accountResolution || accountDefaultsApplied.current || sessionStarted) return;
+    const defaults = accountResolution.account.session_defaults;
+    if (!defaults) return;
+    accountDefaultsApplied.current = true;
+    if (defaults.model) setSelectedModel(defaults.model);
+    if (defaults.thinkingConfig) setThinkingConfig(defaults.thinkingConfig);
+    if (defaults.permissionMode) setPermissionMode(defaults.permissionMode);
+    if (defaults.effort) setEffort(defaults.effort as import('./FloatingPromptInput').EffortLevel);
+  }, [accountResolution, sessionStarted]);
 
   // Watch git branch for the project directory — live-updates the SessionHeader
   // badge when the user switches branches outside the app.
@@ -1516,6 +1531,8 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
               setSelectedModel={setSelectedModel}
               effort={effort}
               setEffort={setEffort}
+              thinkingConfig={thinkingConfig}
+              setThinkingConfig={setThinkingConfig}
               permissionMode={permissionMode}
               setPermissionMode={setPermissionMode}
               autoAllowEnabled={autoAllowEnabled}

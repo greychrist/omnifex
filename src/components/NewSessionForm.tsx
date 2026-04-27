@@ -6,11 +6,14 @@ import { cn } from "@/lib/utils";
 import {
   EFFORT_LEVELS,
   PERMISSION_MODES,
+  THINKING_CONFIGS,
   type EffortLevel,
+  type ThinkingConfig,
 } from "./FloatingPromptInput";
+import type { SessionDefaults } from "@/lib/api";
 
 export interface NewSessionFormAccountResolution {
-  account: { name: string; account_type: string; config_dir: string };
+  account: { name: string; account_type: string; config_dir: string; session_defaults?: SessionDefaults };
   match_type: string;
   match_detail: string;
 }
@@ -21,6 +24,8 @@ interface NewSessionFormProps {
   setSelectedModel: (model: string) => void;
   effort: EffortLevel;
   setEffort: (effort: EffortLevel) => void;
+  thinkingConfig: ThinkingConfig;
+  setThinkingConfig: (config: ThinkingConfig) => void;
   permissionMode: string;
   setPermissionMode: (mode: string) => void;
   autoAllowEnabled: boolean;
@@ -35,6 +40,8 @@ export const NewSessionForm: React.FC<NewSessionFormProps> = ({
   setSelectedModel,
   effort,
   setEffort,
+  thinkingConfig,
+  setThinkingConfig,
   permissionMode,
   setPermissionMode,
   autoAllowEnabled,
@@ -52,32 +59,12 @@ export const NewSessionForm: React.FC<NewSessionFormProps> = ({
       <h3 className="text-base font-medium">New Session</h3>
 
       {accountResolution && (
-        <div className="space-y-1 text-sm">
-          <div className="flex items-center gap-2">
-            <span className="text-foreground/40 w-24 shrink-0">Account:</span>
-            <AccountBadge name={accountResolution.account.name} />
-            <span className="text-foreground/50 text-xs">
-              ({accountResolution.account.account_type})
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-foreground/40 w-24 shrink-0">Config:</span>
-            <span className="font-mono text-xs text-foreground/50 truncate">
-              {accountResolution.account.config_dir}
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-foreground/40 w-24 shrink-0">Matched by:</span>
-            <span className="text-xs text-foreground/60">
-              {accountResolution.match_type === "path_rule"
-                ? "Path rule"
-                : accountResolution.match_type === "project_override"
-                  ? "Project override"
-                  : "Default account"}
-              {" — "}
-              {accountResolution.match_detail}
-            </span>
-          </div>
+        <div className="flex items-center gap-2 text-sm">
+          <span className="text-foreground/40 shrink-0">Account:</span>
+          <AccountBadge name={accountResolution.account.name} />
+          <span className="text-foreground/50 text-xs">
+            ({accountResolution.account.account_type})
+          </span>
         </div>
       )}
 
@@ -132,6 +119,28 @@ export const NewSessionForm: React.FC<NewSessionFormProps> = ({
         </div>
         <p className="text-[10px] text-foreground/40">
           {EFFORT_LEVELS.find((e) => e.id === effort)?.description}
+        </p>
+      </div>
+
+      <div className="space-y-1">
+        <Label className="text-xs text-foreground/60">Thinking</Label>
+        <div className="grid grid-cols-3 gap-1">
+          {THINKING_CONFIGS.map((cfg) => (
+            <Button
+              key={cfg.id}
+              size="sm"
+              variant={thinkingConfig === cfg.id ? "default" : "outline"}
+              onClick={() => setThinkingConfig(cfg.id)}
+              className="flex-col gap-0.5 h-auto py-2 px-1"
+              title={cfg.description}
+            >
+              <span className={cn("text-xs font-bold", cfg.color)}>{cfg.shortName}</span>
+              <span className="text-[9px] leading-tight">{cfg.name}</span>
+            </Button>
+          ))}
+        </div>
+        <p className="text-[10px] text-foreground/40">
+          {THINKING_CONFIGS.find((c) => c.id === thinkingConfig)?.description}
         </p>
       </div>
 

@@ -1,12 +1,14 @@
 import React, { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { api, type Account, type PathRule } from "@/lib/api";
+import { api, type Account, type PathRule, type SessionDefaults } from "@/lib/api";
 import { AccountBadge } from "@/components/AccountBadge";
 import { useAccounts } from "@/contexts/AccountsContext";
 import { Trash2, Plus, Pencil, FolderOpen, Check, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { IconPicker, ICON_MAP } from "./IconPicker";
+import { MODELS } from "./ModelPicker";
+import { THINKING_CONFIGS, PERMISSION_MODES, EFFORT_LEVELS } from "./ControlBar";
 
 const SWATCHES = [
   "#ef4444", // red
@@ -120,6 +122,67 @@ const TypeSelect: React.FC<{ value: string; onChange: (v: string) => void }> = (
   </select>
 );
 
+const SessionDefaultsEditor: React.FC<{
+  value: SessionDefaults;
+  onChange: (v: SessionDefaults) => void;
+}> = ({ value, onChange }) => (
+  <div className="space-y-2 pt-2 border-t border-border">
+    <p className="text-xs font-medium text-muted-foreground">Session Defaults</p>
+    <div className="flex items-center gap-3">
+      <label className="text-xs text-muted-foreground w-20 shrink-0">Model</label>
+      <select
+        value={value.model ?? ""}
+        onChange={(e) => onChange({ ...value, model: e.target.value || undefined })}
+        className="flex-1 h-7 text-xs rounded-md border border-border bg-background px-2"
+      >
+        <option value="">App default</option>
+        {MODELS.map((m) => (
+          <option key={m.id} value={m.id}>{m.name}</option>
+        ))}
+      </select>
+    </div>
+    <div className="flex items-center gap-3">
+      <label className="text-xs text-muted-foreground w-20 shrink-0">Thinking</label>
+      <select
+        value={value.thinkingConfig ?? ""}
+        onChange={(e) => onChange({ ...value, thinkingConfig: (e.target.value || undefined) as SessionDefaults['thinkingConfig'] })}
+        className="flex-1 h-7 text-xs rounded-md border border-border bg-background px-2"
+      >
+        <option value="">App default</option>
+        {THINKING_CONFIGS.map((c) => (
+          <option key={c.id} value={c.id}>{c.name} — {c.description}</option>
+        ))}
+      </select>
+    </div>
+    <div className="flex items-center gap-3">
+      <label className="text-xs text-muted-foreground w-20 shrink-0">Effort</label>
+      <select
+        value={value.effort ?? ""}
+        onChange={(e) => onChange({ ...value, effort: (e.target.value || undefined) as SessionDefaults['effort'] })}
+        className="flex-1 h-7 text-xs rounded-md border border-border bg-background px-2"
+      >
+        <option value="">App default</option>
+        {EFFORT_LEVELS.map((l) => (
+          <option key={l.id} value={l.id}>{l.name} — {l.description}</option>
+        ))}
+      </select>
+    </div>
+    <div className="flex items-center gap-3">
+      <label className="text-xs text-muted-foreground w-20 shrink-0">Permissions</label>
+      <select
+        value={value.permissionMode ?? ""}
+        onChange={(e) => onChange({ ...value, permissionMode: e.target.value || undefined })}
+        className="flex-1 h-7 text-xs rounded-md border border-border bg-background px-2"
+      >
+        <option value="">App default</option>
+        {PERMISSION_MODES.map((m) => (
+          <option key={m.id} value={m.id}>{m.name} — {m.description}</option>
+        ))}
+      </select>
+    </div>
+  </div>
+);
+
 export const AccountSettings: React.FC = () => {
   const { refresh: refreshAccountsContext } = useAccounts();
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -142,6 +205,7 @@ export const AccountSettings: React.FC = () => {
   const [newType, setNewType] = useState("pro");
   const [newColor, setNewColor] = useState("#3b82f6");
   const [newIcon, setNewIcon] = useState<string>("user");
+  const [newSessionDefaults, setNewSessionDefaults] = useState<SessionDefaults>({});
   const [showNewIconPicker, setShowNewIconPicker] = useState(false);
 
   // Edit account state
@@ -151,6 +215,7 @@ export const AccountSettings: React.FC = () => {
   const [editType, setEditType] = useState("");
   const [editColor, setEditColor] = useState("#3b82f6");
   const [editIcon, setEditIcon] = useState<string>("user");
+  const [editSessionDefaults, setEditSessionDefaults] = useState<SessionDefaults>({});
   const [showEditIconPicker, setShowEditIconPicker] = useState(false);
 
   // Add rule form
@@ -200,6 +265,7 @@ export const AccountSettings: React.FC = () => {
     setEditType(account.account_type);
     setEditColor(account.color || "#3b82f6");
     setEditIcon(account.icon || "user");
+    setEditSessionDefaults(account.session_defaults ?? {});
   };
 
   const cancelEdit = () => {
@@ -209,7 +275,8 @@ export const AccountSettings: React.FC = () => {
   const saveEdit = async () => {
     if (editingId === null || !editName.trim() || !editDir.trim()) return;
     try {
-      await api.updateAccount(editingId, editName.trim(), editDir.trim(), editType, editColor, editIcon);
+      const defaults = Object.keys(editSessionDefaults).length > 0 ? editSessionDefaults : null;
+      await api.updateAccount(editingId, editName.trim(), editDir.trim(), editType, editColor, editIcon, defaults);
       setEditingId(null);
       await loadData();
     } catch (error) {
@@ -220,12 +287,14 @@ export const AccountSettings: React.FC = () => {
   const handleCreate = async () => {
     if (!newName.trim() || !newDir.trim()) return;
     try {
-      await api.createAccount(newName.trim(), newDir.trim(), accounts.length === 0, newType, newColor, newIcon);
+      const defaults = Object.keys(newSessionDefaults).length > 0 ? newSessionDefaults : undefined;
+      await api.createAccount(newName.trim(), newDir.trim(), accounts.length === 0, newType, newColor, newIcon, defaults);
       setNewName("");
       setNewDir("");
       setNewType("pro");
       setNewColor("#3b82f6");
       setNewIcon("user");
+      setNewSessionDefaults({});
       setShowAddAccount(false);
       await loadData();
     } catch (error) {
@@ -323,6 +392,7 @@ export const AccountSettings: React.FC = () => {
                     </div>
                   </div>
                 </div>
+                <SessionDefaultsEditor value={editSessionDefaults} onChange={setEditSessionDefaults} />
                 <div className="flex gap-2">
                   <Button size="sm" onClick={saveEdit} className="h-7 text-xs">
                     <Check className="w-3 h-3 mr-1" />
@@ -423,6 +493,7 @@ export const AccountSettings: React.FC = () => {
                 </div>
               </div>
             </div>
+            <SessionDefaultsEditor value={newSessionDefaults} onChange={setNewSessionDefaults} />
             <div className="flex gap-2">
               <Button size="sm" onClick={handleCreate} className="h-7 text-xs">
                 Add

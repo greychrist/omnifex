@@ -59,6 +59,16 @@ const migrations: Migration[] = [
     },
   },
   {
+    version: 4,
+    description: 'Add session_defaults column to accounts',
+    up: (db) => {
+      const cols = db.pragma('table_info(accounts)') as { name: string }[];
+      if (!cols.some((c) => c.name === 'session_defaults')) {
+        db.exec('ALTER TABLE accounts ADD COLUMN session_defaults TEXT');
+      }
+    },
+  },
+  {
     version: 3,
     description: 'Add rate_limit_snapshots and rate_limit_fired_thresholds tables',
     up: (db) => {

@@ -7,6 +7,13 @@ import type { Database } from './database';
 // Public interfaces
 // ---------------------------------------------------------------------------
 
+export interface SessionDefaults {
+  model?: string;
+  thinkingConfig?: 'adaptive' | 'budget' | 'disabled';
+  permissionMode?: string;
+  effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+}
+
 export interface Account {
   id: number;
   name: string;
@@ -15,6 +22,7 @@ export interface Account {
   account_type: string;
   color: string | null;
   icon: string | null;
+  session_defaults?: SessionDefaults;
   created_at: string;
   updated_at: string;
 }
@@ -48,6 +56,7 @@ export interface AccountsService {
     accountType?: string,
     color?: string,
     icon?: string,
+    sessionDefaults?: SessionDefaults,
   ): Account;
   updateAccount(
     id: number,
@@ -56,6 +65,7 @@ export interface AccountsService {
     accountType?: string,
     color?: string,
     icon?: string,
+    sessionDefaults?: SessionDefaults | null,
   ): void;
   deleteAccount(id: number): void;
 
@@ -83,6 +93,7 @@ interface AccountRow {
   account_type: string;
   color: string | null;
   icon: string | null;
+  session_defaults: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -108,6 +119,7 @@ function rowToAccount(row: AccountRow): Account {
     account_type: row.account_type,
     color: row.color,
     icon: row.icon,
+    session_defaults: row.session_defaults ? (JSON.parse(row.session_defaults) as SessionDefaults) : undefined,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
@@ -157,6 +169,7 @@ export function createAccountsService(db: Database): AccountsService {
     accountType = 'pro',
     color?: string,
     icon?: string,
+    sessionDefaults?: SessionDefaults,
   ): Account {
     if (isDefault) {
       raw.prepare('UPDATE accounts SET is_default = 0').run();
@@ -164,10 +177,10 @@ export function createAccountsService(db: Database): AccountsService {
 
     const info = raw
       .prepare(
-        `INSERT INTO accounts (name, config_dir, is_default, account_type, color, icon)
-         VALUES (?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO accounts (name, config_dir, is_default, account_type, color, icon, session_defaults)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(name, configDir, isDefault ? 1 : 0, accountType, color ?? null, icon ?? null);
+      .run(name, configDir, isDefault ? 1 : 0, accountType, color ?? null, icon ?? null, sessionDefaults ? JSON.stringify(sessionDefaults) : null);
 
     const row = raw
       .prepare('SELECT * FROM accounts WHERE id = ?')
@@ -183,15 +196,28 @@ export function createAccountsService(db: Database): AccountsService {
     accountType?: string,
     color?: string,
     icon?: string,
+    sessionDefaults?: SessionDefaults | null,
   ): void {
-    raw
-      .prepare(
-        `UPDATE accounts
-         SET name = ?, config_dir = ?, account_type = COALESCE(?, account_type),
-             color = ?, icon = ?, updated_at = CURRENT_TIMESTAMP
-         WHERE id = ?`,
-      )
-      .run(name, configDir, accountType ?? null, color ?? null, icon ?? null, id);
+    if (sessionDefaults !== undefined) {
+      raw
+        .prepare(
+          `UPDATE accounts
+           SET name = ?, config_dir = ?, account_type = COALESCE(?, account_type),
+               color = ?, icon = ?, session_defaults = ?, updated_at = CURRENT_TIMESTAMP
+           WHERE id = ?`,
+        )
+        .run(name, configDir, accountType ?? null, color ?? null, icon ?? null,
+          sessionDefaults !== null ? JSON.stringify(sessionDefaults) : null, id);
+    } else {
+      raw
+        .prepare(
+          `UPDATE accounts
+           SET name = ?, config_dir = ?, account_type = COALESCE(?, account_type),
+               color = ?, icon = ?, updated_at = CURRENT_TIMESTAMP
+           WHERE id = ?`,
+        )
+        .run(name, configDir, accountType ?? null, color ?? null, icon ?? null, id);
+    }
   }
 
   function deleteAccount(id: number): void {
