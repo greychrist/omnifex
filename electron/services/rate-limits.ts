@@ -305,7 +305,27 @@ export function createRateLimitsService(deps: RateLimitsDeps): RateLimitsService
         JSON.stringify({ source: 'usage_cli', utilization, resetsAt }),
         observedAt,
       );
-    sendToRenderer('rate_limit_snapshot', { account: account.name, rate_limit_type: rateLimitType });
+    // Emit the persisted row (status preserved from any prior SDK event)
+    // on the same channel + shape the SDK-event path uses, so the renderer's
+    // single `rate-limits:updated` listener picks up CLI-runner refreshes.
+    const merged = db.raw
+      .prepare(
+        `SELECT account_name, rate_limit_type, status, utilization, resets_at, observed_at
+         FROM rate_limit_snapshots
+         WHERE account_name = ? AND rate_limit_type = ?`,
+      )
+      .get(account.name, rateLimitType) as RateLimitSnapshot | undefined;
+    sendToRenderer('rate-limits:updated', {
+      account_name: account.name,
+      snapshot: merged ?? {
+        account_name: account.name,
+        rate_limit_type: rateLimitType,
+        status: 'allowed',
+        utilization,
+        resets_at: resetsAt,
+        observed_at: observedAt,
+      },
+    });
   }
 
   // -------------------------------------------------------------------------

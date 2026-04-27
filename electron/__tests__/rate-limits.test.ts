@@ -146,6 +146,21 @@ describe('rate-limits service', () => {
       h.service.recordUtilization('/no/such/dir', 'five_hour', 50, null);
       expect(h.service.getSnapshots()).toHaveLength(0);
     });
+
+    it('emits rate-limits:updated with the merged snapshot so renderer pills refresh', () => {
+      h.service.recordUtilization('/Users/test/.claude', 'seven_day', 42, 1_700_001_234);
+      const evt = h.emitted.find((e) => e.channel === 'rate-limits:updated');
+      expect(evt).toBeDefined();
+      const payload = evt!.payload as {
+        account_name: string;
+        snapshot: { rate_limit_type: string; utilization: number; resets_at: number; observed_at: number };
+      };
+      expect(payload.account_name).toBe('Personal');
+      expect(payload.snapshot.rate_limit_type).toBe('seven_day');
+      expect(payload.snapshot.utilization).toBe(42);
+      expect(payload.snapshot.resets_at).toBe(1_700_001_234);
+      expect(payload.snapshot.observed_at).toBe(h.now());
+    });
   });
 
   describe('recordEvent — snapshot persistence', () => {
