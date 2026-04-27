@@ -99,14 +99,19 @@ describe('usage-runner', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.parsed.windows.length).toBe(3);
+    // observedAt = 1700000000000 (2023-11-14T22:13:20Z = 17:13 NY EST/UTC-5).
+    // "9:40am (America/New_York)" already passed today → Nov 15 14:40Z.
+    // "7pm (America/New_York)" still ahead today        → Nov 15 00:00Z.
+    const nextNy0940 = Math.floor(Date.UTC(2023, 10, 15, 14, 40, 0) / 1000);
+    const nextNy1900 = Math.floor(Date.UTC(2023, 10, 15, 0, 0, 0) / 1000);
     expect(rateLimits.recordUtilization).toHaveBeenCalledWith(
-      '/cfg/personal', 'five_hour', 33, null,
+      '/cfg/personal', 'five_hour', 33, nextNy0940,
     );
     expect(rateLimits.recordUtilization).toHaveBeenCalledWith(
-      '/cfg/personal', 'seven_day', 68, null,
+      '/cfg/personal', 'seven_day', 68, nextNy1900,
     );
     expect(rateLimits.recordUtilization).toHaveBeenCalledWith(
-      '/cfg/personal', 'seven_day_sonnet', 6, null,
+      '/cfg/personal', 'seven_day_sonnet', 6, nextNy1900,
     );
     const cached = runner.getLast('personal');
     expect(cached?.ok).toBe(true);

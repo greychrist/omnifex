@@ -21,8 +21,8 @@ interface RateLimitWidgetProps {
 const STALE_MS = 10 * 60 * 1000; // 10 min
 
 const LABELS: Record<RateLimitWidgetProps['windowType'], { label: string; short: string }> = {
-  five_hour: { label: '5-hour', short: '5h' },
-  seven_day: { label: '7-day', short: '7d' },
+  five_hour: { label: 'Current session', short: '5h' },
+  seven_day: { label: 'Current week', short: '7d' },
 };
 
 const ICONS: Record<RateLimitWidgetProps['windowType'], React.ComponentType<{ className?: string }>> = {

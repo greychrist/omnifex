@@ -4,6 +4,7 @@ import type { RateLimitsService } from './rate-limits';
 import { findClaudeBinary as defaultFindClaudeBinary } from './util/find-claude-binary';
 import { stripAnsi } from './usage-runner/ansi';
 import { parseUsageOutput, type UsageData } from './usage-runner/parser';
+import { resetsLabelToEpoch } from './usage-runner/resets-label';
 import type { LoggingService } from './logging';
 
 export interface FakePty {
@@ -199,10 +200,16 @@ export function createUsageRunnerService(deps: UsageRunnerDeps): UsageRunnerServ
         ok: false, observed_at: observedAt, error: `parse_failed: ${parsed.reason}`, raw,
       });
     }
-    // Dual-write to rate-limits
+    // Dual-write to rate-limits — convert the human label ("Resets 7pm
+    // (America/New_York)" or "in 5h") to an absolute epoch (seconds) so the
+    // 7-day/5-hour pills can render the same countdown the 5-hour widget
+    // already shows from claude-stream events. Pass null when the label is
+    // empty or unparseable so the snapshot just lacks a reset time.
     for (const w of parsed.data.windows) {
       const type = PARSER_LABEL_TO_RATE_LIMIT_TYPE[w.label];
-      deps.rateLimits.recordUtilization(configDir, type, w.pct_used, null);
+      const resetsEpochMs = resetsLabelToEpoch(w.resets_at_label, observedAt);
+      const resetsAtSec = resetsEpochMs == null ? null : Math.floor(resetsEpochMs / 1000);
+      deps.rateLimits.recordUtilization(configDir, type, w.pct_used, resetsAtSec);
     }
     return cacheAndReturn(accountName, {
       ok: true, observed_at: observedAt, raw, parsed: parsed.data,

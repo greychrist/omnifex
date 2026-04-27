@@ -138,7 +138,7 @@ export function SessionHeader({
     data: usageData,
     loading: usageLoading,
     refresh: refreshUsage,
-  } = useUsageAutoRefresh(accountName);
+  } = useUsageAutoRefresh(accountName, sessionStatus === 'active');
 
   // Manual refresh button next to the 7-day widget. The hook flips
   // `loading: true` synchronously before awaiting the PTY run, so the
