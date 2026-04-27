@@ -130,6 +130,7 @@ export interface Services {
   gitWatcher?: {
     start(projectPath: string): Promise<{ watchId: string; branch: string | null }>;
     stop(watchId: string): void;
+    listWorktrees(projectPath: string): Promise<Array<{ path: string; branch: string | null }>>;
   };
   lima?: {
     isInstalled(): Promise<boolean>;
@@ -496,6 +497,11 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
       if (!watchId || !gitWatcher) return null;
       gitWatcher.stop(watchId);
       return null;
+    }),
+    list_git_worktrees: wrapWith(async (p: Record<string, unknown>) => {
+      const projectPath = (p?.projectPath ?? p?.project_path) as string;
+      if (!projectPath || !gitWatcher) return [];
+      return gitWatcher.listWorktrees(projectPath);
     }),
 
     // ── Lima (VM viewer) ──────────────────────────────────────────────────────

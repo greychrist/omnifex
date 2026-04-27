@@ -22,6 +22,77 @@ export interface GitWatcherService {
   disposeAll(): void;
 }
 
+export interface WorktreeInfo {
+  /** Absolute, real-path-resolved worktree directory. */
+  path: string;
+  /** Short branch name, or null if the worktree has a detached HEAD. */
+  branch: string | null;
+}
+
+/**
+ * Enumerate worktrees attached to the same repository as `projectPath`,
+ * excluding `projectPath` itself. Returns [] for non-git directories or when
+ * `git worktree list` fails. Paths are normalized through `realpath` so the
+ * caller-side filter survives macOS `/private/var` ↔ `/var` symlink quirks.
+ */
+export async function listWorktrees(projectPath: string): Promise<WorktreeInfo[]> {
+  if (!resolveGitdir(projectPath)) return [];
+
+  let selfReal: string;
+  try {
+    selfReal = fs.realpathSync(projectPath);
+  } catch {
+    selfReal = projectPath;
+  }
+
+  return new Promise((resolve) => {
+    execFile(
+      'git',
+      ['worktree', 'list', '--porcelain'],
+      { cwd: projectPath, maxBuffer: 4 * 1024 * 1024, windowsHide: true },
+      (err, stdout) => {
+        if (err) {
+          resolve([]);
+          return;
+        }
+        resolve(parseWorktreePorcelain(stdout, selfReal));
+      },
+    );
+  });
+}
+
+function parseWorktreePorcelain(buf: string, selfReal: string): WorktreeInfo[] {
+  // Records are separated by blank lines. Each record has at least a
+  // `worktree <path>` header; branch info is either `branch refs/heads/<name>`,
+  // `detached`, or absent (bare repo entry).
+  const out: WorktreeInfo[] = [];
+  for (const block of buf.split(/\r?\n\r?\n/)) {
+    let wtPath: string | null = null;
+    let branch: string | null = null;
+    let detached = false;
+    let bare = false;
+    for (const line of block.split(/\r?\n/)) {
+      if (line.startsWith('worktree ')) wtPath = line.slice('worktree '.length).trim();
+      else if (line.startsWith('branch ')) {
+        const ref = line.slice('branch '.length).trim();
+        const m = ref.match(/^refs\/heads\/(.+)$/);
+        branch = m ? m[1] : ref;
+      } else if (line === 'detached') detached = true;
+      else if (line === 'bare') bare = true;
+    }
+    if (!wtPath || bare) continue;
+    let real: string;
+    try {
+      real = fs.realpathSync(wtPath);
+    } catch {
+      real = wtPath;
+    }
+    if (real === selfReal) continue;
+    out.push({ path: real, branch: detached ? null : branch });
+  }
+  return out;
+}
+
 interface ActiveWatch {
   projectPath: string;
   watcher: fs.FSWatcher | null;

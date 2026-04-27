@@ -119,6 +119,7 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   'get_git_branch',
   'start_git_branch_watch',
   'stop_git_branch_watch',
+  'list_git_worktrees',
 
   // Lima (VM viewer)
   'lima_check_installed',

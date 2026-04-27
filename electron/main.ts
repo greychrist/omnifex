@@ -55,7 +55,7 @@ import { createPermissionsIOService } from './services/permissions-io';
 import { createUpdaterService } from './services/updater';
 import { createInstallerService } from './services/installer';
 import { createSdkVersionService } from './services/sdk-version';
-import { createGitWatcherService } from './services/git-watcher';
+import { createGitWatcherService, listWorktrees } from './services/git-watcher';
 import { createLimaService } from './services/lima';
 import { registerIpcHandlers } from './ipc/handlers';
 import { createWindowRouter } from './window-router';
@@ -602,6 +602,7 @@ app.whenReady().then(() => {
     gitWatcher: {
       start: (projectPath: string) => gitWatcherService.start(projectPath),
       stop: (watchId: string) => gitWatcherService.stop(watchId),
+      listWorktrees: (projectPath: string) => listWorktrees(projectPath),
     },
     lima: {
       isInstalled: () => limaService.isInstalled(),

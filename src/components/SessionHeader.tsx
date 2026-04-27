@@ -12,6 +12,19 @@ import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import { ProjectPathBadge } from "./claude-code-session/ProjectPathBadge";
 import { GitBranchBadge } from "./claude-code-session/GitBranchBadge";
 
+/**
+ * Small uppercase label rendered above each header badge ("account", "branch",
+ * "mode", etc.). Shared component so a single style change propagates to every
+ * caller — both inside SessionHeader and in adjacent toolbar widgets.
+ */
+export function HeaderLabel({ children, className }: { children: React.ReactNode; className?: string }) {
+  return (
+    <span className={cn("text-[11px] tracking-wider text-muted-foreground", className)}>
+      {children}
+    </span>
+  );
+}
+
 // Palette for context-usage categories. Each category comes with its own
 // `color` from the SDK, but those default colors sometimes clash with our
 // dark palette, so we override with our own sequence and fall back to the
@@ -66,8 +79,23 @@ interface SessionHeaderProps {
   projectPath?: string;
   /** Branch + working-tree status snapshot — rendered as a badge in the header. */
   gitStatus?: GitBranchSnapshot;
+  /**
+   * Snapshots for sibling worktrees of the same repo (excluding the current
+   * project). Rendered as a stacked column of badges next to the branch
+   * widget. Empty/undefined hides the worktrees column entirely.
+   */
+  worktrees?: WorktreeSnapshot[];
 
   className?: string;
+}
+
+/** Working-tree status for a single sibling worktree. */
+export interface WorktreeSnapshot {
+  /** Absolute worktree path — used as a stable React key + tooltip detail. */
+  path: string;
+  branch: string | null;
+  changed: number;
+  untracked: number;
 }
 
 export function SessionHeader({
@@ -83,6 +111,7 @@ export function SessionHeader({
   contextUsage,
   projectPath,
   gitStatus,
+  worktrees,
   sessionStatus,
   className,
 }: SessionHeaderProps) {
@@ -121,11 +150,11 @@ export function SessionHeader({
 
   return (
     <div className={cn(
-      "flex items-center gap-3 px-4 py-2 border-b border-border/50 bg-muted text-xs shrink-0",
+      "flex items-start gap-3 px-4 py-2 border-b border-border/50 bg-muted text-xs shrink-0",
       className
     )}>
       <div className="flex flex-col items-start gap-0.5">
-        <span className="text-[9px] tracking-wider text-muted-foreground">account</span>
+        <HeaderLabel>account</HeaderLabel>
         <Popover
         open={accountPopoverOpen}
         onOpenChange={setAccountPopoverOpen}
@@ -213,8 +242,8 @@ export function SessionHeader({
         />
       </div>
       {/* Session status indicator — inline styles so the border picks up the
-          status color the same way AccountBadge does (Tailwind v4's
-          border-{color}/{alpha} utilities desaturate to gray under this theme). */}
+          status color (Tailwind v4's border-{color}/{alpha} utilities
+          desaturate under this theme). */}
       {sessionStatus && (() => {
         const statusColor =
           sessionStatus === 'active' ? '#22c55e' :
@@ -222,7 +251,7 @@ export function SessionHeader({
           '#ef4444'; // ended
         return (
           <div className="flex flex-col items-start gap-0.5">
-            <span className="text-[9px] tracking-wider text-muted-foreground">status</span>
+            <HeaderLabel>status</HeaderLabel>
             <span
               className={cn(
                 "inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
@@ -243,17 +272,17 @@ export function SessionHeader({
       })()}
 
       {(projectPath || gitStatus?.branch) && (
-        <span aria-hidden="true" className="h-8 w-px bg-foreground/30 shrink-0" />
+        <span aria-hidden="true" className="self-stretch w-px bg-foreground/30 shrink-0" />
       )}
       {projectPath && (
         <div className="flex flex-col items-start gap-0.5">
-          <span className="text-[9px] tracking-wider text-muted-foreground">folder</span>
+          <HeaderLabel>folder</HeaderLabel>
           <ProjectPathBadge path={projectPath} />
         </div>
       )}
       {gitStatus?.branch && (
         <div className="flex flex-col items-start gap-0.5">
-          <span className="text-[9px] tracking-wider text-muted-foreground">branch</span>
+          <HeaderLabel>branch</HeaderLabel>
           <GitBranchBadge
             name={gitStatus.branch}
             changed={gitStatus.changed}
@@ -261,8 +290,27 @@ export function SessionHeader({
           />
         </div>
       )}
+      {worktrees && worktrees.length > 0 && (
+        <span aria-hidden="true" className="self-stretch w-px bg-foreground/30 shrink-0" />
+      )}
+      {worktrees && worktrees.length > 0 && (
+        <div className="flex flex-col items-start gap-0.5">
+          <HeaderLabel>worktrees</HeaderLabel>
+          <div className="flex flex-col items-start gap-1">
+            {worktrees.map((wt) => (
+              <span key={wt.path} title={wt.path}>
+                <GitBranchBadge
+                  name={wt.branch ?? '(detached)'}
+                  changed={wt.changed}
+                  untracked={wt.untracked}
+                />
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
-      <div className="ml-auto flex items-center gap-3">
+      <div className="ml-auto flex items-start gap-3">
         {(() => {
           // Prefer authoritative numbers from query.getContextUsage() when
           // present; otherwise fall back to the old client-side approximation
@@ -331,7 +379,7 @@ export function SessionHeader({
 
           return (
             <div className="flex flex-col items-start gap-0.5">
-              <span className="text-[9px] tracking-wider text-muted-foreground">context</span>
+              <HeaderLabel>context</HeaderLabel>
               <Popover
               open={contextPopoverOpen}
               onOpenChange={setContextPopoverOpen}

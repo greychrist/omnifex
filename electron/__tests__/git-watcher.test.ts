@@ -3,7 +3,7 @@ import { execSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { createGitWatcherService } from '../services/git-watcher';
+import { createGitWatcherService, listWorktrees } from '../services/git-watcher';
 
 function makeTempRepo(): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-git-watch-'));
@@ -148,6 +148,67 @@ describe('git-watcher service', () => {
       ([channel]) => channel === `git-branch-changed:${watchId}`,
     );
     expect(hits.length).toBe(0);
+  });
+
+  describe('listWorktrees', () => {
+    it('returns an empty array for a non-git directory', async () => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-not-repo-wt-'));
+      tempDirs.push(dir);
+
+      const result = await listWorktrees(dir);
+      expect(result).toEqual([]);
+    });
+
+    it('returns an empty array when the repo has no extra worktrees', async () => {
+      const repo = makeTempRepo();
+      tempDirs.push(repo);
+
+      const result = await listWorktrees(repo);
+      expect(result).toEqual([]);
+    });
+
+    it('returns peer worktrees with branch names, excluding the queried path', async () => {
+      const repo = makeTempRepo();
+      tempDirs.push(repo);
+
+      const wtRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-wt-root-'));
+      tempDirs.push(wtRoot);
+      const wt1 = path.join(wtRoot, 'feature-a');
+      const wt2 = path.join(wtRoot, 'feature-b');
+
+      execSync(`git worktree add -b feature-a "${wt1}"`, { cwd: repo, stdio: 'pipe' });
+      execSync(`git worktree add -b feature-b "${wt2}"`, { cwd: repo, stdio: 'pipe' });
+
+      const fromMain = await listWorktrees(repo);
+      expect(fromMain).toHaveLength(2);
+      expect(fromMain.map((w) => w.branch).sort()).toEqual(['feature-a', 'feature-b']);
+      // Paths should be the worktree paths, not the main repo
+      expect(fromMain.every((w) => w.path !== repo)).toBe(true);
+
+      // Querying from a worktree should exclude that worktree but include the
+      // main repo + the sibling worktree.
+      const fromWt1 = await listWorktrees(wt1);
+      expect(fromWt1).toHaveLength(2);
+      expect(fromWt1.every((w) => w.path !== wt1)).toBe(true);
+      const branches = fromWt1.map((w) => w.branch).sort();
+      expect(branches).toEqual(['feature-b', 'main']);
+    });
+
+    it('reports null branch for detached worktrees', async () => {
+      const repo = makeTempRepo();
+      tempDirs.push(repo);
+
+      const headSha = execSync('git rev-parse HEAD', { cwd: repo }).toString().trim();
+      const wtRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-wt-detached-'));
+      tempDirs.push(wtRoot);
+      const wt = path.join(wtRoot, 'detached');
+      execSync(`git worktree add --detach "${wt}" ${headSha}`, { cwd: repo, stdio: 'pipe' });
+
+      const result = await listWorktrees(repo);
+      expect(result).toHaveLength(1);
+      expect(result[0].branch).toBeNull();
+      expect(result[0].path).toBe(fs.realpathSync(wt));
+    });
   });
 
   it('resolves gitdir from a .git file (worktree-style)', async () => {

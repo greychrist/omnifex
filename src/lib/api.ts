@@ -93,6 +93,14 @@ export interface GitBranchSnapshot {
   untracked: number;
 }
 
+/** A worktree attached to the same repository as the currently-open project. */
+export interface WorktreeInfo {
+  /** Absolute path of the worktree directory (realpath-resolved). */
+  path: string;
+  /** Short branch name, or null if the worktree has a detached HEAD. */
+  branch: string | null;
+}
+
 /** Lima VM (parsed from `limactl list --json`). */
 export interface LimaVm {
   name: string;
@@ -1200,6 +1208,15 @@ export const api = {
    */
   async stopGitBranchWatch(watchId: string): Promise<void> {
     await apiCall("stop_git_branch_watch", { watchId });
+  },
+
+  /**
+   * List worktrees attached to the same repository as `projectPath`,
+   * excluding `projectPath` itself. Returns [] for non-git directories.
+   */
+  async listGitWorktrees(projectPath: string): Promise<WorktreeInfo[]> {
+    const result = await apiCall<WorktreeInfo[]>("list_git_worktrees", { projectPath });
+    return result ?? [];
   },
 
   /**

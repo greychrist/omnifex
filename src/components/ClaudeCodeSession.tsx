@@ -44,7 +44,7 @@ import { CollapsibleGroup } from "./CollapsibleGroup";
 import { buildCompactItems } from "@/lib/compactGrouping";
 import { filterCompactHidden } from "@/lib/messageKind";
 import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
-import { SessionHeader } from "./SessionHeader";
+import { SessionHeader, HeaderLabel } from "./SessionHeader";
 import { filterDisplayableMessages } from "@/lib/messageFilters";
 import { deriveSubagents } from "@/lib/subagentStreams";
 import { SubagentBar } from "./SubagentBar";
@@ -187,6 +187,12 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     changed: 0,
     untracked: 0,
   });
+  // Live status for sibling worktrees of the same repo. Keyed by absolute
+  // worktree path so updates from per-worktree watchers can be merged in
+  // place. Empty when the project has no peers (or isn't a git repo).
+  const [worktreeStatuses, setWorktreeStatuses] = useState<
+    Record<string, import('./SessionHeader').WorktreeSnapshot>
+  >({});
 
   // Resolve account explanation for SessionHeader
   useEffect(() => {
@@ -236,6 +242,89 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       if (watchId) void api.stopGitBranchWatch(watchId);
     };
   }, [projectPath]);
+
+  // Watch sibling worktrees attached to the same repo. We enumerate once on
+  // project open, then start a separate git-branch watch per worktree so each
+  // gets the same live changed/untracked counts as the main branch badge.
+  // Watches are torn down on project change to avoid leaks across navigations.
+  useEffect(() => {
+    if (!projectPath) {
+      setWorktreeStatuses({});
+      return;
+    }
+    let cancelled = false;
+    const watchIds: string[] = [];
+    const unsubs: Array<() => void> = [];
+
+    (async () => {
+      let worktrees: import('@/lib/api').WorktreeInfo[] = [];
+      try {
+        worktrees = await api.listGitWorktrees(projectPath);
+      } catch {
+        worktrees = [];
+      }
+      if (cancelled) return;
+
+      // Seed the state with what we know from enumeration so the UI can show
+      // the badges immediately, before per-worktree watchers report counts.
+      const initial: Record<string, import('./SessionHeader').WorktreeSnapshot> = {};
+      for (const wt of worktrees) {
+        initial[wt.path] = { path: wt.path, branch: wt.branch, changed: 0, untracked: 0 };
+      }
+      setWorktreeStatuses(initial);
+
+      for (const wt of worktrees) {
+        try {
+          const result = await api.startGitBranchWatch(wt.path);
+          if (cancelled) {
+            if (result?.watchId) await api.stopGitBranchWatch(result.watchId);
+            return;
+          }
+          if (!result) continue;
+          watchIds.push(result.watchId);
+          setWorktreeStatuses((prev) => ({
+            ...prev,
+            [wt.path]: {
+              path: wt.path,
+              branch: result.branch ?? wt.branch,
+              changed: result.changed,
+              untracked: result.untracked,
+            },
+          }));
+          const unsub = api.onGitBranchChanged(result.watchId, (snap) => {
+            setWorktreeStatuses((prev) => ({
+              ...prev,
+              [wt.path]: {
+                path: wt.path,
+                branch: snap.branch ?? wt.branch,
+                changed: snap.changed,
+                untracked: snap.untracked,
+              },
+            }));
+          });
+          unsubs.push(unsub);
+        } catch {
+          // best effort — skip this worktree
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      for (const u of unsubs) u();
+      for (const id of watchIds) void api.stopGitBranchWatch(id);
+    };
+  }, [projectPath]);
+
+  // Stable list of worktree snapshots for the SessionHeader, sorted by path
+  // so the row order is deterministic across re-renders.
+  const worktreeList = useMemo(
+    () =>
+      Object.values(worktreeStatuses).sort((a, b) =>
+        a.path.localeCompare(b.path),
+      ),
+    [worktreeStatuses],
+  );
 
   // New state for preview feature
   const [showPreview, setShowPreview] = useState(false);
@@ -1241,7 +1330,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                       : undefined;
               return (
                 <div className="flex flex-col items-start gap-0.5">
-                  <span className="text-[9px] tracking-wider text-muted-foreground">restart</span>
+                  <HeaderLabel>restart</HeaderLabel>
                   <Button
                     size="sm"
                     variant="outline"
@@ -1257,7 +1346,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
               );
             })()}
             <div className="flex flex-col items-start gap-0.5">
-              <span className="text-[9px] tracking-wider text-muted-foreground">mode</span>
+              <HeaderLabel>mode</HeaderLabel>
               <SessionModeToggle
                 mode={sessionMode}
                 onChange={(next) => {
@@ -1270,7 +1359,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
               />
             </div>
             <div className="flex flex-col items-start gap-0.5">
-              <span className="text-[9px] tracking-wider text-muted-foreground">output style</span>
+              <HeaderLabel>output style</HeaderLabel>
               <SessionViewToggle mode={viewMode} onChange={setViewMode} />
             </div>
           </div>
@@ -1288,6 +1377,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           contextUsage={contextUsage}
           projectPath={projectPath}
           gitStatus={gitStatus}
+          worktrees={worktreeList}
           sessionStatus={
             !sessionStarted
               ? undefined

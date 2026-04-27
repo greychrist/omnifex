@@ -89,7 +89,7 @@ export const ProjectList: React.FC<ProjectListProps> = ({
   onOpenProject,
   className,
 }) => {
-  const [sortKey, setSortKey] = useState<SortKey>('lastOpened');
+  const [sortKey, setSortKey] = useState<SortKey>('sessions');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
   const [accountFilter, setAccountFilter] = useState<string>('all');
 

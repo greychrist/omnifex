@@ -101,7 +101,7 @@ function buildMockServices() {
     proxy: mockService(['getSettings', 'saveSettings'] as const),
     permissionsIO: createPermissionsIOService(),
     sdkVersion: mockService(['getReferenced', 'getLatest'] as const),
-    gitWatcher: mockService(['start', 'stop'] as const),
+    gitWatcher: mockService(['start', 'stop', 'listWorktrees'] as const),
   };
 }
 
@@ -760,6 +760,26 @@ describe('ipc handlers — dispatch to services', () => {
     const result = await invoke(handlers, 'stop_git_branch_watch', {});
     expect(result).toBeNull();
     expect(services.gitWatcher.stop).not.toHaveBeenCalled();
+  });
+
+  it('list_git_worktrees forwards the project path and returns the service result', async () => {
+    const expected = [{ path: '/tmp/wt1', branch: 'feature' }];
+    services.gitWatcher.listWorktrees.mockResolvedValueOnce(expected);
+    const result = await invoke(handlers, 'list_git_worktrees', { projectPath: '/tmp/x' });
+    expect(result).toEqual(expected);
+    expect(services.gitWatcher.listWorktrees).toHaveBeenCalledWith('/tmp/x');
+  });
+
+  it('list_git_worktrees accepts snake_case project_path param', async () => {
+    services.gitWatcher.listWorktrees.mockResolvedValueOnce([]);
+    await invoke(handlers, 'list_git_worktrees', { project_path: '/tmp/y' });
+    expect(services.gitWatcher.listWorktrees).toHaveBeenCalledWith('/tmp/y');
+  });
+
+  it('list_git_worktrees returns [] when projectPath is missing', async () => {
+    const result = await invoke(handlers, 'list_git_worktrees', {});
+    expect(result).toEqual([]);
+    expect(services.gitWatcher.listWorktrees).not.toHaveBeenCalled();
   });
 });
 
