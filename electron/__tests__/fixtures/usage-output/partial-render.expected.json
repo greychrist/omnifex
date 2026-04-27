@@ -1,0 +1,17 @@
+{
+  "session": {
+    "cost_usd": 0.0123,
+    "api_duration_s": 12,
+    "wall_duration_s": 45,
+    "code_added": 17,
+    "code_removed": 4,
+    "input_tokens": 1234,
+    "output_tokens": 567,
+    "cache_read": 8901,
+    "cache_write": 234
+  },
+  "windows": [
+    { "label": "current_session", "pct_used": 12, "resets_at_label": "9:40am (America/New_York)" }
+  ],
+  "contributing": []
+}

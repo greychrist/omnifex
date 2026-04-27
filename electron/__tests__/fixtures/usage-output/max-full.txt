@@ -1,0 +1,31 @@
+Session
+Total cost:             $0.0000
+Total duration (API):   0s
+Total duration (wall):  3s
+Total code changes:     0 lines added, 0 lines removed
+Usage:                  0 input, 0 output, 0 cache read, 0 cache write
+
+Current session
+33% used
+Resets 9:40am (America/New_York)
+
+Current week (all models)
+68% used
+Resets 7pm (America/New_York)
+
+Current week (Sonnet only)
+6% used
+Resets 7pm (America/New_York)
+
+What's contributing to your limits usage?
+Approximate, based on local sessions on this machine — does not include other devices or claude.ai
+
+Last 24h · these are independent characteristics of your usage, not a breakdown
+
+86% of your usage was at >150k context
+  Longer sessions are more expensive even when cached. /compact mid-task, /clear
+  when switching to new tasks.
+
+67% of your usage came from subagent-heavy sessions
+  Each subagent runs its own requests. Be deliberate about spawning them — and
+  prefer plan mode for short-lived work.

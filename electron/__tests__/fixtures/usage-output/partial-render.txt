@@ -1,0 +1,12 @@
+Session
+Total cost:             $0.0123
+Total duration (API):   12s
+Total duration (wall):  45s
+Total code changes:     17 lines added, 4 lines removed
+Usage:                  1234 input, 567 output, 8901 cache read, 234 cache write
+
+Current session
+12% used
+Resets 9:40am (America/New_York)
+
+Current week (all m
