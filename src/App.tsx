@@ -16,7 +16,6 @@ import { CustomTitlebar } from "@/components/CustomTitlebar";
 import { MarkdownEditor } from "@/components/MarkdownEditor";
 import { ClaudeFileEditor } from "@/components/ClaudeFileEditor";
 import { Settings } from "@/components/Settings";
-import { UsageDashboard } from "@/components/UsageDashboard";
 import { MCPManager } from "@/components/MCPManager";
 import { NFOCredits } from "@/components/NFOCredits";
 import { ClaudeBinaryDialog } from "@/components/ClaudeBinaryDialog";
@@ -40,7 +39,6 @@ type View =
   | "agent-execution"
   | "agent-run-view"
   | "mcp"
-  | "usage-dashboard"
   | "project-settings"
   | "tabs"; // New view for tab-based interface
 
@@ -49,7 +47,7 @@ type View =
  */
 function AppContent() {
   const [view, setView] = useState<View>("tabs");
-  const { createSettingsTab, createLimaTab } = useTabState();
+  const { createSettingsTab, createLimaTab, createUsageTab } = useTabState();
   const { activeTabId, setActiveTab, updateTab } = useTabContext();
   useNotifications(activeTabId, setActiveTab, updateTab);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -137,12 +135,18 @@ function AppContent() {
     };
   }, []);
 
-  // Rate-limit widgets in the session header dispatch this when clicked.
+  // Legacy entry point — anything still dispatching this event opens the
+  // usage dashboard as a tab (singleton, like Settings / Lima) so the tab
+  // strip stays visible and the user has an obvious way back. The dedicated
+  // `view = 'usage-dashboard'` mode is gone; everything goes through tabs.
   useEffect(() => {
-    const handler = () => setView('usage-dashboard');
+    const handler = () => {
+      setView('tabs');
+      createUsageTab();
+    };
     window.addEventListener('navigate-to-usage-dashboard', handler);
     return () => window.removeEventListener('navigate-to-usage-dashboard', handler);
-  }, []);
+  }, [createUsageTab]);
 
   /**
    * Loads all projects from the ~/.claude/projects directory
@@ -329,11 +333,6 @@ function AppContent() {
               <TabContent />
             </div>
           </div>
-        );
-      
-      case "usage-dashboard":
-        return (
-          <UsageDashboard onBack={() => handleViewChange("welcome")} />
         );
       
       case "mcp":
