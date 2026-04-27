@@ -134,6 +134,22 @@ const FloatingPromptInputInner = (
   const [textareaHeight, setTextareaHeight] = useState<number>(48);
   const isIMEComposingRef = useRef(false);
 
+  // Max height cap for the inline (non-expanded) textarea. Scales with the
+  // viewport so the prompt input fills the available vertical space when the
+  // window is tall, instead of being capped at a small fixed value. Internal
+  // textarea scroll engages only past this cap.
+  const [maxTextareaHeight, setMaxTextareaHeight] = useState<number>(() =>
+    typeof window === 'undefined' ? 240 : Math.max(240, Math.floor(window.innerHeight * 0.6)),
+  );
+  useEffect(() => {
+    const compute = (): void => {
+      setMaxTextareaHeight(Math.max(240, Math.floor(window.innerHeight * 0.6)));
+    };
+    compute();
+    window.addEventListener('resize', compute);
+    return () => window.removeEventListener('resize', compute);
+  }, []);
+
   // -- Slash command autocomplete hook --
   const slash = useSlashCommandAutocomplete();
 
@@ -179,11 +195,11 @@ const FloatingPromptInputInner = (
     if (textareaRef.current && !isExpanded) {
       textareaRef.current.style.height = 'auto';
       const scrollHeight = textareaRef.current.scrollHeight;
-      const newHeight = Math.min(Math.max(scrollHeight, 48), 240);
+      const newHeight = Math.min(Math.max(scrollHeight, 48), maxTextareaHeight);
       setTextareaHeight(newHeight);
       textareaRef.current.style.height = `${newHeight}px`;
     }
-  }, [prompt, projectPath, isExpanded]);
+  }, [prompt, projectPath, isExpanded, maxTextareaHeight]);
 
   // Focus textarea when expand state changes
   useEffect(() => {
@@ -203,7 +219,7 @@ const FloatingPromptInputInner = (
     if (textareaRef.current && !isExpanded) {
       textareaRef.current.style.height = 'auto';
       const scrollHeight = textareaRef.current.scrollHeight;
-      const newHeight = Math.min(Math.max(scrollHeight, 48), 240);
+      const newHeight = Math.min(Math.max(scrollHeight, 48), maxTextareaHeight);
       setTextareaHeight(newHeight);
       textareaRef.current.style.height = `${newHeight}px`;
     }
@@ -602,11 +618,11 @@ const FloatingPromptInputInner = (
                   className={cn(
                     "resize-none pr-20 pl-3 py-2.5 transition-all duration-150",
                     dragActive && "border-primary",
-                    textareaHeight >= 240 && "overflow-y-auto scrollbar-thin"
+                    textareaHeight >= maxTextareaHeight && "overflow-y-auto scrollbar-thin"
                   )}
                   style={{
                     height: `${textareaHeight}px`,
-                    overflowY: textareaHeight >= 240 ? 'auto' : 'hidden'
+                    overflowY: textareaHeight >= maxTextareaHeight ? 'auto' : 'hidden'
                   }}
                 />
 
