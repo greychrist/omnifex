@@ -131,32 +131,23 @@ const FloatingPromptInputInner = (
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const expandedTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const [textareaHeight, setTextareaHeight] = useState<number>(48);
   const isIMEComposingRef = useRef(false);
 
-  // Min/max heights for the inline (non-expanded) textarea. Both scale with
-  // the viewport so the prompt input fills the available vertical space when
-  // the window is tall. Min: empty input is already a substantial writing
-  // surface (45% of viewport, floor 120px). Max: caps growth at 70% of
-  // viewport before internal scroll engages.
-  const computeBounds = (): { min: number; max: number } => {
-    if (typeof window === 'undefined') return { min: 120, max: 240 };
-    const min = Math.max(120, Math.floor(window.innerHeight * 0.45));
-    const max = Math.max(min, Math.floor(window.innerHeight * 0.7));
-    return { min, max };
-  };
-  const initialBounds = computeBounds();
-  const [minTextareaHeight, setMinTextareaHeight] = useState<number>(initialBounds.min);
-  const [maxTextareaHeight, setMaxTextareaHeight] = useState<number>(initialBounds.max);
-  const [textareaHeight, setTextareaHeight] = useState<number>(initialBounds.min);
+  // Max height cap for the inline (non-expanded) textarea. Scales with the
+  // viewport so the prompt input fills the available vertical space when the
+  // window is tall, instead of being capped at a small fixed value. Internal
+  // textarea scroll engages only past this cap.
+  const [maxTextareaHeight, setMaxTextareaHeight] = useState<number>(() =>
+    typeof window === 'undefined' ? 240 : Math.max(240, Math.floor(window.innerHeight * 0.6)),
+  );
   useEffect(() => {
-    const apply = (): void => {
-      const { min, max } = computeBounds();
-      setMinTextareaHeight(min);
-      setMaxTextareaHeight(max);
+    const compute = (): void => {
+      setMaxTextareaHeight(Math.max(240, Math.floor(window.innerHeight * 0.6)));
     };
-    apply();
-    window.addEventListener('resize', apply);
-    return () => window.removeEventListener('resize', apply);
+    compute();
+    window.addEventListener('resize', compute);
+    return () => window.removeEventListener('resize', compute);
   }, []);
 
   // -- Slash command autocomplete hook --
@@ -204,11 +195,11 @@ const FloatingPromptInputInner = (
     if (textareaRef.current && !isExpanded) {
       textareaRef.current.style.height = 'auto';
       const scrollHeight = textareaRef.current.scrollHeight;
-      const newHeight = Math.min(Math.max(scrollHeight, minTextareaHeight), maxTextareaHeight);
+      const newHeight = Math.min(Math.max(scrollHeight, 48), maxTextareaHeight);
       setTextareaHeight(newHeight);
       textareaRef.current.style.height = `${newHeight}px`;
     }
-  }, [prompt, projectPath, isExpanded, minTextareaHeight, maxTextareaHeight]);
+  }, [prompt, projectPath, isExpanded, maxTextareaHeight]);
 
   // Focus textarea when expand state changes
   useEffect(() => {
@@ -228,7 +219,7 @@ const FloatingPromptInputInner = (
     if (textareaRef.current && !isExpanded) {
       textareaRef.current.style.height = 'auto';
       const scrollHeight = textareaRef.current.scrollHeight;
-      const newHeight = Math.min(Math.max(scrollHeight, minTextareaHeight), maxTextareaHeight);
+      const newHeight = Math.min(Math.max(scrollHeight, 48), maxTextareaHeight);
       setTextareaHeight(newHeight);
       textareaRef.current.style.height = `${newHeight}px`;
     }
