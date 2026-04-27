@@ -5,6 +5,17 @@ All notable changes to GreyChrist are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.58] — 2026-04-27
+
+### Added
+- Per-account session defaults (model, thinking, effort, permissions) stored in account settings. Defaults seed the new-session form automatically when a project is opened under that account.
+- Thinking mode selector on the new-session start form (Adaptive / Budget / Off).
+
+### Changed
+- New-session form no longer shows Config and Matched-by rows — the account badge is sufficient.
+
+Installers remain **unsigned**.
+
 ## [0.3.57] — 2026-04-27
 
 Adds rate-limit tracking for the 5-hour and 7-day windows in the session header, and reorganizes the header / chat-bar layout to make room for it. Anthropic's Agent SDK only emits `utilization` for accounts with overage credits unlocked at the org level, so on most accounts today the widget will show `?%` until you cross a 75/90% threshold — the countdown timer and notifications still work. Installers remain **unsigned**.
