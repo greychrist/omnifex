@@ -5,6 +5,33 @@ All notable changes to GreyChrist are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.59] — 2026-04-27
+
+Headline: a PTY-based **Usage CLI runner** that actually populates the 5-hour / 7-day rate-limit pills introduced in 0.3.57. Those pills were stuck on `?%` for most accounts because Anthropic's Agent SDK only streams `utilization` to accounts with overage unlocked at the org level. The runner sidesteps that by interactively executing `/usage` in a real Claude CLI session and parsing the TUI output. Installers remain **unsigned**.
+
+### Added
+
+- **Usage CLI runner** (`15b6b92`, `1d157bb`). New `electron/services/usage-runner.ts` spawns a node-pty terminal against each account's Claude CLI, waits past the welcome-screen footer + handles the workspace-trust dialog, sends `/usage`, captures + ANSI-strips the TUI output, parses the session block / per-window blocks / "What's contributing" entries, and dual-writes the parsed percentages to `rate_limit_snapshots`. Per-account in-memory cache + concurrent-call dedup. Three new IPC channels (`usage_runner.run`, `usage_runner.getLast`).
+- **Reset-time epoch conversion** (`9893184`). Parser labels (`"in 5h"`, `"in 7d"`, `"9:40am (America/New_York)"`, `"7pm (America/New_York)"`) now convert to absolute epochs via a new `resets-label.ts` helper (14 unit tests). The runner writes both `utilization` and `resets_at` to the snapshot table, so the rate-limit pills finally render real countdown tails for the runner-driven 7-day window — not just the 5-hour stream-event path.
+- **UsageDetailPopover** (`4b3cdd5`, `f782d6c`). Clicking either rate-limit pill opens a popover showing session cost / API-and-wall durations / tokens / cache reads-and-writes / per-window percentages with reset labels / "What's contributing" headlines.
+- **Visibility-aware auto-refresh hook** (`64415a4`, `9893184`). `useUsageAutoRefresh` reads the cached runner result on mount, fires a fresh run if stale (>5 min), re-runs every 5 minutes while the tab is visible, fires once when a session transitions from `starting` to `active`, and pauses on `visibilitychange` to hidden.
+- **Account `cli_path` UI** (`46036d5`, `09269e2`, `11a20c2`). Account Settings can now pin a custom Claude binary per account. New SQLite migration v4 adds the `cli_path` column. Validator probes `--version` before saving.
+- **Two-column project page** (`8aeba8f`) with a sticky new-session form on the left and the project sidebar on the right.
+
+### Changed
+
+- **Pill labels renamed** (`9893184`). `5-hour` → "Current session", `7-day` → "Current week" — matches the language used inside the popover and inside `/usage` itself.
+- **Refresh button now works** (`13c9800`). The 0.3.57 button was wired to `claude -p "/status"`, which the CLI rejects (`"/status isn't available in this environment"`). It now invokes the new runner; spinner shows immediately on click.
+- **Usage Dashboard opens as a tab** (`1e0b610`) instead of as a modal, so back-navigation behaves.
+- **Prompt input starts at 2 lines tall** (`75d04f2`) instead of 1.
+
+### Fixed
+
+- **Welcome-screen + trust-dialog detection** (`1d157bb`). Old runner heuristic was "wait for `❯` then quiet" — but the workspace-trust dialog uses `❯` as its highlight cursor, so it triggered immediately and silently sent `/usage` into the dialog. Runner now waits for the `"? for shortcuts"` footer and confirms the trust dialog once with Enter if it appears.
+- **Refresh spinner showed late** (`16aa9a3`). Removed a redundant double-call to `runUsageCli` that delayed the `loading: true` flip until after the PTY had already finished.
+- **Parser missed indented sections** (`198b60e`). Real TUI emits section headers at column 2; the regex was anchored at column 0. Also fixed contributing-factor entries that lead with a percentage headline rather than a colon-key.
+- **`recordUtilization` preserves prior status** (`bd19351`). Snapshot upserts only touch `utilization` + `resets_at`; the SDK-reported `status` (`allowed` / `allowed_warning` / `rejected`) carries forward.
+
 ## [0.3.58] — 2026-04-27
 
 ### Added
