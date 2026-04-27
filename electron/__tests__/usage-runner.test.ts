@@ -52,7 +52,10 @@ function makeScriptedSpawn(scriptedOutput: string, settleDelayMs = 30): PtySpawn
     let killed = false;
     setTimeout(() => {
       if (killed) return;
-      for (const h of dataHandlers) h('> ');
+      // Emit the welcome-screen footer marker the runner now waits for
+      // before sending /usage. Real TUI shows "? for shortcuts" once the
+      // prompt is interactive.
+      for (const h of dataHandlers) h('? for shortcuts ');
     }, 5);
     const fake: FakePty = {
       write: (data: string) => {

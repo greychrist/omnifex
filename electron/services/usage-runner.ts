@@ -134,16 +134,38 @@ export function createUsageRunnerService(deps: UsageRunnerDeps): UsageRunnerServ
 
     const hardDeadline = Date.now() + hardTimeoutMs;
 
-    // Phase 1: wait for TUI to settle
+    // Phase 1: navigate past startup until we reach the welcome/prompt
+    // screen. Two transient screens can appear first:
+    //   - Workspace-trust dialog (when cwd hasn't been trusted yet for
+    //     this config dir). Default-highlighted choice is "Yes, I trust
+    //     this folder" — pressing Enter confirms.
+    //   - Welcome screen with the input prompt and a "? for shortcuts"
+    //     footer that's our reliable "ready" signal.
+    //
+    // We wait for the welcome footer to appear; if we see the trust
+    // dialog before then, we send Enter once to confirm and keep waiting.
+    // The earlier heuristic of "wait for `❯` then quiet" was wrong — the
+    // trust dialog uses `❯` as its highlight cursor, so it triggered
+    // immediately and we sent /usage into the dialog.
+    const READY_MARKER = 'for shortcuts';
+    const TRUST_MARKER = 'trust this folder';
+    let trustConfirmed = false;
     while (Date.now() < hardDeadline) {
-      if (Date.now() - lastByteAt >= settleQuietMs && buffer.length > 0) break;
+      const stripped = stripAnsi(buffer);
+      const ready = stripped.includes(READY_MARKER);
+      const quiet = Date.now() - lastByteAt >= settleQuietMs;
+      if (ready && quiet) break;
+      if (!trustConfirmed && stripped.includes(TRUST_MARKER)) {
+        pty.write('\r');
+        trustConfirmed = true;
+      }
       if (exited) break;
-      await sleep(20);
+      await sleep(50);
     }
     if (exited || Date.now() >= hardDeadline) {
       try { pty.kill(); } catch { /* already gone */ }
       return cacheAndReturn(accountName, {
-        ok: false, observed_at: observedAt, error: 'pty exited or timed out before /usage',
+        ok: false, observed_at: observedAt, error: 'pty exited or timed out before prompt was ready',
         raw: stripAnsi(buffer),
       });
     }
