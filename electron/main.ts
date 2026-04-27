@@ -46,6 +46,7 @@ import { createSessionsService } from './services/sessions';
 import { createNotificationsService } from './services/notifications';
 import { createClaudeService } from './services/claude';
 import { createUsageService } from './services/usage';
+import { createRateLimitsService } from './services/rate-limits';
 import { createLoggingService } from './services/logging';
 import { createProxyService } from './services/proxy';
 import { createMCPService } from './services/mcp';
@@ -358,6 +359,13 @@ app.whenReady().then(() => {
     createNotification: (opts) => new Notification(opts),
   });
   const permissionsIOService = createPermissionsIOService();
+  const rateLimitsService = createRateLimitsService({
+    db,
+    accounts: accountsService,
+    notifications: notificationsService,
+    sendToRenderer,
+    logging: loggingService,
+  });
   const sessionsService = _sessionsService = createSessionsService(
     sendToRenderer,
     {
@@ -383,6 +391,7 @@ app.whenReady().then(() => {
       configDir: params.configDir,
       projectPath: params.projectPath,
     }),
+    (configDir, info) => rateLimitsService.recordEvent(configDir, info),
   );
   const claudeService = createClaudeService(db, accountsService);
   const usageService = createUsageService(accountsService, loggingService);
@@ -547,6 +556,15 @@ app.whenReady().then(() => {
       getDetails: (params?: any) => usageService.getUsageDetails(params?.limit),
       getStatsByAccount: (params?: any) =>
         usageService.getStatsByAccount(params?.start_date, params?.end_date),
+    },
+    // Rate Limits adapter
+    rateLimits: {
+      getSnapshots: () => rateLimitsService.getSnapshots(),
+      getSnapshotsByAccount: (accountName: string) =>
+        rateLimitsService.getSnapshotsByAccount(accountName),
+      getSettings: () => rateLimitsService.getSettings(),
+      updateSettings: (partial: any) => rateLimitsService.updateSettings(partial ?? {}),
+      refresh: (accountName: string) => rateLimitsService.refresh(accountName),
     },
     // Claude binary adapter
     claudeBinary: {

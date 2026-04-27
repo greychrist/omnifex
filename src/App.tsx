@@ -137,6 +137,13 @@ function AppContent() {
     };
   }, []);
 
+  // Rate-limit widgets in the session header dispatch this when clicked.
+  useEffect(() => {
+    const handler = () => setView('usage-dashboard');
+    window.addEventListener('navigate-to-usage-dashboard', handler);
+    return () => window.removeEventListener('navigate-to-usage-dashboard', handler);
+  }, []);
+
   /**
    * Loads all projects from the ~/.claude/projects directory
    */

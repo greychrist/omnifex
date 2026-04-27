@@ -58,6 +58,33 @@ const migrations: Migration[] = [
       }
     },
   },
+  {
+    version: 3,
+    description: 'Add rate_limit_snapshots and rate_limit_fired_thresholds tables',
+    up: (db) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS rate_limit_snapshots (
+          account_name TEXT NOT NULL,
+          rate_limit_type TEXT NOT NULL,
+          status TEXT NOT NULL,
+          utilization REAL,
+          resets_at INTEGER,
+          payload_json TEXT NOT NULL,
+          observed_at INTEGER NOT NULL,
+          PRIMARY KEY (account_name, rate_limit_type)
+        );
+
+        CREATE TABLE IF NOT EXISTS rate_limit_fired_thresholds (
+          account_name TEXT NOT NULL,
+          rate_limit_type TEXT NOT NULL,
+          window_resets_at INTEGER NOT NULL,
+          threshold_key TEXT NOT NULL,
+          fired_at INTEGER NOT NULL,
+          PRIMARY KEY (account_name, rate_limit_type, window_resets_at, threshold_key)
+        );
+      `);
+    },
+  },
 ];
 
 /**

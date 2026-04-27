@@ -23,6 +23,7 @@ import type {
   LoggingService,
   SessionOwnership,
   PersistPermissionRuleFn,
+  RateLimitHook,
 } from './types';
 import { createSessionHooks } from './hooks';
 import { discoverWorktrees } from '../git-worktrees';
@@ -67,6 +68,7 @@ export function createSessionsService(
   logging: LoggingService | null = null,
   ownership: SessionOwnership | null = null,
   persistPermissionRule: PersistPermissionRuleFn | null = null,
+  rateLimitHook: RateLimitHook | null = null,
 ): SessionsService {
   const sessions = new Map<string, SessionHandle>();
 
@@ -103,6 +105,19 @@ export function createSessionsService(
         // messages won't have this field (the SDK's JSONL has no timestamp),
         // and the renderer treats that case as "no timestamp".
         (message as any).receivedAt = new Date().toISOString();
+
+        // Capture rate-limit events for the rate-limits service. Wrap in
+        // try/catch so a downstream bug never kills the session stream.
+        if ((message as any).type === 'rate_limit_event') {
+          const info = (message as any).rate_limit_info;
+          if (info && rateLimitHook) {
+            try {
+              rateLimitHook(handle.configDir, info);
+            } catch (err) {
+              console.error('[sessions] rate-limit hook failed:', err);
+            }
+          }
+        }
 
         // Forward every message to the renderer
         sendToRenderer(`claude-output:${tabId}`, message);

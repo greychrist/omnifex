@@ -83,6 +83,13 @@ export interface Services {
     getDetails(params?: unknown): unknown;
     getStatsByAccount(params?: unknown): unknown;
   };
+  rateLimits?: {
+    getSnapshots(): unknown;
+    getSnapshotsByAccount(accountName: string): unknown;
+    getSettings(): unknown;
+    updateSettings(partial: unknown): unknown;
+    refresh(accountName: string): unknown;
+  };
   claudeBinary?: {
     getPath(): unknown;
     setPath(path: string): unknown;
@@ -178,7 +185,7 @@ function wrapWith<P>(fn: (params: P) => unknown): HandlerFn {
  * renderer gets a defined (but empty) response rather than a blocked channel.
  */
 export function getHandlerMap(services: Services = {}): Record<string, HandlerFn> {
-  const { accounts, claude, sessions, usage, claudeBinary, mcp, slashCommands, logging, database, proxy, permissionsIO, models, sdkVersion, gitWatcher, lima } = services;
+  const { accounts, claude, sessions, usage, rateLimits, claudeBinary, mcp, slashCommands, logging, database, proxy, permissionsIO, models, sdkVersion, gitWatcher, lima } = services;
 
   const map: Record<string, HandlerFn> = {
     // ── Accounts ──────────────────────────────────────────────────────────────
@@ -341,6 +348,20 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     get_session_stats: wrapWith((p: Record<string, unknown>) => usage?.getSessionStats(p) ?? null),
     get_usage_details: wrapWith((p: Record<string, unknown>) => usage?.getDetails(p) ?? null),
     get_usage_by_account: wrapWith((p: Record<string, unknown>) => usage?.getStatsByAccount(p) ?? null),
+
+    // ── Rate Limits ───────────────────────────────────────────────────────────
+    get_rate_limits: wrapWith((p: Record<string, unknown>) => {
+      const accountName = (p?.accountName ?? p?.account_name) as string | undefined;
+      if (accountName) return rateLimits?.getSnapshotsByAccount(accountName) ?? [];
+      return rateLimits?.getSnapshots() ?? [];
+    }),
+    get_rate_limit_settings: wrap(() => rateLimits?.getSettings() ?? null),
+    update_rate_limit_settings: wrapWith((p: Record<string, unknown>) => rateLimits?.updateSettings(p) ?? null),
+    refresh_rate_limits: wrapWith((p: Record<string, unknown>) => {
+      const accountName = (p?.accountName ?? p?.account_name) as string | undefined;
+      if (!accountName) return null;
+      return rateLimits?.refresh(accountName) ?? null;
+    }),
 
     // ── Claude Binary ─────────────────────────────────────────────────────────
     get_claude_binary_path: wrap(() => claudeBinary?.getPath() ?? null),

@@ -25,6 +25,7 @@ import {
   HooksSettings,
   CommandsSettings,
   ProxySettingsPanel,
+  RateLimitsSettings,
   type PermissionRule,
   type EnvironmentVariable,
   type ToastState,
@@ -308,6 +309,7 @@ export const Settings: React.FC<SettingsProps> = ({
               <TabsTrigger value="commands" className="flex-1 py-2 text-xs">Commands</TabsTrigger>
               <TabsTrigger value="storage" className="flex-1 py-2 text-xs">Storage</TabsTrigger>
               <TabsTrigger value="proxy" className="flex-1 py-2 text-xs">Proxy</TabsTrigger>
+              <TabsTrigger value="rate_limits" className="flex-1 py-2 text-xs">Rate Limits</TabsTrigger>
               <TabsTrigger value="log" className="flex-1 py-2 text-xs">Log</TabsTrigger>
             </TabsList>
 
@@ -410,6 +412,15 @@ export const Settings: React.FC<SettingsProps> = ({
                   setProxySettingsChanged(hasChanges);
                   saveProxySettings.current = save;
                 }}
+              />
+            </TabsContent>
+
+            {/* Rate Limits Settings */}
+            <TabsContent value="rate_limits" className="space-y-6 mt-6">
+              <RateLimitsSettings
+                settings={settings}
+                updateSetting={updateSetting}
+                setToast={setToast}
               />
             </TabsContent>
 

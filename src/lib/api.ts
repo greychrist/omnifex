@@ -233,6 +233,29 @@ export interface AccountUsageStats {
   stats: UsageStats;
 }
 
+/** Latest rate-limit snapshot for one (account, rate-limit-type) pair. */
+export interface RateLimitSnapshot {
+  account_name: string;
+  /** 'five_hour' | 'seven_day' | 'seven_day_opus' | 'seven_day_sonnet' | 'overage' */
+  rate_limit_type: string;
+  status: 'allowed' | 'allowed_warning' | 'rejected';
+  /** 0–100. May be null when the SDK didn't include it. */
+  utilization: number | null;
+  /** Unix epoch seconds. May be null. */
+  resets_at: number | null;
+  /** Unix epoch ms — when GreyChrist saw this snapshot. */
+  observed_at: number;
+}
+
+/** User-configurable rate-limit settings. */
+export interface RateLimitSettings {
+  notifications_enabled: boolean;
+  five_hour_thresholds_pct: number[];
+  seven_day_notifications_enabled: boolean;
+  seven_day_thresholds_pct: number[];
+  sound_enabled: boolean;
+}
+
 /**
  * Represents an MCP server configuration
  */
@@ -978,6 +1001,34 @@ export const api = {
   /** Run /usage via the CLI for a specific account. Max accounts only. */
   async getCliUsage(configDir?: string): Promise<string> {
     return apiCall("get_cli_usage", { configDir });
+  },
+
+  /** Latest rate-limit snapshots across all accounts (or one if accountName given). */
+  async getRateLimits(accountName?: string): Promise<RateLimitSnapshot[]> {
+    return apiCall<RateLimitSnapshot[]>("get_rate_limits", { accountName });
+  },
+
+  /** Read user's rate-limit notification settings. */
+  async getRateLimitSettings(): Promise<RateLimitSettings> {
+    return apiCall<RateLimitSettings>("get_rate_limit_settings");
+  },
+
+  /** Update one or more rate-limit notification settings; returns the merged result. */
+  async updateRateLimitSettings(
+    partial: Partial<RateLimitSettings>,
+  ): Promise<RateLimitSettings> {
+    return apiCall<RateLimitSettings>("update_rate_limit_settings", partial as Record<string, unknown>);
+  },
+
+  /**
+   * Manually refresh rate-limit data for one account by shelling out to
+   * `claude -p "/status" --output-format json` in the main process. Returns
+   * the snapshots that were updated, or `null` if the call failed (the
+   * failure is logged to the app log; renderer should treat null as
+   * "couldn't refresh, try again").
+   */
+  async refreshRateLimits(accountName: string): Promise<RateLimitSnapshot[] | null> {
+    return apiCall<RateLimitSnapshot[] | null>("refresh_rate_limits", { accountName });
   },
 
   /**

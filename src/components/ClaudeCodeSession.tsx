@@ -10,11 +10,10 @@ import {
   Shield,
   Send,
   ArrowLeft,
-  Eraser,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover } from "@/components/ui/popover";
-import { api, type Session } from "@/lib/api";
+import { api, type Session, type RateLimitSnapshot } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { NewSessionForm } from "./NewSessionForm";
 import { StreamMessage } from "./StreamMessage";
@@ -45,6 +44,8 @@ import { buildCompactItems } from "@/lib/compactGrouping";
 import { filterCompactHidden } from "@/lib/messageKind";
 import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
 import { SessionHeader, HeaderLabel } from "./SessionHeader";
+import { ProjectPathBadge } from "./claude-code-session/ProjectPathBadge";
+import { GitBranchBadge } from "./claude-code-session/GitBranchBadge";
 import { filterDisplayableMessages } from "@/lib/messageFilters";
 import { deriveSubagents } from "@/lib/subagentStreams";
 import { SubagentBar } from "./SubagentBar";
@@ -162,6 +163,16 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     match_type: string;
     match_detail: string;
   } | null>(null);
+
+  /**
+   * Latest rate-limit snapshots for the resolved account, keyed by
+   * `rate_limit_type` (e.g. 'five_hour', 'seven_day'). Populated on mount
+   * via `api.getRateLimits(accountName)` and refreshed live by subscribing
+   * to the main process's `rate-limits:updated` event channel.
+   */
+  const [rateLimitSnapshots, setRateLimitSnapshots] = useState<
+    Record<string, RateLimitSnapshot>
+  >({});
   const [sessionCost, setSessionCost] = useState(0);
   // Pre-session config: show setup panel for new sessions until user clicks
   // Start. When the tab was opened from the project view's inline form,
@@ -991,6 +1002,46 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     return () => unlisten();
   }, []);
 
+  // Rate-limit snapshots for the active account: fetch initial state on
+  // resolution, then live-update from the main process's
+  // `rate-limits:updated` event whenever an SDK rate-limit event lands.
+  const activeAccountName = accountResolution?.account.name ?? null;
+  useEffect(() => {
+    if (!activeAccountName) {
+      setRateLimitSnapshots({});
+      return;
+    }
+    let cancelled = false;
+    api.getRateLimits(activeAccountName)
+      .then((snaps) => {
+        if (cancelled) return;
+        const byType: Record<string, RateLimitSnapshot> = {};
+        for (const s of snaps) byType[s.rate_limit_type] = s;
+        setRateLimitSnapshots(byType);
+      })
+      .catch((err) => console.error('[rate-limits] initial fetch failed:', err));
+
+    const unlisten = window.electronAPI.onEvent(
+      'rate-limits:updated',
+      (...args: unknown[]) => {
+        const payload = args[0] as
+          | { account_name?: string; snapshot?: RateLimitSnapshot }
+          | undefined;
+        if (!payload?.snapshot) return;
+        if (payload.account_name !== activeAccountName) return;
+        const next = payload.snapshot;
+        setRateLimitSnapshots((prev) => ({
+          ...prev,
+          [next.rate_limit_type]: next,
+        }));
+      },
+    );
+    return () => {
+      cancelled = true;
+      unlisten();
+    };
+  }, [activeAccountName]);
+
   // Ref-indirected reload so the session-mode effect can stay [] while
   // reading the latest claudeSessionId / projectId / projectPath.
   const reloadHistoryRef = useRef<() => void>(() => {});
@@ -1348,6 +1399,37 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       : undefined;
 
 
+  // Compute restart-button gating once so it can be passed to both the
+  // header (where the button lives) and any tooltip consumers.
+  const clearButtonDisabled =
+    !isSessionActive || isLoading || waitingForPermission || messages.length === 0;
+  const clearButtonReason = !isSessionActive
+    ? 'Start a session first'
+    : isLoading
+      ? 'Wait for the current turn to finish'
+      : waitingForPermission
+        ? 'Resolve the permission dialog first'
+        : messages.length === 0
+          ? 'Nothing to clear'
+          : undefined;
+
+  const navigateToUsageDashboard = useCallback(() => {
+    window.dispatchEvent(new CustomEvent('navigate-to-usage-dashboard'));
+  }, []);
+
+  const refreshRateLimits = useCallback(async () => {
+    if (!activeAccountName) return;
+    try {
+      // The backend feeds the parsed snapshots through `recordEvent`, which
+      // emits `rate-limits:updated` events. Our existing subscription picks
+      // those up and updates `rateLimitSnapshots` automatically — we don't
+      // need to merge the return value into local state by hand.
+      await api.refreshRateLimits(activeAccountName);
+    } catch (err) {
+      console.error('[rate-limits] manual refresh failed:', err);
+    }
+  }, [activeAccountName]);
+
   return (
     <TooltipProvider>
       <div className={cn("flex flex-col h-full bg-background", className)}>
@@ -1362,54 +1444,40 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             <ArrowLeft className="h-4 w-4" />
             Back to Project
           </Button>
-          <div className="ml-auto flex items-center gap-3">
-            {(() => {
-              const clearDisabled =
-                !isSessionActive || isLoading || waitingForPermission || messages.length === 0;
-              const clearReason = !isSessionActive
-                ? 'Start a session first'
-                : isLoading
-                  ? 'Wait for the current turn to finish'
-                  : waitingForPermission
-                    ? 'Resolve the permission dialog first'
-                    : messages.length === 0
-                      ? 'Nothing to clear'
-                      : undefined;
-              return (
-                <div className="flex flex-col items-start gap-0.5">
-                  <HeaderLabel>restart</HeaderLabel>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => void handleClear()}
-                    disabled={clearDisabled}
-                    className="h-7 px-2 text-xs gap-1"
-                    title={clearReason ?? 'Clear conversation and start a fresh session'}
-                  >
-                    <Eraser className="h-3.5 w-3.5" />
-                    Clear
-                  </Button>
-                </div>
-              );
-            })()}
+          <span aria-hidden="true" className="self-stretch w-px bg-foreground/30 shrink-0 mx-1" />
+          {projectPath && (
             <div className="flex flex-col items-start gap-0.5">
-              <HeaderLabel>mode</HeaderLabel>
-              <SessionModeToggle
-                mode={sessionMode}
-                onChange={(next) => {
-                  api.setSessionMode(tabIdRef.current, next).catch((err) => {
-                    console.error('Failed to switch mode:', err);
-                  });
-                }}
-                disabled={modeToggleDisabled}
-                disabledReason={modeToggleReason}
+              <HeaderLabel>folder</HeaderLabel>
+              <ProjectPathBadge path={projectPath} />
+            </div>
+          )}
+          {gitStatus?.branch && (
+            <div className="flex flex-col items-start gap-0.5">
+              <HeaderLabel>branch</HeaderLabel>
+              <GitBranchBadge
+                name={gitStatus.branch}
+                changed={gitStatus.changed}
+                untracked={gitStatus.untracked}
               />
             </div>
+          )}
+          {worktreeList.length > 0 && (
             <div className="flex flex-col items-start gap-0.5">
-              <HeaderLabel>output style</HeaderLabel>
-              <SessionViewToggle mode={viewMode} onChange={setViewMode} />
+              <HeaderLabel>worktrees</HeaderLabel>
+              <div className="flex flex-col items-start gap-1">
+                {worktreeList.map((wt) => (
+                  <span key={wt.path} title={wt.path}>
+                    <GitBranchBadge
+                      name={wt.branch ?? '(detached)'}
+                      changed={wt.changed}
+                      untracked={wt.untracked}
+                    />
+                  </span>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
+          {/* mode and output-style controls have moved to the chat bar (see FloatingPromptInput below). */}
         </div>
         <SessionHeader
           accountName={accountResolution?.account.name ?? ''}
@@ -1422,9 +1490,13 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           model={selectedModel}
           sdkAccount={sdkAccountInfo}
           contextUsage={contextUsage}
-          projectPath={projectPath}
-          gitStatus={gitStatus}
-          worktrees={worktreeList}
+          fiveHourRateLimit={rateLimitSnapshots['five_hour'] ?? null}
+          sevenDayRateLimit={rateLimitSnapshots['seven_day'] ?? null}
+          onRateLimitClick={navigateToUsageDashboard}
+          onRefreshRateLimits={refreshRateLimits}
+          onClear={() => void handleClear()}
+          clearDisabled={clearButtonDisabled}
+          clearReason={clearButtonReason}
           sessionStatus={
             !sessionStarted
               ? undefined
@@ -1715,6 +1787,27 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                   });
                 }
               }}
+              modeToggle={
+                <div className="flex items-center gap-1.5">
+                  <HeaderLabel>mode</HeaderLabel>
+                  <SessionModeToggle
+                    mode={sessionMode}
+                    onChange={(next) => {
+                      api.setSessionMode(tabIdRef.current, next).catch((err) => {
+                        console.error('Failed to switch mode:', err);
+                      });
+                    }}
+                    disabled={modeToggleDisabled}
+                    disabledReason={modeToggleReason}
+                  />
+                </div>
+              }
+              outputStyleToggle={
+                <div className="flex items-center gap-1.5">
+                  <HeaderLabel>output style</HeaderLabel>
+                  <SessionViewToggle mode={viewMode} onChange={setViewMode} />
+                </div>
+              }
               extraMenuItems={
                 <>
                   {messages.length > 0 && (

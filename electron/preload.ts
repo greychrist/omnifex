@@ -73,6 +73,12 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   'get_usage_details',
   'get_usage_by_account',
 
+  // Rate Limits
+  'get_rate_limits',
+  'get_rate_limit_settings',
+  'update_rate_limit_settings',
+  'refresh_rate_limits',
+
   // Claude Binary
   'get_claude_binary_path',
   'set_claude_binary_path',
@@ -193,7 +199,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       !channel.startsWith('updater:') &&
       !channel.startsWith('notification-clicked') &&
       !channel.startsWith('git-branch-changed:') &&
-      !channel.startsWith('worktrees-changed:')
+      !channel.startsWith('worktrees-changed:') &&
+      !channel.startsWith('rate-limits:')
     ) {
       throw new Error(`Blocked IPC event channel: ${channel}`);
     }

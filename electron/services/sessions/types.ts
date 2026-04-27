@@ -176,6 +176,21 @@ export interface NotificationHooks {
   incrementUnread?: () => void;
 }
 
+/**
+ * Forwarded to the rate-limits service on every `rate_limit_event` message
+ * the SDK streams. Wired in main.ts; tests typically leave it undefined.
+ */
+export type RateLimitHook = (
+  configDir: string,
+  info: {
+    status: 'allowed' | 'allowed_warning' | 'rejected';
+    rateLimitType?: string;
+    utilization?: number;
+    resetsAt?: number;
+    surpassedThreshold?: number;
+  },
+) => void;
+
 // ---------------------------------------------------------------------------
 // Internal session handle
 // ---------------------------------------------------------------------------

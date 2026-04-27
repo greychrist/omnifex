@@ -4,13 +4,19 @@ import {
   Database,
   ShieldCheck,
   ShieldAlert,
+  Eraser,
+  RefreshCw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { SessionAccountInfo, SessionContextUsage, GitBranchSnapshot } from "@/lib/api";
+import type {
+  SessionAccountInfo,
+  SessionContextUsage,
+  RateLimitSnapshot,
+} from "@/lib/api";
 import { Popover } from "@/components/ui/popover";
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
-import { ProjectPathBadge } from "./claude-code-session/ProjectPathBadge";
-import { GitBranchBadge } from "./claude-code-session/GitBranchBadge";
+import { Button } from "@/components/ui/button";
+import { RateLimitWidget } from "./claude-code-session/RateLimitWidget";
 
 /**
  * Small uppercase label rendered above each header badge ("account", "branch",
@@ -75,16 +81,26 @@ interface SessionHeaderProps {
    * just the assistant-reported message-token count.
    */
   contextUsage?: SessionContextUsage | null;
-  /** Project directory path — rendered as a badge in the header. */
-  projectPath?: string;
-  /** Branch + working-tree status snapshot — rendered as a badge in the header. */
-  gitStatus?: GitBranchSnapshot;
+  /** Latest 5-hour rate-limit snapshot for this session's account, or null. */
+  fiveHourRateLimit?: RateLimitSnapshot | null;
+  /** Latest 7-day rate-limit snapshot for this session's account, or null. */
+  sevenDayRateLimit?: RateLimitSnapshot | null;
+  /** Click handler invoked when a rate-limit pill is clicked (open dashboard). */
+  onRateLimitClick?: () => void;
   /**
-   * Snapshots for sibling worktrees of the same repo (excluding the current
-   * project). Rendered as a stacked column of badges next to the branch
-   * widget. Empty/undefined hides the worktrees column entirely.
+   * Click handler for the manual rate-limit refresh button. When provided, a
+   * small refresh icon is rendered next to the rate-limit pills; clicking it
+   * shells out to `claude -p "/status"` to pull fresh data (used when the
+   * SDK's live rate_limit_event stream omits utilization). The promise is
+   * awaited so the button can show a spinning state while the CLI runs.
    */
-  worktrees?: WorktreeSnapshot[];
+  onRefreshRateLimits?: () => Promise<void> | void;
+  /** Restart / Clear-conversation button click handler. */
+  onClear?: () => void;
+  /** Whether the restart button is disabled (no session, mid-turn, etc.). */
+  clearDisabled?: boolean;
+  /** Tooltip explaining why restart is disabled, when it is. */
+  clearReason?: string;
 
   className?: string;
 }
@@ -109,9 +125,13 @@ export function SessionHeader({
   model,
   sdkAccount,
   contextUsage,
-  projectPath,
-  gitStatus,
-  worktrees,
+  fiveHourRateLimit,
+  sevenDayRateLimit,
+  onRateLimitClick,
+  onRefreshRateLimits,
+  onClear,
+  clearDisabled,
+  clearReason,
   sessionStatus,
   className,
 }: SessionHeaderProps) {
@@ -119,6 +139,17 @@ export function SessionHeader({
   // we control close-on-select etc.
   const [accountPopoverOpen, setAccountPopoverOpen] = React.useState(false);
   const [contextPopoverOpen, setContextPopoverOpen] = React.useState(false);
+  const [refreshing, setRefreshing] = React.useState(false);
+
+  const handleRefreshClick = React.useCallback(async () => {
+    if (!onRefreshRateLimits || refreshing) return;
+    setRefreshing(true);
+    try {
+      await onRefreshRateLimits();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [onRefreshRateLimits, refreshing]);
   // Defer chart rendering by one frame so the popover container has dimensions
   const [chartReady, setChartReady] = React.useState(false);
   React.useEffect(() => {
@@ -271,42 +302,36 @@ export function SessionHeader({
         );
       })()}
 
-      {(projectPath || gitStatus?.branch) && (
-        <span aria-hidden="true" className="self-stretch w-px bg-foreground/30 shrink-0" />
-      )}
-      {projectPath && (
+      <span aria-hidden="true" className="self-stretch w-px bg-foreground/30 shrink-0" />
+      <RateLimitWidget
+        snapshot={fiveHourRateLimit ?? null}
+        windowType="five_hour"
+        accountName={accountName}
+        onClick={onRateLimitClick}
+      />
+      <RateLimitWidget
+        snapshot={sevenDayRateLimit ?? null}
+        windowType="seven_day"
+        accountName={accountName}
+        onClick={onRateLimitClick}
+      />
+      {onRefreshRateLimits && (
         <div className="flex flex-col items-start gap-0.5">
-          <HeaderLabel>folder</HeaderLabel>
-          <ProjectPathBadge path={projectPath} />
-        </div>
-      )}
-      {gitStatus?.branch && (
-        <div className="flex flex-col items-start gap-0.5">
-          <HeaderLabel>branch</HeaderLabel>
-          <GitBranchBadge
-            name={gitStatus.branch}
-            changed={gitStatus.changed}
-            untracked={gitStatus.untracked}
-          />
-        </div>
-      )}
-      {worktrees && worktrees.length > 0 && (
-        <span aria-hidden="true" className="self-stretch w-px bg-foreground/30 shrink-0" />
-      )}
-      {worktrees && worktrees.length > 0 && (
-        <div className="flex flex-col items-start gap-0.5">
-          <HeaderLabel>worktrees</HeaderLabel>
-          <div className="flex flex-col items-start gap-1">
-            {worktrees.map((wt) => (
-              <span key={wt.path} title={wt.path}>
-                <GitBranchBadge
-                  name={wt.branch ?? '(detached)'}
-                  changed={wt.changed}
-                  untracked={wt.untracked}
-                />
-              </span>
-            ))}
-          </div>
+          <HeaderLabel>&nbsp;</HeaderLabel>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => void handleRefreshClick()}
+            disabled={refreshing}
+            className="h-7 w-7 p-0"
+            title={
+              refreshing
+                ? 'Refreshing rate limits…'
+                : 'Refresh rate-limit data via `claude /status`'
+            }
+          >
+            <RefreshCw className={cn('h-3.5 w-3.5', refreshing && 'animate-spin')} />
+          </Button>
         </div>
       )}
 
@@ -496,6 +521,22 @@ export function SessionHeader({
             </div>
           );
         })()}
+        {onClear && (
+          <div className="flex flex-col items-start gap-0.5">
+            <HeaderLabel>restart</HeaderLabel>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={onClear}
+              disabled={clearDisabled}
+              className="h-7 px-2 text-xs gap-1"
+              title={clearReason ?? 'Clear conversation and start a fresh session'}
+            >
+              <Eraser className="h-3.5 w-3.5" />
+              Clear
+            </Button>
+          </div>
+        )}
         {showCost && (
           <span className="text-foreground/50 font-mono">
             ${cost.toFixed(4)}

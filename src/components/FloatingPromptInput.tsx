@@ -53,6 +53,20 @@ interface FloatingPromptInputProps {
   className?: string;
   onCancel?: () => void;
   extraMenuItems?: React.ReactNode;
+  /**
+   * Optional content rendered as its own row immediately above the left-side
+   * control pickers (model / effort / thinking / permission). Used by the
+   * session view to surface the SDK ↔ Terminal mode toggle here, freeing
+   * vertical space in the top header above. Renders nothing when omitted.
+   */
+  modeToggle?: React.ReactNode;
+  /**
+   * Optional content rendered as its own row immediately above the right-side
+   * extras (copy / MCP / plugins / permissions). Used by the session view to
+   * surface the Compact ↔ Verbose output style toggle alongside the control
+   * pickers it modifies.
+   */
+  outputStyleToggle?: React.ReactNode;
   permissionMode?: string;
   onPermissionModeChange?: (mode: string) => void;
   supportedModels?: SessionModelInfo[];
@@ -81,6 +95,8 @@ const FloatingPromptInputInner = (
     className,
     onCancel,
     extraMenuItems,
+    modeToggle,
+    outputStyleToggle,
     permissionMode = "default",
     onPermissionModeChange,
     supportedModels,
@@ -527,41 +543,44 @@ const FloatingPromptInputInner = (
 
           <div className="p-3">
             <div className="flex items-end gap-2">
-              {/* Control pickers — left side */}
-              <div className="flex items-center gap-1 shrink-0 mb-1">
-                <CompactModelPicker
-                  selectedModelData={selectedModelData}
-                  models={effectiveModels}
-                  selectedModel={selectedModel}
-                  onSelect={handleModelSelect}
-                  open={modelPickerOpen}
-                  onOpenChange={setModelPickerOpen}
-                  disabled={disabled}
-                />
+              {/* Control pickers — left side; optional mode toggle row above */}
+              <div className="flex flex-col items-start gap-1 shrink-0 mb-1">
+                {modeToggle}
+                <div className="flex items-center gap-1">
+                  <CompactModelPicker
+                    selectedModelData={selectedModelData}
+                    models={effectiveModels}
+                    selectedModel={selectedModel}
+                    onSelect={handleModelSelect}
+                    open={modelPickerOpen}
+                    onOpenChange={setModelPickerOpen}
+                    disabled={disabled}
+                  />
 
-                <EffortPicker
-                  effort={effort}
-                  onEffortChange={onEffortChange}
-                  open={effortPickerOpen}
-                  onOpenChange={setEffortPickerOpen}
-                  disabled={disabled}
-                />
+                  <EffortPicker
+                    effort={effort}
+                    onEffortChange={onEffortChange}
+                    open={effortPickerOpen}
+                    onOpenChange={setEffortPickerOpen}
+                    disabled={disabled}
+                  />
 
-                <ThinkingPicker
-                  thinkingConfig={thinkingConfig}
-                  onThinkingConfigChange={onThinkingConfigChange}
-                  open={thinkingPickerOpen}
-                  onOpenChange={setThinkingPickerOpen}
-                  disabled={disabled}
-                />
+                  <ThinkingPicker
+                    thinkingConfig={thinkingConfig}
+                    onThinkingConfigChange={onThinkingConfigChange}
+                    open={thinkingPickerOpen}
+                    onOpenChange={setThinkingPickerOpen}
+                    disabled={disabled}
+                  />
 
-                <PermissionPicker
-                  permissionMode={permissionMode}
-                  onPermissionModeChange={onPermissionModeChange}
-                  open={permissionPickerOpen}
-                  onOpenChange={setPermissionPickerOpen}
-                  disabled={disabled}
-                />
+                  <PermissionPicker
+                    permissionMode={permissionMode}
+                    onPermissionModeChange={onPermissionModeChange}
+                    open={permissionPickerOpen}
+                    onOpenChange={setPermissionPickerOpen}
+                    disabled={disabled}
+                  />
+                </div>
               </div>
 
               {/* Prompt Input - Center */}
@@ -665,10 +684,15 @@ const FloatingPromptInputInner = (
                 </AnimatePresence>
               </div>
 
-              {/* Extra menu items - Right side */}
-              {extraMenuItems && (
-                <div className="flex items-center gap-0.5 shrink-0 mb-1">
-                  {extraMenuItems}
+              {/* Extra menu items - Right side; optional output-style toggle row above */}
+              {(extraMenuItems || outputStyleToggle) && (
+                <div className="flex flex-col items-end gap-1 shrink-0 mb-1">
+                  {outputStyleToggle}
+                  {extraMenuItems && (
+                    <div className="flex items-center gap-0.5">
+                      {extraMenuItems}
+                    </div>
+                  )}
                 </div>
               )}
             </div>

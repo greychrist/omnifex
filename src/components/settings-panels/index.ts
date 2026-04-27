@@ -6,4 +6,5 @@ export { AdvancedSettings } from "./AdvancedSettings";
 export { HooksSettings } from "./HooksSettings";
 export { CommandsSettings } from "./CommandsSettings";
 export { ProxySettingsPanel } from "./ProxySettingsPanel";
+export { RateLimitsSettings } from "./RateLimitsSettings";
 export type { PermissionRule, EnvironmentVariable, ToastState, SettingsPanelProps } from "./types";
