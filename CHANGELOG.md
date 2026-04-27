@@ -5,6 +5,18 @@ All notable changes to GreyChrist are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.56] — 2026-04-27
+
+Collapses the upgrade button into a single click and surfaces an active-sessions warning *before* you click, driven by a live in-flight count broadcast from the main process. Installers remain **unsigned**.
+
+### Added
+
+- **Live in-flight session count** (`2f438b2`). Main process polls `listInFlightTabIds()` once a second and broadcasts to every window via `session-inflight-count`; titlebar subscribes through new `api.onSessionInFlightCount`. Drives the new warning state and stays a single source of truth that mirrors what the install gate sees.
+
+### Changed
+
+- **Upgrade button is now one click** (`2f438b2`). Download + install run back-to-back inside `handleUpdateClick` (the local-folder "download" is instant, so the previous two-click flow was redundant). When the live in-flight count is 0 the button is the normal "Update Available!" pill; when it's > 0 the button switches to an amber "<N> active — Install Anyway" warning pill, and clicking calls `installUpdate({ force: true })` so the SDK turns are stopped before the install runs. Main-process `waitForIdle` stays as a safety net for stale renderer state.
+
 ## [0.3.55] — 2026-04-27
 
 Replaces the one-shot worktree enumeration with a live fs.watch on the shared gitdir's `worktrees/` so `git worktree add` / `remove` updates the header column without a project re-open. Adds end-to-end install diagnostics + collapses the upgrade button's two-click flow into one for the local-folder updater. Installers remain **unsigned**.
