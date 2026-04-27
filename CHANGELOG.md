@@ -5,6 +5,14 @@ All notable changes to GreyChrist are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.61] — 2026-04-27
+
+Follow-up to 0.3.60: the rate-limit pill kept showing "stale" 10 minutes after the last SDK event even after a successful manual refresh. Installers remain **unsigned**.
+
+### Fixed
+
+- **Rate-limit pill never refreshed from CLI-runner writes** (`198a7cc`). `recordUtilization` (the path the usage CLI runner takes) was emitting an `rate_limit_snapshot` IPC channel with no snapshot payload — but the renderer listens to `rate-limits:updated` (the prefix-allowed channel `recordEvent` uses). The DB row got a fresh `observed_at`, but the React state in `ClaudeCodeSession` held the old value and the widget's `now - observed_at > 10min` "stale" check stayed tripped. `recordUtilization` now reads the merged row back and emits `rate-limits:updated` with the same `{ account_name, snapshot }` payload shape, so manual refreshes and the 5-min auto-refresh actually update the pill.
+
 ## [0.3.60] — 2026-04-27
 
 Fixes the PTY spawn failure introduced with the 0.3.59 usage runner. Installers remain **unsigned**.
