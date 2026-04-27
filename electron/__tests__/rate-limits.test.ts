@@ -16,6 +16,7 @@ function makeAccount(overrides: Partial<Account> = {}): Account {
     account_type: 'max',
     color: null,
     icon: null,
+    cli_path: null,
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
     ...overrides,

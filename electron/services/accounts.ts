@@ -23,6 +23,7 @@ export interface Account {
   color: string | null;
   icon: string | null;
   session_defaults?: SessionDefaults;
+  cli_path: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -57,6 +58,7 @@ export interface AccountsService {
     color?: string,
     icon?: string,
     sessionDefaults?: SessionDefaults,
+    cliPath?: string | null,
   ): Account;
   updateAccount(
     id: number,
@@ -66,6 +68,7 @@ export interface AccountsService {
     color?: string,
     icon?: string,
     sessionDefaults?: SessionDefaults | null,
+    cliPath?: string | null,
   ): void;
   deleteAccount(id: number): void;
 
@@ -94,6 +97,7 @@ interface AccountRow {
   color: string | null;
   icon: string | null;
   session_defaults: string | null;
+  cli_path: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -120,6 +124,7 @@ function rowToAccount(row: AccountRow): Account {
     color: row.color,
     icon: row.icon,
     session_defaults: row.session_defaults ? (JSON.parse(row.session_defaults) as SessionDefaults) : undefined,
+    cli_path: row.cli_path,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
@@ -170,6 +175,7 @@ export function createAccountsService(db: Database): AccountsService {
     color?: string,
     icon?: string,
     sessionDefaults?: SessionDefaults,
+    cliPath?: string | null,
   ): Account {
     if (isDefault) {
       raw.prepare('UPDATE accounts SET is_default = 0').run();
@@ -177,10 +183,19 @@ export function createAccountsService(db: Database): AccountsService {
 
     const info = raw
       .prepare(
-        `INSERT INTO accounts (name, config_dir, is_default, account_type, color, icon, session_defaults)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO accounts (name, config_dir, is_default, account_type, color, icon, session_defaults, cli_path)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(name, configDir, isDefault ? 1 : 0, accountType, color ?? null, icon ?? null, sessionDefaults ? JSON.stringify(sessionDefaults) : null);
+      .run(
+        name,
+        configDir,
+        isDefault ? 1 : 0,
+        accountType,
+        color ?? null,
+        icon ?? null,
+        sessionDefaults ? JSON.stringify(sessionDefaults) : null,
+        cliPath ?? null,
+      );
 
     const row = raw
       .prepare('SELECT * FROM accounts WHERE id = ?')
@@ -197,26 +212,43 @@ export function createAccountsService(db: Database): AccountsService {
     color?: string,
     icon?: string,
     sessionDefaults?: SessionDefaults | null,
+    cliPath?: string | null,
   ): void {
     if (sessionDefaults !== undefined) {
       raw
         .prepare(
           `UPDATE accounts
            SET name = ?, config_dir = ?, account_type = COALESCE(?, account_type),
-               color = ?, icon = ?, session_defaults = ?, updated_at = CURRENT_TIMESTAMP
+               color = ?, icon = ?, session_defaults = ?, cli_path = ?, updated_at = CURRENT_TIMESTAMP
            WHERE id = ?`,
         )
-        .run(name, configDir, accountType ?? null, color ?? null, icon ?? null,
-          sessionDefaults !== null ? JSON.stringify(sessionDefaults) : null, id);
+        .run(
+          name,
+          configDir,
+          accountType ?? null,
+          color ?? null,
+          icon ?? null,
+          sessionDefaults !== null ? JSON.stringify(sessionDefaults) : null,
+          cliPath ?? null,
+          id,
+        );
     } else {
       raw
         .prepare(
           `UPDATE accounts
            SET name = ?, config_dir = ?, account_type = COALESCE(?, account_type),
-               color = ?, icon = ?, updated_at = CURRENT_TIMESTAMP
+               color = ?, icon = ?, cli_path = ?, updated_at = CURRENT_TIMESTAMP
            WHERE id = ?`,
         )
-        .run(name, configDir, accountType ?? null, color ?? null, icon ?? null, id);
+        .run(
+          name,
+          configDir,
+          accountType ?? null,
+          color ?? null,
+          icon ?? null,
+          cliPath ?? null,
+          id,
+        );
     }
   }
 

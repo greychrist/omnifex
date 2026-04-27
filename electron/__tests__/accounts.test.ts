@@ -42,6 +42,34 @@ describe('accounts service', () => {
       expect(updated.account_type).toBe('team');
     });
 
+    it('round-trips cli_path through createAccount', () => {
+      accounts.createAccount('Personal', '/home/user/.claude', false, 'max', undefined, undefined, undefined, '/Users/g/.local/bin/claude');
+      const [acct] = accounts.listAccounts();
+      expect(acct.cli_path).toBe('/Users/g/.local/bin/claude');
+    });
+
+    it('round-trips cli_path through updateAccount', () => {
+      accounts.createAccount('Personal', '/home/user/.claude', false, 'max', undefined, undefined, undefined, '/initial/claude');
+      const [acct] = accounts.listAccounts();
+      accounts.updateAccount(acct.id, 'Personal', '/home/user/.claude', 'max', undefined, undefined, undefined, '/updated/claude');
+      const after = accounts.listAccounts().find((a) => a.id === acct.id)!;
+      expect(after.cli_path).toBe('/updated/claude');
+    });
+
+    it('clears cli_path when updateAccount is called with null', () => {
+      accounts.createAccount('Personal', '/home/user/.claude', false, 'max', undefined, undefined, undefined, '/initial/claude');
+      const [acct] = accounts.listAccounts();
+      accounts.updateAccount(acct.id, 'Personal', '/home/user/.claude', 'max', undefined, undefined, undefined, null);
+      const after = accounts.listAccounts().find((a) => a.id === acct.id)!;
+      expect(after.cli_path).toBeNull();
+    });
+
+    it('defaults cli_path to null on createAccount when not provided', () => {
+      accounts.createAccount('Work', '/home/user/.claude-work', false);
+      const [acct] = accounts.listAccounts();
+      expect(acct.cli_path).toBeNull();
+    });
+
     it('stores and returns session_defaults on create', () => {
       accounts.createAccount('Personal', '/home/user/.claude', false, 'pro', undefined, undefined, {
         model: 'sonnet',
