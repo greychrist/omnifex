@@ -206,6 +206,8 @@ export const AccountSettings: React.FC = () => {
   const [newColor, setNewColor] = useState("#3b82f6");
   const [newIcon, setNewIcon] = useState<string>("user");
   const [newSessionDefaults, setNewSessionDefaults] = useState<SessionDefaults>({});
+  const [newCliPath, setNewCliPath] = useState<string>("");
+  const [newCliPathError, setNewCliPathError] = useState<string | null>(null);
   const [showNewIconPicker, setShowNewIconPicker] = useState(false);
 
   // Edit account state
@@ -216,6 +218,8 @@ export const AccountSettings: React.FC = () => {
   const [editColor, setEditColor] = useState("#3b82f6");
   const [editIcon, setEditIcon] = useState<string>("user");
   const [editSessionDefaults, setEditSessionDefaults] = useState<SessionDefaults>({});
+  const [editCliPath, setEditCliPath] = useState<string>("");
+  const [editCliPathError, setEditCliPathError] = useState<string | null>(null);
   const [showEditIconPicker, setShowEditIconPicker] = useState(false);
 
   // Add rule form
@@ -266,6 +270,8 @@ export const AccountSettings: React.FC = () => {
     setEditColor(account.color || "#3b82f6");
     setEditIcon(account.icon || "user");
     setEditSessionDefaults(account.session_defaults ?? {});
+    setEditCliPath(account.cli_path ?? "");
+    setEditCliPathError(null);
   };
 
   const cancelEdit = () => {
@@ -274,10 +280,21 @@ export const AccountSettings: React.FC = () => {
 
   const saveEdit = async () => {
     if (editingId === null || !editName.trim() || !editDir.trim()) return;
+    // Validate cli_path before saving — empty/null is fine
+    const trimmedCliPath = editCliPath.trim();
+    if (trimmedCliPath) {
+      const v = await api.validateCliPath(trimmedCliPath);
+      if (!v.ok) {
+        setEditCliPathError(v.error);
+        return;
+      }
+    }
     try {
       const defaults = Object.keys(editSessionDefaults).length > 0 ? editSessionDefaults : null;
-      await api.updateAccount(editingId, editName.trim(), editDir.trim(), editType, editColor, editIcon, defaults);
+      const cliPath = trimmedCliPath || null;
+      await api.updateAccount(editingId, editName.trim(), editDir.trim(), editType, editColor, editIcon, defaults, cliPath);
       setEditingId(null);
+      setEditCliPathError(null);
       await loadData();
     } catch (error) {
       console.error("Failed to update account:", error);
@@ -286,15 +303,26 @@ export const AccountSettings: React.FC = () => {
 
   const handleCreate = async () => {
     if (!newName.trim() || !newDir.trim()) return;
+    const trimmedCliPath = newCliPath.trim();
+    if (trimmedCliPath) {
+      const v = await api.validateCliPath(trimmedCliPath);
+      if (!v.ok) {
+        setNewCliPathError(v.error);
+        return;
+      }
+    }
     try {
       const defaults = Object.keys(newSessionDefaults).length > 0 ? newSessionDefaults : undefined;
-      await api.createAccount(newName.trim(), newDir.trim(), accounts.length === 0, newType, newColor, newIcon, defaults);
+      const cliPath = trimmedCliPath || null;
+      await api.createAccount(newName.trim(), newDir.trim(), accounts.length === 0, newType, newColor, newIcon, defaults, cliPath);
       setNewName("");
       setNewDir("");
       setNewType("pro");
       setNewColor("#3b82f6");
       setNewIcon("user");
       setNewSessionDefaults({});
+      setNewCliPath("");
+      setNewCliPathError(null);
       setShowAddAccount(false);
       await loadData();
     } catch (error) {
@@ -393,6 +421,26 @@ export const AccountSettings: React.FC = () => {
                   </div>
                 </div>
                 <SessionDefaultsEditor value={editSessionDefaults} onChange={setEditSessionDefaults} />
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">CLI path (optional)</label>
+                  <Input
+                    placeholder="(default: claude on PATH)"
+                    value={editCliPath}
+                    onChange={(e) => {
+                      setEditCliPath(e.target.value);
+                      setEditCliPathError(null);
+                    }}
+                    className="h-8 text-sm font-mono"
+                  />
+                  {editCliPathError && (
+                    <div className="text-[11px] text-red-400">{editCliPathError}</div>
+                  )}
+                  <div className="text-[11px] text-muted-foreground">
+                    Override which <code>claude</code> binary or wrapper to spawn.
+                    Shell aliases (<code>claude-personal</code>) are not supported —
+                    paste the resolved path (e.g. <code>~/.local/bin/claude</code>).
+                  </div>
+                </div>
                 <div className="flex gap-2">
                   <Button size="sm" onClick={saveEdit} className="h-7 text-xs">
                     <Check className="w-3 h-3 mr-1" />
@@ -494,6 +542,26 @@ export const AccountSettings: React.FC = () => {
               </div>
             </div>
             <SessionDefaultsEditor value={newSessionDefaults} onChange={setNewSessionDefaults} />
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">CLI path (optional)</label>
+              <Input
+                placeholder="(default: claude on PATH)"
+                value={newCliPath}
+                onChange={(e) => {
+                  setNewCliPath(e.target.value);
+                  setNewCliPathError(null);
+                }}
+                className="h-8 text-sm font-mono"
+              />
+              {newCliPathError && (
+                <div className="text-[11px] text-red-400">{newCliPathError}</div>
+              )}
+              <div className="text-[11px] text-muted-foreground">
+                Override which <code>claude</code> binary or wrapper to spawn.
+                Shell aliases (<code>claude-personal</code>) are not supported —
+                paste the resolved path (e.g. <code>~/.local/bin/claude</code>).
+              </div>
+            </div>
             <div className="flex gap-2">
               <Button size="sm" onClick={handleCreate} className="h-7 text-xs">
                 Add

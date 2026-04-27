@@ -1777,12 +1777,14 @@ export const api = {
     color?: string,
     icon?: string,
     sessionDefaults?: SessionDefaults,
+    cliPath?: string | null,
   ): Promise<Account> {
     const params: Record<string, any> = { name, configDir, isDefault };
     if (accountType) params.accountType = accountType;
     if (color) params.color = color;
     if (icon !== undefined) params.icon = icon;
     if (sessionDefaults !== undefined) params.sessionDefaults = sessionDefaults;
+    if (cliPath !== undefined) params.cliPath = cliPath;
     return apiCall<Account>('create_account', params);
   },
 
@@ -1794,12 +1796,14 @@ export const api = {
     color?: string,
     icon?: string,
     sessionDefaults?: SessionDefaults | null,
+    cliPath?: string | null,
   ): Promise<void> {
     const params: Record<string, any> = { id, name, configDir };
     if (accountType) params.accountType = accountType;
     if (color !== undefined) params.color = color;
     if (icon !== undefined) params.icon = icon;
     if (sessionDefaults !== undefined) params.sessionDefaults = sessionDefaults;
+    if (cliPath !== undefined) params.cliPath = cliPath;
     return apiCall<void>('update_account', params);
   },
 
