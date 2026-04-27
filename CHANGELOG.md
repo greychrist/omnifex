@@ -5,6 +5,19 @@ All notable changes to GreyChrist are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.55] — 2026-04-27
+
+Replaces the one-shot worktree enumeration with a live fs.watch on the shared gitdir's `worktrees/` so `git worktree add` / `remove` updates the header column without a project re-open. Adds end-to-end install diagnostics + collapses the upgrade button's two-click flow into one for the local-folder updater. Installers remain **unsigned**.
+
+### Added
+
+- **Live worktree-list watcher** (`9d9a345`). New IPC channel `start_worktree_list_watch` enumerates peer worktrees and attaches `fs.watch` to both `<commondir>/` (so `worktrees/` creation is noticed) and `<commondir>/worktrees/` (for child add/remove). Debounced 100ms; only emits `worktrees-changed:<watchId>` when the path/branch set actually changes — HEAD-only churn in the main repo doesn't trip it. Renderer reconciles peer status watches in place: new peers spin up their own `git-branch-watch`, removed peers tear down. Tests: 6 new cases covering initial list, add, remove, no-emit on HEAD-only changes, non-git, and stop().
+- **Installer diagnostics** (`9d9a345`). Every step of `updater:install` (entry, params, stage, resolveTargetApp, ensureTargetWritable, waitForIdle, executeInstall, error catch) now logs to main-process stdout. `waitForIdle` prints a per-tab status snapshot on every poll, and the `updater:install-status` waiting payload carries a `tabs: [{tabId, status}]` array — so the renderer / DevTools console mirrors what main sees.
+
+### Changed
+
+- **Upgrade button** (`9d9a345`) chains download → install in a single click. The local-folder "download" is instant, so the previous two-click flow was redundant. State machine is unchanged; the second `installUpdate` call just runs immediately after the first transitions to `'ready'`.
+
 ## [0.3.54] — 2026-04-26
 
 Adds a "worktrees" widget to the session header that surfaces sibling git worktrees of the open project — each shown with the same branch + changed/untracked badge as the main branch, live-updated through the existing git-watcher. Also defaults the Recent Projects table sort to Session Count desc, and extracts a shared `HeaderLabel` component so SessionHeader and the toolbar above it share one label style. Installers remain **unsigned**.
