@@ -41,9 +41,45 @@ export interface Account {
   color: string | null;
   icon: string | null;
   session_defaults?: SessionDefaults;
+  /**
+   * Optional per-account override for which `claude` binary or wrapper to
+   * spawn. Defaults to whatever `findClaudeBinary` resolves on PATH when null.
+   * Shell aliases are not supported — paste a resolved path.
+   */
+  cli_path: string | null;
   created_at: string;
   updated_at: string;
 }
+
+/**
+ * Structured form of the rich `/usage` output captured by spawning claude in
+ * a PTY (see `electron/services/usage-runner.ts`). Mirrors the parser shape.
+ */
+export interface UsageRunData {
+  session: {
+    cost_usd: number;
+    api_duration_s: number;
+    wall_duration_s: number;
+    code_added: number;
+    code_removed: number;
+    input_tokens: number;
+    output_tokens: number;
+    cache_read: number;
+    cache_write: number;
+  };
+  windows: Array<{
+    label: 'current_session' | 'week_all_models' | 'week_sonnet';
+    pct_used: number;
+    resets_at_label: string;
+  }>;
+  contributing: Array<{ headline: string; detail: string }>;
+}
+
+export type UsageRunResult =
+  | { ok: true; observed_at: number; raw: string; parsed: UsageRunData }
+  | { ok: false; observed_at: number; error: string; raw?: string };
+
+export type ValidateCliPathResult = { ok: true } | { ok: false; error: string };
 
 /**
  * Represents a path prefix rule that maps directories to accounts
@@ -1029,14 +1065,22 @@ export const api = {
   },
 
   /**
-   * Manually refresh rate-limit data for one account by shelling out to
-   * `claude -p "/status" --output-format json` in the main process. Returns
-   * the snapshots that were updated, or `null` if the call failed (the
-   * failure is logged to the app log; renderer should treat null as
-   * "couldn't refresh, try again").
+   * Run `/usage` via a PTY in the main process and return the parsed result.
+   * Also feeds the per-window utilization into the rate-limits snapshot store
+   * so the existing widgets pick up the fresh data without further wiring.
    */
-  async refreshRateLimits(accountName: string): Promise<RateLimitSnapshot[] | null> {
-    return apiCall<RateLimitSnapshot[] | null>("refresh_rate_limits", { accountName });
+  async runUsageCli(accountName: string): Promise<UsageRunResult> {
+    return apiCall<UsageRunResult>("usage_run_cli", { accountName });
+  },
+
+  /** Read the last cached `/usage` result for an account, if any. */
+  async getLastUsageCli(accountName: string): Promise<UsageRunResult | null> {
+    return apiCall<UsageRunResult | null>("usage_get_last", { accountName });
+  },
+
+  /** Validate a per-account CLI path (path must point to an executable file, or be empty). */
+  async validateCliPath(path: string | null): Promise<ValidateCliPathResult> {
+    return apiCall<ValidateCliPathResult>("accounts_validate_cli_path", { path });
   },
 
   /**

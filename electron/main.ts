@@ -47,6 +47,7 @@ import { createNotificationsService } from './services/notifications';
 import { createClaudeService } from './services/claude';
 import { createUsageService } from './services/usage';
 import { createRateLimitsService } from './services/rate-limits';
+import { createUsageRunnerService } from './services/usage-runner';
 import { createLoggingService } from './services/logging';
 import { createProxyService } from './services/proxy';
 import { createMCPService } from './services/mcp';
@@ -366,6 +367,11 @@ app.whenReady().then(() => {
     sendToRenderer,
     logging: loggingService,
   });
+  const usageRunnerService = createUsageRunnerService({
+    accounts: accountsService,
+    rateLimits: rateLimitsService,
+    logging: loggingService,
+  });
   const sessionsService = _sessionsService = createSessionsService(
     sendToRenderer,
     {
@@ -460,6 +466,7 @@ app.whenReady().then(() => {
           data.color,
           data.icon,
           data.sessionDefaults ?? data.session_defaults,
+          data.cliPath ?? data.cli_path ?? null,
         ),
       update: (_id: any, data: any) =>
         accountsService.updateAccount(
@@ -472,6 +479,7 @@ app.whenReady().then(() => {
           'sessionDefaults' in data || 'session_defaults' in data
             ? (data.sessionDefaults ?? data.session_defaults)
             : undefined,
+          data.cliPath ?? data.cli_path ?? null,
         ),
       delete: (id: any) => accountsService.deleteAccount(id),
       listPathRules: () => accountsService.listPathRules(),
@@ -568,7 +576,10 @@ app.whenReady().then(() => {
         rateLimitsService.getSnapshotsByAccount(accountName),
       getSettings: () => rateLimitsService.getSettings(),
       updateSettings: (partial: any) => rateLimitsService.updateSettings(partial ?? {}),
-      refresh: (accountName: string) => rateLimitsService.refresh(accountName),
+    },
+    usageRunner: {
+      run: (accountName: string) => usageRunnerService.run(accountName),
+      getLast: (accountName: string) => usageRunnerService.getLast(accountName),
     },
     // Claude binary adapter
     claudeBinary: {

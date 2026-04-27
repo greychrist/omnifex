@@ -1435,13 +1435,9 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   const refreshRateLimits = useCallback(async () => {
     if (!activeAccountName) return;
     try {
-      // The backend feeds the parsed snapshots through `recordEvent`, which
-      // emits `rate-limits:updated` events. Our existing subscription picks
-      // those up and updates `rateLimitSnapshots` automatically — we don't
-      // need to merge the return value into local state by hand.
-      await api.refreshRateLimits(activeAccountName);
+      await api.runUsageCli(activeAccountName);
     } catch (err) {
-      console.error('[rate-limits] manual refresh failed:', err);
+      console.error('[usage-cli] manual refresh failed:', err);
     }
   }, [activeAccountName]);
 

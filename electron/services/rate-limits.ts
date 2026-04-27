@@ -1,5 +1,3 @@
-import { execSync } from 'node:child_process';
-import fs from 'node:fs';
 import type { Database } from './database';
 import type { AccountsService } from './accounts';
 import type { NotificationsService } from './notifications';
@@ -66,17 +64,6 @@ export interface RateLimitsService {
   getSnapshotsByAccount(accountName: string): RateLimitSnapshot[];
   getSettings(): RateLimitSettings;
   updateSettings(partial: Partial<RateLimitSettings>): RateLimitSettings;
-  /**
-   * Manually refresh rate-limit data for one account by shelling out to
-   * `claude -p "/status" --output-format json`. Used by the in-UI refresh
-   * button when the live SDK event stream is too sparse to be useful (the
-   * SDK only emits `rate_limit_event` on threshold crossings / status
-   * changes, not on every turn).
-   *
-   * Returns the snapshots that were updated so the renderer can react,
-   * or null if the CLI call failed (logged to the app log).
-   */
-  refresh(accountName: string): Promise<RateLimitSnapshot[] | null>;
 }
 
 export interface RateLimitsDeps {
@@ -488,174 +475,6 @@ export function createRateLimitsService(deps: RateLimitsDeps): RateLimitsService
   // Manual refresh via `claude -p "/status" --output-format json`
   // -------------------------------------------------------------------------
 
-  function findClaudeBinary(): string | null {
-    try {
-      const cmd = process.platform === 'win32' ? 'where claude' : 'which claude';
-      const out = execSync(cmd, { timeout: 5000, encoding: 'utf-8' });
-      const trimmed = out.trim().split('\n')[0].trim();
-      if (trimmed && fs.existsSync(trimmed)) return trimmed;
-    } catch {
-      /* not on PATH */
-    }
-    const fallbacks = [
-      `${process.env.HOME ?? ''}/.local/bin/claude`,
-      '/usr/local/bin/claude',
-      '/opt/homebrew/bin/claude',
-    ];
-    for (const p of fallbacks) {
-      if (p && fs.existsSync(p)) return p;
-    }
-    return null;
-  }
-
-  /**
-   * Pull rate-limit numbers out of `/status`'s output. The exact format isn't
-   * documented and may vary across Claude Code versions, so we try several
-   * strategies in order:
-   *   1) Parse the wrapper as JSON (`{ result: ... }`) and look for a
-   *      structured `rate_limits` object (what the statusline JSON uses).
-   *   2) If `result` is a string, try parsing it as JSON, then look for
-   *      `rate_limits` again.
-   *   3) Fall back to regex scanning the text for percent + reset markers.
-   * Whatever we extract gets turned into `RateLimitInfo` objects keyed by
-   * window, so we can feed them through the same `recordEvent` path the SDK
-   * stream uses.
-   */
-  function parseStatusOutput(raw: string): RateLimitInfo[] {
-    const out: RateLimitInfo[] = [];
-
-    function harvestStructured(rateLimits: unknown): void {
-      if (!rateLimits || typeof rateLimits !== 'object') return;
-      const rl = rateLimits as Record<string, unknown>;
-      for (const [key, val] of Object.entries(rl)) {
-        if (!val || typeof val !== 'object') continue;
-        const v = val as Record<string, unknown>;
-        const utilization =
-          typeof v.used_percentage === 'number'
-            ? v.used_percentage
-            : typeof v.utilization === 'number'
-              ? v.utilization
-              : undefined;
-        const resetsAt =
-          typeof v.resets_at === 'number'
-            ? v.resets_at
-            : typeof v.resetsAt === 'number'
-              ? v.resetsAt
-              : undefined;
-        out.push({
-          status: 'allowed',
-          rateLimitType: key,
-          utilization,
-          resetsAt,
-        });
-      }
-    }
-
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(raw);
-    } catch {
-      parsed = undefined;
-    }
-
-    if (parsed && typeof parsed === 'object') {
-      const wrapper = parsed as Record<string, unknown>;
-      // Direct rate_limits at top level
-      if (wrapper.rate_limits) {
-        harvestStructured(wrapper.rate_limits);
-      }
-      // Nested under .result, possibly as a string of JSON
-      if (out.length === 0 && wrapper.result !== undefined) {
-        if (typeof wrapper.result === 'object') {
-          const r = wrapper.result as Record<string, unknown>;
-          if (r.rate_limits) harvestStructured(r.rate_limits);
-        } else if (typeof wrapper.result === 'string') {
-          try {
-            const inner = JSON.parse(wrapper.result) as Record<string, unknown>;
-            if (inner.rate_limits) harvestStructured(inner.rate_limits);
-          } catch {
-            /* not JSON inside result */
-          }
-        }
-      }
-    }
-
-    // Regex fallback against the raw string. Match patterns like
-    // "5h: 12% (resets 14:32)" or "five_hour 12.3%". Best-effort.
-    if (out.length === 0) {
-      const fiveHour = raw.match(/(?:5[\s-]?(?:hour|h)|five[\s_-]?hour)[^0-9]*([0-9]+(?:\.[0-9]+)?)\s*%/i);
-      const sevenDay = raw.match(/(?:7[\s-]?(?:day|d)|seven[\s_-]?day)[^0-9]*([0-9]+(?:\.[0-9]+)?)\s*%/i);
-      if (fiveHour) {
-        out.push({
-          status: 'allowed',
-          rateLimitType: 'five_hour',
-          utilization: parseFloat(fiveHour[1]),
-        });
-      }
-      if (sevenDay) {
-        out.push({
-          status: 'allowed',
-          rateLimitType: 'seven_day',
-          utilization: parseFloat(sevenDay[1]),
-        });
-      }
-    }
-
-    return out;
-  }
-
-  async function refresh(accountName: string): Promise<RateLimitSnapshot[] | null> {
-    const account = accounts.listAccounts().find((a) => a.name === accountName);
-    if (!account) {
-      logWarn(`refresh: unknown account`, { accountName });
-      return null;
-    }
-
-    const binary = findClaudeBinary();
-    if (!binary) {
-      logWarn(`refresh: claude binary not found on PATH`, { accountName });
-      return null;
-    }
-
-    const env: Record<string, string> = { ...process.env as Record<string, string> };
-    env['CLAUDE_CONFIG_DIR'] = account.config_dir;
-
-    let raw: string;
-    try {
-      raw = execSync(`"${binary}" -p "/status" --output-format json`, {
-        timeout: 30_000,
-        encoding: 'utf-8',
-        env,
-        stdio: ['pipe', 'pipe', 'pipe'],
-      });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      logWarn(`refresh: claude -p /status failed`, { accountName, error: msg });
-      return null;
-    }
-
-    logDebug(`refresh: raw /status output`, {
-      accountName,
-      length: raw.length,
-      // Truncate long outputs in the log so we can read them, but keep enough
-      // to see the shape of the JSON. Greg uses this to validate the parser.
-      preview: raw.slice(0, 1500),
-    });
-
-    const events = parseStatusOutput(raw);
-    if (events.length === 0) {
-      logWarn(`refresh: parsed zero rate-limit events from /status output`, {
-        accountName,
-      });
-      return null;
-    }
-
-    for (const ev of events) {
-      recordEvent(account.config_dir, ev);
-    }
-    return getSnapshotsByAccount(accountName);
-  }
-
   return {
     recordEvent,
     recordUtilization,
@@ -663,6 +482,5 @@ export function createRateLimitsService(deps: RateLimitsDeps): RateLimitsService
     getSnapshotsByAccount,
     getSettings,
     updateSettings,
-    refresh,
   };
 }

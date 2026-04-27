@@ -10,6 +10,7 @@
 
 import type { Database } from '../services/database';
 import type { PermissionsIOService } from '../services/permissions-io';
+import { validateCliPath } from '../services/cli-path-validator';
 
 // Services parameter type — each property is optional so we can add services
 // one task at a time without breaking the registration call.
@@ -88,7 +89,10 @@ export interface Services {
     getSnapshotsByAccount(accountName: string): unknown;
     getSettings(): unknown;
     updateSettings(partial: unknown): unknown;
-    refresh(accountName: string): unknown;
+  };
+  usageRunner?: {
+    run(accountName: string): unknown;
+    getLast(accountName: string): unknown;
   };
   claudeBinary?: {
     getPath(): unknown;
@@ -185,7 +189,7 @@ function wrapWith<P>(fn: (params: P) => unknown): HandlerFn {
  * renderer gets a defined (but empty) response rather than a blocked channel.
  */
 export function getHandlerMap(services: Services = {}): Record<string, HandlerFn> {
-  const { accounts, claude, sessions, usage, rateLimits, claudeBinary, mcp, slashCommands, logging, database, proxy, permissionsIO, models, sdkVersion, gitWatcher, lima } = services;
+  const { accounts, claude, sessions, usage, rateLimits, usageRunner, claudeBinary, mcp, slashCommands, logging, database, proxy, permissionsIO, models, sdkVersion, gitWatcher, lima } = services;
 
   const map: Record<string, HandlerFn> = {
     // ── Accounts ──────────────────────────────────────────────────────────────
@@ -357,11 +361,17 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     }),
     get_rate_limit_settings: wrap(() => rateLimits?.getSettings() ?? null),
     update_rate_limit_settings: wrapWith((p: Record<string, unknown>) => rateLimits?.updateSettings(p) ?? null),
-    refresh_rate_limits: wrapWith((p: Record<string, unknown>) => {
-      const accountName = (p?.accountName ?? p?.account_name) as string | undefined;
-      if (!accountName) return null;
-      return rateLimits?.refresh(accountName) ?? null;
-    }),
+
+    // ── Usage CLI Runner ──────────────────────────────────────────────────────
+    usage_run_cli: wrapWith((p: Record<string, unknown>) =>
+      usageRunner?.run((p?.accountName ?? p?.account_name) as string) ?? null,
+    ),
+    usage_get_last: wrapWith((p: Record<string, unknown>) =>
+      usageRunner?.getLast((p?.accountName ?? p?.account_name) as string) ?? null,
+    ),
+    accounts_validate_cli_path: wrapWith((p: Record<string, unknown>) =>
+      validateCliPath(((p?.path ?? p?.cli_path) as string | null | undefined) ?? null),
+    ),
 
     // ── Claude Binary ─────────────────────────────────────────────────────────
     get_claude_binary_path: wrap(() => claudeBinary?.getPath() ?? null),

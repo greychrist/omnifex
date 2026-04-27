@@ -77,7 +77,11 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   'get_rate_limits',
   'get_rate_limit_settings',
   'update_rate_limit_settings',
-  'refresh_rate_limits',
+
+  // Usage CLI Runner
+  'usage_run_cli',
+  'usage_get_last',
+  'accounts_validate_cli_path',
 
   // Claude Binary
   'get_claude_binary_path',
