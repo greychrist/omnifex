@@ -1428,15 +1428,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           ? 'Nothing to clear'
           : undefined;
 
-  const refreshRateLimits = useCallback(async () => {
-    if (!activeAccountName) return;
-    try {
-      await api.runUsageCli(activeAccountName);
-    } catch (err) {
-      console.error('[usage-cli] manual refresh failed:', err);
-    }
-  }, [activeAccountName]);
-
   return (
     <TooltipProvider>
       <div className={cn("flex flex-col h-full bg-background", className)}>
@@ -1499,7 +1490,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           contextUsage={contextUsage}
           fiveHourRateLimit={rateLimitSnapshots['five_hour'] ?? null}
           sevenDayRateLimit={rateLimitSnapshots['seven_day'] ?? null}
-          onRefreshRateLimits={refreshRateLimits}
           onClear={() => void handleClear()}
           clearDisabled={clearButtonDisabled}
           clearReason={clearButtonReason}

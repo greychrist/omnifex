@@ -87,14 +87,6 @@ interface SessionHeaderProps {
   fiveHourRateLimit?: RateLimitSnapshot | null;
   /** Latest 7-day rate-limit snapshot for this session's account, or null. */
   sevenDayRateLimit?: RateLimitSnapshot | null;
-  /**
-   * Click handler for the manual rate-limit refresh button. When provided, a
-   * small refresh icon is rendered next to the rate-limit pills; clicking it
-   * shells out to `claude -p "/status"` to pull fresh data (used when the
-   * SDK's live rate_limit_event stream omits utilization). The promise is
-   * awaited so the button can show a spinning state while the CLI runs.
-   */
-  onRefreshRateLimits?: () => Promise<void> | void;
   /** Restart / Clear-conversation button click handler. */
   onClear?: () => void;
   /** Whether the restart button is disabled (no session, mid-turn, etc.). */
@@ -127,7 +119,6 @@ export function SessionHeader({
   contextUsage,
   fiveHourRateLimit,
   sevenDayRateLimit,
-  onRefreshRateLimits,
   onClear,
   clearDisabled,
   clearReason,
@@ -149,14 +140,13 @@ export function SessionHeader({
     refresh: refreshUsage,
   } = useUsageAutoRefresh(accountName);
 
-  // Manual refresh button next to the 7-day widget. Falls back to the
-  // parent's `onRefreshRateLimits` if provided (back-compat) but the
-  // primary path is the hook's refresh.
+  // Manual refresh button next to the 7-day widget. The hook flips
+  // `loading: true` synchronously before awaiting the PTY run, so the
+  // spinner shows immediately on click.
   const handleRefreshClick = React.useCallback(async () => {
     if (usageLoading) return;
-    if (onRefreshRateLimits) await onRefreshRateLimits();
     await refreshUsage();
-  }, [onRefreshRateLimits, refreshUsage, usageLoading]);
+  }, [refreshUsage, usageLoading]);
   // Defer chart rendering by one frame so the popover container has dimensions
   const [chartReady, setChartReady] = React.useState(false);
   React.useEffect(() => {
