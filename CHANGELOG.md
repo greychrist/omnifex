@@ -5,6 +5,20 @@ All notable changes to GreyChrist are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.54] — 2026-04-26
+
+Adds a "worktrees" widget to the session header that surfaces sibling git worktrees of the open project — each shown with the same branch + changed/untracked badge as the main branch, live-updated through the existing git-watcher. Also defaults the Recent Projects table sort to Session Count desc, and extracts a shared `HeaderLabel` component so SessionHeader and the toolbar above it share one label style. Installers remain **unsigned**.
+
+### Added
+
+- **Worktrees column** in `SessionHeader` (`5a6540a`). New IPC channel `list_git_worktrees` enumerates peer worktrees via `git worktree list --porcelain` (realpath-normalized, queried path excluded, detached worktrees report `branch: null`). Each peer gets its own per-worktree `start_git_branch_watch`, sharing the existing watcher infrastructure for live changed/untracked counts. The column only renders when at least one peer exists, badges stack vertically, and the header row grows taller as needed. Path tooltip on each badge.
+- Tests: 4 new cases in `electron/__tests__/git-watcher.test.ts` (non-git, no-peers, peer enumeration with self-exclusion both directions, detached HEAD) + 3 new IPC handler tests for `list_git_worktrees` (camelCase, snake_case, missing-param fallback). 666 → 670 tests after the change.
+
+### Changed
+
+- **Recent Projects table** default sort is now `Session Count ↓` instead of `Last opened ↓` — quick glance at where the active work is.
+- **Header labels** ("account", "status", "folder", "branch", "worktrees", "context", "restart", "mode", "output style") now route through a shared `HeaderLabel` component exported from `SessionHeader`. Single source of truth for label styling — bumped from 9px to 11px in the process so the toolbar above the chat matches the header below it. Vertical dividers between groups now `self-stretch` so they fill whatever the row's tallest column dictates.
+
 ## [0.3.53] — 2026-04-26
 
 Removes the in-app agent management system entirely (Claude Code's native subagents already cover the same ground without the parallel format), and replaces the Recent Projects card-list with a sortable / filterable / responsive table. Fixes a session-status bug where every session was stuck reporting `'running'` until its first turn completed. Installers remain **unsigned**.
