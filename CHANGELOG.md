@@ -5,6 +5,14 @@ All notable changes to GreyChrist are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.63] — 2026-04-27
+
+Hotfix on top of 0.3.62: the new "rejected reset epoch" warnings turned up an obvious gap — Anthropic's CLI uses a third `Resets …` format we hadn't taught the parser. Installers remain **unsigned**.
+
+### Fixed
+
+- **Parse `"<Month> <Day> at <Hour>[:Min]<am|pm> (<Tz>)"` reset labels** (`8743f61`). The `/usage` CLI uses this dated form when the reset is more than ~24 hours away (typical for 7-day windows). The previous parser only knew relative (`"in 5h 23m"`) and bare-clock (`"7pm (America/New_York)"`) forms, so the dated form was rejected as `unparseable` — meaning the runner kept the prior good value via the COALESCE added in 0.3.62 but never actually captured the real reset. New `parseDateClockWithTz` accepts full and abbreviated month names, picks the year by rolling forward from observed-at when needed (so a "Jan 5" label observed in Dec correctly lands on next year), and round-trips through the target timezone so an impossible date like `Feb 30` still rejects cleanly.
+
 ## [0.3.62] — 2026-04-27
 
 A focused infra release: one git watch per tab instead of N (project + each peer worktree share a single connection that knows about new and removed worktrees in flight), one click-to-reconnect status icon in the header in place of per-row icons, and `/usage` parsing that waits for a complete render and refuses to clobber a known-good reset time with junk. Plus the Claude Agent SDK bumped to 0.2.121 and Haiku 4.5 added to every model picker. Installers remain **unsigned**.
