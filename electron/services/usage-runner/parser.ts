@@ -35,6 +35,30 @@ const SECTION_HEADERS = {
   contributing: /^[ \t]*What's contributing to your limits usage\?\s*$/m,
 };
 
+/**
+ * Returns true when the captured TUI text appears to be a complete `/usage`
+ * render: all three known window sections are present, each has a `% used`
+ * line and a non-empty `Resets ...` line. Used by the runner as a fast-path
+ * exit signal — no need to wait the full quiet timeout if the buffer is
+ * already complete. Returns false (keep waiting) if any section is missing or
+ * still in mid-render.
+ */
+export function isUsageOutputComplete(input: string): boolean {
+  const result = parseUsageOutput(input);
+  if (!result.ok) return false;
+  // All three known windows must have parsed, with a non-empty resets line.
+  // If a future CLI version emits more sections we still pass; if it emits
+  // fewer (e.g. free-tier accounts that only show the session window), the
+  // fast-path stays disabled and the runner falls back to the quiet timeout.
+  const required: Array<UsageWindow['label']> = ['current_session', 'week_all_models', 'week_sonnet'];
+  for (const label of required) {
+    const w = result.data.windows.find((w) => w.label === label);
+    if (!w) return false;
+    if (!w.resets_at_label.trim()) return false;
+  }
+  return true;
+}
+
 export function parseUsageOutput(input: string): ParseResult {
   const text = input.replace(/\r\n/g, '\n');
 

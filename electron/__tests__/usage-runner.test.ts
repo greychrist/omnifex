@@ -88,22 +88,25 @@ describe('usage-runner', () => {
   it('happy path: parses, dual-writes recordUtilization, caches result', async () => {
     const accounts = makeFakeAccountsService();
     const rateLimits = makeFakeRateLimits();
+    // observedAt = Nov 15 10:40 UTC = 5:40am NY. The fixture's "9:40am NY"
+    // is 4h ahead (today, within the 5-hour cap), and "7pm NY" is ~13h ahead
+    // (within the 7-day cap). Earlier observedAts that pushed the 5-hour
+    // reset >5h out (e.g. yesterday-evening rolling to tomorrow) get rejected
+    // by the new sanity bound, which is the whole point.
+    const observedAt = Date.UTC(2023, 10, 15, 10, 40, 0);
     const runner = createUsageRunnerService({
       accounts, rateLimits,
       spawnPty: makeScriptedSpawn(MAX_FULL_FIXTURE),
       findClaudeBinary: () => '/fake/claude',
-      now: () => 1700000000000,
+      now: () => observedAt,
       ...TUNING,
     });
     const result = await runner.run('personal');
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.parsed.windows.length).toBe(3);
-    // observedAt = 1700000000000 (2023-11-14T22:13:20Z = 17:13 NY EST/UTC-5).
-    // "9:40am (America/New_York)" already passed today → Nov 15 14:40Z.
-    // "7pm (America/New_York)" still ahead today        → Nov 15 00:00Z.
     const nextNy0940 = Math.floor(Date.UTC(2023, 10, 15, 14, 40, 0) / 1000);
-    const nextNy1900 = Math.floor(Date.UTC(2023, 10, 15, 0, 0, 0) / 1000);
+    const nextNy1900 = Math.floor(Date.UTC(2023, 10, 16, 0, 0, 0) / 1000);
     expect(rateLimits.recordUtilization).toHaveBeenCalledWith(
       '/cfg/personal', 'five_hour', 33, nextNy0940,
     );
@@ -115,6 +118,103 @@ describe('usage-runner', () => {
     );
     const cached = runner.getLast('personal');
     expect(cached?.ok).toBe(true);
+  });
+
+  it('waits for the full render before parsing, even when bytes arrive in chunks', async () => {
+    // Emit the fixture in three slices: first only the session header (no
+    // windows yet), then two of the three windows, then the third. The runner
+    // should not parse until the third window's Resets line lands. Expressed
+    // as: recordUtilization gets called with the values from the COMPLETE
+    // fixture (all three windows), not with a partial.
+    const accounts = makeFakeAccountsService();
+    const rateLimits = makeFakeRateLimits();
+
+    // Split the fixture so the first chunk is missing the third window
+    // entirely. If the runner snapshots too early, only two windows would be
+    // recorded.
+    const sonnetIdx = MAX_FULL_FIXTURE.indexOf('Current week (Sonnet only)');
+    const partial = MAX_FULL_FIXTURE.slice(0, sonnetIdx);
+    const completion = MAX_FULL_FIXTURE.slice(sonnetIdx);
+
+    const chunkedSpawn: PtySpawner = () => {
+      const dataHandlers: ((d: string) => void)[] = [];
+      const exitHandlers: ((code: { exitCode: number }) => void)[] = [];
+      let killed = false;
+      setTimeout(() => {
+        if (killed) return;
+        for (const h of dataHandlers) h('? for shortcuts ');
+      }, 5);
+      return {
+        write: (data: string) => {
+          if (data.includes('/usage')) {
+            // Chunk 1: partial render arrives quickly.
+            setTimeout(() => {
+              if (killed) return;
+              for (const h of dataHandlers) h(partial);
+            }, 30);
+            // Chunk 2: completion arrives after a longer delay than the
+            // configured `usageQuietMs` would normally tolerate. The new
+            // completeness check should keep us waiting through the gap.
+            setTimeout(() => {
+              if (killed) return;
+              for (const h of dataHandlers) h(completion);
+            }, 250);
+          }
+        },
+        kill: () => {
+          killed = true;
+          for (const h of exitHandlers) h({ exitCode: 0 });
+        },
+        onData: (cb) => { dataHandlers.push(cb); },
+        onExit: (cb) => { exitHandlers.push(cb); },
+      };
+    };
+
+    const observedAt = Date.UTC(2023, 10, 15, 10, 40, 0);
+    const runner = createUsageRunnerService({
+      accounts, rateLimits,
+      spawnPty: chunkedSpawn,
+      findClaudeBinary: () => '/fake/claude',
+      now: () => observedAt,
+      settleQuietMs: 30,
+      // Quiet timeout long enough for both chunks to arrive (chunk 2 lands
+      // at ~250ms). The completeness fast-path then trips fullRenderQuietMs
+      // and exits without waiting the full quiet window.
+      usageQuietMs: 500,
+      fullRenderQuietMs: 50,
+      hardTimeoutMs: 5000,
+      killGraceMs: 0,
+    });
+
+    const result = await runner.run('personal');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.parsed.windows.length).toBe(3);
+    expect(result.parsed.windows.map((w) => w.label).sort()).toEqual([
+      'current_session', 'week_all_models', 'week_sonnet',
+    ]);
+  });
+
+  it('passes resetsAt=null when the parsed reset is implausibly far in the future', async () => {
+    // observedAt at Nov 14 22:13 UTC pushes the fixture's "9:40am NY"
+    // 16+ hours out (parser rolls past today, then tomorrow). That's well
+    // beyond the 5-hour cap, so the runner should pass null instead of the
+    // junk timestamp — recordUtilization will COALESCE that against any
+    // prior good value.
+    const accounts = makeFakeAccountsService();
+    const rateLimits = makeFakeRateLimits();
+    const runner = createUsageRunnerService({
+      accounts, rateLimits,
+      spawnPty: makeScriptedSpawn(MAX_FULL_FIXTURE),
+      findClaudeBinary: () => '/fake/claude',
+      now: () => 1700000000000,
+      ...TUNING,
+    });
+    const result = await runner.run('personal');
+    expect(result.ok).toBe(true);
+    expect(rateLimits.recordUtilization).toHaveBeenCalledWith(
+      '/cfg/personal', 'five_hour', 33, null,
+    );
   });
 
   it('returns ok:false when account is unknown', async () => {

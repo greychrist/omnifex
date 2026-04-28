@@ -3,7 +3,7 @@ import { execSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { createGitWatcherService, listWorktrees } from '../services/git-watcher';
+import { createSessionGitWatcher, listWorktrees } from '../services/git-watcher';
 
 function makeTempRepo(): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-git-watch-'));
@@ -28,17 +28,14 @@ async function waitFor<T>(fn: () => T | undefined, ms = 2000): Promise<T> {
 
 describe('git-watcher service', () => {
   let tempDirs: string[] = [];
-  let service: ReturnType<typeof createGitWatcherService>;
   let sendToRenderer: ReturnType<typeof vi.fn<(channel: string, ...args: unknown[]) => void>>;
 
   beforeEach(() => {
     tempDirs = [];
     sendToRenderer = vi.fn<(channel: string, ...args: unknown[]) => void>();
-    service = createGitWatcherService({ sendToRenderer });
   });
 
   afterEach(() => {
-    service.disposeAll();
     for (const d of tempDirs) {
       try {
         fs.rmSync(d, { recursive: true, force: true });
@@ -46,108 +43,6 @@ describe('git-watcher service', () => {
         // best effort
       }
     }
-  });
-
-  it('returns the current branch on start for a real repo', async () => {
-    const repo = makeTempRepo();
-    tempDirs.push(repo);
-
-    const { watchId, branch, changed, untracked } = await service.start(repo);
-
-    expect(typeof watchId).toBe('string');
-    expect(watchId.length).toBeGreaterThan(0);
-    expect(branch).toBe('main');
-    expect(changed).toBe(0);
-    expect(untracked).toBe(0);
-  });
-
-  it('returns counts of changed and untracked files on start for a dirty repo', async () => {
-    const repo = makeTempRepo();
-    tempDirs.push(repo);
-
-    // Modify the tracked file (1 changed)
-    fs.writeFileSync(path.join(repo, 'README.md'), 'modified\n');
-    // Add two untracked files
-    fs.writeFileSync(path.join(repo, 'new1.txt'), 'a\n');
-    fs.writeFileSync(path.join(repo, 'new2.txt'), 'b\n');
-
-    const { changed, untracked } = await service.start(repo);
-
-    expect(changed).toBe(1);
-    expect(untracked).toBe(2);
-  });
-
-  it('emits updated counts when the working tree changes', async () => {
-    const repo = makeTempRepo();
-    tempDirs.push(repo);
-
-    service = createGitWatcherService({ sendToRenderer, pollIntervalMs: 100 });
-    const { watchId } = await service.start(repo);
-
-    // Touch the working tree so a poll picks it up
-    fs.writeFileSync(path.join(repo, 'untracked.txt'), 'hi\n');
-
-    const call = await waitFor(() =>
-      sendToRenderer.mock.calls.find(
-        ([channel, payload]) =>
-          channel === `git-branch-changed:${watchId}` &&
-          (payload as { untracked: number }).untracked === 1,
-      ),
-    );
-
-    expect(call[1]).toMatchObject({ branch: 'main', changed: 0, untracked: 1 });
-  });
-
-  it('returns zero counts for a non-git directory', async () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-not-repo-counts-'));
-    tempDirs.push(dir);
-
-    const { changed, untracked } = await service.start(dir);
-    expect(changed).toBe(0);
-    expect(untracked).toBe(0);
-  });
-
-  it('returns branch null for a non-git directory', async () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-not-repo-'));
-    tempDirs.push(dir);
-
-    const { branch } = await service.start(dir);
-    expect(branch).toBeNull();
-  });
-
-  it('emits the new branch after a checkout', async () => {
-    const repo = makeTempRepo();
-    tempDirs.push(repo);
-
-    const { watchId } = await service.start(repo);
-
-    execSync('git checkout -b feature', { cwd: repo, stdio: 'pipe' });
-
-    const call = await waitFor(() =>
-      sendToRenderer.mock.calls.find(
-        ([channel]) => channel === `git-branch-changed:${watchId}`,
-      ),
-    );
-
-    expect(call[1]).toMatchObject({ branch: 'feature' });
-  });
-
-  it('stops emitting after stop()', async () => {
-    const repo = makeTempRepo();
-    tempDirs.push(repo);
-
-    const { watchId } = await service.start(repo);
-    service.stop(watchId);
-
-    execSync('git checkout -b feature', { cwd: repo, stdio: 'pipe' });
-
-    // give fs.watch a chance to fire
-    await new Promise((r) => setTimeout(r, 200));
-
-    const hits = sendToRenderer.mock.calls.filter(
-      ([channel]) => channel === `git-branch-changed:${watchId}`,
-    );
-    expect(hits.length).toBe(0);
   });
 
   describe('listWorktrees', () => {
@@ -210,143 +105,193 @@ describe('git-watcher service', () => {
       expect(result[0].path).toBe(fs.realpathSync(wt));
     });
   });
+  describe('createSessionGitWatcher', () => {
+    function makeService(opts?: { pollIntervalMs?: number }) {
+      return createSessionGitWatcher({
+        sendToRenderer,
+        pollIntervalMs: opts?.pollIntervalMs ?? 5000,
+        readTimeoutMs: 4000,
+      });
+    }
 
-  describe('startWorktreeListWatch', () => {
-    it('returns the initial list of peer worktrees on start', async () => {
+    it('start() returns a unified initial snapshot for project + peers', async () => {
       const repo = makeTempRepo();
       tempDirs.push(repo);
 
-      const wtRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-wlw-init-'));
+      const wtRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-sgw-init-'));
       tempDirs.push(wtRoot);
-      const wt1 = path.join(wtRoot, 'feature-a');
-      execSync(`git worktree add -b feature-a "${wt1}"`, { cwd: repo, stdio: 'pipe' });
+      const wt = path.join(wtRoot, 'feat-a');
+      execSync(`git worktree add -b feat-a "${wt}"`, { cwd: repo, stdio: 'pipe' });
 
-      const { watchId, worktrees } = await service.startWorktreeListWatch(repo);
-      expect(typeof watchId).toBe('string');
-      expect(worktrees).toHaveLength(1);
-      expect(worktrees[0].branch).toBe('feature-a');
+      const svc = makeService();
+      const { watchId, snapshot } = await svc.start(repo);
+      try {
+        expect(watchId).toMatch(/^[0-9a-f-]{36}$/);
+        expect(snapshot.project.branch).toBe('main');
+        expect(snapshot.project.error).toBeNull();
+        expect(snapshot.worktrees).toHaveLength(1);
+        expect(snapshot.worktrees[0].branch).toBe('feat-a');
+        expect(snapshot.worktrees[0].error).toBeNull();
+      } finally {
+        svc.stop(watchId);
+      }
     });
 
-    it('emits worktrees-changed after a new worktree is added', async () => {
+    it('emits when a new peer worktree is added', async () => {
       const repo = makeTempRepo();
       tempDirs.push(repo);
 
-      const { watchId } = await service.startWorktreeListWatch(repo);
+      const svc = makeService({ pollIntervalMs: 200 });
+      const { watchId } = await svc.start(repo);
+      try {
+        const wtRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-sgw-add-'));
+        tempDirs.push(wtRoot);
+        const wt = path.join(wtRoot, 'feat-new');
+        execSync(`git worktree add -b feat-new "${wt}"`, { cwd: repo, stdio: 'pipe' });
 
-      const wtRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-wlw-add-'));
-      tempDirs.push(wtRoot);
-      const wt = path.join(wtRoot, 'feature-new');
-      execSync(`git worktree add -b feature-new "${wt}"`, { cwd: repo, stdio: 'pipe' });
-
-      const call = await waitFor(() =>
-        sendToRenderer.mock.calls.find(
-          ([channel, payload]) =>
-            channel === `worktrees-changed:${watchId}` &&
-            Array.isArray(payload) &&
-            (payload as Array<{ branch: string }>).some((w) => w.branch === 'feature-new'),
-        ),
-      );
-      expect(call).toBeDefined();
+        const call = await waitFor(() =>
+          sendToRenderer.mock.calls.find(
+            ([channel, payload]) =>
+              channel === `session-git-changed:${watchId}` &&
+              (payload as { worktrees: Array<{ branch: string }> }).worktrees.some(
+                (w) => w.branch === 'feat-new',
+              ),
+          ),
+        );
+        expect(call).toBeDefined();
+      } finally {
+        svc.stop(watchId);
+      }
     });
 
-    it('emits worktrees-changed after a worktree is removed', async () => {
+    it('emits when a peer worktree is removed', async () => {
       const repo = makeTempRepo();
       tempDirs.push(repo);
 
-      const wtRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-wlw-rm-'));
+      const wtRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-sgw-rm-'));
       tempDirs.push(wtRoot);
-      const wt = path.join(wtRoot, 'feature-doomed');
-      execSync(`git worktree add -b feature-doomed "${wt}"`, { cwd: repo, stdio: 'pipe' });
+      const wt = path.join(wtRoot, 'feat-doomed');
+      execSync(`git worktree add -b feat-doomed "${wt}"`, { cwd: repo, stdio: 'pipe' });
 
-      const { watchId, worktrees } = await service.startWorktreeListWatch(repo);
-      expect(worktrees).toHaveLength(1);
+      const svc = makeService({ pollIntervalMs: 200 });
+      const { watchId, snapshot } = await svc.start(repo);
+      try {
+        expect(snapshot.worktrees).toHaveLength(1);
 
-      execSync(`git worktree remove "${wt}"`, { cwd: repo, stdio: 'pipe' });
+        sendToRenderer.mockClear();
+        execSync(`git worktree remove "${wt}"`, { cwd: repo, stdio: 'pipe' });
 
-      const call = await waitFor(() =>
-        sendToRenderer.mock.calls.find(
-          ([channel, payload]) =>
-            channel === `worktrees-changed:${watchId}` &&
-            Array.isArray(payload) &&
-            (payload as unknown[]).length === 0,
-        ),
-      );
-      expect(call).toBeDefined();
+        const call = await waitFor(() =>
+          sendToRenderer.mock.calls.find(
+            ([channel, payload]) =>
+              channel === `session-git-changed:${watchId}` &&
+              (payload as { worktrees: unknown[] }).worktrees.length === 0,
+          ),
+        );
+        expect(call).toBeDefined();
+      } finally {
+        svc.stop(watchId);
+      }
     });
 
-    it('does not emit when only the main repo HEAD changes', async () => {
+    it('emits updated counts when a peer worktree gets dirty', async () => {
       const repo = makeTempRepo();
       tempDirs.push(repo);
 
-      const wtRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-wlw-head-'));
+      const wtRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-sgw-dirty-'));
       tempDirs.push(wtRoot);
-      const wt = path.join(wtRoot, 'feature-a');
-      execSync(`git worktree add -b feature-a "${wt}"`, { cwd: repo, stdio: 'pipe' });
+      const wt = path.join(wtRoot, 'feat-dirty');
+      execSync(`git worktree add -b feat-dirty "${wt}"`, { cwd: repo, stdio: 'pipe' });
 
-      const { watchId } = await service.startWorktreeListWatch(repo);
+      const svc = makeService({ pollIntervalMs: 150 });
+      const { watchId } = await svc.start(repo);
+      try {
+        // Seed a brand-new untracked file inside the peer worktree.
+        fs.writeFileSync(path.join(wt, 'new.txt'), 'hi\n');
 
-      // Wait briefly for watchers to settle, then clear any noise from setup
-      await new Promise((r) => setTimeout(r, 150));
+        const call = await waitFor(() =>
+          sendToRenderer.mock.calls.find(([channel, payload]) => {
+            if (channel !== `session-git-changed:${watchId}`) return false;
+            const peer = (payload as { worktrees: Array<{ branch: string; untracked: number }> }).worktrees.find(
+              (w) => w.branch === 'feat-dirty',
+            );
+            return !!peer && peer.untracked === 1;
+          }),
+        );
+        expect(call).toBeDefined();
+      } finally {
+        svc.stop(watchId);
+      }
+    });
+
+    it('isolates per-peer errors in the snapshot', async () => {
+      const repo = makeTempRepo();
+      tempDirs.push(repo);
+
+      const wtRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-sgw-iso-'));
+      tempDirs.push(wtRoot);
+      const wt = path.join(wtRoot, 'feat-broken');
+      execSync(`git worktree add -b feat-broken "${wt}"`, { cwd: repo, stdio: 'pipe' });
+
+      // Corrupt the peer's gitdir pointer so its `git status` fails.
+      fs.writeFileSync(path.join(wt, '.git'), 'gitdir: /nonexistent/path/that/does/not/exist\n');
+
+      const svc = makeService({ pollIntervalMs: 5000 });
+      const { watchId, snapshot } = await svc.start(repo);
+      try {
+        expect(snapshot.project.error).toBeNull();
+        expect(snapshot.worktrees).toHaveLength(1);
+        expect(snapshot.worktrees[0].error).toEqual(expect.any(String));
+      } finally {
+        svc.stop(watchId);
+      }
+    });
+
+    it('reconnect() returns null for an unknown watchId', async () => {
+      const svc = makeService();
+      const result = await svc.reconnect('nope');
+      expect(result).toBeNull();
+    });
+
+    it('reconnect() re-runs and clears stale state', async () => {
+      const repo = makeTempRepo();
+      tempDirs.push(repo);
+
+      const svc = makeService({ pollIntervalMs: 5000 });
+      const { watchId } = await svc.start(repo);
+      try {
+        const wtRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-sgw-rc-'));
+        tempDirs.push(wtRoot);
+        const wt = path.join(wtRoot, 'feat-late');
+        execSync(`git worktree add -b feat-late "${wt}"`, { cwd: repo, stdio: 'pipe' });
+
+        // Skip the fs.watch path entirely — call reconnect to force a
+        // fresh enumeration.
+        const fresh = await svc.reconnect(watchId);
+        expect(fresh).not.toBeNull();
+        expect(fresh!.worktrees.some((w) => w.branch === 'feat-late')).toBe(true);
+      } finally {
+        svc.stop(watchId);
+      }
+    });
+
+    it('stop() closes all watchers and stops emitting', async () => {
+      const repo = makeTempRepo();
+      tempDirs.push(repo);
+
+      const svc = makeService({ pollIntervalMs: 100 });
+      const { watchId } = await svc.start(repo);
+      svc.stop(watchId);
+
       sendToRenderer.mockClear();
-
-      // Change HEAD on the main repo (should not change the worktree list).
-      execSync('git checkout -b unrelated-branch', { cwd: repo, stdio: 'pipe' });
-
-      // Give the debounced refresh time to fire if it's going to.
-      await new Promise((r) => setTimeout(r, 400));
-
-      const hits = sendToRenderer.mock.calls.filter(
-        ([channel]) => channel === `worktrees-changed:${watchId}`,
-      );
-      expect(hits.length).toBe(0);
-    });
-
-    it('returns a watchId and an empty list for a non-git directory', async () => {
-      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-wlw-non-git-'));
-      tempDirs.push(dir);
-
-      const { watchId, worktrees } = await service.startWorktreeListWatch(dir);
-      expect(typeof watchId).toBe('string');
-      expect(worktrees).toEqual([]);
-    });
-
-    it('stops emitting after stopWorktreeListWatch()', async () => {
-      const repo = makeTempRepo();
-      tempDirs.push(repo);
-
-      const { watchId } = await service.startWorktreeListWatch(repo);
-      service.stopWorktreeListWatch(watchId);
-
-      const wtRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-wlw-stop-'));
-      tempDirs.push(wtRoot);
-      const wt = path.join(wtRoot, 'feature-late');
-      execSync(`git worktree add -b feature-late "${wt}"`, { cwd: repo, stdio: 'pipe' });
-
-      // Give fs.watch a chance to fire if it were still attached.
+      execSync('git checkout -b post-stop', { cwd: repo, stdio: 'pipe' });
       await new Promise((r) => setTimeout(r, 250));
 
       const hits = sendToRenderer.mock.calls.filter(
-        ([channel]) => channel === `worktrees-changed:${watchId}`,
+        ([channel]) => channel === `session-git-changed:${watchId}`,
       );
       expect(hits.length).toBe(0);
     });
   });
 
-  it('resolves gitdir from a .git file (worktree-style)', async () => {
-    const primary = makeTempRepo();
-    tempDirs.push(primary);
-
-    // Build a fake worktree: a second directory whose .git is a file that
-    // points at an external gitdir. We reuse the primary repo's .git
-    // directory so HEAD reflects its state, which is sufficient for this test.
-    const worktree = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-worktree-'));
-    tempDirs.push(worktree);
-    fs.writeFileSync(
-      path.join(worktree, '.git'),
-      `gitdir: ${path.join(primary, '.git')}\n`,
-    );
-
-    const { branch } = await service.start(worktree);
-    expect(branch).toBe('main');
-  });
 });

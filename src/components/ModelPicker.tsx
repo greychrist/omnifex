@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import { Popover } from "@/components/ui/popover";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip-modern";
 import { motion } from "framer-motion";
-import { type SessionModelInfo } from "@/lib/api";
 
 export type Model = {
   id: string;
@@ -19,7 +18,7 @@ export type Model = {
 export const MODELS: Model[] = [
   {
     id: "opus[1m]",
-    name: "Claude Opus 4.6 (1M)",
+    name: "Claude Opus 4.7 (1M)",
     description: "Most capable, 1M context window",
     icon: <Zap className="h-3.5 w-3.5" />,
     shortName: "O",
@@ -27,7 +26,7 @@ export const MODELS: Model[] = [
   },
   {
     id: "opus",
-    name: "Claude Opus 4.6 (200K)",
+    name: "Claude Opus 4.7 (200K)",
     description: "Most capable, standard context",
     icon: <Zap className="h-3.5 w-3.5" />,
     shortName: "O",
@@ -40,35 +39,16 @@ export const MODELS: Model[] = [
     icon: <Zap className="h-3.5 w-3.5" />,
     shortName: "S",
     color: "text-primary"
+  },
+  {
+    id: "haiku",
+    name: "Claude Haiku 4.5",
+    description: "Fastest and cheapest, good for simple tasks",
+    icon: <Zap className="h-3.5 w-3.5" />,
+    shortName: "H",
+    color: "text-primary"
   }
 ];
-
-// Derive a short 1-2 letter badge from a model display name so the compact
-// picker trigger still renders a shortName when the parent hands us a live
-// model list without shortNames.
-export function shortNameFor(displayName: string): string {
-  const cleaned = displayName
-    .replace(/claude\s*/i, "")
-    .replace(/\(.*?\)/g, "")
-    .trim();
-  const firstWord = cleaned.split(/[\s\-]+/)[0] || "";
-  return firstWord.slice(0, 1).toUpperCase() || "?";
-}
-
-/** Build the effective model list from live SDK data or the hardcoded fallback. */
-export function buildEffectiveModels(supportedModels?: SessionModelInfo[]): Model[] {
-  if (supportedModels && supportedModels.length > 0) {
-    return supportedModels.map<Model>((m) => ({
-      id: m.value,
-      name: m.displayName,
-      description: m.description,
-      icon: <Zap className="h-3.5 w-3.5" />,
-      shortName: shortNameFor(m.displayName),
-      color: "text-primary",
-    }));
-  }
-  return MODELS;
-}
 
 // ---------------------------------------------------------------------------
 // ModelPickerDropdown — the popup content shared by compact and expanded modes

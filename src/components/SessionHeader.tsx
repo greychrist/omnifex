@@ -104,6 +104,13 @@ export interface WorktreeSnapshot {
   branch: string | null;
   changed: number;
   untracked: number;
+  /** Latest error from the per-worktree git read, or null when healthy. */
+  error: string | null;
+  /**
+   * Main-process watchId for the per-peer status watch. Undefined while the
+   * row is in its seeded "loading" state before the per-peer watch resolves.
+   */
+  watchId?: string;
 }
 
 export function SessionHeader({

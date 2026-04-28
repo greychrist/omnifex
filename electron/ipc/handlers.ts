@@ -139,14 +139,13 @@ export interface Services {
     getLatest(): Promise<string | null>;
   };
   gitWatcher?: {
-    start(projectPath: string): Promise<{ watchId: string; branch: string | null }>;
-    stop(watchId: string): void;
     listWorktrees(projectPath: string): Promise<Array<{ path: string; branch: string | null }>>;
-    startWorktreeListWatch(projectPath: string): Promise<{
+    startSession(projectPath: string): Promise<{
       watchId: string;
-      worktrees: Array<{ path: string; branch: string | null }>;
+      snapshot: import('../services/git-watcher').SessionGitSnapshot;
     }>;
-    stopWorktreeListWatch(watchId: string): void;
+    reconnectSession(watchId: string): Promise<import('../services/git-watcher').SessionGitSnapshot | null>;
+    stopSession(watchId: string): void;
   };
   lima?: {
     isInstalled(): Promise<boolean>;
@@ -523,32 +522,26 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     get_latest_sdk_version: wrap(() => sdkVersion?.getLatest() ?? null),
 
     // ── Git watcher ──────────────────────────────────────────────────────────
-    start_git_branch_watch: wrapWith(async (p: Record<string, unknown>) => {
-      const projectPath = (p?.projectPath ?? p?.project_path) as string;
-      if (!projectPath || !gitWatcher) return null;
-      return gitWatcher.start(projectPath);
-    }),
-    stop_git_branch_watch: wrapWith(async (p: Record<string, unknown>) => {
-      const watchId = (p?.watchId ?? p?.watch_id) as string;
-      if (!watchId || !gitWatcher) return null;
-      gitWatcher.stop(watchId);
-      return null;
-    }),
     list_git_worktrees: wrapWith(async (p: Record<string, unknown>) => {
       const projectPath = (p?.projectPath ?? p?.project_path) as string;
       if (!projectPath || !gitWatcher) return [];
       return gitWatcher.listWorktrees(projectPath);
     }),
-    start_worktree_list_watch: wrapWith(async (p: Record<string, unknown>) => {
+    start_session_git_watch: wrapWith(async (p: Record<string, unknown>) => {
       const projectPath = (p?.projectPath ?? p?.project_path) as string;
       if (!projectPath || !gitWatcher) return null;
-      return gitWatcher.startWorktreeListWatch(projectPath);
+      return gitWatcher.startSession(projectPath);
     }),
-    stop_worktree_list_watch: wrapWith(async (p: Record<string, unknown>) => {
+    stop_session_git_watch: wrapWith(async (p: Record<string, unknown>) => {
       const watchId = (p?.watchId ?? p?.watch_id) as string;
       if (!watchId || !gitWatcher) return null;
-      gitWatcher.stopWorktreeListWatch(watchId);
+      gitWatcher.stopSession(watchId);
       return null;
+    }),
+    reconnect_session_git_watch: wrapWith(async (p: Record<string, unknown>) => {
+      const watchId = (p?.watchId ?? p?.watch_id) as string;
+      if (!watchId || !gitWatcher) return null;
+      return gitWatcher.reconnectSession(watchId);
     }),
 
     // ── Lima (VM viewer) ──────────────────────────────────────────────────────

@@ -23,6 +23,7 @@ import {
   type EffortLevel,
   type ThinkingConfig,
 } from "./FloatingPromptInput";
+import { MODELS } from "./ModelPicker";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { SlashCommandsManager } from "./SlashCommandsManager";
 import { SessionMCPStatus } from "./SessionMCPStatus";
@@ -46,6 +47,7 @@ import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
 import { SessionHeader, HeaderLabel } from "./SessionHeader";
 import { ProjectPathBadge } from "./claude-code-session/ProjectPathBadge";
 import { GitBranchBadge } from "./claude-code-session/GitBranchBadge";
+import { GitWatchStatusIcon } from "./claude-code-session/GitWatchStatusIcon";
 import { filterDisplayableMessages } from "@/lib/messageFilters";
 import { deriveSubagents } from "@/lib/subagentStreams";
 import { SubagentBar } from "./SubagentBar";
@@ -192,19 +194,11 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   const [effort, setEffort] = useState<EffortLevel>(initialSessionConfig?.effort ?? 'high');
   // Thinking config — controls extended thinking behavior.
   const [thinkingConfig, setThinkingConfig] = useState<ThinkingConfig>(initialSessionConfig?.thinkingConfig ?? 'adaptive');
-  // Git branch + working-tree status for the project directory, shown in
-  // SessionHeader badge.
-  const [gitStatus, setGitStatus] = useState<import('@/lib/api').GitBranchSnapshot>({
-    branch: null,
-    changed: 0,
-    untracked: 0,
-  });
-  // Live status for sibling worktrees of the same repo. Keyed by absolute
-  // worktree path so updates from per-worktree watchers can be merged in
-  // place. Empty when the project has no peers (or isn't a git repo).
-  const [worktreeStatuses, setWorktreeStatuses] = useState<
-    Record<string, import('./SessionHeader').WorktreeSnapshot>
-  >({});
+  // Unified per-tab git snapshot — project + all sibling worktrees streamed
+  // from a single main-process watcher. Null until `startSessionGitWatch`
+  // resolves; stays null when the project isn't a git repo.
+  const [sessionGit, setSessionGit] = useState<import('@/lib/api').SessionGitSnapshot | null>(null);
+  const [gitWatchId, setGitWatchId] = useState<string | null>(null);
 
   // Resolve account explanation for SessionHeader
   useEffect(() => {
@@ -231,173 +225,65 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     if (defaults.effort) setEffort(defaults.effort as import('./FloatingPromptInput').EffortLevel);
   }, [accountResolution, sessionStarted]);
 
-  // Watch git branch for the project directory — live-updates the SessionHeader
-  // badge when the user switches branches outside the app.
+  // One per-tab git watch covers project status + worktree list + per-peer
+  // status. The main process owns the fs.watch / poll machinery; we just
+  // mirror the latest snapshot into render state.
   useEffect(() => {
-    if (!projectPath) return;
+    if (!projectPath) {
+      setSessionGit(null);
+      setGitWatchId(null);
+      return;
+    }
     let cancelled = false;
     let watchId: string | null = null;
     let unsub: (() => void) | null = null;
 
     (async () => {
+      let result: { watchId: string; snapshot: import('@/lib/api').SessionGitSnapshot } | null = null;
       try {
-        const result = await api.startGitBranchWatch(projectPath);
-        if (cancelled) {
-          if (result?.watchId) await api.stopGitBranchWatch(result.watchId);
-          return;
-        }
-        if (!result) {
-          setGitStatus({ branch: null, changed: 0, untracked: 0 });
-          return;
-        }
-        watchId = result.watchId;
-        setGitStatus({
-          branch: result.branch,
-          changed: result.changed,
-          untracked: result.untracked,
-        });
-        unsub = api.onGitBranchChanged(result.watchId, setGitStatus);
-      } catch {
-        if (!cancelled) setGitStatus({ branch: null, changed: 0, untracked: 0 });
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-      unsub?.();
-      if (watchId) void api.stopGitBranchWatch(watchId);
-    };
-  }, [projectPath]);
-
-  // Watch sibling worktrees attached to the same repo. We open one
-  // worktree-list watcher (fs.watch on `<commondir>/worktrees/`) so the list
-  // updates live as the user runs `git worktree add`/`remove`, plus a
-  // per-worktree git-branch watch on each peer so changed/untracked counts
-  // stream in the same way as the main branch badge.
-  useEffect(() => {
-    if (!projectPath) {
-      setWorktreeStatuses({});
-      return;
-    }
-    let cancelled = false;
-    let listWatchId: string | null = null;
-    let listUnsub: (() => void) | null = null;
-    const peerWatchIds = new Map<string, string>(); // path → branch-watch id
-    const peerUnsubs = new Map<string, () => void>();
-
-    const startPeer = async (peerPath: string, peerBranch: string | null) => {
-      if (peerWatchIds.has(peerPath)) return;
-      try {
-        const r = await api.startGitBranchWatch(peerPath);
-        if (cancelled || !r) {
-          if (r?.watchId) await api.stopGitBranchWatch(r.watchId);
-          return;
-        }
-        peerWatchIds.set(peerPath, r.watchId);
-        setWorktreeStatuses((prev) => ({
-          ...prev,
-          [peerPath]: {
-            path: peerPath,
-            branch: r.branch ?? peerBranch,
-            changed: r.changed,
-            untracked: r.untracked,
-          },
-        }));
-        const unsub = api.onGitBranchChanged(r.watchId, (snap) => {
-          setWorktreeStatuses((prev) => ({
-            ...prev,
-            [peerPath]: {
-              path: peerPath,
-              branch: snap.branch ?? peerBranch,
-              changed: snap.changed,
-              untracked: snap.untracked,
-            },
-          }));
-        });
-        peerUnsubs.set(peerPath, unsub);
-      } catch {
-        // best effort — skip this peer
-      }
-    };
-
-    const stopPeer = async (peerPath: string) => {
-      const id = peerWatchIds.get(peerPath);
-      const unsub = peerUnsubs.get(peerPath);
-      unsub?.();
-      peerUnsubs.delete(peerPath);
-      peerWatchIds.delete(peerPath);
-      if (id) await api.stopGitBranchWatch(id);
-      setWorktreeStatuses((prev) => {
-        if (!(peerPath in prev)) return prev;
-        const next = { ...prev };
-        delete next[peerPath];
-        return next;
-      });
-    };
-
-    const reconcile = async (worktrees: import('@/lib/api').WorktreeInfo[]) => {
-      const wanted = new Map(worktrees.map((w) => [w.path, w.branch]));
-      // Add peers that are new
-      for (const wt of worktrees) {
-        if (!peerWatchIds.has(wt.path)) await startPeer(wt.path, wt.branch);
-      }
-      // Drop peers that are gone
-      for (const p of Array.from(peerWatchIds.keys())) {
-        if (!wanted.has(p)) await stopPeer(p);
-      }
-    };
-
-    (async () => {
-      let result: { watchId: string; worktrees: import('@/lib/api').WorktreeInfo[] } | null = null;
-      try {
-        result = await api.startWorktreeListWatch(projectPath);
+        result = await api.startSessionGitWatch(projectPath);
       } catch {
         result = null;
       }
       if (cancelled) {
-        if (result?.watchId) await api.stopWorktreeListWatch(result.watchId);
+        if (result?.watchId) await api.stopSessionGitWatch(result.watchId);
         return;
       }
       if (!result) {
-        setWorktreeStatuses({});
+        setSessionGit(null);
         return;
       }
-      listWatchId = result.watchId;
-
-      // Seed initial state so the UI renders before per-peer watchers stream.
-      const initial: Record<string, import('./SessionHeader').WorktreeSnapshot> = {};
-      for (const wt of result.worktrees) {
-        initial[wt.path] = { path: wt.path, branch: wt.branch, changed: 0, untracked: 0 };
-      }
-      setWorktreeStatuses(initial);
-
-      // Open per-peer status watches for the initial set.
-      await reconcile(result.worktrees);
-
-      // Live reconcile when peers come or go.
-      listUnsub = api.onWorktreesChanged(listWatchId, (worktrees) => {
-        void reconcile(worktrees);
-      });
+      watchId = result.watchId;
+      setGitWatchId(result.watchId);
+      setSessionGit(result.snapshot);
+      unsub = api.onSessionGitChanged(result.watchId, setSessionGit);
     })();
 
     return () => {
       cancelled = true;
-      listUnsub?.();
-      if (listWatchId) void api.stopWorktreeListWatch(listWatchId);
-      for (const u of peerUnsubs.values()) u();
-      for (const id of peerWatchIds.values()) void api.stopGitBranchWatch(id);
+      unsub?.();
+      if (watchId) void api.stopSessionGitWatch(watchId);
+      setGitWatchId(null);
     };
   }, [projectPath]);
 
-  // Stable list of worktree snapshots for the SessionHeader, sorted by path
-  // so the row order is deterministic across re-renders.
-  const worktreeList = useMemo(
-    () =>
-      Object.values(worktreeStatuses).sort((a, b) =>
-        a.path.localeCompare(b.path),
-      ),
-    [worktreeStatuses],
-  );
+  // Project status + sibling worktrees derived from the unified snapshot.
+  // `gitStatus` keeps the existing renderer ergonomics for the project badge;
+  // `worktreeList` mirrors the snapshot's `worktrees[]` for the list below.
+  const gitStatus = sessionGit?.project ?? null;
+  const worktreeList = sessionGit?.worktrees ?? [];
+  // Aggregate per-path errors for the single header status icon. The icon is
+  // green when this list is empty and red when any path is errored; the
+  // tooltip lists the offending labels so the user can see *which* row is
+  // wedged without needing per-row icons.
+  const gitWatchErrors = useMemo(() => {
+    const out: Array<{ label: string; error: string }> = [];
+    if (gitStatus?.error) out.push({ label: gitStatus.branch ?? 'project', error: gitStatus.error });
+    for (const wt of worktreeList) {
+      if (wt.error) out.push({ label: wt.branch ?? wt.path, error: wt.error });
+    }
+    return out;
+  }, [gitStatus, worktreeList]);
 
   // New state for preview feature
   const [showPreview, setShowPreview] = useState(false);
@@ -1431,7 +1317,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   return (
     <TooltipProvider>
       <div className={cn("flex flex-col h-full bg-background", className)}>
-        <div className="flex items-center gap-2 px-4 py-1.5 border-b border-border/30 bg-muted shrink-0">
+        <div className="flex items-start gap-2 px-4 py-1.5 border-b border-border/30 bg-muted shrink-0">
           <Button
             size="sm"
             variant="outline"
@@ -1452,11 +1338,19 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           {gitStatus?.branch && (
             <div className="flex flex-col items-start gap-0.5">
               <HeaderLabel>branch</HeaderLabel>
-              <GitBranchBadge
-                name={gitStatus.branch}
-                changed={gitStatus.changed}
-                untracked={gitStatus.untracked}
-              />
+              <div className="flex items-center gap-1">
+                <GitBranchBadge
+                  name={gitStatus.branch}
+                  changed={gitStatus.changed}
+                  untracked={gitStatus.untracked}
+                />
+                {gitWatchId && (
+                  <GitWatchStatusIcon
+                    errors={gitWatchErrors}
+                    onReconnect={() => api.reconnectSessionGitWatch(gitWatchId)}
+                  />
+                )}
+              </div>
             </div>
           )}
           {worktreeList.length > 0 && (
@@ -1464,13 +1358,13 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
               <HeaderLabel>worktrees</HeaderLabel>
               <div className="flex flex-col items-start gap-1">
                 {worktreeList.map((wt) => (
-                  <span key={wt.path} title={wt.path}>
+                  <div key={wt.path} title={wt.path}>
                     <GitBranchBadge
                       name={wt.branch ?? '(detached)'}
                       changed={wt.changed}
                       untracked={wt.untracked}
                     />
-                  </span>
+                  </div>
                 ))}
               </div>
             </div>
@@ -1622,7 +1516,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                         <div className="flex items-center gap-2 mb-1">
                           <span className="text-xs font-medium text-muted-foreground">#{index + 1}</span>
                           <span className="text-xs px-1.5 py-0.5 bg-primary/10 text-primary rounded">
-                            {queuedPrompt.model === "opus[1m]" ? "Opus (1M)" : queuedPrompt.model === "opus" ? "Opus" : "Sonnet"}
+                            {MODELS.find((m) => m.id === queuedPrompt.model)?.name ?? queuedPrompt.model}
                           </span>
                         </div>
                         <p className="text-sm line-clamp-2 break-words">{queuedPrompt.prompt}</p>

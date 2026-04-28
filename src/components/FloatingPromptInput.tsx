@@ -17,7 +17,7 @@ import { type FileEntry, type SlashCommand, type SessionModelInfo } from "@/lib/
 
 // Sub-components
 import {
-  buildEffectiveModels,
+  MODELS,
   CompactModelPicker,
   ExpandedModelPicker,
 } from "./ModelPicker";
@@ -99,7 +99,6 @@ const FloatingPromptInputInner = (
     outputStyleToggle,
     permissionMode = "default",
     onPermissionModeChange,
-    supportedModels,
     onLiveModelChange,
     effort = 'high',
     onEffortChange,
@@ -395,7 +394,7 @@ const FloatingPromptInputInner = (
   };
 
   // -- Derived data --
-  const effectiveModels = buildEffectiveModels(supportedModels);
+  const effectiveModels = MODELS;
   const selectedModelData =
     effectiveModels.find((m) => m.id === selectedModel) || effectiveModels[0];
 

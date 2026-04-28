@@ -101,7 +101,7 @@ function buildMockServices() {
     proxy: mockService(['getSettings', 'saveSettings'] as const),
     permissionsIO: createPermissionsIOService(),
     sdkVersion: mockService(['getReferenced', 'getLatest'] as const),
-    gitWatcher: mockService(['start', 'stop', 'listWorktrees'] as const),
+    gitWatcher: mockService(['startSession', 'stopSession', 'reconnectSession', 'listWorktrees'] as const),
   };
 }
 
@@ -202,8 +202,9 @@ describe('ipc handlers — structure', () => {
       'get_proxy_settings',
       // Git
       'get_git_branch',
-      'start_git_branch_watch',
-      'stop_git_branch_watch',
+      'start_session_git_watch',
+      'stop_session_git_watch',
+      'reconnect_session_git_watch',
       // SDK version
       'get_referenced_sdk_version',
       'get_latest_sdk_version',
@@ -732,34 +733,43 @@ describe('ipc handlers — dispatch to services', () => {
 
   // ── Git watcher ─────────────────────────────────────────────────────────
 
-  it('start_git_branch_watch forwards the project path and returns the service result', async () => {
-    services.gitWatcher.start.mockResolvedValueOnce({ watchId: 'w-1', branch: 'main' });
-    const result = await invoke(handlers, 'start_git_branch_watch', { projectPath: '/tmp/x' });
-    expect(result).toEqual({ watchId: 'w-1', branch: 'main' });
-    expect(services.gitWatcher.start).toHaveBeenCalledWith('/tmp/x');
+  it('start_session_git_watch forwards the project path and returns the service result', async () => {
+    const snap = { project: { path: '/tmp/x', branch: 'main', changed: 0, untracked: 0, error: null }, worktrees: [] };
+    services.gitWatcher.startSession.mockResolvedValueOnce({ watchId: 'w-1', snapshot: snap });
+    const result = await invoke(handlers, 'start_session_git_watch', { projectPath: '/tmp/x' });
+    expect(result).toEqual({ watchId: 'w-1', snapshot: snap });
+    expect(services.gitWatcher.startSession).toHaveBeenCalledWith('/tmp/x');
   });
 
-  it('start_git_branch_watch accepts snake_case project_path param', async () => {
-    services.gitWatcher.start.mockResolvedValueOnce({ watchId: 'w-2', branch: null });
-    await invoke(handlers, 'start_git_branch_watch', { project_path: '/tmp/y' });
-    expect(services.gitWatcher.start).toHaveBeenCalledWith('/tmp/y');
+  it('start_session_git_watch accepts snake_case project_path param', async () => {
+    services.gitWatcher.startSession.mockResolvedValueOnce({ watchId: 'w-2', snapshot: null });
+    await invoke(handlers, 'start_session_git_watch', { project_path: '/tmp/y' });
+    expect(services.gitWatcher.startSession).toHaveBeenCalledWith('/tmp/y');
   });
 
-  it('start_git_branch_watch returns null when projectPath is missing', async () => {
-    const result = await invoke(handlers, 'start_git_branch_watch', {});
+  it('start_session_git_watch returns null when projectPath is missing', async () => {
+    const result = await invoke(handlers, 'start_session_git_watch', {});
     expect(result).toBeNull();
-    expect(services.gitWatcher.start).not.toHaveBeenCalled();
+    expect(services.gitWatcher.startSession).not.toHaveBeenCalled();
   });
 
-  it('stop_git_branch_watch routes through the service', async () => {
-    await invoke(handlers, 'stop_git_branch_watch', { watchId: 'w-1' });
-    expect(services.gitWatcher.stop).toHaveBeenCalledWith('w-1');
+  it('stop_session_git_watch routes through the service', async () => {
+    await invoke(handlers, 'stop_session_git_watch', { watchId: 'w-1' });
+    expect(services.gitWatcher.stopSession).toHaveBeenCalledWith('w-1');
   });
 
-  it('stop_git_branch_watch returns null when watchId is missing', async () => {
-    const result = await invoke(handlers, 'stop_git_branch_watch', {});
+  it('stop_session_git_watch returns null when watchId is missing', async () => {
+    const result = await invoke(handlers, 'stop_session_git_watch', {});
     expect(result).toBeNull();
-    expect(services.gitWatcher.stop).not.toHaveBeenCalled();
+    expect(services.gitWatcher.stopSession).not.toHaveBeenCalled();
+  });
+
+  it('reconnect_session_git_watch routes through the service', async () => {
+    const snap = { project: { path: '/tmp/x', branch: 'main', changed: 0, untracked: 0, error: null }, worktrees: [] };
+    services.gitWatcher.reconnectSession.mockResolvedValueOnce(snap);
+    const result = await invoke(handlers, 'reconnect_session_git_watch', { watchId: 'w-1' });
+    expect(result).toEqual(snap);
+    expect(services.gitWatcher.reconnectSession).toHaveBeenCalledWith('w-1');
   });
 
   it('list_git_worktrees forwards the project path and returns the service result', async () => {

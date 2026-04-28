@@ -129,12 +129,40 @@ export interface ClaudeSettings {
 }
 
 /**
- * Branch + working-tree status snapshot for a project's git repository.
+ * Branch + working-tree status snapshot for one path (project or worktree).
  */
-export interface GitBranchSnapshot {
+export interface PathSnapshot {
+  path: string;
   branch: string | null;
   changed: number;
   untracked: number;
+  /**
+   * Latest error from `git status` / branch read for this path, or `null` if
+   * the read succeeded. Surface this to the user so a wedged worktree is
+   * visible rather than silently stuck at 0/0.
+   */
+  error: string | null;
+}
+
+/**
+ * Combined per-tab git snapshot — the project and all sibling worktrees in a
+ * single payload, emitted on `session-git-changed:<watchId>`.
+ */
+export interface SessionGitSnapshot {
+  project: PathSnapshot;
+  /** Sibling worktrees, sorted by path. */
+  worktrees: PathSnapshot[];
+}
+
+/** Defensive normalizer for a path snapshot crossing the IPC boundary. */
+function normalizePathSnapshot(data: any, fallbackPath: string): PathSnapshot {
+  return {
+    path: typeof data?.path === 'string' ? data.path : fallbackPath,
+    branch: data?.branch ?? null,
+    changed: typeof data?.changed === 'number' ? data.changed : 0,
+    untracked: typeof data?.untracked === 'number' ? data.untracked : 0,
+    error: typeof data?.error === 'string' ? data.error : null,
+  };
 }
 
 /** A worktree attached to the same repository as the currently-open project. */
@@ -1298,22 +1326,6 @@ export const api = {
   },
 
   /**
-   * Start watching a project's .git/ for branch changes and the working tree
-   * for changed/untracked file counts. Returns an initial snapshot and a
-   * watchId the caller uses to unsubscribe.
-   */
-  async startGitBranchWatch(projectPath: string): Promise<GitBranchSnapshot & { watchId: string } | null> {
-    return apiCall("start_git_branch_watch", { projectPath });
-  },
-
-  /**
-   * Stop watching a project's .git/.
-   */
-  async stopGitBranchWatch(watchId: string): Promise<void> {
-    await apiCall("stop_git_branch_watch", { watchId });
-  },
-
-  /**
    * List worktrees attached to the same repository as `projectPath`,
    * excluding `projectPath` itself. Returns [] for non-git directories.
    */
@@ -1323,48 +1335,50 @@ export const api = {
   },
 
   /**
-   * Start watching the shared gitdir's `worktrees/` directory so the renderer
-   * gets a fresh list whenever a peer is added or removed. Returns the
-   * initial list immediately so the UI can render before any event fires.
+   * Start a single per-tab git watch covering both the project itself and any
+   * sibling worktrees. The returned snapshot is the initial state; further
+   * updates stream over `session-git-changed:<watchId>`.
    */
-  async startWorktreeListWatch(projectPath: string): Promise<{ watchId: string; worktrees: WorktreeInfo[] } | null> {
-    return apiCall("start_worktree_list_watch", { projectPath });
+  async startSessionGitWatch(projectPath: string): Promise<{
+    watchId: string;
+    snapshot: SessionGitSnapshot;
+  } | null> {
+    return apiCall("start_session_git_watch", { projectPath });
   },
 
-  /** Stop a worktree-list watch. */
-  async stopWorktreeListWatch(watchId: string): Promise<void> {
-    await apiCall("stop_worktree_list_watch", { watchId });
-  },
-
-  /**
-   * Subscribe to worktree-list updates for a watch. The callback receives the
-   * full new list each time it changes. Returns an unsubscribe function.
-   */
-  onWorktreesChanged(
-    watchId: string,
-    callback: (worktrees: WorktreeInfo[]) => void,
-  ): () => void {
-    return window.electronAPI.onEvent(
-      `worktrees-changed:${watchId}`,
-      (data: any) => callback(Array.isArray(data) ? data : []),
-    );
+  /** Stop a per-tab session git watch. */
+  async stopSessionGitWatch(watchId: string): Promise<void> {
+    await apiCall("stop_session_git_watch", { watchId });
   },
 
   /**
-   * Subscribe to branch / status updates for a specific watch. Returns an
-   * unsubscribe function.
+   * Tear down + recreate the watch's internal fs.watch handles and force a
+   * fresh refresh cycle (re-list peers, re-read every path). Returns the
+   * latest snapshot, or null if the watchId is unknown.
    */
-  onGitBranchChanged(
+  async reconnectSessionGitWatch(watchId: string): Promise<SessionGitSnapshot | null> {
+    return apiCall("reconnect_session_git_watch", { watchId });
+  },
+
+  /**
+   * Subscribe to session-git updates for a watch. The callback fires with the
+   * full snapshot whenever anything visible (project status, peer add/remove,
+   * peer status, error) changes. Returns an unsubscribe function.
+   */
+  onSessionGitChanged(
     watchId: string,
-    callback: (snapshot: GitBranchSnapshot) => void,
+    callback: (snapshot: SessionGitSnapshot) => void,
   ): () => void {
     return window.electronAPI.onEvent(
-      `git-branch-changed:${watchId}`,
-      (data: any) => callback({
-        branch: data?.branch ?? null,
-        changed: typeof data?.changed === 'number' ? data.changed : 0,
-        untracked: typeof data?.untracked === 'number' ? data.untracked : 0,
-      }),
+      `session-git-changed:${watchId}`,
+      (data: any) => {
+        if (!data || typeof data !== 'object') return;
+        const project = normalizePathSnapshot(data.project, '');
+        const worktrees = Array.isArray(data.worktrees)
+          ? data.worktrees.map((w: any) => normalizePathSnapshot(w, ''))
+          : [];
+        callback({ project, worktrees });
+      },
     );
   },
 

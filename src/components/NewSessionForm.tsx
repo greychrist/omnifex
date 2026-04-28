@@ -10,6 +10,7 @@ import {
   type EffortLevel,
   type ThinkingConfig,
 } from "./FloatingPromptInput";
+import { MODELS } from "./ModelPicker";
 import type { SessionDefaults } from "@/lib/api";
 
 export interface NewSessionFormAccountResolution {
@@ -70,31 +71,19 @@ export const NewSessionForm: React.FC<NewSessionFormProps> = ({
 
       <div className="space-y-1">
         <Label className="text-xs text-foreground/60">Model</Label>
-        <div className="flex gap-2">
-          <Button
-            size="sm"
-            variant={selectedModel === "opus[1m]" ? "default" : "outline"}
-            onClick={() => setSelectedModel("opus[1m]")}
-            className="flex-1"
-          >
-            Opus 1M
-          </Button>
-          <Button
-            size="sm"
-            variant={selectedModel === "opus" ? "default" : "outline"}
-            onClick={() => setSelectedModel("opus")}
-            className="flex-1"
-          >
-            Opus
-          </Button>
-          <Button
-            size="sm"
-            variant={selectedModel === "sonnet" ? "default" : "outline"}
-            onClick={() => setSelectedModel("sonnet")}
-            className="flex-1"
-          >
-            Sonnet
-          </Button>
+        <div className="grid grid-cols-2 gap-2">
+          {MODELS.map((model) => (
+            <Button
+              key={model.id}
+              size="sm"
+              variant={selectedModel === model.id ? "default" : "outline"}
+              onClick={() => setSelectedModel(model.id)}
+              className="justify-start"
+              title={model.description}
+            >
+              {model.name}
+            </Button>
+          ))}
         </div>
       </div>
 

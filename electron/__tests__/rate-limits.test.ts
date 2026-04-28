@@ -147,6 +147,17 @@ describe('rate-limits service', () => {
       expect(h.service.getSnapshots()).toHaveLength(0);
     });
 
+    it('preserves prior resets_at when called with null', () => {
+      // First write seeds a good reset time; a follow-up call with null
+      // (e.g. parser failed to extract the resets line) must NOT clobber the
+      // good value with null.
+      h.service.recordUtilization('/Users/test/.claude', 'five_hour', 30, 1_700_000_000);
+      h.service.recordUtilization('/Users/test/.claude', 'five_hour', 35, null);
+      const snap = h.service.getSnapshotsByAccount('Personal').find((s) => s.rate_limit_type === 'five_hour')!;
+      expect(snap.utilization).toBe(35);
+      expect(snap.resets_at).toBe(1_700_000_000);
+    });
+
     it('emits rate-limits:updated with the merged snapshot so renderer pills refresh', () => {
       h.service.recordUtilization('/Users/test/.claude', 'seven_day', 42, 1_700_001_234);
       const evt = h.emitted.find((e) => e.channel === 'rate-limits:updated');

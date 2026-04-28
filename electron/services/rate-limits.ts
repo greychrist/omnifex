@@ -294,7 +294,7 @@ export function createRateLimitsService(deps: RateLimitsDeps): RateLimitsService
          ON CONFLICT(account_name, rate_limit_type)
          DO UPDATE SET
            utilization = excluded.utilization,
-           resets_at = excluded.resets_at,
+           resets_at = COALESCE(excluded.resets_at, rate_limit_snapshots.resets_at),
            observed_at = excluded.observed_at`,
       )
       .run(

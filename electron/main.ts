@@ -57,7 +57,7 @@ import { createPermissionsIOService } from './services/permissions-io';
 import { createUpdaterService } from './services/updater';
 import { createInstallerService } from './services/installer';
 import { createSdkVersionService } from './services/sdk-version';
-import { createGitWatcherService, listWorktrees } from './services/git-watcher';
+import { createSessionGitWatcher, listWorktrees } from './services/git-watcher';
 import { createLimaService } from './services/lima';
 import { registerIpcHandlers } from './ipc/handlers';
 import { createWindowRouter } from './window-router';
@@ -447,7 +447,7 @@ app.whenReady().then(() => {
       }
     },
   });
-  const gitWatcherService = _gitWatcherService = createGitWatcherService({
+  const sessionGitWatcher = _gitWatcherService = createSessionGitWatcher({
     sendToRenderer,
   });
   const limaService = createLimaService();
@@ -633,13 +633,10 @@ app.whenReady().then(() => {
       getLatest: () => sdkVersionService.getLatest(),
     },
     gitWatcher: {
-      start: (projectPath: string) => gitWatcherService.start(projectPath),
-      stop: (watchId: string) => gitWatcherService.stop(watchId),
       listWorktrees: (projectPath: string) => listWorktrees(projectPath),
-      startWorktreeListWatch: (projectPath: string) =>
-        gitWatcherService.startWorktreeListWatch(projectPath),
-      stopWorktreeListWatch: (watchId: string) =>
-        gitWatcherService.stopWorktreeListWatch(watchId),
+      startSession: (projectPath: string) => sessionGitWatcher.start(projectPath),
+      reconnectSession: (watchId: string) => sessionGitWatcher.reconnect(watchId),
+      stopSession: (watchId: string) => sessionGitWatcher.stop(watchId),
     },
     lima: {
       isInstalled: () => limaService.isInstalled(),

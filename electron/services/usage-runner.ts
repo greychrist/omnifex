@@ -3,7 +3,7 @@ import type { AccountsService } from './accounts';
 import type { RateLimitsService } from './rate-limits';
 import { findClaudeBinary as defaultFindClaudeBinary } from './util/find-claude-binary';
 import { stripAnsi } from './usage-runner/ansi';
-import { parseUsageOutput, type UsageData } from './usage-runner/parser';
+import { parseUsageOutput, isUsageOutputComplete, type UsageData } from './usage-runner/parser';
 import { resetsLabelToEpoch } from './usage-runner/resets-label';
 import type { LoggingService } from './logging';
 
@@ -39,6 +39,12 @@ export interface UsageRunnerDeps {
   // Tunables (defaults match the spec)
   settleQuietMs?: number;
   usageQuietMs?: number;
+  /**
+   * After the captured text first looks fully rendered (all three windows +
+   * Resets lines), wait this many extra ms in case more bytes are still
+   * inbound. Defaults to 200ms.
+   */
+  fullRenderQuietMs?: number;
   hardTimeoutMs?: number;
   killGraceMs?: number;
 }
@@ -49,25 +55,48 @@ const PARSER_LABEL_TO_RATE_LIMIT_TYPE: Record<UsageData['windows'][number]['labe
   week_sonnet: 'seven_day_sonnet',
 };
 
+// Plausibility caps per window. The 5h window maxes at 5 hours from now and
+// the 7d window at 7 days; we add a small margin to absorb clock skew + the
+// time spent rendering and capturing the TUI output before stamping
+// `observedAt`. Anything beyond the cap is treated as a parse glitch (the
+// classic case is a relative-format parser swallowing leftover digits and
+// computing "in 500h" or similar).
+const FIVE_HOUR_CAP_MS = 6 * 60 * 60 * 1000;
+const SEVEN_DAY_CAP_MS = 8 * 24 * 60 * 60 * 1000;
+
+function validateResetEpoch(
+  epochMs: number | null,
+  label: UsageData['windows'][number]['label'],
+  observedAtMs: number,
+): { accepted: number | null; reason: string } {
+  if (epochMs == null) return { accepted: null, reason: 'unparseable' };
+  const dt = epochMs - observedAtMs;
+  if (dt <= 0) return { accepted: null, reason: 'in_past' };
+  const cap = label === 'current_session' ? FIVE_HOUR_CAP_MS : SEVEN_DAY_CAP_MS;
+  if (dt > cap) return { accepted: null, reason: `beyond_cap (dt=${dt}ms cap=${cap}ms)` };
+  return { accepted: epochMs, reason: 'ok' };
+}
+
 export function createUsageRunnerService(deps: UsageRunnerDeps): UsageRunnerService {
   const spawnPty = deps.spawnPty ?? defaultSpawnPty;
   const findBinary = deps.findClaudeBinary ?? (() => defaultFindClaudeBinary());
   const now = deps.now ?? Date.now;
   const settleQuietMs = deps.settleQuietMs ?? 750;
   const usageQuietMs = deps.usageQuietMs ?? 1500;
+  const fullRenderQuietMs = deps.fullRenderQuietMs ?? 200;
   const hardTimeoutMs = deps.hardTimeoutMs ?? 20000;
   const killGraceMs = deps.killGraceMs ?? 500;
 
   const inFlight = new Map<string, Promise<UsageRunResult>>();
   const cache = new Map<string, UsageRunResult>();
 
-  function logWarn(msg: string, ctx?: Record<string, unknown>): void {
+  function logAt(level: 'info' | 'warn', msg: string, ctx?: Record<string, unknown>): void {
     if (!deps.logging) return;
     try {
       deps.logging.writeBatch([
         {
           timestamp: new Date().toISOString(),
-          level: 'warn',
+          level,
           source: 'usage-runner',
           message: msg,
           metadata: ctx ? JSON.stringify(ctx) : undefined,
@@ -77,6 +106,8 @@ export function createUsageRunnerService(deps: UsageRunnerDeps): UsageRunnerServ
       // never let logging failures escape
     }
   }
+  function logWarn(msg: string, ctx?: Record<string, unknown>): void { logAt('warn', msg, ctx); }
+  function logInfo(msg: string, ctx?: Record<string, unknown>): void { logAt('info', msg, ctx); }
 
   async function run(accountName: string): Promise<UsageRunResult> {
     const existing = inFlight.get(accountName);
@@ -175,15 +206,29 @@ export function createUsageRunnerService(deps: UsageRunnerDeps): UsageRunnerServ
     const beforeUsage = buffer.length;
     pty.write('/usage\r');
 
-    // Phase 3: wait for /usage rendering to settle
+    // Phase 3: wait for /usage rendering to settle. Fast path: as soon as
+    // the captured text passes `isUsageOutputComplete` (all three windows
+    // present, each with a Resets line), give it a short additional quiet
+    // window (`fullRenderQuietMs`) to absorb any trailing bytes, then exit.
+    // Slow path: if the render is incomplete or unrecognized, fall back to
+    // the existing "quiet for `usageQuietMs`" timeout — a partial snapshot
+    // is still emitted so the user gets *something*, but the new sanity
+    // bounds + COALESCE in `recordUtilization` keep junk out of storage.
     let lastSeenLen = beforeUsage;
     let stableSince = Date.now();
+    let completeSince: number | null = null;
     while (Date.now() < hardDeadline) {
       if (buffer.length !== lastSeenLen) {
         lastSeenLen = buffer.length;
         stableSince = Date.now();
-      } else if (buffer.length > beforeUsage && Date.now() - stableSince >= usageQuietMs) {
-        break;
+        completeSince = null;
+      }
+      if (buffer.length > beforeUsage) {
+        if (completeSince == null && isUsageOutputComplete(stripAnsi(buffer.slice(beforeUsage)))) {
+          completeSince = Date.now();
+        }
+        if (completeSince != null && Date.now() - completeSince >= fullRenderQuietMs) break;
+        if (Date.now() - stableSince >= usageQuietMs) break;
       }
       if (exited) break;
       await sleep(20);
@@ -204,11 +249,31 @@ export function createUsageRunnerService(deps: UsageRunnerDeps): UsageRunnerServ
     // (America/New_York)" or "in 5h") to an absolute epoch (seconds) so the
     // 7-day/5-hour pills can render the same countdown the 5-hour widget
     // already shows from claude-stream events. Pass null when the label is
-    // empty or unparseable so the snapshot just lacks a reset time.
+    // empty, unparseable, or implausibly far away — `recordUtilization`
+    // COALESCEs null against the prior good value so a junk parse never
+    // clobbers a known-good reset time.
     for (const w of parsed.data.windows) {
       const type = PARSER_LABEL_TO_RATE_LIMIT_TYPE[w.label];
       const resetsEpochMs = resetsLabelToEpoch(w.resets_at_label, observedAt);
-      const resetsAtSec = resetsEpochMs == null ? null : Math.floor(resetsEpochMs / 1000);
+      const validation = validateResetEpoch(resetsEpochMs, w.label, observedAt);
+      const resetsAtSec = validation.accepted == null ? null : Math.floor(validation.accepted / 1000);
+
+      const logCtx = {
+        account: accountName,
+        window: w.label,
+        rate_limit_type: type,
+        raw_label: w.resets_at_label,
+        parsed_epoch_ms: resetsEpochMs,
+        observed_at_ms: observedAt,
+        accepted: validation.accepted != null,
+        reason: validation.reason,
+      };
+      if (validation.reason === 'ok') {
+        logInfo('parsed reset epoch', logCtx);
+      } else {
+        logWarn('rejected reset epoch — preserving prior good value', logCtx);
+      }
+
       deps.rateLimits.recordUtilization(configDir, type, w.pct_used, resetsAtSec);
     }
     return cacheAndReturn(accountName, {
