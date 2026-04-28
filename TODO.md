@@ -99,3 +99,39 @@ Audit conclusion: architecture is healthier than expected. Account scoping is mo
 ### Wave 5 complete — 2026-04-17
 
 All ten items shipped across three commits (`48e26af`, `9df9115`, plus a third from the P2 batch). Test count went from 437 → 455 (+18 targeted tests). No new deps, no architectural rewrites; everything followed existing patterns. Next architecture audit should skip Wave 5 and focus on new regressions / SDK surface drift.
+
+---
+
+## Wave 6 — architecture audit punch list (2026-04-27)
+
+Findings from a follow-up architecture audit run after v0.3.63. Verified in-repo with file:line spot-checks. Items are loosely coupled — each can ship as its own PR.
+
+### P1 — actively broken / contract mismatches
+
+- [ ] **6.1 Hooks `local` scope is broken end-to-end.**
+  Picking the Local tab in `HooksEditor` and saving silently writes user-scope `<configDir>/settings.json` instead of `<projectPath>/.claude/settings.local.json`. Reading the Local tab returns user-scope hooks. The renderer's three-way merge in `api.ts:1680` reads user hooks twice and never sees `settings.local.json` content at all.
+  *Root cause:* `main.ts:515-516` does a TS-only `as 'user' | 'project'` cast on a runtime `'local'` value; service signatures and bodies in `claude.ts:668,698` only branch on `'user' | 'project'`, so `'local'` falls through to the user-scope branch. Two competing merge implementations live in the codebase: backend `getMergedHooksConfig` (`claude.ts:760`, two-way) and renderer (`api.ts:1680`, three-way).
+  *Fix:* widen the service signatures to `'user' | 'project' | 'local'`; add a `local` branch that reads/writes `<projectPath>/.claude/settings.local.json`; drop the casts in `main.ts:515-516`; collapse the merge into a single backend function that does the proper three-way and have the renderer call it once instead of three round-trips.
+  *Tests (TDD):* failing test that picks `'local'`, saves a hook, asserts `settings.local.json` contains it and `configDir/settings.json` does not. Merged-read test that returns hooks from all three files with correct precedence (local > project > user).
+
+- [ ] **6.2 MCP API contract is broken at multiple layers.**
+  `mcpAddJson` always throws "Invalid JSON configuration" because the renderer sends `jsonConfig` (`api.ts:1186`) but `handlers.ts:385` passes raw params to `addJson`, which destructures `json` (`mcp.ts:151`). `scope` is silently ignored. The renderer types claim `AddServerResult { success, message, server_name }` but `addJson` returns a raw `MCPServer`. Sibling methods `addFromClaudeDesktop`, `serve`, `testConnection`, `getServerStatus` are explicit stubs (`mcp.ts:161,166,171,186`). `list()` does not populate `scope` or `status` even though the renderer types and UI both rely on them (`MCPServerList.tsx`).
+  *Fix:* rename `MCPAddJsonParams.json` → `jsonConfig` (or accept both during transition); have `addJson` honor `scope` (project `.mcp.json` for `local`/`project`, configDir `settings.json` for `user`); wrap the return as `AddServerResult`. Decide on the stubs — implement `addFromClaudeDesktop` (read `~/Library/Application Support/Claude/claude_desktop_config.json`, import each server) or remove the channel from the API. Populate `scope`/`status` in `list()` (status can stay `'unknown'` until process management lands; scope is computable from which file the server was found in).
+  *Tests:* `addJson` roundtrip with each scope writing the correct file; `list()` returns `scope`; `ImportResult` shape from `addFromClaudeDesktop`.
+
+### P1/P2 — same-account divergence
+
+- [ ] **6.3 Claude binary resolution is fragmented across subsystems.**
+  Same account can launch with different Claude binaries depending on feature. `sessions/lifecycle.ts:49` uses a local hardcoded `findSystemClaudeBinary()` probe. `claude.ts:560` (version check) and `claude.ts:778` (CLI usage) both shell out via `which claude`. `models.ts:21,42` runs its own probe. Only `usage-runner.ts:116` honors the per-account `cli_path` override. A dedicated `claude-binary.ts` service exists with `findBestBinary()` but is not wired into any of these hot paths.
+  *Fix:* route every binary lookup through `claude-binary.ts::findBestBinary()`, with per-account `cli_path` taking precedence when an account context is present. Replace the four probe sites; delete `findSystemClaudeBinary()` from `lifecycle.ts` and the `which` fallbacks in `claude.ts`.
+  *Tests:* `claude-binary` resolution order pins (account override > system probe > SDK-bundled fallback). Behavioral: same binary used for sessions / version check / CLI usage given the same account.
+
+### P2 — semantic + noise
+
+- [ ] **6.4 Usage cost computation ignores account type.**
+  Max-account usage is billed in dashboard totals even though those rows aren't actually cost-bearing. `usage.ts:256` always computes cost from model pricing; `account_type` is carried as metadata only (`usage.ts:260`). Plus the chatty `console.log` block at `usage.ts:480-482,486` writes account names and config dirs to stdout on every `getStatsByAccount` call.
+  *Fix:* zero out `cost` for entries where the resolved account is `'max'` (or skip the pricing lookup entirely for those rows). Remove the three `console.log` lines, or route them through the `LoggingService` at `debug` level.
+  *Tests:* usage-stats test with mixed max + api accounts asserts max contributions sum to `cost === 0`; api account contributions still compute normally.
+
+### Overall
+Top-level architecture is still healthy — main owns privileged work, preload is the IPC boundary, renderer stays in UI land. The drift is concentrated in three places: (1) config-scope correctness (6.1), (2) MCP contract consistency (6.2), (3) "which Claude binary are we actually using?" across features (6.3). 6.1 and 6.2 are real user-visible bugs, not future-debt — start there. 6.3 is a half-landed refactor (the dedicated service exists but isn't called) that gets worse the longer it sits.
