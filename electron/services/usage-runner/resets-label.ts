@@ -8,6 +8,7 @@
  *   "in 5h 23m"
  *   "9:40am (America/New_York)"
  *   "7pm (America/New_York)"
+ *   "May 4 at 7pm (America/New_York)"        (when the reset is days away)
  *
  * Returns null for empty / unrecognized / invalid-timezone inputs.
  */
@@ -16,8 +17,29 @@ export function resetsLabelToEpoch(label: string, observedAtMs: number): number 
   if (!s) return null;
 
   if (/^in\b/i.test(s)) return parseRelative(s, observedAtMs);
+  // Date-prefixed form (`<Month> <Day> at ...`) is tried first because its
+  // regex anchors on a leading word + number; the bare clock form would
+  // match the trailing `<hour>am|pm (tz)` portion and silently drop the
+  // date. If the date form doesn't match we fall back to the bare clock.
+  const dated = parseDateClockWithTz(s, observedAtMs);
+  if (dated != null) return dated;
   return parseClockWithTz(s, observedAtMs);
 }
+
+const MONTH_NAMES: Record<string, number> = {
+  january: 0, jan: 0,
+  february: 1, feb: 1,
+  march: 2, mar: 2,
+  april: 3, apr: 3,
+  may: 4,
+  june: 5, jun: 5,
+  july: 6, jul: 6,
+  august: 7, aug: 7,
+  september: 8, sep: 8, sept: 8,
+  october: 9, oct: 9,
+  november: 10, nov: 10,
+  december: 11, dec: 11,
+};
 
 function parseRelative(s: string, observedAtMs: number): number | null {
   const rest = s.replace(/^in\s+/i, '');
@@ -34,6 +56,71 @@ function parseRelative(s: string, observedAtMs: number): number | null {
   }
   if (!any) return null;
   return observedAtMs + totalMs;
+}
+
+function parseDateClockWithTz(s: string, observedAtMs: number): number | null {
+  // Examples: "May 4 at 7pm (America/New_York)", "May 4 at 7:30pm (...)".
+  const m = /^([A-Za-z]+)\s+(\d{1,2})\s+at\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)\s*\(([^)]+)\)\s*$/i.exec(s);
+  if (!m) return null;
+  const monthIdx = MONTH_NAMES[m[1].toLowerCase()];
+  if (monthIdx == null) return null;
+  const day = parseInt(m[2], 10);
+  if (day < 1 || day > 31) return null;
+  const hour12 = parseInt(m[3], 10);
+  const minute = m[4] ? parseInt(m[4], 10) : 0;
+  const ampm = m[5].toLowerCase();
+  const tz = m[6].trim();
+
+  if (hour12 < 1 || hour12 > 12 || minute < 0 || minute > 59) return null;
+  let hour24 = hour12 % 12;
+  if (ampm === 'pm') hour24 += 12;
+
+  // Pick the year by rolling forward from observed-at: try this year first,
+  // and if the resulting epoch is already in the past, advance to next year.
+  // This handles year-end transitions (observed Dec 30, reset "Jan 5") and
+  // mid-year resets without ambiguity.
+  const observedYear = new Date(observedAtMs).getUTCFullYear();
+  for (const year of [observedYear, observedYear + 1]) {
+    const offsetMs = tzOffsetMs(tz, observedAtMs);
+    if (offsetMs == null) return null;
+    let candidateUtc = Date.UTC(year, monthIdx, day, hour24, minute, 0) - offsetMs;
+    const candidateOffset = tzOffsetMs(tz, candidateUtc);
+    if (candidateOffset != null && candidateOffset !== offsetMs) {
+      candidateUtc = Date.UTC(year, monthIdx, day, hour24, minute, 0) - candidateOffset;
+    }
+    // Reject obviously-bad day numbers (e.g. Feb 30) by checking that the
+    // round-tripped date matches what we asked for in the target tz.
+    const roundTrip = formatInTz(candidateUtc, tz);
+    if (roundTrip == null) return null;
+    if (roundTrip.month !== monthIdx + 1 || roundTrip.day !== day) {
+      return null;
+    }
+    if (candidateUtc > observedAtMs) return candidateUtc;
+  }
+  return null;
+}
+
+/** Returns the wall-clock month/day for `utcMs` in `tz`, or null if invalid. */
+function formatInTz(utcMs: number, tz: string): { month: number; day: number } | null {
+  let parts: Intl.DateTimeFormatPart[];
+  try {
+    parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: tz,
+      hourCycle: 'h23',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(new Date(utcMs));
+  } catch {
+    return null;
+  }
+  const get = (t: string): number | null => {
+    const p = parts.find((x) => x.type === t);
+    return p ? parseInt(p.value, 10) : null;
+  };
+  const month = get('month');
+  const day = get('day');
+  if (month == null || day == null) return null;
+  return { month, day };
 }
 
 function parseClockWithTz(s: string, observedAtMs: number): number | null {

@@ -85,4 +85,37 @@ describe('resetsLabelToEpoch', () => {
       expect(epoch).toBe(Date.UTC(2026, 3, 27, 19, 0, 0));
     });
   });
+
+  describe('date + clock + tz (used by the 7-day window when reset is days away)', () => {
+    it('parses "May 4 at 7pm (America/New_York)"', () => {
+      // 7pm NY EDT (UTC-4) on May 4 = 23:00Z May 4.
+      const epoch = resetsLabelToEpoch('May 4 at 7pm (America/New_York)', APR27_15Z);
+      expect(epoch).toBe(Date.UTC(2026, 4, 4, 23, 0, 0));
+    });
+
+    it('parses "May 4 at 7:30pm (America/New_York)" with explicit minutes', () => {
+      const epoch = resetsLabelToEpoch('May 4 at 7:30pm (America/New_York)', APR27_15Z);
+      expect(epoch).toBe(Date.UTC(2026, 4, 4, 23, 30, 0));
+    });
+
+    it('parses an abbreviated month name', () => {
+      const epoch = resetsLabelToEpoch('May 4 at 7pm (America/New_York)', APR27_15Z);
+      const epochAbbr = resetsLabelToEpoch('May 04 at 7pm (America/New_York)', APR27_15Z);
+      expect(epochAbbr).toBe(epoch);
+    });
+
+    it('rolls forward to next year when the parsed date is already in the past', () => {
+      // Observed Apr 27 2026; "Jan 5 at 12pm (UTC)" rolls to Jan 5 2027.
+      const epoch = resetsLabelToEpoch('Jan 5 at 12pm (UTC)', APR27_15Z);
+      expect(epoch).toBe(Date.UTC(2027, 0, 5, 12, 0, 0));
+    });
+
+    it('returns null for an invalid month name', () => {
+      expect(resetsLabelToEpoch('Smarch 4 at 7pm (America/New_York)', APR27_15Z)).toBeNull();
+    });
+
+    it('returns null for an invalid day number', () => {
+      expect(resetsLabelToEpoch('May 99 at 7pm (America/New_York)', APR27_15Z)).toBeNull();
+    });
+  });
 });
