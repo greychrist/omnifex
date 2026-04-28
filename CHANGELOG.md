@@ -5,6 +5,14 @@ All notable changes to GreyChrist are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.64] — 2026-04-28
+
+Housekeeping release: Wave 6 architecture audit findings logged. No user-visible changes. Installers remain **unsigned**.
+
+### Added
+
+- **Wave 6 architecture audit punch list** (`192255c`). Four findings queued in `TODO.md`: hooks `local` scope writing to the wrong file (P1), MCP API contract mismatches across multiple layers (P1), fragmented Claude binary resolution across subsystems (P1/P2), and usage cost computation ignoring `max`-account type (P2).
+
 ## [0.3.63] — 2026-04-27
 
 Hotfix on top of 0.3.62: the new "rejected reset epoch" warnings turned up an obvious gap — Anthropic's CLI uses a third `Resets …` format we hadn't taught the parser. Installers remain **unsigned**.
