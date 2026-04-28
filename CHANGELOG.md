@@ -5,6 +5,33 @@ All notable changes to GreyChrist are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.62] — 2026-04-27
+
+A focused infra release: one git watch per tab instead of N (project + each peer worktree share a single connection that knows about new and removed worktrees in flight), one click-to-reconnect status icon in the header in place of per-row icons, and `/usage` parsing that waits for a complete render and refuses to clobber a known-good reset time with junk. Plus the Claude Agent SDK bumped to 0.2.121 and Haiku 4.5 added to every model picker. Installers remain **unsigned**.
+
+### Added
+
+- **Unified `SessionGitWatcher`** (`9bb2553`). One per-tab IPC watch (`startSessionGitWatch` / `stopSessionGitWatch` / `reconnectSessionGitWatch`, channel `session-git-changed:<watchId>`) replaces the prior N per-peer `startGitBranchWatch` connections plus the standalone `startWorktreeListWatch`. The single watcher owns one `fs.watch` per known gitdir, one watcher on `<commondir>/worktrees/`, and one shared 3 s poll; per-path reads run via `Promise.allSettled` with a per-`git status` timeout so a wedged peer never blocks the cycle. Adds and removes are picked up via the worktrees-dir watcher with the poll as a backstop.
+- **Header status icon at the tab level** (`9bb2553`). One `GitWatchStatusIcon` next to the project's branch badge — green when every path in the snapshot reads cleanly, red when any path reports an error, with a tooltip that lists the offending labels. Click triggers `reconnectSessionGitWatch` for the whole tab. Replaces the per-row icon variant.
+- **`/usage` completeness gate** (`9bb2553`). New `isUsageOutputComplete` predicate exits the TUI-capture loop as soon as all three windows + their `Resets` lines have parsed, then waits an extra 200 ms for trailing bytes. Falls back to the existing quiet timeout when the render is partial (e.g. a CLI version that emits fewer windows).
+- **Sanity-bounded reset epochs + parse logging** (`9bb2553`). `validateResetEpoch` rejects parsed reset timestamps that are in the past or implausibly far in the future (>6 h for the 5-hour window, >8 d for 7-day), with named reasons. Every `/usage` cycle now logs one `level: info` line per accepted window and `level: warn` per rejected one (raw label, parsed epoch, observed-at, reason) so format drift is visible.
+- **Haiku 4.5 in every model picker** (`9bb2553`). The `MODELS` constant now lists Opus 4.7 (1M / 200K), Sonnet 4.6, and Haiku 4.5 — and the Session Start dialog and Account Settings both render from the same constant, so the four models appear consistently everywhere.
+
+### Changed
+
+- **`@anthropic-ai/claude-agent-sdk` 0.2.119 → 0.2.121** (`9bb2553`). Two patch releases since the previous bump.
+- **Model picker drops the SDK-supplied list** (`9bb2553`). The compact / expanded model dropdowns no longer ingest `query.supportedModels()` data, which was the source of the stray "Default" label leaking into the UI. The hardcoded `MODELS` constant is the single source of truth.
+- **Header row top-aligns** (`9bb2553`). The Back button, folder, branch, and worktrees columns now align to the top of the row instead of getting vertically centered against the tallest column.
+
+### Fixed
+
+- **`recordUtilization` no longer clobbers a good `resets_at` with `null`** (`9bb2553`). The CLI-runner upsert now uses `COALESCE(excluded.resets_at, rate_limit_snapshots.resets_at)`, matching the SDK-event path. Combined with the sanity bounds above, junky parses become "no update" rather than "overwrite with garbage."
+- **Worktree row layout** (`9bb2553`). Header worktrees render as a clean column of branch badges; the per-row error indicator and the inline `AlertTriangle` inside `GitBranchBadge` are gone — error visibility lives in the single header status icon now.
+
+### Removed
+
+- **`startGitBranchWatch` / `stopGitBranchWatch` / `reconnectGitBranchWatch`** and **`startWorktreeListWatch` / `stopWorktreeListWatch`** (`9bb2553`). Replaced by `start_session_git_watch` and friends; the old IPC channels, preload allow-list entries, and corresponding tests were deleted (~250 lines).
+
 ## [0.3.61] — 2026-04-27
 
 Follow-up to 0.3.60: the rate-limit pill kept showing "stale" 10 minutes after the last SDK event even after a successful manual refresh. Installers remain **unsigned**.
