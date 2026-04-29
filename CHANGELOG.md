@@ -5,7 +5,27 @@ All notable changes to GreyChrist are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.3.66] — 2026-04-29
+## [0.3.67] — 2026-04-29
+
+Feature release: per-project pinned branch colors, full shadcn `<Select>` rollout across the renderer, and a context-window display fix for Opus 200K sessions. Installers remain **unsigned**.
+
+### Added
+
+- **Branch Colors card on the project page** (`d591b96`, `8bcff54`). New card in the right column above CLAUDE.md Memories, top-aligned with the New Session card. Pin a color per branch via a shadcn `<Select>` populated from local git branches plus a 9-swatch color picker (reused from the account editor). Persisted in a new `branch_colors` SQLite table (migration v6).
+- **Auto-cycling branch chip colors** (`ea949ef`, `55b1367`). Pure resolver in `src/lib/branchColors.ts` assigns chip colors with priority: user pin → black for `main`/`master` → blue for the main folder branch → next palette color skipping anything already in use → name-hash fallback when the palette is exhausted. Worktree chips no longer collide with each other or the main folder chip.
+- **`branchColors:list|upsert|delete` and `git:list-branches` IPC** (`bcb16b0`, `de642f2`, `62015f7`). New main-process services with 100% line coverage on the new code.
+
+### Changed
+
+- **All raw `<select>` elements migrated to shadcn `<Select>`** (`1c75607`, `36b456a`). Six in `AccountSettings`, plus one each in `Settings`, `SessionPermissionsEditor`, and `ProjectList`. App-default empty options use a `__app_default__` sentinel; placeholder behavior preserved.
+- **`GitBranchBadge` is now presentational** (`55b1367`, `3cdb2af`, `b493efd`, `fd40964`). Accepts a resolved `color` and `isTrunk` from the parent. Adds a luminance check (WCAG, threshold 0.05) so near-black picks render as a "ghost" chip — translucent white bg + white text + the chosen color as a border accent — keeping the chip readable on the dark theme. Saturated picks (blue, gray, etc.) keep the same `${color}33` translucent recipe `AccountBadge` uses.
+- **Shared `ColorSwatchGrid`** (`21f367b`). Extracted from `AccountSettings` to `src/components/ui/ColorSwatchGrid.tsx` for reuse.
+
+### Fixed
+
+- **Opus 200K context donut read against 1M** (`591caca`). The Agent SDK's `getContextUsage().maxTokens` reports the model's *maximum* supportable window (1M for Opus 4.x) regardless of which alias the session was started with — sessions started on the 200K opus alias showed e.g. 4% used at 42K instead of the actual 21% of 200K. The renderer now clamps the displayed limit to 200K when the picker model id does not contain `[1m]`, and drops the SDK-provided "Free space" slice when clamping is active so the donut math reflects the clamped budget.
+
+
 
 Patch release: Claude Agent SDK bumped to 0.2.123. No user-visible changes. Installers remain **unsigned**.
 
