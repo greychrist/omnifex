@@ -354,34 +354,45 @@ export function SessionHeader({
           // Prefer authoritative numbers from query.getContextUsage() when
           // present; otherwise fall back to the old client-side approximation
           // (messages totalTokens / hardcoded context limit for the model).
+          //
+          // Caveat: the SDK's getContextUsage() reports the model's *maximum*
+          // supportable window (1M for Opus 4.x), not whatever the picker
+          // selected. If the user picked a 200K alias we clamp the limit so
+          // the donut reads against the actual budget the session is using —
+          // otherwise a 200K session shows 4% used at 42K which is misleading.
           const useSdk = contextUsage !== undefined && contextUsage !== null;
           const tokens = useSdk ? contextUsage!.totalTokens : totalTokens;
-          const limit = useSdk
-            ? contextUsage!.maxTokens
-            : model?.includes("[1m]")
-            ? 1_000_000
-            : 200_000;
+          const expectsLargeContext = !!model?.includes("[1m]");
+          const sdkLimit = useSdk ? contextUsage!.maxTokens : null;
+          const limit = sdkLimit != null
+            ? expectsLargeContext
+              ? sdkLimit
+              : Math.min(sdkLimit, 200_000)
+            : expectsLargeContext
+              ? 1_000_000
+              : 200_000;
           if (tokens <= 0 || limit <= 0) return null;
           const pct = Math.min(100, (tokens / limit) * 100);
           const color = pct > 80 ? "text-red-400" : pct > 50 ? "text-orange-400" : "text-foreground";
 
           // Build pie-chart data from SDK categories (descending by tokens).
           //
-          // The SDK usually reports a "Free space" category itself, in which
-          // case the sum of its categories already covers the full budget
-          // and we must NOT synthesize our own Free slice — doing so would
-          // double-count and split the donut in half.
-          //
-          // If the SDK's categories sum to less than maxTokens (older SDK
-          // versions, or edge cases where deferred tokens are omitted) we
-          // fill the remainder with a synthetic "Free" slice so the pie
-          // still visualizes the total budget.
+          // The SDK reports a "Free space" category sized against its own
+          // maxTokens (1M for Opus 4.x). When we clamp the limit to 200K we
+          // must drop the SDK's Free slice and synthesize one against the
+          // clamped limit — otherwise a 924K Free slice would dominate a
+          // donut that's supposed to total 200K.
+          const FREE_COLOR = "rgba(148, 163, 184, 0.35)"; // slate-400 @35%
+          const isFreeCategory = (name: string) =>
+            /free|remaining|available/i.test(name);
+          const isClamped = sdkLimit != null && limit < sdkLimit;
           const sortedCategories =
             useSdk && contextUsage!.categories.length > 0
               ? contextUsage!.categories
                   .slice()
                   .sort((a, b) => b.tokens - a.tokens)
                   .filter((c) => c.tokens > 0)
+                  .filter((c) => !isClamped || !isFreeCategory(c.name))
               : [];
 
           const categoriesSum = sortedCategories.reduce(
@@ -393,9 +404,6 @@ export function SessionHeader({
           // they appear. Using a separate counter for non-free categories so
           // we don't waste the first palette color on Free space when it
           // happens to be the largest slice.
-          const FREE_COLOR = "rgba(148, 163, 184, 0.35)"; // slate-400 @35%
-          const isFreeCategory = (name: string) =>
-            /free|remaining|available/i.test(name);
           let usedColorIdx = 0;
           const slicesFromCategories = sortedCategories.map((c) => {
             const free = isFreeCategory(c.name);
