@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Spinner } from "@/components/ui/spinner";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { api } from "@/lib/api";
 interface PermissionLevel {
   label: string;
@@ -209,14 +210,18 @@ export function SessionPermissionsEditor({
                 {/* Add rule inline */}
                 {newRule?.scope === level.scope ? (
                   <div className="flex items-center gap-1.5 pt-1">
-                    <select
+                    <Select
                       value={newRule.behavior}
-                      onChange={(e) => setNewRule({ ...newRule, behavior: e.target.value as "allow" | "deny" })}
-                      className="text-[10px] bg-muted border border-border rounded px-1.5 py-1 h-7"
+                      onValueChange={(v) => setNewRule({ ...newRule, behavior: v as "allow" | "deny" })}
                     >
-                      <option value="allow">allow</option>
-                      <option value="deny">deny</option>
-                    </select>
+                      <SelectTrigger className="h-7 text-[10px] w-auto">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="allow">allow</SelectItem>
+                        <SelectItem value="deny">deny</SelectItem>
+                      </SelectContent>
+                    </Select>
                     <Input
                       value={newRule.value}
                       onChange={(e) => setNewRule({ ...newRule, value: e.target.value })}

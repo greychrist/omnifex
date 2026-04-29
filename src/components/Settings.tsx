@@ -14,6 +14,7 @@ import {
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Toast, ToastContainer } from "@/components/ui/toast";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { StorageTab } from "./StorageTab";
 import { LogTab } from "./LogTab";
 import {
@@ -318,17 +319,21 @@ export const Settings: React.FC<SettingsProps> = ({
             {["environment", "advanced", "hooks", "commands", "permissions"].includes(activeTab) && accounts.length > 0 && (
               <div className="flex items-center gap-2 mb-4 p-3 rounded-lg border border-border/50 bg-muted/30">
                 <Label className="text-xs text-foreground/60 whitespace-nowrap">Editing settings for:</Label>
-                <select
-                  value={selectedAccountId ?? ''}
-                  onChange={(e) => setSelectedAccountId(Number(e.target.value))}
-                  className="text-sm bg-background border border-border rounded px-2 py-1"
+                <Select
+                  value={selectedAccountId != null ? String(selectedAccountId) : undefined}
+                  onValueChange={(v) => setSelectedAccountId(Number(v))}
                 >
-                  {accounts.map((acct) => (
-                    <option key={acct.id} value={acct.id}>
-                      {acct.name} ({acct.config_dir})
-                    </option>
-                  ))}
-                </select>
+                  <SelectTrigger className="h-8 text-sm w-auto">
+                    <SelectValue placeholder="Select account..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {accounts.map((acct) => (
+                      <SelectItem key={acct.id} value={String(acct.id)}>
+                        {acct.name} ({acct.config_dir})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             )}
 

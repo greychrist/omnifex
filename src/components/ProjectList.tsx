@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import { FolderOpen, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { Project } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { AccountBadge } from "@/components/AccountBadge";
@@ -195,16 +196,17 @@ export const ProjectList: React.FC<ProjectListProps> = ({
                     <label className="text-[10px] uppercase tracking-wider text-muted-foreground">
                       Account
                     </label>
-                    <select
-                      value={accountFilter}
-                      onChange={(e) => setAccountFilter(e.target.value)}
-                      className="text-xs bg-background border border-border rounded px-2 py-1 cursor-pointer hover:bg-accent transition-colors"
-                    >
-                      <option value="all">All</option>
-                      {accountOptions.map((name) => (
-                        <option key={name} value={name}>{name}</option>
-                      ))}
-                    </select>
+                    <Select value={accountFilter} onValueChange={setAccountFilter}>
+                      <SelectTrigger className="h-7 text-xs w-auto">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All</SelectItem>
+                        {accountOptions.map((name) => (
+                          <SelectItem key={name} value={name}>{name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                 )}
               </div>
