@@ -9,6 +9,7 @@ import { IconPicker, ICON_MAP } from "./IconPicker";
 import { MODELS } from "./ModelPicker";
 import { THINKING_CONFIGS, PERMISSION_MODES, EFFORT_LEVELS } from "./ControlBar";
 import { ColorSwatchGrid } from "@/components/ui/ColorSwatchGrid";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 const ACCOUNT_TYPES = [
   { value: "max", label: "Max", desc: "No cost, usage limits only" },
@@ -63,17 +64,18 @@ const TypeSelect: React.FC<{ value: string; onChange: (v: string) => void }> = (
   value,
   onChange,
 }) => (
-  <select
-    value={value}
-    onChange={(e) => onChange(e.target.value)}
-    className="w-full h-8 text-sm rounded-md border border-border bg-background px-3"
-  >
-    {ACCOUNT_TYPES.map((t) => (
-      <option key={t.value} value={t.value}>
-        {t.label} ({t.desc})
-      </option>
-    ))}
-  </select>
+  <Select value={value} onValueChange={onChange}>
+    <SelectTrigger className="w-full h-8 text-sm">
+      <SelectValue />
+    </SelectTrigger>
+    <SelectContent>
+      {ACCOUNT_TYPES.map((t) => (
+        <SelectItem key={t.value} value={t.value}>
+          {t.label} ({t.desc})
+        </SelectItem>
+      ))}
+    </SelectContent>
+  </Select>
 );
 
 const SessionDefaultsEditor: React.FC<{
@@ -84,55 +86,71 @@ const SessionDefaultsEditor: React.FC<{
     <p className="text-xs font-medium text-muted-foreground">Session Defaults</p>
     <div className="flex items-center gap-3">
       <label className="text-xs text-muted-foreground w-20 shrink-0">Model</label>
-      <select
-        value={value.model ?? ""}
-        onChange={(e) => onChange({ ...value, model: e.target.value || undefined })}
-        className="flex-1 h-7 text-xs rounded-md border border-border bg-background px-2"
+      <Select
+        value={value.model ?? '__app_default__'}
+        onValueChange={(v) => onChange({ ...value, model: v === '__app_default__' ? undefined : v })}
       >
-        <option value="">App default</option>
-        {MODELS.map((m) => (
-          <option key={m.id} value={m.id}>{m.name}</option>
-        ))}
-      </select>
+        <SelectTrigger className="flex-1 h-7 text-xs">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="__app_default__">App default</SelectItem>
+          {MODELS.map((m) => (
+            <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     </div>
     <div className="flex items-center gap-3">
       <label className="text-xs text-muted-foreground w-20 shrink-0">Thinking</label>
-      <select
-        value={value.thinkingConfig ?? ""}
-        onChange={(e) => onChange({ ...value, thinkingConfig: (e.target.value || undefined) as SessionDefaults['thinkingConfig'] })}
-        className="flex-1 h-7 text-xs rounded-md border border-border bg-background px-2"
+      <Select
+        value={value.thinkingConfig ?? '__app_default__'}
+        onValueChange={(v) => onChange({ ...value, thinkingConfig: (v === '__app_default__' ? undefined : v) as SessionDefaults['thinkingConfig'] })}
       >
-        <option value="">App default</option>
-        {THINKING_CONFIGS.map((c) => (
-          <option key={c.id} value={c.id}>{c.name} — {c.description}</option>
-        ))}
-      </select>
+        <SelectTrigger className="flex-1 h-7 text-xs">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="__app_default__">App default</SelectItem>
+          {THINKING_CONFIGS.map((c) => (
+            <SelectItem key={c.id} value={c.id}>{c.name} — {c.description}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     </div>
     <div className="flex items-center gap-3">
       <label className="text-xs text-muted-foreground w-20 shrink-0">Effort</label>
-      <select
-        value={value.effort ?? ""}
-        onChange={(e) => onChange({ ...value, effort: (e.target.value || undefined) as SessionDefaults['effort'] })}
-        className="flex-1 h-7 text-xs rounded-md border border-border bg-background px-2"
+      <Select
+        value={value.effort ?? '__app_default__'}
+        onValueChange={(v) => onChange({ ...value, effort: (v === '__app_default__' ? undefined : v) as SessionDefaults['effort'] })}
       >
-        <option value="">App default</option>
-        {EFFORT_LEVELS.map((l) => (
-          <option key={l.id} value={l.id}>{l.name} — {l.description}</option>
-        ))}
-      </select>
+        <SelectTrigger className="flex-1 h-7 text-xs">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="__app_default__">App default</SelectItem>
+          {EFFORT_LEVELS.map((l) => (
+            <SelectItem key={l.id} value={l.id}>{l.name} — {l.description}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     </div>
     <div className="flex items-center gap-3">
       <label className="text-xs text-muted-foreground w-20 shrink-0">Permissions</label>
-      <select
-        value={value.permissionMode ?? ""}
-        onChange={(e) => onChange({ ...value, permissionMode: e.target.value || undefined })}
-        className="flex-1 h-7 text-xs rounded-md border border-border bg-background px-2"
+      <Select
+        value={value.permissionMode ?? '__app_default__'}
+        onValueChange={(v) => onChange({ ...value, permissionMode: v === '__app_default__' ? undefined : v })}
       >
-        <option value="">App default</option>
-        {PERMISSION_MODES.map((m) => (
-          <option key={m.id} value={m.id}>{m.name} — {m.description}</option>
-        ))}
-      </select>
+        <SelectTrigger className="flex-1 h-7 text-xs">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="__app_default__">App default</SelectItem>
+          {PERMISSION_MODES.map((m) => (
+            <SelectItem key={m.id} value={m.id}>{m.name} — {m.description}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     </div>
   </div>
 );
@@ -577,18 +595,21 @@ export const AccountSettings: React.FC = () => {
               onChange={setNewRulePrefix}
               placeholder="Path prefix (e.g., ~/Repos/personal/)"
             />
-            <select
-              value={newRuleAccountId ?? ""}
-              onChange={(e) => setNewRuleAccountId(Number(e.target.value) || null)}
-              className="w-full h-8 text-sm rounded-md border border-border bg-background px-3"
+            <Select
+              value={newRuleAccountId != null ? String(newRuleAccountId) : undefined}
+              onValueChange={(v) => setNewRuleAccountId(v ? Number(v) : null)}
             >
-              <option value="">Select account...</option>
-              {accounts.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger className="w-full h-8 text-sm">
+                <SelectValue placeholder="Select account..." />
+              </SelectTrigger>
+              <SelectContent>
+                {accounts.map((a) => (
+                  <SelectItem key={a.id} value={String(a.id)}>
+                    {a.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <div className="flex gap-2">
               <Button size="sm" onClick={handleAddRule} className="h-7 text-xs" disabled={!newRulePrefix.trim() || newRuleAccountId === null}>
                 Add
