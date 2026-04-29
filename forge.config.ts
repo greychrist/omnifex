@@ -34,6 +34,11 @@ const config: ForgeConfig = {
     executableName: 'greychrist',
     appBundleId: 'com.greychrist.app',
     icon: './icons/icon',
+    // Ad-hoc codesign every nested binary in the bundle. Gives the app a
+    // stable CDHash so macOS TCC grants (App Management, Files & Folders,
+    // etc.) persist across launches of the same build. Does NOT replace
+    // Developer ID — Gatekeeper still treats this as untrusted.
+    osxSign: { identity: '-' },
     extraResource: [
       './assets',
       // Also placed at Contents/Resources/ top-level so macOS NSSound
