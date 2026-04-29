@@ -237,10 +237,6 @@ export interface SessionHandle {
   configDir: string;
   /** Saved SDK options so we can restart the query after a stream error. */
   sdkOptions: Record<string, unknown>;
-  /** Diagnostic: set to true after the first non-null getContextUsage so the
-   *  per-session model + maxTokens log fires exactly once. Removed in a
-   *  follow-up commit once the Opus 200K bug is diagnosed. */
-  _loggedCtxOnce?: boolean;
 }
 
 /**
