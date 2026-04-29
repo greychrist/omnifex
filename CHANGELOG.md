@@ -5,6 +5,14 @@ All notable changes to GreyChrist are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.69] — 2026-04-29
+
+Fixup release: the `osxSign` config landed in 0.3.68 was a silent no-op — `@electron/osx-sign` validated the literal `-` identity against the macOS keychain, found nothing, and skipped signing entirely. This release sets `identityValidation: false` so ad-hoc signing actually runs. The 0.3.68 build does **not** have stable TCC grants; install this build instead. Installers remain **unsigned** for Gatekeeper purposes.
+
+### Fixed
+
+- **Ad-hoc osxSign now actually signs the bundle** (`e60bb96`). Adds `identityValidation: false` next to `identity: '-'` in `forge.config.ts`. Without it, `@electron/osx-sign` calls `findIdentities('-')` against the keychain, gets nothing back, and silently skips the entire signing pass — leaving the bundle with only Electron's pre-existing linker-signed Mach-O signature (`Identifier=Electron`, `Sealed Resources=none`). With it, the full bundle gets signed: main app, Electron Helpers, native `.node` addons, `node-pty`'s `spawn-helper`, and the Claude Agent SDK's per-platform binary, with `Identifier=com.greychrist.app` and properly sealed resources. macOS now has a stable CDHash to attach TCC grants to, so "Allow" clicks for App Management / Files & Folders prompts persist across launches of the same build.
+
 ## [0.3.68] — 2026-04-29
 
 Feature release: per-session account override on the project landing page, and ad-hoc codesigning so macOS TCC grants stick across launches. Installers remain **unsigned** for Gatekeeper purposes — first launch still requires right-click → Open.
