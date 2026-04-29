@@ -5,6 +5,14 @@ All notable changes to GreyChrist are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.66] — 2026-04-29
+
+Patch release: Claude Agent SDK bumped to 0.2.123. No user-visible changes. Installers remain **unsigned**.
+
+### Changed
+
+- **Claude Agent SDK 0.2.123** (`7d53183`).
+
 ## [0.3.65] — 2026-04-28
 
 Feature release: hover-reveal image download button on user message images, resend button on user prompt cards, per-account usage scrape logging, and Claude Agent SDK bumped to 0.2.122. Installers remain **unsigned**.
