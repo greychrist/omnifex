@@ -40,9 +40,13 @@ export const GitBranchBadge: React.FC<GitBranchBadgeProps> = ({
   const useColor = !isTrunk && color != null;
   const dark = useColor && isDarkColor(color!);
 
+  // For light/medium colors keep the translucent tint (20% bg / 30% border /
+  // saturated text). For dark colors that translucency is invisible on the
+  // dark page bg, so bump the bg alpha and flip the text to white — still
+  // translucent (~80%), still readable.
   const inlineStyle = useColor
     ? dark
-      ? { backgroundColor: color!, color: '#ffffff', borderColor: color! }
+      ? { backgroundColor: `${color}cc`, color: '#ffffff', borderColor: color! }
       : { backgroundColor: `${color}33`, color: color!, borderColor: `${color}4d` }
     : undefined;
 
