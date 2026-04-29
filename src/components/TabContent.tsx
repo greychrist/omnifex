@@ -39,6 +39,7 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
   
   const [error, setError] = React.useState<string | null>(null);
   const [showAccountPicker, setShowAccountPicker] = React.useState(false);
+  const [showChangeAccountDialog, setShowChangeAccountDialog] = React.useState(false);
   const [pendingProjectPath, setPendingProjectPath] = React.useState<string>('');
   const [projectAccountName, setProjectAccountName] = React.useState<string | null>(null);
   // Inline new-session form state for the project view. Lives here (not in
@@ -181,12 +182,21 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
         thinkingConfig: formThinkingConfig,
         permissionMode: formPermissionMode,
         autoAllowEnabled: formAutoAllowEnabled,
+        accountResolution: projectAccountResolution ?? undefined,
       },
     });
-    // Resolve account name for the tab badge
-    api.resolveAccountForProject(selectedProject.path).then((account) => {
-      if (account) updateTab(tab.id, { accountName: account.name, accountColor: account.color, accountIcon: account.icon });
-    }).catch(() => {});
+    // Resolve account name for the tab badge. Prefer the manually-overridden
+    // account when the user changed it on the landing page; otherwise fall
+    // back to the auto-resolved one.
+    if (projectAccountResolution) {
+      updateTab(tab.id, {
+        accountName: projectAccountResolution.account.name,
+      });
+    } else {
+      api.resolveAccountForProject(selectedProject.path).then((account) => {
+        if (account) updateTab(tab.id, { accountName: account.name, accountColor: account.color, accountIcon: account.icon });
+      }).catch(() => {});
+    }
   };
   
   // Resolve account badge for chat tabs on mount
@@ -272,6 +282,7 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                           autoAllowEnabled={formAutoAllowEnabled}
                           setAutoAllowEnabled={setFormAutoAllowEnabled}
                           onStart={handleStartNewSession}
+                          onChangeAccount={() => setShowChangeAccountDialog(true)}
                         />
                       </div>
 
@@ -374,6 +385,32 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                   }
                 }}
               />
+              {selectedProject && (
+                <AccountPickerDialog
+                  open={showChangeAccountDialog}
+                  onOpenChange={setShowChangeAccountDialog}
+                  projectPath={selectedProject.path}
+                  title="Choose an account for this session"
+                  onAccountSelected={(account) => {
+                    setProjectAccountResolution({
+                      account: {
+                        name: account.name,
+                        account_type: account.account_type,
+                        config_dir: account.config_dir,
+                        session_defaults: account.session_defaults,
+                      },
+                      match_type: 'manual_override',
+                      match_detail: 'Selected from session form',
+                    });
+                    setProjectAccountName(account.name);
+                    updateTab(tab.id, {
+                      accountName: account.name,
+                      accountColor: account.color,
+                      accountIcon: account.icon,
+                    });
+                  }}
+                />
+              )}
           </div>
         );
       

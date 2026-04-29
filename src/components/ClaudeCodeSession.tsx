@@ -13,9 +13,10 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover } from "@/components/ui/popover";
-import { api, type Session, type RateLimitSnapshot } from "@/lib/api";
+import { api, type Session, type RateLimitSnapshot, type Account } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { NewSessionForm } from "./NewSessionForm";
+import { AccountPickerDialog } from "./AccountPickerDialog";
 import { StreamMessage } from "./StreamMessage";
 import {
   FloatingPromptInput,
@@ -85,6 +86,16 @@ interface ClaudeCodeSessionProps {
     thinkingConfig?: ThinkingConfig;
     permissionMode: string;
     autoAllowEnabled?: boolean;
+    accountResolution?: {
+      account: {
+        name: string;
+        account_type: string;
+        config_dir: string;
+        session_defaults?: import('@/lib/api').SessionDefaults;
+      };
+      match_type: string;
+      match_detail: string;
+    };
   };
   /**
    * Callback to go back
@@ -167,7 +178,8 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     account: { name: string; account_type: string; config_dir: string; session_defaults?: import('@/lib/api').SessionDefaults };
     match_type: string;
     match_detail: string;
-  } | null>(null);
+  } | null>(initialSessionConfig?.accountResolution ?? null);
+  const [showAccountPicker, setShowAccountPicker] = useState(false);
 
   /**
    * Latest rate-limit snapshots for the resolved account, keyed by
@@ -218,8 +230,12 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     return () => { cancelled = true; };
   }, [projectPath]);
 
-  // Resolve account explanation for SessionHeader
+  // Resolve account explanation for SessionHeader. Skip when the chat tab was
+  // opened with an explicit account override from the project landing page —
+  // re-resolving via auto-rules would silently clobber the user's choice.
+  const hasInitialAccountOverride = !!initialSessionConfig?.accountResolution;
   useEffect(() => {
+    if (hasInitialAccountOverride) return;
     if (projectPath) {
       api.explainAccountResolution(projectPath).then((result) => {
         if (result) {
@@ -227,7 +243,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
         }
       }).catch(console.error);
     }
-  }, [projectPath]);
+  }, [projectPath, hasInitialAccountOverride]);
 
   // Apply per-account session defaults once when the account first resolves,
   // but only for new sessions (not when resuming or launched with explicit config).
@@ -1457,8 +1473,29 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                 setSessionStarted(true);
                 startPersistentSession();
               }}
+              onChangeAccount={() => setShowAccountPicker(true)}
             />
           </div>
+        )}
+        {projectPath && (
+          <AccountPickerDialog
+            open={showAccountPicker}
+            onOpenChange={setShowAccountPicker}
+            projectPath={projectPath}
+            title="Choose an account for this session"
+            onAccountSelected={(account: Account) => {
+              setAccountResolution({
+                account: {
+                  name: account.name,
+                  account_type: account.account_type,
+                  config_dir: account.config_dir,
+                  session_defaults: account.session_defaults,
+                },
+                match_type: "manual_override",
+                match_detail: "Selected from session form",
+              });
+            }}
+          />
         )}
         <div className="flex-1 min-h-0 w-full flex flex-col relative">
 

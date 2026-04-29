@@ -23,6 +23,23 @@ export interface Tab {
     thinkingConfig?: 'adaptive' | 'budget' | 'disabled';
     permissionMode: string;
     autoAllowEnabled?: boolean;
+    /**
+     * Account override selected by the user on the project landing page.
+     * When present, ClaudeCodeSession seeds its accountResolution from this
+     * snapshot instead of re-resolving from the auto-rules — guarantees the
+     * session spawns under the chosen account even when the override wasn't
+     * persisted via "Remember for this project".
+     */
+    accountResolution?: {
+      account: {
+        name: string;
+        account_type: string;
+        config_dir: string;
+        session_defaults?: import('@/lib/api').SessionDefaults;
+      };
+      match_type: string;
+      match_detail: string;
+    };
   };
   projectPath?: string; // for chat tabs
   accountName?: string; // for chat tabs - resolved account name

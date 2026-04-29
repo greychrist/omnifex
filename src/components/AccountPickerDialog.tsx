@@ -17,6 +17,7 @@ interface AccountPickerDialogProps {
   onOpenChange: (open: boolean) => void;
   projectPath: string;
   onAccountSelected: (account: Account) => void;
+  title?: string;
 }
 
 export const AccountPickerDialog: React.FC<AccountPickerDialogProps> = ({
@@ -24,6 +25,7 @@ export const AccountPickerDialog: React.FC<AccountPickerDialogProps> = ({
   onOpenChange,
   projectPath,
   onAccountSelected,
+  title,
 }) => {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -62,7 +64,7 @@ export const AccountPickerDialog: React.FC<AccountPickerDialogProps> = ({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[420px]">
         <DialogHeader>
-          <DialogTitle>Which account for this project?</DialogTitle>
+          <DialogTitle>{title ?? "Which account for this project?"}</DialogTitle>
           <DialogDescription className="font-mono text-xs">
             {projectName}
           </DialogDescription>

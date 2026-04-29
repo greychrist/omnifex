@@ -1,4 +1,5 @@
 import React from "react";
+import { Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { AccountBadge } from "@/components/AccountBadge";
@@ -32,6 +33,7 @@ interface NewSessionFormProps {
   autoAllowEnabled: boolean;
   setAutoAllowEnabled: (next: boolean) => void;
   onStart: () => void;
+  onChangeAccount?: () => void;
   className?: string;
 }
 
@@ -48,6 +50,7 @@ export const NewSessionForm: React.FC<NewSessionFormProps> = ({
   autoAllowEnabled,
   setAutoAllowEnabled,
   onStart,
+  onChangeAccount,
   className,
 }) => {
   return (
@@ -63,9 +66,18 @@ export const NewSessionForm: React.FC<NewSessionFormProps> = ({
         <div className="flex items-center gap-2 text-sm">
           <span className="text-foreground/40 shrink-0">Account:</span>
           <AccountBadge name={accountResolution.account.name} />
-          <span className="text-foreground/50 text-xs">
-            ({accountResolution.account.account_type})
-          </span>
+          {onChangeAccount && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={onChangeAccount}
+              className="h-6 px-2 text-xs gap-1 text-foreground/60 hover:text-foreground"
+              title="Use a different account for this session"
+            >
+              <Pencil className="h-3 w-3" />
+              Change
+            </Button>
+          )}
         </div>
       )}
 
