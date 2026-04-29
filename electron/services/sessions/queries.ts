@@ -116,7 +116,15 @@ export function createQueryPassthroughs(sessions: Map<string, SessionHandle>) {
     const handle = sessions.get(tabId);
     if (!handle) return null;
     try {
-      return await handle.query.getContextUsage();
+      const snap = await handle.query.getContextUsage();
+      if (snap && !handle._loggedCtxOnce) {
+        handle._loggedCtxOnce = true;
+        const model = (handle.sdkOptions?.model as string | undefined) ?? '<default>';
+        console.log(
+          `[sessions] tabId=${tabId} model=${model} maxTokens=${snap.maxTokens} totalTokens=${snap.totalTokens}`,
+        );
+      }
+      return snap;
     } catch (err) {
       console.error(`[sessions] getContextUsage failed for tab ${tabId}:`, err);
       return null;
