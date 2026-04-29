@@ -38,7 +38,11 @@ const config: ForgeConfig = {
     // stable CDHash so macOS TCC grants (App Management, Files & Folders,
     // etc.) persist across launches of the same build. Does NOT replace
     // Developer ID — Gatekeeper still treats this as untrusted.
-    osxSign: { identity: '-' },
+    //
+    // identityValidation: false is required for the literal "-" ad-hoc
+    // identity. Without it @electron/osx-sign calls findIdentities('-')
+    // against the keychain, finds nothing, and silently skips signing.
+    osxSign: { identity: '-', identityValidation: false },
     extraResource: [
       './assets',
       // Also placed at Contents/Resources/ top-level so macOS NSSound
