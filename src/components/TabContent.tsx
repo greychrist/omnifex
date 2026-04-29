@@ -12,6 +12,7 @@ import { AccountBadge } from '@/components/AccountBadge';
 import { Button } from '@/components/ui/button';
 import { NewSessionForm, type NewSessionFormAccountResolution } from '@/components/NewSessionForm';
 import type { EffortLevel, ThinkingConfig } from '@/components/FloatingPromptInput';
+import { BranchColorsCard } from '@/components/BranchColorsCard';
 
 // Lazy load heavy components
 const ClaudeCodeSession = lazy(() => import('@/components/ClaudeCodeSession').then(m => ({ default: m.ClaudeCodeSession })));
@@ -50,7 +51,26 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
   const [formPermissionMode, setFormPermissionMode] = React.useState<string>('acceptEdits');
   const [formAutoAllowEnabled, setFormAutoAllowEnabled] = React.useState<boolean>(false);
   const [projectAccountResolution, setProjectAccountResolution] = React.useState<NewSessionFormAccountResolution | null>(null);
-  
+
+  const [projectBranches, setProjectBranches] = React.useState<string[]>([]);
+  const [projectMainBranch, setProjectMainBranch] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (!selectedProject?.path) {
+      setProjectBranches([]);
+      setProjectMainBranch(null);
+      return;
+    }
+    let cancelled = false;
+    api.listGitBranches(selectedProject.path).then((branches) => {
+      if (cancelled) return;
+      setProjectBranches(branches);
+      const candidates = ['main', 'master', 'develop'];
+      setProjectMainBranch(branches.find((b) => candidates.includes(b)) ?? branches[0] ?? null);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [selectedProject?.path]);
+
   // Load projects when tab becomes active and is of type 'projects'
   useEffect(() => {
     if (isActive && tab.type === 'projects') {
@@ -256,6 +276,17 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                       </div>
 
                       <div className="flex-1 min-w-0 w-full">
+                        {/* Branch Colors Card */}
+                        {selectedProject && (
+                          <div className="mb-4">
+                            <BranchColorsCard
+                              projectPath={selectedProject.path}
+                              availableBranches={projectBranches}
+                              mainFolderBranch={projectMainBranch}
+                            />
+                          </div>
+                        )}
+
                         {/* Error display */}
                         {error && (
                           <motion.div
