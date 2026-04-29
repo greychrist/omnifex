@@ -48,6 +48,8 @@ import { SessionHeader, HeaderLabel } from "./SessionHeader";
 import { ProjectPathBadge } from "./claude-code-session/ProjectPathBadge";
 import { GitBranchBadge } from "./claude-code-session/GitBranchBadge";
 import { GitWatchStatusIcon } from "./claude-code-session/GitWatchStatusIcon";
+import { resolveBranchColors } from '@/lib/branchColors';
+import type { BranchColor } from '@/lib/api';
 import { filterDisplayableMessages } from "@/lib/messageFilters";
 import { deriveSubagents } from "@/lib/subagentStreams";
 import { SubagentBar } from "./SubagentBar";
@@ -199,6 +201,22 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   // resolves; stays null when the project isn't a git repo.
   const [sessionGit, setSessionGit] = useState<import('@/lib/api').SessionGitSnapshot | null>(null);
   const [gitWatchId, setGitWatchId] = useState<string | null>(null);
+  const [branchPins, setBranchPins] = useState<Record<string, string>>({});
+
+  React.useEffect(() => {
+    if (!projectPath) {
+      setBranchPins({});
+      return;
+    }
+    let cancelled = false;
+    api.listBranchColors(projectPath).then((rows: BranchColor[]) => {
+      if (cancelled) return;
+      const map: Record<string, string> = {};
+      for (const r of rows) map[r.branch_name] = r.color;
+      setBranchPins(map);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [projectPath]);
 
   // Resolve account explanation for SessionHeader
   useEffect(() => {
@@ -284,6 +302,16 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     }
     return out;
   }, [gitStatus, worktreeList]);
+
+  const allBranchesForResolver: string[] = [
+    ...(gitStatus?.branch ? [gitStatus.branch] : []),
+    ...worktreeList.map((wt) => wt.branch ?? '(detached)'),
+  ];
+  const branchColorResolution = resolveBranchColors({
+    pins: branchPins,
+    mainFolderBranch: gitStatus?.branch ?? null,
+    branches: allBranchesForResolver,
+  });
 
   // New state for preview feature
   const [showPreview, setShowPreview] = useState(false);
@@ -1346,6 +1374,8 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                   name={gitStatus.branch}
                   changed={gitStatus.changed}
                   untracked={gitStatus.untracked}
+                  color={branchColorResolution.colors[gitStatus.branch] ?? null}
+                  isTrunk={branchColorResolution.trunkBlack.has(gitStatus.branch)}
                 />
                 {gitWatchId && (
                   <GitWatchStatusIcon
@@ -1360,15 +1390,20 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             <div className="flex flex-col items-start gap-0.5">
               <HeaderLabel>worktrees</HeaderLabel>
               <div className="flex flex-col items-start gap-1">
-                {worktreeList.map((wt) => (
-                  <div key={wt.path} title={wt.path}>
-                    <GitBranchBadge
-                      name={wt.branch ?? '(detached)'}
-                      changed={wt.changed}
-                      untracked={wt.untracked}
-                    />
-                  </div>
-                ))}
+                {worktreeList.map((wt) => {
+                  const branchName = wt.branch ?? '(detached)';
+                  return (
+                    <div key={wt.path} title={wt.path}>
+                      <GitBranchBadge
+                        name={branchName}
+                        changed={wt.changed}
+                        untracked={wt.untracked}
+                        color={branchColorResolution.colors[branchName] ?? null}
+                        isTrunk={branchColorResolution.trunkBlack.has(branchName)}
+                      />
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}

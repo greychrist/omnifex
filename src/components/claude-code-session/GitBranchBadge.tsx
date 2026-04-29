@@ -2,38 +2,28 @@ import * as React from 'react';
 import { GitBranch, FilePen, FilePlus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-// Hex color palette (Tailwind 400 shades). Inline styles are required because
-// Tailwind v4's `border-{color}/{alpha}` utilities desaturate to gray under
-// this theme, the same reason AccountBadge and the session-status badge use
-// inline-style colors.
-const BRANCH_COLORS = [
-  '#60a5fa', // blue-400
-  '#c084fc', // purple-400
-  '#34d399', // emerald-400
-  '#fbbf24', // amber-400
-  '#fb7185', // rose-400
-  '#22d3ee', // cyan-400
-];
-
-function hashBranchColor(name: string): string {
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) {
-    hash = name.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  return BRANCH_COLORS[Math.abs(hash) % BRANCH_COLORS.length];
-}
-
-export const GitBranchBadge: React.FC<{
+export interface GitBranchBadgeProps {
   name: string;
   changed: number;
   untracked: number;
-}> = ({ name, changed, untracked }) => {
-  const isTrunk = name === 'main' || name === 'master';
-  const branchColor = isTrunk ? null : hashBranchColor(name);
+  /** Resolved hex color for non-trunk chips. Ignored when `isTrunk` is true. */
+  color: string | null;
+  /** When true, render the black trunk style (overrides `color`). */
+  isTrunk: boolean;
+}
 
+export const GitBranchBadge: React.FC<GitBranchBadgeProps> = ({
+  name,
+  changed,
+  untracked,
+  color,
+  isTrunk,
+}) => {
   const titleParts = [`Git branch: ${name}`];
   if (changed > 0) titleParts.push(`${changed} changed`);
   if (untracked > 0) titleParts.push(`${untracked} untracked`);
+
+  const useColor = !isTrunk && color != null;
 
   return (
     <span
@@ -42,11 +32,11 @@ export const GitBranchBadge: React.FC<{
         isTrunk && 'bg-black text-white border-black',
       )}
       style={
-        branchColor
+        useColor
           ? {
-              backgroundColor: `${branchColor}33`,
-              color: branchColor,
-              borderColor: `${branchColor}4d`,
+              backgroundColor: `${color}33`,
+              color: color!,
+              borderColor: `${color}4d`,
             }
           : undefined
       }
