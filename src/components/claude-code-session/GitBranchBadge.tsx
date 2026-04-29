@@ -12,10 +12,10 @@ export interface GitBranchBadgeProps {
   isTrunk: boolean;
 }
 
-// WCAG relative luminance — used to flip the chip to a solid bg + white text
-// when the user picks a color that's too dark to read against the dark theme.
-// Threshold is empirical: anything darker than mid-tone gets the inverted style.
-function isDarkColor(hex: string): boolean {
+// WCAG relative luminance — used only to detect TRUE near-black picks where
+// `${color}33` would be invisible on the dark page bg. Everything else (blue,
+// gray, etc.) keeps the same translucent recipe AccountBadge uses.
+function isNearBlack(hex: string): boolean {
   const m = hex.replace('#', '');
   if (m.length !== 6) return false;
   const r = parseInt(m.slice(0, 2), 16) / 255;
@@ -23,7 +23,7 @@ function isDarkColor(hex: string): boolean {
   const b = parseInt(m.slice(4, 6), 16) / 255;
   const lin = (c: number) => (c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
   const L = 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
-  return L < 0.35;
+  return L < 0.05;
 }
 
 export const GitBranchBadge: React.FC<GitBranchBadgeProps> = ({
@@ -38,15 +38,16 @@ export const GitBranchBadge: React.FC<GitBranchBadgeProps> = ({
   if (untracked > 0) titleParts.push(`${untracked} untracked`);
 
   const useColor = !isTrunk && color != null;
-  const dark = useColor && isDarkColor(color!);
+  const nearBlack = useColor && isNearBlack(color!);
 
-  // For light/medium colors keep the translucent tint (20% bg / 30% border /
-  // saturated text). For dark colors that translucency is invisible on the
-  // dark page bg, so bump the bg alpha and flip the text to white — still
-  // translucent (~80%), still readable.
+  // Default recipe matches AccountBadge: 20% bg / 30% border / saturated text.
+  // For near-black picks where that recipe goes invisible on a dark page, use
+  // a "ghost" variant with a white-tinted bg + white text + the chosen color
+  // as a border accent — keeps the translucent feel and lets the pick still
+  // signal which branch this is.
   const inlineStyle = useColor
-    ? dark
-      ? { backgroundColor: `${color}cc`, color: '#ffffff', borderColor: color! }
+    ? nearBlack
+      ? { backgroundColor: '#ffffff26', color: '#ffffff', borderColor: `${color}cc` }
       : { backgroundColor: `${color}33`, color: color!, borderColor: `${color}4d` }
     : undefined;
 
