@@ -12,6 +12,20 @@ export interface GitBranchBadgeProps {
   isTrunk: boolean;
 }
 
+// WCAG relative luminance — used to flip the chip to a solid bg + white text
+// when the user picks a color that's too dark to read against the dark theme.
+// Threshold is empirical: anything darker than mid-tone gets the inverted style.
+function isDarkColor(hex: string): boolean {
+  const m = hex.replace('#', '');
+  if (m.length !== 6) return false;
+  const r = parseInt(m.slice(0, 2), 16) / 255;
+  const g = parseInt(m.slice(2, 4), 16) / 255;
+  const b = parseInt(m.slice(4, 6), 16) / 255;
+  const lin = (c: number) => (c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
+  const L = 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+  return L < 0.35;
+}
+
 export const GitBranchBadge: React.FC<GitBranchBadgeProps> = ({
   name,
   changed,
@@ -24,6 +38,13 @@ export const GitBranchBadge: React.FC<GitBranchBadgeProps> = ({
   if (untracked > 0) titleParts.push(`${untracked} untracked`);
 
   const useColor = !isTrunk && color != null;
+  const dark = useColor && isDarkColor(color!);
+
+  const inlineStyle = useColor
+    ? dark
+      ? { backgroundColor: color!, color: '#ffffff', borderColor: color! }
+      : { backgroundColor: `${color}33`, color: color!, borderColor: `${color}4d` }
+    : undefined;
 
   return (
     <span
@@ -31,15 +52,7 @@ export const GitBranchBadge: React.FC<GitBranchBadgeProps> = ({
         'inline-flex items-center gap-1 px-2 py-0.5 rounded border text-xs font-mono font-medium',
         isTrunk && 'bg-black text-white border-black',
       )}
-      style={
-        useColor
-          ? {
-              backgroundColor: `${color}33`,
-              color: color!,
-              borderColor: `${color}4d`,
-            }
-          : undefined
-      }
+      style={inlineStyle}
       title={titleParts.join(' · ')}
     >
       <GitBranch className="w-3.5 h-3.5" />
