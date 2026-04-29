@@ -105,6 +105,24 @@ const migrations: Migration[] = [
       }
     },
   },
+  {
+    version: 6,
+    description: 'Add branch_colors table',
+    up: (db) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS branch_colors (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          project_path TEXT NOT NULL,
+          branch_name TEXT NOT NULL,
+          color TEXT NOT NULL,
+          sort_order INTEGER NOT NULL DEFAULT 0,
+          created_at INTEGER NOT NULL,
+          UNIQUE(project_path, branch_name)
+        );
+        CREATE INDEX IF NOT EXISTS idx_branch_colors_project ON branch_colors(project_path);
+      `);
+    },
+  },
 ];
 
 /**
