@@ -81,6 +81,15 @@ export type UsageRunResult =
 
 export type ValidateCliPathResult = { ok: true } | { ok: false; error: string };
 
+export interface BranchColor {
+  id: number;
+  project_path: string;
+  branch_name: string;
+  color: string;
+  sort_order: number;
+  created_at: number;
+}
+
 /**
  * Represents a path prefix rule that maps directories to accounts
  */
@@ -1928,6 +1937,20 @@ export const api = {
 
   onUpdateProgress(callback: (data: { percent: number; bytesDownloaded: number; totalBytes: number }) => void): () => void {
     return window.electronAPI.onEvent('updater:progress', callback as any);
+  },
+
+  // ── Branch Colors ─────────────────────────────────────────────
+  async listBranchColors(projectPath: string): Promise<BranchColor[]> {
+    return apiCall<BranchColor[]>('branch_colors_list', { projectPath });
+  },
+  async upsertBranchColor(input: { projectPath: string; branchName: string; color: string }): Promise<BranchColor> {
+    return apiCall<BranchColor>('branch_colors_upsert', input);
+  },
+  async deleteBranchColor(id: number): Promise<boolean> {
+    return apiCall<boolean>('branch_colors_delete', { id });
+  },
+  async listGitBranches(projectPath: string): Promise<string[]> {
+    return apiCall<string[]>('git_list_branches', { projectPath });
   },
 
 };

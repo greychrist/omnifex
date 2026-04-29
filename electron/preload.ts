@@ -125,12 +125,18 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   'get_setting',
   'save_setting',
 
+  // Branch colors
+  'branch_colors_list',
+  'branch_colors_upsert',
+  'branch_colors_delete',
+
   // Git
   'get_git_branch',
   'list_git_worktrees',
   'start_session_git_watch',
   'stop_session_git_watch',
   'reconnect_session_git_watch',
+  'git_list_branches',
 
   // Lima (VM viewer)
   'lima_check_installed',

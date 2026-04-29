@@ -58,6 +58,8 @@ import { createUpdaterService } from './services/updater';
 import { createInstallerService } from './services/installer';
 import { createSdkVersionService } from './services/sdk-version';
 import { createSessionGitWatcher, listWorktrees } from './services/git-watcher';
+import { createBranchColorsService } from './services/branch-colors';
+import { listBranches as listGitBranches } from './services/git-branches';
 import { createLimaService } from './services/lima';
 import { registerIpcHandlers } from './ipc/handlers';
 import { createWindowRouter } from './window-router';
@@ -450,6 +452,8 @@ app.whenReady().then(() => {
   const sessionGitWatcher = _gitWatcherService = createSessionGitWatcher({
     sendToRenderer,
   });
+  const branchColorsService = createBranchColorsService(db);
+  const gitBranchesService = { list: listGitBranches };
   const limaService = createLimaService();
 
   registerIpcHandlers({
@@ -638,6 +642,8 @@ app.whenReady().then(() => {
       reconnectSession: (watchId: string) => sessionGitWatcher.reconnect(watchId),
       stopSession: (watchId: string) => sessionGitWatcher.stop(watchId),
     },
+    branchColors: branchColorsService,
+    gitBranches: gitBranchesService,
     lima: {
       isInstalled: () => limaService.isInstalled(),
       listVms: () => limaService.listVms(),

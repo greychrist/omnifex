@@ -147,6 +147,14 @@ export interface Services {
     reconnectSession(watchId: string): Promise<import('../services/git-watcher').SessionGitSnapshot | null>;
     stopSession(watchId: string): void;
   };
+  branchColors?: {
+    listForProject(projectPath: string): unknown;
+    upsert(input: { project_path: string; branch_name: string; color: string }): unknown;
+    delete(id: number): unknown;
+  };
+  gitBranches?: {
+    list(projectPath: string): Promise<string[]>;
+  };
   lima?: {
     isInstalled(): Promise<boolean>;
     listVms(): Promise<unknown[]>;
@@ -188,7 +196,7 @@ function wrapWith<P>(fn: (params: P) => unknown): HandlerFn {
  * renderer gets a defined (but empty) response rather than a blocked channel.
  */
 export function getHandlerMap(services: Services = {}): Record<string, HandlerFn> {
-  const { accounts, claude, sessions, usage, rateLimits, usageRunner, claudeBinary, mcp, slashCommands, logging, database, proxy, permissionsIO, models, sdkVersion, gitWatcher, lima } = services;
+  const { accounts, claude, sessions, usage, rateLimits, usageRunner, claudeBinary, mcp, slashCommands, logging, database, proxy, permissionsIO, models, sdkVersion, gitWatcher, branchColors, gitBranches, lima } = services;
 
   const map: Record<string, HandlerFn> = {
     // ── Accounts ──────────────────────────────────────────────────────────────
@@ -543,6 +551,26 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
       if (!watchId || !gitWatcher) return null;
       return gitWatcher.reconnectSession(watchId);
     }),
+
+    // ── Branch Colors ─────────────────────────────────────────────────────────
+    branch_colors_list: wrapWith((p: Record<string, unknown>) =>
+      branchColors?.listForProject((p?.projectPath ?? p?.project_path) as string) ?? [],
+    ),
+    branch_colors_upsert: wrapWith((p: Record<string, unknown>) =>
+      branchColors?.upsert({
+        project_path: (p?.projectPath ?? p?.project_path) as string,
+        branch_name: (p?.branchName ?? p?.branch_name) as string,
+        color: p?.color as string,
+      }) ?? null,
+    ),
+    branch_colors_delete: wrapWith((p: Record<string, unknown>) =>
+      branchColors?.delete(p?.id as number) ?? false,
+    ),
+
+    // ── Git Branches ──────────────────────────────────────────────────────────
+    git_list_branches: wrapWith((p: Record<string, unknown>) =>
+      gitBranches?.list((p?.projectPath ?? p?.project_path) as string) ?? [],
+    ),
 
     // ── Lima (VM viewer) ──────────────────────────────────────────────────────
     lima_check_installed: wrap(async () => {
