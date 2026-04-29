@@ -75,7 +75,7 @@ export function useSendPrompt({
     // If already loading, queue the prompt
     if (isLoading) {
       const newPrompt = {
-        id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        id: `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
         prompt,
         model,
       };
@@ -121,16 +121,16 @@ export function useSendPrompt({
         contentBlocks.push({ type: "text", text: prompt });
       }
       if (images && images.length > 0) {
+        const BASE64_MARKER = ';base64,';
         for (const dataUrl of images) {
-          const match = dataUrl.match(/^data:(image\/[\w+]+);base64,(.+)$/);
-          if (!match) continue;
+          const markerIdx = dataUrl.indexOf(BASE64_MARKER);
+          if (!dataUrl.startsWith('data:image/') || markerIdx === -1) continue;
+          const media_type = dataUrl.slice('data:'.length, markerIdx);
+          const data = dataUrl.slice(markerIdx + BASE64_MARKER.length);
+          if (!data) continue;
           contentBlocks.push({
             type: "image",
-            source: {
-              type: "base64",
-              media_type: match[1],
-              data: match[2],
-            },
+            source: { type: "base64", media_type, data },
           });
         }
       }
@@ -172,7 +172,7 @@ export function useSendPrompt({
       }
 
       // Send the message via stdin to the persistent process
-      if (images && images.length > 0) {
+      if (contentBlocks.some((b) => b.type === 'image')) {
         await api.sendStructuredMessage(tabId, contentBlocks);
       } else {
         await api.sendMessage(tabId, prompt);

@@ -42,6 +42,10 @@ const SOURCE_COLORS: Record<string, string> = {
   frontend: "bg-sky-500/20 text-sky-300",
   "claude-sdk": "bg-amber-500/20 text-amber-300",
   "claude-hooks": "bg-emerald-500/20 text-emerald-300",
+  usage: "bg-purple-500/20 text-purple-300",
+  "usage-runner": "bg-violet-500/20 text-violet-300",
+  updater: "bg-orange-500/20 text-orange-300",
+  "rate-limits": "bg-rose-500/20 text-rose-300",
 };
 
 const LEVEL_BG: Record<string, string> = {
@@ -188,7 +192,7 @@ export const LogTab: React.FC = () => {
         </Select>
 
         <Select value={sourceFilter} onValueChange={setSourceFilter}>
-          <SelectTrigger className="w-32">
+          <SelectTrigger className="w-36">
             <SelectValue placeholder="Source" />
           </SelectTrigger>
           <SelectContent>
@@ -196,6 +200,10 @@ export const LogTab: React.FC = () => {
             <SelectItem value="frontend">Frontend</SelectItem>
             <SelectItem value="claude-sdk">Claude SDK</SelectItem>
             <SelectItem value="claude-hooks">Claude Hooks</SelectItem>
+            <SelectItem value="usage">Usage</SelectItem>
+            <SelectItem value="usage-runner">Usage Runner</SelectItem>
+            <SelectItem value="updater">Updater</SelectItem>
+            <SelectItem value="rate-limits">Rate Limits</SelectItem>
           </SelectContent>
         </Select>
 

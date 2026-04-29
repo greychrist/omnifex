@@ -6,6 +6,8 @@ import {
   Copy,
   Check,
   Sparkles,
+  Download,
+  RotateCcw,
 } from "lucide-react";
 import { detectSkillInjection } from "@/lib/skillDetection";
 import { formatDurationMs } from "@/lib/duration";
@@ -138,6 +140,91 @@ const CopyCardButton: React.FC<{ message?: any; text?: string }> = ({ message, t
   );
 };
 
+/** Image with a hover-reveal download button. */
+const DownloadableImage: React.FC<{
+  src: string;
+  alt: string;
+  mediaType?: string;
+  className?: string;
+}> = ({ src, alt, mediaType, className }) => {
+  const handleDownload = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const ext = mediaType
+      ? (mediaType.split('/')[1] ?? 'png').replace('jpeg', 'jpg')
+      : src.split('.').pop()?.split('?')[0] ?? 'png';
+    const filename = `image-${Date.now()}.${ext}`;
+    const a = document.createElement('a');
+    a.href = src;
+    a.download = filename;
+    a.click();
+  };
+
+  return (
+    <div className="relative inline-block group/img">
+      <img src={src} alt={alt} className={className} />
+      <button
+        onClick={handleDownload}
+        className="absolute top-1 right-1 p-1 rounded-md bg-background/80 text-muted-foreground hover:text-foreground opacity-0 group-hover/img:opacity-100 transition-opacity z-10"
+        title="Download image"
+      >
+        <Download className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  );
+};
+
+/** Copy + optional Resend action bar for user message cards. */
+const UserMessageActions: React.FC<{
+  msg: any;
+  onResend?: (text: string, images?: string[]) => void;
+}> = ({ msg, onResend }) => {
+  const [copied, setCopied] = React.useState(false);
+
+  const handleCopy = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const copyText = extractCopyText(msg);
+    if (!copyText) return;
+    navigator.clipboard.writeText(copyText);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleResend = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!onResend) return;
+    const content: any[] = Array.isArray(msg.content) ? msg.content : [];
+    const text = content
+      .filter((c: any) => c.type === 'text')
+      .map((c: any) => c.text as string)
+      .join('\n');
+    const images = content
+      .filter((c: any) => c.type === 'image' && c.source?.type === 'base64')
+      .map((c: any) => `data:${c.source.media_type};base64,${c.source.data}` as string);
+    onResend(text, images.length > 0 ? images : undefined);
+  };
+
+  return (
+    <div className="absolute top-1 right-1 flex items-center gap-0.5 z-10 opacity-0 group-hover/card:opacity-100 transition-opacity">
+      <button
+        onClick={handleCopy}
+        className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50"
+        title="Copy content"
+      >
+        {copied ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
+      </button>
+      {onResend && (
+        <button
+          onClick={handleResend}
+          className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50"
+          title="Resend message"
+        >
+          <RotateCcw className="h-3.5 w-3.5" />
+        </button>
+      )}
+    </div>
+  );
+};
+
 /** M/D/YY H:MM:SS AM/PM in the user's local timezone. */
 function formatLocalTimestamp(iso: string): string | null {
   const d = new Date(iso);
@@ -180,12 +267,14 @@ interface StreamMessageProps {
    *  (ThinkingWidget, etc.) default-expand so the content is visible
    *  without a second click. */
   inExpandedGroup?: boolean;
+  /** Called when the user clicks the resend button on a user message card. */
+  onResend?: (text: string, images?: string[]) => void;
 }
 
 /**
  * Component to render a single Claude Code stream message
  */
-const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, className, streamMessages, onLinkDetected, accountType, inExpandedGroup }) => {
+const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, className, streamMessages, onLinkDetected, accountType, inExpandedGroup, onResend }) => {
   // State to track tool results mapped by tool call ID
   const [toolResults, setToolResults] = useState<Map<string, any>>(new Map());
   
@@ -703,10 +792,16 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
           </div>
         );
 
+      const showResend = !!onResend && !isToolResultOnly && !isSubagentPrompt && !skillInjection;
+
       const renderedCard = (
         <div className={isToolResultOnly ? "" : "flex justify-end"}>
         <Card className={cn(cardStyle.className, !isToolResultOnly && "w-[95%]", "group/card relative")} style={cardStyle.style}>
-          <CopyCardButton message={msg} />
+          {!isToolResultOnly ? (
+            <UserMessageActions msg={msg} onResend={showResend ? onResend : undefined} />
+          ) : (
+            <CopyCardButton message={msg} />
+          )}
           <CardContent className="p-4 pb-6">
             <div className="flex items-start gap-3">
               {cardIcon}
@@ -764,7 +859,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                         {imagePaths.length > 0 && (
                           <div className="flex flex-wrap gap-2">
                             {imagePaths.map((p, i) => (
-                              <img
+                              <DownloadableImage
                                 key={i}
                                 src={`greychrist-file://${encodeURI(p)}`}
                                 alt="Pasted image"
@@ -797,10 +892,11 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                     renderedSomething = true;
                     const dataUrl = `data:${content.source.media_type};base64,${content.source.data}`;
                     return (
-                      <img
+                      <DownloadableImage
                         key={idx}
                         src={dataUrl}
                         alt="Pasted image"
+                        mediaType={content.source.media_type}
                         className="max-w-sm max-h-64 rounded-md border border-border object-contain"
                       />
                     );

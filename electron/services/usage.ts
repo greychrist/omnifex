@@ -30,6 +30,27 @@ function logWarn(
   }
 }
 
+function logInfo(
+  logging: LoggingService | null | undefined,
+  message: string,
+  metadata?: Record<string, unknown>,
+): void {
+  if (!logging) return;
+  try {
+    logging.writeBatch([
+      {
+        timestamp: new Date().toISOString(),
+        level: 'info',
+        source: 'usage',
+        message,
+        metadata: metadata ? JSON.stringify(metadata) : undefined,
+      },
+    ]);
+  } catch {
+    // Never let logging failures escape the usage scan.
+  }
+}
+
 function errString(err: unknown): string {
   if (err instanceof Error) return err.message;
   return String(err);
@@ -421,6 +442,11 @@ export function createUsageService(
         filter,
         logging,
       );
+      logInfo(logging, `usage scrape: account "${account.name}" — ${entries.length} entries`, {
+        account_name: account.name,
+        config_dir: account.config_dir,
+        entries,
+      });
       all.push(...entries);
     }
     return all;
@@ -476,14 +502,7 @@ export function createUsageService(
       filter = makeDateRangeFilter(startDate, endDate);
     }
 
-    const accountList = accounts.listAccounts();
-    console.log(`[usage] getStatsByAccount: ${accountList.length} accounts, dateRange=${startDate ?? 'none'}..${endDate ?? 'none'}`);
-    for (const a of accountList) {
-      console.log(`[usage]   account "${a.name}" config_dir=${a.config_dir}`);
-    }
-
     const entries = collectEntries(filter);
-    console.log(`[usage] getStatsByAccount: ${entries.length} total entries collected`);
 
     // Group entries by account name
     const byAccount = new Map<string, { account_type: string; entries: ParsedUsage[] }>();

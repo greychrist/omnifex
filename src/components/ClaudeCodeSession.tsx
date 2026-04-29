@@ -1184,6 +1184,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                     streamMessages={messages}
                     onLinkDetected={handleLinkDetected}
                     accountType={accountResolution?.account.account_type}
+                    onResend={(text, images) => handleSendPrompt(text, selectedModel, images)}
                   />
                 </div>
               ))
@@ -1197,6 +1198,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                         streamMessages={messages}
                         onLinkDetected={handleLinkDetected}
                         accountType={accountResolution?.account.account_type}
+                        onResend={(text, images) => handleSendPrompt(text, selectedModel, images)}
                       />
                     </div>
                   ) : (
@@ -1206,6 +1208,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                       streamMessages={messages}
                       accountType={accountResolution?.account.account_type}
                       onLinkDetected={handleLinkDetected}
+                      onResend={(text, images) => handleSendPrompt(text, selectedModel, images)}
                     />
                   ),
                 );

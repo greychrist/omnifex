@@ -124,6 +124,7 @@ interface GroupProps {
   streamMessages: ClaudeStreamMessage[];
   accountType?: string;
   onLinkDetected?: (url: string) => void;
+  onResend?: (text: string, images?: string[]) => void;
 }
 
 export const CollapsibleGroup: React.FC<GroupProps> = ({
@@ -131,6 +132,7 @@ export const CollapsibleGroup: React.FC<GroupProps> = ({
   streamMessages,
   accountType,
   onLinkDetected,
+  onResend,
 }) => {
   const [expanded, setExpanded] = useState(false);
   const summary = summarizeGroup(messages);
@@ -165,6 +167,7 @@ export const CollapsibleGroup: React.FC<GroupProps> = ({
               streamMessages={streamMessages}
               accountType={accountType}
               onLinkDetected={onLinkDetected}
+              onResend={onResend}
               inExpandedGroup
             />
           ))}

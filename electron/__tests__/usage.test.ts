@@ -870,4 +870,81 @@ describe('usage service', () => {
       fs.rmSync(dir, { recursive: true, force: true });
     });
   });
+
+  // -------------------------------------------------------------------------
+  // Scrape logging — info entries emitted when usage data is collected
+  // -------------------------------------------------------------------------
+
+  describe('scrape logging', () => {
+    it('logs an info entry for each account after scanning', () => {
+      const configDir = makeTmp();
+      buildConfigDir(configDir, [
+        {
+          name: '-Users-greg-myproject',
+          sessions: [
+            [assistantMessage({ model: 'claude-sonnet-4-5-20250514', input: 100, output: 50 })],
+          ],
+        },
+      ]);
+
+      const logger = makeFakeLogger();
+      const service = createUsageService(makeAccountsService([configDir]), logger);
+      service.getUsageStats();
+
+      const infoEntries = logger.getEntries().filter(
+        (e) => e.level === 'info' && e.source === 'usage',
+      );
+      expect(infoEntries.length).toBeGreaterThan(0);
+
+      const scanEntry = infoEntries.find((e) => /scrape/i.test(String(e.message)));
+      expect(scanEntry).toBeDefined();
+      const metadata = JSON.parse(scanEntry.metadata);
+      expect(metadata).toHaveProperty('entries');
+      expect(Array.isArray(metadata.entries)).toBe(true);
+      expect(metadata.entries.length).toBe(1);
+    });
+
+    it('includes entry details (model, tokens, cost) in logged metadata', () => {
+      const configDir = makeTmp();
+      buildConfigDir(configDir, [
+        {
+          name: '-Users-greg-myproject',
+          sessions: [
+            [assistantMessage({ model: 'claude-opus-4', input: 500, output: 200, timestamp: '2026-04-10T10:00:00Z' })],
+          ],
+        },
+      ]);
+
+      const logger = makeFakeLogger();
+      const service = createUsageService(makeAccountsService([configDir]), logger);
+      service.getUsageStats();
+
+      const scanEntry = logger.getEntries().find(
+        (e) => e.level === 'info' && e.source === 'usage' && /scrape/i.test(String(e.message)),
+      );
+      expect(scanEntry).toBeDefined();
+      const metadata = JSON.parse(scanEntry.metadata);
+      const entry = metadata.entries[0];
+      expect(entry.model).toBe('claude-opus-4');
+      expect(entry.input_tokens).toBe(500);
+      expect(entry.output_tokens).toBe(200);
+      expect(typeof entry.cost).toBe('number');
+    });
+
+    it('emits one log entry per account', () => {
+      const dir1 = makeTmp();
+      const dir2 = makeTmp();
+      buildConfigDir(dir1, [{ name: '-Users-greg-p1', sessions: [[assistantMessage({})]] }]);
+      buildConfigDir(dir2, [{ name: '-Users-greg-p2', sessions: [[assistantMessage({})]] }]);
+
+      const logger = makeFakeLogger();
+      const service = createUsageService(makeAccountsService([dir1, dir2]), logger);
+      service.getUsageStats();
+
+      const scrapeEntries = logger.getEntries().filter(
+        (e) => e.level === 'info' && e.source === 'usage' && /scrape/i.test(String(e.message)),
+      );
+      expect(scrapeEntries.length).toBe(2);
+    });
+  });
 });
