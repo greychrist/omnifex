@@ -5,6 +5,25 @@ All notable changes to GreyChrist are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.65] — 2026-04-28
+
+Feature release: hover-reveal image download button on user message images, resend button on user prompt cards, per-account usage scrape logging, and Claude Agent SDK bumped to 0.2.122. Installers remain **unsigned**.
+
+### Added
+
+- **Image download button** (`90b7636`). Hovering any image in a user message card reveals a `Download` icon overlay. Click saves the file as `image-<timestamp>.<ext>`. Works for both base64-embedded images (pasted) and `greychrist-file://` references.
+- **Resend button on user prompt cards** (`90b7636`). A `RotateCcw` icon appears at the rightmost position of the hover-action row on user message cards. Click re-submits the full message — text and images — using the currently selected model. Suppressed on tool-result-only cards and subagent-generated prompt cards.
+- **Per-account usage scrape logging** (`90b7636`). `collectEntries` now logs an `info`-level event for each account scan with entry count and full detail array. Cleans up three leftover `console.log` calls in `getStatsByAccount`.
+- **LogTab source filter additions** (`90b7636`). `usage`, `usage-runner`, `updater`, and `rate-limits` sources added to the filter dropdown with distinct badge colours.
+
+### Fixed
+
+- **Resend with images sent only text** (`90b7636`). The base64 round-trip regex (`/.+/` without dotAll) could silently drop large image payloads. Replaced with `indexOf`-based slice parsing; send-dispatch now checks `contentBlocks.some(b => b.type === 'image')` instead of the images array.
+
+### Changed
+
+- **Claude Agent SDK 0.2.122** (`90b7636`).
+
 ## [0.3.64] — 2026-04-28
 
 Housekeeping release: Wave 6 architecture audit findings logged. No user-visible changes. Installers remain **unsigned**.
