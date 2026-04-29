@@ -5,6 +5,18 @@ All notable changes to GreyChrist are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.68] — 2026-04-29
+
+Feature release: per-session account override on the project landing page, and ad-hoc codesigning so macOS TCC grants stick across launches. Installers remain **unsigned** for Gatekeeper purposes — first launch still requires right-click → Open.
+
+### Added
+
+- **Per-session account override on the project landing page** (`979208e`). The auto-resolved account in the New Session card now has a "Change" button next to it. Clicking it opens the existing `AccountPickerDialog` with a session-specific title; selecting an account updates the form immediately and threads the choice through `initialSessionConfig` so `ClaudeCodeSession` seeds its `accountResolution` from it instead of re-resolving via the auto-rules. Override sticks even when the dialog's "Remember for this project" checkbox is left unchecked, so one-off session-only overrides actually take effect. Removes the redundant `({account_type})` parenthetical from the form.
+
+### Changed
+
+- **Ad-hoc codesign every binary in the macOS bundle** (`9f13c6e`). Adds `osxSign: { identity: '-' }` to `forge.config.ts` so `@electron/osx-sign` walks the bundle and signs the main app, Electron Helpers, native `.node` addons (better-sqlite3, node-pty), node-pty's `spawn-helper`, and the Claude Agent SDK's per-platform binary. Result: the `.app` gets a stable CDHash, so macOS persists "Allow" clicks for App Management / Files & Folders prompts across launches of the same build. Does not replace Developer ID — Gatekeeper still treats this as untrusted on first launch.
+
 ## [0.3.67] — 2026-04-29
 
 Feature release: per-project pinned branch colors, full shadcn `<Select>` rollout across the renderer, and a context-window display fix for Opus 200K sessions. Installers remain **unsigned**.
