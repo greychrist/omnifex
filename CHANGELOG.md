@@ -5,6 +5,19 @@ All notable changes to GreyChrist are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.71] — 2026-04-29
+
+Fixup release: 0.3.69 and 0.3.70 launch-crashed on macOS due to a code-signing regression. This release switches from ad-hoc signing to a self-signed cert so Library Validation passes, and along the way fixes the original goal of persistent TCC grants for free (no Developer ID required yet). Installers are now **self-signed** (still untrusted by Gatekeeper — first launch per build still needs right-click → Open).
+
+### Fixed
+
+- **Launch crash on macOS**. The ad-hoc `osxSign: { identity: '-', identityValidation: false }` config that landed in 0.3.69 caused dyld to refuse loading the embedded `Electron Framework`: `@electron/osx-sign` re-signed the main binary as `Identifier=com.greychrist.app` but left the framework with its original linker-signed `Identifier=Electron Framework`, and macOS Library Validation killed the process at launch with "Library not loaded ... different Team IDs". 0.3.70 inherited the same broken config. Both releases would have crashed on every Mac that installed them — neither was actually shipped to users.
+
+### Changed
+
+- **macOS code signing now uses a self-signed cert** (`forge.config.ts`). `osxSign` references a cert named `GreyChrist Local Sign` in the developer's login keychain. `@electron/osx-sign` signs the main binary AND the embedded `Electron Framework` with the same identity, so Library Validation passes and the app launches with hardened runtime intact. macOS TCC grants are keyed on the cert's identity hash (stable across rebuilds), so "Allow" clicks for App Management / Files & Folders persist — which was the original intent of the 0.3.68/0.3.69 osxSign experiment, finally working correctly.
+- **Gatekeeper status unchanged.** The cert is self-signed, not Developer ID, so Gatekeeper still treats the build as untrusted. **First launch per build still needs right-click → Open.** Switching to Developer ID + notarization later requires only a one-line identity swap in `forge.config.ts` and is on the roadmap when distribution becomes worthwhile.
+
 ## [0.3.70] — 2026-04-29
 
 Feature release: per-card debug overlay, session GUID in the context popover, and a major Appearance pass that reworks card-icon styling and brings the settings preview into fidelity with the live cards. Installers remain **unsigned** for Gatekeeper purposes — first launch still requires right-click → Open.
