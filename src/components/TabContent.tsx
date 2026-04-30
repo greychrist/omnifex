@@ -2,12 +2,13 @@ import React, { Suspense, lazy, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useTabState } from '@/hooks/useTabState';
 import { Tab } from '@/contexts/TabContext';
-import { Plus, ArrowLeft } from 'lucide-react';
+import { Plus, ArrowLeft, Hash } from 'lucide-react';
 import { Spinner } from '@/components/ui/spinner';
 import { api, type Project, type Session, type ClaudeMdFile } from '@/lib/api';
 import { ProjectList } from '@/components/ProjectList';
 import { SessionList } from '@/components/SessionList';
 import { AccountPickerDialog } from '@/components/AccountPickerDialog';
+import { OpenSessionByIdDialog } from '@/components/OpenSessionByIdDialog';
 import { AccountBadge } from '@/components/AccountBadge';
 import { Button } from '@/components/ui/button';
 import { NewSessionForm, type NewSessionFormAccountResolution } from '@/components/NewSessionForm';
@@ -40,6 +41,7 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
   const [error, setError] = React.useState<string | null>(null);
   const [showAccountPicker, setShowAccountPicker] = React.useState(false);
   const [showChangeAccountDialog, setShowChangeAccountDialog] = React.useState(false);
+  const [showOpenByIdDialog, setShowOpenByIdDialog] = React.useState(false);
   const [pendingProjectPath, setPendingProjectPath] = React.useState<string>('');
   const [projectAccountName, setProjectAccountName] = React.useState<string | null>(null);
   // Inline new-session form state for the project view. Lives here (not in
@@ -167,6 +169,19 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
     }
   };
   
+  const openSessionInTab = (session: Session) => {
+    updateTab(tab.id, {
+      type: 'chat',
+      title: session.project_path.split('/').pop() || 'Session',
+      sessionId: session.id,
+      sessionData: session,
+      initialProjectPath: session.project_path,
+    });
+    api.resolveAccountForProject(session.project_path).then((account) => {
+      if (account) updateTab(tab.id, { accountName: account.name, accountColor: account.color, accountIcon: account.icon });
+    }).catch(() => {});
+  };
+
   const handleStartNewSession = () => {
     if (!selectedProject) return;
     const projectName = selectedProject.path.split('/').pop() || 'Session';
@@ -255,8 +270,18 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                               {selectedProject.path.split('/').pop()}
                               {projectAccountName && <AccountBadge name={projectAccountName} />}
                             </h1>
-                            <p className="mt-1 text-sm text-muted-foreground">
-                              {`${sessions.length} session${sessions.length !== 1 ? 's' : ''}`}
+                            <p className="mt-1 text-sm text-muted-foreground flex items-center gap-3">
+                              <span>{`${sessions.length} session${sessions.length !== 1 ? 's' : ''}`}</span>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-7 px-2 text-xs"
+                                onClick={() => setShowOpenByIdDialog(true)}
+                                title="Open a session by pasting its GUID"
+                              >
+                                <Hash className="h-3 w-3 mr-1" />
+                                Open by ID…
+                              </Button>
                             </p>
                           </div>
                         </div>
@@ -322,19 +347,7 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                           <SessionList
                             sessions={sessions}
                             projectPath={selectedProject.path}
-                            onSessionClick={(session) => {
-                              // Update current tab to show the selected session
-                              updateTab(tab.id, {
-                                type: 'chat',
-                                title: session.project_path.split('/').pop() || 'Session',
-                                sessionId: session.id,
-                                sessionData: session,
-                                initialProjectPath: session.project_path
-                              });
-                              api.resolveAccountForProject(session.project_path).then((account) => {
-                                if (account) updateTab(tab.id, { accountName: account.name, accountColor: account.color, accountIcon: account.icon });
-                              }).catch(() => {});
-                            }}
+                            onSessionClick={openSessionInTab}
                             onEditClaudeFile={(file: ClaudeMdFile) => {
                               // Open CLAUDE.md file in a new tab
                               window.dispatchEvent(new CustomEvent('open-claude-file', {
@@ -369,6 +382,15 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                     />
                   </div>
                 </div>
+              )}
+              {selectedProject && (
+                <OpenSessionByIdDialog
+                  open={showOpenByIdDialog}
+                  onOpenChange={setShowOpenByIdDialog}
+                  projectId={selectedProject.id}
+                  projectPath={selectedProject.path}
+                  onSessionResolved={openSessionInTab}
+                />
               )}
               <AccountPickerDialog
                 open={showAccountPicker}
