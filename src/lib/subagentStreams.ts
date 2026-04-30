@@ -22,6 +22,11 @@ export interface Subagent {
   events: SubagentProgressEvent[];
   summary?: string;
   colorIndex: number;
+  // True when dispatched with run_in_background:true. The SDK fires an
+  // immediate ACK tool_result for these (a dispatch confirmation, not the
+  // actual return value), so the tool_result-completion path in step 2
+  // must not flip these to "completed" — only task_notification can.
+  isBackground?: boolean;
 }
 
 export const SUBAGENT_PALETTE_SIZE = 6;
@@ -77,6 +82,7 @@ export function deriveSubagents(messages: ClaudeStreamMessage[]): Subagent[] {
           const sub = ensureSubagent(byToolUseId, block.id, block.input?.description ?? '');
           sub.agentType = sub.agentType ?? block.input?.subagent_type;
           if (!sub.description) sub.description = block.input?.description ?? '';
+          if (block.input?.run_in_background === true) sub.isBackground = true;
         }
       }
       continue;
@@ -86,6 +92,12 @@ export function deriveSubagents(messages: ClaudeStreamMessage[]): Subagent[] {
     //    subagent's return value, so the subagent has finished. Only used as a
     //    fallback when task_notification never arrives (some streams emit the
     //    tool_result but not the richer lifecycle marker).
+    //
+    //    Exception: background dispatches (run_in_background:true) get an
+    //    immediate ACK tool_result that says "Async agent launched..." — that
+    //    is NOT a completion signal. For those, only an is_error=true ACK
+    //    counts (the dispatch itself failed); a success ACK is ignored and
+    //    we wait for task_notification.
     if (m?.type === 'user' && Array.isArray(m.message?.content)) {
       for (const block of m.message.content) {
         if (block?.type !== 'tool_result') continue;
@@ -94,6 +106,7 @@ export function deriveSubagents(messages: ClaudeStreamMessage[]): Subagent[] {
         const sub = byToolUseId.get(id);
         if (!sub) continue;
         if (notificationFinalized.has(id)) continue;
+        if (sub.isBackground && !block.is_error) continue;
         sub.status = block.is_error ? 'failed' : 'completed';
         sub.endedAt = sub.endedAt ?? new Date().toISOString();
       }

@@ -7,11 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.73] — 2026-04-30
 
-Feature release: a new "Awaiting background work" result kind so the parent session no longer claims "Execution Complete" when its turn ended by dispatching a still-running background subagent. Installers remain **unsigned** for Gatekeeper purposes — first launch still requires right-click → Open.
+Feature release: a new "Awaiting background work" result kind so the parent session no longer claims "Execution Complete" when its turn ended by dispatching a still-running background subagent. Also fixes a long-standing bug where the subagent progress bars at the bottom of a session would flip to "done" the instant a background dispatch was acknowledged — same root cause, healed by the same change. Installers remain **unsigned** for Gatekeeper purposes — first launch still requires right-click → Open.
 
 ### Added
 
 - **`result.awaiting_background` kind** (`05c921b`). Sibling of `result.success` that fires when a turn ends with a still-running `Agent`/`Task` subagent dispatch (e.g. "Will be notified when verify completes"). Renders an amber `Hourglass` chip with header "Awaiting Background Work" instead of the green "Execution Complete." Detection is derived from the message stream itself — `classifyStandaloneKind` runs `deriveSubagents()` on the messages prior to the `result` event and checks for any subagent still in `running` status — because the SDK doesn't distinguish these in the result blob (`stop_reason: "end_turn"`, `terminal_reason: "completed"` are identical to a plain success). The new kind is `compactBoundaryLocked: true` so it's never hidden in compact mode, and is wired through Appearance settings (icon allow-list, fixtures, debug-label preview) like every other kind.
+
+### Fixed
+
+- **Background subagent dispatches flipped to "completed" the instant they were dispatched** (`src/lib/subagentStreams.ts`). The SDK fires an immediate ACK tool_result for `run_in_background:true` dispatches ("Async agent launched successfully. agentId: ..."), which `deriveSubagents` step 2 was treating as completion — so subagent bars showed "done" immediately and the new `result.awaiting_background` classifier never fired. `Subagent` now carries an `isBackground` flag set from `block.input?.run_in_background === true`; step 2 skips the success-flip for background dispatches, leaving them in `running` until `task_notification` arrives. `is_error: true` ACKs (dispatch itself failed) still flip to `failed`. Two-for-one fix: subagent progress bars now stay alive for the duration of the background work, and the new amber `Hourglass` result card actually shows up.
 
 ## [0.3.72] — 2026-04-29
 

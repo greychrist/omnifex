@@ -13,7 +13,12 @@ import {
 const TOOL_USE_ID = 'toolu_TEST_1';
 const TOOL_USE_ID_2 = 'toolu_TEST_2';
 
-function agentToolUse(id: string, description = 'Explore repo', subagentType = 'Explore'): ClaudeStreamMessage {
+function agentToolUse(
+  id: string,
+  description = 'Explore repo',
+  subagentType = 'Explore',
+  runInBackground = false,
+): ClaudeStreamMessage {
   return {
     type: 'assistant',
     message: {
@@ -22,7 +27,12 @@ function agentToolUse(id: string, description = 'Explore repo', subagentType = '
           type: 'tool_use',
           id,
           name: 'Agent',
-          input: { description, subagent_type: subagentType, prompt: 'go' },
+          input: {
+            description,
+            subagent_type: subagentType,
+            prompt: 'go',
+            ...(runInBackground ? { run_in_background: true } : {}),
+          },
         },
       ],
     },
@@ -217,6 +227,34 @@ describe('deriveSubagents', () => {
       taskNotification(TOOL_USE_ID, 'completed', 'actually fine'),
     ]);
     expect(subs[0].status).toBe('completed');
+  });
+
+  it('background dispatch (run_in_background=true) stays running on the synchronous ACK tool_result', () => {
+    // The SDK fires an immediate "Async agent launched" tool_result for
+    // background dispatches; that's a dispatch ACK, not the actual return
+    // value. Status should stay running until task_notification arrives.
+    const subs = deriveSubagents([
+      agentToolUse(TOOL_USE_ID, 'Audit', 'general-purpose', true),
+      toolResult(TOOL_USE_ID, false, 'Async agent launched successfully. agentId: x'),
+    ]);
+    expect(subs[0].status).toBe('running');
+  });
+
+  it('background dispatch flips to completed when task_notification(status=completed) arrives', () => {
+    const subs = deriveSubagents([
+      agentToolUse(TOOL_USE_ID, 'Audit', 'general-purpose', true),
+      toolResult(TOOL_USE_ID, false, 'Async agent launched successfully'),
+      taskNotification(TOOL_USE_ID, 'completed', 'all good'),
+    ]);
+    expect(subs[0].status).toBe('completed');
+  });
+
+  it('background dispatch with is_error=true on the ACK still flips to failed (dispatch itself errored)', () => {
+    const subs = deriveSubagents([
+      agentToolUse(TOOL_USE_ID, 'Audit', 'general-purpose', true),
+      toolResult(TOOL_USE_ID, true, 'spawn failed'),
+    ]);
+    expect(subs[0].status).toBe('failed');
   });
 
   it('leaves the subagent running when no tool_result and no notification', () => {

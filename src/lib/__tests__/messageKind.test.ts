@@ -24,12 +24,24 @@ const resultErr = (): ClaudeStreamMessage =>
 const summary = (): ClaudeStreamMessage =>
   ({ type: 'summary', leafUuid: 'leaf-1', summary: 'sum' } as unknown as ClaudeStreamMessage);
 
-const agentToolUse = (id: string, name: 'Agent' | 'Task' = 'Agent'): ClaudeStreamMessage =>
+const agentToolUse = (
+  id: string,
+  name: 'Agent' | 'Task' = 'Agent',
+  runInBackground = false,
+): ClaudeStreamMessage =>
   ({
     type: 'assistant',
     message: {
       content: [
-        { type: 'tool_use', id, name, input: { description: 'verify' } },
+        {
+          type: 'tool_use',
+          id,
+          name,
+          input: {
+            description: 'verify',
+            ...(runInBackground ? { run_in_background: true } : {}),
+          },
+        },
       ],
     },
   } as unknown as ClaudeStreamMessage);
@@ -93,6 +105,22 @@ describe('classifyStandaloneKind', () => {
       const r = resultOk();
       const msgs = [r];
       expect(classifyStandaloneKind(r, msgs)).toBe('result.success');
+    });
+
+    it('background dispatch with synchronous ACK tool_result still classifies as awaiting', () => {
+      // The realistic shape: SDK emits an immediate ACK tool_result for a
+      // run_in_background:true dispatch ("Async agent launched..."). Without
+      // the deriveSubagents fix, the ACK flips status to completed and the
+      // result classifies as plain success — which is the bug Greg saw.
+      const r = resultOk();
+      const msgs = [
+        agentToolUse('toolu_bg1', 'Agent', true),
+        // ACK tool_result (is_error: false). Body content irrelevant — what
+        // matters is that the SDK fires it before the actual subagent returns.
+        toolResult('toolu_bg1', false),
+        r,
+      ];
+      expect(classifyStandaloneKind(r, msgs)).toBe('result.awaiting_background');
     });
 
     it('only counts subagents dispatched before this result, not after', () => {
