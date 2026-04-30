@@ -37,6 +37,36 @@ function formatRule(r: { toolName: string; ruleContent?: string }): string {
   return r.ruleContent ? `${r.toolName}(${r.ruleContent})` : r.toolName;
 }
 
+/**
+ * Mirror every persistent addRules update with a session-destination twin so
+ * the running query's in-memory rule set is updated *immediately* alongside
+ * the on-disk write.
+ *
+ * Why: the SDK's PermissionUpdate destinations (`userSettings`,
+ * `projectSettings`, `localSettings`, `session`) are *persistence targets*,
+ * not "apply now" flags — only `'session'` says "fold this into the live
+ * query's rule cache." If we send only `localSettings`, the rule lands on
+ * disk but the same SDK process never re-reads it, and the very next
+ * matching tool_use re-prompts. Sending both gives us live semantics
+ * (matching tool_uses short-circuit `canUseTool` for the rest of the
+ * session) AND on-disk persistence (next session boot loads it again).
+ *
+ * Pure function, returns a new array; never mutates input.
+ */
+export function augmentPermissionsWithSession(
+  updates: any[] | undefined,
+): any[] | undefined {
+  if (!updates) return updates;
+  const out: any[] = [];
+  for (const u of updates) {
+    out.push(u);
+    if (u && u.type === 'addRules' && u.destination !== 'session') {
+      out.push({ ...u, destination: 'session' });
+    }
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // createCanUseTool — the SDK's canUseTool callback
 // ---------------------------------------------------------------------------
@@ -281,13 +311,23 @@ export function respondPermission(
 ): void {
   if (handle.permissionQueue.length === 0) return;
 
+  // Mirror persistent allow/deny rules with a session-destination twin so the
+  // SDK applies them to the running query immediately. Without this twin, the
+  // rule would land on disk but never enter the live process's rule cache,
+  // and the very next matching tool_use would re-prompt — exactly the
+  // "permissions never really stick" symptom.
+  const augmented = behavior === 'allow'
+    ? augmentPermissionsWithSession(updatedPermissions)
+    : updatedPermissions;
+
   // Resolve the front of the queue
   const current = handle.permissionQueue.shift()!;
-  current.resolve({ behavior, updatedInput, updatedPermissions });
+  current.resolve({ behavior, updatedInput, updatedPermissions: augmented });
 
   // Persist any rules whose destination isn't "session" — the SDK may also
   // write these internally, but we persist ourselves so rules always land on
-  // disk regardless of SDK behavior.
+  // disk regardless of SDK behavior. We iterate the *original* updates here
+  // (not the augmented array) so we don't double-write the session twin.
   if (behavior === 'allow' && persistPermissionRule && updatedPermissions) {
     for (const suggestion of updatedPermissions) {
       const scope = scopeForDestination((suggestion as any).destination);

@@ -1137,7 +1137,13 @@ describe('sessions service — full lifecycle', () => {
     svc.respondPermission('tab-remember', 'allow', undefined, rules);
     const result = await decisionPromise;
     expect(result.behavior).toBe('allow');
-    expect(result.updatedPermissions).toEqual(rules);
+    // The persistent rule is sent to the SDK alongside a session-destination
+    // twin so the running query applies it live (without this the rule lands
+    // on disk but never enters the active rule cache, and the very next
+    // matching tool_use re-prompts).
+    expect(result.updatedPermissions).toHaveLength(2);
+    expect(result.updatedPermissions[0]).toEqual(rules[0]);
+    expect(result.updatedPermissions[1]).toEqual({ ...rules[0], destination: 'session' });
 
     svc.stopAll();
   });
