@@ -5,6 +5,29 @@ All notable changes to GreyChrist are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.70] — 2026-04-29
+
+Feature release: per-card debug overlay, session GUID in the context popover, and a major Appearance pass that reworks card-icon styling and brings the settings preview into fidelity with the live cards. Installers remain **unsigned** for Gatekeeper purposes — first launch still requires right-click → Open.
+
+### Added
+
+- **Debug overlay on cards** (`1dfe3c2`). New Settings → Appearance → Global → Debug section with a "Show message kind label on cards" toggle (off by default). When on, every card prints its raw SDK type (e.g. `result · success`, `assistant`) on the bottom-left chip and offers a copy button that puts the full message JSON on the clipboard. Useful when a card looks mis-classified ("Execution Complete" being rendered for things that aren't really results).
+- **Session GUID in the context popover** (`1dfe3c2`). The context-window popover (the `Database`-icon pill in the session header) now shows the active Claude session id with a copy-to-clipboard button. Threaded from `ClaudeCodeSession.claudeSessionId` into a new `sessionId` prop on `SessionHeader`.
+- **Card-icon controls in Typography editor** (`1dfe3c2`). New "Card icon" section: Size (`xs`/`sm`/`base`/`lg`/`xl`), Bordered chip on/off, and Background opacity slider (0–100). The chip uses `color-mix(in oklch, var(--color-background) X%, transparent)` for the fill so it composes correctly across light/dark themes.
+- **Per-kind icon overrides** (`1dfe3c2`). `MessageKindConfig` gains optional `iconSize`, `iconBordered`, and `iconBgOpacity` fields. The KindEditor exposes each as a "Use default (X)" dropdown/switch — pick a value to override just that kind, leave on default to inherit the global. Resolution helpers in `src/lib/typographyClasses.ts` accept an optional `kindId` and walk override → global.
+
+### Changed
+
+- **Appearance preview now matches the live render** (`1dfe3c2`). `SamplePreview` was rebuilt to render through the same `<Card>`, `accentStyleFromEntry`, `<KindHeader>`, and `contentClassNames` primitives as `StreamMessage`. Includes a fixed sample timestamp matching `formatLocalTimestamp`'s output and the same chip wrapper / debug overlay chrome on the bottom row. Editing the icon, accent color, or typography in the editor now shows what the live cards will look like.
+- **Compact accent-color and icon pickers in KindEditor** (`1dfe3c2`). The full-grid pickers (21 colors, 80+ icons) are now shadcn `<Select>` dropdowns with previews, freeing up real estate for the new per-kind icon-chrome controls.
+- **Card-icon chip is now layout-stable** (`1dfe3c2`). The bordered chip uses negative margins (`-mt-1 -mx-1.5 -mb-1.5`) that exactly cancel its `p-1.5` padding, so the icon glyph holds its position relative to the card whether the chip is on or off — toggling bordered no longer reflows surrounding content.
+- **Brighter chip text** (`1dfe3c2`). Bottom-row debug-label and timestamp chips now use `text-foreground/80` instead of `text-muted-foreground/70`, plus increased `pb-9` on every `<CardContent>` for breathing room above the chips.
+
+### Fixed
+
+- **Assistant icons now show in the preview** (`1dfe3c2`). The intermediate `SamplePreview` rewrite delegated icon rendering to `<KindHeader showIcon>`, which returns null when `headerLabel` is null — so `assistant.text`, `assistant.thinking`, and `assistant.toolUse` (all `headerLabel: null` by default) silently dropped their icons in the preview. Now the icon is rendered as a sibling of `KindHeader`, matching how the live `StreamMessage` does it.
+- **Background opacity slider actually applies** (`1dfe3c2`). The first cut of the chip-bg opacity used `var(--background)`; the actual CSS variable in this project is `--color-background`, so the `color-mix()` was silently invalid and fell through to no fill. Fixed by using the right token.
+
 ## [0.3.69] — 2026-04-29
 
 Fixup release: the `osxSign` config landed in 0.3.68 was a silent no-op — `@electron/osx-sign` validated the literal `-` identity against the macOS keychain, found nothing, and skipped signing entirely. This release sets `identityValidation: false` so ad-hoc signing actually runs. The 0.3.68 build does **not** have stable TCC grants; install this build instead. Installers remain **unsigned** for Gatekeeper purposes.
