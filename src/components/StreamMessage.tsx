@@ -11,6 +11,11 @@ import {
 } from "lucide-react";
 import { detectSkillInjection } from "@/lib/skillDetection";
 import { classifyStandaloneKind } from "@/lib/messageKind";
+import { isBlockHiddenInCompact } from "@/lib/blockKind";
+import { summarizeHiddenEvents } from "@/lib/hiddenEventsSummary";
+import { HiddenBlocksExpander } from "@/components/HiddenBlocksExpander";
+import { SubagentReturnedMarker } from "@/components/SubagentReturnedMarker";
+import { isSubagentDispatch } from "@/lib/subagentDispatch";
 import { formatDurationMs } from "@/lib/duration";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -325,6 +330,12 @@ interface StreamMessageProps {
    *  (ThinkingWidget, etc.) default-expand so the content is visible
    *  without a second click. */
   inExpandedGroup?: boolean;
+  /** True when the timeline is in compact view mode. Drives per-block
+   *  hiding for mixed-content messages — hidden blocks inside a visible
+   *  parent get an inline `HiddenBlocksExpander`. Ignored when
+   *  `inExpandedGroup` is true (opening the outer group is "show
+   *  everything," so we don't double-collapse). */
+  compact?: boolean;
   /** Called when the user clicks the resend button on a user message card. */
   onResend?: (text: string, images?: string[]) => void;
 }
@@ -332,7 +343,7 @@ interface StreamMessageProps {
 /**
  * Component to render a single Claude Code stream message
  */
-const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, className, streamMessages, onLinkDetected, accountType, inExpandedGroup, onResend }) => {
+const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, className, streamMessages, onLinkDetected, accountType, inExpandedGroup, compact, onResend }) => {
   // State to track tool results mapped by tool call ID
   const [toolResults, setToolResults] = useState<Map<string, any>>(new Map());
   
@@ -387,6 +398,22 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
           cwd={message.cwd}
           tools={message.tools}
         />
+      );
+    }
+
+    // Fallback for any other system subtype (compact_boundary, future SDK
+    // subtypes, etc.). Without this branch the message renders to null and
+    // expanders summarized as "1 system event" reveal nothing when opened.
+    if (message.type === "system" && message.subtype !== "init" && message.subtype !== "notification") {
+      const subtype = String(message.subtype ?? 'unknown');
+      const text = (message as any).message
+        ?? (message as any).title
+        ?? '';
+      return (
+        <div className={cn("flex items-start gap-2 text-xs font-mono py-1.5 px-3 border-l-2 border-muted-foreground/40 text-muted-foreground", className)}>
+          <span className="opacity-70">system.{subtype}</span>
+          {text && <span className="truncate">{String(text)}</span>}
+        </div>
       );
     }
 
@@ -496,9 +523,11 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
               </div>
               <div className="flex-1 space-y-2 min-w-0">
                 <KindHeader kindId="assistant.text" />
-                {msg.content && Array.isArray(msg.content) && msg.content.map((content: any, idx: number) => {
-                  // Text content - render as markdown
-                  if (content.type === "text") {
+                {(() => {
+                  const blocks: any[] = Array.isArray(msg.content) ? msg.content : [];
+                  const renderBlock = (content: any, idx: number) => {
+                    // Text content - render as markdown
+                    if (content.type === "text") {
                     if (suppressTextBlocks) return null;
                     // Ensure we have a string to render
                     const textContent = typeof content.text === 'string'
@@ -569,10 +598,17 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                     
                     // Function to render the appropriate tool widget
                     const renderToolWidget = () => {
-                      // Task tool - for sub-agent tasks
-                      if (toolName === "task" && input) {
+                      // Task / Agent tool — subagent dispatch
+                      if (isSubagentDispatch(content.name) && input) {
                         renderedSomething = true;
-                        return <TaskWidget description={input.description} prompt={input.prompt} result={toolResult} />;
+                        return (
+                          <TaskWidget
+                            description={input.description}
+                            prompt={input.prompt}
+                            subagentType={input.subagent_type}
+                            result={toolResult}
+                          />
+                        );
                       }
                       
                       // Edit tool
@@ -692,8 +728,46 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                   }
                   
                   return null;
-                })}
-                
+                  };
+
+                  const hidingActive = compact === true && inExpandedGroup !== true;
+                  if (!hidingActive) {
+                    return blocks.map((b, i) => renderBlock(b, i));
+                  }
+
+                  const out: React.ReactNode[] = [];
+                  let pendingHidden: { block: any; idx: number }[] = [];
+                  const flush = () => {
+                    if (pendingHidden.length === 0) return;
+                    const items = pendingHidden;
+                    pendingHidden = [];
+                    const summary = summarizeHiddenEvents([
+                      { type: 'assistant', message: { content: items.map((i) => i.block) } } as any,
+                    ]);
+                    out.push(
+                      <HiddenBlocksExpander
+                        key={`hb-${items[0].idx}`}
+                        count={items.length}
+                        summary={summary}
+                      >
+                        {items.map(({ block, idx }) => renderBlock(block, idx))}
+                      </HiddenBlocksExpander>
+                    );
+                  };
+                  for (let i = 0; i < blocks.length; i++) {
+                    const b = blocks[i];
+                    const hidden = isBlockHiddenInCompact(b, message, renderConfig);
+                    if (hidden) {
+                      pendingHidden.push({ block: b, idx: i });
+                    } else {
+                      flush();
+                      out.push(renderBlock(b, i));
+                    }
+                  }
+                  flush();
+                  return out;
+                })()}
+
                 {msg.usage && (
                   <div className="text-xs text-muted-foreground mt-2">
                     Tokens: {msg.usage.input_tokens} in, {msg.usage.output_tokens} out
@@ -838,7 +912,11 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
       };
 
       const userIconName = userKindId ? iconNameFor(renderConfig, userKindId) : null;
-      const showUserHeader = !!userKindId && !isToolResultOnly;
+      // Show the configured kind header on every user-side card, including
+      // tool_result-only ones. Previously this excluded isToolResultOnly,
+      // which silently swallowed the user's customized "Tool Result" label
+      // for subagent return markers and other tool result cards.
+      const showUserHeader = !!userKindId;
 
       const userKindIdForIcon = userKindId ?? undefined;
       const iconSize = iconSizeClassName(renderConfig, userKindIdForIcon);
@@ -874,6 +952,11 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
             <div className="flex items-start gap-3">
               {cardIcon}
               <div className="flex-1 space-y-2 min-w-0">
+                {/* Configured KindHeader for the card. Renders once at the top
+                    of the body so per-block branches (string, image, tool_result)
+                    no longer have to repeat the header inline — and tool_result-
+                    only cards (subagent returns, etc.) don't lose the header. */}
+                {showUserHeader && userKindId && <KindHeader kindId={userKindId} />}
                 {skillInjection && (
                   <div className="text-xs font-medium text-purple-500 dark:text-purple-400 font-mono">
                     Skill: {skillInjection.skillName}
@@ -918,7 +1001,6 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
 
                     return (
                       <div>
-                        {showUserHeader && userKindId && <KindHeader kindId={userKindId} />}
                         {textWithoutImages && (
                           <div className={cn(contentClassNames(renderConfig), "mb-2")}>
                             {textWithoutImages}
@@ -948,7 +1030,6 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                     renderedSomething = true;
                     return (
                       <div key={idx}>
-                        {showUserHeader && userKindId && <KindHeader kindId={userKindId} />}
                         <div className={cn(contentClassNames(renderConfig), "whitespace-pre-wrap")}>
                           {content.text}
                         </div>
@@ -971,8 +1052,14 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                   }
                   // Tool result
                   if (content.type === "tool_result") {
-                    // Skip duplicate tool_result if a dedicated widget is present
+                    // Skip duplicate tool_result if a dedicated widget is present.
+                    // Task is special-cased: TaskWidget renders the dispatch
+                    // ("Subagent spawned"), but the return value still needs a
+                    // chronological marker — render SubagentReturnedMarker here
+                    // instead of suppressing entirely.
                     let hasCorrespondingWidget = false;
+                    let isTaskReturn = false;
+                    let taskDescription: string | undefined;
                     if (content.tool_use_id && streamMessages) {
                       for (let i = streamMessages.length - 1; i >= 0; i--) {
                         const prevMsg = streamMessages[i];
@@ -981,13 +1068,33 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                           if (toolUse) {
                             const toolName = toolUse.name?.toLowerCase();
                             const toolsWithWidgets = ['task','edit','multiedit','todowrite','todoread','ls','read','glob','bash','write','grep','websearch','webfetch'];
-                            if (toolsWithWidgets.includes(toolName) || toolUse.name?.startsWith('mcp__')) {
+                            if (isSubagentDispatch(toolUse.name)) {
+                              isTaskReturn = true;
+                              taskDescription = toolUse.input?.description;
+                            } else if (toolsWithWidgets.includes(toolName) || toolUse.name?.startsWith('mcp__')) {
                               hasCorrespondingWidget = true;
                             }
                             break;
                           }
                         }
                       }
+                    }
+
+                    if (isTaskReturn) {
+                      const text = typeof content.content === 'string'
+                        ? content.content
+                        : Array.isArray(content.content)
+                          ? content.content.map((c: any) => (typeof c === 'string' ? c : c?.text ?? '')).join('\n')
+                          : (content.content?.text ?? JSON.stringify(content.content ?? ''));
+                      renderedSomething = true;
+                      return (
+                        <SubagentReturnedMarker
+                          key={idx}
+                          description={taskDescription}
+                          resultText={text}
+                          defaultExpanded={inExpandedGroup}
+                        />
+                      );
                     }
 
                     if (hasCorrespondingWidget) {
@@ -1054,7 +1161,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                       renderedSomething = true;
                       return (
                         <div key={idx} className="space-y-2">
-                          <KindHeader kindId="tool.result.generic" label="Edit Result" />
+                          <KindHeader kindId="tool.result.generic" fallbackLabel="Edit Result" />
                           <EditResultWidget content={contentText} />
                         </div>
                       );
@@ -1069,7 +1176,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                       renderedSomething = true;
                       return (
                         <div key={idx} className="space-y-2">
-                          <KindHeader kindId="tool.result.generic" label="MultiEdit Result" />
+                          <KindHeader kindId="tool.result.generic" fallbackLabel="MultiEdit Result" />
                           <MultiEditResultWidget content={contentText} />
                         </div>
                       );
@@ -1116,7 +1223,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                       renderedSomething = true;
                       return (
                         <div key={idx} className="space-y-2">
-                          <KindHeader kindId="tool.result.generic" label="Directory Contents" />
+                          <KindHeader kindId="tool.result.generic" fallbackLabel="Directory Contents" />
                           <LSResultWidget content={contentText} />
                         </div>
                       );
@@ -1152,7 +1259,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                       renderedSomething = true;
                       return (
                         <div key={idx} className="space-y-2">
-                          <KindHeader kindId="tool.result.generic" label="Read Result" />
+                          <KindHeader kindId="tool.result.generic" fallbackLabel="Read Result" />
                           <ReadResultWidget content={contentText} filePath={filePath} />
                         </div>
                       );
@@ -1175,7 +1282,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                     return (
                       <div key={idx} className="space-y-2">
                         {content.is_error
-                          ? <KindHeader kindId="result.error" label="Tool Error" fallbackIcon="AlertCircle" showIcon />
+                          ? <KindHeader kindId="result.error" fallbackLabel="Tool Error" fallbackIcon="AlertCircle" showIcon />
                           : <KindHeader kindId="tool.result.generic" fallbackLabel="Tool Result" />}
                         <div className="ml-6 p-2 bg-background rounded-md border">
                           <pre className="text-xs font-mono overflow-x-auto whitespace-pre-wrap">

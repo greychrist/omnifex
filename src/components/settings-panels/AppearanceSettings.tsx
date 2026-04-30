@@ -211,6 +211,7 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
       dropMeta: config.hardFilters.dropMeta,
       dropTaskLifecycle: config.hardFilters.dropTaskLifecycle,
       dropEmptyUser: config.hardFilters.dropEmptyUser,
+      dropHookLifecycle: config.hardFilters.dropHookLifecycle,
     }),
     [config.hardFilters],
   );
@@ -372,6 +373,12 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
             description="Placeholder user messages from the SDK with no content."
             checked={hardFiltersChecked.dropEmptyUser}
             onChange={(v) => setHardFilter("dropEmptyUser", v)}
+          />
+          <FilterRow
+            label="Drop hook lifecycle events"
+            description="SDK hook_started / hook_response / user_prompt_submit notices. Plumbing — turn off only to debug hook behavior."
+            checked={hardFiltersChecked.dropHookLifecycle}
+            onChange={(v) => setHardFilter("dropHookLifecycle", v)}
           />
         </div>
 

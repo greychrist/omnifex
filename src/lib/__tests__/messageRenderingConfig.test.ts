@@ -76,6 +76,18 @@ describe("messageRenderingConfig", () => {
       expect(cfg.kinds["user.prompt"].accentColor).toBe("blue");
     });
 
+    it("locks exactly the four turn-boundary kinds", () => {
+      // The compact-mode redesign shrinks the lock set to user.prompt and
+      // the three terminal result kinds. Everything else must be toggleable.
+      const locked = DEFAULT_KINDS.filter((k) => k.compactBoundaryLocked).map((k) => k.id).sort();
+      expect(locked).toEqual([
+        "result.awaiting_background",
+        "result.error",
+        "result.success",
+        "user.prompt",
+      ]);
+    });
+
     it("forces hiddenInCompact=false for compact-boundary-locked kinds", () => {
       // user.prompt is compactBoundaryLocked; even if saved config says hidden,
       // merge must override back to visible.

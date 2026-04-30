@@ -1,62 +1,34 @@
 import type { ClaudeStreamMessage } from '@/types/claudeStream';
-import { detectSkillInjection } from './skillDetection';
 import type { MessageRenderingConfig } from './messageRenderingConfig';
 import { classifyStandaloneKind } from './messageKind';
+import { classifyBlockKind } from './blockKind';
 
 /**
- * True when the message should render fully on every view — it's either
- * a user-typed prompt, a final assistant response that ends a turn, an
- * Execution Complete card (real or synthesized), or a permission request
- * that needs user action.
+ * Compact-mode grouping: walk the timeline and decide, per message, whether
+ * to render it normally (visible) or fold it into a `HiddenEventsGroup`
+ * with neighboring hidden messages.
  *
- * Everything else (mid-turn tool_use, tool_result replies, thinking,
- * system init, skill-injected user bodies) is part of the "between-prompts"
- * interior of a turn and can be collapsed behind a summary in Compact mode.
+ * The rule is intentionally simple: a message is "fully hidden" iff every
+ * renderable thing in it is hidden by the user's per-kind config. A
+ * partially-hidden message (e.g. visible text + hidden tool_use blocks)
+ * still renders normally — its hidden blocks get a per-message
+ * `HiddenBlocksExpander` inside `StreamMessage`.
  *
- * Pass `allMessages` so skill-injected user messages (which look like user
- * text but were produced by the Skill tool) can be recognized via the
- * preceding tool_use. Without context they can't be distinguished from a
- * real typed prompt.
+ * Special carve-out: the most recent `TodoWrite` tool_use is always
+ * promoted to a top-level visible card so the live todo list stays
+ * inspectable even when `assistant.toolUse` is hidden.
  */
-export function isBoundaryMessage(
-  msg: ClaudeStreamMessage,
-  allMessages?: ClaudeStreamMessage[],
-): boolean {
-  if (msg.type === 'permission_request') return true;
-  if (msg.type === 'result') return true;
 
-  if (msg.type === 'user') {
-    const content: unknown = msg.message?.content;
-    if (typeof content === 'string') {
-      if (content.length === 0) return false;
-    } else if (!Array.isArray(content)) {
-      return false;
-    } else if (!content.some((c: any) => c?.type === 'text')) {
-      return false;
-    }
-    if (allMessages && detectSkillInjection(msg, allMessages)) return false;
-    if ((msg as { parent_tool_use_id?: string | null }).parent_tool_use_id != null) return false;
-    return true;
-  }
-
-  if (msg.type === 'assistant') {
-    const stop = (msg.message as any)?.stop_reason;
-    if (stop === 'end_turn') return true;
-    const content = msg.message?.content;
-    if (!Array.isArray(content) || content.length === 0) return false;
-    const hasText = content.some((c: any) => c?.type === 'text');
-    const hasNonText = content.some((c: any) => c?.type !== 'text');
-    return hasText && !hasNonText;
-  }
-
-  return false;
-}
+export type CompactItem =
+  | { kind: 'single'; message: ClaudeStreamMessage; key: string }
+  | { kind: 'group'; messages: ClaudeStreamMessage[]; key: string };
 
 function hasTodoWriteToolUse(msg: ClaudeStreamMessage): boolean {
   const content = msg.message?.content;
   if (!Array.isArray(content)) return false;
   return content.some(
-    (c: any) => c?.type === 'tool_use' && typeof c?.name === 'string' && c.name.toLowerCase() === 'todowrite',
+    (c: any) =>
+      c?.type === 'tool_use' && typeof c?.name === 'string' && c.name.toLowerCase() === 'todowrite',
   );
 }
 
@@ -67,42 +39,93 @@ function findLastTodoWriteIndex(messages: ClaudeStreamMessage[]): number {
   return -1;
 }
 
-export type CompactItem =
-  | { kind: 'single'; message: ClaudeStreamMessage; key: string }
-  | { kind: 'group'; messages: ClaudeStreamMessage[]; key: string };
+function isRenderableBlock(b: any): boolean {
+  if (!b || typeof b !== 'object') return false;
+  if (b.type === 'tool_use' || b.type === 'tool_result' || b.type === 'image') return true;
+  if (b.type === 'text') {
+    const t = typeof b.text === 'string' ? b.text.trim() : '';
+    return t.length > 0;
+  }
+  if (b.type === 'thinking') {
+    const t = typeof b.thinking === 'string' ? b.thinking.trim() : '';
+    return t.length > 0;
+  }
+  return false;
+}
 
 /**
- * Build the compact-mode item list: boundary messages render as singles,
- * consecutive non-boundary messages collapse into groups. The most recent
- * TodoWrite tool_use is additionally promoted to a top-level single so the
- * live todo list stays visible instead of hiding behind a group summary.
- *
- * When a `config` is passed, standalone-classifiable messages (system init,
- * notifications, summaries, etc.) whose kind has `hiddenInCompact: false`
- * are also promoted to singles — otherwise unhiding them in Appearance has
- * no visible effect because they'd just sit collapsed inside a group.
+ * True iff every renderable thing in `msg` is marked hidden by `config`.
+ * A message with no renderable content is considered "not hidden" so it
+ * doesn't get swept into a group (the renderer will drop it on its own).
  */
+export function isMessageFullyHidden(
+  msg: ClaudeStreamMessage,
+  allMessages: ClaudeStreamMessage[],
+  config: MessageRenderingConfig,
+): boolean {
+  const wholeKind = classifyStandaloneKind(msg, allMessages);
+  if (wholeKind) {
+    const k = config.kinds[wholeKind];
+    if (!k) return false;
+    if (k.compactBoundaryLocked) return false;
+    return k.hiddenInCompact === true;
+  }
+
+  // The declared shape says content is `any[]`, but the CLI's persisted
+  // user prompts are bare strings (live SDK uses an array of text blocks).
+  // Widen here so the string-form check below isn't narrowed away.
+  const content: unknown = msg.message?.content;
+  // Treat any non-empty string as a visible user prompt — early-returning
+  // "fully hidden" here was sweeping reloaded prompts into hidden groups.
+  if (typeof content === 'string') return content.trim().length === 0;
+  // No content / empty content = nothing to render. Treat as hidden so the
+  // message joins any neighboring hidden run instead of breaking it.
+  // (Emitting it as a visible "single" would inject an empty card that
+  // fragments runs visually for no reason.)
+  if (!Array.isArray(content) || content.length === 0) return true;
+
+  let renderable = 0;
+  let hidden = 0;
+  for (const b of content) {
+    if (!isRenderableBlock(b)) continue;
+    renderable += 1;
+    const blockKind = classifyBlockKind(b, msg);
+    if (!blockKind) {
+      // Unclassified renderable block (e.g. a plain user typed text block).
+      // Treat as visible — its kind is either implicit user.prompt (locked
+      // visible) or genuinely something we have no toggle for.
+      continue;
+    }
+    const k = config.kinds[blockKind];
+    if (!k) continue;
+    if (k.compactBoundaryLocked) continue;
+    if (k.hiddenInCompact) hidden += 1;
+  }
+
+  // Same reasoning as the empty-content case: if there's no renderable
+  // content (e.g. signature-only thinking blocks), let it merge into a
+  // neighboring hidden run.
+  if (renderable === 0) return true;
+
+  return hidden === renderable;
+}
+
 export function buildCompactItems(
   messages: ClaudeStreamMessage[],
-  config?: MessageRenderingConfig,
+  config: MessageRenderingConfig,
 ): CompactItem[] {
   const latestTodoIdx = findLastTodoWriteIndex(messages);
   const items: CompactItem[] = [];
 
   messages.forEach((message, idx) => {
-    const isPromoted = idx === latestTodoIdx;
-    let isUnhiddenStandalone = false;
-    if (config) {
-      const kindId = classifyStandaloneKind(message, messages);
-      if (kindId) {
-        const kind = config.kinds[kindId];
-        if (kind && !kind.hiddenInCompact) isUnhiddenStandalone = true;
-      }
-    }
-    if (isBoundaryMessage(message, messages) || isPromoted || isUnhiddenStandalone) {
+    const isLatestTodo = idx === latestTodoIdx;
+    const fullyHidden = !isLatestTodo && isMessageFullyHidden(message, messages, config);
+
+    if (!fullyHidden) {
       items.push({ kind: 'single', message, key: `m-${idx}` });
       return;
     }
+
     const last = items[items.length - 1];
     if (last && last.kind === 'group') {
       last.messages.push(message);

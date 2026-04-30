@@ -41,9 +41,8 @@ import { synthesizeResultMessages } from "@/lib/synthesizeResults";
 import { SessionModeToggle } from "./SessionModeToggle";
 import { SessionViewToggle, type ViewMode } from "./SessionViewToggle";
 import { TerminalView } from './TerminalView';
-import { CollapsibleGroup } from "./CollapsibleGroup";
+import { HiddenEventsGroup } from "./HiddenEventsGroup";
 import { buildCompactItems } from "@/lib/compactGrouping";
-import { filterCompactHidden } from "@/lib/messageKind";
 import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
 import { SessionHeader, HeaderLabel } from "./SessionHeader";
 import { ProjectPathBadge } from "./claude-code-session/ProjectPathBadge";
@@ -429,16 +428,16 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     return null;
   }, [session, extractedSessionInfo, projectPath]);
 
-  // Filter out messages that shouldn't be displayed
-  const displayableMessages = useMemo(() => filterDisplayableMessages(messages), [messages]);
-
-  // Compact mode honors per-kind `hiddenInCompact`. Computed here so the
-  // list passed to the grouper matches what the user would expect from the
-  // Appearance settings (e.g. system.init toggle).
+  // Compact mode honors per-kind `hiddenInCompact` natively in the grouper —
+  // hidden messages flow into HiddenEventsGroup expanders rather than being
+  // pre-filtered, so opening any expander reveals everything that was hidden.
   const { config: renderConfig } = useMessageRenderingConfig();
-  const compactVisibleMessages = useMemo(
-    () => filterCompactHidden(displayableMessages, renderConfig),
-    [displayableMessages, renderConfig],
+
+  // Filter out messages that shouldn't be displayed (honors the user's
+  // hard-filter toggles in Appearance settings).
+  const displayableMessages = useMemo(
+    () => filterDisplayableMessages(messages, renderConfig.hardFilters),
+    [messages, renderConfig.hardFilters],
   );
 
   // Subagent (background task) state, derived from the raw stream.
@@ -568,10 +567,13 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
         );
       }
       
-      // Convert history to messages format
+      // Convert history to messages format. JSONL entries carry their own
+      // `timestamp` field per line — map it to `receivedAt` so the card
+      // timestamp badge renders for resumed sessions just like for live ones.
       const loadedMessages: ClaudeStreamMessage[] = history.map(entry => ({
         ...entry,
-        type: entry.type || "assistant"
+        type: entry.type || "assistant",
+        receivedAt: entry.receivedAt ?? entry.timestamp,
       }));
 
       // The Claude CLI's JSONL session file does not persist live SDK
@@ -1012,6 +1014,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           const loaded: ClaudeStreamMessage[] = history.map((entry: any) => ({
             ...entry,
             type: entry.type || 'assistant',
+            receivedAt: entry.receivedAt ?? entry.timestamp,
           }));
           setMessages(synthesizeResultMessages(loaded));
         })
@@ -1242,7 +1245,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                 </div>
               ))
             : (() => {
-                const items = buildCompactItems(compactVisibleMessages, renderConfig);
+                const items = buildCompactItems(displayableMessages, renderConfig);
                 return items.map((item) =>
                   item.kind === 'single' ? (
                     <div key={item.key}>
@@ -1251,11 +1254,12 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                         streamMessages={messages}
                         onLinkDetected={handleLinkDetected}
                         accountType={accountResolution?.account.account_type}
+                        compact
                         onResend={(text, images) => handleSendPrompt(text, selectedModel, images)}
                       />
                     </div>
                   ) : (
-                    <CollapsibleGroup
+                    <HiddenEventsGroup
                       key={item.key}
                       messages={item.messages}
                       streamMessages={messages}

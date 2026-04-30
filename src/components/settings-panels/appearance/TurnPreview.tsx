@@ -10,9 +10,9 @@ interface TurnPreviewProps {
   mode: "compact" | "verbose";
 }
 
-// In compact mode, consecutive hidden kinds collapse into a single "group
-// marker" row. This mirrors the CollapsibleGroup behavior in the live
-// renderer (compactGrouping.ts), simplified for the preview.
+// In compact mode, consecutive hidden kinds collapse into a single
+// "Hidden Events" expander row. This mirrors HiddenEventsGroup in the
+// live renderer (compactGrouping.ts), simplified for the preview.
 
 interface CompactItem {
   kind: "single" | "group";
@@ -75,11 +75,14 @@ export const TurnPreview: React.FC<TurnPreviewProps> = ({ config, mode }) => {
 const CollapsedGroupMarker: React.FC<{ count: number }> = ({ count }) => (
   <div
     className={cn(
-      "flex items-center gap-2 rounded-md border border-dashed border-border/60 px-3 py-2",
-      "text-xs text-muted-foreground bg-muted/20 italic",
+      "flex items-center gap-2 rounded-md border border-border/40 bg-muted/20 px-3 py-1.5",
+      "text-xs text-muted-foreground",
     )}
   >
     <Layers className="h-3.5 w-3.5" />
-    {count} interior {count === 1 ? "step" : "steps"} collapsed
+    <span className="font-medium text-foreground/80">
+      {count} Hidden {count === 1 ? "Event" : "Events"}:
+    </span>
+    <span className="truncate">collapsed in compact mode</span>
   </div>
 );

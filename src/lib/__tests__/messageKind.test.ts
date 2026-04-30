@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { ClaudeStreamMessage } from '@/types/claudeStream';
-import { classifyStandaloneKind, filterCompactHidden } from '../messageKind';
-import { createDefaultConfig } from '../messageRenderingConfig';
+import { classifyStandaloneKind } from '../messageKind';
 
 const sysInit = (): ClaudeStreamMessage =>
   ({ type: 'system', subtype: 'init', session_id: 'abc', model: 'claude', cwd: '/x', tools: [] } as unknown as ClaudeStreamMessage);
@@ -174,44 +173,3 @@ describe('classifyStandaloneKind', () => {
   });
 });
 
-describe('filterCompactHidden', () => {
-  it('drops system.init when hiddenInCompact=true (default)', () => {
-    const cfg = createDefaultConfig();
-    expect(cfg.kinds['system.init'].hiddenInCompact).toBe(true);
-    const msgs = [userText('hi'), sysInit(), userText('bye')];
-    const filtered = filterCompactHidden(msgs, cfg);
-    expect(filtered).toHaveLength(2);
-    expect(filtered.every(m => !(m.type === 'system' && m.subtype === 'init'))).toBe(true);
-  });
-
-  it('keeps system.init when hiddenInCompact=false', () => {
-    const cfg = createDefaultConfig();
-    cfg.kinds['system.init'] = { ...cfg.kinds['system.init'], hiddenInCompact: false };
-    const msgs = [sysInit()];
-    expect(filterCompactHidden(msgs, cfg)).toHaveLength(1);
-  });
-
-  it('never drops compact-boundary-locked kinds regardless of hiddenInCompact', () => {
-    const cfg = createDefaultConfig();
-    // Force the flag on; mergeConfig normally prevents this, but defense-in-depth.
-    cfg.kinds['permission.request'] = { ...cfg.kinds['permission.request'], hiddenInCompact: true };
-    cfg.kinds['result.success'] = { ...cfg.kinds['result.success'], hiddenInCompact: true };
-    const msgs = [permReq(), resultOk(), summary()];
-    expect(filterCompactHidden(msgs, cfg)).toHaveLength(3);
-  });
-
-  it('drops info notifications by default, keeps error/warn/stop', () => {
-    const cfg = createDefaultConfig();
-    const msgs = [notif('info'), notif('error'), notif('warn'), notif('stop')];
-    const filtered = filterCompactHidden(msgs, cfg);
-    expect(filtered).toHaveLength(3);
-    expect(filtered.every((m) => (m as { notification_type?: string }).notification_type !== 'info')).toBe(true);
-  });
-
-  it('leaves unclassifiable messages alone', () => {
-    const cfg = createDefaultConfig();
-    const msgs = [userText('hi'), sysInit()];
-    const filtered = filterCompactHidden(msgs, cfg);
-    expect(filtered).toContainEqual(msgs[0]);
-  });
-});

@@ -80,8 +80,8 @@ export const KindEditor: React.FC<KindEditorProps> = ({
           </Label>
           <p className="text-caption text-muted-foreground">
             {kind.compactBoundaryLocked
-              ? "Forced visible — this kind is a turn boundary."
-              : "Collapses into the group marker when compact mode is on."}
+              ? "Always visible — turn boundary."
+              : "When hidden, collapses into the nearest expander in compact mode."}
           </p>
         </div>
         <Switch

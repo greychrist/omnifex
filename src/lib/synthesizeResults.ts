@@ -54,6 +54,11 @@ function buildSyntheticResult(
   const totalCostUsd =
     inputTokens * INPUT_RATE_PER_TOKEN + outputTokens * OUTPUT_RATE_PER_TOKEN;
 
+  // Inherit the last assistant message's timestamp so the Execution Complete
+  // card shows a footer time on reloaded sessions, matching live behavior.
+  const ts =
+    (lastAssistant as any).receivedAt ?? (lastAssistant as any).timestamp ?? null;
+
   return {
     type: 'result',
     subtype: isError ? 'error_during_execution' : 'success',
@@ -65,6 +70,7 @@ function buildSyntheticResult(
     total_cost_usd: totalCostUsd,
     usage,
     session_id: (lastAssistant as any).sessionId ?? (lastAssistant as any).session_id ?? null,
+    receivedAt: ts ?? undefined,
     // Marker so downstream code can tell this was reconstructed from disk,
     // not emitted live by the SDK. Useful for debugging or tooltips.
     synthesized: true,

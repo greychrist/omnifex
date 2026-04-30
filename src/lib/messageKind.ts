@@ -1,6 +1,6 @@
 import type { ClaudeStreamMessage } from '@/types/claudeStream';
-import type { MessageRenderingConfig } from './messageRenderingConfig';
 import { deriveSubagents } from './subagentStreams';
+import { isSubagentPrompt } from './subagentDispatch';
 
 /**
  * Classify a stream message as a single "standalone" rendering kind — i.e. a
@@ -50,26 +50,19 @@ export function classifyStandaloneKind(
       if (/warn/i.test(t)) return 'system.notification.warn';
       return 'system.notification.info';
     }
+    if (msg.subtype === 'hook_started') return 'system.hook.started';
+    if (msg.subtype === 'hook_response') return 'system.hook.response';
+    if (msg.subtype === 'user_prompt_submit') return 'system.userPromptSubmit';
+  }
+
+  // Subagent prompts: user-role messages synthesized by the Task/Agent
+  // tool. The strict check (parent_tool_use_id resolves to a Task/Agent
+  // tool_use) avoids false positives on real user prompts whose
+  // parent_tool_use_id is set by the CLI for conversation-tree chaining.
+  if (isSubagentPrompt(msg, allMessages)) {
+    return 'user.subagentPrompt';
   }
 
   return null;
 }
 
-/**
- * In compact mode, drop messages whose classified kind is marked
- * `hiddenInCompact` (unless the kind is boundary-locked, which mergeConfig
- * already guards against but we defend again here).
- */
-export function filterCompactHidden(
-  messages: ClaudeStreamMessage[],
-  config: MessageRenderingConfig,
-): ClaudeStreamMessage[] {
-  return messages.filter((m) => {
-    const id = classifyStandaloneKind(m, messages);
-    if (!id) return true;
-    const kind = config.kinds[id];
-    if (!kind) return true;
-    if (kind.compactBoundaryLocked) return true;
-    return !kind.hiddenInCompact;
-  });
-}

@@ -4,6 +4,7 @@ import { Settings, Info, MoreVertical, Download, Loader2, CheckCircle, AlertCirc
 import { TooltipProvider, TooltipSimple } from '@/components/ui/tooltip-modern';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import GreyChristIcon from '../../icons/icon.png';
 const SDK_POLL_INTERVAL_MS = 60 * 60 * 1000; // 60 minutes
 
 const BADGE_BASE_CLASS =
@@ -264,6 +265,12 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
     >
       {/* Left side - version badges (native traffic lights are provided by Electron frame) */}
       <div className="flex items-center pl-20 gap-1.5 tauri-no-drag">
+        <img
+          src={GreyChristIcon}
+          alt="GreyChrist"
+          className="h-6 w-6 rounded-sm select-none"
+          draggable={false}
+        />
         {appVersion && (
           <TooltipSimple content="GreyChrist application version" side="bottom">
             <span className={cn(BADGE_BASE_CLASS, BADGE_NEUTRAL_CLASS)}>

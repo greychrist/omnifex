@@ -217,7 +217,7 @@ export const DEFAULT_KINDS: MessageKindConfig[] = [
     accentColor: "blue",
     alignment: "right",
     hiddenInCompact: false,
-    compactBoundaryLocked: true,
+    compactBoundaryLocked: false,
   },
   {
     id: "user.subagentPrompt",
@@ -268,7 +268,7 @@ export const DEFAULT_KINDS: MessageKindConfig[] = [
     accentColor: "primary",
     alignment: "left",
     hiddenInCompact: false,
-    compactBoundaryLocked: true,
+    compactBoundaryLocked: false,
   },
   {
     id: "assistant.thinking",
@@ -425,6 +425,42 @@ export const DEFAULT_KINDS: MessageKindConfig[] = [
     hiddenInCompact: true,
     compactBoundaryLocked: false,
   },
+  {
+    id: "system.hook.started",
+    label: "Hook started",
+    description: "SDK lifecycle event fired when a configured hook begins.",
+    origin: "system",
+    icon: "Plug",
+    headerLabel: null,
+    accentColor: "muted",
+    alignment: "full",
+    hiddenInCompact: true,
+    compactBoundaryLocked: false,
+  },
+  {
+    id: "system.hook.response",
+    label: "Hook response",
+    description: "SDK lifecycle event reporting a hook's exit code and output.",
+    origin: "system",
+    icon: "Plug",
+    headerLabel: null,
+    accentColor: "muted",
+    alignment: "full",
+    hiddenInCompact: true,
+    compactBoundaryLocked: false,
+  },
+  {
+    id: "system.userPromptSubmit",
+    label: "User-prompt-submit lifecycle",
+    description: "SDK lifecycle event emitted when a user prompt is accepted, before any UserPromptSubmit hook runs.",
+    origin: "system",
+    icon: "Send",
+    headerLabel: null,
+    accentColor: "muted",
+    alignment: "full",
+    hiddenInCompact: true,
+    compactBoundaryLocked: false,
+  },
 
   // PERMISSION / SUMMARY
   {
@@ -437,7 +473,7 @@ export const DEFAULT_KINDS: MessageKindConfig[] = [
     accentColor: "amber",
     alignment: "full",
     hiddenInCompact: false,
-    compactBoundaryLocked: true,
+    compactBoundaryLocked: false,
     widget: "PermissionCard",
   },
   {
@@ -450,7 +486,7 @@ export const DEFAULT_KINDS: MessageKindConfig[] = [
     accentColor: "gray",
     alignment: "full",
     hiddenInCompact: false,
-    compactBoundaryLocked: true,
+    compactBoundaryLocked: false,
     widget: "SummaryWidget",
   },
 ];
@@ -508,12 +544,14 @@ export interface HardFilters {
   dropMeta: boolean;
   dropTaskLifecycle: boolean;
   dropEmptyUser: boolean;
+  dropHookLifecycle: boolean;
 }
 
 export const DEFAULT_HARD_FILTERS: HardFilters = {
   dropMeta: true,
   dropTaskLifecycle: true,
   dropEmptyUser: true,
+  dropHookLifecycle: true,
 };
 
 // ─── debug ──────────────────────────────────────────────────────────────────
@@ -644,6 +682,8 @@ export function mergeConfig(saved: unknown): MessageRenderingConfig {
       dropTaskLifecycle:
         typeof hf.dropTaskLifecycle === "boolean" ? hf.dropTaskLifecycle : base.hardFilters.dropTaskLifecycle,
       dropEmptyUser: typeof hf.dropEmptyUser === "boolean" ? hf.dropEmptyUser : base.hardFilters.dropEmptyUser,
+      dropHookLifecycle:
+        typeof hf.dropHookLifecycle === "boolean" ? hf.dropHookLifecycle : base.hardFilters.dropHookLifecycle,
     };
   }
 
