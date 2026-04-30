@@ -5,6 +5,18 @@ All notable changes to GreyChrist are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.74] — 2026-04-30
+
+Patch release on top of 0.3.73 with two improvements informed by live testing during yesterday's release flow. Installers remain **unsigned** for Gatekeeper purposes — first launch still requires right-click → Open.
+
+### Added
+
+- **Spinner stays alive across `awaiting_background` turns** (`src/lib/subagentStreams.ts`, `src/components/ClaudeCodeSession.tsx`). The iMessage-style typing bubble was bound strictly to `isLoading`, which flips false the moment the parent's turn-end result event fires — so the amber `Awaiting Background Work` card would land and the spinner would vanish even though a build was still churning in the background. New `isWaitingForBackground(subs)` helper returns true whenever any subagent has `status === 'running' && isBackground === true`. `ClaudeCodeSession` derives an `awaitingBackground` flag from its memoized subagents and ORs it into the spinner's render gate. Net effect: the spinner stays visible from dispatch through the eventual real `Execution Complete`, bridging the awaiting state without changing `isLoading` semantics (cancel button, input enabled state, etc. all unchanged).
+
+### Fixed
+
+- **Saved permission rules now apply live to the running session** (`electron/services/sessions/permissions.ts`). Long-standing UX bug: clicking "Save Permission" wrote the rule to `.claude/settings.local.json` (or whichever scope was selected) but the very next matching tool_use would re-prompt — even with multiple variants of the same rule on disk, even with a bare `Edit` rule that should grant everything. Confirmed via Anthropic's official Agent SDK docs that `PermissionUpdate` destinations (`userSettings` / `projectSettings` / `localSettings` / `session`) are persistence targets, not "apply-now" flags — only `'session'` folds the rule into the running query's in-memory cache. Our renderer was sending only the persistent destination, so the rule landed on disk but the live SDK process never saw it. New `augmentPermissionsWithSession()` helper now mirrors every persistent `addRules` entry with a session-destination twin before resolving the `canUseTool` promise. Matching tool_uses short-circuit `canUseTool` for the rest of the running session AND the rule survives a restart. We continue our own disk write via `persistPermissionRule` (iterating the *original* updates, not the augmented array) as belt-and-braces.
+
 ## [0.3.73] — 2026-04-30
 
 Feature release: a new "Awaiting background work" result kind so the parent session no longer claims "Execution Complete" when its turn ended by dispatching a still-running background subagent. Also fixes a long-standing bug where the subagent progress bars at the bottom of a session would flip to "done" the instant a background dispatch was acknowledged — same root cause, healed by the same change. Installers remain **unsigned** for Gatekeeper purposes — first launch still requires right-click → Open.
