@@ -34,15 +34,21 @@ const config: ForgeConfig = {
     executableName: 'greychrist',
     appBundleId: 'com.greychrist.app',
     icon: './icons/icon',
-    // Ad-hoc codesign every nested binary in the bundle. Gives the app a
-    // stable CDHash so macOS TCC grants (App Management, Files & Folders,
-    // etc.) persist across launches of the same build. Does NOT replace
-    // Developer ID — Gatekeeper still treats this as untrusted.
+    // Codesign with the self-signed "GreyChrist Local Sign" cert in Greg's
+    // login keychain. @electron/osx-sign re-signs the main binary AND the
+    // embedded Electron Framework with this same identity, so Library
+    // Validation passes and the app launches under hardened runtime. macOS
+    // TCC grants are keyed on the cert's identity hash, which is stable
+    // across rebuilds — "Allow" clicks for App Management / Files &
+    // Folders persist instead of re-prompting every launch.
     //
-    // identityValidation: false is required for the literal "-" ad-hoc
-    // identity. Without it @electron/osx-sign calls findIdentities('-')
-    // against the keychain, finds nothing, and silently skips signing.
-    osxSign: { identity: '-', identityValidation: false },
+    // Cert is self-signed, so Gatekeeper still treats the build as
+    // untrusted — first launch per build still needs right-click → Open.
+    // Cleanup plan when Greg buys Developer ID: replace the identity name
+    // with the Developer ID identity and add notarization config.
+    osxSign: {
+      identity: 'GreyChrist Local Sign',
+    },
     extraResource: [
       './assets',
       // Also placed at Contents/Resources/ top-level so macOS NSSound
