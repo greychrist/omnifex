@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ChevronDown, ChevronRight, ChevronUp, Bot, CheckCircle2, AlertCircle, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, ChevronUp, Bot, CheckCircle2, AlertCircle, Ghost, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Subagent } from '@/lib/subagentStreams';
 
@@ -41,6 +41,10 @@ const SubagentRow: React.FC<SubagentRowProps> = ({ sub, onDismiss }) => {
       <CheckCircle2 className={cn('h-3.5 w-3.5', color.text)} />
     ) : sub.status === 'failed' ? (
       <AlertCircle className="h-3.5 w-3.5 text-destructive" />
+    ) : sub.status === 'abandoned' ? (
+      <span title="Session ended before this returned">
+        <Ghost className="h-3.5 w-3.5 text-muted-foreground" />
+      </span>
     ) : (
       <span className={cn('inline-block h-2 w-2 rounded-full animate-pulse', color.dot)} />
     );

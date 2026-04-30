@@ -257,6 +257,53 @@ describe('deriveSubagents', () => {
     expect(subs[0].status).toBe('failed');
   });
 
+  it('background dispatch becomes "abandoned" when a result fires and the parent moves on without task_notification', () => {
+    // Loaded session: turn dispatched a background agent, the result event
+    // closed the turn, and then either a new user message or another turn
+    // happened — proving the parent moved on without the notification.
+    const subs = deriveSubagents([
+      agentToolUse(TOOL_USE_ID, 'Verify', 'general-purpose', true),
+      toolResult(TOOL_USE_ID, false, 'Async agent launched successfully'),
+      { type: 'result', subtype: 'success', result: 'awaiting' } as any,
+      { type: 'user', message: { content: [{ type: 'text', text: 'next prompt' }] } } as any,
+    ]);
+    expect(subs[0].status).toBe('abandoned');
+  });
+
+  it('background dispatch stays running while the result event is the latest message (live awaiting)', () => {
+    // Live session paused at the awaiting state — no messages after the result
+    // yet. We must not mark these as abandoned; the wake-up may still arrive.
+    const subs = deriveSubagents([
+      agentToolUse(TOOL_USE_ID, 'Verify', 'general-purpose', true),
+      toolResult(TOOL_USE_ID, false, 'Async agent launched successfully'),
+      { type: 'result', subtype: 'success', result: 'awaiting' } as any,
+    ]);
+    expect(subs[0].status).toBe('running');
+  });
+
+  it('foreground subagents are never marked abandoned (they have no run_in_background flag)', () => {
+    // Without isBackground, the subagent must already be terminal via
+    // tool_result/notification — it can never reach the abandoned branch.
+    const subs = deriveSubagents([
+      agentToolUse(TOOL_USE_ID, 'Verify', 'Explore', false),
+      // No tool_result, no notification, but trailing user message
+      { type: 'result', subtype: 'success', result: 'huh' } as any,
+      { type: 'user', message: { content: [{ type: 'text', text: 'next' }] } } as any,
+    ]);
+    expect(subs[0].status).toBe('running');
+  });
+
+  it('background dispatch with task_notification(completed) is not abandoned even if more messages follow', () => {
+    const subs = deriveSubagents([
+      agentToolUse(TOOL_USE_ID, 'Verify', 'general-purpose', true),
+      toolResult(TOOL_USE_ID, false, 'Async agent launched'),
+      taskNotification(TOOL_USE_ID, 'completed'),
+      { type: 'result', subtype: 'success', result: 'done' } as any,
+      { type: 'user', message: { content: [{ type: 'text', text: 'next' }] } } as any,
+    ]);
+    expect(subs[0].status).toBe('completed');
+  });
+
   it('leaves the subagent running when no tool_result and no notification', () => {
     const subs = deriveSubagents([
       agentToolUse(TOOL_USE_ID),

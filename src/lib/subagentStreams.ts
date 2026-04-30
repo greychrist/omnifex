@@ -1,6 +1,6 @@
 import type { ClaudeStreamMessage } from '@/types/claudeStream';
 
-export type SubagentStatus = 'running' | 'completed' | 'failed';
+export type SubagentStatus = 'running' | 'completed' | 'failed' | 'abandoned';
 
 export interface SubagentProgressEvent {
   description: string;
@@ -71,9 +71,13 @@ export function deriveSubagents(messages: ClaudeStreamMessage[]): Subagent[] {
   // data. The SDK's notification carries the summary + usage; tool_result only
   // tells us "the subagent returned."
   const notificationFinalized = new Set<string>();
+  // Index of the assistant message that dispatched each subagent. Used after
+  // the main loop to detect orphaned background dispatches (parent moved on
+  // past the awaiting result without ever receiving task_notification).
+  const dispatchIndex = new Map<string, number>();
 
-  for (const raw of messages) {
-    const m = raw as any;
+  for (let i = 0; i < messages.length; i++) {
+    const m = messages[i] as any;
 
     // 1. The parent Agent/Task tool_use block (surfaces a subagent as soon as it's dispatched)
     if (m?.type === 'assistant' && Array.isArray(m.message?.content)) {
@@ -83,6 +87,7 @@ export function deriveSubagents(messages: ClaudeStreamMessage[]): Subagent[] {
           sub.agentType = sub.agentType ?? block.input?.subagent_type;
           if (!sub.description) sub.description = block.input?.description ?? '';
           if (block.input?.run_in_background === true) sub.isBackground = true;
+          if (!dispatchIndex.has(block.id)) dispatchIndex.set(block.id, i);
         }
       }
       continue;
@@ -148,6 +153,34 @@ export function deriveSubagents(messages: ClaudeStreamMessage[]): Subagent[] {
         sub.latest = finalEvent;
         notificationFinalized.add(id);
       }
+    }
+  }
+
+  // Orphan detection: a background dispatch is "abandoned" if the parent
+  // session moved on past its awaiting result without ever receiving a
+  // task_notification. Symptom: zombie "running" bars and ghost amber result
+  // cards on a session reloaded from disk.
+  //
+  // Heuristic: for each background subagent still in `running` after the main
+  // loop, find the first `result` event after its dispatch. If any message
+  // exists after that result (proving the parent advanced — new turn, user
+  // input, anything), mark the subagent abandoned. If the result is the
+  // latest message, the session may be live and awaiting; leave it running.
+  for (const sub of byToolUseId.values()) {
+    if (sub.status !== 'running' || !sub.isBackground) continue;
+    const dispatchedAt = dispatchIndex.get(sub.toolUseId);
+    if (dispatchedAt === undefined) continue;
+    let resultIdx = -1;
+    for (let i = dispatchedAt + 1; i < messages.length; i++) {
+      if ((messages[i] as any)?.type === 'result') {
+        resultIdx = i;
+        break;
+      }
+    }
+    if (resultIdx === -1) continue;
+    if (resultIdx < messages.length - 1) {
+      sub.status = 'abandoned';
+      sub.endedAt = sub.endedAt ?? new Date().toISOString();
     }
   }
 
