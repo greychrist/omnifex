@@ -5,6 +5,14 @@ All notable changes to GreyChrist are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.73] — 2026-04-30
+
+Feature release: a new "Awaiting background work" result kind so the parent session no longer claims "Execution Complete" when its turn ended by dispatching a still-running background subagent. Installers remain **unsigned** for Gatekeeper purposes — first launch still requires right-click → Open.
+
+### Added
+
+- **`result.awaiting_background` kind** (`05c921b`). Sibling of `result.success` that fires when a turn ends with a still-running `Agent`/`Task` subagent dispatch (e.g. "Will be notified when verify completes"). Renders an amber `Hourglass` chip with header "Awaiting Background Work" instead of the green "Execution Complete." Detection is derived from the message stream itself — `classifyStandaloneKind` runs `deriveSubagents()` on the messages prior to the `result` event and checks for any subagent still in `running` status — because the SDK doesn't distinguish these in the result blob (`stop_reason: "end_turn"`, `terminal_reason: "completed"` are identical to a plain success). The new kind is `compactBoundaryLocked: true` so it's never hidden in compact mode, and is wired through Appearance settings (icon allow-list, fixtures, debug-label preview) like every other kind.
+
 ## [0.3.72] — 2026-04-29
 
 Fixup release: 0.3.71 still launch-crashed on macOS — re-signing both binaries with the same self-signed cert isn't sufficient when there's no Apple Developer Team ID. Disabling hardened runtime in the local build sidesteps Library Validation entirely. Installers remain self-signed (Gatekeeper untrusted, first launch needs right-click → Open).
