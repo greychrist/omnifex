@@ -35,19 +35,27 @@ const config: ForgeConfig = {
     appBundleId: 'com.greychrist.app',
     icon: './icons/icon',
     // Codesign with the self-signed "GreyChrist Local Sign" cert in Greg's
-    // login keychain. @electron/osx-sign re-signs the main binary AND the
-    // embedded Electron Framework with this same identity, so Library
-    // Validation passes and the app launches under hardened runtime. macOS
-    // TCC grants are keyed on the cert's identity hash, which is stable
-    // across rebuilds — "Allow" clicks for App Management / Files &
-    // Folders persist instead of re-prompting every launch.
+    // login keychain. The cert gives the bundle a stable signing identity
+    // hash so macOS TCC grants (App Management, Files & Folders) persist
+    // across rebuilds instead of re-prompting every launch.
     //
-    // Cert is self-signed, so Gatekeeper still treats the build as
-    // untrusted — first launch per build still needs right-click → Open.
-    // Cleanup plan when Greg buys Developer ID: replace the identity name
-    // with the Developer ID identity and add notarization config.
+    // hardenedRuntime: false because macOS Library Validation requires both
+    // the loading process and loaded library to share an Apple Developer
+    // *Team ID*, not just a code-signing authority. Self-signed certs have
+    // `TeamIdentifier=not set`, so even when @electron/osx-sign re-signs
+    // both the main binary and the embedded Electron Framework with the
+    // same self-signed authority, Library Validation still rejects the
+    // pair as "different Team IDs" and dyld kills the app at launch.
+    // Disabling hardened runtime turns Library Validation off and the app
+    // launches; the cert's identity hash still drives stable TCC.
+    //
+    // Cert is self-signed → Gatekeeper still treats the build as
+    // untrusted → first launch per build still needs right-click → Open.
+    // Cleanup plan when Greg buys Developer ID: swap the identity name,
+    // re-enable hardened runtime, add notarization config.
     osxSign: {
       identity: 'GreyChrist Local Sign',
+      optionsForFile: () => ({ hardenedRuntime: false }),
     },
     extraResource: [
       './assets',
