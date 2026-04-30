@@ -5,6 +5,14 @@ All notable changes to GreyChrist are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.72] — 2026-04-29
+
+Fixup release: 0.3.71 still launch-crashed on macOS — re-signing both binaries with the same self-signed cert isn't sufficient when there's no Apple Developer Team ID. Disabling hardened runtime in the local build sidesteps Library Validation entirely. Installers remain self-signed (Gatekeeper untrusted, first launch needs right-click → Open).
+
+### Fixed
+
+- **Launch crash on macOS, take two** (`forge.config.ts`). 0.3.71 signed the main binary and embedded `Electron Framework` with the same self-signed `GreyChrist Local Sign` cert and assumed Library Validation would accept the pair. It didn't: macOS's policy requires both halves to share an Apple Developer *Team ID*, and self-signed certs have `TeamIdentifier=not set` — Library Validation read that as a mismatch and dyld killed the app at launch with the same "different Team IDs" error 0.3.69/0.3.70 hit. Adding `optionsForFile: () => ({ hardenedRuntime: false })` to the `osxSign` config disables hardened runtime (and therefore Library Validation) on every binary in the bundle. The app now launches and TCC grants still persist because the cert's identity hash is stable across rebuilds.
+
 ## [0.3.71] — 2026-04-29
 
 Fixup release: 0.3.69 and 0.3.70 launch-crashed on macOS due to a code-signing regression. This release switches from ad-hoc signing to a self-signed cert so Library Validation passes, and along the way fixes the original goal of persistent TCC grants for free (no Developer ID required yet). Installers are now **self-signed** (still untrusted by Gatekeeper — first launch per build still needs right-click → Open).
