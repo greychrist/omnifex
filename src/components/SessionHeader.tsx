@@ -6,6 +6,8 @@ import {
   ShieldAlert,
   Eraser,
   RefreshCw,
+  Copy,
+  Check,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type {
@@ -93,6 +95,10 @@ interface SessionHeaderProps {
   clearDisabled?: boolean;
   /** Tooltip explaining why restart is disabled, when it is. */
   clearReason?: string;
+  /** Current Claude session id (GUID). When present, surfaces in the
+   *  context popover with a copy button so it's easy to grab for support
+   *  threads, JSONL lookups, etc. Null/undefined hides the row. */
+  sessionId?: string | null;
 
   className?: string;
 }
@@ -130,6 +136,7 @@ export function SessionHeader({
   clearDisabled,
   clearReason,
   sessionStatus,
+  sessionId,
   className,
 }: SessionHeaderProps) {
   // Local open state for the two Popovers so they're click-driven and
@@ -137,6 +144,20 @@ export function SessionHeader({
   const [accountPopoverOpen, setAccountPopoverOpen] = React.useState(false);
   const [contextPopoverOpen, setContextPopoverOpen] = React.useState(false);
   const [usagePopoverOpen, setUsagePopoverOpen] = React.useState(false);
+
+  // Briefly swap the copy icon for a check after a successful clipboard
+  // write. Resets after 1.2s so the next copy click feels responsive.
+  const [sessionIdCopied, setSessionIdCopied] = React.useState(false);
+  const handleCopySessionId = React.useCallback(async () => {
+    if (!sessionId) return;
+    try {
+      await navigator.clipboard.writeText(sessionId);
+      setSessionIdCopied(true);
+      setTimeout(() => setSessionIdCopied(false), 1200);
+    } catch (err) {
+      console.error("Failed to copy session id:", err);
+    }
+  }, [sessionId]);
 
   // Live `/usage` data: drives both the rate-limit widgets (via the
   // rate-limits snapshot store, populated by the runner) and the popover
@@ -528,6 +549,31 @@ export function SessionHeader({
                     <div className="text-xs text-muted-foreground italic">
                       Category breakdown not yet available — waiting for the SDK
                       to report per-category usage.
+                    </div>
+                  )}
+
+                  {sessionId && (
+                    <div className="pt-1 mt-1 border-t border-border/50 flex items-center gap-2 text-[10px] text-muted-foreground">
+                      <span className="shrink-0">session</span>
+                      <span
+                        className="font-mono text-foreground/80 truncate"
+                        title={sessionId}
+                      >
+                        {sessionId}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleCopySessionId}
+                        className="shrink-0 p-1 rounded hover:bg-muted/60 text-muted-foreground hover:text-foreground transition-colors"
+                        title={sessionIdCopied ? "Copied!" : "Copy session id"}
+                        aria-label="Copy session id"
+                      >
+                        {sessionIdCopied ? (
+                          <Check className="w-3 h-3 text-green-500" />
+                        ) : (
+                          <Copy className="w-3 h-3" />
+                        )}
+                      </button>
                     </div>
                   )}
 

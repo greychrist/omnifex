@@ -182,6 +182,12 @@ export interface MessageKindConfig {
   // Optional widget name (e.g. ThinkingWidget, SystemWidget). Informational
   // only for v1; not editable.
   widget?: string;
+  // Per-kind icon overrides — when set, override the corresponding global
+  // `typography.icon.*` value for this kind only. When undefined, the kind
+  // inherits the global default.
+  iconSize?: IconSize;
+  iconBordered?: boolean;
+  iconBgOpacity?: number; // 0–100
 }
 
 export type MessageKindsById = Record<string, MessageKindConfig>;
@@ -446,6 +452,11 @@ export type FontFamily = "sans" | "serif" | "mono";
 export type FontSize = "xs" | "sm" | "base" | "lg";
 export type FontWeight = "normal" | "medium" | "semibold" | "bold";
 
+/** Card-level icon size (the colored icon on the left of a message card).
+ *  Independent from `FontSize` so the user can scale icons without changing
+ *  text, and vice versa. */
+export type IconSize = "xs" | "sm" | "base" | "lg" | "xl";
+
 export interface TypographyStyle {
   family: FontFamily;
   size: FontSize;
@@ -453,14 +464,28 @@ export interface TypographyStyle {
   italic: boolean;
 }
 
+export interface IconStyle {
+  size: IconSize;
+  /** When true, the card icon renders inside a bordered chip with the
+   *  chat background — the icon "punches out" of the card's tinted accent.
+   *  When false, the icon sits flat against the card background. */
+  bordered: boolean;
+  /** Opacity (0-100) of the chip's background when `bordered` is true.
+   *  100 = fully opaque chat-background fill, 0 = transparent (chip border
+   *  only). Ignored when `bordered` is false. */
+  bgOpacity: number;
+}
+
 export interface Typography {
   header: TypographyStyle;
   content: TypographyStyle;
+  icon: IconStyle;
 }
 
 export const DEFAULT_TYPOGRAPHY: Typography = {
   header: { family: "sans", size: "sm", weight: "semibold", italic: false },
   content: { family: "sans", size: "sm", weight: "normal", italic: false },
+  icon: { size: "base", bordered: true, bgOpacity: 100 },
 };
 
 // ─── hard filters ───────────────────────────────────────────────────────────
@@ -477,6 +502,18 @@ export const DEFAULT_HARD_FILTERS: HardFilters = {
   dropEmptyUser: true,
 };
 
+// ─── debug ──────────────────────────────────────────────────────────────────
+
+export interface DebugOptions {
+  /** When true, every message card renders its raw SDK type (and subtype if
+   *  present) on the bottom-left, so mis-classified cards are obvious. */
+  showCardKindLabel: boolean;
+}
+
+export const DEFAULT_DEBUG: DebugOptions = {
+  showCardKindLabel: false,
+};
+
 // ─── top-level config ───────────────────────────────────────────────────────
 
 export interface MessageRenderingConfig {
@@ -486,6 +523,7 @@ export interface MessageRenderingConfig {
   kinds: MessageKindsById;
   hardFilters: HardFilters;
   typography: Typography;
+  debug: DebugOptions;
 }
 
 export function createDefaultConfig(): MessageRenderingConfig {
@@ -498,6 +536,7 @@ export function createDefaultConfig(): MessageRenderingConfig {
     kinds,
     hardFilters: { ...DEFAULT_HARD_FILTERS },
     typography: structuredClone(DEFAULT_TYPOGRAPHY),
+    debug: { ...DEFAULT_DEBUG },
   };
 }
 
@@ -561,6 +600,24 @@ export function mergeConfig(saved: unknown): MessageRenderingConfig {
             : typeof override.hiddenInCompact === "boolean"
               ? override.hiddenInCompact
               : current.hiddenInCompact,
+          // Per-kind icon overrides. Each is optional — undefined means
+          // "inherit the global default from typography.icon". When the
+          // saved value is missing or invalid, we drop back to undefined
+          // (inherit) rather than falling through to a stale override.
+          iconSize:
+            typeof override.iconSize === "string" &&
+            (ICON_SIZE_VALUES as readonly string[]).includes(override.iconSize)
+              ? (override.iconSize as IconSize)
+              : undefined,
+          iconBordered:
+            typeof override.iconBordered === "boolean"
+              ? override.iconBordered
+              : undefined,
+          iconBgOpacity:
+            typeof override.iconBgOpacity === "number" &&
+            Number.isFinite(override.iconBgOpacity)
+              ? Math.max(0, Math.min(100, Math.round(override.iconBgOpacity)))
+              : undefined,
         };
       }
     }
@@ -581,6 +638,17 @@ export function mergeConfig(saved: unknown): MessageRenderingConfig {
     base.typography = {
       header: mergeTypographyStyle(t.header, base.typography.header),
       content: mergeTypographyStyle(t.content, base.typography.content),
+      icon: mergeIconStyle(t.icon, base.typography.icon),
+    };
+  }
+
+  if (isRecord(saved.debug)) {
+    const d = saved.debug as Record<string, unknown>;
+    base.debug = {
+      showCardKindLabel:
+        typeof d.showCardKindLabel === "boolean"
+          ? d.showCardKindLabel
+          : base.debug.showCardKindLabel,
     };
   }
 
@@ -590,6 +658,7 @@ export function mergeConfig(saved: unknown): MessageRenderingConfig {
 const FAMILY_VALUES: readonly FontFamily[] = ["sans", "serif", "mono"];
 const SIZE_VALUES: readonly FontSize[] = ["xs", "sm", "base", "lg"];
 const WEIGHT_VALUES: readonly FontWeight[] = ["normal", "medium", "semibold", "bold"];
+const ICON_SIZE_VALUES: readonly IconSize[] = ["xs", "sm", "base", "lg", "xl"];
 
 function mergeTypographyStyle(
   saved: unknown,
@@ -602,6 +671,20 @@ function mergeTypographyStyle(
     size: SIZE_VALUES.includes(s.size as FontSize) ? (s.size as FontSize) : base.size,
     weight: WEIGHT_VALUES.includes(s.weight as FontWeight) ? (s.weight as FontWeight) : base.weight,
     italic: typeof s.italic === "boolean" ? s.italic : base.italic,
+  };
+}
+
+function mergeIconStyle(saved: unknown, base: IconStyle): IconStyle {
+  if (!isRecord(saved)) return base;
+  const s = saved as Record<string, unknown>;
+  const opacity =
+    typeof s.bgOpacity === "number" && Number.isFinite(s.bgOpacity)
+      ? Math.max(0, Math.min(100, Math.round(s.bgOpacity)))
+      : base.bgOpacity;
+  return {
+    size: ICON_SIZE_VALUES.includes(s.size as IconSize) ? (s.size as IconSize) : base.size,
+    bordered: typeof s.bordered === "boolean" ? s.bordered : base.bordered,
+    bgOpacity: opacity,
   };
 }
 

@@ -16,7 +16,7 @@ import { cn } from "@/lib/utils";
 import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
 import { accentStyleFor, swatchFor } from "@/lib/accentStyle";
 import { headerLabelFor, iconNameFor } from "@/lib/kindPresentation";
-import { contentClassNames } from "@/lib/typographyClasses";
+import { contentClassNames, iconSizeClassName, iconWrapperClassName, iconWrapperStyle } from "@/lib/typographyClasses";
 import { IconRenderer } from "@/components/settings-panels/appearance/iconMap";
 import { KindHeader } from "@/components/KindHeader";
 import ReactMarkdown from "react-markdown";
@@ -240,19 +240,76 @@ function formatLocalTimestamp(iso: string): string | null {
   return `${m}/${day}/${yy} ${h}:${mins}:${secs} ${ampm}`;
 }
 
-/** Small bottom-right timestamp badge for a message card. Absent when the
- *  message has no receivedAt (e.g. reloaded from JSONL history). */
-const CardTimestamp: React.FC<{ receivedAt?: string }> = ({ receivedAt }) => {
-  if (!receivedAt) return null;
-  const formatted = formatLocalTimestamp(receivedAt);
-  if (!formatted) return null;
+/** Bottom row for a message card: timestamp on the right, optional debug
+ *  kind label + copy button on the left. The kind label renders the raw
+ *  SDK type (and subtype if present) — gated by the
+ *  `debug.showCardKindLabel` flag in Appearance settings. The copy button
+ *  writes the full message JSON to the clipboard so the user can inspect
+ *  the underlying SDK payload when a card looks mis-classified. Each half
+ *  is absent when the underlying message has no data to show. */
+const CardTimestamp: React.FC<{
+  receivedAt?: string;
+  message?: ClaudeStreamMessage;
+}> = ({ receivedAt, message }) => {
+  const { config } = useMessageRenderingConfig();
+  const [copied, setCopied] = useState(false);
+  const formatted = receivedAt ? formatLocalTimestamp(receivedAt) : null;
+
+  const showKind = config.debug.showCardKindLabel && message;
+  let kindLabel: string | null = null;
+  if (showKind) {
+    const t = (message as any).type ?? null;
+    const sub = (message as any).subtype ?? null;
+    if (t) kindLabel = sub ? `${t} · ${sub}` : String(t);
+  }
+
+  const handleCopy = async () => {
+    if (!message) return;
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(message, null, 2));
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1200);
+    } catch (err) {
+      console.error("Failed to copy message:", err);
+    }
+  };
+
+  if (!formatted && !kindLabel) return null;
+
   return (
-    <div
-      className="absolute bottom-1 right-2 text-[10px] text-muted-foreground/70 font-mono pointer-events-none select-none"
-      title={receivedAt}
-    >
-      {formatted}
-    </div>
+    <>
+      {kindLabel && (
+        <div
+          className="absolute bottom-1 left-2 flex items-center gap-1.5 px-1.5 py-0.5 rounded-md border bg-background text-[10px] text-foreground/80 font-mono select-none"
+          title="SDK message type · subtype"
+        >
+          <span className="pointer-events-none">{kindLabel}</span>
+          {message && (
+            <button
+              type="button"
+              onClick={handleCopy}
+              className="p-0.5 rounded hover:bg-muted/60 hover:text-foreground transition-colors"
+              title={copied ? "Copied!" : "Copy raw message JSON"}
+              aria-label="Copy raw message JSON"
+            >
+              {copied ? (
+                <Check className="w-3 h-3 text-green-500" />
+              ) : (
+                <Copy className="w-3 h-3" />
+              )}
+            </button>
+          )}
+        </div>
+      )}
+      {formatted && (
+        <div
+          className="absolute bottom-1 right-2 px-1.5 py-0.5 rounded-md border bg-background text-[10px] text-foreground/80 font-mono pointer-events-none select-none"
+          title={receivedAt}
+        >
+          {formatted}
+        </div>
+      )}
+    </>
   );
 };
 
@@ -425,12 +482,15 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
           className={cn("border w-[95%] relative", className)}
           style={assistantStyle}
         >
-          <CardContent className="p-4 pb-6">
+          <CardContent className="p-4 pb-9">
             <div className="flex items-start gap-3">
-              <div style={assistantSwatch ? { color: assistantSwatch } : undefined}>
+              <div
+                className={iconWrapperClassName(renderConfig, "assistant.text")}
+                style={iconWrapperStyle(renderConfig, assistantSwatch, "assistant.text")}
+              >
                 <IconRenderer
                   name={assistantIconName ?? "Bot"}
-                  className="h-5 w-5 mt-0.5"
+                  className={iconSizeClassName(renderConfig, "assistant.text")}
                 />
               </div>
               <div className="flex-1 space-y-2 min-w-0">
@@ -641,7 +701,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
               </div>
             </div>
           </CardContent>
-          <CardTimestamp receivedAt={message.receivedAt} />
+          <CardTimestamp receivedAt={message.receivedAt} message={message} />
         </Card>
         </div>
       );
@@ -779,18 +839,25 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
       const userIconName = userKindId ? iconNameFor(renderConfig, userKindId) : null;
       const showUserHeader = !!userKindId && !isToolResultOnly;
 
-      const cardIcon = isToolResultOnly
-        ? <Terminal className="h-5 w-5 mt-0.5" style={userSwatch ? { color: userSwatch } : undefined} />
-        : skillInjection
-        ? <Sparkles className="h-5 w-5 text-purple-500 mt-0.5" />
-        : (
-          <div style={userSwatch ? { color: userSwatch } : undefined}>
-            <IconRenderer
-              name={userIconName ?? (isSubagentPrompt ? "Bot" : "User")}
-              className={isSubagentPrompt ? "h-5 w-5 mt-0.5" : "h-6 w-6 mt-0.5"}
-            />
-          </div>
-        );
+      const userKindIdForIcon = userKindId ?? undefined;
+      const iconSize = iconSizeClassName(renderConfig, userKindIdForIcon);
+      const cardIcon = (
+        <div
+          className={iconWrapperClassName(renderConfig, userKindIdForIcon)}
+          style={iconWrapperStyle(renderConfig, userSwatch, userKindIdForIcon)}
+        >
+          {isToolResultOnly
+            ? <Terminal className={iconSize} />
+            : skillInjection
+            ? <Sparkles className={iconSize} />
+            : (
+              <IconRenderer
+                name={userIconName ?? (isSubagentPrompt ? "Bot" : "User")}
+                className={iconSize}
+              />
+            )}
+        </div>
+      );
 
       const showResend = !!onResend && !isToolResultOnly && !isSubagentPrompt && !skillInjection;
 
@@ -802,7 +869,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
           ) : (
             <CopyCardButton message={msg} />
           )}
-          <CardContent className="p-4 pb-6">
+          <CardContent className="p-4 pb-9">
             <div className="flex items-start gap-3">
               {cardIcon}
               <div className="flex-1 space-y-2 min-w-0">
@@ -1123,7 +1190,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
               </div>
             </div>
           </CardContent>
-          <CardTimestamp receivedAt={message.receivedAt} />
+          <CardTimestamp receivedAt={message.receivedAt} message={message} />
         </Card>
         </div>
       );
@@ -1143,10 +1210,13 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
 
       return (
         <Card className={cn("border relative", className)} style={resultStyle}>
-          <CardContent className="p-4 pb-6">
+          <CardContent className="p-4 pb-9">
             <div className="flex items-start gap-3">
-              <div style={resultSwatch ? { color: resultSwatch } : undefined}>
-                <IconRenderer name={resultIconName} className="h-5 w-5 mt-0.5" />
+              <div
+                className={iconWrapperClassName(renderConfig, resultKindId)}
+                style={iconWrapperStyle(renderConfig, resultSwatch, resultKindId)}
+              >
+                <IconRenderer name={resultIconName} className={iconSizeClassName(renderConfig, resultKindId)} />
               </div>
               <div className="flex-1 space-y-2">
                 <KindHeader kindId={resultKindId} fallbackLabel={resultFallbackLabel} />
@@ -1205,7 +1275,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
               </div>
             </div>
           </CardContent>
-          <CardTimestamp receivedAt={message.receivedAt} />
+          <CardTimestamp receivedAt={message.receivedAt} message={message} />
         </Card>
       );
     }
@@ -1219,12 +1289,14 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
     const errorSwatch = swatchFor(renderConfig, "result.error");
     return (
       <Card className={cn("border relative", className)} style={errorStyle}>
-        <CardContent className="p-4 pb-6">
+        <CardContent className="p-4 pb-9">
           <div className="flex items-start gap-3">
-            <AlertCircle
-              className="h-5 w-5 mt-0.5"
-              style={errorSwatch ? { color: errorSwatch } : undefined}
-            />
+            <div
+              className={iconWrapperClassName(renderConfig, "result.error")}
+              style={iconWrapperStyle(renderConfig, errorSwatch, "result.error")}
+            >
+              <AlertCircle className={iconSizeClassName(renderConfig, "result.error")} />
+            </div>
             <div className="flex-1">
               <p className="text-sm font-medium">Error rendering message</p>
               <p className="text-xs text-muted-foreground mt-1">
@@ -1233,7 +1305,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
             </div>
           </div>
         </CardContent>
-        <CardTimestamp receivedAt={message.receivedAt} />
+        <CardTimestamp receivedAt={message.receivedAt} message={message} />
       </Card>
     );
   }

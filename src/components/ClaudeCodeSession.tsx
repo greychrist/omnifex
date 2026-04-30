@@ -1450,6 +1450,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                   ? 'starting'
                   : 'ended'
           }
+          sessionId={claudeSessionId}
           className="mb-2"
         />
         {!sessionStarted && (

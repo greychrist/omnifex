@@ -39,6 +39,39 @@ export function previewTextForKind(kind: MessageKindConfig): string {
   return KIND_FIXTURES[kind.id] ?? "(no preview available)";
 }
 
+// Raw SDK type/subtype labels matching what the renderer's debug overlay
+// shows on each kind. Used in SamplePreview when the debug toggle is on so
+// the preview's bottom-left label matches what the live cards print.
+export const KIND_DEBUG_LABELS: Record<string, string> = {
+  "user.prompt": "user",
+  "user.image": "user",
+  "user.subagentPrompt": "user",
+  "user.sdkSystemBracket": "user",
+  "user.systemContext": "user",
+  "assistant.text": "assistant",
+  "assistant.thinking": "assistant",
+  "assistant.toolUse": "assistant",
+  "tool.result.generic": "user",
+  "tool.result.systemReminder": "user",
+  "result.success": "result · success",
+  "result.error": "result · error",
+  "system.init": "system · init",
+  "system.notification.error": "system · notification",
+  "system.notification.stop": "system · notification",
+  "system.notification.warn": "system · notification",
+  "system.notification.info": "system · notification",
+  "permission.request": "permission_request",
+  "summary.compaction": "summary",
+};
+
+export function debugLabelForKind(kind: MessageKindConfig): string {
+  return KIND_DEBUG_LABELS[kind.id] ?? kind.id;
+}
+
+// Fixed sample timestamp shown on every preview card, formatted to match
+// the live renderer's CardTimestamp output (M/D/YY H:MM:SS AM/PM).
+export const SAMPLE_TIMESTAMP = "4/29/26 12:34:56 PM";
+
 // ─── fake turn ──────────────────────────────────────────────────────────────
 // A short realistic sequence used in the compact/verbose turn preview. Kind
 // ids reference the same defaults.

@@ -222,6 +222,13 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
     }));
   };
 
+  const setDebugOption = (key: "showCardKindLabel", value: boolean) => {
+    mutate((prev) => ({
+      ...prev,
+      debug: { ...prev.debug, [key]: value },
+    }));
+  };
+
   return (
     <div className="space-y-6">
       {/* Master-detail: tree + editor */}
@@ -261,6 +268,7 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
             <KindEditor
               kind={selectedKind}
               palette={config.palette}
+              typography={config.typography}
               onChange={(patch) => updateKind(selectedKind.id, patch)}
               onResetKind={() => resetKind(selectedKind.id)}
             />
@@ -296,11 +304,6 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
         <div className="rounded-md border border-border bg-background p-4">
           <TurnPreview config={config} mode={previewMode} />
         </div>
-      </Card>
-
-      {/* Palette */}
-      <Card className="p-6">
-        <PaletteEditor palette={config.palette} onChange={updatePalette} />
       </Card>
 
       {/* Typography */}
@@ -372,6 +375,22 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
           />
         </div>
 
+        {/* Debug */}
+        <div className="space-y-3 pt-4 border-t border-border">
+          <div>
+            <Label>Debug</Label>
+            <p className="text-caption text-muted-foreground mt-1">
+              Diagnostic overlays for troubleshooting message rendering.
+            </p>
+          </div>
+          <FilterRow
+            label="Show message kind label on cards"
+            description="Render the raw SDK message type (e.g. result · success, assistant) on the bottom-left of each card. Useful when a card looks mis-classified."
+            checked={config.debug.showCardKindLabel}
+            onChange={(v) => setDebugOption("showCardKindLabel", v)}
+          />
+        </div>
+
         {/* Actions */}
         <div className="flex flex-wrap items-center gap-2 pt-4 border-t border-border">
           <Button type="button" variant="outline" size="sm" onClick={exportConfig}>
@@ -421,6 +440,13 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
             Reset to factory
           </Button>
         </div>
+      </Card>
+
+      {/* Palette — kept at the bottom because retinting the palette is a
+          rare bulk operation that's easier to find when looking for it
+          than it is to scroll past every time. */}
+      <Card className="p-6">
+        <PaletteEditor palette={config.palette} onChange={updatePalette} />
       </Card>
 
       <p className="text-caption text-muted-foreground text-center">
