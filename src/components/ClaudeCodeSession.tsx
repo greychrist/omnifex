@@ -52,7 +52,7 @@ import { GitWatchStatusIcon } from "./claude-code-session/GitWatchStatusIcon";
 import { resolveBranchColors } from '@/lib/branchColors';
 import type { BranchColor } from '@/lib/api';
 import { filterDisplayableMessages } from "@/lib/messageFilters";
-import { deriveSubagents } from "@/lib/subagentStreams";
+import { deriveSubagents, isWaitingForBackground } from "@/lib/subagentStreams";
 import { SubagentBar } from "./SubagentBar";
 import { exportAsJsonl, exportAsMarkdown } from "@/lib/sessionExporters";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -450,6 +450,15 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       ? all
       : all.filter((s) => !dismissedSubagents.has(s.toolUseId));
   }, [messages, dismissedSubagents]);
+  // Bridge the typing-bubble spinner across awaiting_background turns: while
+  // a background dispatch is still running (parent turn ended, but the
+  // wake-up hasn't arrived), keep the indicator alive until the next real
+  // result event lands. Computed from the un-dismissed subagent set so a
+  // user-dismissed background row stops driving the spinner.
+  const awaitingBackground = useMemo(
+    () => isWaitingForBackground(subagents),
+    [subagents],
+  );
   const dismissSubagent = useCallback((toolUseId: string) => {
     setDismissedSubagents((prev) => {
       const next = new Set(prev);
@@ -1261,8 +1270,10 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           {/* Loading indicator under the latest message — iMessage-style typing bubble.
               Rendered inside contentRef (and before messagesEndRef) so the ResizeObserver
               on contentRef catches its appearance/height changes, and scrollIntoView on
-              messagesEndRef scrolls past it instead of leaving it below the viewport. */}
-          {isLoading && (
+              messagesEndRef scrolls past it instead of leaving it below the viewport.
+              Also kept visible during awaiting_background so the visual "in-flight"
+              cue bridges the parent's turn-end result to the eventual completion. */}
+          {(isLoading || awaitingBackground) && (
             <motion.div
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}

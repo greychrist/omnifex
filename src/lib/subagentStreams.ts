@@ -201,3 +201,14 @@ export function deriveSubagents(messages: ClaudeStreamMessage[]): Subagent[] {
 export function clearCompleted(subs: Subagent[]): Subagent[] {
   return subs.filter((s) => s.status === 'running');
 }
+
+/**
+ * True when at least one background subagent (Agent/Task/Bash with
+ * run_in_background:true) is still in `running` status. Used by the session
+ * UI to keep the typing-bubble spinner visible after the parent's turn-end
+ * result event fires — visually bridging "Awaiting Background Work" until
+ * the next real "Execution Complete" lands.
+ */
+export function isWaitingForBackground(subs: Subagent[]): boolean {
+  return subs.some((s) => s.status === 'running' && s.isBackground === true);
+}

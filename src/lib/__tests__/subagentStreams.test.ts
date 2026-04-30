@@ -6,6 +6,7 @@ import {
   deriveSubagents,
   clearCompleted,
   isTaskLifecycleMarker,
+  isWaitingForBackground,
   colorIndexFor,
   SUBAGENT_PALETTE_SIZE,
 } from '../subagentStreams';
@@ -445,6 +446,37 @@ describe('clearCompleted', () => {
     const out = clearCompleted(subs);
     expect(out).toHaveLength(1);
     expect(out[0].toolUseId).toBe('a');
+  });
+});
+
+describe('isWaitingForBackground', () => {
+  it('returns true when any running subagent has isBackground=true', () => {
+    const subs = [
+      { status: 'running', isBackground: true } as any,
+      { status: 'completed', isBackground: true } as any,
+    ];
+    expect(isWaitingForBackground(subs)).toBe(true);
+  });
+
+  it('returns false when running subagents are foreground (no isBackground flag)', () => {
+    const subs = [
+      { status: 'running' } as any,
+      { status: 'running', isBackground: false } as any,
+    ];
+    expect(isWaitingForBackground(subs)).toBe(false);
+  });
+
+  it('returns false when all background subagents are terminal', () => {
+    const subs = [
+      { status: 'completed', isBackground: true } as any,
+      { status: 'failed', isBackground: true } as any,
+      { status: 'abandoned', isBackground: true } as any,
+    ];
+    expect(isWaitingForBackground(subs)).toBe(false);
+  });
+
+  it('returns false on empty input', () => {
+    expect(isWaitingForBackground([])).toBe(false);
   });
 });
 
