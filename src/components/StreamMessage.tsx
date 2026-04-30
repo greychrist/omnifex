@@ -848,7 +848,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
           style={iconWrapperStyle(renderConfig, userSwatch, userKindIdForIcon)}
         >
           {isToolResultOnly
-            ? <Terminal className={iconSize} />
+            ? <IconRenderer name={userIconName ?? "Terminal"} className={iconSize} />
             : skillInjection
             ? <Sparkles className={iconSize} />
             : (
@@ -1022,7 +1022,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                       renderedSomething = true;
                       return (
                         <div key={idx} className="space-y-2">
-                          <KindHeader kindId="tool.result.generic" fallbackLabel="Tool Result" showIcon />
+                          <KindHeader kindId="tool.result.generic" fallbackLabel="Tool Result" />
 
                           {beforeReminder && (
                             <div className="ml-6 p-2 bg-background rounded-md border">
@@ -1054,7 +1054,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                       renderedSomething = true;
                       return (
                         <div key={idx} className="space-y-2">
-                          <KindHeader kindId="tool.result.generic" label="Edit Result" showIcon />
+                          <KindHeader kindId="tool.result.generic" label="Edit Result" />
                           <EditResultWidget content={contentText} />
                         </div>
                       );
@@ -1069,7 +1069,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                       renderedSomething = true;
                       return (
                         <div key={idx} className="space-y-2">
-                          <KindHeader kindId="tool.result.generic" label="MultiEdit Result" showIcon />
+                          <KindHeader kindId="tool.result.generic" label="MultiEdit Result" />
                           <MultiEditResultWidget content={contentText} />
                         </div>
                       );
@@ -1116,7 +1116,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                       renderedSomething = true;
                       return (
                         <div key={idx} className="space-y-2">
-                          <KindHeader kindId="tool.result.generic" label="Directory Contents" showIcon />
+                          <KindHeader kindId="tool.result.generic" label="Directory Contents" />
                           <LSResultWidget content={contentText} />
                         </div>
                       );
@@ -1152,7 +1152,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                       renderedSomething = true;
                       return (
                         <div key={idx} className="space-y-2">
-                          <KindHeader kindId="tool.result.generic" label="Read Result" showIcon />
+                          <KindHeader kindId="tool.result.generic" label="Read Result" />
                           <ReadResultWidget content={contentText} filePath={filePath} />
                         </div>
                       );
@@ -1163,7 +1163,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                       renderedSomething = true;
                       return (
                         <div key={idx} className="space-y-2">
-                          <KindHeader kindId="tool.result.generic" fallbackLabel="Tool Result" showIcon />
+                          <KindHeader kindId="tool.result.generic" fallbackLabel="Tool Result" />
                           <div className="ml-6 p-3 bg-muted/50 rounded-md border text-sm text-muted-foreground italic">
                             Tool did not return any output
                           </div>
@@ -1176,7 +1176,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                       <div key={idx} className="space-y-2">
                         {content.is_error
                           ? <KindHeader kindId="result.error" label="Tool Error" fallbackIcon="AlertCircle" showIcon />
-                          : <KindHeader kindId="tool.result.generic" fallbackLabel="Tool Result" showIcon />}
+                          : <KindHeader kindId="tool.result.generic" fallbackLabel="Tool Result" />}
                         <div className="ml-6 p-2 bg-background rounded-md border">
                           <pre className="text-xs font-mono overflow-x-auto whitespace-pre-wrap">
                             {contentText}
