@@ -79,6 +79,7 @@ import {
   Zap,
   Flame,
   Smile,
+  Hourglass,
 } from "lucide-react";
 import type { IconName } from "@/lib/messageRenderingConfig";
 
@@ -154,6 +155,7 @@ const LUCIDE_MAP: Record<string, React.ComponentType<{ className?: string }>> = 
   Zap,
   Flame,
   Smile,
+  Hourglass,
 };
 
 export const IconRenderer: React.FC<{ name: IconName; className?: string }> = ({

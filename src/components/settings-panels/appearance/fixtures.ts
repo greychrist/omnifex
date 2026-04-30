@@ -23,6 +23,8 @@ export const KIND_FIXTURES: Record<string, string> = {
     "Successfully updated auth middleware and migration helper.\n\nTokens refreshed cleanly for the three sample sessions.",
   "result.error":
     "Failed to apply edit: file was modified since read. Please re-read and retry.",
+  "result.awaiting_background":
+    "Will be notified when verify completes.",
   "system.init":
     "Session ready. Model: claude-opus-4-7. Working dir: /Users/greg/Repos/greychrist. 14 tools loaded (6 MCP).",
   "system.notification.error": "API rate limit reached — retrying in 30s",
@@ -55,6 +57,7 @@ export const KIND_DEBUG_LABELS: Record<string, string> = {
   "tool.result.systemReminder": "user",
   "result.success": "result · success",
   "result.error": "result · error",
+  "result.awaiting_background": "result · success (bg)",
   "system.init": "system · init",
   "system.notification.error": "system · notification",
   "system.notification.stop": "system · notification",

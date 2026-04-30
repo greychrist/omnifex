@@ -10,6 +10,7 @@ import {
   RotateCcw,
 } from "lucide-react";
 import { detectSkillInjection } from "@/lib/skillDetection";
+import { classifyStandaloneKind } from "@/lib/messageKind";
 import { formatDurationMs } from "@/lib/duration";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -1200,13 +1201,26 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
 
     // Result message - render with markdown
     if (message.type === "result") {
-      const isError = message.is_error || message.subtype?.includes("error");
-      const resultKindId = isError ? "result.error" : "result.success";
+      const classifiedKind = classifyStandaloneKind(message, streamMessages);
+      const resultKindId =
+        classifiedKind === "result.error"
+          || classifiedKind === "result.awaiting_background"
+          || classifiedKind === "result.success"
+          ? classifiedKind
+          : (message.is_error || message.subtype?.includes("error")
+              ? "result.error"
+              : "result.success");
+      const isError = resultKindId === "result.error";
+      const isAwaiting = resultKindId === "result.awaiting_background";
       const resultStyle = accentStyleFor(renderConfig, resultKindId);
       const resultSwatch = swatchFor(renderConfig, resultKindId);
       const resultIconName = iconNameFor(renderConfig, resultKindId)
-        ?? (isError ? "AlertCircle" : "CheckCircle2");
-      const resultFallbackLabel = isError ? "Execution Failed" : "Execution Complete";
+        ?? (isError ? "AlertCircle" : isAwaiting ? "Hourglass" : "CheckCircle2");
+      const resultFallbackLabel = isError
+        ? "Execution Failed"
+        : isAwaiting
+          ? "Awaiting Background Work"
+          : "Execution Complete";
 
       return (
         <Card className={cn("border relative", className)} style={resultStyle}>

@@ -152,6 +152,7 @@ export const ALLOWED_ICONS = [
   "Zap",
   "Flame",
   "Smile",
+  "Hourglass",
   // Unicode fallbacks
   "ℹ",
   "✗",
@@ -344,6 +345,19 @@ export const DEFAULT_KINDS: MessageKindConfig[] = [
     icon: "AlertCircle",
     headerLabel: "Execution Failed",
     accentColor: "red",
+    alignment: "full",
+    hiddenInCompact: false,
+    compactBoundaryLocked: true,
+  },
+  {
+    id: "result.awaiting_background",
+    label: "Awaiting background work",
+    description:
+      "Turn ended while a background subagent dispatch is still running. Parent will resume on wake-up.",
+    origin: "system",
+    icon: "Hourglass",
+    headerLabel: "Awaiting Background Work",
+    accentColor: "amber",
     alignment: "full",
     hiddenInCompact: false,
     compactBoundaryLocked: true,

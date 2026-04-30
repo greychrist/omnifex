@@ -1,5 +1,6 @@
 import type { ClaudeStreamMessage } from '@/types/claudeStream';
 import type { MessageRenderingConfig } from './messageRenderingConfig';
+import { deriveSubagents } from './subagentStreams';
 
 /**
  * Classify a stream message as a single "standalone" rendering kind — i.e. a
@@ -15,13 +16,24 @@ import type { MessageRenderingConfig } from './messageRenderingConfig';
  */
 export function classifyStandaloneKind(
   msg: ClaudeStreamMessage,
-  _allMessages: ClaudeStreamMessage[],
+  allMessages: ClaudeStreamMessage[],
 ): string | null {
   if (msg.type === 'permission_request') return 'permission.request';
 
   if (msg.type === 'result') {
     const sub = (msg as any).subtype;
-    return sub && /error/i.test(String(sub)) ? 'result.error' : 'result.success';
+    if (sub && /error/i.test(String(sub))) return 'result.error';
+    // Sibling of result.success: when this turn ends with a still-running
+    // subagent dispatch, the parent is genuinely "idle, awaiting wake-up"
+    // rather than fully complete. The SDK does not distinguish these in the
+    // result blob, so we look at message history before this result for any
+    // subagent that has not yet returned.
+    const idx = allMessages.indexOf(msg);
+    const prior = idx >= 0 ? allMessages.slice(0, idx) : allMessages;
+    if (deriveSubagents(prior).some((s) => s.status === 'running')) {
+      return 'result.awaiting_background';
+    }
+    return 'result.success';
   }
 
   // Compaction summaries arrive as a synthetic "summary" type with a leafUuid.

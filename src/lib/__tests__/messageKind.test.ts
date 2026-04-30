@@ -18,8 +18,31 @@ const permReq = (): ClaudeStreamMessage =>
 const resultOk = (): ClaudeStreamMessage =>
   ({ type: 'result', subtype: 'success', result: 'hi' } as unknown as ClaudeStreamMessage);
 
+const resultErr = (): ClaudeStreamMessage =>
+  ({ type: 'result', subtype: 'error', result: 'boom', is_error: true } as unknown as ClaudeStreamMessage);
+
 const summary = (): ClaudeStreamMessage =>
   ({ type: 'summary', leafUuid: 'leaf-1', summary: 'sum' } as unknown as ClaudeStreamMessage);
+
+const agentToolUse = (id: string, name: 'Agent' | 'Task' = 'Agent'): ClaudeStreamMessage =>
+  ({
+    type: 'assistant',
+    message: {
+      content: [
+        { type: 'tool_use', id, name, input: { description: 'verify' } },
+      ],
+    },
+  } as unknown as ClaudeStreamMessage);
+
+const toolResult = (toolUseId: string, isError = false): ClaudeStreamMessage =>
+  ({
+    type: 'user',
+    message: {
+      content: [
+        { type: 'tool_result', tool_use_id: toolUseId, is_error: isError, content: 'ok' },
+      ],
+    },
+  } as unknown as ClaudeStreamMessage);
 
 describe('classifyStandaloneKind', () => {
   it('tags system init', () => {
@@ -39,6 +62,48 @@ describe('classifyStandaloneKind', () => {
     expect(classifyStandaloneKind(permReq(), [])).toBe('permission.request');
     expect(classifyStandaloneKind(resultOk(), [])).toBe('result.success');
     expect(classifyStandaloneKind(summary(), [])).toBe('summary.compaction');
+  });
+
+  describe('result.awaiting_background (sibling of result.success)', () => {
+    it('returns result.awaiting_background when a turn ends with a still-running Agent dispatch', () => {
+      const r = resultOk();
+      const msgs = [agentToolUse('toolu_1', 'Agent'), r];
+      expect(classifyStandaloneKind(r, msgs)).toBe('result.awaiting_background');
+    });
+
+    it('returns result.awaiting_background for a Task tool_use with no tool_result yet', () => {
+      const r = resultOk();
+      const msgs = [agentToolUse('toolu_2', 'Task'), r];
+      expect(classifyStandaloneKind(r, msgs)).toBe('result.awaiting_background');
+    });
+
+    it('returns plain result.success when the subagent already returned a tool_result', () => {
+      const r = resultOk();
+      const msgs = [agentToolUse('toolu_3', 'Agent'), toolResult('toolu_3', false), r];
+      expect(classifyStandaloneKind(r, msgs)).toBe('result.success');
+    });
+
+    it('still returns result.error when the turn errored, even with running subagent', () => {
+      const r = resultErr();
+      const msgs = [agentToolUse('toolu_4', 'Agent'), r];
+      expect(classifyStandaloneKind(r, msgs)).toBe('result.error');
+    });
+
+    it('returns plain result.success when no Agent/Task dispatch happened in the turn', () => {
+      const r = resultOk();
+      const msgs = [r];
+      expect(classifyStandaloneKind(r, msgs)).toBe('result.success');
+    });
+
+    it('only counts subagents dispatched before this result, not after', () => {
+      // Two result events: first should be a clean success (no prior dispatch);
+      // second should be awaiting (Agent dispatched between them).
+      const r1 = resultOk();
+      const r2 = resultOk();
+      const msgs = [r1, agentToolUse('toolu_5', 'Agent'), r2];
+      expect(classifyStandaloneKind(r1, msgs)).toBe('result.success');
+      expect(classifyStandaloneKind(r2, msgs)).toBe('result.awaiting_background');
+    });
   });
 
   it('returns null for messages whose rendering is per-content-block', () => {
