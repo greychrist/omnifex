@@ -249,6 +249,93 @@ describe('deriveSubagents', () => {
     expect(subs[0].status).toBe('completed');
   });
 
+  describe('Bash run_in_background (generalized background detection)', () => {
+    function bashBackground(id: string, description = 'Build something'): ClaudeStreamMessage {
+      return {
+        type: 'assistant',
+        message: {
+          content: [
+            {
+              type: 'tool_use',
+              id,
+              name: 'Bash',
+              input: {
+                command: 'docker build ...',
+                description,
+                run_in_background: true,
+              },
+            },
+          ],
+        },
+      } as unknown as ClaudeStreamMessage;
+    }
+
+    function bashForeground(id: string): ClaudeStreamMessage {
+      return {
+        type: 'assistant',
+        message: {
+          content: [
+            {
+              type: 'tool_use',
+              id,
+              name: 'Bash',
+              input: { command: 'ls', description: 'list files' },
+            },
+          ],
+        },
+      } as unknown as ClaudeStreamMessage;
+    }
+
+    it('registers a running subagent from a Bash run_in_background tool_use alone (before task_started fires)', () => {
+      const subs = deriveSubagents([bashBackground(TOOL_USE_ID, 'Build DMG')]);
+      expect(subs).toHaveLength(1);
+      expect(subs[0].toolUseId).toBe(TOOL_USE_ID);
+      expect(subs[0].status).toBe('running');
+      expect(subs[0].isBackground).toBe(true);
+      expect(subs[0].description).toBe('Build DMG');
+    });
+
+    it('foreground Bash tool_use does not register a subagent', () => {
+      const subs = deriveSubagents([bashForeground(TOOL_USE_ID)]);
+      expect(subs).toHaveLength(0);
+    });
+
+    it('Bash run_in_background stays running on the synchronous ACK tool_result', () => {
+      const subs = deriveSubagents([
+        bashBackground(TOOL_USE_ID, 'Build DMG'),
+        toolResult(TOOL_USE_ID, false, 'Async agent launched successfully. agentId: x'),
+      ]);
+      expect(subs[0].status).toBe('running');
+    });
+
+    it('Bash run_in_background flips to completed via task_notification', () => {
+      const subs = deriveSubagents([
+        bashBackground(TOOL_USE_ID, 'Build DMG'),
+        toolResult(TOOL_USE_ID, false, 'Async agent launched'),
+        taskNotification(TOOL_USE_ID, 'completed', 'build done'),
+      ]);
+      expect(subs[0].status).toBe('completed');
+    });
+
+    it('Bash run_in_background gets marked abandoned by orphan detection (parent moved on without notification)', () => {
+      const subs = deriveSubagents([
+        bashBackground(TOOL_USE_ID, 'Build DMG'),
+        toolResult(TOOL_USE_ID, false, 'Async agent launched'),
+        { type: 'result', subtype: 'success', result: 'awaiting' } as any,
+        { type: 'user', message: { content: [{ type: 'text', text: 'next' }] } } as any,
+      ]);
+      expect(subs[0].status).toBe('abandoned');
+    });
+
+    it('Bash run_in_background with is_error=true on the ACK still flips to failed', () => {
+      const subs = deriveSubagents([
+        bashBackground(TOOL_USE_ID, 'Build DMG'),
+        toolResult(TOOL_USE_ID, true, 'spawn failed'),
+      ]);
+      expect(subs[0].status).toBe('failed');
+    });
+  });
+
   it('background dispatch with is_error=true on the ACK still flips to failed (dispatch itself errored)', () => {
     const subs = deriveSubagents([
       agentToolUse(TOOL_USE_ID, 'Audit', 'general-purpose', true),

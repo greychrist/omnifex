@@ -107,6 +107,34 @@ describe('classifyStandaloneKind', () => {
       expect(classifyStandaloneKind(r, msgs)).toBe('result.success');
     });
 
+    it('Bash run_in_background dispatch + ACK + result.success classifies as awaiting (the npm run make case)', () => {
+      // The realistic shape from /greychrist-release: I dispatch `Bash` with
+      // run_in_background:true to build the DMG, the SDK fires the immediate
+      // ACK tool_result, and my parent turn ends. The result event must
+      // classify as awaiting_background even though the tool name is Bash,
+      // not Agent/Task — Greg's "I always see one when running release" memory.
+      const r = resultOk();
+      const bashBg: ClaudeStreamMessage = {
+        type: 'assistant',
+        message: {
+          content: [
+            {
+              type: 'tool_use',
+              id: 'toolu_bash_bg',
+              name: 'Bash',
+              input: {
+                command: 'npm run make',
+                description: 'Build DMG + ZIP',
+                run_in_background: true,
+              },
+            },
+          ],
+        },
+      } as unknown as ClaudeStreamMessage;
+      const msgs = [bashBg, toolResult('toolu_bash_bg', false), r];
+      expect(classifyStandaloneKind(r, msgs)).toBe('result.awaiting_background');
+    });
+
     it('background dispatch with synchronous ACK tool_result still classifies as awaiting', () => {
       // The realistic shape: SDK emits an immediate ACK tool_result for a
       // run_in_background:true dispatch ("Async agent launched..."). Without

@@ -79,16 +79,27 @@ export function deriveSubagents(messages: ClaudeStreamMessage[]): Subagent[] {
   for (let i = 0; i < messages.length; i++) {
     const m = messages[i] as any;
 
-    // 1. The parent Agent/Task tool_use block (surfaces a subagent as soon as it's dispatched)
+    // 1. Parent tool_use block — surfaces a subagent as soon as it's
+    //    dispatched. Two ways a tool_use becomes a subagent:
+    //    a) name is Agent or Task (the explicit subagent-dispatch tools)
+    //    b) any tool_use with input.run_in_background === true (e.g. Bash with
+    //       a long-running build) — the SDK treats those as background tasks
+    //       too and fires the same task_started/task_notification lifecycle.
+    //    Without (b), Bash backgrounds wouldn't show up in the bar until the
+    //    SDK got around to firing task_started, and the synchronous ACK
+    //    tool_result would have no isBackground flag to gate against.
     if (m?.type === 'assistant' && Array.isArray(m.message?.content)) {
       for (const block of m.message.content) {
-        if (block?.type === 'tool_use' && (block.name === 'Agent' || block.name === 'Task') && block.id) {
-          const sub = ensureSubagent(byToolUseId, block.id, block.input?.description ?? '');
-          sub.agentType = sub.agentType ?? block.input?.subagent_type;
-          if (!sub.description) sub.description = block.input?.description ?? '';
-          if (block.input?.run_in_background === true) sub.isBackground = true;
-          if (!dispatchIndex.has(block.id)) dispatchIndex.set(block.id, i);
-        }
+        if (block?.type !== 'tool_use' || !block.id) continue;
+        const isAgentTool = block.name === 'Agent' || block.name === 'Task';
+        const isBackgroundDispatch = block.input?.run_in_background === true;
+        if (!isAgentTool && !isBackgroundDispatch) continue;
+
+        const sub = ensureSubagent(byToolUseId, block.id, block.input?.description ?? '');
+        if (!sub.description) sub.description = block.input?.description ?? '';
+        if (isAgentTool) sub.agentType = sub.agentType ?? block.input?.subagent_type;
+        if (isBackgroundDispatch) sub.isBackground = true;
+        if (!dispatchIndex.has(block.id)) dispatchIndex.set(block.id, i);
       }
       continue;
     }
