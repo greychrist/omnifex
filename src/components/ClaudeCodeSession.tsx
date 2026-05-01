@@ -53,6 +53,7 @@ import type { BranchColor } from '@/lib/api';
 import { filterDisplayableMessages } from "@/lib/messageFilters";
 import { deriveSubagents, isWaitingForBackground } from "@/lib/subagentStreams";
 import { SubagentBar } from "./SubagentBar";
+import { TodoBar } from "./TodoBar";
 import { exportAsJsonl, exportAsMarkdown } from "@/lib/sessionExporters";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useSessionLifecycle } from "@/hooks/useSessionLifecycle";
@@ -1701,6 +1702,10 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                 }}
               />
             )}
+            <TodoBar
+              messages={messages}
+              isLive={isSessionActive || isSessionStarting}
+            />
             <SubagentBar
               subagents={subagents}
               onDismiss={dismissSubagent}
