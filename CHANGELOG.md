@@ -5,13 +5,19 @@ All notable changes to GreyChrist are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.3.79] — 2026-05-01
+## [0.3.80] — 2026-05-01
 
-Session-header back button collapsed from a labeled "Back to Project" pill to a 48×48 icon-only button, freeing horizontal space in the toolbar. The label moved to a `TooltipSimple` ("Back to Project page") on hover, with a matching `aria-label` for screen readers. Outline now renders via the same border-0 + 1px outset shadow used by the rate-limit refresh button (and now stacks a small drop shadow underneath for a touch of depth). Installers remain **unsigned** — first launch needs right-click → Open.
+Session-header back button collapsed from a labeled "Back to Project" pill to a 48×48 icon-only button, freeing horizontal space in the toolbar. The label moved to a `TooltipSimple` ("Back to Project page") on hover, with a matching `aria-label` for screen readers. Outline now renders via the same border-0 + 1px outset shadow used by the rate-limit refresh button (and now stacks a small drop shadow underneath for a touch of depth). Also re-anchors the session context-window popover to its left edge so it no longer runs off the left of the window after the back-button collapse. Installers remain **unsigned** — first launch needs right-click → Open.
+
+(The `v0.3.79` tag was cut and pushed before the popover fix landed, so it has no GitHub release attached — `v0.3.80` is the actual ship.)
 
 ### Changed
 
 - **Session-header back button** (`src/components/ClaudeCodeSession.tsx`). Replaced the labeled `Back to Project` button with a 48×48 icon-only button (`ArrowLeft` at `h-6 w-6`), wrapped in `TooltipSimple` content `Back to Project page`. Visual treatment is `border-0` + a stacked `box-shadow` (1px ring at `color-mix(... muted-foreground 45%)` + a subtle `0 3px 8px rgb(0 0 0 / 0.2)` drop shadow) for a flatter look that still reads as a clickable card.
+
+### Fixed
+
+- **Session context popover anchor** (`src/components/SessionCard.tsx`). Switched `<Popover align>` from `end` to `start` for the context-window pie-chart popover. With `SessionCard` now sitting near the left edge of the top toolbar (right after the icon-only back button), `align="end"` extended the popover leftward off the window. `align="start"` extends it rightward from the trigger so it stays on-screen.
 
 ## [0.3.78] — 2026-05-01
 
