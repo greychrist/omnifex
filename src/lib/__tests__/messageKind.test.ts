@@ -171,5 +171,69 @@ describe('classifyStandaloneKind', () => {
     expect(classifyStandaloneKind(asst, [])).toBeNull();
     expect(classifyStandaloneKind(userText('hello'), [])).toBeNull();
   });
+
+  describe('system.unknown', () => {
+    const sys = (subtype: string): ClaudeStreamMessage =>
+      ({ type: 'system', subtype } as unknown as ClaudeStreamMessage);
+
+    it('returns system.unknown for an unrecognized system subtype', () => {
+      expect(classifyStandaloneKind(sys('compact_boundary'), [])).toBe('system.unknown');
+      expect(classifyStandaloneKind(sys('whatever'), [])).toBe('system.unknown');
+    });
+
+    it('does not classify init / notification / known hook subtypes as unknown', () => {
+      expect(classifyStandaloneKind(sys('init'), [])).toBe('system.init');
+      expect(classifyStandaloneKind(sys('hook_started'), [])).toBe('system.hook.started');
+      expect(classifyStandaloneKind(sys('hook_response'), [])).toBe('system.hook.response');
+      expect(classifyStandaloneKind(sys('user_prompt_submit'), [])).toBe('system.userPromptSubmit');
+    });
+  });
+
+  describe('user.skillInjection / user.command / user.commandOutput', () => {
+    const skillToolUse = (id: string, skill: string): ClaudeStreamMessage =>
+      ({
+        type: 'assistant',
+        message: { content: [{ type: 'tool_use', id, name: 'Skill', input: { skill } }] },
+      } as unknown as ClaudeStreamMessage);
+
+    const skillToolResult = (toolUseId: string): ClaudeStreamMessage =>
+      ({
+        type: 'user',
+        message: { content: [{ type: 'tool_result', tool_use_id: toolUseId, content: 'skill body' }] },
+      } as unknown as ClaudeStreamMessage);
+
+    it('classifies a user message that follows a Skill tool_result as user.skillInjection', () => {
+      const tu = skillToolUse('tu_skill', 'merge-to-main');
+      const tr = skillToolResult('tu_skill');
+      const injected = userText('# Merge to Main\n...');
+      const msgs = [tu, tr, injected];
+      expect(classifyStandaloneKind(injected, msgs)).toBe('user.skillInjection');
+    });
+
+    it('does not classify as skillInjection when the preceding tool_use was not Skill', () => {
+      const tu: ClaudeStreamMessage = {
+        type: 'assistant',
+        message: { content: [{ type: 'tool_use', id: 'tu_read', name: 'Read', input: {} }] },
+      } as unknown as ClaudeStreamMessage;
+      const tr = skillToolResult('tu_read');
+      const userMsg = userText('plain user message');
+      const msgs = [tu, tr, userMsg];
+      expect(classifyStandaloneKind(userMsg, msgs)).toBeNull();
+    });
+
+    it('classifies a user message wrapped in <command-name>...</command-name> as user.command', () => {
+      const cmd = userText('<command-name>/clear</command-name><command-message>Clear context</command-message><command-args></command-args>');
+      expect(classifyStandaloneKind(cmd, [cmd])).toBe('user.command');
+    });
+
+    it('classifies a user message wrapped in <local-command-stdout>...</local-command-stdout> as user.commandOutput', () => {
+      const out = userText('<local-command-stdout>some output</local-command-stdout>');
+      expect(classifyStandaloneKind(out, [out])).toBe('user.commandOutput');
+    });
+
+    it('returns null for a plain user prompt that does not match any pattern', () => {
+      expect(classifyStandaloneKind(userText('regular prompt'), [])).toBeNull();
+    });
+  });
 });
 

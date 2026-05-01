@@ -1,5 +1,41 @@
 import type { ClaudeStreamMessage } from '@/types/claudeStream';
 import type { MessageRenderingConfig } from './messageRenderingConfig';
+import { isSubagentDispatch } from './subagentDispatch';
+
+/**
+ * Tool names with a specialized widget in `StreamMessage.tsx`. Matched
+ * case-insensitively (the renderer lowercases the incoming name before
+ * picking a widget). Subagent dispatch (Task / Agent) and any tool whose
+ * name starts with `mcp__` are also "known" but handled separately.
+ *
+ * Keep this list in sync with the `renderToolWidget` switch in
+ * `StreamMessage.tsx`. Anything not listed here lands in the unknown
+ * `Terminal` + JSON dump fallback and classifies as
+ * `assistant.toolUse.unknown`.
+ */
+const KNOWN_TOOL_NAMES_LOWER: ReadonlySet<string> = new Set([
+  'edit',
+  'multiedit',
+  'todowrite',
+  'todoread',
+  'ls',
+  'read',
+  'glob',
+  'bash',
+  'write',
+  'grep',
+  'websearch',
+  'webfetch',
+]);
+
+function isKnownToolName(name: unknown): boolean {
+  if (typeof name !== 'string') return false;
+  const lower = name.toLowerCase();
+  if (KNOWN_TOOL_NAMES_LOWER.has(lower)) return true;
+  if (isSubagentDispatch(name)) return true;
+  if (lower.startsWith('mcp__')) return true;
+  return false;
+}
 
 /**
  * Classify a single content block (text, tool_use, tool_result, thinking,
@@ -29,7 +65,9 @@ export function classifyBlockKind(
       const text = typeof block.thinking === 'string' ? block.thinking.trim() : '';
       return text.length > 0 ? 'assistant.thinking' : null;
     }
-    if (block.type === 'tool_use') return 'assistant.toolUse';
+    if (block.type === 'tool_use') {
+      return isKnownToolName(block.name) ? 'assistant.toolUse' : 'assistant.toolUse.unknown';
+    }
     return null;
   }
 

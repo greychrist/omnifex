@@ -30,8 +30,32 @@ describe('classifyBlockKind', () => {
     expect(classifyBlockKind(parent.message!.content![0], parent)).toBeNull();
   });
 
-  it('classifies assistant tool_use blocks', () => {
+  it('classifies assistant tool_use blocks for known tool names', () => {
     const parent = assistant([{ type: 'tool_use', name: 'Read', input: { file_path: 'a.ts' } }]);
+    expect(classifyBlockKind(parent.message!.content![0], parent)).toBe('assistant.toolUse');
+  });
+
+  it('classifies assistant tool_use blocks for an unknown tool name as assistant.toolUse.unknown', () => {
+    const parent = assistant([{ type: 'tool_use', name: 'SomeRandomTool', input: {} }]);
+    expect(classifyBlockKind(parent.message!.content![0], parent)).toBe('assistant.toolUse.unknown');
+  });
+
+  it('classifies tool_use as known when the name is case-mismatched with the registry', () => {
+    // The renderer matches case-insensitively (e.g. "BASH" still maps to BashWidget),
+    // so the classifier should agree.
+    const parent = assistant([{ type: 'tool_use', name: 'BASH', input: { command: 'ls' } }]);
+    expect(classifyBlockKind(parent.message!.content![0], parent)).toBe('assistant.toolUse');
+  });
+
+  it('classifies subagent dispatch tool_use (Task / Agent) as known', () => {
+    const parent1 = assistant([{ type: 'tool_use', name: 'Task', input: { description: 'x' } }]);
+    expect(classifyBlockKind(parent1.message!.content![0], parent1)).toBe('assistant.toolUse');
+    const parent2 = assistant([{ type: 'tool_use', name: 'Agent', input: { description: 'x' } }]);
+    expect(classifyBlockKind(parent2.message!.content![0], parent2)).toBe('assistant.toolUse');
+  });
+
+  it('classifies any mcp__* tool_use as known', () => {
+    const parent = assistant([{ type: 'tool_use', name: 'mcp__foo__bar', input: {} }]);
     expect(classifyBlockKind(parent.message!.content![0], parent)).toBe('assistant.toolUse');
   });
 

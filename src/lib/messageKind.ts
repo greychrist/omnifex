@@ -1,6 +1,7 @@
 import type { ClaudeStreamMessage } from '@/types/claudeStream';
 import { deriveSubagents } from './subagentStreams';
 import { isSubagentPrompt } from './subagentDispatch';
+import { detectSkillInjection } from './skillDetection';
 
 /**
  * Classify a stream message as a single "standalone" rendering kind — i.e. a
@@ -53,6 +54,9 @@ export function classifyStandaloneKind(
     if (msg.subtype === 'hook_started') return 'system.hook.started';
     if (msg.subtype === 'hook_response') return 'system.hook.response';
     if (msg.subtype === 'user_prompt_submit') return 'system.userPromptSubmit';
+    // Fallback: any other system subtype renders as the unknown gray inline
+    // strip in StreamMessage and is now configurable as `system.unknown`.
+    return 'system.unknown';
   }
 
   // Subagent prompts: user-role messages synthesized by the Task/Agent
@@ -61,6 +65,31 @@ export function classifyStandaloneKind(
   // parent_tool_use_id is set by the CLI for conversation-tree chaining.
   if (isSubagentPrompt(msg, allMessages)) {
     return 'user.subagentPrompt';
+  }
+
+  // Skill-injected user messages: the SDK injects the SKILL.md body as a
+  // user-role text message after the Skill tool runs. Detection looks at
+  // the previous tool_result + the corresponding tool_use's name.
+  if (detectSkillInjection(msg, allMessages)) {
+    return 'user.skillInjection';
+  }
+
+  // Slash-command echoes / local-command stdout — the CLI wraps these in
+  // <command-name>/<local-command-stdout> tags inside a user-role text
+  // block, so detection is a content match on the whole message.
+  if (msg.type === 'user') {
+    const content: unknown = msg.message?.content;
+    let text = '';
+    if (typeof content === 'string') text = content;
+    else if (Array.isArray(content)) {
+      for (const block of content) {
+        if (block?.type === 'text' && typeof block.text === 'string') {
+          text += block.text;
+        }
+      }
+    }
+    if (text.includes('<command-name>')) return 'user.command';
+    if (text.includes('<local-command-stdout>')) return 'user.commandOutput';
   }
 
   return null;
