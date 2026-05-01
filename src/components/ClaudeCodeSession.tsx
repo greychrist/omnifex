@@ -8,7 +8,6 @@ import {
   Plug,
   Package,
   Shield,
-  Send,
   ArrowLeft,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -1613,47 +1612,20 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                         </div>
                         <p className="text-sm line-clamp-2 break-words">{queuedPrompt.prompt}</p>
                       </div>
-                      <div className="flex items-center gap-1">
-                        <motion.div
-                          whileTap={{ scale: 0.97 }}
-                          transition={{ duration: 0.15 }}
+                      <motion.div
+                        whileTap={{ scale: 0.97 }}
+                        transition={{ duration: 0.15 }}
+                      >
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 flex-shrink-0"
+                          title="Remove from queue"
+                          onClick={() => setQueuedPrompts(prev => prev.filter(p => p.id !== queuedPrompt.id))}
                         >
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-6 w-6 flex-shrink-0 text-primary hover:text-primary"
-                            title="Send now"
-                            onClick={() => {
-                              // Remove from queue and send immediately
-                              setQueuedPrompts(prev => prev.filter(p => p.id !== queuedPrompt.id));
-                              // Force reset loading state so handleSendPrompt doesn't re-queue
-                              setIsLoading(false);
-                              persistentSessionRef.current = false;
-                              setIsSessionStarting(false);
-                              setIsSessionActive(false);
-                              setTimeout(() => {
-                                handleSendPrompt(queuedPrompt.prompt, queuedPrompt.model);
-                              }, 50);
-                            }}
-                          >
-                            <Send className="h-3 w-3" />
-                          </Button>
-                        </motion.div>
-                        <motion.div
-                          whileTap={{ scale: 0.97 }}
-                          transition={{ duration: 0.15 }}
-                        >
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-6 w-6 flex-shrink-0"
-                            title="Remove from queue"
-                            onClick={() => setQueuedPrompts(prev => prev.filter(p => p.id !== queuedPrompt.id))}
-                          >
-                            <X className="h-3 w-3" />
-                          </Button>
-                        </motion.div>
-                      </div>
+                          <X className="h-3 w-3" />
+                        </Button>
+                      </motion.div>
                     </motion.div>
                   ))}
                 </div>

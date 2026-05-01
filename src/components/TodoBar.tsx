@@ -66,35 +66,41 @@ export const TodoBar: React.FC<TodoBarProps> = ({ messages, isLive, className })
   const running = summary.running;
 
   const StatusIcon = running ? Loader2 : ListChecks;
-  const statusIconClass = cn('h-3.5 w-3.5 text-emerald-400', running && 'animate-spin');
+  const statusIconClass = cn(
+    'h-3.5 w-3.5',
+    running ? 'text-muted-foreground animate-spin' : 'text-emerald-400',
+  );
   const counter = running
-    ? `${summary.done} of ${summary.total}`
-    : `${summary.total} of ${summary.total} ✓`;
+    ? `${summary.done} of ${summary.total} items completed`
+    : `${summary.total} of ${summary.total} items completed ✓`;
 
   return (
     <div className={cn('shrink-0 border-t border-border/40 flex flex-col', className)}>
-      <div
-        className={cn(
-          'flex items-center gap-2 px-3 py-1 text-[11px] bg-muted/20 shrink-0',
-          running && 'animate-pulse',
-        )}
-      >
-        <button
-          type="button"
-          onClick={() => dispatch({ type: 'CLICK' })}
-          className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"
-          title={expanded ? 'Collapse todos' : 'Expand todos'}
-        >
-          {expanded ? (
-            <ChevronDown className="h-3.5 w-3.5" />
-          ) : (
-            <ChevronUp className="h-3.5 w-3.5" />
+      <div className="relative shrink-0">
+        <div
+          aria-hidden="true"
+          className={cn(
+            'absolute inset-0 bg-sky-400/15',
+            running && 'animate-pulse',
           )}
-          <StatusIcon className={statusIconClass} />
-          <span className="font-medium text-foreground">ToDo</span>
-          <span className="text-muted-foreground/70">·</span>
-          <span className="text-foreground/90 tabular-nums">{counter}</span>
-        </button>
+        />
+        <div className="relative flex items-center gap-2 px-3 py-1 text-[11px]">
+          <button
+            type="button"
+            onClick={() => dispatch({ type: 'CLICK' })}
+            className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"
+            title={expanded ? 'Collapse todos' : 'Expand todos'}
+          >
+            {expanded ? (
+              <ChevronDown className="h-3.5 w-3.5" />
+            ) : (
+              <ChevronUp className="h-3.5 w-3.5" />
+            )}
+            <span className="font-medium text-foreground">ToDo List:</span>
+            <span className="text-foreground/90 tabular-nums">{counter}</span>
+            <StatusIcon className={statusIconClass} />
+          </button>
+        </div>
       </div>
 
       {expanded && (
@@ -125,7 +131,7 @@ const TodoRow: React.FC<{ todo: TodoItem }> = ({ todo }) => {
   return (
     <div
       className={cn(
-        'border-l-2 border-emerald-400/40 bg-emerald-400/10',
+        'border-l-2 border-emerald-400/40 bg-muted/20',
         'px-3 py-1.5 text-xs leading-snug flex items-center gap-2',
       )}
     >
