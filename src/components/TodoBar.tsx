@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useReducer, useRef } from 'react';
+import React, { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import {
   ChevronDown,
   ChevronUp,
@@ -38,6 +38,7 @@ export const TodoBar: React.FC<TodoBarProps> = ({ messages, isLive, className })
   const key = useMemo(() => todosKey(todos), [todos]);
 
   const [state, dispatch] = useReducer(todoBarReducer, initialTodoBarState);
+  const [dismissedKey, setDismissedKey] = useState<string | null>(null);
 
   const lastKeyRef = useRef<string | null>(null);
   useEffect(() => {
@@ -60,7 +61,7 @@ export const TodoBar: React.FC<TodoBarProps> = ({ messages, isLive, className })
     return () => window.clearTimeout(t);
   }, [state]);
 
-  if (!isLive || todos === null) return null;
+  if (!isLive || todos === null || dismissedKey === key) return null;
 
   const expanded = state.kind !== 'collapsed_idle';
   const running = summary.running;
@@ -70,9 +71,7 @@ export const TodoBar: React.FC<TodoBarProps> = ({ messages, isLive, className })
     'h-3.5 w-3.5',
     running ? 'text-muted-foreground animate-spin' : 'text-emerald-400',
   );
-  const counter = running
-    ? `${summary.done} of ${summary.total} items completed`
-    : `${summary.total} of ${summary.total} items completed ✓`;
+  const counter = `${summary.done} of ${summary.total} items completed`;
 
   return (
     <div className={cn('shrink-0 border-t border-border/40 flex flex-col', className)}>
@@ -99,6 +98,17 @@ export const TodoBar: React.FC<TodoBarProps> = ({ messages, isLive, className })
             <span className="font-medium text-foreground">ToDo List:</span>
             <span className="text-foreground/90 tabular-nums">{counter}</span>
             <StatusIcon className={statusIconClass} />
+          </button>
+          <button
+            type="button"
+            onClick={() => setDismissedKey(key)}
+            className={cn(
+              'ml-auto inline-flex items-center px-1.5 py-0.5 rounded border border-border/60 bg-background',
+              'text-muted-foreground hover:text-foreground hover:bg-accent transition-colors',
+            )}
+            title="Clear todo list"
+          >
+            Clear
           </button>
         </div>
       </div>
