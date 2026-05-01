@@ -178,7 +178,7 @@ export function SessionCard({
           <Popover
             open={contextPopoverOpen}
             onOpenChange={setContextPopoverOpen}
-            align="end"
+            align="start"
             side="bottom"
             className="w-96"
             trigger={
