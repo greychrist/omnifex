@@ -5,6 +5,28 @@ All notable changes to GreyChrist are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.78] — 2026-05-01
+
+Live-session header collapsed into a single toolbar of self-contained cards (folder + branch + worktrees + session + account), each with its label inside and an outset-shadow outline that matches the rate-limit and context pills exactly. The second header row is gone; `SessionHeader` has been deleted and the folder card folded into the branch row's neighborhood (worktrees now sit inside the branch card). The branch badge is click-able and opens a popover with the worktree folder, branch name, working-tree status, and any per-row git error. Account card hides its rate-limit widgets + refresh button when the resolved account is `enterprise` (and skips the `/usage` auto-refresh hook entirely). Installers remain **unsigned** — first launch needs right-click → Open.
+
+### Added
+
+- **Branch popover** (`src/components/claude-code-session/GitBranchBadge.tsx`). Badges with a `path` prop become click-able and open a popover showing the worktree folder (tilde-shortened with the absolute path below), branch name + trunk/feature label, working-tree status (changed/untracked counts or "Clean"), and any per-row git status error. Wired through both the main project branch (path = projectPath) and each sibling worktree (path = wt.path).
+- **`AccountCard.tsx`, `SessionCard.tsx`, `HeaderLabel.tsx`** (`src/components/`). The session-header logic split into three discrete components. `AccountCard` owns its own `usagePopoverOpen` state, `useUsageAutoRefresh` hook, account-detail popover, and an `accountType` gate that hides the `/usage` widgets entirely for enterprise accounts. `SessionCard` owns the status badge, context-window widget (with pie-chart popover), and restart button. `HeaderLabel` is the small uppercase label used by every card.
+- **GitWatchStatusIcon auto-pulse** (`src/components/claude-code-session/GitWatchStatusIcon.tsx`). The reconnect button now briefly spins for ≥500 ms when the user clicks it (so fast reconnects are still visible) and again whenever a fresh snapshot arrives from the unified git watch. Initial mount is skipped so the seed snapshot doesn't fire a spurious pulse.
+
+### Changed
+
+- **Top toolbar restructured** (`src/components/ClaudeCodeSession.tsx`). One row only: Back button → divider → session card → branch card (now containing the main branch + worktrees + reconnect button) → account card pinned right via `ml-auto`. `SessionHeader.tsx` deleted; folder card removed (folder now surfaces from the branch popover instead). Cost tracking still runs in the background but isn't rendered.
+- **Rate-limit widgets** (`src/components/claude-code-session/RateLimitWidget.tsx`). 5h and 7d pills reserve fixed-width pct (`min-w-[4ch]`) and tail (`min-w-[7ch]`) columns with `tabular-nums` so both stack at identical widths regardless of value. Tail text is left-aligned. New `hideLabel` prop lets stacked widgets share a single header. Gradient bars shrunk ~30% (`w-16` → `w-11`).
+- **Icon buttons unified** (`src/components/AccountCard.tsx`, `src/components/SessionCard.tsx`, `src/components/claude-code-session/GitWatchStatusIcon.tsx`). All three (account refresh, git-watch reconnect, restart) render at `h-5 w-5` with a 1px outset shadow at `color-mix(in_oklch, var(--color-muted-foreground) 45%, transparent)` so their outline matches the widgets exactly (border-vs-shadow rendering parity). Restart button is now icon-only (`RotateCcw`) with the tooltip "Close this session and open a new one"; `/usage` refresh tooltip shortened to "Pull fresh account stats".
+- **AccountBadge `whitespace-nowrap`** (`src/components/AccountBadge.tsx`). Both color and fallback variants get `whitespace-nowrap` so longer "Name : type" combinations don't wrap to two lines inside the card.
+- **Account popover anchors right** (`src/components/AccountCard.tsx`). Switched from `align="start"` to `align="end"` so the SDK-account-detail popover extends leftward from the trigger instead of overflowing the right edge of the viewport (the card lives top-right now).
+
+### Removed
+
+- **`src/components/SessionHeader.tsx`**. Whole file deleted; the second header row went with it. The exported `HeaderLabel` and `WorktreeSnapshot` moved (label to its own file, snapshot is no longer needed by anyone except the now-internal git-watch types).
+
 ## [0.3.77] — 2026-05-01
 
 New-session screen redesign (form left, Branch Colors right, full-width session list below) and a complete session-list rebuild as a 3-column table (Date / First message / Session ID). Five previously-hardcoded rendering branches (skill injection, slash command echo, command output, unknown tool_use, unknown system subtype) now flow through the kind config so they're tunable from Appearance. Skill-injected user messages survive session reload. Dev-mode StrictMode double-mount no longer wipes the freshly-started session out of the main-process map. TodoBar gets a Clear button. Closed-session badge gets an inline reconnect. Installers remain **unsigned** — first launch needs right-click → Open.
