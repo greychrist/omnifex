@@ -2,7 +2,7 @@ import * as React from 'react';
 import { Clock, CalendarDays } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { RateLimitSnapshot } from '@/lib/api';
-import { HeaderLabel } from '../SessionHeader';
+import { HeaderLabel } from '../HeaderLabel';
 
 interface RateLimitWidgetProps {
   /** Latest snapshot for this rate-limit window. Null = no data yet. */
@@ -79,7 +79,7 @@ export function RateLimitWidget({
         >
           <Icon className="w-3.5 h-3.5 opacity-60" />
           <span className="opacity-60 text-right tabular-nums min-w-[4ch]">—</span>
-          <div className="w-16 h-1.5 bg-foreground/10 rounded-full" />
+          <div className="w-11 h-1.5 bg-foreground/10 rounded-full" />
           <span className="opacity-60 text-left tabular-nums min-w-[7ch]">--</span>
         </span>
       </div>
@@ -138,7 +138,7 @@ export function RateLimitWidget({
         <span className={cn('font-mono text-right tabular-nums min-w-[4ch]', pctTextColor)}>
           {pct != null ? `${pct.toFixed(0)}%` : '?%'}
         </span>
-        <div className="w-16 h-1.5 bg-foreground/10 rounded-full overflow-hidden relative">
+        <div className="w-11 h-1.5 bg-foreground/10 rounded-full overflow-hidden relative">
           <div
             className="absolute inset-0 rounded-full bg-gradient-to-r from-green-400 via-orange-400 to-red-400 transition-[clip-path]"
             style={{ clipPath: `inset(0 ${pct == null ? 100 : 100 - pct}% 0 0)` }}

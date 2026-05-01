@@ -86,7 +86,7 @@ export const GitWatchStatusIcon: React.FC<GitWatchStatusIconProps> = ({
       disabled={userBusy}
       title={title}
       aria-label={title}
-      className={cn('h-7 w-7 p-0', color)}
+      className={cn('h-5 w-5 p-0 rounded-sm border-0 shadow-[0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_45%,transparent)]', color)}
     >
       <Icon className={cn('h-3.5 w-3.5', spinning && 'animate-spin')} />
     </Button>

@@ -8,13 +8,17 @@ import type {
 import { Popover } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { AccountBadge } from "./AccountBadge";
-import { HeaderLabel } from "./SessionHeader";
+import { HeaderLabel } from "./HeaderLabel";
 import { RateLimitWidget } from "./claude-code-session/RateLimitWidget";
 import { UsageDetailPopover } from "./claude-code-session/UsageDetailPopover";
 import { useUsageAutoRefresh } from "@/hooks/useUsageAutoRefresh";
 
 interface AccountCardProps {
   accountName: string;
+  /** Account type: "max", "enterprise", "pro", "free". Enterprise accounts
+   *  hide the rate-limit widgets + refresh button since those numbers have
+   *  no meaning under an enterprise plan. */
+  accountType?: string;
   configDir: string;
   matchType: string;
   matchDetail: string;
@@ -33,6 +37,7 @@ interface AccountCardProps {
  */
 export function AccountCard({
   accountName,
+  accountType,
   configDir,
   matchType,
   matchDetail,
@@ -45,11 +50,13 @@ export function AccountCard({
   const [accountPopoverOpen, setAccountPopoverOpen] = React.useState(false);
   const [usagePopoverOpen, setUsagePopoverOpen] = React.useState(false);
 
+  const showUsage = accountType !== "enterprise";
+
   const {
     data: usageData,
     loading: usageLoading,
     refresh: refreshUsage,
-  } = useUsageAutoRefresh(accountName, sessionStatus === 'active');
+  } = useUsageAutoRefresh(accountName, showUsage && sessionStatus === 'active');
 
   const handleRefreshClick = React.useCallback(async () => {
     if (usageLoading) return;
@@ -69,13 +76,13 @@ export function AccountCard({
     : "default";
 
   return (
-    <div className={cn("flex flex-col items-start gap-0.5", className)}>
-      <HeaderLabel>account</HeaderLabel>
-      <div className="flex items-start gap-3 rounded-md border border-border/50 bg-background/40 px-2 py-1">
+    <div className={cn("flex items-start gap-3 rounded-md border border-border/50 bg-background/40 px-2 py-1", className)}>
+      <div className="flex flex-col items-start gap-0.5">
+        <HeaderLabel>account</HeaderLabel>
         <Popover
           open={accountPopoverOpen}
           onOpenChange={setAccountPopoverOpen}
-          align="start"
+          align="end"
           side="bottom"
           className="w-96"
           trigger={
@@ -157,47 +164,51 @@ export function AccountCard({
             </div>
           }
         />
-        <UsageDetailPopover
-          open={usagePopoverOpen}
-          onOpenChange={setUsagePopoverOpen}
-          data={usageData}
-          loading={usageLoading}
-          onRefresh={() => void refreshUsage()}
-          align="end"
-          trigger={
-            <div className="flex flex-col items-start gap-1">
-              <RateLimitWidget
-                snapshot={fiveHourRateLimit ?? null}
-                windowType="five_hour"
-                accountName={accountName}
-                onClick={() => setUsagePopoverOpen((v) => !v)}
-                hideLabel
-              />
-              <RateLimitWidget
-                snapshot={sevenDayRateLimit ?? null}
-                windowType="seven_day"
-                accountName={accountName}
-                onClick={() => setUsagePopoverOpen((v) => !v)}
-                hideLabel
-              />
-            </div>
-          }
-        />
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => void handleRefreshClick()}
-          disabled={usageLoading}
-          className="h-7 w-7 p-0"
-          title={
-            usageLoading
-              ? 'Refreshing /usage…'
-              : 'Pull fresh account stats'
-          }
-        >
-          <RefreshCw className={cn('h-3.5 w-3.5', usageLoading && 'animate-spin')} />
-        </Button>
       </div>
+      {showUsage && (
+        <>
+          <UsageDetailPopover
+            open={usagePopoverOpen}
+            onOpenChange={setUsagePopoverOpen}
+            data={usageData}
+            loading={usageLoading}
+            onRefresh={() => void refreshUsage()}
+            align="end"
+            trigger={
+              <div className="flex flex-col items-start gap-1">
+                <RateLimitWidget
+                  snapshot={fiveHourRateLimit ?? null}
+                  windowType="five_hour"
+                  accountName={accountName}
+                  onClick={() => setUsagePopoverOpen((v) => !v)}
+                  hideLabel
+                />
+                <RateLimitWidget
+                  snapshot={sevenDayRateLimit ?? null}
+                  windowType="seven_day"
+                  accountName={accountName}
+                  onClick={() => setUsagePopoverOpen((v) => !v)}
+                  hideLabel
+                />
+              </div>
+            }
+          />
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => void handleRefreshClick()}
+            disabled={usageLoading}
+            className="h-5 w-5 p-0 rounded-sm border-0 shadow-[0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_45%,transparent)]"
+            title={
+              usageLoading
+                ? 'Refreshing /usage…'
+                : 'Pull fresh account stats'
+            }
+          >
+            <RefreshCw className={cn('h-3.5 w-3.5', usageLoading && 'animate-spin')} />
+          </Button>
+        </>
+      )}
     </div>
   );
 }

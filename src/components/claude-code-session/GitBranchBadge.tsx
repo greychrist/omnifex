@@ -1,6 +1,7 @@
 import * as React from 'react';
-import { GitBranch, FilePen, FilePlus } from 'lucide-react';
+import { GitBranch, FilePen, FilePlus, Folder } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { Popover } from '@/components/ui/popover';
 
 export interface GitBranchBadgeProps {
   name: string;
@@ -10,6 +11,13 @@ export interface GitBranchBadgeProps {
   color: string | null;
   /** When true, render the black trunk style (overrides `color`). */
   isTrunk: boolean;
+  /** Absolute path of the worktree this branch is checked out in. When
+   *  provided, the badge becomes clickable and opens a popover with the
+   *  folder + branch detail. */
+  path?: string;
+  /** Per-row error string from the unified git watch — surfaced inside the
+   *  popover so the user can see why a row went red without leaving it. */
+  error?: string | null;
 }
 
 // WCAG relative luminance — used only to detect TRUE near-black picks where
@@ -26,13 +34,21 @@ function isNearBlack(hex: string): boolean {
   return L < 0.05;
 }
 
+function tildeHome(p: string): string {
+  return p.replace(/^\/Users\/[^/]+/, '~');
+}
+
 export const GitBranchBadge: React.FC<GitBranchBadgeProps> = ({
   name,
   changed,
   untracked,
   color,
   isTrunk,
+  path,
+  error,
 }) => {
+  const [open, setOpen] = React.useState(false);
+
   const titleParts = [`Git branch: ${name}`];
   if (changed > 0) titleParts.push(`${changed} changed`);
   if (untracked > 0) titleParts.push(`${untracked} untracked`);
@@ -40,26 +56,14 @@ export const GitBranchBadge: React.FC<GitBranchBadgeProps> = ({
   const useColor = !isTrunk && color != null;
   const nearBlack = useColor && isNearBlack(color!);
 
-  // Default recipe matches AccountBadge: 20% bg / 30% border / saturated text.
-  // For near-black picks where that recipe goes invisible on a dark page, use
-  // a "ghost" variant with a white-tinted bg + white text + the chosen color
-  // as a border accent — keeps the translucent feel and lets the pick still
-  // signal which branch this is.
   const inlineStyle = useColor
     ? nearBlack
       ? { backgroundColor: '#ffffff26', color: '#ffffff', borderColor: `${color}cc` }
       : { backgroundColor: `${color}33`, color: color!, borderColor: `${color}4d` }
     : undefined;
 
-  return (
-    <span
-      className={cn(
-        'inline-flex items-center gap-1 px-2 py-0.5 rounded border text-xs font-mono font-medium',
-        isTrunk && 'bg-black text-white border-black',
-      )}
-      style={inlineStyle}
-      title={titleParts.join(' · ')}
-    >
+  const badgeContent = (
+    <>
       <GitBranch className="w-3.5 h-3.5" />
       {name}
       {(changed > 0 || untracked > 0) && (
@@ -77,6 +81,111 @@ export const GitBranchBadge: React.FC<GitBranchBadgeProps> = ({
           {untracked}
         </span>
       )}
-    </span>
+    </>
+  );
+
+  // No path means we have no extra detail to show — render a plain span like
+  // before so the badge stays non-interactive in fallback callers.
+  if (!path) {
+    return (
+      <span
+        className={cn(
+          'inline-flex items-center gap-1 px-2 py-0.5 rounded border text-xs font-mono font-medium',
+          isTrunk && 'bg-black text-white border-black',
+        )}
+        style={inlineStyle}
+        title={titleParts.join(' · ')}
+      >
+        {badgeContent}
+      </span>
+    );
+  }
+
+  return (
+    <Popover
+      open={open}
+      onOpenChange={setOpen}
+      align="start"
+      side="bottom"
+      className="w-80"
+      trigger={
+        <button
+          type="button"
+          className={cn(
+            'inline-flex items-center gap-1 px-2 py-0.5 rounded border text-xs font-mono font-medium cursor-pointer',
+            'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+            isTrunk && 'bg-black text-white border-black',
+          )}
+          style={inlineStyle}
+          title={titleParts.join(' · ')}
+        >
+          {badgeContent}
+        </button>
+      }
+      content={
+        <div className="flex flex-col gap-3 text-left">
+          <div>
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1 flex items-center gap-1">
+              <GitBranch className="w-3 h-3" />
+              Branch
+            </div>
+            <div className="font-mono text-sm text-foreground/90 break-all">
+              {name}
+            </div>
+            <div className="text-[11px] text-muted-foreground mt-0.5">
+              {isTrunk ? 'Trunk branch' : 'Feature / topic branch'}
+            </div>
+          </div>
+
+          <div>
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1 flex items-center gap-1">
+              <Folder className="w-3 h-3" />
+              Folder
+            </div>
+            <div className="font-mono text-xs text-foreground/90 break-all">
+              {tildeHome(path)}
+            </div>
+            <div className="text-[10px] text-muted-foreground/70 mt-0.5 break-all">
+              {path}
+            </div>
+          </div>
+
+          <div>
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
+              Working tree
+            </div>
+            {changed === 0 && untracked === 0 && !error ? (
+              <div className="text-xs text-muted-foreground italic">Clean</div>
+            ) : (
+              <div className="flex flex-col gap-0.5 text-xs">
+                {changed > 0 && (
+                  <div className="flex items-center gap-1.5 text-emerald-400">
+                    <FilePen className="w-3 h-3" />
+                    <span>{changed} changed</span>
+                  </div>
+                )}
+                {untracked > 0 && (
+                  <div className="flex items-center gap-1.5 text-amber-300">
+                    <FilePlus className="w-3 h-3" />
+                    <span>{untracked} untracked</span>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {error && (
+            <div>
+              <div className="text-[10px] uppercase tracking-wider text-rose-400 mb-1">
+                Status error
+              </div>
+              <div className="font-mono text-[11px] text-rose-300/90 break-all">
+                {error}
+              </div>
+            </div>
+          )}
+        </div>
+      }
+    />
   );
 };

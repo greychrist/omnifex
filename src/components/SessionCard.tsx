@@ -1,31 +1,11 @@
 import * as React from "react";
-import {
-  Database,
-  RotateCcw,
-  RefreshCw,
-  Copy,
-  Check,
-} from "lucide-react";
+import { Database, RotateCcw, RefreshCw, Copy, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type {
-  SessionContextUsage,
-} from "@/lib/api";
+import type { SessionContextUsage } from "@/lib/api";
 import { Popover } from "@/components/ui/popover";
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import { Button } from "@/components/ui/button";
-
-/**
- * Small uppercase label rendered above each header badge ("account", "branch",
- * "mode", etc.). Shared component so a single style change propagates to every
- * caller — both inside SessionHeader and in adjacent toolbar widgets.
- */
-export function HeaderLabel({ children, className }: { children: React.ReactNode; className?: string }) {
-  return (
-    <span className={cn("text-[11px] tracking-wider text-muted-foreground", className)}>
-      {children}
-    </span>
-  );
-}
+import { HeaderLabel } from "./HeaderLabel";
 
 // Palette for context-usage categories. Each category comes with its own
 // `color` from the SDK, but those default colors sometimes clash with our
@@ -42,81 +22,44 @@ const CATEGORY_COLORS = [
   "#a3e635", // lime-400
 ];
 
-interface SessionHeaderProps {
-  accountName: string;
-  accountType: string;
-  cost: number;
+interface SessionCardProps {
   totalTokens: number;
   model?: string;
-  /**
-   * Session status indicator:
-   *  - 'starting' — subprocess is up but the SDK control channel hasn't
-   *    answered yet (Claude Code 0.2.114 only responds after the first user
-   *    message, so MCP list / account info / tool list are still empty).
-   *  - 'active' — control channel responded, metadata is fully populated.
-   *  - 'ended' — subprocess closed or session was stopped.
-   */
-  sessionStatus?: 'starting' | 'active' | 'ended';
-  /**
-   * Authoritative context-window usage from query.getContextUsage(), fetched
-   * at session init and at the end of every turn. When present, the widget
-   * uses totalTokens/maxTokens/categories from this object instead of the
-   * client-side (totalTokens / hardcoded limit) approximation — which gives
-   * real numbers for system prompt, tools, memory, MCP, etc. rather than
-   * just the assistant-reported message-token count.
-   */
   contextUsage?: SessionContextUsage | null;
+  sessionStatus?: 'starting' | 'active' | 'ended';
+  /** Force-reconnect button click handler. Renders inside the status badge
+   *  while sessionStatus === 'ended'. */
+  onReconnect?: () => void;
   /** Restart / Clear-conversation button click handler. */
   onClear?: () => void;
-  /** Whether the restart button is disabled (no session, mid-turn, etc.). */
   clearDisabled?: boolean;
-  /** Tooltip explaining why restart is disabled, when it is. */
   clearReason?: string;
-  /** Force-reconnect button click handler. Renders an inline reconnect icon
-   *  inside the status badge while sessionStatus === 'ended'. */
-  onReconnect?: () => void;
-  /** Current Claude session id (GUID). When present, surfaces in the
-   *  context popover with a copy button so it's easy to grab for support
-   *  threads, JSONL lookups, etc. Null/undefined hides the row. */
+  /** Current Claude session id (GUID). When present, surfaces in the context
+   *  popover with a copy button. */
   sessionId?: string | null;
-
   className?: string;
 }
 
-/** Working-tree status for a single sibling worktree. */
-export interface WorktreeSnapshot {
-  /** Absolute worktree path — used as a stable React key + tooltip detail. */
-  path: string;
-  branch: string | null;
-  changed: number;
-  untracked: number;
-  /** Latest error from the per-worktree git read, or null when healthy. */
-  error: string | null;
-  /**
-   * Main-process watchId for the per-peer status watch. Undefined while the
-   * row is in its seeded "loading" state before the per-peer watch resolves.
-   */
-  watchId?: string;
-}
-
-export function SessionHeader({
-  accountType,
-  cost,
+/**
+ * Compact card summarizing the live session: status badge, context-window
+ * widget (with detail popover), and a restart button. Pulled out of
+ * SessionHeader so it can sit inline with the other top-toolbar cards
+ * (folder, branch, account).
+ */
+export function SessionCard({
   totalTokens,
   model,
   contextUsage,
+  sessionStatus,
+  onReconnect,
   onClear,
   clearDisabled,
   clearReason,
-  onReconnect,
-  sessionStatus,
   sessionId,
   className,
-}: SessionHeaderProps) {
+}: SessionCardProps) {
   const [contextPopoverOpen, setContextPopoverOpen] = React.useState(false);
 
-  // Briefly swap the copy icon for a check after a successful clipboard
-  // write. Resets after 1.2s so the next copy click feels responsive.
   const [sessionIdCopied, setSessionIdCopied] = React.useState(false);
   const handleCopySessionId = React.useCallback(async () => {
     if (!sessionId) return;
@@ -129,7 +72,6 @@ export function SessionHeader({
     }
   }, [sessionId]);
 
-  // Defer chart rendering by one frame so the popover container has dimensions
   const [chartReady, setChartReady] = React.useState(false);
   React.useEffect(() => {
     if (contextPopoverOpen) {
@@ -139,26 +81,17 @@ export function SessionHeader({
     setChartReady(false);
   }, [contextPopoverOpen]);
 
-  const showCost = accountType !== "max";
-
   return (
-    <div className={cn(
-      "flex items-start gap-3 px-4 py-2 border-b border-border/50 bg-muted text-xs shrink-0",
-      className
-    )}>
+    <div className={cn("flex items-start gap-3 rounded-md border border-border/50 bg-background/40 px-2 py-1", className)}>
       <div className="flex flex-col items-start gap-0.5">
-      <HeaderLabel>session</HeaderLabel>
-      <div className="flex items-center gap-3 rounded-md border border-border/50 bg-background/40 px-2 py-1">
-      {/* Session status indicator — inline styles so the border picks up the
-          status color (Tailwind v4's border-{color}/{alpha} utilities
-          desaturate under this theme). */}
-      {sessionStatus && (() => {
-        const statusColor =
-          sessionStatus === 'active' ? '#22c55e' :
-          sessionStatus === 'starting' ? '#f59e0b' :
-          '#ef4444'; // ended
-        return (
-          <span
+        <HeaderLabel>session</HeaderLabel>
+        {sessionStatus && (() => {
+          const statusColor =
+            sessionStatus === 'active' ? '#22c55e' :
+            sessionStatus === 'starting' ? '#f59e0b' :
+            '#ef4444';
+          return (
+            <span
               className={cn(
                 "inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
                 sessionStatus === 'starting' && 'animate-pulse',
@@ -185,19 +118,11 @@ export function SessionHeader({
                 </button>
               )}
             </span>
-        );
-      })()}
+          );
+        })()}
+      </div>
 
       {(() => {
-        // Prefer authoritative numbers from query.getContextUsage() when
-        // present; otherwise fall back to the old client-side approximation
-        // (messages totalTokens / hardcoded context limit for the model).
-        //
-        // Caveat: the SDK's getContextUsage() reports the model's *maximum*
-        // supportable window (1M for Opus 4.x), not whatever the picker
-        // selected. If the user picked a 200K alias we clamp the limit so
-        // the donut reads against the actual budget the session is using —
-        // otherwise a 200K session shows 4% used at 42K which is misleading.
         const useSdk = contextUsage !== undefined && contextUsage !== null;
         const tokens = useSdk ? contextUsage!.totalTokens : totalTokens;
         const expectsLargeContext = !!model?.includes("[1m]");
@@ -213,14 +138,7 @@ export function SessionHeader({
         const pct = Math.min(100, (tokens / limit) * 100);
         const color = pct > 80 ? "text-red-400" : pct > 50 ? "text-orange-400" : "text-foreground";
 
-        // Build pie-chart data from SDK categories (descending by tokens).
-        //
-        // The SDK reports a "Free space" category sized against its own
-        // maxTokens (1M for Opus 4.x). When we clamp the limit to 200K we
-        // must drop the SDK's Free slice and synthesize one against the
-        // clamped limit — otherwise a 924K Free slice would dominate a
-        // donut that's supposed to total 200K.
-        const FREE_COLOR = "rgba(148, 163, 184, 0.35)"; // slate-400 @35%
+        const FREE_COLOR = "rgba(148, 163, 184, 0.35)";
         const isFreeCategory = (name: string) =>
           /free|remaining|available/i.test(name);
         const isClamped = sdkLimit != null && limit < sdkLimit;
@@ -233,22 +151,14 @@ export function SessionHeader({
                 .filter((c) => !isClamped || !isFreeCategory(c.name))
             : [];
 
-        const categoriesSum = sortedCategories.reduce(
-          (acc, c) => acc + c.tokens,
-          0,
-        );
-        // Color assignment: "Free-like" categories get the slate backdrop
-        // color, other (used) categories get palette entries in the order
-        // they appear. Using a separate counter for non-free categories so
-        // we don't waste the first palette color on Free space when it
-        // happens to be the largest slice.
+        const categoriesSum = sortedCategories.reduce((acc, c) => acc + c.tokens, 0);
         let usedColorIdx = 0;
         const slicesFromCategories = sortedCategories.map((c) => {
           const free = isFreeCategory(c.name);
-          const color = free
+          const sliceColor = free
             ? FREE_COLOR
             : CATEGORY_COLORS[usedColorIdx++ % CATEGORY_COLORS.length];
-          return { name: c.name, value: c.tokens, color };
+          return { name: c.name, value: c.tokens, color: sliceColor };
         });
         const pieData =
           categoriesSum < limit
@@ -263,7 +173,9 @@ export function SessionHeader({
             : slicesFromCategories;
 
         return (
-            <Popover
+          <div className="flex flex-col items-start gap-0.5">
+            <HeaderLabel>&nbsp;</HeaderLabel>
+          <Popover
             open={contextPopoverOpen}
             onOpenChange={setContextPopoverOpen}
             align="end"
@@ -281,14 +193,7 @@ export function SessionHeader({
                 <span className={cn("font-mono", color)}>
                   {tokens >= 1000 ? `${(tokens / 1000).toFixed(1)}k` : tokens}
                 </span>
-                <div className="w-16 h-1.5 bg-foreground/10 rounded-full overflow-hidden relative">
-                  {/*
-                    The fill is a single full-width gradient (green → orange → red)
-                    clipped from the right by `inset-right: (100 - pct)%`. This way
-                    the visible bar always shows the gradient from 0% to whatever
-                    the current usage is — at 30% the bar is still all-green; at
-                    90% it crosses into the red end. transitions stay smooth.
-                  */}
+                <div className="w-11 h-1.5 bg-foreground/10 rounded-full overflow-hidden relative">
                   <div
                     className="absolute inset-0 rounded-full bg-gradient-to-r from-green-400 via-orange-400 to-red-400 transition-[clip-path]"
                     style={{ clipPath: `inset(0 ${100 - pct}% 0 0)` }}
@@ -401,27 +306,23 @@ export function SessionHeader({
               </div>
             }
           />
+          </div>
         );
       })()}
       {onClear && (
+        <div className="flex flex-col items-start gap-0.5">
+          <HeaderLabel>&nbsp;</HeaderLabel>
         <Button
           size="sm"
           variant="outline"
           onClick={onClear}
           disabled={clearDisabled}
-          className="h-7 w-7 p-0"
+          className="h-5 w-5 p-0 rounded-sm border-0 shadow-[0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_45%,transparent)]"
           title={clearReason ?? 'Close this session and open a new one'}
         >
           <RotateCcw className="h-3.5 w-3.5" />
         </Button>
-      )}
-      </div>
-      </div>
-
-      {showCost && (
-        <span className="ml-auto self-end text-foreground/50 font-mono">
-          ${cost.toFixed(4)}
-        </span>
+        </div>
       )}
     </div>
   );

@@ -81,7 +81,7 @@ export const AccountBadge: React.FC<AccountBadgeProps> = ({
     return (
       <span
         className={cn(
-          "inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[11px] font-medium",
+          "inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[11px] font-medium whitespace-nowrap",
           className,
         )}
         style={{
@@ -103,7 +103,7 @@ export const AccountBadge: React.FC<AccountBadgeProps> = ({
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[11px] font-medium",
+        "inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[11px] font-medium whitespace-nowrap",
         fallbackClass,
         className,
       )}
