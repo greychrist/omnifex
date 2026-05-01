@@ -262,7 +262,9 @@ export const DEFAULT_KINDS: MessageKindConfig[] = [
     description: "User-role message injected by the SDK after a Skill tool runs (the SKILL.md body).",
     origin: "system",
     icon: "Sparkles",
-    headerLabel: "Skill",
+    // Headerless — the renderer shows a dynamic "Skill: {skillName}" line
+    // below the header row, which would conflict with a static label.
+    headerLabel: null,
     accentColor: "purple",
     alignment: "right",
     hiddenInCompact: false,

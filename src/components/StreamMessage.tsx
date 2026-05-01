@@ -5,7 +5,6 @@ import {
   CircleStop,
   Copy,
   Check,
-  Sparkles,
   Download,
   RotateCcw,
 } from "lucide-react";
@@ -409,10 +408,22 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
       const text = (message as any).message
         ?? (message as any).title
         ?? '';
+      // The whole-message classifier maps every non-init/non-notification
+      // system subtype to one of system.hook.started / system.hook.response /
+      // system.userPromptSubmit / system.unknown. Use the resolved kind's
+      // swatch for the left-rail color so Appearance customizations take
+      // effect; default values match today's gray strip.
+      const kindId = classifyStandaloneKind(message, streamMessages) ?? "system.unknown";
+      const swatch = swatchFor(renderConfig, kindId);
+      const borderStyle: React.CSSProperties = swatch ? { borderColor: swatch } : {};
+      const textStyle: React.CSSProperties = swatch ? { color: swatch } : {};
       return (
-        <div className={cn("flex items-start gap-2 text-xs font-mono py-1.5 px-3 border-l-2 border-muted-foreground/40 text-muted-foreground", className)}>
-          <span className="opacity-70">system.{subtype}</span>
-          {text && <span className="truncate">{String(text)}</span>}
+        <div
+          className={cn("flex items-start gap-2 text-xs font-mono py-1.5 px-3 border-l-2", !swatch && "border-muted-foreground/40 text-muted-foreground", className)}
+          style={borderStyle}
+        >
+          <span className="opacity-70" style={textStyle}>system.{subtype}</span>
+          {text && <span className="truncate" style={textStyle}>{String(text)}</span>}
         </div>
       );
     }
@@ -885,26 +896,31 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
 
       let renderedSomething = false;
 
-      // Pick card style from the configurable palette. Skill injection is not
-      // yet wired through the config (no dedicated kind); keeps its purple tint.
+      // Pick card style from the configurable palette. Every variant now has
+      // a dedicated kind id so Appearance customizations apply uniformly —
+      // including the previously-hardcoded skill-injection / command /
+      // command-output cases.
+      const isCommand = !isToolResultOnly && !isSubagentPrompt && !skillInjection
+        && typeof contentStr === 'string'
+        && contentStr.includes('<command-name>');
+      const isCommandOutput = !isToolResultOnly && !isSubagentPrompt && !skillInjection
+        && !isCommand
+        && typeof contentStr === 'string'
+        && contentStr.includes('<local-command-stdout>');
       const userKindId = isToolResultOnly
         ? "tool.result.generic"
         : isSubagentPrompt
         ? "user.subagentPrompt"
         : skillInjection
-        ? null
+        ? "user.skillInjection"
+        : isCommand
+        ? "user.command"
+        : isCommandOutput
+        ? "user.commandOutput"
         : "user.prompt";
 
-      const userStyle: React.CSSProperties | undefined = skillInjection
-        ? { borderColor: "#a855f755", backgroundColor: "rgba(168, 85, 247, 0.10)" }
-        : userKindId
-        ? accentStyleFor(renderConfig, userKindId)
-        : undefined;
-      const userSwatch = skillInjection
-        ? "#a855f7"
-        : userKindId
-        ? swatchFor(renderConfig, userKindId)
-        : undefined;
+      const userStyle: React.CSSProperties | undefined = accentStyleFor(renderConfig, userKindId);
+      const userSwatch = swatchFor(renderConfig, userKindId);
 
       const cardStyle = {
         className: cn("border", className),
@@ -920,21 +936,19 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
 
       const userKindIdForIcon = userKindId ?? undefined;
       const iconSize = iconSizeClassName(renderConfig, userKindIdForIcon);
+      const fallbackIconName = isToolResultOnly
+        ? "Terminal"
+        : skillInjection
+        ? "Sparkles"
+        : isSubagentPrompt
+        ? "Bot"
+        : "User";
       const cardIcon = (
         <div
           className={iconWrapperClassName(renderConfig, userKindIdForIcon)}
           style={iconWrapperStyle(renderConfig, userSwatch, userKindIdForIcon)}
         >
-          {isToolResultOnly
-            ? <IconRenderer name={userIconName ?? "Terminal"} className={iconSize} />
-            : skillInjection
-            ? <Sparkles className={iconSize} />
-            : (
-              <IconRenderer
-                name={userIconName ?? (isSubagentPrompt ? "Bot" : "User")}
-                className={iconSize}
-              />
-            )}
+          <IconRenderer name={userIconName ?? fallbackIconName} className={iconSize} />
         </div>
       );
 
@@ -958,7 +972,10 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                     only cards (subagent returns, etc.) don't lose the header. */}
                 {showUserHeader && userKindId && <KindHeader kindId={userKindId} />}
                 {skillInjection && (
-                  <div className="text-xs font-medium text-purple-500 dark:text-purple-400 font-mono">
+                  <div
+                    className="text-xs font-medium font-mono"
+                    style={userSwatch ? { color: userSwatch } : undefined}
+                  >
                     Skill: {skillInjection.skillName}
                   </div>
                 )}
