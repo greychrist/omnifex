@@ -43,8 +43,9 @@ import { TerminalView } from './TerminalView';
 import { HiddenEventsGroup } from "./HiddenEventsGroup";
 import { buildCompactItems } from "@/lib/compactGrouping";
 import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
-import { SessionHeader, HeaderLabel } from "./SessionHeader";
-import { ProjectPathBadge } from "./claude-code-session/ProjectPathBadge";
+import { HeaderLabel } from "./HeaderLabel";
+import { AccountCard } from "./AccountCard";
+import { SessionCard } from "./SessionCard";
 import { GitBranchBadge } from "./claude-code-session/GitBranchBadge";
 import { GitWatchStatusIcon } from "./claude-code-session/GitWatchStatusIcon";
 import { resolveBranchColors } from '@/lib/branchColors';
@@ -189,7 +190,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   const [rateLimitSnapshots, setRateLimitSnapshots] = useState<
     Record<string, RateLimitSnapshot>
   >({});
-  const [sessionCost, setSessionCost] = useState(0);
+  const [, setSessionCost] = useState(0);
   // Pre-session config: show setup panel for new sessions until user clicks
   // Start. When the tab was opened from the project view's inline form,
   // initialSessionConfig is set and we skip the panel entirely.
@@ -1399,6 +1400,15 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       : undefined;
 
 
+  const sessionStatus: 'starting' | 'active' | 'ended' | undefined =
+    !sessionStarted
+      ? undefined
+      : isSessionActive
+        ? 'active'
+        : isSessionStarting
+          ? 'starting'
+          : 'ended';
+
   // Compute restart-button gating once so it can be passed to both the
   // header (where the button lives) and any tooltip consumers.
   const clearButtonDisabled =
@@ -1421,95 +1431,93 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             size="sm"
             variant="outline"
             onClick={handleBackToProject}
-            className="h-8 px-3 text-sm gap-1.5"
+            className="h-10 px-3 text-sm gap-1.5"
             title="Back to project sessions list"
           >
             <ArrowLeft className="h-4 w-4" />
             Back to Project
           </Button>
           <span aria-hidden="true" className="self-stretch w-px bg-foreground/30 shrink-0 mx-1" />
-          {projectPath && (
-            <div className="flex flex-col items-start gap-0.5">
-              <HeaderLabel>folder</HeaderLabel>
-              <ProjectPathBadge path={projectPath} />
-            </div>
-          )}
+          <SessionCard
+            totalTokens={totalTokens}
+            model={selectedModel}
+            contextUsage={contextUsage}
+            sessionStatus={sessionStatus}
+            onReconnect={() => void handleReconnect()}
+            onClear={() => {
+              if (window.confirm('Clear the conversation and start a fresh session? This wipes all messages in this tab and cannot be undone.')) {
+                void handleClear();
+              }
+            }}
+            clearDisabled={clearButtonDisabled}
+            clearReason={clearButtonReason}
+            sessionId={claudeSessionId}
+          />
           {gitStatus?.branch && (
-            <div className="flex flex-col items-start gap-0.5">
-              <HeaderLabel>branch</HeaderLabel>
-              <div className="flex items-center gap-1">
+            <div className="flex items-start gap-3 rounded-md border border-border/50 bg-background/40 px-2 py-1">
+              <div className="flex flex-col items-start gap-0.5">
+                <HeaderLabel>branch</HeaderLabel>
                 <GitBranchBadge
                   name={gitStatus.branch}
                   changed={gitStatus.changed}
                   untracked={gitStatus.untracked}
                   color={branchColorResolution.colors[gitStatus.branch] ?? null}
                   isTrunk={branchColorResolution.trunkBlack.has(gitStatus.branch)}
+                  path={projectPath}
+                  error={gitStatus.error}
                 />
-                {gitWatchId && (
+              </div>
+              {worktreeList.length > 0 && (
+                <div className="flex flex-col items-start gap-0.5">
+                  <HeaderLabel>worktrees</HeaderLabel>
+                  <div className="flex flex-col items-start gap-1">
+                    {worktreeList.map((wt) => {
+                      const branchName = wt.branch ?? '(detached)';
+                      return (
+                        <div key={wt.path} title={wt.path}>
+                          <GitBranchBadge
+                            name={branchName}
+                            changed={wt.changed}
+                            untracked={wt.untracked}
+                            color={branchColorResolution.colors[branchName] ?? null}
+                            isTrunk={branchColorResolution.trunkBlack.has(branchName)}
+                            path={wt.path}
+                            error={wt.error}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              {gitWatchId && (
+                <div className="flex flex-col items-start gap-0.5">
+                  <HeaderLabel>&nbsp;</HeaderLabel>
                   <GitWatchStatusIcon
                     errors={gitWatchErrors}
                     onReconnect={() => api.reconnectSessionGitWatch(gitWatchId)}
+                    snapshotKey={sessionGit}
                   />
-                )}
-              </div>
-            </div>
-          )}
-          {worktreeList.length > 0 && (
-            <div className="flex flex-col items-start gap-0.5">
-              <HeaderLabel>worktrees</HeaderLabel>
-              <div className="flex flex-col items-start gap-1">
-                {worktreeList.map((wt) => {
-                  const branchName = wt.branch ?? '(detached)';
-                  return (
-                    <div key={wt.path} title={wt.path}>
-                      <GitBranchBadge
-                        name={branchName}
-                        changed={wt.changed}
-                        untracked={wt.untracked}
-                        color={branchColorResolution.colors[branchName] ?? null}
-                        isTrunk={branchColorResolution.trunkBlack.has(branchName)}
-                      />
-                    </div>
-                  );
-                })}
-              </div>
+                </div>
+              )}
             </div>
           )}
           {/* mode and output-style controls have moved to the chat bar (see FloatingPromptInput below). */}
+          {accountResolution && (
+            <AccountCard
+              className="ml-auto"
+              accountName={accountResolution.account.name}
+              accountType={accountResolution.account.account_type}
+              configDir={accountResolution.account.config_dir}
+              matchType={accountResolution.match_type}
+              matchDetail={accountResolution.match_detail}
+              sdkAccount={sdkAccountInfo}
+              fiveHourRateLimit={rateLimitSnapshots['five_hour'] ?? null}
+              sevenDayRateLimit={rateLimitSnapshots['seven_day'] ?? null}
+              sessionStatus={sessionStatus}
+            />
+          )}
         </div>
-        <SessionHeader
-          accountName={accountResolution?.account.name ?? ''}
-          accountType={accountResolution?.account.account_type ?? ''}
-          configDir={accountResolution?.account.config_dir ?? ''}
-          matchType={accountResolution?.match_type ?? ''}
-          matchDetail={accountResolution?.match_detail ?? ''}
-          cost={sessionCost}
-          totalTokens={totalTokens}
-          model={selectedModel}
-          sdkAccount={sdkAccountInfo}
-          contextUsage={contextUsage}
-          fiveHourRateLimit={rateLimitSnapshots['five_hour'] ?? null}
-          sevenDayRateLimit={rateLimitSnapshots['seven_day'] ?? null}
-          onClear={() => {
-            if (window.confirm('Clear the conversation and start a fresh session? This wipes all messages in this tab and cannot be undone.')) {
-              void handleClear();
-            }
-          }}
-          clearDisabled={clearButtonDisabled}
-          clearReason={clearButtonReason}
-          onReconnect={() => void handleReconnect()}
-          sessionStatus={
-            !sessionStarted
-              ? undefined
-              : isSessionActive
-                ? 'active'
-                : isSessionStarting
-                  ? 'starting'
-                  : 'ended'
-          }
-          sessionId={claudeSessionId}
-          className="mb-2"
-        />
         {!sessionStarted && (
           <div className="flex-1 flex items-center justify-center p-8">
             <NewSessionForm

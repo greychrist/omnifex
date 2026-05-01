@@ -2,7 +2,7 @@ import * as React from 'react';
 import { Clock, CalendarDays } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { RateLimitSnapshot } from '@/lib/api';
-import { HeaderLabel } from '../SessionHeader';
+import { HeaderLabel } from '../HeaderLabel';
 
 interface RateLimitWidgetProps {
   /** Latest snapshot for this rate-limit window. Null = no data yet. */
@@ -15,6 +15,9 @@ interface RateLimitWidgetProps {
   onClick?: () => void;
   /** Wall-clock right now (ms since epoch). Defaults to `Date.now()`. */
   nowMs?: number;
+  /** Hide the HeaderLabel above the badge (used when the widget is stacked
+   *  under a sibling that already labels the group). */
+  hideLabel?: boolean;
   className?: string;
 }
 
@@ -55,6 +58,7 @@ export function RateLimitWidget({
   accountName,
   onClick,
   nowMs,
+  hideLabel,
   className,
 }: RateLimitWidgetProps) {
   const { label } = LABELS[windowType];
@@ -65,7 +69,7 @@ export function RateLimitWidget({
   if (!snapshot) {
     return (
       <div className={cn('flex flex-col items-start gap-0.5', className)}>
-        <HeaderLabel>{label}</HeaderLabel>
+        {!hideLabel && <HeaderLabel>{label}</HeaderLabel>}
         <span
           className={cn(
             'inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-mono font-medium text-muted-foreground/70',
@@ -74,9 +78,9 @@ export function RateLimitWidget({
           title={accountName ? `${accountName} · no ${label} data yet` : `no ${label} data yet`}
         >
           <Icon className="w-3.5 h-3.5 opacity-60" />
-          <span className="opacity-60">—</span>
-          <div className="w-16 h-1.5 bg-foreground/10 rounded-full" />
-          <span className="opacity-60">--</span>
+          <span className="opacity-60 text-right tabular-nums min-w-[4ch]">—</span>
+          <div className="w-11 h-1.5 bg-foreground/10 rounded-full" />
+          <span className="opacity-60 text-left tabular-nums min-w-[7ch]">--</span>
         </span>
       </div>
     );
@@ -116,7 +120,7 @@ export function RateLimitWidget({
 
   return (
     <div className={cn('flex flex-col items-start gap-0.5', className)}>
-      <HeaderLabel>{label}</HeaderLabel>
+      {!hideLabel && <HeaderLabel>{label}</HeaderLabel>}
       <button
         type="button"
         onClick={onClick}
@@ -131,16 +135,16 @@ export function RateLimitWidget({
         )}
       >
         <Icon className={cn('w-3.5 h-3.5', isRejected ? 'text-red-400' : 'text-foreground')} />
-        <span className={cn('font-mono', pctTextColor)}>
+        <span className={cn('font-mono text-right tabular-nums min-w-[4ch]', pctTextColor)}>
           {pct != null ? `${pct.toFixed(0)}%` : '?%'}
         </span>
-        <div className="w-16 h-1.5 bg-foreground/10 rounded-full overflow-hidden relative">
+        <div className="w-11 h-1.5 bg-foreground/10 rounded-full overflow-hidden relative">
           <div
             className="absolute inset-0 rounded-full bg-gradient-to-r from-green-400 via-orange-400 to-red-400 transition-[clip-path]"
             style={{ clipPath: `inset(0 ${pct == null ? 100 : 100 - pct}% 0 0)` }}
           />
         </div>
-        <span className="text-foreground/70 font-mono whitespace-nowrap">
+        <span className="text-foreground/70 font-mono whitespace-nowrap text-left tabular-nums min-w-[7ch]">
           {tail || '—'}
         </span>
         {isStale && (
