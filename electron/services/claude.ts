@@ -30,6 +30,9 @@ export interface Session {
   todo_data?: unknown;
   created_at: number;
   first_message?: string;
+  first_timestamp?: string;
+  last_timestamp?: string;
+  /** @deprecated retained for renderer migration; use last_timestamp instead. */
   message_timestamp?: string;
 }
 
@@ -198,18 +201,43 @@ function encodeProjectId(projectPath: string): string {
   return projectPath.replace(/\//g, '-');
 }
 
-/** Get the first user/human message text from a JSONL session file. */
-function extractFirstMessage(filePath: string): string | undefined {
+/**
+ * Walk a JSONL session file once and pull out:
+ *  - the first user-text message (skipping meta / command-tag noise),
+ *  - the ISO timestamp of the first JSONL entry that has a `timestamp` field,
+ *  - the ISO timestamp of the last JSONL entry that has a `timestamp` field.
+ *
+ * Returning all three from one pass lets `getProjectSessions` build the row's
+ * "first activity – last activity" range without extra reads.
+ */
+function extractSessionMetadata(filePath: string): {
+  firstMessage?: string;
+  firstTimestamp?: string;
+  lastTimestamp?: string;
+} {
   const entries = readJsonlFile(filePath);
+  let firstMessage: string | undefined;
+  let firstTimestamp: string | undefined;
+  let lastTimestamp: string | undefined;
+
   for (const entry of entries) {
     if (typeof entry !== 'object' || entry === null) continue;
     const obj = entry as Record<string, unknown>;
 
-    // Only user messages with type === 'user', skip meta/system-injected ones
+    // Track first/last timestamps across every entry that carries one,
+    // regardless of type — assistant turns, tool results, and meta entries
+    // all bracket the session's wall-clock activity.
+    const ts = obj['timestamp'];
+    if (typeof ts === 'string') {
+      if (!firstTimestamp) firstTimestamp = ts;
+      lastTimestamp = ts;
+    }
+
+    if (firstMessage) continue; // already have the first message text
+
     if (obj['type'] !== 'user') continue;
     if (obj['isMeta']) continue;
 
-    // Actual message content is nested under message.content
     const message = obj['message'] as Record<string, unknown> | undefined;
     if (!message) continue;
     const content = message['content'];
@@ -231,7 +259,6 @@ function extractFirstMessage(filePath: string): string | undefined {
 
     if (!text) continue;
 
-    // Skip command caveats, system reminders, tool results, and /exit commands
     if (
       text.includes('<local-command-caveat>') ||
       text.includes('<system-reminder>') ||
@@ -240,9 +267,10 @@ function extractFirstMessage(filePath: string): string | undefined {
       continue;
     }
 
-    return text.trim().slice(0, 200);
+    firstMessage = text.trim().slice(0, 200);
   }
-  return undefined;
+
+  return { firstMessage, firstTimestamp, lastTimestamp };
 }
 
 const EXEC_OPTIONS = {
@@ -404,17 +432,18 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
       const filePath = path.join(projectDir, entry.name);
 
       let createdAt = Date.now();
-      let messageTimestamp: string | undefined;
+      let mtimeFallback: string | undefined;
 
       try {
         const stat = fs.statSync(filePath);
         createdAt = stat.birthtimeMs;
-        messageTimestamp = new Date(stat.mtimeMs).toISOString();
+        mtimeFallback = new Date(stat.mtimeMs).toISOString();
       } catch {
         // ignore
       }
 
-      const firstMessage = extractFirstMessage(filePath);
+      const { firstMessage, firstTimestamp, lastTimestamp } =
+        extractSessionMetadata(filePath);
       const decodedPath = projectPath ?? decodeProjectId(projectId);
 
       sessions.push({
@@ -423,7 +452,9 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
         project_path: decodedPath,
         created_at: Math.floor(createdAt / 1000),
         first_message: firstMessage,
-        message_timestamp: messageTimestamp,
+        first_timestamp: firstTimestamp,
+        last_timestamp: lastTimestamp ?? mtimeFallback,
+        message_timestamp: lastTimestamp ?? mtimeFallback,
       });
     }
 

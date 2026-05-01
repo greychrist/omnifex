@@ -1,6 +1,7 @@
 import type { ClaudeStreamMessage } from "@/types/claudeStream";
 import { isTaskLifecycleMarker } from "@/lib/subagentStreams";
 import { isSubagentPrompt } from "@/lib/subagentDispatch";
+import { detectSkillInjection } from "@/lib/skillDetection";
 import type { HardFilters } from "@/lib/messageRenderingConfig";
 
 const HOOK_LIFECYCLE_SUBTYPES = new Set([
@@ -37,8 +38,21 @@ export function filterDisplayableMessages(
   const dropHookLifecycle = hardFilters?.dropHookLifecycle ?? true;
 
   return messages.filter((message, index) => {
+    // Skill-injection user messages have isMeta:true in the persisted
+    // JSONL (the SDK live-stream variant uses isSynthetic instead) but
+    // they carry the SKILL.md body — which we want to render. Detect
+    // them here so the meta-noise filter below doesn't drop them, and
+    // the user-message isMeta filter further down doesn't either.
+    const isSkillInjected =
+      message.isMeta === true && !!detectSkillInjection(message, messages);
+
     // Skip meta messages that don't have meaningful content
-    if (message.isMeta && !message.leafUuid && !message.summary) {
+    if (
+      message.isMeta &&
+      !message.leafUuid &&
+      !message.summary &&
+      !isSkillInjected
+    ) {
       return false;
     }
 
@@ -64,7 +78,7 @@ export function filterDisplayableMessages(
 
     // Skip user messages that only contain tool results that are already displayed
     if (message.type === "user" && message.message) {
-      if (message.isMeta) return false;
+      if (message.isMeta && !isSkillInjected) return false;
 
       const msg = message.message;
       if (

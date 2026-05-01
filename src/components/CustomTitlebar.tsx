@@ -260,15 +260,16 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
   return (
     <TooltipProvider>
     <div
-      className="relative z-[200] h-11 bg-background/95 backdrop-blur-sm flex items-center justify-between select-none border-b border-border/50 tauri-drag"
+      className="relative z-[200] h-[60px] bg-background/95 backdrop-blur-sm flex items-center justify-between select-none border-b border-border/50 tauri-drag"
       data-tauri-drag-region
     >
-      {/* Left side - version badges (native traffic lights are provided by Electron frame) */}
-      <div className="flex items-center pl-20 gap-1.5 tauri-no-drag">
+      {/* Left side - app icon + version badges. Traffic lights live in the
+           OS-native title bar above this row, so no left padding needed. */}
+      <div className="flex items-center pl-3 gap-1.5 tauri-no-drag">
         <img
           src={GreyChristIcon}
           alt="GreyChrist"
-          className="h-6 w-6 rounded-sm select-none"
+          className="h-12 w-12 rounded-md select-none mr-3"
           draggable={false}
         />
         {appVersion && (

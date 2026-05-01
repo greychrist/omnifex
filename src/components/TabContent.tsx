@@ -2,9 +2,9 @@ import React, { Suspense, lazy, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useTabState } from '@/hooks/useTabState';
 import { Tab } from '@/contexts/TabContext';
-import { Plus, ArrowLeft, Hash } from 'lucide-react';
+import { Plus, ArrowLeft } from 'lucide-react';
 import { Spinner } from '@/components/ui/spinner';
-import { api, type Project, type Session, type ClaudeMdFile } from '@/lib/api';
+import { api, type Project, type Session } from '@/lib/api';
 import { ProjectList } from '@/components/ProjectList';
 import { SessionList } from '@/components/SessionList';
 import { AccountPickerDialog } from '@/components/AccountPickerDialog';
@@ -270,19 +270,6 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                               {selectedProject.path.split('/').pop()}
                               {projectAccountName && <AccountBadge name={projectAccountName} />}
                             </h1>
-                            <p className="mt-1 text-sm text-muted-foreground flex items-center gap-3">
-                              <span>{`${sessions.length} session${sessions.length !== 1 ? 's' : ''}`}</span>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="h-7 px-2 text-xs"
-                                onClick={() => setShowOpenByIdDialog(true)}
-                                title="Open a session by pasting its GUID"
-                              >
-                                <Hash className="h-3 w-3 mr-1" />
-                                Open by ID…
-                              </Button>
-                            </p>
                           </div>
                         </div>
                       </div>
@@ -348,11 +335,17 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                             sessions={sessions}
                             projectPath={selectedProject.path}
                             onSessionClick={openSessionInTab}
-                            onEditClaudeFile={(file: ClaudeMdFile) => {
-                              // Open CLAUDE.md file in a new tab
-                              window.dispatchEvent(new CustomEvent('open-claude-file', {
-                                detail: { file }
-                              }));
+                            onOpenById={() => setShowOpenByIdDialog(true)}
+                            onRefresh={async () => {
+                              try {
+                                const fresh = await api.getProjectSessions(
+                                  selectedProject.id,
+                                  selectedProject.path,
+                                );
+                                setSessions(fresh);
+                              } catch (err) {
+                                console.error('Failed to refresh sessions:', err);
+                              }
                             }}
                           />
                         )}
@@ -549,7 +542,7 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
 };
 
 export const TabContent: React.FC = () => {
-  const { tabs, activeTabId, createChatTab, createProjectsTab, findTabBySessionId, createClaudeFileTab, closeTab, updateTab } = useTabState();
+  const { tabs, activeTabId, createChatTab, createProjectsTab, findTabBySessionId, closeTab, updateTab } = useTabState();
   
   // Listen for events to open sessions in tabs
   useEffect(() => {
@@ -581,11 +574,6 @@ export const TabContent: React.FC = () => {
           }
         }).catch(() => {});
       }
-    };
-
-    const handleOpenClaudeFile = (event: CustomEvent) => {
-      const { file } = event.detail;
-      createClaudeFileTab(file.id, file.name || 'CLAUDE.md');
     };
 
     const handleCloseTab = (event: CustomEvent) => {
@@ -651,18 +639,16 @@ export const TabContent: React.FC = () => {
     };
 
     window.addEventListener('open-session-in-tab', handleOpenSessionInTab as EventListener);
-    window.addEventListener('open-claude-file', handleOpenClaudeFile as EventListener);
     window.addEventListener('close-tab', handleCloseTab as EventListener);
     window.addEventListener('claude-session-selected', handleClaudeSessionSelected as EventListener);
     window.addEventListener('back-to-project', handleBackToProject as EventListener);
     return () => {
       window.removeEventListener('open-session-in-tab', handleOpenSessionInTab as EventListener);
-      window.removeEventListener('open-claude-file', handleOpenClaudeFile as EventListener);
       window.removeEventListener('close-tab', handleCloseTab as EventListener);
       window.removeEventListener('claude-session-selected', handleClaudeSessionSelected as EventListener);
       window.removeEventListener('back-to-project', handleBackToProject as EventListener);
     };
-  }, [createChatTab, findTabBySessionId, createClaudeFileTab, closeTab, updateTab, activeTabId, tabs]);
+  }, [createChatTab, findTabBySessionId, closeTab, updateTab, activeTabId, tabs]);
   
   return (
     <div className="flex-1 h-full relative">

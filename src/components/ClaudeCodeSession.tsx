@@ -1137,6 +1137,43 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   // old JSONL transcript stays on disk; this just begins a new session
   // ID with no resume, mirroring what `/clear` does in the Claude Code
   // CLI. Only safe to call when nothing is in flight.
+  /**
+   * Force-reconnect handler exposed via the inline icon in the status badge.
+   * Unlike `handleClear`, this preserves the message history — it just tears
+   * down stale renderer flags / listeners and either rebinds to a still-alive
+   * main-process session or spawns a fresh one (resuming from
+   * claudeSessionId when available).
+   */
+  const handleReconnect = async () => {
+    const tid = tabIdRef.current;
+
+    // Best-effort stop of any zombie main-process session for this tab so
+    // start() doesn't trip its existing-session-cleanup path on a half-dead
+    // handle.
+    try { await api.stopSession(tid); } catch { /* best effort */ }
+
+    unlistenRefs.current.forEach((u) => u());
+    unlistenRefs.current = [];
+
+    persistentSessionRef.current = false;
+    setIsSessionStarting(false);
+    setIsSessionActive(false);
+    setIsLoading(false);
+    setError(null);
+
+    // Try the cheap rebind first — if the main process session was already
+    // restarted by a hot reload the rebind succeeds and we're done.
+    const rebound = await rebindPersistentSession().catch(() => false);
+    if (rebound) return;
+
+    try {
+      await startPersistentSession(claudeSessionId ?? undefined);
+    } catch (err) {
+      console.error('reconnect: startPersistentSession failed:', err);
+      setError('Failed to reconnect: ' + (err instanceof Error ? err.message : String(err)));
+    }
+  };
+
   const handleClear = async () => {
     if (!isSessionActive || isLoading || waitingForPermission) return;
     const tid = tabIdRef.current;
@@ -1453,9 +1490,14 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           contextUsage={contextUsage}
           fiveHourRateLimit={rateLimitSnapshots['five_hour'] ?? null}
           sevenDayRateLimit={rateLimitSnapshots['seven_day'] ?? null}
-          onClear={() => void handleClear()}
+          onClear={() => {
+            if (window.confirm('Clear the conversation and start a fresh session? This wipes all messages in this tab and cannot be undone.')) {
+              void handleClear();
+            }
+          }}
           clearDisabled={clearButtonDisabled}
           clearReason={clearButtonReason}
+          onReconnect={() => void handleReconnect()}
           sessionStatus={
             !sessionStarted
               ? undefined

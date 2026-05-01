@@ -158,6 +158,11 @@ export function createSessionsService(
       // the mode handler owns lifecycle from here. Do NOT fire claude-error /
       // claude-complete, which would wipe renderer state (isSessionActive).
       if (handle.mode === 'tui') return;
+      // If start() has already replaced this handle (StrictMode double-mount,
+      // or any explicit re-start), the throw was caused by `inputChannel.close()`
+      // in start() itself. Suppress all renderer-facing events so the new
+      // session's listeners don't see a spurious error from the old one.
+      if (sessions.get(tabId) !== handle) return;
       // Stream error — keep the session alive so the user can retry.
       // The next sendMessage() will restart the SDK query transparently.
       handle.status = 'error';
@@ -177,6 +182,13 @@ export function createSessionsService(
     // Normal stream close — clean up (unless we're mid-switch to TUI mode,
     // in which case the session stays alive and mode handles its own lifecycle)
     if (handle.mode === 'tui') return;
+    // If start() has replaced this handle in the map (StrictMode double-mount
+    // or an explicit re-start path), the loop terminated because start() closed
+    // our inputChannel. The newly-registered handle is what the renderer cares
+    // about now — emitting claude-complete here would flip its session state to
+    // 'ended', and `sessions.delete(tabId)` would wipe the new handle from the
+    // map. Bail without touching either.
+    if (sessions.get(tabId) !== handle) return;
     handle.status = 'stopped';
     sendToRenderer(`claude-complete:${tabId}`);
     sessions.delete(tabId);

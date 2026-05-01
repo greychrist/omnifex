@@ -126,7 +126,11 @@ export interface Session {
   created_at: number;
   /** First user message content (if available) */
   first_message?: string;
-  /** Timestamp of the first user message (if available) */
+  /** ISO timestamp of the first JSONL entry that has a `timestamp` field. */
+  first_timestamp?: string;
+  /** ISO timestamp of the last JSONL entry that has a `timestamp` field. */
+  last_timestamp?: string;
+  /** @deprecated Filesystem mtime fallback. Prefer `last_timestamp`. */
   message_timestamp?: string;
 }
 

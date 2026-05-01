@@ -69,16 +69,19 @@ const TabItem: React.FC<TabItemProps> = ({ tab, isActive, onClose, onClick, isDr
       value={tab}
       id={tab.id}
       dragListener={true}
-      transition={{ duration: 0.1 }}
+      // Don't transition `transform` here — framer-motion already animates
+      // it during the drag. A CSS `transition-all` would fight that and
+      // produce the jumpy reorder. Limit CSS transitions to colors / bg.
+      whileDrag={{ scale: 1.02, zIndex: 30, cursor: 'grabbing' }}
       className={cn(
         "relative flex items-center gap-[7px] text-sm cursor-pointer select-none group",
-        "transition-all duration-100",
+        "transition-colors duration-100",
         "rounded-md h-[26px] px-[10px]",
         "min-w-[120px] max-w-[220px]",
         isActive
           ? "text-foreground bg-background shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_75%,transparent)]"
           : "text-muted-foreground hover:text-foreground hover:bg-white/5",
-        isDragging && "shadow-sm",
+        isDragging && "shadow-md",
       )}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
@@ -333,7 +336,11 @@ export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
             values={tabs}
             onReorder={handleReorder}
             className="flex items-center gap-1"
-            layoutScroll={false}
+            // The parent .flex-1 div is `overflow-x-auto`, so let framer-motion
+            // do scroll-aware layout math when the dragged tab nears the edge.
+            // Setting `layoutScroll={false}` was making drop targets
+            // mis-compute and contributed to the jumpy reorder.
+            layoutScroll
           >
             {tabs.map((tab) => (
               <TabItem

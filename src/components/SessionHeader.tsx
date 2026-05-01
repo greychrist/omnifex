@@ -95,6 +95,9 @@ interface SessionHeaderProps {
   clearDisabled?: boolean;
   /** Tooltip explaining why restart is disabled, when it is. */
   clearReason?: string;
+  /** Force-reconnect button click handler. Renders an inline reconnect icon
+   *  inside the status badge while sessionStatus === 'ended'. */
+  onReconnect?: () => void;
   /** Current Claude session id (GUID). When present, surfaces in the
    *  context popover with a copy button so it's easy to grab for support
    *  threads, JSONL lookups, etc. Null/undefined hides the row. */
@@ -135,6 +138,7 @@ export function SessionHeader({
   onClear,
   clearDisabled,
   clearReason,
+  onReconnect,
   sessionStatus,
   sessionId,
   className,
@@ -310,7 +314,7 @@ export function SessionHeader({
             <HeaderLabel>status</HeaderLabel>
             <span
               className={cn(
-                "inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+                "inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
                 sessionStatus === 'starting' && 'animate-pulse',
               )}
               style={{
@@ -322,6 +326,18 @@ export function SessionHeader({
               {sessionStatus === 'active' && 'Active'}
               {sessionStatus === 'starting' && 'Starting…'}
               {sessionStatus === 'ended' && 'Closed'}
+              {sessionStatus === 'ended' && onReconnect && (
+                <button
+                  type="button"
+                  onClick={onReconnect}
+                  className="inline-flex items-center justify-center rounded-sm hover:bg-white/10 transition-colors p-0.5 -mr-0.5"
+                  style={{ color: statusColor }}
+                  title="Force reconnect"
+                  aria-label="Force reconnect"
+                >
+                  <RefreshCw className="h-3 w-3" />
+                </button>
+              )}
             </span>
           </div>
         );

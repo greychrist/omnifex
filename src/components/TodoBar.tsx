@@ -101,7 +101,11 @@ export const TodoBar: React.FC<TodoBarProps> = ({ messages, isLive, className })
           </button>
           <button
             type="button"
-            onClick={() => setDismissedKey(key)}
+            onClick={() => {
+              if (window.confirm('Clear the current todo list from the bar? It will reappear when the agent emits a new TodoWrite.')) {
+                setDismissedKey(key);
+              }
+            }}
             className={cn(
               'ml-auto inline-flex items-center px-1.5 py-0.5 rounded border border-border/60 bg-background',
               'text-muted-foreground hover:text-foreground hover:bg-accent transition-colors',

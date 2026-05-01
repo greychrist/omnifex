@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Bot, FolderCode } from "lucide-react";
-import { api, type Project, type Session, type ClaudeMdFile } from "@/lib/api";
+import { api, type Project, type Session } from "@/lib/api";
 import { initializeWebMode } from "@/lib/apiAdapter";
 import { TabProvider, useTabContext } from "@/contexts/TabContext";
 import { AccountsProvider } from "@/contexts/AccountsContext";
@@ -14,7 +14,6 @@ import { FilePicker } from "@/components/FilePicker";
 import { SessionList } from "@/components/SessionList";
 import { CustomTitlebar } from "@/components/CustomTitlebar";
 import { MarkdownEditor } from "@/components/MarkdownEditor";
-import { ClaudeFileEditor } from "@/components/ClaudeFileEditor";
 import { Settings } from "@/components/Settings";
 import { MCPManager } from "@/components/MCPManager";
 import { NFOCredits } from "@/components/NFOCredits";
@@ -30,8 +29,7 @@ import { StartupIntro } from "@/components/StartupIntro";
 type View = 
   | "welcome" 
   | "projects" 
-  | "editor" 
-  | "claude-file-editor" 
+  | "editor"
   | "settings"
   | "cc-agents"
   | "create-agent"
@@ -53,7 +51,6 @@ function AppContent() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [sessions, setSessions] = useState<Session[]>([]);
-  const [editingClaudeFile, setEditingClaudeFile] = useState<ClaudeMdFile | null>(null);
   const [loading, setLoading] = useState(true);
   const [_error, setError] = useState<string | null>(null);
   const [showNFO, setShowNFO] = useState(false);
@@ -184,6 +181,24 @@ function AppContent() {
   };
 
   /**
+   * Re-fetch the session list for the currently-selected project. Triggered
+   * by the SessionList refresh button when the user wants to pick up new
+   * sessions that were created in a different tab / since the page rendered.
+   */
+  const handleRefreshSessions = async () => {
+    if (!selectedProject) return;
+    try {
+      const sessionList = await api.getProjectSessions(
+        selectedProject.id,
+        selectedProject.path,
+      );
+      setSessions(sessionList);
+    } catch (err) {
+      console.error("Failed to refresh sessions:", err);
+    }
+  };
+
+  /**
    * Opens the project directory picker
    */
   const handleOpenProject = async () => {
@@ -197,22 +212,6 @@ function AppContent() {
    * Opens a new Claude Code session in the interactive UI
    */
   // New session creation is handled by the tab system via titlebar actions
-
-  /**
-   * Handles editing a CLAUDE.md file from a project
-   */
-  const handleEditClaudeFile = (file: ClaudeMdFile) => {
-    setEditingClaudeFile(file);
-    handleViewChange("claude-file-editor");
-  };
-
-  /**
-   * Returns from CLAUDE.md file editor to projects view
-   */
-  const handleBackFromClaudeFileEditor = () => {
-    setEditingClaudeFile(null);
-    handleViewChange("projects");
-  };
 
   /**
    * Handles view changes with navigation protection
@@ -304,7 +303,7 @@ function AppContent() {
             <SessionList
               sessions={sessions}
               projectPath={selectedProject.path}
-              onEditClaudeFile={handleEditClaudeFile}
+              onRefresh={handleRefreshSessions}
             />
           );
         }
@@ -316,14 +315,6 @@ function AppContent() {
             loading={loading}
           />
         );
-      
-      case "claude-file-editor":
-        return editingClaudeFile ? (
-          <ClaudeFileEditor
-            file={editingClaudeFile}
-            onBack={handleBackFromClaudeFileEditor}
-          />
-        ) : null;
       
       case "tabs":
         return (

@@ -1,13 +1,11 @@
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Clock, MessageSquare, Copy, Check } from "lucide-react";
-import { Card } from "@/components/ui/card";
+import { Copy, Check, RefreshCw, Hash } from "lucide-react";
 import { Pagination } from "@/components/ui/pagination";
-import { ClaudeMemoriesDropdown } from "@/components/ClaudeMemoriesDropdown";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { truncateText, getFirstLine } from "@/lib/date-utils";
-import type { Session, ClaudeMdFile } from "@/lib/api";
+import type { Session } from "@/lib/api";
 
 interface SessionListProps {
   /**
@@ -27,9 +25,18 @@ interface SessionListProps {
    */
   onSessionClick?: (session: Session) => void;
   /**
-   * Callback when a CLAUDE.md file should be edited
+   * Callback to re-fetch the session list (refresh button). When provided,
+   * the component renders a small refresh icon in the header row. The
+   * component manages its own pending/spinner state while the promise is
+   * in flight; callers don't need to pass any loading flag.
    */
-  onEditClaudeFile?: (file: ClaudeMdFile) => void;
+  onRefresh?: () => Promise<void> | void;
+  /**
+   * Callback to open the "Open session by GUID" dialog. When provided,
+   * a small `Open by ID…` button is rendered in the header row next to
+   * the session count. The dialog itself is owned by the caller.
+   */
+  onOpenById?: () => void;
   /**
    * Optional className for styling
    */
@@ -53,10 +60,22 @@ export const SessionList: React.FC<SessionListProps> = ({
   sessions,
   projectPath,
   onSessionClick,
-  onEditClaudeFile,
+  onRefresh,
+  onOpenById,
   className,
 }) => {
   const [currentPage, setCurrentPage] = useState(1);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleRefreshClick = async () => {
+    if (!onRefresh || refreshing) return;
+    setRefreshing(true);
+    try {
+      await onRefresh();
+    } finally {
+      setRefreshing(false);
+    }
+  };
   /** Most recently copied session ID — drives the "Copied" affordance on the
    *  copy button. Cleared after a short delay so the icon flips back. */
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -83,121 +102,140 @@ export const SessionList: React.FC<SessionListProps> = ({
   return (
     <TooltipProvider>
       <div className={cn("space-y-4", className)}>
-      {/* CLAUDE.md Memories Dropdown */}
-      {onEditClaudeFile && (
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3, delay: 0.1 }}
-        >
-          <ClaudeMemoriesDropdown
-            projectPath={projectPath}
-            onEditFile={onEditClaudeFile}
-          />
-        </motion.div>
+      {/* Header row: session count + Open-by-ID + refresh. Renders only
+          when at least one of those affordances is present so empty
+          states stay clean. */}
+      {(onRefresh || onOpenById || sessions.length > 0) && (
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-muted-foreground">
+            {sessions.length} session{sessions.length !== 1 ? 's' : ''}
+          </span>
+          {onOpenById && (
+            <button
+              type="button"
+              onClick={onOpenById}
+              className={cn(
+                "inline-flex items-center gap-1 h-7 px-2 rounded-md border border-border/60 text-xs",
+                "text-muted-foreground hover:text-foreground hover:bg-accent transition-colors",
+              )}
+              title="Open a session by pasting its GUID"
+            >
+              <Hash className="h-3 w-3" />
+              Open by ID…
+            </button>
+          )}
+          {onRefresh && (
+            <button
+              type="button"
+              onClick={() => void handleRefreshClick()}
+              disabled={refreshing}
+              className={cn(
+                "ml-auto inline-flex items-center justify-center h-8 w-8 rounded-md border border-border/60",
+                "text-muted-foreground hover:text-foreground hover:bg-accent transition-colors",
+                "disabled:opacity-50 disabled:cursor-not-allowed",
+              )}
+              title={refreshing ? 'Refreshing…' : 'Refresh session list'}
+              aria-label="Refresh session list"
+            >
+              <RefreshCw className={cn('h-4 w-4', refreshing && 'animate-spin')} />
+            </button>
+          )}
+        </div>
       )}
 
+
       <AnimatePresence mode="popLayout">
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {currentSessions.map((session, index) => (
-            <motion.div
-              key={session.id}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              transition={{
-                duration: 0.3,
-                delay: index * 0.05,
-                ease: [0.4, 0, 0.2, 1],
-              }}
-            >
-              <Card
-                className={cn(
-                  "p-3 hover:bg-accent/50 transition-all duration-200 cursor-pointer group h-full",
-                  session.todo_data && "bg-primary/5"
-                )}
-                onClick={() => {
-                  // Emit a special event for Claude Code session navigation
-                  const event = new CustomEvent('claude-session-selected', { 
-                    detail: { session, projectPath } 
-                  });
-                  window.dispatchEvent(event);
-                  onSessionClick?.(session);
-                }}
-              >
-                <div className="flex flex-col h-full">
-                  <div className="flex-1">
-                    {/* Session header */}
-                    <div className="flex items-start justify-between mb-2">
-                      <div className="flex items-start gap-1.5 flex-1 min-w-0">
-                        <Clock className="h-4 w-4 text-primary shrink-0 mt-0.5" />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-body-small font-medium">
-                            Session on {session.message_timestamp 
-                              ? new Date(session.message_timestamp).toLocaleDateString('en-US', { 
-                                  month: 'short', 
-                                  day: 'numeric',
-                                  year: 'numeric'
-                                })
-                              : new Date(session.created_at * 1000).toLocaleDateString('en-US', { 
-                                  month: 'short', 
-                                  day: 'numeric',
-                                  year: 'numeric'
-                                })
-                            }
-                          </p>
-                        </div>
+        <div className="rounded-md border border-border/40 overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-muted/30 text-[11px] uppercase tracking-wider text-muted-foreground">
+              <tr>
+                <th className="text-left font-medium py-2 px-3 w-36">Date</th>
+                <th className="text-left font-medium py-2 px-3">First message</th>
+                <th className="text-left font-medium py-2 px-3 w-28">Session ID</th>
+              </tr>
+            </thead>
+            <tbody>
+              {currentSessions.map((session, index) => {
+                const fmt = (d: Date) =>
+                  `${d.toLocaleDateString('en-US', {
+                    month: 'numeric',
+                    day: 'numeric',
+                    year: 'numeric',
+                  })} ${d.toLocaleTimeString('en-US', {
+                    hour: 'numeric',
+                    minute: '2-digit',
+                  })}`;
+                const firstDate = session.first_timestamp
+                  ? new Date(session.first_timestamp)
+                  : null;
+                const lastDate = session.last_timestamp
+                  ? new Date(session.last_timestamp)
+                  : new Date(session.created_at * 1000);
+                return (
+                  <motion.tr
+                    key={session.id}
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -8 }}
+                    transition={{
+                      duration: 0.2,
+                      delay: index * 0.02,
+                      ease: [0.4, 0, 0.2, 1],
+                    }}
+                    className={cn(
+                      "border-t border-border/30 hover:bg-accent/40 cursor-pointer transition-colors",
+                      session.todo_data && "bg-primary/5",
+                    )}
+                    onClick={() => {
+                      const event = new CustomEvent('claude-session-selected', {
+                        detail: { session, projectPath },
+                      });
+                      window.dispatchEvent(event);
+                      onSessionClick?.(session);
+                    }}
+                  >
+                    <td className="py-2 px-3 text-[11px] text-muted-foreground whitespace-nowrap leading-tight">
+                      {firstDate && (
+                        <div>{fmt(firstDate)}</div>
+                      )}
+                      <div className={firstDate ? 'text-muted-foreground/70' : ''}>
+                        {fmt(lastDate)}
                       </div>
-                      {session.todo_data && (
-                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-caption font-medium bg-primary/10 text-primary">
-                          Todo
+                    </td>
+                    <td className="py-2 px-3 text-xs text-foreground/90 max-w-0">
+                      {session.first_message ? (
+                        <span className="block truncate">
+                          {truncateText(getFirstLine(session.first_message), 200)}
+                        </span>
+                      ) : (
+                        <span className="italic text-muted-foreground/60">
+                          No messages yet
                         </span>
                       )}
-                    </div>
-                    
-                    {/* First message preview */}
-                    {session.first_message ? (
-                      <p className="text-caption text-muted-foreground line-clamp-2 mb-2">
-                        {truncateText(getFirstLine(session.first_message), 120)}
-                      </p>
-                    ) : (
-                      <p className="text-caption text-muted-foreground/60 italic mb-2">
-                        No messages yet
-                      </p>
-                    )}
-                  </div>
-                  
-                  {/* Metadata footer */}
-                  <div className="flex items-center justify-between pt-2 border-t gap-2">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="text-[9px] uppercase tracking-wider text-muted-foreground/70 shrink-0">
-                        session id
-                      </span>
+                    </td>
+                    <td className="py-2 px-3">
                       <button
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
                           handleCopySessionId(session.id);
                         }}
-                        className="inline-flex items-center gap-1 text-caption font-mono text-muted-foreground hover:text-foreground transition-colors min-w-0"
+                        className="inline-flex items-center gap-1.5 font-mono text-xs text-muted-foreground hover:text-foreground transition-colors"
                         title={`Copy full session ID: ${session.id}`}
                       >
-                        <span className="truncate">{session.id.slice(-8)}</span>
+                        <span>{session.id.slice(0, 8)}</span>
                         {copiedId === session.id ? (
-                          <Check className="h-3 w-3 text-green-500 shrink-0" />
+                          <Check className="h-3 w-3 text-green-500" />
                         ) : (
-                          <Copy className="h-3 w-3 shrink-0" />
+                          <Copy className="h-3 w-3" />
                         )}
                       </button>
-                    </div>
-                    {session.todo_data && (
-                      <MessageSquare className="h-3 w-3 text-primary shrink-0" />
-                    )}
-                  </div>
-                </div>
-              </Card>
-            </motion.div>
-          ))}
+                    </td>
+                  </motion.tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       </AnimatePresence>
       

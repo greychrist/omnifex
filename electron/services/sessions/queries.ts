@@ -131,7 +131,6 @@ export function createQueryPassthroughs(sessions: Map<string, SessionHandle>) {
     }
     try {
       const cmds = await handle.query.supportedCommands();
-      console.log(`[sessions] getSupportedCommands(${tabId}): returned ${cmds?.length ?? 0} commands`, cmds?.map(c => c.name));
       return cmds;
     } catch (err) {
       console.error(`[sessions] supportedCommands failed for tab ${tabId}:`, err);

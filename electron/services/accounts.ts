@@ -351,8 +351,6 @@ export function createAccountsService(db: Database): AccountsService {
       )
       .all() as (AccountRow & { path_prefix: string })[];
 
-    console.log('[accounts.resolve] projectPath:', projectPath, 'normalized:', normalizedProject, 'rules:', rules.map(r => ({ prefix: r.path_prefix, normalized: normalizePath(r.path_prefix), account: r.name })));
-
     for (const rule of rules) {
       const normalizedPrefix = normalizePath(rule.path_prefix);
       if (isPathInside(normalizedProject, normalizedPrefix)) {

@@ -17,6 +17,7 @@ import { SubagentReturnedMarker } from "@/components/SubagentReturnedMarker";
 import { isSubagentDispatch } from "@/lib/subagentDispatch";
 import { formatDurationMs } from "@/lib/duration";
 import { Card, CardContent } from "@/components/ui/card";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
 import { accentStyleFor, swatchFor } from "@/lib/accentStyle";
@@ -145,13 +146,15 @@ const CopyCardButton: React.FC<{ message?: any; text?: string }> = ({ message, t
   );
 };
 
-/** Image with a hover-reveal download button. */
+/** Image with a hover-reveal download button + click-to-zoom lightbox. */
 const DownloadableImage: React.FC<{
   src: string;
   alt: string;
   mediaType?: string;
   className?: string;
 }> = ({ src, alt, mediaType, className }) => {
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+
   const handleDownload = (e: React.MouseEvent) => {
     e.stopPropagation();
     const ext = mediaType
@@ -165,16 +168,32 @@ const DownloadableImage: React.FC<{
   };
 
   return (
-    <div className="relative inline-block group/img">
-      <img src={src} alt={alt} className={className} />
-      <button
-        onClick={handleDownload}
-        className="absolute top-1 right-1 p-1 rounded-md bg-background/80 text-muted-foreground hover:text-foreground opacity-0 group-hover/img:opacity-100 transition-opacity z-10"
-        title="Download image"
-      >
-        <Download className="h-3.5 w-3.5" />
-      </button>
-    </div>
+    <>
+      <div className="relative inline-block group/img">
+        <img
+          src={src}
+          alt={alt}
+          className={cn(className, 'cursor-zoom-in')}
+          onClick={() => setLightboxOpen(true)}
+        />
+        <button
+          onClick={handleDownload}
+          className="absolute top-1 right-1 p-1 rounded-md bg-background/80 text-muted-foreground hover:text-foreground opacity-0 group-hover/img:opacity-100 transition-opacity z-10"
+          title="Download image"
+        >
+          <Download className="h-3.5 w-3.5" />
+        </button>
+      </div>
+      <Dialog open={lightboxOpen} onOpenChange={setLightboxOpen}>
+        <DialogContent className="max-w-[90vw] max-h-[90vh] w-fit p-0 bg-transparent border-0 shadow-none">
+          <img
+            src={src}
+            alt={alt}
+            className="max-w-[90vw] max-h-[90vh] object-contain rounded-md"
+          />
+        </DialogContent>
+      </Dialog>
+    </>
   );
 };
 
@@ -378,8 +397,17 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
   };
   
   try {
-    // Skip rendering for meta messages that don't have meaningful content
-    if (message.isMeta && !message.leafUuid && !message.summary) {
+    // Skip rendering for meta messages that don't have meaningful content.
+    // Exempt skill-injection user messages — they arrive with isMeta:true from
+    // JSONL (the live SDK variant uses isSynthetic instead) but carry the
+    // SKILL.md body we want to render. Mirrors the same exemption in
+    // src/lib/messageFilters.ts.
+    if (
+      message.isMeta &&
+      !message.leafUuid &&
+      !message.summary &&
+      !detectSkillInjection(message, streamMessages)
+    ) {
       return null;
     }
 
@@ -798,8 +826,14 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
 
     // User message - handle both nested and direct content structures
     if (message.type === "user") {
-      // Don't render meta messages, which are for system use
-      if (message.isMeta) return null;
+      // Don't render meta messages — except skill-injected bodies, which
+      // arrive with isMeta:true from JSONL but carry the SKILL.md content
+      // we want to render. messageFilters has the same exemption upstream;
+      // mirror it here so the renderer is correct on its own (defense-in-
+      // depth in case filtering is bypassed).
+      if (message.isMeta && !detectSkillInjection(message, streamMessages)) {
+        return null;
+      }
 
       // Handle different message structures
       const msg = message.message || message;
