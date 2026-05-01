@@ -1427,16 +1427,17 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     <TooltipProvider>
       <div className={cn("flex flex-col h-full bg-background", className)}>
         <div className="flex items-start gap-2 px-4 py-1.5 border-b border-border/30 bg-muted shrink-0">
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={handleBackToProject}
-            className="h-10 px-3 text-sm gap-1.5"
-            title="Back to project sessions list"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Back to Project
-          </Button>
+          <TooltipSimple content="Back to Project page" side="bottom">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleBackToProject}
+              className="h-12 w-12 p-0 rounded-sm border-0 shadow-[0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_45%,transparent),0_3px_8px_rgb(0_0_0/0.2)]"
+              aria-label="Back to Project page"
+            >
+              <ArrowLeft className="h-6 w-6" />
+            </Button>
+          </TooltipSimple>
           <span aria-hidden="true" className="self-stretch w-px bg-foreground/30 shrink-0 mx-1" />
           <SessionCard
             totalTokens={totalTokens}
