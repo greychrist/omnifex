@@ -121,7 +121,7 @@ export const SessionList: React.FC<SessionListProps> = ({
               title="Open a session by pasting its GUID"
             >
               <Hash className="h-3 w-3" />
-              Open by ID…
+              Open a Session by UUID
             </button>
           )}
           {onRefresh && (

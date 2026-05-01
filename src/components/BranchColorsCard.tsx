@@ -68,7 +68,7 @@ export const BranchColorsCard: React.FC<BranchColorsCardProps> = ({
   });
 
   return (
-    <Card className="p-4">
+    <Card className="p-4 h-full">
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-sm font-semibold">Branch Colors</h2>
         {!editing && (
@@ -107,7 +107,7 @@ export const BranchColorsCard: React.FC<BranchColorsCardProps> = ({
                 color={preview.colors[row.branch_name] ?? row.color}
                 isTrunk={preview.trunkBlack.has(row.branch_name)}
               />
-              <span className="text-xs text-muted-foreground flex-1 truncate">{row.branch_name}</span>
+              <div className="flex-1" />
               <Button size="sm" variant="ghost" onClick={() => startEdit(row)} className="h-7 w-7 p-0">
                 <Pencil className="h-3.5 w-3.5" />
               </Button>

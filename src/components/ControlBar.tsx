@@ -1,6 +1,7 @@
 import React from "react";
 import {
   ChevronUp,
+  ChevronDown,
   Shield,
   ShieldOff,
   FilePen,
@@ -115,8 +116,9 @@ interface EffortPickerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   disabled?: boolean;
-  /** "compact" (bottom bar) or "expanded" (modal). Defaults to "compact". */
-  variant?: "compact" | "expanded";
+  /** "compact" (bottom bar), "expanded" (modal), or "form" (full-name
+   *  trigger that fills its container — used in NewSessionForm). */
+  variant?: "compact" | "expanded" | "form";
 }
 
 function EffortPickerDropdown({ effort, onSelect }: { effort: EffortLevel; onSelect: (level: EffortLevel) => void }) {
@@ -191,6 +193,32 @@ export function EffortPicker({ effort, onEffortChange, open, onOpenChange, disab
     );
   }
 
+  if (variant === "form") {
+    return (
+      <Popover
+        trigger={
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={disabled}
+            onClick={() => onOpenChange(!open)}
+            className="w-full justify-between h-9 px-3 font-normal"
+          >
+            <span className={cn("text-xs font-semibold", currentLevel?.color)}>
+              {currentLevel?.name}
+            </span>
+            <ChevronDown className="h-3 w-3 opacity-50" />
+          </Button>
+        }
+        content={<EffortPickerDropdown effort={effort} onSelect={handleSelect} />}
+        open={open}
+        onOpenChange={onOpenChange}
+        align="start"
+        side="bottom"
+      />
+    );
+  }
+
   return (
     <Popover
       trigger={
@@ -236,6 +264,9 @@ interface ThinkingPickerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   disabled?: boolean;
+  /** "compact" (bottom bar) or "form" (full-name trigger that fills its
+   *  container — used in NewSessionForm). Defaults to "compact". */
+  variant?: "compact" | "form";
 }
 
 function ThinkingPickerDropdown({
@@ -279,6 +310,7 @@ export function ThinkingPicker({
   open,
   onOpenChange,
   disabled,
+  variant = "compact",
 }: ThinkingPickerProps) {
   const current = THINKING_CONFIGS.find((c) => c.id === thinkingConfig);
 
@@ -286,6 +318,35 @@ export function ThinkingPicker({
     onThinkingConfigChange?.(config);
     onOpenChange(false);
   };
+
+  if (variant === "form") {
+    return (
+      <Popover
+        trigger={
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={disabled}
+            onClick={() => onOpenChange(!open)}
+            className="w-full justify-between h-9 px-3 font-normal gap-2"
+          >
+            <span className="flex items-center gap-2 min-w-0">
+              <Brain className="h-3.5 w-3.5 opacity-70 shrink-0" />
+              <span className={cn("text-xs font-semibold truncate", current?.color)}>
+                {current?.name}
+              </span>
+            </span>
+            <ChevronDown className="h-3 w-3 opacity-50 shrink-0" />
+          </Button>
+        }
+        content={<ThinkingPickerDropdown thinkingConfig={thinkingConfig} onSelect={handleSelect} />}
+        open={open}
+        onOpenChange={onOpenChange}
+        align="start"
+        side="bottom"
+      />
+    );
+  }
 
   return (
     <Popover
@@ -330,15 +391,38 @@ interface PermissionPickerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   disabled?: boolean;
+  /** "compact" (bottom bar) or "form" (full-name trigger that fills its
+   *  container — used in NewSessionForm). Defaults to "compact". */
+  variant?: "compact" | "form";
 }
 
-export function PermissionPicker({ permissionMode, onPermissionModeChange, open, onOpenChange, disabled }: PermissionPickerProps) {
+export function PermissionPicker({ permissionMode, onPermissionModeChange, open, onOpenChange, disabled, variant = "compact" }: PermissionPickerProps) {
   const normalizedMode = normalizePermissionMode(permissionMode);
   const selectedData = PERMISSION_MODES.find((m) => m.id === normalizedMode) || PERMISSION_MODES[0];
+  const isFormVariant = variant === "form";
 
   return (
     <Popover
       trigger={
+        isFormVariant ? (
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={disabled}
+            onClick={() => onOpenChange(!open)}
+            className="w-full justify-between h-9 px-3 font-normal gap-2"
+          >
+            <span className="flex items-center gap-2 min-w-0">
+              <span className={cn("shrink-0", selectedData.color)}>
+                {selectedData.icon}
+              </span>
+              <span className={cn("text-xs font-semibold truncate", selectedData.color)}>
+                {selectedData.name}
+              </span>
+            </span>
+            <ChevronDown className="h-3 w-3 opacity-50 shrink-0" />
+          </Button>
+        ) : (
         <Tooltip>
           <TooltipTrigger asChild>
             <motion.div
@@ -371,6 +455,7 @@ export function PermissionPicker({ permissionMode, onPermissionModeChange, open,
             </p>
           </TooltipContent>
         </Tooltip>
+        )
       }
       content={
         <div className="w-[300px] p-1">
@@ -411,7 +496,7 @@ export function PermissionPicker({ permissionMode, onPermissionModeChange, open,
       open={open}
       onOpenChange={onOpenChange}
       align="start"
-      side="top"
+      side={isFormVariant ? "bottom" : "top"}
     />
   );
 }

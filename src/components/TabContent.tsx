@@ -275,33 +275,30 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                       </div>
                     </div>
 
-                    {/* Two-column layout: new-session form sticky on the
-                        left, history (errors + loading + session list) flowing
-                        on the right. Stacks vertically on narrow screens so
-                        the form stays usable when there's no horizontal room. */}
-                    <div className="flex flex-col lg:flex-row gap-6 items-start">
-                      <div className="w-full lg:w-[28rem] lg:shrink-0 lg:sticky lg:top-6">
-                        <NewSessionForm
-                          accountResolution={projectAccountResolution}
-                          selectedModel={formModel}
-                          setSelectedModel={setFormModel}
-                          effort={formEffort}
-                          setEffort={setFormEffort}
-                          thinkingConfig={formThinkingConfig}
-                          setThinkingConfig={setFormThinkingConfig}
-                          permissionMode={formPermissionMode}
-                          setPermissionMode={setFormPermissionMode}
-                          autoAllowEnabled={formAutoAllowEnabled}
-                          setAutoAllowEnabled={setFormAutoAllowEnabled}
-                          onStart={handleStartNewSession}
-                          onChangeAccount={() => setShowChangeAccountDialog(true)}
-                        />
-                      </div>
-
-                      <div className="flex-1 min-w-0 w-full">
-                        {/* Branch Colors Card */}
+                    {/* New-session form + Branch Colors share the top row,
+                        session list (with errors/loading) flows full-width
+                        below. */}
+                    <div className="flex flex-col gap-6 items-stretch">
+                      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-stretch">
+                        <div className="lg:col-span-3">
+                          <NewSessionForm
+                            accountResolution={projectAccountResolution}
+                            selectedModel={formModel}
+                            setSelectedModel={setFormModel}
+                            effort={formEffort}
+                            setEffort={setFormEffort}
+                            thinkingConfig={formThinkingConfig}
+                            setThinkingConfig={setFormThinkingConfig}
+                            permissionMode={formPermissionMode}
+                            setPermissionMode={setFormPermissionMode}
+                            autoAllowEnabled={formAutoAllowEnabled}
+                            setAutoAllowEnabled={setFormAutoAllowEnabled}
+                            onStart={handleStartNewSession}
+                            onChangeAccount={() => setShowChangeAccountDialog(true)}
+                          />
+                        </div>
                         {selectedProject && (
-                          <div className="mb-4">
+                          <div className="lg:col-span-1">
                             <BranchColorsCard
                               projectPath={selectedProject.path}
                               availableBranches={projectBranches}
@@ -309,7 +306,9 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                             />
                           </div>
                         )}
+                      </div>
 
+                      <div className="w-full">
                         {/* Error display */}
                         {error && (
                           <motion.div

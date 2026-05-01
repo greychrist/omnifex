@@ -1,5 +1,5 @@
 import React from "react";
-import { Zap, ChevronUp } from "lucide-react";
+import { Zap, ChevronUp, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Popover } from "@/components/ui/popover";
@@ -18,7 +18,7 @@ export type Model = {
 export const MODELS: Model[] = [
   {
     id: "opus[1m]",
-    name: "Claude Opus 4.7 (1M)",
+    name: "Opus 4.7 (1M)",
     description: "Most capable, 1M context window",
     icon: <Zap className="h-3.5 w-3.5" />,
     shortName: "O",
@@ -26,7 +26,7 @@ export const MODELS: Model[] = [
   },
   {
     id: "opus",
-    name: "Claude Opus 4.7 (200K)",
+    name: "Opus 4.7 (200K)",
     description: "Most capable, standard context",
     icon: <Zap className="h-3.5 w-3.5" />,
     shortName: "O",
@@ -34,7 +34,7 @@ export const MODELS: Model[] = [
   },
   {
     id: "sonnet",
-    name: "Claude Sonnet 4.6",
+    name: "Sonnet 4.6",
     description: "Faster, efficient for most tasks",
     icon: <Zap className="h-3.5 w-3.5" />,
     shortName: "S",
@@ -42,7 +42,7 @@ export const MODELS: Model[] = [
   },
   {
     id: "haiku",
-    name: "Claude Haiku 4.5",
+    name: "Haiku 4.5",
     description: "Fastest and cheapest, good for simple tasks",
     icon: <Zap className="h-3.5 w-3.5" />,
     shortName: "H",
@@ -213,5 +213,65 @@ export function ExpandedModelPicker({
         side="top"
       />
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// FormModelPicker — full-name trigger that fills its container.
+// Used by NewSessionForm. Same dropdown content as the others.
+// ---------------------------------------------------------------------------
+
+interface FormModelPickerProps {
+  selectedModelData: Model;
+  models: Model[];
+  selectedModel: string;
+  onSelect: (modelId: string) => void;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  disabled?: boolean;
+}
+
+export function FormModelPicker({
+  selectedModelData,
+  models,
+  selectedModel,
+  onSelect,
+  open,
+  onOpenChange,
+  disabled,
+}: FormModelPickerProps) {
+  return (
+    <Popover
+      trigger={
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={disabled}
+          onClick={() => onOpenChange(!open)}
+          className="w-full justify-between h-9 px-3 font-normal gap-2"
+        >
+          <span className="flex items-center gap-2 min-w-0">
+            <span className={cn("shrink-0", selectedModelData.color)}>
+              {selectedModelData.icon}
+            </span>
+            <span className="text-xs font-semibold truncate">
+              {selectedModelData.name}
+            </span>
+          </span>
+          <ChevronDown className="h-3 w-3 opacity-50 shrink-0" />
+        </Button>
+      }
+      content={
+        <ModelPickerDropdown
+          models={models}
+          selectedModel={selectedModel}
+          onSelect={onSelect}
+        />
+      }
+      open={open}
+      onOpenChange={onOpenChange}
+      align="start"
+      side="bottom"
+    />
   );
 }
