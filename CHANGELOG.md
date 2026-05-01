@@ -5,6 +5,14 @@ All notable changes to GreyChrist are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.79] — 2026-05-01
+
+Session-header back button collapsed from a labeled "Back to Project" pill to a 48×48 icon-only button, freeing horizontal space in the toolbar. The label moved to a `TooltipSimple` ("Back to Project page") on hover, with a matching `aria-label` for screen readers. Outline now renders via the same border-0 + 1px outset shadow used by the rate-limit refresh button (and now stacks a small drop shadow underneath for a touch of depth). Installers remain **unsigned** — first launch needs right-click → Open.
+
+### Changed
+
+- **Session-header back button** (`src/components/ClaudeCodeSession.tsx`). Replaced the labeled `Back to Project` button with a 48×48 icon-only button (`ArrowLeft` at `h-6 w-6`), wrapped in `TooltipSimple` content `Back to Project page`. Visual treatment is `border-0` + a stacked `box-shadow` (1px ring at `color-mix(... muted-foreground 45%)` + a subtle `0 3px 8px rgb(0 0 0 / 0.2)` drop shadow) for a flatter look that still reads as a clickable card.
+
 ## [0.3.78] — 2026-05-01
 
 Live-session header collapsed into a single toolbar of self-contained cards (folder + branch + worktrees + session + account), each with its label inside and an outset-shadow outline that matches the rate-limit and context pills exactly. The second header row is gone; `SessionHeader` has been deleted and the folder card folded into the branch row's neighborhood (worktrees now sit inside the branch card). The branch badge is click-able and opens a popover with the worktree folder, branch name, working-tree status, and any per-row git error. Account card hides its rate-limit widgets + refresh button when the resolved account is `enterprise` (and skips the `/usage` auto-refresh hook entirely). Installers remain **unsigned** — first launch needs right-click → Open.
