@@ -1,6 +1,7 @@
 import * as React from 'react';
-import { CircleCheckBig, CircleAlert, Loader2 } from 'lucide-react';
+import { RefreshCw, CircleAlert } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
 
 interface GitWatchStatusIconProps {
   /**
@@ -15,6 +16,12 @@ interface GitWatchStatusIconProps {
    * owns its own spinner state for the duration of this call.
    */
   onReconnect: () => Promise<unknown>;
+  /**
+   * Reference identity changes when a fresh snapshot arrives from the
+   * watcher. Drives a brief auto-spin so the user can see when a poll/fs
+   * event actually delivered new data.
+   */
+  snapshotKey?: unknown;
 }
 
 /**
@@ -27,43 +34,61 @@ interface GitWatchStatusIconProps {
 export const GitWatchStatusIcon: React.FC<GitWatchStatusIconProps> = ({
   errors,
   onReconnect,
+  snapshotKey,
 }) => {
-  const [busy, setBusy] = React.useState(false);
+  const [userBusy, setUserBusy] = React.useState(false);
+  const [autoPulse, setAutoPulse] = React.useState(false);
 
   const handleClick = async () => {
-    if (busy) return;
-    setBusy(true);
+    if (userBusy) return;
+    setUserBusy(true);
+    const minSpin = new Promise((r) => setTimeout(r, 500));
     try {
-      await onReconnect();
+      await Promise.all([onReconnect(), minSpin]);
     } finally {
-      setBusy(false);
+      setUserBusy(false);
     }
   };
 
+  // Pulse the spinner briefly each time a fresh snapshot arrives. Skip the
+  // initial mount so we don't spin against the seed snapshot.
+  const lastKey = React.useRef(snapshotKey);
+  const seeded = React.useRef(false);
+  React.useEffect(() => {
+    if (!seeded.current) {
+      seeded.current = true;
+      lastKey.current = snapshotKey;
+      return;
+    }
+    if (lastKey.current === snapshotKey) return;
+    lastKey.current = snapshotKey;
+    setAutoPulse(true);
+    const t = setTimeout(() => setAutoPulse(false), 500);
+    return () => clearTimeout(t);
+  }, [snapshotKey]);
+
+  const spinning = userBusy || autoPulse;
   const hasErrors = errors.length > 0;
-  const title = busy
+  const title = userBusy
     ? 'Reconnecting…'
     : hasErrors
       ? `Git status errors:\n${errors.map((e) => `  • ${e.label}: ${e.error}`).join('\n')}\n\nClick to reconnect.`
       : 'Watching git status — click to refresh';
 
-  const Icon = busy ? Loader2 : hasErrors ? CircleAlert : CircleCheckBig;
-  const color = hasErrors ? 'text-rose-400' : 'text-emerald-400';
+  const Icon = hasErrors ? CircleAlert : RefreshCw;
+  const color = hasErrors ? 'text-rose-400' : undefined;
 
   return (
-    <button
-      type="button"
+    <Button
+      size="sm"
+      variant="outline"
       onClick={handleClick}
-      disabled={busy}
+      disabled={userBusy}
       title={title}
       aria-label={title}
-      className={cn(
-        'inline-flex items-center justify-center h-5 w-5 rounded transition-colors',
-        'hover:bg-foreground/10 disabled:cursor-not-allowed',
-        color,
-      )}
+      className={cn('h-7 w-7 p-0', color)}
     >
-      <Icon className={cn('h-3.5 w-3.5', busy && 'animate-spin text-muted-foreground')} />
-    </button>
+      <Icon className={cn('h-3.5 w-3.5', spinning && 'animate-spin')} />
+    </Button>
   );
 };

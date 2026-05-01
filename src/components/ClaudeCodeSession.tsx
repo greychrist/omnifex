@@ -44,6 +44,7 @@ import { HiddenEventsGroup } from "./HiddenEventsGroup";
 import { buildCompactItems } from "@/lib/compactGrouping";
 import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
 import { SessionHeader, HeaderLabel } from "./SessionHeader";
+import { AccountCard } from "./AccountCard";
 import { ProjectPathBadge } from "./claude-code-session/ProjectPathBadge";
 import { GitBranchBadge } from "./claude-code-session/GitBranchBadge";
 import { GitWatchStatusIcon } from "./claude-code-session/GitWatchStatusIcon";
@@ -1399,6 +1400,15 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       : undefined;
 
 
+  const sessionStatus: 'starting' | 'active' | 'ended' | undefined =
+    !sessionStarted
+      ? undefined
+      : isSessionActive
+        ? 'active'
+        : isSessionStarting
+          ? 'starting'
+          : 'ended';
+
   // Compute restart-button gating once so it can be passed to both the
   // header (where the button lives) and any tooltip consumers.
   const clearButtonDisabled =
@@ -1449,6 +1459,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                   <GitWatchStatusIcon
                     errors={gitWatchErrors}
                     onReconnect={() => api.reconnectSessionGitWatch(gitWatchId)}
+                    snapshotKey={sessionGit}
                   />
                 )}
               </div>
@@ -1476,20 +1487,27 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             </div>
           )}
           {/* mode and output-style controls have moved to the chat bar (see FloatingPromptInput below). */}
+          {accountResolution && (
+            <AccountCard
+              className="ml-auto"
+              accountName={accountResolution.account.name}
+              configDir={accountResolution.account.config_dir}
+              matchType={accountResolution.match_type}
+              matchDetail={accountResolution.match_detail}
+              sdkAccount={sdkAccountInfo}
+              fiveHourRateLimit={rateLimitSnapshots['five_hour'] ?? null}
+              sevenDayRateLimit={rateLimitSnapshots['seven_day'] ?? null}
+              sessionStatus={sessionStatus}
+            />
+          )}
         </div>
         <SessionHeader
           accountName={accountResolution?.account.name ?? ''}
           accountType={accountResolution?.account.account_type ?? ''}
-          configDir={accountResolution?.account.config_dir ?? ''}
-          matchType={accountResolution?.match_type ?? ''}
-          matchDetail={accountResolution?.match_detail ?? ''}
           cost={sessionCost}
           totalTokens={totalTokens}
           model={selectedModel}
-          sdkAccount={sdkAccountInfo}
           contextUsage={contextUsage}
-          fiveHourRateLimit={rateLimitSnapshots['five_hour'] ?? null}
-          sevenDayRateLimit={rateLimitSnapshots['seven_day'] ?? null}
           onClear={() => {
             if (window.confirm('Clear the conversation and start a fresh session? This wipes all messages in this tab and cannot be undone.')) {
               void handleClear();
@@ -1498,15 +1516,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           clearDisabled={clearButtonDisabled}
           clearReason={clearButtonReason}
           onReconnect={() => void handleReconnect()}
-          sessionStatus={
-            !sessionStarted
-              ? undefined
-              : isSessionActive
-                ? 'active'
-                : isSessionStarting
-                  ? 'starting'
-                  : 'ended'
-          }
+          sessionStatus={sessionStatus}
           sessionId={claudeSessionId}
           className="mb-2"
         />
