@@ -76,13 +76,13 @@ export function AccountCard({
     : "default";
 
   return (
-    <div className={cn("flex items-start gap-3 rounded-md border border-border/50 bg-background/40 px-2 py-1", className)}>
+    <div className={cn("flex items-start gap-3 rounded-md border-0 bg-background/40 px-2 py-1 shadow-[0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_30%,transparent),2px_2px_4px_rgb(0_0_0/0.08)]", className)}>
       <div className="flex flex-col items-start gap-0.5">
         <HeaderLabel>account</HeaderLabel>
         <Popover
           open={accountPopoverOpen}
           onOpenChange={setAccountPopoverOpen}
-          align="end"
+          align="start"
           side="bottom"
           className="w-96"
           trigger={
@@ -173,7 +173,7 @@ export function AccountCard({
             data={usageData}
             loading={usageLoading}
             onRefresh={() => void refreshUsage()}
-            align="end"
+            align="start"
             trigger={
               <div className="flex flex-col items-start gap-1">
                 <RateLimitWidget

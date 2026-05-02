@@ -1432,30 +1432,28 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
               size="sm"
               variant="outline"
               onClick={handleBackToProject}
-              className="h-12 w-12 p-0 rounded-sm border-0 shadow-[0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_45%,transparent),0_3px_8px_rgb(0_0_0/0.2)]"
+              className="h-12 w-12 p-0 rounded-sm border-0 shadow-[0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_30%,transparent),2px_2px_4px_rgb(0_0_0/0.08)]"
               aria-label="Back to Project page"
             >
               <ArrowLeft className="h-6 w-6" />
             </Button>
           </TooltipSimple>
           <span aria-hidden="true" className="self-stretch w-px bg-foreground/30 shrink-0 mx-1" />
-          <SessionCard
-            totalTokens={totalTokens}
-            model={selectedModel}
-            contextUsage={contextUsage}
-            sessionStatus={sessionStatus}
-            onReconnect={() => void handleReconnect()}
-            onClear={() => {
-              if (window.confirm('Clear the conversation and start a fresh session? This wipes all messages in this tab and cannot be undone.')) {
-                void handleClear();
-              }
-            }}
-            clearDisabled={clearButtonDisabled}
-            clearReason={clearButtonReason}
-            sessionId={claudeSessionId}
-          />
+          {accountResolution && (
+            <AccountCard
+              accountName={accountResolution.account.name}
+              accountType={accountResolution.account.account_type}
+              configDir={accountResolution.account.config_dir}
+              matchType={accountResolution.match_type}
+              matchDetail={accountResolution.match_detail}
+              sdkAccount={sdkAccountInfo}
+              fiveHourRateLimit={rateLimitSnapshots['five_hour'] ?? null}
+              sevenDayRateLimit={rateLimitSnapshots['seven_day'] ?? null}
+              sessionStatus={sessionStatus}
+            />
+          )}
           {gitStatus?.branch && (
-            <div className="flex items-start gap-3 rounded-md border border-border/50 bg-background/40 px-2 py-1">
+            <div className="flex items-start gap-3 rounded-md border-0 bg-background/40 px-2 py-1 shadow-[0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_30%,transparent),2px_2px_4px_rgb(0_0_0/0.08)]">
               <div className="flex flex-col items-start gap-0.5">
                 <HeaderLabel>branch</HeaderLabel>
                 <GitBranchBadge
@@ -1504,20 +1502,22 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             </div>
           )}
           {/* mode and output-style controls have moved to the chat bar (see FloatingPromptInput below). */}
-          {accountResolution && (
-            <AccountCard
-              className="ml-auto"
-              accountName={accountResolution.account.name}
-              accountType={accountResolution.account.account_type}
-              configDir={accountResolution.account.config_dir}
-              matchType={accountResolution.match_type}
-              matchDetail={accountResolution.match_detail}
-              sdkAccount={sdkAccountInfo}
-              fiveHourRateLimit={rateLimitSnapshots['five_hour'] ?? null}
-              sevenDayRateLimit={rateLimitSnapshots['seven_day'] ?? null}
-              sessionStatus={sessionStatus}
-            />
-          )}
+          <SessionCard
+            className="ml-auto"
+            totalTokens={totalTokens}
+            model={selectedModel}
+            contextUsage={contextUsage}
+            sessionStatus={sessionStatus}
+            onReconnect={() => void handleReconnect()}
+            onClear={() => {
+              if (window.confirm('Clear the conversation and start a fresh session? This wipes all messages in this tab and cannot be undone.')) {
+                void handleClear();
+              }
+            }}
+            clearDisabled={clearButtonDisabled}
+            clearReason={clearButtonReason}
+            sessionId={claudeSessionId}
+          />
         </div>
         {!sessionStarted && (
           <div className="flex-1 flex items-center justify-center p-8">
