@@ -5,6 +5,20 @@ All notable changes to GreyChrist are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.81] — 2026-05-02
+
+Header card layout reshuffled so account context lives near the back button and live-session info floats to the right. `AccountCard` now sits left of the git/branch card; `SessionCard` is pushed right with `ml-auto`. Popover anchors flipped accordingly so neither runs off-screen. Back-button drop shadow softened and angled toward the bottom-right, then mirrored on every header card (account, session, git/branch) for a consistent grouped look. Installers remain **unsigned** — first launch needs right-click → Open.
+
+### Changed
+
+- **Header card order** (`src/components/ClaudeCodeSession.tsx`). Swapped `AccountCard` and `SessionCard` positions in the top toolbar. AccountCard now renders right after the back-button divider; SessionCard renders last with `className="ml-auto"`.
+- **Popover alignments** (`src/components/SessionCard.tsx`, `src/components/AccountCard.tsx`). Flipped to match new positions: SessionCard's context-window popover went `align="start"` → `align="end"` (now opens leftward from the right edge); AccountCard's account-detail and usage-detail popovers went `align="end"` → `align="start"` (now open rightward from the left edge).
+- **Header card drop shadow** (`src/components/ClaudeCodeSession.tsx`, `src/components/AccountCard.tsx`, `src/components/SessionCard.tsx`). Replaced the `border border-border/50` outline on AccountCard, SessionCard, and the git/branch card with the same stacked `border-0` + outset shadow already used by the back button (`0 0 0 1px color-mix(... muted-foreground 30%)` ring + `2px 2px 4px rgb(0 0 0 / 0.08)` angled drop shadow). Back-button shadow itself was eased from `0 3px 8px / 0.2` down to the same softer angled shadow.
+
+### Fixed
+
+- **Off-screen popovers after card swap** (`src/components/AccountCard.tsx`, `src/components/SessionCard.tsx`). With AccountCard now on the left and SessionCard on the right, their previous `align` values would have extended popovers off the window edge. Alignment flips above keep all three context popovers on-screen.
+
 ## [0.3.80] — 2026-05-01
 
 Session-header back button collapsed from a labeled "Back to Project" pill to a 48×48 icon-only button, freeing horizontal space in the toolbar. The label moved to a `TooltipSimple` ("Back to Project page") on hover, with a matching `aria-label` for screen readers. Outline now renders via the same border-0 + 1px outset shadow used by the rate-limit refresh button (and now stacks a small drop shadow underneath for a touch of depth). Also re-anchors the session context-window popover to its left edge so it no longer runs off the left of the window after the back-button collapse. Installers remain **unsigned** — first launch needs right-click → Open.
