@@ -10,12 +10,15 @@ html, body {
   background-color: rgba(0, 0, 0, 0);
 }
 
-/* Tauri drag region helpers */
-.tauri-drag {
+/* Drag region helpers — set on the titlebar and its children so the OS
+   knows which areas of the chrome are draggable. The Electron behavior
+   comes from the -webkit-app-region declaration; class names are
+   convention only. */
+.app-drag {
   -webkit-app-region: drag;
 }
 
-.tauri-no-drag {
+.app-no-drag {
   -webkit-app-region: no-drag;
 }
 

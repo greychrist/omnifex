@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import * as SelectPrimitive from "@radix-ui/react-select";
-import { Check, Shield, ShieldCheck, ShieldX } from "lucide-react";
+import { Check, Clock, Shield, ShieldCheck, ShieldX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -16,41 +16,36 @@ import {
   SCOPE_OPTIONS,
   type ScopeValue,
   buildPersistedSuggestion,
+  buildSessionSuggestion,
   getInitialRuleString,
   type IncomingSuggestion,
 } from "@/lib/permissionCardLogic";
+import type { PermissionRequestPayload } from "@/lib/types/permissionRequest";
 
 interface PermissionCardProps {
-  toolName: string;
-  toolInput: Record<string, any>;
-  title?: string;
-  displayName?: string;
-  description?: string;
-  decisionReason?: string;
-  suggestions: IncomingSuggestion[];
+  request: PermissionRequestPayload;
   onAllow: (selectedSuggestions: IncomingSuggestion[]) => void;
   onDeny: () => void;
 }
 
-function formatToolInput(input: Record<string, any>): string {
-  if (input.command) return String(input.command);
-  if (input.file_path) return String(input.file_path);
-  if (input.pattern) return String(input.pattern);
-  if (input.url) return String(input.url);
+function formatToolInput(input: Record<string, unknown>): string {
+  if (typeof input.command === 'string') return input.command;
+  if (typeof input.file_path === 'string') return input.file_path;
+  if (typeof input.pattern === 'string') return input.pattern;
+  if (typeof input.url === 'string') return input.url;
   return JSON.stringify(input, null, 2);
 }
 
-export function PermissionCard({
-  toolName,
-  toolInput,
-  title,
-  displayName,
-  description,
-  decisionReason,
-  suggestions,
-  onAllow,
-  onDeny,
-}: PermissionCardProps) {
+export function PermissionCard({ request, onAllow, onDeny }: PermissionCardProps) {
+  const {
+    toolName,
+    toolInput,
+    title,
+    displayName,
+    description,
+    decisionReason,
+    suggestions,
+  } = request;
   const { config } = useMessageRenderingConfig();
   const accentStyle = accentStyleFor(config, "permission.request");
   const accentSwatch = swatchFor(config, "permission.request");
@@ -70,7 +65,7 @@ export function PermissionCard({
   const activeScope =
     SCOPE_OPTIONS.find((o) => o.value === scope) ?? SCOPE_OPTIONS[0];
 
-  const handleSaveForSession = () => onAllow([]);
+  const handleSaveForSession = () => onAllow([buildSessionSuggestion(rule)]);
   const handleSavePermission = () =>
     onAllow([buildPersistedSuggestion(rule, scope)]);
 
@@ -189,11 +184,13 @@ export function PermissionCard({
           <div className="flex gap-2">
             <Button
               size="sm"
-              variant="outline"
+              variant="secondary"
               className="text-xs"
               onClick={handleSaveForSession}
+              disabled={!rule.trim()}
             >
-              Save for Session
+              <Clock className="h-3.5 w-3.5 mr-1" />
+              Allow for Session
             </Button>
             <Button
               size="sm"

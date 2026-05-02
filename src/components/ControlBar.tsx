@@ -4,8 +4,10 @@ import {
   ChevronDown,
   Shield,
   ShieldOff,
+  ShieldX,
   FilePen,
   ClipboardList,
+  Sparkles,
   Brain,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -62,38 +64,58 @@ export type PermissionMode = {
   color: string;
 };
 
-// Wave 2.4b — full SDK permission mode set. Order follows ascending risk:
-// Ask (safe, green) → Auto Accept edits (yellow) → Plan Only (blue, no
-// execution at all) → Auto Approve all (red, skip everything).
+// Mirrors the SDK's PermissionMode union exactly:
+//   'default' | 'acceptEdits' | 'bypassPermissions' | 'plan' | 'dontAsk' | 'auto'
+// Order is UI ordering (least to most permissive-ish), not SDK enum order.
 export const PERMISSION_MODES: PermissionMode[] = [
   {
     id: "default",
     name: "Ask",
-    description: "Prompt before every tool use (terminal behavior)",
+    description:
+      "Prompt when hooks/settings rules do not already allow or deny.",
     shortName: "ASK",
     icon: <Shield className="h-3.5 w-3.5" />,
     color: "text-green-600",
   },
   {
     id: "acceptEdits",
-    name: "Auto Accept",
-    description: "Auto-approve Read/Write/Edit; everything else still prompts",
+    name: "Accept Edits",
+    description:
+      "Auto-approve file edits and common filesystem operations; prompt for other unmatched tools.",
     shortName: "EDIT",
     icon: <FilePen className="h-3.5 w-3.5" />,
     color: "text-yellow-600",
   },
   {
     id: "plan",
-    name: "Plan Only",
-    description: "Claude plans but never executes tools — plan-then-confirm",
+    name: "Plan",
+    description: "Plan only; no tool execution.",
     shortName: "PLAN",
     icon: <ClipboardList className="h-3.5 w-3.5" />,
     color: "text-blue-600",
   },
   {
+    id: "dontAsk",
+    name: "No Prompts",
+    description: "Run only pre-approved tools; deny everything else.",
+    shortName: "DENY",
+    icon: <ShieldX className="h-3.5 w-3.5" />,
+    color: "text-slate-600",
+  },
+  {
+    id: "auto",
+    name: "Auto Review",
+    description:
+      "Use Claude Code's safety check to approve or deny unmatched tool requests.",
+    shortName: "AUTO",
+    icon: <Sparkles className="h-3.5 w-3.5" />,
+    color: "text-purple-600",
+  },
+  {
     id: "bypassPermissions",
-    name: "Auto Approve",
-    description: "Bypass every permission check (destructive ops allowed)",
+    name: "Bypass",
+    description:
+      "Skip permission prompts for all tools. Dangerous; hooks may still block.",
     shortName: "ALL",
     icon: <ShieldOff className="h-3.5 w-3.5" />,
     color: "text-red-600",

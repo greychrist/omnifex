@@ -22,8 +22,7 @@ api.logCount().then((count) => {
   // Ignore — DB may not be ready yet
 });
 
-// Add a macOS-specific class to the <html> element to enable platform-specific styling
-// Browser-safe detection using navigator properties (works in Tauri and web preview)
+// Add a macOS-specific class to the <html> element to enable platform-specific styling.
 (() => {
   const isMacLike = typeof navigator !== "undefined" &&
     (navigator.platform?.toLowerCase().includes("mac") ||

@@ -1,88 +1,60 @@
 import { useState } from "react";
 import { api } from "@/lib/api";
-
-export interface PendingToolUse {
-  name: string;
-  input: Record<string, any>;
-  title?: string;
-  displayName?: string;
-  description?: string;
-  decisionReason?: string;
-  suggestions: Array<{
-    type: string;
-    rules?: Array<{ toolName: string; ruleContent?: string }>;
-    behavior?: string;
-    destination?: string;
-  }>;
-}
+import type {
+  PermissionRequestPayload,
+  PermissionSuggestion,
+} from "@/lib/types/permissionRequest";
 
 interface UsePermissionsReturn {
+  /**
+   * The currently-shown permission request, or null when none is open.
+   * `waitingForPermission` is just `pendingPermission !== null`.
+   */
+  pendingPermission: PermissionRequestPayload | null;
+  setPendingPermission: React.Dispatch<
+    React.SetStateAction<PermissionRequestPayload | null>
+  >;
   waitingForPermission: boolean;
-  setWaitingForPermission: React.Dispatch<React.SetStateAction<boolean>>;
-  pendingToolUse: PendingToolUse | null;
-  setPendingToolUse: React.Dispatch<React.SetStateAction<PendingToolUse | null>>;
-  pendingRequestId: string | null;
-  setPendingRequestId: React.Dispatch<React.SetStateAction<string | null>>;
-  autoAllowEnabled: boolean;
-  setAutoAllowEnabled: React.Dispatch<React.SetStateAction<boolean>>;
-  autoAllowedTools: Set<string>;
-  setAutoAllowedTools: React.Dispatch<React.SetStateAction<Set<string>>>;
   handlePermissionAllow: (
     tabId: string,
-    selectedSuggestions: any[],
+    selectedSuggestions: PermissionSuggestion[],
   ) => void;
-  handlePermissionDeny: (
-    tabId: string,
-  ) => void;
+  handlePermissionDeny: (tabId: string) => void;
 }
 
 export function usePermissions(): UsePermissionsReturn {
-  const [waitingForPermission, setWaitingForPermission] = useState(false);
-  const [pendingToolUse, setPendingToolUse] = useState<PendingToolUse | null>(null);
-  const [pendingRequestId, setPendingRequestId] = useState<string | null>(null);
-  const [autoAllowEnabled, setAutoAllowEnabled] = useState(false);
-  const [autoAllowedTools, setAutoAllowedTools] = useState<Set<string>>(new Set());
+  const [pendingPermission, setPendingPermission] =
+    useState<PermissionRequestPayload | null>(null);
 
   const handlePermissionAllow = (
     tabId: string,
-    selectedSuggestions: any[],
+    selectedSuggestions: PermissionSuggestion[],
   ) => {
-    if (!pendingRequestId) return;
+    if (!pendingPermission) return;
     api
       .respondPermission(
         tabId,
-        pendingRequestId,
+        pendingPermission.requestId,
         "allow",
         undefined,
         selectedSuggestions.length > 0 ? selectedSuggestions : undefined,
       )
       .catch(console.error);
-    setWaitingForPermission(false);
-    setPendingToolUse(null);
-    setPendingRequestId(null);
+    setPendingPermission(null);
   };
 
-  const handlePermissionDeny = (
-    tabId: string,
-  ) => {
-    if (!pendingRequestId) return;
-    api.respondPermission(tabId, pendingRequestId, "deny").catch(console.error);
-    setWaitingForPermission(false);
-    setPendingToolUse(null);
-    setPendingRequestId(null);
+  const handlePermissionDeny = (tabId: string) => {
+    if (!pendingPermission) return;
+    api
+      .respondPermission(tabId, pendingPermission.requestId, "deny")
+      .catch(console.error);
+    setPendingPermission(null);
   };
 
   return {
-    waitingForPermission,
-    setWaitingForPermission,
-    pendingToolUse,
-    setPendingToolUse,
-    pendingRequestId,
-    setPendingRequestId,
-    autoAllowEnabled,
-    setAutoAllowEnabled,
-    autoAllowedTools,
-    setAutoAllowedTools,
+    pendingPermission,
+    setPendingPermission,
+    waitingForPermission: pendingPermission !== null,
     handlePermissionAllow,
     handlePermissionDeny,
   };

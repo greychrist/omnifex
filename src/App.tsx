@@ -2,7 +2,6 @@ import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Bot, FolderCode } from "lucide-react";
 import { api, type Project, type Session } from "@/lib/api";
-import { initializeWebMode } from "@/lib/apiAdapter";
 import { TabProvider, useTabContext } from "@/contexts/TabContext";
 import { AccountsProvider } from "@/contexts/AccountsContext";
 import { ThemeProvider } from "@/contexts/ThemeContext";
@@ -62,11 +61,6 @@ function AppContent() {
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" | "info" } | null>(null);
   const [projectForSettings, setProjectForSettings] = useState<Project | null>(null);
   const [previousView] = useState<View>("welcome");
-  
-  // Initialize web mode compatibility on mount
-  useEffect(() => {
-    initializeWebMode();
-  }, []);
 
   // Load projects on mount when in projects view
   useEffect(() => {

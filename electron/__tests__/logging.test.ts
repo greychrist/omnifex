@@ -17,8 +17,8 @@ describe('logging service', () => {
 
   it('writeBatch inserts entries and query returns them all', () => {
     logging.writeBatch([
-      { timestamp: '2024-01-01T00:00:00Z', level: 'info', source: 'app', message: 'hello' },
-      { timestamp: '2024-01-01T00:00:01Z', level: 'error', source: 'app', message: 'oops' },
+      { timestamp: '2024-01-01T00:00:00Z', level: 'info', source: 'frontend', message: 'hello' },
+      { timestamp: '2024-01-01T00:00:01Z', level: 'error', source: 'frontend', message: 'oops' },
     ]);
 
     const result = logging.query({});
@@ -28,9 +28,9 @@ describe('logging service', () => {
 
   it('query filters by level', () => {
     logging.writeBatch([
-      { timestamp: '2024-01-01T00:00:00Z', level: 'info', source: 'app', message: 'info msg' },
-      { timestamp: '2024-01-01T00:00:01Z', level: 'error', source: 'app', message: 'error msg' },
-      { timestamp: '2024-01-01T00:00:02Z', level: 'warn', source: 'app', message: 'warn msg' },
+      { timestamp: '2024-01-01T00:00:00Z', level: 'info', source: 'frontend', message: 'info msg' },
+      { timestamp: '2024-01-01T00:00:01Z', level: 'error', source: 'frontend', message: 'error msg' },
+      { timestamp: '2024-01-01T00:00:02Z', level: 'warn', source: 'frontend', message: 'warn msg' },
     ]);
 
     const result = logging.query({ levels: ['error', 'warn'] });
@@ -40,9 +40,9 @@ describe('logging service', () => {
 
   it('query filters by date range', () => {
     logging.writeBatch([
-      { timestamp: '2024-01-01T00:00:00Z', level: 'info', source: 'app', message: 'old' },
-      { timestamp: '2024-06-01T00:00:00Z', level: 'info', source: 'app', message: 'mid' },
-      { timestamp: '2024-12-31T00:00:00Z', level: 'info', source: 'app', message: 'new' },
+      { timestamp: '2024-01-01T00:00:00Z', level: 'info', source: 'frontend', message: 'old' },
+      { timestamp: '2024-06-01T00:00:00Z', level: 'info', source: 'frontend', message: 'mid' },
+      { timestamp: '2024-12-31T00:00:00Z', level: 'info', source: 'frontend', message: 'new' },
     ]);
 
     const result = logging.query({
@@ -55,8 +55,8 @@ describe('logging service', () => {
 
   it('query filters by search text', () => {
     logging.writeBatch([
-      { timestamp: '2024-01-01T00:00:00Z', level: 'info', source: 'app', message: 'banana split' },
-      { timestamp: '2024-01-01T00:00:01Z', level: 'info', source: 'app', message: 'apple pie' },
+      { timestamp: '2024-01-01T00:00:00Z', level: 'info', source: 'frontend', message: 'banana split' },
+      { timestamp: '2024-01-01T00:00:01Z', level: 'info', source: 'frontend', message: 'apple pie' },
     ]);
 
     const result = logging.query({ search: 'banana' });
@@ -69,14 +69,14 @@ describe('logging service', () => {
       {
         timestamp: '2024-01-01T00:00:00Z',
         level: 'info',
-        source: 'app',
+        source: 'frontend',
         message: 'permission decision',
         metadata: JSON.stringify({ toolName: 'Bash', ruleContent: 'git:*' }),
       },
       {
         timestamp: '2024-01-01T00:00:01Z',
         level: 'info',
-        source: 'app',
+        source: 'frontend',
         message: 'unrelated event',
         metadata: JSON.stringify({ toolName: 'Read' }),
       },
@@ -92,14 +92,14 @@ describe('logging service', () => {
       {
         timestamp: '2024-01-01T00:00:00Z',
         level: 'info',
-        source: 'app',
+        source: 'frontend',
         category: 'permission',
         message: 'some event',
       },
       {
         timestamp: '2024-01-01T00:00:01Z',
         level: 'info',
-        source: 'app',
+        source: 'frontend',
         category: 'session',
         message: 'another event',
       },
@@ -112,8 +112,8 @@ describe('logging service', () => {
 
   it('query search still matches message when metadata and category are empty', () => {
     logging.writeBatch([
-      { timestamp: '2024-01-01T00:00:00Z', level: 'info', source: 'app', message: 'banana split' },
-      { timestamp: '2024-01-01T00:00:01Z', level: 'info', source: 'app', message: 'apple pie' },
+      { timestamp: '2024-01-01T00:00:00Z', level: 'info', source: 'frontend', message: 'banana split' },
+      { timestamp: '2024-01-01T00:00:01Z', level: 'info', source: 'frontend', message: 'apple pie' },
     ]);
 
     const result = logging.query({ search: 'apple' });
@@ -126,27 +126,27 @@ describe('logging service', () => {
       {
         timestamp: '2024-01-01T00:00:00Z',
         level: 'info',
-        source: 'app',
+        source: 'frontend',
         category: 'permission',
         message: 'msg a',
       },
       {
         timestamp: '2024-01-01T00:00:01Z',
         level: 'info',
-        source: 'app',
+        source: 'frontend',
         message: 'permission thing',
       },
       {
         timestamp: '2024-01-01T00:00:02Z',
         level: 'info',
-        source: 'app',
+        source: 'frontend',
         message: 'other',
         metadata: JSON.stringify({ note: 'permission snapshot' }),
       },
       {
         timestamp: '2024-01-01T00:00:03Z',
         level: 'info',
-        source: 'app',
+        source: 'frontend',
         message: 'unrelated',
       },
     ]);
@@ -156,9 +156,9 @@ describe('logging service', () => {
 
   it('query supports pagination via limit and offset', () => {
     logging.writeBatch([
-      { timestamp: '2024-01-01T00:00:00Z', level: 'info', source: 'app', message: 'a' },
-      { timestamp: '2024-01-01T00:00:01Z', level: 'info', source: 'app', message: 'b' },
-      { timestamp: '2024-01-01T00:00:02Z', level: 'info', source: 'app', message: 'c' },
+      { timestamp: '2024-01-01T00:00:00Z', level: 'info', source: 'frontend', message: 'a' },
+      { timestamp: '2024-01-01T00:00:01Z', level: 'info', source: 'frontend', message: 'b' },
+      { timestamp: '2024-01-01T00:00:02Z', level: 'info', source: 'frontend', message: 'c' },
     ]);
 
     const page1 = logging.query({ limit: 2, offset: 0 });
@@ -186,7 +186,7 @@ describe('logging service', () => {
       {
         timestamp: '2024-01-01T00:00:00Z',
         level: 'debug',
-        source: 'agent',
+        source: 'backend',
         category: 'network',
         message: 'fetch started',
         metadata: JSON.stringify({ url: 'https://example.com' }),
@@ -209,9 +209,9 @@ describe('logging service', () => {
 
     it('returns the total count when no filters are applied', () => {
       logging.writeBatch([
-        { timestamp: '2024-01-01T00:00:00Z', level: 'info', source: 'app', message: 'a' },
-        { timestamp: '2024-01-01T00:00:01Z', level: 'info', source: 'app', message: 'b' },
-        { timestamp: '2024-01-01T00:00:02Z', level: 'info', source: 'app', message: 'c' },
+        { timestamp: '2024-01-01T00:00:00Z', level: 'info', source: 'frontend', message: 'a' },
+        { timestamp: '2024-01-01T00:00:01Z', level: 'info', source: 'frontend', message: 'b' },
+        { timestamp: '2024-01-01T00:00:02Z', level: 'info', source: 'frontend', message: 'c' },
       ]);
       expect(logging.count({})).toBe(3);
     });
@@ -231,9 +231,9 @@ describe('logging service', () => {
 
     it('ignores limit/offset (count is a total, not a page)', () => {
       logging.writeBatch([
-        { timestamp: '2024-01-01T00:00:00Z', level: 'info', source: 'app', message: 'a' },
-        { timestamp: '2024-01-01T00:00:01Z', level: 'info', source: 'app', message: 'b' },
-        { timestamp: '2024-01-01T00:00:02Z', level: 'info', source: 'app', message: 'c' },
+        { timestamp: '2024-01-01T00:00:00Z', level: 'info', source: 'frontend', message: 'a' },
+        { timestamp: '2024-01-01T00:00:01Z', level: 'info', source: 'frontend', message: 'b' },
+        { timestamp: '2024-01-01T00:00:02Z', level: 'info', source: 'frontend', message: 'c' },
       ]);
       expect(logging.count({ limit: 1, offset: 0 })).toBe(3);
     });
@@ -246,8 +246,8 @@ describe('logging service', () => {
   describe('prune()', () => {
     it('deletes all entries when olderThan is undefined and returns the count removed', () => {
       logging.writeBatch([
-        { timestamp: '2024-01-01T00:00:00Z', level: 'info', source: 'app', message: 'a' },
-        { timestamp: '2024-01-01T00:00:01Z', level: 'info', source: 'app', message: 'b' },
+        { timestamp: '2024-01-01T00:00:00Z', level: 'info', source: 'frontend', message: 'a' },
+        { timestamp: '2024-01-01T00:00:01Z', level: 'info', source: 'frontend', message: 'b' },
       ]);
       expect(logging.prune()).toBe(2);
       expect(logging.count({})).toBe(0);
@@ -259,9 +259,9 @@ describe('logging service', () => {
 
     it('accepts an ISO timestamp as olderThan and only deletes entries strictly older', () => {
       logging.writeBatch([
-        { timestamp: '2024-01-01T00:00:00Z', level: 'info', source: 'app', message: 'old' },
-        { timestamp: '2024-06-01T00:00:00Z', level: 'info', source: 'app', message: 'cut' },
-        { timestamp: '2024-12-31T00:00:00Z', level: 'info', source: 'app', message: 'keep' },
+        { timestamp: '2024-01-01T00:00:00Z', level: 'info', source: 'frontend', message: 'old' },
+        { timestamp: '2024-06-01T00:00:00Z', level: 'info', source: 'frontend', message: 'cut' },
+        { timestamp: '2024-12-31T00:00:00Z', level: 'info', source: 'frontend', message: 'keep' },
       ]);
 
       const deleted = logging.prune('2024-06-01T00:00:00Z');
@@ -279,9 +279,9 @@ describe('logging service', () => {
       const nowIso = new Date(now).toISOString();
 
       logging.writeBatch([
-        { timestamp: fortyDaysAgo, level: 'info', source: 'app', message: 'ancient' },
-        { timestamp: tenDaysAgo, level: 'info', source: 'app', message: 'middle' },
-        { timestamp: nowIso, level: 'info', source: 'app', message: 'fresh' },
+        { timestamp: fortyDaysAgo, level: 'info', source: 'frontend', message: 'ancient' },
+        { timestamp: tenDaysAgo, level: 'info', source: 'frontend', message: 'middle' },
+        { timestamp: nowIso, level: 'info', source: 'frontend', message: 'fresh' },
       ]);
 
       // "1w" = older than 7 days → deletes "ancient" (40d) AND "middle" (10d)
@@ -298,9 +298,9 @@ describe('logging service', () => {
       const nowIso = new Date(now).toISOString();
 
       logging.writeBatch([
-        { timestamp: fortyDaysAgo, level: 'info', source: 'app', message: 'ancient' },
-        { timestamp: twentyDaysAgo, level: 'info', source: 'app', message: 'middle' },
-        { timestamp: nowIso, level: 'info', source: 'app', message: 'fresh' },
+        { timestamp: fortyDaysAgo, level: 'info', source: 'frontend', message: 'ancient' },
+        { timestamp: twentyDaysAgo, level: 'info', source: 'frontend', message: 'middle' },
+        { timestamp: nowIso, level: 'info', source: 'frontend', message: 'fresh' },
       ]);
 
       expect(logging.prune('1m')).toBe(1); // only "ancient" is older than 30 days
@@ -313,8 +313,8 @@ describe('logging service', () => {
       const halfDayAgo = new Date(now - 12 * 60 * 60 * 1000).toISOString();
 
       logging.writeBatch([
-        { timestamp: twoDaysAgo, level: 'info', source: 'app', message: 'old' },
-        { timestamp: halfDayAgo, level: 'info', source: 'app', message: 'recent' },
+        { timestamp: twoDaysAgo, level: 'info', source: 'frontend', message: 'old' },
+        { timestamp: halfDayAgo, level: 'info', source: 'frontend', message: 'recent' },
       ]);
 
       expect(logging.prune('1d')).toBe(1);

@@ -13,6 +13,11 @@ import type {
   PersistPermissionRuleFn,
 } from './types';
 
+function currentPermissionMode(handle: SessionHandle): string {
+  const mode = handle.sdkOptions.permissionMode;
+  return typeof mode === 'string' ? mode : 'default';
+}
+
 /** Map the SDK's destination string to our settings-file scope. */
 function scopeForDestination(
   dest: string | undefined,
@@ -130,6 +135,27 @@ export function createCanUseTool(
     },
   ): Promise<any> => {
     const requestId = `perm-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+    const permissionMode = currentPermissionMode(handle);
+
+    if (permissionMode === 'bypassPermissions') {
+      logEntry({
+        level: 'info',
+        message: `permission decision: allow ${toolName} (${permissionMode})`,
+        metadata: {
+          event: 'permission.decision',
+          tool_name: toolName,
+          tool_use_id: toolOptions.toolUseID,
+          behavior: 'allow',
+          persisted: false,
+          permission_mode: permissionMode,
+          auto_allowed: true,
+        },
+      });
+      return {
+        behavior: 'allow' as const,
+        updatedInput: toolInput,
+      };
+    }
 
     // Build a sensible default rule from the tool name and input. Used when
     // the SDK gives us nothing OR gives us a suggestion with an empty rules
@@ -373,14 +399,3 @@ export function respondPermission(
   }
 }
 
-// ---------------------------------------------------------------------------
-// setAutoAllow / addAutoAllowTool
-// ---------------------------------------------------------------------------
-
-export function setAutoAllow(handle: SessionHandle, enabled: boolean): void {
-  handle.autoAllowEnabled = enabled;
-}
-
-export function addAutoAllowTool(handle: SessionHandle, toolName: string): void {
-  handle.autoAllowedTools.add(toolName);
-}

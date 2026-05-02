@@ -3,6 +3,7 @@ import {
   parseRuleString,
   formatRuleString,
   buildPersistedSuggestion,
+  buildSessionSuggestion,
   getInitialRuleString,
   SCOPE_OPTIONS,
   DEFAULT_SCOPE,
@@ -70,6 +71,35 @@ describe('buildPersistedSuggestion', () => {
     const s = buildPersistedSuggestion('Edit(/src/**)', 'projectSettings');
     expect(s.destination).toBe('projectSettings');
     expect(s.rules[0]).toEqual({ toolName: 'Edit', ruleContent: '/src/**' });
+  });
+});
+
+describe('buildSessionSuggestion', () => {
+  it('builds an addRules suggestion that applies only to the running session', () => {
+    expect(buildSessionSuggestion('Edit(/src/**)')).toEqual({
+      type: 'addRules',
+      rules: [{ toolName: 'Edit', ruleContent: '/src/**' }],
+      behavior: 'allow',
+      destination: 'session',
+    });
+  });
+
+  it('throws when given an empty rule', () => {
+    expect(() => buildSessionSuggestion('')).toThrow(/empty/i);
+  });
+
+  it('throws when given a whitespace-only rule', () => {
+    expect(() => buildSessionSuggestion('   \t  ')).toThrow(/empty/i);
+  });
+});
+
+describe('buildPersistedSuggestion validation', () => {
+  it('throws when given an empty rule', () => {
+    expect(() => buildPersistedSuggestion('', 'localSettings')).toThrow(/empty/i);
+  });
+
+  it('throws when given a whitespace-only rule', () => {
+    expect(() => buildPersistedSuggestion('   ', 'userSettings')).toThrow(/empty/i);
   });
 });
 

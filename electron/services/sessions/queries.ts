@@ -47,6 +47,10 @@ export function createQueryPassthroughs(sessions: Map<string, SessionHandle>) {
   async function setPermissionMode(tabId: string, mode: PermissionMode): Promise<void> {
     const handle = sessions.get(tabId);
     if (!handle) return;
+    handle.sdkOptions.permissionMode = mode;
+    if (mode === 'bypassPermissions') {
+      handle.sdkOptions.allowDangerouslySkipPermissions = true;
+    }
     try {
       await handle.query.setPermissionMode(mode);
     } catch (err) {

@@ -22,7 +22,6 @@ export interface Tab {
     effort: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
     thinkingConfig?: 'adaptive' | 'budget' | 'disabled';
     permissionMode: string;
-    autoAllowEnabled?: boolean;
     /**
      * Account override selected by the user on the project landing page.
      * When present, ClaudeCodeSession seeds its accountResolution from this

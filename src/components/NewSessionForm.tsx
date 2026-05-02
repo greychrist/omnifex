@@ -32,8 +32,6 @@ interface NewSessionFormProps {
   setThinkingConfig: (config: ThinkingConfig) => void;
   permissionMode: string;
   setPermissionMode: (mode: string) => void;
-  autoAllowEnabled: boolean;
-  setAutoAllowEnabled: (next: boolean) => void;
   onStart: () => void;
   onChangeAccount?: () => void;
   className?: string;
@@ -108,8 +106,6 @@ export const NewSessionForm: React.FC<NewSessionFormProps> = ({
   setThinkingConfig,
   permissionMode,
   setPermissionMode,
-  autoAllowEnabled,
-  setAutoAllowEnabled,
   onStart,
   onChangeAccount,
   className,
@@ -331,27 +327,6 @@ export const NewSessionForm: React.FC<NewSessionFormProps> = ({
           />
         </div>
       </div>
-
-      {permissionMode === "default" && (
-        <div className="flex items-center justify-between gap-2 pt-1">
-          <div className="min-w-0">
-            <Label className="text-xs text-foreground/60">Auto-Allow Tools</Label>
-            <p className="text-[10px] text-foreground/40 leading-tight">
-              {autoAllowEnabled
-                ? '"Always Allow" option shown on permission prompts'
-                : "Every tool use requires explicit approval"}
-            </p>
-          </div>
-          <Button
-            size="sm"
-            variant={autoAllowEnabled ? "default" : "outline"}
-            onClick={() => setAutoAllowEnabled(!autoAllowEnabled)}
-            className="text-xs h-7 shrink-0"
-          >
-            {autoAllowEnabled ? "On" : "Off"}
-          </Button>
-        </div>
-      )}
 
       <Button className="w-full" onClick={onStart}>
         Start Session

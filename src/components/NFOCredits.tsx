@@ -92,7 +92,7 @@ export const NFOCredits: React.FC<NFOCreditsProps> = ({ onClose }) => {
     { type: "credit", role: "MCP PROTOCOL", name: "Model Context Protocol" },
     { type: "spacer" },
     { type: "section", title: "━━━ DEPENDENCIES ━━━" },
-    { type: "credit", role: "RUNTIME", name: "Tauri Framework" },
+    { type: "credit", role: "RUNTIME", name: "Electron" },
     { type: "credit", role: "UI FRAMEWORK", name: "React + TypeScript" },
     { type: "credit", role: "STYLING", name: "Tailwind CSS + shadcn/ui" },
     { type: "credit", role: "ANIMATIONS", name: "Framer Motion" },

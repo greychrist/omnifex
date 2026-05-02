@@ -8,7 +8,7 @@ import GreyChristIcon from '../../icons/icon.png';
 const SDK_POLL_INTERVAL_MS = 60 * 60 * 1000; // 60 minutes
 
 const BADGE_BASE_CLASS =
-  'inline-flex items-center rounded border px-2 py-0.5 text-[11px] font-medium select-none tauri-no-drag';
+  'inline-flex items-center rounded border px-2 py-0.5 text-[11px] font-medium select-none app-no-drag';
 const BADGE_NEUTRAL_CLASS = 'bg-muted/40 text-muted-foreground border-border/60';
 const BADGE_GREEN_CLASS = 'bg-green-500/15 text-green-500 border-green-500/30';
 const BADGE_RED_CLASS = 'bg-red-500/15 text-red-500 border-red-500/30';
@@ -260,12 +260,12 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
   return (
     <TooltipProvider>
     <div
-      className="relative z-[200] h-[60px] bg-background/95 backdrop-blur-sm flex items-center justify-between select-none border-b border-border/50 tauri-drag"
-      data-tauri-drag-region
+      className="relative z-[200] h-[60px] bg-background/95 backdrop-blur-sm flex items-center justify-between select-none border-b border-border/50 app-drag"
+      data-app-drag-region
     >
       {/* Left side - app icon + version badges. Traffic lights live in the
            OS-native title bar above this row, so no left padding needed. */}
-      <div className="flex items-center pl-3 gap-1.5 tauri-no-drag">
+      <div className="flex items-center pl-3 gap-1.5 app-no-drag">
         <img
           src={GreyChristIcon}
           alt="GreyChrist"
@@ -318,7 +318,7 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
       </div>
 
       {/* Right side - Navigation icons */}
-      <div className="flex items-center pr-5 gap-3 tauri-no-drag">
+      <div className="flex items-center pr-5 gap-3 app-no-drag">
         {/* Primary actions group */}
         <div className="flex items-center gap-1">
           {/* Update button — visible during checking, when update available, downloading, ready, up-to-date, or error */}
@@ -343,7 +343,7 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.9 }}
                   transition={{ duration: 0.2 }}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-amber-600/20 text-amber-500 tauri-no-drag"
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-amber-600/20 text-amber-500 app-no-drag"
                 >
                   <Loader2 size={13} className="animate-spin" />
                   <span>
@@ -379,7 +379,7 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
                   }
                   transition={{ duration: 0.2 }}
                   disabled={updateState.status === 'installing'}
-                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors tauri-no-drag ${
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors app-no-drag ${
                     updateState.status === 'checking'
                       ? 'bg-muted text-muted-foreground cursor-wait'
                       : updateState.status === 'up-to-date'
@@ -428,7 +428,7 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
                 onClick={onLimaClick}
                 whileTap={{ scale: 0.97 }}
                 transition={{ duration: 0.15 }}
-                className="p-2 rounded-md hover:bg-accent hover:text-accent-foreground transition-colors tauri-no-drag"
+                className="p-2 rounded-md hover:bg-accent hover:text-accent-foreground transition-colors app-no-drag"
               >
                 <HardDrive size={16} />
               </motion.button>
@@ -448,7 +448,7 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
                 onClick={onSettingsClick}
                 whileTap={{ scale: 0.97 }}
                 transition={{ duration: 0.15 }}
-                className="p-2 rounded-md hover:bg-accent hover:text-accent-foreground transition-colors tauri-no-drag"
+                className="p-2 rounded-md hover:bg-accent hover:text-accent-foreground transition-colors app-no-drag"
               >
                 <Settings size={16} />
               </motion.button>

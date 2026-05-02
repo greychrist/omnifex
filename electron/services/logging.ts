@@ -1,4 +1,7 @@
 import type { Database } from './database';
+import type { LogLevel, LogSource } from './log-sources';
+
+export type { LogLevel, LogSource };
 
 // ---------------------------------------------------------------------------
 // Public interfaces
@@ -6,8 +9,8 @@ import type { Database } from './database';
 
 export interface LogEntry {
   timestamp: string;
-  level: string;
-  source: string;
+  level: LogLevel;
+  source: LogSource;
   category?: string;
   message: string;
   metadata?: string;

@@ -1,16 +1,14 @@
-// Sessions module — lifecycle orchestrator (factory + session management)
-// Extracted from electron/services/sessions.ts (pure refactor)
+// Sessions module — controller (factory + session management)
+//
+// Thin glue layer that composes `factory.buildSdkOptions` (SDK options
+// assembly), `runtime.listenToMessages` / `runtime.restartQuery` (the
+// stream FSM), and the per-tab `permissions.canUseTool` callback.
+// Holds the live `Map<tabId, SessionHandle>` and exposes the public
+// `SessionsService` IPC surface.
 
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
 import { createAsyncChannel } from '../async-channel';
-import { findBundledSdkBinaryAuto } from '../claude-binary';
 import { query } from '@anthropic-ai/claude-agent-sdk';
-import type {
-  SDKUserMessage,
-  PermissionMode,
-} from '@anthropic-ai/claude-agent-sdk';
+import type { SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 import type {
   SessionHandle,
   SessionStartParams,
@@ -24,39 +22,20 @@ import type {
   SessionOwnership,
   PersistPermissionRuleFn,
   RateLimitHook,
+  ElicitationDecision,
 } from './types';
-import { createSessionHooks } from './hooks';
-import { discoverWorktrees } from '../git-worktrees';
 import {
   createCanUseTool,
   respondPermission as respondPermissionImpl,
-  setAutoAllow as setAutoAllowImpl,
-  addAutoAllowTool as addAutoAllowToolImpl,
 } from './permissions';
 import { createQueryPassthroughs } from './queries';
 import { createTuiSession } from './tui';
-
-// ---------------------------------------------------------------------------
-// findSystemClaudeBinary
-// ---------------------------------------------------------------------------
-
-/**
- * Resolve a claude binary: prefer a system install (matches Greg's dual-account
- * setup), fall back to the per-platform binary bundled with the SDK
- * (@anthropic-ai/claude-agent-sdk-{platform}-{arch}/claude) so packaged builds
- * still work for users without Claude Code installed system-wide.
- */
-function findSystemClaudeBinary(): string | null {
-  const candidates = [
-    `${os.homedir()}/.local/bin/claude`,
-    '/usr/local/bin/claude',
-    '/opt/homebrew/bin/claude',
-  ];
-  for (const p of candidates) {
-    if (fs.existsSync(p)) return p;
-  }
-  return findBundledSdkBinaryAuto();
-}
+import { buildSdkOptions, findSystemClaudeBinary } from './factory';
+import {
+  listenToMessages,
+  restartQuery,
+  type RuntimeDeps,
+} from './runtime';
 
 // ---------------------------------------------------------------------------
 // Factory
@@ -72,169 +51,20 @@ export function createSessionsService(
 ): SessionsService {
   const sessions = new Map<string, SessionHandle>();
 
-  // -------------------------------------------------------------------------
-  // Internal: start the async listener loop for a session
-  // -------------------------------------------------------------------------
-
-  async function listenToMessages(tabId: string, handle: SessionHandle): Promise<void> {
-    try {
-      for await (const message of handle.query) {
-        // Extract session ID from system init message
-        const isInit =
-          message.type === 'system' && (message as any).subtype === 'init';
-        if (isInit && (message as any).session_id) {
-          handle.sessionId = (message as any).session_id as string;
-        }
-
-        // Status transitions:
-        //  - 'init' means the session is alive but no turn is in flight yet
-        //    → 'idle' so the installer's wait-for-idle gate doesn't block.
-        //  - 'result' is handled below (also flips to 'idle').
-        //  - Anything else (assistant / tool_use / tool_result / etc.) means
-        //    the SDK is mid-turn → 'running'.
-        // sendMessage() also sets 'running' eagerly so the gate reacts the
-        // moment the user submits, before the SDK echoes anything.
-        if (isInit) {
-          handle.status = 'idle';
-        } else if (message.type !== 'result') {
-          handle.status = 'running';
-        }
-
-        // Stamp each live message with the wall-clock time we received it,
-        // so the renderer can show a per-card timestamp. Reloaded-from-JSONL
-        // messages won't have this field (the SDK's JSONL has no timestamp),
-        // and the renderer treats that case as "no timestamp".
-        (message as any).receivedAt = new Date().toISOString();
-
-        // Capture rate-limit events for the rate-limits service. Wrap in
-        // try/catch so a downstream bug never kills the session stream.
-        if ((message as any).type === 'rate_limit_event') {
-          const info = (message as any).rate_limit_info;
-          if (info && rateLimitHook) {
-            try {
-              rateLimitHook(handle.configDir, info);
-            } catch (err) {
-              console.error('[sessions] rate-limit hook failed:', err);
-            }
-          }
-        }
-
-        // Forward every message to the renderer
-        sendToRenderer(`claude-output:${tabId}`, message);
-
-        // Emit notification event on result messages (execution complete/failed)
-        if (message.type === 'result') {
-          const msg = message as any;
-          const isError = msg.is_error || msg.subtype === 'error';
-          const projectName = path.basename(handle.projectPath) || 'GreyChrist';
-          const title = `GreyChrist — ${projectName}`;
-          const body = (msg.result || msg.error || (isError ? 'Task failed' : 'Task complete')).slice(0, 200);
-
-          // Emit to renderer for in-app tab badge handling
-          sendToRenderer('claude-notification', {
-            tab_id: tabId,
-            title,
-            body,
-            is_error: isError,
-          });
-
-          // Fire native OS notification + dock badge
-          try {
-            notificationHooks.showNotification?.(title, body, isError, { tabId });
-            notificationHooks.incrementUnread?.();
-          } catch (e) {
-            console.error('[sessions] notification hook failed:', e);
-          }
-
-          // Turn is over — flip to 'idle' so the installer's wait-for-idle
-          // gate doesn't block on a tab that's just sitting waiting for the
-          // user. Line 89 above will move us back to 'running' the moment
-          // the next message lands on the stream.
-          handle.status = 'idle';
-        }
-      }
-    } catch (err) {
-      // If we're mid-switch to TUI, swallow whatever the old stream threw —
-      // the mode handler owns lifecycle from here. Do NOT fire claude-error /
-      // claude-complete, which would wipe renderer state (isSessionActive).
-      if (handle.mode === 'tui') return;
-      // If start() has already replaced this handle (StrictMode double-mount,
-      // or any explicit re-start), the throw was caused by `inputChannel.close()`
-      // in start() itself. Suppress all renderer-facing events so the new
-      // session's listeners don't see a spurious error from the old one.
-      if (sessions.get(tabId) !== handle) return;
-      // Stream error — keep the session alive so the user can retry.
-      // The next sendMessage() will restart the SDK query transparently.
-      handle.status = 'error';
-      const errMsg = err instanceof Error ? err.message : String(err);
-      sendToRenderer(`claude-error:${tabId}`, errMsg);
-      sendToRenderer(`claude-output:${tabId}`, {
-        type: 'system',
-        subtype: 'notification',
-        notification_type: 'error',
-        title: 'Session Error',
-        message: `Error: ${errMsg.slice(0, 200)}`,
-      });
-      // Stop the loading indicator but keep the session in the map
-      sendToRenderer(`claude-complete:${tabId}`);
-      return;
-    }
-    // Normal stream close — clean up (unless we're mid-switch to TUI mode,
-    // in which case the session stays alive and mode handles its own lifecycle)
-    if (handle.mode === 'tui') return;
-    // If start() has replaced this handle in the map (StrictMode double-mount
-    // or an explicit re-start path), the loop terminated because start() closed
-    // our inputChannel. The newly-registered handle is what the renderer cares
-    // about now — emitting claude-complete here would flip its session state to
-    // 'ended', and `sessions.delete(tabId)` would wipe the new handle from the
-    // map. Bail without touching either.
-    if (sessions.get(tabId) !== handle) return;
-    handle.status = 'stopped';
-    sendToRenderer(`claude-complete:${tabId}`);
-    sessions.delete(tabId);
-    ownership?.unregister(tabId);
-  }
-
-  // -------------------------------------------------------------------------
-  // Internal: restart a dead query (after stream error) so the session resumes
-  // -------------------------------------------------------------------------
-
-  function restartQuery(tabId: string, handle: SessionHandle): void {
-    const newInputChannel = createAsyncChannel<SDKUserMessage>(1000);
-    const opts = { ...handle.sdkOptions };
-    if (handle.sessionId) {
-      opts.resume = handle.sessionId;
-    }
-
-    const q = query({
-      prompt: newInputChannel,
-      options: opts as any,
-    });
-
-    handle.inputChannel = newInputChannel;
-    handle.query = q;
-    handle.status = 'starting';
-
-    listenToMessages(tabId, handle).catch((err) => {
-      console.error(`[sessions] Unhandled error in listenToMessages for tab ${tabId}:`, err);
-    });
-  }
+  const runtimeDeps: RuntimeDeps = {
+    sendToRenderer,
+    notificationHooks,
+    rateLimitHook,
+    ownership,
+    sessions,
+  };
 
   // -------------------------------------------------------------------------
   // start()
   // -------------------------------------------------------------------------
 
   function start(params: SessionStartParams): void {
-    const {
-      tabId,
-      projectPath,
-      configDir,
-      model,
-      permissionMode,
-      resumeSessionId,
-      effort,
-      thinking,
-    } = params;
+    const { tabId, projectPath, configDir } = params;
 
     // Close any existing session for this tab
     const existing = sessions.get(tabId);
@@ -247,126 +77,25 @@ export function createSessionsService(
 
     const inputChannel = createAsyncChannel<SDKUserMessage>(1000);
 
-    // Build the SDK options
-    const options: Record<string, unknown> = {
-      cwd: projectPath,
-      model,
-      permissionMode: permissionMode as PermissionMode,
-      env: {
-        ...process.env,
-        CLAUDE_CONFIG_DIR: configDir,
-      },
-      // Use the full Claude Code CLI system prompt. Without this the SDK ships a minimal
-      // prompt and sessions lose the plan-first / ask-clarifying-questions / tool-use
-      // conventions that make Claude Code feel like Claude Code.
-      systemPrompt: { type: 'preset', preset: 'claude_code' },
-      // Load project CLAUDE.md, .claude/skills/*, .claude/commands/*, .claude/settings.json,
-      // and user ~/.claude/settings.json. Without this the SDK runs in isolation mode and
-      // ignores all filesystem-based project config — defeating the point of a Claude Code GUI.
-      // Note: the claude_code preset alone does NOT load CLAUDE.md — settingSources is required.
-      settingSources: ['user', 'project', 'local'],
-      // Auto-approve all project .mcp.json servers so they connect without
-      // interactive approval (which the SDK would otherwise silently decline).
-      // `showThinkingSummaries: true` opts out of the CLI's default redact-thinking
-      // beta header so the API returns summary text in thinking blocks (otherwise
-      // we get signature-only blocks with empty `thinking` text).
-      settings: {
-        enableAllProjectMcpServers: true,
-        showThinkingSummaries: true,
-      },
-      // Stream periodic AI-generated progress summaries for running subagents
-      // (Task tool) on `task_progress` system messages. Without this the SDK
-      // emits only task_started + task_notification, leaving the SubagentBar
-      // expander empty mid-run.
-      agentProgressSummaries: true,
-      // Elicitation: prompt the user via the renderer instead of auto-accepting.
-      onElicitation: async (request: any) => {
-        // URL mode: open browser immediately, then wait for user decision
-        if (request.mode === 'url' && request.url) {
-          try {
-            const { shell } = require('electron') as typeof import('electron');
-            shell.openExternal(request.url);
-          } catch { /* best effort */ }
-        }
-
-        // Send the request to the renderer and wait for the user's decision
-        sendToRenderer(`elicitation-request:${tabId}`, {
-          serverName: request.serverName,
-          message: request.message,
-          mode: request.mode,
-          url: request.url,
-          elicitationId: request.elicitationId,
-          requestedSchema: request.requestedSchema,
-        });
-
-        return new Promise<{ action: 'accept' | 'decline' | 'cancel'; content?: Record<string, unknown> }>((resolve) => {
+    // Build the SDK options. The factory excludes `canUseTool` because
+    // that callback closes over the handle (which is created below).
+    // Elicitation requests are routed to a resolver that the runtime
+    // writes to handle.elicitationResolver in respondElicitation().
+    const options = buildSdkOptions(params, {
+      tabId,
+      sendToRenderer,
+      notificationHooks,
+      logging,
+      onElicitationRequest: (_request) =>
+        new Promise<ElicitationDecision>((resolve) => {
           handle.elicitationResolver = (decision) => {
             handle.elicitationResolver = null;
-            resolve({ action: decision.action, content: decision.content });
+            resolve(decision);
           };
-        });
-      },
-    };
+        }),
+    });
 
-    if (effort) {
-      options.effort = effort;
-    }
-    if (thinking) {
-      options.thinking = thinking;
-    }
-
-    // Admit sibling git worktrees into the SDK sandbox so a session rooted
-    // at one checkout can touch files in related worktrees (e.g. Greg's
-    // feature-branch worktrees under ~/Repos/personal/worktrees/<project>/).
-    // Without this every cross-worktree write trips the "Path is outside
-    // allowed working directories" dialog regardless of permissions.allow
-    // rules. Discovery is fire-and-forget on failure (returns []).
-    const siblingWorktrees = discoverWorktrees(projectPath);
-    if (siblingWorktrees.length > 0) {
-      options.additionalDirectories = siblingWorktrees;
-      if (logging) {
-        logging.writeBatch([
-          {
-            timestamp: new Date().toISOString(),
-            level: 'info',
-            source: 'claude-sdk',
-            category: `session:${tabId}`,
-            message: `admitting ${siblingWorktrees.length} sibling worktree${siblingWorktrees.length === 1 ? '' : 's'}`,
-            metadata: JSON.stringify({ event: 'session.start.worktrees', paths: siblingWorktrees }),
-          },
-        ]);
-      }
-    }
-
-    // Route CLI subprocess stderr into the logging service. Note the CLI routes its
-    // own `--debug` output to ~/.claude-personal/debug/<sessionId>.txt (not stderr),
-    // so this callback only catches unexpected stderr (crashes, fatal errors).
-    if (logging) {
-      options.stderr = (data: string) => {
-        // Detect error-like patterns in stderr and log at appropriate level
-        const isError = /^error[:\s]|Error in hook callback|stream closed|FATAL|panic/i.test(data);
-        logging.writeBatch([
-          {
-            timestamp: new Date().toISOString(),
-            level: isError ? 'error' : 'debug',
-            source: 'claude-sdk',
-            category: `session:${tabId}`,
-            message: data,
-          },
-        ]);
-      };
-
-    }
-
-    // Audit hooks — createSessionHooks handles null logging internally
-    options.hooks = createSessionHooks(tabId, logging, sendToRenderer, notificationHooks);
-
-    // ---- canUseTool: primary permission handler ----
-    // Called by the SDK before each tool execution. The SDK may call this
-    // concurrently for parallel tool use — we queue requests and show them
-    // one at a time so the user isn't overwhelmed.
-
-    // Create handle first so the PermissionRequest hook callback can reference it
+    // Create handle first so the canUseTool callback can reference it
     const handle: SessionHandle = {
       query: null as any, // set below
       inputChannel,
@@ -378,8 +107,6 @@ export function createSessionsService(
       permissionResolver: null,
       permissionQueue: [],
       elicitationResolver: null,
-      autoAllowEnabled: false,
-      autoAllowedTools: new Set(),
       projectPath,
       configDir: (() => {
         if (!configDir) throw new Error(`configDir is required to start session for tab ${tabId}`);
@@ -389,16 +116,6 @@ export function createSessionsService(
     };
 
     options.canUseTool = createCanUseTool(handle, tabId, sendToRenderer, notificationHooks, logging);
-
-    // Use system-installed claude binary (account is scoped via CLAUDE_CONFIG_DIR)
-    const binaryPath = findSystemClaudeBinary();
-    if (binaryPath) {
-      options.pathToClaudeCodeExecutable = binaryPath;
-    }
-
-    if (resumeSessionId) {
-      options.resume = resumeSessionId;
-    }
 
     // Start the SDK query with the async input channel
     const q = query({
@@ -413,23 +130,27 @@ export function createSessionsService(
     }
 
     // Start listening in the background (don't await — fire and forget)
-    listenToMessages(tabId, handle).catch((err) => {
+    listenToMessages(tabId, handle, runtimeDeps).catch((err) => {
       console.error(`[sessions] Unhandled error in listenToMessages for tab ${tabId}:`, err);
     });
   }
 
   // -------------------------------------------------------------------------
-  // sendMessage()
+  // sendMessage() / sendStructuredMessage()
   // -------------------------------------------------------------------------
+
+  function ensureLiveQuery(tabId: string, handle: SessionHandle): void {
+    // If the previous stream errored, restart the SDK query transparently
+    if (handle.status === 'error') {
+      restartQuery(tabId, handle, runtimeDeps);
+    }
+  }
 
   function sendMessage(tabId: string, prompt: string): void {
     const handle = sessions.get(tabId);
     if (!handle) return;
 
-    // If the previous stream errored, restart the SDK query transparently
-    if (handle.status === 'error') {
-      restartQuery(tabId, handle);
-    }
+    ensureLiveQuery(tabId, handle);
 
     // Mark the turn as in-flight before the SDK has a chance to echo
     // anything back, so the installer's wait-for-idle gate reacts to the
@@ -455,10 +176,7 @@ export function createSessionsService(
     const handle = sessions.get(tabId);
     if (!handle) return;
 
-    // If the previous stream errored, restart the SDK query transparently
-    if (handle.status === 'error') {
-      restartQuery(tabId, handle);
-    }
+    ensureLiveQuery(tabId, handle);
 
     // See sendMessage() — keep status in sync with submit, not echo.
     handle.status = 'running';
@@ -523,22 +241,6 @@ export function createSessionsService(
     const handle = sessions.get(tabId);
     if (!handle?.elicitationResolver) return;
     handle.elicitationResolver({ action, content });
-  }
-
-  // -------------------------------------------------------------------------
-  // setAutoAllow() / addAutoAllowTool()
-  // -------------------------------------------------------------------------
-
-  function setAutoAllow(tabId: string, enabled: boolean): void {
-    const handle = sessions.get(tabId);
-    if (!handle) return;
-    setAutoAllowImpl(handle, enabled);
-  }
-
-  function addAutoAllowTool(tabId: string, toolName: string): void {
-    const handle = sessions.get(tabId);
-    if (!handle) return;
-    addAutoAllowToolImpl(handle, toolName);
   }
 
   // -------------------------------------------------------------------------
@@ -616,13 +318,6 @@ export function createSessionsService(
     return { alive: true, status: handle.status, sessionId: handle.sessionId };
   }
 
-  function restartSdkQuery(tabId: string, handle: SessionHandle): void {
-    // Re-enter the SDK query on the same sessionId so the conversation
-    // continues where TUI mode left off. restartQuery already handles the
-    // resume + new input channel + listenToMessages re-wire.
-    restartQuery(tabId, handle);
-  }
-
   async function setMode(tabId: string, mode: SessionMode): Promise<void> {
     const handle = sessions.get(tabId);
     if (!handle) throw new Error(`setMode: unknown tab ${tabId}`);
@@ -653,7 +348,7 @@ export function createSessionsService(
       handle.mode = 'tui';
 
       // Close the SDK query cleanly.
-      try { handle.query?.close?.(); } catch {}
+      try { handle.query?.close?.(); } catch { /* best effort */ }
       handle.inputChannel.close();
 
       const tui = createTuiSession({
@@ -674,7 +369,7 @@ export function createSessionsService(
       });
 
       handle.tui = tui;
-      handle.tuiDetach = () => { try { tui.kill(); } catch {} };
+      handle.tuiDetach = () => { try { tui.kill(); } catch { /* best effort */ } };
       sendToRenderer(`session-mode:${tabId}`, { mode: 'tui' });
     } else {
       // tui -> sdk: kill the pty, then re-start the SDK query with resume.
@@ -685,8 +380,8 @@ export function createSessionsService(
       sendToRenderer(`session-mode:${tabId}`, { mode: 'sdk' });
 
       // Re-start the SDK query on the same session id. Re-use the original
-      // start params captured on the handle (Task 6 implements this).
-      restartSdkQuery(tabId, handle);
+      // SDK options captured on the handle.
+      restartQuery(tabId, handle, runtimeDeps);
     }
   }
 
@@ -713,8 +408,6 @@ export function createSessionsService(
     sendStructuredMessage,
     respondPermission,
     respondElicitation,
-    setAutoAllow,
-    addAutoAllowTool,
     stop,
     stopAll,
     getSessionId,

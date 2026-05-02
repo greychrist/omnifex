@@ -28,27 +28,30 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { api, type LogEntry, type LogQueryResult } from "@/lib/api";
+import {
+  LOG_LEVELS,
+  LOG_SOURCES,
+  LOG_SOURCE_DISPLAY,
+  type LogLevel,
+} from "@/lib/logSources";
 
 const PAGE_SIZE = 50;
 
-const LEVEL_COLORS: Record<string, string> = {
+const LEVEL_LABEL: Record<LogLevel, string> = {
+  error: "Error",
+  warn: "Warn",
+  info: "Info",
+  debug: "Debug",
+};
+
+const LEVEL_COLORS: Record<LogLevel, string> = {
   error: "text-red-400",
   warn: "text-yellow-400",
   info: "text-blue-400",
   debug: "text-gray-400",
 };
 
-const SOURCE_COLORS: Record<string, string> = {
-  frontend: "bg-sky-500/20 text-sky-300",
-  "claude-sdk": "bg-amber-500/20 text-amber-300",
-  "claude-hooks": "bg-emerald-500/20 text-emerald-300",
-  usage: "bg-purple-500/20 text-purple-300",
-  "usage-runner": "bg-violet-500/20 text-violet-300",
-  updater: "bg-orange-500/20 text-orange-300",
-  "rate-limits": "bg-rose-500/20 text-rose-300",
-};
-
-const LEVEL_BG: Record<string, string> = {
+const LEVEL_BG: Record<LogLevel, string> = {
   error: "bg-red-500/10",
   warn: "bg-yellow-500/10",
   info: "bg-blue-500/10",
@@ -184,10 +187,9 @@ export const LogTab: React.FC = () => {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Levels</SelectItem>
-            <SelectItem value="error">Error</SelectItem>
-            <SelectItem value="warn">Warn</SelectItem>
-            <SelectItem value="info">Info</SelectItem>
-            <SelectItem value="debug">Debug</SelectItem>
+            {LOG_LEVELS.map((level) => (
+              <SelectItem key={level} value={level}>{LEVEL_LABEL[level]}</SelectItem>
+            ))}
           </SelectContent>
         </Select>
 
@@ -197,13 +199,11 @@ export const LogTab: React.FC = () => {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Sources</SelectItem>
-            <SelectItem value="frontend">Frontend</SelectItem>
-            <SelectItem value="claude-sdk">Claude SDK</SelectItem>
-            <SelectItem value="claude-hooks">Claude Hooks</SelectItem>
-            <SelectItem value="usage">Usage</SelectItem>
-            <SelectItem value="usage-runner">Usage Runner</SelectItem>
-            <SelectItem value="updater">Updater</SelectItem>
-            <SelectItem value="rate-limits">Rate Limits</SelectItem>
+            {LOG_SOURCES.map((source) => (
+              <SelectItem key={source} value={source}>
+                {LOG_SOURCE_DISPLAY[source].label}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
 
@@ -248,7 +248,7 @@ export const LogTab: React.FC = () => {
                 {entries.map((entry) => (
                   <React.Fragment key={entry.id}>
                     <tr
-                      className={`border-t cursor-pointer hover:bg-muted/30 ${LEVEL_BG[entry.level] || ""}`}
+                      className={`border-t cursor-pointer hover:bg-muted/30 ${LEVEL_BG[entry.level as LogLevel] || ""}`}
                       onClick={() =>
                         setExpandedId(expandedId === entry.id ? null : (entry.id ?? null))
                       }
@@ -256,12 +256,13 @@ export const LogTab: React.FC = () => {
                       <td className="px-3 py-2 font-mono text-xs text-muted-foreground whitespace-nowrap">
                         {formatTimestamp(entry.timestamp)}
                       </td>
-                      <td className={`px-3 py-2 font-mono text-xs font-bold uppercase ${LEVEL_COLORS[entry.level] || ""}`}>
+                      <td className={`px-3 py-2 font-mono text-xs font-bold uppercase ${LEVEL_COLORS[entry.level as LogLevel] || ""}`}>
                         {entry.level}
                       </td>
                       <td className="px-3 py-2">
                         <span className={`text-xs px-1.5 py-0.5 rounded ${
-                          SOURCE_COLORS[entry.source] || "bg-foreground/10 text-foreground/60"
+                          LOG_SOURCE_DISPLAY[entry.source as keyof typeof LOG_SOURCE_DISPLAY]?.chipClass
+                            || "bg-foreground/10 text-foreground/60"
                         }`}>
                           {entry.source}
                         </span>

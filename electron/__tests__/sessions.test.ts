@@ -219,13 +219,11 @@ describe('sessions service — empty state guards', () => {
     expect(service.getInfo('unknown')).toBeNull();
   });
 
-  it('sendMessage / sendStructuredMessage / respondPermission / stop / setAutoAllow / addAutoAllowTool are no-ops for unknown tabs', () => {
+  it('sendMessage / sendStructuredMessage / respondPermission / stop are no-ops for unknown tabs', () => {
     expect(() => service.sendMessage('unknown', 'hi')).not.toThrow();
     expect(() => service.sendStructuredMessage('unknown', [])).not.toThrow();
     expect(() => service.respondPermission('unknown', 'allow')).not.toThrow();
     expect(() => service.stop('unknown')).not.toThrow();
-    expect(() => service.setAutoAllow('unknown', true)).not.toThrow();
-    expect(() => service.addAutoAllowTool('unknown', 'Bash')).not.toThrow();
   });
 
   it('stopAll is a no-op when no sessions exist', () => {
@@ -281,6 +279,44 @@ describe('sessions service — full lifecycle', () => {
     expect(options.env.CLAUDE_CONFIG_DIR).toBe('/custom/.claude');
     // canUseTool is the SDK's primary permission callback
     expect(typeof options.canUseTool).toBe('function');
+  });
+
+  it('start() passes acceptEdits straight through to the SDK without injecting an app-only allowedTools list', () => {
+    // The SDK's own acceptEdits mode handles auto-approval of edit-class tools
+    // internally. Adding `allowedTools` here would mean the SDK never asks the
+    // app for edit tools (good) but ALSO never asks for anything outside that
+    // list either (bad — the SDK then runs in restricted-tools mode). The
+    // correct behavior is: pass the mode through untouched and let the SDK
+    // decide which tools to short-circuit.
+    const fake = installFakeQuery();
+
+    service.start({
+      tabId: 'tab-accept-edits',
+      projectPath: '/tmp/my-project',
+      configDir: '/custom/.claude',
+      model: 'sonnet',
+      permissionMode: 'acceptEdits',
+    });
+
+    const options = fake.getCapturedOptions();
+    expect(options.permissionMode).toBe('acceptEdits');
+    expect(options.allowedTools).toBeUndefined();
+  });
+
+  it('start() opts into the SDK bypass safety flag when using bypassPermissions', () => {
+    const fake = installFakeQuery();
+
+    service.start({
+      tabId: 'tab-bypass',
+      projectPath: '/tmp/my-project',
+      configDir: '/custom/.claude',
+      model: 'sonnet',
+      permissionMode: 'bypassPermissions',
+    });
+
+    const options = fake.getCapturedOptions();
+    expect(options.permissionMode).toBe('bypassPermissions');
+    expect(options.allowDangerouslySkipPermissions).toBe(true);
   });
 
   it('start() passes settingSources so the SDK loads project CLAUDE.md, .claude/, and MCP config', () => {
@@ -1540,26 +1576,6 @@ describe('sessions service — full lifecycle', () => {
 
     svc.respondPermission('tab-queue', 'deny');
     await secondPromise;
-    svc.stopAll();
-  });
-
-  it('setAutoAllow / addAutoAllowTool mutate the session handle state', () => {
-    const svc = createSessionsService(
-      sendToRenderer as any,
-      { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
-    );
-    installFakeQuery();
-    svc.start({ tabId: 'tab-auto', projectPath: '/p', configDir: '/c', model: 'sonnet', permissionMode: 'default' });
-
-    // No-ops that shouldn't throw even after state changes.
-    expect(() => svc.setAutoAllow('tab-auto', true)).not.toThrow();
-    expect(() => svc.addAutoAllowTool('tab-auto', 'Bash')).not.toThrow();
-    expect(() => svc.setAutoAllow('tab-auto', false)).not.toThrow();
-
-    // Unknown tabs are a silent no-op (existing behaviour).
-    expect(() => svc.setAutoAllow('unknown', true)).not.toThrow();
-    expect(() => svc.addAutoAllowTool('unknown', 'Read')).not.toThrow();
-
     svc.stopAll();
   });
 
@@ -3210,7 +3226,14 @@ describe('sessions service — full lifecycle', () => {
     });
   });
 
-  it('canUseTool always prompts (SDK handles pre-approval internally)', async () => {
+  it('canUseTool does NOT short-circuit edit tools in acceptEdits mode — the SDK handles its own auto-approval', async () => {
+    // Regression guard: the previous behavior auto-allowed Read/Write/Edit/
+    // MultiEdit/NotebookEdit at the app layer when permissionMode was
+    // acceptEdits. That double-handles what the SDK already does and prevents
+    // the user from ever seeing a permission card for edit tools the SDK
+    // *would* still surface (e.g. when settings rules ask to confirm a
+    // specific path). We now defer entirely to the SDK: if the SDK calls
+    // canUseTool for a tool, we always run the dialog flow.
     const writeBatch = vi.fn();
     const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
     const svc = createSessionsService(
@@ -3225,22 +3248,59 @@ describe('sessions service — full lifecycle', () => {
       projectPath: '/p',
       configDir: '/c',
       model: 'sonnet',
-      permissionMode: 'default',
+      permissionMode: 'acceptEdits',
     });
 
     const canUseTool = fake.getCapturedOptions().canUseTool;
-    // canUseTool always emits a permission_request — the SDK only calls it
-    // when it needs a decision (pre-approved tools never reach this callback)
-    const pending = canUseTool('Bash', { command: 'ls' }, {
+    // Fire canUseTool but don't await — we want to see the permission_request
+    // emitted, then resolve via respondPermission so the promise settles.
+    const decision = canUseTool('Edit', { file_path: '/p/a.ts' }, {
       signal: new AbortController().signal,
       toolUseID: 'tu-auto',
     });
 
     await new Promise((r) => setImmediate(r));
-    expect(svc.getStatus('tab-auto-partial')).toBe('waiting_permission');
 
-    svc.respondPermission('tab-auto-partial', 'deny');
-    await pending;
+    expect(svc.getStatus('tab-auto-partial')).toBe('waiting_permission');
+    expect(sendToRenderer).toHaveBeenCalledWith(
+      'claude-output:tab-auto-partial',
+      expect.objectContaining({ type: 'permission_request', tool_name: 'Edit' }),
+    );
+
+    svc.respondPermission('tab-auto-partial', 'allow', { file_path: '/p/a.ts' });
+    const result = await decision;
+    expect(result.behavior).toBe('allow');
+
+    svc.stopAll();
+  });
+
+  it('setPermissionMode forwards to the live SDK and updates the stored handle option', async () => {
+    // Two halves: the live SDK call (so the running query starts honoring the
+    // new mode immediately) AND the cached sdkOptions.permissionMode (so
+    // anything that re-reads `currentPermissionMode(handle)` after the change
+    // — e.g. the canUseTool callback — sees the new value). The captured
+    // options object from the SDK's query() call is the same reference the
+    // service stores on the handle, so we can verify both halves through it.
+    const svc = createSessionsService(
+      sendToRenderer as any,
+      { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
+    );
+    const fake = installFakeQuery();
+
+    svc.start({
+      tabId: 'tab-mode-fallback',
+      projectPath: '/p',
+      configDir: '/c',
+      model: 'sonnet',
+      permissionMode: 'default',
+    });
+
+    expect(fake.getCapturedOptions().permissionMode).toBe('default');
+
+    await svc.setPermissionMode('tab-mode-fallback', 'plan');
+
+    expect(fake.query.setPermissionMode).toHaveBeenCalledWith('plan');
+    expect(fake.getCapturedOptions().permissionMode).toBe('plan');
 
     svc.stopAll();
   });

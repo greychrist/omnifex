@@ -9,9 +9,6 @@ interface ElectronAPI {
 declare global {
   interface Window {
     electronAPI: ElectronAPI;
-    // Legacy Tauri detection flag — retained for runtime guards in components
-    // being migrated to Electron. Always undefined in Electron context.
-    __TAURI__?: unknown;
   }
 }
 

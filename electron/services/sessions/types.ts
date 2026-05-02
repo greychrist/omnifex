@@ -98,8 +98,6 @@ export interface SessionsService {
     action: 'accept' | 'decline' | 'cancel',
     content?: Record<string, unknown>,
   ): void;
-  setAutoAllow(tabId: string, enabled: boolean): void;
-  addAutoAllowTool(tabId: string, toolName: string): void;
   stop(tabId: string): void;
   stopAll(): void;
   getSessionId(tabId: string): string | null;
@@ -231,8 +229,6 @@ export interface SessionHandle {
   permissionQueue: PendingPermission[];
   /** Resolver for a pending elicitation (MCP server asking the user a question). */
   elicitationResolver: ((decision: ElicitationDecision) => void) | null;
-  autoAllowEnabled: boolean;
-  autoAllowedTools: Set<string>;
   projectPath: string;
   configDir: string;
   /** Saved SDK options so we can restart the query after a stream error. */

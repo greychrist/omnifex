@@ -52,7 +52,6 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
   const [formEffort, setFormEffort] = React.useState<EffortLevel>('high');
   const [formThinkingConfig, setFormThinkingConfig] = React.useState<ThinkingConfig>('adaptive');
   const [formPermissionMode, setFormPermissionMode] = React.useState<string>('acceptEdits');
-  const [formAutoAllowEnabled, setFormAutoAllowEnabled] = React.useState<boolean>(false);
   const [projectAccountResolution, setProjectAccountResolution] = React.useState<NewSessionFormAccountResolution | null>(null);
 
   const [projectBranches, setProjectBranches] = React.useState<string[]>([]);
@@ -196,7 +195,6 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
         effort: formEffort,
         thinkingConfig: formThinkingConfig,
         permissionMode: formPermissionMode,
-        autoAllowEnabled: formAutoAllowEnabled,
         accountResolution: projectAccountResolution ?? undefined,
       },
     });
@@ -291,8 +289,6 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                             setThinkingConfig={setFormThinkingConfig}
                             permissionMode={formPermissionMode}
                             setPermissionMode={setFormPermissionMode}
-                            autoAllowEnabled={formAutoAllowEnabled}
-                            setAutoAllowEnabled={setFormAutoAllowEnabled}
                             onStart={handleStartNewSession}
                             onChangeAccount={() => setShowChangeAccountDialog(true)}
                           />

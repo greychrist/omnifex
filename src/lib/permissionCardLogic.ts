@@ -1,4 +1,5 @@
-export type ScopeValue = 'localSettings' | 'userSettings' | 'projectSettings';
+export type PersistedScopeValue = 'localSettings' | 'userSettings' | 'projectSettings';
+export type ScopeValue = PersistedScopeValue;
 
 export interface ScopeOption {
   value: ScopeValue;
@@ -35,7 +36,14 @@ export interface PersistedSuggestion {
   type: 'addRules';
   rules: ParsedRule[];
   behavior: 'allow';
-  destination: ScopeValue;
+  destination: PersistedScopeValue;
+}
+
+export interface SessionSuggestion {
+  type: 'addRules';
+  rules: ParsedRule[];
+  behavior: 'allow';
+  destination: 'session';
 }
 
 export interface IncomingSuggestion {
@@ -57,17 +65,36 @@ export function formatRuleString(parsed: ParsedRule): string {
   return parsed.ruleContent ? `${parsed.toolName}(${parsed.ruleContent})` : parsed.toolName;
 }
 
+function assertNonEmptyRule(ruleString: string): void {
+  if (!ruleString.trim()) {
+    throw new Error('Cannot build permission suggestion from an empty rule');
+  }
+}
+
 /** Build the `updatedPermissions` entry for an allow-and-persist action. */
 export function buildPersistedSuggestion(
   ruleString: string,
-  scope: ScopeValue,
+  scope: PersistedScopeValue,
 ): PersistedSuggestion {
+  assertNonEmptyRule(ruleString);
   const parsed = parseRuleString(ruleString);
   return {
     type: 'addRules',
     rules: [{ toolName: parsed.toolName, ruleContent: parsed.ruleContent }],
     behavior: 'allow',
     destination: scope,
+  };
+}
+
+/** Build the `updatedPermissions` entry for the current SDK session only. */
+export function buildSessionSuggestion(ruleString: string): SessionSuggestion {
+  assertNonEmptyRule(ruleString);
+  const parsed = parseRuleString(ruleString);
+  return {
+    type: 'addRules',
+    rules: [{ toolName: parsed.toolName, ruleContent: parsed.ruleContent }],
+    behavior: 'allow',
+    destination: 'session',
   };
 }
 

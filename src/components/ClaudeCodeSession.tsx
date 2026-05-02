@@ -60,6 +60,10 @@ import { useSessionLifecycle } from "@/hooks/useSessionLifecycle";
 import { useSendPrompt } from "@/hooks/useSendPrompt";
 // Virtualizer removed — flat list for reliable scrolling
 import { SessionPersistenceService } from "@/services/sessionPersistence";
+import { reduceSessionStreamMessage } from "@/lib/sessionStreamReducer";
+import { runStreamEffect } from "@/lib/sessionStreamEffects";
+import { useTabSession, useClaudeSessionStore } from "@/stores/claudeSessionStore";
+import type { PermissionSuggestion } from "@/lib/types/permissionRequest";
 
 interface ClaudeCodeSessionProps {
   /**
@@ -85,7 +89,6 @@ interface ClaudeCodeSessionProps {
     effort: EffortLevel;
     thinkingConfig?: ThinkingConfig;
     permissionMode: string;
-    autoAllowEnabled?: boolean;
     accountResolution?: {
       account: {
         name: string;
@@ -135,8 +138,28 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   onProjectPathChange,
 }) => {
   const [projectPath] = useState(initialProjectPath || session?.project_path || "");
-  const [messages, setMessages] = useState<ClaudeStreamMessage[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  // Stream-derived per-tab state lives in `claudeSessionStore`. The hook
+  // returns React-shaped setters so existing hook contracts (useSessionLifecycle,
+  // useSendPrompt) keep working without changes.
+  const sessionTabId = tabId || 'default';
+  const {
+    messages,
+    setMessages,
+    appendMessage,
+    insertMessageBeforeFirstUser,
+    isLoading,
+    setIsLoading,
+    extractedSessionInfo,
+    setExtractedSessionInfo,
+    claudeSessionId,
+    setClaudeSessionId,
+    sdkAccountInfo,
+    setSdkAccountInfo,
+    contextUsage,
+    setContextUsage,
+    supportedModels,
+    setSupportedModels,
+  } = useTabSession(sessionTabId);
   const [currentActivity, setCurrentActivity] = useState<string>("Honking");
 
   // Random gerund words like Claude Code CLI
@@ -151,21 +174,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   const [rawJsonlOutput, setRawJsonlOutput] = useState<string[]>([]);
   const [copyPopoverOpen, setCopyPopoverOpen] = useState(false);
   const [totalTokens, setTotalTokens] = useState(0);
-  const [extractedSessionInfo, setExtractedSessionInfo] = useState<{ sessionId: string; projectId: string } | null>(null);
-  const [claudeSessionId, setClaudeSessionId] = useState<string | null>(null);
-  // Wave 2.1 — SDK-reported account info, fetched after the session's
-  // system:init message arrives. Used to verify end-to-end that the CLI
-  // subprocess is authenticated against the account we resolved.
-  const [sdkAccountInfo, setSdkAccountInfo] = useState<import('@/lib/api').SessionAccountInfo | null>(null);
-  // Wave 2.2 — authoritative context-window usage from the SDK. Fetched
-  // after init and at the end of every turn (result message). Replaces the
-  // header's client-side (totalTokens / hardcoded limit) approximation with
-  // real numbers that include system prompt + tools + memory + MCP tokens.
-  const [contextUsage, setContextUsage] = useState<import('@/lib/api').SessionContextUsage | null>(null);
-  // Wave 2.5 — live model list fetched via query.supportedModels() once the
-  // session is running. Passed into FloatingPromptInput; when empty, its
-  // picker falls back to the hardcoded MODELS array in that component.
-  const [supportedModels, setSupportedModels] = useState<import('@/lib/api').SessionModelInfo[]>([]);
   // Pre-fetched built-in slash commands from the SDK, loaded alongside models
   // during session init so the picker has them immediately.
   const [supportedCommands, setSupportedCommands] = useState<import('@/lib/api').SessionSlashCommand[]>([]);
@@ -341,16 +349,9 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
 
   // Permission prompt state
   const {
+    pendingPermission,
+    setPendingPermission,
     waitingForPermission,
-    setWaitingForPermission,
-    pendingToolUse,
-    setPendingToolUse,
-    pendingRequestId,
-    setPendingRequestId,
-    autoAllowEnabled,
-    setAutoAllowEnabled,
-    autoAllowedTools,
-    setAutoAllowedTools,
     handlePermissionAllow,
     handlePermissionDeny,
   } = usePermissions();
@@ -383,7 +384,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   // the SDK emits after interrupt) so "Execution Failed" doesn't flash after
   // a deliberate cancel. Reset after the first result message is consumed.
   const userInterruptedRef = useRef(false);
-  const messagesRef = useRef<ClaudeStreamMessage[]>([]);
   const isNearBottomRef = useRef(true);
   
   // Session metrics state for enhanced analytics
@@ -409,11 +409,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       onProjectPathChange(projectPath);
     }
   }, []); // Only run on mount
-  
-  // Keep refs in sync with state
-  useEffect(() => {
-    messagesRef.current = messages;
-  }, [messages]);
 
   // Get effective session info (from prop or extracted) - use useMemo to ensure it updates
   const effectiveSession = useMemo(() => {
@@ -617,254 +612,118 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       }
 
 
-      // Update current activity and track thinking duration based on message content
-      if (message.type === 'assistant' && message.message?.content) {
-        const content = Array.isArray(message.message.content) ? message.message.content : [];
-        for (const block of content) {
-          if (block?.type === 'thinking') {
-            setCurrentActivity(pickGerund());
-            break;
-          } else if (block?.type === 'tool_use' && block.name) {
-            // Build a descriptive label based on tool + input
-            const name = block.name;
-            const input = block.input || {};
-            let label = `Running ${name}`;
-            if (name === 'Grep') label = `Searching for ${input.pattern ? `"${String(input.pattern).slice(0, 40)}"` : 'pattern'}`;
-            else if (name === 'Glob') label = `Finding files ${input.pattern ? `matching ${input.pattern}` : ''}`;
-            else if (name === 'Read') label = `Reading ${input.file_path ? String(input.file_path).split('/').pop() : 'file'}`;
-            else if (name === 'Write') label = `Writing ${input.file_path ? String(input.file_path).split('/').pop() : 'file'}`;
-            else if (name === 'Edit' || name === 'MultiEdit') label = `Editing ${input.file_path ? String(input.file_path).split('/').pop() : 'file'}`;
-            else if (name === 'Bash') label = `Running command${input.description ? `: ${String(input.description).slice(0, 60)}` : ''}`;
-            else if (name === 'WebFetch') label = `Fetching ${input.url ? String(input.url).slice(0, 50) : 'URL'}`;
-            else if (name === 'WebSearch') label = `Searching web${input.query ? `: "${String(input.query).slice(0, 40)}"` : ''}`;
-            else if (name === 'Task') label = `Running agent${input.subagent_type ? ` (${input.subagent_type})` : ''}`;
-            else if (name === 'TodoWrite') label = 'Updating todos';
-            setCurrentActivity(label);
-            break;
-          } else if (block?.type === 'text') {
-            setCurrentActivity(pickGerund());
-            break;
-          }
-        }
-      } else if (message.type === 'user' && message.message?.content) {
-        const content = Array.isArray(message.message.content) ? message.message.content : [];
-        if (content.some((b: any) => b?.type === 'tool_result')) {
-          setCurrentActivity(pickGerund());
-        }
-      }
-
       // Store raw JSONL
       setRawJsonlOutput((prev) => [...prev, rawPayload]);
 
-      // Track enhanced tool execution
-      if (message.type === 'assistant' && message.message?.content) {
-        const toolUses = message.message.content.filter((c: any) => c.type === 'tool_use');
-        toolUses.forEach((toolUse: any) => {
-          sessionMetrics.current.toolsExecuted += 1;
-          sessionMetrics.current.lastActivityTime = Date.now();
+      // Pure reducer handles: append decisions, session-id extraction,
+      // permission detection, userInterrupted suppression, init dedup,
+      // result-turn handling, post-event refresh requests, AND activity
+      // labels, metrics, cost. Read live tab state from the store so the
+      // reducer sees the post-batch values, not the render-time closure.
+      const liveSlice = useClaudeSessionStore
+        .getState()
+        .selectTab(sessionTabId);
+      const hasExistingInit = liveSlice.messages.some(
+        (m) => m.type === 'system' && m.subtype === 'init',
+      );
+      const reduced = reduceSessionStreamMessage(message, {
+        projectPath,
+        hasExistingInit,
+        hasExtractedSession: !!liveSlice.extractedSessionInfo,
+        userInterrupted: userInterruptedRef.current,
+        messagesLength: liveSlice.messages.length,
+      });
 
-          const toolName = toolUse.name?.toLowerCase() || '';
-          if (toolName.includes('create') || toolName.includes('write')) {
-            sessionMetrics.current.filesCreated += 1;
-          } else if (toolName.includes('edit') || toolName.includes('multiedit') || toolName.includes('search_replace')) {
-            sessionMetrics.current.filesModified += 1;
-          } else if (toolName.includes('delete')) {
-            sessionMetrics.current.filesDeleted += 1;
-          }
-
-        });
-      }
-
-      // Track tool results
-      if (message.type === 'user' && message.message?.content) {
-        const toolResults = message.message.content.filter((c: any) => c.type === 'tool_result');
-        toolResults.forEach((result: any) => {
-          const isError = result.is_error || false;
-          if (isError) {
-            sessionMetrics.current.toolsFailed += 1;
-            sessionMetrics.current.errorsEncountered += 1;
-          }
-        });
-      }
-
-      // Track code blocks generated
-      if (message.type === 'assistant' && message.message?.content) {
-        const codeBlocks = message.message.content.filter((c: any) =>
-          c.type === 'text' && c.text?.includes('```')
+      // Activity label
+      if (reduced.activityUpdate) {
+        setCurrentActivity(
+          reduced.activityUpdate.kind === 'literal'
+            ? reduced.activityUpdate.label
+            : pickGerund(),
         );
-        if (codeBlocks.length > 0) {
-          codeBlocks.forEach((block: any) => {
-            const matches = (block.text.match(/```/g) || []).length;
-            sessionMetrics.current.codeBlocksGenerated += Math.floor(matches / 2);
-          });
-        }
       }
 
-      // Track errors in system messages
-      if (message.type === 'system' && (message.subtype === 'error' || message.error)) {
-        sessionMetrics.current.errorsEncountered += 1;
+      // Metric deltas — fold into the live ref. Snap lastActivityTime to
+      // now when the message implied activity.
+      const m = reduced.metrics;
+      if (
+        m.toolsExecuted ||
+        m.toolsFailed ||
+        m.filesCreated ||
+        m.filesModified ||
+        m.filesDeleted ||
+        m.codeBlocksGenerated ||
+        m.errorsEncountered ||
+        m.bumpLastActivity
+      ) {
+        const live = sessionMetrics.current;
+        live.toolsExecuted += m.toolsExecuted;
+        live.toolsFailed += m.toolsFailed;
+        live.filesCreated += m.filesCreated;
+        live.filesModified += m.filesModified;
+        live.filesDeleted += m.filesDeleted;
+        live.codeBlocksGenerated += m.codeBlocksGenerated;
+        live.errorsEncountered += m.errorsEncountered;
+        if (m.bumpLastActivity) live.lastActivityTime = Date.now();
       }
 
-      // Detect permission request from SDK canUseTool callback
-      if (message.type === 'permission_request' && message.request_id) {
-        setPendingToolUse({
-          name: message.tool_name || 'Unknown',
-          input: message.tool_input || {},
-          title: message.title,
-          displayName: message.display_name,
-          description: message.description,
-          decisionReason: message.decision_reason,
-          suggestions: message.permission_suggestions || [],
+      if (reduced.costDelta > 0) {
+        setSessionCost((prev) => prev + reduced.costDelta);
+      }
+
+      if (reduced.sessionIdUpdate) {
+        setClaudeSessionId(reduced.sessionIdUpdate);
+      }
+      if (reduced.extractedSessionInfo) {
+        setExtractedSessionInfo(reduced.extractedSessionInfo);
+      }
+      if (reduced.pendingPermission) {
+        setPendingPermission(reduced.pendingPermission);
+      }
+      if (reduced.clearUserInterrupted) {
+        userInterruptedRef.current = false;
+      }
+      if (reduced.clearLoading) {
+        setIsLoading(false);
+      }
+
+      // Execute returned effects. Effects are intentionally fire-and-forget;
+      // errors are logged but never break the stream.
+      for (const effect of reduced.effects) {
+        runStreamEffect(effect, {
+          tabId: tabIdRef.current,
+          projectPath,
+          api: {
+            sessionAccountInfo: api.sessionAccountInfo,
+            sessionContextUsage: api.sessionContextUsage,
+            sessionSupportedModels: api.sessionSupportedModels,
+          },
+          persistSession: ({ sessionId, projectId, projectPath: pp, messageCount }) =>
+            SessionPersistenceService.saveSession(sessionId, projectId, pp, messageCount),
+          setSdkAccountInfo: (info) => setSdkAccountInfo(info as any),
+          setContextUsage: (usage) => setContextUsage(usage as any),
+          setSupportedModels: (models) => setSupportedModels(models as any),
+          queuedPromptsRef,
+          setQueuedPrompts,
+          handleSendPrompt,
+          onError: (kind, err) =>
+            console.error(`[sessions] effect ${kind} failed:`, err),
         });
-        setPendingRequestId(message.request_id);
-        setWaitingForPermission(true);
       }
 
-      // Track cost from usage data
-      if (message.usage || message.message?.usage) {
-        const usage = message.usage || message.message?.usage;
-        if (usage) {
-          const inputCost = (usage.input_tokens || 0) * 0.000003;
-          const outputCost = (usage.output_tokens || 0) * 0.000015;
-          setSessionCost(prev => prev + inputCost + outputCost);
-        }
-      }
-
-      // Extract session_id from system:init messages
-      if (message.type === 'system' && message.subtype === 'init' && message.session_id) {
-        setClaudeSessionId(message.session_id);
-
-        if (!extractedSessionInfo) {
-          const projectId = projectPath.replace(/[^a-zA-Z0-9]/g, '-');
-          setExtractedSessionInfo({ sessionId: message.session_id, projectId });
-
-          SessionPersistenceService.saveSession(
-            message.session_id,
-            projectId,
-            projectPath,
-            messages.length
-          );
-        }
-
-        // Wave 2.1 — fetch the SDK-reported account info now that the
-        // session is initialized. This is the authoritative check that
-        // CLAUDE_CONFIG_DIR routed the CLI subprocess to the account we
-        // think we resolved. If these disagree the SessionHeader flags it
-        // so the user notices before they run anything expensive.
-        const tidForAccount = tabIdRef.current;
-        api.sessionAccountInfo(tidForAccount)
-          .then((info) => {
-            if (info) setSdkAccountInfo(info);
-          })
-          .catch((err) => {
-            console.error('[sessions] sessionAccountInfo failed:', err);
-          });
-
-        // Wave 2.2 — also fetch the initial context-usage snapshot so the
-        // header shows real numbers (system prompt / tools / memory) from
-        // the very first render instead of starting at 0 and approximating.
-        api.sessionContextUsage(tidForAccount)
-          .then((usage) => {
-            if (usage) setContextUsage(usage);
-          })
-          .catch((err) => {
-            console.error('[sessions] sessionContextUsage failed:', err);
-          });
-
-        // Wave 2.5 — fetch the live model list for the in-session picker.
-        // Only fires once per session; the result stays in state until the
-        // next session init.
-        api.sessionSupportedModels(tidForAccount)
-          .then((models) => {
-            if (models && models.length > 0) setSupportedModels(models);
-          })
-          .catch((err) => {
-            console.error('[sessions] sessionSupportedModels failed:', err);
-          });
-
-      }
-
-      // system:compact_boundary — SDK emits this after a manual or auto
-      // compaction. The SDK's internal context is already the compacted
-      // state, so refresh the header popover immediately instead of
-      // waiting for the next turn's result to settle.
-      if (message.type === 'system' && message.subtype === 'compact_boundary') {
-        const tidForCompact = tabIdRef.current;
-        api.sessionContextUsage(tidForCompact)
-          .then((usage) => {
-            if (usage) setContextUsage(usage);
-          })
-          .catch((err) => {
-            console.error('[sessions] sessionContextUsage post-compact refresh failed:', err);
-          });
-      }
-
-      // system:init: skip duplicates, insert before the first user message
-      if (message.type === 'system' && message.subtype === 'init') {
-        const alreadyHasInit = messagesRef.current.some(
-          (m) => m.type === 'system' && m.subtype === 'init'
-        );
-        if (alreadyHasInit) {
-          return;
-        }
-        setMessages((prev) => {
-          const firstUserIdx = prev.findIndex((m) => m.type === 'user');
-          if (firstUserIdx >= 0) {
-            const copy = [...prev];
-            copy.splice(firstUserIdx, 0, message);
-            return copy;
-          }
-          return [...prev, message];
-        });
+      // Fold the message into messages[] per the reducer's append decision.
+      if (reduced.append === 'skip') {
         return;
       }
-
-      // result messages mean "turn complete, waiting for next input" — NOT process exit
-      if (message.type === 'result') {
-        // If the user just hit cancel/interrupt, the SDK emits an error-
-        // typed result (is_error: true) representing the interrupted turn.
-        // Suppress it so "Execution Failed" doesn't flash after a
-        // deliberate cancel — the user already saw the "Response
-        // interrupted" notification from handleCancelExecution.
-        if (userInterruptedRef.current) {
-          userInterruptedRef.current = false;
-          const isError = (message as any).is_error || (message as any).subtype?.includes('error');
-          if (isError) {
-            setIsLoading(false);
-            return;
-          }
-        }
-
-        setIsLoading(false);
-
-        // Wave 2.2 — refresh context usage at the end of every turn so the
-        // header reflects the tokens this turn consumed. Fire-and-forget;
-        // errors are swallowed because stale usage is strictly better than
-        // breaking the turn flow.
-        const tidForUsage = tabIdRef.current;
-        api.sessionContextUsage(tidForUsage)
-          .then((usage) => {
-            if (usage) setContextUsage(usage);
-          })
-          .catch((err) => {
-            console.error('[sessions] sessionContextUsage refresh failed:', err);
-          });
-
-        // Process queued prompts after turn completion
-        if (queuedPromptsRef.current.length > 0) {
-          const [nextPrompt, ...remainingPrompts] = queuedPromptsRef.current;
-          setQueuedPrompts(remainingPrompts);
-          setTimeout(() => {
-            handleSendPrompt(nextPrompt.prompt, nextPrompt.model);
-          }, 100);
-        }
+      if (reduced.append === 'insertBeforeFirstUser') {
+        insertMessageBeforeFirstUser(message);
+        return;
       }
-
-      setMessages((prev) => [...prev, message]);
+      appendMessage(message);
     } catch (err) {
       console.error('Failed to parse message:', err, payload);
     }
-  }, [projectPath, effectiveSession, extractedSessionInfo, autoAllowedTools]);
+  }, [projectPath, effectiveSession, extractedSessionInfo]);
 
   // Session lifecycle: persistent session management, event listeners, cleanup
   const { unlistenRefs, isMountedRef, startPersistentSession, rebindPersistentSession } = useSessionLifecycle({
@@ -931,9 +790,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   //      pre-filled config the user already chose. Skips the second click.
   useEffect(() => {
     if (persistentSessionRef.current) return;
-    if (initialSessionConfig?.autoAllowEnabled) {
-      setAutoAllowEnabled(true);
-    }
     if (session) {
       (async () => {
         const rebound = await rebindPersistentSession();
@@ -1531,11 +1387,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
               setThinkingConfig={setThinkingConfig}
               permissionMode={permissionMode}
               setPermissionMode={setPermissionMode}
-              autoAllowEnabled={autoAllowEnabled}
-              setAutoAllowEnabled={(next) => {
-                setAutoAllowEnabled(next);
-                if (!next) setAutoAllowedTools(new Set());
-              }}
               onStart={() => {
                 setSessionStarted(true);
                 startPersistentSession();
@@ -1708,17 +1559,14 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             "shrink-0 transition-all duration-300 z-50",
             (showMCPPanel || showPluginsPanel || showPermissionsPanel) && "sm:mr-96"
           )}>
-            {waitingForPermission && pendingToolUse && pendingRequestId && (
+            {pendingPermission && (
               <PermissionCard
-                toolName={pendingToolUse.name}
-                toolInput={pendingToolUse.input}
-                title={pendingToolUse.title}
-                displayName={pendingToolUse.displayName}
-                description={pendingToolUse.description}
-                decisionReason={pendingToolUse.decisionReason}
-                suggestions={pendingToolUse.suggestions}
+                request={pendingPermission}
                 onAllow={(selectedSuggestions) => {
-                  handlePermissionAllow(tabIdRef.current, selectedSuggestions);
+                  handlePermissionAllow(
+                    tabIdRef.current,
+                    selectedSuggestions as PermissionSuggestion[],
+                  );
                 }}
                 onDeny={() => {
                   handlePermissionDeny(tabIdRef.current);

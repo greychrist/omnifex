@@ -14,7 +14,6 @@ const NOISE_PATTERNS = [
   /act\(\) is not supported in production/,
   /AnimatePresence.*mode is set to "wait"/,
   /\[PostHog\.js\]/,
-  /Failed to set up Tauri drag-drop listener/,
 ];
 
 class LogService {
@@ -28,7 +27,7 @@ class LogService {
     debug: typeof console.debug;
   };
   private initialized = false;
-  private tauriUnlisten: (() => void) | null = null;
+  private backendLogUnlisten: (() => void) | null = null;
 
   private constructor() {
     this.originalConsole = {
@@ -70,7 +69,7 @@ class LogService {
 
     // Listen for backend log events
     try {
-      this.tauriUnlisten = window.electronAPI.onEvent('backend-log', (payload: any) => {
+      this.backendLogUnlisten = window.electronAPI.onEvent('backend-log', (payload: any) => {
         const { level, category, message, timestamp } = payload as {
           level: string;
           category: string;
@@ -132,9 +131,9 @@ class LogService {
       clearInterval(this.flushTimer);
       this.flushTimer = null;
     }
-    if (this.tauriUnlisten) {
-      this.tauriUnlisten();
-      this.tauriUnlisten = null;
+    if (this.backendLogUnlisten) {
+      this.backendLogUnlisten();
+      this.backendLogUnlisten = null;
     }
     await this.flush();
   }
