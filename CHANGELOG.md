@@ -5,6 +5,24 @@ All notable changes to GreyChrist are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] — 2026-05-02
+
+Session/chat architecture tightening pass. Permission card no longer lets an empty rule submit. Stale auto-allow state (renderer hooks + sessions service surface) is gone — it was never wired through IPC and never read by `canUseTool`. Stream-effect execution moved out of `ClaudeCodeSession` into a pure runner with focused tests so `handleStreamMessage` is now thin: parse → reduce → patch → run effects → append. Bundles the in-flight session decomposition (factory / runtime / events / store / log-source) work that had been staged. Installers remain **unsigned** — first launch needs right-click → Open.
+
+### Added
+
+- **`src/lib/sessionStreamEffects.ts`**. Pure `runStreamEffect(effect, deps)` runner that interprets `StreamReducerEffect` descriptors (saveSessionPersistence, fetchAccountInfo, refreshContextUsage, fetchSupportedModels, processQueuedPrompt, showPermissionPrompt). Fire-and-forget semantics preserved; rejections forwarded to `deps.onError`. Backed by 10 unit tests (`src/lib/__tests__/sessionStreamEffects.test.ts`).
+- **Empty-rule guard in `permissionCardLogic.ts`**. New `assertNonEmptyRule()` makes `buildSessionSuggestion` and `buildPersistedSuggestion` throw `Error('Cannot build permission suggestion from an empty rule')` rather than silently returning `{ toolName: "" }`. PermissionCard's "Allow for Session" button now also disables when `!rule.trim()`, matching "Save Permission".
+
+### Changed
+
+- **`ClaudeCodeSession.handleStreamMessage`** (`src/components/ClaudeCodeSession.tsx`). The 47-line inline `runEffect` switch is gone. The component now constructs a `StreamEffectDeps` object once per message and delegates to `runStreamEffect`. `useCallback` dep array shrunk accordingly.
+- **PermissionCard "Allow Once" → "Allow for Session"** (`src/components/PermissionCard.tsx`). Button label restored to its earlier wording; Clock icon unchanged.
+
+### Removed
+
+- **Stale auto-allow state.** `autoAllowEnabled` / `autoAllowedTools` / `setAutoAllow` / `addAutoAllowTool` removed from `usePermissions`, `ClaudeCodeSession.tsx`, `NewSessionForm.tsx`, `TabContent.tsx`, `TabContext.tsx`, `electron/services/sessions/types.ts`, `electron/services/sessions/lifecycle.ts`, `electron/services/sessions/permissions.ts`, and the matching `electron/__tests__/sessions.test.ts` cases. The state was set but never read in `canUseTool`, never crossed IPC, and the renderer toggle had no observable effect.
+
 ## [0.3.81] — 2026-05-02
 
 Header card layout reshuffled so account context lives near the back button and live-session info floats to the right. `AccountCard` now sits left of the git/branch card; `SessionCard` is pushed right with `ml-auto`. Popover anchors flipped accordingly so neither runs off-screen. Back-button drop shadow softened and angled toward the bottom-right, then mirrored on every header card (account, session, git/branch) for a consistent grouped look. Installers remain **unsigned** — first launch needs right-click → Open.
