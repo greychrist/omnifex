@@ -5,6 +5,16 @@ All notable changes to GreyChrist are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] — 2026-05-03
+
+Test coverage pass. No runtime behavior change. Pushes overall line coverage from 86.11% to 92.11% and brings every previously-sub-80% module to or past the 80% line target. Installers remain **unsigned** — first launch needs right-click → Open.
+
+### Added
+
+- **React component test suites.** New tests for `ControlBar.tsx` (7.69% → 97.43%), `ui/popover.tsx` (4% → 100%), `ui/button.tsx` (75% → 100%), and `ui/tooltip-modern.tsx` (75% → 100%). Adds `@testing-library/react`, `@testing-library/jest-dom`, and `jsdom` as devDependencies; `vitest.config.ts` now picks up `*.test.tsx` files alongside `*.test.ts`.
+- **Backend fallback-path coverage.** New tests for `electron/services/claude-binary.ts` NVM/standard-install/VS-Code-extension fallback chain (74.41% → 98.83%), `electron/services/util/find-claude-binary.ts` defaultWhich path (64.28% → 100%), `electron/services/installer.ts` default `extractZip`/`readBundleVersion`/`isWritable` impls (71.91% → 97.75%), `electron/services/sessions/queries.ts` query-passthrough error/cache paths (65.95% → 100%), and `electron/ipc/handlers.ts` logging/branch-colors/git-branches/lima handlers (74.16% → 86.66%).
+- **Renderer state coverage.** New tests for `src/lib/utils.ts`, `src/lib/typographyClasses.ts` icon helpers, `src/lib/subagentDispatch.ts`, `src/stores/sessionStore.ts`, and the `useTabSession` hook over `src/stores/claudeSessionStore.ts`.
+
 ## [0.4.0] — 2026-05-02
 
 Session/chat architecture tightening pass. Permission card no longer lets an empty rule submit. Stale auto-allow state (renderer hooks + sessions service surface) is gone — it was never wired through IPC and never read by `canUseTool`. Stream-effect execution moved out of `ClaudeCodeSession` into a pure runner with focused tests so `handleStreamMessage` is now thin: parse → reduce → patch → run effects → append. Bundles the in-flight session decomposition (factory / runtime / events / store / log-source) work that had been staged. Installers remain **unsigned** — first launch needs right-click → Open.
