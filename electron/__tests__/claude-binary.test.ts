@@ -58,6 +58,47 @@ describe('claude binary service', () => {
     // Should NOT return the nonexistent path
     expect(best).not.toBe('/nonexistent/path/claude');
   });
+
+  it('findBestBinary returns custom path when it exists on disk', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-bin-'));
+    const fakeBin = path.join(tmpDir, 'claude');
+    fs.writeFileSync(fakeBin, '#!/bin/sh\nexit 0\n');
+    fs.chmodSync(fakeBin, 0o755);
+    try {
+      service.setPath(fakeBin);
+      expect(service.findBestBinary()).toBe(fakeBin);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('listInstallations includes a custom configured path tagged "custom"', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-bin-'));
+    const fakeBin = path.join(tmpDir, 'claude');
+    fs.writeFileSync(fakeBin, '#!/bin/sh\nexit 0\n');
+    fs.chmodSync(fakeBin, 0o755);
+    try {
+      service.setPath(fakeBin);
+      const installations = service.listInstallations();
+      const custom = installations.find((i) => i.source === 'custom');
+      // Either it shows up as 'custom', or it was already discovered by another source
+      // (in which case the dedup branch in listInstallations short-circuits).
+      const seenAtAnySource = installations.some((i) => i.path === fakeBin);
+      expect(seenAtAnySource).toBe(true);
+      // If 'custom' label appears, it must point at our fake binary
+      if (custom) expect(custom.path).toBe(fakeBin);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('findBundledSdkBinaryAuto', () => {
+  it('returns string or null without throwing', async () => {
+    const { findBundledSdkBinaryAuto } = await import('../services/claude-binary');
+    const result = findBundledSdkBinaryAuto();
+    expect(result === null || typeof result === 'string').toBe(true);
+  });
 });
 
 describe('findBundledSdkBinary', () => {

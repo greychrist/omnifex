@@ -177,6 +177,134 @@ describe('InstallerService.waitForIdle', () => {
   });
 });
 
+describe('InstallerService.stage extractZip failure', () => {
+  let stageDir: string;
+  beforeEach(async () => {
+    stageDir = await fs.mkdtemp(path.join(os.tmpdir(), 'installer-extract-fail-'));
+  });
+  afterEach(async () => {
+    await fs.rm(stageDir, { recursive: true, force: true });
+  });
+
+  it('throws InvalidUpdatePackage when extractZip rejects', async () => {
+    const zipPath = path.join(stageDir, 'corrupt.zip');
+    await fs.writeFile(zipPath, 'garbage');
+    const installer = createInstallerService(makeDeps({
+      extractZip: async () => {
+        throw new Error('ditto exited 1');
+      },
+    }));
+    await expect(installer.stage(zipPath, '0.4.0')).rejects.toThrow(
+      /InvalidUpdatePackage.*extraction failed.*ditto exited 1/,
+    );
+  });
+
+  it('readBundleVersion returning null surfaces "<unreadable>" in VersionMismatch', async () => {
+    const zipPath = path.join(stageDir, 'pkg.zip');
+    await fs.writeFile(zipPath, 'x');
+    const installer = createInstallerService(makeDeps({
+      extractZip: async (_zip, dest) => {
+        const appDir = path.join(dest, 'GreyChrist.app', 'Contents', 'MacOS');
+        await fs.mkdir(appDir, { recursive: true });
+        await fs.writeFile(path.join(appDir, 'GreyChrist'), 'b');
+      },
+      readBundleVersion: async () => null,
+    }));
+    await expect(installer.stage(zipPath, '0.4.0')).rejects.toThrow(/<unreadable>/);
+  });
+});
+
+describe('InstallerService default isWritable', () => {
+  it('returns true for a writable tmp dir', async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'installer-write-'));
+    try {
+      const installer = createInstallerService(makeDeps());
+      // We can't access the default impl directly — exercise via ensureTargetWritable.
+      await expect(installer.ensureTargetWritable(path.join(tmpDir, 'whatever.app')))
+        .resolves.toBeUndefined();
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('throws TargetNotWritable for a non-existent parent dir', async () => {
+    const installer = createInstallerService(makeDeps());
+    await expect(installer.ensureTargetWritable('/this/path/does/not/exist/whatever.app'))
+      .rejects.toThrow(/TargetNotWritable/);
+  });
+});
+
+describe('InstallerService.waitForIdle diagnostic snapshot', () => {
+  it('includes tabs from listSessionStatuses in the waiting payload', async () => {
+    let active = 1;
+    const sendToRenderer = vi.fn();
+    const installer = createInstallerService(makeDeps({
+      sendToRenderer,
+      sessionsService: {
+        listInFlightTabIds: () => active > 0 ? ['t-1'] : [],
+        listSessionStatuses: () => [
+          { tabId: 't-1', status: 'running' },
+          { tabId: 't-2', status: 'idle' },
+        ],
+        stopAll: () => {},
+      },
+    }));
+    const p = installer.waitForIdle({ force: false });
+    setTimeout(() => { active = 0; }, 1100);
+    await p;
+    const waitingCalls = sendToRenderer.mock.calls.filter((c) => c[1].phase === 'waiting');
+    expect(waitingCalls.length).toBeGreaterThan(0);
+    expect(waitingCalls[0][1].tabs).toEqual([
+      { tabId: 't-1', status: 'running' },
+      { tabId: 't-2', status: 'idle' },
+    ]);
+  });
+});
+
+describe('InstallerService.stage default extractZip / readBundleVersion (macOS only)', () => {
+  let stageDir: string;
+  beforeEach(async () => {
+    stageDir = await fs.mkdtemp(path.join(os.tmpdir(), 'installer-default-'));
+  });
+  afterEach(async () => {
+    await fs.rm(stageDir, { recursive: true, force: true });
+  });
+
+  // Skip on non-darwin since `ditto` is macOS-only.
+  const itDarwin = process.platform === 'darwin' ? it : it.skip;
+
+  itDarwin('default extractZip fails as InvalidUpdatePackage on a corrupt zip', async () => {
+    const corrupt = path.join(stageDir, 'corrupt.zip');
+    await fs.writeFile(corrupt, 'not-a-zip');
+    // No extractZip injected — default ditto runs and fails
+    const installer = createInstallerService(makeDeps());
+    await expect(installer.stage(corrupt, '0.4.0')).rejects.toThrow(/InvalidUpdatePackage/);
+  });
+
+  itDarwin('default readBundleVersion returns null when Info.plist is missing → VersionMismatch <unreadable>', async () => {
+    // Create a minimal valid zip containing GreyChrist.app/Contents/MacOS/GreyChrist
+    // but no Info.plist so plutil fails.
+    const srcDir = path.join(stageDir, 'src');
+    const appDir = path.join(srcDir, 'GreyChrist.app', 'Contents', 'MacOS');
+    await fs.mkdir(appDir, { recursive: true });
+    await fs.writeFile(path.join(appDir, 'GreyChrist'), '#!/bin/sh\nexit 0\n');
+
+    const zipPath = path.join(stageDir, 'pkg.zip');
+    // Use system `ditto -ck` (the create form) to build a real zip
+    const { spawnSync } = await import('node:child_process');
+    const create = spawnSync('ditto', ['-ck', '--keepParent', path.join(srcDir, 'GreyChrist.app'), zipPath]);
+    if (create.status !== 0) {
+      // Skip cleanly if ditto cannot create the test zip on this host
+      return;
+    }
+
+    const installer = createInstallerService(makeDeps());
+    // No readBundleVersion injected → default plutil tries to read missing
+    // Info.plist and returns null, surfacing as VersionMismatch <unreadable>
+    await expect(installer.stage(zipPath, '0.4.0')).rejects.toThrow(/<unreadable>/);
+  });
+});
+
 describe('InstallerService.executeInstall', () => {
   let stageDir: string;
   beforeEach(async () => {

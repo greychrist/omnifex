@@ -991,3 +991,276 @@ describe('ipc handlers — storage channels', () => {
     await expect(invoke(handlers, 'storage_execute_sql', {})).resolves.toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Logging handlers — count + prune (previously uncovered)
+// ---------------------------------------------------------------------------
+
+describe('logging handlers', () => {
+  it('log_count forwards params to logging.count', async () => {
+    const logging = mockService(['writeBatch', 'query', 'count', 'prune'] as const);
+    const handlers = getHandlerMap({ logging: logging as any });
+    await invoke(handlers, 'log_count', { source: 'cli' });
+    expect(logging.count).toHaveBeenCalledWith({ source: 'cli' });
+  });
+
+  it('log_count returns null when logging service is missing', async () => {
+    const handlers = getHandlerMap({});
+    await expect(invoke(handlers, 'log_count', {})).resolves.toBeNull();
+  });
+
+  it('log_prune forwards olderThan param to logging.prune', async () => {
+    const logging = mockService(['writeBatch', 'query', 'count', 'prune'] as const);
+    const handlers = getHandlerMap({ logging: logging as any });
+    await invoke(handlers, 'log_prune', { olderThan: '2026-01-01' });
+    expect(logging.prune).toHaveBeenCalledWith('2026-01-01');
+  });
+
+  it('log_prune accepts undefined olderThan', async () => {
+    const logging = mockService(['writeBatch', 'query', 'count', 'prune'] as const);
+    const handlers = getHandlerMap({ logging: logging as any });
+    await invoke(handlers, 'log_prune', {});
+    expect(logging.prune).toHaveBeenCalledWith(undefined);
+  });
+
+  it('log_prune returns null when logging service is missing', async () => {
+    const handlers = getHandlerMap({});
+    await expect(invoke(handlers, 'log_prune', { olderThan: 'x' })).resolves.toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Branch colors handlers
+// ---------------------------------------------------------------------------
+
+describe('branch colors handlers', () => {
+  function makeBranchColors() {
+    return {
+      listForProject: vi.fn().mockReturnValue([{ branch_name: 'main', color: '#fff' }]),
+      upsert: vi.fn().mockReturnValue({ id: 1 }),
+      delete: vi.fn().mockReturnValue(true),
+    };
+  }
+
+  it('branch_colors_list forwards camelCase projectPath', async () => {
+    const branchColors = makeBranchColors();
+    const handlers = getHandlerMap({ branchColors: branchColors as any });
+    await invoke(handlers, 'branch_colors_list', { projectPath: '/p' });
+    expect(branchColors.listForProject).toHaveBeenCalledWith('/p');
+  });
+
+  it('branch_colors_list also accepts snake_case project_path', async () => {
+    const branchColors = makeBranchColors();
+    const handlers = getHandlerMap({ branchColors: branchColors as any });
+    await invoke(handlers, 'branch_colors_list', { project_path: '/p2' });
+    expect(branchColors.listForProject).toHaveBeenCalledWith('/p2');
+  });
+
+  it('branch_colors_list returns [] when service is missing', async () => {
+    const handlers = getHandlerMap({});
+    await expect(invoke(handlers, 'branch_colors_list', { projectPath: '/p' })).resolves.toEqual([]);
+  });
+
+  it('branch_colors_upsert builds the upsert payload from camelCase keys', async () => {
+    const branchColors = makeBranchColors();
+    const handlers = getHandlerMap({ branchColors: branchColors as any });
+    await invoke(handlers, 'branch_colors_upsert', {
+      projectPath: '/p',
+      branchName: 'feat',
+      color: '#abc',
+    });
+    expect(branchColors.upsert).toHaveBeenCalledWith({
+      project_path: '/p',
+      branch_name: 'feat',
+      color: '#abc',
+    });
+  });
+
+  it('branch_colors_upsert builds the upsert payload from snake_case keys', async () => {
+    const branchColors = makeBranchColors();
+    const handlers = getHandlerMap({ branchColors: branchColors as any });
+    await invoke(handlers, 'branch_colors_upsert', {
+      project_path: '/p',
+      branch_name: 'feat',
+      color: '#abc',
+    });
+    expect(branchColors.upsert).toHaveBeenCalledWith({
+      project_path: '/p',
+      branch_name: 'feat',
+      color: '#abc',
+    });
+  });
+
+  it('branch_colors_upsert returns null when service is missing', async () => {
+    const handlers = getHandlerMap({});
+    await expect(invoke(handlers, 'branch_colors_upsert', {})).resolves.toBeNull();
+  });
+
+  it('branch_colors_delete forwards id', async () => {
+    const branchColors = makeBranchColors();
+    const handlers = getHandlerMap({ branchColors: branchColors as any });
+    await invoke(handlers, 'branch_colors_delete', { id: 7 });
+    expect(branchColors.delete).toHaveBeenCalledWith(7);
+  });
+
+  it('branch_colors_delete returns false when service is missing', async () => {
+    const handlers = getHandlerMap({});
+    await expect(invoke(handlers, 'branch_colors_delete', { id: 1 })).resolves.toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Git branches handler
+// ---------------------------------------------------------------------------
+
+describe('git_list_branches handler', () => {
+  it('forwards projectPath to gitBranches.list', async () => {
+    const gitBranches = { list: vi.fn().mockResolvedValue(['main', 'dev']) };
+    const handlers = getHandlerMap({ gitBranches: gitBranches as any });
+    const result = await invoke(handlers, 'git_list_branches', { projectPath: '/p' });
+    expect(gitBranches.list).toHaveBeenCalledWith('/p');
+    expect(result).toEqual(['main', 'dev']);
+  });
+
+  it('accepts snake_case project_path', async () => {
+    const gitBranches = { list: vi.fn().mockResolvedValue([]) };
+    const handlers = getHandlerMap({ gitBranches: gitBranches as any });
+    await invoke(handlers, 'git_list_branches', { project_path: '/p' });
+    expect(gitBranches.list).toHaveBeenCalledWith('/p');
+  });
+
+  it('returns [] when gitBranches service is missing', async () => {
+    const handlers = getHandlerMap({});
+    await expect(invoke(handlers, 'git_list_branches', { projectPath: '/p' })).resolves.toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Lima handlers
+// ---------------------------------------------------------------------------
+
+describe('lima handlers', () => {
+  function makeLima() {
+    return {
+      isInstalled: vi.fn().mockResolvedValue(true),
+      listVms: vi.fn().mockResolvedValue([{ name: 'default' }]),
+      listContainers: vi.fn().mockResolvedValue([{ id: 'c1' }]),
+      startVm: vi.fn().mockResolvedValue(undefined),
+      stopVm: vi.fn().mockResolvedValue(undefined),
+      startContainer: vi.fn().mockResolvedValue(undefined),
+      stopContainer: vi.fn().mockResolvedValue(undefined),
+    };
+  }
+
+  it('lima_check_installed returns { installed: true } when service reports true', async () => {
+    const lima = makeLima();
+    const handlers = getHandlerMap({ lima: lima as any });
+    await expect(invoke(handlers, 'lima_check_installed')).resolves.toEqual({ installed: true });
+  });
+
+  it('lima_check_installed returns { installed: false } when service is missing', async () => {
+    const handlers = getHandlerMap({});
+    await expect(invoke(handlers, 'lima_check_installed')).resolves.toEqual({ installed: false });
+  });
+
+  it('lima_list_vms returns vm list', async () => {
+    const lima = makeLima();
+    const handlers = getHandlerMap({ lima: lima as any });
+    await expect(invoke(handlers, 'lima_list_vms')).resolves.toEqual([{ name: 'default' }]);
+  });
+
+  it('lima_list_vms returns [] when service is missing', async () => {
+    const handlers = getHandlerMap({});
+    await expect(invoke(handlers, 'lima_list_vms')).resolves.toEqual([]);
+  });
+
+  it('lima_list_containers forwards camelCase vmName', async () => {
+    const lima = makeLima();
+    const handlers = getHandlerMap({ lima: lima as any });
+    await invoke(handlers, 'lima_list_containers', { vmName: 'vm1' });
+    expect(lima.listContainers).toHaveBeenCalledWith('vm1');
+  });
+
+  it('lima_list_containers accepts snake_case vm_name', async () => {
+    const lima = makeLima();
+    const handlers = getHandlerMap({ lima: lima as any });
+    await invoke(handlers, 'lima_list_containers', { vm_name: 'vm1' });
+    expect(lima.listContainers).toHaveBeenCalledWith('vm1');
+  });
+
+  it('lima_list_containers returns [] without vmName', async () => {
+    const lima = makeLima();
+    const handlers = getHandlerMap({ lima: lima as any });
+    await expect(invoke(handlers, 'lima_list_containers', {})).resolves.toEqual([]);
+    expect(lima.listContainers).not.toHaveBeenCalled();
+  });
+
+  it('lima_list_containers returns [] when service is missing', async () => {
+    const handlers = getHandlerMap({});
+    await expect(invoke(handlers, 'lima_list_containers', { vmName: 'vm1' })).resolves.toEqual([]);
+  });
+
+  it('lima_start_vm forwards vmName and returns null', async () => {
+    const lima = makeLima();
+    const handlers = getHandlerMap({ lima: lima as any });
+    await expect(invoke(handlers, 'lima_start_vm', { vmName: 'vm1' })).resolves.toBeNull();
+    expect(lima.startVm).toHaveBeenCalledWith('vm1');
+  });
+
+  it('lima_start_vm returns null without calling service when vmName missing', async () => {
+    const lima = makeLima();
+    const handlers = getHandlerMap({ lima: lima as any });
+    await expect(invoke(handlers, 'lima_start_vm', {})).resolves.toBeNull();
+    expect(lima.startVm).not.toHaveBeenCalled();
+  });
+
+  it('lima_stop_vm forwards vmName and returns null', async () => {
+    const lima = makeLima();
+    const handlers = getHandlerMap({ lima: lima as any });
+    await expect(invoke(handlers, 'lima_stop_vm', { vmName: 'vm1' })).resolves.toBeNull();
+    expect(lima.stopVm).toHaveBeenCalledWith('vm1');
+  });
+
+  it('lima_stop_vm returns null when service is missing', async () => {
+    const handlers = getHandlerMap({});
+    await expect(invoke(handlers, 'lima_stop_vm', { vmName: 'vm1' })).resolves.toBeNull();
+  });
+
+  it('lima_start_container forwards vmName and containerId', async () => {
+    const lima = makeLima();
+    const handlers = getHandlerMap({ lima: lima as any });
+    await expect(
+      invoke(handlers, 'lima_start_container', { vmName: 'vm1', containerId: 'c1' }),
+    ).resolves.toBeNull();
+    expect(lima.startContainer).toHaveBeenCalledWith('vm1', 'c1');
+  });
+
+  it('lima_start_container returns null when containerId missing', async () => {
+    const lima = makeLima();
+    const handlers = getHandlerMap({ lima: lima as any });
+    await expect(invoke(handlers, 'lima_start_container', { vmName: 'vm1' })).resolves.toBeNull();
+    expect(lima.startContainer).not.toHaveBeenCalled();
+  });
+
+  it('lima_start_container returns null when vmName missing', async () => {
+    const lima = makeLima();
+    const handlers = getHandlerMap({ lima: lima as any });
+    await expect(invoke(handlers, 'lima_start_container', { containerId: 'c1' })).resolves.toBeNull();
+  });
+
+  it('lima_stop_container forwards vmName and containerId', async () => {
+    const lima = makeLima();
+    const handlers = getHandlerMap({ lima: lima as any });
+    await expect(
+      invoke(handlers, 'lima_stop_container', { vm_name: 'vm1', container_id: 'c1' }),
+    ).resolves.toBeNull();
+    expect(lima.stopContainer).toHaveBeenCalledWith('vm1', 'c1');
+  });
+
+  it('lima_stop_container returns null when service is missing', async () => {
+    const handlers = getHandlerMap({});
+    await expect(
+      invoke(handlers, 'lima_stop_container', { vmName: 'vm1', containerId: 'c1' }),
+    ).resolves.toBeNull();
+  });
+});

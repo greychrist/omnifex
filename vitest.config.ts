@@ -11,6 +11,7 @@ export default defineConfig({
     include: [
       'electron/__tests__/**/*.test.ts',
       'src/**/*.test.ts',
+      'src/**/*.test.tsx',
     ],
     environment: 'node',
     coverage: {
