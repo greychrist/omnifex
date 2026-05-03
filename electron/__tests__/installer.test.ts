@@ -13,7 +13,7 @@ function makeDeps(overrides: Partial<InstallerDeps> = {}): InstallerDeps {
     appQuit: vi.fn(),
     spawn: vi.fn(),
     sendToRenderer: vi.fn(),
-    execPath: '/Applications/GreyChrist.app/Contents/MacOS/GreyChrist',
+    execPath: '/Applications/OmniFex.app/Contents/MacOS/OmniFex',
     ...overrides,
   };
 }
@@ -36,7 +36,7 @@ describe('InstallerService.stage', () => {
     ).rejects.toThrow(/UpdateFileNotFound/);
   });
 
-  it('throws InvalidUpdatePackage when the ZIP does not contain GreyChrist.app', async () => {
+  it('throws InvalidUpdatePackage when the ZIP does not contain OmniFex.app', async () => {
     const zipPath = path.join(stageDir, 'fake.zip');
     await fs.writeFile(zipPath, 'not a real zip');
     const installer = createInstallerService(makeDeps({
@@ -53,9 +53,9 @@ describe('InstallerService.stage', () => {
     await fs.writeFile(zipPath, 'placeholder');
     const installer = createInstallerService(makeDeps({
       extractZip: async (_zip, dest) => {
-        const appDir = path.join(dest, 'GreyChrist.app', 'Contents', 'MacOS');
+        const appDir = path.join(dest, 'OmniFex.app', 'Contents', 'MacOS');
         await fs.mkdir(appDir, { recursive: true });
-        await fs.writeFile(path.join(appDir, 'GreyChrist'), 'binary');
+        await fs.writeFile(path.join(appDir, 'OmniFex'), 'binary');
       },
       readBundleVersion: async () => '0.3.99',
     }));
@@ -67,14 +67,14 @@ describe('InstallerService.stage', () => {
     await fs.writeFile(zipPath, 'placeholder');
     const installer = createInstallerService(makeDeps({
       extractZip: async (_zip, dest) => {
-        const appDir = path.join(dest, 'GreyChrist.app', 'Contents', 'MacOS');
+        const appDir = path.join(dest, 'OmniFex.app', 'Contents', 'MacOS');
         await fs.mkdir(appDir, { recursive: true });
-        await fs.writeFile(path.join(appDir, 'GreyChrist'), 'binary');
+        await fs.writeFile(path.join(appDir, 'OmniFex'), 'binary');
       },
       readBundleVersion: async () => '0.4.0',
     }));
     const { stagedAppPath } = await installer.stage(zipPath, '0.4.0');
-    expect(stagedAppPath).toMatch(/GreyChrist\.app$/);
+    expect(stagedAppPath).toMatch(/OmniFex\.app$/);
     await fs.access(stagedAppPath); // exists
   });
 });
@@ -82,10 +82,10 @@ describe('InstallerService.stage', () => {
 describe('InstallerService.resolveTargetApp', () => {
   it('returns the .app bundle ancestor of execPath', () => {
     const installer = createInstallerService(makeDeps({
-      execPath: '/Applications/GreyChrist.app/Contents/MacOS/GreyChrist',
+      execPath: '/Applications/OmniFex.app/Contents/MacOS/OmniFex',
     }));
     expect(installer.resolveTargetApp()).toEqual({
-      targetAppPath: '/Applications/GreyChrist.app',
+      targetAppPath: '/Applications/OmniFex.app',
     });
   });
 
@@ -111,7 +111,7 @@ describe('InstallerService.ensureTargetWritable', () => {
     const installer = createInstallerService(makeDeps({
       isWritable: async () => false,
     }));
-    await expect(installer.ensureTargetWritable('/Applications/GreyChrist.app'))
+    await expect(installer.ensureTargetWritable('/Applications/OmniFex.app'))
       .rejects.toThrow(/TargetNotWritable/);
   });
 
@@ -119,7 +119,7 @@ describe('InstallerService.ensureTargetWritable', () => {
     const installer = createInstallerService(makeDeps({
       isWritable: async () => true,
     }));
-    await expect(installer.ensureTargetWritable('/Applications/GreyChrist.app')).resolves.toBeUndefined();
+    await expect(installer.ensureTargetWritable('/Applications/OmniFex.app')).resolves.toBeUndefined();
   });
 });
 
@@ -204,9 +204,9 @@ describe('InstallerService.stage extractZip failure', () => {
     await fs.writeFile(zipPath, 'x');
     const installer = createInstallerService(makeDeps({
       extractZip: async (_zip, dest) => {
-        const appDir = path.join(dest, 'GreyChrist.app', 'Contents', 'MacOS');
+        const appDir = path.join(dest, 'OmniFex.app', 'Contents', 'MacOS');
         await fs.mkdir(appDir, { recursive: true });
-        await fs.writeFile(path.join(appDir, 'GreyChrist'), 'b');
+        await fs.writeFile(path.join(appDir, 'OmniFex'), 'b');
       },
       readBundleVersion: async () => null,
     }));
@@ -282,17 +282,17 @@ describe('InstallerService.stage default extractZip / readBundleVersion (macOS o
   });
 
   itDarwin('default readBundleVersion returns null when Info.plist is missing → VersionMismatch <unreadable>', async () => {
-    // Create a minimal valid zip containing GreyChrist.app/Contents/MacOS/GreyChrist
+    // Create a minimal valid zip containing OmniFex.app/Contents/MacOS/OmniFex
     // but no Info.plist so plutil fails.
     const srcDir = path.join(stageDir, 'src');
-    const appDir = path.join(srcDir, 'GreyChrist.app', 'Contents', 'MacOS');
+    const appDir = path.join(srcDir, 'OmniFex.app', 'Contents', 'MacOS');
     await fs.mkdir(appDir, { recursive: true });
-    await fs.writeFile(path.join(appDir, 'GreyChrist'), '#!/bin/sh\nexit 0\n');
+    await fs.writeFile(path.join(appDir, 'OmniFex'), '#!/bin/sh\nexit 0\n');
 
     const zipPath = path.join(stageDir, 'pkg.zip');
     // Use system `ditto -ck` (the create form) to build a real zip
     const { spawnSync } = await import('node:child_process');
-    const create = spawnSync('ditto', ['-ck', '--keepParent', path.join(srcDir, 'GreyChrist.app'), zipPath]);
+    const create = spawnSync('ditto', ['-ck', '--keepParent', path.join(srcDir, 'OmniFex.app'), zipPath]);
     if (create.status !== 0) {
       // Skip cleanly if ditto cannot create the test zip on this host
       return;
@@ -318,13 +318,13 @@ describe('InstallerService.executeInstall', () => {
     const spawn = vi.fn().mockReturnValue({ unref: () => {} });
     const appQuit = vi.fn();
     const installer = createInstallerService(makeDeps({ spawn, appQuit }));
-    await installer.executeInstall('/tmp/stage/GreyChrist.app', '/Applications/GreyChrist.app');
+    await installer.executeInstall('/tmp/stage/OmniFex.app', '/Applications/OmniFex.app');
 
     expect(spawn).toHaveBeenCalledTimes(1);
     const [cmd, args, opts] = spawn.mock.calls[0];
     expect(cmd).toBe('/bin/sh');
     expect(args).toHaveLength(1);
-    expect(args[0]).toMatch(/greychrist-installer-\d+\.sh$/);
+    expect(args[0]).toMatch(/omnifex-installer-\d+\.sh$/);
     expect(opts).toEqual({ detached: true, stdio: 'ignore' });
 
     // The helper script should exist on disk and be executable
@@ -332,8 +332,8 @@ describe('InstallerService.executeInstall', () => {
     expect(stat.mode & 0o100).toBeTruthy(); // owner executable bit
 
     const contents = await fs.readFile(args[0], 'utf8');
-    expect(contents).toContain('TARGET_APP="/Applications/GreyChrist.app"');
-    expect(contents).toContain('STAGED_APP="/tmp/stage/GreyChrist.app"');
+    expect(contents).toContain('TARGET_APP="/Applications/OmniFex.app"');
+    expect(contents).toContain('STAGED_APP="/tmp/stage/OmniFex.app"');
 
     expect(appQuit).toHaveBeenCalledTimes(1);
 

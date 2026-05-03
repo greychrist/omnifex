@@ -48,7 +48,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
   const { theme, setTheme } = useTheme();
   const [tabPersistenceEnabled, setTabPersistenceEnabled] = useState(true);
   const [startupIntroEnabled, setStartupIntroEnabled] = useState(true);
-  // The directory the updater scans for newer GreyChrist-<semver>-arm64.dmg
+  // The directory the updater scans for newer OmniFex-<semver>-arm64.dmg
   // builds. Empty string → updates disabled. Persisted as `local_update_dir`
   // in app_settings and read lazily by the main-process updater on every
   // check, so changes here take effect immediately without a restart.
@@ -246,8 +246,8 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
           <div className="space-y-2">
             <Label htmlFor="local-update-dir">Update Source Folder</Label>
             <p className="text-caption text-muted-foreground">
-              Folder that holds locally-built <code>GreyChrist-&lt;version&gt;-arm64.dmg</code> files.
-              GreyChrist scans this folder and offers an update when a newer version is present.
+              Folder that holds locally-built <code>OmniFex-&lt;version&gt;-arm64.dmg</code> files.
+              OmniFex scans this folder and offers an update when a newer version is present.
               Leave empty to disable update checks.
             </p>
             <div className="flex items-center gap-2">

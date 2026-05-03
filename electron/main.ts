@@ -56,6 +56,7 @@ import { createSlashCommandsService } from './services/slash-commands';
 import { createPermissionsIOService } from './services/permissions-io';
 import { createUpdaterService } from './services/updater';
 import { createInstallerService } from './services/installer';
+import { migrateUserData } from './services/userdata-migration';
 import { createSdkVersionService } from './services/sdk-version';
 import { createSessionGitWatcher, listWorktrees } from './services/git-watcher';
 import { createBranchColorsService } from './services/branch-colors';
@@ -266,6 +267,27 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 app.whenReady().then(() => {
+  // One-time userdata migration from the legacy "GreyChrist" Application
+  // Support directory. Must run before any service touches userData. Old
+  // installs that ran v0.4.1 or earlier wrote to ~/Library/Application
+  // Support/GreyChrist; the renamed app reads from ~/Library/Application
+  // Support/OmniFex. This copies the old directory once and marks done.
+  try {
+    const newUserDataPath = app.getPath('userData');
+    const legacyUserDataPath = path.join(path.dirname(newUserDataPath), 'GreyChrist');
+    const result = migrateUserData({
+      legacyPath: legacyUserDataPath,
+      newPath: newUserDataPath,
+    });
+    if (result.migrated) {
+      console.log('[migration] copied userdata from', legacyUserDataPath, '->', newUserDataPath);
+    } else if (result.reason && result.reason !== 'already-migrated') {
+      console.log('[migration] skipped:', result.reason);
+    }
+  } catch (err) {
+    console.error('[migration] failed:', err);
+  }
+
   // Serve local files via greychrist-file:// protocol (bypasses file:// security)
   protocol.handle('greychrist-file', async (request) => {
     try {

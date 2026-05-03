@@ -33,7 +33,7 @@ describe('updater service (local folder source)', () => {
     it('returns null when no local update directory is configured', async () => {
       const svc = createUpdaterService('0.3.12', {
         getLocalUpdateDir: () => null,
-        readdir: makeReaddir(['GreyChrist-darwin-arm64-0.4.0.zip']), // should never be read
+        readdir: makeReaddir(['OmniFex-darwin-arm64-0.4.0.zip']), // should never be read
       });
 
       const result = await svc.checkForUpdate();
@@ -44,7 +44,7 @@ describe('updater service (local folder source)', () => {
     it('returns null when local update directory is empty string', async () => {
       const svc = createUpdaterService('0.3.12', {
         getLocalUpdateDir: () => '',
-        readdir: makeReaddir(['GreyChrist-darwin-arm64-0.4.0.zip']),
+        readdir: makeReaddir(['OmniFex-darwin-arm64-0.4.0.zip']),
       });
 
       const result = await svc.checkForUpdate();
@@ -111,7 +111,7 @@ describe('updater service (local folder source)', () => {
     it('returns null when the directory contains no matching ZIP files', async () => {
       const svc = createUpdaterService('0.3.12', {
         getLocalUpdateDir: () => '/tmp/updates',
-        readdir: makeReaddir(['README.txt', 'random.zip', 'GreyChrist.zip']),
+        readdir: makeReaddir(['README.txt', 'random.zip', 'OmniFex.zip']),
       });
 
       const result = await svc.checkForUpdate();
@@ -123,9 +123,9 @@ describe('updater service (local folder source)', () => {
       const svc = createUpdaterService('0.3.12', {
         getLocalUpdateDir: () => '/tmp/updates',
         readdir: makeReaddir([
-          'GreyChrist-darwin-arm64-0.3.10.zip',
-          'GreyChrist-darwin-arm64-0.3.11.zip',
-          'GreyChrist-darwin-arm64-0.3.12.zip', // exact match to current
+          'OmniFex-darwin-arm64-0.3.10.zip',
+          'OmniFex-darwin-arm64-0.3.11.zip',
+          'OmniFex-darwin-arm64-0.3.12.zip', // exact match to current
         ]),
       });
 
@@ -138,10 +138,10 @@ describe('updater service (local folder source)', () => {
       const svc = createUpdaterService('0.3.12', {
         getLocalUpdateDir: () => '/tmp/updates',
         readdir: makeReaddir([
-          'GreyChrist-darwin-arm64-0.3.10.zip',
-          'GreyChrist-darwin-arm64-0.3.12.zip',
-          'GreyChrist-darwin-arm64-0.4.0.zip',
-          'GreyChrist-darwin-arm64-0.3.15.zip',
+          'OmniFex-darwin-arm64-0.3.10.zip',
+          'OmniFex-darwin-arm64-0.3.12.zip',
+          'OmniFex-darwin-arm64-0.4.0.zip',
+          'OmniFex-darwin-arm64-0.3.15.zip',
         ]),
       });
 
@@ -150,22 +150,22 @@ describe('updater service (local folder source)', () => {
       expect(result).not.toBeNull();
       expect(result!.available).toBe(true);
       expect(result!.version).toBe('0.4.0');
-      expect(result!.assetName).toBe('GreyChrist-darwin-arm64-0.4.0.zip');
+      expect(result!.assetName).toBe('OmniFex-darwin-arm64-0.4.0.zip');
       // downloadUrl is an absolute path to the local file (or a file:// URL)
-      expect(result!.downloadUrl).toContain('GreyChrist-darwin-arm64-0.4.0.zip');
+      expect(result!.downloadUrl).toContain('OmniFex-darwin-arm64-0.4.0.zip');
       expect(result!.downloadUrl).toContain('/tmp/updates');
     });
 
-    it('ignores files that do not match the GreyChrist-darwin-arm64-<semver>.zip pattern', async () => {
+    it('ignores files that do not match the OmniFex-darwin-arm64-<semver>.zip pattern', async () => {
       const svc = createUpdaterService('0.3.12', {
         getLocalUpdateDir: () => '/tmp/updates',
         readdir: makeReaddir([
-          'GreyChrist-darwin-arm64-0.4.0.zip',   // matches
-          'GreyChrist-0.4.0.zip',                 // missing platform/arch prefix
-          'GreyChrist-darwin-arm64-foo.zip',      // not semver
-          'greychrist-darwin-arm64-0.4.0.zip',    // lowercase
+          'OmniFex-darwin-arm64-0.4.0.zip',   // matches
+          'OmniFex-0.4.0.zip',                    // missing platform/arch prefix
+          'OmniFex-darwin-arm64-foo.zip',         // not semver
+          'omnifex-darwin-arm64-0.4.0.zip',       // lowercase
           'OtherApp-darwin-arm64-0.4.0.zip',      // wrong name
-          'GreyChrist-darwin-arm64-0.4.0.zip.txt', // extra extension
+          'OmniFex-darwin-arm64-0.4.0.zip.txt',   // extra extension
         ]),
       });
 
@@ -176,12 +176,12 @@ describe('updater service (local folder source)', () => {
     });
 
     it('supports version suffixes like 0.3.6a in filename parsing', async () => {
-      // Filenames like `GreyChrist-darwin-arm64-0.3.6a.zip` could show up; the
+      // Filenames like `OmniFex-darwin-arm64-0.3.6a.zip` could show up; the
       // updater should either parse them as 0.3.6 (ignoring the suffix, like
       // isNewer already does) or reject them — but not crash.
       const svc = createUpdaterService('0.3.12', {
         getLocalUpdateDir: () => '/tmp/updates',
-        readdir: makeReaddir(['GreyChrist-darwin-arm64-0.3.6a.zip']), // 0.3.6 < 0.3.12
+        readdir: makeReaddir(['OmniFex-darwin-arm64-0.3.6a.zip']), // 0.3.6 < 0.3.12
       });
 
       const result = await svc.checkForUpdate();
@@ -200,11 +200,11 @@ describe('updater service (local folder source)', () => {
 
       const progressCalls: Array<{ percent: number }> = [];
       const result = await svc.downloadUpdate(
-        '/tmp/updates/GreyChrist-darwin-arm64-0.4.0.zip',
+        '/tmp/updates/OmniFex-darwin-arm64-0.4.0.zip',
         (data) => progressCalls.push(data),
       );
 
-      expect(result).toBe('/tmp/updates/GreyChrist-darwin-arm64-0.4.0.zip');
+      expect(result).toBe('/tmp/updates/OmniFex-darwin-arm64-0.4.0.zip');
     });
 
     it('fires a single onProgress({ percent: 100 }) call for UI parity', async () => {
@@ -215,7 +215,7 @@ describe('updater service (local folder source)', () => {
 
       const progressCalls: Array<{ percent: number; bytesDownloaded: number; totalBytes: number }> = [];
       await svc.downloadUpdate(
-        '/tmp/updates/GreyChrist-darwin-arm64-0.4.0.zip',
+        '/tmp/updates/OmniFex-darwin-arm64-0.4.0.zip',
         (data) => progressCalls.push(data),
       );
 

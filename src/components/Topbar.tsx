@@ -24,10 +24,6 @@ interface TopbarProps {
    */
   onMCPClick: () => void;
   /**
-   * Callback when Info is clicked
-   */
-  onInfoClick: () => void;
-  /**
    * Callback when Agents is clicked
    */
   onAgentsClick?: () => void;

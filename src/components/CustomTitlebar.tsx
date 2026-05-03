@@ -1,32 +1,34 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Settings, Info, MoreVertical, Download, Loader2, CheckCircle, AlertCircle, RefreshCw, HardDrive } from 'lucide-react';
-import { TooltipProvider, TooltipSimple } from '@/components/ui/tooltip-modern';
+import { Settings, CircleFadingArrowUp, Download, Loader2, CheckCircle, AlertCircle, HardDrive } from 'lucide-react';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipSimple,
+  TooltipTrigger,
+} from '@/components/ui/tooltip-modern';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import GreyChristIcon from '../../icons/icon.png';
+import OmniFexIcon from '../../icons/icon.png';
 const SDK_POLL_INTERVAL_MS = 60 * 60 * 1000; // 60 minutes
-
-const BADGE_BASE_CLASS =
-  'inline-flex items-center rounded border px-2 py-0.5 text-[11px] font-medium select-none app-no-drag';
-const BADGE_NEUTRAL_CLASS = 'bg-muted/40 text-muted-foreground border-border/60';
-const BADGE_GREEN_CLASS = 'bg-green-500/15 text-green-500 border-green-500/30';
-const BADGE_RED_CLASS = 'bg-red-500/15 text-red-500 border-red-500/30';
+// Minimum visible spin time on any upgrade check (manual click, mount,
+// or hourly SDK poll). The underlying checks can resolve in <100ms
+// (cached/local), which makes the spinner flash and feels like nothing
+// happened. Holding the spin for ~700ms gives clear feedback that the
+// action ran.
+const MIN_CHECK_SPIN_MS = 700;
 
 interface CustomTitlebarProps {
   onSettingsClick?: () => void;
   onLimaClick?: () => void;
-  onInfoClick?: () => void;
 }
 
 
 export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
   onSettingsClick,
   onLimaClick,
-  onInfoClick
 }) => {
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
   const [appVersion, setAppVersion] = useState<string>('');
   const [referencedSdk, setReferencedSdk] = useState<string | null>(null);
   const [latestSdk, setLatestSdk] = useState<string | null>(null);
@@ -53,17 +55,6 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
   const [activeSessions, setActiveSessions] = useState<number>(0);
   useEffect(() => {
     return api.onSessionInFlightCount(setActiveSessions);
-  }, []);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setIsDropdownOpen(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
   // Reusable check-for-update function
@@ -110,23 +101,41 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
     }
   }, []);
 
-  // Combined one-click refresh for the dropdown's "Check for Updates" button:
-  // app update check AND SDK version check kick off in parallel.
+  // True while any check is running (manual, on-mount, or hourly poll).
+  // Enforces a minimum visible spin so cached responses still produce
+  // visible feedback rather than a flicker.
+  const [checkingHold, setCheckingHold] = useState(false);
+
+  // Wrap a check in the min-spin hold. The hold clears once both the work
+  // and the minimum-spin timer have elapsed, whichever takes longer.
+  const withMinSpin = useCallback((work: Promise<unknown>) => {
+    setCheckingHold(true);
+    const minSpin = new Promise<void>((resolve) =>
+      setTimeout(resolve, MIN_CHECK_SPIN_MS),
+    );
+    void Promise.all([work, minSpin]).finally(() => setCheckingHold(false));
+  }, []);
+
+  // Combined one-click refresh for the upgrade-check button: app update
+  // check AND SDK version check kick off in parallel, under the same
+  // min-spin hold.
   const checkEverything = useCallback(() => {
-    void checkForUpdate();
-    void checkSdkVersion();
-  }, [checkForUpdate, checkSdkVersion]);
+    withMinSpin(Promise.all([checkForUpdate(), checkSdkVersion()]));
+  }, [checkForUpdate, checkSdkVersion, withMinSpin]);
 
   // Fetch app version + check for updates + check SDK on mount
   useEffect(() => {
     api.getAppVersion().then(setAppVersion).catch(() => {});
     api.getReferencedSdkVersion().then(setReferencedSdk).catch(() => setReferencedSdk(null));
-    void checkForUpdate();
-    void checkSdkVersion();
+    withMinSpin(Promise.all([checkForUpdate(), checkSdkVersion()]));
 
     // Re-check the SDK hourly so the badge reflects new releases without a
-    // restart. (The app-update check is manual only after mount.)
-    const sdkTimer = setInterval(() => { void checkSdkVersion(); }, SDK_POLL_INTERVAL_MS);
+    // restart. (The app-update check is manual only after mount.) The
+    // hourly poll runs under the same min-spin hold so the icon spin reads
+    // consistently with manual checks.
+    const sdkTimer = setInterval(() => {
+      withMinSpin(checkSdkVersion());
+    }, SDK_POLL_INTERVAL_MS);
 
     // Listen for download progress
     const cleanupProgress = api.onUpdateProgress((data: { percent: number }) => {
@@ -168,7 +177,7 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
       cleanupProgress();
       cleanupInstallStatus();
     };
-  }, [checkForUpdate, checkSdkVersion]);
+  }, [checkForUpdate, checkSdkVersion, withMinSpin]);
 
   // One-click install. We keep download + install internal so the user only
   // ever sees one button press. `force` is wired to the live in-flight session
@@ -263,58 +272,27 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
       className="relative z-[200] h-[60px] bg-background/95 backdrop-blur-sm flex items-center justify-between select-none border-b border-border/50 app-drag"
       data-app-drag-region
     >
-      {/* Left side - app icon + version badges. Traffic lights live in the
-           OS-native title bar above this row, so no left padding needed. */}
+      {/* Left side - app icon + brand. Traffic lights live in the OS-native
+           title bar above this row, so no left padding needed. SDK details
+           moved into the upgrade-button popover on the right. */}
       <div className="flex items-center pl-3 gap-1.5 app-no-drag">
         <img
-          src={GreyChristIcon}
-          alt="GreyChrist"
-          className="h-12 w-12 rounded-md select-none mr-3"
+          src={OmniFexIcon}
+          alt="OmniFex"
+          className="h-12 w-12 rounded-md select-none mr-2"
           draggable={false}
         />
-        {appVersion && (
-          <TooltipSimple content="GreyChrist application version" side="bottom">
-            <span className={cn(BADGE_BASE_CLASS, BADGE_NEUTRAL_CLASS)}>
-              GreyChrist {appVersion}
-            </span>
-          </TooltipSimple>
-        )}
-        {referencedSdk && (
-          <TooltipSimple content="SDK version this build is tied to" side="bottom">
-            <span className={cn(BADGE_BASE_CLASS, BADGE_NEUTRAL_CLASS)}>
-              Referenced SDK {referencedSdk}
-            </span>
-          </TooltipSimple>
-        )}
-        <TooltipSimple
-          content={
-            checkingSdk
-              ? 'Checking npm for latest SDK version…'
-              : latestSdk == null
-                ? 'Latest SDK version unavailable'
-                : referencedSdk && latestSdk === referencedSdk
-                  ? 'SDK is up to date'
-                  : `Newer SDK available on npm: ${latestSdk}`
-          }
-          side="bottom"
-        >
-          <span
-            className={cn(
-              BADGE_BASE_CLASS,
-              'gap-1',
-              // Default to green — only flip to red when we have a confirmed
-              // mismatch against the referenced version.
-              referencedSdk && latestSdk && latestSdk !== referencedSdk
-                ? BADGE_RED_CLASS
-                : BADGE_GREEN_CLASS,
+        <div className="flex flex-col leading-tight select-none">
+          <span className="text-2xl font-semibold tracking-tight">
+            OmniFex
+            {appVersion && (
+              <span className="ml-1.5 text-xs font-normal text-muted-foreground">
+                ({appVersion})
+              </span>
             )}
-          >
-            <span>Current SDK</span>
-            {checkingSdk
-              ? <Loader2 size={10} className="animate-spin" />
-              : <span>{latestSdk ?? '—'}</span>}
           </span>
-        </TooltipSimple>
+          <span className="text-[11px] text-muted-foreground">by GreyChrist, LLC</span>
+        </div>
       </div>
 
       {/* Right side - Navigation icons */}
@@ -430,7 +408,7 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
                 transition={{ duration: 0.15 }}
                 className="p-2 rounded-md hover:bg-accent hover:text-accent-foreground transition-colors app-no-drag"
               >
-                <HardDrive size={16} />
+                <HardDrive size={22} />
               </motion.button>
             </TooltipSimple>
           )}
@@ -450,55 +428,75 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
                 transition={{ duration: 0.15 }}
                 className="p-2 rounded-md hover:bg-accent hover:text-accent-foreground transition-colors app-no-drag"
               >
-                <Settings size={16} />
+                <Settings size={22} />
               </motion.button>
             </TooltipSimple>
           )}
 
-          {/* Dropdown menu for additional options */}
-          <div className="relative" ref={dropdownRef}>
-            <TooltipSimple content="More options" side="bottom">
+          {(() => {
+            const sdkOutOfDate =
+              !checkingSdk && !!referencedSdk && !!latestSdk && latestSdk !== referencedSdk;
+            const isCheckingAnything =
+              checkingHold || updateState.status === 'checking' || checkingSdk;
+            return (
+          <Tooltip delayDuration={150}>
+            <TooltipTrigger asChild>
               <motion.button
-                onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                onClick={checkEverything}
+                disabled={isCheckingAnything || updateState.status === 'downloading'}
                 whileTap={{ scale: 0.97 }}
                 transition={{ duration: 0.15 }}
-                className="p-2 rounded-md hover:bg-accent hover:text-accent-foreground transition-colors flex items-center gap-1"
+                className={cn(
+                  'p-2 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed app-no-drag',
+                  sdkOutOfDate
+                    ? 'text-amber-500 hover:bg-amber-500/15 hover:text-amber-400'
+                    : 'hover:bg-accent hover:text-accent-foreground',
+                )}
               >
-                <MoreVertical size={16} />
+                <CircleFadingArrowUp
+                  size={22}
+                  className={isCheckingAnything ? 'animate-spin' : ''}
+                />
               </motion.button>
-            </TooltipSimple>
-
-            {isDropdownOpen && (
-              <div className="absolute right-0 mt-2 w-48 bg-popover border border-border rounded-lg shadow-lg z-[250]">
-                <div className="py-1">
-                  <button
-                    onClick={() => {
-                      checkEverything();
-                      setIsDropdownOpen(false);
-                    }}
-                    disabled={updateState.status === 'checking' || updateState.status === 'downloading' || checkingSdk}
-                    className="w-full px-4 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground transition-colors flex items-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <RefreshCw size={14} className={updateState.status === 'checking' || checkingSdk ? 'animate-spin' : ''} />
-                    <span>{updateState.status === 'checking' || checkingSdk ? 'Checking...' : 'Check for Updates'}</span>
-                  </button>
-
-                  {onInfoClick && (
-                    <button
-                      onClick={() => {
-                        onInfoClick();
-                        setIsDropdownOpen(false);
-                      }}
-                      className="w-full px-4 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground transition-colors flex items-center gap-3"
-                    >
-                      <Info size={14} />
-                      <span>About</span>
-                    </button>
-                  )}
+            </TooltipTrigger>
+            <TooltipContent side="bottom" align="end" className="px-0 py-0 w-[280px]">
+              <div className="px-3.5 py-2.5 border-b border-border/50 flex items-center justify-between">
+                <span className="text-base font-semibold">
+                  {isCheckingAnything ? 'Checking for upgrade…' : 'Check for Upgrade'}
+                </span>
+                {isCheckingAnything && (
+                  <Loader2 size={14} className="animate-spin text-muted-foreground" />
+                )}
+              </div>
+              <div className="px-3.5 py-2.5 space-y-2 text-[13px]">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-muted-foreground">App</span>
+                  <span className="font-medium">OmniFex {appVersion || '—'}</span>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-muted-foreground">Referenced Claude SDK</span>
+                  <span className="font-medium">{referencedSdk ?? '—'}</span>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-muted-foreground">Latest Claude SDK</span>
+                  <span className="flex items-center gap-1 font-medium">
+                    {checkingSdk ? (
+                      <Loader2 size={12} className="animate-spin" />
+                    ) : (
+                      <span>{latestSdk ?? '—'}</span>
+                    )}
+                    {!checkingSdk && referencedSdk && latestSdk && (
+                      latestSdk === referencedSdk
+                        ? <CheckCircle size={13} className="text-green-500" />
+                        : <AlertCircle size={13} className="text-amber-500" />
+                    )}
+                  </span>
                 </div>
               </div>
-            )}
-          </div>
+            </TooltipContent>
+          </Tooltip>
+            );
+          })()}
         </div>
       </div>
     </div>

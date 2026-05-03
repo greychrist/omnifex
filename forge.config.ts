@@ -30,9 +30,9 @@ function copySdkPlatformBinaries(buildPath: string) {
 const config: ForgeConfig = {
   rebuildConfig: {},
   packagerConfig: {
-    name: 'GreyChrist',
-    executableName: 'greychrist',
-    appBundleId: 'com.greychrist.app',
+    name: 'OmniFex',
+    executableName: 'omnifex',
+    appBundleId: 'com.omnifex.app',
     icon: './icons/icon',
     // Codesign with the self-signed "GreyChrist Local Sign" cert in Greg's
     // login keychain. The cert gives the bundle a stable signing identity

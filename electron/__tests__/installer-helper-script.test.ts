@@ -5,12 +5,12 @@ describe('buildHelperScript', () => {
   it('substitutes parent PID, target app, and staged app paths', () => {
     const script = buildHelperScript({
       parentPid: 12345,
-      targetAppPath: '/Applications/GreyChrist.app',
-      stagedAppPath: '/tmp/stage/GreyChrist.app',
+      targetAppPath: '/Applications/OmniFex.app',
+      stagedAppPath: '/tmp/stage/OmniFex.app',
     });
     expect(script).toContain('PARENT_PID=12345');
-    expect(script).toContain('TARGET_APP="/Applications/GreyChrist.app"');
-    expect(script).toContain('STAGED_APP="/tmp/stage/GreyChrist.app"');
+    expect(script).toContain('TARGET_APP="/Applications/OmniFex.app"');
+    expect(script).toContain('STAGED_APP="/tmp/stage/OmniFex.app"');
     expect(script).toContain('while kill -0 "$PARENT_PID"');
     expect(script).toContain('rm -rf "$TARGET_APP"');
     expect(script).toContain('ditto "$STAGED_APP" "$TARGET_APP"');

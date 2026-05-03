@@ -5,9 +5,9 @@
 
 export interface HelperScriptParams {
   parentPid: number;
-  /** Absolute path to the running GreyChrist.app bundle. */
+  /** Absolute path to the running OmniFex.app bundle. */
   targetAppPath: string;
-  /** Absolute path to the extracted (new-version) GreyChrist.app bundle. */
+  /** Absolute path to the extracted (new-version) OmniFex.app bundle. */
   stagedAppPath: string;
 }
 

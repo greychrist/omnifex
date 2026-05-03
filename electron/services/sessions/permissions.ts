@@ -258,8 +258,8 @@ export function createCanUseTool(
         sendToRenderer(`claude-output:${tabId}`, payload);
 
         // Notify the user that a permission decision is needed
-        const projectName = path.basename(handle.projectPath) || 'GreyChrist';
-        const title = `GreyChrist — ${projectName}`;
+        const projectName = path.basename(handle.projectPath) || 'OmniFex';
+        const title = `OmniFex — ${projectName}`;
         const body = `Permission requested: ${toolName}`;
         sendToRenderer('claude-notification', { tab_id: tabId, title, body, is_error: false });
         try {
@@ -384,8 +384,8 @@ export function respondPermission(
     sendToRenderer(`claude-output:${tabId}`, nextPayload);
 
     // Notify the user about the next permission in the queue
-    const projectName = path.basename(handle.projectPath) || 'GreyChrist';
-    const title = `GreyChrist — ${projectName}`;
+    const projectName = path.basename(handle.projectPath) || 'OmniFex';
+    const title = `OmniFex — ${projectName}`;
     const body = `Permission requested: ${nextPayload.tool_name}`;
     sendToRenderer('claude-notification', { tab_id: tabId, title, body, is_error: false });
     try {

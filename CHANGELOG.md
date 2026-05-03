@@ -1,9 +1,39 @@
 # Changelog
 
-All notable changes to GreyChrist are documented in this file.
+All notable changes to OmniFex (formerly GreyChrist) are documented in this file. The app was renamed from GreyChrist → OmniFex in v0.4.2; "GreyChrist" remains the LLC/company name. Earlier entries refer to the app under its prior name.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [0.4.2] — 2026-05-03
+
+App renamed from **GreyChrist** to **OmniFex**. The shipping product is now OmniFex; the publishing entity remains GreyChrist, LLC ("by GreyChrist, LLC" appears under the app title). Bundle ID, executable, .app name, ZIP filename pattern, notification dialog titles, and user-visible UI strings all carry the new name. Internal identifiers (`greychrist.db`, `greychrist-file://` protocol, localStorage keys, signing-cert identity) are intentionally unchanged to avoid migration churn.
+
+### Manual upgrade required
+
+The .app bundle name changed (`/Applications/GreyChrist.app` → `/Applications/OmniFex.app`), so the v0.4.1-and-earlier auto-installer cannot replace itself with v0.4.2. **First-time install of OmniFex must be manual**: drag `OmniFex.app` into `/Applications` and trash the old `GreyChrist.app`. Subsequent OmniFex → OmniFex updates auto-install normally.
+
+### Added
+
+- **Userdata migration on first launch** (`electron/services/userdata-migration.ts`). Detects the legacy `~/Library/Application Support/GreyChrist/` directory and copies it once into the new `~/Library/Application Support/OmniFex/` location. Drops a `.migrated-from-greychrist` marker so it never re-runs. Idempotent; refuses to overwrite a populated new dir. Backed by 6 unit tests covering the empty/populated/already-migrated/no-legacy permutations.
+- **Rich upgrade-check popover** (`src/components/CustomTitlebar.tsx`). The CircleFadingArrowUp icon next to Settings now opens a hover popover showing app version, referenced Claude SDK, and latest Claude SDK on npm — with a green ✓ when matched and amber ⚠ when out-of-date. The icon itself tints amber when the SDK is out-of-date so the warning is visible without hovering. Click still triggers the underlying check.
+- **Minimum spin time on upgrade checks.** All check paths (manual click, on-mount, hourly SDK poll) hold the icon spin for a minimum of 700ms via a `withMinSpin()` helper, so cached responses produce visible feedback instead of a flicker.
+
+### Changed
+
+- **Header redesign** (`CustomTitlebar.tsx`). App icon + brand stack ("OmniFex" with `(version)` inline + "by GreyChrist, LLC" subtitle) replaces the previous version/SDK badge row. SDK details moved into the upgrade-check popover.
+- **Window title and splash screen.** OS title and `StartupIntro` brand text now read "OmniFex".
+- **About dialog removed** along with `NFOCredits.tsx`, `src/assets/nfo/asterisk-logo.png`, and `src/assets/nfo/opcode-nfo.ogg`. Favicon repointed from the deleted asterisk logo to `icons/icon.png`.
+- **Renamed**: `package.json` `name`/`productName`, `forge.config.ts` `name`/`executableName`/`appBundleId`, ZIP filename pattern (`OmniFex-darwin-arm64-<semver>.zip`), notification dialog titles, settings panel copy.
+
+### Kept as GreyChrist (deliberately)
+
+- LICENSE copyright holder
+- "by GreyChrist, LLC" subtitle in the titlebar
+- Repo directory name `greychrist/`
+- Internal SQLite filename `greychrist.db`, custom protocol scheme `greychrist-file://`, localStorage key prefixes
+- Signing-cert identity `'GreyChrist Local Sign'` (will be renamed when the cert is rotated)
+- Historical CHANGELOG entries and `docs/superpowers/plans/` and `specs/` files
 
 ## [0.4.1] — 2026-05-03
 

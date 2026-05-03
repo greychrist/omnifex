@@ -99,8 +99,8 @@ export async function listenToMessages(
       sendToRenderer(`claude-output:${tabId}`, message);
 
       if (event.kind === 'result') {
-        const projectName = path.basename(handle.projectPath) || 'GreyChrist';
-        const title = `GreyChrist — ${projectName}`;
+        const projectName = path.basename(handle.projectPath) || 'OmniFex';
+        const title = `OmniFex — ${projectName}`;
 
         // Emit to renderer for in-app tab badge handling
         sendToRenderer('claude-notification', {

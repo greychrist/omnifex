@@ -15,7 +15,6 @@ import { CustomTitlebar } from "@/components/CustomTitlebar";
 import { MarkdownEditor } from "@/components/MarkdownEditor";
 import { Settings } from "@/components/Settings";
 import { MCPManager } from "@/components/MCPManager";
-import { NFOCredits } from "@/components/NFOCredits";
 import { ClaudeBinaryDialog } from "@/components/ClaudeBinaryDialog";
 import { AccountPickerDialog } from "@/components/AccountPickerDialog";
 import { Toast, ToastContainer } from "@/components/ui/toast";
@@ -52,7 +51,6 @@ function AppContent() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
   const [_error, setError] = useState<string | null>(null);
-  const [showNFO, setShowNFO] = useState(false);
   const [showClaudeBinaryDialog, setShowClaudeBinaryDialog] = useState(false);
   const [showProjectPicker, setShowProjectPicker] = useState(false);
   const [homeDirectory, setHomeDirectory] = useState<string>('/');
@@ -236,7 +234,7 @@ function AppContent() {
               >
                 <h1 className="text-4xl font-bold tracking-tight">
                   <span className="rotating-symbol"></span>
-                  Welcome to GreyChrist
+                  Welcome to OmniFex
                 </h1>
               </motion.div>
 
@@ -350,30 +348,14 @@ function AppContent() {
       <CustomTitlebar
         onLimaClick={() => createLimaTab()}
         onSettingsClick={() => createSettingsTab()}
-        onInfoClick={() => setShowNFO(true)}
       />
-      
-      {/* Topbar - Commented out since navigation moved to titlebar */}
-      {/* <Topbar
-        onClaudeClick={() => createClaudeMdTab()}
-        onSettingsClick={() => createSettingsTab()}
-        onUsageClick={() => createUsageTab()}
-        onMCPClick={() => createMCPTab()}
-        onInfoClick={() => setShowNFO(true)}
-        onAgentsClick={() => setShowAgentsModal(true)}
-      /> */}
-      
-      
-      
+
       {/* Main Content */}
       <div className="flex-1 overflow-hidden">
         {renderContent()}
       </div>
-      
-      {/* NFO Credits Modal */}
-      {showNFO && <NFOCredits onClose={() => setShowNFO(false)} />}
-      
-      
+
+
       {/* Claude Binary Dialog */}
       <ClaudeBinaryDialog
         open={showClaudeBinaryDialog}

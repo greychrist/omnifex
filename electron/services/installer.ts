@@ -1,6 +1,6 @@
-// Auto-installer for GreyChrist updates. Validates a ZIP, stages it to
+// Auto-installer for OmniFex updates. Validates a ZIP, stages it to
 // $TMPDIR, waits for in-flight sessions, then spawns a detached
-// helper script that swaps GreyChrist.app and relaunches.
+// helper script that swaps OmniFex.app and relaunches.
 //
 // Spec: docs/superpowers/specs/2026-04-25-auto-install-update-design.md
 
@@ -160,7 +160,7 @@ export function createInstallerService(deps: InstallerDeps): InstallerService {
       throw new UpdateFileNotFound(zipPath);
     }
 
-    const destDir = await fs.mkdtemp(path.join(os.tmpdir(), 'greychrist-stage-'));
+    const destDir = await fs.mkdtemp(path.join(os.tmpdir(), 'omnifex-stage-'));
     try {
       await extractZip(zipPath, destDir);
     } catch (err) {
@@ -168,13 +168,13 @@ export function createInstallerService(deps: InstallerDeps): InstallerService {
       throw new InvalidUpdatePackage(`extraction failed: ${(err as Error).message}`);
     }
 
-    const stagedAppPath = path.join(destDir, 'GreyChrist.app');
-    const execPath = path.join(stagedAppPath, 'Contents', 'MacOS', 'GreyChrist');
+    const stagedAppPath = path.join(destDir, 'OmniFex.app');
+    const execPath = path.join(stagedAppPath, 'Contents', 'MacOS', 'OmniFex');
     try {
       await fs.access(execPath);
     } catch {
       await fs.rm(destDir, { recursive: true, force: true }).catch(() => {});
-      throw new InvalidUpdatePackage('GreyChrist.app/Contents/MacOS/GreyChrist not found in archive');
+      throw new InvalidUpdatePackage('OmniFex.app/Contents/MacOS/OmniFex not found in archive');
     }
 
     const actualVersion = await readBundleVersion(stagedAppPath);
@@ -188,8 +188,8 @@ export function createInstallerService(deps: InstallerDeps): InstallerService {
 
   function resolveTargetApp(): { targetAppPath: string } {
     // Walk up from execPath to find the .app bundle. Path looks like:
-    //   /Applications/GreyChrist.app/Contents/MacOS/GreyChrist
-    // We want /Applications/GreyChrist.app.
+    //   /Applications/OmniFex.app/Contents/MacOS/OmniFex
+    // We want /Applications/OmniFex.app.
     let cur = deps.execPath;
     while (cur !== '/' && cur !== '') {
       if (cur.endsWith('.app')) {
@@ -250,7 +250,7 @@ export function createInstallerService(deps: InstallerDeps): InstallerService {
   ): Promise<void> {
     const helperPath = path.join(
       os.tmpdir(),
-      `greychrist-installer-${Date.now()}.sh`,
+      `omnifex-installer-${Date.now()}.sh`,
     );
     const script = buildHelperScript({
       parentPid: process.pid,

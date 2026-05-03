@@ -1,7 +1,7 @@
-// Updater service — scans a local folder for newer GreyChrist ZIP builds and
+// Updater service — scans a local folder for newer OmniFex ZIP builds and
 // returns update info pointing at the file on disk.
 //
-// GreyChrist is a solo project with local-only releases (`npm run make`). The
+// OmniFex is a solo project with local-only releases (`npm run make`). The
 // old GitHub-release-polling updater was retired in v0.3.12 in favor of this
 // folder-scanning approach, which needs no network and no Actions budget. See
 // CHANGELOG.md v0.3.12 and the `local_update_dir` app setting for how the
@@ -11,8 +11,8 @@ import path from 'node:path';
 import type { LoggingService } from './logging';
 
 // ---------------------------------------------------------------------------
-// Public types — stable; the renderer (src/lib/api.ts, CustomTitlebar.tsx)
-// consumes these unchanged across the GitHub → local migration.
+// Public types — stable across the GitHub → local migration; the renderer
+// (src/lib/api.ts, CustomTitlebar.tsx) consumes these unchanged.
 // ---------------------------------------------------------------------------
 
 export interface UpdateInfo {
@@ -20,7 +20,7 @@ export interface UpdateInfo {
   version: string;
   /** Absolute local file path. Kept named `downloadUrl` for renderer compatibility. */
   downloadUrl: string;
-  assetName: string;           // e.g. "GreyChrist-darwin-arm64-0.4.0.zip"
+  assetName: string;           // e.g. "OmniFex-darwin-arm64-0.4.2.zip"
   releaseUrl: string;          // Empty for local source; kept for renderer compatibility.
   releaseNotes?: string;
 }
@@ -89,13 +89,13 @@ function compareVersion(a: string, b: string): number {
 }
 
 // ---------------------------------------------------------------------------
-// Filename pattern — `GreyChrist-darwin-arm64-<major>.<minor>.<patch>.zip`,
+// Filename pattern — `OmniFex-darwin-arm64-<major>.<minor>.<patch>.zip`,
 // matching the artifact produced by Electron Forge's zip maker.
 // The auto-installer service unpacks this ZIP in place of the manual
 // DMG-drag flow that predated v0.4.0.
 // ---------------------------------------------------------------------------
 
-const ZIP_RE = /^GreyChrist-darwin-arm64-(\d+\.\d+\.\d+)\.zip$/;
+const ZIP_RE = /^OmniFex-darwin-arm64-(\d+\.\d+\.\d+)\.zip$/;
 
 // ---------------------------------------------------------------------------
 // Factory

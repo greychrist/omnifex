@@ -183,7 +183,7 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "greychrist-appearance.json";
+    a.download = "omnifex-appearance.json";
     a.click();
     URL.revokeObjectURL(url);
   }, [config]);

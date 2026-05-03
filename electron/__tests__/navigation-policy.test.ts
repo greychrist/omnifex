@@ -3,7 +3,7 @@ import { classifyNavigation } from '../navigation-policy';
 
 describe('classifyNavigation', () => {
   it('allows file:// (packaged app load)', () => {
-    expect(classifyNavigation('file:///Applications/GreyChrist.app/renderer/index.html')).toBe(
+    expect(classifyNavigation('file:///Applications/OmniFex.app/renderer/index.html')).toBe(
       'allow'
     );
   });

@@ -101,7 +101,7 @@ export const RateLimitsSettings: React.FC<SettingsPanelProps> = ({ setToast }) =
       <div>
         <h3 className="text-heading-4 mb-1">Rate-limit notifications</h3>
         <p className="text-caption text-muted-foreground">
-          GreyChrist captures Anthropic's rate-limit signals from the Agent SDK as your sessions
+          OmniFex captures Anthropic's rate-limit signals from the Agent SDK as your sessions
           stream. Use these settings to control when you're notified about your 5-hour and 7-day
           windows.
         </p>
@@ -112,7 +112,7 @@ export const RateLimitsSettings: React.FC<SettingsPanelProps> = ({ setToast }) =
         <div>
           <Label>Enable rate-limit notifications</Label>
           <p className="text-caption text-muted-foreground mt-1">
-            Master switch. When off, GreyChrist still tracks utilization for the in-app widget but
+            Master switch. When off, OmniFex still tracks utilization for the in-app widget but
             won't fire OS notifications.
           </p>
         </div>

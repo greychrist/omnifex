@@ -4,7 +4,7 @@ import App from "./App";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import "./assets/shimmer.css";
 import "./styles.css";
-import AppIcon from "./assets/nfo/asterisk-logo.png";
+import AppIcon from "../icons/icon.png";
 import { logService } from "./lib/logService";
 import { api } from "./lib/api";
 
