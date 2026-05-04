@@ -5,6 +5,34 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.4] — 2026-05-04
+
+New **Sessions popover** in the titlebar (atom icon) showing live per-tab status — busy roll-up, main-turn flag, active agent count, todos progress, branch + files changed/untracked, context usage. Click a card header to jump to that tab. Solves the "1 active — Install Anyway" mystery from v0.4.3 by giving you direct visibility into which tab is actually busy and why.
+
+Same architecture also fixes the install-gate predicate-drift bug from v0.4.3: each tab publishes its busy state up to a new main-process aggregator, and both the popover and the installer's wait-for-idle gate read from the same authoritative source. No more leaks where trailing `task_notification` events bumped a session's lifecycle status back to "running" between turns.
+
+Installers remain **unsigned**.
+
+### Added
+
+- **Sessions popover** (`src/components/TabStatusPopover.tsx`) — atom-icon button in the titlebar with a busy-count badge. Popover lists all open chat tabs in tab-bar order; each card header is clickable (jumps to that tab and closes the popover). Click outside or Esc to dismiss. Shows for each tab: status badge (not-started / starting / idle / busy / error), context usage with progress bar, branch + files changed/untracked, main-turn flag, active agent count, todos progress (`X of Y · N pending`).
+- **Main-process tab-status aggregator** (`electron/services/tab-status.ts`) — insertion-ordered map of renderer-published per-tab summaries with shallow-equality-skipped broadcasts. New IPC: `tab_status_publish`, `tab_status_remove`, `tab_status_list`; new event channel: `tab-status:changed`. 11 unit tests (TDD).
+- **`usePublishTabStatus` hook** — derives the summary from messages / `isLoading` / subagents / todos / git / context-usage and publishes on every change. Removes the entry on unmount.
+- **Titlebar segmented-control button group** (`Lima · Sessions · Settings · Updates`) — single bordered container with internal hairline dividers, 16px icons paired with text labels.
+
+### Changed
+
+- **Installer's `listInFlightTabIds`** now reads from the new `TabStatusService.busyTabIds()` (renderer is the canonical interpreter) and falls back to `sessionsService.listInFlightTabIds()` only on cold start before any tab has reported. Fixes the v0.4.3 leak where trailing `task_notification` events flipped lifecycle status back to "running" and stuck the install gate. The "X active — Install Anyway" badge in the upgrade button now also reflects the renderer's authoritative count.
+- **Spinner gate folds in pending todos.** The in-tab typing-bubble previously activated only on `isLoading || hasRunningSubagent`; now also lights up while a TodoWrite list has pending or in_progress items, matching the popover's "busy" definition (turn || agents || todos).
+- **TodoBar matches SubagentBar.** Removed the auto-expand-on-TodoWrite / 5-second-auto-collapse state machine and replaced it with a single `collapsed` flag persisted in `localStorage` (`greychrist.todoBar.collapsed`). User toggles only — no drift between auto and pinned states.
+- **TodoBar's "Clear" button no longer shows a confirmation prompt.** One-click dismiss; the bar will reappear when the agent emits a fresh TodoWrite.
+- **Predicate ordering in the popover summary**: `sessionStarted` now wins over `isStarting`, so an active session can't fall back to "Starting…" badge after `fetchInitInfo` returns.
+- **`useSessionLifecycle.fetchInitInfo`** now clears `isSessionStarting` when it sets `isSessionActive` — mirrors the `rebindPersistentSession` path. Was a pre-existing inconsistency; only the new popover surfaced it.
+
+### Removed
+
+- `src/lib/todoBarState.ts` and its tests — replaced by the simple boolean toggle described above.
+
 ## [0.4.3] — 2026-05-04
 
 Session reliability pass — three coupled bugs in the prompt queue and the spinner gate, surfaced together because they all hit the same "what's outstanding right now?" question.
