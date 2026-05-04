@@ -51,7 +51,7 @@ import { GitWatchStatusIcon } from "./claude-code-session/GitWatchStatusIcon";
 import { resolveBranchColors } from '@/lib/branchColors';
 import type { BranchColor } from '@/lib/api';
 import { filterDisplayableMessages } from "@/lib/messageFilters";
-import { deriveSubagents, isWaitingForBackground } from "@/lib/subagentStreams";
+import { deriveSubagents, hasRunningSubagent } from "@/lib/subagentStreams";
 import { SubagentBar } from "./SubagentBar";
 import { TodoBar } from "./TodoBar";
 import { exportAsJsonl, exportAsMarkdown } from "@/lib/sessionExporters";
@@ -366,6 +366,12 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
 
   const parentRef = useRef<HTMLDivElement>(null);
   const persistentSessionRef = useRef(false);
+  // Live mirror of `isLoading` for call-time reads inside useSendPrompt's
+  // queue gate. The drain path (setTimeout in runStreamEffect) holds onto a
+  // captured handleSendPrompt across renders; reading from the ref avoids
+  // the stale-closure bug where drained prompts silently re-queue.
+  const isLoadingRef = useRef(false);
+  useEffect(() => { isLoadingRef.current = isLoading; }, [isLoading]);
   // Two distinct states for the status badge:
   //  - isSessionStarting: true between api.startSession firing and the SDK
   //    control channel answering. Maps to 'Starting…' in the header.
@@ -445,13 +451,13 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       ? all
       : all.filter((s) => !dismissedSubagents.has(s.toolUseId));
   }, [messages, dismissedSubagents]);
-  // Bridge the typing-bubble spinner across awaiting_background turns: while
-  // a background dispatch is still running (parent turn ended, but the
-  // wake-up hasn't arrived), keep the indicator alive until the next real
-  // result event lands. Computed from the un-dismissed subagent set so a
-  // user-dismissed background row stops driving the spinner.
+  // Bridge the typing-bubble spinner whenever any subagent is still running:
+  // parent's turn-end result clears isLoading, but if a Task/Agent/background
+  // dispatch is still in flight there is genuinely an outstanding response.
+  // Same predicate the result-classifier uses for "Awaiting Background Work"
+  // (see classifyStandaloneKind) so the card and the spinner can't drift.
   const awaitingBackground = useMemo(
-    () => isWaitingForBackground(subagents),
+    () => hasRunningSubagent(subagents),
     [subagents],
   );
   const dismissSubagent = useCallback((toolUseId: string) => {
@@ -750,7 +756,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   const { handleSendPrompt: sendPromptRaw, queuedPrompts, setQueuedPrompts, queuedPromptsRef } = useSendPrompt({
     projectPath,
     tabId: tabIdRef.current,
-    isLoading,
+    isLoadingRef,
     selectedModel,
     persistentSessionRef,
     unlistenRefs,

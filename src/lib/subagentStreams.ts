@@ -203,12 +203,12 @@ export function clearCompleted(subs: Subagent[]): Subagent[] {
 }
 
 /**
- * True when at least one background subagent (Agent/Task/Bash with
- * run_in_background:true) is still in `running` status. Used by the session
- * UI to keep the typing-bubble spinner visible after the parent's turn-end
- * result event fires — visually bridging "Awaiting Background Work" until
- * the next real "Execution Complete" lands.
+ * True when at least one subagent (Agent/Task/Bash-with-run_in_background) is
+ * still in `running` status. Single source of truth for "is there an
+ * outstanding response?" — must match the predicate in classifyStandaloneKind
+ * that decides whether a `result` event renders as `result.awaiting_background`,
+ * so the spinner stays on for as long as that card would render.
  */
-export function isWaitingForBackground(subs: Subagent[]): boolean {
-  return subs.some((s) => s.status === 'running' && s.isBackground === true);
+export function hasRunningSubagent(subs: Subagent[]): boolean {
+  return subs.some((s) => s.status === 'running');
 }

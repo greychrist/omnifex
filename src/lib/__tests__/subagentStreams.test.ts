@@ -6,7 +6,7 @@ import {
   deriveSubagents,
   clearCompleted,
   isTaskLifecycleMarker,
-  isWaitingForBackground,
+  hasRunningSubagent,
   colorIndexFor,
   SUBAGENT_PALETTE_SIZE,
 } from '../subagentStreams';
@@ -449,34 +449,27 @@ describe('clearCompleted', () => {
   });
 });
 
-describe('isWaitingForBackground', () => {
-  it('returns true when any running subagent has isBackground=true', () => {
-    const subs = [
-      { status: 'running', isBackground: true } as any,
-      { status: 'completed', isBackground: true } as any,
-    ];
-    expect(isWaitingForBackground(subs)).toBe(true);
+describe('hasRunningSubagent', () => {
+  // Single source of truth for "is there an outstanding response we're waiting
+  // on?" — must match the predicate in classifyStandaloneKind that decides
+  // whether a `result` event renders as `result.awaiting_background`. Drift
+  // here was the bug behind "spinner gone but Awaiting Background card showing".
+  it('returns true for any running subagent regardless of isBackground flag', () => {
+    expect(hasRunningSubagent([{ status: 'running' } as any])).toBe(true);
+    expect(hasRunningSubagent([{ status: 'running', isBackground: true } as any])).toBe(true);
+    expect(hasRunningSubagent([{ status: 'running', isBackground: false } as any])).toBe(true);
   });
 
-  it('returns false when running subagents are foreground (no isBackground flag)', () => {
-    const subs = [
-      { status: 'running' } as any,
-      { status: 'running', isBackground: false } as any,
-    ];
-    expect(isWaitingForBackground(subs)).toBe(false);
-  });
-
-  it('returns false when all background subagents are terminal', () => {
-    const subs = [
+  it('returns false when no subagents are running', () => {
+    expect(hasRunningSubagent([
       { status: 'completed', isBackground: true } as any,
-      { status: 'failed', isBackground: true } as any,
+      { status: 'failed' } as any,
       { status: 'abandoned', isBackground: true } as any,
-    ];
-    expect(isWaitingForBackground(subs)).toBe(false);
+    ])).toBe(false);
   });
 
   it('returns false on empty input', () => {
-    expect(isWaitingForBackground([])).toBe(false);
+    expect(hasRunningSubagent([])).toBe(false);
   });
 });
 

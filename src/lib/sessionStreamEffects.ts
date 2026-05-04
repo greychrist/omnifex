@@ -24,8 +24,10 @@ export interface StreamEffectApi {
 export interface QueuedPrompt {
   prompt: string;
   model: string;
-  // Allow additional fields (id, etc.) without forcing the runner to know about them.
-  [key: string]: unknown;
+  // Optional pasted images, forwarded to handleSendPrompt on drain so a
+  // queued prompt with images sends as the same structured-content blocks
+  // an inline submission would have produced.
+  images?: string[];
 }
 
 export interface StreamEffectDeps<Q extends QueuedPrompt = QueuedPrompt> {
@@ -43,7 +45,7 @@ export interface StreamEffectDeps<Q extends QueuedPrompt = QueuedPrompt> {
   setSupportedModels: (models: unknown[]) => void;
   queuedPromptsRef: { current: Q[] };
   setQueuedPrompts: (next: Q[]) => void;
-  handleSendPrompt: (prompt: string, model: string) => void;
+  handleSendPrompt: (prompt: string, model: string, images?: string[]) => void;
   onError: (kind: StreamReducerEffect['kind'], err: unknown) => void;
 }
 
@@ -95,10 +97,9 @@ export function runStreamEffect<Q extends QueuedPrompt = QueuedPrompt>(
       deps.setQueuedPrompts(rest);
       // The 100ms delay matches the original inline behaviour — gives React a
       // tick to flush the dequeue setState before the next prompt re-enters
-      // the send pipeline (which would otherwise see the not-yet-cleared
-      // isLoading state and bail).
+      // the send pipeline.
       setTimeout(() => {
-        deps.handleSendPrompt(next.prompt, next.model);
+        deps.handleSendPrompt(next.prompt, next.model, next.images);
       }, 100);
       return;
     }

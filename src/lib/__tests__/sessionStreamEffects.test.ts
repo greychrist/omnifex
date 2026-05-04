@@ -140,7 +140,24 @@ describe('runStreamEffect', () => {
     runStreamEffect({ kind: 'processQueuedPrompt' }, deps);
     expect(setQueuedPrompts).toHaveBeenCalledWith([tail]);
     vi.advanceTimersByTime(150);
-    expect(handleSendPrompt).toHaveBeenCalledWith('hello', 'opus');
+    expect(handleSendPrompt).toHaveBeenCalledWith('hello', 'opus', undefined);
+    vi.useRealTimers();
+  });
+
+  it('processQueuedPrompt forwards images attached to the queued prompt', () => {
+    vi.useFakeTimers();
+    const handleSendPrompt = vi.fn();
+    const setQueuedPrompts = vi.fn();
+    const images = ['data:image/png;base64,AAAA'];
+    const head = { prompt: 'look at this', model: 'opus', images };
+    const deps = makeDeps({
+      handleSendPrompt,
+      setQueuedPrompts,
+      queuedPromptsRef: { current: [head] },
+    });
+    runStreamEffect({ kind: 'processQueuedPrompt' }, deps);
+    vi.advanceTimersByTime(150);
+    expect(handleSendPrompt).toHaveBeenCalledWith('look at this', 'opus', images);
     vi.useRealTimers();
   });
 

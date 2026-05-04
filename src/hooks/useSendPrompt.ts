@@ -2,10 +2,24 @@ import { useState, useRef } from "react";
 import { api, type Session } from "@/lib/api";
 import type { ClaudeStreamMessage } from "@/types/claudeStream";
 
+export interface QueuedPromptItem {
+  id: string;
+  prompt: string;
+  model: string;
+  images?: string[];
+}
+
 interface UseSendPromptArgs {
   projectPath: string;
   tabId: string;
-  isLoading: boolean;
+  /**
+   * Live ref to the parent's `isLoading`. Read at call-time so the queue-drain
+   * path (which holds onto handleSendPrompt across renders via setTimeout)
+   * sees the current value rather than a stale closure capture. Reading from
+   * a closure-captured `isLoading` boolean caused the queue to silently
+   * re-enqueue drained prompts instead of sending them.
+   */
+  isLoadingRef: React.MutableRefObject<boolean>;
   selectedModel: string;
   persistentSessionRef: React.MutableRefObject<boolean>;
   unlistenRefs: React.MutableRefObject<(() => void)[]>;
@@ -30,16 +44,16 @@ interface UseSendPromptArgs {
 
 interface UseSendPromptReturn {
   handleSendPrompt: (prompt: string, model: string, images?: string[]) => Promise<void>;
-  queuedPrompts: Array<{ id: string; prompt: string; model: string }>;
-  setQueuedPrompts: React.Dispatch<React.SetStateAction<Array<{ id: string; prompt: string; model: string }>>>;
-  queuedPromptsRef: React.MutableRefObject<Array<{ id: string; prompt: string; model: string }>>;
+  queuedPrompts: QueuedPromptItem[];
+  setQueuedPrompts: React.Dispatch<React.SetStateAction<QueuedPromptItem[]>>;
+  queuedPromptsRef: React.MutableRefObject<QueuedPromptItem[]>;
   lastPromptRef: React.MutableRefObject<{ prompt: string; model: string } | null>;
 }
 
 export function useSendPrompt({
   projectPath,
   tabId,
-  isLoading,
+  isLoadingRef,
   selectedModel,
   persistentSessionRef,
   unlistenRefs,
@@ -54,12 +68,8 @@ export function useSendPrompt({
   setSelectedModel,
   setMessages,
 }: UseSendPromptArgs): UseSendPromptReturn {
-  const [queuedPrompts, setQueuedPrompts] = useState<
-    Array<{ id: string; prompt: string; model: string }>
-  >([]);
-  const queuedPromptsRef = useRef<
-    Array<{ id: string; prompt: string; model: string }>
-  >([]);
+  const [queuedPrompts, setQueuedPrompts] = useState<QueuedPromptItem[]>([]);
+  const queuedPromptsRef = useRef<QueuedPromptItem[]>([]);
   const lastPromptRef = useRef<{ prompt: string; model: string } | null>(null);
 
   const handleSendPrompt = async (
@@ -72,12 +82,15 @@ export function useSendPrompt({
       return;
     }
 
-    // If already loading, queue the prompt
-    if (isLoading) {
-      const newPrompt = {
+    // If already loading, queue the prompt. Read from the ref (not a closure
+    // boolean) so a stale reference held by the queue-drain setTimeout sees
+    // the current loading state, not whatever value was captured at render.
+    if (isLoadingRef.current) {
+      const newPrompt: QueuedPromptItem = {
         id: `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
         prompt,
         model,
+        ...(images && images.length > 0 ? { images } : {}),
       };
       setQueuedPrompts((prev) => [...prev, newPrompt]);
       return;
