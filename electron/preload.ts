@@ -155,6 +155,11 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   'get_proxy_settings',
   'save_proxy_settings',
 
+  // Tab Status (renderer publishes per-tab summaries; popover reads list)
+  'tab_status_publish',
+  'tab_status_remove',
+  'tab_status_list',
+
   // Updater
   'updater:check',
   'updater:download',
@@ -208,7 +213,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       !channel.startsWith('updater:') &&
       !channel.startsWith('notification-clicked') &&
       !channel.startsWith('session-git-changed:') &&
-      !channel.startsWith('rate-limits:')
+      !channel.startsWith('rate-limits:') &&
+      !channel.startsWith('tab-status:')
     ) {
       throw new Error(`Blocked IPC event channel: ${channel}`);
     }

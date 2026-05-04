@@ -56,6 +56,7 @@ import { createSlashCommandsService } from './services/slash-commands';
 import { createPermissionsIOService } from './services/permissions-io';
 import { createUpdaterService } from './services/updater';
 import { createInstallerService } from './services/installer';
+import { createTabStatusService, type TabStatusSummary } from './services/tab-status';
 import { migrateUserData } from './services/userdata-migration';
 import { createSdkVersionService } from './services/sdk-version';
 import { createSessionGitWatcher, listWorktrees } from './services/git-watcher';
@@ -712,9 +713,48 @@ app.whenReady().then(() => {
     setTimeout(() => app.quit(), 1500);
   });
 
+  // Tab Status — renderer-published per-tab summaries (busy/idle, agent
+  // counts, todos, git, context usage). Each chat tab pushes its own state
+  // up; the popover and the install gate both read from this aggregator.
+  const tabStatusService = createTabStatusService({
+    broadcast: (summaries) => {
+      for (const w of BrowserWindow.getAllWindows()) {
+        w.webContents.send('tab-status:changed', summaries);
+      }
+    },
+  });
+
+  ipcMain.handle('tab_status_publish', async (_event, data: any) => {
+    const summary = data?.summary as TabStatusSummary | undefined;
+    if (!summary || typeof summary.tabId !== 'string') {
+      throw new Error('tab_status_publish requires summary.tabId');
+    }
+    tabStatusService.publish(summary);
+    return { success: true };
+  });
+
+  ipcMain.handle('tab_status_remove', async (_event, data: any) => {
+    const tabId: string | undefined = data?.tabId ?? data?.tab_id;
+    if (!tabId) throw new Error('tab_status_remove requires tabId');
+    tabStatusService.remove(tabId);
+    return { success: true };
+  });
+
+  ipcMain.handle('tab_status_list', async () => tabStatusService.list());
+
   const installerService = createInstallerService({
     sessionsService: {
-      listInFlightTabIds: () => sessionsService.listInFlightTabIds(),
+      // Renderer-derived busy state is the source of truth for the install
+      // gate. Falls back to the lifecycle status only if no tab has reported
+      // yet (cold-start race), so a fresh app launch can still gate correctly
+      // before any summary publishes.
+      listInFlightTabIds: () => {
+        const fromRenderer = tabStatusService.busyTabIds();
+        if (fromRenderer.length > 0 || tabStatusService.list().length > 0) {
+          return fromRenderer;
+        }
+        return sessionsService.listInFlightTabIds();
+      },
       listSessionStatuses: () => sessionsService.listSessionStatuses(),
       stopAll: () => sessionsService.stopAll(),
     },
@@ -781,7 +821,12 @@ app.whenReady().then(() => {
   // changes when a session enters/leaves a turn, not per stream message.
   let lastInFlightCount = -1;
   const broadcastInFlight = (): void => {
-    const count = sessionsService.listInFlightTabIds().length;
+    // Mirror the install-gate's source-of-truth choice: prefer the
+    // renderer-published busy count once any tab has reported in.
+    const fromRenderer = tabStatusService.list().length > 0
+      ? tabStatusService.busyTabIds().length
+      : null;
+    const count = fromRenderer ?? sessionsService.listInFlightTabIds().length;
     if (count === lastInFlightCount) return;
     lastInFlightCount = count;
     for (const w of BrowserWindow.getAllWindows()) {

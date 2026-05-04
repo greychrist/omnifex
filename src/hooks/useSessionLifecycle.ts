@@ -171,6 +171,12 @@ export function useSessionLifecycle({
         ]);
         if (info) {
           setSdkAccountInfo(info);
+          // Mirror the rebind path (setIsSessionStarting(false) +
+          // setIsSessionActive(true)) — the session has answered, so it's no
+          // longer "Starting…". Without this, downstream consumers that
+          // distinguish starting vs. active (e.g. the tab status popover)
+          // get stuck on "Starting…" forever.
+          setIsSessionStarting(false);
           setIsSessionActive(true);
 
           const [models, mcpServers, ctxUsage, commands] = await Promise.all([

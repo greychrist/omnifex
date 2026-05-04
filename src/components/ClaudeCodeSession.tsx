@@ -52,12 +52,15 @@ import { resolveBranchColors } from '@/lib/branchColors';
 import type { BranchColor } from '@/lib/api';
 import { filterDisplayableMessages } from "@/lib/messageFilters";
 import { deriveSubagents, hasRunningSubagent } from "@/lib/subagentStreams";
+import { getLatestTodos, summarizeTodos } from "@/lib/latestTodos";
 import { SubagentBar } from "./SubagentBar";
 import { TodoBar } from "./TodoBar";
 import { exportAsJsonl, exportAsMarkdown } from "@/lib/sessionExporters";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useSessionLifecycle } from "@/hooks/useSessionLifecycle";
 import { useSendPrompt } from "@/hooks/useSendPrompt";
+import { usePublishTabStatus } from "@/hooks/usePublishTabStatus";
+import { useTabContext } from "@/contexts/TabContext";
 // Virtualizer removed — flat list for reliable scrolling
 import { SessionPersistenceService } from "@/services/sessionPersistence";
 import { reduceSessionStreamMessage } from "@/lib/sessionStreamReducer";
@@ -460,6 +463,15 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     () => hasRunningSubagent(subagents),
     [subagents],
   );
+  // True iff the latest todo list still has pending or in_progress items.
+  // Folded into the spinner gate so the in-tab indicator matches the
+  // popover's "busy" definition (turn || agents || todos).
+  const todosInFlight = useMemo(() => {
+    const todos = getLatestTodos(messages);
+    if (!todos) return false;
+    return summarizeTodos(todos).running;
+  }, [messages]);
+  const outstandingWork = isLoading || awaitingBackground || todosInFlight;
   const dismissSubagent = useCallback((toolUseId: string) => {
     setDismissedSubagents((prev) => {
       const next = new Set(prev);
@@ -476,6 +488,26 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       return next;
     });
   }, [subagents]);
+
+  // Publish this tab's busy/idle summary up to main on every change. The
+  // status popover and the install-gate both read from the aggregated list.
+  const { getTabById } = useTabContext();
+  const tabTitle = getTabById(tabIdRef.current)?.title ?? projectPath ?? tabIdRef.current;
+  usePublishTabStatus({
+    tabId: tabIdRef.current,
+    title: tabTitle,
+    projectPath: projectPath ?? null,
+    sessionStarted: isSessionActive,
+    isStarting: isSessionStarting,
+    isLoading,
+    hasError: error !== null,
+    messages,
+    subagents,
+    contextUsage,
+    branch: gitStatus?.branch ?? null,
+    filesChanged: gitStatus?.changed ?? 0,
+    filesUntracked: gitStatus?.untracked ?? 0,
+  });
 
   const [viewMode, setViewMode] = useState<ViewMode>('compact');
 
@@ -1177,7 +1209,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
               messagesEndRef scrolls past it instead of leaving it below the viewport.
               Also kept visible during awaiting_background so the visual "in-flight"
               cue bridges the parent's turn-end result to the eventual completion. */}
-          {(isLoading || awaitingBackground) && (
+          {outstandingWork && (
             <motion.div
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}

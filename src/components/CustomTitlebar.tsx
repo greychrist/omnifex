@@ -11,6 +11,7 @@ import {
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import OmniFexIcon from '../../icons/icon.png';
+import { TabStatusPopover } from '@/components/TabStatusPopover';
 const SDK_POLL_INTERVAL_MS = 60 * 60 * 1000; // 60 minutes
 // Minimum visible spin time on any upgrade check (manual click, mount,
 // or hourly SDK poll). The underlying checks can resolve in <100ms
@@ -296,11 +297,9 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
       </div>
 
       {/* Right side - Navigation icons */}
-      <div className="flex items-center pr-5 gap-3 app-no-drag">
-        {/* Primary actions group */}
-        <div className="flex items-center gap-1">
-          {/* Update button — visible during checking, when update available, downloading, ready, up-to-date, or error */}
-          <AnimatePresence>
+      <div className="flex items-center pr-5 gap-2 app-no-drag">
+        {/* Update button — visible during checking, when update available, downloading, ready, up-to-date, or error */}
+        <AnimatePresence>
           {updateState.status !== 'idle' && (
             <TooltipSimple
               content={
@@ -400,37 +399,36 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
           )}
           </AnimatePresence>
 
+          {/* Icon button group — segmented-control style, single bordered
+              container with internal dividers. Drops individual rounding so
+              the buttons read as one connected group. overflow-visible so
+              the Sessions popover can escape the group's bounds (otherwise
+              its absolutely-positioned content gets clipped to ~32px tall). */}
+          <div className="inline-flex items-center rounded-md border border-border/60 bg-background/30 [&>*+*]:border-l [&>*+*]:border-border/50">
           {onLimaClick && (
-            <TooltipSimple content="Lima VMs" side="bottom">
-              <motion.button
-                onClick={onLimaClick}
-                whileTap={{ scale: 0.97 }}
-                transition={{ duration: 0.15 }}
-                className="p-2 rounded-md hover:bg-accent hover:text-accent-foreground transition-colors app-no-drag"
-              >
-                <HardDrive size={22} />
-              </motion.button>
-            </TooltipSimple>
+            <motion.button
+              onClick={onLimaClick}
+              whileTap={{ scale: 0.97 }}
+              transition={{ duration: 0.15 }}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium hover:bg-accent hover:text-accent-foreground transition-colors app-no-drag"
+            >
+              <HardDrive size={16} />
+              <span>Lima</span>
+            </motion.button>
           )}
 
-        </div>
+          <TabStatusPopover />
 
-        {/* Visual separator */}
-        <div className="w-px h-5 bg-border/50" />
-
-        {/* Secondary actions group */}
-        <div className="flex items-center gap-1">
           {onSettingsClick && (
-            <TooltipSimple content="Settings" side="bottom">
-              <motion.button
-                onClick={onSettingsClick}
-                whileTap={{ scale: 0.97 }}
-                transition={{ duration: 0.15 }}
-                className="p-2 rounded-md hover:bg-accent hover:text-accent-foreground transition-colors app-no-drag"
-              >
-                <Settings size={22} />
-              </motion.button>
-            </TooltipSimple>
+            <motion.button
+              onClick={onSettingsClick}
+              whileTap={{ scale: 0.97 }}
+              transition={{ duration: 0.15 }}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium hover:bg-accent hover:text-accent-foreground transition-colors app-no-drag"
+            >
+              <Settings size={16} />
+              <span>Settings</span>
+            </motion.button>
           )}
 
           {(() => {
@@ -447,16 +445,17 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
                 whileTap={{ scale: 0.97 }}
                 transition={{ duration: 0.15 }}
                 className={cn(
-                  'p-2 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed app-no-drag',
+                  'inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed app-no-drag',
                   sdkOutOfDate
                     ? 'text-amber-500 hover:bg-amber-500/15 hover:text-amber-400'
                     : 'hover:bg-accent hover:text-accent-foreground',
                 )}
               >
                 <CircleFadingArrowUp
-                  size={22}
+                  size={16}
                   className={isCheckingAnything ? 'animate-spin' : ''}
                 />
+                <span>Updates</span>
               </motion.button>
             </TooltipTrigger>
             <TooltipContent side="bottom" align="end" className="px-0 py-0 w-[280px]">
@@ -497,7 +496,7 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
           </Tooltip>
             );
           })()}
-        </div>
+          </div>
       </div>
     </div>
     </TooltipProvider>

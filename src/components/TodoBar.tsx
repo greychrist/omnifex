@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   ChevronDown,
   ChevronUp,
@@ -16,12 +16,8 @@ import {
   todosKey,
   type TodoItem,
 } from '@/lib/latestTodos';
-import {
-  initialTodoBarState,
-  todoBarReducer,
-} from '@/lib/todoBarState';
 
-const AUTO_COLLAPSE_MS = 5000;
+const COLLAPSE_STORAGE_KEY = 'greychrist.todoBar.collapsed';
 
 interface TodoBarProps {
   messages: ClaudeStreamMessage[];
@@ -37,33 +33,22 @@ export const TodoBar: React.FC<TodoBarProps> = ({ messages, isLive, className })
   );
   const key = useMemo(() => todosKey(todos), [todos]);
 
-  const [state, dispatch] = useReducer(todoBarReducer, initialTodoBarState);
+  // Open/closed mirrors SubagentBar: user-controlled, persisted in
+  // localStorage. No auto-expand on TodoWrite, no auto-collapse on a timer.
+  const [collapsed, setCollapsed] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return true;
+    return window.localStorage.getItem(COLLAPSE_STORAGE_KEY) !== '0';
+  });
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(COLLAPSE_STORAGE_KEY, collapsed ? '1' : '0');
+  }, [collapsed]);
+
   const [dismissedKey, setDismissedKey] = useState<string | null>(null);
-
-  const lastKeyRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (todos === null) {
-      lastKeyRef.current = null;
-      return;
-    }
-    if (lastKeyRef.current !== key) {
-      lastKeyRef.current = key;
-      dispatch({ type: 'TODOS_CHANGED' });
-    }
-  }, [key, todos]);
-
-  useEffect(() => {
-    if (state.kind !== 'expanded_auto') return;
-    const t = window.setTimeout(
-      () => dispatch({ type: 'TIMER_EXPIRED' }),
-      AUTO_COLLAPSE_MS,
-    );
-    return () => window.clearTimeout(t);
-  }, [state]);
 
   if (!isLive || todos === null || dismissedKey === key) return null;
 
-  const expanded = state.kind !== 'collapsed_idle';
+  const expanded = !collapsed;
   const running = summary.running;
 
   const StatusIcon = running ? Loader2 : ListChecks;
@@ -86,7 +71,7 @@ export const TodoBar: React.FC<TodoBarProps> = ({ messages, isLive, className })
         <div className="relative flex items-center gap-2 px-3 py-1 text-[11px]">
           <button
             type="button"
-            onClick={() => dispatch({ type: 'CLICK' })}
+            onClick={() => setCollapsed((c) => !c)}
             className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"
             title={expanded ? 'Collapse todos' : 'Expand todos'}
           >
@@ -101,16 +86,12 @@ export const TodoBar: React.FC<TodoBarProps> = ({ messages, isLive, className })
           </button>
           <button
             type="button"
-            onClick={() => {
-              if (window.confirm('Clear the current todo list from the bar? It will reappear when the agent emits a new TodoWrite.')) {
-                setDismissedKey(key);
-              }
-            }}
+            onClick={() => setDismissedKey(key)}
             className={cn(
               'ml-auto inline-flex items-center px-1.5 py-0.5 rounded border border-border/60 bg-background',
               'text-muted-foreground hover:text-foreground hover:bg-accent transition-colors',
             )}
-            title="Clear todo list"
+            title="Clear todo list (reappears on next TodoWrite)"
           >
             Clear
           </button>

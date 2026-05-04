@@ -547,6 +547,44 @@ export interface SessionContextUsage {
   model: string;
 }
 
+/**
+ * Per-tab status summary the renderer publishes up to main. Both the status
+ * popover and the install-gate read from the aggregated list. The renderer
+ * is the canonical interpreter — it knows messages, subagents, and todos —
+ * so main treats this as opaque pass-through with a few well-known fields.
+ */
+export interface TabStatusTodos {
+  total: number;
+  completed: number;
+  inFlight: boolean;
+}
+
+export interface TabStatusSummary {
+  tabId: string;
+  title: string;
+  projectPath: string | null;
+  /** True iff a persistent SDK session is alive for this tab. */
+  sessionStarted: boolean;
+  /** Roll-up: mainTurnInFlight || activeAgents > 0 || todos.inFlight. */
+  busy: boolean;
+  mainTurnInFlight: boolean;
+  /** Running, un-dismissed subagents (Agent / Task / run_in_background:Bash). */
+  activeAgents: number;
+  todos: TabStatusTodos;
+  contextUsage: {
+    totalTokens: number;
+    maxTokens: number;
+    percentage: number;
+  } | null;
+  branch: string | null;
+  filesChanged: number;
+  filesUntracked: number;
+  /** High-level status for the badge in the popover. */
+  status: 'not-started' | 'starting' | 'idle' | 'busy' | 'error';
+  /** Wall-clock ms when this summary was published. */
+  updatedAt: number;
+}
+
 export interface SessionSlashCommand {
   name: string;
   description: string;
@@ -1941,6 +1979,36 @@ export const api = {
 
   onUpdateProgress(callback: (data: { percent: number; bytesDownloaded: number; totalBytes: number }) => void): () => void {
     return window.electronAPI.onEvent('updater:progress', callback as any);
+  },
+
+  // ── Tab Status ────────────────────────────────────────────────
+  /**
+   * Push this tab's busy/idle summary up to main so the status popover and
+   * the install-gate can read a single source of truth. Renderer is the
+   * canonical interpreter (knows messages, subagents, todos); main is the
+   * canonical aggregator across all open tabs.
+   */
+  async publishTabStatus(summary: TabStatusSummary): Promise<void> {
+    return apiCall('tab_status_publish', { summary });
+  },
+
+  async removeTabStatus(tabId: string): Promise<void> {
+    return apiCall('tab_status_remove', { tabId });
+  },
+
+  async listTabStatuses(): Promise<TabStatusSummary[]> {
+    return apiCall<TabStatusSummary[]>('tab_status_list', {});
+  },
+
+  /**
+   * Subscribe to the live list of tab summaries. Fires whenever any tab
+   * publishes or is removed. The list is in tab-bar order.
+   */
+  onTabStatusesChanged(cb: (summaries: TabStatusSummary[]) => void): () => void {
+    return window.electronAPI.onEvent(
+      'tab-status:changed',
+      (data: any) => cb(Array.isArray(data) ? data : []),
+    );
   },
 
   // ── Branch Colors ─────────────────────────────────────────────
