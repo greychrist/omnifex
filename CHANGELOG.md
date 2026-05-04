@@ -5,6 +5,30 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.3] — 2026-05-04
+
+Session reliability pass — three coupled bugs in the prompt queue and the spinner gate, surfaced together because they all hit the same "what's outstanding right now?" question.
+
+Installers remain **unsigned**.
+
+### Fixed
+
+- **Queued prompts no longer auto-post when the running turn finishes.** `useSendPrompt`'s queue gate read `isLoading` from a render closure, so the drain path's `setTimeout`-deferred call invoked a stale function that re-queued the prompt instead of sending it. The queue then sat forever with nothing to trigger another drain. Switched the gate to read from a live `isLoadingRef` (synced from state in `ClaudeCodeSession.tsx`) so the gate sees the current value at call time.
+- **Pasted images dropped from queued prompts.** Queue items only stored `{ id, prompt, model }` and the drain in `runStreamEffect` only forwarded `prompt + model`. Added `images?: string[]` to the queue-item shape, stored at enqueue time, and passed through on drain so a queued prompt with images sends as the same structured-content blocks an inline submission produces.
+- **Spinner disappeared while the "Awaiting Background Work" card was still showing.** The spinner gate (`isWaitingForBackground`) required `isBackground === true`, but the result classifier (`classifyStandaloneKind`) renders the awaiting card for *any* running subagent — Agent/Task/`run_in_background` Bash alike. So a still-running plain Task or Agent dispatch left the card on screen with no spinner after the parent turn ended. Replaced with `hasRunningSubagent` (`status === 'running'`), so both the card and the spinner share one definition of "outstanding response."
+
+### Changed
+
+- `useSendPrompt` now takes `isLoadingRef: MutableRefObject<boolean>` instead of `isLoading: boolean` (caller in `ClaudeCodeSession.tsx` keeps the ref in sync via a one-line `useEffect`).
+- `QueuedPrompt` (in `sessionStreamEffects.ts`) and `QueuedPromptItem` (in `useSendPrompt.ts`) gained an optional `images` field; `runStreamEffect`'s `processQueuedPrompt` arm forwards it to `handleSendPrompt`.
+- `subagentStreams.ts`: `isWaitingForBackground` removed; replaced with `hasRunningSubagent`. Doc-comment now points at the classifier as the parallel source-of-truth so the two predicates can't drift again.
+
+### Tests
+
+- New `src/hooks/__tests__/useSendPrompt.test.tsx` covers the stale-closure scenario directly: a captured-while-loading function is invoked after `isLoadingRef.current` flips to `false`, and we assert it dispatches via `api.sendMessage` instead of re-queueing. Also asserts images survive both the queue path and the structured-message send path.
+- `sessionStreamEffects.test.ts` extended: `processQueuedPrompt` test now asserts the third (`images`) argument is forwarded.
+- `subagentStreams.test.ts`: `isWaitingForBackground` block replaced by `hasRunningSubagent` block reflecting the new "any running" semantics.
+
 ## [0.4.2] — 2026-05-03
 
 App renamed from **GreyChrist** to **OmniFex**. The shipping product is now OmniFex; the publishing entity remains GreyChrist, LLC ("by GreyChrist, LLC" appears under the app title). Bundle ID, executable, .app name, ZIP filename pattern, notification dialog titles, and user-visible UI strings all carry the new name. Internal identifiers (`greychrist.db`, `greychrist-file://` protocol, localStorage keys, signing-cert identity) are intentionally unchanged to avoid migration churn.
