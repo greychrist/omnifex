@@ -37,6 +37,30 @@ export function buildMarkdownComponents(
   syntaxTheme: SyntaxTheme,
 ): Components & { code: (props: CodeComponentProps) => JSX.Element } {
   return {
+    // Conditional <pre> passthrough.
+    //
+    // react-markdown wraps every fenced code block in <pre><code>…</code></pre>,
+    // and Tailwind Typography styles <pre> as a dark, padded, rounded card.
+    // For *tagged* fences (`language-*`), our `code` override returns a
+    // <MarkdownBlock> or Prism <SyntaxHighlighter> — both supply their own
+    // chrome, so the prose <pre> on top produces a visible card-in-card.
+    // We strip the wrapper for those.
+    //
+    // For *untagged* fences (just ``` … ```), the `code` override returns
+    // a plain <code>. The surrounding <pre> is the *only* element preserving
+    // newlines (white-space: pre); removing it collapses multiline ASCII
+    // trees onto one wrapped line. Keep the default <pre> in that case so
+    // prose can style it as a normal code card.
+    pre({ node, children, ...props }) {
+      const codeChild = (node as any)?.children?.[0];
+      const className: string =
+        codeChild?.properties?.className?.[0] ?? "";
+      const isTagged = /^language-/.test(className);
+      if (isTagged) {
+        return <>{children}</>;
+      }
+      return <pre {...props}>{children}</pre>;
+    },
     code({ node: _node, className, children, ...props }: CodeComponentProps) {
       const match = /language-(\w+)/.exec(className || "");
       const lang = match?.[1];
@@ -47,14 +71,40 @@ export function buildMarkdownComponents(
       }
 
       return lang ? (
-        <SyntaxHighlighter
-          style={syntaxTheme}
-          language={lang}
-          PreTag="div"
-          {...(props as Record<string, unknown>)}
-        >
-          {src}
-        </SyntaxHighlighter>
+        // The Claude syntax theme is transparent and the outer prose <pre>
+        // (from react-markdown) is stripped for tagged fences, so this
+        // wrapper supplies the visible code-panel chrome (var(--color-card),
+        // matching prose's own <pre>).
+        //
+        // We let SyntaxHighlighter render its own <pre> (its default —
+        // PreTag is omitted) so that `<code>` ends up inside a <pre>.
+        // That makes the `.prose pre code` reset in styles.css fire and
+        // zero out the inline-code padding which would otherwise manifest
+        // as a leading first-line indent on multi-line blocks. Note:
+        // `not-prose` does NOT work here — this repo's prose CSS is
+        // hand-rolled and doesn't include the not-prose escape selectors.
+        //
+        // The inner <pre>'s chrome (background / border-radius / margin
+        // from `.prose pre`) is overridden via inline customStyle, which
+        // always beats external CSS — so the wrapper's chrome stays the
+        // only visible card.
+        <div className="rounded-md border border-border/50 bg-card overflow-hidden my-3">
+          <SyntaxHighlighter
+            style={syntaxTheme}
+            language={lang}
+            customStyle={{
+              margin: 0,
+              padding: "0.75rem",
+              maxWidth: "100%",
+              overflowX: "auto",
+              background: "transparent",
+              borderRadius: 0,
+            }}
+            {...(props as Record<string, unknown>)}
+          >
+            {src}
+          </SyntaxHighlighter>
+        </div>
       ) : (
         <code className={className} {...props}>
           {children}
