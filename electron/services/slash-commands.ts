@@ -135,6 +135,53 @@ function scanDirectory(
   return commands;
 }
 
+/**
+ * Scan a `.claude/skills/` directory. Skills are folders, each containing a
+ * `SKILL.md` with frontmatter (`name`, `description`). The Claude Agent SDK
+ * exposes them alongside built-in slash commands, but its `SlashCommand`
+ * shape (`name` / `description` / `argumentHint`) carries no source info,
+ * so the renderer can't tell project skills apart from SDK defaults.
+ *
+ * Emitting them here as project- or user-scoped pseudo-commands lets the
+ * picker's dedup (custom commands win over SDK defaults) re-tag them with
+ * the correct scope.
+ */
+function scanSkillsDirectory(
+  dir: string,
+  scope: string,
+  namespace: string
+): SlashCommand[] {
+  const commands: SlashCommand[] = [];
+  let entries: fs.Dirent[];
+
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return commands;
+  }
+
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const manifestPath = path.join(dir, entry.name, 'SKILL.md');
+    if (!fs.existsSync(manifestPath)) continue;
+    // Reuse commandFromFile so frontmatter parsing stays in one place. The
+    // `name` (and thus `full_command`) is taken from the folder name —
+    // matching how the SDK reports the skill — not from the manifest's
+    // basename ("SKILL").
+    const cmd = commandFromFile(manifestPath, scope, namespace);
+    if (cmd) {
+      commands.push({
+        ...cmd,
+        name: entry.name,
+        full_command: `/${entry.name}`,
+        id: `${scope}:${namespace}:${entry.name}`,
+      });
+    }
+  }
+
+  return commands;
+}
+
 // ---------------------------------------------------------------------------
 // Factory
 // ---------------------------------------------------------------------------
@@ -150,10 +197,19 @@ export function createSlashCommandsService(defaultConfigDir: string): SlashComma
     // Global (user) commands
     commands.push(...scanDirectory(getCommandsDir(configDir), 'user', 'user'));
 
+    // Global (user) skills — emitted as user-scoped so the picker's dedup
+    // can re-tag SDK-reported skills out of the "default" bucket.
+    const userSkillsDir = path.join(configDir ?? defaultConfigDir, 'skills');
+    commands.push(...scanSkillsDirectory(userSkillsDir, 'user', 'user'));
+
     // Project-local commands
     if (projectPath) {
       const projectCommandsDir = path.join(projectPath, '.claude', 'commands');
       commands.push(...scanDirectory(projectCommandsDir, 'project', 'project'));
+
+      // Project-local skills
+      const projectSkillsDir = path.join(projectPath, '.claude', 'skills');
+      commands.push(...scanSkillsDirectory(projectSkillsDir, 'project', 'project'));
     }
 
     return commands;

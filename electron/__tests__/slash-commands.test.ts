@@ -145,6 +145,56 @@ describe('slash commands service', () => {
     expect(content).toContain('Content here');
   });
 
+  describe('skill discovery', () => {
+    it('list includes project skills (.claude/skills/<name>/SKILL.md) as project-scoped', () => {
+      // Skills live as folders under <projectPath>/.claude/skills/<skillName>/
+      // with a SKILL.md frontmatter file. The Claude Agent SDK exposes them
+      // alongside built-in slash commands, but with no scope info — so the
+      // renderer mislabels them as "default". Including them here lets the
+      // picker's dedup re-tag them as project.
+      const projectPath = path.join(tmpDir, 'proj-skills');
+      const skillDir = path.join(projectPath, '.claude', 'skills', 'omnifex-release');
+      fs.mkdirSync(skillDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(skillDir, 'SKILL.md'),
+        '---\nname: omnifex-release\ndescription: Cut a new OmniFex release\n---\n# Body\n',
+        'utf-8',
+      );
+
+      const all = service.list(projectPath);
+      const skill = all.find((c) => c.name === 'omnifex-release');
+      expect(skill).toBeTruthy();
+      expect(skill?.scope).toBe('project');
+      expect(skill?.full_command).toBe('/omnifex-release');
+      expect(skill?.description).toBe('Cut a new OmniFex release');
+    });
+
+    it('list includes user skills (<configDir>/skills/<name>/SKILL.md) as user-scoped', () => {
+      const skillDir = path.join(configDir, 'skills', 'global-skill');
+      fs.mkdirSync(skillDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(skillDir, 'SKILL.md'),
+        '---\nname: global-skill\ndescription: A user-level skill\n---\nBody\n',
+        'utf-8',
+      );
+
+      const all = service.list();
+      const skill = all.find((c) => c.name === 'global-skill');
+      expect(skill).toBeTruthy();
+      expect(skill?.scope).toBe('user');
+    });
+
+    it('skips skill folders missing SKILL.md', () => {
+      const projectPath = path.join(tmpDir, 'proj-broken-skill');
+      const skillDir = path.join(projectPath, '.claude', 'skills', 'no-manifest');
+      fs.mkdirSync(skillDir, { recursive: true });
+      // No SKILL.md — should be ignored.
+
+      const all = service.list(projectPath);
+      expect(all.find((c) => c.name === 'no-manifest')).toBeUndefined();
+    });
+  });
+
   describe('multi-account isolation', () => {
     let accountADir: string;
     let accountBDir: string;
