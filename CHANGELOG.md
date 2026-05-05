@@ -5,6 +5,27 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.5] — 2026-05-04
+
+Polish pass on the Sessions popover and a small QoL improvement in the active session view.
+
+Installers remain **unsigned**.
+
+### Added
+
+- **Scroll-to-top / scroll-to-bottom buttons** on the right edge of the messages panel in the active session view. Stacked chevron-up / chevron-down icon buttons styled to match the chatbar — useful for jumping around long conversations without manually dragging the scrollbar.
+
+### Changed
+
+- **Sessions popover styling overhaul** to match the visual language of the in-session header cards:
+  - Body background is now `bg-background` (matching the messages area), with a separate `bg-popover` strip behind the "Tab Status" header.
+  - Tab cards use the same translucent fill as the session header's account / branch / session cards (`color-mix` of background + muted), the same 1px-ring + offset-shadow treatment at 45% muted-foreground, and a header-divider rendered via the same shadow color so the border tone matches the card ring exactly.
+  - Card header strip uses `bg-muted` for the lighter "title" band, mirroring the session header bar.
+- **Branch chip in tab cards** now uses the same chip styling as `GitBranchBadge` in the session header — palette colors via `resolveBranchColors` (palette-rotated across visible tabs), trunk-black for `main` / `master`, and inline `FilePen` (changed) / `FilePlus` (untracked) counts on the chip itself.
+- **Context-size widget in tab cards** replaced the plain solid progress bar with the `SessionCard` widget — `Database` icon, k-formatted token count (color shifts orange/red as usage rises), green→orange→red gradient bar with `clip-path` masking, and percentage. Wider gradient bar (`w-24`) for a more readable scale.
+- **Labeled rows** in tab cards: `Current Branch:` and `Context Size:` are now `HeaderLabel`-styled and share a fixed label column (`w-28`) so the chips line up vertically. Other rows (turn / agents / todos) stay label-less.
+- **Bumped `@anthropic-ai/claude-agent-sdk`** to `0.2.128` (from `0.2.126`). Patch bump; transitive deps and the `zod` peer all unchanged.
+
 ## [0.4.4] — 2026-05-04
 
 New **Sessions popover** in the titlebar (atom icon) showing live per-tab status — busy roll-up, main-turn flag, active agent count, todos progress, branch + files changed/untracked, context usage. Click a card header to jump to that tab. Solves the "1 active — Install Anyway" mystery from v0.4.3 by giving you direct visibility into which tab is actually busy and why.
