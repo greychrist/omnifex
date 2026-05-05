@@ -5,6 +5,29 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.6] — 2026-05-05
+
+Markdown rendering inside assistant messages got a real polish pass: fenced ` ```markdown ` blocks now have a Rendered/Source toggle and a copy-source button, and code-block chrome is consistent across all three fence variants (markdown, syntax-highlighted, untagged). Fixed a long-standing first-line indent artifact on syntax-highlighted blocks. The slash-command picker now correctly labels project-local skills as **PROJECT** instead of mislabeling them as **DEFAULT**.
+
+Installers remain **unsigned**.
+
+### Added
+
+- **`MarkdownBlock` Source/Rendered tabbed component** for fenced ` ```markdown ` / ` ```md ` blocks. Pill toggle (Rendered is default) plus a copy-source button; the copy button always copies the raw markdown source regardless of which view is active. Markdown fences nested inside markdown fences recurse — each `MarkdownBlock` instance owns its own toggle state.
+- **`buildMarkdownComponents` dispatcher** (`src/lib/markdownComponents.tsx`) — single source of truth for `react-markdown`'s `code` component override. `language-markdown` / `language-md` → `MarkdownBlock`; any other `language-*` → Prism `SyntaxHighlighter`; no language → plain `<code>` (inline path). `StreamMessage` now uses this helper instead of duplicating the `code` override.
+
+### Changed
+
+- **Code-block chrome unified across all three fence variants**: ` ```markdown ` blocks (MarkdownBlock card), ` ```typescript `/etc. (`SyntaxHighlighter` wrapper), and untagged ` ``` ` blocks (prose `<pre>`) now all render with the same `var(--color-card)` panel color, `border-border/50`, and `rounded-md` chrome. No more concentric cards from the prose `<pre>` wrapping a MarkdownBlock card.
+- **`MarkdownBlock` controls** moved above the content card (instead of overlaying it). Pill toggle group + copy button sit on a small bar above the rendered/source panel.
+
+### Fixed
+
+- **First-line indent on syntax-highlighted code blocks** is gone. Root cause: `SyntaxHighlighter` was using `PreTag="div"`, so `<code>` had no `<pre>` ancestor and Tailwind Typography's `.prose pre code` reset never fired — leaving `.prose code`'s inline horizontal padding visible at the start of the first line in multiline blocks (directory trees, multi-import imports, etc.). Removed `PreTag="div"`; inline `customStyle` neutralizes the inner prose `<pre>` chrome so the wrapper card stays the only visible card.
+- **`<pre>` passthrough is now conditional** in `buildMarkdownComponents`: tagged fences skip the prose `<pre>` (their inner component owns the card); untagged fences keep their `<pre>` so `white-space: pre` still preserves newlines. Earlier unconditional passthrough collapsed multiline ASCII trees onto one wrapped line.
+- **Slash-command picker now labels project skills as PROJECT** (and user skills as USER), instead of mislabeling everything from the Claude Agent SDK as DEFAULT. The slash-commands service now also scans `<projectPath>/.claude/skills/<name>/SKILL.md` and `<configDir>/skills/<name>/SKILL.md`, emitting them as scoped pseudo-commands; the picker's existing dedup (custom commands win over SDK defaults) re-tags SDK-reported skills with the correct scope.
+- **Horizontal bleed in card bodies** is clipped via `overflow-x-auto` so wide inline content (long URLs, source spans) no longer pushes the card past the message column.
+
 ## [0.4.5] — 2026-05-04
 
 Polish pass on the Sessions popover and a small QoL improvement in the active session view.
