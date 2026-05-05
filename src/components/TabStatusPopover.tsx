@@ -1,10 +1,12 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Atom, GitBranch, FileText, Activity, Bot, ListChecks } from 'lucide-react';
+import { Atom, GitBranch, FilePen, FilePlus, Activity, Bot, ListChecks, Database } from 'lucide-react';
 import { api, type TabStatusSummary } from '@/lib/api';
 import { useTabContext } from '@/contexts/TabContext';
 import { cn } from '@/lib/utils';
 import { TooltipSimple } from '@/components/ui/tooltip-modern';
+import { resolveBranchColors } from '@/lib/branchColors';
+import { HeaderLabel } from './HeaderLabel';
 
 const STATUS_LABEL: Record<TabStatusSummary['status'], string> = {
   'not-started': 'Not started',
@@ -22,27 +24,26 @@ const STATUS_COLOR: Record<TabStatusSummary['status'], string> = {
   error: 'text-red-400 bg-red-500/15',
 };
 
-function formatTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
-  return String(n);
-}
-
 interface TabStatusCardProps {
   summary: TabStatusSummary;
+  branchColor: string | null;
+  branchIsTrunk: boolean;
   onClick: () => void;
 }
 
-const TabStatusCard: React.FC<TabStatusCardProps> = ({ summary, onClick }) => {
+const TabStatusCard: React.FC<TabStatusCardProps> = ({ summary, branchColor, branchIsTrunk, onClick }) => {
   const ctx = summary.contextUsage;
-  const ctxPct = ctx ? Math.round(ctx.percentage) : null;
+  const branchStyle =
+    !branchIsTrunk && branchColor
+      ? { backgroundColor: `${branchColor}33`, color: branchColor, borderColor: `${branchColor}4d` }
+      : undefined;
 
   return (
-    <div className="rounded-md border border-border bg-card/40 overflow-hidden">
+    <div className="rounded-md border-0 bg-[color-mix(in_oklch,var(--color-background)_40%,var(--color-muted))] overflow-hidden shadow-[0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_45%,transparent),2px_2px_4px_rgb(0_0_0/0.08)]">
       <button
         type="button"
         onClick={onClick}
-        className="w-full flex items-center justify-between gap-3 px-3 py-2 hover:bg-accent/40 transition-colors text-left app-no-drag"
+        className="w-full flex items-center justify-between gap-3 px-3 py-2 bg-muted shadow-[inset_0_-1px_0_0_color-mix(in_oklch,var(--color-muted-foreground)_45%,transparent)] hover:bg-accent/40 transition-colors text-left app-no-drag"
       >
         <div className="flex items-center gap-2 min-w-0">
           <span
@@ -63,41 +64,64 @@ const TabStatusCard: React.FC<TabStatusCardProps> = ({ summary, onClick }) => {
 
       <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 px-3 pb-2.5 pt-1 text-xs">
         {summary.branch !== null && (
-          <div className="flex items-center gap-1.5 text-muted-foreground">
-            <GitBranch size={11} />
-            <span className="truncate font-mono text-foreground">{summary.branch}</span>
-          </div>
-        )}
-        {summary.branch !== null && (
-          <div className="flex items-center gap-1.5 text-muted-foreground">
-            <FileText size={11} />
-            <span className="text-foreground">
-              {summary.filesChanged} changed
+          <div className="flex items-center gap-2 min-w-0 col-span-2">
+            <HeaderLabel>Current Branch:</HeaderLabel>
+            <span
+              className={cn(
+                'inline-flex items-center gap-1 px-2 py-0.5 rounded border text-xs font-mono font-medium max-w-full',
+                branchIsTrunk && 'bg-black text-white border-black',
+              )}
+              style={branchStyle}
+              title={summary.branch}
+            >
+              <GitBranch className="w-3 h-3 shrink-0" />
+              <span className="truncate">{summary.branch}</span>
+              {(summary.filesChanged > 0 || summary.filesUntracked > 0) && (
+                <span aria-hidden className="h-3 w-px bg-current opacity-40 mx-0.5" />
+              )}
+              {summary.filesChanged > 0 && (
+                <span className="inline-flex items-center gap-0.5 text-emerald-400">
+                  <FilePen className="w-3 h-3" />
+                  {summary.filesChanged}
+                </span>
+              )}
               {summary.filesUntracked > 0 && (
-                <span className="text-muted-foreground">
-                  {' '}· {summary.filesUntracked} untracked
+                <span className="inline-flex items-center gap-0.5 text-amber-300">
+                  <FilePlus className="w-3 h-3" />
+                  {summary.filesUntracked}
                 </span>
               )}
             </span>
           </div>
         )}
-        {ctx && (
-          <div className="flex items-center gap-1.5 col-span-2 text-muted-foreground">
-            <span className="w-3 inline-flex justify-center">{ctxPct}%</span>
-            <div className="flex-1 h-1 rounded-full bg-muted overflow-hidden">
-              <div
+        {ctx && (() => {
+          const tokens = ctx.totalTokens;
+          const pct = Math.min(100, ctx.percentage);
+          const tokenColor = pct > 80 ? 'text-red-400' : pct > 50 ? 'text-orange-400' : 'text-foreground';
+          return (
+            <div className="flex items-center gap-2 col-span-2 text-muted-foreground">
+              <HeaderLabel>Context Size:</HeaderLabel>
+              <span
                 className={cn(
-                  'h-full rounded-full',
-                  ctxPct! >= 90 ? 'bg-red-500' : ctxPct! >= 70 ? 'bg-amber-500' : 'bg-primary',
+                  'inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-mono font-medium text-foreground',
+                  'bg-background shadow-[0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_45%,transparent)]',
                 )}
-                style={{ width: `${Math.min(100, ctxPct!)}%` }}
-              />
+              >
+                <Database className="w-3.5 h-3.5 text-foreground" />
+                <span className={cn('font-mono', tokenColor)}>
+                  {tokens >= 1000 ? `${(tokens / 1000).toFixed(1)}k` : tokens}
+                </span>
+                <div className="w-24 h-1.5 bg-foreground/10 rounded-full overflow-hidden relative">
+                  <div
+                    className="absolute inset-0 rounded-full bg-gradient-to-r from-green-400 via-orange-400 to-red-400 transition-[clip-path]"
+                    style={{ clipPath: `inset(0 ${100 - pct}% 0 0)` }}
+                  />
+                </div>
+                <span className="text-foreground font-mono">{pct.toFixed(0)}%</span>
+              </span>
             </div>
-            <span className="text-foreground tabular-nums">
-              {formatTokens(ctx.totalTokens)} / {formatTokens(ctx.maxTokens)}
-            </span>
-          </div>
-        )}
+          );
+        })()}
         <div className="flex items-center gap-1.5 text-muted-foreground">
           <Activity size={11} />
           <span className="text-foreground">
@@ -191,6 +215,12 @@ export const TabStatusPopover: React.FC = () => {
 
   const busyCount = ordered.filter((s) => s.busy).length;
 
+  const branchResolution = resolveBranchColors({
+    pins: {},
+    mainFolderBranch: null,
+    branches: ordered.map((s) => s.branch).filter((b): b is string => b !== null),
+  });
+
   return (
     <div className="relative inline-block">
       <TooltipSimple
@@ -228,9 +258,9 @@ export const TabStatusPopover: React.FC = () => {
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: -8 }}
               transition={{ duration: 0.12 }}
-              className="w-[420px] max-h-[70vh] overflow-y-auto rounded-md border border-border bg-popover text-popover-foreground shadow-lg"
+              className="w-[420px] max-h-[70vh] overflow-y-auto rounded-md border border-border bg-background text-popover-foreground shadow-lg"
             >
-              <div className="px-3 py-2 border-b border-border flex items-center justify-between">
+              <div className="px-3 py-2 border-b border-border bg-popover flex items-center justify-between">
                 <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                   Tab Status
                 </div>
@@ -250,6 +280,8 @@ export const TabStatusPopover: React.FC = () => {
                     <TabStatusCard
                       key={s.tabId}
                       summary={s}
+                      branchColor={s.branch ? branchResolution.colors[s.branch] ?? null : null}
+                      branchIsTrunk={s.branch ? branchResolution.trunkBlack.has(s.branch) : false}
                       onClick={() => {
                         setActiveTab(s.tabId);
                         setOpen(false);

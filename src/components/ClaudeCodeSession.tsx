@@ -1135,6 +1135,16 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     }
   };
 
+  const scrollToTop = useCallback(() => {
+    parentRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+  }, []);
+
+  const scrollToBottom = useCallback(() => {
+    const el = parentRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+  }, []);
+
   const handleScroll = useCallback(() => {
     const el = parentRef.current;
     if (!el) return;
@@ -1154,7 +1164,29 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   }, []);
 
   const messagesList = (
-    <div className="flex-1 min-h-0 px-10 py-2 bg-muted/30">
+    <div className="flex-1 min-h-0 px-10 py-2 bg-muted/30 relative">
+    <div className="absolute right-1 bottom-6 z-10 flex flex-col gap-1">
+      <TooltipSimple content="Scroll to top" side="left">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={scrollToTop}
+          className="h-8 w-8 hover:bg-accent/50 transition-colors bg-background/80 backdrop-blur-sm border border-border/50"
+        >
+          <ChevronUp className="h-3.5 w-3.5" />
+        </Button>
+      </TooltipSimple>
+      <TooltipSimple content="Scroll to bottom" side="left">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={scrollToBottom}
+          className="h-8 w-8 hover:bg-accent/50 transition-colors bg-background/80 backdrop-blur-sm border border-border/50"
+        >
+          <ChevronDown className="h-3.5 w-3.5" />
+        </Button>
+      </TooltipSimple>
+    </div>
     <div
       ref={parentRef}
       className="h-full overflow-y-auto relative border border-border/50 rounded-lg bg-background"
