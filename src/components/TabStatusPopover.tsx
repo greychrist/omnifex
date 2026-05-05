@@ -65,7 +65,7 @@ const TabStatusCard: React.FC<TabStatusCardProps> = ({ summary, branchColor, bra
       <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 px-3 pb-2.5 pt-1 text-xs">
         {summary.branch !== null && (
           <div className="flex items-center gap-2 min-w-0 col-span-2">
-            <HeaderLabel>Current Branch:</HeaderLabel>
+            <HeaderLabel className="inline-block w-28 shrink-0">Current Branch:</HeaderLabel>
             <span
               className={cn(
                 'inline-flex items-center gap-1 px-2 py-0.5 rounded border text-xs font-mono font-medium max-w-full',
@@ -100,7 +100,7 @@ const TabStatusCard: React.FC<TabStatusCardProps> = ({ summary, branchColor, bra
           const tokenColor = pct > 80 ? 'text-red-400' : pct > 50 ? 'text-orange-400' : 'text-foreground';
           return (
             <div className="flex items-center gap-2 col-span-2 text-muted-foreground">
-              <HeaderLabel>Context Size:</HeaderLabel>
+              <HeaderLabel className="inline-block w-28 shrink-0">Context Size:</HeaderLabel>
               <span
                 className={cn(
                   'inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-mono font-medium text-foreground',
