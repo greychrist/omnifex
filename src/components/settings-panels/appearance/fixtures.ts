@@ -26,7 +26,7 @@ export const KIND_FIXTURES: Record<string, string> = {
   "result.awaiting_background":
     "Will be notified when verify completes.",
   "system.init":
-    "Session ready. Model: claude-opus-4-7. Working dir: /Users/greg/Repos/greychrist. 14 tools loaded (6 MCP).",
+    "Session ready. Model: claude-opus-4-7. Working dir: /Users/greg/Repos/omnifex. 14 tools loaded (6 MCP).",
   "system.notification.error": "API rate limit reached — retrying in 30s",
   "system.notification.stop": "User interrupted execution",
   "system.notification.warn": "Tool call exceeded 10s — continuing",

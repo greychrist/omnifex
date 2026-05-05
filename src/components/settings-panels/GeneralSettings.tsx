@@ -255,7 +255,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
                 id="local-update-dir"
                 type="text"
                 value={localUpdateDir}
-                placeholder="/Users/you/Repos/greychrist/out/make"
+                placeholder="/Users/you/Repos/omnifex/out/make"
                 onChange={(e) => setLocalUpdateDir(e.target.value)}
                 onBlur={() => saveLocalUpdateDir(localUpdateDir)}
                 className="flex-1 font-mono text-xs"

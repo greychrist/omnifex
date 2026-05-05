@@ -68,8 +68,8 @@
 
 1. **Clone the Repository**
    ```bash
-   git clone https://github.com/greychrist/GreyChrist.git
-   cd GreyChrist
+   git clone https://github.com/greychrist/omnifex.git
+   cd omnifex
    ```
 
 2. **Install Frontend Dependencies**
