@@ -21,9 +21,11 @@ interface MarkdownBlockProps {
  * always copies the raw source string regardless of which view is active.
  *
  * Recursion (a ```markdown fence nested inside another ```markdown fence)
- * is added in a follow-up step that wires `buildMarkdownComponents` into
- * the inner ReactMarkdown call. Until then, the inner ReactMarkdown uses
- * vanilla defaults.
+ * is supported: the inner `ReactMarkdown` is wired with the shared
+ * `buildMarkdownComponents` dispatcher, so any nested markdown fence
+ * renders as another `<MarkdownBlock>` with its own toggle and copy
+ * button. Each component instance owns its own `view` state, so inner
+ * and outer toggles operate independently.
  */
 export const MarkdownBlock: React.FC<MarkdownBlockProps> = ({ source }) => {
   const [view, setView] = useState<View>("rendered");
