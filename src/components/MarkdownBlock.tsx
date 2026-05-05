@@ -61,25 +61,12 @@ export const MarkdownBlock: React.FC<MarkdownBlockProps> = ({ source }) => {
   const pillInactive = "text-muted-foreground hover:text-foreground";
 
   return (
-    <div className="relative group/mdblock my-3 rounded-md border border-border/50 bg-muted/20 overflow-hidden">
-      <div className="absolute top-1 right-1 z-10 flex items-center gap-1 opacity-60 group-hover/mdblock:opacity-100 transition-opacity">
-        <button
-          type="button"
-          onClick={handleCopy}
-          aria-label="Copy source"
-          className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
-          title={copied ? "Copied!" : "Copy source"}
-        >
-          {copied ? (
-            <Check className="h-3.5 w-3.5 text-emerald-500" />
-          ) : (
-            <Copy className="h-3.5 w-3.5" />
-          )}
-        </button>
+    <div className="my-3">
+      <div className="flex items-center justify-end gap-2 mb-2">
         <div
           role="group"
           aria-label="View mode"
-          className="flex items-center rounded-md border border-border/50 bg-background/80 backdrop-blur-sm overflow-hidden"
+          className="flex items-center rounded-md border border-border/50 bg-background/80 overflow-hidden"
         >
           <button
             type="button"
@@ -98,10 +85,23 @@ export const MarkdownBlock: React.FC<MarkdownBlockProps> = ({ source }) => {
             Source
           </button>
         </div>
+        <button
+          type="button"
+          onClick={handleCopy}
+          aria-label="Copy source"
+          className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+          title={copied ? "Copied!" : "Copy source"}
+        >
+          {copied ? (
+            <Check className="h-3.5 w-3.5 text-emerald-500" />
+          ) : (
+            <Copy className="h-3.5 w-3.5" />
+          )}
+        </button>
       </div>
 
       {view === "rendered" ? (
-        <div className="prose prose-sm dark:prose-invert max-w-none p-3 break-words">
+        <div className="prose prose-sm dark:prose-invert max-w-none break-words">
           <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
             {source}
           </ReactMarkdown>
@@ -113,7 +113,7 @@ export const MarkdownBlock: React.FC<MarkdownBlockProps> = ({ source }) => {
           PreTag="div"
           customStyle={{
             margin: 0,
-            padding: "0.75rem",
+            padding: 0,
             maxWidth: "100%",
             overflowX: "auto",
           }}
