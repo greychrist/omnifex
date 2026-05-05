@@ -27,8 +27,8 @@ import { IconRenderer } from "@/components/settings-panels/appearance/iconMap";
 import { KindHeader } from "@/components/KindHeader";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { getClaudeSyntaxTheme } from "@/lib/claudeSyntaxTheme";
+import { buildMarkdownComponents } from "@/lib/markdownComponents";
 import { useTheme } from "@/hooks";
 import type { ClaudeStreamMessage } from "@/types/claudeStream";
 import {
@@ -368,6 +368,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
   // Get current theme
   const { theme } = useTheme();
   const syntaxTheme = getClaudeSyntaxTheme(theme);
+  const mdComponents = buildMarkdownComponents(syntaxTheme);
 
   // Per-kind accent colors, live-reload from Appearance settings
   const { config: renderConfig } = useMessageRenderingConfig();
@@ -578,28 +579,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                       <div key={idx} className="relative group/card">
                         <CopyCardButton text={textContent} />
                         <div className="prose prose-sm dark:prose-invert max-w-none">
-                          <ReactMarkdown
-                            remarkPlugins={[remarkGfm]}
-                            components={{
-                              code({ node, inline, className, children, ...props }: any) {
-                                const match = /language-(\w+)/.exec(className || '');
-                                return !inline && match ? (
-                                  <SyntaxHighlighter
-                                    style={syntaxTheme}
-                                    language={match[1]}
-                                    PreTag="div"
-                                    {...props}
-                                  >
-                                    {String(children).replace(/\n$/, '')}
-                                  </SyntaxHighlighter>
-                                ) : (
-                                  <code className={className} {...props}>
-                                    {children}
-                                  </code>
-                                );
-                              }
-                            }}
-                          >
+                          <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
                             {textContent}
                           </ReactMarkdown>
                         </div>
@@ -1395,28 +1375,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
 
                 {message.result && (
                   <div className="prose prose-sm dark:prose-invert max-w-none">
-                    <ReactMarkdown
-                      remarkPlugins={[remarkGfm]}
-                      components={{
-                        code({ node, inline, className, children, ...props }: any) {
-                          const match = /language-(\w+)/.exec(className || '');
-                          return !inline && match ? (
-                            <SyntaxHighlighter
-                              style={syntaxTheme}
-                              language={match[1]}
-                              PreTag="div"
-                              {...props}
-                            >
-                              {String(children).replace(/\n$/, '')}
-                            </SyntaxHighlighter>
-                          ) : (
-                            <code className={className} {...props}>
-                              {children}
-                            </code>
-                          );
-                        }
-                      }}
-                    >
+                    <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
                       {message.result}
                     </ReactMarkdown>
                   </div>
