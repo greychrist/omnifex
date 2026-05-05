@@ -560,7 +560,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                   className={iconSizeClassName(renderConfig, "assistant.text")}
                 />
               </div>
-              <div className="flex-1 space-y-2 min-w-0">
+              <div className="flex-1 space-y-2 min-w-0 overflow-x-auto">
                 <KindHeader kindId="assistant.text" />
                 {(() => {
                   const blocks: any[] = Array.isArray(msg.content) ? msg.content : [];
@@ -999,7 +999,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
           <CardContent className="p-4 pb-9">
             <div className="flex items-start gap-3">
               {cardIcon}
-              <div className="flex-1 space-y-2 min-w-0">
+              <div className="flex-1 space-y-2 min-w-0 overflow-x-auto">
                 {/* Configured KindHeader for the card. Renders once at the top
                     of the body so per-block branches (string, image, tool_result)
                     no longer have to repeat the header inline — and tool_result-
@@ -1390,7 +1390,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
               >
                 <IconRenderer name={resultIconName} className={iconSizeClassName(renderConfig, resultKindId)} />
               </div>
-              <div className="flex-1 space-y-2">
+              <div className="flex-1 space-y-2 min-w-0 overflow-x-auto">
                 <KindHeader kindId={resultKindId} fallbackLabel={resultFallbackLabel} />
 
                 {message.result && (

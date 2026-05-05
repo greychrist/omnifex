@@ -105,7 +105,7 @@ export const MessageCard: React.FC<MessageCardProps> = ({
                 />
               </div>
             )}
-            <div className="flex-1 space-y-2 min-w-0">
+            <div className="flex-1 space-y-2 min-w-0 overflow-x-auto">
               <KindHeader
                 kindId={kindId}
                 fallbackLabel={headerFallbackLabel}
