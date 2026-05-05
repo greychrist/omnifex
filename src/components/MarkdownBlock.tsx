@@ -100,27 +100,29 @@ export const MarkdownBlock: React.FC<MarkdownBlockProps> = ({ source }) => {
         </button>
       </div>
 
-      {view === "rendered" ? (
-        <div className="prose prose-sm dark:prose-invert max-w-none break-words">
-          <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
+      <div className="rounded-md border border-border/50 bg-muted/20 overflow-hidden">
+        {view === "rendered" ? (
+          <div className="prose prose-sm dark:prose-invert max-w-none break-words p-3">
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
+              {source}
+            </ReactMarkdown>
+          </div>
+        ) : (
+          <SyntaxHighlighter
+            style={syntaxTheme}
+            language="markdown"
+            PreTag="div"
+            customStyle={{
+              margin: 0,
+              padding: "0.75rem",
+              maxWidth: "100%",
+              overflowX: "auto",
+            }}
+          >
             {source}
-          </ReactMarkdown>
-        </div>
-      ) : (
-        <SyntaxHighlighter
-          style={syntaxTheme}
-          language="markdown"
-          PreTag="div"
-          customStyle={{
-            margin: 0,
-            padding: 0,
-            maxWidth: "100%",
-            overflowX: "auto",
-          }}
-        >
-          {source}
-        </SyntaxHighlighter>
-      )}
+          </SyntaxHighlighter>
+        )}
+      </div>
     </div>
   );
 };
