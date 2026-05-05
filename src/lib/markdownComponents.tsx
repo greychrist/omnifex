@@ -1,15 +1,11 @@
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import type { CSSProperties } from "react";
+import type { Components, ExtraProps } from "react-markdown";
+import type { ComponentProps } from "react";
 import { MarkdownBlock } from "@/components/MarkdownBlock";
 
 type SyntaxTheme = { [key: string]: CSSProperties };
-
-interface CodeProps {
-  className?: string;
-  children?: React.ReactNode;
-  node?: unknown;
-  [key: string]: unknown;
-}
+type CodeComponentProps = ComponentProps<"code"> & ExtraProps;
 
 /**
  * Returns the `components` map for `react-markdown`'s ReactMarkdown component.
@@ -31,10 +27,17 @@ interface CodeProps {
  *   `getClaudeSyntaxTheme(theme)`. Passed through to SyntaxHighlighter for
  *   non-markdown fenced blocks. MarkdownBlock fetches its own theme via
  *   `useTheme()` so this argument is unused for the markdown branch.
+ *
+ * The return type intersects `Components` with `{ code: ... }` so callers
+ * (and tests) can destructure `code` as a non-optional component without
+ * a non-null assertion. The `as Components` cast at the return site
+ * satisfies react-markdown's structural index-signature constraint.
  */
-export function buildMarkdownComponents(syntaxTheme: SyntaxTheme) {
+export function buildMarkdownComponents(
+  syntaxTheme: SyntaxTheme,
+): Components & { code: (props: CodeComponentProps) => JSX.Element } {
   return {
-    code({ node, className, children, ...props }: CodeProps) {
+    code({ node: _node, className, children, ...props }: CodeComponentProps) {
       const match = /language-(\w+)/.exec(className || "");
       const lang = match?.[1];
       const src = String(children ?? "").replace(/\n$/, "");
@@ -48,7 +51,7 @@ export function buildMarkdownComponents(syntaxTheme: SyntaxTheme) {
           style={syntaxTheme}
           language={lang}
           PreTag="div"
-          {...props}
+          {...(props as Record<string, unknown>)}
         >
           {src}
         </SyntaxHighlighter>
@@ -58,5 +61,5 @@ export function buildMarkdownComponents(syntaxTheme: SyntaxTheme) {
         </code>
       );
     },
-  };
+  } as Components & { code: (props: CodeComponentProps) => JSX.Element };
 }

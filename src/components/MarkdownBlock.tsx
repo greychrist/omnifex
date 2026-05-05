@@ -5,6 +5,7 @@ import remarkGfm from "remark-gfm";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { useTheme } from "@/hooks";
 import { getClaudeSyntaxTheme } from "@/lib/claudeSyntaxTheme";
+import { buildMarkdownComponents } from "@/lib/markdownComponents";
 import { cn } from "@/lib/utils";
 
 type View = "rendered" | "source";
@@ -30,6 +31,7 @@ export const MarkdownBlock: React.FC<MarkdownBlockProps> = ({ source }) => {
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { theme } = useTheme();
   const syntaxTheme = getClaudeSyntaxTheme(theme);
+  const mdComponents = buildMarkdownComponents(syntaxTheme);
 
   useEffect(() => {
     return () => {
@@ -98,7 +100,9 @@ export const MarkdownBlock: React.FC<MarkdownBlockProps> = ({ source }) => {
 
       {view === "rendered" ? (
         <div className="prose prose-sm dark:prose-invert max-w-none p-3 break-words">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{source}</ReactMarkdown>
+          <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
+            {source}
+          </ReactMarkdown>
         </div>
       ) : (
         <SyntaxHighlighter
