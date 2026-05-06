@@ -179,3 +179,28 @@ export function truncateForModel(transcript: string): TruncationResult {
   const marker = `\n\n[… ~${elidedTokens.toLocaleString()} tokens elided …]\n\n`;
   return { transcript: head + marker + tail, truncated: true };
 }
+
+// ---------------------------------------------------------------------------
+// XML response parsing
+// ---------------------------------------------------------------------------
+
+export interface ParsedSummary {
+  headline: string;
+  paragraph: string;
+}
+
+/**
+ * Extract <headline> and <paragraph> from the model's response. Tolerates
+ * prose around the tags. Returns null when either tag is missing — the
+ * caller should treat that as a recoverable failure (don't overwrite an
+ * existing sidecar).
+ */
+export function parseSummaryXML(response: string): ParsedSummary | null {
+  const headlineMatch = response.match(/<headline>([\s\S]*?)<\/headline>/);
+  const paragraphMatch = response.match(/<paragraph>([\s\S]*?)<\/paragraph>/);
+  if (!headlineMatch || !paragraphMatch) return null;
+  const headline = headlineMatch[1].trim();
+  const paragraph = paragraphMatch[1].trim();
+  if (!headline || !paragraph) return null;
+  return { headline, paragraph };
+}

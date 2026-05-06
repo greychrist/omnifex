@@ -8,6 +8,7 @@ import {
   sidecarPathFor,
   extractTranscript,
   truncateForModel,
+  parseSummaryXML,
   type SessionSummary,
 } from '../services/sessions-summary';
 
@@ -203,5 +204,53 @@ describe('sessions-summary truncation', () => {
 
     const justOver = 'B'.repeat(720_001);
     expect(truncateForModel(justOver).truncated).toBe(true);
+  });
+});
+
+describe('sessions-summary XML parsing', () => {
+  it('extracts both fields from a well-formed response', () => {
+    const response =
+      '<headline>Migrated SessionList to a paginated table.</headline>\n' +
+      '<paragraph>Started by virtualizing, then pivoted to pagination. Left the optimized variant for deletion.</paragraph>';
+    expect(parseSummaryXML(response)).toEqual({
+      headline: 'Migrated SessionList to a paginated table.',
+      paragraph:
+        'Started by virtualizing, then pivoted to pagination. Left the optimized variant for deletion.',
+    });
+  });
+
+  it('tolerates prose around the tags', () => {
+    const response =
+      'Sure! Here is your summary:\n\n' +
+      '<headline>Refactored the auth flow.</headline>\n' +
+      '<paragraph>Removed the legacy callback. Added refresh-token support. Tests green.</paragraph>\n\n' +
+      'Hope that helps!';
+    const parsed = parseSummaryXML(response);
+    expect(parsed?.headline).toBe('Refactored the auth flow.');
+    expect(parsed?.paragraph).toBe(
+      'Removed the legacy callback. Added refresh-token support. Tests green.',
+    );
+  });
+
+  it('returns null when <headline> is missing', () => {
+    expect(parseSummaryXML('<paragraph>Only paragraph.</paragraph>')).toBeNull();
+  });
+
+  it('returns null when <paragraph> is missing', () => {
+    expect(parseSummaryXML('<headline>Only headline.</headline>')).toBeNull();
+  });
+
+  it('returns null when both tags are missing', () => {
+    expect(parseSummaryXML('Just plain prose, no tags.')).toBeNull();
+  });
+
+  it('trims surrounding whitespace inside the tags', () => {
+    const response =
+      '<headline>\n  Trimmed headline.\n</headline>\n' +
+      '<paragraph>\n  Trimmed paragraph.\n</paragraph>';
+    expect(parseSummaryXML(response)).toEqual({
+      headline: 'Trimmed headline.',
+      paragraph: 'Trimmed paragraph.',
+    });
   });
 });
