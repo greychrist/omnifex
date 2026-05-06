@@ -7,6 +7,7 @@ import {
   writeSidecar,
   sidecarPathFor,
   extractTranscript,
+  truncateForModel,
   type SessionSummary,
 } from '../services/sessions-summary';
 
@@ -174,5 +175,33 @@ describe('sessions-summary transcript extraction', () => {
     const result = extractTranscript(jsonl);
     expect(result.transcript).toBe('USER: good message');
     expect(result.messageCount).toBe(1);
+  });
+});
+
+describe('sessions-summary truncation', () => {
+  it('returns the transcript unchanged when under the cap', () => {
+    const small = 'USER: hi\nASSISTANT: hello\n';
+    expect(truncateForModel(small)).toEqual({
+      transcript: small,
+      truncated: false,
+    });
+  });
+
+  it('truncates by keeping first 240K chars + elision marker + last 240K chars', () => {
+    const huge = 'A'.repeat(800_000);
+    const result = truncateForModel(huge);
+    expect(result.truncated).toBe(true);
+    expect(result.transcript.startsWith('A'.repeat(240_000))).toBe(true);
+    expect(result.transcript.endsWith('A'.repeat(240_000))).toBe(true);
+    expect(result.transcript).toContain('tokens elided');
+    expect(result.transcript.length).toBeLessThan(huge.length);
+  });
+
+  it('threshold is 720K characters (≈180K tokens)', () => {
+    const justUnder = 'B'.repeat(720_000);
+    expect(truncateForModel(justUnder).truncated).toBe(false);
+
+    const justOver = 'B'.repeat(720_001);
+    expect(truncateForModel(justOver).truncated).toBe(true);
   });
 });

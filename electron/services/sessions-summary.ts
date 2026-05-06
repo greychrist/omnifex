@@ -146,3 +146,36 @@ export function extractTranscript(jsonlContent: string): ExtractedTranscript {
 
   return { transcript: lines.join('\n'), messageCount };
 }
+
+// ---------------------------------------------------------------------------
+// Truncation safety net
+// ---------------------------------------------------------------------------
+
+const MAX_TRANSCRIPT_CHARS = 720_000; // ~180K tokens at 4 chars/token
+const KEEP_HEAD_CHARS = 240_000;
+const KEEP_TAIL_CHARS = 240_000;
+
+export interface TruncationResult {
+  transcript: string;
+  truncated: boolean;
+}
+
+/**
+ * Cap the transcript at ~180K tokens so it fits comfortably under any
+ * mainline Claude model's 200K context with room for prompt + output.
+ * When over the cap, keep the first 240K and last 240K characters with
+ * an elision marker between them. Char-based heuristic is intentional —
+ * precise tokenization is overkill for a safety net that fires on <1%
+ * of sessions.
+ */
+export function truncateForModel(transcript: string): TruncationResult {
+  if (transcript.length <= MAX_TRANSCRIPT_CHARS) {
+    return { transcript, truncated: false };
+  }
+  const head = transcript.slice(0, KEEP_HEAD_CHARS);
+  const tail = transcript.slice(transcript.length - KEEP_TAIL_CHARS);
+  const elidedChars = transcript.length - KEEP_HEAD_CHARS - KEEP_TAIL_CHARS;
+  const elidedTokens = Math.round(elidedChars / 4);
+  const marker = `\n\n[… ~${elidedTokens.toLocaleString()} tokens elided …]\n\n`;
+  return { transcript: head + marker + tail, truncated: true };
+}
