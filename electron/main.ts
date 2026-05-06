@@ -54,6 +54,7 @@ import { createMCPService } from './services/mcp';
 import { createModelsService } from './services/models';
 import { createSlashCommandsService } from './services/slash-commands';
 import { createSessionsSummaryService } from './services/sessions-summary';
+import { query as sdkQuery } from '@anthropic-ai/claude-agent-sdk';
 import { createPermissionsIOService } from './services/permissions-io';
 import { createUpdaterService } from './services/updater';
 import { createInstallerService } from './services/installer';
@@ -454,9 +455,41 @@ app.whenReady().then(() => {
         summaryModel: null,
       };
     },
-    runQuery: async () => {
-      // Slice 2 (Task 8) wires the real SDK call.
-      throw new Error('runQuery not yet implemented');
+    runQuery: async ({ prompt, model, cwd, configDir }) => {
+      // One-shot summarization call. bypassPermissions + disallowed-all-tools
+      // guarantees this is pure text-in / text-out — Haiku (or whichever
+      // model the user picked) can't accidentally invoke a tool.
+      const stream = sdkQuery({
+        prompt,
+        options: {
+          cwd,
+          model,
+          env: { ...process.env, CLAUDE_CONFIG_DIR: configDir } as Record<string, string>,
+          permissionMode: 'bypassPermissions',
+          disallowedTools: ['*'],
+        },
+      });
+
+      let assistantText = '';
+      for await (const msg of stream) {
+        if (msg.type === 'assistant') {
+          const content = (msg as { message?: { content?: unknown } }).message?.content;
+          if (Array.isArray(content)) {
+            for (const part of content) {
+              if (
+                part &&
+                typeof part === 'object' &&
+                (part as { type?: unknown }).type === 'text' &&
+                typeof (part as { text?: unknown }).text === 'string'
+              ) {
+                assistantText += (part as { text: string }).text;
+              }
+            }
+          }
+        }
+        if (msg.type === 'result') break;
+      }
+      return assistantText;
     },
   });
   const modelsService = createModelsService();
