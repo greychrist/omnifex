@@ -123,6 +123,20 @@ const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 7,
+    description: 'Add summarizeOnClose + summaryModel to accounts (per-session summary opt-in)',
+    up: (db) => {
+      const cols = db.pragma('table_info(accounts)') as { name: string }[];
+      const names = new Set(cols.map((c) => c.name));
+      if (!names.has('summarizeOnClose')) {
+        db.exec('ALTER TABLE accounts ADD COLUMN summarizeOnClose INTEGER NOT NULL DEFAULT 0');
+      }
+      if (!names.has('summaryModel')) {
+        db.exec('ALTER TABLE accounts ADD COLUMN summaryModel TEXT');
+      }
+    },
+  },
 ];
 
 /**

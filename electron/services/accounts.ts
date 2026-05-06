@@ -26,6 +26,11 @@ export interface Account {
   cli_path: string | null;
   created_at: string;
   updated_at: string;
+  /** Whether per-session summaries auto-generate on tab close. */
+  summarizeOnClose?: boolean;
+  /** Model id (e.g. 'claude-haiku-4-5') used for summarization. Null
+   *  when toggle is off or no model has been selected. */
+  summaryModel?: string | null;
 }
 
 export interface PathRule {
@@ -70,6 +75,14 @@ export interface AccountsService {
     sessionDefaults?: SessionDefaults | null,
     cliPath?: string | null,
   ): void;
+  /** Update the per-session summarization opt-in for an account. Pass
+   *  `summaryModel: null` to clear the model (which also disables the
+   *  toggle, since both fields are required for generation). */
+  updateSummarySettings(
+    id: number,
+    summarizeOnClose: boolean,
+    summaryModel: string | null,
+  ): void;
   deleteAccount(id: number): void;
 
   listPathRules(): PathRule[];
@@ -100,6 +113,8 @@ interface AccountRow {
   cli_path: string | null;
   created_at: string;
   updated_at: string;
+  summarizeOnClose: number; // SQLite stores 0/1
+  summaryModel: string | null;
 }
 
 interface PathRuleRow {
@@ -127,6 +142,8 @@ function rowToAccount(row: AccountRow): Account {
     cli_path: row.cli_path,
     created_at: row.created_at,
     updated_at: row.updated_at,
+    summarizeOnClose: row.summarizeOnClose !== 0,
+    summaryModel: row.summaryModel,
   };
 }
 
@@ -250,6 +267,20 @@ export function createAccountsService(db: Database): AccountsService {
           id,
         );
     }
+  }
+
+  function updateSummarySettings(
+    id: number,
+    summarizeOnClose: boolean,
+    summaryModel: string | null,
+  ): void {
+    raw
+      .prepare(
+        `UPDATE accounts
+         SET summarizeOnClose = ?, summaryModel = ?, updated_at = CURRENT_TIMESTAMP
+         WHERE id = ?`,
+      )
+      .run(summarizeOnClose ? 1 : 0, summaryModel, id);
   }
 
   function deleteAccount(id: number): void {
@@ -445,6 +476,7 @@ export function createAccountsService(db: Database): AccountsService {
     listAccounts,
     createAccount,
     updateAccount,
+    updateSummarySettings,
     deleteAccount,
     listPathRules,
     addPathRule,

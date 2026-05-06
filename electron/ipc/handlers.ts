@@ -19,6 +19,7 @@ export interface Services {
     list(): unknown;
     create(data: unknown): unknown;
     update(id: unknown, data: unknown): unknown;
+    updateSummarySettings(data: unknown): unknown;
     delete(id: unknown): unknown;
     listPathRules(): unknown;
     addPathRule(rule: unknown): unknown;
@@ -207,6 +208,7 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     list_accounts: wrap(() => accounts?.list() ?? null),
     create_account: wrapWith((p: Record<string, unknown>) => accounts?.create(p) ?? null),
     update_account: wrapWith((p: Record<string, unknown>) => accounts?.update(p?.id, p) ?? null),
+    update_account_summary: wrapWith((p: Record<string, unknown>) => accounts?.updateSummarySettings(p) ?? null),
     delete_account: wrapWith((p: Record<string, unknown>) => accounts?.delete(p?.id) ?? null),
     list_path_rules: wrap(() => accounts?.listPathRules() ?? null),
     add_path_rule: wrapWith((p: Record<string, unknown>) => accounts?.addPathRule(p) ?? null),

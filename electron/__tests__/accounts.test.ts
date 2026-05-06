@@ -311,4 +311,41 @@ describe('accounts service', () => {
       expect(Array.isArray(discovered)).toBe(true);
     });
   });
+
+  // -----------------------------------------------------------------------
+  // Per-session summary settings (toggle + model)
+  // -----------------------------------------------------------------------
+
+  describe('summary settings', () => {
+    it('migration adds summarizeOnClose + summaryModel columns', () => {
+      const cols = db.raw.pragma('table_info(accounts)') as { name: string }[];
+      const names = cols.map((c) => c.name);
+      expect(names).toContain('summarizeOnClose');
+      expect(names).toContain('summaryModel');
+    });
+
+    it('defaults to summarizeOnClose=false / summaryModel=null on a fresh account', () => {
+      const a = accounts.createAccount('SumDefault', '/tmp/sum-default', false);
+      const reread = accounts.listAccounts().find((x) => x.id === a.id)!;
+      expect(reread.summarizeOnClose).toBe(false);
+      expect(reread.summaryModel).toBeNull();
+    });
+
+    it('updateSummarySettings persists toggle + model', () => {
+      const a = accounts.createAccount('SumUpdate', '/tmp/sum-update', false);
+      accounts.updateSummarySettings(a.id, true, 'claude-haiku-4-5');
+      const reread = accounts.listAccounts().find((x) => x.id === a.id)!;
+      expect(reread.summarizeOnClose).toBe(true);
+      expect(reread.summaryModel).toBe('claude-haiku-4-5');
+    });
+
+    it('updateSummarySettings can clear the model and disable the toggle', () => {
+      const a = accounts.createAccount('SumClear', '/tmp/sum-clear', false);
+      accounts.updateSummarySettings(a.id, true, 'claude-sonnet-4-6');
+      accounts.updateSummarySettings(a.id, false, null);
+      const reread = accounts.listAccounts().find((x) => x.id === a.id)!;
+      expect(reread.summarizeOnClose).toBe(false);
+      expect(reread.summaryModel).toBeNull();
+    });
+  });
 });

@@ -7,6 +7,7 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   'list_accounts',
   'create_account',
   'update_account',
+  'update_account_summary',
   'delete_account',
   'list_path_rules',
   'add_path_rule',

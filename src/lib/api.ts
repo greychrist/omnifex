@@ -49,6 +49,11 @@ export interface Account {
   cli_path: string | null;
   created_at: string;
   updated_at: string;
+  /** Per-session summary opt-in. Default false. */
+  summarizeOnClose?: boolean;
+  /** Model id used for summarization (e.g. 'haiku', 'sonnet'). Null
+   *  means no model selected — feature stays off regardless of toggle. */
+  summaryModel?: string | null;
 }
 
 /**
@@ -1871,6 +1876,27 @@ export const api = {
     projectPath: string,
   ): Promise<SessionSummary | null> {
     return apiCall<SessionSummary | null>("summary_generate", { sessionUuid, projectPath });
+  },
+
+  /**
+   * Update an account's per-session summary opt-in.
+   *
+   * `summarizeOnClose` toggles the auto-on-close generation; `summaryModel`
+   * is the model id (e.g. 'haiku', 'sonnet', 'opus', or a full SDK id like
+   * 'claude-haiku-4-5'). Pass `null` to clear the model. Both fields are
+   * required for generation — toggling on while model is null leaves the
+   * feature off in practice.
+   */
+  async accountUpdateSummary(
+    id: number,
+    summarizeOnClose: boolean,
+    summaryModel: string | null,
+  ): Promise<void> {
+    return apiCall<void>('update_account_summary', {
+      id,
+      summarizeOnClose,
+      summaryModel,
+    });
   },
 
   /**

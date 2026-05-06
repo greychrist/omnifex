@@ -78,6 +78,20 @@ const TypeSelect: React.FC<{ value: string; onChange: (v: string) => void }> = (
   </Select>
 );
 
+/**
+ * Per-call cost estimate shown under the summary-model dropdown. The
+ * range reflects the spread between short (~5K tok in) and long (~50K
+ * tok in) sessions. Output is ~80 tokens regardless — negligible.
+ * Pricing: Haiku 4.5 $1/$5, Sonnet 4.6 $3/$15, Opus 4.7 $15/$75 per MTok.
+ */
+function summaryCostEstimate(model: string): string {
+  const m = model.toLowerCase();
+  if (m.includes('haiku')) return '~$0.005–$0.05 per session.';
+  if (m.includes('sonnet')) return '~$0.015–$0.15 per session.';
+  if (m.includes('opus')) return '~$0.075–$0.75 per session.';
+  return 'Cost depends on the chosen model.';
+}
+
 const SessionDefaultsEditor: React.FC<{
   value: SessionDefaults;
   onChange: (v: SessionDefaults) => void;
@@ -193,6 +207,8 @@ export const AccountSettings: React.FC = () => {
   const [editCliPath, setEditCliPath] = useState<string>("");
   const [editCliPathError, setEditCliPathError] = useState<string | null>(null);
   const [showEditIconPicker, setShowEditIconPicker] = useState(false);
+  const [editSummarizeOnClose, setEditSummarizeOnClose] = useState(false);
+  const [editSummaryModel, setEditSummaryModel] = useState<string | null>('haiku');
 
   // Add rule form
   const [showAddRule, setShowAddRule] = useState(false);
@@ -244,6 +260,8 @@ export const AccountSettings: React.FC = () => {
     setEditSessionDefaults(account.session_defaults ?? {});
     setEditCliPath(account.cli_path ?? "");
     setEditCliPathError(null);
+    setEditSummarizeOnClose(!!account.summarizeOnClose);
+    setEditSummaryModel(account.summaryModel ?? 'haiku');
   };
 
   const cancelEdit = () => {
@@ -265,6 +283,13 @@ export const AccountSettings: React.FC = () => {
       const defaults = Object.keys(editSessionDefaults).length > 0 ? editSessionDefaults : null;
       const cliPath = trimmedCliPath || null;
       await api.updateAccount(editingId, editName.trim(), editDir.trim(), editType, editColor, editIcon, defaults, cliPath);
+      // Persist summary settings via the dedicated channel — keeps the
+      // existing updateAccount signature stable.
+      await api.accountUpdateSummary(
+        editingId,
+        editSummarizeOnClose && !!editSummaryModel,
+        editSummaryModel ?? null,
+      );
       setEditingId(null);
       setEditCliPathError(null);
       await loadData();
@@ -411,6 +436,50 @@ export const AccountSettings: React.FC = () => {
                     Override which <code>claude</code> binary or wrapper to spawn.
                     Shell aliases (<code>claude-personal</code>) are not supported —
                     paste the resolved path (e.g. <code>~/.local/bin/claude</code>).
+                  </div>
+                </div>
+                {/* Per-session summary opt-in. Toggle + model picker live
+                    on the same edit form so they save with the rest of the
+                    account fields. */}
+                <div className="space-y-1 pt-2 border-t border-border/30">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs text-muted-foreground">
+                      Generate summaries when sessions close
+                    </label>
+                    <input
+                      type="checkbox"
+                      checked={editSummarizeOnClose}
+                      disabled={!editSummaryModel}
+                      onChange={(e) => setEditSummarizeOnClose(e.target.checked)}
+                      className="h-3.5 w-3.5"
+                      aria-label="Generate summaries when sessions close"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs text-muted-foreground flex-none">
+                      Summary model
+                    </label>
+                    <select
+                      value={editSummaryModel ?? ''}
+                      onChange={(e) =>
+                        setEditSummaryModel(e.target.value || null)
+                      }
+                      className="h-7 px-2 text-xs rounded-md border border-border/60 bg-background"
+                    >
+                      <option value="">(pick a model)</option>
+                      {MODELS.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="text-[11px] text-muted-foreground">
+                    {editSummaryModel
+                      ? summaryCostEstimate(editSummaryModel)
+                      : 'Pick a model to enable summarization.'}
+                    {' '}Costs come out of this account's plan allotment for
+                    Pro/Max plans, or are billed per token for API keys.
                   </div>
                 </div>
                 <div className="flex gap-2">

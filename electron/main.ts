@@ -464,14 +464,11 @@ app.whenReady().then(() => {
     resolveAccount: (projectPath) => {
       const acct = accountsService.resolve(projectPath);
       if (!acct) return null;
-      // Slice 1: hardcode toggle off + model null. Slice 4 (Task 11) wires
-      // real columns from the accounts table. The hardcoded false here means
-      // generateSummary always bails until the migration lands.
       return {
         name: acct.name,
         configDir: acct.config_dir,
-        summarizeOnClose: false,
-        summaryModel: null,
+        summarizeOnClose: !!acct.summarizeOnClose,
+        summaryModel: acct.summaryModel ?? null,
       };
     },
     runQuery: async ({ prompt, model, cwd, configDir }) => {
@@ -596,6 +593,12 @@ app.whenReady().then(() => {
             ? (data.sessionDefaults ?? data.session_defaults)
             : undefined,
           data.cliPath ?? data.cli_path ?? null,
+        ),
+      updateSummarySettings: (data: any) =>
+        accountsService.updateSummarySettings(
+          data.id,
+          !!(data.summarizeOnClose ?? data.summarize_on_close),
+          (data.summaryModel ?? data.summary_model ?? null) as string | null,
         ),
       delete: (id: any) => accountsService.deleteAccount(id),
       listPathRules: () => accountsService.listPathRules(),

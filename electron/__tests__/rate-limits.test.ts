@@ -28,6 +28,7 @@ function makeAccountsService(accounts: Account[]): AccountsService {
     listAccounts: () => accounts,
     createAccount: () => accounts[0],
     updateAccount: () => {},
+        updateSummarySettings: () => {},
     deleteAccount: () => {},
     listPathRules: () => [],
     addPathRule: () => ({ id: 1, account_id: 1, account_name: 'Personal', path_prefix: '/', priority: 0 }),
