@@ -206,6 +206,24 @@ export function parseSummaryXML(response: string): ParsedSummary | null {
 }
 
 // ---------------------------------------------------------------------------
+// Prompt construction
+// ---------------------------------------------------------------------------
+
+const SUMMARY_PROMPT_PREAMBLE = `You are summarizing a coding-assistant session for a developer's records.
+Produce a one-line headline (8–14 words) and a 2–3 sentence paragraph (~50 words).
+The headline answers "what was this about?" The paragraph answers "what did I do, what worked, what's still open?" Be concrete — name files, libraries, decisions. No filler. No hedging.
+
+Format your response EXACTLY:
+<headline>...</headline>
+<paragraph>...</paragraph>
+
+`;
+
+function buildSummaryPrompt(transcript: string): string {
+  return `${SUMMARY_PROMPT_PREAMBLE}<transcript>\n${transcript}\n</transcript>`;
+}
+
+// ---------------------------------------------------------------------------
 // Service factory
 // ---------------------------------------------------------------------------
 
@@ -245,6 +263,9 @@ export interface SessionsSummaryService {
 export function createSessionsSummaryService(
   deps: SessionsSummaryDeps,
 ): SessionsSummaryService {
+  // Per-session in-flight map for dedup. Keyed by `${projectPath}::${uuid}`.
+  const inFlight = new Map<string, Promise<SessionSummary | null>>();
+
   function getSummary(
     sessionUuid: string,
     projectPath: string,
@@ -253,12 +274,97 @@ export function createSessionsSummaryService(
     return readSidecar(sidecarPathFor(jsonlPath));
   }
 
-  async function generateSummary(
-    _sessionUuid: string,
-    _projectPath: string,
+  async function generateSummaryInner(
+    sessionUuid: string,
+    projectPath: string,
   ): Promise<SessionSummary | null> {
-    // Real implementation lands in Task 7.
-    return null;
+    const account = deps.resolveAccount(projectPath);
+    if (!account) {
+      console.warn(
+        `[sessions-summary] No account resolved for ${projectPath}; skipping.`,
+      );
+      return null;
+    }
+    if (!account.summarizeOnClose || !account.summaryModel) {
+      return null;
+    }
+
+    const jsonlPath = deps.jsonlPathFor(sessionUuid, projectPath);
+    let stat: fs.Stats;
+    try {
+      stat = fs.statSync(jsonlPath);
+    } catch {
+      console.warn(`[sessions-summary] JSONL missing: ${jsonlPath}; skipping.`);
+      return null;
+    }
+    const jsonlSize = stat.size;
+
+    // Size-change gate: skip when the JSONL hasn't grown since the last
+    // successful summary. Returns the cached sidecar so callers can render
+    // it without re-spending Haiku tokens.
+    const sidecarPath = sidecarPathFor(jsonlPath);
+    const cached = readSidecar(sidecarPath);
+    if (cached && cached.jsonlSize === jsonlSize) {
+      return cached;
+    }
+
+    let jsonlContent: string;
+    try {
+      jsonlContent = fs.readFileSync(jsonlPath, 'utf-8');
+    } catch {
+      console.warn(`[sessions-summary] JSONL unreadable: ${jsonlPath}; skipping.`);
+      return null;
+    }
+    const { transcript, messageCount } = extractTranscript(jsonlContent);
+    if (!transcript || messageCount === 0) {
+      // Nothing to summarize.
+      return null;
+    }
+    const { transcript: capped, truncated } = truncateForModel(transcript);
+
+    const prompt = buildSummaryPrompt(capped);
+    const response = await deps.runQuery({
+      prompt,
+      model: account.summaryModel,
+      cwd: projectPath,
+      configDir: account.configDir,
+    });
+
+    const parsed = parseSummaryXML(response);
+    if (!parsed) {
+      console.warn(
+        `[sessions-summary] Model returned malformed XML; sidecar untouched. Raw response: ${response.slice(0, 200)}`,
+      );
+      return null;
+    }
+
+    const summary: SessionSummary = {
+      version: CURRENT_SCHEMA_VERSION,
+      headline: parsed.headline,
+      paragraph: parsed.paragraph,
+      messageCount,
+      jsonlSize,
+      generatedAt: new Date().toISOString(),
+      model: account.summaryModel,
+      accountName: account.name,
+      ...(truncated ? { truncated: true } : {}),
+    };
+    writeSidecar(sidecarPath, summary);
+    return summary;
+  }
+
+  async function generateSummary(
+    sessionUuid: string,
+    projectPath: string,
+  ): Promise<SessionSummary | null> {
+    const key = `${projectPath}::${sessionUuid}`;
+    const existing = inFlight.get(key);
+    if (existing) return existing;
+    const promise = generateSummaryInner(sessionUuid, projectPath).finally(() => {
+      inFlight.delete(key);
+    });
+    inFlight.set(key, promise);
+    return promise;
   }
 
   return { getSummary, generateSummary };

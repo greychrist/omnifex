@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -310,12 +310,249 @@ describe('sessions-summary service factory', () => {
     expect(svc.getSummary(sessionUuid, projectPath)).toEqual(summary);
   });
 
-  it('generateSummary stub returns null (real impl lands in a later task)', async () => {
+  it('generateSummary returns null when no account resolves', async () => {
     const svc = createSessionsSummaryService({
       jsonlPathFor: () => jsonlPath,
       resolveAccount: () => null,
       runQuery: async () => '',
     });
     expect(await svc.generateSummary(sessionUuid, projectPath)).toBeNull();
+  });
+});
+
+describe('sessions-summary generateSummary (real)', () => {
+  let tmpDir: string;
+  let jsonlPath: string;
+  let projectPath: string;
+  let configDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sessions-summary-gen-'));
+    configDir = path.join(tmpDir, 'config');
+    projectPath = path.join(tmpDir, 'project');
+    fs.mkdirSync(path.join(configDir, 'projects', '-tmp-p'), { recursive: true });
+    fs.mkdirSync(projectPath, { recursive: true });
+    jsonlPath = path.join(configDir, 'projects', '-tmp-p', 'abc.jsonl');
+    fs.writeFileSync(
+      jsonlPath,
+      [
+        JSON.stringify({ type: 'user', message: { content: 'hello' } }),
+        JSON.stringify({
+          type: 'assistant',
+          message: { content: [{ type: 'text', text: 'hi back' }] },
+        }),
+      ].join('\n'),
+      'utf-8',
+    );
+  });
+
+  afterEach(() => fs.rmSync(tmpDir, { recursive: true, force: true }));
+
+  it('writes a sidecar with the parsed headline/paragraph and metadata', async () => {
+    const runQuery = vi.fn(async () =>
+      '<headline>Tested it.</headline><paragraph>It works.</paragraph>',
+    );
+    const svc = createSessionsSummaryService({
+      jsonlPathFor: () => jsonlPath,
+      resolveAccount: () => ({
+        name: 'Test Acct',
+        configDir,
+        summarizeOnClose: true,
+        summaryModel: 'claude-haiku-4-5',
+      }),
+      runQuery,
+    });
+
+    const result = await svc.generateSummary('abc', projectPath);
+
+    expect(result).not.toBeNull();
+    expect(result!.headline).toBe('Tested it.');
+    expect(result!.paragraph).toBe('It works.');
+    expect(result!.messageCount).toBe(2);
+    expect(result!.model).toBe('claude-haiku-4-5');
+    expect(result!.accountName).toBe('Test Acct');
+    expect(result!.jsonlSize).toBe(fs.statSync(jsonlPath).size);
+    expect(runQuery).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: 'claude-haiku-4-5',
+        cwd: projectPath,
+        configDir,
+        prompt: expect.stringContaining('USER: hello'),
+      }),
+    );
+    // Sidecar persisted on disk.
+    const sidecar = readSidecar(sidecarPathFor(jsonlPath));
+    expect(sidecar?.headline).toBe('Tested it.');
+  });
+
+  it('returns null and skips runQuery when account toggle is off', async () => {
+    const runQuery = vi.fn();
+    const svc = createSessionsSummaryService({
+      jsonlPathFor: () => jsonlPath,
+      resolveAccount: () => ({
+        name: 'X',
+        configDir,
+        summarizeOnClose: false,
+        summaryModel: 'claude-haiku-4-5',
+      }),
+      runQuery,
+    });
+    expect(await svc.generateSummary('abc', projectPath)).toBeNull();
+    expect(runQuery).not.toHaveBeenCalled();
+  });
+
+  it('returns null and skips runQuery when summaryModel is null', async () => {
+    const runQuery = vi.fn();
+    const svc = createSessionsSummaryService({
+      jsonlPathFor: () => jsonlPath,
+      resolveAccount: () => ({
+        name: 'X',
+        configDir,
+        summarizeOnClose: true,
+        summaryModel: null,
+      }),
+      runQuery,
+    });
+    expect(await svc.generateSummary('abc', projectPath)).toBeNull();
+    expect(runQuery).not.toHaveBeenCalled();
+  });
+
+  it('returns null and skips runQuery when no account resolves', async () => {
+    const runQuery = vi.fn();
+    const svc = createSessionsSummaryService({
+      jsonlPathFor: () => jsonlPath,
+      resolveAccount: () => null,
+      runQuery,
+    });
+    expect(await svc.generateSummary('abc', projectPath)).toBeNull();
+    expect(runQuery).not.toHaveBeenCalled();
+  });
+
+  it('returns the cached sidecar without calling runQuery when jsonlSize is unchanged', async () => {
+    const runQuery = vi.fn();
+    const cachedSummary: SessionSummary = {
+      version: 1,
+      headline: 'cached',
+      paragraph: 'cached para',
+      messageCount: 2,
+      jsonlSize: fs.statSync(jsonlPath).size,
+      generatedAt: '2026-01-01T00:00:00.000Z',
+      model: 'claude-haiku-4-5',
+      accountName: 'X',
+    };
+    writeSidecar(sidecarPathFor(jsonlPath), cachedSummary);
+    const svc = createSessionsSummaryService({
+      jsonlPathFor: () => jsonlPath,
+      resolveAccount: () => ({
+        name: 'X',
+        configDir,
+        summarizeOnClose: true,
+        summaryModel: 'claude-haiku-4-5',
+      }),
+      runQuery,
+    });
+    const result = await svc.generateSummary('abc', projectPath);
+    expect(result).toEqual(cachedSummary);
+    expect(runQuery).not.toHaveBeenCalled();
+  });
+
+  it('returns null and leaves sidecar untouched when XML is malformed', async () => {
+    const existing: SessionSummary = {
+      version: 1,
+      headline: 'old',
+      paragraph: 'old para',
+      messageCount: 1,
+      jsonlSize: 1,
+      generatedAt: '2026-01-01T00:00:00.000Z',
+      model: 'claude-haiku-4-5',
+      accountName: 'X',
+    };
+    writeSidecar(sidecarPathFor(jsonlPath), existing);
+    const runQuery = vi.fn(async () => 'no tags here, just prose');
+    const svc = createSessionsSummaryService({
+      jsonlPathFor: () => jsonlPath,
+      resolveAccount: () => ({
+        name: 'X',
+        configDir,
+        summarizeOnClose: true,
+        summaryModel: 'claude-haiku-4-5',
+      }),
+      runQuery,
+    });
+    const result = await svc.generateSummary('abc', projectPath);
+    expect(result).toBeNull();
+    expect(readSidecar(sidecarPathFor(jsonlPath))).toEqual(existing);
+  });
+
+  it('throws when runQuery throws (auth / network errors propagate)', async () => {
+    const runQuery = vi.fn(async () => {
+      throw new Error('OAuth token expired');
+    });
+    const svc = createSessionsSummaryService({
+      jsonlPathFor: () => jsonlPath,
+      resolveAccount: () => ({
+        name: 'X',
+        configDir,
+        summarizeOnClose: true,
+        summaryModel: 'claude-haiku-4-5',
+      }),
+      runQuery,
+    });
+    await expect(svc.generateSummary('abc', projectPath)).rejects.toThrow(
+      /OAuth token expired/,
+    );
+  });
+
+  it('dedups parallel calls — one runQuery invocation, both promises resolve identically', async () => {
+    let calls = 0;
+    const runQuery = vi.fn(async () => {
+      calls += 1;
+      await new Promise((r) => setTimeout(r, 10));
+      return '<headline>x</headline><paragraph>y</paragraph>';
+    });
+    const svc = createSessionsSummaryService({
+      jsonlPathFor: () => jsonlPath,
+      resolveAccount: () => ({
+        name: 'X',
+        configDir,
+        summarizeOnClose: true,
+        summaryModel: 'claude-haiku-4-5',
+      }),
+      runQuery,
+    });
+    const [a, b] = await Promise.all([
+      svc.generateSummary('abc', projectPath),
+      svc.generateSummary('abc', projectPath),
+    ]);
+    expect(calls).toBe(1);
+    expect(a).toEqual(b);
+  });
+
+  it('marks truncated: true when the transcript is over the cap', async () => {
+    fs.writeFileSync(
+      jsonlPath,
+      JSON.stringify({
+        type: 'user',
+        message: { content: 'X'.repeat(800_000) },
+      }),
+      'utf-8',
+    );
+    const runQuery = vi.fn(async () =>
+      '<headline>big</headline><paragraph>huge.</paragraph>',
+    );
+    const svc = createSessionsSummaryService({
+      jsonlPathFor: () => jsonlPath,
+      resolveAccount: () => ({
+        name: 'X',
+        configDir,
+        summarizeOnClose: true,
+        summaryModel: 'claude-haiku-4-5',
+      }),
+      runQuery,
+    });
+    const result = await svc.generateSummary('abc', projectPath);
+    expect(result?.truncated).toBe(true);
+    const firstCallArgs = (runQuery.mock.calls[0] as unknown) as Array<{ prompt: string }>;
+    expect(firstCallArgs[0].prompt).toContain('tokens elided');
   });
 });
