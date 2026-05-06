@@ -132,6 +132,10 @@ export interface Session {
   last_timestamp?: string;
   /** @deprecated Filesystem mtime fallback. Prefer `last_timestamp`. */
   message_timestamp?: string;
+  /** Size of the session JSONL in bytes (from fs.stat). Used by the
+   *  summary refresh button to decide whether anything has changed since
+   *  the last summary generation. */
+  file_size_bytes?: number;
 }
 
 /**
@@ -1867,6 +1871,25 @@ export const api = {
     projectPath: string,
   ): Promise<SessionSummary | null> {
     return apiCall<SessionSummary | null>("summary_generate", { sessionUuid, projectPath });
+  },
+
+  /**
+   * Subscribe to summary-updated events. The main process emits
+   * `session-summary:updated` after a successful sidecar write so the
+   * renderer can refresh the matching row. Returns an unsubscribe
+   * function; matches the pattern used by other event subscriptions in
+   * this file.
+   */
+  onSessionSummaryUpdated(
+    callback: (payload: { sessionUuid: string }) => void,
+  ): () => void {
+    return window.electronAPI.onEvent(
+      'session-summary:updated',
+      (data: any) => {
+        if (!data || typeof data !== 'object' || typeof data.sessionUuid !== 'string') return;
+        callback({ sessionUuid: data.sessionUuid });
+      },
+    );
   },
 
   // ── Account Management ─────────────────────────────────────

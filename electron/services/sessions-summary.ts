@@ -250,6 +250,12 @@ export interface SessionsSummaryDeps {
     cwd: string;
     configDir: string;
   }): Promise<string>;
+  /**
+   * Called after a successful sidecar write so the renderer can refresh
+   * the matching row. Not called when generateSummary returns null
+   * (skipped, gated, malformed XML, etc.).
+   */
+  onSummaryUpdated?: (sessionUuid: string) => void;
 }
 
 export interface SessionsSummaryService {
@@ -350,6 +356,7 @@ export function createSessionsSummaryService(
       ...(truncated ? { truncated: true } : {}),
     };
     writeSidecar(sidecarPath, summary);
+    deps.onSummaryUpdated?.(sessionUuid);
     return summary;
   }
 

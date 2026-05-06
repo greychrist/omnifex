@@ -528,6 +528,44 @@ describe('sessions-summary generateSummary (real)', () => {
     expect(a).toEqual(b);
   });
 
+  it('calls onSummaryUpdated after a successful sidecar write', async () => {
+    const onSummaryUpdated = vi.fn();
+    const runQuery = vi.fn(async () =>
+      '<headline>x</headline><paragraph>y</paragraph>',
+    );
+    const svc = createSessionsSummaryService({
+      jsonlPathFor: () => jsonlPath,
+      resolveAccount: () => ({
+        name: 'X',
+        configDir,
+        summarizeOnClose: true,
+        summaryModel: 'claude-haiku-4-5',
+      }),
+      runQuery,
+      onSummaryUpdated,
+    });
+    await svc.generateSummary('abc', projectPath);
+    expect(onSummaryUpdated).toHaveBeenCalledWith('abc');
+  });
+
+  it('does NOT call onSummaryUpdated when XML is malformed', async () => {
+    const onSummaryUpdated = vi.fn();
+    const runQuery = vi.fn(async () => 'no tags');
+    const svc = createSessionsSummaryService({
+      jsonlPathFor: () => jsonlPath,
+      resolveAccount: () => ({
+        name: 'X',
+        configDir,
+        summarizeOnClose: true,
+        summaryModel: 'claude-haiku-4-5',
+      }),
+      runQuery,
+      onSummaryUpdated,
+    });
+    await svc.generateSummary('abc', projectPath);
+    expect(onSummaryUpdated).not.toHaveBeenCalled();
+  });
+
   it('marks truncated: true when the transcript is over the cap', async () => {
     fs.writeFileSync(
       jsonlPath,

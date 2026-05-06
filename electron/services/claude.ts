@@ -34,6 +34,10 @@ export interface Session {
   last_timestamp?: string;
   /** @deprecated retained for renderer migration; use last_timestamp instead. */
   message_timestamp?: string;
+  /** Size of the session JSONL in bytes (from fs.stat). Used downstream by
+   *  the summary refresh affordance to decide whether anything has changed
+   *  since the last summary generation. */
+  file_size_bytes?: number;
 }
 
 export interface ClaudeMdFile {
@@ -433,11 +437,13 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
 
       let createdAt = Date.now();
       let mtimeFallback: string | undefined;
+      let fileSize: number | undefined;
 
       try {
         const stat = fs.statSync(filePath);
         createdAt = stat.birthtimeMs;
         mtimeFallback = new Date(stat.mtimeMs).toISOString();
+        fileSize = stat.size;
       } catch {
         // ignore
       }
@@ -455,6 +461,7 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
         first_timestamp: firstTimestamp,
         last_timestamp: lastTimestamp ?? mtimeFallback,
         message_timestamp: lastTimestamp ?? mtimeFallback,
+        file_size_bytes: fileSize,
       });
     }
 

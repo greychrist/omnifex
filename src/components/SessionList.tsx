@@ -121,6 +121,27 @@ export const SessionList: React.FC<SessionListProps> = ({
     };
   }, [sessions, projectPath]);
 
+  // Subscribe to backend summary-updated events so auto-on-close
+  // generations refresh the matching row in real time. We re-fetch the
+  // sidecar via the same `summaryGet` path so the row source-of-truth
+  // stays consistent with the disk.
+  useEffect(() => {
+    if (!projectPath) return;
+    const unsubscribe = api.onSessionSummaryUpdated(({ sessionUuid }) => {
+      api
+        .summaryGet(sessionUuid, projectPath)
+        .then((summary) => {
+          setSummaries((prev) => new Map(prev).set(sessionUuid, summary));
+        })
+        .catch(() => {
+          // Silent — the row keeps its previous state.
+        });
+    });
+    return () => {
+      unsubscribe?.();
+    };
+  }, [projectPath]);
+
   const toggleExpanded = useCallback((id: string) => {
     setExpanded((prev) => {
       const next = new Set(prev);
@@ -241,6 +262,15 @@ export const SessionList: React.FC<SessionListProps> = ({
                 const summary = summaries.get(session.id);
                 const isExpanded = expanded.has(session.id);
                 const isRefreshing = summaryRefreshing.has(session.id);
+                // Refresh button is a no-op when the JSONL size hasn't
+                // changed since the last successful summary — the
+                // backend size-gate would skip the API call anyway, so
+                // we surface that state in the UI instead of letting the
+                // button look clickable.
+                const noChanges =
+                  !!summary &&
+                  typeof session.file_size_bytes === 'number' &&
+                  session.file_size_bytes === summary.jsonlSize;
                 return (
                   <motion.tr
                     key={session.id}
@@ -333,12 +363,20 @@ export const SessionList: React.FC<SessionListProps> = ({
                       <button
                         type="button"
                         aria-label={summary ? 'Refresh summary' : 'Generate summary'}
-                        title={summary ? 'Refresh summary' : 'Generate summary'}
+                        title={
+                          isRefreshing
+                            ? 'Generating…'
+                            : noChanges
+                              ? 'No new messages since last summary.'
+                              : summary
+                                ? 'Refresh summary'
+                                : 'Generate summary'
+                        }
                         onClick={(e) => {
                           e.stopPropagation();
                           void refreshSummary(session.id);
                         }}
-                        disabled={isRefreshing}
+                        disabled={isRefreshing || noChanges}
                         className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted/60 disabled:opacity-40"
                       >
                         <RefreshCw

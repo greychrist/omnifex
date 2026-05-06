@@ -399,6 +399,14 @@ app.whenReady().then(() => {
     rateLimits: rateLimitsService,
     logging: loggingService,
   });
+  // Forward reference: sessionsSummaryService is constructed below (after
+  // sessionsService) but the auto-on-close hook needs to call it. The
+  // closure is invoked only at session-stop time, so the reference is
+  // safely populated by then.
+  let sessionsSummaryServiceRef:
+    | import('./services/sessions-summary').SessionsSummaryService
+    | null = null;
+
   const sessionsService = _sessionsService = createSessionsService(
     sendToRenderer,
     {
@@ -425,6 +433,17 @@ app.whenReady().then(() => {
       projectPath: params.projectPath,
     }),
     (configDir, info) => rateLimitsService.recordEvent(configDir, info),
+    (sessionId, projectPath) => {
+      // Auto-on-close summarization. Account toggle + size-gate run inside
+      // the service; this is fire-and-forget so session teardown isn't
+      // blocked by Haiku latency. The size-change gate makes "close
+      // without changes" a no-op (no API spend).
+      sessionsSummaryServiceRef
+        ?.generateSummary(sessionId, projectPath)
+        .catch((err) =>
+          console.warn('[main] auto-summarize on close failed:', err),
+        );
+    },
   );
   const claudeService = createClaudeService(db, accountsService);
   const usageService = createUsageService(accountsService, loggingService);
@@ -491,7 +510,14 @@ app.whenReady().then(() => {
       }
       return assistantText;
     },
+    onSummaryUpdated: (sessionUuid) => {
+      // Broadcast to every renderer; SessionList rows subscribe and refetch
+      // the matching uuid. Channel matches the existing `session-` prefix
+      // in preload's event allow-list (no preload change needed).
+      sendToRenderer('session-summary:updated', { sessionUuid });
+    },
   });
+  sessionsSummaryServiceRef = sessionsSummaryService;
   const modelsService = createModelsService();
   const sdkVersionService = createSdkVersionService({
     readSdkPackageJson: async () => {

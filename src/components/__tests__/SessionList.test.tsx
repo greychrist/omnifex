@@ -29,6 +29,7 @@ vi.mock('@/lib/api', async () => {
     api: {
       summaryGet: vi.fn(),
       summaryGenerate: vi.fn(),
+      onSessionSummaryUpdated: vi.fn(() => () => {}),
     },
     // Re-export the types so the test file's import path stays clean.
   };
@@ -93,11 +94,27 @@ describe('SessionList summary rendering', () => {
   });
 
   it('clicking refresh calls summaryGenerate and updates the row', async () => {
-    render(<SessionList sessions={[sessionFixture]} projectPath="/x" />);
+    const sessionWithDifferentSize: Session = {
+      ...sessionFixture,
+      file_size_bytes: 9999, // Differs from summary.jsonlSize (4096)
+    } as Session;
+    render(<SessionList sessions={[sessionWithDifferentSize]} projectPath="/x" />);
     await screen.findByText('Summary headline here.');
     fireEvent.click(screen.getByRole('button', { name: /refresh summary/i }));
     await waitFor(() =>
       expect(screen.getByText('Refreshed headline.')).toBeTruthy(),
     );
+  });
+
+  it('disables the refresh button when JSONL size matches cached summary', async () => {
+    const sessionWithSameSize: Session = {
+      ...sessionFixture,
+      file_size_bytes: 4096, // Matches summary.jsonlSize
+    } as Session;
+    render(<SessionList sessions={[sessionWithSameSize]} projectPath="/x" />);
+    await screen.findByText('Summary headline here.');
+    const btn = screen.getByRole('button', { name: /refresh summary/i });
+    expect(btn.hasAttribute('disabled')).toBe(true);
+    expect(btn.getAttribute('title')).toMatch(/no new messages/i);
   });
 });
