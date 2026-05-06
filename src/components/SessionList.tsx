@@ -98,6 +98,12 @@ export const SessionList: React.FC<SessionListProps> = ({
   const [summaryRefreshing, setSummaryRefreshing] = useState<Set<string>>(
     new Set(),
   );
+  // Per-row error message for the most recent failed manual refresh.
+  // Auto-clears after a few seconds. No toast library is wired in this
+  // codebase, so we surface failures inline.
+  const [summaryErrors, setSummaryErrors] = useState<Map<string, string>>(
+    new Map(),
+  );
 
   // Fetch summaries in parallel whenever the session list or project path
   // changes. The IPC layer answers each call independently; we don't await
@@ -155,15 +161,31 @@ export const SessionList: React.FC<SessionListProps> = ({
     async (id: string) => {
       if (summaryRefreshing.has(id) || !projectPath) return;
       setSummaryRefreshing((prev) => new Set(prev).add(id));
+      // Clear any previous error on this row before retrying.
+      setSummaryErrors((prev) => {
+        if (!prev.has(id)) return prev;
+        const next = new Map(prev);
+        next.delete(id);
+        return next;
+      });
       try {
         const fresh = await api.summaryGenerate(id, projectPath);
         if (fresh) {
           setSummaries((prev) => new Map(prev).set(id, fresh));
         }
       } catch (err) {
-        // Toast wiring lands in Task 12. For now log so the dev console
-        // surfaces the failure; the row stays in its previous state.
+        const message = err instanceof Error ? err.message : 'Summary failed.';
         console.error('[SessionList] summaryGenerate failed:', err);
+        setSummaryErrors((prev) => new Map(prev).set(id, message));
+        // Auto-clear after 6s so the row doesn't accumulate stale errors.
+        setTimeout(() => {
+          setSummaryErrors((prev) => {
+            if (!prev.has(id)) return prev;
+            const next = new Map(prev);
+            next.delete(id);
+            return next;
+          });
+        }, 6000);
       } finally {
         setSummaryRefreshing((prev) => {
           const next = new Set(prev);
@@ -339,6 +361,11 @@ export const SessionList: React.FC<SessionListProps> = ({
                         <span className="italic text-muted-foreground/60">
                           No messages yet
                         </span>
+                      )}
+                      {summaryErrors.has(session.id) && (
+                        <p className="mt-1 text-[11px] text-red-400">
+                          Summary failed: {summaryErrors.get(session.id)}
+                        </p>
                       )}
                     </td>
                     <td className="py-2 px-3 align-top">
