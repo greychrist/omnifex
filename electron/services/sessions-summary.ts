@@ -210,8 +210,17 @@ export function parseSummaryXML(response: string): ParsedSummary | null {
 // ---------------------------------------------------------------------------
 
 const SUMMARY_PROMPT_PREAMBLE = `You are summarizing a coding-assistant session for a developer's records.
-Produce a one-line headline (8–14 words) and a 2–3 sentence paragraph (~50 words).
-The headline answers "what was this about?" The paragraph answers "what did I do, what worked, what's still open?" Be concrete — name files, libraries, decisions. No filler. No hedging.
+Produce a one-line headline (8–14 words) and a 2–3 sentence paragraph (~50 words) that capture the THEMES of the session — what general area or capability was worked on, what the broader goals were, what kind of problem the user was trying to solve.
+
+Stay at a higher level of abstraction. Do NOT list specific file names, function names, library names, line numbers, or step-by-step changes. Generalize:
+- "Iterating on the session list UI" — not "edited SessionList.tsx to add pagination."
+- "Improving the authentication flow" — not "added refresh-token logic to auth.ts:42."
+- "Debugging a multi-account routing edge case" — not "fixed the path-rule resolver in accounts.ts."
+
+The headline answers: "what kind of work was this?"
+The paragraph answers: "what was the user generally trying to accomplish, and where did it land?"
+
+No filler. No hedging. No code snippets.
 
 Format your response EXACTLY:
 <headline>...</headline>
