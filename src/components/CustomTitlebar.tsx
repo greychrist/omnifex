@@ -43,6 +43,13 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
     | { status: 'idle' }
     | { status: 'checking' }
     | { status: 'up-to-date' }
+    /**
+     * App version is current but the bundled Claude SDK is behind npm's
+     * latest. Distinct from `up-to-date` so the badge stays resident
+     * (no auto-dismiss) and renders amber instead of green — the user
+     * needs to know a release is needed to ship the new SDK.
+     */
+    | { status: 'sdk-out-of-date' }
     | { status: 'available'; version: string; downloadUrl: string; assetName: string; releaseUrl: string }
     | { status: 'downloading'; percent: number }
     | { status: 'ready'; filePath: string; version: string }
@@ -76,11 +83,11 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
           releaseUrl: info.releaseUrl,
         });
       } else {
+        // App is up to date. The auto-dismiss / SDK-out-of-date escalation
+        // is now driven by an effect that also watches the SDK check
+        // result — see the `useEffect` further down. Setting the status
+        // here is enough; the effect handles the rest.
         setUpdateState({ status: 'up-to-date' });
-        // Auto-dismiss "up to date" after 3 seconds
-        setTimeout(() => {
-          setUpdateState((prev) => prev.status === 'up-to-date' ? { status: 'idle' } : prev);
-        }, 3000);
       }
     } catch {
       setUpdateState({ status: 'idle' });
@@ -123,6 +130,46 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
   const checkEverything = useCallback(() => {
     withMinSpin(Promise.all([checkForUpdate(), checkSdkVersion()]));
   }, [checkForUpdate, checkSdkVersion, withMinSpin]);
+
+  // Cross-watcher: when the app reports up-to-date, decide between
+  // auto-dismissing the green badge (everything truly current) or
+  // escalating to a persistent amber 'sdk-out-of-date' badge (app
+  // current, SDK behind). Waits for the SDK check to settle before
+  // making the call so a fast app-check doesn't dismiss before we know
+  // the SDK status.
+  useEffect(() => {
+    if (updateState.status !== 'up-to-date') return;
+    if (checkingSdk) return; // wait for SDK answer
+    const sdkOutOfDate =
+      !!referencedSdk && !!latestSdk && latestSdk !== referencedSdk;
+    if (sdkOutOfDate) {
+      // Persistent — no timer, the user needs to know.
+      setUpdateState({ status: 'sdk-out-of-date' });
+      return;
+    }
+    // Both app and SDK current — auto-dismiss the green badge.
+    const t = setTimeout(() => {
+      setUpdateState((prev) =>
+        prev.status === 'up-to-date' ? { status: 'idle' } : prev,
+      );
+    }, 3000);
+    return () => clearTimeout(t);
+  }, [updateState.status, checkingSdk, referencedSdk, latestSdk]);
+
+  // If a fresh SDK check (manual button or hourly poll) discovers the
+  // SDK has gone out of date while we were sitting at idle, surface the
+  // resident badge. Conversely, if a new SDK check shows everything is
+  // current and we were on `sdk-out-of-date`, drop back to idle.
+  useEffect(() => {
+    if (checkingSdk) return;
+    const sdkOutOfDate =
+      !!referencedSdk && !!latestSdk && latestSdk !== referencedSdk;
+    if (sdkOutOfDate && updateState.status === 'idle') {
+      setUpdateState({ status: 'sdk-out-of-date' });
+    } else if (!sdkOutOfDate && updateState.status === 'sdk-out-of-date') {
+      setUpdateState({ status: 'idle' });
+    }
+  }, [checkingSdk, referencedSdk, latestSdk, updateState.status]);
 
   // Fetch app version + check for updates + check SDK on mount
   useEffect(() => {
@@ -305,6 +352,7 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
               content={
                 updateState.status === 'checking' ? 'Checking for updates...' :
                 updateState.status === 'up-to-date' ? 'You\'re up to date' :
+                updateState.status === 'sdk-out-of-date' ? `Claude SDK update available (latest ${latestSdk}, you have ${referencedSdk})` :
                 updateState.status === 'available' ? `v${updateState.version} available` :
                 updateState.status === 'downloading' ? 'Downloading...' :
                 updateState.status === 'ready' ? `Install v${updateState.version}` :
@@ -350,6 +398,7 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
                   whileTap={
                     updateState.status !== 'checking' &&
                     updateState.status !== 'up-to-date' &&
+                    updateState.status !== 'sdk-out-of-date' &&
                     updateState.status !== 'installing'
                       ? { scale: 0.97 }
                       : undefined
@@ -361,6 +410,8 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
                       ? 'bg-muted text-muted-foreground cursor-wait'
                       : updateState.status === 'up-to-date'
                       ? 'bg-green-600/20 text-green-500 cursor-default'
+                      : updateState.status === 'sdk-out-of-date'
+                      ? 'bg-amber-500/20 text-amber-400 cursor-default border border-amber-500/40'
                       : updateState.status === 'available' && activeSessions > 0
                       ? 'bg-amber-500/20 text-amber-200 hover:bg-amber-500/30 border border-amber-500/40'
                       : updateState.status === 'available'
@@ -376,6 +427,7 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
                 >
                   {updateState.status === 'checking' && <Loader2 size={13} className="animate-spin" />}
                   {updateState.status === 'up-to-date' && <CheckCircle size={13} />}
+                  {updateState.status === 'sdk-out-of-date' && <AlertCircle size={13} />}
                   {updateState.status === 'available' && activeSessions > 0 && <AlertCircle size={13} />}
                   {updateState.status === 'available' && activeSessions === 0 && <Download size={13} />}
                   {updateState.status === 'downloading' && <Loader2 size={13} className="animate-spin" />}
@@ -385,6 +437,7 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
                   <span>
                     {updateState.status === 'checking' && 'Checking...'}
                     {updateState.status === 'up-to-date' && 'Up to Date'}
+                    {updateState.status === 'sdk-out-of-date' && 'Claude SDK Out of Date'}
                     {updateState.status === 'available' && activeSessions > 0 &&
                       `${activeSessions} active — Install Anyway`}
                     {updateState.status === 'available' && activeSessions === 0 && 'Update Available!'}
