@@ -45,20 +45,41 @@ vi.mock('@/contexts/AccountsContext', () => ({
   }),
 }));
 
+// Tests can grab the registered `onSessionSummaryGenerating` callback
+// off this ref and invoke it manually to simulate backend events.
+const generatingCallbackRef: { current: ((p: { sessionUuid: string; generating: boolean }) => void) | null } = { current: null };
+
 vi.mock('@/lib/api', async () => {
   return {
     api: {
       summaryGet: vi.fn(),
       summaryGenerate: vi.fn(),
       onSessionSummaryUpdated: vi.fn(() => () => {}),
+      onSessionSummaryGenerating: vi.fn((cb: (p: { sessionUuid: string; generating: boolean }) => void) => {
+        generatingCallbackRef.current = cb;
+        return () => {
+          generatingCallbackRef.current = null;
+        };
+      }),
+      // Default: no in-flight generations on mount. Individual tests
+      // override to seed the spinner via the mount-time query (covers
+      // the back-button race where the lifecycle event fires before
+      // the component has subscribed).
+      getGeneratingSummaryUuids: vi.fn(async () => [] as string[]),
       resolveAccountForProject: vi.fn(),
-      // The component reads this on mount to hash the active prompt
-      // template. Tests don't care about the value; null skips the
-      // prompt-hash compare.
-      getSetting: vi.fn(async () => null),
+      // The component reads two app_settings keys on mount: the prompt
+      // template (returns null → prompt-hash compare is skipped) and the
+      // master "enabled" toggle (returns 'true' → cached sidecars are
+      // shown and the refresh icon is enabled). Individual tests can
+      // override either via the keyed `mockImplementation` in beforeEach.
+      getSetting: vi.fn(async (key: string) => {
+        if (key === 'sessionsSummary.enabled') return 'true';
+        return null;
+      }),
     },
-    // Mirror the setting key constant the component imports.
+    // Mirror the setting key constants the component imports.
     PROMPT_TEMPLATE_SETTING_KEY: 'sessionsSummary.promptTemplate',
+    ENABLED_SETTING_KEY: 'sessionsSummary.enabled',
   };
 });
 
@@ -100,8 +121,9 @@ beforeEach(() => {
       paragraph: 'Refreshed paragraph.',
     },
   });
-  // Default: account has summarization enabled — so the refresh icon
-  // renders. Individual tests override for the disabled-account case.
+  // Default: account has a summary model picked + global auto-on-close
+  // is on (mocked above) → refresh icon renders. Individual tests can
+  // override either by re-mocking before render.
   vi.mocked(api.resolveAccountForProject).mockResolvedValue({
     id: 1,
     name: 'Test',
@@ -113,26 +135,32 @@ beforeEach(() => {
     cli_path: null,
     created_at: '',
     updated_at: '',
-    summarizeOnClose: true,
     summaryModel: 'haiku',
   } as any);
+
+  // Reset the keyed getSetting stub on every test so individual cases
+  // can override one key without leaking into others.
+  vi.mocked(api.getSetting).mockImplementation(async (key: string) => {
+    if (key === 'sessionsSummary.enabled') return 'true';
+    return null;
+  });
 });
 
 afterEach(() => cleanup());
 
 describe('SessionList summary rendering', () => {
-  it('renders the summary headline when a sidecar exists', async () => {
+  it('renders the summary headline AND paragraph together when a sidecar exists', async () => {
     render(<SessionList sessions={[sessionFixture]} projectPath="/x" />);
     expect(await screen.findByText('Summary headline here.')).toBeTruthy();
-    // Paragraph hidden until expanded.
-    expect(screen.queryByText('Summary paragraph here, with details.')).toBeNull();
+    // Paragraph is always shown — no expand/collapse toggle.
+    expect(screen.getByText('Summary paragraph here, with details.')).toBeTruthy();
   });
 
-  it('reveals the paragraph when the chevron is clicked', async () => {
+  it('does not render an expand/collapse chevron next to the summary', async () => {
     render(<SessionList sessions={[sessionFixture]} projectPath="/x" />);
     await screen.findByText('Summary headline here.');
-    fireEvent.click(screen.getByRole('button', { name: /expand summary/i }));
-    expect(screen.getByText('Summary paragraph here, with details.')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /expand summary/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /collapse summary/i })).toBeNull();
   });
 
   it('falls back to first_message when no sidecar exists', async () => {
@@ -197,27 +225,21 @@ describe('SessionList summary rendering', () => {
     );
   });
 
-  it('hides the summary and refresh icon when the resolved account has summarization disabled', async () => {
-    vi.mocked(api.resolveAccountForProject).mockResolvedValueOnce({
-      id: 1,
-      name: 'Test',
-      config_dir: '/x/.claude',
-      is_default: true,
-      account_type: 'pro',
-      color: null,
-      icon: null,
-      cli_path: null,
-      created_at: '',
-      updated_at: '',
-      summarizeOnClose: false, // toggle off
-      summaryModel: 'haiku',
-    } as any);
+  it('hides the summary and refresh icon when the MASTER "enabled" toggle is off', async () => {
+    // Override the keyed getSetting stub: enabled='false' should hide
+    // cached sidecars and the refresh icon regardless of which account
+    // resolves. The auto-on-close flag is unrelated here — only the
+    // master "enabled" toggle gates SessionList's UI.
+    vi.mocked(api.getSetting).mockImplementation(async (key: string) => {
+      if (key === 'sessionsSummary.enabled') return 'false';
+      return null;
+    });
     render(<SessionList sessions={[sessionFixture]} projectPath="/x" />);
-    // Toggle off → cached sidecars on disk are NOT shown; the row falls
-    // back to the first-message preview. summaryGet's mock might land
-    // before or after resolveAccountForProject's mock — we wait until
-    // BOTH have been called AND React has flushed the resulting state
-    // (signal: the resolved fallback span has fully rendered).
+    // Global toggle off → cached sidecars on disk are NOT shown; the row
+    // falls back to the first-message preview. summaryGet's mock might
+    // land before or after resolveAccountForProject's mock — we wait
+    // until BOTH have been called AND React has flushed the resulting
+    // state (signal: the resolved fallback span has fully rendered).
     await waitFor(() => {
       expect(api.summaryGet).toHaveBeenCalled();
       expect(api.resolveAccountForProject).toHaveBeenCalled();
@@ -263,5 +285,91 @@ describe('SessionList summary rendering', () => {
     const btn = screen.getByRole('button', { name: /refresh summary/i });
     expect(btn.hasAttribute('disabled')).toBe(true);
     expect(btn.getAttribute('title')).toMatch(/no new messages/i);
+  });
+
+  it('spins the refresh icon when a backend "generating: true" event arrives, and stops on "generating: false"', async () => {
+    // Use a session whose JSONL size differs from the cached summary so
+    // the refresh button isn't disabled by the size-gate. Title text
+    // tracks isRefreshing — that's the renderer's spinner signal.
+    const sessionWithDifferentSize: Session = {
+      ...sessionFixture,
+      file_size_bytes: 9999,
+    } as Session;
+    render(<SessionList sessions={[sessionWithDifferentSize]} projectPath="/x" />);
+    const btn = await screen.findByRole('button', { name: /refresh summary/i });
+    // Initial state: not generating.
+    expect(btn.getAttribute('title')).not.toMatch(/generating/i);
+
+    // Simulate the backend firing "generating: true" for this session.
+    expect(generatingCallbackRef.current).not.toBeNull();
+    generatingCallbackRef.current!({
+      sessionUuid: sessionFixture.id,
+      generating: true,
+    });
+    await waitFor(() => {
+      expect(
+        screen
+          .getByRole('button', { name: /refresh summary/i })
+          .getAttribute('title'),
+      ).toMatch(/generating/i);
+    });
+
+    // Now fire "generating: false" — spinner should clear.
+    generatingCallbackRef.current!({
+      sessionUuid: sessionFixture.id,
+      generating: false,
+    });
+    await waitFor(() => {
+      expect(
+        screen
+          .getByRole('button', { name: /refresh summary/i })
+          .getAttribute('title'),
+      ).not.toMatch(/generating/i);
+    });
+  });
+
+  it('seeds the spinner on mount from getGeneratingSummaryUuids (back-button race fix)', async () => {
+    // The lifecycle hook may have fired `generating: true` BEFORE the
+    // SessionList finished subscribing — common when the user clicks
+    // the back button inside a session, since close + nav happen in
+    // the same frame. The component recovers by querying the in-flight
+    // set on mount and seeding spinner state from the result.
+    vi.mocked(api.getGeneratingSummaryUuids).mockResolvedValueOnce([sessionFixture.id]);
+    const sessionWithDifferentSize: Session = {
+      ...sessionFixture,
+      file_size_bytes: 9999,
+    } as Session;
+    render(<SessionList sessions={[sessionWithDifferentSize]} projectPath="/x" />);
+    await screen.findByText('Summary headline here.');
+    await waitFor(() => {
+      expect(
+        screen
+          .getByRole('button', { name: /refresh summary/i })
+          .getAttribute('title'),
+      ).toMatch(/generating/i);
+    });
+  });
+
+  it('ignores "generating" events for session ids not in the current list', async () => {
+    const sessionWithDifferentSize: Session = {
+      ...sessionFixture,
+      file_size_bytes: 9999,
+    } as Session;
+    render(<SessionList sessions={[sessionWithDifferentSize]} projectPath="/x" />);
+    const btn = await screen.findByRole('button', { name: /refresh summary/i });
+    const initialTitle = btn.getAttribute('title');
+
+    // Fire an event for a session that isn't on this page — title
+    // should stay exactly the same.
+    expect(generatingCallbackRef.current).not.toBeNull();
+    generatingCallbackRef.current!({
+      sessionUuid: 'some-other-session',
+      generating: true,
+    });
+    // Give React a tick.
+    await new Promise((r) => setTimeout(r, 50));
+    expect(
+      screen.getByRole('button', { name: /refresh summary/i }).getAttribute('title'),
+    ).toBe(initialTitle);
   });
 });

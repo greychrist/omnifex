@@ -628,6 +628,20 @@ export interface SessionSummary {
  *  stored. Mirrors the backend constant in sessions-summary.ts. */
 export const PROMPT_TEMPLATE_SETTING_KEY = 'sessionsSummary.promptTemplate';
 
+/** app_settings key for the master "summaries on/off" toggle. When
+ *  off, sessions list rows show first_message instead of any cached
+ *  sidecar, the manual refresh button is hidden, and the auto-on-close
+ *  lifecycle hook also bails (it gates on enabled AND autoOnClose).
+ *  Mirrors the backend constant in sessions-summary.ts. Stored as
+ *  `'true'` or `'false'`. */
+export const ENABLED_SETTING_KEY = 'sessionsSummary.enabled';
+
+/** app_settings key for the "auto-summarize on session close" toggle.
+ *  Only gates the lifecycle hook — the manual refresh button is
+ *  unaffected. Mirrors the backend constant in sessions-summary.ts.
+ *  Stored as `'true'` or `'false'`. */
+export const AUTO_ON_CLOSE_SETTING_KEY = 'sessionsSummary.autoOnClose';
+
 /**
  * Discriminated result of `summaryGenerate`. Mirrors
  * `SummaryGenerateResult` in electron/services/sessions-summary.ts.
@@ -1977,6 +1991,53 @@ export const api = {
       (data: any) => {
         if (!data || typeof data !== 'object' || typeof data.sessionUuid !== 'string') return;
         callback({ sessionUuid: data.sessionUuid });
+      },
+    );
+  },
+
+  /**
+   * Snapshot of session uuids whose summary model call is currently
+   * in flight on the main process. Returned as a plain array.
+   *
+   * SessionList calls this on mount so it can spin the per-row refresh
+   * icon for background auto-on-close runs that started before the
+   * component had a chance to subscribe to `session-summary:generating`
+   * events — common when the user clicks the back button inside a
+   * session, since the close lifecycle fires its event within the same
+   * frame as the navigation.
+   */
+  async getGeneratingSummaryUuids(): Promise<string[]> {
+    const result = await apiCall<unknown>('summary_generating_now', {});
+    if (!Array.isArray(result)) return [];
+    return result.filter((x): x is string => typeof x === 'string');
+  },
+
+  /**
+   * Subscribe to generation-state events. The main process emits
+   * `session-summary:generating` with `generating: true` when a model
+   * call starts and `generating: false` when it finishes (success or
+   * thrown). Used by SessionList to spin the per-row refresh icon
+   * during background auto-on-close runs.
+   *
+   * Note: skipped paths (no-account, no-model, unchanged size-gate,
+   * empty-session, etc.) do NOT emit either event — the model is never
+   * called, so there's nothing to spin for.
+   */
+  onSessionSummaryGenerating(
+    callback: (payload: { sessionUuid: string; generating: boolean }) => void,
+  ): () => void {
+    return window.electronAPI.onEvent(
+      'session-summary:generating',
+      (data: any) => {
+        if (
+          !data ||
+          typeof data !== 'object' ||
+          typeof data.sessionUuid !== 'string' ||
+          typeof data.generating !== 'boolean'
+        ) {
+          return;
+        }
+        callback({ sessionUuid: data.sessionUuid, generating: data.generating });
       },
     );
   },

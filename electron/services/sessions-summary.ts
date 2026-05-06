@@ -11,6 +11,26 @@ export const CURRENT_SCHEMA_VERSION = 1;
 export const PROMPT_TEMPLATE_SETTING_KEY = 'sessionsSummary.promptTemplate';
 
 /**
+ * app_settings keys for the two global summary toggles. Both live in
+ * Settings → Session Summaries. Stored as `'true'` or `'false'`.
+ *
+ * - `enabled` — master switch. When off, summaries aren't shown on
+ *   session rows, the refresh/generate button is hidden, and the
+ *   lifecycle hook skips auto-on-close generation. When on, cached
+ *   sidecars render and the manual refresh button is available.
+ * - `autoOnClose` — only controls whether closing/leaving a session
+ *   auto-triggers a generation. The manual refresh button is unaffected
+ *   by this flag (it's gated by `enabled` only).
+ *
+ * Neither flag is checked inside `generateSummary` — gating is the
+ * caller's responsibility (see the lifecycle hook in `main.ts`). That
+ * keeps the service stateless w.r.t. global config and lets each
+ * caller decide which mix of flags applies.
+ */
+export const ENABLED_SETTING_KEY = 'sessionsSummary.enabled';
+export const AUTO_ON_CLOSE_SETTING_KEY = 'sessionsSummary.autoOnClose';
+
+/**
  * FNV-1a hash of a string. 32-bit, returned as 8-char hex. Used to tag
  * sidecars with the prompt template they were produced under so the
  * size-change gate auto-invalidates whenever the user edits the prompt.
@@ -244,41 +264,23 @@ export function parseSummaryXML(response: string): ParsedSummary | null {
  * latest value at call time.
  */
 export const DEFAULT_SUMMARY_PROMPT = `You are summarizing a coding-assistant session for a developer's records.
+Produce a one-line headline (8–14 words) and a 2–3 bullet points (< 50 words) that capture the THEMES of the session — what general area or capability was worked on, what the broader goals were, what kind of problem the user was trying to solve.
 
-Produce a one-line headline (8–14 words) and 3–6 resume-style bullet
-points that capture the THEMES of the session — high-level outcomes,
-not a changelog. Each bullet reads like a line on a CV: an
-accomplishment at a level of abstraction someone scanning the row in a
-session list would care about.
+If nothing of note was done, just say so.  Nothing of note. or Testing functionality.
 
-Stay at a high level of abstraction. Do NOT list specific file names,
-function names, library names, line numbers, or step-by-step changes.
-Generalize:
-- "Iterated on the session list UI" — not "edited SessionList.tsx to add pagination."
-- "Improved the authentication flow" — not "added refresh-token logic to auth.ts:42."
-- "Debugged a multi-account routing edge case" — not "fixed the path-rule resolver in accounts.ts."
-- "Refined the account-edit dialog visual design"
-
-Each bullet:
-- starts with "- " (markdown dash) on its own line,
-- is 6–14 words,
-- uses past-tense action verbs ("Refactored", "Improved", "Debugged",
-  "Designed", "Restructured"),
-- describes an outcome, not the steps.
+Stay at a higher level of abstraction. Do NOT list specific file names, function names, library names, line numbers, or step-by-step changes. Generalize:
+- "Iterating on the session list UI" — not "edited SessionList.tsx to add pagination."
+- "Improving the authentication flow" — not "added refresh-token logic to auth.ts:42."
+- "Debugging a multi-account routing edge case" — not "fixed the path-rule resolver in accounts.ts."
 
 The headline answers: "what kind of work was this?"
-The bullets answer: "what high-level outcomes shipped this session?"
+The paragraph answers: "what was the user generally trying to accomplish, and where did it land?"
 
 No filler. No hedging. No code snippets.
 
 Format your response EXACTLY:
 <headline>...</headline>
-<paragraph>
-- ...
-- ...
-- ...
-</paragraph>
-
+<paragraph>...</paragraph>
 `;
 
 function buildSummaryPrompt(transcript: string, preamble: string): string {
@@ -294,9 +296,7 @@ export interface ResolvedAccount {
   name: string;
   /** Path passed as CLAUDE_CONFIG_DIR when calling the SDK. */
   configDir: string;
-  /** Whether auto-on-close + manual button are enabled for this account. */
-  summarizeOnClose: boolean;
-  /** SDK model id, e.g. 'claude-haiku-4-5'. Null when toggle is off / unset. */
+  /** SDK model id, e.g. 'claude-haiku-4-5'. Null when no model is picked. */
   summaryModel: string | null;
 }
 
@@ -315,11 +315,18 @@ export interface SessionsSummaryDeps {
   ): string;
   /** Resolve the account responsible for this project, or null. */
   resolveAccount(projectPath: string): ResolvedAccount | null;
-  /** Send a single user prompt to the SDK and return the assistant text. */
+  /**
+   * Send a single user prompt to the SDK and return the assistant text.
+   *
+   * The service deliberately does NOT pass a `cwd` — the runner picks a
+   * throwaway scratch directory so the subprocess JSONL the binary always
+   * writes lands under `<configDir>/projects/<scratch>/` and can be swept
+   * after the call, instead of polluting the user's real project session
+   * list. See `electron/services/sessions/summary-query.ts`.
+   */
   runQuery(opts: {
     prompt: string;
     model: string;
-    cwd: string;
     configDir: string;
   }): Promise<string>;
   /**
@@ -334,6 +341,20 @@ export interface SessionsSummaryDeps {
    * sidecar's `promptHash` reflects what was actually sent to the model.
    */
   getPromptTemplate(): string;
+  /**
+   * Optional. Fired when a `generateSummary` call is about to invoke the
+   * model (`generating: true`) and again when that invocation finishes
+   * for any reason (`generating: false`, including thrown errors).
+   *
+   * Only fires when the call actually reaches the model — early skips
+   * (`no-account`, `no-model`, `unchanged`, `empty-session`,
+   * `jsonl-missing` / `jsonl-unreadable`) do NOT fire either event.
+   *
+   * Used by the renderer to spin the per-row refresh icon during
+   * background auto-on-close generations (a session the user is still
+   * looking at while it auto-summarizes after close).
+   */
+  onGenerationStateChanged?: (sessionUuid: string, generating: boolean) => void;
 }
 
 /**
@@ -371,6 +392,19 @@ export interface SessionsSummaryService {
     projectPath: string,
     configDir: string | null,
   ): Promise<SummaryGenerateResult>;
+  /**
+   * Snapshot of session uuids whose model call is currently in flight
+   * (between the `started` and `finished` boundaries the
+   * `onGenerationStateChanged` dep fires at). Empty when no session is
+   * actively being summarized. Skipped paths never appear.
+   *
+   * Exposed so the renderer can seed its per-row spinner state on
+   * mount — auto-on-close generations triggered by a back-button click
+   * may emit their `generating: true` event before the project page's
+   * SessionList has had a chance to subscribe, so without this query
+   * the spinner would never appear for that session.
+   */
+  getGeneratingSessionUuids(): string[];
 }
 
 export function createSessionsSummaryService(
@@ -378,6 +412,12 @@ export function createSessionsSummaryService(
 ): SessionsSummaryService {
   // Per-session in-flight map for dedup. Keyed by `${projectPath}::${uuid}`.
   const inFlight = new Map<string, Promise<SummaryGenerateResult>>();
+  // Subset of generations that have actually entered the model call —
+  // updated at the same boundaries as the `onGenerationStateChanged`
+  // dep. Read by `getGeneratingSessionUuids()` so the renderer can
+  // recover from missing the live "generating" event when the project
+  // page mounts after the lifecycle hook has already fired.
+  const generatingNow = new Set<string>();
 
   function getSummary(
     sessionUuid: string,
@@ -399,9 +439,6 @@ export function createSessionsSummaryService(
         `[sessions-summary] No account resolved for ${projectPath}; skipping.`,
       );
       return { status: 'skipped', reason: 'no-account' };
-    }
-    if (!account.summarizeOnClose) {
-      return { status: 'skipped', reason: 'toggle-off' };
     }
     if (!account.summaryModel) {
       return { status: 'skipped', reason: 'no-model' };
@@ -452,12 +489,31 @@ export function createSessionsSummaryService(
     );
 
     const prompt = buildSummaryPrompt(capped, promptTemplate);
-    const response = await deps.runQuery({
-      prompt,
-      model: account.summaryModel,
-      cwd: projectPath,
-      configDir: account.configDir,
-    });
+    // Notify listeners that a model call is starting and will finish
+    // (success or failure). The renderer uses this to spin the per-row
+    // refresh icon during background auto-on-close runs that the user
+    // is still watching from the project page. We only emit AFTER all
+    // the early-skip gates above have passed — `generating: true` only
+    // fires when we're actually about to hit the model.
+    //
+    // Mirror into `generatingNow` at the same boundaries so a renderer
+    // mounting mid-flight can ask `getGeneratingSessionUuids()` and
+    // catch up — important on back-button navigation where the session
+    // close lifecycle fires its event slightly before the project
+    // page's SessionList finishes subscribing.
+    generatingNow.add(sessionUuid);
+    deps.onGenerationStateChanged?.(sessionUuid, true);
+    let response: string;
+    try {
+      response = await deps.runQuery({
+        prompt,
+        model: account.summaryModel,
+        configDir: account.configDir,
+      });
+    } finally {
+      generatingNow.delete(sessionUuid);
+      deps.onGenerationStateChanged?.(sessionUuid, false);
+    }
 
     const parsed = parseSummaryXML(response);
     if (!parsed) {
@@ -499,5 +555,9 @@ export function createSessionsSummaryService(
     return promise;
   }
 
-  return { getSummary, generateSummary };
+  return {
+    getSummary,
+    generateSummary,
+    getGeneratingSessionUuids: () => Array.from(generatingNow),
+  };
 }

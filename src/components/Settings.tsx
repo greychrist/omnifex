@@ -243,7 +243,7 @@ export const Settings: React.FC<SettingsProps> = ({
               <TabsTrigger value="general" className="flex-1 py-2 text-xs">General</TabsTrigger>
               <TabsTrigger value="appearance" className="flex-1 py-2 text-xs">Chats</TabsTrigger>
               <TabsTrigger value="accounts" className="flex-1 py-2 text-xs">Accounts</TabsTrigger>
-              <TabsTrigger value="sessions" className="flex-1 py-2 text-xs">Sessions</TabsTrigger>
+              <TabsTrigger value="sessions" className="flex-1 py-2 text-xs">Session Summaries</TabsTrigger>
               <TabsTrigger value="storage" className="flex-1 py-2 text-xs">Storage</TabsTrigger>
               <TabsTrigger value="proxy" className="flex-1 py-2 text-xs">Proxy</TabsTrigger>
               <TabsTrigger value="rate_limits" className="flex-1 py-2 text-xs">Rate Limits</TabsTrigger>

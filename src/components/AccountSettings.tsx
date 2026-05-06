@@ -12,7 +12,6 @@ import { MODELS } from "./ModelPicker";
 import { THINKING_CONFIGS, PERMISSION_MODES, EFFORT_LEVELS } from "./ControlBar";
 import { ColorSwatchGrid } from "@/components/ui/ColorSwatchGrid";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import {
   Dialog,
@@ -462,7 +461,10 @@ export const AccountSettings: React.FC = () => {
   const [editSessionDefaults, setEditSessionDefaults] = useState<SessionDefaults>({});
   const [editCliPath, setEditCliPath] = useState<string>("");
   const [showEditIconPicker, setShowEditIconPicker] = useState(false);
-  const [editSummarizeOnClose, setEditSummarizeOnClose] = useState(false);
+  // Per-account model picker stays — different accounts may want different
+  // models for cost/preference. The auto-on-close TOGGLE moved to a single
+  // global control in Settings → Session Summaries (replacing the old
+  // per-account `summarizeOnClose` flag).
   const [editSummaryModel, setEditSummaryModel] = useState<string | null>('haiku');
 
   // Add rule form
@@ -514,7 +516,6 @@ export const AccountSettings: React.FC = () => {
     setEditIcon(account.icon || "user");
     setEditSessionDefaults(account.session_defaults ?? {});
     setEditCliPath(account.cli_path ?? "");
-    setEditSummarizeOnClose(!!account.summarizeOnClose);
     setEditSummaryModel(account.summaryModel ?? 'haiku');
   };
 
@@ -532,11 +533,16 @@ export const AccountSettings: React.FC = () => {
       const defaults = Object.keys(editSessionDefaults).length > 0 ? editSessionDefaults : null;
       const cliPath = trimmedCliPath || null;
       await api.updateAccount(editingId, editName.trim(), editDir.trim(), editType, editColor, editIcon, defaults, cliPath);
-      // Persist summary settings via the dedicated channel — keeps the
-      // existing updateAccount signature stable.
+      // Persist the per-account summary model via the dedicated channel.
+      // The first argument is the legacy per-account `summarizeOnClose`
+      // flag — retired in favour of the global toggle in Settings →
+      // Session Summaries, but the IPC signature stays stable. Pass
+      // `!!editSummaryModel` so the dead column at least tracks "this
+      // account has a model picked", which avoids surprises if anything
+      // else still reads it.
       await api.accountUpdateSummary(
         editingId,
-        editSummarizeOnClose && !!editSummaryModel,
+        !!editSummaryModel,
         editSummaryModel ?? null,
       );
       setEditingId(null);
@@ -734,41 +740,27 @@ export const AccountSettings: React.FC = () => {
                 </div>
               </div>
               <SessionDefaultsEditor value={editSessionDefaults} onChange={setEditSessionDefaults} />
-              {/* Session Summaries — toggle + model on one line, model
-                  disabled when toggle is off. The actual prompt template
-                  lives in Settings → Session Summary Prompt (global). */}
+              {/* Session Summaries — model picker only. The auto-on-close
+                  toggle moved to Settings → Session Summaries (global,
+                  applies to every account). The prompt template also lives
+                  there. */}
               <div className="space-y-2 pt-5">
                 <h4 className="text-sm font-medium">Session Summaries</h4>
                 <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <label
-                      htmlFor={`summarize-toggle-${editingId ?? 'new'}`}
-                      className="text-xs text-muted-foreground"
-                    >
-                      Generate Summaries
-                    </label>
-                    <Switch
-                      id={`summarize-toggle-${editingId ?? 'new'}`}
-                      checked={editSummarizeOnClose}
-                      onCheckedChange={setEditSummarizeOnClose}
-                      aria-label="Generate Summaries"
-                    />
-                  </div>
+                  <label className="text-xs text-muted-foreground">
+                    Summary model
+                  </label>
                   <Select
                     value={editSummaryModel ?? '__none__'}
                     onValueChange={(v) =>
                       setEditSummaryModel(v === '__none__' ? null : v)
                     }
-                    disabled={!editSummarizeOnClose}
                   >
-                    <SelectTrigger
-                      className="h-7 w-44 text-xs"
-                      disabled={!editSummarizeOnClose}
-                    >
+                    <SelectTrigger className="h-7 w-44 text-xs">
                       <SelectValue placeholder="Pick a model" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="__none__">(pick a model)</SelectItem>
+                      <SelectItem value="__none__">(no model)</SelectItem>
                       {MODELS.map((m) => (
                         <SelectItem key={m.id} value={m.id}>
                           {m.name}
@@ -778,12 +770,13 @@ export const AccountSettings: React.FC = () => {
                   </Select>
                 </div>
                 <div className="text-[11px] text-muted-foreground">
-                  {editSummarizeOnClose && editSummaryModel
+                  {editSummaryModel
                     ? summaryCostEstimate(editSummaryModel)
-                    : 'Toggle on and pick a model to enable summarization.'}
+                    : 'Pick a model to enable summarization for this account.'}
                   {' '}Costs come out of this account's plan allotment for
-                  Pro/Max plans, or are billed per token for API keys.
-                  {' '}Edit the prompt in Settings → Session Summary Prompt.
+                  Pro/Max plans, or are billed per token for API keys. The
+                  on/off switch is in Settings → Session Summaries; the
+                  prompt template is there too.
                 </div>
               </div>
             </div>

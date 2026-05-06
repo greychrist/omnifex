@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Copy, Check, RefreshCw, Hash, ChevronDown, ChevronUp, Trash2 } from "lucide-react";
+import { Copy, Check, RefreshCw, Hash, Trash2 } from "lucide-react";
 import { Pagination } from "@/components/ui/pagination";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,7 @@ import { truncateText, getFirstLine } from "@/lib/date-utils";
 import {
   api,
   PROMPT_TEMPLATE_SETTING_KEY,
+  ENABLED_SETTING_KEY,
   type Session,
   type SessionSummary,
   type SummaryGenerateResult,
@@ -183,7 +184,6 @@ export const SessionList: React.FC<SessionListProps> = ({
   const [summaries, setSummaries] = useState<Map<string, SessionSummary | null>>(
     new Map(),
   );
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [summaryRefreshing, setSummaryRefreshing] = useState<Set<string>>(
     new Set(),
   );
@@ -303,13 +303,20 @@ export const SessionList: React.FC<SessionListProps> = ({
       return;
     }
     let cancelled = false;
-    api
-      .resolveAccountForProject(projectPath)
-      .then((acct) => {
+    Promise.all([
+      api.resolveAccountForProject(projectPath),
+      api.getSetting(ENABLED_SETTING_KEY),
+    ])
+      .then(([acct, enabledSetting]) => {
         if (cancelled) return;
-        setSummarizeEnabledForProject(
-          !!(acct?.summarizeOnClose && acct?.summaryModel),
-        );
+        // Master "Enable session summaries" toggle in Settings → Session
+        // Summaries. Off → cached sidecars hide and the refresh button
+        // disappears (rows fall back to first-message previews). On
+        // requires a model on the resolved account before the refresh
+        // button is shown. The auto-on-close toggle is unrelated here —
+        // it only gates the lifecycle hook in main.ts.
+        const enabled = enabledSetting === null ? true : enabledSetting === 'true';
+        setSummarizeEnabledForProject(!!(enabled && acct?.summaryModel));
         setResolvedConfigDir(acct?.config_dir ?? null);
       })
       .catch(() => {
@@ -346,14 +353,50 @@ export const SessionList: React.FC<SessionListProps> = ({
     };
   }, [projectPath]);
 
-  const toggleExpanded = useCallback((id: string) => {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }, []);
+  // Subscribe to backend generation-state events so the per-row refresh
+  // icon spins for *background* auto-on-close runs (not just the
+  // user's manual button click). The same `summaryRefreshing` set
+  // drives both — manual clicks add+remove locally inside
+  // `refreshSummary`, backend events add+remove via this listener.
+  //
+  // We ALSO query `getGeneratingSummaryUuids()` once on mount and seed
+  // the set from the result. This catches the back-button race: when
+  // the user clicks back inside a session, the close lifecycle fires
+  // its `generating: true` event in the same frame as the navigation
+  // — often before this effect has subscribed. The mount-time query
+  // recovers any in-flight generation we'd otherwise miss.
+  useEffect(() => {
+    if (!projectPath) return;
+    let cancelled = false;
+    api
+      .getGeneratingSummaryUuids()
+      .then((uuids) => {
+        if (cancelled || uuids.length === 0) return;
+        setSummaryRefreshing((prev) => {
+          const next = new Set(prev);
+          for (const id of uuids) next.add(id);
+          return next;
+        });
+      })
+      .catch(() => {
+        // Silent — worst case the spinner doesn't appear; the
+        // updated event will still refresh the row when it arrives.
+      });
+    const unsubscribe = api.onSessionSummaryGenerating(
+      ({ sessionUuid, generating }) => {
+        setSummaryRefreshing((prev) => {
+          const next = new Set(prev);
+          if (generating) next.add(sessionUuid);
+          else next.delete(sessionUuid);
+          return next;
+        });
+      },
+    );
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
+  }, [projectPath]);
 
   const refreshSummary = useCallback(
     async (id: string) => {
@@ -508,7 +551,6 @@ export const SessionList: React.FC<SessionListProps> = ({
                 const cachedSummary = summaries.get(session.id);
                 const summary =
                   summarizeEnabledForProject === false ? null : cachedSummary;
-                const isExpanded = expanded.has(session.id);
                 const isRefreshing = summaryRefreshing.has(session.id);
                 // Refresh button is a no-op when the JSONL size hasn't
                 // changed AND the cached summary was produced by the
@@ -559,28 +601,11 @@ export const SessionList: React.FC<SessionListProps> = ({
                     </td>
                     <td className="py-2 px-3 text-xs text-foreground/90 max-w-0 align-top">
                       {summary ? (
-                        <div className="flex items-start gap-1 min-w-0">
-                          <button
-                            type="button"
-                            aria-label={isExpanded ? 'Collapse summary' : 'Expand summary'}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              toggleExpanded(session.id);
-                            }}
-                            className="flex-none mt-[2px] text-muted-foreground hover:text-foreground"
-                          >
-                            {isExpanded ? (
-                              <ChevronUp className="h-3.5 w-3.5" />
-                            ) : (
-                              <ChevronDown className="h-3.5 w-3.5" />
-                            )}
-                          </button>
-                          <div className="min-w-0 flex-1">
-                            <div className="font-medium text-foreground truncate">
-                              {summary.headline}
-                            </div>
-                            {isExpanded && <SummaryBody text={summary.paragraph} />}
+                        <div className="min-w-0">
+                          <div className="font-medium text-foreground truncate">
+                            {summary.headline}
                           </div>
+                          <SummaryBody text={summary.paragraph} />
                         </div>
                       ) : session.first_message ? (
                         <span className="block truncate">

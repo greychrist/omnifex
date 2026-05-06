@@ -287,7 +287,7 @@ describe('sessions-summary service factory', () => {
       jsonlPathFor: () => jsonlPath,
       resolveAccount: () => null,
       runQuery: async () => '',
-    getPromptTemplate: () => 'PROMPT',
+      getPromptTemplate: () => 'PROMPT',
     });
     expect(svc.getSummary(sessionUuid, projectPath, null)).toBeNull();
   });
@@ -308,7 +308,7 @@ describe('sessions-summary service factory', () => {
       jsonlPathFor: () => jsonlPath,
       resolveAccount: () => null,
       runQuery: async () => '',
-    getPromptTemplate: () => 'PROMPT',
+      getPromptTemplate: () => 'PROMPT',
     });
     expect(svc.getSummary(sessionUuid, projectPath, null)).toEqual(summary);
   });
@@ -318,7 +318,7 @@ describe('sessions-summary service factory', () => {
       jsonlPathFor: () => jsonlPath,
       resolveAccount: () => null,
       runQuery: async () => '',
-    getPromptTemplate: () => 'PROMPT',
+      getPromptTemplate: () => 'PROMPT',
     });
     const r = await svc.generateSummary(sessionUuid, projectPath, null);
     expect(r.status).toBe('skipped');
@@ -362,7 +362,6 @@ describe('sessions-summary generateSummary (real)', () => {
       resolveAccount: () => ({
         name: 'Test Acct',
         configDir,
-        summarizeOnClose: true,
         summaryModel: 'claude-haiku-4-5',
       }),
       runQuery,
@@ -382,33 +381,25 @@ describe('sessions-summary generateSummary (real)', () => {
     expect(runQuery).toHaveBeenCalledWith(
       expect.objectContaining({
         model: 'claude-haiku-4-5',
-        cwd: projectPath,
         configDir,
         prompt: expect.stringContaining('USER: hello'),
       }),
     );
+    // The service must NOT pass `cwd` — picking the cwd is the runner's
+    // job (it uses a throwaway scratch dir so the subprocess JSONL
+    // doesn't land in the user's real project session list).
+    const firstCall = runQuery.mock.calls[0] as unknown as [Record<string, unknown>];
+    expect(firstCall[0]).not.toHaveProperty('cwd');
     // Sidecar persisted on disk.
     const sidecar = readSidecar(sidecarPathFor(jsonlPath));
     expect(sidecar?.headline).toBe('Tested it.');
   });
 
-  it('returns skipped:toggle-off and skips runQuery when account toggle is off', async () => {
-    const runQuery = vi.fn();
-    const svc = createSessionsSummaryService({
-      jsonlPathFor: () => jsonlPath,
-      resolveAccount: () => ({
-        name: 'X',
-        configDir,
-        summarizeOnClose: false,
-        summaryModel: 'claude-haiku-4-5',
-      }),
-      runQuery,
-      getPromptTemplate: () => 'PROMPT',
-    });
-    const r = await svc.generateSummary('abc', projectPath, null);
-    expect(r).toEqual({ status: 'skipped', reason: 'toggle-off' });
-    expect(runQuery).not.toHaveBeenCalled();
-  });
+  // Note: global "enabled" / "auto-on-close" toggles are NOT gated inside
+  // generateSummary anymore. Each caller (lifecycle hook in main.ts, or
+  // the manual `summary_generate` IPC handler) decides which mix of
+  // flags applies before invoking the service. So the only gates left
+  // here are no-account and no-model.
 
   it('returns skipped:no-model and skips runQuery when summaryModel is null', async () => {
     const runQuery = vi.fn();
@@ -417,7 +408,6 @@ describe('sessions-summary generateSummary (real)', () => {
       resolveAccount: () => ({
         name: 'X',
         configDir,
-        summarizeOnClose: true,
         summaryModel: null,
       }),
       runQuery,
@@ -461,7 +451,6 @@ describe('sessions-summary generateSummary (real)', () => {
       resolveAccount: () => ({
         name: 'X',
         configDir,
-        summarizeOnClose: true,
         summaryModel: 'claude-haiku-4-5',
       }),
       runQuery,
@@ -494,7 +483,6 @@ describe('sessions-summary generateSummary (real)', () => {
       resolveAccount: () => ({
         name: 'X',
         configDir,
-        summarizeOnClose: true,
         summaryModel: 'claude-haiku-4-5',
       }),
       runQuery,
@@ -528,7 +516,6 @@ describe('sessions-summary generateSummary (real)', () => {
       resolveAccount: () => ({
         name: 'X',
         configDir,
-        summarizeOnClose: true,
         summaryModel: 'claude-haiku-4-5',
       }),
       runQuery,
@@ -548,7 +535,6 @@ describe('sessions-summary generateSummary (real)', () => {
       resolveAccount: () => ({
         name: 'X',
         configDir,
-        summarizeOnClose: true,
         summaryModel: 'claude-haiku-4-5',
       }),
       runQuery,
@@ -571,7 +557,6 @@ describe('sessions-summary generateSummary (real)', () => {
       resolveAccount: () => ({
         name: 'X',
         configDir,
-        summarizeOnClose: true,
         summaryModel: 'claude-haiku-4-5',
       }),
       runQuery,
@@ -596,7 +581,6 @@ describe('sessions-summary generateSummary (real)', () => {
       resolveAccount: () => ({
         name: 'X',
         configDir,
-        summarizeOnClose: true,
         summaryModel: 'claude-haiku-4-5',
       }),
       runQuery,
@@ -615,7 +599,6 @@ describe('sessions-summary generateSummary (real)', () => {
       resolveAccount: () => ({
         name: 'X',
         configDir,
-        summarizeOnClose: true,
         summaryModel: 'claude-haiku-4-5',
       }),
       runQuery,
@@ -643,7 +626,6 @@ describe('sessions-summary generateSummary (real)', () => {
       resolveAccount: () => ({
         name: 'X',
         configDir,
-        summarizeOnClose: true,
         summaryModel: 'claude-haiku-4-5',
       }),
       runQuery,
@@ -656,5 +638,138 @@ describe('sessions-summary generateSummary (real)', () => {
     }
     const firstCallArgs = (runQuery.mock.calls[0] as unknown) as Array<{ prompt: string }>;
     expect(firstCallArgs[0].prompt).toContain('tokens elided');
+  });
+
+  it('emits generation-state events around runQuery (started before, finished after)', async () => {
+    const events: string[] = [];
+    const runQuery = vi.fn(async () => {
+      events.push('runQuery');
+      return '<headline>h</headline><paragraph>p</paragraph>';
+    });
+    const onGenerationStateChanged = vi.fn(
+      (_uuid: string, generating: boolean) => {
+        events.push(generating ? 'started' : 'finished');
+      },
+    );
+    const svc = createSessionsSummaryService({
+      jsonlPathFor: () => jsonlPath,
+      resolveAccount: () => ({
+        name: 'X',
+        configDir,
+        summaryModel: 'claude-haiku-4-5',
+      }),
+      runQuery,
+      getPromptTemplate: () => 'PROMPT',
+      onGenerationStateChanged,
+    });
+    await svc.generateSummary('abc', projectPath, null);
+    expect(events).toEqual(['started', 'runQuery', 'finished']);
+    // Both calls reference the same session uuid.
+    expect(onGenerationStateChanged.mock.calls.map((c) => c[0])).toEqual(['abc', 'abc']);
+  });
+
+  it('emits the "finished" generation-state event even when runQuery throws', async () => {
+    const states: boolean[] = [];
+    const runQuery = vi.fn(async () => {
+      throw new Error('boom');
+    });
+    const svc = createSessionsSummaryService({
+      jsonlPathFor: () => jsonlPath,
+      resolveAccount: () => ({
+        name: 'X',
+        configDir,
+        summaryModel: 'claude-haiku-4-5',
+      }),
+      runQuery,
+      getPromptTemplate: () => 'PROMPT',
+      onGenerationStateChanged: (_uuid: string, generating: boolean) => {
+        states.push(generating);
+      },
+    });
+    await expect(
+      svc.generateSummary('abc', projectPath, null),
+    ).rejects.toThrow(/boom/);
+    // Renderer must see the spinner clear when the model call fails so
+    // the row doesn't spin forever after an OAuth-token-expired error.
+    expect(states).toEqual([true, false]);
+  });
+
+  it('does NOT emit generation-state events when generateSummary skips (no-account)', async () => {
+    const onGenerationStateChanged = vi.fn();
+    const svc = createSessionsSummaryService({
+      jsonlPathFor: () => jsonlPath,
+      resolveAccount: () => null,
+      runQuery: vi.fn(),
+      getPromptTemplate: () => 'PROMPT',
+      onGenerationStateChanged,
+    });
+    const r = await svc.generateSummary('abc', projectPath, null);
+    expect(r).toEqual({ status: 'skipped', reason: 'no-account' });
+    expect(onGenerationStateChanged).not.toHaveBeenCalled();
+  });
+
+  it('exposes currently-generating session uuids so renderers can seed the spinner state on mount (race-fix for back-button auto-summarize)', async () => {
+    // Hold the runQuery promise open so we can assert mid-flight.
+    let resolveQuery: (text: string) => void = () => {};
+    const queryPromise = new Promise<string>((res) => {
+      resolveQuery = res;
+    });
+    const runQuery = vi.fn(() => queryPromise);
+    const svc = createSessionsSummaryService({
+      jsonlPathFor: () => jsonlPath,
+      resolveAccount: () => ({
+        name: 'X',
+        configDir,
+        summaryModel: 'claude-haiku-4-5',
+      }),
+      runQuery,
+      getPromptTemplate: () => 'PROMPT',
+    });
+
+    expect(svc.getGeneratingSessionUuids()).toEqual([]);
+
+    const generatePromise = svc.generateSummary('abc', projectPath, null);
+    // Yield so the inner runQuery is reached.
+    await new Promise((r) => setImmediate(r));
+
+    expect(svc.getGeneratingSessionUuids()).toEqual(['abc']);
+
+    resolveQuery('<headline>h</headline><paragraph>p</paragraph>');
+    await generatePromise;
+
+    expect(svc.getGeneratingSessionUuids()).toEqual([]);
+  });
+
+  it('does NOT emit generation-state events for the size-gate "unchanged" path', async () => {
+    // Seed a sidecar whose jsonlSize matches the on-disk file → the
+    // size gate returns unchanged BEFORE we'd ever spin the model.
+    const matchingPrompt = 'MATCHING PROMPT';
+    const cachedSummary: SessionSummary = {
+      version: 1,
+      headline: 'cached',
+      paragraph: 'cached para',
+      messageCount: 2,
+      jsonlSize: fs.statSync(jsonlPath).size,
+      generatedAt: '2026-01-01T00:00:00.000Z',
+      model: 'claude-haiku-4-5',
+      accountName: 'X',
+      promptHash: promptHash(matchingPrompt),
+    };
+    writeSidecar(sidecarPathFor(jsonlPath), cachedSummary);
+    const onGenerationStateChanged = vi.fn();
+    const svc = createSessionsSummaryService({
+      jsonlPathFor: () => jsonlPath,
+      resolveAccount: () => ({
+        name: 'X',
+        configDir,
+        summaryModel: 'claude-haiku-4-5',
+      }),
+      runQuery: vi.fn(),
+      getPromptTemplate: () => matchingPrompt,
+      onGenerationStateChanged,
+    });
+    const result = await svc.generateSummary('abc', projectPath, null);
+    expect(result.status).toBe('unchanged');
+    expect(onGenerationStateChanged).not.toHaveBeenCalled();
   });
 });

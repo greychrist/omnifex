@@ -113,6 +113,7 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   // Session Summaries
   'summary_get',
   'summary_generate',
+  'summary_generating_now',
 
   // Logging
   'log_write_batch',

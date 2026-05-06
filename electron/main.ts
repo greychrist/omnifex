@@ -57,8 +57,10 @@ import {
   createSessionsSummaryService,
   DEFAULT_SUMMARY_PROMPT,
   PROMPT_TEMPLATE_SETTING_KEY,
+  AUTO_ON_CLOSE_SETTING_KEY,
+  ENABLED_SETTING_KEY,
 } from './services/sessions-summary';
-import { query as sdkQuery } from '@anthropic-ai/claude-agent-sdk';
+import { createSummaryQueryRunner } from './services/sessions/summary-query';
 import { createPermissionsIOService } from './services/permissions-io';
 import { createUpdaterService } from './services/updater';
 import { createInstallerService } from './services/installer';
@@ -363,6 +365,11 @@ app.whenReady().then(() => {
   ensureDefaultSettings(db, {
     local_update_dir: app.isPackaged ? '' : path.join(process.cwd(), 'out', 'make'),
     [PROMPT_TEMPLATE_SETTING_KEY]: DEFAULT_SUMMARY_PROMPT,
+    // Both summary toggles default-on. ensureDefaultSettings only fills
+    // truly-missing keys, so existing installs keep whatever they set.
+    // Settings → Session Summaries owns both switches.
+    [ENABLED_SETTING_KEY]: 'true',
+    [AUTO_ON_CLOSE_SETTING_KEY]: 'true',
   });
   const accountsService = createAccountsService(db);
   const claudeBinaryService = createClaudeBinaryService(db);
@@ -439,12 +446,25 @@ app.whenReady().then(() => {
     }),
     (configDir, info) => rateLimitsService.recordEvent(configDir, info),
     (sessionId, projectPath, configDir) => {
-      // Auto-on-close summarization. Account toggle + size-gate run inside
-      // the service; this is fire-and-forget so session teardown isn't
-      // blocked by Haiku latency. The size-change gate makes "close
+      // Auto-on-close summarization. Two global toggles gate this path:
+      //   - sessionsSummary.enabled (master) — off means summaries are
+      //     not used at all, so no point generating one.
+      //   - sessionsSummary.autoOnClose — off means the user wants to
+      //     hit the manual refresh button themselves.
+      // Both must be 'true' for the lifecycle hook to fire. The manual
+      // refresh path doesn't go through here — it hits the
+      // `summary_generate` IPC directly, so the autoOnClose flag has
+      // no effect on it. Read fresh on every close so flips in
+      // Settings take effect without restart.
+      //
+      // Fire-and-forget so session teardown isn't blocked by Haiku
+      // latency; the size-change gate inside the service makes "close
       // without changes" a no-op (no API spend). configDir comes from
-      // the live SessionHandle so we anchor the JSONL lookup to the
+      // the live SessionHandle so the JSONL lookup is anchored to the
       // exact account that ran the session.
+      const enabled = db.getSetting(ENABLED_SETTING_KEY) === 'true';
+      const autoOn = db.getSetting(AUTO_ON_CLOSE_SETTING_KEY) === 'true';
+      if (!enabled || !autoOn) return;
       sessionsSummaryServiceRef
         ?.generateSummary(sessionId, projectPath, configDir)
         .catch((err) =>
@@ -524,51 +544,29 @@ app.whenReady().then(() => {
       return {
         name: acct.name,
         configDir: acct.config_dir,
-        summarizeOnClose: !!acct.summarizeOnClose,
         summaryModel: acct.summaryModel ?? null,
       };
     },
-    runQuery: async ({ prompt, model, cwd, configDir }) => {
-      // One-shot summarization call. bypassPermissions + disallowed-all-tools
-      // guarantees this is pure text-in / text-out — Haiku (or whichever
-      // model the user picked) can't accidentally invoke a tool.
-      const stream = sdkQuery({
-        prompt,
-        options: {
-          cwd,
-          model,
-          env: { ...process.env, CLAUDE_CONFIG_DIR: configDir } as Record<string, string>,
-          permissionMode: 'bypassPermissions',
-          disallowedTools: ['*'],
-        },
-      });
-
-      let assistantText = '';
-      for await (const msg of stream) {
-        if (msg.type === 'assistant') {
-          const content = (msg as { message?: { content?: unknown } }).message?.content;
-          if (Array.isArray(content)) {
-            for (const part of content) {
-              if (
-                part &&
-                typeof part === 'object' &&
-                (part as { type?: unknown }).type === 'text' &&
-                typeof (part as { text?: unknown }).text === 'string'
-              ) {
-                assistantText += (part as { text: string }).text;
-              }
-            }
-          }
-        }
-        if (msg.type === 'result') break;
-      }
-      return assistantText;
-    },
+    // One-shot summarization call via the V2 SDK's `unstable_v2_prompt`.
+    // The runner uses a per-call scratch cwd so the JSONL the subprocess
+    // always writes lands in a throwaway dir under
+    // `<configDir>/projects/<scratch>/` and gets swept after the call,
+    // instead of mixing throwaway summary sessions into the user's real
+    // project session list. bypassPermissions + disallowedTools:['*']
+    // keep this strictly text-in / text-out.
+    runQuery: createSummaryQueryRunner(),
     onSummaryUpdated: (sessionUuid) => {
       // Broadcast to every renderer; SessionList rows subscribe and refetch
       // the matching uuid. Channel matches the existing `session-` prefix
       // in preload's event allow-list (no preload change needed).
       sendToRenderer('session-summary:updated', { sessionUuid });
+    },
+    onGenerationStateChanged: (sessionUuid, generating) => {
+      // Broadcast generation start/finish so the SessionList row can spin
+      // its refresh icon for background auto-on-close runs that the user
+      // is still watching from the project page. Same `session-` prefix
+      // → no preload allow-list change.
+      sendToRenderer('session-summary:generating', { sessionUuid, generating });
     },
     getPromptTemplate: () => {
       // Read fresh on every call so prompt edits in the Settings UI

@@ -132,6 +132,7 @@ export interface Services {
       projectPath: string,
       configDir: string | null,
     ): Promise<unknown>;
+    getGeneratingSessionUuids(): string[];
   };
   logging?: {
     writeBatch(entries: unknown): unknown;
@@ -442,6 +443,10 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
       (p?.projectPath ?? p?.project_path) as string,
       ((p?.configDir ?? p?.config_dir) as string | null | undefined) ?? null,
     ) ?? null),
+    // Snapshot of session uuids whose model call is currently in flight.
+    // SessionList queries this on mount to seed the spinner state for
+    // background auto-on-close runs that started before it subscribed.
+    summary_generating_now: wrap(() => sessionsSummary?.getGeneratingSessionUuids() ?? []),
 
     // ── Logging ───────────────────────────────────────────────────────────────
     log_write_batch: wrapWith((p: Record<string, unknown>) => logging?.writeBatch(p?.entries) ?? null),
