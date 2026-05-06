@@ -126,6 +126,14 @@ export const SessionList: React.FC<SessionListProps> = ({
   const [summaryErrors, setSummaryErrors] = useState<Map<string, string>>(
     new Map(),
   );
+  // Whether the project's resolved account has summarization enabled.
+  // Drives whether we even render the manual refresh button on each row —
+  // when the account toggle is off or no model is set, the button is
+  // hidden entirely (rather than visible-but-clicking-yields-an-error).
+  // Null until the resolution returns; we render no button while it's
+  // pending to avoid a flash of incorrect UI.
+  const [summarizeEnabledForProject, setSummarizeEnabledForProject] =
+    useState<boolean | null>(null);
 
   // Fetch summaries in parallel whenever the session list or project path
   // changes. The IPC layer answers each call independently; we don't await
@@ -148,6 +156,30 @@ export const SessionList: React.FC<SessionListProps> = ({
       cancelled = true;
     };
   }, [sessions, projectPath]);
+
+  // Resolve which account "owns" this project so we can decide whether
+  // the manual refresh button should even render on these rows.
+  useEffect(() => {
+    if (!projectPath) {
+      setSummarizeEnabledForProject(null);
+      return;
+    }
+    let cancelled = false;
+    api
+      .resolveAccountForProject(projectPath)
+      .then((acct) => {
+        if (cancelled) return;
+        setSummarizeEnabledForProject(
+          !!(acct?.summarizeOnClose && acct?.summaryModel),
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setSummarizeEnabledForProject(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectPath]);
 
   // Subscribe to backend summary-updated events so auto-on-close
   // generations refresh the matching row in real time. We re-fetch the
@@ -429,29 +461,31 @@ export const SessionList: React.FC<SessionListProps> = ({
                       </button>
                     </td>
                     <td className="py-2 px-3 align-top">
-                      <button
-                        type="button"
-                        aria-label={summary ? 'Refresh summary' : 'Generate summary'}
-                        title={
-                          isRefreshing
-                            ? 'Generating…'
-                            : noChanges
-                              ? 'No new messages since last summary.'
-                              : summary
-                                ? 'Refresh summary'
-                                : 'Generate summary'
-                        }
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          void refreshSummary(session.id);
-                        }}
-                        disabled={isRefreshing || noChanges}
-                        className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted/60 disabled:opacity-40"
-                      >
-                        <RefreshCw
-                          className={cn('h-3.5 w-3.5', isRefreshing && 'animate-spin')}
-                        />
-                      </button>
+                      {summarizeEnabledForProject ? (
+                        <button
+                          type="button"
+                          aria-label={summary ? 'Refresh summary' : 'Generate summary'}
+                          title={
+                            isRefreshing
+                              ? 'Generating…'
+                              : noChanges
+                                ? 'No new messages since last summary.'
+                                : summary
+                                  ? 'Refresh summary'
+                                  : 'Generate summary'
+                          }
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void refreshSummary(session.id);
+                          }}
+                          disabled={isRefreshing || noChanges}
+                          className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted/60 disabled:opacity-40"
+                        >
+                          <RefreshCw
+                            className={cn('h-3.5 w-3.5', isRefreshing && 'animate-spin')}
+                          />
+                        </button>
+                      ) : null}
                     </td>
                   </motion.tr>
                 );

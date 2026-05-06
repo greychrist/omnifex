@@ -10,6 +10,7 @@ import { MODELS } from "./ModelPicker";
 import { THINKING_CONFIGS, PERMISSION_MODES, EFFORT_LEVELS } from "./ControlBar";
 import { ColorSwatchGrid } from "@/components/ui/ColorSwatchGrid";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 
 const ACCOUNT_TYPES = [
   { value: "max", label: "Max", desc: "No cost, usage limits only" },
@@ -441,38 +442,44 @@ export const AccountSettings: React.FC = () => {
                 {/* Per-session summary opt-in. Toggle + model picker live
                     on the same edit form so they save with the rest of the
                     account fields. */}
-                <div className="space-y-1 pt-2 border-t border-border/30">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs text-muted-foreground">
+                <div className="space-y-2 pt-2 border-t border-border/30">
+                  <div className="flex items-center justify-between gap-3">
+                    <label
+                      htmlFor={`summarize-toggle-${editingId ?? 'new'}`}
+                      className="text-xs text-muted-foreground"
+                    >
                       Generate summaries when sessions close
                     </label>
-                    <input
-                      type="checkbox"
+                    <Switch
+                      id={`summarize-toggle-${editingId ?? 'new'}`}
                       checked={editSummarizeOnClose}
                       disabled={!editSummaryModel}
-                      onChange={(e) => setEditSummarizeOnClose(e.target.checked)}
-                      className="h-3.5 w-3.5"
+                      onCheckedChange={setEditSummarizeOnClose}
                       aria-label="Generate summaries when sessions close"
                     />
                   </div>
-                  <div className="flex items-center gap-2">
-                    <label className="text-xs text-muted-foreground flex-none">
+                  <div className="flex items-center justify-between gap-3">
+                    <label className="text-xs text-muted-foreground">
                       Summary model
                     </label>
-                    <select
-                      value={editSummaryModel ?? ''}
-                      onChange={(e) =>
-                        setEditSummaryModel(e.target.value || null)
+                    <Select
+                      value={editSummaryModel ?? '__none__'}
+                      onValueChange={(v) =>
+                        setEditSummaryModel(v === '__none__' ? null : v)
                       }
-                      className="h-7 px-2 text-xs rounded-md border border-border/60 bg-background"
                     >
-                      <option value="">(pick a model)</option>
-                      {MODELS.map((m) => (
-                        <option key={m.id} value={m.id}>
-                          {m.name}
-                        </option>
-                      ))}
-                    </select>
+                      <SelectTrigger className="h-8 w-44 text-xs">
+                        <SelectValue placeholder="Pick a model" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__">(pick a model)</SelectItem>
+                        {MODELS.map((m) => (
+                          <SelectItem key={m.id} value={m.id}>
+                            {m.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div className="text-[11px] text-muted-foreground">
                     {editSummaryModel

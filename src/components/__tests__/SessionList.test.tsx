@@ -30,6 +30,7 @@ vi.mock('@/lib/api', async () => {
       summaryGet: vi.fn(),
       summaryGenerate: vi.fn(),
       onSessionSummaryUpdated: vi.fn(() => () => {}),
+      resolveAccountForProject: vi.fn(),
     },
     // Re-export the types so the test file's import path stays clean.
   };
@@ -71,6 +72,22 @@ beforeEach(() => {
       paragraph: 'Refreshed paragraph.',
     },
   });
+  // Default: account has summarization enabled — so the refresh icon
+  // renders. Individual tests override for the disabled-account case.
+  vi.mocked(api.resolveAccountForProject).mockResolvedValue({
+    id: 1,
+    name: 'Test',
+    config_dir: '/x/.claude',
+    is_default: true,
+    account_type: 'pro',
+    color: null,
+    icon: null,
+    cli_path: null,
+    created_at: '',
+    updated_at: '',
+    summarizeOnClose: true,
+    summaryModel: 'haiku',
+  } as any);
 });
 
 afterEach(() => cleanup());
@@ -150,6 +167,47 @@ describe('SessionList summary rendering', () => {
         ).toBeTruthy(),
       { timeout: 2000 },
     );
+  });
+
+  it('hides the refresh icon when the resolved account has summarization disabled', async () => {
+    vi.mocked(api.resolveAccountForProject).mockResolvedValueOnce({
+      id: 1,
+      name: 'Test',
+      config_dir: '/x/.claude',
+      is_default: true,
+      account_type: 'pro',
+      color: null,
+      icon: null,
+      cli_path: null,
+      created_at: '',
+      updated_at: '',
+      summarizeOnClose: false, // toggle off
+      summaryModel: 'haiku',
+    } as any);
+    render(<SessionList sessions={[sessionFixture]} projectPath="/x" />);
+    await screen.findByText('Summary headline here.');
+    expect(screen.queryByRole('button', { name: /refresh summary/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /generate summary/i })).toBeNull();
+  });
+
+  it('hides the refresh icon when the resolved account has no model selected', async () => {
+    vi.mocked(api.resolveAccountForProject).mockResolvedValueOnce({
+      id: 1,
+      name: 'Test',
+      config_dir: '/x/.claude',
+      is_default: true,
+      account_type: 'pro',
+      color: null,
+      icon: null,
+      cli_path: null,
+      created_at: '',
+      updated_at: '',
+      summarizeOnClose: true,
+      summaryModel: null, // no model
+    } as any);
+    render(<SessionList sessions={[sessionFixture]} projectPath="/x" />);
+    await screen.findByText('Summary headline here.');
+    expect(screen.queryByRole('button', { name: /refresh summary/i })).toBeNull();
   });
 
   it('disables the refresh button when JSONL size matches cached summary', async () => {
