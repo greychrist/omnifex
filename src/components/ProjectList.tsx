@@ -110,7 +110,7 @@ export const ProjectList: React.FC<ProjectListProps> = ({
   onOpenProject,
   className,
 }) => {
-  const [sortKey, setSortKey] = useState<SortKey>('sessions');
+  const [sortKey, setSortKey] = useState<SortKey>('lastActivity');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
   const [accountFilter, setAccountFilter] = useState<string>('all');
 
@@ -142,11 +142,11 @@ export const ProjectList: React.FC<ProjectListProps> = ({
         case 'sessions':
           return (a.sessions.length - b.sessions.length) * dir;
         case 'lastActivity': {
-          // Prefer last_activity_at (newest file mtime in folder).
-          // Fall back to most_recent_session, then created_at, then 0
-          // for projects whose folder no longer exists on disk.
-          const av = a.last_activity_at ?? a.most_recent_session ?? a.created_at ?? 0;
-          const bv = b.last_activity_at ?? b.most_recent_session ?? b.created_at ?? 0;
+          // last_activity_at = newest file mtime in the project folder.
+          // Undefined when the folder no longer exists on disk — no fallback
+          // (don't lie about activity using session JSONL mtimes).
+          const av = a.last_activity_at ?? 0;
+          const bv = b.last_activity_at ?? 0;
           return (av - bv) * dir;
         }
       }
@@ -273,11 +273,10 @@ export const ProjectList: React.FC<ProjectListProps> = ({
               </thead>
               <tbody>
                 {visibleProjects.map((project, index) => {
-                  const lastActivity =
-                    project.last_activity_at ??
-                    project.most_recent_session ??
-                    project.created_at ??
-                    0;
+                  // No fallback: if last_activity_at is undefined the folder
+                  // no longer exists on disk, so we render an em-dash rather
+                  // than a misleading session-mtime timestamp.
+                  const lastActivity = project.last_activity_at ?? 0;
                   return (
                     <motion.tr
                       key={project.id}

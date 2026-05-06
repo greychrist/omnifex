@@ -90,7 +90,11 @@ export const AccountBadge: React.FC<AccountBadgeProps> = ({
           borderColor: `${color}4d`,
         }}
       >
-        <IconComponent className="h-[11px] w-[11px]" strokeWidth={2.2} />
+        {/* Icon is intentionally ~25% larger than the 11px label to read
+            cleaner. The pill height is driven by the line-height of the
+            text, so lifting the icon up to 14px doesn't change the
+            badge's overall size. */}
+        <IconComponent className="h-[14px] w-[14px]" strokeWidth={2.2} />
         {name}
         {resolvedType && (
           <span className="opacity-70">: {resolvedType}</span>

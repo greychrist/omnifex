@@ -1,16 +1,5 @@
 import type { ClaudeSettings } from "@/lib/api";
 
-export interface PermissionRule {
-  id: string;
-  value: string;
-}
-
-export interface EnvironmentVariable {
-  id: string;
-  key: string;
-  value: string;
-}
-
 export interface ToastState {
   message: string;
   type: 'success' | 'error';

@@ -4,7 +4,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Save, AlertCircle } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Card } from "@/components/ui/card";
 import {
@@ -14,22 +13,14 @@ import {
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Toast, ToastContainer } from "@/components/ui/toast";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { StorageTab } from "./StorageTab";
 import { LogTab } from "./LogTab";
 import { SummaryPromptSettings } from "./settings-panels/SummaryPromptSettings";
 import {
   GeneralSettings,
   AppearanceSettings,
-  PermissionsSettings,
-  EnvironmentSettings,
-  AdvancedSettings,
-  HooksSettings,
-  CommandsSettings,
   ProxySettingsPanel,
   RateLimitsSettings,
-  type PermissionRule,
-  type EnvironmentVariable,
   type ToastState,
 } from "./settings-panels";
 
@@ -47,6 +38,13 @@ interface SettingsProps {
 /**
  * Comprehensive Settings UI for managing Claude Code settings.
  * Thin shell that owns shared state and delegates to per-tab panel components.
+ *
+ * The Permissions / Environment / Advanced / Hooks / Commands tabs were
+ * removed in May 2026 — they edited per-account `~/.claude/settings.json`
+ * fields that are now configured outside this dialog (in-session permission
+ * prompts, project hook editor, slash-command manager, etc.). The
+ * load/save flow here only touches the global Claude settings keys read
+ * by the General and Proxy tabs.
  */
 export const Settings: React.FC<SettingsProps> = ({
   className,
@@ -61,44 +59,41 @@ export const Settings: React.FC<SettingsProps> = ({
   const [binaryPathChanged, setBinaryPathChanged] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
 
-  // Permission rules state
-  const [allowRules, setAllowRules] = useState<PermissionRule[]>([]);
-  const [denyRules, setDenyRules] = useState<PermissionRule[]>([]);
-
-  // Environment variables state
-  const [envVars, setEnvVars] = useState<EnvironmentVariable[]>([]);
-
-  // Hooks state
-  const [userHooksChanged, setUserHooksChanged] = useState(false);
-  const getUserHooks = React.useRef<(() => any) | null>(null);
+  // The Claude settings file is per-account (`<configDir>/settings.json`),
+  // so even though this dialog no longer has an account selector we still
+  // need a configDir to read/write — we always operate on the default
+  // account's config_dir. Loaded once on mount; load/save only fires
+  // after we have it.
+  const [defaultConfigDir, setDefaultConfigDir] = useState<string | null>(null);
 
   // Proxy state
   const [proxySettingsChanged, setProxySettingsChanged] = useState(false);
   const saveProxySettings = React.useRef<(() => Promise<void>) | null>(null);
 
-  // Account selector for account-specific settings tabs
-  const [accounts, setAccounts] = useState<Array<{ id: number; name: string; config_dir: string; is_default: boolean }>>([]);
-  const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null);
-
   useEffect(() => {
-    api.listAccounts().then((accts) => {
-      setAccounts(accts);
-      const defaultAcct = accts.find((a: any) => a.is_default) || accts[0];
-      if (defaultAcct) setSelectedAccountId(defaultAcct.id);
-    }).catch(console.error);
-  }, []);
-
-  // Load settings when selected account is ready (or changes)
-  useEffect(() => {
-    if (selectedAccountId != null) {
-      loadSettings();
-    }
-  }, [selectedAccountId]);
-
-  // Load binary path on mount (not account-dependent)
-  useEffect(() => {
+    api.listAccounts()
+      .then((accts) => {
+        const def = accts.find((a) => a.is_default) || accts[0];
+        if (def) setDefaultConfigDir(def.config_dir);
+        else {
+          // No accounts at all — nothing to load. Surface the empty state
+          // rather than spinning forever.
+          setLoading(false);
+          setSettings({});
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to list accounts:", err);
+        setLoading(false);
+        setError("Failed to load accounts. Please ensure ~/.claude directory exists.");
+      });
     loadClaudeBinaryPath();
   }, []);
+
+  // Load Claude settings as soon as the default config dir is resolved.
+  useEffect(() => {
+    if (defaultConfigDir) loadSettings();
+  }, [defaultConfigDir]);
 
   const loadClaudeBinaryPath = async () => {
     try {
@@ -109,17 +104,12 @@ export const Settings: React.FC<SettingsProps> = ({
     }
   };
 
-  const getSelectedConfigDir = () => {
-    if (selectedAccountId == null) return undefined;
-    return accounts.find(a => a.id === selectedAccountId)?.config_dir;
-  };
-
   const loadSettings = async () => {
+    if (!defaultConfigDir) return;
     try {
       setLoading(true);
       setError(null);
-      const configDir = getSelectedConfigDir();
-      const loadedSettings = await api.getClaudeSettings(configDir ? { configDir } : undefined);
+      const loadedSettings = await api.getClaudeSettings({ configDir: defaultConfigDir });
 
       if (!loadedSettings || typeof loadedSettings !== 'object') {
         console.warn("Loaded settings is not an object:", loadedSettings);
@@ -128,43 +118,6 @@ export const Settings: React.FC<SettingsProps> = ({
       }
 
       setSettings(loadedSettings);
-
-      // The settings file has a nested "settings" key:
-      // { settings: { permissions: {...}, env: {...}, ... } }
-      const inner = (loadedSettings.settings ?? loadedSettings) as Record<string, unknown>;
-
-      // Parse permissions
-      const perms = inner.permissions as Record<string, unknown> | undefined;
-      if (perms && typeof perms === 'object') {
-        if (Array.isArray(perms.allow)) {
-          setAllowRules(
-            perms.allow.map((rule: string, index: number) => ({
-              id: `allow-${index}`,
-              value: rule,
-            }))
-          );
-        }
-        if (Array.isArray(perms.deny)) {
-          setDenyRules(
-            perms.deny.map((rule: string, index: number) => ({
-              id: `deny-${index}`,
-              value: rule,
-            }))
-          );
-        }
-      }
-
-      // Parse environment variables
-      const env = inner.env as Record<string, string> | undefined;
-      if (env && typeof env === 'object' && !Array.isArray(env)) {
-        setEnvVars(
-          Object.entries(env).map(([key, value], index) => ({
-            id: `env-${index}`,
-            key,
-            value: value as string,
-          }))
-        );
-      }
     } catch (err) {
       console.error("Failed to load settings:", err);
       setError("Failed to load settings. Please ensure ~/.claude directory exists.");
@@ -175,44 +128,18 @@ export const Settings: React.FC<SettingsProps> = ({
   };
 
   const saveSettings = async () => {
+    if (!defaultConfigDir) return;
     try {
       setSaving(true);
       setError(null);
       setToast(null);
 
-      // Preserve the nested "settings" key structure that Claude's settings.json uses
-      const existingInner = ((settings as any)?.settings ?? settings) as Record<string, unknown>;
-      const updatedInner = {
-        ...existingInner,
-        permissions: {
-          allow: allowRules.map(rule => rule.value).filter(v => v && String(v).trim()),
-          deny: denyRules.map(rule => rule.value).filter(v => v && String(v).trim()),
-        },
-        env: envVars.reduce((acc, { key, value }) => {
-          if (key && String(key).trim() && value && String(value).trim()) {
-            acc[key] = String(value);
-          }
-          return acc;
-        }, {} as Record<string, string>),
-      };
-      const updatedSettings: ClaudeSettings = (settings as any)?.settings
-        ? { ...settings, settings: updatedInner }
-        : updatedInner;
-
-      const configDir = getSelectedConfigDir();
-      await api.saveClaudeSettings(updatedSettings, configDir ? { configDir } : undefined);
-      setSettings(updatedSettings);
+      await api.saveClaudeSettings(settings ?? {}, { configDir: defaultConfigDir });
 
       if (binaryPathChanged && selectedInstallation) {
         await api.setClaudeBinaryPath(selectedInstallation.path);
         setCurrentBinaryPath(selectedInstallation.path);
         setBinaryPathChanged(false);
-      }
-
-      if (userHooksChanged && getUserHooks.current) {
-        const hooks = getUserHooks.current();
-        await api.updateHooksConfig('user', hooks, undefined, configDir);
-        setUserHooksChanged(false);
       }
 
       if (proxySettingsChanged && saveProxySettings.current) {
@@ -240,10 +167,6 @@ export const Settings: React.FC<SettingsProps> = ({
   // confusing and contributes to the "multiple save buttons on one
   // screen" problem.
   const TABS_USING_TOP_SAVE = new Set([
-    'permissions',
-    'environment',
-    'advanced',
-    'hooks',
     'proxy',
   ]);
   const showTopSave = TABS_USING_TOP_SAVE.has(activeTab);
@@ -318,13 +241,8 @@ export const Settings: React.FC<SettingsProps> = ({
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full flex flex-col flex-1 overflow-hidden">
             <TabsList className="flex w-full mb-6 h-auto p-1 shrink-0">
               <TabsTrigger value="general" className="flex-1 py-2 text-xs">General</TabsTrigger>
-              <TabsTrigger value="appearance" className="flex-1 py-2 text-xs">Appearance</TabsTrigger>
+              <TabsTrigger value="appearance" className="flex-1 py-2 text-xs">Chats</TabsTrigger>
               <TabsTrigger value="accounts" className="flex-1 py-2 text-xs">Accounts</TabsTrigger>
-              <TabsTrigger value="permissions" className="flex-1 py-2 text-xs">Permissions</TabsTrigger>
-              <TabsTrigger value="environment" className="flex-1 py-2 text-xs">Environment</TabsTrigger>
-              <TabsTrigger value="advanced" className="flex-1 py-2 text-xs">Advanced</TabsTrigger>
-              <TabsTrigger value="hooks" className="flex-1 py-2 text-xs">Hooks</TabsTrigger>
-              <TabsTrigger value="commands" className="flex-1 py-2 text-xs">Commands</TabsTrigger>
               <TabsTrigger value="sessions" className="flex-1 py-2 text-xs">Sessions</TabsTrigger>
               <TabsTrigger value="storage" className="flex-1 py-2 text-xs">Storage</TabsTrigger>
               <TabsTrigger value="proxy" className="flex-1 py-2 text-xs">Proxy</TabsTrigger>
@@ -333,42 +251,21 @@ export const Settings: React.FC<SettingsProps> = ({
             </TabsList>
 
             <div className={activeTab === "log" ? "flex-1 flex flex-col min-h-0 overflow-hidden" : "flex-1 overflow-y-auto"}>
-            {/* Account selector for account-specific tabs */}
-            {["environment", "advanced", "hooks", "commands", "permissions"].includes(activeTab) && accounts.length > 0 && (
-              <div className="flex items-center gap-2 mb-4 p-3 rounded-lg border border-border/50 bg-muted/30">
-                <Label className="text-xs text-foreground/60 whitespace-nowrap">Editing settings for:</Label>
-                <Select
-                  value={selectedAccountId != null ? String(selectedAccountId) : undefined}
-                  onValueChange={(v) => setSelectedAccountId(Number(v))}
-                >
-                  <SelectTrigger className="h-8 text-sm w-auto">
-                    <SelectValue placeholder="Select account..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {accounts.map((acct) => (
-                      <SelectItem key={acct.id} value={String(acct.id)}>
-                        {acct.name} ({acct.config_dir})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
 
             {/* Account Settings */}
-            <TabsContent value="accounts" className="space-y-6 mt-6">
+            <TabsContent value="accounts" className="space-y-6">
               <Card className="p-6">
                 <AccountSettings />
               </Card>
             </TabsContent>
 
             {/* Appearance Settings */}
-            <TabsContent value="appearance" className="space-y-6 mt-6">
+            <TabsContent value="appearance" className="space-y-6">
               <AppearanceSettings setToast={setToast} />
             </TabsContent>
 
             {/* General Settings */}
-            <TabsContent value="general" className="space-y-6 mt-6">
+            <TabsContent value="general" className="space-y-6">
               <GeneralSettings
                 settings={settings}
                 updateSetting={updateSetting}
@@ -379,52 +276,11 @@ export const Settings: React.FC<SettingsProps> = ({
               />
             </TabsContent>
 
-            {/* Permissions Settings */}
-            <TabsContent value="permissions" className="space-y-6">
-              <PermissionsSettings
-                allowRules={allowRules}
-                denyRules={denyRules}
-                setAllowRules={setAllowRules}
-                setDenyRules={setDenyRules}
-              />
-            </TabsContent>
-
-            {/* Environment Variables */}
-            <TabsContent value="environment" className="space-y-6">
-              <EnvironmentSettings
-                envVars={envVars}
-                setEnvVars={setEnvVars}
-              />
-            </TabsContent>
-
-            {/* Advanced Settings */}
-            <TabsContent value="advanced" className="space-y-6">
-              <AdvancedSettings
-                settings={settings}
-                updateSetting={updateSetting}
-              />
-            </TabsContent>
-
-            {/* Hooks Settings */}
-            <TabsContent value="hooks" className="space-y-6">
-              <HooksSettings
-                activeTab={activeTab}
-                configDir={getSelectedConfigDir()}
-                onHooksChange={(hasChanges: boolean, getHooks: () => any) => {
-                  setUserHooksChanged(hasChanges);
-                  getUserHooks.current = getHooks;
-                }}
-              />
-            </TabsContent>
-
-            {/* Commands Tab */}
-            <TabsContent value="commands">
-              <CommandsSettings />
-            </TabsContent>
-
             {/* Sessions Tab — per-session summary prompt template */}
-            <TabsContent value="sessions" className="space-y-6 mt-6">
-              <SummaryPromptSettings />
+            <TabsContent value="sessions" className="space-y-6">
+              <Card className="p-6">
+                <SummaryPromptSettings />
+              </Card>
             </TabsContent>
 
             {/* Storage Tab */}
@@ -444,7 +300,7 @@ export const Settings: React.FC<SettingsProps> = ({
             </TabsContent>
 
             {/* Rate Limits Settings */}
-            <TabsContent value="rate_limits" className="space-y-6 mt-6">
+            <TabsContent value="rate_limits" className="space-y-6">
               <RateLimitsSettings
                 settings={settings}
                 updateSetting={updateSetting}

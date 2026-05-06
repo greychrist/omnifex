@@ -1,10 +1,5 @@
 export { GeneralSettings } from "./GeneralSettings";
 export { AppearanceSettings } from "./AppearanceSettings";
-export { PermissionsSettings } from "./PermissionsSettings";
-export { EnvironmentSettings } from "./EnvironmentSettings";
-export { AdvancedSettings } from "./AdvancedSettings";
-export { HooksSettings } from "./HooksSettings";
-export { CommandsSettings } from "./CommandsSettings";
 export { ProxySettingsPanel } from "./ProxySettingsPanel";
 export { RateLimitsSettings } from "./RateLimitsSettings";
-export type { PermissionRule, EnvironmentVariable, ToastState, SettingsPanelProps } from "./types";
+export type { ToastState, SettingsPanelProps } from "./types";

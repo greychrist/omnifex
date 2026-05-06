@@ -82,6 +82,19 @@ export interface ClaudeService {
   ): Promise<unknown[]>;
   loadAgentSessionHistory(sessionId: string): Promise<unknown[]>;
 
+  /**
+   * Delete a session JSONL plus its known ride-along files
+   * (`*.summary.json`, `*.todo.json`). Throws when the project's config
+   * dir cannot be resolved or when the JSONL file is missing — the
+   * caller should surface those as user-facing errors. Sidecar absence
+   * is silent (best-effort cascade).
+   */
+  deleteSession(
+    sessionId: string,
+    projectId: string,
+    projectPath?: string,
+  ): Promise<void>;
+
   getClaudeSettings(opts?: ClaudeSettingsOpts): Promise<Record<string, unknown>>;
   saveClaudeSettings(
     settings: Record<string, unknown>,
@@ -653,6 +666,54 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
   }
 
   // -------------------------------------------------------------------------
+  // deleteSession
+  // -------------------------------------------------------------------------
+
+  async function deleteSession(
+    sessionId: string,
+    projectId: string,
+    projectPath?: string,
+  ): Promise<void> {
+    const configDir = findProjectConfigDir(projectId, accounts, projectPath);
+    if (!configDir) {
+      throw new Error(
+        `deleteSession: no config dir resolves project '${projectId}'`,
+      );
+    }
+
+    const projectDir = path.join(configDir, 'projects', projectId);
+    const jsonlPath = path.join(projectDir, `${sessionId}.jsonl`);
+    if (!fs.existsSync(jsonlPath)) {
+      throw new Error(
+        `deleteSession: JSONL not found at ${jsonlPath}`,
+      );
+    }
+
+    // Hard delete the JSONL first — that's the user's source-of-truth
+    // signal that the session is gone. Ride-along sidecars are
+    // best-effort: if any of them is missing or unlinkable for an
+    // unrelated reason we don't want to half-delete the session.
+    fs.unlinkSync(jsonlPath);
+
+    const sidecarPath = path.join(projectDir, `${sessionId}.summary.json`);
+    const todoPath = path.join(projectDir, `${sessionId}.todo.json`);
+    for (const ridePath of [sidecarPath, todoPath]) {
+      try {
+        fs.unlinkSync(ridePath);
+      } catch (e) {
+        const err = e as NodeJS.ErrnoException;
+        if (err.code !== 'ENOENT') {
+          // Surface anything other than "file wasn't there anyway" so
+          // we don't silently leak corrupt sidecar state — but the JSONL
+          // is already gone at this point, so we just log rather than
+          // re-throw and leave the row half-deleted.
+          console.warn(`[claude] deleteSession: failed to remove ${ridePath}:`, err);
+        }
+      }
+    }
+  }
+
+  // -------------------------------------------------------------------------
   // getClaudeSettings / saveClaudeSettings
   // -------------------------------------------------------------------------
 
@@ -982,6 +1043,7 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
     getProjectSessions,
     loadSessionHistory,
     loadAgentSessionHistory,
+    deleteSession,
     getClaudeSettings,
     saveClaudeSettings,
     getSystemPrompt,

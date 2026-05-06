@@ -1,16 +1,19 @@
 import React, { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Popover } from "@/components/ui/popover";
 import { api, type Account, type PathRule, type SessionDefaults } from "@/lib/api";
 import { AccountBadge } from "@/components/AccountBadge";
 import { useAccounts } from "@/contexts/AccountsContext";
-import { Trash2, Plus, Pencil, FolderOpen, Check } from "lucide-react";
+import { Trash2, Plus, Pencil, FolderOpen, Check, ChevronDown } from "lucide-react";
 import { IconPicker, ICON_MAP } from "./IconPicker";
 import { MODELS } from "./ModelPicker";
 import { THINKING_CONFIGS, PERMISSION_MODES, EFFORT_LEVELS } from "./ControlBar";
 import { ColorSwatchGrid } from "@/components/ui/ColorSwatchGrid";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { cn } from "@/lib/utils";
 import {
   Dialog,
   DialogContent,
@@ -44,37 +47,46 @@ interface DirInputProps {
   value: string;
   onChange: (v: string) => void;
   placeholder: string;
+  /** When true, render at the same compact size as the session-defaults
+   *  pickers (h-7 text-xs). Default is the larger h-8 text-sm used in
+   *  the add-rule form etc. */
+  compact?: boolean;
 }
 
-const DirInput: React.FC<DirInputProps> = ({ value, onChange, placeholder }) => (
-  <div className="flex gap-1">
-    <Input
-      placeholder={placeholder}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="h-8 text-sm flex-1"
-    />
-    <Button
-      variant="outline"
-      size="sm"
-      className="h-8 px-2"
-      onClick={async () => {
-        const folder = await pickFolder(value || undefined);
-        if (folder) onChange(folder);
-      }}
-      title="Browse..."
-    >
-      <FolderOpen className="w-3.5 h-3.5" />
-    </Button>
-  </div>
-);
+const DirInput: React.FC<DirInputProps> = ({ value, onChange, placeholder, compact }) => {
+  const h = compact ? "h-7" : "h-8";
+  const ts = compact ? "text-xs" : "text-sm";
+  return (
+    <div className="flex gap-1">
+      <Input
+        placeholder={placeholder}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className={cn(h, ts, "flex-1")}
+      />
+      <Button
+        variant="outline"
+        size="sm"
+        className={cn(h, "px-2")}
+        onClick={async () => {
+          const folder = await pickFolder(value || undefined);
+          if (folder) onChange(folder);
+        }}
+        title="Browse..."
+      >
+        <FolderOpen className="w-3.5 h-3.5" />
+      </Button>
+    </div>
+  );
+};
 
-const TypeSelect: React.FC<{ value: string; onChange: (v: string) => void }> = ({
+const TypeSelect: React.FC<{ value: string; onChange: (v: string) => void; compact?: boolean }> = ({
   value,
   onChange,
+  compact,
 }) => (
   <Select value={value} onValueChange={onChange}>
-    <SelectTrigger className="w-full h-8 text-sm">
+    <SelectTrigger className={cn("w-full", compact ? "h-7 text-xs" : "h-8 text-sm")}>
       <SelectValue />
     </SelectTrigger>
     <SelectContent>
@@ -101,82 +113,319 @@ function summaryCostEstimate(model: string): string {
   return 'Cost depends on the chosen model.';
 }
 
+// ── Session-defaults pickers ────────────────────────────────────────────
+//
+// Visual style mirrors NewSessionForm (the form on the project-open
+// screen): outlined trigger button per field, full-width within its grid
+// column, small uppercase label above. Every dropdown has an "App
+// default" entry that maps to `undefined` in the stored value — that's
+// how we say "fall through to the global app default for this field"
+// rather than pinning a specific value.
+
+function DropdownTrigger({
+  open,
+  onClick,
+  title,
+  children,
+}: {
+  open: boolean;
+  onClick: () => void;
+  title?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={onClick}
+      className="w-full justify-between h-9 px-2 font-normal gap-1"
+      aria-expanded={open}
+      title={title}
+    >
+      <span className="flex items-center gap-1 min-w-0 overflow-hidden">{children}</span>
+      <ChevronDown className="h-3 w-3 opacity-50 shrink-0" />
+    </Button>
+  );
+}
+
+function DropdownRow({
+  selected,
+  onClick,
+  children,
+}: {
+  selected: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors",
+        "hover:bg-accent",
+        selected && "bg-accent",
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+const APP_DEFAULT_LABEL = "App default";
+
 const SessionDefaultsEditor: React.FC<{
   value: SessionDefaults;
   onChange: (v: SessionDefaults) => void;
-}> = ({ value, onChange }) => (
-  <div className="space-y-2 pt-2 border-t border-border">
-    <p className="text-xs font-medium text-muted-foreground">Session Defaults</p>
-    <div className="flex items-center gap-3">
-      <label className="text-xs text-muted-foreground w-20 shrink-0">Model</label>
-      <Select
-        value={value.model ?? '__app_default__'}
-        onValueChange={(v) => onChange({ ...value, model: v === '__app_default__' ? undefined : v })}
-      >
-        <SelectTrigger className="flex-1 h-7 text-xs">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="__app_default__">App default</SelectItem>
-          {MODELS.map((m) => (
-            <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+}> = ({ value, onChange }) => {
+  const [modelOpen, setModelOpen] = useState(false);
+  const [effortOpen, setEffortOpen] = useState(false);
+  const [thinkingOpen, setThinkingOpen] = useState(false);
+  const [permsOpen, setPermsOpen] = useState(false);
+
+  const selectedModel = value.model ? MODELS.find((m) => m.id === value.model) : null;
+  const selectedEffort = value.effort ? EFFORT_LEVELS.find((e) => e.id === value.effort) : null;
+  const selectedThinking = value.thinkingConfig
+    ? THINKING_CONFIGS.find((c) => c.id === value.thinkingConfig)
+    : null;
+  const selectedPerm = value.permissionMode
+    ? PERMISSION_MODES.find((m) => m.id === value.permissionMode)
+    : null;
+
+  return (
+    <div className="space-y-2 pt-5">
+      <h4 className="text-sm font-medium">Session Defaults</h4>
+      <div className="grid grid-cols-4 gap-2">
+        {/* Model */}
+        <div className="flex flex-col gap-1 min-w-0">
+          <Label className="text-[10px] uppercase tracking-wider text-foreground/50">Model</Label>
+          <Popover
+            open={modelOpen}
+            onOpenChange={setModelOpen}
+            align="start"
+            side="bottom"
+            trigger={
+              <DropdownTrigger
+                open={modelOpen}
+                onClick={() => setModelOpen(!modelOpen)}
+                title={selectedModel?.name ?? APP_DEFAULT_LABEL}
+              >
+                <span
+                  className={cn(
+                    "text-[11px] truncate",
+                    selectedModel ? "" : "text-muted-foreground italic",
+                  )}
+                >
+                  {selectedModel?.name ?? APP_DEFAULT_LABEL}
+                </span>
+              </DropdownTrigger>
+            }
+            content={
+              <div className="w-[260px] p-1">
+                <DropdownRow
+                  selected={!selectedModel}
+                  onClick={() => {
+                    onChange({ ...value, model: undefined });
+                    setModelOpen(false);
+                  }}
+                >
+                  <span className="text-xs italic text-muted-foreground">{APP_DEFAULT_LABEL}</span>
+                </DropdownRow>
+                {MODELS.map((model) => (
+                  <DropdownRow
+                    key={model.id}
+                    selected={selectedModel?.id === model.id}
+                    onClick={() => {
+                      onChange({ ...value, model: model.id });
+                      setModelOpen(false);
+                    }}
+                  >
+                    <span className="text-xs">{model.name}</span>
+                  </DropdownRow>
+                ))}
+              </div>
+            }
+          />
+        </div>
+
+        {/* Effort */}
+        <div className="flex flex-col gap-1 min-w-0">
+          <Label className="text-[10px] uppercase tracking-wider text-foreground/50">Effort</Label>
+          <Popover
+            open={effortOpen}
+            onOpenChange={setEffortOpen}
+            align="start"
+            side="bottom"
+            trigger={
+              <DropdownTrigger
+                open={effortOpen}
+                onClick={() => setEffortOpen(!effortOpen)}
+                title={selectedEffort?.description ?? APP_DEFAULT_LABEL}
+              >
+                {selectedEffort ? (
+                  <>
+                    <span className={cn("text-[11px] font-bold shrink-0", selectedEffort.color)}>
+                      {selectedEffort.shortName}
+                    </span>
+                    <span className="text-[10px] leading-tight truncate">{selectedEffort.name}</span>
+                  </>
+                ) : (
+                  <span className="text-[11px] truncate text-muted-foreground italic">
+                    {APP_DEFAULT_LABEL}
+                  </span>
+                )}
+              </DropdownTrigger>
+            }
+            content={
+              <div className="w-[240px] p-1">
+                <DropdownRow
+                  selected={!selectedEffort}
+                  onClick={() => {
+                    onChange({ ...value, effort: undefined });
+                    setEffortOpen(false);
+                  }}
+                >
+                  <span className="text-xs italic text-muted-foreground">{APP_DEFAULT_LABEL}</span>
+                </DropdownRow>
+                {EFFORT_LEVELS.map((level) => (
+                  <DropdownRow
+                    key={level.id}
+                    selected={selectedEffort?.id === level.id}
+                    onClick={() => {
+                      onChange({ ...value, effort: level.id });
+                      setEffortOpen(false);
+                    }}
+                  >
+                    <span className={cn("text-xs font-bold w-10 shrink-0", level.color)}>
+                      {level.shortName}
+                    </span>
+                    <span className="text-[10px] leading-tight">{level.name}</span>
+                  </DropdownRow>
+                ))}
+              </div>
+            }
+          />
+        </div>
+
+        {/* Thinking */}
+        <div className="flex flex-col gap-1 min-w-0">
+          <Label className="text-[10px] uppercase tracking-wider text-foreground/50">Thinking</Label>
+          <Popover
+            open={thinkingOpen}
+            onOpenChange={setThinkingOpen}
+            align="start"
+            side="bottom"
+            trigger={
+              <DropdownTrigger
+                open={thinkingOpen}
+                onClick={() => setThinkingOpen(!thinkingOpen)}
+                title={selectedThinking?.description ?? APP_DEFAULT_LABEL}
+              >
+                {selectedThinking ? (
+                  <>
+                    <span className={cn("text-[11px] font-bold shrink-0", selectedThinking.color)}>
+                      {selectedThinking.shortName}
+                    </span>
+                    <span className="text-[10px] leading-tight truncate">{selectedThinking.name}</span>
+                  </>
+                ) : (
+                  <span className="text-[11px] truncate text-muted-foreground italic">
+                    {APP_DEFAULT_LABEL}
+                  </span>
+                )}
+              </DropdownTrigger>
+            }
+            content={
+              <div className="w-[240px] p-1">
+                <DropdownRow
+                  selected={!selectedThinking}
+                  onClick={() => {
+                    onChange({ ...value, thinkingConfig: undefined });
+                    setThinkingOpen(false);
+                  }}
+                >
+                  <span className="text-xs italic text-muted-foreground">{APP_DEFAULT_LABEL}</span>
+                </DropdownRow>
+                {THINKING_CONFIGS.map((cfg) => (
+                  <DropdownRow
+                    key={cfg.id}
+                    selected={selectedThinking?.id === cfg.id}
+                    onClick={() => {
+                      onChange({ ...value, thinkingConfig: cfg.id });
+                      setThinkingOpen(false);
+                    }}
+                  >
+                    <span className={cn("text-xs font-bold w-10 shrink-0", cfg.color)}>
+                      {cfg.shortName}
+                    </span>
+                    <span className="text-[10px] leading-tight">{cfg.name}</span>
+                  </DropdownRow>
+                ))}
+              </div>
+            }
+          />
+        </div>
+
+        {/* Permissions */}
+        <div className="flex flex-col gap-1 min-w-0">
+          <Label className="text-[10px] uppercase tracking-wider text-foreground/50">Permissions</Label>
+          <Popover
+            open={permsOpen}
+            onOpenChange={setPermsOpen}
+            align="start"
+            side="bottom"
+            trigger={
+              <DropdownTrigger
+                open={permsOpen}
+                onClick={() => setPermsOpen(!permsOpen)}
+                title={selectedPerm?.description ?? APP_DEFAULT_LABEL}
+              >
+                {selectedPerm ? (
+                  <>
+                    <span className={cn("shrink-0", selectedPerm.color)}>{selectedPerm.icon}</span>
+                    <span className={cn("text-[11px] truncate", selectedPerm.color)}>
+                      {selectedPerm.name}
+                    </span>
+                  </>
+                ) : (
+                  <span className="text-[11px] truncate text-muted-foreground italic">
+                    {APP_DEFAULT_LABEL}
+                  </span>
+                )}
+              </DropdownTrigger>
+            }
+            content={
+              <div className="w-[260px] p-1">
+                <DropdownRow
+                  selected={!selectedPerm}
+                  onClick={() => {
+                    onChange({ ...value, permissionMode: undefined });
+                    setPermsOpen(false);
+                  }}
+                >
+                  <span className="text-xs italic text-muted-foreground">{APP_DEFAULT_LABEL}</span>
+                </DropdownRow>
+                {PERMISSION_MODES.map((mode) => (
+                  <DropdownRow
+                    key={mode.id}
+                    selected={selectedPerm?.id === mode.id}
+                    onClick={() => {
+                      onChange({ ...value, permissionMode: mode.id });
+                      setPermsOpen(false);
+                    }}
+                  >
+                    <span className={cn("shrink-0", mode.color)}>{mode.icon}</span>
+                    <span className={cn("text-xs", mode.color)}>{mode.name}</span>
+                  </DropdownRow>
+                ))}
+              </div>
+            }
+          />
+        </div>
+      </div>
     </div>
-    <div className="flex items-center gap-3">
-      <label className="text-xs text-muted-foreground w-20 shrink-0">Thinking</label>
-      <Select
-        value={value.thinkingConfig ?? '__app_default__'}
-        onValueChange={(v) => onChange({ ...value, thinkingConfig: (v === '__app_default__' ? undefined : v) as SessionDefaults['thinkingConfig'] })}
-      >
-        <SelectTrigger className="flex-1 h-7 text-xs">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="__app_default__">App default</SelectItem>
-          {THINKING_CONFIGS.map((c) => (
-            <SelectItem key={c.id} value={c.id}>{c.name} — {c.description}</SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
-    <div className="flex items-center gap-3">
-      <label className="text-xs text-muted-foreground w-20 shrink-0">Effort</label>
-      <Select
-        value={value.effort ?? '__app_default__'}
-        onValueChange={(v) => onChange({ ...value, effort: (v === '__app_default__' ? undefined : v) as SessionDefaults['effort'] })}
-      >
-        <SelectTrigger className="flex-1 h-7 text-xs">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="__app_default__">App default</SelectItem>
-          {EFFORT_LEVELS.map((l) => (
-            <SelectItem key={l.id} value={l.id}>{l.name} — {l.description}</SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
-    <div className="flex items-center gap-3">
-      <label className="text-xs text-muted-foreground w-20 shrink-0">Permissions</label>
-      <Select
-        value={value.permissionMode ?? '__app_default__'}
-        onValueChange={(v) => onChange({ ...value, permissionMode: v === '__app_default__' ? undefined : v })}
-      >
-        <SelectTrigger className="flex-1 h-7 text-xs">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="__app_default__">App default</SelectItem>
-          {PERMISSION_MODES.map((m) => (
-            <SelectItem key={m.id} value={m.id}>{m.name} — {m.description}</SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
-  </div>
-);
+  );
+};
 
 export const AccountSettings: React.FC = () => {
   const { refresh: refreshAccountsContext } = useAccounts();
@@ -201,8 +450,6 @@ export const AccountSettings: React.FC = () => {
   const [newColor, setNewColor] = useState("#3b82f6");
   const [newIcon, setNewIcon] = useState<string>("user");
   const [newSessionDefaults, setNewSessionDefaults] = useState<SessionDefaults>({});
-  const [newCliPath, setNewCliPath] = useState<string>("");
-  const [newCliPathError, setNewCliPathError] = useState<string | null>(null);
   const [showNewIconPicker, setShowNewIconPicker] = useState(false);
 
   // Edit account state
@@ -214,7 +461,6 @@ export const AccountSettings: React.FC = () => {
   const [editIcon, setEditIcon] = useState<string>("user");
   const [editSessionDefaults, setEditSessionDefaults] = useState<SessionDefaults>({});
   const [editCliPath, setEditCliPath] = useState<string>("");
-  const [editCliPathError, setEditCliPathError] = useState<string | null>(null);
   const [showEditIconPicker, setShowEditIconPicker] = useState(false);
   const [editSummarizeOnClose, setEditSummarizeOnClose] = useState(false);
   const [editSummaryModel, setEditSummaryModel] = useState<string | null>('haiku');
@@ -268,7 +514,6 @@ export const AccountSettings: React.FC = () => {
     setEditIcon(account.icon || "user");
     setEditSessionDefaults(account.session_defaults ?? {});
     setEditCliPath(account.cli_path ?? "");
-    setEditCliPathError(null);
     setEditSummarizeOnClose(!!account.summarizeOnClose);
     setEditSummaryModel(account.summaryModel ?? 'haiku');
   };
@@ -279,15 +524,10 @@ export const AccountSettings: React.FC = () => {
 
   const saveEdit = async () => {
     if (editingId === null || !editName.trim() || !editDir.trim()) return;
-    // Validate cli_path before saving — empty/null is fine
+    // CLI path UI was retired — preserve whatever value was already on
+    // the account rather than wiping it. No validation needed here since
+    // the user can no longer change it from this dialog.
     const trimmedCliPath = editCliPath.trim();
-    if (trimmedCliPath) {
-      const v = await api.validateCliPath(trimmedCliPath);
-      if (!v.ok) {
-        setEditCliPathError(v.error);
-        return;
-      }
-    }
     try {
       const defaults = Object.keys(editSessionDefaults).length > 0 ? editSessionDefaults : null;
       const cliPath = trimmedCliPath || null;
@@ -300,7 +540,6 @@ export const AccountSettings: React.FC = () => {
         editSummaryModel ?? null,
       );
       setEditingId(null);
-      setEditCliPathError(null);
       await loadData();
     } catch (error) {
       console.error("Failed to update account:", error);
@@ -309,17 +548,10 @@ export const AccountSettings: React.FC = () => {
 
   const handleCreate = async () => {
     if (!newName.trim() || !newDir.trim()) return;
-    const trimmedCliPath = newCliPath.trim();
-    if (trimmedCliPath) {
-      const v = await api.validateCliPath(trimmedCliPath);
-      if (!v.ok) {
-        setNewCliPathError(v.error);
-        return;
-      }
-    }
     try {
       const defaults = Object.keys(newSessionDefaults).length > 0 ? newSessionDefaults : undefined;
-      const cliPath = trimmedCliPath || null;
+      // CLI path UI retired — new accounts always start with no override.
+      const cliPath: string | null = null;
       await api.createAccount(newName.trim(), newDir.trim(), accounts.length === 0, newType, newColor, newIcon, defaults, cliPath);
       setNewName("");
       setNewDir("");
@@ -327,8 +559,6 @@ export const AccountSettings: React.FC = () => {
       setNewColor("#3b82f6");
       setNewIcon("user");
       setNewSessionDefaults({});
-      setNewCliPath("");
-      setNewCliPathError(null);
       setShowAddAccount(false);
       await loadData();
     } catch (error) {
@@ -426,14 +656,22 @@ export const AccountSettings: React.FC = () => {
             </DialogHeader>
 
             <div className="space-y-3 py-2">
-              <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">Account name</label>
-                <Input
-                  placeholder="Account name"
-                  value={editName}
-                  onChange={(e) => setEditName(e.target.value)}
-                  className="h-8 text-sm"
-                />
+              {/* Name + Type on a single row to use the dialog width and
+                  keep the top of the form compact. */}
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">Account name</label>
+                  <Input
+                    placeholder="Account name"
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    className="h-7 text-xs"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">Account type</label>
+                  <TypeSelect value={editType} onChange={setEditType} compact />
+                </div>
               </div>
               <div className="space-y-1">
                 <label className="text-xs text-muted-foreground">Config directory</label>
@@ -441,95 +679,92 @@ export const AccountSettings: React.FC = () => {
                   value={editDir}
                   onChange={setEditDir}
                   placeholder="Config directory"
+                  compact
                 />
               </div>
-              <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">Account type</label>
-                <TypeSelect value={editType} onChange={setEditType} />
+              {/* Color (single native picker swatch) + icon button on one
+                  row. Labels kept so the controls aren't ambiguous. */}
+              <div className="flex items-center gap-3 pt-1">
+                <label className="text-xs text-muted-foreground">Color</label>
+                <input
+                  type="color"
+                  value={editColor}
+                  onChange={(e) => setEditColor(e.target.value)}
+                  className="w-7 h-7 rounded cursor-pointer border border-border bg-transparent"
+                  title="Pick color"
+                  aria-label="Account color"
+                />
+                <label className="text-xs text-muted-foreground ml-2">Icon</label>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setShowEditIconPicker(true)}
+                  className="h-7 px-2 shrink-0"
+                  title="Pick icon"
+                >
+                  {(() => {
+                    const IconComponent = ICON_MAP[editIcon] || ICON_MAP.user;
+                    return IconComponent ? <IconComponent className="w-4 h-4" /> : null;
+                  })()}
+                  <span className="ml-2 text-xs">{editIcon}</span>
+                </Button>
               </div>
-              <div className="space-y-2 pt-1">
-                <div className="flex items-start gap-3">
-                  <label className="text-xs text-muted-foreground w-14 mt-1">Color</label>
-                  <ColorSwatchGrid value={editColor} onChange={setEditColor} />
-                </div>
-                <div className="flex items-center gap-3">
-                  <label className="text-xs text-muted-foreground w-14">Icon</label>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setShowEditIconPicker(true)}
-                    className="h-8 px-2"
-                  >
-                    {(() => {
-                      const IconComponent = ICON_MAP[editIcon] || ICON_MAP.user;
-                      return IconComponent ? <IconComponent className="w-4 h-4" /> : null;
-                    })()}
-                    <span className="ml-2 text-xs">{editIcon}</span>
-                  </Button>
-                </div>
-                <div className="flex items-center gap-3">
-                  <label className="text-xs text-muted-foreground w-14">Preview</label>
-                  <div className="flex items-center gap-2">
-                    <AccountBadge
-                      name={editName || "Account"}
-                      color={editColor}
-                      icon={editIcon}
-                      variant="compact"
-                    />
-                    <span className="text-xs text-foreground">{editName || "Account"}</span>
-                  </div>
+              {/* Preview both badge variants the user will see at runtime:
+                  the compact icon-only square (tabs) and the full pill with
+                  account-type suffix (session header). Pass color/icon/type
+                  explicitly so the preview reflects the in-flight edits, not
+                  whatever the AccountsContext has cached. */}
+              <div className="flex items-center gap-3">
+                <label className="text-xs text-muted-foreground w-14">Preview</label>
+                <div className="flex items-center gap-2">
+                  <AccountBadge
+                    name={editName || "Account"}
+                    color={editColor}
+                    icon={editIcon}
+                    variant="compact"
+                  />
+                  <AccountBadge
+                    name={editName || "Account"}
+                    color={editColor}
+                    icon={editIcon}
+                    accountType={editType}
+                    variant="full"
+                  />
                 </div>
               </div>
               <SessionDefaultsEditor value={editSessionDefaults} onChange={setEditSessionDefaults} />
-              <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">CLI path (optional)</label>
-                <Input
-                  placeholder="(default: claude on PATH)"
-                  value={editCliPath}
-                  onChange={(e) => {
-                    setEditCliPath(e.target.value);
-                    setEditCliPathError(null);
-                  }}
-                  className="h-8 text-sm font-mono"
-                />
-                {editCliPathError && (
-                  <div className="text-[11px] text-red-400">{editCliPathError}</div>
-                )}
-                <div className="text-[11px] text-muted-foreground">
-                  Override which <code>claude</code> binary or wrapper to spawn.
-                  Shell aliases (<code>claude-personal</code>) are not supported —
-                  paste the resolved path (e.g. <code>~/.local/bin/claude</code>).
-                </div>
-              </div>
-              {/* Per-session summary opt-in. */}
-              <div className="space-y-2 pt-2 border-t border-border/30">
+              {/* Session Summaries — toggle + model on one line, model
+                  disabled when toggle is off. The actual prompt template
+                  lives in Settings → Session Summary Prompt (global). */}
+              <div className="space-y-2 pt-5">
+                <h4 className="text-sm font-medium">Session Summaries</h4>
                 <div className="flex items-center justify-between gap-3">
-                  <label
-                    htmlFor={`summarize-toggle-${editingId ?? 'new'}`}
-                    className="text-xs text-muted-foreground"
-                  >
-                    Generate summaries when sessions close
-                  </label>
-                  <Switch
-                    id={`summarize-toggle-${editingId ?? 'new'}`}
-                    checked={editSummarizeOnClose}
-                    disabled={!editSummaryModel}
-                    onCheckedChange={setEditSummarizeOnClose}
-                    aria-label="Generate summaries when sessions close"
-                  />
-                </div>
-                <div className="flex items-center justify-between gap-3">
-                  <label className="text-xs text-muted-foreground">
-                    Summary model
-                  </label>
+                  <div className="flex items-center gap-3">
+                    <label
+                      htmlFor={`summarize-toggle-${editingId ?? 'new'}`}
+                      className="text-xs text-muted-foreground"
+                    >
+                      Generate Summaries
+                    </label>
+                    <Switch
+                      id={`summarize-toggle-${editingId ?? 'new'}`}
+                      checked={editSummarizeOnClose}
+                      onCheckedChange={setEditSummarizeOnClose}
+                      aria-label="Generate Summaries"
+                    />
+                  </div>
                   <Select
                     value={editSummaryModel ?? '__none__'}
                     onValueChange={(v) =>
                       setEditSummaryModel(v === '__none__' ? null : v)
                     }
+                    disabled={!editSummarizeOnClose}
                   >
-                    <SelectTrigger className="h-8 w-44 text-xs">
+                    <SelectTrigger
+                      className="h-7 w-44 text-xs"
+                      disabled={!editSummarizeOnClose}
+                    >
                       <SelectValue placeholder="Pick a model" />
                     </SelectTrigger>
                     <SelectContent>
@@ -543,11 +778,12 @@ export const AccountSettings: React.FC = () => {
                   </Select>
                 </div>
                 <div className="text-[11px] text-muted-foreground">
-                  {editSummaryModel
+                  {editSummarizeOnClose && editSummaryModel
                     ? summaryCostEstimate(editSummaryModel)
-                    : 'Pick a model to enable summarization.'}
+                    : 'Toggle on and pick a model to enable summarization.'}
                   {' '}Costs come out of this account's plan allotment for
                   Pro/Max plans, or are billed per token for API keys.
+                  {' '}Edit the prompt in Settings → Session Summary Prompt.
                 </div>
               </div>
             </div>
@@ -613,26 +849,6 @@ export const AccountSettings: React.FC = () => {
               </div>
             </div>
             <SessionDefaultsEditor value={newSessionDefaults} onChange={setNewSessionDefaults} />
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">CLI path (optional)</label>
-              <Input
-                placeholder="(default: claude on PATH)"
-                value={newCliPath}
-                onChange={(e) => {
-                  setNewCliPath(e.target.value);
-                  setNewCliPathError(null);
-                }}
-                className="h-8 text-sm font-mono"
-              />
-              {newCliPathError && (
-                <div className="text-[11px] text-red-400">{newCliPathError}</div>
-              )}
-              <div className="text-[11px] text-muted-foreground">
-                Override which <code>claude</code> binary or wrapper to spawn.
-                Shell aliases (<code>claude-personal</code>) are not supported —
-                paste the resolved path (e.g. <code>~/.local/bin/claude</code>).
-              </div>
-            </div>
             <div className="flex gap-2">
               <Button size="sm" onClick={handleCreate} className="h-7 text-xs">
                 Add

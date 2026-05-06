@@ -23,6 +23,7 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   'create_project',
   'get_project_sessions',
   'load_session_history',
+  'delete_session',
   'get_home_directory',
   'get_claude_settings',
   'save_claude_settings',

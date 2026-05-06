@@ -715,6 +715,22 @@ export const api = {
   },
 
   /**
+   * Permanently delete a session — its JSONL file and any ride-along
+   * sidecars (`*.summary.json`, `*.todo.json`). Throws when the session
+   * file isn't found or the project's config dir can't be resolved;
+   * the caller should catch and surface a toast/inline error.
+   */
+  async deleteSession(
+    sessionId: string,
+    projectId: string,
+    projectPath?: string,
+  ): Promise<void> {
+    const params: Record<string, string> = { sessionId, projectId };
+    if (projectPath) params.projectPath = projectPath;
+    await apiCall<unknown>('delete_session', params);
+  },
+
+  /**
    * Reads the Claude settings file
    * @returns Promise resolving to the settings object
    */

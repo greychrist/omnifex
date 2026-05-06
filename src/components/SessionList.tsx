@@ -1,8 +1,17 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Copy, Check, RefreshCw, Hash, ChevronDown, ChevronUp } from "lucide-react";
+import { Copy, Check, RefreshCw, Hash, ChevronDown, ChevronUp, Trash2 } from "lucide-react";
 import { Pagination } from "@/components/ui/pagination";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { truncateText, getFirstLine } from "@/lib/date-utils";
 import {
@@ -12,6 +21,7 @@ import {
   type SessionSummary,
   type SummaryGenerateResult,
 } from "@/lib/api";
+import { useAccounts } from "@/contexts/AccountsContext";
 
 /**
  * FNV-1a hash mirror — must produce the same output as `promptHash` in
@@ -28,6 +38,34 @@ function clientPromptHash(template: string): string {
   }
   return (hash >>> 0).toString(16).padStart(8, '0');
 }
+
+/**
+ * Render the body of a session summary. The current default prompt asks
+ * the model to produce markdown-style "- " bullet lines inside the
+ * `<paragraph>` tag; older cached summaries are still plain prose. When
+ * every non-empty line begins with `- ` or `* ` we render a tight bullet
+ * list, otherwise we fall back to a plain paragraph so legacy sidecars
+ * keep rendering correctly until they're regenerated.
+ */
+const SummaryBody: React.FC<{ text: string }> = ({ text }) => {
+  const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+  const allBullets =
+    lines.length > 0 && lines.every((l) => /^[-*]\s+/.test(l));
+  if (allBullets) {
+    return (
+      <ul className="mt-1 list-disc pl-4 space-y-0.5 text-[11px] text-muted-foreground">
+        {lines.map((l, i) => (
+          <li key={i}>{l.replace(/^[-*]\s+/, '')}</li>
+        ))}
+      </ul>
+    );
+  }
+  return (
+    <p className="mt-1 text-[11px] text-muted-foreground whitespace-normal">
+      {text}
+    </p>
+  );
+};
 
 /**
  * Human-readable explanation for each `skipped` reason. Surfaced inline
@@ -108,6 +146,13 @@ export const SessionList: React.FC<SessionListProps> = ({
   onOpenById,
   className,
 }) => {
+  // We use the accounts context not for direct lookups but to re-trigger
+  // the per-project resolution below when the user toggles the
+  // "Generate Summaries" / model settings on the resolved account from
+  // somewhere else in the app — without this dep the summarize state
+  // for an open SessionList wouldn't update until the user navigated
+  // away and back.
+  const { accounts } = useAccounts();
   const [currentPage, setCurrentPage] = useState(1);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -164,6 +209,43 @@ export const SessionList: React.FC<SessionListProps> = ({
   // refresh button should treat an unchanged JSONL as "nothing to do".
   // A prompt edit changes the hash and re-enables the button.
   const [activePromptHash, setActivePromptHash] = useState<string | null>(null);
+
+  // Delete-session flow: clicking the per-row trash icon parks the
+  // session id here, which opens the confirm dialog. Confirming calls
+  // the IPC and then onRefresh() to reload the list. Errors surface
+  // inline in the dialog so the row stays addressable.
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const handleConfirmDelete = useCallback(async () => {
+    if (!pendingDeleteId) return;
+    const target = sessions.find((s) => s.id === pendingDeleteId);
+    if (!target) {
+      // Row vanished from under us (refresh race); just close the dialog.
+      setPendingDeleteId(null);
+      return;
+    }
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await api.deleteSession(target.id, target.project_id, target.project_path);
+      setPendingDeleteId(null);
+      // Drop any in-memory summary state for the deleted row so the
+      // list doesn't briefly re-render the row with a stale summary if
+      // the parent's refresh hasn't completed yet.
+      setSummaries((prev) => {
+        const next = new Map(prev);
+        next.delete(target.id);
+        return next;
+      });
+      if (onRefresh) await onRefresh();
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDeleting(false);
+    }
+  }, [pendingDeleteId, sessions, onRefresh]);
 
   // Fetch summaries in parallel whenever the session list or project path
   // changes. The IPC layer answers each call independently; we don't await
@@ -238,7 +320,10 @@ export const SessionList: React.FC<SessionListProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [projectPath]);
+    // `accounts` is intentionally a dep: when the AccountsContext
+    // refreshes after the user edits per-account summary settings, we
+    // re-resolve so the gate flips without needing a tab switch.
+  }, [projectPath, accounts]);
 
   // Subscribe to backend summary-updated events so auto-on-close
   // generations refresh the matching row in real time. We re-fetch the
@@ -395,6 +480,7 @@ export const SessionList: React.FC<SessionListProps> = ({
                 <th className="text-left font-medium py-2 px-3">Summary</th>
                 <th className="text-left font-medium py-2 px-3 w-28">Session ID</th>
                 <th className="text-left font-medium py-2 px-3 w-10"></th>
+                <th className="text-left font-medium py-2 px-3 w-10"></th>
               </tr>
             </thead>
             <tbody>
@@ -414,7 +500,14 @@ export const SessionList: React.FC<SessionListProps> = ({
                 const lastDate = session.last_timestamp
                   ? new Date(session.last_timestamp)
                   : new Date(session.created_at * 1000);
-                const summary = summaries.get(session.id);
+                // Hide cached summaries when the resolved account has
+                // summarization turned off — the user toggled off and
+                // expects them gone from the UI without having to manually
+                // delete sidecar files. `null` (resolution still pending)
+                // and `true` keep showing whatever's cached.
+                const cachedSummary = summaries.get(session.id);
+                const summary =
+                  summarizeEnabledForProject === false ? null : cachedSummary;
                 const isExpanded = expanded.has(session.id);
                 const isRefreshing = summaryRefreshing.has(session.id);
                 // Refresh button is a no-op when the JSONL size hasn't
@@ -486,11 +579,7 @@ export const SessionList: React.FC<SessionListProps> = ({
                             <div className="font-medium text-foreground truncate">
                               {summary.headline}
                             </div>
-                            {isExpanded && (
-                              <p className="mt-1 text-[11px] text-muted-foreground whitespace-normal">
-                                {summary.paragraph}
-                              </p>
-                            )}
+                            {isExpanded && <SummaryBody text={summary.paragraph} />}
                           </div>
                         </div>
                       ) : session.first_message ? (
@@ -553,6 +642,20 @@ export const SessionList: React.FC<SessionListProps> = ({
                         </button>
                       ) : null}
                     </td>
+                    <td className="py-2 px-3 align-top">
+                      <button
+                        type="button"
+                        aria-label="Delete session"
+                        title="Delete session"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setPendingDeleteId(session.id);
+                        }}
+                        className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </td>
                   </motion.tr>
                 );
               })}
@@ -567,6 +670,52 @@ export const SessionList: React.FC<SessionListProps> = ({
           onPageChange={setCurrentPage}
         />
       </div>
+
+      {/* Delete-session confirmation. Mounted once at panel level; opens
+          when pendingDeleteId is set. Cancel just clears the id; Delete
+          calls handleConfirmDelete which clears it on success or sets
+          deleteError on failure. */}
+      <Dialog
+        open={pendingDeleteId !== null}
+        onOpenChange={(open) => {
+          if (!open && !deleting) {
+            setPendingDeleteId(null);
+            setDeleteError(null);
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete this session?</DialogTitle>
+            <DialogDescription>
+              This permanently removes the session transcript and any
+              cached summary or todo files. It cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          {deleteError && (
+            <div className="text-xs text-red-400 px-1">{deleteError}</div>
+          )}
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setPendingDeleteId(null);
+                setDeleteError(null);
+              }}
+              disabled={deleting}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => void handleConfirmDelete()}
+              disabled={deleting}
+            >
+              {deleting ? 'Deleting…' : 'Delete'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </TooltipProvider>
   );
 };

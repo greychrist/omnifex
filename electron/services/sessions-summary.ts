@@ -244,21 +244,40 @@ export function parseSummaryXML(response: string): ParsedSummary | null {
  * latest value at call time.
  */
 export const DEFAULT_SUMMARY_PROMPT = `You are summarizing a coding-assistant session for a developer's records.
-Produce a one-line headline (8–14 words) and a 2–3 sentence paragraph (~50 words) that capture the THEMES of the session — what general area or capability was worked on, what the broader goals were, what kind of problem the user was trying to solve.
 
-Stay at a higher level of abstraction. Do NOT list specific file names, function names, library names, line numbers, or step-by-step changes. Generalize:
-- "Iterating on the session list UI" — not "edited SessionList.tsx to add pagination."
-- "Improving the authentication flow" — not "added refresh-token logic to auth.ts:42."
-- "Debugging a multi-account routing edge case" — not "fixed the path-rule resolver in accounts.ts."
+Produce a one-line headline (8–14 words) and 3–6 resume-style bullet
+points that capture the THEMES of the session — high-level outcomes,
+not a changelog. Each bullet reads like a line on a CV: an
+accomplishment at a level of abstraction someone scanning the row in a
+session list would care about.
+
+Stay at a high level of abstraction. Do NOT list specific file names,
+function names, library names, line numbers, or step-by-step changes.
+Generalize:
+- "Iterated on the session list UI" — not "edited SessionList.tsx to add pagination."
+- "Improved the authentication flow" — not "added refresh-token logic to auth.ts:42."
+- "Debugged a multi-account routing edge case" — not "fixed the path-rule resolver in accounts.ts."
+- "Refined the account-edit dialog visual design"
+
+Each bullet:
+- starts with "- " (markdown dash) on its own line,
+- is 6–14 words,
+- uses past-tense action verbs ("Refactored", "Improved", "Debugged",
+  "Designed", "Restructured"),
+- describes an outcome, not the steps.
 
 The headline answers: "what kind of work was this?"
-The paragraph answers: "what was the user generally trying to accomplish, and where did it land?"
+The bullets answer: "what high-level outcomes shipped this session?"
 
 No filler. No hedging. No code snippets.
 
 Format your response EXACTLY:
 <headline>...</headline>
-<paragraph>...</paragraph>
+<paragraph>
+- ...
+- ...
+- ...
+</paragraph>
 
 `;
 

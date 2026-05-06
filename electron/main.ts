@@ -685,6 +685,8 @@ app.whenReady().then(() => {
       getProjectSessions: (projectId: string, projectPath?: string) => claudeService.getProjectSessions(projectId, projectPath),
       loadSessionHistory: (sessionId: string, projectId: string) =>
         claudeService.loadSessionHistory(sessionId, projectId),
+      deleteSession: (sessionId: string, projectId: string, projectPath?: string) =>
+        claudeService.deleteSession(sessionId, projectId, projectPath),
       getHomeDirectory: () => claudeService.getHomeDirectory(),
       getSettings: (opts?: any) => claudeService.getClaudeSettings(opts),
       saveSettings: (settings: any, opts?: any) => claudeService.saveClaudeSettings(settings, opts),

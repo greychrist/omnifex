@@ -484,6 +484,115 @@ describe('claude service', () => {
   // loadAgentSessionHistory
   // -------------------------------------------------------------------------
 
+  // -------------------------------------------------------------------------
+  // deleteSession
+  // -------------------------------------------------------------------------
+
+  describe('deleteSession', () => {
+    it('removes the JSONL file for the given session', async () => {
+      const configDir = path.join(tmpDir, '.claude-delete');
+      const projectId = 'delete-proj';
+      const sessionId = 'sess-to-go';
+      const projectDir = path.join(configDir, 'projects', projectId);
+      fs.mkdirSync(projectDir, { recursive: true });
+      const jsonlPath = path.join(projectDir, `${sessionId}.jsonl`);
+      fs.writeFileSync(jsonlPath, JSON.stringify({ type: 'system' }) + '\n');
+
+      accounts.createAccount('Test', configDir, true, 'pro');
+
+      await service.deleteSession(sessionId, projectId);
+      expect(fs.existsSync(jsonlPath)).toBe(false);
+    });
+
+    it('cascade-deletes the .summary.json sidecar when present', async () => {
+      const configDir = path.join(tmpDir, '.claude-delete-summary');
+      const projectId = 'sum-proj';
+      const sessionId = 'sess-with-summary';
+      const projectDir = path.join(configDir, 'projects', projectId);
+      fs.mkdirSync(projectDir, { recursive: true });
+      const jsonlPath = path.join(projectDir, `${sessionId}.jsonl`);
+      const sidecarPath = path.join(projectDir, `${sessionId}.summary.json`);
+      fs.writeFileSync(jsonlPath, JSON.stringify({ type: 'system' }) + '\n');
+      fs.writeFileSync(sidecarPath, JSON.stringify({ version: 1, headline: 'h', paragraph: 'p' }));
+
+      accounts.createAccount('Test', configDir, true, 'pro');
+
+      await service.deleteSession(sessionId, projectId);
+      expect(fs.existsSync(jsonlPath)).toBe(false);
+      expect(fs.existsSync(sidecarPath)).toBe(false);
+    });
+
+    it('cascade-deletes the .todo.json ride-along when present', async () => {
+      const configDir = path.join(tmpDir, '.claude-delete-todo');
+      const projectId = 'todo-proj';
+      const sessionId = 'sess-with-todo';
+      const projectDir = path.join(configDir, 'projects', projectId);
+      fs.mkdirSync(projectDir, { recursive: true });
+      const jsonlPath = path.join(projectDir, `${sessionId}.jsonl`);
+      const todoPath = path.join(projectDir, `${sessionId}.todo.json`);
+      fs.writeFileSync(jsonlPath, JSON.stringify({ type: 'system' }) + '\n');
+      fs.writeFileSync(todoPath, JSON.stringify([{ task: 'x', status: 'pending' }]));
+
+      accounts.createAccount('Test', configDir, true, 'pro');
+
+      await service.deleteSession(sessionId, projectId);
+      expect(fs.existsSync(jsonlPath)).toBe(false);
+      expect(fs.existsSync(todoPath)).toBe(false);
+    });
+
+    it('succeeds quietly when the sidecars are absent', async () => {
+      const configDir = path.join(tmpDir, '.claude-delete-no-extras');
+      const projectId = 'plain-proj';
+      const sessionId = 'sess-bare';
+      const projectDir = path.join(configDir, 'projects', projectId);
+      fs.mkdirSync(projectDir, { recursive: true });
+      const jsonlPath = path.join(projectDir, `${sessionId}.jsonl`);
+      fs.writeFileSync(jsonlPath, JSON.stringify({ type: 'system' }) + '\n');
+
+      accounts.createAccount('Test', configDir, true, 'pro');
+
+      await expect(service.deleteSession(sessionId, projectId)).resolves.not.toThrow();
+      expect(fs.existsSync(jsonlPath)).toBe(false);
+    });
+
+    it('throws when the JSONL file does not exist', async () => {
+      const configDir = path.join(tmpDir, '.claude-delete-missing');
+      const projectId = 'missing-proj';
+      const projectDir = path.join(configDir, 'projects', projectId);
+      fs.mkdirSync(projectDir, { recursive: true });
+      accounts.createAccount('Test', configDir, true, 'pro');
+
+      await expect(service.deleteSession('ghost', projectId)).rejects.toThrow();
+    });
+
+    it('throws when the project config dir cannot be resolved', async () => {
+      // No accounts → no configDir resolves.
+      await expect(service.deleteSession('any', 'nope')).rejects.toThrow();
+    });
+
+    it('does not delete unrelated session files in the same project dir', async () => {
+      const configDir = path.join(tmpDir, '.claude-delete-isolation');
+      const projectId = 'iso-proj';
+      const sessionA = 'keep-me';
+      const sessionB = 'delete-me';
+      const projectDir = path.join(configDir, 'projects', projectId);
+      fs.mkdirSync(projectDir, { recursive: true });
+      const jsonlA = path.join(projectDir, `${sessionA}.jsonl`);
+      const jsonlB = path.join(projectDir, `${sessionB}.jsonl`);
+      const sidecarA = path.join(projectDir, `${sessionA}.summary.json`);
+      fs.writeFileSync(jsonlA, JSON.stringify({ type: 'system' }) + '\n');
+      fs.writeFileSync(jsonlB, JSON.stringify({ type: 'system' }) + '\n');
+      fs.writeFileSync(sidecarA, JSON.stringify({ version: 1, headline: 'h', paragraph: 'p' }));
+
+      accounts.createAccount('Test', configDir, true, 'pro');
+
+      await service.deleteSession(sessionB, projectId);
+      expect(fs.existsSync(jsonlA)).toBe(true);
+      expect(fs.existsSync(sidecarA)).toBe(true);
+      expect(fs.existsSync(jsonlB)).toBe(false);
+    });
+  });
+
   describe('loadAgentSessionHistory', () => {
     it('returns empty array when no config dir holds the session file', async () => {
       const result = await service.loadAgentSessionHistory('ghost-session');

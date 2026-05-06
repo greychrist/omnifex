@@ -24,6 +24,27 @@ vi.mock('framer-motion', () => ({
   AnimatePresence: ({ children }: any) => children,
 }));
 
+// SessionList consumes AccountsContext so it can re-trigger the
+// per-project summary-resolution when account settings change. Tests
+// mount it without a Provider; stub the hook so it returns an empty
+// account list — that's enough to keep the resolution useEffect
+// working off the test's `resolveAccountForProject` mock.
+//
+// Use a frozen array so the stub returns the SAME reference on every
+// render — otherwise SessionList's `[projectPath, accounts]` effect
+// re-fires on every re-render and exhausts the test's
+// `mockResolvedValueOnce` after the first call.
+const STUB_ACCOUNTS: ReadonlyArray<never> = Object.freeze([]);
+vi.mock('@/contexts/AccountsContext', () => ({
+  useAccounts: () => ({
+    accounts: STUB_ACCOUNTS,
+    refresh: async () => {},
+    getColor: () => null,
+    getIcon: () => null,
+    getAccountType: () => null,
+  }),
+}));
+
 vi.mock('@/lib/api', async () => {
   return {
     api: {
@@ -176,7 +197,7 @@ describe('SessionList summary rendering', () => {
     );
   });
 
-  it('hides the refresh icon when the resolved account has summarization disabled', async () => {
+  it('hides the summary and refresh icon when the resolved account has summarization disabled', async () => {
     vi.mocked(api.resolveAccountForProject).mockResolvedValueOnce({
       id: 1,
       name: 'Test',
@@ -192,12 +213,22 @@ describe('SessionList summary rendering', () => {
       summaryModel: 'haiku',
     } as any);
     render(<SessionList sessions={[sessionFixture]} projectPath="/x" />);
-    await screen.findByText('Summary headline here.');
+    // Toggle off → cached sidecars on disk are NOT shown; the row falls
+    // back to the first-message preview. summaryGet's mock might land
+    // before or after resolveAccountForProject's mock — we wait until
+    // BOTH have been called AND React has flushed the resulting state
+    // (signal: the resolved fallback span has fully rendered).
+    await waitFor(() => {
+      expect(api.summaryGet).toHaveBeenCalled();
+      expect(api.resolveAccountForProject).toHaveBeenCalled();
+      expect(screen.queryByText(/old first message preview/)).not.toBeNull();
+      expect(screen.queryByText('Summary headline here.')).toBeNull();
+    });
     expect(screen.queryByRole('button', { name: /refresh summary/i })).toBeNull();
     expect(screen.queryByRole('button', { name: /generate summary/i })).toBeNull();
   });
 
-  it('hides the refresh icon when the resolved account has no model selected', async () => {
+  it('hides the summary and refresh icon when the resolved account has no model selected', async () => {
     vi.mocked(api.resolveAccountForProject).mockResolvedValueOnce({
       id: 1,
       name: 'Test',
@@ -213,7 +244,12 @@ describe('SessionList summary rendering', () => {
       summaryModel: null, // no model
     } as any);
     render(<SessionList sessions={[sessionFixture]} projectPath="/x" />);
-    await screen.findByText('Summary headline here.');
+    await waitFor(() => {
+      expect(api.summaryGet).toHaveBeenCalled();
+      expect(api.resolveAccountForProject).toHaveBeenCalled();
+      expect(screen.queryByText(/old first message preview/)).not.toBeNull();
+      expect(screen.queryByText('Summary headline here.')).toBeNull();
+    });
     expect(screen.queryByRole('button', { name: /refresh summary/i })).toBeNull();
   });
 
