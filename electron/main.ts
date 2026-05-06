@@ -452,14 +452,46 @@ app.whenReady().then(() => {
   const slashCommandsService = createSlashCommandsService(defaultConfigDir);
   const sessionsSummaryService = createSessionsSummaryService({
     jsonlPathFor: (sessionUuid, projectPath) => {
-      // Encode project path the way Claude Code does: each '/' → '-'.
+      // The straightforward path: Claude Code encodes project paths to
+      // directory names by replacing each '/' with '-'.
       const projectId = projectPath.replace(/\//g, '-');
-      return path.join(
+      const computedPath = path.join(
         defaultConfigDir,
         'projects',
         projectId,
         `${sessionUuid}.jsonl`,
       );
+      if (fs.existsSync(computedPath)) return computedPath;
+
+      // Fallback: scan every projects/<dir>/ for a JSONL with this uuid.
+      // Handles project renames, path-prefix drift, and anything else
+      // that breaks the project-path → project-id round-trip. We also
+      // search every account's configDir, since multi-account routing
+      // means the JSONL could live under a different account than the
+      // one currently resolved for this projectPath.
+      const candidateConfigDirs = new Set<string>([defaultConfigDir]);
+      for (const acct of accountsService.listAccounts()) {
+        candidateConfigDirs.add(acct.config_dir);
+      }
+      for (const cfgDir of candidateConfigDirs) {
+        const projectsDir = path.join(cfgDir, 'projects');
+        let entries: import('fs').Dirent[];
+        try {
+          entries = fs.readdirSync(projectsDir, { withFileTypes: true });
+        } catch {
+          continue;
+        }
+        for (const entry of entries) {
+          if (!entry.isDirectory()) continue;
+          const candidate = path.join(projectsDir, entry.name, `${sessionUuid}.jsonl`);
+          if (fs.existsSync(candidate)) return candidate;
+        }
+      }
+
+      // Nothing found — return the computed path so the caller's missing-
+      // file branch fires (skipped:jsonl-missing) with a sensible value
+      // in the log.
+      return computedPath;
     },
     resolveAccount: (projectPath) => {
       const acct = accountsService.resolve(projectPath);

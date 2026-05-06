@@ -1314,7 +1314,22 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   // 'chat' back to 'projects'. When SessionList mutates a projects tab
   // into a chat tab on session-click, there was no way to undo that
   // mutation from within the chat view. This button is that way back.
+  //
+  // Also kicks off a fire-and-forget summary regen for the session
+  // we're navigating away from. Auto-on-close only fires when the SDK
+  // session is torn down (tab close); back-button keeps the SDK
+  // session alive but we still want the summary to reflect the work
+  // that just happened. The service's in-flight dedup map prevents
+  // double-spend if both back-button and tab-close fire for the same
+  // session.
   const handleBackToProject = () => {
+    if (claudeSessionId && projectPath) {
+      api
+        .summaryGenerate(claudeSessionId, projectPath)
+        .catch((err) =>
+          console.warn('[ClaudeCodeSession] back-button summary failed:', err),
+        );
+    }
     window.dispatchEvent(new CustomEvent('back-to-project'));
   };
 
