@@ -8,8 +8,28 @@ import type { Project } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { AccountBadge } from "@/components/AccountBadge";
 
-type SortKey = 'name' | 'path' | 'account' | 'sessions' | 'lastOpened';
+type SortKey = 'name' | 'path' | 'account' | 'sessions' | 'lastActivity';
 type SortDir = 'asc' | 'desc';
+
+/**
+ * Format a Unix-seconds timestamp as a compact relative-time string
+ * ("2h ago", "3d ago", "5mo ago"). Falls back to a date when older than
+ * a year. The Projects list cares about recency at-a-glance, not exact
+ * dates — relative reads more naturally.
+ */
+function formatRelativeTime(unixSeconds: number): string {
+  const now = Date.now() / 1000;
+  const diff = Math.max(0, now - unixSeconds);
+  if (diff < 60) return 'just now';
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86_400) return `${Math.floor(diff / 3600)}h ago`;
+  if (diff < 86_400 * 30) return `${Math.floor(diff / 86_400)}d ago`;
+  if (diff < 86_400 * 365) return `${Math.floor(diff / (86_400 * 30))}mo ago`;
+  return new Date(unixSeconds * 1000).toLocaleDateString('en-US', {
+    month: 'short',
+    year: 'numeric',
+  });
+}
 
 interface ProjectListProps {
   /**
@@ -121,9 +141,12 @@ export const ProjectList: React.FC<ProjectListProps> = ({
           return (a.account_name ?? '').localeCompare(b.account_name ?? '') * dir;
         case 'sessions':
           return (a.sessions.length - b.sessions.length) * dir;
-        case 'lastOpened': {
-          const av = a.most_recent_session ?? a.created_at;
-          const bv = b.most_recent_session ?? b.created_at;
+        case 'lastActivity': {
+          // Prefer last_activity_at (newest file mtime in folder).
+          // Fall back to most_recent_session, then created_at, then 0
+          // for projects whose folder no longer exists on disk.
+          const av = a.last_activity_at ?? a.most_recent_session ?? a.created_at ?? 0;
+          const bv = b.last_activity_at ?? b.most_recent_session ?? b.created_at ?? 0;
           return (av - bv) * dir;
         }
       }
@@ -138,7 +161,7 @@ export const ProjectList: React.FC<ProjectListProps> = ({
       setSortKey(key);
       // For numeric/date columns the useful default is descending (newest /
       // most-active first); for string columns ascending reads more naturally.
-      setSortDir(key === 'sessions' || key === 'lastOpened' ? 'desc' : 'asc');
+      setSortDir(key === 'sessions' || key === 'lastActivity' ? 'desc' : 'asc');
     }
   };
 
@@ -241,15 +264,20 @@ export const ProjectList: React.FC<ProjectListProps> = ({
                   </th>
                   <th
                     className="px-3 py-2 font-medium text-right cursor-pointer hover:text-foreground select-none"
-                    onClick={() => toggleSort('lastOpened')}
+                    onClick={() => toggleSort('lastActivity')}
+                    title="Newest file modification time anywhere within the project folder. Excludes node_modules, .git, build artifacts, etc."
                   >
-                    Last opened<SortIcon k="lastOpened" />
+                    Last activity<SortIcon k="lastActivity" />
                   </th>
                 </tr>
               </thead>
               <tbody>
                 {visibleProjects.map((project, index) => {
-                  const last = project.most_recent_session ?? project.created_at;
+                  const lastActivity =
+                    project.last_activity_at ??
+                    project.most_recent_session ??
+                    project.created_at ??
+                    0;
                   return (
                     <motion.tr
                       key={project.id}
@@ -273,10 +301,15 @@ export const ProjectList: React.FC<ProjectListProps> = ({
                       <td className="px-3 py-2 text-right text-muted-foreground tabular-nums">
                         {project.sessions.length}
                       </td>
-                      <td className="px-3 py-2 text-right text-muted-foreground text-xs tabular-nums">
-                        {last
-                          ? new Date(last * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-                          : '—'}
+                      <td
+                        className="px-3 py-2 text-right text-muted-foreground text-xs tabular-nums"
+                        title={
+                          lastActivity
+                            ? new Date(lastActivity * 1000).toLocaleString()
+                            : ''
+                        }
+                      >
+                        {lastActivity ? formatRelativeTime(lastActivity) : '—'}
                       </td>
                     </motion.tr>
                   );

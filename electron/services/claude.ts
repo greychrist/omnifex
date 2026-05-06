@@ -21,6 +21,16 @@ export interface Project {
   most_recent_session?: number;
   account_id?: number;
   account_name?: string;
+  /**
+   * Newest file-mtime found anywhere within the project folder, in
+   * Unix seconds. Computed by walking the tree with cheap excludes
+   * (node_modules, .git, build artifacts, etc.). This is "did anything
+   * happen on disk in this folder," which is what the Projects list
+   * actually wants to surface as "last activity" — distinct from
+   * `most_recent_session` which only knows about Claude session JSONLs.
+   * Undefined when the path doesn't exist or the walk fails.
+   */
+  last_activity_at?: number;
 }
 
 export interface Session {
@@ -284,6 +294,123 @@ const EXEC_OPTIONS = {
 };
 
 // ---------------------------------------------------------------------------
+// findMostRecentMtime — newest file-mtime anywhere within a project folder
+//
+// Walks `dir` recursively (BFS), skipping hot-spot dirs that aren't real
+// activity (build artifacts, dependency folders, VCS metadata) and that
+// would dominate the walk time on typical repos. Returns ms-since-epoch
+// of the newest mtime, or undefined if the dir doesn't exist or nothing
+// is reachable.
+//
+// Bounded by:
+//   - depth cap (8) — deep enough for any real source tree, shallow
+//     enough to stay sub-second on huge monorepos
+//   - file-stat budget (5000) — early-out before we walk a runaway tree
+//
+// Uses sync fs because listProjects is itself sync and is already doing
+// readdirSync per project. We're adding O(N files) per project, but the
+// excludes cut that by orders of magnitude on real-world projects.
+// ---------------------------------------------------------------------------
+
+const ACTIVITY_WALK_EXCLUDES = new Set<string>([
+  'node_modules',
+  '.git',
+  '.hg',
+  '.svn',
+  '.cache',
+  '.next',
+  '.nuxt',
+  '.turbo',
+  '.parcel-cache',
+  '.vite',
+  '.svelte-kit',
+  '.output',
+  'dist',
+  'build',
+  'out',
+  'target',
+  'coverage',
+  '.coverage',
+  '__pycache__',
+  '.pytest_cache',
+  '.mypy_cache',
+  '.tox',
+  'venv',
+  '.venv',
+  'env',
+  '.env',
+  '.gradle',
+  '.idea',
+  '.vscode',
+  '.DS_Store',
+  'tmp',
+  '.tmp',
+  'logs',
+  '.logs',
+]);
+
+const ACTIVITY_WALK_MAX_DEPTH = 8;
+const ACTIVITY_WALK_MAX_STATS = 5000;
+
+export function findMostRecentMtime(dir: string): number | undefined {
+  let mostRecent: number | undefined;
+  let statBudget = ACTIVITY_WALK_MAX_STATS;
+
+  function walk(current: string, depth: number): void {
+    if (depth > ACTIVITY_WALK_MAX_DEPTH) return;
+    if (statBudget <= 0) return;
+
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(current, { withFileTypes: true });
+    } catch {
+      return;
+    }
+
+    for (const entry of entries) {
+      if (statBudget <= 0) return;
+      if (entry.name.startsWith('.') && ACTIVITY_WALK_EXCLUDES.has(entry.name)) {
+        // Excluded dotfile (e.g. .git, .next).
+        continue;
+      }
+      if (ACTIVITY_WALK_EXCLUDES.has(entry.name)) continue;
+
+      const child = path.join(current, entry.name);
+
+      if (entry.isSymbolicLink()) {
+        // Don't follow symlinks; could loop or escape the project root.
+        continue;
+      }
+      if (entry.isDirectory()) {
+        walk(child, depth + 1);
+        continue;
+      }
+      if (entry.isFile()) {
+        statBudget -= 1;
+        try {
+          const stat = fs.statSync(child);
+          const mtime = stat.mtimeMs;
+          if (mostRecent === undefined || mtime > mostRecent) {
+            mostRecent = mtime;
+          }
+        } catch {
+          // ignore unreadable files
+        }
+      }
+    }
+  }
+
+  try {
+    if (!fs.existsSync(dir)) return undefined;
+  } catch {
+    return undefined;
+  }
+
+  walk(dir, 0);
+  return mostRecent;
+}
+
+// ---------------------------------------------------------------------------
 // Factory
 // ---------------------------------------------------------------------------
 
@@ -384,13 +511,17 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
           }
         }
 
+        const projectPath = decodeProjectId(projectId);
+        const lastActivityMs = findMostRecentMtime(projectPath);
         projects.push({
           id: projectId,
-          path: decodeProjectId(projectId),
+          path: projectPath,
           sessions,
           created_at: Math.floor(createdAt / 1000),
           most_recent_session:
             mostRecent !== undefined ? Math.floor(mostRecent / 1000) : undefined,
+          last_activity_at:
+            lastActivityMs !== undefined ? Math.floor(lastActivityMs / 1000) : undefined,
           account_id: account.id,
           account_name: account.name,
         });

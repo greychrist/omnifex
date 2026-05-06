@@ -15,6 +15,11 @@ export interface Project {
   created_at: number;
   /** Unix timestamp of the most recent session (if any) */
   most_recent_session?: number;
+  /** Unix timestamp of the newest file-mtime anywhere within the project
+   *  folder. Computed by walking the tree with cheap excludes. This is
+   *  what the Projects list surfaces as "Last activity" — distinct from
+   *  `most_recent_session` which only reflects Claude session JSONLs. */
+  last_activity_at?: number;
   /** Account ID this project belongs to */
   account_id?: number;
   /** Account name for display */
