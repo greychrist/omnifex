@@ -4,13 +4,21 @@ import { Input } from "@/components/ui/input";
 import { api, type Account, type PathRule, type SessionDefaults } from "@/lib/api";
 import { AccountBadge } from "@/components/AccountBadge";
 import { useAccounts } from "@/contexts/AccountsContext";
-import { Trash2, Plus, Pencil, FolderOpen, Check, X } from "lucide-react";
+import { Trash2, Plus, Pencil, FolderOpen, Check } from "lucide-react";
 import { IconPicker, ICON_MAP } from "./IconPicker";
 import { MODELS } from "./ModelPicker";
 import { THINKING_CONFIGS, PERMISSION_MODES, EFFORT_LEVELS } from "./ControlBar";
 import { ColorSwatchGrid } from "@/components/ui/ColorSwatchGrid";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 
 const ACCOUNT_TYPES = [
   { value: "max", label: "Max", desc: "No cost, usage limits only" },
@@ -365,181 +373,196 @@ export const AccountSettings: React.FC = () => {
       <div>
         <h3 className="text-sm font-semibold mb-3">Accounts</h3>
         <div className="space-y-2">
-          {accounts.map((account) =>
-            editingId === account.id ? (
-              /* Edit mode */
-              <div
-                key={account.id}
-                className="space-y-2 p-3 rounded-lg border border-primary/50 bg-primary/5"
+          {accounts.map((account) => (
+            <div
+              key={account.id}
+              className="flex items-center gap-3 px-3 py-2.5 rounded-lg border border-border bg-muted/30"
+            >
+              <AccountBadge name={account.name} color={account.color} />
+              <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
+                {account.account_type}
+              </span>
+              <span className="text-xs text-muted-foreground flex-1 truncate">
+                {account.config_dir}
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 px-2 text-xs text-muted-foreground"
+                onClick={() => startEdit(account)}
+                title="Edit"
               >
+                <Pencil className="w-3 h-3" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 px-2 text-xs text-muted-foreground hover:text-destructive"
+                onClick={() => handleDelete(account.id)}
+                title="Delete"
+              >
+                <Trash2 className="w-3 h-3" />
+              </Button>
+            </div>
+          ))}
+        </div>
+
+        {/* Edit-account dialog. Mounted once at panel level; opens when
+            startEdit() sets editingId. Cancel closes via cancelEdit;
+            save closes via saveEdit on success. */}
+        <Dialog
+          open={editingId !== null}
+          onOpenChange={(open) => {
+            if (!open) cancelEdit();
+          }}
+        >
+          <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Edit account</DialogTitle>
+              <DialogDescription>
+                Change name, config directory, account type, appearance,
+                session defaults, and per-session summarization options.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-3 py-2">
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">Account name</label>
                 <Input
                   placeholder="Account name"
                   value={editName}
                   onChange={(e) => setEditName(e.target.value)}
                   className="h-8 text-sm"
                 />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">Config directory</label>
                 <DirInput
                   value={editDir}
                   onChange={setEditDir}
                   placeholder="Config directory"
                 />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">Account type</label>
                 <TypeSelect value={editType} onChange={setEditType} />
-                <div className="space-y-2">
-                  <div className="flex items-start gap-3">
-                    <label className="text-xs text-muted-foreground w-14 mt-1">Color</label>
-                    <ColorSwatchGrid value={editColor} onChange={setEditColor} />
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <label className="text-xs text-muted-foreground w-14">Icon</label>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() => setShowEditIconPicker(true)}
-                      className="h-8 px-2"
-                    >
-                      {(() => {
-                        const IconComponent = ICON_MAP[editIcon] || ICON_MAP.user;
-                        return IconComponent ? <IconComponent className="w-4 h-4" /> : null;
-                      })()}
-                      <span className="ml-2 text-xs">{editIcon}</span>
-                    </Button>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <label className="text-xs text-muted-foreground w-14">Preview</label>
-                    <div className="flex items-center gap-2">
-                      <AccountBadge
-                        name={editName || "Account"}
-                        color={editColor}
-                        icon={editIcon}
-                        variant="compact"
-                      />
-                      <span className="text-xs text-foreground">{editName || "Account"}</span>
-                    </div>
-                  </div>
+              </div>
+              <div className="space-y-2 pt-1">
+                <div className="flex items-start gap-3">
+                  <label className="text-xs text-muted-foreground w-14 mt-1">Color</label>
+                  <ColorSwatchGrid value={editColor} onChange={setEditColor} />
                 </div>
-                <SessionDefaultsEditor value={editSessionDefaults} onChange={setEditSessionDefaults} />
-                <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground">CLI path (optional)</label>
-                  <Input
-                    placeholder="(default: claude on PATH)"
-                    value={editCliPath}
-                    onChange={(e) => {
-                      setEditCliPath(e.target.value);
-                      setEditCliPathError(null);
-                    }}
-                    className="h-8 text-sm font-mono"
-                  />
-                  {editCliPathError && (
-                    <div className="text-[11px] text-red-400">{editCliPathError}</div>
-                  )}
-                  <div className="text-[11px] text-muted-foreground">
-                    Override which <code>claude</code> binary or wrapper to spawn.
-                    Shell aliases (<code>claude-personal</code>) are not supported —
-                    paste the resolved path (e.g. <code>~/.local/bin/claude</code>).
-                  </div>
-                </div>
-                {/* Per-session summary opt-in. Toggle + model picker live
-                    on the same edit form so they save with the rest of the
-                    account fields. */}
-                <div className="space-y-2 pt-2 border-t border-border/30">
-                  <div className="flex items-center justify-between gap-3">
-                    <label
-                      htmlFor={`summarize-toggle-${editingId ?? 'new'}`}
-                      className="text-xs text-muted-foreground"
-                    >
-                      Generate summaries when sessions close
-                    </label>
-                    <Switch
-                      id={`summarize-toggle-${editingId ?? 'new'}`}
-                      checked={editSummarizeOnClose}
-                      disabled={!editSummaryModel}
-                      onCheckedChange={setEditSummarizeOnClose}
-                      aria-label="Generate summaries when sessions close"
-                    />
-                  </div>
-                  <div className="flex items-center justify-between gap-3">
-                    <label className="text-xs text-muted-foreground">
-                      Summary model
-                    </label>
-                    <Select
-                      value={editSummaryModel ?? '__none__'}
-                      onValueChange={(v) =>
-                        setEditSummaryModel(v === '__none__' ? null : v)
-                      }
-                    >
-                      <SelectTrigger className="h-8 w-44 text-xs">
-                        <SelectValue placeholder="Pick a model" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="__none__">(pick a model)</SelectItem>
-                        {MODELS.map((m) => (
-                          <SelectItem key={m.id} value={m.id}>
-                            {m.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="text-[11px] text-muted-foreground">
-                    {editSummaryModel
-                      ? summaryCostEstimate(editSummaryModel)
-                      : 'Pick a model to enable summarization.'}
-                    {' '}Costs come out of this account's plan allotment for
-                    Pro/Max plans, or are billed per token for API keys.
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  <Button size="sm" onClick={saveEdit} className="h-7 text-xs">
-                    <Check className="w-3 h-3 mr-1" />
-                    Save
-                  </Button>
+                <div className="flex items-center gap-3">
+                  <label className="text-xs text-muted-foreground w-14">Icon</label>
                   <Button
+                    type="button"
                     size="sm"
                     variant="outline"
-                    onClick={cancelEdit}
-                    className="h-7 text-xs"
+                    onClick={() => setShowEditIconPicker(true)}
+                    className="h-8 px-2"
                   >
-                    <X className="w-3 h-3 mr-1" />
-                    Cancel
+                    {(() => {
+                      const IconComponent = ICON_MAP[editIcon] || ICON_MAP.user;
+                      return IconComponent ? <IconComponent className="w-4 h-4" /> : null;
+                    })()}
+                    <span className="ml-2 text-xs">{editIcon}</span>
                   </Button>
                 </div>
+                <div className="flex items-center gap-3">
+                  <label className="text-xs text-muted-foreground w-14">Preview</label>
+                  <div className="flex items-center gap-2">
+                    <AccountBadge
+                      name={editName || "Account"}
+                      color={editColor}
+                      icon={editIcon}
+                      variant="compact"
+                    />
+                    <span className="text-xs text-foreground">{editName || "Account"}</span>
+                  </div>
+                </div>
               </div>
-            ) : (
-              /* Display mode */
-              <div
-                key={account.id}
-                className="flex items-center gap-3 px-3 py-2.5 rounded-lg border border-border bg-muted/30"
-              >
-                <AccountBadge name={account.name} color={account.color} />
-                <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
-                  {account.account_type}
-                </span>
-                <span className="text-xs text-muted-foreground flex-1 truncate">
-                  {account.config_dir}
-                </span>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-6 px-2 text-xs text-muted-foreground"
-                  onClick={() => startEdit(account)}
-                  title="Edit"
-                >
-                  <Pencil className="w-3 h-3" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-6 px-2 text-xs text-muted-foreground hover:text-destructive"
-                  onClick={() => handleDelete(account.id)}
-                  title="Delete"
-                >
-                  <Trash2 className="w-3 h-3" />
-                </Button>
+              <SessionDefaultsEditor value={editSessionDefaults} onChange={setEditSessionDefaults} />
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">CLI path (optional)</label>
+                <Input
+                  placeholder="(default: claude on PATH)"
+                  value={editCliPath}
+                  onChange={(e) => {
+                    setEditCliPath(e.target.value);
+                    setEditCliPathError(null);
+                  }}
+                  className="h-8 text-sm font-mono"
+                />
+                {editCliPathError && (
+                  <div className="text-[11px] text-red-400">{editCliPathError}</div>
+                )}
+                <div className="text-[11px] text-muted-foreground">
+                  Override which <code>claude</code> binary or wrapper to spawn.
+                  Shell aliases (<code>claude-personal</code>) are not supported —
+                  paste the resolved path (e.g. <code>~/.local/bin/claude</code>).
+                </div>
               </div>
-            )
-          )}
-        </div>
+              {/* Per-session summary opt-in. */}
+              <div className="space-y-2 pt-2 border-t border-border/30">
+                <div className="flex items-center justify-between gap-3">
+                  <label
+                    htmlFor={`summarize-toggle-${editingId ?? 'new'}`}
+                    className="text-xs text-muted-foreground"
+                  >
+                    Generate summaries when sessions close
+                  </label>
+                  <Switch
+                    id={`summarize-toggle-${editingId ?? 'new'}`}
+                    checked={editSummarizeOnClose}
+                    disabled={!editSummaryModel}
+                    onCheckedChange={setEditSummarizeOnClose}
+                    aria-label="Generate summaries when sessions close"
+                  />
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <label className="text-xs text-muted-foreground">
+                    Summary model
+                  </label>
+                  <Select
+                    value={editSummaryModel ?? '__none__'}
+                    onValueChange={(v) =>
+                      setEditSummaryModel(v === '__none__' ? null : v)
+                    }
+                  >
+                    <SelectTrigger className="h-8 w-44 text-xs">
+                      <SelectValue placeholder="Pick a model" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">(pick a model)</SelectItem>
+                      {MODELS.map((m) => (
+                        <SelectItem key={m.id} value={m.id}>
+                          {m.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="text-[11px] text-muted-foreground">
+                  {editSummaryModel
+                    ? summaryCostEstimate(editSummaryModel)
+                    : 'Pick a model to enable summarization.'}
+                  {' '}Costs come out of this account's plan allotment for
+                  Pro/Max plans, or are billed per token for API keys.
+                </div>
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={cancelEdit}>
+                Cancel
+              </Button>
+              <Button onClick={saveEdit}>
+                <Check className="mr-2 h-4 w-4" />
+                Save
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {showAddAccount ? (
           <div className="mt-3 space-y-2 p-3 rounded-lg border border-dashed border-border">

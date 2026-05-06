@@ -10,7 +10,7 @@ import {
   truncateForModel,
   parseSummaryXML,
   createSessionsSummaryService,
-  CURRENT_PROMPT_VERSION,
+  promptHash,
   type SessionSummary,
 } from '../services/sessions-summary';
 
@@ -287,6 +287,7 @@ describe('sessions-summary service factory', () => {
       jsonlPathFor: () => jsonlPath,
       resolveAccount: () => null,
       runQuery: async () => '',
+    getPromptTemplate: () => 'PROMPT',
     });
     expect(svc.getSummary(sessionUuid, projectPath, null)).toBeNull();
   });
@@ -307,6 +308,7 @@ describe('sessions-summary service factory', () => {
       jsonlPathFor: () => jsonlPath,
       resolveAccount: () => null,
       runQuery: async () => '',
+    getPromptTemplate: () => 'PROMPT',
     });
     expect(svc.getSummary(sessionUuid, projectPath, null)).toEqual(summary);
   });
@@ -316,6 +318,7 @@ describe('sessions-summary service factory', () => {
       jsonlPathFor: () => jsonlPath,
       resolveAccount: () => null,
       runQuery: async () => '',
+    getPromptTemplate: () => 'PROMPT',
     });
     const r = await svc.generateSummary(sessionUuid, projectPath, null);
     expect(r.status).toBe('skipped');
@@ -363,6 +366,7 @@ describe('sessions-summary generateSummary (real)', () => {
         summaryModel: 'claude-haiku-4-5',
       }),
       runQuery,
+      getPromptTemplate: () => 'PROMPT',
     });
 
     const result = await svc.generateSummary('abc', projectPath, null);
@@ -399,6 +403,7 @@ describe('sessions-summary generateSummary (real)', () => {
         summaryModel: 'claude-haiku-4-5',
       }),
       runQuery,
+      getPromptTemplate: () => 'PROMPT',
     });
     const r = await svc.generateSummary('abc', projectPath, null);
     expect(r).toEqual({ status: 'skipped', reason: 'toggle-off' });
@@ -416,6 +421,7 @@ describe('sessions-summary generateSummary (real)', () => {
         summaryModel: null,
       }),
       runQuery,
+      getPromptTemplate: () => 'PROMPT',
     });
     const r = await svc.generateSummary('abc', projectPath, null);
     expect(r).toEqual({ status: 'skipped', reason: 'no-model' });
@@ -428,14 +434,16 @@ describe('sessions-summary generateSummary (real)', () => {
       jsonlPathFor: () => jsonlPath,
       resolveAccount: () => null,
       runQuery,
+      getPromptTemplate: () => 'PROMPT',
     });
     const r = await svc.generateSummary('abc', projectPath, null);
     expect(r).toEqual({ status: 'skipped', reason: 'no-account' });
     expect(runQuery).not.toHaveBeenCalled();
   });
 
-  it('returns unchanged + cached summary without calling runQuery when jsonlSize is unchanged', async () => {
+  it('returns unchanged + cached summary when jsonlSize and promptHash both match', async () => {
     const runQuery = vi.fn();
+    const matchingPrompt = 'MATCHING PROMPT';
     const cachedSummary: SessionSummary = {
       version: 1,
       headline: 'cached',
@@ -445,7 +453,7 @@ describe('sessions-summary generateSummary (real)', () => {
       generatedAt: '2026-01-01T00:00:00.000Z',
       model: 'claude-haiku-4-5',
       accountName: 'X',
-      promptVersion: CURRENT_PROMPT_VERSION,
+      promptHash: promptHash(matchingPrompt),
     };
     writeSidecar(sidecarPathFor(jsonlPath), cachedSummary);
     const svc = createSessionsSummaryService({
@@ -457,13 +465,14 @@ describe('sessions-summary generateSummary (real)', () => {
         summaryModel: 'claude-haiku-4-5',
       }),
       runQuery,
+      getPromptTemplate: () => matchingPrompt,
     });
     const result = await svc.generateSummary('abc', projectPath, null);
     expect(result).toEqual({ status: 'unchanged', summary: cachedSummary });
     expect(runQuery).not.toHaveBeenCalled();
   });
 
-  it('invalidates the size-gate when promptVersion does not match (cache stale on prompt iteration)', async () => {
+  it('invalidates the size-gate when promptHash does not match (cache stale after prompt edit)', async () => {
     const stale: SessionSummary = {
       version: 1,
       headline: 'old',
@@ -473,12 +482,13 @@ describe('sessions-summary generateSummary (real)', () => {
       generatedAt: '2026-01-01T00:00:00.000Z',
       model: 'claude-haiku-4-5',
       accountName: 'X',
-      promptVersion: 1, // older than CURRENT_PROMPT_VERSION
+      promptHash: promptHash('OLD PROMPT'),
     };
     writeSidecar(sidecarPathFor(jsonlPath), stale);
     const runQuery = vi.fn(async () =>
       '<headline>fresh</headline><paragraph>fresh paragraph.</paragraph>',
     );
+    const newPrompt = 'NEW PROMPT';
     const svc = createSessionsSummaryService({
       jsonlPathFor: () => jsonlPath,
       resolveAccount: () => ({
@@ -488,13 +498,14 @@ describe('sessions-summary generateSummary (real)', () => {
         summaryModel: 'claude-haiku-4-5',
       }),
       runQuery,
+      getPromptTemplate: () => newPrompt,
     });
     const result = await svc.generateSummary('abc', projectPath, null);
-    // Sizes match but prompt version doesn't — should still call the model.
+    // Sizes match but prompt hash doesn't — should still call the model.
     expect(runQuery).toHaveBeenCalledOnce();
     expect(result.status).toBe('generated');
     if (result.status === 'generated') {
-      expect(result.summary.promptVersion).toBe(CURRENT_PROMPT_VERSION);
+      expect(result.summary.promptHash).toBe(promptHash(newPrompt));
       expect(result.summary.headline).toBe('fresh');
     }
   });
@@ -521,6 +532,7 @@ describe('sessions-summary generateSummary (real)', () => {
         summaryModel: 'claude-haiku-4-5',
       }),
       runQuery,
+      getPromptTemplate: () => 'PROMPT',
     });
     const result = await svc.generateSummary('abc', projectPath, null);
     expect(result).toEqual({ status: 'malformed-response' });
@@ -540,6 +552,7 @@ describe('sessions-summary generateSummary (real)', () => {
         summaryModel: 'claude-haiku-4-5',
       }),
       runQuery,
+      getPromptTemplate: () => 'PROMPT',
     });
     await expect(svc.generateSummary('abc', projectPath, null)).rejects.toThrow(
       /OAuth token expired/,
@@ -562,6 +575,7 @@ describe('sessions-summary generateSummary (real)', () => {
         summaryModel: 'claude-haiku-4-5',
       }),
       runQuery,
+      getPromptTemplate: () => 'PROMPT',
     });
     const [a, b] = await Promise.all([
       svc.generateSummary('abc', projectPath, null),
@@ -586,6 +600,7 @@ describe('sessions-summary generateSummary (real)', () => {
         summaryModel: 'claude-haiku-4-5',
       }),
       runQuery,
+      getPromptTemplate: () => 'PROMPT',
       onSummaryUpdated,
     });
     await svc.generateSummary('abc', projectPath, null);
@@ -604,6 +619,7 @@ describe('sessions-summary generateSummary (real)', () => {
         summaryModel: 'claude-haiku-4-5',
       }),
       runQuery,
+      getPromptTemplate: () => 'PROMPT',
       onSummaryUpdated,
     });
     await svc.generateSummary('abc', projectPath, null);
@@ -631,6 +647,7 @@ describe('sessions-summary generateSummary (real)', () => {
         summaryModel: 'claude-haiku-4-5',
       }),
       runQuery,
+      getPromptTemplate: () => 'PROMPT',
     });
     const result = await svc.generateSummary('abc', projectPath, null);
     expect(result.status).toBe('generated');

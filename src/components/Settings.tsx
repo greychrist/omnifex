@@ -17,6 +17,7 @@ import { Toast, ToastContainer } from "@/components/ui/toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { StorageTab } from "./StorageTab";
 import { LogTab } from "./LogTab";
+import { SummaryPromptSettings } from "./settings-panels/SummaryPromptSettings";
 import {
   GeneralSettings,
   AppearanceSettings,
@@ -233,6 +234,20 @@ export const Settings: React.FC<SettingsProps> = ({
     setSettings(prev => ({ ...prev, [key]: value }));
   };
 
+  // Tabs whose data is actually written by the top-of-page Save button.
+  // Other tabs own their own save flow (or are read-only / live-updated)
+  // and the top button doesn't touch their state — showing it there is
+  // confusing and contributes to the "multiple save buttons on one
+  // screen" problem.
+  const TABS_USING_TOP_SAVE = new Set([
+    'permissions',
+    'environment',
+    'advanced',
+    'hooks',
+    'proxy',
+  ]);
+  const showTopSave = TABS_USING_TOP_SAVE.has(activeTab);
+
   const handleClaudeInstallationSelect = (installation: ClaudeInstallation) => {
     setSelectedInstallation(installation);
     setBinaryPathChanged(installation.path !== currentBinaryPath);
@@ -250,28 +265,30 @@ export const Settings: React.FC<SettingsProps> = ({
                 Configure Claude Code preferences
               </p>
             </div>
-            <motion.div
-              whileTap={{ scale: 0.97 }}
-              transition={{ duration: 0.15 }}
-            >
-              <Button
-                onClick={saveSettings}
-                disabled={saving || loading}
-                size="default"
+            {showTopSave && (
+              <motion.div
+                whileTap={{ scale: 0.97 }}
+                transition={{ duration: 0.15 }}
               >
-                {saving ? (
-                  <>
-                    <Spinner className="mr-2" />
-                    Saving...
-                  </>
-                ) : (
-                  <>
-                    <Save className="mr-2 h-4 w-4" />
-                    Save Settings
-                  </>
-                )}
-              </Button>
-            </motion.div>
+                <Button
+                  onClick={saveSettings}
+                  disabled={saving || loading}
+                  size="default"
+                >
+                  {saving ? (
+                    <>
+                      <Spinner className="mr-2" />
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="mr-2 h-4 w-4" />
+                      Save Settings
+                    </>
+                  )}
+                </Button>
+              </motion.div>
+            )}
           </div>
         </div>
 
@@ -308,6 +325,7 @@ export const Settings: React.FC<SettingsProps> = ({
               <TabsTrigger value="advanced" className="flex-1 py-2 text-xs">Advanced</TabsTrigger>
               <TabsTrigger value="hooks" className="flex-1 py-2 text-xs">Hooks</TabsTrigger>
               <TabsTrigger value="commands" className="flex-1 py-2 text-xs">Commands</TabsTrigger>
+              <TabsTrigger value="sessions" className="flex-1 py-2 text-xs">Sessions</TabsTrigger>
               <TabsTrigger value="storage" className="flex-1 py-2 text-xs">Storage</TabsTrigger>
               <TabsTrigger value="proxy" className="flex-1 py-2 text-xs">Proxy</TabsTrigger>
               <TabsTrigger value="rate_limits" className="flex-1 py-2 text-xs">Rate Limits</TabsTrigger>
@@ -402,6 +420,11 @@ export const Settings: React.FC<SettingsProps> = ({
             {/* Commands Tab */}
             <TabsContent value="commands">
               <CommandsSettings />
+            </TabsContent>
+
+            {/* Sessions Tab — per-session summary prompt template */}
+            <TabsContent value="sessions" className="space-y-6 mt-6">
+              <SummaryPromptSettings />
             </TabsContent>
 
             {/* Storage Tab */}

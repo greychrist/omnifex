@@ -53,7 +53,11 @@ import { createProxyService } from './services/proxy';
 import { createMCPService } from './services/mcp';
 import { createModelsService } from './services/models';
 import { createSlashCommandsService } from './services/slash-commands';
-import { createSessionsSummaryService } from './services/sessions-summary';
+import {
+  createSessionsSummaryService,
+  DEFAULT_SUMMARY_PROMPT,
+  PROMPT_TEMPLATE_SETTING_KEY,
+} from './services/sessions-summary';
 import { query as sdkQuery } from '@anthropic-ai/claude-agent-sdk';
 import { createPermissionsIOService } from './services/permissions-io';
 import { createUpdaterService } from './services/updater';
@@ -358,6 +362,7 @@ app.whenReady().then(() => {
   // want to check a specific folder for updates.
   ensureDefaultSettings(db, {
     local_update_dir: app.isPackaged ? '' : path.join(process.cwd(), 'out', 'make'),
+    [PROMPT_TEMPLATE_SETTING_KEY]: DEFAULT_SUMMARY_PROMPT,
   });
   const accountsService = createAccountsService(db);
   const claudeBinaryService = createClaudeBinaryService(db);
@@ -564,6 +569,14 @@ app.whenReady().then(() => {
       // the matching uuid. Channel matches the existing `session-` prefix
       // in preload's event allow-list (no preload change needed).
       sendToRenderer('session-summary:updated', { sessionUuid });
+    },
+    getPromptTemplate: () => {
+      // Read fresh on every call so prompt edits in the Settings UI
+      // land without restart. Empty string falls back to the default,
+      // and ensureDefaultSettings seeds the row on first launch.
+      const stored = db.getSetting(PROMPT_TEMPLATE_SETTING_KEY);
+      const trimmed = stored?.trim() ?? '';
+      return trimmed || DEFAULT_SUMMARY_PROMPT;
     },
   });
   sessionsSummaryServiceRef = sessionsSummaryService;

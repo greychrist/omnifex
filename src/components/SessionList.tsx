@@ -7,11 +7,27 @@ import { cn } from "@/lib/utils";
 import { truncateText, getFirstLine } from "@/lib/date-utils";
 import {
   api,
-  CURRENT_PROMPT_VERSION,
+  PROMPT_TEMPLATE_SETTING_KEY,
   type Session,
   type SessionSummary,
   type SummaryGenerateResult,
 } from "@/lib/api";
+
+/**
+ * FNV-1a hash mirror — must produce the same output as `promptHash` in
+ * `electron/services/sessions-summary.ts`. The renderer hashes the
+ * locally-cached prompt template (read from app_settings) so it can
+ * decide whether the size-change gate should treat the cached sidecar
+ * as fresh, without an extra IPC round-trip per row.
+ */
+function clientPromptHash(template: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < template.length; i++) {
+    hash ^= template.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
+}
 
 /**
  * Human-readable explanation for each `skipped` reason. Surfaced inline
@@ -144,6 +160,10 @@ export const SessionList: React.FC<SessionListProps> = ({
   // summaryGet / summaryGenerate call anchors paths to the right account
   // root (NOT ~/.claude). Null until resolution returns.
   const [resolvedConfigDir, setResolvedConfigDir] = useState<string | null>(null);
+  // Hash of the active prompt template — used to decide whether the
+  // refresh button should treat an unchanged JSONL as "nothing to do".
+  // A prompt edit changes the hash and re-enables the button.
+  const [activePromptHash, setActivePromptHash] = useState<string | null>(null);
 
   // Fetch summaries in parallel whenever the session list or project path
   // changes. The IPC layer answers each call independently; we don't await
@@ -166,6 +186,30 @@ export const SessionList: React.FC<SessionListProps> = ({
       cancelled = true;
     };
   }, [sessions, projectPath, resolvedConfigDir]);
+
+  // Read the active prompt template once on mount and hash it. Used by
+  // the noChanges check below — a prompt edit since the cached sidecar
+  // was written re-enables the refresh button.
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .getSetting(PROMPT_TEMPLATE_SETTING_KEY)
+      .then((value) => {
+        if (cancelled) return;
+        // Empty / missing → backend will fall through to its DEFAULT
+        // prompt; we represent that as null on this side and skip the
+        // hash compare (any cached sidecar is treated as fresh wrt
+        // prompt). The next refresh from the backend will write a real
+        // promptHash.
+        setActivePromptHash(value && value.trim() ? clientPromptHash(value) : null);
+      })
+      .catch(() => {
+        if (!cancelled) setActivePromptHash(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Resolve which account "owns" this project so we can (a) decide
   // whether the manual refresh button should even render and (b) hold
@@ -375,15 +419,20 @@ export const SessionList: React.FC<SessionListProps> = ({
                 const isRefreshing = summaryRefreshing.has(session.id);
                 // Refresh button is a no-op when the JSONL size hasn't
                 // changed AND the cached summary was produced by the
-                // current prompt template. A prompt-version mismatch
+                // current prompt template. A promptHash mismatch
                 // re-enables the button so prompt iteration lands —
                 // the backend size-gate has the matching escape hatch.
-                const cachedPromptVersion = summary?.promptVersion ?? 1;
-                const noChanges =
+                // When activePromptHash is null we couldn't load the
+                // prompt setting (or it's empty / using the default),
+                // so we don't gate on it.
+                const sizeMatches =
                   !!summary &&
                   typeof session.file_size_bytes === 'number' &&
-                  session.file_size_bytes === summary.jsonlSize &&
-                  cachedPromptVersion === CURRENT_PROMPT_VERSION;
+                  session.file_size_bytes === summary.jsonlSize;
+                const promptMatches =
+                  activePromptHash == null ||
+                  summary?.promptHash === activePromptHash;
+                const noChanges = sizeMatches && promptMatches;
                 return (
                   <motion.tr
                     key={session.id}

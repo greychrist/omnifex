@@ -611,16 +611,17 @@ export interface SessionSummary {
   model: string;
   accountName: string;
   truncated?: boolean;
-  /** Which prompt template produced this summary. Used by the manual
-   *  refresh button to decide whether the size-change gate should
-   *  treat an unchanged JSONL as "nothing to do" — a prompt-version
-   *  mismatch enables the button so prompt iteration lands. */
+  /** FNV-1a hash of the prompt template that produced this summary.
+   *  A mismatch with the current prompt's hash invalidates the size-
+   *  change gate so a refresh click regenerates with the new prompt. */
+  promptHash?: string;
+  /** @deprecated older sidecars used a numeric version; kept for read-back only. */
   promptVersion?: number;
 }
 
-/** Mirrors `CURRENT_PROMPT_VERSION` in electron/services/sessions-summary.ts.
- *  Bump in lockstep with the backend constant. */
-export const CURRENT_PROMPT_VERSION = 2;
+/** app_settings key under which the user-editable prompt template is
+ *  stored. Mirrors the backend constant in sessions-summary.ts. */
+export const PROMPT_TEMPLATE_SETTING_KEY = 'sessionsSummary.promptTemplate';
 
 /**
  * Discriminated result of `summaryGenerate`. Mirrors

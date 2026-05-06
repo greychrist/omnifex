@@ -31,10 +31,13 @@ vi.mock('@/lib/api', async () => {
       summaryGenerate: vi.fn(),
       onSessionSummaryUpdated: vi.fn(() => () => {}),
       resolveAccountForProject: vi.fn(),
+      // The component reads this on mount to hash the active prompt
+      // template. Tests don't care about the value; null skips the
+      // prompt-hash compare.
+      getSetting: vi.fn(async () => null),
     },
-    // Mirror the constant the component imports.
-    CURRENT_PROMPT_VERSION: 2,
-    // Re-export the types so the test file's import path stays clean.
+    // Mirror the setting key constant the component imports.
+    PROMPT_TEMPLATE_SETTING_KEY: 'sessionsSummary.promptTemplate',
   };
 });
 
@@ -61,7 +64,8 @@ const summaryFixture: SessionSummary = {
   generatedAt: '2026-05-05T11:05:00Z',
   model: 'claude-haiku-4-5',
   accountName: 'Test',
-  promptVersion: 2, // matches CURRENT_PROMPT_VERSION
+  // Tests use getSetting → null, so the prompt-hash compare is skipped
+  // and any (or no) promptHash on the fixture is fine.
 };
 
 beforeEach(() => {

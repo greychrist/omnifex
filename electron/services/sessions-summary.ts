@@ -7,18 +7,25 @@ import path from 'node:path';
 
 export const CURRENT_SCHEMA_VERSION = 1;
 
+/** app_settings key under which the user-editable prompt template lives. */
+export const PROMPT_TEMPLATE_SETTING_KEY = 'sessionsSummary.promptTemplate';
+
 /**
- * Prompt version. Bump every time `SUMMARY_PROMPT_PREAMBLE` changes
- * meaningfully — a sidecar generated with a different promptVersion is
- * considered stale and the size-change gate won't keep the user from
- * regenerating it. This is what lets prompt iteration land cleanly:
- * change the prompt + bump the version, and existing sessions become
- * eligible for re-summarization on the next refresh click.
+ * FNV-1a hash of a string. 32-bit, returned as 8-char hex. Used to tag
+ * sidecars with the prompt template they were produced under so the
+ * size-change gate auto-invalidates whenever the user edits the prompt.
  *
- * Cheap to bump. Cheap to ignore — auto-on-close still respects the
- * size gate, so day-to-day cost doesn't change.
+ * Cheap (no crypto), stable across restarts, collision-rate fine for
+ * cache invalidation.
  */
-export const CURRENT_PROMPT_VERSION = 2;
+export function promptHash(template: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < template.length; i++) {
+    hash ^= template.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
+}
 
 export interface SessionSummary {
   version: number;
@@ -30,7 +37,11 @@ export interface SessionSummary {
   model: string;
   accountName: string;
   truncated?: boolean;
-  /** Which prompt template produced this summary. See CURRENT_PROMPT_VERSION. */
+  /** FNV-1a hash of the prompt template this summary was produced under.
+   *  A mismatch with the current template hash invalidates the size-gate
+   *  cache so a refresh click regenerates with the new prompt. */
+  promptHash?: string;
+  /** @deprecated Replaced by `promptHash`. Kept readable for older sidecars. */
   promptVersion?: number;
 }
 
@@ -224,7 +235,15 @@ export function parseSummaryXML(response: string): ParsedSummary | null {
 // Prompt construction
 // ---------------------------------------------------------------------------
 
-const SUMMARY_PROMPT_PREAMBLE = `You are summarizing a coding-assistant session for a developer's records.
+/**
+ * Default prompt template used when the user hasn't customized one.
+ * Loaded as the initial value into the app_settings table on first
+ * launch (see `ensureDefaultSettings` in main.ts) and exposed via the
+ * settings UI. Editing the template in the UI rewrites the
+ * app_settings row; the in-memory `runQuery` callback always reads the
+ * latest value at call time.
+ */
+export const DEFAULT_SUMMARY_PROMPT = `You are summarizing a coding-assistant session for a developer's records.
 Produce a one-line headline (8–14 words) and a 2–3 sentence paragraph (~50 words) that capture the THEMES of the session — what general area or capability was worked on, what the broader goals were, what kind of problem the user was trying to solve.
 
 Stay at a higher level of abstraction. Do NOT list specific file names, function names, library names, line numbers, or step-by-step changes. Generalize:
@@ -243,8 +262,8 @@ Format your response EXACTLY:
 
 `;
 
-function buildSummaryPrompt(transcript: string): string {
-  return `${SUMMARY_PROMPT_PREAMBLE}<transcript>\n${transcript}\n</transcript>`;
+function buildSummaryPrompt(transcript: string, preamble: string): string {
+  return `${preamble}<transcript>\n${transcript}\n</transcript>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -290,6 +309,12 @@ export interface SessionsSummaryDeps {
    * (skipped, gated, malformed XML, etc.).
    */
   onSummaryUpdated?: (sessionUuid: string) => void;
+  /**
+   * Read the current prompt template (user-edited or default). Resolved
+   * fresh on every call so prompt edits land without restart and the
+   * sidecar's `promptHash` reflects what was actually sent to the model.
+   */
+  getPromptTemplate(): string;
 }
 
 /**
@@ -374,17 +399,18 @@ export function createSessionsSummaryService(
     const jsonlSize = stat.size;
 
     // Size-change gate: skip when the JSONL hasn't grown since the last
-    // successful summary AND the prompt template hasn't changed since
-    // that summary was written. A prompt-version mismatch invalidates
-    // the cache so prompt iteration lands without manual sidecar
-    // deletion.
+    // successful summary AND the cached sidecar's promptHash matches the
+    // hash of the prompt template we're about to use. A hash mismatch
+    // invalidates the cache so prompt edits in the UI land on the next
+    // refresh click without any manual cache-busting.
     const sidecarPath = sidecarPathFor(jsonlPath);
     const cached = readSidecar(sidecarPath);
-    const cachedPromptVersion = cached?.promptVersion ?? 1;
+    const promptTemplate = deps.getPromptTemplate();
+    const currentPromptHash = promptHash(promptTemplate);
     if (
       cached &&
       cached.jsonlSize === jsonlSize &&
-      cachedPromptVersion === CURRENT_PROMPT_VERSION
+      cached.promptHash === currentPromptHash
     ) {
       return { status: 'unchanged', summary: cached };
     }
@@ -406,7 +432,7 @@ export function createSessionsSummaryService(
       `[sessions-summary] Calling ${account.summaryModel} via ${account.configDir} for ${sessionUuid} (${messageCount} msgs, ${jsonlSize} bytes${truncated ? ', truncated' : ''})`,
     );
 
-    const prompt = buildSummaryPrompt(capped);
+    const prompt = buildSummaryPrompt(capped, promptTemplate);
     const response = await deps.runQuery({
       prompt,
       model: account.summaryModel,
@@ -431,7 +457,7 @@ export function createSessionsSummaryService(
       generatedAt: new Date().toISOString(),
       model: account.summaryModel,
       accountName: account.name,
-      promptVersion: CURRENT_PROMPT_VERSION,
+      promptHash: currentPromptHash,
       ...(truncated ? { truncated: true } : {}),
     };
     writeSidecar(sidecarPath, summary);
