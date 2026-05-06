@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.9] — 2026-05-06
+
+Session-summary overhaul. The Settings → Sessions tab is now **Session Summaries**, with a master enable switch, instant-save edits to the prompt template, and a separate auto-on-close toggle. Per-row spinners now animate for background generations triggered by closing or backing out of a session. Default summary prompt rewritten to ask for higher-level themes instead of CV-style bullets.
+
+Installers remain **unsigned**.
+
+### Added
+
+- **Master "Enable session summaries" switch** in Settings → Session Summaries. When off, rows fall back to first-message previews and the per-row refresh icon is hidden.
+- **Live spinner for auto-on-close generations.** When you back out of a session, the matching row on the project page now spins its refresh icon for the duration of the model call (success or failure clears it). Survives the back-button race by seeding state from a mount-time query against the in-flight set.
+- **Auto-save** for the summary-prompt textarea (debounced) — Save and Cancel buttons removed.
+- New unit-test coverage: dedicated panel-level tests for `SummaryPromptSettings`, plus tests for the V2 SDK summary-query runner, the generation-state event boundary, and the spinner-mount-seed race fix.
+
+### Changed
+
+- **Summary prompt default** rewritten — asks for a higher-level headline + 2–3 bullets capturing themes (general area, broader goals, problem being solved) instead of CV-style outcome bullets. Existing installs keep whatever prompt they have; click Reset to default in the panel to pick up the new wording.
+- **Switched to V2 SDK `unstable_v2_prompt`** for one-shot summarization. Each call runs in a single stable scratch cwd (`os.tmpdir()/omnifex-summary-scratch`) and the resulting `<configDir>/projects/<scratch>/` directory is swept after the call — stops piling up one throwaway folder per summary in the user's session list.
+- **Auto-on-close gating split.** "Generate summaries automatically when leaving a session" only gates the close lifecycle now; the manual refresh button stays available regardless. The master "enabled" switch gates UI visibility everywhere.
+- **Session summary on each row** always shows headline + bullets together — expand/collapse chevron removed.
+- **Settings tab** renamed from "Sessions" to "Session Summaries".
+- **Claude Agent SDK** `@anthropic-ai/claude-agent-sdk` 0.2.131 → 0.2.132.
+
+### Removed
+
+- **Per-account "Generate Summaries" toggle** in Account Settings. The master toggle in Session Summaries replaces it. Per-account model picker stays. The SQLite column is kept harmlessly for back-compat but no longer read.
+- **Save / Cancel buttons** on the summary-prompt panel — auto-save handles persistence.
+
 ## [0.4.8] — 2026-05-06
 
 Dependency bump only — keeps OmniFex on the latest Claude Agent SDK.
