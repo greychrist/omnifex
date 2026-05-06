@@ -1873,27 +1873,41 @@ export const api = {
   /**
    * Read the cached summary sidecar for a session. Null when no sidecar
    * exists or the on-disk file is unreadable / version-mismatched.
+   *
+   * `configDir` is the resolved account's `config_dir` — held at tab
+   * level by the renderer (`accountResolution.account.config_dir` in
+   * `ClaudeCodeSession`, or from `resolveAccountForProject` in
+   * `SessionList`). Pass `null` only if you don't yet know which
+   * account owns the session; the backend will scan all known accounts
+   * as a fallback.
    */
   async summaryGet(
     sessionUuid: string,
     projectPath: string,
+    configDir: string | null,
   ): Promise<SessionSummary | null> {
-    return apiCall<SessionSummary | null>("summary_get", { sessionUuid, projectPath });
+    return apiCall<SessionSummary | null>("summary_get", {
+      sessionUuid,
+      projectPath,
+      configDir,
+    });
   },
 
   /**
-   * Generate (or regenerate) a summary for a session. Returns null on:
-   * - account toggle off, model unset, or no account resolved
-   * - JSONL size unchanged since last summary (the on-the-cache result is returned instead)
-   * - malformed model response
-   * Throws on hard errors (auth expired, network failure) so callers can
-   * surface a toast.
+   * Generate (or regenerate) a summary for a session. See
+   * `SummaryGenerateResult` for return shape; throws on hard errors
+   * (auth expired, network failure) so callers can surface a toast.
    */
   async summaryGenerate(
     sessionUuid: string,
     projectPath: string,
+    configDir: string | null,
   ): Promise<SummaryGenerateResult> {
-    return apiCall<SummaryGenerateResult>("summary_generate", { sessionUuid, projectPath });
+    return apiCall<SummaryGenerateResult>("summary_generate", {
+      sessionUuid,
+      projectPath,
+      configDir,
+    });
   },
 
   /**

@@ -134,6 +134,10 @@ export const SessionList: React.FC<SessionListProps> = ({
   // pending to avoid a flash of incorrect UI.
   const [summarizeEnabledForProject, setSummarizeEnabledForProject] =
     useState<boolean | null>(null);
+  // The resolved account's config_dir — held at tab/view level so every
+  // summaryGet / summaryGenerate call anchors paths to the right account
+  // root (NOT ~/.claude). Null until resolution returns.
+  const [resolvedConfigDir, setResolvedConfigDir] = useState<string | null>(null);
 
   // Fetch summaries in parallel whenever the session list or project path
   // changes. The IPC layer answers each call independently; we don't await
@@ -144,7 +148,7 @@ export const SessionList: React.FC<SessionListProps> = ({
     Promise.all(
       sessions.map(async (s) => {
         const summary = await api
-          .summaryGet(s.id, projectPath)
+          .summaryGet(s.id, projectPath, resolvedConfigDir)
           .catch(() => null);
         return [s.id, summary] as const;
       }),
@@ -155,13 +159,15 @@ export const SessionList: React.FC<SessionListProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [sessions, projectPath]);
+  }, [sessions, projectPath, resolvedConfigDir]);
 
-  // Resolve which account "owns" this project so we can decide whether
-  // the manual refresh button should even render on these rows.
+  // Resolve which account "owns" this project so we can (a) decide
+  // whether the manual refresh button should even render and (b) hold
+  // its config_dir at this view level for downstream summary IPC calls.
   useEffect(() => {
     if (!projectPath) {
       setSummarizeEnabledForProject(null);
+      setResolvedConfigDir(null);
       return;
     }
     let cancelled = false;
@@ -172,9 +178,12 @@ export const SessionList: React.FC<SessionListProps> = ({
         setSummarizeEnabledForProject(
           !!(acct?.summarizeOnClose && acct?.summaryModel),
         );
+        setResolvedConfigDir(acct?.config_dir ?? null);
       })
       .catch(() => {
-        if (!cancelled) setSummarizeEnabledForProject(false);
+        if (cancelled) return;
+        setSummarizeEnabledForProject(false);
+        setResolvedConfigDir(null);
       });
     return () => {
       cancelled = true;
@@ -189,7 +198,7 @@ export const SessionList: React.FC<SessionListProps> = ({
     if (!projectPath) return;
     const unsubscribe = api.onSessionSummaryUpdated(({ sessionUuid }) => {
       api
-        .summaryGet(sessionUuid, projectPath)
+        .summaryGet(sessionUuid, projectPath, resolvedConfigDir)
         .then((summary) => {
           setSummaries((prev) => new Map(prev).set(sessionUuid, summary));
         })
@@ -238,7 +247,7 @@ export const SessionList: React.FC<SessionListProps> = ({
       };
       try {
         const [result] = await Promise.all([
-          api.summaryGenerate(id, projectPath),
+          api.summaryGenerate(id, projectPath, resolvedConfigDir),
           minSpinner,
         ]);
         switch (result.status) {
@@ -268,7 +277,7 @@ export const SessionList: React.FC<SessionListProps> = ({
         });
       }
     },
-    [projectPath, summaryRefreshing],
+    [projectPath, summaryRefreshing, resolvedConfigDir],
   );
 
   // Calculate pagination

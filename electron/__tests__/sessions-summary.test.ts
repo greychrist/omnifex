@@ -287,7 +287,7 @@ describe('sessions-summary service factory', () => {
       resolveAccount: () => null,
       runQuery: async () => '',
     });
-    expect(svc.getSummary(sessionUuid, projectPath)).toBeNull();
+    expect(svc.getSummary(sessionUuid, projectPath, null)).toBeNull();
   });
 
   it('getSummary returns the sidecar when present', () => {
@@ -307,7 +307,7 @@ describe('sessions-summary service factory', () => {
       resolveAccount: () => null,
       runQuery: async () => '',
     });
-    expect(svc.getSummary(sessionUuid, projectPath)).toEqual(summary);
+    expect(svc.getSummary(sessionUuid, projectPath, null)).toEqual(summary);
   });
 
   it('generateSummary returns null when no account resolves', async () => {
@@ -316,7 +316,7 @@ describe('sessions-summary service factory', () => {
       resolveAccount: () => null,
       runQuery: async () => '',
     });
-    const r = await svc.generateSummary(sessionUuid, projectPath);
+    const r = await svc.generateSummary(sessionUuid, projectPath, null);
     expect(r.status).toBe('skipped');
   });
 });
@@ -364,7 +364,7 @@ describe('sessions-summary generateSummary (real)', () => {
       runQuery,
     });
 
-    const result = await svc.generateSummary('abc', projectPath);
+    const result = await svc.generateSummary('abc', projectPath, null);
 
     expect(result.status).toBe('generated');
     if (result.status !== 'generated') throw new Error('unreachable');
@@ -399,7 +399,7 @@ describe('sessions-summary generateSummary (real)', () => {
       }),
       runQuery,
     });
-    const r = await svc.generateSummary('abc', projectPath);
+    const r = await svc.generateSummary('abc', projectPath, null);
     expect(r).toEqual({ status: 'skipped', reason: 'toggle-off' });
     expect(runQuery).not.toHaveBeenCalled();
   });
@@ -416,7 +416,7 @@ describe('sessions-summary generateSummary (real)', () => {
       }),
       runQuery,
     });
-    const r = await svc.generateSummary('abc', projectPath);
+    const r = await svc.generateSummary('abc', projectPath, null);
     expect(r).toEqual({ status: 'skipped', reason: 'no-model' });
     expect(runQuery).not.toHaveBeenCalled();
   });
@@ -428,7 +428,7 @@ describe('sessions-summary generateSummary (real)', () => {
       resolveAccount: () => null,
       runQuery,
     });
-    const r = await svc.generateSummary('abc', projectPath);
+    const r = await svc.generateSummary('abc', projectPath, null);
     expect(r).toEqual({ status: 'skipped', reason: 'no-account' });
     expect(runQuery).not.toHaveBeenCalled();
   });
@@ -456,7 +456,7 @@ describe('sessions-summary generateSummary (real)', () => {
       }),
       runQuery,
     });
-    const result = await svc.generateSummary('abc', projectPath);
+    const result = await svc.generateSummary('abc', projectPath, null);
     expect(result).toEqual({ status: 'unchanged', summary: cachedSummary });
     expect(runQuery).not.toHaveBeenCalled();
   });
@@ -484,7 +484,7 @@ describe('sessions-summary generateSummary (real)', () => {
       }),
       runQuery,
     });
-    const result = await svc.generateSummary('abc', projectPath);
+    const result = await svc.generateSummary('abc', projectPath, null);
     expect(result).toEqual({ status: 'malformed-response' });
     expect(readSidecar(sidecarPathFor(jsonlPath))).toEqual(existing);
   });
@@ -503,7 +503,7 @@ describe('sessions-summary generateSummary (real)', () => {
       }),
       runQuery,
     });
-    await expect(svc.generateSummary('abc', projectPath)).rejects.toThrow(
+    await expect(svc.generateSummary('abc', projectPath, null)).rejects.toThrow(
       /OAuth token expired/,
     );
   });
@@ -526,8 +526,8 @@ describe('sessions-summary generateSummary (real)', () => {
       runQuery,
     });
     const [a, b] = await Promise.all([
-      svc.generateSummary('abc', projectPath),
-      svc.generateSummary('abc', projectPath),
+      svc.generateSummary('abc', projectPath, null),
+      svc.generateSummary('abc', projectPath, null),
     ]);
     expect(calls).toBe(1);
     expect(a).toEqual(b);
@@ -550,7 +550,7 @@ describe('sessions-summary generateSummary (real)', () => {
       runQuery,
       onSummaryUpdated,
     });
-    await svc.generateSummary('abc', projectPath);
+    await svc.generateSummary('abc', projectPath, null);
     expect(onSummaryUpdated).toHaveBeenCalledWith('abc');
   });
 
@@ -568,7 +568,7 @@ describe('sessions-summary generateSummary (real)', () => {
       runQuery,
       onSummaryUpdated,
     });
-    await svc.generateSummary('abc', projectPath);
+    await svc.generateSummary('abc', projectPath, null);
     expect(onSummaryUpdated).not.toHaveBeenCalled();
   });
 
@@ -594,7 +594,7 @@ describe('sessions-summary generateSummary (real)', () => {
       }),
       runQuery,
     });
-    const result = await svc.generateSummary('abc', projectPath);
+    const result = await svc.generateSummary('abc', projectPath, null);
     expect(result.status).toBe('generated');
     if (result.status === 'generated') {
       expect(result.summary.truncated).toBe(true);

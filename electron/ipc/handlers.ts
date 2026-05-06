@@ -121,8 +121,16 @@ export interface Services {
     delete(commandId: string, projectPath?: string, configDir?: string): unknown;
   };
   sessionsSummary?: {
-    getSummary(sessionUuid: string, projectPath: string): unknown;
-    generateSummary(sessionUuid: string, projectPath: string): Promise<unknown>;
+    getSummary(
+      sessionUuid: string,
+      projectPath: string,
+      configDir: string | null,
+    ): unknown;
+    generateSummary(
+      sessionUuid: string,
+      projectPath: string,
+      configDir: string | null,
+    ): Promise<unknown>;
   };
   logging?: {
     writeBatch(entries: unknown): unknown;
@@ -425,10 +433,12 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     summary_get: wrapWith((p: Record<string, unknown>) => sessionsSummary?.getSummary(
       (p?.sessionUuid ?? p?.session_uuid) as string,
       (p?.projectPath ?? p?.project_path) as string,
+      ((p?.configDir ?? p?.config_dir) as string | null | undefined) ?? null,
     ) ?? null),
     summary_generate: wrapWith((p: Record<string, unknown>) => sessionsSummary?.generateSummary(
       (p?.sessionUuid ?? p?.session_uuid) as string,
       (p?.projectPath ?? p?.project_path) as string,
+      ((p?.configDir ?? p?.config_dir) as string | null | undefined) ?? null,
     ) ?? null),
 
     // ── Logging ───────────────────────────────────────────────────────────────

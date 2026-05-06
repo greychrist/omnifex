@@ -433,13 +433,15 @@ app.whenReady().then(() => {
       projectPath: params.projectPath,
     }),
     (configDir, info) => rateLimitsService.recordEvent(configDir, info),
-    (sessionId, projectPath) => {
+    (sessionId, projectPath, configDir) => {
       // Auto-on-close summarization. Account toggle + size-gate run inside
       // the service; this is fire-and-forget so session teardown isn't
       // blocked by Haiku latency. The size-change gate makes "close
-      // without changes" a no-op (no API spend).
+      // without changes" a no-op (no API spend). configDir comes from
+      // the live SessionHandle so we anchor the JSONL lookup to the
+      // exact account that ran the session.
       sessionsSummaryServiceRef
-        ?.generateSummary(sessionId, projectPath)
+        ?.generateSummary(sessionId, projectPath, configDir)
         .catch((err) =>
           console.warn('[main] auto-summarize on close failed:', err),
         );
@@ -451,47 +453,65 @@ app.whenReady().then(() => {
   const mcpService = createMCPService(defaultConfigDir);
   const slashCommandsService = createSlashCommandsService(defaultConfigDir);
   const sessionsSummaryService = createSessionsSummaryService({
-    jsonlPathFor: (sessionUuid, projectPath) => {
-      // The straightforward path: Claude Code encodes project paths to
-      // directory names by replacing each '/' with '-'.
-      const projectId = projectPath.replace(/\//g, '-');
-      const computedPath = path.join(
-        defaultConfigDir,
-        'projects',
-        projectId,
-        `${sessionUuid}.jsonl`,
-      );
-      if (fs.existsSync(computedPath)) return computedPath;
+    jsonlPathFor: (sessionUuid, projectPath, configDir) => {
+      // We never assume ~/.claude. The "root" is always an account's
+      // config_dir. The renderer holds it at tab level (chat tab via
+      // accountResolution; SessionList via resolveAccountForProject)
+      // and passes it explicitly. lifecycle.ts also passes the
+      // SessionHandle's configDir on the close path.
+      //
+      // Only fall back to scanning every account's projects/ when the
+      // caller passes null — handles the rare case where we don't yet
+      // know which account owns the session.
 
-      // Fallback: scan every projects/<dir>/ for a JSONL with this uuid.
-      // Handles project renames, path-prefix drift, and anything else
-      // that breaks the project-path → project-id round-trip. We also
-      // search every account's configDir, since multi-account routing
-      // means the JSONL could live under a different account than the
-      // one currently resolved for this projectPath.
-      const candidateConfigDirs = new Set<string>([defaultConfigDir]);
-      for (const acct of accountsService.listAccounts()) {
-        candidateConfigDirs.add(acct.config_dir);
-      }
-      for (const cfgDir of candidateConfigDirs) {
+      // Claude Code encodes project paths to directory names by
+      // replacing each '/' with '-'.
+      const projectId = projectPath.replace(/\//g, '-');
+
+      const tryAt = (cfgDir: string): string | null => {
+        // 1) Encoded path under this account's projects/
+        const encoded = path.join(cfgDir, 'projects', projectId, `${sessionUuid}.jsonl`);
+        if (fs.existsSync(encoded)) return encoded;
+        // 2) Same account's projects/<any-dir>/<uuid>.jsonl — handles
+        //    project renames within an account.
         const projectsDir = path.join(cfgDir, 'projects');
         let entries: import('fs').Dirent[];
         try {
           entries = fs.readdirSync(projectsDir, { withFileTypes: true });
         } catch {
-          continue;
+          return null;
         }
         for (const entry of entries) {
           if (!entry.isDirectory()) continue;
           const candidate = path.join(projectsDir, entry.name, `${sessionUuid}.jsonl`);
           if (fs.existsSync(candidate)) return candidate;
         }
+        return null;
+      };
+
+      if (configDir) {
+        const found = tryAt(configDir);
+        if (found) return found;
       }
 
-      // Nothing found — return the computed path so the caller's missing-
-      // file branch fires (skipped:jsonl-missing) with a sensible value
-      // in the log.
-      return computedPath;
+      // Caller didn't provide configDir, or the session truly isn't in
+      // that account. Search every known account.
+      const seen = new Set<string>();
+      if (configDir) seen.add(configDir);
+      for (const acct of accountsService.listAccounts()) {
+        if (seen.has(acct.config_dir)) continue;
+        seen.add(acct.config_dir);
+        const found = tryAt(acct.config_dir);
+        if (found) return found;
+      }
+
+      // Nothing found. Return a path that fails the existsSync check
+      // downstream so the skipped:jsonl-missing branch fires with a
+      // sensible value in the log.
+      const fallbackRoot = configDir
+        ?? accountsService.resolve(projectPath)?.config_dir
+        ?? defaultConfigDir;
+      return path.join(fallbackRoot, 'projects', projectId, `${sessionUuid}.jsonl`);
     },
     resolveAccount: (projectPath) => {
       const acct = accountsService.resolve(projectPath);

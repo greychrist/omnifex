@@ -1324,8 +1324,13 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   // session.
   const handleBackToProject = () => {
     if (claudeSessionId && projectPath) {
+      // Anchor the JSONL lookup to this tab's resolved account, NOT to
+      // the default ~/.claude. The configDir is held at tab level via
+      // accountResolution and passed explicitly so the backend doesn't
+      // have to re-resolve and risk a mismatch.
+      const configDir = accountResolution?.account.config_dir ?? null;
       api
-        .summaryGenerate(claudeSessionId, projectPath)
+        .summaryGenerate(claudeSessionId, projectPath, configDir)
         .catch((err) =>
           console.warn('[ClaudeCodeSession] back-button summary failed:', err),
         );

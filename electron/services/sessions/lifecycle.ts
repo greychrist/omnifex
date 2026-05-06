@@ -48,7 +48,7 @@ export function createSessionsService(
   ownership: SessionOwnership | null = null,
   persistPermissionRule: PersistPermissionRuleFn | null = null,
   rateLimitHook: RateLimitHook | null = null,
-  onSessionClosed: ((sessionId: string, projectPath: string) => void) | null = null,
+  onSessionClosed: ((sessionId: string, projectPath: string, configDir: string) => void) | null = null,
 ): SessionsService {
   const sessions = new Map<string, SessionHandle>();
 
@@ -256,6 +256,7 @@ export function createSessionsService(
     // sessions that have a known sessionId (UUID).
     const closedSessionId = handle.sessionId;
     const closedProjectPath = handle.projectPath;
+    const closedConfigDir = handle.configDir;
 
     handle.tuiDetach?.();
     handle.inputChannel.close();
@@ -267,7 +268,7 @@ export function createSessionsService(
       // Fire-and-forget — auto-on-close summarization shouldn't block
       // session teardown, and any errors are logged inside the hook.
       try {
-        onSessionClosed(closedSessionId, closedProjectPath);
+        onSessionClosed(closedSessionId, closedProjectPath, closedConfigDir);
       } catch (err) {
         console.warn('[sessions] onSessionClosed hook threw:', err);
       }

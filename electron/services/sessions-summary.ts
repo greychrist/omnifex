@@ -239,8 +239,18 @@ export interface ResolvedAccount {
 }
 
 export interface SessionsSummaryDeps {
-  /** Resolve a JSONL path from a session uuid + project path. */
-  jsonlPathFor(sessionUuid: string, projectPath: string): string;
+  /**
+   * Resolve a JSONL path from a session uuid + project path + the
+   * resolved account's configDir. The configDir is the root we anchor
+   * paths to — the caller (renderer or lifecycle close hook) holds it
+   * at tab level. Pass `null` when it isn't known and the implementation
+   * should search all known accounts as a last-resort.
+   */
+  jsonlPathFor(
+    sessionUuid: string,
+    projectPath: string,
+    configDir: string | null,
+  ): string;
   /** Resolve the account responsible for this project, or null. */
   resolveAccount(projectPath: string): ResolvedAccount | null;
   /** Send a single user prompt to the SDK and return the assistant text. */
@@ -277,10 +287,21 @@ export type SummaryGenerateResult =
   | { status: 'malformed-response' };
 
 export interface SessionsSummaryService {
-  getSummary(sessionUuid: string, projectPath: string): SessionSummary | null;
+  /**
+   * Read the cached sidecar for a session. `configDir` is the resolved
+   * account's config_dir as held at the tab level (renderer) or session
+   * level (lifecycle hook). Pass `null` when the caller doesn't have it
+   * and the service should search all accounts.
+   */
+  getSummary(
+    sessionUuid: string,
+    projectPath: string,
+    configDir: string | null,
+  ): SessionSummary | null;
   generateSummary(
     sessionUuid: string,
     projectPath: string,
+    configDir: string | null,
   ): Promise<SummaryGenerateResult>;
 }
 
@@ -293,14 +314,16 @@ export function createSessionsSummaryService(
   function getSummary(
     sessionUuid: string,
     projectPath: string,
+    configDir: string | null,
   ): SessionSummary | null {
-    const jsonlPath = deps.jsonlPathFor(sessionUuid, projectPath);
+    const jsonlPath = deps.jsonlPathFor(sessionUuid, projectPath, configDir);
     return readSidecar(sidecarPathFor(jsonlPath));
   }
 
   async function generateSummaryInner(
     sessionUuid: string,
     projectPath: string,
+    configDir: string | null,
   ): Promise<SummaryGenerateResult> {
     const account = deps.resolveAccount(projectPath);
     if (!account) {
@@ -316,7 +339,7 @@ export function createSessionsSummaryService(
       return { status: 'skipped', reason: 'no-model' };
     }
 
-    const jsonlPath = deps.jsonlPathFor(sessionUuid, projectPath);
+    const jsonlPath = deps.jsonlPathFor(sessionUuid, projectPath, configDir);
     let stat: fs.Stats;
     try {
       stat = fs.statSync(jsonlPath);
@@ -387,11 +410,12 @@ export function createSessionsSummaryService(
   async function generateSummary(
     sessionUuid: string,
     projectPath: string,
+    configDir: string | null,
   ): Promise<SummaryGenerateResult> {
     const key = `${projectPath}::${sessionUuid}`;
     const existing = inFlight.get(key);
     if (existing) return existing;
-    const promise = generateSummaryInner(sessionUuid, projectPath).finally(() => {
+    const promise = generateSummaryInner(sessionUuid, projectPath, configDir).finally(() => {
       inFlight.delete(key);
     });
     inFlight.set(key, promise);
