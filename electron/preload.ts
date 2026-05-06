@@ -108,6 +108,10 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   'slash_command_save',
   'slash_command_delete',
 
+  // Session Summaries
+  'summary_get',
+  'summary_generate',
+
   // Logging
   'log_write_batch',
   'log_query',

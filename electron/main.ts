@@ -53,6 +53,7 @@ import { createProxyService } from './services/proxy';
 import { createMCPService } from './services/mcp';
 import { createModelsService } from './services/models';
 import { createSlashCommandsService } from './services/slash-commands';
+import { createSessionsSummaryService } from './services/sessions-summary';
 import { createPermissionsIOService } from './services/permissions-io';
 import { createUpdaterService } from './services/updater';
 import { createInstallerService } from './services/installer';
@@ -429,6 +430,35 @@ app.whenReady().then(() => {
   const proxyService = createProxyService(db);
   const mcpService = createMCPService(defaultConfigDir);
   const slashCommandsService = createSlashCommandsService(defaultConfigDir);
+  const sessionsSummaryService = createSessionsSummaryService({
+    jsonlPathFor: (sessionUuid, projectPath) => {
+      // Encode project path the way Claude Code does: each '/' → '-'.
+      const projectId = projectPath.replace(/\//g, '-');
+      return path.join(
+        defaultConfigDir,
+        'projects',
+        projectId,
+        `${sessionUuid}.jsonl`,
+      );
+    },
+    resolveAccount: (projectPath) => {
+      const acct = accountsService.resolve(projectPath);
+      if (!acct) return null;
+      // Slice 1: hardcode toggle off + model null. Slice 4 (Task 11) wires
+      // real columns from the accounts table. The hardcoded false here means
+      // generateSummary always bails until the migration lands.
+      return {
+        name: acct.name,
+        configDir: acct.config_dir,
+        summarizeOnClose: false,
+        summaryModel: null,
+      };
+    },
+    runQuery: async () => {
+      // Slice 2 (Task 8) wires the real SDK call.
+      throw new Error('runQuery not yet implemented');
+    },
+  });
   const modelsService = createModelsService();
   const sdkVersionService = createSdkVersionService({
     readSdkPackageJson: async () => {
@@ -637,6 +667,8 @@ app.whenReady().then(() => {
       save: (data: any) => slashCommandsService.save(data),
       delete: (commandId: string, projectPath?: string, configDir?: string) => slashCommandsService.delete(commandId, projectPath, configDir),
     },
+    // Sessions-summary adapter
+    sessionsSummary: sessionsSummaryService,
     // Logging adapter
     logging: {
       writeBatch: (entries: any) => loggingService.writeBatch(entries),

@@ -591,6 +591,19 @@ export interface SessionSlashCommand {
   argumentHint: string;
 }
 
+// Sidecar mirror — keep in sync with electron/services/sessions-summary.ts.
+export interface SessionSummary {
+  version: number;
+  headline: string;
+  paragraph: string;
+  messageCount: number;
+  jsonlSize: number;
+  generatedAt: string;
+  model: string;
+  accountName: string;
+  truncated?: boolean;
+}
+
 export interface SessionModelInfo {
   value: string;
   displayName: string;
@@ -1826,6 +1839,34 @@ export const api = {
       console.error("Failed to delete slash command:", error);
       throw error;
     }
+  },
+
+  // ── Session Summaries ───────────────────────────────────────
+
+  /**
+   * Read the cached summary sidecar for a session. Null when no sidecar
+   * exists or the on-disk file is unreadable / version-mismatched.
+   */
+  async summaryGet(
+    sessionUuid: string,
+    projectPath: string,
+  ): Promise<SessionSummary | null> {
+    return apiCall<SessionSummary | null>("summary_get", { sessionUuid, projectPath });
+  },
+
+  /**
+   * Generate (or regenerate) a summary for a session. Returns null on:
+   * - account toggle off, model unset, or no account resolved
+   * - JSONL size unchanged since last summary (the on-the-cache result is returned instead)
+   * - malformed model response
+   * Throws on hard errors (auth expired, network failure) so callers can
+   * surface a toast.
+   */
+  async summaryGenerate(
+    sessionUuid: string,
+    projectPath: string,
+  ): Promise<SessionSummary | null> {
+    return apiCall<SessionSummary | null>("summary_generate", { sessionUuid, projectPath });
   },
 
   // ── Account Management ─────────────────────────────────────

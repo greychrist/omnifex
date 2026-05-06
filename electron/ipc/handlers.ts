@@ -119,6 +119,10 @@ export interface Services {
     save(data: unknown): unknown;
     delete(commandId: string, projectPath?: string, configDir?: string): unknown;
   };
+  sessionsSummary?: {
+    getSummary(sessionUuid: string, projectPath: string): unknown;
+    generateSummary(sessionUuid: string, projectPath: string): Promise<unknown>;
+  };
   logging?: {
     writeBatch(entries: unknown): unknown;
     query(params: unknown): unknown;
@@ -196,7 +200,7 @@ function wrapWith<P>(fn: (params: P) => unknown): HandlerFn {
  * renderer gets a defined (but empty) response rather than a blocked channel.
  */
 export function getHandlerMap(services: Services = {}): Record<string, HandlerFn> {
-  const { accounts, claude, sessions, usage, rateLimits, usageRunner, claudeBinary, mcp, slashCommands, logging, database, proxy, permissionsIO, models, sdkVersion, gitWatcher, branchColors, gitBranches, lima } = services;
+  const { accounts, claude, sessions, usage, rateLimits, usageRunner, claudeBinary, mcp, slashCommands, sessionsSummary, logging, database, proxy, permissionsIO, models, sdkVersion, gitWatcher, branchColors, gitBranches, lima } = services;
 
   const map: Record<string, HandlerFn> = {
     // ── Accounts ──────────────────────────────────────────────────────────────
@@ -413,6 +417,16 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
       (p?.commandId ?? p?.command_id) as string,
       (p?.projectPath ?? p?.project_path) as string | undefined,
       (p?.configDir ?? p?.config_dir) as string | undefined,
+    ) ?? null),
+
+    // ── Session Summaries ─────────────────────────────────────────────────────
+    summary_get: wrapWith((p: Record<string, unknown>) => sessionsSummary?.getSummary(
+      (p?.sessionUuid ?? p?.session_uuid) as string,
+      (p?.projectPath ?? p?.project_path) as string,
+    ) ?? null),
+    summary_generate: wrapWith((p: Record<string, unknown>) => sessionsSummary?.generateSummary(
+      (p?.sessionUuid ?? p?.session_uuid) as string,
+      (p?.projectPath ?? p?.project_path) as string,
     ) ?? null),
 
     // ── Logging ───────────────────────────────────────────────────────────────
