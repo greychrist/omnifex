@@ -32,6 +32,8 @@ vi.mock('@/lib/api', async () => {
       onSessionSummaryUpdated: vi.fn(() => () => {}),
       resolveAccountForProject: vi.fn(),
     },
+    // Mirror the constant the component imports.
+    CURRENT_PROMPT_VERSION: 2,
     // Re-export the types so the test file's import path stays clean.
   };
 });
@@ -59,6 +61,7 @@ const summaryFixture: SessionSummary = {
   generatedAt: '2026-05-05T11:05:00Z',
   model: 'claude-haiku-4-5',
   accountName: 'Test',
+  promptVersion: 2, // matches CURRENT_PROMPT_VERSION
 };
 
 beforeEach(() => {

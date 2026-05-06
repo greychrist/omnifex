@@ -10,6 +10,7 @@ import {
   truncateForModel,
   parseSummaryXML,
   createSessionsSummaryService,
+  CURRENT_PROMPT_VERSION,
   type SessionSummary,
 } from '../services/sessions-summary';
 
@@ -444,6 +445,7 @@ describe('sessions-summary generateSummary (real)', () => {
       generatedAt: '2026-01-01T00:00:00.000Z',
       model: 'claude-haiku-4-5',
       accountName: 'X',
+      promptVersion: CURRENT_PROMPT_VERSION,
     };
     writeSidecar(sidecarPathFor(jsonlPath), cachedSummary);
     const svc = createSessionsSummaryService({
@@ -459,6 +461,42 @@ describe('sessions-summary generateSummary (real)', () => {
     const result = await svc.generateSummary('abc', projectPath, null);
     expect(result).toEqual({ status: 'unchanged', summary: cachedSummary });
     expect(runQuery).not.toHaveBeenCalled();
+  });
+
+  it('invalidates the size-gate when promptVersion does not match (cache stale on prompt iteration)', async () => {
+    const stale: SessionSummary = {
+      version: 1,
+      headline: 'old',
+      paragraph: 'old para',
+      messageCount: 2,
+      jsonlSize: fs.statSync(jsonlPath).size,
+      generatedAt: '2026-01-01T00:00:00.000Z',
+      model: 'claude-haiku-4-5',
+      accountName: 'X',
+      promptVersion: 1, // older than CURRENT_PROMPT_VERSION
+    };
+    writeSidecar(sidecarPathFor(jsonlPath), stale);
+    const runQuery = vi.fn(async () =>
+      '<headline>fresh</headline><paragraph>fresh paragraph.</paragraph>',
+    );
+    const svc = createSessionsSummaryService({
+      jsonlPathFor: () => jsonlPath,
+      resolveAccount: () => ({
+        name: 'X',
+        configDir,
+        summarizeOnClose: true,
+        summaryModel: 'claude-haiku-4-5',
+      }),
+      runQuery,
+    });
+    const result = await svc.generateSummary('abc', projectPath, null);
+    // Sizes match but prompt version doesn't — should still call the model.
+    expect(runQuery).toHaveBeenCalledOnce();
+    expect(result.status).toBe('generated');
+    if (result.status === 'generated') {
+      expect(result.summary.promptVersion).toBe(CURRENT_PROMPT_VERSION);
+      expect(result.summary.headline).toBe('fresh');
+    }
   });
 
   it('returns malformed-response and leaves sidecar untouched when XML is malformed', async () => {

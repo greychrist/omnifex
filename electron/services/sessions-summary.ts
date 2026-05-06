@@ -7,6 +7,19 @@ import path from 'node:path';
 
 export const CURRENT_SCHEMA_VERSION = 1;
 
+/**
+ * Prompt version. Bump every time `SUMMARY_PROMPT_PREAMBLE` changes
+ * meaningfully — a sidecar generated with a different promptVersion is
+ * considered stale and the size-change gate won't keep the user from
+ * regenerating it. This is what lets prompt iteration land cleanly:
+ * change the prompt + bump the version, and existing sessions become
+ * eligible for re-summarization on the next refresh click.
+ *
+ * Cheap to bump. Cheap to ignore — auto-on-close still respects the
+ * size gate, so day-to-day cost doesn't change.
+ */
+export const CURRENT_PROMPT_VERSION = 2;
+
 export interface SessionSummary {
   version: number;
   headline: string;
@@ -17,6 +30,8 @@ export interface SessionSummary {
   model: string;
   accountName: string;
   truncated?: boolean;
+  /** Which prompt template produced this summary. See CURRENT_PROMPT_VERSION. */
+  promptVersion?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -359,11 +374,18 @@ export function createSessionsSummaryService(
     const jsonlSize = stat.size;
 
     // Size-change gate: skip when the JSONL hasn't grown since the last
-    // successful summary. Returns the cached sidecar so callers can render
-    // it without re-spending Haiku tokens.
+    // successful summary AND the prompt template hasn't changed since
+    // that summary was written. A prompt-version mismatch invalidates
+    // the cache so prompt iteration lands without manual sidecar
+    // deletion.
     const sidecarPath = sidecarPathFor(jsonlPath);
     const cached = readSidecar(sidecarPath);
-    if (cached && cached.jsonlSize === jsonlSize) {
+    const cachedPromptVersion = cached?.promptVersion ?? 1;
+    if (
+      cached &&
+      cached.jsonlSize === jsonlSize &&
+      cachedPromptVersion === CURRENT_PROMPT_VERSION
+    ) {
       return { status: 'unchanged', summary: cached };
     }
 
@@ -409,6 +431,7 @@ export function createSessionsSummaryService(
       generatedAt: new Date().toISOString(),
       model: account.summaryModel,
       accountName: account.name,
+      promptVersion: CURRENT_PROMPT_VERSION,
       ...(truncated ? { truncated: true } : {}),
     };
     writeSidecar(sidecarPath, summary);

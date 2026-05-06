@@ -5,7 +5,13 @@ import { Pagination } from "@/components/ui/pagination";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { truncateText, getFirstLine } from "@/lib/date-utils";
-import { api, type Session, type SessionSummary, type SummaryGenerateResult } from "@/lib/api";
+import {
+  api,
+  CURRENT_PROMPT_VERSION,
+  type Session,
+  type SessionSummary,
+  type SummaryGenerateResult,
+} from "@/lib/api";
 
 /**
  * Human-readable explanation for each `skipped` reason. Surfaced inline
@@ -368,14 +374,16 @@ export const SessionList: React.FC<SessionListProps> = ({
                 const isExpanded = expanded.has(session.id);
                 const isRefreshing = summaryRefreshing.has(session.id);
                 // Refresh button is a no-op when the JSONL size hasn't
-                // changed since the last successful summary — the
-                // backend size-gate would skip the API call anyway, so
-                // we surface that state in the UI instead of letting the
-                // button look clickable.
+                // changed AND the cached summary was produced by the
+                // current prompt template. A prompt-version mismatch
+                // re-enables the button so prompt iteration lands —
+                // the backend size-gate has the matching escape hatch.
+                const cachedPromptVersion = summary?.promptVersion ?? 1;
                 const noChanges =
                   !!summary &&
                   typeof session.file_size_bytes === 'number' &&
-                  session.file_size_bytes === summary.jsonlSize;
+                  session.file_size_bytes === summary.jsonlSize &&
+                  cachedPromptVersion === CURRENT_PROMPT_VERSION;
                 return (
                   <motion.tr
                     key={session.id}
