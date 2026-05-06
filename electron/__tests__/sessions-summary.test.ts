@@ -9,6 +9,7 @@ import {
   extractTranscript,
   truncateForModel,
   parseSummaryXML,
+  createSessionsSummaryService,
   type SessionSummary,
 } from '../services/sessions-summary';
 
@@ -252,5 +253,69 @@ describe('sessions-summary XML parsing', () => {
       headline: 'Trimmed headline.',
       paragraph: 'Trimmed paragraph.',
     });
+  });
+});
+
+describe('sessions-summary service factory', () => {
+  let tmpDir: string;
+  let projectId: string;
+  let sessionUuid: string;
+  let jsonlPath: string;
+  let sidecarPath: string;
+  let projectPath: string;
+  let configDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sessions-summary-svc-'));
+    configDir = path.join(tmpDir, 'config');
+    projectPath = path.join(tmpDir, 'project');
+    projectId = '-tmp-fake-project';
+    sessionUuid = '00000000-0000-0000-0000-000000000001';
+    const projectDir = path.join(configDir, 'projects', projectId);
+    fs.mkdirSync(projectDir, { recursive: true });
+    fs.mkdirSync(projectPath, { recursive: true });
+    jsonlPath = path.join(projectDir, `${sessionUuid}.jsonl`);
+    sidecarPath = path.join(projectDir, `${sessionUuid}.summary.json`);
+    fs.writeFileSync(jsonlPath, '', 'utf-8');
+  });
+
+  afterEach(() => fs.rmSync(tmpDir, { recursive: true, force: true }));
+
+  it('getSummary returns null when no sidecar exists', () => {
+    const svc = createSessionsSummaryService({
+      jsonlPathFor: () => jsonlPath,
+      resolveAccount: () => null,
+      runQuery: async () => '',
+    });
+    expect(svc.getSummary(sessionUuid, projectPath)).toBeNull();
+  });
+
+  it('getSummary returns the sidecar when present', () => {
+    const summary: SessionSummary = {
+      version: 1,
+      headline: 'h',
+      paragraph: 'p',
+      messageCount: 3,
+      jsonlSize: 0,
+      generatedAt: '2026-05-05T16:00:00.000Z',
+      model: 'claude-haiku-4-5',
+      accountName: 'Test',
+    };
+    fs.writeFileSync(sidecarPath, JSON.stringify(summary), 'utf-8');
+    const svc = createSessionsSummaryService({
+      jsonlPathFor: () => jsonlPath,
+      resolveAccount: () => null,
+      runQuery: async () => '',
+    });
+    expect(svc.getSummary(sessionUuid, projectPath)).toEqual(summary);
+  });
+
+  it('generateSummary stub returns null (real impl lands in a later task)', async () => {
+    const svc = createSessionsSummaryService({
+      jsonlPathFor: () => jsonlPath,
+      resolveAccount: () => null,
+      runQuery: async () => '',
+    });
+    expect(await svc.generateSummary(sessionUuid, projectPath)).toBeNull();
   });
 });

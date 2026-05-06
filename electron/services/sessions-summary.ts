@@ -204,3 +204,62 @@ export function parseSummaryXML(response: string): ParsedSummary | null {
   if (!headline || !paragraph) return null;
   return { headline, paragraph };
 }
+
+// ---------------------------------------------------------------------------
+// Service factory
+// ---------------------------------------------------------------------------
+
+export interface ResolvedAccount {
+  /** User-defined account label, stored in the sidecar's `accountName`. */
+  name: string;
+  /** Path passed as CLAUDE_CONFIG_DIR when calling the SDK. */
+  configDir: string;
+  /** Whether auto-on-close + manual button are enabled for this account. */
+  summarizeOnClose: boolean;
+  /** SDK model id, e.g. 'claude-haiku-4-5'. Null when toggle is off / unset. */
+  summaryModel: string | null;
+}
+
+export interface SessionsSummaryDeps {
+  /** Resolve a JSONL path from a session uuid + project path. */
+  jsonlPathFor(sessionUuid: string, projectPath: string): string;
+  /** Resolve the account responsible for this project, or null. */
+  resolveAccount(projectPath: string): ResolvedAccount | null;
+  /** Send a single user prompt to the SDK and return the assistant text. */
+  runQuery(opts: {
+    prompt: string;
+    model: string;
+    cwd: string;
+    configDir: string;
+  }): Promise<string>;
+}
+
+export interface SessionsSummaryService {
+  getSummary(sessionUuid: string, projectPath: string): SessionSummary | null;
+  generateSummary(
+    sessionUuid: string,
+    projectPath: string,
+  ): Promise<SessionSummary | null>;
+}
+
+export function createSessionsSummaryService(
+  deps: SessionsSummaryDeps,
+): SessionsSummaryService {
+  function getSummary(
+    sessionUuid: string,
+    projectPath: string,
+  ): SessionSummary | null {
+    const jsonlPath = deps.jsonlPathFor(sessionUuid, projectPath);
+    return readSidecar(sidecarPathFor(jsonlPath));
+  }
+
+  async function generateSummary(
+    _sessionUuid: string,
+    _projectPath: string,
+  ): Promise<SessionSummary | null> {
+    // Real implementation lands in Task 7.
+    return null;
+  }
+
+  return { getSummary, generateSummary };
+}
