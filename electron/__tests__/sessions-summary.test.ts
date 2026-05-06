@@ -316,7 +316,8 @@ describe('sessions-summary service factory', () => {
       resolveAccount: () => null,
       runQuery: async () => '',
     });
-    expect(await svc.generateSummary(sessionUuid, projectPath)).toBeNull();
+    const r = await svc.generateSummary(sessionUuid, projectPath);
+    expect(r.status).toBe('skipped');
   });
 });
 
@@ -365,13 +366,14 @@ describe('sessions-summary generateSummary (real)', () => {
 
     const result = await svc.generateSummary('abc', projectPath);
 
-    expect(result).not.toBeNull();
-    expect(result!.headline).toBe('Tested it.');
-    expect(result!.paragraph).toBe('It works.');
-    expect(result!.messageCount).toBe(2);
-    expect(result!.model).toBe('claude-haiku-4-5');
-    expect(result!.accountName).toBe('Test Acct');
-    expect(result!.jsonlSize).toBe(fs.statSync(jsonlPath).size);
+    expect(result.status).toBe('generated');
+    if (result.status !== 'generated') throw new Error('unreachable');
+    expect(result.summary.headline).toBe('Tested it.');
+    expect(result.summary.paragraph).toBe('It works.');
+    expect(result.summary.messageCount).toBe(2);
+    expect(result.summary.model).toBe('claude-haiku-4-5');
+    expect(result.summary.accountName).toBe('Test Acct');
+    expect(result.summary.jsonlSize).toBe(fs.statSync(jsonlPath).size);
     expect(runQuery).toHaveBeenCalledWith(
       expect.objectContaining({
         model: 'claude-haiku-4-5',
@@ -385,7 +387,7 @@ describe('sessions-summary generateSummary (real)', () => {
     expect(sidecar?.headline).toBe('Tested it.');
   });
 
-  it('returns null and skips runQuery when account toggle is off', async () => {
+  it('returns skipped:toggle-off and skips runQuery when account toggle is off', async () => {
     const runQuery = vi.fn();
     const svc = createSessionsSummaryService({
       jsonlPathFor: () => jsonlPath,
@@ -397,11 +399,12 @@ describe('sessions-summary generateSummary (real)', () => {
       }),
       runQuery,
     });
-    expect(await svc.generateSummary('abc', projectPath)).toBeNull();
+    const r = await svc.generateSummary('abc', projectPath);
+    expect(r).toEqual({ status: 'skipped', reason: 'toggle-off' });
     expect(runQuery).not.toHaveBeenCalled();
   });
 
-  it('returns null and skips runQuery when summaryModel is null', async () => {
+  it('returns skipped:no-model and skips runQuery when summaryModel is null', async () => {
     const runQuery = vi.fn();
     const svc = createSessionsSummaryService({
       jsonlPathFor: () => jsonlPath,
@@ -413,22 +416,24 @@ describe('sessions-summary generateSummary (real)', () => {
       }),
       runQuery,
     });
-    expect(await svc.generateSummary('abc', projectPath)).toBeNull();
+    const r = await svc.generateSummary('abc', projectPath);
+    expect(r).toEqual({ status: 'skipped', reason: 'no-model' });
     expect(runQuery).not.toHaveBeenCalled();
   });
 
-  it('returns null and skips runQuery when no account resolves', async () => {
+  it('returns skipped:no-account and skips runQuery when no account resolves', async () => {
     const runQuery = vi.fn();
     const svc = createSessionsSummaryService({
       jsonlPathFor: () => jsonlPath,
       resolveAccount: () => null,
       runQuery,
     });
-    expect(await svc.generateSummary('abc', projectPath)).toBeNull();
+    const r = await svc.generateSummary('abc', projectPath);
+    expect(r).toEqual({ status: 'skipped', reason: 'no-account' });
     expect(runQuery).not.toHaveBeenCalled();
   });
 
-  it('returns the cached sidecar without calling runQuery when jsonlSize is unchanged', async () => {
+  it('returns unchanged + cached summary without calling runQuery when jsonlSize is unchanged', async () => {
     const runQuery = vi.fn();
     const cachedSummary: SessionSummary = {
       version: 1,
@@ -452,11 +457,11 @@ describe('sessions-summary generateSummary (real)', () => {
       runQuery,
     });
     const result = await svc.generateSummary('abc', projectPath);
-    expect(result).toEqual(cachedSummary);
+    expect(result).toEqual({ status: 'unchanged', summary: cachedSummary });
     expect(runQuery).not.toHaveBeenCalled();
   });
 
-  it('returns null and leaves sidecar untouched when XML is malformed', async () => {
+  it('returns malformed-response and leaves sidecar untouched when XML is malformed', async () => {
     const existing: SessionSummary = {
       version: 1,
       headline: 'old',
@@ -480,7 +485,7 @@ describe('sessions-summary generateSummary (real)', () => {
       runQuery,
     });
     const result = await svc.generateSummary('abc', projectPath);
-    expect(result).toBeNull();
+    expect(result).toEqual({ status: 'malformed-response' });
     expect(readSidecar(sidecarPathFor(jsonlPath))).toEqual(existing);
   });
 
@@ -526,6 +531,7 @@ describe('sessions-summary generateSummary (real)', () => {
     ]);
     expect(calls).toBe(1);
     expect(a).toEqual(b);
+    expect(a.status).toBe('generated');
   });
 
   it('calls onSummaryUpdated after a successful sidecar write', async () => {
@@ -589,7 +595,10 @@ describe('sessions-summary generateSummary (real)', () => {
       runQuery,
     });
     const result = await svc.generateSummary('abc', projectPath);
-    expect(result?.truncated).toBe(true);
+    expect(result.status).toBe('generated');
+    if (result.status === 'generated') {
+      expect(result.summary.truncated).toBe(true);
+    }
     const firstCallArgs = (runQuery.mock.calls[0] as unknown) as Array<{ prompt: string }>;
     expect(firstCallArgs[0].prompt).toContain('tokens elided');
   });

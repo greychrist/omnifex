@@ -5,7 +5,29 @@ import { Pagination } from "@/components/ui/pagination";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { truncateText, getFirstLine } from "@/lib/date-utils";
-import { api, type Session, type SessionSummary } from "@/lib/api";
+import { api, type Session, type SessionSummary, type SummaryGenerateResult } from "@/lib/api";
+
+/**
+ * Human-readable explanation for each `skipped` reason. Surfaced inline
+ * on the row so the manual refresh button gives honest feedback when the
+ * account isn't fully configured for summarization.
+ */
+function skipReasonMessage(reason: Extract<SummaryGenerateResult, { status: 'skipped' }>['reason']): string {
+  switch (reason) {
+    case 'toggle-off':
+      return 'Summaries are off for this account. Enable in Account Settings.';
+    case 'no-model':
+      return 'No summary model selected. Pick one in Account Settings.';
+    case 'no-account':
+      return 'No account resolved for this project — add a path rule in Account Settings.';
+    case 'empty-session':
+      return 'No user/assistant messages to summarize yet.';
+    case 'jsonl-missing':
+      return 'Session file not found on disk.';
+    case 'jsonl-unreadable':
+      return 'Session file unreadable.';
+  }
+}
 
 interface SessionListProps {
   /**
@@ -168,16 +190,11 @@ export const SessionList: React.FC<SessionListProps> = ({
         next.delete(id);
         return next;
       });
-      try {
-        const fresh = await api.summaryGenerate(id, projectPath);
-        if (fresh) {
-          setSummaries((prev) => new Map(prev).set(id, fresh));
-        }
-      } catch (err) {
-        const message = err instanceof Error ? err.message : 'Summary failed.';
-        console.error('[SessionList] summaryGenerate failed:', err);
+      // Min-spinner: even instant returns (toggle-off, size-unchanged)
+      // flash the spinner long enough to feel like a click registered.
+      const minSpinner = new Promise<void>((resolve) => setTimeout(resolve, 400));
+      const showError = (message: string) => {
         setSummaryErrors((prev) => new Map(prev).set(id, message));
-        // Auto-clear after 6s so the row doesn't accumulate stale errors.
         setTimeout(() => {
           setSummaryErrors((prev) => {
             if (!prev.has(id)) return prev;
@@ -185,7 +202,32 @@ export const SessionList: React.FC<SessionListProps> = ({
             next.delete(id);
             return next;
           });
-        }, 6000);
+        }, 8000);
+      };
+      try {
+        const [result] = await Promise.all([
+          api.summaryGenerate(id, projectPath),
+          minSpinner,
+        ]);
+        switch (result.status) {
+          case 'generated':
+          case 'unchanged':
+            setSummaries((prev) => new Map(prev).set(id, result.summary));
+            break;
+          case 'skipped':
+            showError(skipReasonMessage(result.reason));
+            break;
+          case 'malformed-response':
+            showError('Model returned an invalid response. Try again.');
+            break;
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Summary failed.';
+        console.error('[SessionList] summaryGenerate failed:', err);
+        // Don't dismiss the spinner before the min duration even on
+        // failure — keeps the UI honest about a click having registered.
+        await minSpinner.catch(() => {});
+        showError(message);
       } finally {
         setSummaryRefreshing((prev) => {
           const next = new Set(prev);

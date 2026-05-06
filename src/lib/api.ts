@@ -613,6 +613,24 @@ export interface SessionSummary {
   truncated?: boolean;
 }
 
+/**
+ * Discriminated result of `summaryGenerate`. Mirrors
+ * `SummaryGenerateResult` in electron/services/sessions-summary.ts.
+ *
+ * The renderer uses the tag to differentiate "succeeded but no change",
+ * "skipped because the account isn't configured", "model returned
+ * gibberish", etc. — so the manual refresh button can give honest
+ * feedback instead of silently failing.
+ */
+export type SummaryGenerateResult =
+  | { status: 'generated'; summary: SessionSummary }
+  | { status: 'unchanged'; summary: SessionSummary }
+  | {
+      status: 'skipped';
+      reason: 'no-account' | 'toggle-off' | 'no-model' | 'empty-session' | 'jsonl-missing' | 'jsonl-unreadable';
+    }
+  | { status: 'malformed-response' };
+
 export interface SessionModelInfo {
   value: string;
   displayName: string;
@@ -1874,8 +1892,8 @@ export const api = {
   async summaryGenerate(
     sessionUuid: string,
     projectPath: string,
-  ): Promise<SessionSummary | null> {
-    return apiCall<SessionSummary | null>("summary_generate", { sessionUuid, projectPath });
+  ): Promise<SummaryGenerateResult> {
+    return apiCall<SummaryGenerateResult>("summary_generate", { sessionUuid, projectPath });
   },
 
   /**

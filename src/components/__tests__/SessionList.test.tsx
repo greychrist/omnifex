@@ -64,9 +64,12 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(api.summaryGet).mockResolvedValue(summaryFixture);
   vi.mocked(api.summaryGenerate).mockResolvedValue({
-    ...summaryFixture,
-    headline: 'Refreshed headline.',
-    paragraph: 'Refreshed paragraph.',
+    status: 'generated',
+    summary: {
+      ...summaryFixture,
+      headline: 'Refreshed headline.',
+      paragraph: 'Refreshed paragraph.',
+    },
   });
 });
 
@@ -93,7 +96,7 @@ describe('SessionList summary rendering', () => {
     expect(await screen.findByText(/old first message preview/)).toBeTruthy();
   });
 
-  it('clicking refresh calls summaryGenerate and updates the row', async () => {
+  it('clicking refresh calls summaryGenerate and updates the row on success', async () => {
     const sessionWithDifferentSize: Session = {
       ...sessionFixture,
       file_size_bytes: 9999, // Differs from summary.jsonlSize (4096)
@@ -101,8 +104,51 @@ describe('SessionList summary rendering', () => {
     render(<SessionList sessions={[sessionWithDifferentSize]} projectPath="/x" />);
     await screen.findByText('Summary headline here.');
     fireEvent.click(screen.getByRole('button', { name: /refresh summary/i }));
-    await waitFor(() =>
-      expect(screen.getByText('Refreshed headline.')).toBeTruthy(),
+    await waitFor(
+      () => expect(screen.getByText('Refreshed headline.')).toBeTruthy(),
+      { timeout: 2000 },
+    );
+  });
+
+  it('shows a friendly inline message when generation is skipped (toggle-off)', async () => {
+    vi.mocked(api.summaryGenerate).mockResolvedValueOnce({
+      status: 'skipped',
+      reason: 'toggle-off',
+    });
+    const sessionWithDifferentSize: Session = {
+      ...sessionFixture,
+      file_size_bytes: 9999,
+    } as Session;
+    render(<SessionList sessions={[sessionWithDifferentSize]} projectPath="/x" />);
+    await screen.findByText('Summary headline here.');
+    fireEvent.click(screen.getByRole('button', { name: /refresh summary/i }));
+    await waitFor(
+      () =>
+        expect(
+          screen.getByText(/Summaries are off for this account/i),
+        ).toBeTruthy(),
+      { timeout: 2000 },
+    );
+  });
+
+  it('shows a friendly inline message when generation is skipped (no-model)', async () => {
+    vi.mocked(api.summaryGenerate).mockResolvedValueOnce({
+      status: 'skipped',
+      reason: 'no-model',
+    });
+    const sessionWithDifferentSize: Session = {
+      ...sessionFixture,
+      file_size_bytes: 9999,
+    } as Session;
+    render(<SessionList sessions={[sessionWithDifferentSize]} projectPath="/x" />);
+    await screen.findByText('Summary headline here.');
+    fireEvent.click(screen.getByRole('button', { name: /refresh summary/i }));
+    await waitFor(
+      () =>
+        expect(
+          screen.getByText(/No summary model selected/i),
+        ).toBeTruthy(),
+      { timeout: 2000 },
     );
   });
 

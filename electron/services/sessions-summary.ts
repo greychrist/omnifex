@@ -258,19 +258,37 @@ export interface SessionsSummaryDeps {
   onSummaryUpdated?: (sessionUuid: string) => void;
 }
 
+/**
+ * Discriminated result of `generateSummary`. Returning a tagged object lets
+ * the renderer tell "skipped because toggle off" apart from "succeeded with
+ * no change" — both of those used to collapse to `null`, which made the
+ * manual refresh button feel broken when the account was unconfigured.
+ *
+ * Hard errors (auth, network) still throw out of `generateSummary` so they
+ * surface as toasts rather than as result codes.
+ */
+export type SummaryGenerateResult =
+  | { status: 'generated'; summary: SessionSummary }
+  | { status: 'unchanged'; summary: SessionSummary }
+  | {
+      status: 'skipped';
+      reason: 'no-account' | 'toggle-off' | 'no-model' | 'empty-session' | 'jsonl-missing' | 'jsonl-unreadable';
+    }
+  | { status: 'malformed-response' };
+
 export interface SessionsSummaryService {
   getSummary(sessionUuid: string, projectPath: string): SessionSummary | null;
   generateSummary(
     sessionUuid: string,
     projectPath: string,
-  ): Promise<SessionSummary | null>;
+  ): Promise<SummaryGenerateResult>;
 }
 
 export function createSessionsSummaryService(
   deps: SessionsSummaryDeps,
 ): SessionsSummaryService {
   // Per-session in-flight map for dedup. Keyed by `${projectPath}::${uuid}`.
-  const inFlight = new Map<string, Promise<SessionSummary | null>>();
+  const inFlight = new Map<string, Promise<SummaryGenerateResult>>();
 
   function getSummary(
     sessionUuid: string,
@@ -283,16 +301,19 @@ export function createSessionsSummaryService(
   async function generateSummaryInner(
     sessionUuid: string,
     projectPath: string,
-  ): Promise<SessionSummary | null> {
+  ): Promise<SummaryGenerateResult> {
     const account = deps.resolveAccount(projectPath);
     if (!account) {
       console.warn(
         `[sessions-summary] No account resolved for ${projectPath}; skipping.`,
       );
-      return null;
+      return { status: 'skipped', reason: 'no-account' };
     }
-    if (!account.summarizeOnClose || !account.summaryModel) {
-      return null;
+    if (!account.summarizeOnClose) {
+      return { status: 'skipped', reason: 'toggle-off' };
+    }
+    if (!account.summaryModel) {
+      return { status: 'skipped', reason: 'no-model' };
     }
 
     const jsonlPath = deps.jsonlPathFor(sessionUuid, projectPath);
@@ -301,7 +322,7 @@ export function createSessionsSummaryService(
       stat = fs.statSync(jsonlPath);
     } catch {
       console.warn(`[sessions-summary] JSONL missing: ${jsonlPath}; skipping.`);
-      return null;
+      return { status: 'skipped', reason: 'jsonl-missing' };
     }
     const jsonlSize = stat.size;
 
@@ -311,7 +332,7 @@ export function createSessionsSummaryService(
     const sidecarPath = sidecarPathFor(jsonlPath);
     const cached = readSidecar(sidecarPath);
     if (cached && cached.jsonlSize === jsonlSize) {
-      return cached;
+      return { status: 'unchanged', summary: cached };
     }
 
     let jsonlContent: string;
@@ -319,14 +340,17 @@ export function createSessionsSummaryService(
       jsonlContent = fs.readFileSync(jsonlPath, 'utf-8');
     } catch {
       console.warn(`[sessions-summary] JSONL unreadable: ${jsonlPath}; skipping.`);
-      return null;
+      return { status: 'skipped', reason: 'jsonl-unreadable' };
     }
     const { transcript, messageCount } = extractTranscript(jsonlContent);
     if (!transcript || messageCount === 0) {
-      // Nothing to summarize.
-      return null;
+      return { status: 'skipped', reason: 'empty-session' };
     }
     const { transcript: capped, truncated } = truncateForModel(transcript);
+
+    console.log(
+      `[sessions-summary] Calling ${account.summaryModel} via ${account.configDir} for ${sessionUuid} (${messageCount} msgs, ${jsonlSize} bytes${truncated ? ', truncated' : ''})`,
+    );
 
     const prompt = buildSummaryPrompt(capped);
     const response = await deps.runQuery({
@@ -341,7 +365,7 @@ export function createSessionsSummaryService(
       console.warn(
         `[sessions-summary] Model returned malformed XML; sidecar untouched. Raw response: ${response.slice(0, 200)}`,
       );
-      return null;
+      return { status: 'malformed-response' };
     }
 
     const summary: SessionSummary = {
@@ -357,13 +381,13 @@ export function createSessionsSummaryService(
     };
     writeSidecar(sidecarPath, summary);
     deps.onSummaryUpdated?.(sessionUuid);
-    return summary;
+    return { status: 'generated', summary };
   }
 
   async function generateSummary(
     sessionUuid: string,
     projectPath: string,
-  ): Promise<SessionSummary | null> {
+  ): Promise<SummaryGenerateResult> {
     const key = `${projectPath}::${sessionUuid}`;
     const existing = inFlight.get(key);
     if (existing) return existing;
