@@ -24,6 +24,17 @@ const STATUS_COLOR: Record<TabStatusSummary['status'], string> = {
   error: 'text-red-400 bg-red-500/15',
 };
 
+// "Waiting on the user" overrides the busy badge with a more specific
+// label/color so background tabs that need you are obvious. Indigo for both
+// — it's a different domain from busy (amber) and idle (green) and reads
+// as "your turn" rather than "agent working".
+const WAITING_LABEL: Record<NonNullable<TabStatusSummary['waitingFor']>, string> = {
+  permission: 'Permission Request',
+  question: 'Question Waiting',
+};
+
+const WAITING_COLOR = 'text-indigo-300 bg-indigo-500/20';
+
 interface TabStatusCardProps {
   summary: TabStatusSummary;
   branchColor: string | null;
@@ -49,13 +60,15 @@ const TabStatusCard: React.FC<TabStatusCardProps> = ({ summary, branchColor, bra
           <span
             className={cn(
               'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide',
-              STATUS_COLOR[summary.status],
+              summary.waitingFor ? WAITING_COLOR : STATUS_COLOR[summary.status],
             )}
           >
-            {summary.status === 'busy' && (
+            {(summary.waitingFor || summary.status === 'busy') && (
               <span className="inline-block h-1.5 w-1.5 rounded-full bg-current animate-pulse" />
             )}
-            {STATUS_LABEL[summary.status]}
+            {summary.waitingFor
+              ? WAITING_LABEL[summary.waitingFor]
+              : STATUS_LABEL[summary.status]}
           </span>
           <span className="truncate text-sm font-medium">{summary.title}</span>
         </div>

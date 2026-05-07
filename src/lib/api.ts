@@ -597,6 +597,13 @@ export interface TabStatusSummary {
   filesUntracked: number;
   /** High-level status for the badge in the popover. */
   status: 'not-started' | 'starting' | 'idle' | 'busy' | 'error';
+  /**
+   * Set when the session is paused waiting on the user — a permission grant
+   * or an AskUserQuestion answer. The TabStatusPopover overrides the badge
+   * label/color when this is non-null so background tabs that need the user
+   * are obvious at a glance. Null when nothing is waiting.
+   */
+  waitingFor: 'permission' | 'question' | null;
   /** Wall-clock ms when this summary was published. */
   updatedAt: number;
 }

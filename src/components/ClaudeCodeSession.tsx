@@ -510,6 +510,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     branch: gitStatus?.branch ?? null,
     filesChanged: gitStatus?.changed ?? 0,
     filesUntracked: gitStatus?.untracked ?? 0,
+    pendingPermission,
   });
 
   const [viewMode, setViewMode] = useState<ViewMode>('compact');

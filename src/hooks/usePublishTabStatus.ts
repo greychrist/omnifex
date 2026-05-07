@@ -3,6 +3,7 @@ import { api, type SessionContextUsage, type TabStatusSummary } from '@/lib/api'
 import type { ClaudeStreamMessage } from '@/types/claudeStream';
 import type { Subagent } from '@/lib/subagentStreams';
 import { getLatestTodos, summarizeTodos } from '@/lib/latestTodos';
+import { deriveWaitingFor } from '@/lib/tabWaitingFor';
 
 interface UsePublishTabStatusArgs {
   tabId: string;
@@ -20,6 +21,12 @@ interface UsePublishTabStatusArgs {
   branch: string | null;
   filesChanged: number;
   filesUntracked: number;
+  /**
+   * The session's currently-pending permission, if any. Used to derive
+   * the popover's "Permission Request" / "Question Waiting" badge. Pass
+   * null when nothing is pending.
+   */
+  pendingPermission: { toolName?: string } | null;
 }
 
 /**
@@ -45,6 +52,7 @@ export function usePublishTabStatus({
   branch,
   filesChanged,
   filesUntracked,
+  pendingPermission,
 }: UsePublishTabStatusArgs): void {
   const summary: TabStatusSummary = useMemo(() => {
     const todos = getLatestTodos(messages);
@@ -56,7 +64,12 @@ export function usePublishTabStatus({
       0,
     );
     const mainTurnInFlight = isLoading;
-    const busy = mainTurnInFlight || activeAgents > 0 || todoSummary.running;
+    const waitingFor = deriveWaitingFor(pendingPermission);
+    // Waiting on the user counts as busy: the session can't accept a new
+    // prompt while a permission/question is open, so the install gate and
+    // any other "wait for idle" consumer should still treat it as busy.
+    const busy =
+      mainTurnInFlight || activeAgents > 0 || todoSummary.running || waitingFor !== null;
 
     let status: TabStatusSummary['status'];
     if (hasError) status = 'error';
@@ -88,6 +101,7 @@ export function usePublishTabStatus({
       filesChanged,
       filesUntracked,
       status,
+      waitingFor,
       updatedAt: Date.now(),
     };
   }, [
@@ -104,6 +118,7 @@ export function usePublishTabStatus({
     branch,
     filesChanged,
     filesUntracked,
+    pendingPermission,
   ]);
 
   useEffect(() => {
