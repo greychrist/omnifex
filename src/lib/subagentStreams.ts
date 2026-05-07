@@ -44,6 +44,53 @@ export function isTaskLifecycleMarker(m: unknown): boolean {
   return !!msg && msg.type === 'system' && typeof msg.subtype === 'string' && msg.subtype.startsWith('task_');
 }
 
+// XML <task-notification>...</task-notification> payloads ride two envelopes:
+//   - { type: 'queue-operation', operation: 'enqueue', content: '<task-notification>...' }
+//   - { type: 'attachment', attachment: { type: 'queued_command', prompt: '<task-notification>...' } }
+// Both surface the completion of a run_in_background dispatch (typically Bash)
+// in lieu of a structured task_notification SystemMessage. We pull the raw XML
+// out without committing to a schema beyond "has a <task-notification> open
+// tag inside a string field on a known envelope".
+function extractTaskNotificationXml(m: unknown): string | null {
+  if (!m || typeof m !== 'object') return null;
+  const any = m as Record<string, unknown>;
+  if (any.type === 'queue-operation' && (any.operation === 'enqueue' || any.operation === undefined)) {
+    const content = any.content;
+    if (typeof content === 'string' && content.includes('<task-notification>')) return content;
+  }
+  if (any.type === 'attachment') {
+    const att = any.attachment as { type?: string; prompt?: unknown } | undefined;
+    if (att?.type === 'queued_command' && typeof att.prompt === 'string' && att.prompt.includes('<task-notification>')) {
+      return att.prompt;
+    }
+  }
+  return null;
+}
+
+interface ParsedTaskNotification {
+  taskId?: string;
+  toolUseId: string;
+  status: 'completed' | 'failed';
+  summary?: string;
+}
+
+function parseTaskNotificationXml(text: string): ParsedTaskNotification | null {
+  const tag = (name: string): string | undefined => {
+    const re = new RegExp(`<${name}>([\\s\\S]*?)</${name}>`);
+    const m = text.match(re);
+    return m ? m[1].trim() : undefined;
+  };
+  const toolUseId = tag('tool-use-id');
+  if (!toolUseId) return null;
+  const statusRaw = tag('status');
+  return {
+    taskId: tag('task-id'),
+    toolUseId,
+    status: statusRaw === 'completed' ? 'completed' : 'failed',
+    summary: tag('summary'),
+  };
+}
+
 function ensureSubagent(
   byId: Map<string, Subagent>,
   toolUseId: string,
@@ -163,6 +210,38 @@ export function deriveSubagents(messages: ClaudeStreamMessage[]): Subagent[] {
         sub.events.push(finalEvent);
         sub.latest = finalEvent;
         notificationFinalized.add(id);
+      }
+      continue;
+    }
+
+    // 4. XML <task-notification> carried as a queue-operation enqueue or as an
+    //    attachment.queued_command. The CLI surfaces these for run_in_background
+    //    dispatches (Bash especially) in lieu of — or in addition to — a
+    //    structured task_notification SystemMessage. Source of truth is the
+    //    embedded <tool-use-id>; route through the same close path so the
+    //    SubagentBar gets a final event (replacing "Waiting for first
+    //    progress event…") and the spinner / amber "Awaiting Background
+    //    Work" card retire.
+    const xml = extractTaskNotificationXml(m);
+    if (xml) {
+      const parsed = parseTaskNotificationXml(xml);
+      if (parsed) {
+        const sub = byToolUseId.get(parsed.toolUseId);
+        // Only act when we know the dispatch — never invent orphan subs from
+        // notifications alone, since they routinely refer to tool_uses from
+        // earlier turns we may not have in scope.
+        if (sub && !notificationFinalized.has(parsed.toolUseId)) {
+          sub.status = parsed.status;
+          sub.summary = parsed.summary ?? sub.summary;
+          sub.endedAt = new Date().toISOString();
+          if (parsed.taskId && !sub.taskId) sub.taskId = parsed.taskId;
+          const finalEvent: SubagentProgressEvent = {
+            description: parsed.summary ?? sub.description ?? '',
+          };
+          sub.events.push(finalEvent);
+          sub.latest = finalEvent;
+          notificationFinalized.add(parsed.toolUseId);
+        }
       }
     }
   }

@@ -436,6 +436,137 @@ describe('deriveSubagents', () => {
   });
 });
 
+describe('XML task-notification (queue-operation / attachment)', () => {
+  // Background Bash dispatches receive their completion signal as XML wrapped
+  // in a queue-operation enqueue (live stream) or an attachment.queued_command
+  // (replayed through the agent loop), NOT as a structured task_notification
+  // SystemMessage. The reducer must extract the embedded <tool-use-id> /
+  // <status> / <summary> and route through the same close path that
+  // structured task_notification uses.
+
+  function bashBg(id: string, description = 'verify gate'): ClaudeStreamMessage {
+    return {
+      type: 'assistant',
+      message: {
+        content: [
+          {
+            type: 'tool_use',
+            id,
+            name: 'Bash',
+            input: {
+              command: 'node scripts/claude/verify.mjs',
+              description,
+              run_in_background: true,
+            },
+          },
+        ],
+      },
+    } as unknown as ClaudeStreamMessage;
+  }
+
+  function bgAck(toolUseId: string): ClaudeStreamMessage {
+    return toolResult(toolUseId, false, `Command running in background with ID: bg_${toolUseId}`);
+  }
+
+  function xmlBody(
+    toolUseId: string,
+    status: 'completed' | 'failed' = 'completed',
+    summary = 'verify gate done',
+    taskId = 'bgtask1',
+  ): string {
+    return [
+      '<task-notification>',
+      `<task-id>${taskId}</task-id>`,
+      `<tool-use-id>${toolUseId}</tool-use-id>`,
+      `<status>${status}</status>`,
+      `<summary>${summary}</summary>`,
+      '</task-notification>',
+    ].join('\n');
+  }
+
+  function queueOp(toolUseId: string, status: 'completed' | 'failed' = 'completed', summary = 'verify gate done'): ClaudeStreamMessage {
+    return {
+      type: 'queue-operation',
+      operation: 'enqueue',
+      content: xmlBody(toolUseId, status, summary),
+    } as unknown as ClaudeStreamMessage;
+  }
+
+  function attachmentQueued(toolUseId: string, status: 'completed' | 'failed' = 'completed', summary = 'verify gate done'): ClaudeStreamMessage {
+    return {
+      type: 'attachment',
+      attachment: {
+        type: 'queued_command',
+        prompt: xmlBody(toolUseId, status, summary),
+      },
+    } as unknown as ClaudeStreamMessage;
+  }
+
+  it('queue-operation enqueue with <task-notification> closes out the matching bg dispatch', () => {
+    const subs = deriveSubagents([
+      bashBg(TOOL_USE_ID, 'verify gate'),
+      bgAck(TOOL_USE_ID),
+      queueOp(TOOL_USE_ID, 'completed', 'verify gate completed (exit 0)'),
+    ]);
+    expect(subs).toHaveLength(1);
+    expect(subs[0].status).toBe('completed');
+    expect(subs[0].summary).toBe('verify gate completed (exit 0)');
+    // The summary should become the latest progress event so SubagentBar
+    // replaces "Waiting for first progress event…" with the summary line.
+    expect(subs[0].events).toHaveLength(1);
+    expect(subs[0].latest?.description).toBe('verify gate completed (exit 0)');
+  });
+
+  it('attachment(queued_command) carrying <task-notification> closes out the matching bg dispatch', () => {
+    const subs = deriveSubagents([
+      bashBg(TOOL_USE_ID, 'verify gate'),
+      bgAck(TOOL_USE_ID),
+      attachmentQueued(TOOL_USE_ID, 'completed', 'verify gate done'),
+    ]);
+    expect(subs[0].status).toBe('completed');
+    expect(subs[0].summary).toBe('verify gate done');
+  });
+
+  it('XML <status>failed</status> maps to failed', () => {
+    const subs = deriveSubagents([
+      bashBg(TOOL_USE_ID),
+      bgAck(TOOL_USE_ID),
+      queueOp(TOOL_USE_ID, 'failed', 'exit 1'),
+    ]);
+    expect(subs[0].status).toBe('failed');
+  });
+
+  it('XML for an unknown tool_use_id is ignored (no orphan subagent fabricated)', () => {
+    const subs = deriveSubagents([queueOp('toolu_never_seen', 'completed', 'whatever')]);
+    expect(subs).toHaveLength(0);
+  });
+
+  it('structured task_notification arriving first wins over a later XML one', () => {
+    const subs = deriveSubagents([
+      bashBg(TOOL_USE_ID),
+      bgAck(TOOL_USE_ID),
+      taskNotification(TOOL_USE_ID, 'completed', 'structured summary'),
+      queueOp(TOOL_USE_ID, 'failed', 'xml says failed but structured already won'),
+    ]);
+    expect(subs[0].status).toBe('completed');
+    expect(subs[0].summary).toBe('structured summary');
+  });
+
+  it('structured task_notification arriving after XML still wins (structured is most authoritative)', () => {
+    // Existing precedence: structured task_notification carries usage + a
+    // canonical status, so it overwrites whatever the XML branch set. This
+    // matches the structured branch's pre-existing unconditional overwrite.
+    const subs = deriveSubagents([
+      bashBg(TOOL_USE_ID),
+      bgAck(TOOL_USE_ID),
+      queueOp(TOOL_USE_ID, 'completed', 'xml summary'),
+      taskNotification(TOOL_USE_ID, 'failed', 'structured wins'),
+    ]);
+    expect(subs[0].status).toBe('failed');
+    expect(subs[0].summary).toBe('structured wins');
+  });
+});
+
 describe('clearCompleted', () => {
   it('drops completed and failed, keeps running', () => {
     const subs = [
