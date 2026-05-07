@@ -38,6 +38,7 @@ import { SplitPane } from "@/components/ui/split-pane";
 import { WebviewPreview } from "./WebviewPreview";
 import type { ClaudeStreamMessage } from "@/types/claudeStream";
 import { synthesizeResultMessages } from "@/lib/synthesizeResults";
+import { maybeAutoGenerateSummaryOnLeave } from "@/lib/sessionSummaryGate";
 import { SessionModeToggle } from "./SessionModeToggle";
 import { SessionViewToggle, type ViewMode } from "./SessionViewToggle";
 import { TerminalView } from './TerminalView';
@@ -1321,7 +1322,10 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   // we're navigating away from. Auto-on-close only fires when the SDK
   // session is torn down (tab close); back-button keeps the SDK
   // session alive but we still want the summary to reflect the work
-  // that just happened. The service's in-flight dedup map prevents
+  // that just happened. Gated on the same `enabled && autoOnClose`
+  // pair the lifecycle hook in main.ts checks — the back-button is
+  // semantically "leaving the session," so the user's auto-on-close
+  // toggle controls it. The service's in-flight dedup map prevents
   // double-spend if both back-button and tab-close fire for the same
   // session.
   const handleBackToProject = () => {
@@ -1331,11 +1335,9 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       // accountResolution and passed explicitly so the backend doesn't
       // have to re-resolve and risk a mismatch.
       const configDir = accountResolution?.account.config_dir ?? null;
-      api
-        .summaryGenerate(claudeSessionId, projectPath, configDir)
-        .catch((err) =>
-          console.warn('[ClaudeCodeSession] back-button summary failed:', err),
-        );
+      // Fire-and-forget; the helper reads the two global toggles and
+      // skips the IPC when either is off, swallowing rejections.
+      void maybeAutoGenerateSummaryOnLeave(claudeSessionId, projectPath, configDir);
     }
     window.dispatchEvent(new CustomEvent('back-to-project'));
   };
