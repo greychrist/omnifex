@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.11] — 2026-05-06
+
+Hot-fix on top of v0.4.10. Manual summary generation in the dev/Electron app failed with `[ENOTDIR] spawn ENOTDIR` because the V2 SDK summary path didn't set `pathToClaudeCodeExecutable` explicitly and the SDK's auto-resolver doesn't work reliably from Electron's bundled main process. The summary path now uses the same binary probe the interactive sessions path has always used.
+
+Installers remain **unsigned**.
+
+### Fixed
+
+- **Manual summary generation no longer fails with `[ENOTDIR] spawn ENOTDIR`.** The V2 `unstable_v2_prompt` runner now sets `pathToClaudeCodeExecutable` explicitly via `findSystemClaudeBinary()` (system installs → SDK-bundled fallback), matching the interactive V1 sessions path. If no binary can be resolved at all, the runner throws a descriptive error instead of letting the renderer see an opaque spawn failure. Lines up with Wave 6 audit item 6.3 ("Claude binary resolution is fragmented across subsystems") — a follow-up is still queued to route every probe site through `claude-binary.ts::findBestBinary`.
+
 ## [0.4.10] — 2026-05-06
 
 Bug-fix release. The back-button on a session was generating a summary even when "Generate summaries automatically when leaving a session" was disabled — the lifecycle close hook gated correctly but the back-button path bypassed it. Now both leave-the-session entry points respect the same toggle.
