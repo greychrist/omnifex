@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.10] — 2026-05-06
+
+Bug-fix release. The back-button on a session was generating a summary even when "Generate summaries automatically when leaving a session" was disabled — the lifecycle close hook gated correctly but the back-button path bypassed it. Now both leave-the-session entry points respect the same toggle.
+
+Installers remain **unsigned**.
+
+### Fixed
+
+- **Back-button no longer auto-generates a summary when auto-on-close is off.** The "Back to project" button in `ClaudeCodeSession` now goes through the same `enabled && autoOnClose` gate as the lifecycle close hook in the main process, so flipping "Generate summaries automatically when leaving a session" off actually stops it. The manual refresh button on session rows is still ungated by design — that path is an explicit user action.
+
 ## [0.4.9] — 2026-05-06
 
 Session-summary overhaul. The Settings → Sessions tab is now **Session Summaries**, with a master enable switch, instant-save edits to the prompt template, and a separate auto-on-close toggle. Per-row spinners now animate for background generations triggered by closing or backing out of a session. Default summary prompt rewritten to ask for higher-level themes instead of CV-style bullets.
