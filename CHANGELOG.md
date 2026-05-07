@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.13] — 2026-05-07
+
+Reliability pass on the `/usage` runner driven by Claude Code 2.1.132's TUI changes — the fetch was timing out, missing the Sonnet bar, and showing dropped characters in the popover ("Longer sessi ns are more expensive…"). The runner now sidesteps Claude's first-launch safety dialog by pre-trusting a per-account scratch folder, recognizes both old and new welcome-screen wordings, tolerates cursor-redraw corruption of the Sonnet header, waits patiently for late-rendering blocks, and post-processes the captured text against the buffer's own vocabulary to recover dropped characters. The popover also gains the three ranked tables Claude shows under "What's contributing" (Skills, Subagents, Plugins), Settings drops three dead fields plus the per-account picker, and the Log tab's prune controls collapse into a single count + period dropdown.
+
+Installers remain **unsigned**.
+
+### Fixed
+
+- **`/usage` no longer times out on Claude Code 2.1.132's first-launch safety dialog.** A new helper at `electron/services/usage-runner/scratch-cwd.ts` creates a per-account empty scratch directory under `<userData>/usage-cwd/<accountKey>/` and writes `projects[<absPath>].hasTrustDialogAccepted: true` into `<configDir>/.claude.json` (atomic temp + rename, idempotent). The runner spawns the Claude CLI in that folder instead of the user's home directory, so the safety dialog never fires.
+- **Welcome-screen detection covers Claude Code 2.1.132's new footer.** Replaced the single `READY_MARKER = 'for shortcuts'` with a multi-marker check that matches either `for shortcuts` (pre-2.1.132) or `shift+tab to cycle` (2.1.132+). When Claude reworords the footer again, the failure mode is loud: a `warn` log with the full captured raw buffer.
+- **Sonnet bar surfaces despite cursor-redraw corruption of its header.** The `week_sonnet` header regex was loosened from the strict literal `Current week (Sonnet only)` to `Current week (\s*Son[^)]*\)`, which matches both the clean form and observed corruptions like `Current week (Son et nly)` while still excluding `(all models)`.
+- **Patient parsing for late-arriving blocks.** New `incompleteParseGraceMs` (default 3000ms) extends the wait when the buffer goes quiet but the parse hasn't yet hit all three windows — Claude sometimes async-renders the Sonnet block over a "Refreshing…" placeholder after the rest has stilled. Falls back to snapshotting whatever has arrived if the grace expires.
+- **Vocabulary-driven character-corruption repair.** New `electron/services/usage-runner/repair.ts` recovers single-character corruption introduced by Claude's cursor-positioning redraws (`sessions` → `sessi ns`, `Approximate` → `App oximate`, `Sonnet only` → `Son et nly`, `Resets 7am` → `Rese s 7 m`). For each adjacent token pair `<A> <B>` separated by a single space on the same line, splices in any vocabulary word matching `A + ?c + B` of length `len(A) + 1 + len(B)`. Conservative guardrails: never merges if both fragments stand alone elsewhere in the buffer, never crosses newlines, length-gated, applied iteratively until quiescent.
+
+### Added
+
+- **Skills / Subagents / Plugins ranked tables in the `/usage` popover.** Claude shows three "% of usage" tables under "What's contributing" — these were previously dropped on the floor. The parser now extracts them as `{ rows: { name, pct_used }[], more_count }` and the popover renders them as inline percent-bar lists matching the existing limits-window visual language. Includes the trailing `… N more` marker when Claude truncates.
+- **Comprehensive structured logging on the `/usage` runner.** Every phase emits a structured `app_logs` entry — `run start`, `welcome ready`, `trust dialog observed despite pre-trust` (defensive), `/usage sent`, `parse incomplete — extending wait for late chunk`, `usage capture (pre-parse)` with the full raw buffer, `repaired corrupted words from buffer vocabulary`, `parse ok`, `parse failed`, and the timeout path now logs the captured raw too. Visible in Settings → Log filtered by `usage-runner`.
+- **Log-tab prune dropdown for arbitrary "older than N <unit>" cutoffs.** The single Count (1–24) + Period (hours / days / weeks / months) + 🗑 Clear control replaces the previous "Older than 1 week / 1 month" buttons. Backend `parseOlderThan` already accepted `Nh / Nd / Nw / Nm`, so this is a renderer-only change.
+
+### Removed
+
+- **General-tab Claude-settings toggles + the per-account picker that scoped them.** `includeCoAuthoredBy` (deprecated upstream in favor of `attribution`), `verbose` (undocumented and unused — OmniFex's actual rendering preference is the Chats tab's `defaultViewMode`), and `cleanupPeriodDays` (load-bearing but rarely tuned; 30-day default is sane) are gone. With nothing in `Settings.tsx` consuming the per-account `getClaudeSettings`/`saveClaudeSettings` flow anymore, the "Editing Claude settings.json for…" picker was retired too. `RateLimitsSettings`'s dead `settings`/`updateSetting` props were removed; `SettingsPanelProps` shrunk to just `setToast`.
+
 ## [0.4.12] — 2026-05-07
 
 UX cleanup pass on background-tab signals. The biggest fix is for sessions that ended up stuck on a "Crafting…" spinner with an amber **Awaiting Background Work** card after the parent's success result — when the bg dispatch's completion arrived as XML on a `queue-operation` enqueue (or an `attachment.queued_command`) instead of as a structured `task_notification` SystemMessage, the reducer ignored it and the subagent stayed `running` forever. The reducer now reads both envelopes and routes them through the same close path. The Sessions popover also gained finer-grained labels for tabs paused on the user, and `AskUserQuestion` no longer overlays the chat as a modal Dialog.
