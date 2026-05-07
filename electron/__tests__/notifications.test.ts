@@ -137,6 +137,15 @@ describe('notifications service', () => {
       });
     });
 
+    it('honors a custom subtitle override', () => {
+      h.service.show('OmniFex', 'Pick a side?', false, { tabId: 't1' }, { subtitle: 'Question' });
+      expect(h.created[0].options).toMatchObject({
+        title: 'OmniFex',
+        body: 'Pick a side?',
+        subtitle: 'Question',
+      });
+    });
+
     it('focuses the window when a notification is clicked', () => {
       h.service.show('T', 'B', false);
       h.created[0].trigger('click');

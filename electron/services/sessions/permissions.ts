@@ -18,6 +18,77 @@ function currentPermissionMode(handle: SessionHandle): string {
   return typeof mode === 'string' ? mode : 'default';
 }
 
+const NOTIF_BODY_CAP = 140;
+
+function truncate(s: string): string {
+  const t = s.trim();
+  return t.length > NOTIF_BODY_CAP ? t.slice(0, NOTIF_BODY_CAP - 1) + '…' : t;
+}
+
+function summarizeRequest(
+  toolName: string,
+  toolInput: Record<string, unknown> | undefined,
+  hints?: { title?: string; displayName?: string },
+): string {
+  // Prefer the SDK-provided title/displayName when present — those already
+  // read like a one-liner summary (e.g. "Run rm -rf /").
+  const hint = (hints?.title || hints?.displayName || '').trim();
+  if (hint) return truncate(hint);
+
+  const input = toolInput ?? {};
+  if (toolName === 'Bash' && typeof (input as any).command === 'string') {
+    return truncate(`$ ${(input as any).command}`);
+  }
+  if (
+    (toolName === 'Write' ||
+      toolName === 'Edit' ||
+      toolName === 'MultiEdit' ||
+      toolName === 'Read' ||
+      toolName === 'NotebookEdit') &&
+    typeof (input as any).file_path === 'string'
+  ) {
+    return truncate(`${toolName} ${(input as any).file_path}`);
+  }
+  if (toolName === 'WebFetch' && typeof (input as any).url === 'string') {
+    return truncate(`WebFetch ${(input as any).url}`);
+  }
+  if (
+    (toolName === 'Glob' || toolName === 'Grep') &&
+    typeof (input as any).pattern === 'string'
+  ) {
+    return truncate(`${toolName} ${(input as any).pattern}`);
+  }
+  return toolName;
+}
+
+/**
+ * Notification subtitle + body for a permission prompt. AskUserQuestion is
+ * the SDK's built-in question tool — it rides the permission channel but the
+ * agent is *asking the user* something, not requesting a tool. We surface
+ * that distinction via the subtitle ("Answer Needed:" vs "Permission
+ * Request:") and put a summary of the actual request in the body.
+ */
+export function permissionNotificationContent(
+  toolName: string,
+  toolInput: Record<string, unknown> | undefined,
+  hints?: { title?: string; displayName?: string },
+): { body: string; subtitle: string } {
+  if (toolName === 'AskUserQuestion') {
+    const questions = (toolInput as any)?.questions;
+    const first =
+      Array.isArray(questions) && questions.length > 0 ? questions[0] : undefined;
+    const text = typeof first?.question === 'string' ? first.question.trim() : '';
+    return {
+      subtitle: 'Answer Needed:',
+      body: text ? truncate(text) : 'Awaiting your response',
+    };
+  }
+  return {
+    subtitle: 'Permission Request:',
+    body: summarizeRequest(toolName, toolInput, hints),
+  };
+}
+
 /** Map the SDK's destination string to our settings-file scope. */
 function scopeForDestination(
   dest: string | undefined,
@@ -260,10 +331,13 @@ export function createCanUseTool(
         // Notify the user that a permission decision is needed
         const projectName = path.basename(handle.projectPath) || 'OmniFex';
         const title = `OmniFex — ${projectName}`;
-        const body = `Permission requested: ${toolName}`;
+        const { body, subtitle } = permissionNotificationContent(toolName, toolInput, {
+          title: toolOptions.title,
+          displayName: toolOptions.displayName,
+        });
         sendToRenderer('claude-notification', { tab_id: tabId, title, body, is_error: false });
         try {
-          notificationHooks.showNotification?.(title, body, false, { tabId });
+          notificationHooks.showNotification?.(title, body, false, { tabId }, { subtitle });
           notificationHooks.incrementUnread?.();
         } catch (e) {
           console.error('[sessions] permission notification hook failed:', e);
@@ -386,10 +460,14 @@ export function respondPermission(
     // Notify the user about the next permission in the queue
     const projectName = path.basename(handle.projectPath) || 'OmniFex';
     const title = `OmniFex — ${projectName}`;
-    const body = `Permission requested: ${nextPayload.tool_name}`;
+    const { body, subtitle } = permissionNotificationContent(
+      nextPayload.tool_name,
+      nextPayload.tool_input,
+      { title: nextPayload.title, displayName: nextPayload.display_name },
+    );
     sendToRenderer('claude-notification', { tab_id: tabId, title, body, is_error: false });
     try {
-      notificationHooks.showNotification?.(title, body, false, { tabId });
+      notificationHooks.showNotification?.(title, body, false, { tabId }, { subtitle });
       notificationHooks.incrementUnread?.();
     } catch (e) {
       console.error('[sessions] permission notification hook failed:', e);

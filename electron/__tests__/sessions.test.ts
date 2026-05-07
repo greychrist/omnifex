@@ -1077,17 +1077,60 @@ describe('sessions service — full lifecycle', () => {
 
     await new Promise((r) => setImmediate(r));
 
-    // Should fire native notification for the permission request
+    // Should fire native notification with a summary body and a
+    // "Permission Request:" subtitle (no "Task Complete" leakage).
     expect(showNotification).toHaveBeenCalledWith(
       expect.stringContaining('my-project'),
-      expect.stringContaining('Bash'),
+      expect.stringContaining('rm -rf /'),
       false,
       { tabId: 'tab-perm-notif' },
+      { subtitle: 'Permission Request:' },
     );
+    const [, body] = showNotification.mock.calls.at(-1)!;
+    expect(body).not.toMatch(/Permission requested:/);
     expect(incrementUnread).toHaveBeenCalled();
 
     // Clean up — resolve the permission so the promise settles
     svc.respondPermission('tab-perm-notif', 'deny');
+    await decisionPromise;
+    svc.stopAll();
+  });
+
+  it('canUseTool fires an "Answer Needed:" notification (not "Permission requested") for AskUserQuestion', async () => {
+    const writeBatch = vi.fn();
+    const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
+    const svc = createSessionsService(
+      sendToRenderer as any,
+      { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
+      fakeLogging as any,
+    );
+    const fake = installFakeQuery();
+
+    svc.start({ tabId: 'tab-q', projectPath: '/tmp/my-project', configDir: '/c', model: 'sonnet', permissionMode: 'default' });
+
+    const canUseTool = fake.getCapturedOptions().canUseTool;
+    const decisionPromise = canUseTool(
+      'AskUserQuestion',
+      { questions: [{ question: 'Pick a side?', options: [{ label: 'A' }, { label: 'B' }] }] },
+      {
+        signal: new AbortController().signal,
+        toolUseID: 'tu-q',
+      },
+    );
+
+    await new Promise((r) => setImmediate(r));
+
+    expect(showNotification).toHaveBeenCalled();
+    const call = showNotification.mock.calls.at(-1)!;
+    // [title, body, isError, payload, options?]
+    expect(call[0]).toEqual(expect.stringContaining('my-project'));
+    expect(call[1]).toBe('Pick a side?');
+    expect(call[1]).not.toMatch(/Permission requested/);
+    expect(call[2]).toBe(false);
+    expect(call[3]).toEqual({ tabId: 'tab-q' });
+    expect(call[4]).toMatchObject({ subtitle: 'Answer Needed:' });
+
+    svc.respondPermission('tab-q', 'deny');
     await decisionPromise;
     svc.stopAll();
   });

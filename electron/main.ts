@@ -426,8 +426,8 @@ app.whenReady().then(() => {
   const sessionsService = _sessionsService = createSessionsService(
     sendToRenderer,
     {
-      showNotification: (title, body, isError, payload) => {
-        notificationsService.show(title, body, isError, payload);
+      showNotification: (title, body, isError, payload, options) => {
+        notificationsService.show(title, body, isError, payload, options);
       },
       incrementUnread: () => {
         // Only bump the dock badge when no window is focused

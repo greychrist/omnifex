@@ -169,6 +169,7 @@ export interface NotificationHooks {
     body: string,
     isError: boolean,
     payload?: { tabId?: string },
+    options?: { subtitle?: string },
   ) => void;
   /** Increment unread count / update dock badge */
   incrementUnread?: () => void;

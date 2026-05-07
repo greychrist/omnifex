@@ -20,8 +20,23 @@ export interface NotificationsDeps {
   onNotificationClick?: (payload: NotificationClickPayload) => void;
 }
 
+export interface NotificationShowOptions {
+  /**
+   * Override the default "Task Complete" / "Task Failed" subtitle. Used by
+   * the permission flow to render "Question" for AskUserQuestion prompts so
+   * the OS notification reads as a question instead of a finished task.
+   */
+  subtitle?: string;
+}
+
 export interface NotificationsService {
-  show(title: string, body: string, isError: boolean, payload?: NotificationClickPayload): void;
+  show(
+    title: string,
+    body: string,
+    isError: boolean,
+    payload?: NotificationClickPayload,
+    options?: NotificationShowOptions,
+  ): void;
   dismissAll(): void;
 }
 
@@ -29,7 +44,7 @@ export function createNotificationsService(deps: NotificationsDeps): Notificatio
   const active = new Set<NotificationLike>();
 
   return {
-    show(title, body, isError, payload) {
+    show(title, body, isError, payload, options) {
       if (!deps.isSupported()) return;
 
       if (deps.isWindowFocused()) {
@@ -39,7 +54,7 @@ export function createNotificationsService(deps: NotificationsDeps): Notificatio
 
       const notif = deps.createNotification({
         title,
-        subtitle: isError ? 'Task Failed' : 'Task Complete',
+        subtitle: options?.subtitle ?? (isError ? 'Task Failed' : 'Task Complete'),
         body,
         silent: false,
         sound: isError ? 'Basso' : 'greychrist_success',
