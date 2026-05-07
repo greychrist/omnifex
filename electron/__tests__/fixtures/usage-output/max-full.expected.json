@@ -24,5 +24,8 @@
       "headline": "67% of your usage came from subagent-heavy sessions",
       "detail": "Each subagent runs its own requests. Be deliberate about spawning them — and prefer plan mode for short-lived work."
     }
-  ]
+  ],
+  "skills": { "rows": [], "more_count": null },
+  "subagents": { "rows": [], "more_count": null },
+  "plugins": { "rows": [], "more_count": null }
 }

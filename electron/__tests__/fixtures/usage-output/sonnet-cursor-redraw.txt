@@ -1,0 +1,84 @@
+❯ /usage
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Status Config Usage Stats
+
+ Session
+ Total cost: $0.0000
+ Total duration (API): 0s
+ Total duration (wall): 1s
+ Total code changes: 0 lines added, 0 lines removed
+ Usage: 0 input, 0 output, 0 cache read, 0 cache write
+
+ Current session
+ ██████ 12% used
+ Resets 7am (America/New_York)
+
+ Current week (all models)
+ ████████████ 24% used
+ Resets May 11 at 7pm (America/New_York)
+
+ What's contributing to your limits usage?
+ Approximate, based on local sessions on this machine — does not include other devices or claude.ai
+
+ Scanning local sessions…
+
+ Refreshing…
+
+ Esc to cancel
+ ▌ 5
+Current week (Son et nly)
+█▌ 3% used
+Resets May 11 at 7pm (America/New_York)
+
+What's contributing to your limits usage?
+App oximate, based on local sessions on this machine — does not include other devices or claude.ai
+Scanning local sessions…
+
+ Extra usage
+ Extra usage not enabled · /extra-usage to enable
+
+ Esc to cancel
+ Last 24h · these are independent characteristics of your usage, not a breakdown
+59% of your usage was at >150k context
+ Longer sessi ns are more expensive even when cached. /compact mid-task, /clear
+when switching to new tasks.
+
+ 40% of your usage came from subagent-heavy sessions
+ Each subagent runs its own requests. Be deliberate about spawning them — and
+ consider configuring a cheaper model for simpler subagents.
+
+ 10% of your usage came from subagents under
+ "superpowers:subagent-driven-development"
+ If this runs frequently, consider configuring its subagents with a cheaper
+ model or tightening their prompts.
+
+ 22% of your usage came from plugin "superpowers"
+ Review what this plugin contributes — its agents, skills, and MCP tools all
+ count toward your limit.
+
+ Skills % of usage
+ /superpowers:subagent-drive… 6%
+ /superpowers:test-driven-de… 4%
+ /resolve-ticket 3%
+ /omnifex-release 2%
+ /verify 2%
+ /fewer-permission-prompts 1%
+ /superpowers:brainstorming 1%
+ /superpowers:writing-plans 1%
+ … 2 more
+
+ Subagents % of usage
+ superpowers:subagent-driven… 10%
+ general-purpose 1%
+ Explore 1%
+
+ Plugins % of usage
+ superpowers 22%
+
+ d to day · w to week
+
+ Extra usage
+ Extra usage not enabled · /extra-usage to enable
+
+ Esc to cancel

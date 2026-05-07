@@ -409,6 +409,11 @@ app.whenReady().then(() => {
     accounts: accountsService,
     rateLimits: rateLimitsService,
     logging: loggingService,
+    // Used by the default `ensureCwd` to create per-account trusted scratch
+    // dirs under `<userData>/usage-cwd/<key>/`. See usage-runner/scratch-cwd.ts
+    // for why this exists (works around Claude Code's first-launch safety
+    // dialog by pre-trusting an empty folder we control).
+    userDataDir: app.getPath('userData'),
   });
   // Forward reference: sessionsSummaryService is constructed below (after
   // sessionsService) but the auto-on-close hook needs to call it. The

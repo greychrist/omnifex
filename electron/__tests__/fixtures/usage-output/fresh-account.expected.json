@@ -14,5 +14,8 @@
     { "label": "current_session", "pct_used": 0, "resets_at_label": "in 5h" },
     { "label": "week_all_models", "pct_used": 0, "resets_at_label": "in 7d" }
   ],
-  "contributing": []
+  "contributing": [],
+  "skills": { "rows": [], "more_count": null },
+  "subagents": { "rows": [], "more_count": null },
+  "plugins": { "rows": [], "more_count": null }
 }

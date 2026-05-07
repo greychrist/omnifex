@@ -15,6 +15,13 @@ import { useTheme } from "@/hooks";
 import { TabPersistenceService } from "@/services/tabPersistence";
 import type { SettingsPanelProps } from "./types";
 
+// This panel no longer reads from `<configDir>/settings.json`. The three
+// keys it used to expose (`includeCoAuthoredBy`, `verbose`,
+// `cleanupPeriodDays`) were removed in May 2026 — the first is deprecated
+// upstream, the second isn't in current Claude Code docs, and the third is
+// load-bearing-but-rarely-tuned (Claude defaults to 30 days). Anyone who
+// still wants to tune those can edit the per-account settings.json directly.
+
 // Opens a macOS folder picker and returns the chosen path, or null on cancel.
 // Duplicated from AccountSettings.tsx's pickFolder; pulled inline to keep this
 // settings panel self-contained.
@@ -38,8 +45,6 @@ interface GeneralSettingsProps extends SettingsPanelProps {
 }
 
 export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
-  settings,
-  updateSetting,
   setToast,
   currentBinaryPath,
   binaryPathChanged,
@@ -115,60 +120,6 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
                 {theme === 'light' && <Check className="h-3 w-3" />}
                 Light
               </button>
-            </div>
-          </div>
-
-          {/* Include Co-authored By */}
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5 flex-1">
-              <Label htmlFor="coauthored">Include "Co-authored by Claude"</Label>
-              <p className="text-caption text-muted-foreground">
-                Add Claude attribution to git commits and pull requests
-              </p>
-            </div>
-            <Switch
-              id="coauthored"
-              checked={settings?.includeCoAuthoredBy === true}
-              onCheckedChange={(checked) => updateSetting("includeCoAuthoredBy", checked)}
-            />
-          </div>
-
-          {/* Verbose Output */}
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5 flex-1">
-              <Label htmlFor="verbose">Verbose Output</Label>
-              <p className="text-caption text-muted-foreground">
-                Show full bash and command outputs
-              </p>
-            </div>
-            <Switch
-              id="verbose"
-              checked={settings?.verbose === true}
-              onCheckedChange={(checked) => updateSetting("verbose", checked)}
-            />
-          </div>
-
-          {/* Cleanup Period */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <div className="flex-1">
-                <Label htmlFor="cleanup">Chat Transcript Retention (days)</Label>
-                <p className="text-caption text-muted-foreground mt-1">
-                  How long to retain chat transcripts locally (default: 30 days)
-                </p>
-              </div>
-              <Input
-                id="cleanup"
-                type="number"
-                min="1"
-                placeholder="30"
-                value={settings?.cleanupPeriodDays || ""}
-                onChange={(e) => {
-                  const value = e.target.value ? parseInt(e.target.value) : undefined;
-                  updateSetting("cleanupPeriodDays", value);
-                }}
-                className="w-24"
-              />
             </div>
           </div>
 

@@ -85,6 +85,17 @@ export interface UsageRunData {
     resets_at_label: string;
   }>;
   contributing: Array<{ headline: string; detail: string }>;
+  /**
+   * Tabular breakdowns Claude shows under "What's contributing" — three
+   * separate ranked lists. Each row has the entry name (which Claude
+   * truncates with a unicode ellipsis to fit its TUI column, e.g.
+   * `/superpowers:subagent-drive…`) and the percentage of total usage.
+   * `more_count` is the integer from a trailing `… N more` line if Claude
+   * decided not to render the long tail; null when fully enumerated.
+   */
+  skills: { rows: Array<{ name: string; pct_used: number }>; more_count: number | null };
+  subagents: { rows: Array<{ name: string; pct_used: number }>; more_count: number | null };
+  plugins: { rows: Array<{ name: string; pct_used: number }>; more_count: number | null };
 }
 
 export type UsageRunResult =

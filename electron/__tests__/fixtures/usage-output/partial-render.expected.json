@@ -13,5 +13,8 @@
   "windows": [
     { "label": "current_session", "pct_used": 12, "resets_at_label": "9:40am (America/New_York)" }
   ],
-  "contributing": []
+  "contributing": [],
+  "skills": { "rows": [], "more_count": null },
+  "subagents": { "rows": [], "more_count": null },
+  "plugins": { "rows": [], "more_count": null }
 }

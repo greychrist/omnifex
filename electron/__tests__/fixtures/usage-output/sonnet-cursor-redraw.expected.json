@@ -1,0 +1,75 @@
+{
+  "session": {
+    "cost_usd": 0,
+    "api_duration_s": 0,
+    "wall_duration_s": 1,
+    "code_added": 0,
+    "code_removed": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "cache_read": 0,
+    "cache_write": 0
+  },
+  "windows": [
+    {
+      "label": "current_session",
+      "pct_used": 12,
+      "resets_at_label": "7am (America/New_York)"
+    },
+    {
+      "label": "week_all_models",
+      "pct_used": 24,
+      "resets_at_label": "May 11 at 7pm (America/New_York)"
+    },
+    {
+      "label": "week_sonnet",
+      "pct_used": 3,
+      "resets_at_label": "May 11 at 7pm (America/New_York)"
+    }
+  ],
+  "contributing": [
+    {
+      "headline": "59% of your usage was at >150k context",
+      "detail": "Longer sessi ns are more expensive even when cached. /compact mid-task, /clear when switching to new tasks."
+    },
+    {
+      "headline": "40% of your usage came from subagent-heavy sessions",
+      "detail": "Each subagent runs its own requests. Be deliberate about spawning them — and consider configuring a cheaper model for simpler subagents."
+    },
+    {
+      "headline": "10% of your usage came from subagents under",
+      "detail": "\"superpowers:subagent-driven-development\" If this runs frequently, consider configuring its subagents with a cheaper model or tightening their prompts."
+    },
+    {
+      "headline": "22% of your usage came from plugin \"superpowers\"",
+      "detail": "Review what this plugin contributes — its agents, skills, and MCP tools all count toward your limit."
+    }
+  ],
+  "skills": {
+    "rows": [
+      { "name": "/superpowers:subagent-drive…", "pct_used": 6 },
+      { "name": "/superpowers:test-driven-de…", "pct_used": 4 },
+      { "name": "/resolve-ticket", "pct_used": 3 },
+      { "name": "/omnifex-release", "pct_used": 2 },
+      { "name": "/verify", "pct_used": 2 },
+      { "name": "/fewer-permission-prompts", "pct_used": 1 },
+      { "name": "/superpowers:brainstorming", "pct_used": 1 },
+      { "name": "/superpowers:writing-plans", "pct_used": 1 }
+    ],
+    "more_count": 2
+  },
+  "subagents": {
+    "rows": [
+      { "name": "superpowers:subagent-driven…", "pct_used": 10 },
+      { "name": "general-purpose", "pct_used": 1 },
+      { "name": "Explore", "pct_used": 1 }
+    ],
+    "more_count": null
+  },
+  "plugins": {
+    "rows": [
+      { "name": "superpowers", "pct_used": 22 }
+    ],
+    "more_count": null
+  }
+}

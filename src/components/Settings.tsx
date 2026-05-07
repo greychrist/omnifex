@@ -6,12 +6,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Card } from "@/components/ui/card";
-import {
-  api,
-  type Account,
-  type ClaudeSettings,
-  type ClaudeInstallation,
-} from "@/lib/api";
+import { api, type ClaudeInstallation } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Toast, ToastContainer } from "@/components/ui/toast";
 import { StorageTab } from "./StorageTab";
@@ -37,21 +32,24 @@ interface SettingsProps {
 }
 
 /**
- * Comprehensive Settings UI for managing Claude Code settings.
- * Thin shell that owns shared state and delegates to per-tab panel components.
+ * Settings shell. Each tab owns its own persistence; the shell only
+ * brokers toasts plus the Claude-binary-path / Proxy save that share
+ * the top-of-page Save button.
  *
- * The Permissions / Environment / Advanced / Hooks / Commands tabs were
- * removed in May 2026 — they edited per-account `~/.claude/settings.json`
- * fields that are now configured outside this dialog (in-session permission
- * prompts, project hook editor, slash-command manager, etc.). The
- * load/save flow here only touches the global Claude settings keys read
- * by the General and Proxy tabs.
+ * History (May 2026):
+ * - Permissions / Environment / Advanced / Hooks / Commands tabs were
+ *   removed — those Claude `settings.json` fields are now configured
+ *   outside this dialog (in-session permission prompts, project hook
+ *   editor, slash-command manager, etc.).
+ * - The General-tab `includeCoAuthoredBy`, `verbose`, and
+ *   `cleanupPeriodDays` toggles were removed (deprecated, undocumented,
+ *   and rarely-tuned respectively), which retired the per-account
+ *   `getClaudeSettings`/`saveClaudeSettings` flow and the per-account
+ *   picker that used to scope it.
  */
 export const Settings: React.FC<SettingsProps> = ({
   className,
 }) => {
-  const [settings, setSettings] = useState<ClaudeSettings | null>(null);
-  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("general");
@@ -60,47 +58,13 @@ export const Settings: React.FC<SettingsProps> = ({
   const [binaryPathChanged, setBinaryPathChanged] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
 
-  // The Claude settings file is per-account (`<configDir>/settings.json`).
-  // There is no notion of a default account, so the user must explicitly
-  // pick which account's settings.json to edit. We load the list of
-  // accounts on mount and the user picks one — we never silently fall back
-  // to the first account or to ~/.claude. See CLAUDE.md "Multi-Account Rules".
-  const [accounts, setAccounts] = useState<Account[]>([]);
-  const [selectedConfigDir, setSelectedConfigDir] = useState<string | null>(null);
-
   // Proxy state
   const [proxySettingsChanged, setProxySettingsChanged] = useState(false);
   const saveProxySettings = React.useRef<(() => Promise<void>) | null>(null);
 
   useEffect(() => {
-    api.listAccounts()
-      .then((accts) => {
-        setAccounts(accts);
-        if (accts.length === 1) {
-          // A single account is unambiguous — no picker needed, just use it.
-          // This is NOT a default-account fallback: with two or more accounts
-          // the user must explicitly pick one (no `accts[0]` shortcut).
-          setSelectedConfigDir(accts[0].config_dir);
-        } else {
-          // Either zero accounts (nothing to edit) or multiple (user picks).
-          // Either way, don't auto-select — the picker / empty state handles it.
-          setLoading(false);
-          if (accts.length === 0) setSettings({});
-        }
-      })
-      .catch((err) => {
-        console.error("Failed to list accounts:", err);
-        setLoading(false);
-        setError("Failed to load accounts.");
-      });
     loadClaudeBinaryPath();
   }, []);
-
-  // Load Claude settings as soon as the user picks (or auto-picks for the
-  // single-account case) a config dir.
-  useEffect(() => {
-    if (selectedConfigDir) loadSettings();
-  }, [selectedConfigDir]);
 
   const loadClaudeBinaryPath = async () => {
     try {
@@ -111,37 +75,11 @@ export const Settings: React.FC<SettingsProps> = ({
     }
   };
 
-  const loadSettings = async () => {
-    if (!selectedConfigDir) return;
-    try {
-      setLoading(true);
-      setError(null);
-      const loadedSettings = await api.getClaudeSettings({ configDir: selectedConfigDir });
-
-      if (!loadedSettings || typeof loadedSettings !== 'object') {
-        console.warn("Loaded settings is not an object:", loadedSettings);
-        setSettings({});
-        return;
-      }
-
-      setSettings(loadedSettings);
-    } catch (err) {
-      console.error("Failed to load settings:", err);
-      setError(`Failed to load settings for ${selectedConfigDir}.`);
-      setSettings({});
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const saveSettings = async () => {
-    if (!selectedConfigDir) return;
     try {
       setSaving(true);
       setError(null);
       setToast(null);
-
-      await api.saveClaudeSettings(settings ?? {}, { configDir: selectedConfigDir });
 
       if (binaryPathChanged && selectedInstallation) {
         await api.setClaudeBinaryPath(selectedInstallation.path);
@@ -162,10 +100,6 @@ export const Settings: React.FC<SettingsProps> = ({
     } finally {
       setSaving(false);
     }
-  };
-
-  const updateSetting = (key: string, value: any) => {
-    setSettings(prev => ({ ...prev, [key]: value }));
   };
 
   // Tabs whose data is actually written by the top-of-page Save button.
@@ -202,7 +136,7 @@ export const Settings: React.FC<SettingsProps> = ({
               >
                 <Button
                   onClick={saveSettings}
-                  disabled={saving || loading}
+                  disabled={saving}
                   size="default"
                 >
                   {saving ? (
@@ -238,38 +172,8 @@ export const Settings: React.FC<SettingsProps> = ({
         )}
       </AnimatePresence>
 
-      {/* Account selector for the Claude settings.json file the General /
-          Proxy panels read & write. With multiple accounts the user picks
-          explicitly — there is no default-account fallback. With zero
-          accounts we surface an empty state pointing at Account Settings. */}
-      {accounts.length > 1 && (
-        <div className="mx-4 mt-4 flex items-center gap-2 text-body-small">
-          <span className="text-muted-foreground">Editing Claude settings.json for:</span>
-          <select
-            className="rounded border border-input bg-background px-2 py-1 text-body-small"
-            value={selectedConfigDir ?? ''}
-            onChange={(e) => setSelectedConfigDir(e.target.value || null)}
-          >
-            <option value="" disabled>— pick an account —</option>
-            {accounts.map((a) => (
-              <option key={a.id} value={a.config_dir}>{a.name} ({a.config_dir})</option>
-            ))}
-          </select>
-        </div>
-      )}
-      {accounts.length === 0 && (
-        <div className="mx-4 mt-4 p-3 rounded-lg border border-dashed border-muted-foreground/40 text-body-small text-muted-foreground">
-          No Claude accounts configured yet. Add one under the <strong>Accounts</strong> tab — there is no default-account fallback, so a few panels here can't load until at least one account exists.
-        </div>
-      )}
-
       {/* Content */}
-      {loading ? (
-        <div className="flex-1 flex items-center justify-center">
-          <Spinner className="size-8 text-muted-foreground" />
-        </div>
-      ) : (
-        <div className="flex-1 flex flex-col overflow-hidden p-6">
+      <div className="flex-1 flex flex-col overflow-hidden p-6">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full flex flex-col flex-1 overflow-hidden">
             <TabsList className="flex w-full mb-6 h-auto p-1 shrink-0">
               <TabsTrigger value="general" className="flex-1 py-2 text-xs">General</TabsTrigger>
@@ -299,8 +203,6 @@ export const Settings: React.FC<SettingsProps> = ({
             {/* General Settings */}
             <TabsContent value="general" className="space-y-6">
               <GeneralSettings
-                settings={settings}
-                updateSetting={updateSetting}
                 setToast={setToast}
                 currentBinaryPath={currentBinaryPath}
                 binaryPathChanged={binaryPathChanged}
@@ -334,8 +236,6 @@ export const Settings: React.FC<SettingsProps> = ({
             {/* Rate Limits Settings */}
             <TabsContent value="rate_limits" className="space-y-6">
               <RateLimitsSettings
-                settings={settings}
-                updateSetting={updateSetting}
                 setToast={setToast}
               />
             </TabsContent>
@@ -348,7 +248,6 @@ export const Settings: React.FC<SettingsProps> = ({
 
           </Tabs>
         </div>
-      )}
       </div>
 
       {/* Toast Notification */}

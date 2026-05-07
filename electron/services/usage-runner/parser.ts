@@ -4,6 +4,9 @@ export type UsageWindow = {
   resets_at_label: string;
 };
 
+export type UsageRow = { name: string; pct_used: number };
+export type UsageTable = { rows: UsageRow[]; more_count: number | null };
+
 export type UsageData = {
   session: {
     cost_usd: number;
@@ -18,7 +21,15 @@ export type UsageData = {
   };
   windows: UsageWindow[];
   contributing: { headline: string; detail: string }[];
+  /**
+   * Three ranked tables Claude shows beneath "What's contributing" — see
+   * notes on `UsageRunData.skills` in `src/lib/api.ts` for shape details.
+   */
+  skills: UsageTable;
+  subagents: UsageTable;
+  plugins: UsageTable;
 };
+
 
 export type ParseResult =
   | { ok: true; data: UsageData }
@@ -27,12 +38,27 @@ export type ParseResult =
 // Section headers in the real TUI are indented (~2 spaces). The CLI also
 // emits a row of tab labels (`Status   Config   Usage   Stats`) above the
 // `Session` block, so we anchor on header text rather than column zero.
+//
+// `week_sonnet` is intentionally fuzzy. As of Claude Code 2.1.132 the
+// Sonnet block is rendered asynchronously over a "Refreshing…" placeholder
+// using cursor-position overwrites, which our linear ANSI strip can't
+// replicate — the literal text "Sonnet only" arrives corrupted (e.g.
+// "Son et nly", chars dropped). The leading `Son` and the surrounding
+// parens have been stable across observed corruptions, and matches are
+// disambiguated from `(all models)` by requiring "Son" inside the parens.
+// If a future version drops the `S` too, weaken further.
 const SECTION_HEADERS = {
   session: /^[ \t]*Session\s*$/m,
   current_session: /^[ \t]*Current session\s*$/m,
   week_all_models: /^[ \t]*Current week \(all models\)\s*$/m,
-  week_sonnet: /^[ \t]*Current week \(Sonnet only\)\s*$/m,
+  week_sonnet: /^[ \t]*Current week \(\s*Son[^)]*\)\s*$/m,
   contributing: /^[ \t]*What's contributing to your limits usage\?\s*$/m,
+  skills_table: /^[ \t]*Skills\s+% of usage\s*$/m,
+  subagents_table: /^[ \t]*Subagents\s+% of usage\s*$/m,
+  plugins_table: /^[ \t]*Plugins\s+% of usage\s*$/m,
+  // Footer hint Claude prints after the tables ("d to day · w to week").
+  // Used as a hard end-boundary for the last table.
+  tables_footer: /^[ \t]*d to day\b/m,
 };
 
 /**
@@ -74,10 +100,13 @@ export function parseUsageOutput(input: string): ParseResult {
   if (windows.length === 0) return { ok: false, reason: 'no_windows' };
 
   const contributing = parseContributing(text);
+  const skills = parseTable(text, SECTION_HEADERS.skills_table);
+  const subagents = parseTable(text, SECTION_HEADERS.subagents_table);
+  const plugins = parseTable(text, SECTION_HEADERS.plugins_table);
 
   return {
     ok: true,
-    data: { session, windows, contributing },
+    data: { session, windows, contributing, skills, subagents, plugins },
   };
 }
 
@@ -153,6 +182,56 @@ function parseWindow(
     pct_used: parseFloat(pct),
     resets_at_label: resetsLine ?? '',
   };
+}
+
+/**
+ * Parses one of Claude's three "% of usage" ranked tables (Skills /
+ * Subagents / Plugins). Each table has the shape:
+ *
+ *   <Title> % of usage
+ *   <name1> <pct1>%
+ *   <name2> <pct2>%
+ *   …
+ *   … <N> more         (optional, when truncated)
+ *
+ * Names may contain `:` `/` `-` `…` and other URL-safe punctuation, but no
+ * spaces. We capture from the start of the trimmed line up to the last
+ * whitespace before the percent, which keeps multi-token names intact if
+ * Claude ever introduces them. Returns `{ rows: [], more_count: null }`
+ * when the header isn't found, so downstream renderers can collapse
+ * absent tables (e.g. on accounts with no relevant data) without
+ * conditional checks.
+ */
+function parseTable(text: string, header: RegExp): UsageTable {
+  // Scope the slice to "from this header until the next table header /
+  // tables footer / end-of-text". `What's contributing` (and earlier
+  // sections) are always above the tables in the real TUI, so we don't
+  // need to bound on those.
+  const block = sliceSection(
+    text,
+    header,
+    SECTION_HEADERS.skills_table,
+    SECTION_HEADERS.subagents_table,
+    SECTION_HEADERS.plugins_table,
+    SECTION_HEADERS.tables_footer,
+  );
+  if (!block) return { rows: [], more_count: null };
+  const rows: UsageRow[] = [];
+  let more_count: number | null = null;
+  const ROW_RE = /^\s*(\S(?:.*\S)?)\s+(\d+(?:\.\d+)?)%\s*$/;
+  const MORE_RE = /^\s*…\s*(\d+)\s+more\s*$/;
+  for (const raw of block.split('\n')) {
+    const m = ROW_RE.exec(raw);
+    if (m) {
+      rows.push({ name: m[1], pct_used: parseFloat(m[2]) });
+      continue;
+    }
+    const moreMatch = MORE_RE.exec(raw);
+    if (moreMatch) {
+      more_count = parseInt(moreMatch[1], 10);
+    }
+  }
+  return { rows, more_count };
 }
 
 function parseContributing(text: string): { headline: string; detail: string }[] {

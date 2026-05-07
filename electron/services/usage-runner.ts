@@ -1,10 +1,11 @@
-import os from 'node:os';
 import type { AccountsService } from './accounts';
 import type { RateLimitsService } from './rate-limits';
 import { findClaudeBinary as defaultFindClaudeBinary } from './util/find-claude-binary';
 import { stripAnsi } from './usage-runner/ansi';
 import { parseUsageOutput, isUsageOutputComplete, type UsageData } from './usage-runner/parser';
 import { resetsLabelToEpoch } from './usage-runner/resets-label';
+import { ensureTrustedScratchCwd } from './usage-runner/scratch-cwd';
+import { repairCorruptedWords } from './usage-runner/repair';
 import type { LoggingService } from './logging';
 
 export interface FakePty {
@@ -36,6 +37,24 @@ export interface UsageRunnerDeps {
   findClaudeBinary?: () => string | null;
   now?: () => number;
   logging?: LoggingService | null;
+  /**
+   * Resolves the cwd to spawn Claude in for a given account. Prior versions
+   * used `os.homedir()` and tripped Claude Code's first-launch safety
+   * dialog ("Quick safety check: Is this a project you created…"), which
+   * the pty automation couldn't recognize and timed out on. The default
+   * production binding creates a per-account empty scratch dir under
+   * `<userData>/usage-cwd/<accountKey>/` and pre-trusts it via
+   * `<configDir>/.claude.json` — see ./usage-runner/scratch-cwd.ts.
+   *
+   * Tests inject a stub returning a fixed string so they don't touch real
+   * filesystem state.
+   */
+  ensureCwd?: (accountKey: string, configDir: string) => string;
+  /**
+   * `app.getPath('userData')`. Used by the default `ensureCwd` binding;
+   * ignored when a custom `ensureCwd` is provided.
+   */
+  userDataDir?: string;
   // Tunables (defaults match the spec)
   settleQuietMs?: number;
   usageQuietMs?: number;
@@ -45,6 +64,16 @@ export interface UsageRunnerDeps {
    * inbound. Defaults to 200ms.
    */
   fullRenderQuietMs?: number;
+  /**
+   * When the buffer goes quiet for `usageQuietMs` but the parse is
+   * incomplete (fewer than all 3 windows), wait an additional grace
+   * period for the missing block to arrive. As of Claude Code 2.1.132 the
+   * Sonnet bar is rendered asynchronously via cursor redraws over a
+   * "Refreshing…" placeholder, sometimes after the rest of the screen
+   * has gone quiet. If the grace expires without completion, snapshot
+   * what we have. Defaults to 3000ms.
+   */
+  incompleteParseGraceMs?: number;
   hardTimeoutMs?: number;
   killGraceMs?: number;
 }
@@ -84,8 +113,20 @@ export function createUsageRunnerService(deps: UsageRunnerDeps): UsageRunnerServ
   const settleQuietMs = deps.settleQuietMs ?? 750;
   const usageQuietMs = deps.usageQuietMs ?? 1500;
   const fullRenderQuietMs = deps.fullRenderQuietMs ?? 200;
+  const incompleteParseGraceMs = deps.incompleteParseGraceMs ?? 3000;
   const hardTimeoutMs = deps.hardTimeoutMs ?? 20000;
   const killGraceMs = deps.killGraceMs ?? 500;
+  const ensureCwd: (accountKey: string, configDir: string) => string =
+    deps.ensureCwd ?? ((accountKey, configDir) => {
+      if (!deps.userDataDir) {
+        throw new Error(
+          'usage-runner: either `ensureCwd` or `userDataDir` must be provided',
+        );
+      }
+      return ensureTrustedScratchCwd(accountKey, configDir, {
+        userDataDir: deps.userDataDir,
+      });
+    });
 
   const inFlight = new Map<string, Promise<UsageRunResult>>();
   const cache = new Map<string, UsageRunResult>();
@@ -139,17 +180,36 @@ export function createUsageRunnerService(deps: UsageRunnerDeps): UsageRunnerServ
     binary: string,
   ): Promise<UsageRunResult> {
     const observedAt = now();
+
+    // Resolve a trusted cwd. If this throws (e.g. malformed .claude.json),
+    // surface the error to the caller and the Log tab rather than
+    // launching into the safety dialog.
+    let cwd: string;
+    try {
+      cwd = ensureCwd(accountName, configDir);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logWarn('ensureCwd failed — cannot resolve trusted scratch dir', {
+        account: accountName, configDir, error: msg,
+      });
+      return cacheAndReturn(accountName, {
+        ok: false, observed_at: observedAt, error: `ensureCwd failed: ${msg}`,
+      });
+    }
+
+    logInfo('run start', { account: accountName, configDir, binary, cwd });
+
     let pty: FakePty;
     try {
       pty = spawnPty(binary, [], {
-        cwd: os.homedir(),
+        cwd,
         env: { ...process.env, CLAUDE_CONFIG_DIR: configDir },
         cols: 200,
         rows: 60,
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      logWarn('spawn failed', { binary, error: msg });
+      logWarn('spawn failed', { binary, cwd, error: msg });
       return cacheAndReturn(accountName, {
         ok: false, observed_at: observedAt, error: `spawn failed: ${msg}`,
       });
@@ -179,15 +239,35 @@ export function createUsageRunnerService(deps: UsageRunnerDeps): UsageRunnerServ
     // The earlier heuristic of "wait for `❯` then quiet" was wrong — the
     // trust dialog uses `❯` as its highlight cursor, so it triggered
     // immediately and we sent /usage into the dialog.
-    const READY_MARKER = 'for shortcuts';
+    // Welcome-footer markers. Claude Code's TUI footer text drifts across
+    // versions, so we match a small set rather than a single fixed string:
+    //   - `for shortcuts`           pre-2.1.132 ("? for shortcuts")
+    //   - `shift+tab to cycle`      2.1.132+ ("⏵⏵ auto mode on (shift+tab to cycle) …")
+    // Add new entries here when Claude rewords the footer again. The
+    // failure mode is loud (timeout + raw buffer in Log tab), so the next
+    // drift is easy to diagnose.
+    const READY_MARKERS = ['for shortcuts', 'shift+tab to cycle'];
     const TRUST_MARKER = 'trust this folder';
     let trustConfirmed = false;
+    let readyLogged = false;
     while (Date.now() < hardDeadline) {
       const stripped = stripAnsi(buffer);
-      const ready = stripped.includes(READY_MARKER);
+      const ready = READY_MARKERS.some((m) => stripped.includes(m));
       const quiet = Date.now() - lastByteAt >= settleQuietMs;
-      if (ready && quiet) break;
+      if (ready && quiet) {
+        if (!readyLogged) {
+          logInfo('welcome ready — about to send /usage', { account: accountName });
+          readyLogged = true;
+        }
+        break;
+      }
       if (!trustConfirmed && stripped.includes(TRUST_MARKER)) {
+        // Defensive — the scratch-cwd helper pre-trusts the folder, so
+        // this branch shouldn't fire under normal operation. If it does,
+        // log it so we can tell whether the trust mark stopped sticking.
+        logWarn('trust dialog observed despite pre-trust — sending Enter', {
+          account: accountName, cwd,
+        });
         pty.write('\r');
         trustConfirmed = true;
       }
@@ -195,40 +275,69 @@ export function createUsageRunnerService(deps: UsageRunnerDeps): UsageRunnerServ
       await sleep(50);
     }
     if (exited || Date.now() >= hardDeadline) {
+      const raw = stripAnsi(buffer);
       try { pty.kill(); } catch { /* already gone */ }
+      logWarn('pty exited or timed out before prompt was ready', {
+        account: accountName, cwd, configDir, exited, raw,
+      });
       return cacheAndReturn(accountName, {
         ok: false, observed_at: observedAt, error: 'pty exited or timed out before prompt was ready',
-        raw: stripAnsi(buffer),
+        raw,
       });
     }
 
     // Phase 2: send /usage
     const beforeUsage = buffer.length;
     pty.write('/usage\r');
+    logInfo('/usage sent — waiting for render', { account: accountName });
 
-    // Phase 3: wait for /usage rendering to settle. Fast path: as soon as
-    // the captured text passes `isUsageOutputComplete` (all three windows
-    // present, each with a Resets line), give it a short additional quiet
-    // window (`fullRenderQuietMs`) to absorb any trailing bytes, then exit.
-    // Slow path: if the render is incomplete or unrecognized, fall back to
-    // the existing "quiet for `usageQuietMs`" timeout — a partial snapshot
-    // is still emitted so the user gets *something*, but the new sanity
-    // bounds + COALESCE in `recordUtilization` keep junk out of storage.
+    // Phase 3: wait for /usage rendering to settle.
+    //   - Fast path: as soon as the captured text passes
+    //     `isUsageOutputComplete` (all three windows + Resets lines), give
+    //     it a short additional quiet window (`fullRenderQuietMs`) and
+    //     exit.
+    //   - Patient path: if the buffer goes quiet for `usageQuietMs` but
+    //     the parse is *incomplete*, keep waiting up to an additional
+    //     `incompleteParseGraceMs` for the missing block — Claude
+    //     sometimes async-renders the Sonnet bar after the rest has
+    //     stilled. Re-arms whenever bytes arrive (so a slow-but-steady
+    //     trickle continues to extend the wait until either completion
+    //     or hard deadline).
+    //   - Snapshot path: if grace expires without completion, take
+    //     whatever we have. The downstream sanity bounds + COALESCE in
+    //     `recordUtilization` keep junk out of storage.
     let lastSeenLen = beforeUsage;
     let stableSince = Date.now();
     let completeSince: number | null = null;
+    let graceLogged = false;
     while (Date.now() < hardDeadline) {
       if (buffer.length !== lastSeenLen) {
         lastSeenLen = buffer.length;
         stableSince = Date.now();
         completeSince = null;
+        graceLogged = false;
       }
       if (buffer.length > beforeUsage) {
         if (completeSince == null && isUsageOutputComplete(stripAnsi(buffer.slice(beforeUsage)))) {
           completeSince = Date.now();
         }
+        // Fast path — fully complete render.
         if (completeSince != null && Date.now() - completeSince >= fullRenderQuietMs) break;
-        if (Date.now() - stableSince >= usageQuietMs) break;
+        // Quiet for `usageQuietMs`. If the parse is also complete we
+        // would have already broken via the fast path, so reaching here
+        // means the parse is incomplete. Wait for `incompleteParseGraceMs`
+        // additional time to give Claude a chance to async-render the
+        // missing block, then snapshot whatever we have.
+        const quietFor = Date.now() - stableSince;
+        if (quietFor >= usageQuietMs + incompleteParseGraceMs) break;
+        if (quietFor >= usageQuietMs && !graceLogged) {
+          logInfo('parse incomplete — extending wait for late chunk', {
+            account: accountName,
+            quiet_for_ms: quietFor,
+            grace_ms: incompleteParseGraceMs,
+          });
+          graceLogged = true;
+        }
       }
       if (exited) break;
       await sleep(20);
@@ -239,12 +348,35 @@ export function createUsageRunnerService(deps: UsageRunnerDeps): UsageRunnerServ
     setTimeout(() => { try { pty.kill(); } catch { /* already gone */ } }, killGraceMs);
 
     const raw = stripAnsi(buffer.slice(beforeUsage));
-    const parsed = parseUsageOutput(raw);
+    // Always log the raw pre-parse buffer so successful and failing runs
+    // both leave an inspectable record. (The earlier code only logged
+    // `raw` inside the parse-failure / timeout branches, so a parse that
+    // technically "succeeded" but produced wrong numbers was invisible.)
+    logInfo('usage capture (pre-parse)', { account: accountName, raw });
+    // Vocabulary-driven repair: Claude's cursor-redraw drops single chars
+    // (e.g. "sessions" → "sessi ns") but the same word usually appears
+    // intact elsewhere in the buffer. See usage-runner/repair.ts.
+    const repaired = repairCorruptedWords(raw);
+    if (repaired !== raw) {
+      logInfo('repaired corrupted words from buffer vocabulary', {
+        account: accountName,
+        before_len: raw.length,
+        after_len: repaired.length,
+      });
+    }
+    const parsed = parseUsageOutput(repaired);
     if (!parsed.ok) {
+      logWarn('parse failed', {
+        account: accountName, reason: parsed.reason, raw, repaired,
+      });
       return cacheAndReturn(accountName, {
         ok: false, observed_at: observedAt, error: `parse_failed: ${parsed.reason}`, raw,
       });
     }
+    logInfo('parse ok', {
+      account: accountName,
+      windows: parsed.data.windows.map((w) => ({ label: w.label, pct: w.pct_used })),
+    });
     // Dual-write to rate-limits — convert the human label ("Resets 7pm
     // (America/New_York)" or "in 5h") to an absolute epoch (seconds) so the
     // 7-day/5-hour pills can render the same countdown the 5-hour widget

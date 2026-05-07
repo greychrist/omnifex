@@ -73,6 +73,11 @@ export const LogTab: React.FC = () => {
     label: "",
   });
   const [pruneCount, setPruneCount] = useState<number | null>(null);
+  // Pending "older than N <unit>" selection. The actual delete is only
+  // triggered by the adjacent trash button — changing either dropdown
+  // alone is non-destructive.
+  const [olderN, setOlderN] = useState<number>(1);
+  const [olderUnit, setOlderUnit] = useState<"h" | "d" | "w" | "m">("d");
 
   // Debounce search
   useEffect(() => {
@@ -332,22 +337,55 @@ export const LogTab: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => handlePruneClick("1w", "older than 1 week")}
-          >
-            <Trash2 className="w-3 h-3 mr-1" />
-            Older than 1 week
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => handlePruneClick("1m", "older than 1 month")}
-          >
-            <Trash2 className="w-3 h-3 mr-1" />
-            Older than 1 month
-          </Button>
+          {/* "Older than N <unit>" — count dropdown + unit dropdown + trash.
+              Cycling either dropdown is non-destructive; only the trash
+              button opens the confirmation dialog. */}
+          <div className="flex items-center gap-1 rounded-md border border-input pl-2">
+            <span className="text-xs text-muted-foreground whitespace-nowrap">Older than</span>
+            <Select value={String(olderN)} onValueChange={(v) => setOlderN(Number(v))}>
+              <SelectTrigger className="h-7 w-14 border-0 px-2 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {Array.from({ length: 24 }, (_, i) => i + 1).map((n) => (
+                  <SelectItem key={n} value={String(n)}>
+                    {n}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={olderUnit}
+              onValueChange={(v) => setOlderUnit(v as "h" | "d" | "w" | "m")}
+            >
+              <SelectTrigger className="h-7 w-24 border-0 px-2 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="h">hour{olderN === 1 ? "" : "s"}</SelectItem>
+                <SelectItem value="d">day{olderN === 1 ? "" : "s"}</SelectItem>
+                <SelectItem value="w">week{olderN === 1 ? "" : "s"}</SelectItem>
+                <SelectItem value="m">month{olderN === 1 ? "" : "s"}</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2"
+              onClick={() => {
+                const unitWord = { h: "hour", d: "day", w: "week", m: "month" }[olderUnit];
+                const plural = olderN === 1 ? "" : "s";
+                handlePruneClick(
+                  `${olderN}${olderUnit}`,
+                  `older than ${olderN} ${unitWord}${plural}`,
+                );
+              }}
+              aria-label={`Delete logs older than ${olderN} ${{ h: "hour", d: "day", w: "week", m: "month" }[olderUnit]}${olderN === 1 ? "" : "s"}`}
+            >
+              <Trash2 className="w-3 h-3 mr-1" />
+              Clear
+            </Button>
+          </div>
           <Button
             variant="destructive"
             size="sm"

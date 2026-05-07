@@ -24,5 +24,8 @@
       "headline": "64% of your usage came from subagent-heavy sessions",
       "detail": "Each subagent runs its own requests. Be deliberate about spawning them — and"
     }
-  ]
+  ],
+  "skills": { "rows": [], "more_count": null },
+  "subagents": { "rows": [], "more_count": null },
+  "plugins": { "rows": [], "more_count": null }
 }

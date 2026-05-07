@@ -119,6 +119,16 @@ export function UsageDetailPopover({
             </Section>
           )}
 
+          {data.parsed.skills.rows.length > 0 && (
+            <UsageRankedTable title="Skills" table={data.parsed.skills} />
+          )}
+          {data.parsed.subagents.rows.length > 0 && (
+            <UsageRankedTable title="Subagents" table={data.parsed.subagents} />
+          )}
+          {data.parsed.plugins.rows.length > 0 && (
+            <UsageRankedTable title="Plugins" table={data.parsed.plugins} />
+          )}
+
           <div className="flex items-center justify-between pt-2 border-t border-border">
             <span className="text-[11px] text-muted-foreground">
               observed {ageLabel(data.observed_at, now)}
@@ -171,5 +181,47 @@ function KV({ k, v }: { k: string; v: string }) {
       <span className="text-muted-foreground">{k}</span>
       <span className="font-mono">{v}</span>
     </div>
+  );
+}
+
+/**
+ * Renders one of Claude's "% of usage" ranked lists (Skills / Subagents /
+ * Plugins). Each row is shown with an inline percent bar so the list
+ * reads as a chart, not a wall of numbers — matches the popover's
+ * existing visual language for the limit windows above.
+ */
+function UsageRankedTable({
+  title,
+  table,
+}: {
+  title: string;
+  table: { rows: Array<{ name: string; pct_used: number }>; more_count: number | null };
+}) {
+  // Bar width is normalized to the largest row so a 6%-leading list still
+  // shows visible variation. Floor at 1% so the smallest non-zero entry
+  // is still visible.
+  const max = Math.max(1, ...table.rows.map((r) => r.pct_used));
+  return (
+    <Section title={title}>
+      {table.rows.map((r) => (
+        <div key={r.name} className="flex items-center gap-2 text-xs">
+          <span className="flex-1 truncate" title={r.name}>{r.name}</span>
+          <div className="h-1.5 w-16 rounded-full bg-foreground/10 overflow-hidden">
+            <div
+              className="h-full bg-foreground/50"
+              style={{ width: `${Math.max(2, (r.pct_used / max) * 100)}%` }}
+            />
+          </div>
+          <span className="font-mono tabular-nums w-8 text-right text-muted-foreground">
+            {r.pct_used}%
+          </span>
+        </div>
+      ))}
+      {table.more_count != null && table.more_count > 0 && (
+        <div className="text-[11px] text-muted-foreground pl-1">
+          … {table.more_count} more
+        </div>
+      )}
+    </Section>
   );
 }
