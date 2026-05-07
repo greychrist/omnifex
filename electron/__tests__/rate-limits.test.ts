@@ -12,7 +12,6 @@ function makeAccount(overrides: Partial<Account> = {}): Account {
     id: 1,
     name: 'Personal',
     config_dir: '/Users/test/.claude',
-    is_default: true,
     account_type: 'max',
     color: null,
     icon: null,

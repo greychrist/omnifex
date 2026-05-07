@@ -11,8 +11,8 @@ const notif = (kind: string): ClaudeStreamMessage =>
 const userText = (text: string): ClaudeStreamMessage =>
   ({ type: 'user', message: { content: [{ type: 'text', text }] } } as unknown as ClaudeStreamMessage);
 
-const permReq = (): ClaudeStreamMessage =>
-  ({ type: 'permission_request' } as unknown as ClaudeStreamMessage);
+const permReq = (toolName?: string): ClaudeStreamMessage =>
+  ({ type: 'permission_request', tool_name: toolName } as unknown as ClaudeStreamMessage);
 
 const resultOk = (): ClaudeStreamMessage =>
   ({ type: 'result', subtype: 'success', result: 'hi' } as unknown as ClaudeStreamMessage);
@@ -70,9 +70,21 @@ describe('classifyStandaloneKind', () => {
   });
 
   it('tags permission requests, results, summaries', () => {
-    expect(classifyStandaloneKind(permReq(), [])).toBe('permission.request');
+    expect(classifyStandaloneKind(permReq('Bash'), [])).toBe('permission.request');
     expect(classifyStandaloneKind(resultOk(), [])).toBe('result.success');
     expect(classifyStandaloneKind(summary(), [])).toBe('summary.compaction');
+  });
+
+  it('routes AskUserQuestion permission requests to their own kind', () => {
+    // Distinct kind so the AskUserQuestionCard's accent color is editable
+    // independently of the generic Bash/Read permission prompt.
+    expect(classifyStandaloneKind(permReq('AskUserQuestion'), [])).toBe(
+      'permission.askUserQuestion',
+    );
+  });
+
+  it('falls back to permission.request when tool_name is absent', () => {
+    expect(classifyStandaloneKind(permReq(undefined), [])).toBe('permission.request');
   });
 
   describe('result.awaiting_background (sibling of result.success)', () => {

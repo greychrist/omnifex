@@ -9,6 +9,44 @@ import path from 'node:path';
 import type { Database } from './database';
 import type { AccountsService } from './accounts';
 
+/**
+ * Thrown when an operation needs a Claude account for a project path but
+ * `accounts.resolve(projectPath)` returns null. There is NO silent fallback
+ * to a "default" account or to `~/.claude` — either a path rule / explicit
+ * project override binds the project to an account, or this error is raised
+ * so the renderer can surface a prominent "no account configured" banner
+ * with a link to Account Settings.
+ *
+ * `code` is used by the IPC layer + renderer to recognize the error type
+ * after structured-clone (Error message is preserved across IPC; subclass
+ * identity is not).
+ */
+export class NoAccountError extends Error {
+  readonly code = 'NO_ACCOUNT_FOR_PROJECT';
+  readonly projectPath: string | undefined;
+  readonly projectId: string | undefined;
+  constructor(message: string, projectPath?: string, projectId?: string) {
+    super(message);
+    this.name = 'NoAccountError';
+    this.projectPath = projectPath;
+    this.projectId = projectId;
+  }
+}
+
+function noAccountMessage(projectId: string, projectPath?: string): string {
+  if (projectPath) {
+    return (
+      `No Claude account is configured for project path "${projectPath}". ` +
+      `Add a path rule or an explicit account override in Account Settings.`
+    );
+  }
+  return (
+    `No Claude account could be resolved for project "${projectId}" because ` +
+    `no project path was supplied. The renderer must always pass projectPath ` +
+    `so account resolution can run — there is no default-account fallback.`
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Public interfaces
 // ---------------------------------------------------------------------------
@@ -151,11 +189,12 @@ function readJsonlFile(filePath: string): unknown[] {
 }
 
 /** Get the default claude config dir (~/.claude). */
-function defaultConfigDir(): string {
-  return path.join(os.homedir(), '.claude');
-}
-
-/** Get all config dirs from accounts, plus default ~/.claude as fallback. */
+/**
+ * Distinct config dirs across all accounts. Used by listing/scanning paths
+ * that legitimately span every account (e.g. listProjects, the agent-history
+ * lookup that has no projectPath to anchor on). There is NO synthetic
+ * `~/.claude` entry — only what's registered in the accounts table.
+ */
 function getConfigDirs(accounts: AccountsService): string[] {
   const dirs: string[] = [];
   const seen = new Set<string>();
@@ -167,47 +206,31 @@ function getConfigDirs(accounts: AccountsService): string[] {
     }
   }
 
-  const def = defaultConfigDir();
-  if (!seen.has(def)) {
-    dirs.push(def);
-  }
-
   return dirs;
 }
 
 /**
- * Find which config dir contains `projects/$projectId/`.
- * Falls back to resolving via projectPath if provided.
+ * Resolve the config dir that owns a given project, strictly via the accounts
+ * service. Returns null when the project path cannot be resolved (no path rule
+ * and no explicit override) — callers turn that into a NoAccountError.
+ *
+ * Important: this no longer scans the filesystem. A stray `projects/<id>/`
+ * directory left under the wrong account's configDir (e.g. from a one-off run
+ * under the wrong CLAUDE_CONFIG_DIR) MUST NOT change which account owns the
+ * project. The bound account is the source of truth — see CLAUDE.md "Multi-
+ * Account Rules" and the WIN-project bug regression in claude.test.ts.
  */
 function findProjectConfigDir(
-  projectId: string,
   accounts: AccountsService,
-  projectPath?: string,
+  projectPath: string | undefined,
 ): string | null {
-  // Search all known config dirs first
-  for (const dir of getConfigDirs(accounts)) {
-    const candidate = path.join(dir, 'projects', projectId);
-    if (fs.existsSync(candidate)) {
-      return dir;
-    }
+  if (!projectPath) return null;
+  try {
+    const resolved = accounts.resolve(projectPath);
+    return resolved?.config_dir ?? null;
+  } catch {
+    return null;
   }
-
-  // Try resolving via account matching
-  if (projectPath) {
-    try {
-      const resolved = accounts.resolve(projectPath);
-      if (resolved) {
-        const candidate = path.join(resolved.config_dir, 'projects', projectId);
-        if (fs.existsSync(candidate)) {
-          return resolved.config_dir;
-        }
-      }
-    } catch {
-      // ignore resolution errors
-    }
-  }
-
-  return null;
 }
 
 /**
@@ -559,10 +582,17 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
     projectId: string,
     projectPath?: string,
   ): Promise<Session[]> {
-    const configDir = findProjectConfigDir(projectId, accounts, projectPath);
-    if (!configDir) return [];
+    const configDir = findProjectConfigDir(accounts, projectPath);
+    if (!configDir) {
+      throw new NoAccountError(
+        noAccountMessage(projectId, projectPath),
+        projectPath,
+        projectId,
+      );
+    }
 
     const projectDir = path.join(configDir, 'projects', projectId);
+    // Account exists but no on-disk sessions yet — legitimate empty state.
     if (!fs.existsSync(projectDir)) return [];
 
     let entries: fs.Dirent[];
@@ -623,8 +653,14 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
     projectId: string,
     projectPath?: string,
   ): Promise<unknown[]> {
-    const configDir = findProjectConfigDir(projectId, accounts, projectPath);
-    if (!configDir) return [];
+    const configDir = findProjectConfigDir(accounts, projectPath);
+    if (!configDir) {
+      throw new NoAccountError(
+        noAccountMessage(projectId, projectPath),
+        projectPath,
+        projectId,
+      );
+    }
 
     const filePath = path.join(configDir, 'projects', projectId, `${sessionId}.jsonl`);
     if (!fs.existsSync(filePath)) return [];
@@ -674,10 +710,12 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
     projectId: string,
     projectPath?: string,
   ): Promise<void> {
-    const configDir = findProjectConfigDir(projectId, accounts, projectPath);
+    const configDir = findProjectConfigDir(accounts, projectPath);
     if (!configDir) {
-      throw new Error(
-        `deleteSession: no config dir resolves project '${projectId}'`,
+      throw new NoAccountError(
+        noAccountMessage(projectId, projectPath),
+        projectPath,
+        projectId,
       );
     }
 

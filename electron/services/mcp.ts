@@ -91,9 +91,18 @@ function writeSettings(settingsPath: string, settings: Record<string, unknown>):
 // Factory
 // ---------------------------------------------------------------------------
 
-export function createMCPService(defaultConfigDir: string): MCPService {
+export function createMCPService(): MCPService {
+  // configDir is required for every operation that touches settings.json.
+  // There is no default-account fallback to ~/.claude — the caller (renderer
+  // via IPC) must explicitly pass the resolved account's config_dir.
   function getSettingsPath(configDir?: string): string {
-    return path.join(configDir ?? defaultConfigDir, 'settings.json');
+    if (!configDir) {
+      throw new Error(
+        'MCP: configDir is required. The renderer must pass the resolved ' +
+        "account's config_dir; there is no default-account fallback.",
+      );
+    }
+    return path.join(configDir, 'settings.json');
   }
 
   function getMcpServers(configDir?: string): Record<string, MCPServerConfig> {

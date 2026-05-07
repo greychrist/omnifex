@@ -20,6 +20,16 @@ interface UsePermissionsReturn {
     selectedSuggestions: PermissionSuggestion[],
   ) => void;
   handlePermissionDeny: (tabId: string) => void;
+  /**
+   * Allow the pending tool call but rewrite its input first. Used by the
+   * AskUserQuestion card to inject the user's selected answers as the
+   * tool's effective input — the SDK's runtime then surfaces them as the
+   * tool's output (`AskUserQuestionOutput.answers`).
+   */
+  handlePermissionAllowWithInput: (
+    tabId: string,
+    updatedInput: Record<string, unknown>,
+  ) => void;
 }
 
 export function usePermissions(): UsePermissionsReturn {
@@ -51,11 +61,29 @@ export function usePermissions(): UsePermissionsReturn {
     setPendingPermission(null);
   };
 
+  const handlePermissionAllowWithInput = (
+    tabId: string,
+    updatedInput: Record<string, unknown>,
+  ) => {
+    if (!pendingPermission) return;
+    api
+      .respondPermission(
+        tabId,
+        pendingPermission.requestId,
+        "allow",
+        updatedInput,
+        undefined,
+      )
+      .catch(console.error);
+    setPendingPermission(null);
+  };
+
   return {
     pendingPermission,
     setPendingPermission,
     waitingForPermission: pendingPermission !== null,
     handlePermissionAllow,
     handlePermissionDeny,
+    handlePermissionAllowWithInput,
   };
 }

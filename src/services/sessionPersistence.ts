@@ -142,16 +142,24 @@ export class SessionPersistenceService {
   }
 
   /**
-   * Check if session exists on disk and is restorable
+   * Check if session exists on disk and is restorable.
+   *
+   * `projectPath` is required because session history reads now go through
+   * strict account resolution — there is no default-account fallback. Pass
+   * the same path used when the session was opened.
    */
-  static async isSessionRestorable(sessionId: string, projectId: string): Promise<boolean> {
+  static async isSessionRestorable(
+    sessionId: string,
+    projectId: string,
+    projectPath: string,
+  ): Promise<boolean> {
     try {
       // First check if we have the session metadata
       const sessionData = this.loadSession(sessionId);
       if (!sessionData) return false;
 
       // Try to verify the session exists on disk by loading its history
-      const history = await api.loadSessionHistory(sessionId, projectId);
+      const history = await api.loadSessionHistory(sessionId, projectId, projectPath);
       return history && history.length > 0;
     } catch (error) {
       console.error('Failed to check session restorability:', error);

@@ -342,7 +342,6 @@ app.whenReady().then(() => {
   }
 
   const userDataPath = app.getPath('userData');
-  const defaultConfigDir = path.join(os.homedir(), '.claude');
 
   let db: ReturnType<typeof createDatabase>;
   try {
@@ -475,8 +474,8 @@ app.whenReady().then(() => {
   const claudeService = createClaudeService(db, accountsService);
   const usageService = createUsageService(accountsService, loggingService);
   const proxyService = createProxyService(db);
-  const mcpService = createMCPService(defaultConfigDir);
-  const slashCommandsService = createSlashCommandsService(defaultConfigDir);
+  const mcpService = createMCPService();
+  const slashCommandsService = createSlashCommandsService();
   const sessionsSummaryService = createSessionsSummaryService({
     jsonlPathFor: (sessionUuid, projectPath, configDir) => {
       // We never assume ~/.claude. The "root" is always an account's
@@ -530,13 +529,13 @@ app.whenReady().then(() => {
         if (found) return found;
       }
 
-      // Nothing found. Return a path that fails the existsSync check
-      // downstream so the skipped:jsonl-missing branch fires with a
-      // sensible value in the log.
-      const fallbackRoot = configDir
-        ?? accountsService.resolve(projectPath)?.config_dir
-        ?? defaultConfigDir;
-      return path.join(fallbackRoot, 'projects', projectId, `${sessionUuid}.jsonl`);
+      // Nothing found. Return a path under the resolved account when one
+      // exists, otherwise null so the caller's skipped:no-account branch
+      // fires. There is no synthetic ~/.claude fallback — see CLAUDE.md
+      // "Multi-Account Rules" and NoAccountError in claude.ts.
+      const resolvedRoot = configDir ?? accountsService.resolve(projectPath)?.config_dir;
+      if (!resolvedRoot) return null;
+      return path.join(resolvedRoot, 'projects', projectId, `${sessionUuid}.jsonl`);
     },
     resolveAccount: (projectPath) => {
       const acct = accountsService.resolve(projectPath);
@@ -637,7 +636,6 @@ app.whenReady().then(() => {
         accountsService.createAccount(
           data.name,
           data.configDir ?? data.config_dir,
-          data.isDefault ?? data.is_default ?? false,
           data.accountType ?? data.account_type,
           data.color,
           data.icon,
@@ -681,8 +679,8 @@ app.whenReady().then(() => {
       listProjects: (_configDir?: string) => claudeService.listProjects(),
       createProject: (data: any) => claudeService.createProject(data?.path ?? data),
       getProjectSessions: (projectId: string, projectPath?: string) => claudeService.getProjectSessions(projectId, projectPath),
-      loadSessionHistory: (sessionId: string, projectId: string) =>
-        claudeService.loadSessionHistory(sessionId, projectId),
+      loadSessionHistory: (sessionId: string, projectId: string, projectPath?: string) =>
+        claudeService.loadSessionHistory(sessionId, projectId, projectPath),
       deleteSession: (sessionId: string, projectId: string, projectPath?: string) =>
         claudeService.deleteSession(sessionId, projectId, projectPath),
       getHomeDirectory: () => claudeService.getHomeDirectory(),

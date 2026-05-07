@@ -19,7 +19,17 @@ export function classifyStandaloneKind(
   msg: ClaudeStreamMessage,
   allMessages: ClaudeStreamMessage[],
 ): string | null {
-  if (msg.type === 'permission_request') return 'permission.request';
+  if (msg.type === 'permission_request') {
+    // The built-in AskUserQuestion tool gets its own kind so it can carry a
+    // distinct accent color from generic Bash/Read permission prompts. Both
+    // travel on the same `permission_request` channel; the SDK puts the
+    // tool name on `tool_name` (snake_case wire) which the reducer also
+    // normalises onto the camelCase payload.
+    const toolName = (msg as unknown as { tool_name?: string; toolName?: string }).tool_name
+      ?? (msg as unknown as { toolName?: string }).toolName;
+    if (toolName === 'AskUserQuestion') return 'permission.askUserQuestion';
+    return 'permission.request';
+  }
 
   if (msg.type === 'result') {
     const sub = (msg as any).subtype;

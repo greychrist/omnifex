@@ -29,6 +29,7 @@ import { SlashCommandsManager } from "./SlashCommandsManager";
 import { SessionMCPStatus } from "./SessionMCPStatus";
 import { SessionPluginStatus } from "./SessionPluginStatus";
 import { PermissionCard } from "./PermissionCard";
+import { AskUserQuestionCard } from "./AskUserQuestionCard";
 import { ElicitationDialog } from "./ElicitationDialog";
 import { SessionPermissionsEditor } from "./SessionPermissionsEditor";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -357,6 +358,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     waitingForPermission,
     handlePermissionAllow,
     handlePermissionDeny,
+    handlePermissionAllowWithInput,
   } = usePermissions();
 
   // Elicitation state — MCP servers requesting user input
@@ -1650,18 +1652,36 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             (showMCPPanel || showPluginsPanel || showPermissionsPanel) && "sm:mr-96"
           )}>
             {pendingPermission && (
-              <PermissionCard
-                request={pendingPermission}
-                onAllow={(selectedSuggestions) => {
-                  handlePermissionAllow(
-                    tabIdRef.current,
-                    selectedSuggestions as PermissionSuggestion[],
-                  );
-                }}
-                onDeny={() => {
-                  handlePermissionDeny(tabIdRef.current);
-                }}
-              />
+              // The SDK gates the built-in `AskUserQuestion` tool through the
+              // same canUseTool / permission_request channel as Bash / Read /
+              // etc. — but its right UX is "show the question with selectable
+              // options", not "Allow / Deny". Render the dedicated card and
+              // forward answers via updatedInput on allow. Other tools still
+              // use the standard PermissionCard.
+              pendingPermission.toolName === 'AskUserQuestion' ? (
+                <AskUserQuestionCard
+                  request={pendingPermission}
+                  onSubmit={(updatedInput) => {
+                    handlePermissionAllowWithInput(tabIdRef.current, updatedInput);
+                  }}
+                  onCancel={() => {
+                    handlePermissionDeny(tabIdRef.current);
+                  }}
+                />
+              ) : (
+                <PermissionCard
+                  request={pendingPermission}
+                  onAllow={(selectedSuggestions) => {
+                    handlePermissionAllow(
+                      tabIdRef.current,
+                      selectedSuggestions as PermissionSuggestion[],
+                    );
+                  }}
+                  onDeny={() => {
+                    handlePermissionDeny(tabIdRef.current);
+                  }}
+                />
+              )
             )}
             <TodoBar
               messages={messages}

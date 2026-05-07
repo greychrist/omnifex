@@ -186,21 +186,35 @@ function scanSkillsDirectory(
 // Factory
 // ---------------------------------------------------------------------------
 
-export function createSlashCommandsService(defaultConfigDir: string): SlashCommandsService {
+export function createSlashCommandsService(): SlashCommandsService {
+  // configDir is required for every operation that scans user-scoped commands
+  // / skills. There is no default-account fallback to ~/.claude — the caller
+  // must pass the resolved account's config_dir explicitly.
   function getCommandsDir(configDir?: string): string {
-    return path.join(configDir ?? defaultConfigDir, 'commands');
+    if (!configDir) {
+      throw new Error(
+        'slash-commands: configDir is required. The renderer must pass ' +
+        "the resolved account's config_dir; there is no default-account fallback.",
+      );
+    }
+    return path.join(configDir, 'commands');
   }
 
   function list(projectPath?: string, configDir?: string): SlashCommand[] {
     const commands: SlashCommand[] = [];
 
-    // Global (user) commands
-    commands.push(...scanDirectory(getCommandsDir(configDir), 'user', 'user'));
+    // Global (user) commands — only attempted when the caller resolved a
+    // configDir. Without one we can't list user-scoped commands at all
+    // (no default-account fallback). Project-local commands below are
+    // always scanned because they're on the project path itself.
+    if (configDir) {
+      commands.push(...scanDirectory(getCommandsDir(configDir), 'user', 'user'));
 
-    // Global (user) skills — emitted as user-scoped so the picker's dedup
-    // can re-tag SDK-reported skills out of the "default" bucket.
-    const userSkillsDir = path.join(configDir ?? defaultConfigDir, 'skills');
-    commands.push(...scanSkillsDirectory(userSkillsDir, 'user', 'user'));
+      // Global (user) skills — emitted as user-scoped so the picker's dedup
+      // can re-tag SDK-reported skills out of the "default" bucket.
+      const userSkillsDir = path.join(configDir, 'skills');
+      commands.push(...scanSkillsDirectory(userSkillsDir, 'user', 'user'));
+    }
 
     // Project-local commands
     if (projectPath) {

@@ -133,7 +133,20 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
       });
     } catch (err) {
       console.error("Failed to load sessions:", err, "project:", JSON.stringify(project));
-      setError(`Failed to load sessions: ${err instanceof Error ? err.message : String(err)}`);
+      // NO_ACCOUNT_FOR_PROJECT: structured signal that no path rule / project
+      // override binds this folder to a Claude account. Surface the actionable
+      // message verbatim — no silent fallback to a "default" account.
+      const code = (err as { code?: string } | null)?.code;
+      const msg = err instanceof Error ? err.message : String(err);
+      if (code === 'NO_ACCOUNT_FOR_PROJECT') {
+        setError(
+          `No Claude account is configured for "${project.path}". ` +
+          `Open Account Settings to add a path rule or project override, ` +
+          `then reopen the project.`,
+        );
+      } else {
+        setError(`Failed to load sessions: ${msg}`);
+      }
     } finally {
       setLoading(false);
     }

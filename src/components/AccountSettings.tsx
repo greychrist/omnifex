@@ -558,7 +558,8 @@ export const AccountSettings: React.FC = () => {
       const defaults = Object.keys(newSessionDefaults).length > 0 ? newSessionDefaults : undefined;
       // CLI path UI retired — new accounts always start with no override.
       const cliPath: string | null = null;
-      await api.createAccount(newName.trim(), newDir.trim(), accounts.length === 0, newType, newColor, newIcon, defaults, cliPath);
+      // No isDefault parameter — there is no notion of a default account.
+      await api.createAccount(newName.trim(), newDir.trim(), newType, newColor, newIcon, defaults, cliPath);
       setNewName("");
       setNewDir("");
       setNewType("pro");

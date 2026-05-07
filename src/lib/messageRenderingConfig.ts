@@ -99,6 +99,7 @@ export const ALLOWED_ICONS = [
   "Send",
   "Mail",
   "AtSign",
+  "CircleHelp",
   // Status / feedback
   "ShieldCheck",
   "Eye",
@@ -539,6 +540,24 @@ export const DEFAULT_KINDS: MessageKindConfig[] = [
     hiddenInCompact: false,
     compactBoundaryLocked: false,
     widget: "PermissionCard",
+  },
+  {
+    // Sibling of permission.request, but specifically the agent's built-in
+    // AskUserQuestion tool. The renderer branches on toolName so this card
+    // can carry its own accent color independent of the generic Bash/Read
+    // permission prompt — they're qualitatively different interactions
+    // (agent asking the user vs. user gating the agent).
+    id: "permission.askUserQuestion",
+    label: "Agent question (AskUserQuestion)",
+    description: "Multiple-choice question card the agent surfaces via the AskUserQuestion tool.",
+    origin: "system",
+    icon: "CircleHelp",
+    headerLabel: null,
+    accentColor: "purple",
+    alignment: "full",
+    hiddenInCompact: false,
+    compactBoundaryLocked: false,
+    widget: "AskUserQuestionCard",
   },
   {
     id: "summary.compaction",

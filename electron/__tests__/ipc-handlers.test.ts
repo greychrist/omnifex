@@ -333,7 +333,7 @@ describe('ipc handlers — dispatch to services', () => {
       sessionId: 'sid',
       projectId: 'pid',
     });
-    expect(services.claude.loadSessionHistory).toHaveBeenCalledWith('sid', 'pid');
+    expect(services.claude.loadSessionHistory).toHaveBeenCalledWith('sid', 'pid', undefined);
   });
 
   it('find/read/save_claude_md_file route through the claude service', async () => {

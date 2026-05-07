@@ -33,6 +33,8 @@ export const KIND_FIXTURES: Record<string, string> = {
   "system.notification.info": "Session resumed from transcript",
   "permission.request":
     "Claude wants to run: npm install @anthropic-ai/sdk. Allow this time?",
+  "permission.askUserQuestion":
+    "Which library should we use for date formatting? (Choose: date-fns, dayjs, luxon, Other)",
   "summary.compaction":
     "Turn summary: user asked to refactor auth middleware; agent edited three files and ran the test suite.",
 };
@@ -64,6 +66,7 @@ export const KIND_DEBUG_LABELS: Record<string, string> = {
   "system.notification.warn": "system · notification",
   "system.notification.info": "system · notification",
   "permission.request": "permission_request",
+  "permission.askUserQuestion": "permission_request · AskUserQuestion",
   "summary.compaction": "summary",
 };
 

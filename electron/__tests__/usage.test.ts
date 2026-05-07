@@ -46,7 +46,6 @@ function makeAccount(overrides: Partial<Account> = {}): Account {
     id: 1,
     name: 'Test',
     config_dir: '',
-    is_default: true,
     account_type: 'pro',
     color: null,
     icon: null,

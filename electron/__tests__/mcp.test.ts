@@ -17,7 +17,7 @@ describe('mcp service', () => {
     const settingsPath = path.join(configDir, 'settings.json');
     fs.writeFileSync(settingsPath, JSON.stringify({ mcpServers: {} }), 'utf-8');
 
-    mcp = createMCPService(configDir);
+    mcp = createMCPService();
   });
 
   afterEach(() => {
@@ -25,7 +25,7 @@ describe('mcp service', () => {
   });
 
   it('list returns empty array when no servers configured', () => {
-    const servers = mcp.list();
+    const servers = mcp.list(configDir);
     expect(Array.isArray(servers)).toBe(true);
     expect(servers).toHaveLength(0);
   });
@@ -35,9 +35,10 @@ describe('mcp service', () => {
       name: 'my-server',
       command: 'npx',
       args: ['-y', '@modelcontextprotocol/server-filesystem', '/tmp'],
+      configDir,
     });
 
-    const servers = mcp.list();
+    const servers = mcp.list(configDir);
     expect(servers).toHaveLength(1);
     expect(servers[0].name).toBe('my-server');
   });
@@ -47,21 +48,22 @@ describe('mcp service', () => {
       name: 'test-server',
       command: 'node',
       args: ['server.js'],
+      configDir,
     });
 
-    const server = mcp.get('test-server');
+    const server = mcp.get('test-server', configDir);
     expect(server).not.toBeNull();
     expect(server.name).toBe('test-server');
     expect(server.command).toBe('node');
   });
 
   it('remove deletes a server', () => {
-    mcp.add({ name: 'to-delete', command: 'cmd', args: [] });
-    expect(mcp.list()).toHaveLength(1);
+    mcp.add({ name: 'to-delete', command: 'cmd', args: [], configDir });
+    expect(mcp.list(configDir)).toHaveLength(1);
 
-    const result = mcp.remove('to-delete');
+    const result = mcp.remove('to-delete', configDir);
     expect(result).toContain('to-delete');
-    expect(mcp.list()).toHaveLength(0);
+    expect(mcp.list(configDir)).toHaveLength(0);
   });
 
   it('readProjectConfig and saveProjectConfig round-trip', () => {
@@ -84,59 +86,61 @@ describe('mcp service', () => {
   });
 
   it('add persists across service re-instantiation', () => {
-    mcp.add({ name: 'persistent', command: 'node', args: ['x.js'] });
+    mcp.add({ name: 'persistent', command: 'node', args: ['x.js'], configDir });
 
-    // Re-create the service with the same configDir
-    const mcp2 = createMCPService(configDir);
-    const servers = mcp2.list();
+    // Re-create the service — settings live on disk in `configDir`.
+    const mcp2 = createMCPService();
+    const servers = mcp2.list(configDir);
     expect(servers.some(s => s.name === 'persistent')).toBe(true);
   });
 
   it('getServerStatus returns stub data', () => {
-    const status = mcp.getServerStatus();
+    const status = mcp.getServerStatus(configDir);
     expect(typeof status).toBe('object');
   });
 
   it('testConnection returns a stub string', () => {
-    mcp.add({ name: 'conn-test', command: 'node', args: [] });
-    const result = mcp.testConnection('conn-test');
+    mcp.add({ name: 'conn-test', command: 'node', args: [], configDir });
+    const result = mcp.testConnection('conn-test', configDir);
     expect(typeof result).toBe('string');
   });
 
   // ---- coverage-driven additions ----
 
   it('add throws when name is missing', () => {
-    expect(() => mcp.add({ command: 'node' })).toThrow(/name is required/);
+    expect(() => mcp.add({ command: 'node', configDir })).toThrow(/name is required/);
   });
 
   it('get throws when the server does not exist', () => {
-    expect(() => mcp.get('nonexistent')).toThrow(/not found/);
+    expect(() => mcp.get('nonexistent', configDir)).toThrow(/not found/);
   });
 
   it('remove throws when the server does not exist', () => {
-    expect(() => mcp.remove('ghost')).toThrow(/not found/);
+    expect(() => mcp.remove('ghost', configDir)).toThrow(/not found/);
   });
 
   it('addJson parses a JSON string and registers the server', () => {
     const result = mcp.addJson({
       name: 'from-json',
       json: JSON.stringify({ command: 'deno', args: ['run', 'main.ts'] }),
+      configDir,
     });
     expect(result.name).toBe('from-json');
-    expect(mcp.get('from-json').command).toBe('deno');
+    expect(mcp.get('from-json', configDir).command).toBe('deno');
   });
 
   it('addJson accepts an already-parsed object', () => {
     mcp.addJson({
       name: 'from-obj',
       json: { command: 'bun', args: ['server.ts'] },
+      configDir,
     });
-    expect(mcp.get('from-obj').command).toBe('bun');
+    expect(mcp.get('from-obj', configDir).command).toBe('bun');
   });
 
   it('addJson throws on malformed JSON string', () => {
     expect(() =>
-      mcp.addJson({ name: 'bad', json: '{not valid json' }),
+      mcp.addJson({ name: 'bad', json: '{not valid json', configDir }),
     ).toThrow(/Invalid JSON/);
   });
 
@@ -155,15 +159,15 @@ describe('mcp service', () => {
   });
 
   it('testConnection returns an error string when the server is unknown', () => {
-    const result = mcp.testConnection('does-not-exist');
+    const result = mcp.testConnection('does-not-exist', configDir);
     expect(result).toMatch(/Error/);
   });
 
   it('getServerStatus includes an entry per registered server', () => {
-    mcp.add({ name: 'alpha', command: 'a' });
-    mcp.add({ name: 'beta', command: 'b' });
+    mcp.add({ name: 'alpha', command: 'a', configDir });
+    mcp.add({ name: 'beta', command: 'b', configDir });
 
-    const status = mcp.getServerStatus();
+    const status = mcp.getServerStatus(configDir);
     expect(status.alpha).toEqual({ status: 'unknown', pid: null });
     expect(status.beta).toEqual({ status: 'unknown', pid: null });
   });
@@ -187,10 +191,10 @@ describe('mcp service', () => {
   it('service works even when settings.json does not exist', () => {
     const freshDir = fs.mkdtempSync(path.join(os.tmpdir(), 'greychrist-mcp-fresh-'));
     try {
-      const fresh = createMCPService(freshDir);
-      expect(fresh.list()).toEqual([]);
-      fresh.add({ name: 'bootstrap', command: 'node' });
-      expect(fresh.list()).toHaveLength(1);
+      const fresh = createMCPService();
+      expect(fresh.list(freshDir)).toEqual([]);
+      fresh.add({ name: 'bootstrap', command: 'node', configDir: freshDir });
+      expect(fresh.list(freshDir)).toHaveLength(1);
     } finally {
       fs.rmSync(freshDir, { recursive: true, force: true });
     }
@@ -271,14 +275,15 @@ describe('mcp service', () => {
       expect(Object.keys(statusB)).toHaveLength(0);
     });
 
-    it('falls back to defaultConfigDir when configDir is omitted', () => {
-      // Add to the default dir (mcp was created with configDir = tmpDir)
-      mcp.add({ name: 'default-server', command: 'node', args: [] });
-
-      // list() with no arg should see it
-      expect(mcp.list()).toHaveLength(1);
-      // list() with explicit accountA should not see it
-      expect(mcp.list(accountA)).toHaveLength(0);
+    it('throws when configDir is omitted (no default-account fallback)', () => {
+      // The MCP service refuses to operate without an explicit configDir.
+      // Per CLAUDE.md "Multi-Account Rules", there is no silent fallback to
+      // a "default" account or to ~/.claude — the renderer must always pass
+      // the resolved account's config_dir.
+      expect(() => mcp.list()).toThrow(/configDir is required/);
+      expect(() => mcp.add({ name: 'x', command: 'node' })).toThrow(/configDir is required/);
+      expect(() => mcp.get('x')).toThrow(/configDir is required/);
+      expect(() => mcp.remove('x')).toThrow(/configDir is required/);
     });
   });
 });

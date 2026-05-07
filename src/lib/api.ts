@@ -40,7 +40,9 @@ export interface Account {
   id: number;
   name: string;
   config_dir: string;
-  is_default: boolean;
+  // No is_default field — there is no default account. See migration v8 in
+  // electron/services/database.ts. Resolution is path rule / project override
+  // only; failure raises NoAccountError.
   /** Account type: "max" (no cost), "enterprise", "pro", "free" */
   account_type: string;
   color: string | null;
@@ -2051,14 +2053,16 @@ export const api = {
   async createAccount(
     name: string,
     configDir: string,
-    isDefault: boolean,
     accountType?: string,
     color?: string,
     icon?: string,
     sessionDefaults?: SessionDefaults,
     cliPath?: string | null,
   ): Promise<Account> {
-    const params: Record<string, any> = { name, configDir, isDefault };
+    // No isDefault parameter — there is no notion of a default account.
+    // Account binding is via path rules / project overrides; failure to
+    // resolve surfaces as a NoAccountError. See electron/services/accounts.ts.
+    const params: Record<string, any> = { name, configDir };
     if (accountType) params.accountType = accountType;
     if (color) params.color = color;
     if (icon !== undefined) params.icon = icon;

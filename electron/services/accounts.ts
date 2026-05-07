@@ -18,7 +18,9 @@ export interface Account {
   id: number;
   name: string;
   config_dir: string;
-  is_default: boolean;
+  // No is_default field. There is no "default" account — resolution is
+  // strictly via path rules and explicit project overrides. See migration
+  // v8 in database.ts and CLAUDE.md "Multi-Account Rules".
   account_type: string;
   color: string | null;
   icon: string | null;
@@ -55,10 +57,14 @@ export interface ResolutionExplanation {
 
 export interface AccountsService {
   listAccounts(): Account[];
+  /**
+   * Create an account row. There is no isDefault parameter — accounts have no
+   * default-account flag. Callers that previously passed `true`/`false` as the
+   * third positional arg must drop it (migration v8 also drops the column).
+   */
   createAccount(
     name: string,
     configDir: string,
-    isDefault: boolean,
     accountType?: string,
     color?: string,
     icon?: string,
@@ -105,7 +111,6 @@ interface AccountRow {
   id: number;
   name: string;
   config_dir: string;
-  is_default: number; // SQLite stores 0/1
   account_type: string;
   color: string | null;
   icon: string | null;
@@ -134,7 +139,6 @@ function rowToAccount(row: AccountRow): Account {
     id: row.id,
     name: row.name,
     config_dir: row.config_dir,
-    is_default: row.is_default !== 0,
     account_type: row.account_type,
     color: row.color,
     icon: row.icon,
@@ -187,26 +191,20 @@ export function createAccountsService(db: Database): AccountsService {
   function createAccount(
     name: string,
     configDir: string,
-    isDefault: boolean,
     accountType = 'pro',
     color?: string,
     icon?: string,
     sessionDefaults?: SessionDefaults,
     cliPath?: string | null,
   ): Account {
-    if (isDefault) {
-      raw.prepare('UPDATE accounts SET is_default = 0').run();
-    }
-
     const info = raw
       .prepare(
-        `INSERT INTO accounts (name, config_dir, is_default, account_type, color, icon, session_defaults, cli_path)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO accounts (name, config_dir, account_type, color, icon, session_defaults, cli_path)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         name,
         configDir,
-        isDefault ? 1 : 0,
         accountType,
         color ?? null,
         icon ?? null,

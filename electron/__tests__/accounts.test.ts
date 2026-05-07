@@ -21,8 +21,8 @@ describe('accounts service', () => {
 
   describe('CRUD', () => {
     it('creates and lists accounts', () => {
-      accounts.createAccount('Personal', '/home/user/.claude', false, 'pro');
-      accounts.createAccount('Work', '/home/user/.claude-work', false, 'team');
+      accounts.createAccount('Personal', '/home/user/.claude', 'pro');
+      accounts.createAccount('Work', '/home/user/.claude-work', 'team');
 
       const list = accounts.listAccounts();
       expect(list).toHaveLength(2);
@@ -31,7 +31,7 @@ describe('accounts service', () => {
     });
 
     it('updates an account', () => {
-      accounts.createAccount('Personal', '/home/user/.claude', false, 'pro');
+      accounts.createAccount('Personal', '/home/user/.claude', 'pro');
       const [acct] = accounts.listAccounts();
 
       accounts.updateAccount(acct.id, 'Personal Updated', '/home/user/.claude-new', 'team');
@@ -43,13 +43,13 @@ describe('accounts service', () => {
     });
 
     it('round-trips cli_path through createAccount', () => {
-      accounts.createAccount('Personal', '/home/user/.claude', false, 'max', undefined, undefined, undefined, '/Users/g/.local/bin/claude');
+      accounts.createAccount('Personal', '/home/user/.claude', 'max', undefined, undefined, undefined, '/Users/g/.local/bin/claude');
       const [acct] = accounts.listAccounts();
       expect(acct.cli_path).toBe('/Users/g/.local/bin/claude');
     });
 
     it('round-trips cli_path through updateAccount', () => {
-      accounts.createAccount('Personal', '/home/user/.claude', false, 'max', undefined, undefined, undefined, '/initial/claude');
+      accounts.createAccount('Personal', '/home/user/.claude', 'max', undefined, undefined, undefined, '/initial/claude');
       const [acct] = accounts.listAccounts();
       accounts.updateAccount(acct.id, 'Personal', '/home/user/.claude', 'max', undefined, undefined, undefined, '/updated/claude');
       const after = accounts.listAccounts().find((a) => a.id === acct.id)!;
@@ -57,7 +57,7 @@ describe('accounts service', () => {
     });
 
     it('clears cli_path when updateAccount is called with null', () => {
-      accounts.createAccount('Personal', '/home/user/.claude', false, 'max', undefined, undefined, undefined, '/initial/claude');
+      accounts.createAccount('Personal', '/home/user/.claude', 'max', undefined, undefined, undefined, '/initial/claude');
       const [acct] = accounts.listAccounts();
       accounts.updateAccount(acct.id, 'Personal', '/home/user/.claude', 'max', undefined, undefined, undefined, null);
       const after = accounts.listAccounts().find((a) => a.id === acct.id)!;
@@ -65,13 +65,13 @@ describe('accounts service', () => {
     });
 
     it('defaults cli_path to null on createAccount when not provided', () => {
-      accounts.createAccount('Work', '/home/user/.claude-work', false);
+      accounts.createAccount('Work', '/home/user/.claude-work');
       const [acct] = accounts.listAccounts();
       expect(acct.cli_path).toBeNull();
     });
 
     it('stores and returns session_defaults on create', () => {
-      accounts.createAccount('Personal', '/home/user/.claude', false, 'pro', undefined, undefined, {
+      accounts.createAccount('Personal', '/home/user/.claude', 'pro', undefined, undefined, {
         model: 'sonnet',
         thinkingConfig: 'disabled',
         permissionMode: 'acceptEdits',
@@ -85,7 +85,7 @@ describe('accounts service', () => {
     });
 
     it('stores and returns session_defaults on update', () => {
-      accounts.createAccount('Personal', '/home/user/.claude', false, 'pro');
+      accounts.createAccount('Personal', '/home/user/.claude', 'pro');
       const [acct] = accounts.listAccounts();
 
       accounts.updateAccount(acct.id, 'Personal', '/home/user/.claude', 'pro', undefined, undefined, {
@@ -103,7 +103,7 @@ describe('accounts service', () => {
     });
 
     it('preserves existing session_defaults when update omits them', () => {
-      accounts.createAccount('Personal', '/home/user/.claude', false, 'pro', undefined, undefined, {
+      accounts.createAccount('Personal', '/home/user/.claude', 'pro', undefined, undefined, {
         model: 'sonnet',
       });
       const [acct] = accounts.listAccounts();
@@ -115,7 +115,7 @@ describe('accounts service', () => {
     });
 
     it('clears session_defaults when explicitly set to null', () => {
-      accounts.createAccount('Personal', '/home/user/.claude', false, 'pro', undefined, undefined, {
+      accounts.createAccount('Personal', '/home/user/.claude', 'pro', undefined, undefined, {
         model: 'sonnet',
       });
       const [acct] = accounts.listAccounts();
@@ -127,7 +127,7 @@ describe('accounts service', () => {
     });
 
     it('deletes an account', () => {
-      accounts.createAccount('ToDelete', '/home/user/.claude', false, 'pro');
+      accounts.createAccount('ToDelete', '/home/user/.claude', 'pro');
       const [acct] = accounts.listAccounts();
 
       accounts.deleteAccount(acct.id);
@@ -136,9 +136,9 @@ describe('accounts service', () => {
     });
 
     it('enforces unique name constraint', () => {
-      accounts.createAccount('Dup', '/home/user/.claude', false, 'pro');
+      accounts.createAccount('Dup', '/home/user/.claude', 'pro');
       expect(() => {
-        accounts.createAccount('Dup', '/home/user/.claude-2', false, 'pro');
+        accounts.createAccount('Dup', '/home/user/.claude-2', 'pro');
       }).toThrow();
     });
   });
@@ -149,7 +149,7 @@ describe('accounts service', () => {
 
   describe('path rules', () => {
     it('adds and lists path rules', () => {
-      accounts.createAccount('Work', '/home/user/.claude-work', false, 'team');
+      accounts.createAccount('Work', '/home/user/.claude-work', 'team');
       const [work] = accounts.listAccounts();
 
       accounts.addPathRule(work.id, '/home/user/work', 10);
@@ -162,7 +162,7 @@ describe('accounts service', () => {
     });
 
     it('removes a path rule', () => {
-      accounts.createAccount('Work', '/home/user/.claude-work', false, 'team');
+      accounts.createAccount('Work', '/home/user/.claude-work', 'team');
       const [work] = accounts.listAccounts();
       accounts.addPathRule(work.id, '/home/user/work');
 
@@ -179,8 +179,8 @@ describe('accounts service', () => {
 
   describe('resolution', () => {
     it('resolves via explicit project override', () => {
-      accounts.createAccount('Default', '/home/user/.claude', true, 'pro');
-      accounts.createAccount('Work', '/home/user/.claude-work', false, 'team');
+      accounts.createAccount('Default', '/home/user/.claude', 'pro');
+      accounts.createAccount('Work', '/home/user/.claude-work', 'team');
       const [def, work] = accounts.listAccounts().sort((a, b) => a.name.localeCompare(b.name));
 
       accounts.setProjectOverride('/home/user/projects/myapp', work.id);
@@ -191,8 +191,8 @@ describe('accounts service', () => {
     });
 
     it('resolves via longest matching path rule', () => {
-      accounts.createAccount('Work', '/home/user/.claude-work', false, 'team');
-      accounts.createAccount('OSS', '/home/user/.claude-oss', false, 'pro');
+      accounts.createAccount('Work', '/home/user/.claude-work', 'team');
+      accounts.createAccount('OSS', '/home/user/.claude-oss', 'pro');
       const [oss, work] = accounts.listAccounts().sort((a, b) => a.name.localeCompare(b.name));
 
       accounts.addPathRule(work.id, '/home/user/work', 0);
@@ -204,15 +204,15 @@ describe('accounts service', () => {
     });
 
     it('returns null when no override or path rule matches (no default fallback)', () => {
-      accounts.createAccount('Default', '/home/user/.claude', true, 'pro');
-      accounts.createAccount('Work', '/home/user/.claude-work', false, 'team');
+      accounts.createAccount('Default', '/home/user/.claude', 'pro');
+      accounts.createAccount('Work', '/home/user/.claude-work', 'team');
 
       const resolved = accounts.resolve('/home/user/personal/myrepo');
       expect(resolved).toBeNull();
     });
 
     it('returns null when nothing matches', () => {
-      accounts.createAccount('Work', '/home/user/.claude-work', false, 'team');
+      accounts.createAccount('Work', '/home/user/.claude-work', 'team');
       // no default, no rules
 
       const resolved = accounts.resolve('/home/user/personal/myrepo');
@@ -220,8 +220,8 @@ describe('accounts service', () => {
     });
 
     it('path rule beats default account', () => {
-      accounts.createAccount('Default', '/home/user/.claude', true, 'pro');
-      accounts.createAccount('Work', '/home/user/.claude-work', false, 'team');
+      accounts.createAccount('Default', '/home/user/.claude', 'pro');
+      accounts.createAccount('Work', '/home/user/.claude-work', 'team');
       const [def, work] = accounts.listAccounts().sort((a, b) => a.name.localeCompare(b.name));
 
       accounts.addPathRule(work.id, '/home/user/work', 0);
@@ -232,8 +232,8 @@ describe('accounts service', () => {
     });
 
     it('explicit override beats path rule', () => {
-      accounts.createAccount('Work', '/home/user/.claude-work', false, 'team');
-      accounts.createAccount('Special', '/home/user/.claude-special', false, 'pro');
+      accounts.createAccount('Work', '/home/user/.claude-work', 'team');
+      accounts.createAccount('Special', '/home/user/.claude-special', 'pro');
       const [special, work] = accounts.listAccounts().sort((a, b) => a.name.localeCompare(b.name));
 
       accounts.addPathRule(work.id, '/home/user/work', 0);
@@ -251,7 +251,7 @@ describe('accounts service', () => {
 
   describe('explain resolution', () => {
     it('explains override match', () => {
-      accounts.createAccount('Work', '/home/user/.claude-work', false, 'team');
+      accounts.createAccount('Work', '/home/user/.claude-work', 'team');
       const [work] = accounts.listAccounts();
 
       accounts.setProjectOverride('/home/user/projects/myapp', work.id);
@@ -263,7 +263,7 @@ describe('accounts service', () => {
     });
 
     it('explains path rule match', () => {
-      accounts.createAccount('Work', '/home/user/.claude-work', false, 'team');
+      accounts.createAccount('Work', '/home/user/.claude-work', 'team');
       const [work] = accounts.listAccounts();
 
       accounts.addPathRule(work.id, '/home/user/work', 5);
@@ -282,20 +282,20 @@ describe('accounts service', () => {
 
   describe('icon field', () => {
     it('persists icon on create and reads it back via listAccounts', () => {
-      accounts.createAccount('Personal', '/home/user/.claude', false, 'pro', '#a78bfa', 'user');
+      accounts.createAccount('Personal', '/home/user/.claude', 'pro', '#a78bfa', 'user');
       const list = accounts.listAccounts();
       expect(list[0].icon).toBe('user');
     });
 
     it('updates icon via updateAccount', () => {
-      const acct = accounts.createAccount('Work', '/home/user/.claude-work', false, 'team', '#f59e0b', 'briefcase');
+      const acct = accounts.createAccount('Work', '/home/user/.claude-work', 'team', '#f59e0b', 'briefcase');
       accounts.updateAccount(acct.id, 'Work', '/home/user/.claude-work', 'team', '#f59e0b', 'rocket');
       const list = accounts.listAccounts();
       expect(list[0].icon).toBe('rocket');
     });
 
     it('icon is null when not provided on create', () => {
-      accounts.createAccount('NoIcon', '/home/user/.claude', false, 'pro');
+      accounts.createAccount('NoIcon', '/home/user/.claude', 'pro');
       const list = accounts.listAccounts();
       expect(list[0].icon).toBeNull();
     });
@@ -325,14 +325,14 @@ describe('accounts service', () => {
     });
 
     it('defaults to summarizeOnClose=false / summaryModel=null on a fresh account', () => {
-      const a = accounts.createAccount('SumDefault', '/tmp/sum-default', false);
+      const a = accounts.createAccount('SumDefault', '/tmp/sum-default');
       const reread = accounts.listAccounts().find((x) => x.id === a.id)!;
       expect(reread.summarizeOnClose).toBe(false);
       expect(reread.summaryModel).toBeNull();
     });
 
     it('updateSummarySettings persists toggle + model', () => {
-      const a = accounts.createAccount('SumUpdate', '/tmp/sum-update', false);
+      const a = accounts.createAccount('SumUpdate', '/tmp/sum-update');
       accounts.updateSummarySettings(a.id, true, 'claude-haiku-4-5');
       const reread = accounts.listAccounts().find((x) => x.id === a.id)!;
       expect(reread.summarizeOnClose).toBe(true);
@@ -340,7 +340,7 @@ describe('accounts service', () => {
     });
 
     it('updateSummarySettings can clear the model and disable the toggle', () => {
-      const a = accounts.createAccount('SumClear', '/tmp/sum-clear', false);
+      const a = accounts.createAccount('SumClear', '/tmp/sum-clear');
       accounts.updateSummarySettings(a.id, true, 'claude-sonnet-4-6');
       accounts.updateSummarySettings(a.id, false, null);
       const reread = accounts.listAccounts().find((x) => x.id === a.id)!;

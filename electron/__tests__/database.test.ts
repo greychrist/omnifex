@@ -303,6 +303,46 @@ describe('runMigrations', () => {
     expect(cols.filter((c) => c.name === 'icon')).toHaveLength(1);
     db.close();
   });
+
+  it('migration v8 drops the is_default column from existing installs', () => {
+    const db = new BetterSqlite3(':memory:');
+    // Old schema with is_default still present (a pre-v8 install).
+    db.exec(`
+      CREATE TABLE accounts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT UNIQUE NOT NULL,
+        config_dir TEXT NOT NULL,
+        is_default BOOLEAN NOT NULL DEFAULT 0,
+        account_type TEXT NOT NULL DEFAULT 'pro',
+        color TEXT,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      INSERT INTO accounts (name, config_dir, is_default) VALUES ('Personal', '/cfg/p', 1);
+    `);
+
+    runMigrations(db);
+
+    const cols = db.pragma('table_info(accounts)') as { name: string }[];
+    expect(cols.some((c) => c.name === 'is_default')).toBe(false);
+    // Row data preserved (just without the dropped column).
+    const row = db.prepare('SELECT name, config_dir FROM accounts').get() as
+      | { name: string; config_dir: string }
+      | undefined;
+    expect(row?.name).toBe('Personal');
+    expect(row?.config_dir).toBe('/cfg/p');
+    db.close();
+  });
+
+  it('fresh installs (initSchema only) never have an is_default column', () => {
+    // Goes through the full createDatabase path so initSchema + runMigrations
+    // both fire. initSchema creates the new schema (no is_default), and v8 is
+    // a no-op when the column was never there to begin with.
+    const db = createDatabase(':memory:');
+    const cols = db.raw.pragma('table_info(accounts)') as { name: string }[];
+    expect(cols.some((c) => c.name === 'is_default')).toBe(false);
+    db.close();
+  });
 });
 
 describe('toActionableNativeModuleError', () => {

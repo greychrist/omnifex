@@ -307,12 +307,17 @@ export interface SessionsSummaryDeps {
    * paths to — the caller (renderer or lifecycle close hook) holds it
    * at tab level. Pass `null` when it isn't known and the implementation
    * should search all known accounts as a last-resort.
+   *
+   * Returns `null` when no account resolves the project path AND no
+   * configDir was provided — there is no synthetic ~/.claude fallback.
+   * Callers must treat null as a skipped:no-account / jsonl-missing
+   * outcome (depending on what they're doing).
    */
   jsonlPathFor(
     sessionUuid: string,
     projectPath: string,
     configDir: string | null,
-  ): string;
+  ): string | null;
   /** Resolve the account responsible for this project, or null. */
   resolveAccount(projectPath: string): ResolvedAccount | null;
   /**
@@ -425,6 +430,9 @@ export function createSessionsSummaryService(
     configDir: string | null,
   ): SessionSummary | null {
     const jsonlPath = deps.jsonlPathFor(sessionUuid, projectPath, configDir);
+    // No resolved configDir → no sidecar to read. Treat as "no cached
+    // summary" rather than synthesizing a ~/.claude path.
+    if (!jsonlPath) return null;
     return readSidecar(sidecarPathFor(jsonlPath));
   }
 
@@ -445,6 +453,12 @@ export function createSessionsSummaryService(
     }
 
     const jsonlPath = deps.jsonlPathFor(sessionUuid, projectPath, configDir);
+    if (!jsonlPath) {
+      // No configDir resolved by jsonlPathFor — treat as no-account so the
+      // caller surfaces the same skip code it would for any unconfigured
+      // account. There is no ~/.claude fallback to attempt here.
+      return { status: 'skipped', reason: 'no-account' };
+    }
     let stat: fs.Stats;
     try {
       stat = fs.statSync(jsonlPath);

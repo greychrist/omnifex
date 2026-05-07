@@ -31,7 +31,7 @@ function makeFakeAccountsService(cliPath: string | null = null) {
     listAccounts: () => [
       {
         id: 1, name: 'personal', config_dir: '/cfg/personal',
-        cli_path: cliPath, is_default: true,
+        cli_path: cliPath,
         account_type: 'max', color: null, icon: null,
         created_at: '', updated_at: '',
       },

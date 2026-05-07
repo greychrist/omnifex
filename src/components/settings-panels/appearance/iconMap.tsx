@@ -26,6 +26,7 @@ import {
   Send,
   Mail,
   AtSign,
+  CircleHelp,
   // status / feedback
   ShieldCheck,
   Eye,
@@ -108,6 +109,7 @@ const LUCIDE_MAP: Record<string, React.ComponentType<{ className?: string }>> = 
   Send,
   Mail,
   AtSign,
+  CircleHelp,
   ShieldCheck,
   Eye,
   EyeOff,

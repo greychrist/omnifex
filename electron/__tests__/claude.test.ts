@@ -53,7 +53,7 @@ describe('claude service', () => {
     it('returns an array when accounts exist but config dirs are empty', async () => {
       const configDir = path.join(tmpDir, '.claude-test');
       fs.mkdirSync(configDir, { recursive: true });
-      accounts.createAccount('Test', configDir, true, 'pro');
+      accounts.createAccount('Test', configDir, 'pro');
 
       const projects = await service.listProjects();
       expect(Array.isArray(projects)).toBe(true);
@@ -69,7 +69,7 @@ describe('claude service', () => {
       const sessionFile = path.join(projectDir, 'abc123.jsonl');
       fs.writeFileSync(sessionFile, JSON.stringify({ type: 'system', content: 'init' }) + '\n');
 
-      accounts.createAccount('Test', configDir, true, 'pro');
+      accounts.createAccount('Test', configDir, 'pro');
 
       const projects = await service.listProjects();
       expect(projects.length).toBeGreaterThanOrEqual(1);
@@ -83,15 +83,27 @@ describe('claude service', () => {
   // -------------------------------------------------------------------------
 
   describe('loadSessionHistory', () => {
-    it('returns empty array for non-existent session', async () => {
-      const result = await service.loadSessionHistory('nonexistent', 'nonexistent-project');
-      expect(Array.isArray(result)).toBe(true);
-      expect(result.length).toBe(0);
+    it('throws NoAccountError when projectPath cannot be resolved to an account', async () => {
+      await expect(
+        service.loadSessionHistory('nonexistent', 'nonexistent-project'),
+      ).rejects.toThrow(/no claude account/i);
+    });
+
+    it('returns empty array when the resolved account has no JSONL for the session', async () => {
+      const configDir = path.join(tmpDir, '.claude-no-jsonl');
+      const projectPath = path.join(tmpDir, 'no-jsonl-proj');
+      const projectId = projectPath.replace(/\//g, '-');
+      const account = accounts.createAccount('Test', configDir, 'pro');
+      accounts.addPathRule(account.id, tmpDir);
+
+      const result = await service.loadSessionHistory('ghost', projectId, projectPath);
+      expect(result).toEqual([]);
     });
 
     it('parses a valid jsonl session file', async () => {
       const configDir = path.join(tmpDir, '.claude-test');
-      const projectId = 'test-project';
+      const projectPath = path.join(tmpDir, 'test-project');
+      const projectId = projectPath.replace(/\//g, '-');
       const sessionId = 'session-001';
       const projectDir = path.join(configDir, 'projects', projectId);
       fs.mkdirSync(projectDir, { recursive: true });
@@ -105,9 +117,10 @@ describe('claude service', () => {
       ].join('\n');
       fs.writeFileSync(sessionFile, lines);
 
-      accounts.createAccount('Test', configDir, true, 'pro');
+      const account = accounts.createAccount('Test', configDir, 'pro');
+      accounts.addPathRule(account.id, tmpDir);
 
-      const result = await service.loadSessionHistory(sessionId, projectId);
+      const result = await service.loadSessionHistory(sessionId, projectId, projectPath);
       // Should parse valid lines and skip invalid
       expect(Array.isArray(result)).toBe(true);
       expect(result.length).toBe(3);
@@ -344,7 +357,7 @@ describe('claude service', () => {
     it('creates the project directory inside the resolved account config dir', () => {
       const configDir = path.join(tmpDir, '.claude-create');
       fs.mkdirSync(configDir, { recursive: true });
-      const account = accounts.createAccount('Test', configDir, true, 'pro');
+      const account = accounts.createAccount('Test', configDir, 'pro');
       accounts.addPathRule(account.id, tmpDir);
 
       const projectPath = path.join(tmpDir, 'brand-new');
@@ -370,17 +383,31 @@ describe('claude service', () => {
   // -------------------------------------------------------------------------
 
   describe('getProjectSessions', () => {
-    it('returns empty array when no config dir contains the project', async () => {
-      const result = await service.getProjectSessions('no-such-project');
+    it('throws NoAccountError when no projectPath is provided (cannot resolve)', async () => {
+      await expect(
+        service.getProjectSessions('no-such-project'),
+      ).rejects.toThrow(/no claude account/i);
+    });
+
+    it('returns empty array when the resolved account has no sessions on disk yet', async () => {
+      const configDir = path.join(tmpDir, '.claude-empty');
+      const projectPath = path.join(tmpDir, 'empty-project');
+      const projectId = projectPath.replace(/\//g, '-');
+      const account = accounts.createAccount('Empty', configDir, 'pro');
+      accounts.addPathRule(account.id, tmpDir);
+
+      const result = await service.getProjectSessions(projectId, projectPath);
       expect(result).toEqual([]);
     });
 
     it('lists sessions and extracts the first user message from JSONL', async () => {
       const configDir = path.join(tmpDir, '.claude-sessions');
-      const projectId = '-home-user-sessions-test';
+      const projectPath = path.join(tmpDir, 'sessions-test');
+      const projectId = projectPath.replace(/\//g, '-');
       const projectDir = path.join(configDir, 'projects', projectId);
       fs.mkdirSync(projectDir, { recursive: true });
-      accounts.createAccount('SessionsTest', configDir, true, 'pro');
+      const account = accounts.createAccount('SessionsTest', configDir, 'pro');
+      accounts.addPathRule(account.id, tmpDir);
 
       // Session A: has a plain text user message
       const sessionA = path.join(projectDir, 'sess-a.jsonl');
@@ -445,7 +472,7 @@ describe('claude service', () => {
         ].join('\n'),
       );
 
-      const sessions = await service.getProjectSessions(projectId);
+      const sessions = await service.getProjectSessions(projectId, projectPath);
       const byId = Object.fromEntries(sessions.map((s) => [s.id, s]));
 
       expect(sessions).toHaveLength(4);
@@ -456,7 +483,7 @@ describe('claude service', () => {
       // Sessions should carry decoded path and timestamps
       for (const s of sessions) {
         expect(s.project_id).toBe(projectId);
-        expect(typeof s.message_timestamp).toBe('string');
+        expect(typeof s.last_timestamp).toBe('string');
       }
     });
 
@@ -471,12 +498,86 @@ describe('claude service', () => {
         JSON.stringify({ type: 'user', message: { content: 'hi' } }),
       );
 
-      const account = accounts.createAccount('Hint', configDir, true, 'pro');
+      const account = accounts.createAccount('Hint', configDir, 'pro');
       accounts.addPathRule(account.id, tmpDir);
 
       const sessions = await service.getProjectSessions(projectId, projectPath);
       expect(sessions).toHaveLength(1);
       expect(sessions[0].project_path).toBe(projectPath);
+    });
+
+    // Regression: when the same projectId directory exists under more than one
+    // account's configDir (e.g. a stray run under the wrong account left a few
+    // JSONLs behind), getProjectSessions must read from the configDir resolved
+    // by the path rule, NOT from whichever directory happens to be alphabetically
+    // first in listAccounts() order. This was the WIN-project bug: 264 real
+    // sessions in .claude-personal hidden by 2 stray sessions in .claude-local.
+    it('reads sessions from the path-rule-resolved configDir, not the first dir whose project folder exists', async () => {
+      const personalDir = path.join(tmpDir, '.claude-personal');
+      const localDir = path.join(tmpDir, '.claude-local');
+      const projectPath = path.join(tmpDir, 'Repos', 'personal', 'WIN');
+      const projectId = projectPath.replace(/\//g, '-');
+
+      // Stray (wrong-account) sessions under .claude-local — alphabetically first.
+      const localProjectDir = path.join(localDir, 'projects', projectId);
+      fs.mkdirSync(localProjectDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(localProjectDir, 'stray-1.jsonl'),
+        JSON.stringify({ type: 'user', message: { content: 'stray' } }),
+      );
+      fs.writeFileSync(
+        path.join(localProjectDir, 'stray-2.jsonl'),
+        JSON.stringify({ type: 'user', message: { content: 'stray' } }),
+      );
+
+      // Real sessions under .claude-personal — what the path rule should resolve to.
+      const personalProjectDir = path.join(personalDir, 'projects', projectId);
+      fs.mkdirSync(personalProjectDir, { recursive: true });
+      for (const id of ['real-1', 'real-2', 'real-3']) {
+        fs.writeFileSync(
+          path.join(personalProjectDir, `${id}.jsonl`),
+          JSON.stringify({ type: 'user', message: { content: id } }),
+        );
+      }
+
+      // Both accounts exist. Path rule binds ~/Repos/personal → Personal.
+      // Note: 'Local' sorts before 'Personal' in listAccounts() ORDER BY name.
+      const personal = accounts.createAccount('Personal', personalDir, 'pro');
+      accounts.createAccount('Local', localDir, 'pro');
+      accounts.addPathRule(personal.id, path.join(tmpDir, 'Repos', 'personal'));
+
+      const sessions = await service.getProjectSessions(projectId, projectPath);
+      const ids = sessions.map((s) => s.id).sort();
+      expect(ids).toEqual(['real-1', 'real-2', 'real-3']);
+    });
+
+    it('throws NoAccountError when no path rule resolves the project path', async () => {
+      const personalDir = path.join(tmpDir, '.claude-personal');
+      accounts.createAccount('Personal', personalDir, 'pro');
+      // No path rule covering /Some/Other/Path.
+
+      const orphanPath = path.join(tmpDir, 'orphan');
+      const orphanId = orphanPath.replace(/\//g, '-');
+
+      await expect(
+        service.getProjectSessions(orphanId, orphanPath),
+      ).rejects.toThrow(/no claude account/i);
+    });
+
+    it('throws NoAccountError when projectPath is not provided (no resolution possible)', async () => {
+      const configDir = path.join(tmpDir, '.claude-no-path');
+      const projectId = 'some-proj';
+      const projectDir = path.join(configDir, 'projects', projectId);
+      fs.mkdirSync(projectDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(projectDir, 'sess.jsonl'),
+        JSON.stringify({ type: 'user', message: { content: 'hi' } }),
+      );
+      accounts.createAccount('Test', configDir, 'pro');
+
+      await expect(
+        service.getProjectSessions(projectId),
+      ).rejects.toThrow(/no claude account/i);
     });
   });
 
@@ -489,24 +590,34 @@ describe('claude service', () => {
   // -------------------------------------------------------------------------
 
   describe('deleteSession', () => {
+    // Helper: register a configDir with the accounts service and bind it
+    // to the test's tmpDir via a path rule so any projectPath under tmpDir
+    // resolves to this account.
+    function bindAccount(name: string, configDir: string) {
+      const account = accounts.createAccount(name, configDir, 'pro');
+      accounts.addPathRule(account.id, tmpDir);
+    }
+
     it('removes the JSONL file for the given session', async () => {
       const configDir = path.join(tmpDir, '.claude-delete');
-      const projectId = 'delete-proj';
+      const projectPath = path.join(tmpDir, 'delete-proj');
+      const projectId = projectPath.replace(/\//g, '-');
       const sessionId = 'sess-to-go';
       const projectDir = path.join(configDir, 'projects', projectId);
       fs.mkdirSync(projectDir, { recursive: true });
       const jsonlPath = path.join(projectDir, `${sessionId}.jsonl`);
       fs.writeFileSync(jsonlPath, JSON.stringify({ type: 'system' }) + '\n');
 
-      accounts.createAccount('Test', configDir, true, 'pro');
+      bindAccount('Test', configDir);
 
-      await service.deleteSession(sessionId, projectId);
+      await service.deleteSession(sessionId, projectId, projectPath);
       expect(fs.existsSync(jsonlPath)).toBe(false);
     });
 
     it('cascade-deletes the .summary.json sidecar when present', async () => {
       const configDir = path.join(tmpDir, '.claude-delete-summary');
-      const projectId = 'sum-proj';
+      const projectPath = path.join(tmpDir, 'sum-proj');
+      const projectId = projectPath.replace(/\//g, '-');
       const sessionId = 'sess-with-summary';
       const projectDir = path.join(configDir, 'projects', projectId);
       fs.mkdirSync(projectDir, { recursive: true });
@@ -515,16 +626,17 @@ describe('claude service', () => {
       fs.writeFileSync(jsonlPath, JSON.stringify({ type: 'system' }) + '\n');
       fs.writeFileSync(sidecarPath, JSON.stringify({ version: 1, headline: 'h', paragraph: 'p' }));
 
-      accounts.createAccount('Test', configDir, true, 'pro');
+      bindAccount('Test', configDir);
 
-      await service.deleteSession(sessionId, projectId);
+      await service.deleteSession(sessionId, projectId, projectPath);
       expect(fs.existsSync(jsonlPath)).toBe(false);
       expect(fs.existsSync(sidecarPath)).toBe(false);
     });
 
     it('cascade-deletes the .todo.json ride-along when present', async () => {
       const configDir = path.join(tmpDir, '.claude-delete-todo');
-      const projectId = 'todo-proj';
+      const projectPath = path.join(tmpDir, 'todo-proj');
+      const projectId = projectPath.replace(/\//g, '-');
       const sessionId = 'sess-with-todo';
       const projectDir = path.join(configDir, 'projects', projectId);
       fs.mkdirSync(projectDir, { recursive: true });
@@ -533,46 +645,51 @@ describe('claude service', () => {
       fs.writeFileSync(jsonlPath, JSON.stringify({ type: 'system' }) + '\n');
       fs.writeFileSync(todoPath, JSON.stringify([{ task: 'x', status: 'pending' }]));
 
-      accounts.createAccount('Test', configDir, true, 'pro');
+      bindAccount('Test', configDir);
 
-      await service.deleteSession(sessionId, projectId);
+      await service.deleteSession(sessionId, projectId, projectPath);
       expect(fs.existsSync(jsonlPath)).toBe(false);
       expect(fs.existsSync(todoPath)).toBe(false);
     });
 
     it('succeeds quietly when the sidecars are absent', async () => {
       const configDir = path.join(tmpDir, '.claude-delete-no-extras');
-      const projectId = 'plain-proj';
+      const projectPath = path.join(tmpDir, 'plain-proj');
+      const projectId = projectPath.replace(/\//g, '-');
       const sessionId = 'sess-bare';
       const projectDir = path.join(configDir, 'projects', projectId);
       fs.mkdirSync(projectDir, { recursive: true });
       const jsonlPath = path.join(projectDir, `${sessionId}.jsonl`);
       fs.writeFileSync(jsonlPath, JSON.stringify({ type: 'system' }) + '\n');
 
-      accounts.createAccount('Test', configDir, true, 'pro');
+      bindAccount('Test', configDir);
 
-      await expect(service.deleteSession(sessionId, projectId)).resolves.not.toThrow();
+      await expect(service.deleteSession(sessionId, projectId, projectPath)).resolves.not.toThrow();
       expect(fs.existsSync(jsonlPath)).toBe(false);
     });
 
     it('throws when the JSONL file does not exist', async () => {
       const configDir = path.join(tmpDir, '.claude-delete-missing');
-      const projectId = 'missing-proj';
+      const projectPath = path.join(tmpDir, 'missing-proj');
+      const projectId = projectPath.replace(/\//g, '-');
       const projectDir = path.join(configDir, 'projects', projectId);
       fs.mkdirSync(projectDir, { recursive: true });
-      accounts.createAccount('Test', configDir, true, 'pro');
+      bindAccount('Test', configDir);
 
-      await expect(service.deleteSession('ghost', projectId)).rejects.toThrow();
+      await expect(service.deleteSession('ghost', projectId, projectPath)).rejects.toThrow();
     });
 
-    it('throws when the project config dir cannot be resolved', async () => {
-      // No accounts → no configDir resolves.
-      await expect(service.deleteSession('any', 'nope')).rejects.toThrow();
+    it('throws NoAccountError when the project path does not resolve to any account', async () => {
+      // No accounts and no rules → no configDir resolves.
+      await expect(
+        service.deleteSession('any', 'nope', path.join(tmpDir, 'unbound')),
+      ).rejects.toThrow(/no claude account/i);
     });
 
     it('does not delete unrelated session files in the same project dir', async () => {
       const configDir = path.join(tmpDir, '.claude-delete-isolation');
-      const projectId = 'iso-proj';
+      const projectPath = path.join(tmpDir, 'iso-proj');
+      const projectId = projectPath.replace(/\//g, '-');
       const sessionA = 'keep-me';
       const sessionB = 'delete-me';
       const projectDir = path.join(configDir, 'projects', projectId);
@@ -584,9 +701,9 @@ describe('claude service', () => {
       fs.writeFileSync(jsonlB, JSON.stringify({ type: 'system' }) + '\n');
       fs.writeFileSync(sidecarA, JSON.stringify({ version: 1, headline: 'h', paragraph: 'p' }));
 
-      accounts.createAccount('Test', configDir, true, 'pro');
+      bindAccount('Test', configDir);
 
-      await service.deleteSession(sessionB, projectId);
+      await service.deleteSession(sessionB, projectId, projectPath);
       expect(fs.existsSync(jsonlA)).toBe(true);
       expect(fs.existsSync(sidecarA)).toBe(true);
       expect(fs.existsSync(jsonlB)).toBe(false);
@@ -613,7 +730,7 @@ describe('claude service', () => {
         ].join('\n'),
       );
 
-      accounts.createAccount('AgentHistory', configDir, true, 'pro');
+      accounts.createAccount('AgentHistory', configDir, 'pro');
 
       const history = await service.loadAgentSessionHistory(sessionId);
       expect(history).toHaveLength(2);

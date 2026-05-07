@@ -137,6 +137,23 @@ const migrations: Migration[] = [
       }
     },
   },
+  {
+    version: 8,
+    description:
+      'Drop accounts.is_default — there is no longer any notion of a default account. ' +
+      'Account resolution is strictly via path rules and explicit project overrides; ' +
+      'failure to resolve is an error surfaced to the user, not a silent fallback.',
+    up: (db) => {
+      const cols = db.pragma('table_info(accounts)') as { name: string }[];
+      if (cols.some((c) => c.name === 'is_default')) {
+        // SQLite ≥ 3.35 supports ALTER TABLE DROP COLUMN. better-sqlite3 ships
+        // a modern SQLite so this is safe; if a user is on an older bundle the
+        // ALTER will throw and the migration's transaction rolls back, leaving
+        // the schema_version row unwritten so a future run can retry.
+        db.exec('ALTER TABLE accounts DROP COLUMN is_default');
+      }
+    },
+  },
 ];
 
 /**
@@ -284,7 +301,10 @@ function initSchema(db: BetterSqlite3.Database): void {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT UNIQUE NOT NULL,
       config_dir TEXT NOT NULL,
-      is_default BOOLEAN NOT NULL DEFAULT 0,
+      -- No is_default column. There is no notion of a "default" account.
+      -- Account resolution is strictly path rule / project override, with
+      -- failure surfaced as an error (NoAccountError). Migration v8 drops
+      -- this column from existing installs.
       account_type TEXT NOT NULL DEFAULT 'pro',
       color TEXT,
       icon TEXT,

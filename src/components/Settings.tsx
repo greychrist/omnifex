@@ -8,6 +8,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Card } from "@/components/ui/card";
 import {
   api,
+  type Account,
   type ClaudeSettings,
   type ClaudeInstallation,
 } from "@/lib/api";
@@ -59,12 +60,13 @@ export const Settings: React.FC<SettingsProps> = ({
   const [binaryPathChanged, setBinaryPathChanged] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
 
-  // The Claude settings file is per-account (`<configDir>/settings.json`),
-  // so even though this dialog no longer has an account selector we still
-  // need a configDir to read/write — we always operate on the default
-  // account's config_dir. Loaded once on mount; load/save only fires
-  // after we have it.
-  const [defaultConfigDir, setDefaultConfigDir] = useState<string | null>(null);
+  // The Claude settings file is per-account (`<configDir>/settings.json`).
+  // There is no notion of a default account, so the user must explicitly
+  // pick which account's settings.json to edit. We load the list of
+  // accounts on mount and the user picks one — we never silently fall back
+  // to the first account or to ~/.claude. See CLAUDE.md "Multi-Account Rules".
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [selectedConfigDir, setSelectedConfigDir] = useState<string | null>(null);
 
   // Proxy state
   const [proxySettingsChanged, setProxySettingsChanged] = useState(false);
@@ -73,27 +75,32 @@ export const Settings: React.FC<SettingsProps> = ({
   useEffect(() => {
     api.listAccounts()
       .then((accts) => {
-        const def = accts.find((a) => a.is_default) || accts[0];
-        if (def) setDefaultConfigDir(def.config_dir);
-        else {
-          // No accounts at all — nothing to load. Surface the empty state
-          // rather than spinning forever.
+        setAccounts(accts);
+        if (accts.length === 1) {
+          // A single account is unambiguous — no picker needed, just use it.
+          // This is NOT a default-account fallback: with two or more accounts
+          // the user must explicitly pick one (no `accts[0]` shortcut).
+          setSelectedConfigDir(accts[0].config_dir);
+        } else {
+          // Either zero accounts (nothing to edit) or multiple (user picks).
+          // Either way, don't auto-select — the picker / empty state handles it.
           setLoading(false);
-          setSettings({});
+          if (accts.length === 0) setSettings({});
         }
       })
       .catch((err) => {
         console.error("Failed to list accounts:", err);
         setLoading(false);
-        setError("Failed to load accounts. Please ensure ~/.claude directory exists.");
+        setError("Failed to load accounts.");
       });
     loadClaudeBinaryPath();
   }, []);
 
-  // Load Claude settings as soon as the default config dir is resolved.
+  // Load Claude settings as soon as the user picks (or auto-picks for the
+  // single-account case) a config dir.
   useEffect(() => {
-    if (defaultConfigDir) loadSettings();
-  }, [defaultConfigDir]);
+    if (selectedConfigDir) loadSettings();
+  }, [selectedConfigDir]);
 
   const loadClaudeBinaryPath = async () => {
     try {
@@ -105,11 +112,11 @@ export const Settings: React.FC<SettingsProps> = ({
   };
 
   const loadSettings = async () => {
-    if (!defaultConfigDir) return;
+    if (!selectedConfigDir) return;
     try {
       setLoading(true);
       setError(null);
-      const loadedSettings = await api.getClaudeSettings({ configDir: defaultConfigDir });
+      const loadedSettings = await api.getClaudeSettings({ configDir: selectedConfigDir });
 
       if (!loadedSettings || typeof loadedSettings !== 'object') {
         console.warn("Loaded settings is not an object:", loadedSettings);
@@ -120,7 +127,7 @@ export const Settings: React.FC<SettingsProps> = ({
       setSettings(loadedSettings);
     } catch (err) {
       console.error("Failed to load settings:", err);
-      setError("Failed to load settings. Please ensure ~/.claude directory exists.");
+      setError(`Failed to load settings for ${selectedConfigDir}.`);
       setSettings({});
     } finally {
       setLoading(false);
@@ -128,13 +135,13 @@ export const Settings: React.FC<SettingsProps> = ({
   };
 
   const saveSettings = async () => {
-    if (!defaultConfigDir) return;
+    if (!selectedConfigDir) return;
     try {
       setSaving(true);
       setError(null);
       setToast(null);
 
-      await api.saveClaudeSettings(settings ?? {}, { configDir: defaultConfigDir });
+      await api.saveClaudeSettings(settings ?? {}, { configDir: selectedConfigDir });
 
       if (binaryPathChanged && selectedInstallation) {
         await api.setClaudeBinaryPath(selectedInstallation.path);
@@ -230,6 +237,31 @@ export const Settings: React.FC<SettingsProps> = ({
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Account selector for the Claude settings.json file the General /
+          Proxy panels read & write. With multiple accounts the user picks
+          explicitly — there is no default-account fallback. With zero
+          accounts we surface an empty state pointing at Account Settings. */}
+      {accounts.length > 1 && (
+        <div className="mx-4 mt-4 flex items-center gap-2 text-body-small">
+          <span className="text-muted-foreground">Editing Claude settings.json for:</span>
+          <select
+            className="rounded border border-input bg-background px-2 py-1 text-body-small"
+            value={selectedConfigDir ?? ''}
+            onChange={(e) => setSelectedConfigDir(e.target.value || null)}
+          >
+            <option value="" disabled>— pick an account —</option>
+            {accounts.map((a) => (
+              <option key={a.id} value={a.config_dir}>{a.name} ({a.config_dir})</option>
+            ))}
+          </select>
+        </div>
+      )}
+      {accounts.length === 0 && (
+        <div className="mx-4 mt-4 p-3 rounded-lg border border-dashed border-muted-foreground/40 text-body-small text-muted-foreground">
+          No Claude accounts configured yet. Add one under the <strong>Accounts</strong> tab — there is no default-account fallback, so a few panels here can't load until at least one account exists.
+        </div>
+      )}
 
       {/* Content */}
       {loading ? (

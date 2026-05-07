@@ -14,7 +14,7 @@ describe('slash commands service', () => {
     configDir = path.join(tmpDir, 'config');
     fs.mkdirSync(path.join(configDir, 'commands'), { recursive: true });
 
-    service = createSlashCommandsService(configDir);
+    service = createSlashCommandsService();
   });
 
   afterEach(() => {
@@ -22,7 +22,7 @@ describe('slash commands service', () => {
   });
 
   it('list returns empty array when no commands exist', () => {
-    const commands = service.list();
+    const commands = service.list(undefined, configDir);
     expect(Array.isArray(commands)).toBe(true);
     expect(commands).toHaveLength(0);
   });
@@ -35,9 +35,10 @@ describe('slash commands service', () => {
       content: 'Say hello to $ARGUMENTS',
       description: 'Greets the user',
       allowedTools: 'read_file',
+      configDir,
     });
 
-    const commands = service.list();
+    const commands = service.list(undefined, configDir);
     expect(commands).toHaveLength(1);
     expect(commands[0].name).toBe('greet');
     expect(commands[0].description).toBe('Greets the user');
@@ -52,9 +53,10 @@ describe('slash commands service', () => {
       content: 'Do something',
       description: 'A test command',
       allowedTools: '',
+      configDir,
     });
 
-    const retrieved = service.get(saved.id);
+    const retrieved = service.get(saved.id, configDir);
     expect(retrieved.name).toBe('test-cmd');
     expect(retrieved.id).toBe(saved.id);
   });
@@ -67,11 +69,12 @@ describe('slash commands service', () => {
       content: 'Goodbye',
       description: 'Farewell command',
       allowedTools: '',
+      configDir,
     });
 
-    service.delete(saved.id);
+    service.delete(saved.id, undefined, configDir);
 
-    const commands = service.list();
+    const commands = service.list(undefined, configDir);
     expect(commands.find((c) => c.id === saved.id)).toBeUndefined();
   });
 
@@ -89,7 +92,7 @@ describe('slash commands service', () => {
       projectPath,
     });
 
-    const projectCommands = service.list(projectPath);
+    const projectCommands = service.list(projectPath, configDir);
     expect(projectCommands.some((c) => c.name === 'deploy')).toBe(true);
   });
 
@@ -102,6 +105,7 @@ describe('slash commands service', () => {
       content: 'Global',
       description: 'A global command',
       allowedTools: '',
+      configDir,
     });
 
     // Project command
@@ -118,7 +122,7 @@ describe('slash commands service', () => {
       projectPath,
     });
 
-    const all = service.list(projectPath);
+    const all = service.list(projectPath, configDir);
     const names = all.map((c) => c.name);
     expect(names).toContain('global-cmd');
     expect(names).toContain('proj-cmd');
@@ -132,6 +136,7 @@ describe('slash commands service', () => {
       content: 'Content here',
       description: 'Format check',
       allowedTools: 'read_file, write_file',
+      configDir,
     });
 
     const commandsDir = path.join(configDir, 'commands');
@@ -143,6 +148,34 @@ describe('slash commands service', () => {
     expect(content).toContain('description:');
     expect(content).toContain('allowed_tools:');
     expect(content).toContain('Content here');
+  });
+
+  it('user-scoped save throws when configDir is omitted (no default-account fallback)', () => {
+    // Per CLAUDE.md "Multi-Account Rules": there is no silent fallback to a
+    // default account or to ~/.claude. User-scoped commands need an explicit
+    // configDir so they land in the right account's tree.
+    expect(() =>
+      service.save({
+        scope: 'user',
+        name: 'no-config',
+        namespace: 'x',
+        content: '',
+        description: '',
+        allowedTools: '',
+      }),
+    ).toThrow(/configDir is required/);
+
+    expect(() => service.get('user:x:no-config')).toThrow(/configDir is required/);
+    expect(() => service.delete('user:x:no-config')).toThrow(/configDir is required/);
+  });
+
+  it('list silently skips user-scope when configDir is omitted (project-only listing is valid)', () => {
+    // list() is the one read path that legitimately needs to work without a
+    // configDir — e.g. when no project is open the renderer still calls
+    // list() with no args. We return an empty array (user-scope skipped)
+    // rather than throwing, so the picker just shows nothing.
+    const commands = service.list();
+    expect(commands).toEqual([]);
   });
 
   describe('skill discovery', () => {
@@ -178,7 +211,7 @@ describe('slash commands service', () => {
         'utf-8',
       );
 
-      const all = service.list();
+      const all = service.list(undefined, configDir);
       const skill = all.find((c) => c.name === 'global-skill');
       expect(skill).toBeTruthy();
       expect(skill?.scope).toBe('user');

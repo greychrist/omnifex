@@ -34,7 +34,7 @@ export interface Services {
     listProjects(configDir?: string): unknown;
     createProject(data: unknown): unknown;
     getProjectSessions(projectId: string, projectPath?: string): unknown;
-    loadSessionHistory(sessionId: string, projectId: string): unknown;
+    loadSessionHistory(sessionId: string, projectId: string, projectPath?: string): unknown;
     deleteSession(sessionId: string, projectId: string, projectPath?: string): unknown;
     getHomeDirectory(): unknown;
     getSettings(opts?: unknown): unknown;
@@ -185,12 +185,37 @@ export interface Services {
 // object that the renderer sends via invoke(channel, params).
 type HandlerFn = (event: unknown, params?: Record<string, unknown>) => Promise<unknown>;
 
+/**
+ * Repackage a thrown error for the IPC boundary.
+ *
+ * Electron's `ipcMain.handle` only preserves `error.message` and `error.stack`
+ * across the structured-clone boundary — custom properties (like `code`,
+ * `name`, `projectPath`) are stripped. To let the renderer recognize specific
+ * error classes we encode the code as a `[CODE]` prefix on the message.
+ *
+ * The renderer's `api.ts` strips the prefix and surfaces `error.code` again so
+ * components can `if (err.code === 'NO_ACCOUNT_FOR_PROJECT')` without
+ * substring matching the message.
+ */
+function repackageError(err: unknown): Error {
+  if (err instanceof Error) {
+    const code = (err as Error & { code?: unknown }).code;
+    const message = typeof code === 'string' && code.length > 0
+      ? `[${code}] ${err.message}`
+      : err.message;
+    const out = new Error(message);
+    out.stack = err.stack;
+    return out;
+  }
+  return new Error(String(err));
+}
+
 function wrap(fn: () => unknown): HandlerFn {
   return async (_event: unknown, _params?: Record<string, unknown>) => {
     try {
       return await fn();
     } catch (err) {
-      throw new Error(err instanceof Error ? err.message : String(err));
+      throw repackageError(err);
     }
   };
 }
@@ -200,7 +225,7 @@ function wrapWith<P>(fn: (params: P) => unknown): HandlerFn {
     try {
       return await fn(params as unknown as P);
     } catch (err) {
-      throw new Error(err instanceof Error ? err.message : String(err));
+      throw repackageError(err);
     }
   };
 }
@@ -233,7 +258,7 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     list_projects: wrapWith((p: Record<string, unknown>) => claude?.listProjects(p?.config_dir as string | undefined) ?? null),
     create_project: wrapWith((p: Record<string, unknown>) => claude?.createProject(p) ?? null),
     get_project_sessions: wrapWith((p: Record<string, unknown>) => claude?.getProjectSessions((p?.projectId ?? p?.project_id) as string, (p?.projectPath ?? p?.project_path) as string | undefined) ?? null),
-    load_session_history: wrapWith((p: Record<string, unknown>) => claude?.loadSessionHistory((p?.sessionId ?? p?.session_id) as string, (p?.projectId ?? p?.project_id) as string) ?? null),
+    load_session_history: wrapWith((p: Record<string, unknown>) => claude?.loadSessionHistory((p?.sessionId ?? p?.session_id) as string, (p?.projectId ?? p?.project_id) as string, (p?.projectPath ?? p?.project_path) as string | undefined) ?? null),
     delete_session: wrapWith((p: Record<string, unknown>) => claude?.deleteSession((p?.sessionId ?? p?.session_id) as string, (p?.projectId ?? p?.project_id) as string, (p?.projectPath ?? p?.project_path) as string | undefined) ?? null),
     get_home_directory: wrap(() => claude?.getHomeDirectory() ?? null),
     get_claude_settings: wrapWith((p: Record<string, unknown>) => {
