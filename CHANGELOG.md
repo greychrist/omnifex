@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.14] — 2026-05-07
+
+Small polish on the native macOS notifications that fire for permission-channel prompts. Previously every prompt read "Task Complete — Permission requested: <Tool>", which was misleading on its face and especially wrong for the SDK's `AskUserQuestion` tool (the agent is asking *the user* something, not requesting a tool). The kind label now lives in the subtitle and the body carries a real summary of the request.
+
+Installers remain **unsigned**.
+
+### Changed
+
+- **Permission-prompt notifications.** Subtitle is now `Permission Request:` for tool prompts and `Answer Needed:` for `AskUserQuestion`, replacing the default `Task Complete` / `Task Failed`. Body shows the SDK-provided title/displayName when available, otherwise a tool-aware summary (`$ <command>` for Bash, `<Tool> <file_path>` for Read/Write/Edit/MultiEdit/NotebookEdit, `WebFetch <url>`, `<Tool> <pattern>` for Glob/Grep). `AskUserQuestion` shows the first question text. All bodies trim to 140 chars. Plumbed via a new optional 5th `options` argument on `NotificationsService.show` and `NotificationHooks.showNotification` carrying `{ subtitle }`; non-permission notifications keep the existing default subtitle behavior.
+
 ## [0.4.13] — 2026-05-07
 
 Reliability pass on the `/usage` runner driven by Claude Code 2.1.132's TUI changes — the fetch was timing out, missing the Sonnet bar, and showing dropped characters in the popover ("Longer sessi ns are more expensive…"). The runner now sidesteps Claude's first-launch safety dialog by pre-trusting a per-account scratch folder, recognizes both old and new welcome-screen wordings, tolerates cursor-redraw corruption of the Sonnet header, waits patiently for late-rendering blocks, and post-processes the captured text against the buffer's own vocabulary to recover dropped characters. The popover also gains the three ranked tables Claude shows under "What's contributing" (Skills, Subagents, Plugins), Settings drops three dead fields plus the per-account picker, and the Log tab's prune controls collapse into a single count + period dropdown.
