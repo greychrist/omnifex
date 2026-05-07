@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.12] — 2026-05-07
+
+UX cleanup pass on background-tab signals. The biggest fix is for sessions that ended up stuck on a "Crafting…" spinner with an amber **Awaiting Background Work** card after the parent's success result — when the bg dispatch's completion arrived as XML on a `queue-operation` enqueue (or an `attachment.queued_command`) instead of as a structured `task_notification` SystemMessage, the reducer ignored it and the subagent stayed `running` forever. The reducer now reads both envelopes and routes them through the same close path. The Sessions popover also gained finer-grained labels for tabs paused on the user, and `AskUserQuestion` no longer overlays the chat as a modal Dialog.
+
+Installers remain **unsigned**.
+
+### Fixed
+
+- **Stuck "Crafting…" spinner / amber "Awaiting Background Work" card after a successful turn.** `deriveSubagents` in `src/lib/subagentStreams.ts` now parses `<task-notification>…</task-notification>` payloads carried by `queue-operation` enqueues and `attachment.queued_command` envelopes, pulls the embedded `<tool-use-id>` / `<status>` / `<summary>`, and routes through the same close path as the structured `task_notification` SystemMessage. Closes the zombie-running-subagent case that kept the spinner pinned, the amber card showing instead of the green success card, and the SubagentBar entries stuck on "Waiting for first progress event…". Only acts on tool_use_ids it has already seen so notifications never fabricate orphan subagents.
+- **`AskUserQuestion` no longer overlays the chat as a modal Dialog.** The card now renders inline at the bottom of the chat alongside `PermissionCard`, using the same per-kind translucent container, so the surrounding agent context stays visible and the originating tab naturally surfaces the question without any focus tricks.
+
+### Added
+
+- **Tab-status popover surfaces "Permission Request" / "Question Waiting".** Background tabs paused on a permission grant or an `AskUserQuestion` prompt now show an indigo badge with the specific label instead of the generic "Busy" badge, so it's obvious at a glance which tab needs you. Driven by a new `waitingFor` field on `TabStatusSummary` derived from the session's pending permission via a small pure helper.
+
 ## [0.4.11] — 2026-05-06
 
 Hot-fix on top of v0.4.10. Manual summary generation in the dev/Electron app failed with `[ENOTDIR] spawn ENOTDIR` because the V2 SDK summary path didn't set `pathToClaudeCodeExecutable` explicitly and the SDK's auto-resolver doesn't work reliably from Electron's bundled main process. The summary path now uses the same binary probe the interactive sessions path has always used.
