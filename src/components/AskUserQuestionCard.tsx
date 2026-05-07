@@ -1,9 +1,8 @@
 import { useMemo, useState } from "react";
 import { Send, MessageCircleQuestion } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
-import { swatchFor } from "@/lib/accentStyle";
+import { accentStyleFor, swatchFor } from "@/lib/accentStyle";
 import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
 import type { PermissionRequestPayload } from "@/lib/types/permissionRequest";
 
@@ -70,11 +69,11 @@ function parseQuestions(input: Record<string, unknown>): QuestionShape[] {
 
 export function AskUserQuestionCard({ request, onSubmit, onCancel }: AskUserQuestionCardProps) {
   const { config } = useMessageRenderingConfig();
-  // Pull just the swatch — the dialog's background MUST stay opaque
-  // (`bg-background` on DialogContent), so the translucent accent bg
-  // returned by `accentStyleFor` is not applied here. The swatch becomes
-  // the 4px left stripe and the question icon color so per-kind theming
-  // (Settings → Chats) still reads.
+  // Mirror PermissionCard's container treatment: `accentStyle` paints the
+  // outer card with the per-kind translucent border + bg, and `accentSwatch`
+  // colors the question icon so per-kind theming (Settings → Chats) still
+  // reads against the lighter inline surface.
+  const accentStyle = accentStyleFor(config, 'permission.askUserQuestion');
   const accentSwatch = swatchFor(config, 'permission.askUserQuestion');
 
   const questions = useMemo(() => parseQuestions(request.toolInput), [request.toolInput]);
@@ -152,55 +151,39 @@ export function AskUserQuestionCard({ request, onSubmit, onCancel }: AskUserQues
     onSubmit(updatedInput);
   };
 
-  // Render as a modal Dialog so the card overlays the chat instead of
-  // pushing it up. The Dialog portals to <body>, so the surrounding
-  // `shrink-0` container in ClaudeCodeSession doesn't reserve vertical
-  // space for it. Escape / backdrop click / the built-in X all funnel
-  // through onOpenChange → onCancel, which sends `behavior: 'deny'` and
-  // dismisses cleanly.
-  const handleOpenChange = (open: boolean) => {
-    if (!open) onCancel();
-  };
+  // Render inline at the bottom of the chat, alongside PermissionCard. The
+  // SDK gates AskUserQuestion through the same canUseTool channel as Bash
+  // / Read / etc., but the right UX is "show the question with selectable
+  // options" — and showing it inline (rather than as a modal Dialog) keeps
+  // the surrounding chat context visible and means whichever tab raised
+  // the prompt naturally surfaces it without any tab-switching trickery.
 
   if (questions.length === 0) {
-    // Defensive: malformed input. Show the same dialog frame so the user
+    // Defensive: malformed input. Render the same inline shell so the user
     // can dismiss instead of being stuck on a permission prompt that has
     // nothing to allow.
     return (
-      <Dialog open onOpenChange={handleOpenChange}>
-        <DialogContent
-          className="max-w-md p-4 border-l-4 bg-background"
-          style={{ borderLeftColor: accentSwatch }}
-        >
+      <div className="mx-2 my-2 rounded-lg border shadow-sm" style={accentStyle}>
+        <div className="p-3 space-y-2">
           <div className="text-sm font-medium">Question from agent</div>
-          <div className="text-xs text-muted-foreground mt-1">
+          <div className="text-xs text-muted-foreground">
             The agent invoked AskUserQuestion but the input had no parseable questions.
           </div>
-          <div className="mt-3 flex justify-end">
+          <div className="flex justify-end">
             <Button size="sm" variant="secondary" onClick={onCancel}>Dismiss</Button>
           </div>
-        </DialogContent>
-      </Dialog>
+        </div>
+      </div>
     );
   }
 
   return (
-    <Dialog open onOpenChange={handleOpenChange}>
-      {/* max-w-2xl gives multi-question stacks room without going full-width
-          on large displays. Background stays fully opaque (`bg-background`)
-          — DO NOT spread `accentStyle` here; its translucent
-          `backgroundColor: <swatch>14` would override bg-background and
-          make the dialog see-through. The accent color shows up as the 4px
-          left stripe; the swatch is also reused for the question icon. */}
-      <DialogContent
-        className="max-w-2xl p-0 border-l-4 overflow-hidden bg-background"
-        style={{ borderLeftColor: accentSwatch }}
-      >
+    <div className="mx-2 my-2 rounded-lg border shadow-sm" style={accentStyle}>
       {/* Outer column: header / scroll region / footer. Outer spacing is
           tighter (space-y-3) so the scroll boundary and the buttons sit
           close to the questions; the inner scroll region carries the wider
           space-y-4 between questions to match the prior layout. */}
-      <div className="p-4 space-y-3">
+      <div className="p-3 space-y-3">
         {/* Header */}
         <div className="flex items-start gap-2">
           <MessageCircleQuestion className="h-4 w-4 mt-0.5 shrink-0" style={{ color: accentSwatch }} />
@@ -353,7 +336,6 @@ export function AskUserQuestionCard({ request, onSubmit, onCancel }: AskUserQues
           </Button>
         </div>
       </div>
-      </DialogContent>
-    </Dialog>
+    </div>
   );
 }
