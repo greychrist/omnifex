@@ -6,6 +6,7 @@ import {
   type SDKResultMessage,
   type SDKSessionOptions,
 } from '@anthropic-ai/claude-agent-sdk';
+import { findSystemClaudeBinary } from './factory';
 
 // ---------------------------------------------------------------------------
 // One-shot summary runner
@@ -61,6 +62,19 @@ export interface SummaryQueryDeps {
   runPrompt?: RunPromptFn;
   /** Defaults to `os.tmpdir()`. Injected in tests. */
   tmpRoot?: string;
+  /**
+   * Resolve the Claude Code binary to spawn. Defaults to the same probe
+   * the V1 sessions/factory path uses (`findSystemClaudeBinary` →
+   * system installs → SDK-bundled per-platform binary). Injected in tests.
+   *
+   * Setting this explicitly is important: the V2 SDK's auto-resolution
+   * (`require.resolve` from the SDK's own module URL) works in plain Node
+   * but fails inside Electron's bundled main process — the spawn fails
+   * with `[ENOTDIR] spawn ENOTDIR`. Passing `pathToClaudeCodeExecutable`
+   * explicitly bypasses that resolver, the same way the interactive
+   * sessions path has always done.
+   */
+  resolveClaudeBinary?: () => string | null;
 }
 
 /**
@@ -80,9 +94,23 @@ export function createSummaryQueryRunner(
 ): (opts: SummaryQueryOptions) => Promise<string> {
   const runPrompt: RunPromptFn = deps.runPrompt ?? unstable_v2_prompt;
   const tmpRoot = deps.tmpRoot ?? os.tmpdir();
+  const resolveClaudeBinary = deps.resolveClaudeBinary ?? findSystemClaudeBinary;
   const scratchCwd = path.join(tmpRoot, SCRATCH_DIR_NAME);
 
   return async function runSummaryQuery(opts: SummaryQueryOptions): Promise<string> {
+    // Resolve the binary up front for the same reason the interactive
+    // session path does — the SDK's auto-resolver fails inside Electron's
+    // bundled main process (spawn ENOTDIR). Fail fast with a clear error
+    // when no binary can be found, so the renderer surfaces something
+    // diagnosable instead of an opaque spawn error.
+    const claudeBinary = resolveClaudeBinary();
+    if (!claudeBinary) {
+      throw new Error(
+        'Claude binary not found: no system install and no SDK-bundled fallback. ' +
+          'Configure a CLI path in Account Settings or reinstall @anthropic-ai/claude-agent-sdk.',
+      );
+    }
+
     // mkdir -p is idempotent — the dir survives across calls so the
     // encoded projects path stays stable and we don't accumulate one
     // throwaway folder per summary in the user's session list.
@@ -98,6 +126,7 @@ export function createSummaryQueryRunner(
         model: opts.model,
         cwd: scratchCwd,
         env: { ...process.env, CLAUDE_CONFIG_DIR: opts.configDir },
+        pathToClaudeCodeExecutable: claudeBinary,
         permissionMode: 'bypassPermissions',
         allowDangerouslySkipPermissions: true,
         disallowedTools: ['*'],

@@ -180,4 +180,46 @@ describe('createSummaryQueryRunner', () => {
     expect(encodeProjectKey('/Users/foo/Repos/bar')).toBe('-Users-foo-Repos-bar');
     expect(encodeProjectKey('/var/folders/06/x/T/scratch')).toBe('-var-folders-06-x-T-scratch');
   });
+
+  // Regression for v0.4.10: the summary path used to leave
+  // `pathToClaudeCodeExecutable` unset and rely on the SDK's auto-resolution
+  // (B7 → require.resolve from the SDK's import.meta.url). That path works
+  // in plain Node but fails inside Electron's bundled main process with
+  // `[ENOTDIR] spawn ENOTDIR`. The V1 sessions/factory path has always set
+  // the executable explicitly via `findSystemClaudeBinary()`; the V2 summary
+  // path now does the same so both code paths share the same resolver.
+  it('passes pathToClaudeCodeExecutable through to runPrompt when the resolver returns a path', async () => {
+    let seenPath: unknown = undefined;
+    const runPrompt: RunPromptFn = vi.fn(async (_msg, opts) => {
+      seenPath = (opts as unknown as { pathToClaudeCodeExecutable?: unknown })
+        .pathToClaudeCodeExecutable;
+      return { type: 'result', subtype: 'success', result: '' } as never;
+    });
+
+    const run = createSummaryQueryRunner({
+      runPrompt,
+      tmpRoot,
+      resolveClaudeBinary: () => '/usr/local/bin/claude',
+    });
+    await run({ prompt: 'p', model: 'm', configDir });
+
+    expect(seenPath).toBe('/usr/local/bin/claude');
+  });
+
+  it('throws a clear error when no Claude binary can be resolved', async () => {
+    const runPrompt: RunPromptFn = vi.fn(
+      async () => ({ type: 'result', subtype: 'success', result: '' }) as never,
+    );
+
+    const run = createSummaryQueryRunner({
+      runPrompt,
+      tmpRoot,
+      resolveClaudeBinary: () => null,
+    });
+
+    await expect(run({ prompt: 'p', model: 'm', configDir })).rejects.toThrow(
+      /Claude (binary|Code executable)/i,
+    );
+    expect(runPrompt).not.toHaveBeenCalled();
+  });
 });
