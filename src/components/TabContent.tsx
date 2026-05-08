@@ -250,9 +250,13 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
           <div className="h-full">
               {/* Content based on selection */}
               {selectedProject ? (
-                <div className="h-full overflow-y-auto">
-                  <div className="max-w-6xl mx-auto p-6">
-                    <div className="mb-6">
+                // Flex-column layout so the session-list table can fill
+                // the remaining height and scroll internally — no
+                // page-level scrollbar. Header + new-session form stay
+                // at natural height; SessionList claims the rest.
+                <div className="h-full flex flex-col overflow-hidden">
+                  <div className="max-w-6xl mx-auto p-6 w-full flex flex-col flex-1 min-h-0">
+                    <div className="mb-6 flex-none">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
                           <motion.div
@@ -288,9 +292,11 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
 
                     {/* New-session form + Branch Colors share the top row,
                         session list (with errors/loading) flows full-width
-                        below. */}
-                    <div className="flex flex-col gap-6 items-stretch">
-                      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-stretch">
+                        below. The list region is `flex-1 min-h-0` so the
+                        SessionList table fills the remaining viewport
+                        height and scrolls internally. */}
+                    <div className="flex flex-col gap-6 items-stretch flex-1 min-h-0">
+                      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-stretch flex-none">
                         <div className="lg:col-span-3">
                           <NewSessionForm
                             accountResolution={projectAccountResolution}
@@ -317,14 +323,14 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                         )}
                       </div>
 
-                      <div className="w-full">
+                      <div className="w-full flex flex-col flex-1 min-h-0">
                         {/* Error display */}
                         {error && (
                           <motion.div
                             initial={{ opacity: 0, y: 4 }}
                             animate={{ opacity: 1, y: 0 }}
                             transition={{ duration: 0.15 }}
-                            className="mb-4 rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-xs text-destructive"
+                            className="mb-4 rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-xs text-destructive flex-none"
                           >
                             {error}
                           </motion.div>
@@ -332,7 +338,7 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
 
                         {/* Loading state */}
                         {loading && (
-                          <div className="flex items-center justify-center py-8">
+                          <div className="flex items-center justify-center py-8 flex-none">
                             <Spinner className="size-6 text-muted-foreground" />
                           </div>
                         )}

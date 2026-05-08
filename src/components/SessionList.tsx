@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Copy, Check, RefreshCw, Hash, Trash2 } from "lucide-react";
-import { Pagination } from "@/components/ui/pagination";
+import { Copy, Check, RefreshCw, Hash, Trash2, ChevronDown, ChevronUp } from "lucide-react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import {
@@ -126,8 +125,6 @@ interface SessionListProps {
   className?: string;
 }
 
-const ITEMS_PER_PAGE = 12;
-
 /**
  * SessionList component - Displays paginated sessions for a specific project
  *
@@ -154,7 +151,6 @@ export const SessionList: React.FC<SessionListProps> = ({
   // for an open SessionList wouldn't update until the user navigated
   // away and back.
   const { accounts } = useAccounts();
-  const [currentPage, setCurrentPage] = useState(1);
   const [refreshing, setRefreshing] = useState(false);
 
   const handleRefreshClick = async () => {
@@ -184,6 +180,20 @@ export const SessionList: React.FC<SessionListProps> = ({
   const [summaries, setSummaries] = useState<Map<string, SessionSummary | null>>(
     new Map(),
   );
+  // Per-row expand/collapse state. Default = collapsed (only headline
+  // visible); clicking the chevron flips it. Restored in v0.4.15 — the
+  // unconditional always-expanded layout from v0.4.8 made multi-summary
+  // pages impossibly tall, especially once paired with the bounded
+  // scroll container below.
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const toggleExpanded = useCallback((id: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
   const [summaryRefreshing, setSummaryRefreshing] = useState<Set<string>>(
     new Set(),
   );
@@ -458,20 +468,9 @@ export const SessionList: React.FC<SessionListProps> = ({
     [projectPath, summaryRefreshing, resolvedConfigDir],
   );
 
-  // Calculate pagination
-  const totalPages = Math.ceil(sessions.length / ITEMS_PER_PAGE);
-  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
-  const endIndex = startIndex + ITEMS_PER_PAGE;
-  const currentSessions = sessions.slice(startIndex, endIndex);
-
-  // Reset to page 1 if sessions change
-  React.useEffect(() => {
-    setCurrentPage(1);
-  }, [sessions.length]);
-
   return (
     <TooltipProvider>
-      <div className={cn("space-y-4", className)}>
+      <div className={cn("flex flex-col gap-4 h-full min-h-0", className)}>
       {/* Header row: session count + Open-by-ID + refresh. Renders only
           when at least one of those affordances is present so empty
           states stay clean. */}
@@ -514,10 +513,15 @@ export const SessionList: React.FC<SessionListProps> = ({
       )}
 
 
+      {/* Bounded scroll container. The table fills the remaining height
+          inside the project-view flex column and scrolls internally so
+          long, expanded summary lists never push the page out of the
+          viewport. The sticky <thead> keeps the column labels visible
+          while the body scrolls underneath. */}
       <AnimatePresence mode="popLayout">
-        <div className="rounded-md border border-border/40 overflow-hidden">
+        <div className="rounded-md border border-border/40 overflow-y-auto flex-1 min-h-0">
           <table className="w-full text-sm">
-            <thead className="bg-muted/30 text-[11px] uppercase tracking-wider text-muted-foreground">
+            <thead className="sticky top-0 z-10 bg-muted/30 text-[11px] uppercase tracking-wider text-muted-foreground backdrop-blur supports-[backdrop-filter]:bg-muted/60">
               <tr>
                 <th className="text-left font-medium py-2 px-3 w-36">Date</th>
                 <th className="text-left font-medium py-2 px-3">Summary</th>
@@ -527,7 +531,7 @@ export const SessionList: React.FC<SessionListProps> = ({
               </tr>
             </thead>
             <tbody>
-              {currentSessions.map((session, index) => {
+              {sessions.map((session, index) => {
                 const fmt = (d: Date) =>
                   `${d.toLocaleDateString('en-US', {
                     month: 'numeric',
@@ -551,6 +555,7 @@ export const SessionList: React.FC<SessionListProps> = ({
                 const cachedSummary = summaries.get(session.id);
                 const summary =
                   summarizeEnabledForProject === false ? null : cachedSummary;
+                const isExpanded = expanded.has(session.id);
                 const isRefreshing = summaryRefreshing.has(session.id);
                 // Refresh button is a no-op when the JSONL size hasn't
                 // changed AND the cached summary was produced by the
@@ -601,11 +606,28 @@ export const SessionList: React.FC<SessionListProps> = ({
                     </td>
                     <td className="py-2 px-3 text-xs text-foreground/90 max-w-0 align-top">
                       {summary ? (
-                        <div className="min-w-0">
-                          <div className="font-medium text-foreground truncate">
-                            {summary.headline}
+                        <div className="flex items-start gap-1 min-w-0">
+                          <button
+                            type="button"
+                            aria-label={isExpanded ? 'Collapse summary' : 'Expand summary'}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleExpanded(session.id);
+                            }}
+                            className="flex-none mt-[2px] text-muted-foreground hover:text-foreground"
+                          >
+                            {isExpanded ? (
+                              <ChevronUp className="h-3.5 w-3.5" />
+                            ) : (
+                              <ChevronDown className="h-3.5 w-3.5" />
+                            )}
+                          </button>
+                          <div className="min-w-0 flex-1">
+                            <div className="font-medium text-foreground truncate">
+                              {summary.headline}
+                            </div>
+                            {isExpanded && <SummaryBody text={summary.paragraph} />}
                           </div>
-                          <SummaryBody text={summary.paragraph} />
                         </div>
                       ) : session.first_message ? (
                         <span className="block truncate">
@@ -688,12 +710,6 @@ export const SessionList: React.FC<SessionListProps> = ({
           </table>
         </div>
       </AnimatePresence>
-
-        <Pagination
-          currentPage={currentPage}
-          totalPages={totalPages}
-          onPageChange={setCurrentPage}
-        />
       </div>
 
       {/* Delete-session confirmation. Mounted once at panel level; opens

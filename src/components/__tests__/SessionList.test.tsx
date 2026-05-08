@@ -148,18 +148,75 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe('SessionList summary rendering', () => {
-  it('renders the summary headline AND paragraph together when a sidecar exists', async () => {
+  it('renders the summary headline collapsed by default and reveals the paragraph on chevron click', async () => {
     render(<SessionList sessions={[sessionFixture]} projectPath="/x" />);
+
+    // Headline is always visible.
     expect(await screen.findByText('Summary headline here.')).toBeTruthy();
-    // Paragraph is always shown — no expand/collapse toggle.
+
+    // Paragraph is hidden by default (collapsed state).
+    expect(screen.queryByText('Summary paragraph here, with details.')).toBeNull();
+
+    // Click the expand chevron — paragraph appears.
+    const expandBtn = screen.getByRole('button', { name: /expand summary/i });
+    fireEvent.click(expandBtn);
     expect(screen.getByText('Summary paragraph here, with details.')).toBeTruthy();
+
+    // Now the chevron's role flips to "Collapse summary".
+    const collapseBtn = screen.getByRole('button', { name: /collapse summary/i });
+    fireEvent.click(collapseBtn);
+    expect(screen.queryByText('Summary paragraph here, with details.')).toBeNull();
   });
 
-  it('does not render an expand/collapse chevron next to the summary', async () => {
-    render(<SessionList sessions={[sessionFixture]} projectPath="/x" />);
+  it('renders every session with no pagination controls (relies on the bounded-scroll container instead)', async () => {
+    // Build 30 sessions — well past the old 12-per-page cap. Every one
+    // should render; no Previous/Next/page-N controls should exist.
+    const many: Session[] = Array.from({ length: 30 }, (_, i) => ({
+      ...sessionFixture,
+      id: `sess-${i + 1}`,
+    }) as Session);
+    vi.mocked(api.summaryGet).mockResolvedValue(null);
+
+    render(<SessionList sessions={many} projectPath="/x" />);
+
+    await waitFor(() => {
+      // Each row exposes its session id as the copy-button label
+      // ("sess-N" → first 8 chars displayed). Easier to count the
+      // delete buttons since there's exactly one per row regardless
+      // of summary state.
+      expect(screen.getAllByRole('button', { name: /delete session/i })).toHaveLength(30);
+    });
+
+    // No pagination controls — neither prev/next nor numbered page buttons.
+    expect(screen.queryByRole('button', { name: /previous|next|page/i })).toBeNull();
+  });
+
+  it('expands rows independently — toggling one does not affect another', async () => {
+    const sess2: Session = { ...sessionFixture, id: 'sess-2' };
+    // Different summary text per session so we can disambiguate.
+    vi.mocked(api.summaryGet).mockImplementation(async (sessionUuid: string) => {
+      if (sessionUuid === 'sess-2') {
+        return {
+          ...summaryFixture,
+          headline: 'Second headline.',
+          paragraph: 'Second paragraph body.',
+        };
+      }
+      return summaryFixture;
+    });
+
+    render(<SessionList sessions={[sessionFixture, sess2]} projectPath="/x" />);
     await screen.findByText('Summary headline here.');
-    expect(screen.queryByRole('button', { name: /expand summary/i })).toBeNull();
-    expect(screen.queryByRole('button', { name: /collapse summary/i })).toBeNull();
+    await screen.findByText('Second headline.');
+
+    // Two expand chevrons, both starting collapsed.
+    const expandBtns = screen.getAllByRole('button', { name: /expand summary/i });
+    expect(expandBtns).toHaveLength(2);
+
+    // Expand only the first row.
+    fireEvent.click(expandBtns[0]);
+    expect(screen.getByText('Summary paragraph here, with details.')).toBeTruthy();
+    expect(screen.queryByText('Second paragraph body.')).toBeNull();
   });
 
   it('falls back to first_message when no sidecar exists', async () => {
