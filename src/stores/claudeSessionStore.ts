@@ -25,6 +25,14 @@ export interface TabSessionState {
   contextUsage: SessionContextUsage | null;
   supportedModels: SessionModelInfo[];
   isLoading: boolean;
+  /** Text-streaming slot for partial messages. Populated by the
+   *  inflight coalescer's RAF flush; cleared when the complete assistant
+   *  message lands (matching uuid), on stream error, or on tab close. */
+  inflightAssistant: {
+    uuid: string;
+    text: string;
+    parentToolUseId: string | null;
+  } | null;
 }
 
 export const EMPTY_TAB_SESSION: TabSessionState = {
@@ -35,6 +43,7 @@ export const EMPTY_TAB_SESSION: TabSessionState = {
   contextUsage: null,
   supportedModels: [],
   isLoading: false,
+  inflightAssistant: null,
 };
 
 type MessagesUpdater =
@@ -58,6 +67,13 @@ interface ClaudeSessionStoreState {
    *  fall back to push when there is no user yet. */
   insertMessageBeforeFirstUser(tabId: string, msg: ClaudeStreamMessage): void;
   resetTab(tabId: string): void;
+  setInflightAssistantText(
+    tabId: string,
+    uuid: string,
+    text: string,
+    parentToolUseId: string | null,
+  ): void;
+  clearInflightAssistant(tabId: string): void;
 
   /** Test-only — wipes the whole store. */
   __resetForTests(): void;
@@ -83,6 +99,35 @@ export const useClaudeSessionStore = create<ClaudeSessionStoreState>()(
           [tabId]: { ...ensureTab(state.tabs, tabId), ...patch },
         },
       })),
+
+    setInflightAssistantText: (tabId, uuid, text, parentToolUseId) =>
+      set((state) => {
+        const existing = ensureTab(state.tabs, tabId);
+        return {
+          tabs: {
+            ...state.tabs,
+            [tabId]: {
+              ...existing,
+              inflightAssistant: { uuid, text, parentToolUseId },
+              // First delta flushing implicitly clears the spinner —
+              // the streaming bubble replaces it visually.
+              isLoading: false,
+            },
+          },
+        };
+      }),
+
+    clearInflightAssistant: (tabId) =>
+      set((state) => {
+        const existing = state.tabs[tabId];
+        if (!existing) return state;
+        return {
+          tabs: {
+            ...state.tabs,
+            [tabId]: { ...existing, inflightAssistant: null },
+          },
+        };
+      }),
 
     setMessages: (tabId, next) =>
       set((state) => {

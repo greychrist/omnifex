@@ -89,4 +89,47 @@ describe('claudeSessionStore', () => {
     expect(store.selectTab('tab-a').claudeSessionId).toBe('a');
     expect(store.selectTab('tab-b').claudeSessionId).toBe('b');
   });
+
+  it('setInflightAssistantText populates the inflight slot and clears isLoading', () => {
+    const store = useClaudeSessionStore.getState();
+    store.patchTab(TAB, { isLoading: true });
+    store.setInflightAssistantText(TAB, 'msg-uuid-1', 'Hello world', null);
+    const slice = store.selectTab(TAB);
+    expect(slice.inflightAssistant).toEqual({
+      uuid: 'msg-uuid-1',
+      text: 'Hello world',
+      parentToolUseId: null,
+    });
+    expect(slice.isLoading).toBe(false);
+  });
+
+  it('setInflightAssistantText replaces the slot when re-called with new uuid/text', () => {
+    const store = useClaudeSessionStore.getState();
+    store.setInflightAssistantText(TAB, 'msg-uuid-1', 'first', null);
+    store.setInflightAssistantText(TAB, 'msg-uuid-2', 'second', 'parent-tu-id');
+    expect(store.selectTab(TAB).inflightAssistant).toEqual({
+      uuid: 'msg-uuid-2',
+      text: 'second',
+      parentToolUseId: 'parent-tu-id',
+    });
+  });
+
+  it('clearInflightAssistant sets the slot to null', () => {
+    const store = useClaudeSessionStore.getState();
+    store.setInflightAssistantText(TAB, 'msg-uuid-1', 'Hello', null);
+    store.clearInflightAssistant(TAB);
+    expect(store.selectTab(TAB).inflightAssistant).toBeNull();
+  });
+
+  it('inflight slot is per-tab — setting one does not leak to another', () => {
+    const store = useClaudeSessionStore.getState();
+    store.setInflightAssistantText('tab-A', 'uuid-A', 'A text', null);
+    store.setInflightAssistantText('tab-B', 'uuid-B', 'B text', null);
+    expect(store.selectTab('tab-A').inflightAssistant?.text).toBe('A text');
+    expect(store.selectTab('tab-B').inflightAssistant?.text).toBe('B text');
+  });
+
+  it('EMPTY_TAB_SESSION includes inflightAssistant: null', () => {
+    expect(EMPTY_TAB_SESSION.inflightAssistant).toBeNull();
+  });
 });
