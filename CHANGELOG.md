@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.16] — 2026-05-08
+
+The Projects list's "Last activity" column was lying. It was sorting by the newest file mtime found by recursively walking each project's working tree (depth ≤ 8, ≤5000 stats per project, hardcoded exclude list) — which meant any `git pull`, formatter run, or editor save bumped a project ahead of one where you'd actually had a Claude conversation an hour ago. Worse, projects whose on-disk folder was deleted sank to the bottom even when they had real recent session history. The column now sorts by the newest Claude session JSONL mtime directly.
+
+Installers remain **unsigned**.
+
+### Changed
+
+- **"Last activity" sorts by Claude session activity, not filesystem walk.** `ProjectList`'s comparator and cell render now read `most_recent_session` (newest `*.jsonl` mtime in the Claude config dir) instead of the synthesized `last_activity_at`. Editing or building files in the working tree no longer reorders the list; a project whose on-disk folder was moved or deleted now correctly surfaces its last real Claude session. The column tooltip was rewritten to match. Tradeoff: a project that exists in the Claude config but has no session JSONLs yet renders an em-dash and sorts last (was: showed the working-tree mtime).
+
+### Removed
+
+- **`findMostRecentMtime` and the `last_activity_at` field.** The recursive project-tree walker, its exclude set (`node_modules`, `.git`, `dist`, `build`, `target`, `.next`, `.vite`, `.venv`, `__pycache__`, etc.), and its depth/stat-budget caps are gone. `Project.last_activity_at` was dropped from both the renderer and main-process types. Net deletion of ~140 lines and one filesystem walk per project per `listProjects()` call.
+
 ## [0.4.15] — 2026-05-08
 
 Two threads this release. The session-list panel got a layout overhaul: summaries are collapsible again, the table is bounded to the viewport with a sticky header, and pagination is gone — every session for a project lives in one scrollable list. Separately, the Claude Agent SDK bumped to `0.2.133`, which deprecated the `unstable_v2_*` symbols; the one consumer (`summary-query`) migrated off them.
