@@ -67,6 +67,7 @@ import { useTabContext } from "@/contexts/TabContext";
 import { SessionPersistenceService } from "@/services/sessionPersistence";
 import { reduceSessionStreamMessage } from "@/lib/sessionStreamReducer";
 import { runStreamEffect } from "@/lib/sessionStreamEffects";
+import { appendInflightDelta } from "@/lib/inflightCoalescer";
 import { useTabSession, useClaudeSessionStore } from "@/stores/claudeSessionStore";
 import type { PermissionSuggestion } from "@/lib/types/permissionRequest";
 
@@ -653,6 +654,32 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
         rawPayload = JSON.stringify(payload);
       }
 
+
+      // stream_event: token-level partial assistant message.
+      // Filter to text-only deltas from the parent agent and route through
+      // the coalescer. Subagent partials and non-text deltas drop. Early-
+      // return BEFORE setRawJsonlOutput because (a) these are ephemeral
+      // partials the SDK doesn't persist, and (b) per-token state thrash
+      // on this component is the exact perf cost the RAF coalescer exists
+      // to avoid.
+      if ((message as any).type === 'stream_event') {
+        const m = message as any;
+        if (m.parent_tool_use_id !== null) return; // skip subagent partials
+        const event = m.event;
+        if (
+          event?.type === 'content_block_delta' &&
+          event.delta?.type === 'text_delta' &&
+          typeof event.delta.text === 'string'
+        ) {
+          appendInflightDelta(
+            tabIdRef.current,
+            m.uuid,
+            event.delta.text,
+            m.parent_tool_use_id,
+          );
+        }
+        return;
+      }
 
       // Store raw JSONL
       setRawJsonlOutput((prev) => [...prev, rawPayload]);
