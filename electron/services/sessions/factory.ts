@@ -78,6 +78,11 @@ export function buildSdkOptions(
     // emits only task_started + task_notification, leaving the SubagentBar
     // expander empty mid-run.
     agentProgressSummaries: true,
+    // Stream token-level partial assistant messages so the renderer can paint
+    // assistant text as Claude generates it (rendered into the inflight slot
+    // via src/lib/inflightCoalescer.ts). Subagent partials and non-text deltas
+    // are filtered renderer-side; this flag is the single switch.
+    includePartialMessages: true,
     // Elicitation: prompt the user via the renderer instead of auto-accepting.
     onElicitation: async (request: any) => {
       // URL mode: open browser immediately, then wait for user decision

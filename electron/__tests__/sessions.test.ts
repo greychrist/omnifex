@@ -377,6 +377,21 @@ describe('sessions service — full lifecycle', () => {
     expect(options.systemPrompt).toEqual({ type: 'preset', preset: 'claude_code' });
   });
 
+  it('start() enables includePartialMessages so assistant text streams to the renderer', () => {
+    const fake = installFakeQuery();
+
+    service.start({
+      tabId: 't1',
+      projectPath: '/p',
+      configDir: '/cfg',
+      model: 'opus',
+      permissionMode: 'default',
+    });
+
+    const options = fake.getCapturedOptions();
+    expect(options.includePartialMessages).toBe(true);
+  });
+
   it('start() sets enableAllProjectMcpServers so .mcp.json servers auto-connect', () => {
     const fake = installFakeQuery();
 

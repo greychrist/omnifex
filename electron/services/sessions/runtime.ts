@@ -95,10 +95,9 @@ export async function listenToMessages(
           handle.status = 'running';
           break;
         case 'streamEvent':
-          // Token-level partial delta (only emitted with
-          // includePartialMessages: true, which we currently don't set).
-          // Keep status as-is: status transitions are driven by
-          // turn-level events, not per-token deltas.
+          // Token-level partial delta (emitted because includePartialMessages: true
+          // is set in factory.ts). Keep status as-is: status transitions are driven
+          // by turn-level events, not per-token deltas.
           break;
         case 'turn':
           handle.status = 'running';
