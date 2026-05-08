@@ -270,6 +270,18 @@ export function reduceSessionStreamMessage(
   message: ClaudeStreamMessage,
   ctx: StreamReducerContext,
 ): StreamReducerResult {
+  // Defensive: stream_event messages are intercepted by the IPC subscriber
+  // before they reach the reducer. If a future code path bypasses that
+  // branch, ensure these never land in messages[] as garbage entries.
+  if ((message as { type?: string }).type === 'stream_event') {
+    return {
+      append: 'skip',
+      effects: [],
+      metrics: EMPTY_METRICS_DELTA,
+      costDelta: 0,
+    };
+  }
+
   const effects: StreamReducerEffect[] = [];
   let metrics: MetricsDelta = { ...EMPTY_METRICS_DELTA };
   let activity: ActivityUpdate | null = null;

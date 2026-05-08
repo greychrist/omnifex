@@ -278,3 +278,24 @@ describe('reduceSessionStreamMessage', () => {
     });
   });
 });
+
+describe('reduceSessionStreamMessage stream_event handling', () => {
+  it('skips stream_event messages so they never land in messages[]', () => {
+    const result = reduceSessionStreamMessage(
+      // Cast — stream_event isn't in the local ClaudeStreamMessage union;
+      // the reducer's case branch handles it defensively.
+      { type: 'stream_event', uuid: 'u', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'x' } } } as any,
+      {
+        projectPath: '/p',
+        hasExistingInit: true,
+        hasExtractedSession: true,
+        userInterrupted: false,
+        messagesLength: 0,
+      },
+    );
+    expect(result.append).toBe('skip');
+    expect(result.effects).toEqual([]);
+    expect(result.metrics).toEqual(EMPTY_METRICS_DELTA);
+    expect(result.costDelta).toBe(0);
+  });
+});
