@@ -5,15 +5,17 @@ import * as path from 'node:path';
 import {
   createSummaryQueryRunner,
   encodeProjectKey,
+  runQueryOnce,
   type RunPromptFn,
 } from '../services/sessions/summary-query';
 
 // These tests cover the one-shot summary runner that wraps the SDK's
-// `unstable_v2_prompt`. The hard requirement is that the subprocess's
-// JSONL never lands inside the user's real project directory — every
-// summary call must run in a throwaway cwd and the runner must sweep
-// the resulting `<configDir>/projects/<encoded-scratch>/` directory
-// before returning.
+// streaming `query()` API to one-shot `Promise<SDKResultMessage>`
+// ergonomics (previously `unstable_v2_prompt`, deprecated in SDK 0.2.133).
+// The hard requirement is that the subprocess's JSONL never lands inside
+// the user's real project directory — every summary call must run in a
+// throwaway cwd and the runner must sweep the resulting
+// `<configDir>/projects/<encoded-scratch>/` directory before returning.
 
 describe('createSummaryQueryRunner', () => {
   let tmpRoot: string;
@@ -174,6 +176,97 @@ describe('createSummaryQueryRunner', () => {
     expect(fs.existsSync(seenCwd)).toBe(true);
     const projectsDir = path.join(configDir, 'projects', encodeProjectKey(seenCwd));
     expect(fs.existsSync(projectsDir)).toBe(false);
+  });
+
+  // ---------------------------------------------------------------------
+  // runQueryOnce — the wrapper that gives us back the one-shot ergonomics
+  // we lost when `unstable_v2_prompt` was deprecated. It iterates a
+  // streaming `query()` to its first `result` message and closes the
+  // query handle no matter what.
+  // ---------------------------------------------------------------------
+
+  describe('runQueryOnce', () => {
+    function makeFakeQuery(messages: unknown[]) {
+      let closed = 0;
+      const queue = [...messages];
+      const handle: any = {
+        async *[Symbol.asyncIterator]() {
+          while (queue.length) yield queue.shift();
+        },
+        close: () => {
+          closed += 1;
+        },
+      };
+      return {
+        handle,
+        wasClosed: () => closed > 0,
+        closedCount: () => closed,
+      };
+    }
+
+    it('returns the first result message from the query stream', async () => {
+      const result = { type: 'result', subtype: 'success', result: 'ok' };
+      const fake = makeFakeQuery([
+        { type: 'assistant', message: { content: [{ type: 'text', text: 'thinking…' }] } },
+        result,
+        // Anything after the result is ignored — close() should fire first.
+        { type: 'assistant', message: { content: [] } },
+      ]);
+      const queryFn = vi.fn(() => fake.handle);
+
+      const out = await runQueryOnce(queryFn as any, 'hello', { model: 'm' } as any);
+
+      expect(out).toBe(result);
+      expect(fake.wasClosed()).toBe(true);
+      expect(queryFn).toHaveBeenCalledWith({ prompt: 'hello', options: { model: 'm' } });
+    });
+
+    it('closes the query handle even on a non-result stream end', async () => {
+      const fake = makeFakeQuery([
+        { type: 'assistant', message: { content: [] } },
+        // No result message — stream just ends.
+      ]);
+      const queryFn = vi.fn(() => fake.handle);
+
+      await expect(
+        runQueryOnce(queryFn as any, 'p', {} as any),
+      ).rejects.toThrow(/without a result/i);
+      expect(fake.wasClosed()).toBe(true);
+    });
+
+    it('closes the query handle even when iteration throws', async () => {
+      let closed = 0;
+      const handle: any = {
+        async *[Symbol.asyncIterator]() {
+          throw new Error('stream blew up');
+        },
+        close: () => {
+          closed += 1;
+        },
+      };
+      const queryFn = vi.fn(() => handle);
+
+      await expect(
+        runQueryOnce(queryFn as any, 'p', {} as any),
+      ).rejects.toThrow('stream blew up');
+      expect(closed).toBe(1);
+    });
+
+    it('swallows errors thrown by close() so they do not mask the result', async () => {
+      const result = { type: 'result', subtype: 'success', result: 'ok' };
+      const handle: any = {
+        async *[Symbol.asyncIterator]() {
+          yield result;
+        },
+        close: () => {
+          throw new Error('close failed');
+        },
+      };
+      const queryFn = vi.fn(() => handle);
+
+      const out = await runQueryOnce(queryFn as any, 'p', {} as any);
+      expect(out).toBe(result);
+    });
   });
 
   it('encodeProjectKey replaces path separators with dashes (matches the binary)', () => {

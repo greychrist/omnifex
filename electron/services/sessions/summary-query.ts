@@ -2,9 +2,9 @@ import * as fsPromises from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import {
-  unstable_v2_prompt,
+  query,
+  type Options,
   type SDKResultMessage,
-  type SDKSessionOptions,
 } from '@anthropic-ai/claude-agent-sdk';
 import { findSystemClaudeBinary } from './factory';
 
@@ -14,24 +14,28 @@ import { findSystemClaudeBinary } from './factory';
 // Background:
 //   The Claude Code subprocess always persists a JSONL under
 //     <CLAUDE_CONFIG_DIR>/projects/<encoded-cwd>/<uuid>.jsonl
-//   regardless of which SDK API surface you use — `unstable_v2_prompt`
-//   doesn't change that, it just hides the session lifecycle from the
-//   consumer. Earlier the summary path called V1 `query()` with the real
-//   project path as `cwd`, leaving throwaway one-message sessions in the
-//   user's real project session list.
+//   regardless of which SDK API surface you use. Earlier the summary path
+//   called V1 `query()` with the real project path as `cwd`, leaving
+//   throwaway one-message sessions in the user's real project session list.
 //
-//   This wrapper:
-//     1. Switches to V2's `unstable_v2_prompt` (single await, no streaming
-//        loop on the consumer side).
-//     2. Pins every call to a single STABLE scratch cwd —
-//        `<os.tmpdir()>/omnifex-summary-scratch`. The encoded form is the
-//        same on every call, so we don't accumulate one
-//        `<configDir>/projects/-var-folders-...-omnifex-summary-XXXXX/`
-//        folder per call. After each call we wipe the contents of the
-//        encoded projects dir.
-//     3. The V2 default of `settingSources: []` keeps CLAUDE.md and
-//        project settings out of the summary prompt (set explicitly for
-//        defensiveness).
+//   v0.4.13 switched to `unstable_v2_prompt` for cleaner one-shot
+//   ergonomics. SDK 0.2.133 deprecated all `unstable_v2_*` symbols
+//   ("will be removed in a future release"), so v0.4.14 went back to
+//   the streaming `query()` and wrapped it in `runQueryOnce` (below) to
+//   keep the one-shot await-and-go ergonomics. Everything else about
+//   this runner stayed the same:
+//     - Pins every call to a single STABLE scratch cwd
+//       `<os.tmpdir()>/omnifex-summary-scratch`. The encoded form is the
+//       same on every call, so we don't accumulate one
+//       `<configDir>/projects/-var-folders-...-omnifex-summary-XXXXX/`
+//       folder per call. After each call we wipe the contents of the
+//       encoded projects dir.
+//     - `settingSources: []` keeps CLAUDE.md and project settings out
+//       of the summary prompt (set explicitly for defensiveness).
+//     - `permissionMode: 'bypassPermissions'` +
+//       `allowDangerouslySkipPermissions: true` + `disallowedTools: ['*']`
+//       — summarization writes nothing and reads nothing; it just gets
+//       a model response back as a string.
 //
 //   Concurrency note: if two summary calls overlap, they share the same
 //   projects dir. The cleanup `rm -rf` of one call may unlink the other's
@@ -54,11 +58,49 @@ export interface SummaryQueryOptions {
 /** Subset of the SDK call surface we depend on — exposed for testing. */
 export type RunPromptFn = (
   message: string,
-  options: SDKSessionOptions,
+  options: Options,
 ) => Promise<SDKResultMessage>;
 
+/**
+ * One-shot wrapper around the SDK's streaming `query()` API. Iterates
+ * until the first `result` message and returns it; closes the underlying
+ * `Query` handle on every exit path (success, no-result stream end,
+ * iteration error). `query.close()` errors are swallowed so they cannot
+ * mask either the result or the original iteration error.
+ *
+ * This restores the `unstable_v2_prompt`-style ergonomics that v0.4.13
+ * relied on, without depending on the deprecated V2 surface.
+ *
+ * The first parameter is the SDK's `query` function, taken as a
+ * dependency so unit tests can drive it without mocking the module.
+ */
+export async function runQueryOnce(
+  queryFn: typeof query,
+  message: string,
+  options: Options,
+): Promise<SDKResultMessage> {
+  const q = queryFn({ prompt: message, options });
+  try {
+    for await (const msg of q as AsyncIterable<unknown>) {
+      if ((msg as { type?: string } | null)?.type === 'result') {
+        return msg as SDKResultMessage;
+      }
+    }
+    throw new Error('SDK query ended without a result message');
+  } finally {
+    try {
+      q.close();
+    } catch {
+      // best-effort — never let close() mask the real outcome
+    }
+  }
+}
+
 export interface SummaryQueryDeps {
-  /** Defaults to the SDK's `unstable_v2_prompt`. Injected in tests. */
+  /**
+   * Defaults to a `runQueryOnce(query, …)` wrapper around the SDK's
+   * streaming `query()`. Injected in tests.
+   */
   runPrompt?: RunPromptFn;
   /** Defaults to `os.tmpdir()`. Injected in tests. */
   tmpRoot?: string;
@@ -92,7 +134,8 @@ export function encodeProjectKey(absPath: string): string {
 export function createSummaryQueryRunner(
   deps: SummaryQueryDeps = {},
 ): (opts: SummaryQueryOptions) => Promise<string> {
-  const runPrompt: RunPromptFn = deps.runPrompt ?? unstable_v2_prompt;
+  const runPrompt: RunPromptFn =
+    deps.runPrompt ?? ((message, options) => runQueryOnce(query, message, options));
   const tmpRoot = deps.tmpRoot ?? os.tmpdir();
   const resolveClaudeBinary = deps.resolveClaudeBinary ?? findSystemClaudeBinary;
   const scratchCwd = path.join(tmpRoot, SCRATCH_DIR_NAME);
