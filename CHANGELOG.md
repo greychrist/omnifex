@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.15] — 2026-05-08
+
+Two threads this release. The session-list panel got a layout overhaul: summaries are collapsible again, the table is bounded to the viewport with a sticky header, and pagination is gone — every session for a project lives in one scrollable list. Separately, the Claude Agent SDK bumped to `0.2.133`, which deprecated the `unstable_v2_*` symbols; the one consumer (`summary-query`) migrated off them.
+
+Installers remain **unsigned**.
+
+### Changed
+
+- **Session-list table is now bounded + scrollable.** The project view's outer container switched from page-level scroll (`h-full overflow-y-auto`) to a flex column. Header, new-session form, and branch-colors row stay at natural height; the SessionList region claims the rest with `flex-1 min-h-0`. Inside SessionList the table wrapper is `overflow-y-auto` and `<thead>` is `sticky top-0` with an opaque background, so column labels stay visible while rows scroll under them. Long lists no longer push the page off-screen.
+- **Expandable session summaries restored.** Each row defaults to collapsed (only the headline shows); a chevron toggles the bullets/paragraph. Per-row state lives in a `Set<string>` so rows expand independently. Restores the affordance removed in v0.4.8 — practical now that the table is bounded.
+- **Pagination removed.** The 12-per-page Previous/Next/page-N control is gone — the bounded scroll container makes it redundant. `sessions.map(...)` renders every row; the user scrolls to find what they want.
+- **Claude Agent SDK 0.2.132 → 0.2.133.** Upstream marked `unstable_v2_createSession`, `unstable_v2_prompt`, and `unstable_v2_resumeSession` `@deprecated` ("will be removed in a future release"). `query()` is the official replacement. The summary path was the only consumer of `unstable_v2_prompt`; it now uses a small `runQueryOnce(queryFn, message, options)` helper that iterates the streaming `Query` to its first `result` message and closes the handle on every exit path. No behavior change — same scratch-cwd, same permission lockdown, same projects-dir cleanup.
+
 ## [0.4.14] — 2026-05-07
 
 Small polish on the native macOS notifications that fire for permission-channel prompts. Previously every prompt read "Task Complete — Permission requested: <Tool>", which was misleading on its face and especially wrong for the SDK's `AskUserQuestion` tool (the agent is asking *the user* something, not requesting a tool). The kind label now lives in the subtitle and the body carries a real summary of the request.
