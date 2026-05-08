@@ -323,6 +323,60 @@ export function createCanUseTool(
     const decision = await new Promise<PermissionDecision>((resolve) => {
       const entry: PendingPermission & { payload: any } = { requestId, resolve, payload };
       handle.permissionQueue.push(entry);
+
+      // The SDK passes an `AbortSignal` that fires when the tool use is
+      // no longer needed (user pressed interrupt mid-permission, parent
+      // task cancelled, session being torn down). Without this listener
+      // the Promise never settles and the SDK's tool pipeline hangs for
+      // this session. Match the queue-management semantics of
+      // respondPermission: splice out wherever this entry sits, advance
+      // the queue head if we were displaying it, and resolve as a
+      // distinguishable deny.
+      const onAbort = (): void => {
+        const idx = handle.permissionQueue.indexOf(entry as PendingPermission);
+        if (idx === -1) return; // Already resolved by respondPermission.
+        const wasHead = idx === 0;
+        handle.permissionQueue.splice(idx, 1);
+
+        if (wasHead) {
+          if (handle.permissionQueue.length > 0) {
+            // Show the next queued request, mirroring respondPermission's tail.
+            const next = handle.permissionQueue[0] as PendingPermission & { payload: any };
+            sendToRenderer(`claude-output:${tabId}`, next.payload);
+            const projectName = path.basename(handle.projectPath) || 'OmniFex';
+            const title = `OmniFex — ${projectName}`;
+            const { body, subtitle } = permissionNotificationContent(
+              next.payload.tool_name,
+              next.payload.tool_input,
+              { title: next.payload.title, displayName: next.payload.display_name },
+            );
+            sendToRenderer('claude-notification', { tab_id: tabId, title, body, is_error: false });
+            try {
+              notificationHooks.showNotification?.(title, body, false, { tabId }, { subtitle });
+              notificationHooks.incrementUnread?.();
+            } catch (e) {
+              console.error('[sessions] permission notification hook failed:', e);
+            }
+          } else if (handle.status === 'waiting_permission') {
+            handle.status = 'running';
+          }
+        }
+
+        resolve({ behavior: 'deny', aborted: true });
+      };
+
+      if (toolOptions.signal) {
+        if (toolOptions.signal.aborted) {
+          // Listener won't fire for already-aborted signals; invoke the
+          // handler directly so we don't enqueue a request that nobody
+          // is waiting on. We pushed the entry before checking on
+          // purpose so the splice path runs unmodified.
+          onAbort();
+          return;
+        }
+        toolOptions.signal.addEventListener('abort', onAbort, { once: true });
+      }
+
       // If this is the only item in the queue, show it immediately
       if (handle.permissionQueue.length === 1) {
         handle.status = 'waiting_permission';
@@ -345,6 +399,22 @@ export function createCanUseTool(
       }
       // Otherwise it waits — sendNextPermission will show it when the current one resolves
     });
+
+    if (decision.aborted) {
+      logEntry({
+        level: 'info',
+        message: `permission aborted: ${toolName}`,
+        metadata: {
+          event: 'permission.aborted',
+          tool_name: toolName,
+          tool_use_id: toolOptions.toolUseID,
+        },
+      });
+      return {
+        behavior: 'deny' as const,
+        message: 'Aborted by SDK before user response',
+      };
+    }
 
     if (decision.behavior === 'allow') {
       // updatedInput is REQUIRED and must be the original tool input

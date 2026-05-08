@@ -261,16 +261,40 @@ export function useSessionLifecycle({
         : thinkingConfig === "disabled"
           ? { type: "disabled" as const }
           : { type: "enabled" as const, budgetTokens: 10000 };
-    await api.startSession(
-      tabId,
-      projectPath,
-      selectedModel,
-      mode,
-      resumeId,
-      configDir,
-      sdkEffort,
-      sdkThinking,
-    );
+    try {
+      await api.startSession(
+        tabId,
+        projectPath,
+        selectedModel,
+        mode,
+        resumeId,
+        configDir,
+        sdkEffort,
+        sdkThinking,
+      );
+    } catch (err) {
+      // Surface session-start failures to the user. The most common cause
+      // is "no account resolved for this project path" (configDir is
+      // null-checked in the main process, throws synchronously); without
+      // this branch, the renderer's `.catch(console.error)` would swallow
+      // the message and leave the user staring at a stuck "Starting…"
+      // badge with no clue what went wrong.
+      const errMsg = err instanceof Error ? err.message : String(err);
+      console.error("[startPersistentSession] api.startSession failed:", err);
+      setIsSessionStarting(false);
+      setIsLoading(false);
+      setMessages((prev) => [
+        ...prev,
+        {
+          type: "system",
+          subtype: "notification",
+          notification_type: "error",
+          title: "Session Failed to Start",
+          message: `Could not start session: ${errMsg.slice(0, 300)}`,
+        } as ClaudeStreamMessage,
+      ]);
+      throw err; // Bubble so the caller's .catch logger still fires.
+    }
     persistentSessionRef.current = true;
     // Intentionally NOT flipping isSessionActive here — fetchInitInfo flips
     // it once the SDK control channel actually answers, which matches what

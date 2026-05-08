@@ -15,10 +15,19 @@ vi.mock('../services/sessions/tui', () => ({
   createTuiSession: vi.fn(),
 }));
 
+// Default the binary resolver so existing tests don't require a real
+// claude install on the test machine. Per-test overrides via mockReturnValueOnce.
+vi.mock('../services/sessions/binary', () => ({
+  findSystemClaudeBinary: vi.fn(() => '/mock/bin/claude'),
+}));
+
 const mockedQuery = vi.mocked(sdkQuery);
 
 import { createTuiSession as _createTuiSession } from '../services/sessions/tui';
 const mockedCreateTuiSession = vi.mocked(_createTuiSession);
+
+import { findSystemClaudeBinary as _findSystemClaudeBinary } from '../services/sessions/binary';
+const mockedFindSystemClaudeBinary = vi.mocked(_findSystemClaudeBinary);
 
 // ---------------------------------------------------------------------------
 // A controllable fake `Query`. The sessions service treats the return value of
@@ -258,6 +267,25 @@ describe('sessions service — full lifecycle', () => {
 
   afterEach(() => {
     service.stopAll();
+  });
+
+  it('start() throws fast with an actionable message when no Claude binary can be resolved', () => {
+    mockedFindSystemClaudeBinary.mockReturnValueOnce(null);
+
+    // No installFakeQuery() needed — we expect the throw to land before
+    // the SDK is invoked. installing the fake would silently mask a
+    // regression where the throw moved later in the flow.
+    expect(() =>
+      service.start({
+        tabId: 'tab-no-binary',
+        projectPath: '/p',
+        configDir: '/c',
+        model: 'sonnet',
+        permissionMode: 'default',
+      }),
+    ).toThrow(/Claude Code CLI binary not found/i);
+
+    expect(mockedQuery).not.toHaveBeenCalled();
   });
 
   it('start() calls the SDK query with cwd, model, permissionMode, and CLAUDE_CONFIG_DIR env', () => {
@@ -795,6 +823,10 @@ describe('sessions service — full lifecycle', () => {
     // Session stays alive in error state — NOT deleted
     expect(service.isActive('tab-throw')).toBe(true);
     expect(service.getStatus('tab-throw')).toBe('error');
+    // The dead Query handle should be closed so its internals are released.
+    // Otherwise it sits in handle.query holding subprocess resources until
+    // stop() or restartQuery() replaces it.
+    expect(fakeQuery.close).toHaveBeenCalled();
     // Keep the channel referenced so TS doesn't complain about the unused var
     channel.close();
   });
@@ -869,6 +901,80 @@ describe('sessions service — full lifecycle', () => {
     // Clean up
     recoveryChannel.close();
     errorChannel.close();
+    await flush();
+  });
+
+  it('passes resume=<sessionId> when restarting after a stream error on a session with a known UUID', async () => {
+    // The recovery test above doesn't push an init message before the throw,
+    // so handle.sessionId stays null and the SDK contract for "resume after
+    // error" is never exercised. This test seeds the init first, then forces
+    // a throw, and asserts the second query() call sets options.resume to the
+    // captured sessionId — preserving conversation continuity across the
+    // automatic restart.
+    let callCount = 0;
+    const SESSION_UUID = '550e8400-e29b-41d4-a716-446655440000';
+
+    const initThenThrowChannel = createAsyncChannel<unknown>();
+    const initThenThrowQuery: any = {
+      async *[Symbol.asyncIterator]() {
+        // Emit a system:init so the FSM stamps the sessionId on the handle.
+        yield {
+          type: 'system',
+          subtype: 'init',
+          session_id: SESSION_UUID,
+        };
+        // Then explode.
+        throw new Error('connection lost');
+      },
+      close: vi.fn(),
+    };
+
+    const recoveryChannel = createAsyncChannel<unknown>();
+    const recoveryQuery: any = {
+      [Symbol.asyncIterator]: () => recoveryChannel[Symbol.asyncIterator](),
+      close: vi.fn(),
+      interrupt: vi.fn().mockResolvedValue(undefined),
+      setPermissionMode: vi.fn().mockResolvedValue(undefined),
+      setModel: vi.fn().mockResolvedValue(undefined),
+      accountInfo: vi.fn().mockResolvedValue({}),
+      getContextUsage: vi.fn().mockResolvedValue(null),
+      supportedCommands: vi.fn().mockResolvedValue([]),
+      supportedModels: vi.fn().mockResolvedValue([]),
+      supportedAgents: vi.fn().mockResolvedValue([]),
+      setMaxThinkingTokens: vi.fn().mockResolvedValue(undefined),
+      applyFlagSettings: vi.fn().mockResolvedValue(undefined),
+    };
+
+    const capturedArgs: any[] = [];
+    mockedQuery.mockImplementation((args: any) => {
+      capturedArgs.push(args);
+      callCount++;
+      return callCount === 1 ? initThenThrowQuery : recoveryQuery;
+    });
+
+    service.start({
+      tabId: 'tab-resume',
+      projectPath: '/p',
+      configDir: '/c',
+      model: 'sonnet',
+      permissionMode: 'default',
+    });
+
+    await flush(4);
+
+    expect(service.getStatus('tab-resume')).toBe('error');
+    expect(service.getSessionId('tab-resume')).toBe(SESSION_UUID);
+
+    // Trigger restart.
+    service.sendMessage('tab-resume', 'pick up where we left off');
+    await flush(4);
+
+    expect(callCount).toBe(2);
+    const restartArgs = capturedArgs[1];
+    expect(restartArgs?.options?.resume).toBe(SESSION_UUID);
+
+    recoveryChannel.close();
+    initThenThrowChannel.close();
     await flush();
   });
 
@@ -1186,6 +1292,133 @@ describe('sessions service — full lifecycle', () => {
     const result = await decisionPromise;
     expect(result.behavior).toBe('deny');
     expect(result.message).toBe('User denied permission');
+
+    svc.stopAll();
+  });
+
+  // -------------------------------------------------------------------------
+  // canUseTool — SDK abort handling
+  //
+  // The SDK passes an `AbortSignal` in `toolOptions.signal` and aborts it when
+  // the tool use is no longer needed (e.g. user pressed interrupt mid-permission,
+  // session torn down, parent task cancelled). Without honoring the signal the
+  // pending Promise never settles and the SDK's tool pipeline hangs for that
+  // session.
+  // -------------------------------------------------------------------------
+
+  it('canUseTool resolves the pending request as deny when the SDK aborts the signal', async () => {
+    const writeBatch = vi.fn();
+    const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
+    const svc = createSessionsService(
+      sendToRenderer as any,
+      { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
+      fakeLogging as any,
+    );
+    const fake = installFakeQuery();
+
+    svc.start({ tabId: 'tab-abort', projectPath: '/p', configDir: '/c', model: 'sonnet', permissionMode: 'default' });
+
+    const canUseTool = fake.getCapturedOptions().canUseTool;
+    const ctrl = new AbortController();
+    const decisionPromise = canUseTool('Bash', { command: 'sleep 9999' }, {
+      signal: ctrl.signal,
+      toolUseID: 'tu-abort',
+    });
+
+    // Let the canUseTool body register the abort listener.
+    await new Promise((r) => setImmediate(r));
+
+    // SDK aborts the request — no user response was produced.
+    ctrl.abort();
+
+    // Race the Promise against a short timeout. The pre-fix behavior was to
+    // hang forever; this assertion is what makes the test fail before the fix.
+    const result = await Promise.race([
+      decisionPromise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error('canUseTool hung after abort')), 200)),
+    ]);
+    expect(result).toMatchObject({ behavior: 'deny' });
+    // Distinguishable from a user-driven deny so logging / future SDK
+    // responses can branch on it.
+    expect((result as any).message).toMatch(/abort/i);
+
+    svc.stopAll();
+  });
+
+  it('canUseTool advances the permission queue when the head request is aborted', async () => {
+    const writeBatch = vi.fn();
+    const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
+    const svc = createSessionsService(
+      sendToRenderer as any,
+      { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
+      fakeLogging as any,
+    );
+    const fake = installFakeQuery();
+
+    svc.start({ tabId: 'tab-abort-queue', projectPath: '/p', configDir: '/c', model: 'sonnet', permissionMode: 'default' });
+
+    const canUseTool = fake.getCapturedOptions().canUseTool;
+    const ctrl1 = new AbortController();
+    const p1 = canUseTool('Bash', { command: 'first' }, {
+      signal: ctrl1.signal,
+      toolUseID: 'tu-q1',
+    });
+    await new Promise((r) => setImmediate(r));
+
+    const ctrl2 = new AbortController();
+    const p2 = canUseTool('Bash', { command: 'second' }, {
+      signal: ctrl2.signal,
+      toolUseID: 'tu-q2',
+    });
+    await new Promise((r) => setImmediate(r));
+
+    // Snapshot the renderer call count so we can detect the *next* dispatch.
+    const callCountBeforeAbort = (sendToRenderer as any).mock.calls.length;
+
+    ctrl1.abort();
+    await new Promise((r) => setImmediate(r));
+
+    // p1 must settle as deny.
+    await expect(p1).resolves.toMatchObject({ behavior: 'deny' });
+
+    // The second request should now be displayed (it was queued behind p1).
+    const newCalls = (sendToRenderer as any).mock.calls.slice(callCountBeforeAbort);
+    const shownSecond = newCalls.some(
+      ([ch, payload]: any[]) =>
+        ch === 'claude-output:tab-abort-queue' &&
+        payload?.type === 'permission_request' &&
+        payload?.tool_input?.command === 'second',
+    );
+    expect(shownSecond).toBe(true);
+
+    // p2 still pending — user can still respond normally.
+    svc.respondPermission('tab-abort-queue', 'allow');
+    await expect(p2).resolves.toMatchObject({ behavior: 'allow' });
+
+    svc.stopAll();
+  });
+
+  it('canUseTool resolves immediately when handed an already-aborted signal', async () => {
+    const writeBatch = vi.fn();
+    const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
+    const svc = createSessionsService(
+      sendToRenderer as any,
+      { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
+      fakeLogging as any,
+    );
+    const fake = installFakeQuery();
+
+    svc.start({ tabId: 'tab-pre-abort', projectPath: '/p', configDir: '/c', model: 'sonnet', permissionMode: 'default' });
+
+    const canUseTool = fake.getCapturedOptions().canUseTool;
+    const ctrl = new AbortController();
+    ctrl.abort();
+
+    const decision = await Promise.race([
+      canUseTool('Bash', { command: 'pre' }, { signal: ctrl.signal, toolUseID: 'tu-pre' }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('hung on pre-aborted signal')), 200)),
+    ]);
+    expect(decision).toMatchObject({ behavior: 'deny' });
 
     svc.stopAll();
   });

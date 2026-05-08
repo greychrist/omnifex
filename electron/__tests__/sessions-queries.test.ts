@@ -174,6 +174,33 @@ describe('createQueryPassthroughs.applyPermissions', () => {
     const q = createQueryPassthroughs(sessions);
     await expect(q.applyPermissions('t1', {})).resolves.toBeUndefined();
   });
+
+  it('emits a renderer warning when applyFlagSettings rejects', async () => {
+    // Without this signal, the rule lands on disk but the live session keeps
+    // prompting — the user thinks "I just allowed this, why is it asking again?"
+    // because the apply failed silently. We push a system warning so the chat
+    // surfaces the mismatch.
+    const handle = makeHandle(
+      makeQuery({ applyFlagSettings: vi.fn().mockRejectedValue(new Error('apply blew up')) }),
+    );
+    const sessions = new Map([['tab-warn', handle]]);
+    const sendToRenderer = vi.fn();
+    const q = createQueryPassthroughs(sessions, sendToRenderer);
+
+    await q.applyPermissions('tab-warn', { allow: ['Bash(ls)'] });
+
+    const warningCall = sendToRenderer.mock.calls.find(
+      ([ch, payload]: any[]) =>
+        ch === 'claude-output:tab-warn' &&
+        payload?.type === 'system' &&
+        payload?.subtype === 'notification' &&
+        payload?.notification_type === 'warn',
+    );
+    expect(warningCall).toBeTruthy();
+    const payload = warningCall![1];
+    expect(String(payload.message)).toMatch(/restart|apply/i);
+    expect(String(payload.message)).toContain('apply blew up');
+  });
 });
 
 describe('createQueryPassthroughs.setThinking', () => {
@@ -408,6 +435,26 @@ describe('createQueryPassthroughs.getPlugins', () => {
     const q = createQueryPassthroughs(sessions);
     await q.getPlugins('t1');
     await q.getPlugins('t1', true);
+    expect(reload).toHaveBeenCalledTimes(2);
+  });
+
+  it('evictPluginCache(tabId) drops the cache so the next call re-fetches', async () => {
+    // Without eviction the cache grows unbounded across the lifetime of the
+    // service: every closed tab leaves an entry behind. The lifecycle layer
+    // calls evictPluginCache(tabId) on session stop to keep this bounded.
+    const reload = vi.fn().mockResolvedValue({
+      plugins: [{ name: 'p1', path: '/tmp/p1', version: '1', enabled: true, source: 'user' }],
+    });
+    const handle = makeHandle(makeQuery({ reloadPlugins: reload }));
+    const sessions = new Map([['t1', handle]]);
+    const q = createQueryPassthroughs(sessions);
+
+    await q.getPlugins('t1'); // populates cache
+    expect(reload).toHaveBeenCalledTimes(1);
+
+    q.evictPluginCache('t1');
+
+    await q.getPlugins('t1'); // cache empty → re-fetch
     expect(reload).toHaveBeenCalledTimes(2);
   });
 

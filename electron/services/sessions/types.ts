@@ -204,6 +204,12 @@ export interface PermissionDecision {
     behavior: 'allow';
     destination: 'session' | 'projectSettings' | 'userSettings' | 'localSettings';
   }>;
+  /** Set when the SDK's `AbortSignal` fired while the request was queued —
+   *  i.e. the tool use was cancelled before the user responded. Treated as a
+   *  deny on the way back to the SDK, but distinguished from a user-driven
+   *  deny so logging and any future SDK contract that wants a richer signal
+   *  has a hook. */
+  aborted?: boolean;
 }
 
 export interface PendingPermission {

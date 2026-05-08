@@ -11,6 +11,7 @@ import type {
   SlashCommand,
   SDKControlGetContextUsageResponse,
   McpServerStatus,
+  SendToRenderer,
 } from './types';
 import { enrichPlugin, type EnrichedPlugin } from './plugins';
 
@@ -23,7 +24,10 @@ import { enrichPlugin, type EnrichedPlugin } from './plugins';
 // as null/[] so a misbehaving subprocess can't crash the IPC layer.
 // ---------------------------------------------------------------------------
 
-export function createQueryPassthroughs(sessions: Map<string, SessionHandle>) {
+export function createQueryPassthroughs(
+  sessions: Map<string, SessionHandle>,
+  sendToRenderer: SendToRenderer | null = null,
+) {
   async function interrupt(tabId: string): Promise<void> {
     const handle = sessions.get(tabId);
     if (!handle) return;
@@ -83,7 +87,22 @@ export function createQueryPassthroughs(sessions: Map<string, SessionHandle>) {
     try {
       await handle.query.applyFlagSettings({ permissions } as any);
     } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
       console.error(`[sessions] applyPermissions failed for tab ${tabId}:`, err);
+      // Surface the failure to the chat as a warning. The rule was already
+      // written to disk by the caller — the user thinks "I just allowed
+      // this," but the live SDK session never picked up the change and
+      // will keep prompting until restart. Without this warning, the
+      // mismatch is invisible.
+      sendToRenderer?.(`claude-output:${tabId}`, {
+        type: 'system',
+        subtype: 'notification',
+        notification_type: 'warn',
+        title: 'Permission rule saved on disk but not applied to live session',
+        message:
+          `Restart the session to apply the new rules. ` +
+          `(applyFlagSettings failed: ${errMsg.slice(0, 200)})`,
+      });
     }
   }
 
@@ -182,9 +201,14 @@ export function createQueryPassthroughs(sessions: Map<string, SessionHandle>) {
   }
 
   // reloadPlugins is a side-effectful SDK call, so cache per-tab and only
-  // refresh when the caller explicitly asks. Cache is keyed by tabId; stale
-  // entries from closed tabs are harmless.
+  // refresh when the caller explicitly asks. Cache is keyed by tabId; the
+  // lifecycle layer calls evictPluginCache(tabId) on session stop so
+  // entries don't accumulate forever.
   const pluginCache = new Map<string, EnrichedPlugin[]>();
+
+  function evictPluginCache(tabId: string): void {
+    pluginCache.delete(tabId);
+  }
 
   async function getPlugins(tabId: string, force = false): Promise<EnrichedPlugin[]> {
     const handle = sessions.get(tabId);
@@ -229,5 +253,6 @@ export function createQueryPassthroughs(sessions: Map<string, SessionHandle>) {
     getSupportedAgents,
     getMcpServerStatus,
     getPlugins,
+    evictPluginCache,
   };
 }

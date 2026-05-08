@@ -51,6 +51,9 @@ export function createSessionsService(
   onSessionClosed: ((sessionId: string, projectPath: string, configDir: string) => void) | null = null,
 ): SessionsService {
   const sessions = new Map<string, SessionHandle>();
+  // Hoisted so both the public return and stop()'s plugin-cache eviction
+  // share the same instance.
+  const queryPassthroughs = createQueryPassthroughs(sessions, sendToRenderer);
 
   const runtimeDeps: RuntimeDeps = {
     sendToRenderer,
@@ -74,6 +77,7 @@ export function createSessionsService(
       existing.query.close();
       sessions.delete(tabId);
       ownership?.unregister(tabId);
+      queryPassthroughs.evictPluginCache(tabId);
     }
 
     const inputChannel = createAsyncChannel<SDKUserMessage>(1000);
@@ -263,6 +267,9 @@ export function createSessionsService(
     handle.query.close();
     sessions.delete(tabId);
     ownership?.unregister(tabId);
+    // Evict the per-tab plugin cache so closed-tab entries don't accumulate
+    // over the lifetime of the service.
+    queryPassthroughs.evictPluginCache(tabId);
 
     if (closedSessionId && closedProjectPath && onSessionClosed) {
       // Fire-and-forget — auto-on-close summarization shouldn't block
@@ -439,6 +446,6 @@ export function createSessionsService(
     tuiWrite,
     tuiResize,
     getMode,
-    ...createQueryPassthroughs(sessions),
+    ...queryPassthroughs,
   };
 }

@@ -87,6 +87,19 @@ export async function listenToMessages(
           }
           handle.status = 'running';
           break;
+        case 'compact':
+          // Stream paused for compaction. Treat as 'running' for now —
+          // the FSM doesn't have a separate 'compacting' status today,
+          // but classifying separately leaves room for one if/when the
+          // status badge wants to distinguish it.
+          handle.status = 'running';
+          break;
+        case 'streamEvent':
+          // Token-level partial delta (only emitted with
+          // includePartialMessages: true, which we currently don't set).
+          // Keep status as-is: status transitions are driven by
+          // turn-level events, not per-token deltas.
+          break;
         case 'turn':
           handle.status = 'running';
           break;
@@ -138,6 +151,15 @@ export async function listenToMessages(
     // Stream error — keep the session alive so the user can retry.
     // The next sendMessage() will restart the SDK query transparently.
     handle.status = 'error';
+    // Close the dead Query handle so its internals are released. The
+    // SDK's Query.close() is idempotent; without this the dying handle
+    // hangs around in handle.query holding subprocess resources until
+    // either stop() or restartQuery() eventually replaces it.
+    try {
+      handle.query.close();
+    } catch (closeErr) {
+      console.warn('[sessions] query.close on stream error threw:', closeErr);
+    }
     const errMsg = err instanceof Error ? err.message : String(err);
     sendToRenderer(`claude-error:${tabId}`, errMsg);
     sendToRenderer(`claude-output:${tabId}`, {

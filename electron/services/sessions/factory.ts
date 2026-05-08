@@ -4,12 +4,10 @@
 // callback closes over the session handle (which is created after this
 // factory runs); the caller injects it post-handle.
 
-import fs from 'node:fs';
-import os from 'node:os';
-import { findBundledSdkBinaryAuto } from '../claude-binary';
 import type { PermissionMode } from '@anthropic-ai/claude-agent-sdk';
 import { discoverWorktrees } from '../git-worktrees';
 import { createSessionHooks } from './hooks';
+import { findSystemClaudeBinary } from './binary';
 import type {
   SessionStartParams,
   SendToRenderer,
@@ -18,22 +16,9 @@ import type {
   ElicitationDecision,
 } from './types';
 
-/**
- * Resolve a claude binary: prefer a system install, fall back to the
- * per-platform binary bundled with the SDK so packaged builds still work
- * for users without Claude Code installed system-wide.
- */
-export function findSystemClaudeBinary(): string | null {
-  const candidates = [
-    `${os.homedir()}/.local/bin/claude`,
-    '/usr/local/bin/claude',
-    '/opt/homebrew/bin/claude',
-  ];
-  for (const p of candidates) {
-    if (fs.existsSync(p)) return p;
-  }
-  return findBundledSdkBinaryAuto();
-}
+// Re-export for backward compat with anything outside this module that
+// already imported `findSystemClaudeBinary` from factory.
+export { findSystemClaudeBinary } from './binary';
 
 export interface BuildSdkOptionsDeps {
   tabId: string;
@@ -174,11 +159,20 @@ export function buildSdkOptions(
   options.hooks = createSessionHooks(tabId, logging, sendToRenderer, notificationHooks);
 
   // Resolve the binary up front so the SDK doesn't fall back to its own
-  // bundled copy when a system install is available.
+  // bundled copy when a system install is available. Fail fast with an
+  // actionable message if neither a system install nor a bundled binary
+  // is available — letting the SDK try its own resolution would surface
+  // an opaque spawn error mid-stream after the user already paid the
+  // session-start latency.
   const binaryPath = findSystemClaudeBinary();
-  if (binaryPath) {
-    options.pathToClaudeCodeExecutable = binaryPath;
+  if (!binaryPath) {
+    throw new Error(
+      'Claude Code CLI binary not found. Install via ' +
+      '`npm i -g @anthropic-ai/claude-code` (or place it at ' +
+      '~/.local/bin/claude, /usr/local/bin/claude, or /opt/homebrew/bin/claude).',
+    );
   }
+  options.pathToClaudeCodeExecutable = binaryPath;
 
   if (resumeSessionId) {
     options.resume = resumeSessionId;
