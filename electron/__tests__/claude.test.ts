@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createDatabase, type Database } from '../services/database';
 import { createAccountsService, type AccountsService } from '../services/accounts';
-import { createClaudeService, findMostRecentMtime, type ClaudeService } from '../services/claude';
+import { createClaudeService, type ClaudeService } from '../services/claude';
 import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
@@ -854,67 +854,4 @@ describe('claude service', () => {
     });
   });
 
-  describe('findMostRecentMtime', () => {
-    let tmpDir: string;
-    beforeEach(() => {
-      tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mtime-test-'));
-    });
-    afterEach(() => {
-      fs.rmSync(tmpDir, { recursive: true, force: true });
-    });
-
-    function touch(file: string, mtimeMs: number) {
-      fs.mkdirSync(path.dirname(file), { recursive: true });
-      fs.writeFileSync(file, '');
-      const ts = mtimeMs / 1000;
-      fs.utimesSync(file, ts, ts);
-    }
-
-    it('returns undefined for a missing path', () => {
-      expect(findMostRecentMtime(path.join(tmpDir, 'does-not-exist'))).toBeUndefined();
-    });
-
-    it('returns the newest mtime across nested files', () => {
-      touch(path.join(tmpDir, 'a.txt'), 1_000_000);
-      touch(path.join(tmpDir, 'sub', 'b.txt'), 5_000_000);
-      touch(path.join(tmpDir, 'sub', 'deeper', 'c.txt'), 3_000_000);
-      const result = findMostRecentMtime(tmpDir);
-      expect(result).toBe(5_000_000);
-    });
-
-    it('skips excluded directories so node_modules churn does not dominate', () => {
-      touch(path.join(tmpDir, 'src', 'main.ts'), 1_000_000);
-      // Newest file lives under node_modules — should be ignored.
-      touch(path.join(tmpDir, 'node_modules', 'foo', 'index.js'), 9_000_000);
-      const result = findMostRecentMtime(tmpDir);
-      expect(result).toBe(1_000_000);
-    });
-
-    it('skips .git, dist, build, target, .next, .vite, .venv, __pycache__', () => {
-      touch(path.join(tmpDir, 'src', 'a.ts'), 1_000_000);
-      for (const excluded of ['.git', 'dist', 'build', 'target', '.next', '.vite', '.venv', '__pycache__']) {
-        touch(path.join(tmpDir, excluded, 'x'), 9_000_000);
-      }
-      const result = findMostRecentMtime(tmpDir);
-      expect(result).toBe(1_000_000);
-    });
-
-    it('caps recursion depth so pathological trees stay bounded', () => {
-      // Build a 12-deep chain; only the file at depth 9 should be visited.
-      // ACTIVITY_WALK_MAX_DEPTH is 8 — depth 0 = top-level dir, so files
-      // up to "level-8/file.txt" are reachable.
-      let p = tmpDir;
-      for (let i = 0; i < 12; i++) {
-        p = path.join(p, `level-${i}`);
-      }
-      touch(path.join(p, 'too-deep.txt'), 9_000_000);
-
-      // Add a shallow file so the walk has something to find.
-      touch(path.join(tmpDir, 'shallow.txt'), 1_000_000);
-
-      const result = findMostRecentMtime(tmpDir);
-      // The deep file should NOT have been considered.
-      expect(result).toBe(1_000_000);
-    });
-  });
 });

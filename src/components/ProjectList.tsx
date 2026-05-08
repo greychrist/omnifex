@@ -142,11 +142,12 @@ export const ProjectList: React.FC<ProjectListProps> = ({
         case 'sessions':
           return (a.sessions.length - b.sessions.length) * dir;
         case 'lastActivity': {
-          // last_activity_at = newest file mtime in the project folder.
-          // Undefined when the folder no longer exists on disk — no fallback
-          // (don't lie about activity using session JSONL mtimes).
-          const av = a.last_activity_at ?? 0;
-          const bv = b.last_activity_at ?? 0;
+          // most_recent_session = newest Claude session JSONL mtime.
+          // We deliberately do NOT walk the project's working tree — file
+          // edits, formatter runs, and `git pull` are not "Claude activity."
+          // Undefined → 0 (project has no Claude sessions yet).
+          const av = a.most_recent_session ?? 0;
+          const bv = b.most_recent_session ?? 0;
           return (av - bv) * dir;
         }
       }
@@ -265,7 +266,7 @@ export const ProjectList: React.FC<ProjectListProps> = ({
                   <th
                     className="px-3 py-2 font-medium text-right cursor-pointer hover:text-foreground select-none"
                     onClick={() => toggleSort('lastActivity')}
-                    title="Newest file modification time anywhere within the project folder. Excludes node_modules, .git, build artifacts, etc."
+                    title="When Claude last had a session for this project."
                   >
                     Last activity<SortIcon k="lastActivity" />
                   </th>
@@ -273,10 +274,11 @@ export const ProjectList: React.FC<ProjectListProps> = ({
               </thead>
               <tbody>
                 {visibleProjects.map((project, index) => {
-                  // No fallback: if last_activity_at is undefined the folder
-                  // no longer exists on disk, so we render an em-dash rather
-                  // than a misleading session-mtime timestamp.
-                  const lastActivity = project.last_activity_at ?? 0;
+                  // most_recent_session is undefined when the project has
+                  // no Claude session JSONLs yet — render an em-dash so
+                  // the column is visibly empty rather than showing an
+                  // epoch-zero "55y ago".
+                  const lastActivity = project.most_recent_session ?? 0;
                   return (
                     <motion.tr
                       key={project.id}
