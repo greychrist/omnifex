@@ -120,42 +120,6 @@ export const Settings: React.FC<SettingsProps> = ({
   return (
     <div className={cn("h-full overflow-y-auto", className)}>
       <div className="max-w-6xl mx-auto flex flex-col h-full">
-        {/* Header */}
-        <div className="p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-heading-1">Settings</h1>
-              <p className="mt-1 text-body-small text-muted-foreground">
-                Configure Claude Code preferences
-              </p>
-            </div>
-            {showTopSave && (
-              <motion.div
-                whileTap={{ scale: 0.97 }}
-                transition={{ duration: 0.15 }}
-              >
-                <Button
-                  onClick={saveSettings}
-                  disabled={saving}
-                  size="default"
-                >
-                  {saving ? (
-                    <>
-                      <Spinner className="mr-2" />
-                      Saving...
-                    </>
-                  ) : (
-                    <>
-                      <Save className="mr-2 h-4 w-4" />
-                      Save Settings
-                    </>
-                  )}
-                </Button>
-              </motion.div>
-            )}
-          </div>
-        </div>
-
       {/* Error message */}
       <AnimatePresence>
         {error && (
@@ -175,16 +139,48 @@ export const Settings: React.FC<SettingsProps> = ({
       {/* Content */}
       <div className="flex-1 flex flex-col overflow-hidden p-6">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full flex flex-col flex-1 overflow-hidden">
-            <TabsList className="flex w-full mb-6 h-auto p-1 shrink-0">
-              <TabsTrigger value="general" className="flex-1 py-2 text-xs">General</TabsTrigger>
-              <TabsTrigger value="appearance" className="flex-1 py-2 text-xs">Chats</TabsTrigger>
-              <TabsTrigger value="accounts" className="flex-1 py-2 text-xs">Accounts</TabsTrigger>
-              <TabsTrigger value="sessions" className="flex-1 py-2 text-xs">Session Summaries</TabsTrigger>
-              <TabsTrigger value="storage" className="flex-1 py-2 text-xs">Storage</TabsTrigger>
-              <TabsTrigger value="proxy" className="flex-1 py-2 text-xs">Proxy</TabsTrigger>
-              <TabsTrigger value="rate_limits" className="flex-1 py-2 text-xs">Rate Limits</TabsTrigger>
-              <TabsTrigger value="log" className="flex-1 py-2 text-xs">Log</TabsTrigger>
-            </TabsList>
+            {/* Tab strip + conditional Save button on the right.
+                The "Settings" h1 + caption above this row was removed —
+                the Settings tab in the app chrome already labels the
+                page, and the tab strip below conveys what's available.
+                Reclaims ~100px of vertical space at the top. */}
+            <div className="flex items-center gap-3 mb-6 shrink-0">
+              <TabsList className="flex flex-1 h-auto p-1">
+                <TabsTrigger value="general" className="flex-1 py-2 text-xs">General</TabsTrigger>
+                <TabsTrigger value="appearance" className="flex-1 py-2 text-xs">Chats</TabsTrigger>
+                <TabsTrigger value="accounts" className="flex-1 py-2 text-xs">Accounts</TabsTrigger>
+                <TabsTrigger value="sessions" className="flex-1 py-2 text-xs">Session Summaries</TabsTrigger>
+                <TabsTrigger value="storage" className="flex-1 py-2 text-xs">Storage</TabsTrigger>
+                <TabsTrigger value="proxy" className="flex-1 py-2 text-xs">Proxy</TabsTrigger>
+                <TabsTrigger value="rate_limits" className="flex-1 py-2 text-xs">Rate Limits</TabsTrigger>
+                <TabsTrigger value="log" className="flex-1 py-2 text-xs">Log</TabsTrigger>
+              </TabsList>
+              {showTopSave && (
+                <motion.div
+                  whileTap={{ scale: 0.97 }}
+                  transition={{ duration: 0.15 }}
+                  className="shrink-0"
+                >
+                  <Button
+                    onClick={saveSettings}
+                    disabled={saving}
+                    size="sm"
+                  >
+                    {saving ? (
+                      <>
+                        <Spinner className="mr-2" />
+                        Saving...
+                      </>
+                    ) : (
+                      <>
+                        <Save className="mr-2 h-4 w-4" />
+                        Save
+                      </>
+                    )}
+                  </Button>
+                </motion.div>
+              )}
+            </div>
 
             <div className={activeTab === "log" ? "flex-1 flex flex-col min-h-0 overflow-hidden" : "flex-1 overflow-y-auto"}>
 
