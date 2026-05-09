@@ -44,7 +44,7 @@ import { buildMarkdownComponents } from '@/lib/markdownComponents';
  *  burst; if the canonical assistant message lands before the
  *  typewriter catches up, Task 7's reconciliation clears the slot and
  *  the bubble snaps to the full canonical message. */
-const TYPEWRITER_INTERVAL_MS = 5;
+const TYPEWRITER_INTERVAL_MS = 2;
 
 export const InflightAssistantBubble: React.FC<{ tabId: string }> = ({ tabId }) => {
   const inflight = useClaudeSessionStore(
