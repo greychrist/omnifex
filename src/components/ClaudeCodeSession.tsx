@@ -68,6 +68,7 @@ import { SessionPersistenceService } from "@/services/sessionPersistence";
 import { reduceSessionStreamMessage } from "@/lib/sessionStreamReducer";
 import { runStreamEffect } from "@/lib/sessionStreamEffects";
 import { appendInflightDelta, clearInflightBuffer } from "@/lib/inflightCoalescer";
+import { InflightAssistantBubble } from "./InflightAssistantBubble";
 import { useTabSession, useClaudeSessionStore } from "@/stores/claudeSessionStore";
 import type { PermissionSuggestion } from "@/lib/types/permissionRequest";
 
@@ -391,6 +392,9 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   const [isSessionActive, setIsSessionActive] = useState(false);
   const [sessionMode, setSessionMode] = useState<'sdk' | 'tui'>('sdk');
   const tabIdRef = useRef(tabId || 'default');
+  // Drop any per-tab inflight buffer when this tab unmounts so the
+  // module-level Map doesn't leak across long-lived renderer sessions.
+  useEffect(() => () => clearInflightBuffer(tabIdRef.current), []);
   const floatingPromptRef = useRef<FloatingPromptInputRef>(null);
   // Tracks whether the user just hit the cancel/interrupt button. When true,
   // the stream listener suppresses the next error-typed result message (which
@@ -475,6 +479,12 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     if (!todos) return false;
     return summarizeTodos(todos).running;
   }, [messages]);
+  // True when the streaming bubble is currently rendered. Used to
+  // suppress the typing-dots spinner so the spinner and bubble
+  // don't co-exist on screen.
+  const hasInflightAssistant = useClaudeSessionStore(
+    (s) => s.tabs[tabIdRef.current]?.inflightAssistant != null,
+  );
   const outstandingWork = isLoading || awaitingBackground || todosInFlight;
   const dismissSubagent = useCallback((toolUseId: string) => {
     setDismissedSubagents((prev) => {
@@ -1286,13 +1296,16 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                 );
               })()}
 
+          {/* Streaming bubble — renders null when no in-flight slot is set. */}
+          <InflightAssistantBubble tabId={tabIdRef.current} />
+
           {/* Loading indicator under the latest message — iMessage-style typing bubble.
               Rendered inside contentRef (and before messagesEndRef) so the ResizeObserver
               on contentRef catches its appearance/height changes, and scrollIntoView on
               messagesEndRef scrolls past it instead of leaving it below the viewport.
               Also kept visible during awaiting_background so the visual "in-flight"
               cue bridges the parent's turn-end result to the eventual completion. */}
-          {outstandingWork && (
+          {outstandingWork && !hasInflightAssistant && (
             <motion.div
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
