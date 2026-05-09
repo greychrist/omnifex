@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.19] — 2026-05-09
+
+A point release that closes the obvious gap left by 0.4.18's typography overhaul: the chat **Content** typeface picker only affected user-prompt bodies, not assistant markdown — so picking a distinctive Content typeface and seeing the assistant text stay on the App font read like the App font was overriding the chat setting.
+
+Installers remain **unsigned**.
+
+### Fixed
+
+- **Chat Content typeface now applies to assistant markdown.** The `typography.content.typeface` selection is mirrored to a new `--chat-content-font` CSS variable on `:root` by `MessageRenderingProvider`, and `.prose` reads it via `font-family: var(--chat-content-font, inherit)`. Every prose surface in the chat picks it up: assistant text blocks, thinking content, fenced markdown blocks (`MarkdownBlock`), in-flight streaming bubble, subagent return marker, web-search result rendering. Previously these inherited `body`'s `--font-sans` (the App font) because no inline `fontFamily` was set on the `.prose` wrappers. Single CSS rule, single variable — no per-call-site plumbing. The Typography card's Content description was updated to reflect the new scope.
+
 ## [0.4.18] — 2026-05-09
 
 Three things land together: an SDK parity bump, a typography overhaul that introduces a curated 13-typeface bundle plus a global App-font picker plus per-element typeface pickers on the chat surface (replacing the old abstract sans|serif|mono toggle), and a fix for a long-standing tab-spinner regression where the per-tab busy indicator cleared mid-turn the moment streaming text started, even though the turn was still wide open. The Settings → Appearance Typography card is reorganized into a 3-column layout (Header / Content / Card icon) — same controls, far less wasted vertical space.
