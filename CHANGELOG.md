@@ -9,13 +9,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.4.18] — 2026-05-09
 
-Patch release: SDK parity bump only. `@anthropic-ai/claude-agent-sdk` 0.2.137 → 0.2.138, which tracks Claude Code v2.1.138 (internal fixes upstream, no API surface changes). No transitive dependency churn. Verification gate (`npm run check`, `npm run build`, `npm run test:coverage`) passes; coverage holds at 81.04% lines.
+Three things land together: an SDK parity bump, a typography overhaul that introduces a curated 13-typeface bundle plus a global App-font picker plus per-element typeface pickers on the chat surface (replacing the old abstract sans|serif|mono toggle), and a fix for a long-standing tab-spinner regression where the per-tab busy indicator cleared mid-turn the moment streaming text started, even though the turn was still wide open. The Settings → Appearance Typography card is reorganized into a 3-column layout (Header / Content / Card icon) — same controls, far less wasted vertical space.
 
 Installers remain **unsigned**.
+
+### Added
+
+- **App-font picker.** New "App font" card at the top of Settings → Appearance. Single dropdown driving `--font-sans` globally for the whole UI (sidebar, settings, project list, dialogs). Six choices: Inter (default), Geist, Plus Jakarta Sans, DM Sans, IBM Plex Sans, Oxanium. Persists immediately via `app_font` setting; mirrors `ThemeContext`'s shape with a new `AppFontProvider`.
+- **Per-element typeface pickers in the Typography card.** Header column and Content column each get a Font dropdown grouped by family tag (Sans / Display / Serif / Humanist / Mono). Each `<SelectItem>` previews its typeface inline. 13 bundled typefaces total: the 6 sans-tagged App fonts plus Source Serif 4, IBM Plex Serif, iA Writer Quattro, IBM Plex Mono, JetBrains Mono, Geist Mono, iA Writer Duospace.
+- **Typeface catalog module** (`src/lib/typefaceCatalog.ts`). Single source of truth for typeface metadata (id, label, CSS family string, family tag). Drives both pickers and the schema migration.
+- **`--app-font-stack` CSS variable.** `--font-sans` now reads from this var first with the existing Inter stack as fallback. `AppFontProvider` sets it on `:root` based on the persisted choice. First-paint behavior unchanged (Inter still wins until the provider mounts).
 
 ### Changed
 
 - **`@anthropic-ai/claude-agent-sdk` 0.2.137 → 0.2.138.** Parity with Claude Code v2.1.138 (internal fixes only per upstream release notes). `@anthropic-ai/sdk` (`^0.81.0`), `@modelcontextprotocol/sdk` (`^1.29.0`), and `zod` (`^4.0.0` peer) constraints unchanged.
+- **`MessageRenderingConfig.typography.{header,content}.family` replaced with `.typeface`.** The abstract `'sans' | 'serif' | 'mono'` enum is gone; each element picks a concrete typeface from the catalog. Parser migrates legacy records: `sans → inter`, `serif → source-serif`, `mono → jetbrains-mono`. Unknown typeface IDs fall back to `inter`. Migration is one-way; downgrading to a pre-0.4.18 build resets typography family to default.
+- **Typography card layout rewritten** from a vertically stacked StyleRow pattern to a 3-column grid (Header / Content / Card icon). On narrow widths the columns collapse to a single column. The "Background opacity" slider label is shortened to "Bg opacity" to fit the narrower column.
+- **Inter font now ships with its OFL license** (`src/assets/fonts/inter/LICENSE.txt`) — bringing the long-bundled typeface into compliance with the new one-LICENSE-per-typeface convention this release establishes.
+
+### Fixed
+
+- **Tab busy indicator stays on through partial-message turns.** The 0.4.17 partial-messages work introduced a regression where `setInflightAssistantText` flipped `isLoading: false` on the first text-delta flush — intended to let the streaming bubble visually replace the in-chat typing-dots spinner. But the in-chat spinner is already independently suppressed via `hasInflightAssistant`, so the side-effect on `isLoading` was redundant for its stated purpose; meanwhile `isLoading` is what drives the per-tab busy indicator (`mainTurnInFlight` in `usePublishTabStatus`). Tab spinners cleared the instant streaming started, even though the turn was wide open (more text, tool calls, results all still pending). After the first text segment landed in `messages[]` and the bubble unmounted, `isLoading` stayed false for the rest of the turn — sessions mid-tool-call showed no spinner, no typing dots, no bubble: looked dead. Removed the `isLoading: false` side effect; updated the existing store test that was encoding the buggy behavior; added a test that locks in `isLoading` is also preserved when already false.
+
+### Removed
+
+- **`FontFamily` type and `FAMILY_VALUES` constant** from `messageRenderingConfig.ts`. The abstract sans/serif/mono enum is no longer part of the public surface.
+- **`font-sans` / `font-serif` / `font-mono` Tailwind class emission** from `typographyClassNames()`. Family is now applied via inline `style={{ fontFamily }}` from the catalog. The new `typographyFontFamily()` helper produces the value.
 
 ## [0.4.17] — 2026-05-09
 
