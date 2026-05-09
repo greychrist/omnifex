@@ -99,15 +99,39 @@ export const InflightAssistantBubble: React.FC<{ tabId: string }> = ({ tabId }) 
   if (!inflight || !targetText) return null;
 
   const displayedText = targetText.slice(0, displayedLength);
+  const isCatchingUp = displayedLength < targetLength;
+
+  // Mask-image gradient — softens the trailing edge of the visible text so
+  // newly-revealed chars fade in from translucent to opaque as more text
+  // arrives below them. The mask fades only the bottom ~1.2em (≈ one line of
+  // prose-sm text), so older content stays fully opaque. Equivalent
+  // -webkit-mask-image keeps Electron's Chromium happy on older releases.
+  const trailingFadeStyle: React.CSSProperties = {
+    maskImage:
+      'linear-gradient(to bottom, black 0, black calc(100% - 1.2em), transparent 100%)',
+    WebkitMaskImage:
+      'linear-gradient(to bottom, black 0, black calc(100% - 1.2em), transparent 100%)',
+  };
+
   return (
     <Card className={cn('group/card relative my-1 border-border/40')}>
-      <CardContent className="prose prose-sm dark:prose-invert max-w-none py-2 px-3">
+      <CardContent
+        className="prose prose-sm dark:prose-invert max-w-none py-2 px-3"
+        style={trailingFadeStyle}
+      >
         <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
           {displayedText}
         </ReactMarkdown>
         <span
           aria-hidden
-          className="animate-pulse text-muted-foreground inline-block ml-0.5"
+          className={cn(
+            'text-muted-foreground inline-block ml-0.5',
+            // Hold the cursor solid while text is still flowing in — the
+            // fade-in tail already conveys "live". Only pulse once the
+            // typewriter has caught up to the buffer (i.e., the SDK has
+            // stopped sending deltas for now), as a steady-state idle hint.
+            !isCatchingUp && 'animate-pulse',
+          )}
         >
           |
         </span>
