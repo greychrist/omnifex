@@ -111,7 +111,10 @@ const SelectLabel = React.forwardRef<
   <SelectPrimitive.Label
     ref={ref}
     className={cn(
-      "px-2 pt-3 pb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground",
+      // -mx-1 cancels SelectContent.Viewport's p-1 so the bg strip
+      // extends edge-to-edge of the dropdown; px-3 puts the content
+      // back at the same horizontal inset as items.
+      "-mx-1 px-3 pt-2 pb-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground bg-muted/40",
       className,
     )}
     {...props}
