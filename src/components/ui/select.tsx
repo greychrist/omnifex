@@ -95,13 +95,25 @@ const SelectContent = React.forwardRef<
 ));
 SelectContent.displayName = SelectPrimitive.Content.displayName;
 
+// SelectLabel is a section header inside a SelectContent, used to group
+// SelectItems (e.g. "Sans" / "Serif" / "Mono" categories in the font
+// picker). The styling is deliberately distinct from SelectItems so it
+// reads as a category header, not as another selectable option:
+//   - smaller (text-xs vs items' text-sm)
+//   - uppercase + tracked-out so the visual rhythm is clearly different
+//   - muted-foreground to de-emphasize vs items
+//   - extra top padding so a new group has breathing room from the
+//     previous group's last item
 const SelectLabel = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Label>,
   React.ComponentPropsWithoutRef<typeof SelectPrimitive.Label>
 >(({ className, ...props }, ref) => (
   <SelectPrimitive.Label
     ref={ref}
-    className={cn("px-2 py-1.5 text-sm font-semibold", className)}
+    className={cn(
+      "px-2 pt-3 pb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground",
+      className,
+    )}
     {...props}
   />
 ));
