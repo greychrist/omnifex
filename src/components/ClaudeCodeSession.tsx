@@ -394,7 +394,13 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   const tabIdRef = useRef(tabId || 'default');
   // Drop any per-tab inflight buffer when this tab unmounts so the
   // module-level Map doesn't leak across long-lived renderer sessions.
-  useEffect(() => () => clearInflightBuffer(tabIdRef.current), []);
+  // Pair with a store-slot clear so a stale Zustand slot can't survive
+  // the unmount when a RAF was pending at teardown.
+  useEffect(() => () => {
+    const tabId = tabIdRef.current;
+    clearInflightBuffer(tabId);
+    useClaudeSessionStore.getState().clearInflightAssistant(tabId);
+  }, []);
   const floatingPromptRef = useRef<FloatingPromptInputRef>(null);
   // Tracks whether the user just hit the cancel/interrupt button. When true,
   // the stream listener suppresses the next error-typed result message (which
@@ -674,7 +680,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       // to avoid.
       if ((message as any).type === 'stream_event') {
         const m = message as any;
-        if (m.parent_tool_use_id !== null) return; // skip subagent partials
+        if (m.parent_tool_use_id != null) return; // skip subagent partials (null OR undefined)
         const event = m.event;
         if (
           event?.type === 'content_block_delta' &&
