@@ -7,6 +7,7 @@ import {
   serializeConfig,
   type MessageRenderingConfig,
 } from "@/lib/messageRenderingConfig";
+import { resolveTypeface } from "@/lib/typefaceCatalog";
 
 interface MessageRenderingContextValue {
   config: MessageRenderingConfig;
@@ -36,6 +37,17 @@ export const MessageRenderingProvider: React.FC<{ children: React.ReactNode }> =
       cancelled = true;
     };
   }, []);
+
+  // Mirror the chat Content typeface to a CSS variable on :root so any
+  // markdown/prose surface in the chat (assistant text, thinking, tool
+  // widgets, fenced markdown blocks) can pick it up via a single rule in
+  // styles.css. Without this, those surfaces inherit body's --font-sans —
+  // i.e. the App font — which makes the chat Content picker look like it
+  // only affects the user-prompt body.
+  useEffect(() => {
+    const stack = resolveTypeface(config.typography.content.typeface).cssFamily;
+    document.documentElement.style.setProperty("--chat-content-font", stack);
+  }, [config.typography.content.typeface]);
 
   const setConfig = useCallback((next: MessageRenderingConfig, persist = true) => {
     setConfigState(next);

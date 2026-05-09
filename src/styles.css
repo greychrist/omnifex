@@ -624,6 +624,11 @@ html.is-macos body {
   max-width: 65ch;
   font-size: 1rem;
   line-height: 1.75;
+  /* Pick up the chat Content typeface set by MessageRenderingProvider so
+     assistant markdown, thinking, tool-widget prose, and fenced markdown
+     blocks track the Chats → Typography → Content picker instead of
+     silently inheriting the global App font from body. */
+  font-family: var(--chat-content-font, inherit);
 }
 
 .prose-sm {

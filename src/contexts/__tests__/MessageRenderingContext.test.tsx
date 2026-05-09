@@ -1,0 +1,99 @@
+// @vitest-environment jsdom
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import { render, act, waitFor } from "@testing-library/react";
+import React from "react";
+import {
+  MessageRenderingProvider,
+  useMessageRenderingConfig,
+} from "../MessageRenderingContext";
+import {
+  createDefaultConfig,
+  serializeConfig,
+  type MessageRenderingConfig,
+} from "@/lib/messageRenderingConfig";
+
+vi.mock("@/lib/api", () => ({
+  api: {
+    getSetting: vi.fn(),
+    saveSetting: vi.fn(),
+  },
+}));
+
+import { api } from "@/lib/api";
+
+const Probe: React.FC<{
+  onState: (s: {
+    config: MessageRenderingConfig;
+    setConfig: (next: MessageRenderingConfig, persist?: boolean) => void;
+  }) => void;
+}> = ({ onState }) => {
+  const ctx = useMessageRenderingConfig();
+  onState({ config: ctx.config, setConfig: ctx.setConfig });
+  return null;
+};
+
+describe("MessageRenderingProvider", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    document.documentElement.style.removeProperty("--chat-content-font");
+  });
+
+  it("sets --chat-content-font from the loaded typography.content.typeface", async () => {
+    const stored = createDefaultConfig();
+    stored.typography.content.typeface = "geist";
+    (api.getSetting as ReturnType<typeof vi.fn>).mockResolvedValue(serializeConfig(stored));
+
+    let captured = {
+      config: createDefaultConfig(),
+      setConfig: (_: MessageRenderingConfig) => {},
+    };
+
+    render(
+      <MessageRenderingProvider>
+        <Probe onState={(s) => (captured = s)} />
+      </MessageRenderingProvider>,
+    );
+
+    await waitFor(() =>
+      expect(captured.config.typography.content.typeface).toBe("geist"),
+    );
+    await waitFor(() =>
+      expect(
+        document.documentElement.style.getPropertyValue("--chat-content-font"),
+      ).toMatch(/Geist/),
+    );
+  });
+
+  it("re-applies --chat-content-font when setConfig changes the content typeface", async () => {
+    (api.getSetting as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+    (api.saveSetting as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+
+    let captured = {
+      config: createDefaultConfig(),
+      setConfig: (_: MessageRenderingConfig) => {},
+    };
+
+    render(
+      <MessageRenderingProvider>
+        <Probe onState={(s) => (captured = s)} />
+      </MessageRenderingProvider>,
+    );
+
+    await waitFor(() => expect(api.getSetting).toHaveBeenCalled());
+
+    await act(async () => {
+      const next = { ...captured.config };
+      next.typography = {
+        ...next.typography,
+        content: { ...next.typography.content, typeface: "plus-jakarta" },
+      };
+      captured.setConfig(next);
+    });
+
+    await waitFor(() =>
+      expect(
+        document.documentElement.style.getPropertyValue("--chat-content-font"),
+      ).toMatch(/Plus Jakarta Sans/),
+    );
+  });
+});

@@ -203,7 +203,7 @@ export const TypographyEditor: React.FC<TypographyEditorProps> = ({ typography, 
         />
         <TextColumn
           title="Content"
-          description="User message body text. (Assistant markdown bodies keep their prose defaults.)"
+          description="Body text for chat messages — user prompts and assistant markdown."
           style={typography.content}
           italicId="typography-content-italic"
           onChange={(next) => onChange({ ...typography, content: next })}
