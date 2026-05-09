@@ -584,7 +584,16 @@ export const DEFAULT_KINDS: MessageKindConfig[] = [
 // sliders keeps the UI simple and the config small.
 
 export type FontSize = "xs" | "sm" | "base" | "lg";
-export type FontWeight = "normal" | "medium" | "semibold" | "bold";
+export type FontWeight =
+  | "thin"
+  | "extralight"
+  | "light"
+  | "normal"
+  | "medium"
+  | "semibold"
+  | "bold"
+  | "extrabold"
+  | "black";
 
 /** Card-level icon size (the colored icon on the left of a message card).
  *  Independent from `FontSize` so the user can scale icons without changing
@@ -795,7 +804,17 @@ export function mergeConfig(saved: unknown): MessageRenderingConfig {
 }
 
 const SIZE_VALUES: readonly FontSize[] = ["xs", "sm", "base", "lg"];
-const WEIGHT_VALUES: readonly FontWeight[] = ["normal", "medium", "semibold", "bold"];
+const WEIGHT_VALUES: readonly FontWeight[] = [
+  "thin",
+  "extralight",
+  "light",
+  "normal",
+  "medium",
+  "semibold",
+  "bold",
+  "extrabold",
+  "black",
+];
 const ICON_SIZE_VALUES: readonly IconSize[] = ["xs", "sm", "base", "lg", "xl"];
 
 function mergeTypographyStyle(

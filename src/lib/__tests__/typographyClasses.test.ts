@@ -31,6 +31,29 @@ describe("typographyClassNames", () => {
     });
     expect(result).toBe("text-sm font-normal");
   });
+
+  it("maps every supported font weight to its Tailwind class", () => {
+    const cases = [
+      ["thin", "font-thin"],
+      ["extralight", "font-extralight"],
+      ["light", "font-light"],
+      ["normal", "font-normal"],
+      ["medium", "font-medium"],
+      ["semibold", "font-semibold"],
+      ["bold", "font-bold"],
+      ["extrabold", "font-extrabold"],
+      ["black", "font-black"],
+    ] as const;
+    for (const [weight, expected] of cases) {
+      const result = typographyClassNames({
+        typeface: "inter",
+        size: "sm",
+        weight,
+        italic: false,
+      });
+      expect(result).toBe(`text-sm ${expected}`);
+    }
+  });
 });
 
 describe("typographyFontFamily", () => {

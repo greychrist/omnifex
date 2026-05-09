@@ -31,11 +31,21 @@ const SIZES: { value: FontSize; label: string }[] = [
   { value: "lg", label: "Large" },
 ];
 
+// Ordered light → heavy. Tailwind v4 maps each to its standard CSS weight
+// (thin = 100, extralight = 200, … black = 900). Not every bundled typeface
+// ships every weight (e.g. IBM Plex Serif/Mono are single-weight 400, Plus
+// Jakarta and Oxanium start at 200) — the browser falls back to the closest
+// available weight on a miss, so all options remain selectable.
 const WEIGHTS: { value: FontWeight; label: string }[] = [
+  { value: "thin", label: "Thin" },
+  { value: "extralight", label: "Extra light" },
+  { value: "light", label: "Light" },
   { value: "normal", label: "Normal" },
   { value: "medium", label: "Medium" },
   { value: "semibold", label: "Semibold" },
   { value: "bold", label: "Bold" },
+  { value: "extrabold", label: "Extra bold" },
+  { value: "black", label: "Black" },
 ];
 
 const ICON_SIZES: { value: IconSize; label: string }[] = [
