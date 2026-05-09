@@ -7,6 +7,8 @@
 //
 // Derived from docs/message-rendering-config.yaml.
 
+import { isTypefaceId, type Typeface } from "./typefaceCatalog";
+
 export const MESSAGE_RENDERING_CONFIG_KEY = "message_rendering_config";
 
 // ─── palette ────────────────────────────────────────────────────────────────
@@ -581,7 +583,6 @@ export const DEFAULT_KINDS: MessageKindConfig[] = [
 // Per-kind overrides are intentionally out of scope for v1; one pair of
 // sliders keeps the UI simple and the config small.
 
-export type FontFamily = "sans" | "serif" | "mono";
 export type FontSize = "xs" | "sm" | "base" | "lg";
 export type FontWeight = "normal" | "medium" | "semibold" | "bold";
 
@@ -591,7 +592,8 @@ export type FontWeight = "normal" | "medium" | "semibold" | "bold";
 export type IconSize = "xs" | "sm" | "base" | "lg" | "xl";
 
 export interface TypographyStyle {
-  family: FontFamily;
+  /** Catalog typeface ID. See src/lib/typefaceCatalog.ts. */
+  typeface: Typeface;
   size: FontSize;
   weight: FontWeight;
   italic: boolean;
@@ -616,8 +618,8 @@ export interface Typography {
 }
 
 export const DEFAULT_TYPOGRAPHY: Typography = {
-  header: { family: "sans", size: "sm", weight: "semibold", italic: false },
-  content: { family: "sans", size: "sm", weight: "normal", italic: false },
+  header: { typeface: "inter", size: "sm", weight: "semibold", italic: false },
+  content: { typeface: "inter", size: "sm", weight: "normal", italic: false },
   icon: { size: "base", bordered: true, bgOpacity: 100 },
 };
 
@@ -792,7 +794,6 @@ export function mergeConfig(saved: unknown): MessageRenderingConfig {
   return base;
 }
 
-const FAMILY_VALUES: readonly FontFamily[] = ["sans", "serif", "mono"];
 const SIZE_VALUES: readonly FontSize[] = ["xs", "sm", "base", "lg"];
 const WEIGHT_VALUES: readonly FontWeight[] = ["normal", "medium", "semibold", "bold"];
 const ICON_SIZE_VALUES: readonly IconSize[] = ["xs", "sm", "base", "lg", "xl"];
@@ -802,12 +803,30 @@ function mergeTypographyStyle(
   base: TypographyStyle,
 ): TypographyStyle {
   if (!isRecord(saved)) return base;
-  const s = saved as Record<string, unknown>;
+  const raw = saved as Record<string, unknown>;
+
+  // Migration path: legacy records have a `family` field. Map it to a
+  // sensible default typeface so the user's intent (sans vs serif vs mono)
+  // is preserved across the schema change.
+  let typeface: Typeface = base.typeface;
+  if (typeof raw.typeface === "string" && isTypefaceId(raw.typeface)) {
+    typeface = raw.typeface;
+  } else if (typeof raw.family === "string") {
+    typeface =
+      raw.family === "serif"
+        ? "source-serif"
+        : raw.family === "mono"
+        ? "jetbrains-mono"
+        : "inter";
+  }
+
   return {
-    family: FAMILY_VALUES.includes(s.family as FontFamily) ? (s.family as FontFamily) : base.family,
-    size: SIZE_VALUES.includes(s.size as FontSize) ? (s.size as FontSize) : base.size,
-    weight: WEIGHT_VALUES.includes(s.weight as FontWeight) ? (s.weight as FontWeight) : base.weight,
-    italic: typeof s.italic === "boolean" ? s.italic : base.italic,
+    typeface,
+    size: SIZE_VALUES.includes(raw.size as FontSize) ? (raw.size as FontSize) : base.size,
+    weight: WEIGHT_VALUES.includes(raw.weight as FontWeight)
+      ? (raw.weight as FontWeight)
+      : base.weight,
+    italic: typeof raw.italic === "boolean" ? raw.italic : base.italic,
   };
 }
 

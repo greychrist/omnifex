@@ -135,25 +135,25 @@ describe("messageRenderingConfig", () => {
     it("merges typography overrides safely", () => {
       const cfg = mergeConfig({
         typography: {
-          header: { family: "serif", size: "lg", weight: "bold", italic: true },
-          content: { family: "mono" },
+          header: { typeface: "source-serif", size: "lg", weight: "bold", italic: true },
+          content: { typeface: "jetbrains-mono" },
         },
       });
       expect(cfg.typography.header).toEqual({
-        family: "serif",
+        typeface: "source-serif",
         size: "lg",
         weight: "bold",
         italic: true,
       });
       // partial override preserves defaults for other fields
-      expect(cfg.typography.content.family).toBe("mono");
+      expect(cfg.typography.content.typeface).toBe("jetbrains-mono");
       expect(cfg.typography.content.size).toBe(DEFAULT_TYPOGRAPHY.content.size);
     });
 
     it("rejects invalid typography values", () => {
       const cfg = mergeConfig({
         typography: {
-          header: { family: "comic-sans", size: "huge", weight: "ultra", italic: "sometimes" },
+          header: { typeface: "comic-sans", size: "huge", weight: "ultra", italic: "sometimes" },
         },
       });
       expect(cfg.typography.header).toEqual(DEFAULT_TYPOGRAPHY.header);
@@ -162,6 +162,72 @@ describe("messageRenderingConfig", () => {
     it("returns defaults when typography is entirely absent", () => {
       const cfg = mergeConfig({});
       expect(cfg.typography).toEqual(DEFAULT_TYPOGRAPHY);
+    });
+  });
+
+  describe("typeface migration", () => {
+    it("migrates legacy family: 'sans' to typeface: 'inter'", () => {
+      const legacy = {
+        ...JSON.parse(serializeConfig(createDefaultConfig())),
+        typography: {
+          header: { family: "sans", size: "sm", weight: "semibold", italic: false },
+          content: { family: "sans", size: "sm", weight: "normal", italic: false },
+          icon: { size: "base", bordered: true, bgOpacity: 100 },
+        },
+      };
+      const cfg = parseConfig(JSON.stringify(legacy));
+      expect(cfg.typography.header.typeface).toBe("inter");
+      expect(cfg.typography.content.typeface).toBe("inter");
+      // Legacy `family` key is dropped from the result.
+      expect((cfg.typography.header as unknown as Record<string, unknown>).family).toBeUndefined();
+    });
+
+    it("migrates legacy family: 'serif' to typeface: 'source-serif'", () => {
+      const legacy = {
+        ...JSON.parse(serializeConfig(createDefaultConfig())),
+        typography: {
+          header: { family: "serif", size: "sm", weight: "semibold", italic: false },
+          content: { family: "serif", size: "sm", weight: "normal", italic: false },
+          icon: { size: "base", bordered: true, bgOpacity: 100 },
+        },
+      };
+      const cfg = parseConfig(JSON.stringify(legacy));
+      expect(cfg.typography.header.typeface).toBe("source-serif");
+      expect(cfg.typography.content.typeface).toBe("source-serif");
+    });
+
+    it("migrates legacy family: 'mono' to typeface: 'jetbrains-mono'", () => {
+      const legacy = {
+        ...JSON.parse(serializeConfig(createDefaultConfig())),
+        typography: {
+          header: { family: "mono", size: "sm", weight: "semibold", italic: false },
+          content: { family: "mono", size: "sm", weight: "normal", italic: false },
+          icon: { size: "base", bordered: true, bgOpacity: 100 },
+        },
+      };
+      const cfg = parseConfig(JSON.stringify(legacy));
+      expect(cfg.typography.header.typeface).toBe("jetbrains-mono");
+      expect(cfg.typography.content.typeface).toBe("jetbrains-mono");
+    });
+
+    it("falls back unknown typeface IDs to inter", () => {
+      const bad = {
+        ...JSON.parse(serializeConfig(createDefaultConfig())),
+        typography: {
+          header: { typeface: "not-a-real-font", size: "sm", weight: "semibold", italic: false },
+          content: { typeface: "geist", size: "sm", weight: "normal", italic: false },
+          icon: { size: "base", bordered: true, bgOpacity: 100 },
+        },
+      };
+      const cfg = parseConfig(JSON.stringify(bad));
+      expect(cfg.typography.header.typeface).toBe("inter");
+      expect(cfg.typography.content.typeface).toBe("geist"); // valid one survives
+    });
+
+    it("default config uses typeface: 'inter' for both header and content", () => {
+      const cfg = createDefaultConfig();
+      expect(cfg.typography.header.typeface).toBe("inter");
+      expect(cfg.typography.content.typeface).toBe("inter");
     });
   });
 
