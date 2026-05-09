@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.20] — 2026-05-09
+
+A small typography polish on top of v0.4.19. The chat **Header** and **Content** weight pickers were limited to four choices (Normal, Medium, Semibold, Bold) — extended to the full nine standard CSS weights so the bundled variable typefaces (Inter, Geist, DM Sans, JetBrains Mono, iA Writer Quattro/Duospace, etc.) can be used at the weights they actually ship.
+
+Installers remain **unsigned**.
+
+### Added
+
+- **Six new weight options on the chat Header / Content pickers:** Thin (100), Extra light (200), Light (300), Extra bold (800), Black (900). The dropdown is now ordered light → heavy: Thin → Extra light → Light → Normal → Medium → Semibold → Bold → Extra bold → Black. Each value maps to its standard Tailwind class (`font-thin` … `font-black`).
+
+### Notes
+
+- Not every bundled typeface ships every weight. IBM Plex Serif/Mono are 400-only; Plus Jakarta Sans and Oxanium start at 200; IBM Plex Sans tops out at 700. The browser falls back to the closest available weight on a miss, so all nine options remain selectable in the picker without surprises. The Inter, Geist, Geist Mono, DM Sans, JetBrains Mono, iA Writer Quattro, and iA Writer Duospace bundles cover the full 100–900 range.
+- Saved `MessageRenderingConfig` records using the previous four weight values keep working unchanged — `WEIGHT_VALUES` was extended additively.
+
 ## [0.4.19] — 2026-05-09
 
 A point release that closes the obvious gap left by 0.4.18's typography overhaul: the chat **Content** typeface picker only affected user-prompt bodies, not assistant markdown — so picking a distinctive Content typeface and seeing the assistant text stay on the App font read like the App font was overriding the chat setting.
