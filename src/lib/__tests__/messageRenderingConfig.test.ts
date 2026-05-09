@@ -229,6 +229,55 @@ describe("messageRenderingConfig", () => {
       expect(cfg.typography.header.typeface).toBe("inter");
       expect(cfg.typography.content.typeface).toBe("inter");
     });
+
+    it("prefers typeface over legacy family when both are present", () => {
+      const mixed = {
+        ...JSON.parse(serializeConfig(createDefaultConfig())),
+        typography: {
+          header: {
+            typeface: "source-serif",
+            family: "mono",
+            size: "sm",
+            weight: "semibold",
+            italic: false,
+          },
+          content: {
+            typeface: "geist",
+            family: "serif",
+            size: "sm",
+            weight: "normal",
+            italic: false,
+          },
+          icon: { size: "base", bordered: true, bgOpacity: 100 },
+        },
+      };
+      const cfg = parseConfig(JSON.stringify(mixed));
+      // typeface field wins; legacy family is ignored entirely.
+      expect(cfg.typography.header.typeface).toBe("source-serif");
+      expect(cfg.typography.content.typeface).toBe("geist");
+      expect((cfg.typography.header as unknown as Record<string, unknown>).family).toBeUndefined();
+      expect((cfg.typography.content as unknown as Record<string, unknown>).family).toBeUndefined();
+    });
+
+    it("maps unrecognized legacy family strings (e.g. 'comic-sans', '') to inter", () => {
+      // Cases: empty string, an unknown family name, the literal "monospace"
+      // (close to but not equal to "mono"). All collapse to 'inter' rather
+      // than retaining the user's malformed value or attempting a fuzzy match.
+      const cases = ["", "comic-sans", "monospace"];
+      for (const garbage of cases) {
+        const legacy = {
+          ...JSON.parse(serializeConfig(createDefaultConfig())),
+          typography: {
+            header: { family: garbage, size: "sm", weight: "semibold", italic: false },
+            content: { family: garbage, size: "sm", weight: "normal", italic: false },
+            icon: { size: "base", bordered: true, bgOpacity: 100 },
+          },
+        };
+        const cfg = parseConfig(JSON.stringify(legacy));
+        expect(cfg.typography.header.typeface, `family=${JSON.stringify(garbage)}`).toBe("inter");
+        expect(cfg.typography.content.typeface, `family=${JSON.stringify(garbage)}`).toBe("inter");
+      }
+    });
   });
 
   describe("parse/serialize round-trip", () => {
