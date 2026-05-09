@@ -1,18 +1,12 @@
 import type React from "react";
 import type {
-  FontFamily,
   FontSize,
   FontWeight,
   IconSize,
   MessageRenderingConfig,
   TypographyStyle,
 } from "./messageRenderingConfig";
-
-const FAMILY_CLASS: Record<FontFamily, string> = {
-  sans: "font-sans",
-  serif: "font-serif",
-  mono: "font-mono",
-};
+import { resolveTypeface } from "./typefaceCatalog";
 
 const SIZE_CLASS: Record<FontSize, string> = {
   xs: "text-xs",
@@ -30,13 +24,20 @@ const WEIGHT_CLASS: Record<FontWeight, string> = {
 
 export function typographyClassNames(style: TypographyStyle): string {
   return [
-    FAMILY_CLASS[style.family],
     SIZE_CLASS[style.size],
     WEIGHT_CLASS[style.weight],
     style.italic ? "italic" : "",
   ]
     .filter(Boolean)
     .join(" ");
+}
+
+/**
+ * CSS `font-family` value for a typography style. Pair with
+ * `typographyClassNames` and apply via `style={{ fontFamily: ... }}`.
+ */
+export function typographyFontFamily(style: TypographyStyle): string {
+  return resolveTypeface(style.typeface).cssFamily;
 }
 
 export function headerClassNames(config: MessageRenderingConfig): string {

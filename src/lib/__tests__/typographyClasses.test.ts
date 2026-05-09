@@ -7,39 +7,63 @@ import {
   iconWrapperClassName,
   iconWrapperStyle,
   typographyClassNames,
+  typographyFontFamily,
 } from "../typographyClasses";
 
-describe("typographyClasses", () => {
-  it("maps the default header style to expected Tailwind classes", () => {
-    const cfg = createDefaultConfig();
-    expect(headerClassNames(cfg)).toBe("font-sans text-sm font-semibold");
-  });
-
-  it("maps the default content style to expected Tailwind classes", () => {
-    const cfg = createDefaultConfig();
-    expect(contentClassNames(cfg)).toBe("font-sans text-sm font-normal");
-  });
-
-  it("includes italic when italic is true", () => {
-    const cls = typographyClassNames({
-      family: "serif",
-      size: "lg",
+describe("typographyClassNames", () => {
+  it("emits size + weight + italic, no family class", () => {
+    const result = typographyClassNames({
+      typeface: "inter",
+      size: "base",
       weight: "bold",
       italic: true,
     });
-    expect(cls).toBe("font-serif text-lg font-bold italic");
+    expect(result).toBe("text-base font-bold italic");
+    expect(result).not.toMatch(/font-sans|font-serif|font-mono/);
   });
 
-  it("omits italic when italic is false", () => {
-    const cls = typographyClassNames({
-      family: "mono",
-      size: "xs",
-      weight: "medium",
+  it("omits italic when false", () => {
+    const result = typographyClassNames({
+      typeface: "inter",
+      size: "sm",
+      weight: "normal",
       italic: false,
     });
-    expect(cls).toBe("font-mono text-xs font-medium");
+    expect(result).toBe("text-sm font-normal");
+  });
+});
+
+describe("typographyFontFamily", () => {
+  it("returns the catalog cssFamily for known typefaces", () => {
+    const inter = typographyFontFamily({
+      typeface: "inter",
+      size: "sm",
+      weight: "normal",
+      italic: false,
+    });
+    expect(inter).toMatch(/^"Inter",/);
+
+    const geist = typographyFontFamily({
+      typeface: "geist",
+      size: "sm",
+      weight: "normal",
+      italic: false,
+    });
+    expect(geist).toMatch(/^"Geist",/);
+  });
+});
+
+describe("headerClassNames / contentClassNames", () => {
+  it("default config emits text-sm font-semibold for header (no italic)", () => {
+    expect(headerClassNames(createDefaultConfig())).toBe("text-sm font-semibold");
   });
 
+  it("default config emits text-sm font-normal for content", () => {
+    expect(contentClassNames(createDefaultConfig())).toBe("text-sm font-normal");
+  });
+});
+
+describe("typographyClasses (icon helpers)", () => {
   describe("iconSizeClassName", () => {
     it("returns the global icon size class when no kindId is given", () => {
       const cfg = createDefaultConfig();
