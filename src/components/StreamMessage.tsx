@@ -86,33 +86,6 @@ function extractCopyText(msg: any): string {
   return parts.join('\n').trim();
 }
 
-/** Extract text from a tool_use block + its result for copying. */
-function extractToolCopyText(input: any, result: any): string {
-  const parts: string[] = [];
-  if (input) {
-    if (typeof input.command === 'string') parts.push(`$ ${input.command}`);
-    if (typeof input.file_path === 'string') parts.push(input.file_path);
-    if (typeof input.pattern === 'string') parts.push(input.pattern);
-    if (typeof input.content === 'string') parts.push(input.content);
-    if (typeof input.query === 'string') parts.push(input.query);
-    if (typeof input.url === 'string') parts.push(input.url);
-    if (typeof input.prompt === 'string') parts.push(input.prompt);
-    if (typeof input.description === 'string') parts.push(input.description);
-  }
-  if (result) {
-    if (typeof result.content === 'string') parts.push(result.content);
-    else if (Array.isArray(result.content)) {
-      for (const inner of result.content) {
-        if (typeof inner === 'string') parts.push(inner);
-        else if (typeof inner.text === 'string') parts.push(inner.text);
-      }
-    }
-    if (typeof result.output === 'string') parts.push(result.output);
-    if (typeof result.stdout === 'string') parts.push(result.stdout);
-  }
-  return parts.join('\n').trim();
-}
-
 /** Copy button with inline toast feedback. Accepts either a message object or raw text. */
 const CopyCardButton: React.FC<{ message?: any; text?: string }> = ({ message, text }) => {
   const [copied, setCopied] = React.useState(false);
@@ -547,9 +520,10 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
       const renderedCard = (
         <div className="flex justify-start">
         <Card
-          className={cn("border w-[95%] relative", className)}
+          className={cn("border w-[95%] relative group/card", className)}
           style={assistantStyle}
         >
+          <CopyCardButton message={msg} />
           <CardContent className="p-4 pb-9">
             <div className="flex items-start gap-3">
               <div
@@ -576,13 +550,10 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
 
                     renderedSomething = true;
                     return (
-                      <div key={idx} className="relative group/card">
-                        <CopyCardButton text={textContent} />
-                        <div className="prose prose-sm dark:prose-invert max-w-none">
-                          <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
-                            {textContent}
-                          </ReactMarkdown>
-                        </div>
+                      <div key={idx} className="prose prose-sm dark:prose-invert max-w-none">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
+                          {textContent}
+                        </ReactMarkdown>
                       </div>
                     );
                   }
@@ -595,14 +566,12 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                     if (!thinkingText) return null;
                     renderedSomething = true;
                     return (
-                      <div key={idx} className="relative group/card">
-                        <CopyCardButton text={thinkingText} />
-                        <ThinkingWidget
-                          thinking={content.thinking}
-                          signature={content.signature}
-                          defaultExpanded={inExpandedGroup}
-                        />
-                      </div>
+                      <ThinkingWidget
+                        key={idx}
+                        thinking={content.thinking}
+                        signature={content.signature}
+                        defaultExpanded={inExpandedGroup}
+                      />
                     );
                   }
                   
@@ -716,13 +685,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                     const widget = renderToolWidget();
                     if (widget) {
                       renderedSomething = true;
-                      const toolText = extractToolCopyText(input, toolResult);
-                      return (
-                        <div key={idx} className="relative group/card">
-                          {toolText && <CopyCardButton text={toolText} />}
-                          {widget}
-                        </div>
-                      );
+                      return <React.Fragment key={idx}>{widget}</React.Fragment>;
                     }
                     
                     // Fallback to basic tool display
@@ -1361,7 +1324,8 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
           : "Execution Complete";
 
       return (
-        <Card className={cn("border relative", className)} style={resultStyle}>
+        <Card className={cn("border relative group/card", className)} style={resultStyle}>
+          <CopyCardButton message={message} />
           <CardContent className="p-4 pb-9">
             <div className="flex items-start gap-3">
               <div
