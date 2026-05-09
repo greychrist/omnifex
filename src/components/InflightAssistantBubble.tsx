@@ -24,9 +24,10 @@ import { buildMarkdownComponents } from '@/lib/markdownComponents';
  * Smoothing: the SDK delivers token bursts (a chunk of N chars per
  * delta), so painting `inflight.text` directly produces a chunky
  * stair-step animation. We instead advance a `displayedLength`
- * cursor toward `inflight.text.length` on requestAnimationFrame,
- * catching up within ~CATCHUP_FRAMES frames regardless of burst
- * size. Result: smooth typewriter-style growth at frame rate.
+ * cursor toward `inflight.text.length` at a strict, constant rate
+ * (one char per TYPEWRITER_INTERVAL_MS), independent of how full
+ * the buffer is. The buffer absorbs SDK bursts; the typewriter
+ * paces them out for the eye.
  *
  * Note: the plan referenced `<MarkdownBlock content={...} />`, but this
  * repo's `MarkdownBlock` is a fenced-block primitive with a
@@ -36,14 +37,14 @@ import { buildMarkdownComponents } from '@/lib/markdownComponents';
  * we mirror that pattern here.
  */
 
-/** Number of frames the typewriter takes to drain the buffer. With a
- *  60Hz display this is ~130ms — fast enough that the cursor stays
- *  near the most recently received text, slow enough to feel smooth. */
-const CATCHUP_FRAMES = 8;
-
-/** Floor on chars-per-frame so very small buffers still advance every
- *  frame instead of stalling on integer-rounded zero. */
-const MIN_CHARS_PER_FRAME = 1;
+/** Milliseconds between revealed characters. Strict one-char-at-a-time
+ *  pacing — the rate is constant regardless of how full the buffer is.
+ *  50ms ≈ 20 chars/sec, comfortably readable. Lower → faster, higher →
+ *  slower. The typewriter can fall behind a fast SDK burst; if the
+ *  canonical assistant message lands before the typewriter catches up,
+ *  Task 7's reconciliation clears the slot and the bubble snaps to the
+ *  full canonical message. */
+const TYPEWRITER_INTERVAL_MS = 50;
 
 export const InflightAssistantBubble: React.FC<{ tabId: string }> = ({ tabId }) => {
   const inflight = useClaudeSessionStore(
@@ -56,7 +57,11 @@ export const InflightAssistantBubble: React.FC<{ tabId: string }> = ({ tabId }) 
   const targetText = inflight?.text ?? '';
   const targetLength = targetText.length;
   const [displayedLength, setDisplayedLength] = useState(0);
-  const rafRef = useRef<number | null>(null);
+
+  // Stash the live target length in a ref so the interval (set up once)
+  // always sees the latest value without re-binding the timer.
+  const targetLengthRef = useRef(targetLength);
+  targetLengthRef.current = targetLength;
 
   // Clamp on any backward jump in target (defensive: shouldn't happen,
   // but if a future code path replaces text instead of appending, the
@@ -65,36 +70,18 @@ export const InflightAssistantBubble: React.FC<{ tabId: string }> = ({ tabId }) 
     setDisplayedLength((cur) => Math.min(cur, targetLength));
   }, [targetLength]);
 
-  // Animation loop: advance displayedLength toward targetLength.
-  // The tick recursively schedules its next frame, so this effect
-  // re-runs only when targetLength changes (not every tick).
+  // Strict one-char-per-tick typewriter. The interval runs for the
+  // bubble's whole lifetime; when caught up, the setState call returns
+  // the same value and React bails out — no re-render, near-zero cost.
   useEffect(() => {
-    function tick() {
-      rafRef.current = null;
+    const id = setInterval(() => {
       setDisplayedLength((cur) => {
-        if (cur >= targetLength) return cur;
-        const remaining = targetLength - cur;
-        const advance = Math.max(
-          MIN_CHARS_PER_FRAME,
-          Math.ceil(remaining / CATCHUP_FRAMES),
-        );
-        const next = Math.min(cur + advance, targetLength);
-        if (next < targetLength) {
-          rafRef.current = requestAnimationFrame(tick);
-        }
-        return next;
+        const t = targetLengthRef.current;
+        return cur < t ? cur + 1 : cur;
       });
-    }
-    if (rafRef.current === null && displayedLength < targetLength) {
-      rafRef.current = requestAnimationFrame(tick);
-    }
-    return () => {
-      if (rafRef.current !== null) {
-        cancelAnimationFrame(rafRef.current);
-        rafRef.current = null;
-      }
-    };
-  }, [targetLength, displayedLength]);
+    }, TYPEWRITER_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, []);
 
   if (!inflight || !targetText) return null;
 
