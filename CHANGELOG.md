@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.18] — 2026-05-09
+
+Patch release: SDK parity bump only. `@anthropic-ai/claude-agent-sdk` 0.2.137 → 0.2.138, which tracks Claude Code v2.1.138 (internal fixes upstream, no API surface changes). No transitive dependency churn. Verification gate (`npm run check`, `npm run build`, `npm run test:coverage`) passes; coverage holds at 81.04% lines.
+
+Installers remain **unsigned**.
+
+### Changed
+
+- **`@anthropic-ai/claude-agent-sdk` 0.2.137 → 0.2.138.** Parity with Claude Code v2.1.138 (internal fixes only per upstream release notes). `@anthropic-ai/sdk` (`^0.81.0`), `@modelcontextprotocol/sdk` (`^1.29.0`), and `zod` (`^4.0.0` peer) constraints unchanged.
+
 ## [0.4.17] — 2026-05-09
 
 Token-level streaming for assistant messages. Until now, when Claude took eight seconds to reply you stared at a typing-dots spinner. The Claude Agent SDK has supported `includePartialMessages: true` for a while — emitting `stream_event` deltas as tokens come off the model — but OmniFex wasn't using it. The renderer's reducer treated `messages[]` as an append-only list of complete SDK messages with no concept of an in-flight assistant. This release adds that: a per-tab text-buffer in a sidecar coalescer module, RAF-bounded flushes into a new `inflightAssistant` slot on the Zustand store, and a small `<InflightAssistantBubble />` that renders the buffered text directly. Bubble appears on the first delta, grows as deltas land, and unmounts cleanly when the canonical assistant message takes over.
