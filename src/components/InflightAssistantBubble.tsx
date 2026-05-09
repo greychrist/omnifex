@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useClaudeSessionStore } from '@/stores/claudeSessionStore';
@@ -83,8 +84,7 @@ export const InflightAssistantBubble: React.FC<{ tabId: string }> = ({ tabId }) 
     return () => clearInterval(id);
   }, []);
 
-  if (!inflight || !targetText) return null;
-
+  const isVisible = !!inflight && !!targetText;
   const displayedText = targetText.slice(0, displayedLength);
   const isCatchingUp = displayedLength < targetLength;
 
@@ -100,29 +100,48 @@ export const InflightAssistantBubble: React.FC<{ tabId: string }> = ({ tabId }) 
       'linear-gradient(to bottom, black 0, black calc(100% - 1.2em), transparent 100%)',
   };
 
+  // AnimatePresence + motion.div: when the slot clears (Task 7's reconcile
+  // path on assistant complete / error / unmount), the conditional below
+  // becomes false and framer-motion holds the previously-rendered DOM
+  // frozen while running the exit fade. The canonical assistant message
+  // has already mounted in the message list above us at the moment of
+  // clear, so what the user sees is: full canonical bubble appears →
+  // partial bubble below it dissolves over ~180ms. Reads as "the
+  // streaming caught up and settled" instead of a hard snap.
+  // initial={false} suppresses the entrance animation — the bubble appears
+  // instantly with whatever first-flush content the coalescer delivered.
   return (
-    <Card className={cn('group/card relative my-1 border-border/40')}>
-      <CardContent
-        className="prose prose-sm dark:prose-invert max-w-none py-2 px-3"
-        style={trailingFadeStyle}
-      >
-        <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
-          {displayedText}
-        </ReactMarkdown>
-        <span
-          aria-hidden
-          className={cn(
-            'text-muted-foreground inline-block ml-0.5',
-            // Hold the cursor solid while text is still flowing in — the
-            // fade-in tail already conveys "live". Only pulse once the
-            // typewriter has caught up to the buffer (i.e., the SDK has
-            // stopped sending deltas for now), as a steady-state idle hint.
-            !isCatchingUp && 'animate-pulse',
-          )}
+    <AnimatePresence>
+      {isVisible && (
+        <motion.div
+          key="inflight-bubble"
+          initial={false}
+          exit={{ opacity: 0, transition: { duration: 0.18, ease: 'easeOut' } }}
         >
-          |
-        </span>
-      </CardContent>
-    </Card>
+          <Card className={cn('group/card relative my-1 border-border/40')}>
+            <CardContent
+              className="prose prose-sm dark:prose-invert max-w-none py-2 px-3"
+              style={trailingFadeStyle}
+            >
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
+                {displayedText}
+              </ReactMarkdown>
+              <span
+                aria-hidden
+                className={cn(
+                  'text-muted-foreground inline-block ml-0.5',
+                  // Hold the cursor solid while text is still flowing in —
+                  // the fade-in tail already conveys "live". Only pulse
+                  // once the typewriter has caught up to the buffer.
+                  !isCatchingUp && 'animate-pulse',
+                )}
+              >
+                |
+              </span>
+            </CardContent>
+          </Card>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 };
