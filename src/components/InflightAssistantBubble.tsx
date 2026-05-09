@@ -22,13 +22,15 @@ import { buildMarkdownComponents } from '@/lib/markdownComponents';
  * ONLY when the inflight slot changes — not on unrelated tab state
  * mutations (messages[] appends, account info refresh, etc.).
  *
- * Smoothing: the SDK delivers tokens in bursts. Rather than pacing
- * them out via a fake typewriter, we render the buffered text
- * directly and rely on two visual softeners — (a) a mask-image
- * gradient that fades the trailing edge of the prose so newly
- * arrived text materializes from translucent into opaque as more
- * text arrives below it, and (b) a brief opacity pulse on each
- * length change so each chunk's appearance feels intentional.
+ * Smoothing: the SDK delivers tokens in bursts. We render the
+ * buffered text directly and rely on a mask-image gradient that
+ * fades the trailing edge of the prose, so newly arrived text
+ * materializes from translucent at the bottom and rises into full
+ * opacity as more text arrives below it. ReactMarkdown can't be
+ * cleanly split mid-stream (a `**foo` chunk would render its
+ * delimiters literally if separated from a later `bar**`), so we
+ * don't try to fade only the appended segment — geometry does the
+ * work via the gradient instead.
  *
  * Note: the plan referenced `<MarkdownBlock content={...} />`, but this
  * repo's `MarkdownBlock` is a fenced-block primitive with a
@@ -50,15 +52,18 @@ export const InflightAssistantBubble: React.FC<{ tabId: string }> = ({ tabId }) 
   const isVisible = !!inflight && !!text;
 
   // Mask-image gradient — softens the trailing edge of the visible text so
-  // newly-revealed chars fade in from translucent to opaque as more text
-  // arrives below them. The mask fades only the bottom ~1.2em (≈ one line of
-  // prose-sm text), so older content stays fully opaque. Equivalent
-  // -webkit-mask-image keeps Electron's Chromium happy on older releases.
+  // newly-arrived chunks fade in from translucent at the bottom and rise
+  // into opaque as more text arrives below them. The fade zone is ~2.5em
+  // (about two lines of prose-sm text) plus a soft mid-zone, so chunk
+  // arrivals slide through several stops of opacity rather than slamming
+  // in at full opacity. Older content stays fully opaque above the zone.
+  // Equivalent -webkit-mask-image keeps Electron's Chromium happy on
+  // older releases.
   const trailingFadeStyle: React.CSSProperties = {
     maskImage:
-      'linear-gradient(to bottom, black 0, black calc(100% - 1.2em), transparent 100%)',
+      'linear-gradient(to bottom, black 0, black calc(100% - 2.5em), rgba(0,0,0,0.4) calc(100% - 1em), transparent 100%)',
     WebkitMaskImage:
-      'linear-gradient(to bottom, black 0, black calc(100% - 1.2em), transparent 100%)',
+      'linear-gradient(to bottom, black 0, black calc(100% - 2.5em), rgba(0,0,0,0.4) calc(100% - 1em), transparent 100%)',
   };
 
   // AnimatePresence + motion.div: when the slot clears (Task 7's reconcile
@@ -84,25 +89,9 @@ export const InflightAssistantBubble: React.FC<{ tabId: string }> = ({ tabId }) 
               className="prose prose-sm dark:prose-invert max-w-none py-2 px-3"
               style={trailingFadeStyle}
             >
-              {/* Per-chunk fade: keying on text length re-mounts this
-                  motion span on each coalescer flush, so the just-arrived
-                  delta enters at opacity 0.5 and animates up to 1.0 in
-                  120ms. Older content is already opaque on the second
-                  arrival because it's the same key from a prior render's
-                  perspective — but since the key changes every flush,
-                  the whole content re-fades briefly. The duration is
-                  short enough that the eye reads it as "the chunk arrived"
-                  rather than "everything blinked". */}
-              <motion.div
-                key={text.length}
-                initial={{ opacity: 0.55 }}
-                animate={{ opacity: 1 }}
-                transition={{ duration: 0.12, ease: 'easeOut' }}
-              >
-                <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
-                  {text}
-                </ReactMarkdown>
-              </motion.div>
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
+                {text}
+              </ReactMarkdown>
               <span
                 aria-hidden
                 className="animate-pulse text-muted-foreground inline-block ml-0.5"
