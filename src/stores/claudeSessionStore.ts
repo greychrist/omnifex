@@ -109,9 +109,16 @@ export const useClaudeSessionStore = create<ClaudeSessionStoreState>()(
             [tabId]: {
               ...existing,
               inflightAssistant: { uuid, text, parentToolUseId },
-              // First delta flushing implicitly clears the spinner —
-              // the streaming bubble replaces it visually.
-              isLoading: false,
+              // isLoading intentionally not touched. The in-chat
+              // typing-dots spinner is suppressed independently via
+              // `hasInflightAssistant` in ClaudeCodeSession.tsx (so
+              // dots and bubble never co-exist on screen). Meanwhile
+              // `isLoading` represents the parent-turn lifecycle and
+              // feeds the per-tab busy indicator via
+              // usePublishTabStatus → mainTurnInFlight; flipping it
+              // false on the first delta clears the tab spinner
+              // mid-turn — the bug that the original 0.4.17 partial-
+              // messages implementation introduced.
             },
           },
         };
