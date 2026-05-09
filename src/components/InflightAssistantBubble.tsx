@@ -39,12 +39,12 @@ import { buildMarkdownComponents } from '@/lib/markdownComponents';
 
 /** Milliseconds between revealed characters. Strict one-char-at-a-time
  *  pacing — the rate is constant regardless of how full the buffer is.
- *  20ms ≈ 50 chars/sec, brisk but still distinctly per-char. Lower →
+ *  10ms ≈ 100 chars/sec, fast but still smooth per-char. Lower →
  *  faster, higher → slower. The typewriter can fall behind a fast SDK
  *  burst; if the canonical assistant message lands before the
  *  typewriter catches up, Task 7's reconciliation clears the slot and
  *  the bubble snaps to the full canonical message. */
-const TYPEWRITER_INTERVAL_MS = 20;
+const TYPEWRITER_INTERVAL_MS = 10;
 
 export const InflightAssistantBubble: React.FC<{ tabId: string }> = ({ tabId }) => {
   const inflight = useClaudeSessionStore(
