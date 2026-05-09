@@ -67,7 +67,7 @@ import { useTabContext } from "@/contexts/TabContext";
 import { SessionPersistenceService } from "@/services/sessionPersistence";
 import { reduceSessionStreamMessage } from "@/lib/sessionStreamReducer";
 import { runStreamEffect } from "@/lib/sessionStreamEffects";
-import { appendInflightDelta } from "@/lib/inflightCoalescer";
+import { appendInflightDelta, clearInflightBuffer } from "@/lib/inflightCoalescer";
 import { useTabSession, useClaudeSessionStore } from "@/stores/claudeSessionStore";
 import type { PermissionSuggestion } from "@/lib/types/permissionRequest";
 
@@ -778,6 +778,26 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           onError: (kind, err) =>
             console.error(`[sessions] effect ${kind} failed:`, err),
         });
+      }
+
+      // Reconcile inflight slot:
+      //  - On any assistant append, the canonical complete message has landed;
+      //    clear the inflight slot and any unflushed deltas so the streaming
+      //    bubble unmounts as the canonical bubble in messages[] takes its place.
+      //  - On any error notification, clear so the streaming bubble doesn't
+      //    sit stale next to an error card.
+      const store = useClaudeSessionStore.getState();
+      if (reduced.append === 'append' && (message as any).type === 'assistant') {
+        store.clearInflightAssistant(tabIdRef.current);
+        clearInflightBuffer(tabIdRef.current);
+      }
+      if (
+        (message as any).type === 'system' &&
+        (message as any).subtype === 'notification' &&
+        /error/i.test(String((message as any).notification_type ?? ''))
+      ) {
+        store.clearInflightAssistant(tabIdRef.current);
+        clearInflightBuffer(tabIdRef.current);
       }
 
       // Fold the message into messages[] per the reducer's append decision.
