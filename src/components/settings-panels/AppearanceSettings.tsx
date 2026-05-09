@@ -24,7 +24,6 @@ import { SamplePreview } from "./appearance/SamplePreview";
 import { TurnPreview } from "./appearance/TurnPreview";
 import { PaletteEditor } from "./appearance/PaletteEditor";
 import { TypographyEditor } from "./appearance/TypographyEditor";
-import { AppFontPicker } from "./AppFontPicker";
 import type { SettingsPanelProps } from "./types";
 import { cn } from "@/lib/utils";
 
@@ -233,10 +232,8 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
 
   return (
     <div className="space-y-6">
-      {/* App font */}
-      <Card className="p-6">
-        <AppFontPicker />
-      </Card>
+      {/* App font moved to General → just below Theme. The chat surface
+          still picks per-element typefaces via the Typography card below. */}
 
       {/* Master-detail: tree + editor */}
       <Card className="p-6">

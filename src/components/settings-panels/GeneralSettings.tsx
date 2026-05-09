@@ -8,10 +8,19 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { api, type ClaudeInstallation } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { ClaudeVersionSelector } from "@/components/ClaudeVersionSelector";
 import { useTheme } from "@/hooks";
+import { useAppFont } from "@/contexts/AppFontContext";
+import { APP_FONT_CHOICES, type Typeface } from "@/lib/typefaceCatalog";
 import { TabPersistenceService } from "@/services/tabPersistence";
 import type { SettingsPanelProps } from "./types";
 
@@ -51,6 +60,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
   onClaudeInstallationSelect,
 }) => {
   const { theme, setTheme } = useTheme();
+  const { appFont, setAppFont, isLoading: appFontLoading } = useAppFont();
   const [tabPersistenceEnabled, setTabPersistenceEnabled] = useState(true);
   const [startupIntroEnabled, setStartupIntroEnabled] = useState(true);
   // The directory the updater scans for newer OmniFex-<semver>-arm64.dmg
@@ -120,6 +130,37 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
                 {theme === 'light' && <Check className="h-3 w-3" />}
                 Light
               </button>
+            </div>
+          </div>
+
+          {/* App font (sits right under Theme — same row layout: label
+              on left, control on right). Drives --font-sans globally
+              for the whole UI. Chat-surface fonts are configured in
+              the Chats tab's Typography card, separately from this. */}
+          <div className="flex items-center justify-between">
+            <div>
+              <Label>App font</Label>
+              <p className="text-caption text-muted-foreground mt-1">
+                Global UI typeface — sidebar, settings, dialogs, project list
+              </p>
+            </div>
+            <div className="w-48">
+              <Select
+                value={appFont}
+                onValueChange={(v) => setAppFont(v as Typeface)}
+                disabled={appFontLoading}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {APP_FONT_CHOICES.map((t) => (
+                    <SelectItem key={t.id} value={t.id}>
+                      <span style={{ fontFamily: t.cssFamily }}>{t.label}</span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
 
