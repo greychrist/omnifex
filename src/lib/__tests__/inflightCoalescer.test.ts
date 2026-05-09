@@ -49,16 +49,31 @@ describe('inflightCoalescer', () => {
     });
   });
 
-  it('resets the buffer when a new uuid arrives for the same tab', () => {
-    appendInflightDelta('t1', 'msg-1', 'old', null);
+  it('keeps accumulating text even when each delta arrives with a fresh uuid', () => {
+    // The SDK emits a unique uuid per stream_event message (one per delta) —
+    // not a single uuid shared across the whole assistant turn. So the
+    // coalescer must NOT reset its buffer on uuid change; the only way to
+    // end a turn is an explicit clearInflightBuffer() call from the IPC
+    // subscriber's reconciliation path.
+    appendInflightDelta('t1', 'evt-1', 'Hel', null);
+    appendInflightDelta('t1', 'evt-2', 'lo ', null);
+    appendInflightDelta('t1', 'evt-3', 'world', null);
     tickFrame();
-    appendInflightDelta('t1', 'msg-2', 'new', null);
+    const slot = useClaudeSessionStore.getState().selectTab('t1').inflightAssistant;
+    expect(slot?.text).toBe('Hello world');
+    // The recorded uuid is the most-recent event's; it's informational only.
+    expect(slot?.uuid).toBe('evt-3');
+    expect(slot?.parentToolUseId).toBeNull();
+  });
+
+  it('clearInflightBuffer is the only way to start a fresh accumulation', () => {
+    appendInflightDelta('t1', 'evt-1', 'first turn', null);
     tickFrame();
-    expect(useClaudeSessionStore.getState().selectTab('t1').inflightAssistant).toEqual({
-      uuid: 'msg-2',
-      text: 'new',
-      parentToolUseId: null,
-    });
+    clearInflightBuffer('t1');
+    appendInflightDelta('t1', 'evt-2', 'second turn', null);
+    tickFrame();
+    expect(useClaudeSessionStore.getState().selectTab('t1').inflightAssistant?.text)
+      .toBe('second turn');
   });
 
   it('schedules exactly one frame for many same-frame appends', () => {
@@ -104,14 +119,14 @@ describe('inflightCoalescer', () => {
     expect(useClaudeSessionStore.getState().selectTab('t1').inflightAssistant).toBeNull();
   });
 
-  it('preserves parentToolUseId across appends to the same uuid', () => {
-    appendInflightDelta('t1', 'msg-1', 'first', 'parent-tu-id');
-    appendInflightDelta('t1', 'msg-1', '-second', 'parent-tu-id');
+  it('preserves the parentToolUseId from the first delta across the turn', () => {
+    // Each stream_event has a fresh uuid (per SDK), so accumulation crosses
+    // uuids. parentToolUseId is stable within a turn: first value wins.
+    appendInflightDelta('t1', 'evt-1', 'first', 'parent-tu-id');
+    appendInflightDelta('t1', 'evt-2', '-second', 'parent-tu-id');
     tickFrame();
-    expect(useClaudeSessionStore.getState().selectTab('t1').inflightAssistant).toEqual({
-      uuid: 'msg-1',
-      text: 'first-second',
-      parentToolUseId: 'parent-tu-id',
-    });
+    const slot = useClaudeSessionStore.getState().selectTab('t1').inflightAssistant;
+    expect(slot?.text).toBe('first-second');
+    expect(slot?.parentToolUseId).toBe('parent-tu-id');
   });
 });
