@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.17] — 2026-05-09
+
+Token-level streaming for assistant messages. Until now, when Claude took eight seconds to reply you stared at a typing-dots spinner. The Claude Agent SDK has supported `includePartialMessages: true` for a while — emitting `stream_event` deltas as tokens come off the model — but OmniFex wasn't using it. The renderer's reducer treated `messages[]` as an append-only list of complete SDK messages with no concept of an in-flight assistant. This release adds that: a per-tab text-buffer in a sidecar coalescer module, RAF-bounded flushes into a new `inflightAssistant` slot on the Zustand store, and a small `<InflightAssistantBubble />` that renders the buffered text directly. Bubble appears on the first delta, grows as deltas land, and unmounts cleanly when the canonical assistant message takes over.
+
+Also in this release: a copy-button consolidation across all message cards (always at the top-right of the outer card, never pushed below a header), and the SDK bumped to 0.2.137.
+
+Installers remain **unsigned**.
+
+### Added
+
+- **Streaming assistant text via `includePartialMessages: true`.** Flag set unconditionally in `electron/services/sessions/factory.ts`. The IPC subscriber in `ClaudeCodeSession.tsx` branches on `stream_event` ahead of the stream reducer, filters to `text_delta` content-block deltas from the parent agent (subagent partials are dropped — out of scope for v1), and routes the deltas through a new `src/lib/inflightCoalescer.ts` module. The coalescer accumulates per-tab text in a module-level `Map` and flushes once per `requestAnimationFrame` to a new `setInflightAssistantText` action on `claudeSessionStore`. The action also patches `isLoading: false` on the first flush, so the typing spinner naturally clears as the streaming bubble takes its place. The `<InflightAssistantBubble />` reads the slot via a narrow store selector and renders `inflight.text` through `ReactMarkdown` with the project's existing markdown component dispatcher. Reconciliation: the IPC subscriber clears the inflight slot on assistant append (matching the reducer's `'append'` decision), on system/notification messages with a notification_type matching `/error/i` (catches `error`, `rate_limit_error`, `auth_error`, etc.), and on tab unmount. The bubble is wrapped in `<AnimatePresence>` so the unmount is a brief opacity fade-out instead of a hard snap. **No new IPC channels** — `runtime.ts` already forwarded stream events on `claude-output:${tabId}` and `classifyRuntimeEvent` already returned a `streamEvent` kind from a prior cleanup pass; this release wires the renderer side that was deferred at that time.
+- **`stream_event` defensive skip in the stream reducer.** `reduceSessionStreamMessage` now early-returns `{ append: 'skip', effects: [], metrics: EMPTY_METRICS_DELTA, costDelta: 0 }` when it sees `type: 'stream_event'`. The IPC subscriber's branch (above) intercepts these messages before the reducer runs, so this is a defensive safety net — if a future code path bypasses the IPC branch, stream events still won't land in `messages[]` as garbage entries.
+- **Card-level copy button on assistant and result message cards.** Single Copy button, anchored top-right of the outer `Card`, hover-revealed via `group/card`. Copies the entire message via `extractCopyText` (text + tool_use args + tool_result body, joined by newlines).
+
+### Changed
+
+- **`@anthropic-ai/claude-agent-sdk` 0.2.133 → 0.2.137.** Parity bump to Claude Code v2.1.137. `resolveSettings()` (alpha) was added in 0.2.136 — useful for inspecting effective merged settings without spawning the CLI. The `TodoWrite` tool was marked deprecated in 0.2.136 in favor of forthcoming `TaskCreate` / `TaskGet` / `TaskUpdate` / `TaskList` tools, but the 0.2.137 type defs don't yet enumerate the new tool names — the model still emits `TodoWrite` and OmniFex's existing TodoBar / TodoWidget routing remains correct. Migration tracked as future work.
+- **`zod` 4.3.6 → 4.4.3.** Peer dependency of the SDK; well within the SDK's `^4.0.0` range.
+- **Copy buttons consolidated.** Per-block copy buttons on assistant cards (one per text/thinking/tool widget, anchored to the top of each block's wrapper) were inconsistent — when a `KindHeader` rendered above them they appeared "pushed down" below the header rather than at the top-right of the card. Result and Error cards had no copy button at all. The outer Card now owns one Copy button at top-right; per-block copy and the `relative group/card` per-block wrappers were removed.
+
+### Removed
+
+- **`extractToolCopyText` helper.** Per-block copy was the only caller; deleted along with the per-block buttons.
+
 ## [0.4.16] — 2026-05-08
 
 The Projects list's "Last activity" column was lying. It was sorting by the newest file mtime found by recursively walking each project's working tree (depth ≤ 8, ≤5000 stats per project, hardcoded exclude list) — which meant any `git pull`, formatter run, or editor save bumped a project ahead of one where you'd actually had a Claude conversation an hour ago. Worse, projects whose on-disk folder was deleted sank to the bottom even when they had real recent session history. The column now sorts by the newest Claude session JSONL mtime directly.
