@@ -81,6 +81,38 @@ describe('classifyBlockKind', () => {
     expect(classifyBlockKind(parent.message!.content![0], parent)).toBe('user.systemContext');
   });
 
+  it('classifies Stop-hook feedback text as systemContext (not a user prompt)', () => {
+    const parent = user([{
+      type: 'text',
+      text: 'Stop hook feedback:\nYou have 2 unfinished todo items in your latest TodoWrite call:\n  - [pending] foo\n  - [pending] bar',
+    }]);
+    expect(classifyBlockKind(parent.message!.content![0], parent)).toBe('user.systemContext');
+  });
+
+  it('classifies PreToolUse / PostToolUse hook feedback as systemContext', () => {
+    for (const prefix of ['PreToolUse', 'PostToolUse', 'UserPromptSubmit', 'SubagentStop', 'Notification']) {
+      const parent = user([{ type: 'text', text: `${prefix} hook feedback:\nblocked because reasons` }]);
+      expect(
+        classifyBlockKind(parent.message!.content![0], parent),
+        `prefix=${prefix}`,
+      ).toBe('user.systemContext');
+    }
+  });
+
+  it('classifies SessionStart hook additional-context preamble as systemContext', () => {
+    const parent = user([{
+      type: 'text',
+      text: 'SessionStart hook additional context: <EXTREMELY_IMPORTANT>...</EXTREMELY_IMPORTANT>',
+    }]);
+    expect(classifyBlockKind(parent.message!.content![0], parent)).toBe('user.systemContext');
+  });
+
+  it('does NOT match the hook-feedback pattern when the prefix is mid-line user text', () => {
+    // A user genuinely typing about hooks should not get reclassified.
+    const parent = user([{ type: 'text', text: "I read about Stop hook feedback: in the docs and have a question." }]);
+    expect(classifyBlockKind(parent.message!.content![0], parent)).toBeNull();
+  });
+
   it('returns null for plain user typed text (handled by whole-message classification)', () => {
     const parent = user([{ type: 'text', text: 'just a normal prompt' }]);
     expect(classifyBlockKind(parent.message!.content![0], parent)).toBeNull();

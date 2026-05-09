@@ -28,6 +28,25 @@ const KNOWN_TOOL_NAMES_LOWER: ReadonlySet<string> = new Set([
   'webfetch',
 ]);
 
+/**
+ * Matches the literal prefix Claude Code prepends when surfacing hook
+ * output back to the model as a user text message. Examples:
+ *   "Stop hook feedback:"
+ *   "PreToolUse hook feedback:"
+ *   "PostToolUse hook feedback:"
+ *   "UserPromptSubmit hook feedback:"
+ *   "SubagentStop hook feedback:"
+ *   "Notification hook feedback:"
+ *   "SessionEnd hook feedback:"
+ *   "SessionStart hook additional context:"
+ *
+ * Anchored at start (`^`) so user-typed text mentioning these phrases
+ * mid-message doesn't get reclassified. The leading event name is
+ * a single capitalized identifier; the suffix is one of the two
+ * conventional verbs Claude Code uses.
+ */
+const HOOK_FEEDBACK_PREFIX = /^[A-Z][A-Za-z]* hook (feedback|additional context):/;
+
 function isKnownToolName(name: unknown): boolean {
   if (typeof name !== 'string') return false;
   const lower = name.toLowerCase();
@@ -85,7 +104,18 @@ export function classifyBlockKind(
     }
     if (block.type === 'text') {
       const text = typeof block.text === 'string' ? block.text : '';
-      if (text.includes('<system-reminder>') || text.includes('Base directory for this skill:')) {
+      if (
+        text.includes('<system-reminder>') ||
+        text.includes('Base directory for this skill:') ||
+        // Claude Code surfaces hook output back to the model as a plain
+        // user text message prefixed with "<HookEvent> hook feedback:"
+        // (Stop / PreToolUse / PostToolUse / UserPromptSubmit /
+        // SubagentStop / Notification / SessionEnd) or the SessionStart
+        // variant "SessionStart hook additional context:". Anchored at
+        // the start so a user genuinely typing about hooks doesn't
+        // false-positive.
+        HOOK_FEEDBACK_PREFIX.test(text)
+      ) {
         return 'user.systemContext';
       }
       // Plain user text falls through to whole-message classification
