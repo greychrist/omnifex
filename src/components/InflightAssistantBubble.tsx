@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -22,13 +22,13 @@ import { buildMarkdownComponents } from '@/lib/markdownComponents';
  * ONLY when the inflight slot changes — not on unrelated tab state
  * mutations (messages[] appends, account info refresh, etc.).
  *
- * Smoothing: the SDK delivers token bursts (a chunk of N chars per
- * delta), so painting `inflight.text` directly produces a chunky
- * stair-step animation. We instead advance a `displayedLength`
- * cursor toward `inflight.text.length` at a strict, constant rate
- * (one char per TYPEWRITER_INTERVAL_MS), independent of how full
- * the buffer is. The buffer absorbs SDK bursts; the typewriter
- * paces them out for the eye.
+ * Smoothing: the SDK delivers tokens in bursts. Rather than pacing
+ * them out via a fake typewriter, we render the buffered text
+ * directly and rely on two visual softeners — (a) a mask-image
+ * gradient that fades the trailing edge of the prose so newly
+ * arrived text materializes from translucent into opaque as more
+ * text arrives below it, and (b) a brief opacity pulse on each
+ * length change so each chunk's appearance feels intentional.
  *
  * Note: the plan referenced `<MarkdownBlock content={...} />`, but this
  * repo's `MarkdownBlock` is a fenced-block primitive with a
@@ -38,15 +38,6 @@ import { buildMarkdownComponents } from '@/lib/markdownComponents';
  * we mirror that pattern here.
  */
 
-/** Milliseconds between revealed characters. Strict one-char-at-a-time
- *  pacing — the rate is constant regardless of how full the buffer is.
- *  10ms ≈ 100 chars/sec, fast but still smooth per-char. Lower →
- *  faster, higher → slower. The typewriter can fall behind a fast SDK
- *  burst; if the canonical assistant message lands before the
- *  typewriter catches up, Task 7's reconciliation clears the slot and
- *  the bubble snaps to the full canonical message. */
-const TYPEWRITER_INTERVAL_MS = 2;
-
 export const InflightAssistantBubble: React.FC<{ tabId: string }> = ({ tabId }) => {
   const inflight = useClaudeSessionStore(
     (s) => s.tabs[tabId]?.inflightAssistant ?? null,
@@ -55,38 +46,8 @@ export const InflightAssistantBubble: React.FC<{ tabId: string }> = ({ tabId }) 
   const syntaxTheme = useMemo(() => getClaudeSyntaxTheme(theme), [theme]);
   const mdComponents = useMemo(() => buildMarkdownComponents(syntaxTheme), [syntaxTheme]);
 
-  const targetText = inflight?.text ?? '';
-  const targetLength = targetText.length;
-  const [displayedLength, setDisplayedLength] = useState(0);
-
-  // Stash the live target length in a ref so the interval (set up once)
-  // always sees the latest value without re-binding the timer.
-  const targetLengthRef = useRef(targetLength);
-  targetLengthRef.current = targetLength;
-
-  // Clamp on any backward jump in target (defensive: shouldn't happen,
-  // but if a future code path replaces text instead of appending, the
-  // cursor must not point past the end of the string).
-  useEffect(() => {
-    setDisplayedLength((cur) => Math.min(cur, targetLength));
-  }, [targetLength]);
-
-  // Strict one-char-per-tick typewriter. The interval runs for the
-  // bubble's whole lifetime; when caught up, the setState call returns
-  // the same value and React bails out — no re-render, near-zero cost.
-  useEffect(() => {
-    const id = setInterval(() => {
-      setDisplayedLength((cur) => {
-        const t = targetLengthRef.current;
-        return cur < t ? cur + 1 : cur;
-      });
-    }, TYPEWRITER_INTERVAL_MS);
-    return () => clearInterval(id);
-  }, []);
-
-  const isVisible = !!inflight && !!targetText;
-  const displayedText = targetText.slice(0, displayedLength);
-  const isCatchingUp = displayedLength < targetLength;
+  const text = inflight?.text ?? '';
+  const isVisible = !!inflight && !!text;
 
   // Mask-image gradient — softens the trailing edge of the visible text so
   // newly-revealed chars fade in from translucent to opaque as more text
@@ -123,18 +84,28 @@ export const InflightAssistantBubble: React.FC<{ tabId: string }> = ({ tabId }) 
               className="prose prose-sm dark:prose-invert max-w-none py-2 px-3"
               style={trailingFadeStyle}
             >
-              <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
-                {displayedText}
-              </ReactMarkdown>
+              {/* Per-chunk fade: keying on text length re-mounts this
+                  motion span on each coalescer flush, so the just-arrived
+                  delta enters at opacity 0.5 and animates up to 1.0 in
+                  120ms. Older content is already opaque on the second
+                  arrival because it's the same key from a prior render's
+                  perspective — but since the key changes every flush,
+                  the whole content re-fades briefly. The duration is
+                  short enough that the eye reads it as "the chunk arrived"
+                  rather than "everything blinked". */}
+              <motion.div
+                key={text.length}
+                initial={{ opacity: 0.55 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.12, ease: 'easeOut' }}
+              >
+                <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
+                  {text}
+                </ReactMarkdown>
+              </motion.div>
               <span
                 aria-hidden
-                className={cn(
-                  'text-muted-foreground inline-block ml-0.5',
-                  // Hold the cursor solid while text is still flowing in —
-                  // the fade-in tail already conveys "live". Only pulse
-                  // once the typewriter has caught up to the buffer.
-                  !isCatchingUp && 'animate-pulse',
-                )}
+                className="animate-pulse text-muted-foreground inline-block ml-0.5"
               >
                 |
               </span>
