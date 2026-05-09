@@ -6,7 +6,7 @@ import type {
 import { Card, CardContent } from "@/components/ui/card";
 import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
 import { accentStyleFromEntry } from "@/lib/accentStyle";
-import { contentClassNames, iconSizeClassName, iconWrapperClassName, iconWrapperStyle } from "@/lib/typographyClasses";
+import { contentClassNames, iconSizeClassName, iconWrapperClassName, iconWrapperStyle, typographyFontFamily } from "@/lib/typographyClasses";
 import { KindHeader } from "@/components/KindHeader";
 import { IconRenderer } from "./iconMap";
 import { previewTextForKind, debugLabelForKind, SAMPLE_TIMESTAMP } from "./fixtures";
@@ -64,7 +64,10 @@ export const SamplePreview: React.FC<SamplePreviewProps> = ({
           )}
           <div className="flex-1 space-y-2 min-w-0">
             <KindHeader kindId={kind.id} fallbackLabel={kind.headerLabel} />
-            <div className={cn(contentClassNames(config), "whitespace-pre-wrap leading-relaxed text-foreground/90")}>
+            <div
+              className={cn(contentClassNames(config), "whitespace-pre-wrap leading-relaxed text-foreground/90")}
+              style={{ fontFamily: typographyFontFamily(config.typography.content) }}
+            >
               {previewTextForKind(kind)}
             </div>
             {wouldHide && (

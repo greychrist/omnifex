@@ -22,7 +22,7 @@ import { cn } from "@/lib/utils";
 import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
 import { accentStyleFor, swatchFor } from "@/lib/accentStyle";
 import { headerLabelFor, iconNameFor } from "@/lib/kindPresentation";
-import { contentClassNames, iconSizeClassName, iconWrapperClassName, iconWrapperStyle } from "@/lib/typographyClasses";
+import { contentClassNames, iconSizeClassName, iconWrapperClassName, iconWrapperStyle, typographyFontFamily } from "@/lib/typographyClasses";
 import { IconRenderer } from "@/components/settings-panels/appearance/iconMap";
 import { KindHeader } from "@/components/KindHeader";
 import ReactMarkdown from "react-markdown";
@@ -996,7 +996,10 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                     return (
                       <div>
                         {textWithoutImages && (
-                          <div className={cn(contentClassNames(renderConfig), "mb-2")}>
+                          <div
+                            className={cn(contentClassNames(renderConfig), "mb-2")}
+                            style={{ fontFamily: typographyFontFamily(renderConfig.typography.content) }}
+                          >
                             {textWithoutImages}
                           </div>
                         )}
@@ -1024,7 +1027,10 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                     renderedSomething = true;
                     return (
                       <div key={idx}>
-                        <div className={cn(contentClassNames(renderConfig), "whitespace-pre-wrap")}>
+                        <div
+                          className={cn(contentClassNames(renderConfig), "whitespace-pre-wrap")}
+                          style={{ fontFamily: typographyFontFamily(renderConfig.typography.content) }}
+                        >
                           {content.text}
                         </div>
                       </div>

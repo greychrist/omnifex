@@ -3,7 +3,7 @@ import { cn } from "@/lib/utils";
 import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
 import { headerLabelFor, iconNameFor } from "@/lib/kindPresentation";
 import { swatchFor } from "@/lib/accentStyle";
-import { headerClassNames } from "@/lib/typographyClasses";
+import { headerClassNames, typographyFontFamily } from "@/lib/typographyClasses";
 import { IconRenderer } from "@/components/settings-panels/appearance/iconMap";
 import type { IconName } from "@/lib/messageRenderingConfig";
 
@@ -44,16 +44,19 @@ export const KindHeader: React.FC<KindHeaderProps> = ({
   if (!resolvedLabel) return null;
   const iconName = iconNameFor(config, kindId) ?? fallbackIcon ?? null;
   const swatch = swatchFor(config, kindId);
-  const style = swatch ? { color: swatch } : undefined;
+  const swatchStyle = swatch ? { color: swatch } : undefined;
 
   return (
     <div className={cn("flex items-center gap-2 mb-1", className)}>
       {showIcon && iconName && iconName !== "none" && (
-        <span style={style}>
+        <span style={swatchStyle}>
           <IconRenderer name={iconName} className="h-4 w-4" />
         </span>
       )}
-      <span className={headerClassNames(config)} style={style}>
+      <span
+        className={headerClassNames(config)}
+        style={{ fontFamily: typographyFontFamily(config.typography.header), ...swatchStyle }}
+      >
         {resolvedLabel}
       </span>
     </div>
