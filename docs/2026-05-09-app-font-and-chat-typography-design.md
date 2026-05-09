@@ -274,10 +274,13 @@ Coverage gate stays at the existing 80% lines target — these tests should comf
 
 ## Release coordination
 
-A draft v0.4.18 GitHub release was created earlier in this session with the SDK-bump-only artifacts (DMG + ZIP). Greg paused before publishing to add this feature. Two paths when this lands:
+A draft v0.4.18 GitHub release was created earlier in this session with the SDK-bump-only artifacts (DMG + ZIP). **Decision (Greg, 2026-05-09): roll this feature into v0.4.18 and re-release.**
 
-1. **Roll into v0.4.18.** Delete the existing draft release on GitHub, rebuild artifacts after the feature lands, re-attach to the same `v0.4.18` tag. The `v0.4.18` tag is already pushed; the omnifex-release skill's "don't re-point an existing tag" rule was written for tags users may have pulled — since v0.4.18 was draft-only and never published, the tag never pointed to a published artifact, so re-pointing locally + force-pushing is acceptable here. Confirm with Greg.
+The v0.4.18 release becomes:
 
-2. **Bump to v0.4.19.** Land this feature with a fresh version bump and new tag. Cleaner versioning history; v0.4.18 (SDK-only) gets published as-is first or just abandoned.
+- `chore(deps): bump @anthropic-ai/claude-agent-sdk 0.2.137 → 0.2.138` (already on `main`, pushed)
+- `chore: bump version to 0.4.18` (already on `main`, pushed; tag already pushed)
+- This feature's commits, landed on `main` after the design's plan executes
+- Re-cut artifacts: delete the existing draft GitHub release, run `npm run make`, create a new draft attached to the same `v0.4.18` tag
 
-Decision deferred to release time; design doesn't depend on the choice.
+The `v0.4.18` git tag was pushed but no artifacts were ever published from it (only a draft existed), so the tag has no consumer expectations attached. Standard force-push of the tag after the feature commits land is acceptable: `git tag -f v0.4.18 && git push --force-with-lease origin v0.4.18`. The CHANGELOG entry for v0.4.18 must be expanded to include this feature alongside the SDK bump before the new draft is created.
