@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.22] — 2026-05-10
+
+A small UX fix for the inline `AskUserQuestion` card. When the agent sends 3-4 questions with previews the card can occupy ~60vh, hiding the chat content the user wants to consult before answering. A new chevron in the card header collapses it to a single header row so the chat above is visible again; click the chevron to re-expand and submit. Submit stays gated on expansion so you can't fire off answers you can no longer see.
+
+Installers remain **unsigned**.
+
+### Added
+
+- **Collapsible `AskUserQuestion` card.** New chevron toggle in the header (`ChevronUp` / `ChevronDown`, with `aria-label` + `aria-expanded`) drops the scroll region and the Send/Cancel footer, leaving only the header row inline in the chat. Default is expanded — a fresh question always opens visible. State is component-local, so a new request always starts open. 3 new component tests in `AskUserQuestionCard.test.tsx`.
+
 ## [0.4.21] — 2026-05-10
 
 A multi-area UX pass on the Projects and Sessions tables, plus a few supporting cleanups that came up while shipping it. Row-wide click is gone on both tables — you now launch a project or session via the explicit name/date link or the right-side launch icon, never by clicking anywhere in the row. New per-row Trash icons for permanent project / session deletion. Account badges adapt to light theme so bright hues stay readable. Thinking-config picker collapses to two states (Adaptive / Off) since "Budget" was a UI lie that produced identical model behavior. One stale-state bug fix for "Start Session warps me back to the session I just backed out of."
