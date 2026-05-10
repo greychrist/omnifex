@@ -1,15 +1,37 @@
 import React, { useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { FolderOpen, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
+import { FolderOpen, ArrowUp, ArrowDown, ArrowUpDown, ExternalLink, Trash2, Infinity as InfinityIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import type { Project } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { AccountBadge } from "@/components/AccountBadge";
 
 type SortKey = 'name' | 'path' | 'account' | 'sessions' | 'lastActivity';
 type SortDir = 'asc' | 'desc';
+
+/**
+ * "All accounts" badge for the project filter. Matches AccountBadge's
+ * `size="sm"` shape (`text-xs`, 15px icon, `px-2 py-0.5`, rounded border)
+ * but uses theme-neutral muted tokens since "All" isn't a real account
+ * and shouldn't pull from any account's color stack. Used in both the
+ * closed dropdown trigger and the open dropdown items.
+ */
+const AllAccountsBadge: React.FC = () => (
+  <span className="inline-flex items-center gap-1 rounded border border-border bg-muted/40 px-2 py-0.5 text-xs font-medium text-muted-foreground whitespace-nowrap">
+    <InfinityIcon className="h-[15px] w-[15px]" strokeWidth={2.2} />
+    All
+  </span>
+);
 
 /**
  * Format a Unix-seconds timestamp as a compact relative-time string
@@ -37,13 +59,23 @@ interface ProjectListProps {
    */
   projects: Project[];
   /**
-   * Callback when a project is clicked
+   * Callback when a project is launched. Fired by clicking the project
+   * name (rendered as a link) or the launch icon — never by clicking
+   * elsewhere in the row.
    */
   onProjectClick: (project: Project) => void;
   /**
    * Callback when open project is clicked
    */
   onOpenProject?: () => void | Promise<void>;
+  /**
+   * Optional callback fired after the user confirms the delete dialog.
+   * The parent owns the actual API call and list refetch — ProjectList
+   * just delivers the project to delete. When omitted, the trash icon
+   * is hidden so this component degrades gracefully in callers that
+   * haven't wired delete yet.
+   */
+  onDeleteProject?: (project: Project) => void | Promise<void>;
   /**
    * Whether the list is currently loading
    */
@@ -108,11 +140,16 @@ export const ProjectList: React.FC<ProjectListProps> = ({
   projects,
   onProjectClick,
   onOpenProject,
+  onDeleteProject,
   className,
 }) => {
   const [sortKey, setSortKey] = useState<SortKey>('lastActivity');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
   const [accountFilter, setAccountFilter] = useState<string>('all');
+  // The project the user has armed for deletion. The dialog is open iff
+  // this is non-null. Single piece of state — no separate `dialogOpen`
+  // flag — so confirming/cancelling can't get out of sync with the row.
+  const [pendingDelete, setPendingDelete] = useState<Project | null>(null);
 
   // Distinct account names present in the project list — sorted alpha for
   // a stable dropdown order. `'(unassigned)'` covers projects with no
@@ -221,13 +258,48 @@ export const ProjectList: React.FC<ProjectListProps> = ({
                       Account
                     </label>
                     <Select value={accountFilter} onValueChange={setAccountFilter}>
-                      <SelectTrigger className="h-7 text-xs w-auto">
-                        <SelectValue />
+                      {/* Trigger renders the badge directly when a real
+                          account is selected — both the closed dropdown
+                          and the dropdown items use AccountBadge size="sm"
+                          so the badge inherits the surrounding text-xs
+                          scale. "All" stays plain text since it's not an
+                          account. The legacy "(unassigned)" bucket
+                          (projects whose account didn't resolve) gets a
+                          muted "No account" string for the same reason.
+                          The trigger gets `[&>svg]:size-3` so the chevron
+                          stays small even though the badge itself is
+                          taller than bare text. */}
+                      <SelectTrigger className="h-7 text-xs w-auto gap-1.5 pl-1 [&>svg]:size-3">
+                        {/* Wrapper div keeps the badge out of
+                            SelectTrigger's `[&>span]:line-clamp-1`
+                            scope. Without it, line-clamp forces
+                            `display: -webkit-box` on the badge span and
+                            stacks the icon above the label. As a flex
+                            child of the trigger (justify-between), the
+                            div hugs its content on the left while the
+                            chevron stays right. */}
+                        <div className="inline-flex items-center">
+                          {accountFilter === 'all' ? (
+                            <AllAccountsBadge />
+                          ) : accountFilter === '(unassigned)' ? (
+                            <span className="text-muted-foreground">No account</span>
+                          ) : (
+                            <AccountBadge name={accountFilter} size="sm" />
+                          )}
+                        </div>
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="all">All</SelectItem>
+                        <SelectItem value="all">
+                          <AllAccountsBadge />
+                        </SelectItem>
                         {accountOptions.map((name) => (
-                          <SelectItem key={name} value={name}>{name}</SelectItem>
+                          <SelectItem key={name} value={name}>
+                            {name === '(unassigned)' ? (
+                              <span className="text-muted-foreground">No account</span>
+                            ) : (
+                              <AccountBadge name={name} size="sm" />
+                            )}
+                          </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -270,6 +342,10 @@ export const ProjectList: React.FC<ProjectListProps> = ({
                   >
                     Last activity<SortIcon k="lastActivity" />
                   </th>
+                  {/* Actions column — header is intentionally empty; the
+                      icons in each row carry their own tooltips. Width is
+                      fixed so the column doesn't grow with row count. */}
+                  <th className="px-3 py-2 w-[88px]" aria-label="Actions" />
                 </tr>
               </thead>
               <tbody>
@@ -285,11 +361,32 @@ export const ProjectList: React.FC<ProjectListProps> = ({
                       initial={{ opacity: 0, y: 4 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ duration: 0.15, delay: index * 0.02 }}
-                      onClick={() => onProjectClick(project)}
-                      className="border-b border-border/30 hover:bg-accent/40 transition-colors cursor-pointer"
+                      // Subtle row hover for visual scan-tracking. The
+                      // row itself is no longer interactive (only the
+                      // name and the action icons are clickable), so
+                      // we deliberately omit `cursor-pointer` here —
+                      // the hover tint is presentational, not an
+                      // affordance.
+                      className="border-b border-border/30 transition-colors hover:bg-accent/40"
                     >
                       <td className="px-3 py-2 font-medium">
-                        {getProjectName(project.path)}
+                        {/* Name renders as a link-styled <button> with a
+                            trailing ExternalLink glyph so the launch
+                            affordance is visible at a glance. Both name
+                            and icon live inside the same button — one
+                            click target, one hover underline. The icon
+                            is muted (`opacity-60`) so it reads as
+                            secondary chrome. The rest of the row has
+                            no click target. */}
+                        <button
+                          type="button"
+                          onClick={() => onProjectClick(project)}
+                          className="inline-flex items-center gap-1 text-left text-foreground hover:underline focus-visible:underline focus:outline-none"
+                          title="Launch this project"
+                        >
+                          {getProjectName(project.path)}
+                          <ExternalLink className="h-3.5 w-3.5 opacity-60" aria-hidden="true" />
+                        </button>
                       </td>
                       <td className="px-3 py-2 text-muted-foreground font-mono text-xs truncate max-w-[420px]" title={project.path}>
                         {getDisplayPath(project.path, 60)}
@@ -311,6 +408,41 @@ export const ProjectList: React.FC<ProjectListProps> = ({
                         }
                       >
                         {lastActivity ? formatRelativeTime(lastActivity) : '—'}
+                      </td>
+                      <td className="px-3 py-2">
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              // Belt-and-suspenders: stop the click from
+                              // bubbling to any future row-level handler.
+                              // No row click exists today, but we don't
+                              // want a passive future change to silently
+                              // double-fire onProjectClick.
+                              e.stopPropagation();
+                              onProjectClick(project);
+                            }}
+                            className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                            title="Launch this project"
+                            aria-label="Launch this project"
+                          >
+                            <ExternalLink className="h-4 w-4" />
+                          </button>
+                          {onDeleteProject && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setPendingDelete(project);
+                              }}
+                              className="p-1 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-destructive"
+                              title="Delete this project from the account's Claude folder"
+                              aria-label="Delete this project"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </motion.tr>
                   );
@@ -347,6 +479,77 @@ export const ProjectList: React.FC<ProjectListProps> = ({
           )}
         </div>
       </div>
+
+      {/* Permanent-delete confirm. Body lists path, account, and session
+          count so the user has every load-bearing fact in front of them
+          before pressing the destructive button. The dialog is the only
+          gate — once it closes via Delete, the parent removes the row
+          optimistically and fires the API. */}
+      <Dialog
+        open={pendingDelete !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingDelete(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete this project?</DialogTitle>
+            <DialogDescription>
+              This permanently removes the project's folder from the
+              account's Claude config directory — every session, summary,
+              and todo file under it will be deleted from disk.
+            </DialogDescription>
+          </DialogHeader>
+          {pendingDelete && (
+            <div className="space-y-2 text-sm">
+              <div>
+                <span className="text-muted-foreground">Path:</span>{' '}
+                <span className="font-mono text-xs break-all">
+                  {pendingDelete.path}
+                </span>
+              </div>
+              {pendingDelete.account_name && (
+                <div>
+                  <span className="text-muted-foreground">Account:</span>{' '}
+                  <span className="font-medium">{pendingDelete.account_name}</span>
+                </div>
+              )}
+              <div>
+                <span className="text-muted-foreground">Sessions:</span>{' '}
+                <span className="font-medium tabular-nums">
+                  {pendingDelete.sessions.length}
+                </span>{' '}
+                will be permanently deleted.
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setPendingDelete(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => {
+                const target = pendingDelete;
+                if (!target) return;
+                // Close the dialog first so the parent's optimistic state
+                // update (likely setProjects([...without target])) flows
+                // through to a stable list with no flash of dialog over
+                // the removed row.
+                setPendingDelete(null);
+                void onDeleteProject?.(target);
+              }}
+            >
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
-}; 
+};

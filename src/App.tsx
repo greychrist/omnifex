@@ -189,6 +189,42 @@ function AppContent() {
   };
 
   /**
+   * Optimistically remove the project from the on-screen list and call
+   * the IPC. On failure we restore the row + reload from disk so the UI
+   * matches reality. ProjectList's confirm dialog has already gated the
+   * call, so by the time we get here the user has actively chosen this.
+   */
+  const handleDeleteProject = async (project: Project) => {
+    if (project.account_id === undefined) {
+      setToast({
+        type: 'error',
+        message: 'Cannot delete: this project has no account binding.',
+      });
+      return;
+    }
+    const previous = projects;
+    setProjects((prev) => prev.filter((p) => p.id !== project.id));
+    try {
+      await api.deleteClaudeProject({
+        accountId: project.account_id,
+        projectId: project.id,
+      });
+      setToast({
+        type: 'success',
+        message: `Deleted ${project.path}`,
+      });
+    } catch (err) {
+      console.error('Failed to delete project:', err);
+      setProjects(previous);
+      const msg = err instanceof Error ? err.message : String(err);
+      setToast({ type: 'error', message: `Failed to delete project: ${msg}` });
+      // Refetch so we don't leave the optimistic snapshot in place if
+      // something else changed in the meantime.
+      void loadProjects();
+    }
+  };
+
+  /**
    * Re-fetch the session list for the currently-selected project. Triggered
    * by the SessionList refresh button when the user wants to pick up new
    * sessions that were created in a different tab / since the page rendered.
@@ -320,6 +356,7 @@ function AppContent() {
             projects={projects}
             onProjectClick={handleProjectClick}
             onOpenProject={handleOpenProject}
+            onDeleteProject={handleDeleteProject}
             loading={loading}
           />
         );

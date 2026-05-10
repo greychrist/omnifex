@@ -710,6 +710,73 @@ describe('claude service', () => {
     });
   });
 
+  describe('deleteProject', () => {
+    it('removes the entire <configDir>/projects/<projectId> directory', async () => {
+      const configDir = path.join(tmpDir, '.claude-delete-project');
+      const projectPath = path.join(tmpDir, 'proj-to-go');
+      const projectId = projectPath.replace(/\//g, '-');
+      const projectDir = path.join(configDir, 'projects', projectId);
+      fs.mkdirSync(projectDir, { recursive: true });
+      // Drop a few session files so we can prove the recursive delete.
+      fs.writeFileSync(path.join(projectDir, 'a.jsonl'), '{}\n');
+      fs.writeFileSync(path.join(projectDir, 'b.jsonl'), '{}\n');
+      fs.writeFileSync(path.join(projectDir, 'a.summary.json'), '{}');
+
+      const account = accounts.createAccount('DelTest', configDir, 'pro');
+
+      await service.deleteProject({ accountId: account.id, projectId });
+
+      expect(fs.existsSync(projectDir)).toBe(false);
+      // Sibling project dirs in the same configDir are untouched.
+      expect(fs.existsSync(path.join(configDir, 'projects'))).toBe(true);
+    });
+
+    it('is idempotent when the project directory is already gone', async () => {
+      const configDir = path.join(tmpDir, '.claude-delete-missing-proj');
+      fs.mkdirSync(path.join(configDir, 'projects'), { recursive: true });
+      const account = accounts.createAccount('DelTest', configDir, 'pro');
+
+      await expect(
+        service.deleteProject({ accountId: account.id, projectId: '-already-gone' }),
+      ).resolves.not.toThrow();
+    });
+
+    it('rejects projectIds containing path separators or traversal', async () => {
+      const configDir = path.join(tmpDir, '.claude-delete-traversal');
+      fs.mkdirSync(configDir, { recursive: true });
+      const account = accounts.createAccount('DelTest', configDir, 'pro');
+
+      const bad = ['', '..', '../escape', 'has/slash', '.', '   '];
+      for (const projectId of bad) {
+        await expect(
+          service.deleteProject({ accountId: account.id, projectId }),
+        ).rejects.toThrow();
+      }
+    });
+
+    it('throws when the account id does not exist', async () => {
+      await expect(
+        service.deleteProject({ accountId: 999_999, projectId: '-foo' }),
+      ).rejects.toThrow(/account/i);
+    });
+
+    it('does not touch sibling project directories under the same account', async () => {
+      const configDir = path.join(tmpDir, '.claude-delete-siblings');
+      const projectsDir = path.join(configDir, 'projects');
+      fs.mkdirSync(path.join(projectsDir, '-keep'), { recursive: true });
+      fs.mkdirSync(path.join(projectsDir, '-go'), { recursive: true });
+      fs.writeFileSync(path.join(projectsDir, '-keep', 's.jsonl'), '{}\n');
+      fs.writeFileSync(path.join(projectsDir, '-go', 's.jsonl'), '{}\n');
+
+      const account = accounts.createAccount('DelTest', configDir, 'pro');
+
+      await service.deleteProject({ accountId: account.id, projectId: '-go' });
+
+      expect(fs.existsSync(path.join(projectsDir, '-go'))).toBe(false);
+      expect(fs.existsSync(path.join(projectsDir, '-keep', 's.jsonl'))).toBe(true);
+    });
+  });
+
   describe('loadAgentSessionHistory', () => {
     it('returns empty array when no config dir holds the session file', async () => {
       const result = await service.loadAgentSessionHistory('ghost-session');

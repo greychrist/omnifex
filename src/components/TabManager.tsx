@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence, Reorder } from 'framer-motion';
-import { X, Plus, MessageSquare, AlertCircle, Folder, BarChart, Server, Settings, FileText, HardDrive } from 'lucide-react';
+import { X, Plus, MessageSquare, AlertCircle, Folder, BarChart, Server, Settings, FileText, HardDrive, List } from 'lucide-react';
 import { Spinner } from '@/components/ui/spinner';
 import { AccountBadge } from './AccountBadge';
 import { useTabState } from '@/hooks/useTabState';
@@ -16,30 +16,48 @@ interface TabItemProps {
   setDraggedTabId?: (id: string | null) => void;
 }
 
+// Per-tab `icon` string overrides the type-based default. Today this is
+// used by the projects tab to flip Folder → List once the user drills
+// into a project's sessions view, and stays unset everywhere else so
+// the type defaults below win. Add new entries here as needed; unknown
+// ids fall through to the type default rather than throwing, so a stale
+// persisted value can't break the tab strip.
+const TAB_ICON_OVERRIDES: Record<string, typeof MessageSquare> = {
+  list: List,
+};
+
+/**
+ * Pure icon resolver — exported for testing. The `tab.icon` string takes
+ * precedence over the `tab.type` default, but unknown override values
+ * silently fall through to the type-based switch.
+ */
+export function getTabIcon(tab: Pick<Tab, 'type' | 'icon'>): typeof MessageSquare {
+  if (tab.icon && TAB_ICON_OVERRIDES[tab.icon]) {
+    return TAB_ICON_OVERRIDES[tab.icon];
+  }
+  switch (tab.type) {
+    case 'chat':
+      return MessageSquare;
+    case 'projects':
+      return Folder;
+    case 'usage':
+      return BarChart;
+    case 'mcp':
+      return Server;
+    case 'lima':
+      return HardDrive;
+    case 'settings':
+      return Settings;
+    case 'claude-md':
+    case 'claude-file':
+      return FileText;
+    default:
+      return MessageSquare;
+  }
+}
+
 const TabItem: React.FC<TabItemProps> = ({ tab, isActive, onClose, onClick, isDragging = false, setDraggedTabId }) => {
   const [isHovered, setIsHovered] = useState(false);
-  
-  const getIcon = () => {
-    switch (tab.type) {
-      case 'chat':
-        return MessageSquare;
-      case 'projects':
-        return Folder;
-      case 'usage':
-        return BarChart;
-      case 'mcp':
-        return Server;
-      case 'lima':
-        return HardDrive;
-      case 'settings':
-        return Settings;
-      case 'claude-md':
-      case 'claude-file':
-        return FileText;
-      default:
-        return MessageSquare;
-    }
-  };
 
   const getStatusIcon = () => {
     // Unread result badge takes priority — pulsing dot for visibility
@@ -61,7 +79,7 @@ const TabItem: React.FC<TabItemProps> = ({ tab, isActive, onClose, onClick, isDr
     }
   };
 
-  const Icon = getIcon();
+  const Icon = getTabIcon(tab);
   const statusIcon = getStatusIcon();
 
   return (

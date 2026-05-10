@@ -36,6 +36,7 @@ export interface Services {
     getProjectSessions(projectId: string, projectPath?: string): unknown;
     loadSessionHistory(sessionId: string, projectId: string, projectPath?: string): unknown;
     deleteSession(sessionId: string, projectId: string, projectPath?: string): unknown;
+    deleteProject(args: { accountId: number; projectId: string }): unknown;
     getHomeDirectory(): unknown;
     getSettings(opts?: unknown): unknown;
     saveSettings(settings: unknown, opts?: unknown): unknown;
@@ -260,6 +261,14 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     get_project_sessions: wrapWith((p: Record<string, unknown>) => claude?.getProjectSessions((p?.projectId ?? p?.project_id) as string, (p?.projectPath ?? p?.project_path) as string | undefined) ?? null),
     load_session_history: wrapWith((p: Record<string, unknown>) => claude?.loadSessionHistory((p?.sessionId ?? p?.session_id) as string, (p?.projectId ?? p?.project_id) as string, (p?.projectPath ?? p?.project_path) as string | undefined) ?? null),
     delete_session: wrapWith((p: Record<string, unknown>) => claude?.deleteSession((p?.sessionId ?? p?.session_id) as string, (p?.projectId ?? p?.project_id) as string, (p?.projectPath ?? p?.project_path) as string | undefined) ?? null),
+    delete_project: wrapWith((p: Record<string, unknown>) => {
+      const accountId = Number(p?.accountId ?? p?.account_id);
+      const projectId = (p?.projectId ?? p?.project_id) as string;
+      if (!Number.isFinite(accountId)) {
+        throw new Error('delete_project: accountId is required');
+      }
+      return claude?.deleteProject({ accountId, projectId }) ?? null;
+    }),
     get_home_directory: wrap(() => claude?.getHomeDirectory() ?? null),
     get_claude_settings: wrapWith((p: Record<string, unknown>) => {
       const configDir = (p?.configDir ?? p?.config_dir) as string | undefined;

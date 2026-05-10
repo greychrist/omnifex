@@ -231,16 +231,20 @@ describe('createQueryPassthroughs.setThinking', () => {
       .toHaveBeenCalledWith(null);
   });
 
-  it('enabled config with budgetTokens passes that budget', async () => {
+  it('enabled config with budgetTokens collapses to adaptive (calls setMaxThinkingTokens(null))', async () => {
+    // Budget was removed in v0.4.21 — the SDK collapsed every non-zero
+    // value to adaptive on Opus 4.6+ anyway. Stale callers passing
+    // `enabled` with a budget should land on adaptive, not forward the
+    // budget number (which the SDK would just discard).
     const handle = makeHandle();
     const sessions = new Map([['t1', handle]]);
     const q = createQueryPassthroughs(sessions);
     await q.setThinking('t1', { type: 'enabled', budgetTokens: 5000 });
     expect((handle.query as unknown as { setMaxThinkingTokens: ReturnType<typeof vi.fn> }).setMaxThinkingTokens)
-      .toHaveBeenCalledWith(5000);
+      .toHaveBeenCalledWith(null);
   });
 
-  it('enabled config without budgetTokens passes null', async () => {
+  it('enabled config without budgetTokens also collapses to adaptive', async () => {
     const handle = makeHandle();
     const sessions = new Map([['t1', handle]]);
     const q = createQueryPassthroughs(sessions);

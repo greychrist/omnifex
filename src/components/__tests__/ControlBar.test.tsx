@@ -35,8 +35,8 @@ describe("static option lists", () => {
     expect(EFFORT_LEVELS.map((e) => e.id)).toEqual(["low", "medium", "high", "xhigh", "max"]);
   });
 
-  it("THINKING_CONFIGS exposes the three thinking modes", () => {
-    expect(THINKING_CONFIGS.map((t) => t.id)).toEqual(["adaptive", "budget", "disabled"]);
+  it("THINKING_CONFIGS exposes only adaptive + disabled (Budget removed in v0.4.21)", () => {
+    expect(THINKING_CONFIGS.map((t) => t.id)).toEqual(["adaptive", "disabled"]);
   });
 
   it("PERMISSION_MODES exposes all six permission modes", () => {
@@ -232,7 +232,7 @@ describe("ThinkingPicker (compact)", () => {
   it("does not throw without onThinkingConfigChange", () => {
     renderInProvider(
       <ThinkingPicker
-        thinkingConfig="budget"
+        thinkingConfig="adaptive"
         open={true}
         onOpenChange={vi.fn()}
       />,
@@ -254,23 +254,24 @@ describe("ThinkingPicker (compact)", () => {
 });
 
 describe("ThinkingPicker (form)", () => {
-  it("renders the full thinking name", () => {
+  it("renders the full thinking name for the disabled state", () => {
     renderInProvider(
       <ThinkingPicker
-        thinkingConfig="budget"
+        thinkingConfig="disabled"
         open={false}
         onOpenChange={vi.fn()}
         variant="form"
       />,
     );
-    expect(screen.getAllByText("Budget").length).toBeGreaterThan(0);
+    // Off is the human-facing name for `'disabled'`.
+    expect(screen.getAllByText("Off").length).toBeGreaterThan(0);
   });
 
   it("toggles open via trigger click", () => {
     const onOpenChange = vi.fn();
     renderInProvider(
       <ThinkingPicker
-        thinkingConfig="budget"
+        thinkingConfig="disabled"
         open={false}
         onOpenChange={onOpenChange}
         variant="form"

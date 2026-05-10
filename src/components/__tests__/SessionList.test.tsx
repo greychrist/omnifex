@@ -428,3 +428,150 @@ describe('SessionList summary rendering', () => {
     ).toBe(initialTitle);
   });
 });
+
+describe('SessionList — click semantics', () => {
+  it('does NOT fire onSessionClick when the user clicks Summary or Session ID cell chrome', async () => {
+    const onSessionClick = vi.fn();
+    vi.mocked(api.summaryGet).mockResolvedValue(null);
+    const { container } = render(
+      <SessionList
+        sessions={[sessionFixture]}
+        projectPath="/x"
+        onSessionClick={onSessionClick}
+      />,
+    );
+
+    // Wait for the row to render fully (resolution + summaryGet flush).
+    await screen.findByText(/old first message preview/);
+
+    // Click the cells whose chrome is purely informational. The Date
+    // cell IS a launch target now (its own test below), so it's
+    // excluded from this assertion. cells[0]=Date (launch),
+    // cells[1]=Summary, cells[2]=Session ID, cells[3]=actions.
+    const cells = Array.from(
+      container.querySelectorAll('tbody tr td'),
+    ) as HTMLTableCellElement[];
+    expect(cells.length).toBeGreaterThanOrEqual(4);
+    fireEvent.click(cells[1]);
+    fireEvent.click(cells[2]);
+    expect(onSessionClick).not.toHaveBeenCalled();
+  });
+
+  it('fires onSessionClick when the user clicks the Date cell (now a launch target)', async () => {
+    const onSessionClick = vi.fn();
+    render(
+      <SessionList
+        sessions={[sessionFixture]}
+        projectPath="/x"
+        onSessionClick={onSessionClick}
+      />,
+    );
+    await screen.findByText('Summary headline here.');
+
+    // The date cell is wrapped in a `<button title="Launch session">`.
+    // Two such buttons exist per row — the date and the rightmost
+    // action icon. Click the one whose textContent contains a date
+    // string ("/" appears in the formatted date but not in the icon
+    // button's accessible name).
+    const launchButtons = screen.getAllByRole('button', { name: /launch session/i });
+    const dateBtn = launchButtons.find((b) => /\d+\/\d+\/\d+/.test(b.textContent ?? ''));
+    expect(dateBtn).toBeDefined();
+    fireEvent.click(dateBtn!);
+    expect(onSessionClick).toHaveBeenCalledTimes(1);
+    expect(onSessionClick).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'sess-1' }),
+    );
+  });
+
+  it('fires onSessionClick when the user clicks the rightmost launch icon (actions cluster)', async () => {
+    const onSessionClick = vi.fn();
+    render(
+      <SessionList
+        sessions={[sessionFixture]}
+        projectPath="/x"
+        onSessionClick={onSessionClick}
+      />,
+    );
+    await screen.findByText('Summary headline here.');
+
+    // Two "Launch session" buttons per row now — the date launcher
+    // (text content includes a formatted date) and the rightmost icon
+    // launcher (icon-only, textContent empty). Pick the icon-only one.
+    const launchButtons = screen.getAllByRole('button', { name: /launch session/i });
+    const iconBtn = launchButtons.find((b) => !/\d+\/\d+\/\d+/.test(b.textContent ?? ''));
+    expect(iconBtn).toBeDefined();
+    fireEvent.click(iconBtn!);
+    expect(onSessionClick).toHaveBeenCalledTimes(1);
+    expect(onSessionClick).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'sess-1' }),
+    );
+  });
+
+  it('dispatches the claude-session-selected CustomEvent on launch', async () => {
+    const listener = vi.fn();
+    window.addEventListener('claude-session-selected', listener as EventListener);
+    try {
+      render(<SessionList sessions={[sessionFixture]} projectPath="/x" />);
+      await screen.findByText('Summary headline here.');
+      const launchButtons = screen.getAllByRole('button', { name: /launch session/i });
+      const iconBtn = launchButtons.find((b) => !/\d+\/\d+\/\d+/.test(b.textContent ?? ''));
+      fireEvent.click(iconBtn!);
+      expect(listener).toHaveBeenCalledTimes(1);
+      const evt = listener.mock.calls[0][0] as CustomEvent;
+      expect((evt.detail as any).session.id).toBe('sess-1');
+      expect((evt.detail as any).projectPath).toBe('/x');
+    } finally {
+      window.removeEventListener('claude-session-selected', listener as EventListener);
+    }
+  });
+
+  it('clicking copy-ID, summary chevron, refresh, or trash never fires onSessionClick', async () => {
+    const onSessionClick = vi.fn();
+    const sessionWithDifferentSize: Session = {
+      ...sessionFixture,
+      file_size_bytes: 9999,
+    } as Session;
+    // jsdom has no `navigator.clipboard` — define one before clicking the
+    // copy button so the stopPropagation handler doesn't blow up with an
+    // unhandled "Cannot read properties of undefined (reading 'writeText')"
+    // exception. We restore at the end.
+    const originalClipboard = (navigator as any).clipboard;
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: vi.fn().mockResolvedValue(undefined) },
+    });
+    try {
+      render(
+        <SessionList
+          sessions={[sessionWithDifferentSize]}
+          projectPath="/x"
+          onSessionClick={onSessionClick}
+        />,
+      );
+      await screen.findByText('Summary headline here.');
+
+      // copy-ID: title contains "Copy full session ID"
+      const copyBtn = screen
+        .getAllByRole('button')
+        .find((b) => /copy full session id/i.test(b.getAttribute('title') ?? ''));
+      expect(copyBtn).toBeDefined();
+      fireEvent.click(copyBtn!);
+
+      // expand chevron
+      fireEvent.click(screen.getByRole('button', { name: /expand summary/i }));
+
+      // summary refresh
+      fireEvent.click(screen.getByRole('button', { name: /refresh summary/i }));
+
+      // trash (opens dialog — does NOT call onSessionClick)
+      fireEvent.click(screen.getByRole('button', { name: /delete session/i }));
+
+      expect(onSessionClick).not.toHaveBeenCalled();
+    } finally {
+      Object.defineProperty(navigator, 'clipboard', {
+        configurable: true,
+        value: originalClipboard,
+      });
+    }
+  });
+});

@@ -41,13 +41,16 @@ export const EFFORT_LEVELS: { id: EffortLevel; name: string; description: string
 // ── Thinking ────────────────────────────────────────────────────────────
 
 /**
- * Thinking config — controls extended thinking behavior.
+ * Thinking config — controls extended thinking behavior. Re-exported
+ * from the renderer-shared `lib/thinkingConfig` module so every UI
+ * touch-point stays on the same canonical type. The legacy `'budget'`
+ * variant was removed in v0.4.21; see lib/thinkingConfig.ts for why.
  */
-export type ThinkingConfig = 'adaptive' | 'budget' | 'disabled';
+export type { ThinkingConfig } from '@/lib/thinkingConfig';
+import type { ThinkingConfig } from '@/lib/thinkingConfig';
 
 export const THINKING_CONFIGS: { id: ThinkingConfig; name: string; description: string; shortName: string; color: string }[] = [
   { id: 'adaptive', name: 'Adaptive', description: 'Claude decides when and how much to think', shortName: 'On', color: 'text-sky-600' },
-  { id: 'budget', name: 'Budget', description: 'Fixed thinking token budget', shortName: 'Budg', color: 'text-violet-600' },
   { id: 'disabled', name: 'Off', description: 'No extended thinking', shortName: 'Off', color: 'text-foreground/70' },
 ];
 

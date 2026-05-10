@@ -110,12 +110,16 @@ export function createQueryPassthroughs(
     const handle = sessions.get(tabId);
     if (!handle) return;
     try {
+      // Two states only as of v0.4.21 — the SDK's `setMaxThinkingTokens`
+      // collapses every non-zero value to adaptive on Opus 4.6+, so the
+      // old `enabled` (fixed-budget) branch produced identical runtime
+      // behavior to `adaptive` while pretending otherwise. Treat any
+      // `enabled` value the renderer might still send as adaptive so a
+      // stale-state caller doesn't fall through silently.
       if (!config || config.type === 'disabled') {
         await handle.query.setMaxThinkingTokens(0);
-      } else if (config.type === 'adaptive') {
+      } else {
         await handle.query.setMaxThinkingTokens(null);
-      } else if (config.type === 'enabled') {
-        await handle.query.setMaxThinkingTokens(config.budgetTokens ?? null);
       }
     } catch (err) {
       console.error(`[sessions] setThinking failed for tab ${tabId}:`, err);

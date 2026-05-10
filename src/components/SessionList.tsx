@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Copy, Check, RefreshCw, Hash, Trash2, ChevronDown, ChevronUp } from "lucide-react";
+import { Copy, Check, RefreshCw, Hash, Trash2, ChevronDown, ChevronUp, ExternalLink } from "lucide-react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import {
@@ -173,6 +173,21 @@ export const SessionList: React.FC<SessionListProps> = ({
       setCopiedId((prev) => (prev === id ? null : prev));
     }, 1500);
   };
+
+  // Single launch path. Used by the per-row launch icon — and by any
+  // future caller that wants to programmatically open a session — so the
+  // CustomEvent + onSessionClick callback always fire together. Keeps
+  // parity with the row-onClick that lived here through v0.4.20.
+  const handleLaunch = useCallback(
+    (session: Session) => {
+      const event = new CustomEvent('claude-session-selected', {
+        detail: { session, projectPath },
+      });
+      window.dispatchEvent(event);
+      onSessionClick?.(session);
+    },
+    [projectPath, onSessionClick],
+  );
 
   // ── Per-session summaries ────────────────────────────────────────────
   // Map keyed by session.id. `null` = no summary on disk (fall back to
@@ -517,17 +532,38 @@ export const SessionList: React.FC<SessionListProps> = ({
           inside the project-view flex column and scrolls internally so
           long, expanded summary lists never push the page out of the
           viewport. The sticky <thead> keeps the column labels visible
-          while the body scrolls underneath. */}
+          while the body scrolls underneath.
+
+          Two-layer wrapper:
+            - Outer holds the rounded border AND `overflow-hidden`, so
+              the sticky thead's tinted background gets clipped by the
+              radius at the top corners.
+            - Inner is the actual scroll container.
+          Folding both responsibilities onto a single div left the
+          header bleeding past the top corners — `overflow-y-auto` only
+          gates vertical overflow, so content drawn outside the radius
+          still painted. */}
       <AnimatePresence mode="popLayout">
-        <div className="rounded-md border border-border/40 overflow-y-auto flex-1 min-h-0">
+        <div className="rounded-md border border-border/40 overflow-hidden flex-1 min-h-0 flex flex-col">
+          <div className="overflow-y-auto flex-1 min-h-0">
           <table className="w-full text-sm">
-            <thead className="sticky top-0 z-10 bg-muted/30 text-[11px] uppercase tracking-wider text-muted-foreground backdrop-blur supports-[backdrop-filter]:bg-muted/60">
+            {/* Fully opaque bg — `bg-muted` (no /60 alpha). The header
+                is sticky over a scrolling body, so any transparency
+                lets row content paint through and read as ghosted
+                text. Same muted hue as before, just at full opacity.
+                No backdrop-blur, since `backdrop-filter` opens its own
+                stacking context and bled past the wrapper's rounded
+                corners as a faint shadow. */}
+            <thead className="sticky top-0 z-10 bg-muted text-[11px] uppercase tracking-wider text-muted-foreground">
               <tr>
                 <th className="text-left font-medium py-2 px-3 w-36">Date</th>
                 <th className="text-left font-medium py-2 px-3">Summary</th>
                 <th className="text-left font-medium py-2 px-3 w-28">Session ID</th>
-                <th className="text-left font-medium py-2 px-3 w-10"></th>
-                <th className="text-left font-medium py-2 px-3 w-10"></th>
+                {/* Consolidated actions column — launch + summary refresh
+                    + trash. Width fits all three icons with gap-1 padding;
+                    aria-label is on each button so the column header can
+                    stay empty without screen-reader noise. */}
+                <th className="text-left font-medium py-2 px-3 w-[88px]" aria-label="Actions" />
               </tr>
             </thead>
             <tbody>
@@ -585,24 +621,50 @@ export const SessionList: React.FC<SessionListProps> = ({
                       ease: [0.4, 0, 0.2, 1],
                     }}
                     className={cn(
-                      "border-t border-border/30 hover:bg-accent/40 cursor-pointer transition-colors",
+                      "border-t border-border/30 transition-colors hover:bg-accent/40",
+                      // Launch is now the per-row launch icon; the row
+                      // itself is no longer interactive. The hover tint
+                      // is just for scan-tracking — `cursor-pointer` is
+                      // intentionally omitted so the visual signal
+                      // doesn't claim a click target that doesn't exist.
+                      // The bg tint for sessions with stored todos is a
+                      // status cue, not an affordance, so it stays.
                       session.todo_data && "bg-primary/5",
                     )}
-                    onClick={() => {
-                      const event = new CustomEvent('claude-session-selected', {
-                        detail: { session, projectPath },
-                      });
-                      window.dispatchEvent(event);
-                      onSessionClick?.(session);
-                    }}
                   >
                     <td className="py-2 px-3 text-[11px] text-muted-foreground whitespace-nowrap leading-tight align-top">
-                      {firstDate && (
-                        <div>{fmt(firstDate)}</div>
-                      )}
-                      <div className={firstDate ? 'text-muted-foreground/70' : ''}>
-                        {fmt(lastDate)}
-                      </div>
+                      {/* Dates wrapped in a launch button — same
+                          contract as ProjectList's name cell.
+                          Trailing ExternalLink glyph signals the
+                          launch affordance. Top-aligned so the icon
+                          sits next to the first date line. The whole
+                          stacked block is one click target. */}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleLaunch(session);
+                        }}
+                        className="inline-flex items-start gap-1 text-left text-muted-foreground hover:text-foreground hover:underline focus-visible:underline focus:outline-none"
+                        // aria-label fixes the accessible name to
+                        // "Launch session" so the button matches the
+                        // rightmost icon launcher in screen-reader
+                        // and test queries. Visible date text is still
+                        // there for sighted users.
+                        aria-label="Launch session"
+                        title="Launch session"
+                      >
+                        <span>
+                          {firstDate && <div>{fmt(firstDate)}</div>}
+                          <div className={firstDate ? 'text-muted-foreground/70' : ''}>
+                            {fmt(lastDate)}
+                          </div>
+                        </span>
+                        <ExternalLink
+                          className="h-3 w-3 opacity-60 mt-[1px]"
+                          aria-hidden="true"
+                        />
+                      </button>
                     </td>
                     <td className="py-2 px-3 text-xs text-foreground/90 max-w-0 align-top">
                       {summary ? (
@@ -663,51 +725,67 @@ export const SessionList: React.FC<SessionListProps> = ({
                       </button>
                     </td>
                     <td className="py-2 px-3 align-top">
-                      {summarizeEnabledForProject ? (
+                      <div className="flex items-center justify-end gap-1">
+                        {/* Launch — primary action, leftmost in the
+                            cluster. Mirrors the projects-row icon
+                            placement / glyph for cross-page consistency. */}
                         <button
                           type="button"
-                          aria-label={summary ? 'Refresh summary' : 'Generate summary'}
-                          title={
-                            isRefreshing
-                              ? 'Generating…'
-                              : noChanges
-                                ? 'No new messages since last summary.'
-                                : summary
-                                  ? 'Refresh summary'
-                                  : 'Generate summary'
-                          }
+                          aria-label="Launch session"
+                          title="Launch session"
                           onClick={(e) => {
                             e.stopPropagation();
-                            void refreshSummary(session.id);
+                            handleLaunch(session);
                           }}
-                          disabled={isRefreshing || noChanges}
-                          className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted/60 disabled:opacity-40"
+                          className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                         >
-                          <RefreshCw
-                            className={cn('h-3.5 w-3.5', isRefreshing && 'animate-spin')}
-                          />
+                          <ExternalLink className="h-4 w-4" />
                         </button>
-                      ) : null}
-                    </td>
-                    <td className="py-2 px-3 align-top">
-                      <button
-                        type="button"
-                        aria-label="Delete session"
-                        title="Delete session"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setPendingDeleteId(session.id);
-                        }}
-                        className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
+                        {summarizeEnabledForProject ? (
+                          <button
+                            type="button"
+                            aria-label={summary ? 'Refresh summary' : 'Generate summary'}
+                            title={
+                              isRefreshing
+                                ? 'Generating…'
+                                : noChanges
+                                  ? 'No new messages since last summary.'
+                                  : summary
+                                    ? 'Refresh summary'
+                                    : 'Generate summary'
+                            }
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void refreshSummary(session.id);
+                            }}
+                            disabled={isRefreshing || noChanges}
+                            className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted/60 disabled:opacity-40"
+                          >
+                            <RefreshCw
+                              className={cn('h-3.5 w-3.5', isRefreshing && 'animate-spin')}
+                            />
+                          </button>
+                        ) : null}
+                        <button
+                          type="button"
+                          aria-label="Delete session"
+                          title="Delete session"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPendingDeleteId(session.id);
+                          }}
+                          className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
                     </td>
                   </motion.tr>
                 );
               })}
             </tbody>
           </table>
+          </div>
         </div>
       </AnimatePresence>
       </div>

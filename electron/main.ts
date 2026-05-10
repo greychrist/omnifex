@@ -688,6 +688,8 @@ app.whenReady().then(() => {
         claudeService.loadSessionHistory(sessionId, projectId, projectPath),
       deleteSession: (sessionId: string, projectId: string, projectPath?: string) =>
         claudeService.deleteSession(sessionId, projectId, projectPath),
+      deleteProject: (args: { accountId: number; projectId: string }) =>
+        claudeService.deleteProject(args),
       getHomeDirectory: () => claudeService.getHomeDirectory(),
       getSettings: (opts?: any) => claudeService.getClaudeSettings(opts),
       saveSettings: (settings: any, opts?: any) => claudeService.saveClaudeSettings(settings, opts),

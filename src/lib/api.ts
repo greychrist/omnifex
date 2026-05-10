@@ -30,7 +30,7 @@ export interface Project {
  */
 export interface SessionDefaults {
   model?: string;
-  thinkingConfig?: 'adaptive' | 'budget' | 'disabled';
+  thinkingConfig?: 'adaptive' | 'disabled';
   permissionMode?: string;
   effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 }
@@ -761,6 +761,24 @@ export const api = {
     const params: Record<string, string> = { sessionId, projectId };
     if (projectPath) params.projectPath = projectPath;
     await apiCall<unknown>('delete_session', params);
+  },
+
+  /**
+   * Permanently delete a project's `<configDir>/projects/<projectId>` folder
+   * for the given account — this removes every session JSONL, summary, and
+   * todo sidecar OmniFex/Claude has stored under that account for that
+   * project. Idempotent: a missing directory resolves quietly. Bound to
+   * `accountId` rather than path resolution so deleting from one account
+   * cannot cascade to a sibling account whose path rule happens to match.
+   */
+  async deleteClaudeProject(args: {
+    accountId: number;
+    projectId: string;
+  }): Promise<{ deletedPath: string }> {
+    return apiCall<{ deletedPath: string }>('delete_project', {
+      accountId: args.accountId,
+      projectId: args.projectId,
+    });
   },
 
   /**

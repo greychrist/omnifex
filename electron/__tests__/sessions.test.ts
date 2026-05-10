@@ -3381,7 +3381,12 @@ describe('sessions service — full lifecycle', () => {
       service.stopAll();
     });
 
-    it('setThinking("enabled", budget) calls setMaxThinkingTokens(budget)', async () => {
+    it('setThinking({type:"enabled", budgetTokens}) collapses to adaptive — calls setMaxThinkingTokens(null)', async () => {
+      // Stale-state safety: a caller from before v0.4.21 might still
+      // pass an `enabled` shape with a budget. The SDK collapses every
+      // non-zero budget to adaptive on Opus 4.6+ anyway, so the queries
+      // module now treats `enabled` the same as `adaptive` instead of
+      // forwarding the budget number.
       const fake = installFakeQuery();
       service.start({
         tabId: 'tab-think-budget',
@@ -3392,7 +3397,7 @@ describe('sessions service — full lifecycle', () => {
       });
 
       await service.setThinking('tab-think-budget', { type: 'enabled', budgetTokens: 10000 });
-      expect(fake.query.setMaxThinkingTokens).toHaveBeenCalledWith(10000);
+      expect(fake.query.setMaxThinkingTokens).toHaveBeenCalledWith(null);
 
       service.stopAll();
     });

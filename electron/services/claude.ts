@@ -128,6 +128,24 @@ export interface ClaudeService {
     projectPath?: string,
   ): Promise<void>;
 
+  /**
+   * Recursively delete `<configDir>/projects/<projectId>` for the account
+   * identified by `accountId`. Returns the absolute path that was removed
+   * (or attempted) so the caller can toast / log.
+   *
+   * Idempotent: a missing project directory resolves quietly. Throws when
+   * the account id is unknown or when `projectId` is not a single safe
+   * path segment (rejects `''`, `.`, `..`, anything containing `/`, `\`,
+   * or `\0`). The renderer is bound to per-row `account_id` so this
+   * intentionally does not consult path rules — deleting a project under
+   * a specific account must not bleed into a sibling account whose path
+   * rule happens to match.
+   */
+  deleteProject(args: {
+    accountId: number;
+    projectId: string;
+  }): Promise<{ deletedPath: string }>;
+
   getClaudeSettings(opts?: ClaudeSettingsOpts): Promise<Record<string, unknown>>;
   saveClaudeSettings(
     settings: Record<string, unknown>,
@@ -627,6 +645,51 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
   }
 
   // -------------------------------------------------------------------------
+  // deleteProject
+  // -------------------------------------------------------------------------
+
+  // A safe project ID is a single non-empty path segment with no separators
+  // and no traversal sneakiness. Claude's encoded project IDs look like
+  // "-Users-gregorychristie-Repos-foo" — leading dash, then dashes for
+  // every internal slash. Anything else is rejected so a malformed renderer
+  // call cannot rm-rf a sibling directory.
+  function assertSafeProjectId(projectId: string): void {
+    if (typeof projectId !== 'string') {
+      throw new Error('deleteProject: projectId must be a string');
+    }
+    const trimmed = projectId.trim();
+    if (trimmed.length === 0) {
+      throw new Error('deleteProject: projectId must not be empty');
+    }
+    if (trimmed === '.' || trimmed === '..') {
+      throw new Error(`deleteProject: refusing traversal projectId "${projectId}"`);
+    }
+    if (/[\\/\0]/.test(projectId) || projectId.includes('..')) {
+      throw new Error(`deleteProject: invalid projectId "${projectId}"`);
+    }
+  }
+
+  async function deleteProject(args: {
+    accountId: number;
+    projectId: string;
+  }): Promise<{ deletedPath: string }> {
+    const { accountId, projectId } = args;
+    assertSafeProjectId(projectId);
+
+    // Bind via id, not path resolution — the renderer row already knows
+    // which account this project lives under, and using accounts.resolve()
+    // would silently jump to a different account whose path rule wins.
+    const account = accounts.listAccounts().find((a) => a.id === accountId);
+    if (!account) {
+      throw new Error(`deleteProject: unknown account id ${accountId}`);
+    }
+
+    const projectDir = path.join(account.config_dir, 'projects', projectId);
+    fs.rmSync(projectDir, { recursive: true, force: true });
+    return { deletedPath: projectDir };
+  }
+
+  // -------------------------------------------------------------------------
   // getClaudeSettings / saveClaudeSettings
   // -------------------------------------------------------------------------
 
@@ -957,6 +1020,7 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
     loadSessionHistory,
     loadAgentSessionHistory,
     deleteSession,
+    deleteProject,
     getClaudeSettings,
     saveClaudeSettings,
     getSystemPrompt,

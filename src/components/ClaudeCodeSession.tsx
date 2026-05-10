@@ -23,6 +23,7 @@ import {
   type EffortLevel,
   type ThinkingConfig,
 } from "./FloatingPromptInput";
+import { normalizeThinkingConfig } from "@/lib/thinkingConfig";
 import { MODELS } from "./ModelPicker";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { SlashCommandsManager } from "./SlashCommandsManager";
@@ -222,7 +223,13 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   // There is no 'auto' — the SDK's EffortLevel is strictly low/medium/high/xhigh/max.
   const [effort, setEffort] = useState<EffortLevel>(initialSessionConfig?.effort ?? 'high');
   // Thinking config — controls extended thinking behavior.
-  const [thinkingConfig, setThinkingConfig] = useState<ThinkingConfig>(initialSessionConfig?.thinkingConfig ?? 'adaptive');
+  const [thinkingConfig, setThinkingConfig] = useState<ThinkingConfig>(
+    // initialSessionConfig may carry a legacy `'budget'` value if the
+    // tab was launched from a pre-v0.4.21 saved-session form. Normalize
+    // at the seed point so the rest of the component works in the
+    // tightened two-state schema.
+    normalizeThinkingConfig(initialSessionConfig?.thinkingConfig),
+  );
   // Unified per-tab git snapshot — project + all sibling worktrees streamed
   // from a single main-process watcher. Null until `startSessionGitWatch`
   // resolves; stays null when the project isn't a git repo.
@@ -269,7 +276,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     if (!defaults) return;
     accountDefaultsApplied.current = true;
     if (defaults.model) setSelectedModel(defaults.model);
-    if (defaults.thinkingConfig) setThinkingConfig(defaults.thinkingConfig);
+    if (defaults.thinkingConfig) setThinkingConfig(normalizeThinkingConfig(defaults.thinkingConfig));
     if (defaults.permissionMode) setPermissionMode(defaults.permissionMode);
     if (defaults.effort) setEffort(defaults.effort as import('./FloatingPromptInput').EffortLevel);
   }, [accountResolution, sessionStarted]);

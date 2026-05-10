@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, cleanup } from '@testing-library/react';
+import { render, cleanup, fireEvent, screen } from '@testing-library/react';
 import type { Project } from '@/lib/api';
 import { ProjectList } from '@/components/ProjectList';
 
@@ -36,6 +36,13 @@ vi.mock('@/contexts/AccountsContext', () => ({
   }),
 }));
 
+// AccountBadge also reads useTheme() now (theme-aware light/dark
+// styling). Stub at the dark-default so the existing assertions keep
+// matching the gray-theme color path.
+vi.mock('@/hooks', () => ({
+  useTheme: () => ({ theme: 'gray', setTheme: async () => {} }),
+}));
+
 afterEach(() => cleanup());
 
 function makeProject(partial: Partial<Project> & Pick<Project, 'id' | 'path'>): Project {
@@ -66,5 +73,116 @@ describe('ProjectList — "Last activity" sort', () => {
 
     // charlie (5000) > bravo (3000) > alpha (1000)
     expect(names).toEqual(['charlie', 'bravo', 'alpha']);
+  });
+});
+
+describe('ProjectList — click semantics', () => {
+  function renderWithOne(handlers: {
+    onProjectClick?: (p: Project) => void;
+    onDeleteProject?: (p: Project) => void;
+  }) {
+    const projects: Project[] = [
+      {
+        id: '-repos-alpha',
+        path: '/repos/alpha',
+        sessions: ['s1', 's2', 's3'],
+        created_at: 0,
+        most_recent_session: 1000,
+        account_id: 7,
+        account_name: 'Personal',
+      },
+    ];
+    return render(
+      <ProjectList
+        projects={projects}
+        onProjectClick={handlers.onProjectClick ?? (() => {})}
+        onDeleteProject={handlers.onDeleteProject}
+      />,
+    );
+  }
+
+  it('does NOT fire onProjectClick when the user clicks Path / Account / Sessions / Last activity cells', () => {
+    const onProjectClick = vi.fn();
+    const { container } = renderWithOne({ onProjectClick });
+
+    // The five informational cells in order: name, path, account,
+    // sessions, last activity, plus the new actions cell. We only want
+    // to assert the four non-actionable middle cells stay inert; the
+    // actions cell is exercised separately below.
+    const cells = Array.from(
+      container.querySelectorAll('tbody tr td'),
+    ) as HTMLTableCellElement[];
+    // Skip cell[0] (name, has a button) and cell[5] (actions). Click
+    // cells 1..4.
+    for (const cell of cells.slice(1, 5)) {
+      fireEvent.click(cell);
+    }
+    expect(onProjectClick).not.toHaveBeenCalled();
+  });
+
+  it('fires onProjectClick when the user clicks the project name', () => {
+    const onProjectClick = vi.fn();
+    renderWithOne({ onProjectClick });
+
+    // The name button's accessible name is its textContent ("alpha").
+    // The Rocket button's accessible name comes from its aria-label
+    // ("Launch this project") — different role-name match, so this
+    // unambiguously hits the link.
+    const nameButton = screen.getByRole('button', { name: 'alpha' });
+    fireEvent.click(nameButton);
+    expect(onProjectClick).toHaveBeenCalledTimes(1);
+    expect(onProjectClick).toHaveBeenCalledWith(
+      expect.objectContaining({ id: '-repos-alpha' }),
+    );
+  });
+
+  it('fires onProjectClick when the user clicks the Rocket icon', () => {
+    const onProjectClick = vi.fn();
+    renderWithOne({ onProjectClick });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Launch this project' }));
+    expect(onProjectClick).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens the confirm dialog (does not delete yet) when Trash is clicked', () => {
+    const onDeleteProject = vi.fn();
+    renderWithOne({ onDeleteProject });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete this project' }));
+    expect(onDeleteProject).not.toHaveBeenCalled();
+    // Dialog should be visible. Scope a query inside the dialog so we
+    // don't match the path text that also appears in the table row.
+    const dialog = screen.getByRole('dialog');
+    expect(dialog.textContent).toContain('Delete this project?');
+    expect(dialog.textContent).toContain('/repos/alpha');
+    expect(dialog.textContent).toContain('Personal');
+  });
+
+  it('fires onDeleteProject only after the user confirms the dialog', () => {
+    const onDeleteProject = vi.fn();
+    renderWithOne({ onDeleteProject });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete this project' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    expect(onDeleteProject).toHaveBeenCalledTimes(1);
+    expect(onDeleteProject).toHaveBeenCalledWith(
+      expect.objectContaining({ id: '-repos-alpha' }),
+    );
+  });
+
+  it('does not fire onDeleteProject when the user cancels the dialog', () => {
+    const onDeleteProject = vi.fn();
+    renderWithOne({ onDeleteProject });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete this project' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(onDeleteProject).not.toHaveBeenCalled();
+  });
+
+  it('hides the trash icon entirely when no onDeleteProject prop is provided', () => {
+    renderWithOne({}); // no onDeleteProject
+    expect(
+      screen.queryByRole('button', { name: 'Delete this project' }),
+    ).toBeNull();
   });
 });

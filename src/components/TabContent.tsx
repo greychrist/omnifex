@@ -13,6 +13,8 @@ import { AccountBadge } from '@/components/AccountBadge';
 import { Button } from '@/components/ui/button';
 import { NewSessionForm, type NewSessionFormAccountResolution } from '@/components/NewSessionForm';
 import type { EffortLevel, ThinkingConfig } from '@/components/FloatingPromptInput';
+import { normalizeThinkingConfig } from '@/lib/thinkingConfig';
+import { useClaudeSessionStore } from '@/stores/claudeSessionStore';
 import { BranchColorsCard } from '@/components/BranchColorsCard';
 
 // Lazy load heavy components
@@ -94,6 +96,34 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
     }
   };
   
+  /**
+   * Optimistically remove the project from the on-screen list and call the
+   * IPC. On failure we restore the row + reload from disk so the UI matches
+   * reality. ProjectList's confirm dialog has already gated the call.
+   * Tab-content has no toast surface, so success is silent (the row vanishing
+   * is the feedback) and failure shows the inline error banner.
+   */
+  const handleDeleteProject = async (project: Project) => {
+    if (project.account_id === undefined) {
+      setError('Cannot delete: this project has no account binding.');
+      return;
+    }
+    const previous = projects;
+    setProjects((prev) => prev.filter((p) => p.id !== project.id));
+    try {
+      await api.deleteClaudeProject({
+        accountId: project.account_id,
+        projectId: project.id,
+      });
+    } catch (err) {
+      console.error('Failed to delete project:', err);
+      setProjects(previous);
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(`Failed to delete project: ${msg}`);
+      void loadProjects();
+    }
+  };
+
   const handleProjectClick = async (project: Project) => {
     try {
       setLoading(true);
@@ -121,15 +151,23 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
         if (d) {
           if (d.model) setFormModel(d.model);
           if (d.effort) setFormEffort(d.effort);
-          if (d.thinkingConfig) setFormThinkingConfig(d.thinkingConfig);
+          // Stored session_defaults may carry the legacy `'budget'`
+          // value for accounts last edited before v0.4.21. Normalize at
+          // the read boundary so the form always lands on a valid
+          // current-schema state.
+          if (d.thinkingConfig) setFormThinkingConfig(normalizeThinkingConfig(d.thinkingConfig));
           if (d.permissionMode) setFormPermissionMode(d.permissionMode);
         }
       }).catch(() => setProjectAccountResolution(null));
 
-      // Update tab title to show project name
+      // Update tab title to "<ProjectName>: Sessions" and flip the
+      // tab icon from Folder → List so the strip reflects that the
+      // projects tab is now showing a session list, not the project
+      // browser. Both reset on the back button below.
       const projectName = project.path.split('/').pop() || 'Project';
       updateTab(tab.id, {
-        title: projectName
+        title: `${projectName}: Sessions`,
+        icon: 'list',
       });
     } catch (err) {
       console.error("Failed to load sessions:", err, "project:", JSON.stringify(project));
@@ -182,12 +220,27 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
   };
   
   const openSessionInTab = (session: Session) => {
+    // Wipe any leftover slice state for this tabId before flipping the
+    // tab to a chat view. The slice (messages / claudeSessionId /
+    // extractedSessionInfo / inflightAssistant) is keyed by tabId, so a
+    // tab that previously hosted a different chat — or the same chat
+    // before a back-out — would feed stale data into the freshly
+    // mounted ClaudeCodeSession. Specifically, `effectiveSession`
+    // (ClaudeCodeSession.tsx:444) synthesizes a Session from the slice
+    // when no `session` prop is given and `extractedSessionInfo` is
+    // populated, which is what made "Start Session" warp back into the
+    // last-opened session. Resetting up front means the new mount
+    // starts from a guaranteed-blank slate.
+    useClaudeSessionStore.getState().resetTab(tab.id);
     updateTab(tab.id, {
       type: 'chat',
       title: session.project_path.split('/').pop() || 'Session',
       sessionId: session.id,
       sessionData: session,
       initialProjectPath: session.project_path,
+      // Clear the projects-tab "list" icon override so the chat type's
+      // default MessageSquare wins for this tab going forward.
+      icon: undefined,
     });
     api.resolveAccountForProject(session.project_path).then((account) => {
       if (account) updateTab(tab.id, { accountName: account.name, accountColor: account.color, accountIcon: account.icon });
@@ -196,6 +249,12 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
 
   const handleStartNewSession = () => {
     if (!selectedProject) return;
+    // Same reset rationale as openSessionInTab — without this, a
+    // previous chat's `extractedSessionInfo` leaks into ClaudeCodeSession's
+    // `effectiveSession` memo and the user lands back in the session
+    // they just backed out of, even though the SDK side has spawned a
+    // fresh subprocess.
+    useClaudeSessionStore.getState().resetTab(tab.id);
     const projectName = selectedProject.path.split('/').pop() || 'Session';
     updateTab(tab.id, {
       type: 'chat',
@@ -203,6 +262,8 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
       sessionId: undefined,
       sessionData: undefined,
       initialProjectPath: selectedProject.path,
+      // Clear the projects-tab "list" icon override; chat's default wins.
+      icon: undefined,
       initialSessionConfig: {
         model: formModel,
         effort: formEffort,
@@ -269,9 +330,12 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                               onClick={() => {
                                 setSelectedProject(null);
                                 setSessions([]);
-                                // Restore tab title to "Projects"
+                                // Restore tab title to "Projects" and
+                                // clear the per-tab icon override so the
+                                // type default (Folder) wins again.
                                 updateTab(tab.id, {
-                                  title: 'Projects'
+                                  title: 'Projects',
+                                  icon: undefined,
                                 });
                               }}
                               className="h-8 w-8 -ml-2"
@@ -385,6 +449,7 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                       projects={projects}
                       onProjectClick={handleProjectClick}
                       onOpenProject={handleOpenProject}
+                      onDeleteProject={handleDeleteProject}
                       loading={loading}
                     />
                   </div>
@@ -452,10 +517,15 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
               tabId={tab.id}
               initialSessionConfig={tab.initialSessionConfig}
               onBack={() => {
-                // Go back to projects view in the same tab
+                // Go back to projects view in the same tab. Also clear
+                // the per-tab icon override — the chat tab might still
+                // be carrying it from a previous projects → sessions
+                // drill-down, and the projects landing page wants the
+                // type-default Folder icon back.
                 updateTab(tab.id, {
                   type: 'projects',
                   title: 'Projects',
+                  icon: undefined,
                 });
               }}
               onStreamingChange={(isStreaming, sessionId) => {

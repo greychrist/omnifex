@@ -114,6 +114,47 @@ describe('accounts service', () => {
       expect(updated.session_defaults).toEqual({ model: 'sonnet' });
     });
 
+    it("normalizes a legacy 'budget' thinkingConfig in stored session_defaults to 'adaptive' on read", () => {
+      // Schema migration in v0.4.21 collapsed thinkingConfig to a
+      // two-state ('adaptive' | 'disabled') value. Accounts saved
+      // before that migration may still carry the legacy 'budget'
+      // entry in session_defaults JSON. The deserializer should coerce
+      // it to 'adaptive' silently — that's what the SDK already
+      // collapsed any non-zero budget to at runtime, so behavior is
+      // unchanged; only the stored label is lying.
+      accounts.createAccount('Legacy', '/home/user/.claude', 'pro');
+      const [acct] = accounts.listAccounts();
+      // Drop a legacy payload directly into the row, bypassing the
+      // typed API which no longer accepts 'budget'.
+      const legacyJson = JSON.stringify({
+        model: 'sonnet',
+        thinkingConfig: 'budget',
+        permissionMode: 'default',
+      });
+      db.raw.prepare('UPDATE accounts SET session_defaults = ? WHERE id = ?').run(legacyJson, acct.id);
+
+      const reloaded = accounts.listAccounts().find((a) => a.id === acct.id)!;
+      expect(reloaded.session_defaults).toEqual({
+        model: 'sonnet',
+        thinkingConfig: 'adaptive',
+        permissionMode: 'default',
+      });
+    });
+
+    it("strips an unknown thinkingConfig value rather than passing it through", () => {
+      // Defensive: any future schema drift (or hand-edited DB) that
+      // produces a value outside the two known states should be
+      // dropped, not propagated to the renderer where it would render
+      // as a no-op picker state.
+      accounts.createAccount('Garbage', '/home/user/.claude', 'pro');
+      const [acct] = accounts.listAccounts();
+      const garbageJson = JSON.stringify({ thinkingConfig: 'totally-unknown' });
+      db.raw.prepare('UPDATE accounts SET session_defaults = ? WHERE id = ?').run(garbageJson, acct.id);
+
+      const reloaded = accounts.listAccounts().find((a) => a.id === acct.id)!;
+      expect(reloaded.session_defaults?.thinkingConfig).toBeUndefined();
+    });
+
     it('clears session_defaults when explicitly set to null', () => {
       accounts.createAccount('Personal', '/home/user/.claude', 'pro', undefined, undefined, {
         model: 'sonnet',
