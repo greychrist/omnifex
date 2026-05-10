@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.21] — 2026-05-10
+
+A multi-area UX pass on the Projects and Sessions tables, plus a few supporting cleanups that came up while shipping it. Row-wide click is gone on both tables — you now launch a project or session via the explicit name/date link or the right-side launch icon, never by clicking anywhere in the row. New per-row Trash icons for permanent project / session deletion. Account badges adapt to light theme so bright hues stay readable. Thinking-config picker collapses to two states (Adaptive / Off) since "Budget" was a UI lie that produced identical model behavior. One stale-state bug fix for "Start Session warps me back to the session I just backed out of."
+
+Installers remain **unsigned**.
+
+### Added
+
+- **Project-row launch + delete affordances.** Project name renders as a link-styled `<button>` with a trailing `ExternalLink` glyph; both fire `onProjectClick`. New right-most actions column with the launch icon and a Trash icon (shadcn confirm dialog with project path, account name, and session count).
+- **`claude:deleteProject` IPC.** Permanently removes `<configDir>/projects/<projectId>` for the row's account. Hard `projectId` validation (rejects `/`, `\`, `..`, empty, `.`, leading-dot), idempotent `rmSync`, resolves `config_dir` strictly via `account_id` so deletion can't bleed into a sibling account whose path rule happens to match. Optimistic removal in the renderer with rollback on error. 5 new service tests + 7 new ProjectList click-semantics tests.
+- **Session-row launch + delete affordances** (parallel treatment). Date cell becomes a launch `<button>` with the same trailing `ExternalLink` glyph. Right-side actions cluster consolidates launch + summary refresh + trash into one column (replacing two prior single-icon header cells). 4 new SessionList click-semantics tests covering Date launches, launch icon launches, dispatches the existing `claude-session-selected` CustomEvent, and the dead-cell contract.
+- **Tab title and icon when drilled into a project's sessions.** The projects tab title becomes `<ProjectName>: Sessions` and the icon flips from Folder → List. Cleared on Back, on opening a session, on starting a new chat. New pure `getTabIcon(tab)` resolver in `TabManager.tsx` (extracted for direct unit testing) plus a `tab.icon` override path on the existing `Tab.icon?: string` field.
+- **Account-filter dropdown badges.** Each option in the Projects-page Account filter renders as the resolved `AccountBadge` (color + icon + name), in both the dropdown items and the closed trigger. `'All'` gets a new gray `AllAccountsBadge` with a lucide `Infinity` glyph. `'(unassigned)'` reads as muted "No account" text.
+- **`AccountBadge` `size="sm"` variant.** 12px text (`text-xs`) and a 15px icon, sized to match shadcn's text-xs container chrome (select dropdowns / triggers / etc.). The default `xs` (11px text + 14px icon) is unchanged for every other call site. 3 new size-variant tests.
+- **Theme-aware `AccountBadge` colors.** Colored badges now adapt to the active theme via OKLCH `color-mix`. The gray (dark) theme keeps the original transparent-mix look; the light theme mixes the surface toward white and the foreground toward black so bright hues (yellow, cyan, rose) keep contrast on a near-white background. Same treatment on the compact (icon-only) chip variant. 3 new theme-aware tests.
+- **`src/lib/thinkingConfig.ts`.** Canonical `type ThinkingConfig = 'adaptive' | 'disabled'` plus `normalizeThinkingConfig(value: unknown)` coercer. Used at every persisted-data read boundary. 4 new unit tests.
+
+### Changed
+
+- **Row hover affordance.** Both tables keep `hover:bg-accent/40` for visual scan-tracking but drop `cursor-pointer` and the row-level `onClick` — hover is presentational, not an affordance. Click targets are now exclusively the name/date link, the launch icon, and the trash icon.
+- **`ThinkingConfig` collapses to two states.** `'adaptive' | 'budget' | 'disabled'` → `'adaptive' | 'disabled'`. The SDK's `setMaxThinkingTokens` already collapsed every non-zero value to adaptive on Opus 4.6+, so "Budget" was persisting a label that produced identical model behavior. Picker shows two rows: Adaptive and Off. Type tightens across `ControlBar`, `TabContext`, `src/lib/api`, and `electron/services/accounts`.
+- **Stored `'budget'` values silently migrate.** `AccountsService.rowToAccount` runs a new `normalizeSessionDefaults()` over the JSON column on read; legacy `'budget'` flips to `'adaptive'`, truly unknown values get stripped. Same coercion at every renderer read point (`TabContent` form seed, `ClaudeCodeSession` state seed and account-defaults apply). No DB migration needed — coercion happens at every read boundary.
+- **`queries.setThinking` simplified.** Drops the `enabled` (fixed-budget) branch — any caller still passing it lands on adaptive instead of falling through. Two branches now: `disabled` → `setMaxThinkingTokens(0)`, anything else → `setMaxThinkingTokens(null)`.
+- **Sessions table chrome.** Outer wrapper restructured into a rounded `overflow-hidden` clipper + an inner scroll container so the sticky `<thead>`'s tinted background no longer bleeds past the rounded corners at the top. Sticky `<thead>` switches from `bg-muted/60 + backdrop-blur` to a fully opaque `bg-muted` — `backdrop-filter` opens its own stacking context with looser clipping that escaped the outer `overflow-hidden`, and the 60% alpha let scrolled rows paint through the header as ghosted text. Solid bg fixes both at once.
+- **Account-filter trigger left padding.** The closed trigger had shadcn's default `px-3` (12px) eating the space before the badge; tightened to `pl-1` (4px) so the badge sits closer to the left border without crowding it.
+- **CHANGELOG-only:** the `commit` skill in `.claude/skills/commit.md` and the `omnifex-release` runbook are unchanged in this release.
+
+### Fixed
+
+- **"Start Session warps me back to the previous session" (stale per-tab store).** `claudeSessionStore` keeps per-tab state (`messages`, `claudeSessionId`, `extractedSessionInfo`, `inflightAssistant`, …) keyed by `tabId`. On chat unmount the slice survived, so the next `ClaudeCodeSession` to mount on the same tab read the leftover state — `effectiveSession` (line 444) synthesized the previous session from `extractedSessionInfo` and the user landed back in the session they just backed out of, even though the SDK side had spawned a fresh subprocess. `handleStartNewSession` and `openSessionInTab` now call `useClaudeSessionStore.getState().resetTab(tab.id)` before flipping the tab type, guaranteeing the new mount starts blank.
+- **Light-mode `AccountBadge` invisibility for bright hues.** A yellow / cyan / rose account on the light theme rendered as a near-white wash with bright-color text — no contrast for either text or border. Theme-aware `color-mix` (above) makes every hue land on a readable side of the contrast ratio in both themes.
+
+### Removed
+
+- **`'budget'` thinking-config option.** No model behavior change — the SDK already collapsed it to adaptive. UI label removed; persisted values coerced on read.
+- **`THINKING_CONFIGS` Budget entry** (`{ id: 'budget', name: 'Budget', … }`).
+- **The `enabled` branch in `queries.setThinking`.** Any caller still passing the `enabled` shape from the broader SDK type lands on adaptive.
+- **`backdrop-blur` + `supports-[backdrop-filter]:bg-muted/60` from the Sessions table sticky header.** Replaced by the simpler opaque `bg-muted` (see Changed).
+
 ## [0.4.20] — 2026-05-09
 
 A small typography polish on top of v0.4.19. The chat **Header** and **Content** weight pickers were limited to four choices (Normal, Medium, Semibold, Bold) — extended to the full nine standard CSS weights so the bundled variable typefaces (Inter, Geist, DM Sans, JetBrains Mono, iA Writer Quattro/Duospace, etc.) can be used at the weights they actually ship.
