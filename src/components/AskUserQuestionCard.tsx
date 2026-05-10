@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Send, MessageCircleQuestion } from "lucide-react";
+import { Send, MessageCircleQuestion, ChevronUp, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { accentStyleFor, swatchFor } from "@/lib/accentStyle";
@@ -85,6 +85,12 @@ export function AskUserQuestionCard({ request, onSubmit, onCancel }: AskUserQues
     () => questions.map((q) => (q.multiSelect ? [] : null)),
   );
   const [otherTexts, setOtherTexts] = useState<string[]>(() => questions.map(() => ''));
+  // When the SDK sends 3-4 questions with previews the card can occupy
+  // ~60vh, hiding the chat context the user wants to consult before
+  // answering. Collapsing drops everything below the header so that
+  // context is visible again; submit stays gated on re-expanding so the
+  // user can't fire off answers they can no longer see.
+  const [collapsed, setCollapsed] = useState(false);
 
   const isComplete = questions.every((q, i) => {
     const sel = selections[i];
@@ -195,8 +201,23 @@ export function AskUserQuestionCard({ request, onSubmit, onCancel }: AskUserQues
                 : `Answer all ${questions.length} questions, then submit.`}
             </div>
           </div>
+          <button
+            type="button"
+            onClick={() => setCollapsed((c) => !c)}
+            aria-label={collapsed ? "Expand question" : "Collapse question"}
+            aria-expanded={!collapsed}
+            className={cn(
+              "shrink-0 -mt-0.5 -mr-0.5 h-6 w-6 inline-flex items-center justify-center rounded-md",
+              "text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors",
+              "focus:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+            )}
+          >
+            {collapsed ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}
+          </button>
         </div>
 
+        {!collapsed && (
+        <>
         {/* Questions — scrollable so the SDK's max-4 questions, each with
             up to 4 options + an optional preview block + the auto "Other"
             field, never blow past the chat layout. Cap at ~60% viewport
@@ -335,6 +356,8 @@ export function AskUserQuestionCard({ request, onSubmit, onCancel }: AskUserQues
             Send answer{questions.length > 1 ? 's' : ''}
           </Button>
         </div>
+        </>
+        )}
       </div>
     </div>
   );

@@ -91,4 +91,61 @@ describe("AskUserQuestionCard", () => {
     fireEvent.click(screen.getByRole("button", { name: /^cancel$/i }));
     expect(onCancel).toHaveBeenCalledTimes(1);
   });
+
+  describe("collapse / expand", () => {
+    // The card can occupy ~60vh + header + footer of the chat when the agent
+    // sends 3-4 questions, hiding chat context the user wants to consult
+    // before answering. A chevron in the header collapses the card to its
+    // header row so the chat above is visible again.
+    it("defaults to expanded with questions and Send visible", () => {
+      render(
+        <AskUserQuestionCard
+          request={makeRequest()}
+          onSubmit={vi.fn()}
+          onCancel={vi.fn()}
+        />,
+      );
+      expect(screen.getByText("Pick a color")).toBeTruthy();
+      expect(screen.getByRole("button", { name: /send answer/i })).toBeTruthy();
+      expect(screen.getByRole("button", { name: /collapse question/i })).toBeTruthy();
+    });
+
+    it("collapsing hides the questions, Send, and Cancel buttons", () => {
+      render(
+        <AskUserQuestionCard
+          request={makeRequest()}
+          onSubmit={vi.fn()}
+          onCancel={vi.fn()}
+        />,
+      );
+
+      fireEvent.click(screen.getByRole("button", { name: /collapse question/i }));
+
+      // Question text and the Send / Cancel footer all gone.
+      expect(screen.queryByText("Pick a color")).toBeNull();
+      expect(screen.queryByText("Red")).toBeNull();
+      expect(screen.queryByText("Blue")).toBeNull();
+      expect(screen.queryByRole("button", { name: /send answer/i })).toBeNull();
+      expect(screen.queryByRole("button", { name: /^cancel$/i })).toBeNull();
+      // Header + toggle stay so the user can re-open.
+      expect(screen.getByText("The agent has a question for you")).toBeTruthy();
+      expect(screen.getByRole("button", { name: /expand question/i })).toBeTruthy();
+    });
+
+    it("re-expanding restores questions and the Send button", () => {
+      render(
+        <AskUserQuestionCard
+          request={makeRequest()}
+          onSubmit={vi.fn()}
+          onCancel={vi.fn()}
+        />,
+      );
+
+      fireEvent.click(screen.getByRole("button", { name: /collapse question/i }));
+      fireEvent.click(screen.getByRole("button", { name: /expand question/i }));
+
+      expect(screen.getByText("Pick a color")).toBeTruthy();
+      expect(screen.getByRole("button", { name: /send answer/i })).toBeTruthy();
+    });
+  });
 });
