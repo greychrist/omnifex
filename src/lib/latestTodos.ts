@@ -20,7 +20,9 @@ export function getLatestTodos(messages: ClaudeStreamMessage[]): TodoItem[] | nu
         typeof block?.name === 'string' &&
         block.name.toLowerCase() === 'todowrite'
       ) {
-        const todos = block.input?.todos;
+        // BetaToolUseBlock.input is typed as `unknown` (tool-shape-specific).
+        const input = (block.input ?? {}) as { todos?: unknown };
+        const todos = input.todos;
         if (Array.isArray(todos) && todos.length > 0) {
           return todos as TodoItem[];
         }

@@ -62,7 +62,7 @@ export function useSessionTimeouts({
                 subtype: "notification",
                 notification_type: "warn",
                 title: "Slow Response",
-                message:
+                body:
                   "Session is still active but no response yet. Waiting...",
               } as any,
             ]);
@@ -106,9 +106,15 @@ export function useSessionTimeouts({
           if (health.alive && health.status !== "error") {
             // Session is alive — show warning but keep waiting
             setMessages((prev) => {
-              // Don't spam warnings
+              // Don't spam warnings. Only system+notification messages carry
+              // a `title` field on the typed union; everything else returns
+              // undefined here and falls through to the spam-prevention path.
               const lastMsg = prev[prev.length - 1];
-              if (lastMsg?.title === "Session May Be Unresponsive") return prev;
+              const lastTitle =
+                lastMsg?.type === 'system' && lastMsg.subtype === 'notification'
+                  ? lastMsg.title
+                  : undefined;
+              if (lastTitle === "Session May Be Unresponsive") return prev;
               return [
                 ...prev,
                 {
@@ -116,7 +122,7 @@ export function useSessionTimeouts({
                   subtype: "notification",
                   notification_type: "warn",
                   title: "Session May Be Unresponsive",
-                  message:
+                  body:
                     "No messages received recently, but session is still alive.",
                 } as any,
               ];
@@ -137,7 +143,7 @@ export function useSessionTimeouts({
             subtype: "notification",
             notification_type: "warn",
             title: "Session Lost",
-            message: "Session is no longer active. Send a message to restart.",
+            body: "Session is no longer active. Send a message to restart.",
           } as any,
         ]);
       }

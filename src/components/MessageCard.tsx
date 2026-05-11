@@ -148,9 +148,14 @@ const CardFooter: React.FC<{
 
   const showKind = config.debug.showCardKindLabel && message;
   let kindLabel: string | null = null;
-  if (showKind) {
-    const t = message?.type ?? null;
-    const sub = message?.subtype ?? null;
+  if (showKind && message) {
+    const t = message.type;
+    // Only system / result variants carry a subtype on the typed union; the
+    // rest fall through with a bare type label.
+    const sub =
+      'subtype' in message && typeof message.subtype === 'string'
+        ? message.subtype
+        : null;
     if (t) kindLabel = sub ? `${t} · ${sub}` : String(t);
   }
 

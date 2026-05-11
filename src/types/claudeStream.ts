@@ -1,118 +1,170 @@
 /**
- * Shape of one message off the Claude Agent SDK stream, as we receive it
- * in the renderer. Mirrors what `claude-output:<tabId>` events deliver.
+ * Shape of one message off the Claude Agent SDK stream, as the renderer
+ * receives it on `claude-output:<tabId>` events.
  *
- * The SDK exposes a richer discriminated union (`SDKMessage` in
- * `@anthropic-ai/claude-agent-sdk` — see `node_modules/.../sdk.d.ts`).
- * OmniFex deliberately keeps a permissive index signature here so JSONL-
- * loaded sessions, synthesized result cards, and tool-specific fields
- * we don't model can pass through the renderer without ceremony.
+ * Anchored on `SDKMessage` (the SDK's 29-variant discriminated union)
+ * intersected with `OmnifexEnvelope` (the main process timestamps each
+ * message as it crosses the IPC boundary). Three OmniFex synthetic
+ * variants cover what the SDK doesn't model:
  *
- * The well-known fields below — including the inner `message.stop_reason`,
- * `message.usage.cache_*` cache attribution, and the OmniFex augmentations
- * like `receivedAt` / `synthesized` / `timestamp` — are typed explicitly so
- * hot-path consumers (synthesizeResults, the result card, classifiers) can
- * read them without `as any` casts. New consumers should prefer adding to
- * this declaration over reaching through the index signature.
+ *   - `permission_request` — emitted by `canUseTool` for the in-app
+ *     permission gate. Wire is snake_case; the reducer normalises to
+ *     camelCase `PermissionRequestPayload` before downstream consumers.
+ *   - `system` + `notification` — OmniFex's toast-style status row
+ *     (info/warn/error/stop). Distinct from `SDKNotificationMessage`
+ *     (which has key/text/priority for the REPL notification queue) —
+ *     we `Exclude` the SDK variant from the union so the discriminator
+ *     unambiguously names the OmniFex shape.
+ *   - `summary` — compaction summary loaded from session JSONL.
+ *
+ * Why anchor on the full `SDKMessage` rather than enumerate variants:
+ * `subagentStreams.ts` consumes `task_started`/`task_progress`/
+ * `task_notification`; `messageFilters.ts` and `messageKind.ts` switch
+ * on `hook_started`/`hook_response`/`hook_progress`. Enumerating only
+ * the handful with first-class rendering would force every other site
+ * back through casts. Using the SDK's own union and `Exclude`-ing the
+ * one colliding variant is the smallest change that lets the compiler
+ * narrow correctly throughout.
  */
-export interface ClaudeStreamMessage {
-  /**
-   * Discriminator. The first five are SDK-emitted variants; `permission_request`
-   * is an OmniFex-side synthetic for the canUseTool gate; `summary` is the
-   * compaction-summary synthetic (carries `leafUuid` + `summary`); and
-   * `stream_event` is the SDK's partial-assistant frame (carries `event`
-   * with text/JSON deltas).
-   */
-  type:
-    | 'system'
-    | 'assistant'
-    | 'user'
-    | 'result'
-    | 'permission_request'
-    | 'summary'
-    | 'stream_event';
-  subtype?: string;
-  request_id?: string;
-  tool_name?: string;
-  tool_input?: Record<string, any>;
-  /** The wrapped Anthropic message — present on `assistant` and `user` rows. */
-  message?: {
-    /** Mixed content blocks: `text`, `thinking`, `tool_use`, `tool_result`, `image`, … */
-    content?: any[];
-    /**
-     * Why the model stopped on this turn. Terminal values: `end_turn`,
-     * `stop_sequence`, `max_tokens`, `refusal`, `model_context_window_exceeded`.
-     * Non-terminal: `tool_use`, `pause_turn`. `null`/absent on partial streams.
-     * See `synthesizeResults.ts` for the terminal-stop classification.
-     */
-    stop_reason?: string | null;
-    /** Per-call token usage, with prompt-caching attribution. */
-    usage?: {
-      input_tokens: number;
-      output_tokens: number;
-      /** Tokens served from the prompt cache (~0.1× input price). */
-      cache_read_input_tokens?: number;
-      /** Tokens written to the prompt cache (~1.25× input price, 5-min TTL). */
-      cache_creation_input_tokens?: number;
-    };
-  };
-  /** Per-turn usage on the synthesized result row (not the inner SDK message). */
-  usage?: {
-    input_tokens: number;
-    output_tokens: number;
-    cache_read_input_tokens?: number;
-    cache_creation_input_tokens?: number;
-  };
-  /**
-   * ISO timestamp stamped by the main process as the message was received
-   * from the SDK stream. Absent on messages loaded from a session's JSONL
-   * (the SDK's history has no per-message receive timestamp).
-   */
+
+import type {
+  SDKAssistantMessage,
+  SDKMessage,
+  SDKNotificationMessage,
+  SDKResultMessage,
+  SDKUserMessage,
+  SDKUserMessageReplay,
+} from '@anthropic-ai/claude-agent-sdk';
+import type { PermissionSuggestion } from '../lib/types/permissionRequest';
+
+/**
+ * Fields the main process attaches to every message as it crosses the IPC
+ * boundary. Live messages receive `receivedAt`; JSONL-reloaded messages
+ * carry `timestamp`. `synthesized` marks result rows reconstructed by
+ * `synthesizeResultMessages` rather than emitted by the SDK.
+ */
+export interface OmnifexEnvelope {
+  /** ISO timestamp stamped when the main process received the message from the SDK stream. */
   receivedAt?: string;
-  /**
-   * Wall-clock timestamp from the JSONL session history. Distinct from
-   * `receivedAt`: live messages have `receivedAt`, reloaded messages have
-   * `timestamp`. Synthesized result cards inherit one or the other.
-   */
+  /** Wall-clock timestamp from JSONL history. Distinct from `receivedAt`. */
   timestamp?: string;
-  /** SDK session ID; mirrored on every message after init. */
-  sessionId?: string;
-  session_id?: string;
-  /**
-   * Set on assistant messages emitted by a subagent (Task/Agent tool); links
-   * back to the parent tool_use block. `null` on the user's own thread.
-   */
-  parent_tool_use_id?: string | null;
-  /** True on JSONL-loaded messages that the SDK marked `meta` (skip rendering unless exempted). */
-  isMeta?: boolean;
-  /**
-   * Marker for messages reconstructed by `synthesizeResultMessages` — they
-   * were not emitted live by the SDK. Useful for debugging or tooltips.
-   */
+  /** True on messages reconstructed by `synthesizeResultMessages` rather than emitted live. */
   synthesized?: boolean;
-  // Tool-specific fields, error details, and other rare augmentations pass
-  // through the index signature. Prefer adding to this interface over
-  // reaching through the index signature in new code.
-  [key: string]: any;
+  /**
+   * Annotation applied by OmniFex's JSONL loader to messages the SDK marked
+   * `meta`. The renderer skips meta rows unless an exemption applies (skill
+   * injection, system context). Not emitted on live-stream messages.
+   */
+  isMeta?: boolean;
 }
 
-/** True when `msg` is the SDK's assistant variant. */
+/**
+ * `SDKMessage` minus `SDKNotificationMessage`. The SDK variant carries
+ * `{ key, text, priority }` for the REPL's notification queue; OmniFex's
+ * `SystemNotificationMessage` synthetic occupies the same `system+notification`
+ * discriminator with a different shape. The SDK shape is never currently
+ * emitted to the renderer; if that changes, route it through a distinct
+ * subtype rather than colliding here.
+ */
+type AnchoredSDKMessage = Exclude<SDKMessage, SDKNotificationMessage>;
+
+/**
+ * `permission_request` is OmniFex-synthetic — it travels on the same
+ * `claude-output:<tabId>` channel as SDK messages and is normalised
+ * onto `PermissionRequestPayload` by `sessionStreamReducer`. Snake_case
+ * field names match the wire format emitted by `permissions.ts`.
+ */
+export interface PermissionRequestMessage extends OmnifexEnvelope {
+  type: 'permission_request';
+  request_id: string;
+  tool_name: string;
+  tool_input?: Record<string, unknown>;
+  title?: string;
+  display_name?: string;
+  description?: string;
+  decision_reason?: string;
+  blocked_path?: string;
+  permission_suggestions?: PermissionSuggestion[];
+}
+
+/**
+ * OmniFex's toast-style status row. Emitted by:
+ *   - `electron/services/sessions/hooks.ts` (hook-driven notifications, session setup)
+ *   - `electron/services/sessions/runtime.ts` (session lifecycle errors)
+ *   - `electron/services/sessions/queries.ts` (interrupt failures, permission-rule warnings)
+ *   - `src/hooks/useSessionLifecycle.ts` (session-start failures)
+ *
+ * The `body` field carries the rendered text. Historical wire emitted
+ * `message: string` here, which collided with `assistant.message` /
+ * `user.message` (a wrapped Anthropic message). The rename lets the
+ * discriminated union narrow cleanly.
+ */
+export interface SystemNotificationMessage extends OmnifexEnvelope {
+  type: 'system';
+  subtype: 'notification';
+  notification_type: 'info' | 'warn' | 'error' | 'stop';
+  title?: string;
+  body?: string;
+}
+
+/**
+ * Synthetic for compaction-summary entries loaded from session JSONL.
+ * SDK has `SDKCompactBoundaryMessage` for the live marker
+ * (`system+compact_boundary`); this synthetic is the *historical*
+ * summary row that the Claude CLI writes as `{ type: 'summary',
+ * leafUuid, summary }` at the top of a compacted JSONL session file.
+ */
+export interface CompactionSummaryMessage extends OmnifexEnvelope {
+  type: 'summary';
+  leafUuid: string;
+  summary: string;
+}
+
+export type ClaudeStreamMessage =
+  | (AnchoredSDKMessage & OmnifexEnvelope)
+  | PermissionRequestMessage
+  | SystemNotificationMessage
+  | CompactionSummaryMessage;
+
+// ---------------------------------------------------------------------------
+// Narrowing guards
+// ---------------------------------------------------------------------------
+
+/** True when `msg` is the SDK's assistant variant (carries a wrapped BetaMessage). */
 export function isAssistantMessage(
   msg: ClaudeStreamMessage,
-): msg is ClaudeStreamMessage & { type: 'assistant'; message: NonNullable<ClaudeStreamMessage['message']> } {
-  return msg.type === 'assistant' && msg.message != null;
+): msg is SDKAssistantMessage & OmnifexEnvelope {
+  return msg.type === 'assistant';
 }
 
-/** True when `msg` is the SDK's user variant (typed prompt, tool_result reply, or hook feedback). */
+/**
+ * True when `msg` is an SDK user-variant — typed prompt, tool_result reply,
+ * hook feedback, or JSONL-replay. Both `SDKUserMessage` and
+ * `SDKUserMessageReplay` share `type: 'user'`.
+ */
 export function isUserMessage(
   msg: ClaudeStreamMessage,
-): msg is ClaudeStreamMessage & { type: 'user' } {
+): msg is (SDKUserMessage | SDKUserMessageReplay) & OmnifexEnvelope {
   return msg.type === 'user';
 }
 
-/** True when `msg` is a terminal turn result — either real (from SDK) or synthesized. */
+/** True when `msg` is a terminal turn result — success or error subtype, real or synthesized. */
 export function isResultMessage(
   msg: ClaudeStreamMessage,
-): msg is ClaudeStreamMessage & { type: 'result' } {
+): msg is SDKResultMessage & OmnifexEnvelope {
   return msg.type === 'result';
+}
+
+/**
+ * Returns the inner content blocks for an assistant or user message, `undefined`
+ * for any other variant. Returned as `unknown` so the caller can branch on
+ * `typeof content === 'string'` (user messages may carry a string payload from
+ * the CLI's initial-prompt format) vs `Array.isArray(content)` without an
+ * extra cast. Saves dozens of `if (msg.type === 'assistant' || ...)` narrows
+ * across counters / classifiers / filters.
+ */
+export function getMessageContent(msg: ClaudeStreamMessage): unknown {
+  if (msg.type === 'assistant') return msg.message.content;
+  if (msg.type === 'user') return msg.message?.content;
+  return undefined;
 }

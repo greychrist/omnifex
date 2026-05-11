@@ -6,7 +6,7 @@ const sysInit = (): ClaudeStreamMessage =>
   ({ type: 'system', subtype: 'init', session_id: 'abc', model: 'claude', cwd: '/x', tools: [] } as unknown as ClaudeStreamMessage);
 
 const notif = (kind: string): ClaudeStreamMessage =>
-  ({ type: 'system', subtype: 'notification', notification_type: kind, message: 'm' } as unknown as ClaudeStreamMessage);
+  ({ type: 'system', subtype: 'notification', notification_type: kind, body: 'm' } as unknown as ClaudeStreamMessage);
 
 const userText = (text: string): ClaudeStreamMessage =>
   ({ type: 'user', message: { content: [{ type: 'text', text }] } } as unknown as ClaudeStreamMessage);

@@ -44,7 +44,7 @@ export function createQueryPassthroughs(
         subtype: 'notification',
         notification_type: 'error',
         title: 'Stop request failed',
-        message:
+        body:
           `The session may still be running. Try again, or restart the session ` +
           `if it stays stuck. (interrupt failed: ${errMsg.slice(0, 200)})`,
       });
@@ -112,7 +112,7 @@ export function createQueryPassthroughs(
         subtype: 'notification',
         notification_type: 'warn',
         title: 'Permission rule saved on disk but not applied to live session',
-        message:
+        body:
           `Restart the session to apply the new rules. ` +
           `(applyFlagSettings failed: ${errMsg.slice(0, 200)})`,
       });

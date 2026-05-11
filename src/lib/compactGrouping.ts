@@ -1,4 +1,5 @@
 import type { ClaudeStreamMessage } from '@/types/claudeStream';
+import { getMessageContent } from '@/types/claudeStream';
 import type { MessageRenderingConfig } from './messageRenderingConfig';
 import { classifyStandaloneKind } from './messageKind';
 import { classifyBlockKind } from './blockKind';
@@ -24,7 +25,7 @@ export type CompactItem =
   | { kind: 'group'; messages: ClaudeStreamMessage[]; key: string };
 
 function hasTodoWriteToolUse(msg: ClaudeStreamMessage): boolean {
-  const content = msg.message?.content;
+  const content = getMessageContent(msg);
   if (!Array.isArray(content)) return false;
   return content.some(
     (c: any) =>
@@ -71,10 +72,10 @@ export function isMessageFullyHidden(
     return k.hiddenInCompact === true;
   }
 
-  // The declared shape says content is `any[]`, but the CLI's persisted
-  // user prompts are bare strings (live SDK uses an array of text blocks).
-  // Widen here so the string-form check below isn't narrowed away.
-  const content: unknown = msg.message?.content;
+  // The CLI's persisted user prompts are bare strings (live SDK uses an
+  // array of text blocks). `getMessageContent` returns `unknown` so the
+  // typeof / Array.isArray branches below narrow cleanly.
+  const content = getMessageContent(msg);
   // Treat any non-empty string as a visible user prompt — early-returning
   // "fully hidden" here was sweeping reloaded prompts into hidden groups.
   if (typeof content === 'string') return content.trim().length === 0;

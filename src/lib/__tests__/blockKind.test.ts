@@ -3,10 +3,16 @@ import { classifyBlockKind, isBlockHiddenInCompact } from '../blockKind';
 import { createDefaultConfig } from '../messageRenderingConfig';
 import type { ClaudeStreamMessage } from '@/types/claudeStream';
 
-const assistant = (content: any[]): ClaudeStreamMessage =>
+// Test factories return a structural mock whose `.message.content` is always
+// present. We declare the narrow shape we want to use at access sites so the
+// strict ClaudeStreamMessage union doesn't force callers through `as any`.
+type AssistantStub = ClaudeStreamMessage & { message: { content: any[] } };
+type UserStub = ClaudeStreamMessage & { message: { content: any[] } };
+
+const assistant = (content: any[]): AssistantStub =>
   ({ type: 'assistant', message: { content } }) as any;
 
-const user = (content: any[]): ClaudeStreamMessage =>
+const user = (content: any[]): UserStub =>
   ({ type: 'user', message: { content } }) as any;
 
 describe('classifyBlockKind', () => {

@@ -634,10 +634,12 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   // Calculate total tokens from messages — guard against undefined fields to avoid NaN
   useEffect(() => {
     const tokens = messages.reduce((total, msg) => {
-      if (msg.message?.usage) {
+      // Assistant rows carry usage on the wrapped BetaMessage; result rows
+      // carry per-turn usage at the top level. Other variants have no tokens.
+      if (msg.type === 'assistant' && msg.message?.usage) {
         return total + (msg.message.usage.input_tokens || 0) + (msg.message.usage.output_tokens || 0);
       }
-      if (msg.usage) {
+      if (msg.type === 'result' && msg.usage) {
         return total + (msg.usage.input_tokens || 0) + (msg.usage.output_tokens || 0);
       }
       return total;
@@ -1100,7 +1102,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       const interruptMessage: ClaudeStreamMessage = {
         type: "system",
         subtype: "notification",
-        message: "Response interrupted — session still active",
+        body: "Response interrupted — session still active",
         notification_type: "stop",
         timestamp: new Date().toISOString(),
       } as any;
@@ -1130,7 +1132,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       const errorMessage: ClaudeStreamMessage = {
         type: "system",
         subtype: "notification",
-        message: "Session cancelled by user",
+        body: "Session cancelled by user",
         notification_type: "stop",
         timestamp: new Date().toISOString(),
       } as any;

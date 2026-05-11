@@ -290,7 +290,7 @@ export function useSessionLifecycle({
           subtype: "notification",
           notification_type: "error",
           title: "Session Failed to Start",
-          message: `Could not start session: ${errMsg.slice(0, 300)}`,
+          body: `Could not start session: ${errMsg.slice(0, 300)}`,
         } as ClaudeStreamMessage,
       ]);
       throw err; // Bubble so the caller's .catch logger still fires.

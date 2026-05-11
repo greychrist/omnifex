@@ -4,18 +4,19 @@ import { isSubagentPrompt } from "@/lib/subagentDispatch";
 import { detectSkillInjection } from "@/lib/skillDetection";
 import type { HardFilters } from "@/lib/messageRenderingConfig";
 
-const HOOK_LIFECYCLE_SUBTYPES = new Set([
+// SDK subtypes the renderer treats as hook-lifecycle noise. `user_prompt_submit`
+// is a hook *event* name (not an SDK message subtype) but historical sessions
+// stamped it as a subtype, so it stays in the set for backward compatibility.
+const HOOK_LIFECYCLE_SUBTYPES: ReadonlySet<string> = new Set([
   "hook_started",
   "hook_response",
   "user_prompt_submit",
 ]);
 
 function isHookLifecycleMarker(msg: ClaudeStreamMessage): boolean {
-  return (
-    msg.type === "system" &&
-    typeof msg.subtype === "string" &&
-    HOOK_LIFECYCLE_SUBTYPES.has(msg.subtype)
-  );
+  if (msg.type !== "system") return false;
+  const sub = (msg as { subtype?: string }).subtype;
+  return typeof sub === "string" && HOOK_LIFECYCLE_SUBTYPES.has(sub);
 }
 
 /**
@@ -46,13 +47,11 @@ export function filterDisplayableMessages(
     const isSkillInjected =
       message.isMeta === true && !!detectSkillInjection(message, messages);
 
-    // Skip meta messages that don't have meaningful content
-    if (
-      message.isMeta &&
-      !message.leafUuid &&
-      !message.summary &&
-      !isSkillInjected
-    ) {
+    // Skip meta messages that don't have meaningful content. Compaction
+    // summaries (`type: 'summary'`) are exempt — they're meta in the JSONL
+    // sense but carry the only signal that the prior history was compacted,
+    // so the dedicated SummaryWidget needs them.
+    if (message.isMeta && message.type !== 'summary' && !isSkillInjected) {
       return false;
     }
 
@@ -111,9 +110,9 @@ export function filterDisplayableMessages(
                   Array.isArray(prevMsg.message.content)
                 ) {
                   const toolUse = prevMsg.message.content.find(
-                    (c: any) =>
+                    (c) =>
                       c.type === "tool_use" && c.id === content.tool_use_id,
-                  );
+                  ) as { type: 'tool_use'; name?: string } | undefined;
                   if (toolUse) {
                     const toolName = toolUse.name?.toLowerCase();
                     const toolsWithWidgets = [
@@ -133,7 +132,8 @@ export function filterDisplayableMessages(
                     // dropping the parent user message would erase the
                     // subagent's output card entirely.
                     if (
-                      toolsWithWidgets.includes(toolName) ||
+                      (toolName !== undefined &&
+                        toolsWithWidgets.includes(toolName)) ||
                       toolUse.name?.startsWith("mcp__")
                     ) {
                       willBeSkipped = true;

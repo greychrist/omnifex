@@ -254,9 +254,14 @@ const CardTimestamp: React.FC<{
 
   const showKind = config.debug.showCardKindLabel && message;
   let kindLabel: string | null = null;
-  if (showKind) {
-    const t = message?.type ?? null;
-    const sub = message?.subtype ?? null;
+  if (showKind && message) {
+    const t = message.type;
+    // Only system / result variants carry a typed `subtype`; for everything
+    // else the label is just the bare type name.
+    const sub =
+      'subtype' in message && typeof message.subtype === 'string'
+        ? message.subtype
+        : null;
     if (t) kindLabel = sub ? `${t} · ${sub}` : String(t);
   }
 
@@ -378,15 +383,15 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
     // src/lib/messageFilters.ts.
     if (
       message.isMeta &&
-      !message.leafUuid &&
-      !message.summary &&
+      message.type !== 'summary' &&
       !detectSkillInjection(message, streamMessages)
     ) {
       return null;
     }
 
-    // Handle summary messages
-    if (message.leafUuid && message.summary && message.type === "summary") {
+    // Handle summary messages (synthesized for compaction summaries — they
+    // carry { leafUuid, summary } and are the only variant with these fields).
+    if (message.type === "summary" && message.leafUuid && message.summary) {
       return <SummaryWidget summary={message.summary} leafUuid={message.leafUuid} />;
     }
 
@@ -405,11 +410,16 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
     // Fallback for any other system subtype (compact_boundary, future SDK
     // subtypes, etc.). Without this branch the message renders to null and
     // expanders summarized as "1 system event" reveal nothing when opened.
-    if (message.type === "system" && message.subtype !== "init" && message.subtype !== "notification") {
-      const subtype = String(message.subtype ?? 'unknown');
-      const text = (message as any).message
-        ?? (message as any).title
-        ?? '';
+    // The 'init' subtype is handled above; the explicit `!== 'notification'`
+    // guard keeps the dedicated notification renderer below reachable.
+    if (message.type === "system" && message.subtype !== "notification") {
+      const subtype = String(message.subtype);
+      // System variants don't share a common text field; pick whichever
+      // narrative-style field the specific subtype carries.
+      const text =
+        (message as { message?: unknown }).message
+          ?? (message as { title?: unknown }).title
+          ?? '';
       // The whole-message classifier maps every non-init/non-notification
       // system subtype to one of system.hook.started / system.hook.response /
       // system.userPromptSubmit / system.unknown. Use the resolved kind's
@@ -437,7 +447,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
     //   stop  → red     ⏹ (user-initiated interrupt/cancel)
     //   info  → muted   💬
     if (message.type === "system" && message.subtype === "notification") {
-      const notifType = (message as any).notification_type ?? 'info';
+      const notifType = message.notification_type ?? 'info';
       const isError = /error/i.test(notifType);
       const isWarn = /warn/i.test(notifType);
       const isStop = notifType === 'stop';
@@ -466,8 +476,8 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
           {icon}
           {symbol && <span style={textStyle}>{symbol}</span>}
           <span style={textStyle}>
-            {(message as any).title ? `${(message as any).title}: ` : ''}
-            {(message as any).message ?? ''}
+            {message.title ? `${message.title}: ` : ''}
+            {message.body ?? ''}
           </span>
         </div>
       );
@@ -497,7 +507,15 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
           if (msgIndex !== -1) {
             for (let i = msgIndex + 1; i < Math.min(streamMessages.length, msgIndex + 5); i++) {
               const next = streamMessages[i];
-              if (next.type === 'result' && next.result && next.result.trim() === assistantText.trim()) {
+              // `result` is only present on SDKResultSuccess; the error
+              // variant carries `errors` instead and doesn't trigger this
+              // de-dup path.
+              if (
+                next.type === 'result' &&
+                next.subtype === 'success' &&
+                next.result &&
+                next.result.trim() === assistantText.trim()
+              ) {
                 suppressTextBlocks = true;
                 break;
               }
@@ -1067,13 +1085,18 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                       for (let i = streamMessages.length - 1; i >= 0; i--) {
                         const prevMsg = streamMessages[i];
                         if (prevMsg.type === 'assistant' && prevMsg.message?.content && Array.isArray(prevMsg.message.content)) {
-                          const toolUse = prevMsg.message.content.find((c: any) => c.type === 'tool_use' && c.id === content.tool_use_id);
+                          // Narrow each block via shape so BetaToolUseBlock's
+                          // `name` / `input` are reachable without `as any`.
+                          const toolUse = prevMsg.message.content.find(
+                            (c): c is Extract<typeof c, { type: 'tool_use' }> =>
+                              c?.type === 'tool_use' && (c as { id?: string }).id === content.tool_use_id,
+                          );
                           if (toolUse) {
-                            const toolName = toolUse.name?.toLowerCase();
+                            const toolName = toolUse.name?.toLowerCase() ?? '';
                             const toolsWithWidgets = ['task','edit','multiedit','todowrite','todoread','ls','read','glob','bash','write','grep','websearch','webfetch'];
                             if (isSubagentDispatch(toolUse.name)) {
                               isTaskReturn = true;
-                              taskDescription = toolUse.input?.description;
+                              taskDescription = (toolUse.input as { description?: string } | undefined)?.description;
                             } else if (toolsWithWidgets.includes(toolName) || toolUse.name?.startsWith('mcp__')) {
                               hasCorrespondingWidget = true;
                             }
@@ -1246,13 +1269,15 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                           const prevMsg = streamMessages[i];
                           // Only check assistant messages
                           if (prevMsg.type === 'assistant' && prevMsg.message?.content && Array.isArray(prevMsg.message.content)) {
-                            const toolUse = prevMsg.message.content.find((c: any) => 
-                              c.type === 'tool_use' && 
-                              c.id === content.tool_use_id &&
-                              c.name?.toLowerCase() === 'read'
+                            const toolUse = prevMsg.message.content.find(
+                              (c): c is Extract<typeof c, { type: 'tool_use' }> =>
+                                c?.type === 'tool_use' &&
+                                (c as { id?: string }).id === content.tool_use_id &&
+                                (c as { name?: string }).name?.toLowerCase() === 'read',
                             );
-                            if (toolUse?.input?.file_path) {
-                              filePath = toolUse.input.file_path;
+                            const fp = (toolUse?.input as { file_path?: string } | undefined)?.file_path;
+                            if (fp) {
+                              filePath = fp;
                               break;
                             }
                           }
@@ -1346,7 +1371,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
               <div className="flex-1 space-y-2 min-w-0 overflow-x-auto">
                 <KindHeader kindId={resultKindId} fallbackLabel={resultFallbackLabel} />
 
-                {message.result && (
+                {message.subtype === 'success' && message.result && (
                   <div className="prose prose-sm dark:prose-invert max-w-none">
                     <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
                       {message.result}
@@ -1354,14 +1379,18 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                   </div>
                 )}
 
-                {message.error && (
-                  <div className="text-sm text-destructive">{message.error}</div>
-                )}
+                {/* SDKResultError carries `errors: string[]` (plural). The
+                    pre-SDK-anchored shape exposed a legacy `error` field that
+                    never matched the SDK wire — drop the lookup and join the
+                    typed array instead. */}
+                {message.subtype !== 'success' && message.errors?.length ? (
+                  <div className="text-sm text-destructive">{message.errors.join('\n')}</div>
+                ) : null}
 
                 <hr className="border-t border-border/50 my-2" />
                 <div className="text-xs text-muted-foreground space-y-1">
-                  {accountType !== "max" && (message.cost_usd !== undefined || message.total_cost_usd !== undefined) && (
-                    <div>Cost: ${((message.cost_usd || message.total_cost_usd)!).toFixed(4)} USD</div>
+                  {accountType !== "max" && message.total_cost_usd !== undefined && (
+                    <div>Cost: ${message.total_cost_usd.toFixed(4)} USD</div>
                   )}
                   {message.duration_ms !== undefined && (
                     <div>Duration: {formatDurationMs(message.duration_ms)}</div>

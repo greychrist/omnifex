@@ -1,5 +1,5 @@
 import type { ClaudeStreamMessage } from "@/types/claudeStream";
-import { isAssistantMessage } from "@/types/claudeStream";
+import { getMessageContent, isAssistantMessage } from "@/types/claudeStream";
 
 // Rates used by the live session's client-side cost calc
 // (see ClaudeCodeSession.tsx handleStreamMessage). Kept in sync so
@@ -44,7 +44,7 @@ function parseTimestamp(ts: unknown): number | null {
 }
 
 function lastTextOf(msg: ClaudeStreamMessage): string {
-  const content = msg.message?.content;
+  const content = getMessageContent(msg);
   if (!Array.isArray(content)) return '';
   return content
     .filter((c: any) => c?.type === 'text')
@@ -63,7 +63,7 @@ function lastTextOf(msg: ClaudeStreamMessage): string {
  */
 function isUserTurnBoundary(msg: ClaudeStreamMessage): boolean {
   if (msg.type !== 'user') return false;
-  const content: unknown = msg.message?.content;
+  const content = getMessageContent(msg);
   if (typeof content === 'string') return content.length > 0;
   if (!Array.isArray(content)) return false;
   return content.some((c: any) => c?.type === 'text');
@@ -74,7 +74,10 @@ function buildSyntheticResult(
   durationMs: number,
   numTurns: number,
 ): ClaudeStreamMessage {
-  const inner = lastAssistant.message;
+  // Only assistant messages drive synthesis, but the parameter is the union
+  // because flushTurn passes whatever it last saw. Narrow explicitly so the
+  // SDK BetaMessage shape is reachable.
+  const inner = isAssistantMessage(lastAssistant) ? lastAssistant.message : null;
   const stopReason = inner?.stop_reason ?? null;
   // Success = clean completion (end_turn / stop_sequence). Everything else
   // that landed here is a terminal-but-unsuccessful stop (max_tokens,
@@ -92,21 +95,54 @@ function buildSyntheticResult(
   // card shows a footer time on reloaded sessions, matching live behavior.
   const ts = lastAssistant.receivedAt ?? lastAssistant.timestamp ?? null;
 
-  return {
-    type: 'result',
-    subtype: isError ? 'error_during_execution' : 'success',
-    is_error: isError,
+  // SDK's SDKResultSuccess / SDKResultError require fields we don't have on
+  // reload (`duration_api_ms`, `modelUsage`, `permission_denials`, `uuid`).
+  // Synthesized results pad them with zero-equivalents; the renderer's
+  // result card reads `result`, `is_error`, `usage`, `total_cost_usd`,
+  // `stop_reason`, `synthesized`, and `session_id` — never the padding.
+  const sessionId = isAssistantMessage(lastAssistant)
+    ? lastAssistant.session_id
+    : undefined;
+  const base = {
     duration_ms: Math.max(0, durationMs),
+    duration_api_ms: 0,
     num_turns: numTurns,
     stop_reason: stopReason,
-    result: lastTextOf(lastAssistant),
     total_cost_usd: totalCostUsd,
-    usage,
-    session_id: lastAssistant.sessionId ?? lastAssistant.session_id,
+    usage: usage as never,
+    modelUsage: {},
+    permission_denials: [],
+    session_id: sessionId ?? '',
+    uuid: '' as never,
     receivedAt: ts ?? undefined,
-    // Marker so downstream code can tell this was reconstructed from disk,
-    // not emitted live by the SDK. Useful for debugging or tooltips.
-    synthesized: true,
+    synthesized: true as const,
+  };
+
+  // Both branches carry the last assistant text on `result`. The SDK's
+  // SDKResultError type officially omits `result` (it has `errors: string[]`
+  // instead), but OmniFex's synthesized error rows still want to surface the
+  // truncated assistant message body — the Execution Failed card renders it
+  // directly. The cast-widen lets us keep that behavior; downstream
+  // consumers that read `result` already check `subtype === 'success'` per
+  // the SDK contract, so this extra field is benign noise on the error
+  // path. See `result.error`-kind tests in synthesizeResults.test.ts.
+  const result = lastTextOf(lastAssistant);
+  if (isError) {
+    return {
+      ...base,
+      type: 'result',
+      subtype: 'error_during_execution',
+      is_error: true,
+      errors: [],
+      result,
+    } as ClaudeStreamMessage;
+  }
+  return {
+    ...base,
+    type: 'result',
+    subtype: 'success',
+    is_error: false,
+    result,
   };
 }
 

@@ -1,4 +1,5 @@
 import type { ClaudeStreamMessage } from '@/types/claudeStream';
+import { getMessageContent } from '@/types/claudeStream';
 
 interface Counts {
   read: number;
@@ -51,7 +52,7 @@ function tally(messages: ClaudeStreamMessage[]): Counts {
       c.systemEvents += 1;
       continue;
     }
-    const content = m.message?.content;
+    const content = getMessageContent(m);
     if (!Array.isArray(content)) continue;
     for (const b of content) {
       if (!b || typeof b !== 'object') continue;
@@ -129,7 +130,7 @@ export function countHiddenEvents(messages: ClaudeStreamMessage[]): number {
       n += 1;
       continue;
     }
-    const content = m.message?.content;
+    const content = getMessageContent(m);
     if (!Array.isArray(content)) continue;
     for (const b of content) {
       if (!b || typeof b !== 'object') continue;

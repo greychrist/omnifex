@@ -83,7 +83,10 @@ describe('createQueryPassthroughs.interrupt', () => {
         subtype: 'notification',
         notification_type: 'error',
         title: expect.stringMatching(/stop|interrupt/i),
-        message: expect.stringContaining('SDK transport closed'),
+        // Renamed from `message` so OmniFex's notification synthetic doesn't
+        // collide with the wrapped `assistant.message` / `user.message`
+        // discriminator on the SDK-anchored ClaudeStreamMessage union.
+        body: expect.stringContaining('SDK transport closed'),
       }),
     );
   });
@@ -230,8 +233,9 @@ describe('createQueryPassthroughs.applyPermissions', () => {
     );
     expect(warningCall).toBeTruthy();
     const payload = warningCall![1];
-    expect(String(payload.message)).toMatch(/restart|apply/i);
-    expect(String(payload.message)).toContain('apply blew up');
+    // Renamed `message` → `body` on the OmniFex notification synthetic.
+    expect(String(payload.body)).toMatch(/restart|apply/i);
+    expect(String(payload.body)).toContain('apply blew up');
   });
 });
 

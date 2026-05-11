@@ -256,10 +256,14 @@ function inspectUserContent(blocks: unknown[]): {
 }
 
 function computeCost(message: ClaudeStreamMessage): number {
-  const usage =
-    (message as { usage?: { input_tokens?: number; output_tokens?: number } })
-      .usage ??
-    message.message?.usage;
+  // result rows carry per-turn `usage` at the top level; assistant rows carry
+  // the inner BetaMessage's usage. Other variants don't carry token usage.
+  let usage: { input_tokens?: number; output_tokens?: number } | undefined;
+  if (message.type === 'result') {
+    usage = message.usage;
+  } else if (message.type === 'assistant') {
+    usage = message.message?.usage;
+  }
   if (!usage) return 0;
   const input = (usage.input_tokens || 0) * 0.000003;
   const output = (usage.output_tokens || 0) * 0.000015;
@@ -324,19 +328,16 @@ export function reduceSessionStreamMessage(
   // is snake_case (it's an SDK stream message); we normalise to camelCase
   // here so every renderer consumer uses the same shape.
   if (message.type === 'permission_request' && message.request_id) {
-    const m = message as Record<string, unknown>;
     const payload: PermissionRequestPayload = {
       requestId: message.request_id,
-      toolName: (m.tool_name as string) || 'Unknown',
-      toolInput: (m.tool_input as Record<string, unknown>) || {},
-      title: m.title as string | undefined,
-      displayName: m.display_name as string | undefined,
-      description: m.description as string | undefined,
-      decisionReason: m.decision_reason as string | undefined,
-      blockedPath: m.blocked_path as string | undefined,
-      suggestions:
-        (m.permission_suggestions as PermissionRequestPayload['suggestions']) ||
-        [],
+      toolName: message.tool_name || 'Unknown',
+      toolInput: message.tool_input ?? {},
+      title: message.title,
+      displayName: message.display_name,
+      description: message.description,
+      decisionReason: message.decision_reason,
+      blockedPath: message.blocked_path,
+      suggestions: message.permission_suggestions ?? [],
     };
     result.pendingPermission = payload;
     effects.push({ kind: 'showPermissionPrompt', payload });

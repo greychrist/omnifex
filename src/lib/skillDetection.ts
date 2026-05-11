@@ -35,9 +35,13 @@ export function detectSkillInjection(
   if (prev.type !== 'user') return null;
   const prevContent = prev.message?.content;
   if (!Array.isArray(prevContent)) return null;
-  const toolResult = prevContent.find((c: any) => c?.type === 'tool_result');
+  // ContentBlockParam → ToolResultBlockParam narrowing.
+  const toolResult = prevContent.find(
+    (c): c is Extract<typeof c, { type: 'tool_result' }> =>
+      c?.type === 'tool_result',
+  );
   if (!toolResult) return null;
-  const toolUseId: string | undefined = toolResult.tool_use_id;
+  const toolUseId = toolResult.tool_use_id;
   if (!toolUseId) return null;
 
   for (let i = idx - 2; i >= 0; i--) {
@@ -45,14 +49,17 @@ export function detectSkillInjection(
     if (candidate.type !== 'assistant') continue;
     const candContent = candidate.message?.content;
     if (!Array.isArray(candContent)) continue;
+    // BetaContentBlock narrows to BetaToolUseBlock when type === 'tool_use'.
     const tu = candContent.find(
-      (c: any) => c?.type === 'tool_use' && c?.id === toolUseId,
+      (c): c is Extract<typeof c, { type: 'tool_use' }> =>
+        c?.type === 'tool_use' && (c as { id?: string }).id === toolUseId,
     );
     if (!tu) continue;
     if (tu.name !== 'Skill') return null;
+    const input = (tu.input ?? {}) as Record<string, unknown>;
     const skillName =
-      (typeof tu.input?.skill === 'string' && tu.input.skill) ||
-      (typeof tu.input?.name === 'string' && tu.input.name) ||
+      (typeof input.skill === 'string' && input.skill) ||
+      (typeof input.name === 'string' && input.name) ||
       'unknown';
     return { skillName };
   }

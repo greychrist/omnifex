@@ -250,11 +250,15 @@ export function createSessionHooks(
                 is_error: isError,
               });
               // Emit on the chat stream so the notification appears
-              // inline in the session message list.
+              // inline in the session message list. The Notification-hook
+              // input field is `message` (SDK contract); OmniFex's renderer
+              // notification carries it as `body` so the discriminated union
+              // field-set stays distinct from the wrapped Anthropic
+              // `message` on assistant/user variants.
               sendToRenderer(`claude-output:${tabId}`, {
                 type: 'system',
                 subtype: 'notification',
-                message: input.message ?? '',
+                body: input.message ?? '',
                 title: input.title,
                 notification_type: input.notification_type ?? 'info',
               });
@@ -548,7 +552,7 @@ export function createSessionHooks(
               sendToRenderer(`claude-output:${tabId}`, {
                 type: 'system', subtype: 'notification', notification_type: 'info',
                 title: 'Setup',
-                message: `Session ${input.trigger === 'init' ? 'initializing' : 'maintenance running'}`,
+                body: `Session ${input.trigger === 'init' ? 'initializing' : 'maintenance running'}`,
               });
             } catch (err) { console.error('[sessions] Setup hook failed:', err); }
             return {};

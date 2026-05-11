@@ -99,7 +99,10 @@ describe('useSessionLifecycle — startPersistentSession error surface', () => {
     expect(errMsg.type).toBe('system');
     expect(errMsg.subtype).toBe('notification');
     expect(errMsg.notification_type).toBe('error');
-    // Message must surface the underlying cause so the user knows what to fix.
-    expect(String(errMsg.message)).toMatch(/No Claude account/i);
+    // Body must surface the underlying cause so the user knows what to fix.
+    // (Renamed from `message` so OmniFex's notification synthetic doesn't
+    // collide with the wrapped `assistant.message` / `user.message` field
+    // on the SDK-anchored ClaudeStreamMessage union.)
+    expect(String(errMsg.body)).toMatch(/No Claude account/i);
   });
 });

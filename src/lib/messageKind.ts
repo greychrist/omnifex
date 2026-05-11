@@ -49,16 +49,14 @@ export function classifyStandaloneKind(
   }
 
   // Compaction summaries arrive as a synthetic "summary" type with a leafUuid.
-  // `summary` and `leafUuid` aren't on the typed interface yet (Tier B follow-up);
-  // they pass through the index signature.
-  if (msg.type === 'summary' && (msg as any).summary && (msg as any).leafUuid) {
+  if (msg.type === 'summary' && msg.summary && msg.leafUuid) {
     return 'summary.compaction';
   }
 
   if (msg.type === 'system') {
     if (msg.subtype === 'init') return 'system.init';
     if (msg.subtype === 'notification') {
-      const t = String((msg as any).notification_type ?? 'info');
+      const t = msg.notification_type ?? 'info';
       if (/error/i.test(t)) return 'system.notification.error';
       if (t === 'stop') return 'system.notification.stop';
       if (/warn/i.test(t)) return 'system.notification.warn';
@@ -66,7 +64,12 @@ export function classifyStandaloneKind(
     }
     if (msg.subtype === 'hook_started') return 'system.hook.started';
     if (msg.subtype === 'hook_response') return 'system.hook.response';
-    if (msg.subtype === 'user_prompt_submit') return 'system.userPromptSubmit';
+    // Legacy `user_prompt_submit` subtype check: this is a hook *event* name,
+    // not an SDK message subtype (the SDK never emits a system message with
+    // this subtype). Historical OmniFex JSONL may carry it; tolerate via a
+    // permissive cast so the dedicated kind classification still wins.
+    if ((msg as { subtype?: string }).subtype === 'user_prompt_submit')
+      return 'system.userPromptSubmit';
     // Fallback: any other system subtype renders as the unknown gray inline
     // strip in StreamMessage and is now configurable as `system.unknown`.
     return 'system.unknown';
@@ -91,7 +94,7 @@ export function classifyStandaloneKind(
   // <command-name>/<local-command-stdout> tags inside a user-role text
   // block, so detection is a content match on the whole message.
   if (msg.type === 'user') {
-    const content: unknown = msg.message?.content;
+    const content: unknown = msg.message?.content as unknown;
     let text = '';
     if (typeof content === 'string') text = content;
     else if (Array.isArray(content)) {

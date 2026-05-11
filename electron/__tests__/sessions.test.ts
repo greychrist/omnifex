@@ -2471,7 +2471,10 @@ describe('sessions service — full lifecycle', () => {
       const msg = outputCall![1] as any;
       expect(msg.type).toBe('system');
       expect(msg.subtype).toBe('notification');
-      expect(msg.message).toBe('MCP server disconnected');
+      // Hook input carries `message` (per the SDK Notification hook
+      // contract), but OmniFex propagates it onto the renderer notification
+      // as `body` to avoid colliding with assistant/user `.message`.
+      expect(msg.body).toBe('MCP server disconnected');
       expect(msg.title).toBe('Connection Lost');
       expect(msg.notification_type).toBe('warning');
 

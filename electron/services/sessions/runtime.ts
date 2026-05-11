@@ -166,7 +166,7 @@ export async function listenToMessages(
       subtype: 'notification',
       notification_type: 'error',
       title: 'Session Error',
-      message: `Error: ${errMsg.slice(0, 200)}`,
+      body: `Error: ${errMsg.slice(0, 200)}`,
     });
     // Stop the loading indicator but keep the session in the map
     sendToRenderer(`claude-complete:${tabId}`);

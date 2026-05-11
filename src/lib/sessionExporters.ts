@@ -32,11 +32,7 @@ export async function exportAsMarkdown(
       markdown += `## Assistant\n\n`;
       for (const content of msg.message.content || []) {
         if (content.type === "text") {
-          const textContent =
-            typeof content.text === "string"
-              ? content.text
-              : content.text?.text || JSON.stringify(content.text || content);
-          markdown += `${textContent}\n\n`;
+          markdown += `${content.text}\n\n`;
         } else if (content.type === "tool_use") {
           markdown += `### Tool: ${content.name}\n\n`;
           markdown += `\`\`\`json\n${JSON.stringify(content.input, null, 2)}\n\`\`\`\n\n`;
@@ -47,44 +43,41 @@ export async function exportAsMarkdown(
       }
     } else if (msg.type === "user" && msg.message) {
       markdown += `## User\n\n`;
-      for (const content of msg.message.content || []) {
+      // MessageParam.content is string | ContentBlockParam[]; normalise the
+      // string form into a single text block so the loop has one shape.
+      const userContent = msg.message.content;
+      const blocks = typeof userContent === 'string'
+        ? [{ type: 'text' as const, text: userContent }]
+        : userContent ?? [];
+      for (const content of blocks) {
         if (content.type === "text") {
-          const textContent =
-            typeof content.text === "string"
-              ? content.text
-              : content.text?.text || JSON.stringify(content.text);
-          markdown += `${textContent}\n\n`;
+          markdown += `${content.text}\n\n`;
         } else if (content.type === "tool_result") {
           markdown += `### Tool Result\n\n`;
           let contentText = "";
-          if (typeof content.content === "string") {
-            contentText = content.content;
-          } else if (
-            content.content &&
-            typeof content.content === "object"
-          ) {
-            if (content.content.text) {
-              contentText = content.content.text;
-            } else if (Array.isArray(content.content)) {
-              contentText = content.content
-                .map((c: any) =>
-                  typeof c === "string" ? c : c.text || JSON.stringify(c),
-                )
-                .join("\n");
-            } else {
-              contentText = JSON.stringify(content.content, null, 2);
-            }
+          const inner = content.content;
+          if (typeof inner === "string") {
+            contentText = inner;
+          } else if (Array.isArray(inner)) {
+            contentText = inner
+              .map((c) =>
+                'text' in c && typeof c.text === 'string'
+                  ? c.text
+                  : JSON.stringify(c),
+              )
+              .join("\n");
           }
           markdown += `\`\`\`\n${contentText}\n\`\`\`\n\n`;
         }
       }
     } else if (msg.type === "result") {
       markdown += `## Execution Result\n\n`;
-      if (msg.result) {
+      if (msg.subtype === 'success' && msg.result) {
         markdown += `${msg.result}\n\n`;
       }
-      if (msg.error) {
-        markdown += `**Error:** ${msg.error}\n\n`;
+      // SDKResultError carries `errors: string[]` (the SDK's plural form).
+      if (msg.subtype !== 'success' && msg.errors?.length) {
+        markdown += `**Error:** ${msg.errors.join('\n')}\n\n`;
       }
     }
   }
