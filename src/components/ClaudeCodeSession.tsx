@@ -720,7 +720,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       // partials the SDK doesn't persist, and (b) per-token state thrash
       // on this component is the exact perf cost the RAF coalescer exists
       // to avoid.
-      if ((message as any).type === 'stream_event') {
+      if (message.type === 'stream_event') {
         const m = message as any;
         if (m.parent_tool_use_id != null) return; // skip subagent partials (null OR undefined)
         const event = m.event;
@@ -845,13 +845,15 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       //  - On any error notification, clear so the streaming bubble doesn't
       //    sit stale next to an error card.
       const store = useClaudeSessionStore.getState();
-      if (reduced.append === 'append' && (message as any).type === 'assistant') {
+      if (reduced.append === 'append' && message.type === 'assistant') {
         store.clearInflightAssistant(tabIdRef.current);
         clearInflightBuffer(tabIdRef.current);
       }
       if (
-        (message as any).type === 'system' &&
-        (message as any).subtype === 'notification' &&
+        message.type === 'system' &&
+        message.subtype === 'notification' &&
+        // notification_type isn't typed yet — see the Tier B follow-up in
+        // the audit. Cast stays until that lands.
         /error/i.test(String((message as any).notification_type ?? ''))
       ) {
         store.clearInflightAssistant(tabIdRef.current);

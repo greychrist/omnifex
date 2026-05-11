@@ -116,6 +116,13 @@ export function createQueryPassthroughs(
       // behavior to `adaptive` while pretending otherwise. Treat any
       // `enabled` value the renderer might still send as adaptive so a
       // stale-state caller doesn't fall through silently.
+      // `null` is the documented "unset; use default" sentinel on the SDK
+      // signature (`number | null`) and is what we want for adaptive — the
+      // CLI then picks the right adaptive behavior for the active model.
+      // Do not "fix" this to `1` or another positive int: those are a
+      // literal budget claim and would be honored as such if Anthropic
+      // ever loosens the current "non-zero collapses to adaptive on Opus
+      // 4.6+" rule. `null` continues to mean "default" across versions.
       if (!config || config.type === 'disabled') {
         await handle.query.setMaxThinkingTokens(0);
       } else {

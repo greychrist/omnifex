@@ -255,8 +255,8 @@ const CardTimestamp: React.FC<{
   const showKind = config.debug.showCardKindLabel && message;
   let kindLabel: string | null = null;
   if (showKind) {
-    const t = (message as any).type ?? null;
-    const sub = (message as any).subtype ?? null;
+    const t = message?.type ?? null;
+    const sub = message?.subtype ?? null;
     if (t) kindLabel = sub ? `${t} · ${sub}` : String(t);
   }
 
@@ -386,7 +386,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
     }
 
     // Handle summary messages
-    if (message.leafUuid && message.summary && (message as any).type === "summary") {
+    if (message.leafUuid && message.summary && message.type === "summary") {
       return <SummaryWidget summary={message.summary} leafUuid={message.leafUuid} />;
     }
 

@@ -33,7 +33,7 @@ export function classifyStandaloneKind(
   }
 
   if (msg.type === 'result') {
-    const sub = (msg as any).subtype;
+    const sub = msg.subtype;
     if (sub && /error/i.test(String(sub))) return 'result.error';
     // Sibling of result.success: when this turn ends with a still-running
     // subagent dispatch, the parent is genuinely "idle, awaiting wake-up"
@@ -49,7 +49,9 @@ export function classifyStandaloneKind(
   }
 
   // Compaction summaries arrive as a synthetic "summary" type with a leafUuid.
-  if ((msg as any).type === 'summary' && (msg as any).summary && (msg as any).leafUuid) {
+  // `summary` and `leafUuid` aren't on the typed interface yet (Tier B follow-up);
+  // they pass through the index signature.
+  if (msg.type === 'summary' && (msg as any).summary && (msg as any).leafUuid) {
     return 'summary.compaction';
   }
 
