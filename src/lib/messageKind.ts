@@ -2,6 +2,7 @@ import type { ClaudeStreamMessage } from '@/types/claudeStream';
 import { deriveSubagents } from './subagentStreams';
 import { isSubagentPrompt } from './subagentDispatch';
 import { detectSkillInjection } from './skillDetection';
+import { isSystemContextText } from './blockKind';
 
 /**
  * Classify a stream message as a single "standalone" rendering kind — i.e. a
@@ -100,6 +101,36 @@ export function classifyStandaloneKind(
     }
     if (text.includes('<command-name>')) return 'user.command';
     if (text.includes('<local-command-stdout>')) return 'user.commandOutput';
+
+    // System-context user messages: the Agent SDK delivers hook output,
+    // <system-reminder> injections, and skill-load preambles as synthetic
+    // user-role text messages. Without this branch they fall through to
+    // the StreamMessage `user.prompt` card and look like the user typed
+    // them — including the stop-hook "You have N unfinished todo items"
+    // feedback that prompted this classification. Only treat the whole
+    // message as system context when *every* text block looks like a
+    // system injection; mixed user-typed + appended-reminder messages
+    // stay null and are handled by the per-block renderer.
+    if (Array.isArray(content) && content.length > 0) {
+      let sawText = false;
+      let allSystemContext = true;
+      for (const block of content) {
+        if (block?.type === 'text') {
+          sawText = true;
+          if (!isSystemContextText(typeof block.text === 'string' ? block.text : '')) {
+            allSystemContext = false;
+            break;
+          }
+        } else if (block?.type === 'image') {
+          // Images imply a real user message.
+          allSystemContext = false;
+          break;
+        }
+      }
+      if (sawText && allSystemContext) return 'user.systemContext';
+    } else if (typeof content === 'string' && content.length > 0 && isSystemContextText(content)) {
+      return 'user.systemContext';
+    }
   }
 
   return null;

@@ -47,6 +47,26 @@ const KNOWN_TOOL_NAMES_LOWER: ReadonlySet<string> = new Set([
  */
 const HOOK_FEEDBACK_PREFIX = /^[A-Z][A-Za-z]* hook (feedback|additional context):/;
 
+/**
+ * True when a piece of user-role text content is actually a system injection
+ * (hook feedback, a `<system-reminder>` block, a skill-load preamble) rather
+ * than something the user typed. Used both by per-block classification and
+ * by whole-message classification so the renderer treats these consistently
+ * — without this, hook-feedback-only user messages fall through to the
+ * `user.prompt` card and look like the user said them.
+ *
+ * The hook-feedback regex is anchored at the start so user text that
+ * mentions phrases like "Stop hook feedback:" mid-message does not get
+ * misclassified.
+ */
+export function isSystemContextText(text: string): boolean {
+  if (typeof text !== 'string') return false;
+  if (text.includes('<system-reminder>')) return true;
+  if (text.includes('Base directory for this skill:')) return true;
+  if (HOOK_FEEDBACK_PREFIX.test(text.trimStart())) return true;
+  return false;
+}
+
 function isKnownToolName(name: unknown): boolean {
   if (typeof name !== 'string') return false;
   const lower = name.toLowerCase();
@@ -104,20 +124,13 @@ export function classifyBlockKind(
     }
     if (block.type === 'text') {
       const text = typeof block.text === 'string' ? block.text : '';
-      if (
-        text.includes('<system-reminder>') ||
-        text.includes('Base directory for this skill:') ||
-        // Claude Code surfaces hook output back to the model as a plain
-        // user text message prefixed with "<HookEvent> hook feedback:"
-        // (Stop / PreToolUse / PostToolUse / UserPromptSubmit /
-        // SubagentStop / Notification / SessionEnd) or the SessionStart
-        // variant "SessionStart hook additional context:". Anchored at
-        // the start so a user genuinely typing about hooks doesn't
-        // false-positive.
-        HOOK_FEEDBACK_PREFIX.test(text)
-      ) {
-        return 'user.systemContext';
-      }
+      // Claude Code / the Agent SDK surface hook output back to the model
+      // as plain user text prefixed with "<HookEvent> hook feedback:"
+      // (Stop / PreToolUse / PostToolUse / UserPromptSubmit / SubagentStop
+      // / Notification / SessionEnd) or the "SessionStart hook additional
+      // context:" variant. Also matches <system-reminder> blocks and
+      // skill-load preambles. See `isSystemContextText`.
+      if (isSystemContextText(text)) return 'user.systemContext';
       // Plain user text falls through to whole-message classification
       // (user.prompt / user.subagentPrompt / user.sdkSystemBracket).
       return null;

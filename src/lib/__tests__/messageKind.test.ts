@@ -247,5 +247,54 @@ describe('classifyStandaloneKind', () => {
       expect(classifyStandaloneKind(userText('regular prompt'), [])).toBeNull();
     });
   });
+
+  describe('user.systemContext (whole-message)', () => {
+    // The Agent SDK delivers hook output and other system injections as
+    // synthetic user-role messages. Without whole-message classification
+    // these fall through to user.prompt and render as if the user typed
+    // them — which is what the OmniFex chat was doing for Stop-hook
+    // feedback before this fix.
+
+    it('classifies a bare "Stop hook feedback:" user message as user.systemContext', () => {
+      const m = userText(
+        'Stop hook feedback:\nYou have 2 unfinished todo items in your latest TodoWrite call:\n  - [pending] foo\n  - [pending] bar',
+      );
+      expect(classifyStandaloneKind(m, [m])).toBe('user.systemContext');
+    });
+
+    it('classifies a user message wrapping a <system-reminder> block as user.systemContext', () => {
+      const m = userText('<system-reminder>\nrouted context\n</system-reminder>');
+      expect(classifyStandaloneKind(m, [m])).toBe('user.systemContext');
+    });
+
+    it('classifies a Stop-hook message containing both a <system-reminder> preamble and hook feedback body', () => {
+      // This is the exact shape seen in OmniFex sessions: the hook content
+      // is wrapped in a <system-reminder>, then followed by a plain
+      // "Stop hook feedback: ..." body in the same text block.
+      const m = userText(
+        '<system-reminder>\nStop hook blocking error from command: "..."/check-unfinished-todos.py: You have 4 unfinished todo items...\n</system-reminder>\nStop hook feedback:\nYou have 4 unfinished todo items in your latest TodoWrite call:\n  - [in_progress] X\n',
+      );
+      expect(classifyStandaloneKind(m, [m])).toBe('user.systemContext');
+    });
+
+    it('classifies SessionStart additional-context preamble as user.systemContext', () => {
+      const m = userText(
+        'SessionStart hook additional context: <EXTREMELY_IMPORTANT>...</EXTREMELY_IMPORTANT>',
+      );
+      expect(classifyStandaloneKind(m, [m])).toBe('user.systemContext');
+    });
+
+    it('classifies PreToolUse / PostToolUse / UserPromptSubmit / SubagentStop / Notification feedback as user.systemContext', () => {
+      for (const prefix of ['PreToolUse', 'PostToolUse', 'UserPromptSubmit', 'SubagentStop', 'Notification']) {
+        const m = userText(`${prefix} hook feedback:\nblocked because reasons`);
+        expect(classifyStandaloneKind(m, [m]), `prefix=${prefix}`).toBe('user.systemContext');
+      }
+    });
+
+    it('does NOT classify a plain user-typed message mentioning hook feedback mid-line', () => {
+      const m = userText('I read about Stop hook feedback: in the docs and have a question.');
+      expect(classifyStandaloneKind(m, [m])).toBeNull();
+    });
+  });
 });
 

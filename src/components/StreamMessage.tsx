@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { detectSkillInjection } from "@/lib/skillDetection";
 import { classifyStandaloneKind } from "@/lib/messageKind";
-import { isBlockHiddenInCompact } from "@/lib/blockKind";
+import { isBlockHiddenInCompact, isSystemContextText } from "@/lib/blockKind";
 import { summarizeHiddenEvents } from "@/lib/hiddenEventsSummary";
 import { HiddenBlocksExpander } from "@/components/HiddenBlocksExpander";
 import { SubagentReturnedMarker } from "@/components/SubagentReturnedMarker";
@@ -807,9 +807,12 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
             }).join('')
           : '';
 
-      // Detect system-injected context (skills, CLAUDE.md, system-reminders)
-      // Render as collapsible widget instead of user message
-      if (contentStr.includes('<system-reminder>') || contentStr.includes('Base directory for this skill:')) {
+      // Detect system-injected context (skills, CLAUDE.md, system-reminders,
+      // and hook feedback like "Stop hook feedback: ...") and render as a
+      // collapsible System Context widget instead of a user-prompt card.
+      // The helper centralizes the patterns shared with the block- and
+      // whole-message-level classifiers in `blockKind.ts` / `messageKind.ts`.
+      if (isSystemContextText(contentStr)) {
         return <SystemContextWidget content={contentStr} />;
       }
 
