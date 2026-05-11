@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.23] — 2026-05-11
+
+Two chat-pane improvements. First, Cmd/Ctrl+F now opens a floating find-in-chat bar that highlights matches inside the current session and walks them with Enter / Shift+Enter (wraps in both directions). Second, stop-hook output and other hook-feedback events the Agent SDK injects as synthetic user messages are now rendered as a collapsible System Context card instead of looking like the user typed them — which previously caused the model to reply as if the hook output were a real prompt.
+
+Installers remain **unsigned**.
+
+### Added
+
+- **Find in chat.** Cmd/Ctrl+F inside a session opens a floating bar pinned to the top-right of the chat pane. Plain case-insensitive substring match scoped strictly to the rendered transcript — sidebar, headers, and collapsed tool blocks are skipped by construction. Enter advances, Shift+Enter retreats, both wrap around; the active hit auto-scrolls to the viewport's center. Count display shows `active/total`. Esc or the × button closes; closing clears the query. Implemented as `useFindInChat` (TreeWalker → `<mark data-find>` wrapping, debounced re-walks during streaming that preserve the user's reading position) plus a presentational `FindBar` component. 24 new tests (12 hook, 12 component) cover wrap-around, case-insensitive matching, stale-mark unwrapping, skip-attribute scoping, hidden-element filtering, and active-index preservation across re-walks. Design: `docs/superpowers/specs/2026-05-11-find-in-chat-design.md`.
+
+### Fixed
+
+- **Hook-feedback rendering.** The Agent SDK delivers stop-hook output (and `PreToolUse` / `PostToolUse` / `UserPromptSubmit` / `SubagentStop` / `Notification` / `SessionStart` feedback) as synthetic user-role text messages prefixed with `<Event> hook feedback:` or `SessionStart hook additional context:`. The renderer caught the `<system-reminder>` and skill-load shapes but not the bare hook-feedback prefix, so those messages fell through to the `user.prompt` card and looked like the user said them — and the model replied as if asked a question. New shared `isSystemContextText` helper centralizes the three patterns; `classifyStandaloneKind` now returns `user.systemContext` when every text block in a user-role message classifies as system context (mixed user-typed + appended-reminder messages still fall through to per-block rendering); `StreamMessage.tsx`'s inline detector uses the helper so the bare prefix shape also routes to `SystemContextWidget`. Adds 6 whole-message classification tests covering every hook event plus a negative case guarding mid-sentence false positives.
+
 ## [0.4.22] — 2026-05-10
 
 A small UX fix for the inline `AskUserQuestion` card. When the agent sends 3-4 questions with previews the card can occupy ~60vh, hiding the chat content the user wants to consult before answering. A new chevron in the card header collapses it to a single header row so the chat above is visible again; click the chevron to re-expand and submit. Submit stays gated on expansion so you can't fire off answers you can no longer see.
