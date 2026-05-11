@@ -34,7 +34,20 @@ export function createQueryPassthroughs(
     try {
       await handle.query.interrupt();
     } catch (err) {
+      // Stop is user-facing — a silent failure leaves the user mashing the
+      // button with the stream still running and no UI signal. Mirror the
+      // pattern in applyPermissions: log + surface a system notification.
+      const errMsg = err instanceof Error ? err.message : String(err);
       console.error(`[sessions] interrupt failed for tab ${tabId}:`, err);
+      sendToRenderer?.(`claude-output:${tabId}`, {
+        type: 'system',
+        subtype: 'notification',
+        notification_type: 'error',
+        title: 'Stop request failed',
+        message:
+          `The session may still be running. Try again, or restart the session ` +
+          `if it stays stuck. (interrupt failed: ${errMsg.slice(0, 200)})`,
+      });
     }
   }
 

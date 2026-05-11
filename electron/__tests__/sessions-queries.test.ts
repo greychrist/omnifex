@@ -64,6 +64,38 @@ describe('createQueryPassthroughs.interrupt', () => {
     const q = createQueryPassthroughs(sessions);
     await expect(q.interrupt('t1')).resolves.toBeUndefined();
   });
+
+  // The user pressing Stop expects feedback. Silent SDK failures here left
+  // them mashing the button with nothing happening — surface it to the
+  // renderer as a system notification so the chat shows what went wrong.
+  it('surfaces interrupt failure as a system.notification.error when sendToRenderer is wired', async () => {
+    const handle = makeHandle(
+      makeQuery({ interrupt: vi.fn().mockRejectedValue(new Error('SDK transport closed')) }),
+    );
+    const sessions = new Map([['t1', handle]]);
+    const sendToRenderer = vi.fn();
+    const q = createQueryPassthroughs(sessions, sendToRenderer);
+    await q.interrupt('t1');
+    expect(sendToRenderer).toHaveBeenCalledWith(
+      'claude-output:t1',
+      expect.objectContaining({
+        type: 'system',
+        subtype: 'notification',
+        notification_type: 'error',
+        title: expect.stringMatching(/stop|interrupt/i),
+        message: expect.stringContaining('SDK transport closed'),
+      }),
+    );
+  });
+
+  it('does not emit a notification when interrupt succeeds', async () => {
+    const handle = makeHandle();
+    const sessions = new Map([['t1', handle]]);
+    const sendToRenderer = vi.fn();
+    const q = createQueryPassthroughs(sessions, sendToRenderer);
+    await q.interrupt('t1');
+    expect(sendToRenderer).not.toHaveBeenCalled();
+  });
 });
 
 describe('createQueryPassthroughs.setModel', () => {

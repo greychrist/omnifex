@@ -76,6 +76,40 @@ describe('classifyBlockKind', () => {
     expect(classifyBlockKind(parent.message!.content![0], parent)).toBe('tool.result.generic');
   });
 
+  // The Agent SDK doesn't currently surface server-side tool blocks through
+  // the CLI, but if Anthropic ever exposes the code-execution tool surface
+  // (server_tool_use + bash_code_execution_tool_result +
+  // text_editor_code_execution_tool_result blocks per the Messages API),
+  // the renderer needs to recognize them rather than fall through to the
+  // "unknown" catch-all.
+  it('classifies assistant server_tool_use blocks as assistant.serverToolUse', () => {
+    const parent = assistant([{
+      type: 'server_tool_use',
+      id: 'srvtu_1',
+      name: 'code_execution',
+      input: { code: 'print(1)' },
+    }]);
+    expect(classifyBlockKind(parent.message!.content![0], parent)).toBe('assistant.serverToolUse');
+  });
+
+  it('classifies user bash_code_execution_tool_result blocks as tool.result.codeExecution', () => {
+    const parent = user([{
+      type: 'bash_code_execution_tool_result',
+      tool_use_id: 'srvtu_1',
+      content: { type: 'bash_code_execution_result', return_code: 0, stdout: 'hi\n' },
+    }]);
+    expect(classifyBlockKind(parent.message!.content![0], parent)).toBe('tool.result.codeExecution');
+  });
+
+  it('classifies user text_editor_code_execution_tool_result blocks as tool.result.codeExecution', () => {
+    const parent = user([{
+      type: 'text_editor_code_execution_tool_result',
+      tool_use_id: 'srvtu_2',
+      content: { type: 'text_editor_code_execution_view_result', file_text: 'hello' },
+    }]);
+    expect(classifyBlockKind(parent.message!.content![0], parent)).toBe('tool.result.codeExecution');
+  });
+
   it('classifies user text containing system-reminder as systemContext', () => {
     const parent = user([{ type: 'text', text: 'hello\n<system-reminder>x</system-reminder>' }]);
     expect(classifyBlockKind(parent.message!.content![0], parent)).toBe('user.systemContext');

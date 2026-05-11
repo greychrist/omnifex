@@ -1,10 +1,38 @@
 import type { ClaudeStreamMessage } from "@/types/claudeStream";
+import { isAssistantMessage } from "@/types/claudeStream";
 
 // Rates used by the live session's client-side cost calc
 // (see ClaudeCodeSession.tsx handleStreamMessage). Kept in sync so
 // reloaded turns show the same cost we displayed live.
 const INPUT_RATE_PER_TOKEN = 0.000003;
 const OUTPUT_RATE_PER_TOKEN = 0.000015;
+
+/**
+ * Stop reasons that terminate a turn. The assistant has nothing more to
+ * say on this exchange, even if the turn didn't end cleanly. We synthesize
+ * a result card for every one of these on reload so the user sees a
+ * closing summary instead of the cut-off assistant message just dangling.
+ *
+ * Excluded:
+ * - `tool_use` — mid-turn step; the turn continues with a tool_result
+ *   user message + another assistant step.
+ * - `pause_turn` — server-side tool loop hit its iteration limit; the
+ *   harness re-sends to resume, so this is recoverable, not terminal.
+ * - `null` / absent — partial or interrupted assistant streams.
+ */
+const TERMINAL_STOP_REASONS: ReadonlySet<string> = new Set([
+  'end_turn',
+  'stop_sequence',
+  'max_tokens',
+  'refusal',
+  'model_context_window_exceeded',
+]);
+
+/** Subset of terminal stops that represent a clean completion. */
+const SUCCESS_STOP_REASONS: ReadonlySet<string> = new Set([
+  'end_turn',
+  'stop_sequence',
+]);
 
 function parseTimestamp(ts: unknown): number | null {
   if (typeof ts === 'number') return ts;
@@ -46,9 +74,15 @@ function buildSyntheticResult(
   durationMs: number,
   numTurns: number,
 ): ClaudeStreamMessage {
-  const stopReason = (lastAssistant.message as any)?.stop_reason ?? null;
-  const isError = typeof stopReason === 'string' && stopReason !== 'end_turn';
-  const usage = (lastAssistant.message as any)?.usage ?? {};
+  const inner = lastAssistant.message;
+  const stopReason = inner?.stop_reason ?? null;
+  // Success = clean completion (end_turn / stop_sequence). Everything else
+  // that landed here is a terminal-but-unsuccessful stop (max_tokens,
+  // refusal, model_context_window_exceeded) — surface as an error so the
+  // result card uses the appropriate styling.
+  const isError =
+    typeof stopReason === 'string' && !SUCCESS_STOP_REASONS.has(stopReason);
+  const usage = inner?.usage ?? { input_tokens: 0, output_tokens: 0 };
   const inputTokens = Number(usage.input_tokens ?? 0);
   const outputTokens = Number(usage.output_tokens ?? 0);
   const totalCostUsd =
@@ -56,8 +90,7 @@ function buildSyntheticResult(
 
   // Inherit the last assistant message's timestamp so the Execution Complete
   // card shows a footer time on reloaded sessions, matching live behavior.
-  const ts =
-    (lastAssistant as any).receivedAt ?? (lastAssistant as any).timestamp ?? null;
+  const ts = lastAssistant.receivedAt ?? lastAssistant.timestamp ?? null;
 
   return {
     type: 'result',
@@ -69,12 +102,12 @@ function buildSyntheticResult(
     result: lastTextOf(lastAssistant),
     total_cost_usd: totalCostUsd,
     usage,
-    session_id: (lastAssistant as any).sessionId ?? (lastAssistant as any).session_id ?? null,
+    session_id: lastAssistant.sessionId ?? lastAssistant.session_id,
     receivedAt: ts ?? undefined,
     // Marker so downstream code can tell this was reconstructed from disk,
     // not emitted live by the SDK. Useful for debugging or tooltips.
     synthesized: true,
-  } as unknown as ClaudeStreamMessage;
+  };
 }
 
 /**
@@ -99,7 +132,7 @@ export function synthesizeResultMessages(
 
   const flushTurn = () => {
     if (!lastAssistant) return;
-    const endTs = parseTimestamp((lastAssistant as any).timestamp);
+    const endTs = parseTimestamp(lastAssistant.timestamp);
     const startTs = turnStartTs ?? endTs ?? 0;
     const durationMs = endTs && startTs ? endTs - startTs : 0;
     turnsSoFar += 1;
@@ -110,16 +143,19 @@ export function synthesizeResultMessages(
   for (const msg of messages) {
     if (isUserTurnBoundary(msg)) {
       flushTurn();
-      turnStartTs = parseTimestamp((msg as any).timestamp);
+      turnStartTs = parseTimestamp(msg.timestamp);
       out.push(msg);
       continue;
     }
-    // Assistant messages end a turn only when their stop_reason is
-    // 'end_turn'. Mid-turn assistant messages with stop_reason 'tool_use'
-    // are interstitial steps; do not treat them as the turn's final say.
-    if (msg.type === 'assistant') {
-      const stop = (msg.message as any)?.stop_reason;
-      if (stop === 'end_turn') {
+    // Assistant messages end a turn on any TERMINAL_STOP_REASONS value —
+    // clean completions (end_turn / stop_sequence) and unsuccessful but
+    // terminal ones (max_tokens / refusal / model_context_window_exceeded).
+    // Mid-turn `tool_use` stops are interstitial steps; `pause_turn` is
+    // resumable; partial streams have no stop_reason at all. None of those
+    // are turn-enders.
+    if (isAssistantMessage(msg)) {
+      const stop = msg.message.stop_reason;
+      if (typeof stop === 'string' && TERMINAL_STOP_REASONS.has(stop)) {
         lastAssistant = msg;
       }
     }

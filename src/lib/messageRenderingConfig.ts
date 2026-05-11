@@ -351,6 +351,20 @@ export const DEFAULT_KINDS: MessageKindConfig[] = [
     hiddenInCompact: true,
     compactBoundaryLocked: false,
   },
+  {
+    id: "assistant.serverToolUse",
+    label: "Server tool use",
+    description:
+      "Anthropic-hosted server-side tool invocation (code_execution, web_search, web_fetch). " +
+      "Distinct from client-side tool_use — Claude runs these on Anthropic infrastructure.",
+    origin: "tool",
+    icon: "Terminal",
+    headerLabel: null,
+    accentColor: "muted",
+    alignment: "left",
+    hiddenInCompact: true,
+    compactBoundaryLocked: false,
+  },
 
   // TOOL RESULTS
   {
@@ -360,6 +374,21 @@ export const DEFAULT_KINDS: MessageKindConfig[] = [
     origin: "tool",
     icon: "Terminal",
     headerLabel: "Tool Result",
+    accentColor: "muted",
+    alignment: "left",
+    hiddenInCompact: true,
+    compactBoundaryLocked: false,
+  },
+  {
+    id: "tool.result.codeExecution",
+    label: "Code execution result",
+    description:
+      "Result of an Anthropic-hosted server-side tool — bash_code_execution_tool_result or " +
+      "text_editor_code_execution_tool_result. Currently not surfaced through the Agent SDK CLI; " +
+      "registered defensively so future SDK versions don't fall through to the unknown widget.",
+    origin: "tool",
+    icon: "Terminal",
+    headerLabel: "Code Execution",
     accentColor: "muted",
     alignment: "left",
     hiddenInCompact: true,

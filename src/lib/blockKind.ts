@@ -107,6 +107,14 @@ export function classifyBlockKind(
     if (block.type === 'tool_use') {
       return isKnownToolName(block.name) ? 'assistant.toolUse' : 'assistant.toolUse.unknown';
     }
+    // Anthropic-hosted server-side tools (code_execution, web_search,
+    // web_fetch) emit `server_tool_use` blocks rather than `tool_use`.
+    // The Agent SDK doesn't currently surface these through the CLI, but
+    // classify defensively so a future SDK release doesn't drop them into
+    // the unknown-tool catch-all.
+    if (block.type === 'server_tool_use') {
+      return 'assistant.serverToolUse';
+    }
     return null;
   }
 
@@ -121,6 +129,15 @@ export function classifyBlockKind(
           : '';
       if (innerText.includes('<system-reminder>')) return 'tool.result.systemReminder';
       return 'tool.result.generic';
+    }
+    // Server-side code-execution result blocks — paired with server_tool_use
+    // above. Same defensive registration; the CLI surface doesn't emit
+    // these today.
+    if (
+      block.type === 'bash_code_execution_tool_result' ||
+      block.type === 'text_editor_code_execution_tool_result'
+    ) {
+      return 'tool.result.codeExecution';
     }
     if (block.type === 'text') {
       const text = typeof block.text === 'string' ? block.text : '';
