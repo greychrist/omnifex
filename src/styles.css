@@ -1087,3 +1087,20 @@ code::-webkit-scrollbar-thumb:hover {
   }
 }
 
+
+/* Find-in-chat highlights. The `data-find` attribute is the contract with
+   `useFindInChat`; the hook wraps every match in <mark data-find> and toggles
+   `.is-active` on the currently focused hit. Theme-neutral yellow reads on
+   light + dark backgrounds; the active outline anchors the eye while
+   scrolling between hits. See useFindInChat.ts. */
+mark[data-find] {
+  background-color: rgba(250, 204, 21, 0.35); /* yellow-400 @ 35% */
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+mark[data-find].is-active {
+  background-color: rgba(250, 204, 21, 0.75);
+  outline: 1px solid rgba(202, 138, 4, 0.9); /* yellow-600 */
+}

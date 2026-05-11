@@ -58,6 +58,8 @@ import { deriveSubagents, hasRunningSubagent } from "@/lib/subagentStreams";
 import { getLatestTodos, summarizeTodos } from "@/lib/latestTodos";
 import { SubagentBar } from "./SubagentBar";
 import { TodoBar } from "./TodoBar";
+import { FindBar } from "./FindBar";
+import { useFindInChat } from "@/hooks/useFindInChat";
 import { exportAsJsonl, exportAsMarkdown } from "@/lib/sessionExporters";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useSessionLifecycle } from "@/hooks/useSessionLifecycle";
@@ -380,6 +382,13 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   } | null>(null);
 
   const parentRef = useRef<HTMLDivElement>(null);
+  // Find-in-chat state. Cmd/Ctrl+F opens the floating FindBar; `useFindInChat`
+  // walks `contentRef` (the messages list, not the scroll wrapper) and wraps
+  // matches in <mark data-find>. transcriptVersion bumps on each new message
+  // so highlights stay fresh while streaming. See FindBar.tsx +
+  // useFindInChat.ts + docs/superpowers/specs/2026-05-11-find-in-chat-design.md.
+  const [findOpen, setFindOpen] = useState(false);
+  const [findQuery, setFindQuery] = useState('');
   const persistentSessionRef = useRef(false);
   // Live mirror of `isLoading` for call-time reads inside useSendPrompt's
   // queue gate. The drain path (setTimeout in runStreamEffect) holds onto a
@@ -579,6 +588,32 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   // content below the viewport AFTER the length-change effect already fired, and
   // the chat looks "stuck" a few hundred pixels above the real bottom.
   const contentRef = useRef<HTMLDivElement>(null);
+
+  // Cmd/Ctrl+F → open the find bar. Esc inside the bar closes it (handled by
+  // FindBar itself). Listener is scoped to window because focus may be on
+  // the FloatingPromptInput when the user wants to find — we want the
+  // shortcut to work regardless. Bound only while the session is mounted.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'f') {
+        e.preventDefault();
+        setFindOpen(true);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
+
+  const findResults = useFindInChat({
+    containerRef: contentRef,
+    query: findQuery,
+    isOpen: findOpen,
+    // Messages array grows on every stream tick; using `.length` as the
+    // version keeps the highlight count fresh without needing a separate
+    // counter. A wholesale-reload would also bump it.
+    transcriptVersion: messages.length,
+  });
+
   useEffect(() => {
     const contentEl = contentRef.current;
     const scrollEl = parentRef.current;
@@ -1239,6 +1274,17 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
 
   const messagesList = (
     <div className="flex-1 min-h-0 px-10 py-2 bg-muted/30 relative">
+    {findOpen && (
+      <FindBar
+        query={findQuery}
+        onQueryChange={setFindQuery}
+        count={findResults.count}
+        activeIndex={findResults.activeIndex}
+        onNext={findResults.next}
+        onPrev={findResults.prev}
+        onClose={() => { setFindOpen(false); setFindQuery(''); }}
+      />
+    )}
     <div className="absolute right-1 bottom-6 z-10 flex flex-col gap-1">
       <TooltipSimple content="Scroll to top" side="left">
         <Button
