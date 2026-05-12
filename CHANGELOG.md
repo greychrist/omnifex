@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.28] — 2026-05-12
+
+A noise pass on the error-toast pipeline added in 0.4.27. Two specific cases were treating routine chat events as app-level errors: closing a tab mid-session fired a toast for every tab (the Claude Code CLI's own teardown hook throws "Stream closed" on its way out, which our stderr classifier was catching as an error), and every shell command that exited non-zero from inside the agent — `grep` with no match, `git pull` blocked by an untracked file, `pgrep` with no result — wrote an error row even though Claude already explained the failure in the chat. The Log tab is now reserved for events the chat doesn't already show; tool-call mirroring and notification mirroring were dropped wholesale. Also rolls the Claude Agent SDK forward to track upstream.
+
+Installers remain **unsigned**.
+
+### Fixed
+
+- **Tab close no longer fires a spurious error toast for sessions with live SDK queries.** The Claude Code CLI runs an internal teardown hook on shutdown that tries to push a system-reminder through the control channel; once we close the input channel it throws `Stream closed` and dumps a bun stack trace to stderr. The session-factory stderr classifier now downgrades `Error in hook callback` / `Stream closed` messages to debug-level while a session is shutting down (tracked via a new `shuttingDownTabs` set on the sessions service, populated at the top of `stop()` and surviving the per-tab handle's removal from the live-sessions map). Real `FATAL` / `panic` / generic `error:` lines still surface even during shutdown so genuine crashes aren't hidden.
+
+### Changed
+
+- **Tool-call hook log rows retired.** `PreToolUse` / `PostToolUse` / `PostToolUseFailure` no longer write to `app_logs`. Every tool call and tool failure is already visible to the user in the chat (`tool_use` + `tool_result` blocks) and in Claude's own session JSONL on disk; the Log mirror was duplicative, and `PostToolUseFailure` in particular was generating error toasts for benign non-zero exit codes.
+- **`Notification` / `SubagentStart` / `SubagentStop` hooks stop writing log rows.** Renderer side effects are preserved: the `claude-notification` channel still drives tab badges (`useNotifications.ts`), notifications still appear inline in the chat via `claude-output`, and the subagent UI continues to update via the JSONL tail. Only the `app_logs` mirror was removed.
+- **`@anthropic-ai/claude-agent-sdk` → `0.2.140`** (was `0.2.139`). CLI-parity bump; no API changes.
+
 ## [0.4.27] — 2026-05-12
 
 Quality-of-life pass on two surfaces that had grown loud: the slash-command picker and the application log. The picker now opens on a Project filter (the one you actually want), Left/Right arrows cycle filter tabs, and the SDK-sourced "Default" tab is renamed to "Claude" — with `project` and `user` scopes split into separate tabs. The log gains two verbose-source toggles (Claude hook events, Usage runner) so the bulk info-level chatter can be silenced without losing warnings and errors, plus a new "Toast on errors" feature that pops a corner toast with a "View in Log" action whenever a real error is recorded, so you can correlate noisy stack traces back to the action that triggered them.
