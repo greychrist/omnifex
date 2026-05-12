@@ -288,7 +288,7 @@ export function AnsweredAskUserQuestionCard({
                   )}
                 </div>
                 <span className="text-foreground/80 break-words">{q.question}</span>
-                <span className="italic font-medium text-foreground break-words">
+                <span className="italic text-foreground break-words">
                   {otherText
                     ? <>You typed: “{otherText}”</>
                     : hasAnswer
