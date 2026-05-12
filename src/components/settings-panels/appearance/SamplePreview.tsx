@@ -3,6 +3,7 @@ import type {
   MessageKindConfig,
   Palette,
 } from "@/lib/messageRenderingConfig";
+import { isHexColor } from "@/lib/messageRenderingConfig";
 import { Card, CardContent } from "@/components/ui/card";
 import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
 import { accentStyleFromEntry } from "@/lib/accentStyle";
@@ -33,7 +34,11 @@ export const SamplePreview: React.FC<SamplePreviewProps> = ({
   compact,
 }) => {
   const { config } = useMessageRenderingConfig();
-  const entry = palette[kind.accentColor];
+  // `kind.accentColor` is either a palette name (legacy) or a hex string
+  // (picker-driven). Resolve both to a PaletteEntry-shaped record.
+  const entry = isHexColor(kind.accentColor)
+    ? ({ border: "", bg: "auto", swatch: kind.accentColor } as const)
+    : (palette[kind.accentColor as keyof typeof palette] ?? { border: "", bg: "auto", swatch: "#888" });
   const alignClass =
     kind.alignment === "right"
       ? "ml-auto max-w-[80%]"

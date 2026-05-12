@@ -3,12 +3,11 @@ import { Lock } from "lucide-react";
 import type {
   MessageKindConfig,
   Palette,
-  PaletteName,
   IconName,
   IconSize,
   Typography,
 } from "@/lib/messageRenderingConfig";
-import { ALLOWED_ICONS } from "@/lib/messageRenderingConfig";
+import { ALLOWED_ICONS, isHexColor } from "@/lib/messageRenderingConfig";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -24,6 +23,9 @@ import { cn } from "@/lib/utils";
 
 interface KindEditorProps {
   kind: MessageKindConfig;
+  /** Kept on the props for backwards compatibility with the global palette
+   *  retinting flow. Resolved into a `swatch` for the picker's initial
+   *  value when the kind still references a palette name (legacy data). */
   palette: Palette;
   /** Global icon defaults — used to label "Use default (X)" placeholders so
    *  the user knows what the kind will inherit when an override is unset. */
@@ -42,6 +44,28 @@ const ICON_SIZE_OPTIONS: { value: IconSize; label: string }[] = [
 
 const SENTINEL_DEFAULT = "__default__";
 
+/**
+ * Resolve `kind.accentColor` (palette name OR hex) to a `#rrggbb` for the
+ * native `<input type="color">`, which only accepts that exact form.
+ * Falls back to a neutral grey for unknown values.
+ */
+function resolveAccentHex(accentColor: string, palette: Palette): string {
+  if (isHexColor(accentColor)) {
+    // Normalise `#rgb` and `#rrggbbaa` down to `#rrggbb` so the native
+    // picker doesn't reject them. Alpha is dropped — the picker has no
+    // alpha lane; alpha is re-derived from `accentStyleFromEntry`.
+    if (accentColor.length === 4) {
+      const r = accentColor[1];
+      const g = accentColor[2];
+      const b = accentColor[3];
+      return `#${r}${r}${g}${g}${b}${b}`.toLowerCase();
+    }
+    return accentColor.slice(0, 7).toLowerCase();
+  }
+  const entry = palette[accentColor as keyof typeof palette];
+  return entry?.swatch ?? "#888888";
+}
+
 export const KindEditor: React.FC<KindEditorProps> = ({
   kind,
   palette,
@@ -49,11 +73,11 @@ export const KindEditor: React.FC<KindEditorProps> = ({
   onChange,
   onResetKind,
 }) => {
-  const paletteEntries = Object.entries(palette) as [PaletteName, Palette[PaletteName]][];
-
   const effectiveBordered = kind.iconBordered ?? typography.icon.bordered;
   const effectiveBgOpacity = kind.iconBgOpacity ?? typography.icon.bgOpacity;
   const overrideBgOpacity = kind.iconBgOpacity !== undefined;
+
+  const accentHex = resolveAccentHex(kind.accentColor, palette);
 
   const sizeLabel = (id: IconSize) =>
     ICON_SIZE_OPTIONS.find((o) => o.value === id)?.label ?? id;
@@ -69,7 +93,7 @@ export const KindEditor: React.FC<KindEditorProps> = ({
         </p>
       </header>
 
-      {/* Visibility in compact mode */}
+      {/* 1. Hide in compact mode */}
       <div className="flex items-start justify-between gap-4">
         <div className="space-y-0.5 flex-1">
           <Label className="flex items-center gap-1.5">
@@ -91,44 +115,68 @@ export const KindEditor: React.FC<KindEditorProps> = ({
         />
       </div>
 
-      {/* Accent color — dropdown */}
-      <div className="space-y-2">
-        <Label>Accent color</Label>
-        <p className="text-caption text-muted-foreground">
-          Palette name — edit the palette once to retint every kind that uses it.
-        </p>
-        <Select
-          value={kind.accentColor}
-          onValueChange={(v) => onChange({ accentColor: v as PaletteName })}
-        >
-          <SelectTrigger>
-            <SelectValue>
-              <div className="flex items-center gap-2">
-                <span
-                  className="h-3 w-3 rounded-full border border-border/60 shrink-0"
-                  style={{ backgroundColor: palette[kind.accentColor].swatch }}
-                />
-                <span>{kind.accentColor}</span>
-              </div>
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent className="max-h-72">
-            {paletteEntries.map(([name, entry]) => (
-              <SelectItem key={name} value={name}>
-                <div className="flex items-center gap-2">
-                  <span
-                    className="h-3 w-3 rounded-full border border-border/60 shrink-0"
-                    style={{ backgroundColor: entry.swatch }}
-                  />
-                  <span>{name}</span>
-                </div>
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      {/* 2. Header label + accent colour — side-by-side. The label is the
+            user-facing title that lands in the card's KindHeader; the
+            colour picker is a native <input type="color"> backed by a
+            hex text field so users can type values too. */}
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3">
+        <div className="space-y-2">
+          <Label htmlFor="header-label">Header label</Label>
+          <Input
+            id="header-label"
+            value={kind.headerLabel ?? ""}
+            placeholder="(no header)"
+            onChange={(e) =>
+              onChange({
+                headerLabel: e.target.value === "" ? null : e.target.value,
+              })
+            }
+          />
+          <p className="text-caption text-muted-foreground">
+            Leave blank to hide the header bar.
+          </p>
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="accent-color">Accent colour</Label>
+          <div className="flex items-center gap-2">
+            {/* Native colour picker — clicking opens the OS picker. The
+                hex value is what gets written; alpha/border tinting is
+                derived from it by `accentStyleFromEntry`. */}
+            <input
+              id="accent-color"
+              type="color"
+              value={accentHex}
+              onChange={(e) => onChange({ accentColor: e.target.value })}
+              className={cn(
+                "h-9 w-12 cursor-pointer rounded-md border border-border",
+                "bg-background p-1",
+                "focus:outline-none focus:ring-1 focus:ring-ring",
+              )}
+              aria-label="Accent colour picker"
+            />
+            <Input
+              value={accentHex}
+              onChange={(e) => {
+                const v = e.target.value.trim();
+                // Accept partial typing without bouncing the user — only
+                // commit when the value looks like a valid hex. Anything
+                // else is held in the controlled input via the picker's
+                // value above.
+                if (isHexColor(v)) {
+                  onChange({ accentColor: v.toLowerCase() });
+                }
+              }}
+              className="font-mono text-xs h-9 w-24"
+              aria-label="Accent colour hex"
+            />
+          </div>
+          <p className="text-caption text-muted-foreground">
+            Drives the card border and a subtle bg tint.
+          </p>
+        </div>
       </div>
 
-      {/* Icon — dropdown with previews */}
+      {/* 3. Icon — dropdown with previews */}
       <div className="space-y-2">
         <Label>Icon</Label>
         <Select
@@ -164,7 +212,9 @@ export const KindEditor: React.FC<KindEditorProps> = ({
         </Select>
       </div>
 
-      {/* Per-kind icon overrides */}
+      {/* 4. Icon chrome — per-kind overrides for the icon's size, border,
+            and background opacity. Inherits from the global Typography →
+            Card icon defaults when unset. */}
       <div className="space-y-3 pt-3 border-t border-border">
         <div>
           <Label>Icon chrome (per-kind overrides)</Label>
@@ -261,24 +311,6 @@ export const KindEditor: React.FC<KindEditorProps> = ({
             </span>
           </div>
         </div>
-      </div>
-
-      {/* Header label override */}
-      <div className="space-y-2">
-        <Label htmlFor="header-label">Header label</Label>
-        <p className="text-caption text-muted-foreground">
-          Leave blank to hide the header bar.
-        </p>
-        <Input
-          id="header-label"
-          value={kind.headerLabel ?? ""}
-          placeholder="(no header)"
-          onChange={(e) =>
-            onChange({
-              headerLabel: e.target.value === "" ? null : e.target.value,
-            })
-          }
-        />
       </div>
 
       <div className="pt-2 border-t border-border flex items-center justify-between">

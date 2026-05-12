@@ -1,7 +1,8 @@
 import type React from "react";
-import type {
-  MessageRenderingConfig,
-  PaletteEntry,
+import {
+  isHexColor,
+  type MessageRenderingConfig,
+  type PaletteEntry,
 } from "./messageRenderingConfig";
 
 // Build an inline style that overrides Tailwind border/bg classes for a card.
@@ -14,13 +15,34 @@ export function accentStyleFromEntry(entry: PaletteEntry): React.CSSProperties {
   };
 }
 
+/**
+ * Resolve the accent for a kind to a `PaletteEntry`-shaped record so the
+ * downstream helpers (`accentStyleFor`, `swatchFor`) don't care whether
+ * the value came from the named palette or a free-form hex from the
+ * per-kind colour picker.
+ *
+ * `kind.accentColor` is `string` (loosened from `PaletteName` when the
+ * picker landed). Two recognised forms:
+ *   - Palette name (legacy / shared retinting) — looked up in
+ *     `config.palette`.
+ *   - Hex colour (`#rgb` / `#rrggbb` / `#rrggbbaa`) — synthesised into
+ *     a PaletteEntry-like shape with the hex as the swatch and the
+ *     border/bg alpha suffixes computed by `accentStyleFromEntry`.
+ *
+ * Anything else returns null and the caller renders without accent
+ * styling.
+ */
 export function accentFor(
   config: MessageRenderingConfig,
   kindId: string,
 ): PaletteEntry | null {
   const kind = config.kinds[kindId];
   if (!kind) return null;
-  return config.palette[kind.accentColor] ?? null;
+  const ac = kind.accentColor;
+  if (isHexColor(ac)) {
+    return { border: "", bg: "auto", swatch: ac };
+  }
+  return config.palette[ac as keyof typeof config.palette] ?? null;
 }
 
 export function accentStyleFor(

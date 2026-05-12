@@ -69,11 +69,25 @@ describe("messageRenderingConfig", () => {
       expect(cfg.kinds["user.prompt"].icon).toBe("User");
     });
 
-    it("rejects accentColor names not in the palette", () => {
+    it("rejects accentColor strings that are neither palette names nor hex", () => {
+      // "neon" isn't in the palette and doesn't look like a hex colour →
+      // falls back to the kind's default.
       const cfg = mergeConfig({
         kinds: { "user.prompt": { accentColor: "neon" } },
       });
       expect(cfg.kinds["user.prompt"].accentColor).toBe("blue");
+    });
+
+    it("accepts hex accentColor strings (picker-driven configs)", () => {
+      // The KindEditor's <input type="color"> emits 7-char `#rrggbb`; the
+      // hex text field also accepts `#rgb` and `#rrggbbaa`. mergeConfig
+      // must let these through so saved configs round-trip cleanly.
+      for (const hex of ["#a855f7", "#abc", "#aabbccdd"]) {
+        const cfg = mergeConfig({
+          kinds: { "user.prompt": { accentColor: hex } },
+        });
+        expect(cfg.kinds["user.prompt"].accentColor).toBe(hex);
+      }
     });
 
     it("locks exactly the four turn-boundary kinds", () => {

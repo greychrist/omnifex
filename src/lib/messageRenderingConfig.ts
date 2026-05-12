@@ -177,7 +177,15 @@ export interface MessageKindConfig {
   origin: Origin;
   icon: IconName;
   headerLabel: string | null; // null => no header text
-  accentColor: PaletteName;
+  /**
+   * Either a palette name (legacy / cross-kind retinting) or a hex colour
+   * (`#rrggbb` / `#rgb`). The accent helpers in `accentStyle.ts` resolve
+   * palette names through `config.palette` and treat hex strings as a
+   * one-off swatch with derived border/bg alphas. Picker-driven configs
+   * write hex; the palette is kept for backwards compatibility and the
+   * (rarely used) "retint every kind that shares a name" workflow.
+   */
+  accentColor: string;
   alignment: Alignment;
   hiddenInCompact: boolean;
   // True if this kind is forced visible in compact mode by grouping logic
@@ -767,6 +775,17 @@ function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
+/**
+ * True when `v` looks like a CSS hex colour: `#rgb`, `#rrggbb`, or the
+ * 8-digit RGBA variant `#rrggbbaa`. Permissive enough to accept what an
+ * `<input type="color">` emits (always 7-char `#rrggbb`) plus typed-in
+ * shorthands and alpha variants. The accent helpers in `accentStyle.ts`
+ * pad/derive border + bg alphas on top of whichever form is stored.
+ */
+export function isHexColor(v: unknown): v is string {
+  return typeof v === "string" && /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(v);
+}
+
 export function mergeConfig(saved: unknown): MessageRenderingConfig {
   const base = createDefaultConfig();
   if (!isRecord(saved)) return base;
@@ -804,8 +823,9 @@ export function mergeConfig(saved: unknown): MessageRenderingConfig {
               ? (override.headerLabel as string | null)
               : current.headerLabel,
           accentColor:
-            typeof override.accentColor === "string" && override.accentColor in base.palette
-              ? (override.accentColor as PaletteName)
+            typeof override.accentColor === "string" &&
+            (override.accentColor in base.palette || isHexColor(override.accentColor))
+              ? override.accentColor
               : current.accentColor,
           alignment:
             override.alignment === "left" || override.alignment === "right" || override.alignment === "full"

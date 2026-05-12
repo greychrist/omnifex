@@ -1,5 +1,6 @@
 import React from "react";
 import { ChevronDown, ChevronRight, EyeOff, Lock } from "lucide-react";
+import { isHexColor } from "@/lib/messageRenderingConfig";
 import type {
   MessageRenderingConfig,
   MessageKindConfig,
@@ -114,7 +115,11 @@ interface TreeRowProps {
 }
 
 const TreeRow: React.FC<TreeRowProps> = ({ kind, palette, selected, onSelect }) => {
-  const entry = palette[kind.accentColor];
+  // `kind.accentColor` is either a palette name (legacy) or a hex string
+  // (picker-driven). Resolve to a swatch hex either way.
+  const swatch = isHexColor(kind.accentColor)
+    ? kind.accentColor
+    : (palette[kind.accentColor as keyof typeof palette]?.swatch ?? "#888");
   return (
     <button
       type="button"
@@ -127,7 +132,7 @@ const TreeRow: React.FC<TreeRowProps> = ({ kind, palette, selected, onSelect }) 
     >
       <span
         className="h-2.5 w-2.5 rounded-full flex-shrink-0"
-        style={{ backgroundColor: entry.swatch }}
+        style={{ backgroundColor: swatch }}
       />
       <span className="text-muted-foreground flex-shrink-0">
         <IconRenderer name={kind.icon} className="h-3.5 w-3.5" />
