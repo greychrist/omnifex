@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ChevronDown, ChevronRight, ChevronUp, Bot, CheckCircle2, AlertCircle, Ghost, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, ChevronUp, Bot, CheckCircle2, CircleDashed, AlertCircle, Ghost, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Subagent } from '@/lib/subagentStreams';
 
@@ -39,6 +39,17 @@ const SubagentRow: React.FC<SubagentRowProps> = ({ sub, onDismiss }) => {
   const statusIcon =
     sub.status === 'completed' ? (
       <CheckCircle2 className={cn('h-3.5 w-3.5', color.text)} />
+    ) : sub.status === 'completed_inferred' ? (
+      // Distinct icon for inferred completion — the parent emitted a
+      // `result` and moved on, but we never received a direct closure
+      // carrier (task_notification SystemMessage or
+      // queue-operation/attachment XML). The work is done, but we lack
+      // the summary/usage data the carriers would have provided. The
+      // dashed-ring variant makes this visible at a glance vs the solid
+      // CheckCircle2 used for verified completions.
+      <span title="Completion inferred from parent result — no task-notification was delivered.">
+        <CircleDashed className={cn('h-3.5 w-3.5', color.text, 'opacity-60')} />
+      </span>
     ) : sub.status === 'failed' ? (
       <AlertCircle className="h-3.5 w-3.5 text-destructive" />
     ) : sub.status === 'abandoned' ? (
@@ -104,7 +115,9 @@ const SubagentRow: React.FC<SubagentRowProps> = ({ sub, onDismiss }) => {
         <div className="px-3 pb-2 pt-0.5 border-t border-white/5 space-y-0.5">
           {sub.events.length === 0 && (
             <div className="text-[11px] text-muted-foreground italic py-1">
-              Waiting for first progress event…
+              {sub.status === 'completed_inferred'
+                ? 'Completed (no progress reported)'
+                : 'Waiting for first progress event…'}
             </div>
           )}
           {sub.events.map((ev, i) => {

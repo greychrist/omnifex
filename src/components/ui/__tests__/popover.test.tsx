@@ -95,6 +95,48 @@ describe("Popover (controlled)", () => {
   });
 });
 
+describe("Popover portal rendering", () => {
+  // The popover renders into a portal at document.body so it escapes the
+  // trigger's stacking context. Without the portal, a parent with
+  // `position: relative` + `z-40` (e.g. the session header) caps the popover
+  // at z-40 globally, letting later z-50 siblings (e.g. SubagentBar's
+  // expanded rows) paint on top of it.
+  it("renders open content as a child of document.body, not the trigger's parent", () => {
+    render(
+      <div data-testid="trigger-wrapper" style={{ position: "relative", zIndex: 1 }}>
+        <Popover
+          open
+          trigger={<button>t</button>}
+          content={<div data-testid="popover-body">body</div>}
+        />
+      </div>,
+    );
+    const body = screen.getByTestId("popover-body");
+    const wrapper = screen.getByTestId("trigger-wrapper");
+    // Walk up from the popover body — it must reach document.body without
+    // passing through the trigger's wrapper.
+    let el: HTMLElement | null = body;
+    let passedThroughWrapper = false;
+    while (el && el !== document.body) {
+      if (el === wrapper) {
+        passedThroughWrapper = true;
+        break;
+      }
+      el = el.parentElement;
+    }
+    expect(passedThroughWrapper).toBe(false);
+    expect(el).toBe(document.body);
+  });
+
+  it("still renders the trigger inline (only the content is portaled)", () => {
+    render(<Popover open trigger={<button>t</button>} content={<div>body</div>} />);
+    const trigger = screen.getByText("t");
+    // Trigger walks back to document.body through the rendered tree as
+    // normal (it's not portaled).
+    expect(trigger.closest("body")).toBe(document.body);
+  });
+});
+
 describe("Popover side and align variants", () => {
   it("renders with side='top'", () => {
     render(

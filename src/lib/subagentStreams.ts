@@ -1,14 +1,27 @@
+/**
+ * Derive subagent state from the Claude Agent SDK stream.
+ *
+ * Thin facade over `subagentEvents.ts`. Translation, reduction, and the
+ * inferred-closure post-pass live there; this file is the renderer-facing
+ * shape (`Subagent` rendered by SubagentBar, `clearCompleted` for the
+ * "Clear done" button, `hasRunningSubagent` for callers that want to know
+ * if any row is still in flight) plus the `colorIndexFor` palette hash.
+ */
+
 import type { ClaudeStreamMessage } from '@/types/claudeStream';
+import {
+  applyEvents,
+  dispatchIndicesFromEvents,
+  inferredClosureEvents,
+  isTaskLifecycleMarker as _isTaskLifecycleMarker,
+  messagesToEvents,
+  type SubagentProgressEntry,
+  type SubagentState,
+  type SubagentStatus,
+} from './subagentEvents';
 
-export type SubagentStatus = 'running' | 'completed' | 'failed' | 'abandoned';
-
-export interface SubagentProgressEvent {
-  description: string;
-  lastToolName?: string;
-  totalTokens?: number;
-  toolUses?: number;
-  durationMs?: number;
-}
+export type { SubagentStatus } from './subagentEvents';
+export type SubagentProgressEvent = SubagentProgressEntry;
 
 export interface Subagent {
   toolUseId: string;
@@ -24,9 +37,13 @@ export interface Subagent {
   colorIndex: number;
   // True when dispatched with run_in_background:true. The SDK fires an
   // immediate ACK tool_result for these (a dispatch confirmation, not the
-  // actual return value), so the tool_result-completion path in step 2
-  // must not flip these to "completed" — only task_notification can.
+  // actual return value), so the reducer must not flip these to "completed"
+  // on the ACK — only TaskNotification(Xml) or the inferred-closure rule
+  // do that.
   isBackground?: boolean;
+  /** Which carrier finalised this row, if any. `'parent_result'` indicates
+   *  the inferred-closure path (no direct closure carrier was seen). */
+  closureSource?: SubagentState['closureSource'];
 }
 
 export const SUBAGENT_PALETTE_SIZE = 6;
@@ -39,242 +56,59 @@ export function colorIndexFor(toolUseId: string): number {
   return hash % SUBAGENT_PALETTE_SIZE;
 }
 
-export function isTaskLifecycleMarker(m: unknown): boolean {
-  const msg = m as { type?: string; subtype?: string } | null;
-  return !!msg && msg.type === 'system' && typeof msg.subtype === 'string' && msg.subtype.startsWith('task_');
-}
+export const isTaskLifecycleMarker = _isTaskLifecycleMarker;
 
-// XML <task-notification>...</task-notification> payloads ride two envelopes:
-//   - { type: 'queue-operation', operation: 'enqueue', content: '<task-notification>...' }
-//   - { type: 'attachment', attachment: { type: 'queued_command', prompt: '<task-notification>...' } }
-// Both surface the completion of a run_in_background dispatch (typically Bash)
-// in lieu of a structured task_notification SystemMessage. We pull the raw XML
-// out without committing to a schema beyond "has a <task-notification> open
-// tag inside a string field on a known envelope".
-function extractTaskNotificationXml(m: unknown): string | null {
-  if (!m || typeof m !== 'object') return null;
-  const any = m as Record<string, unknown>;
-  if (any.type === 'queue-operation' && (any.operation === 'enqueue' || any.operation === undefined)) {
-    const content = any.content;
-    if (typeof content === 'string' && content.includes('<task-notification>')) return content;
-  }
-  if (any.type === 'attachment') {
-    const att = any.attachment as { type?: string; prompt?: unknown } | undefined;
-    if (att?.type === 'queued_command' && typeof att.prompt === 'string' && att.prompt.includes('<task-notification>')) {
-      return att.prompt;
-    }
-  }
-  return null;
-}
-
-interface ParsedTaskNotification {
-  taskId?: string;
-  toolUseId: string;
-  status: 'completed' | 'failed';
-  summary?: string;
-}
-
-function parseTaskNotificationXml(text: string): ParsedTaskNotification | null {
-  const tag = (name: string): string | undefined => {
-    const re = new RegExp(`<${name}>([\\s\\S]*?)</${name}>`);
-    const m = text.match(re);
-    return m ? m[1].trim() : undefined;
-  };
-  const toolUseId = tag('tool-use-id');
-  if (!toolUseId) return null;
-  const statusRaw = tag('status');
-  return {
-    taskId: tag('task-id'),
-    toolUseId,
-    status: statusRaw === 'completed' ? 'completed' : 'failed',
-    summary: tag('summary'),
-  };
-}
-
-function ensureSubagent(
-  byId: Map<string, Subagent>,
-  toolUseId: string,
-  initialDescription = '',
-): Subagent {
-  let sub = byId.get(toolUseId);
-  if (!sub) {
-    sub = {
-      toolUseId,
-      description: initialDescription,
-      status: 'running',
-      latest: null,
-      events: [],
-      colorIndex: colorIndexFor(toolUseId),
-    };
-    byId.set(toolUseId, sub);
-  }
-  return sub;
-}
-
+/**
+ * Build the subagent list from the message stream.
+ *
+ * Pipeline:
+ *   1. `messagesToEvents` — pure SDK→event translation
+ *   2. `applyEvents` — fold events into per-`tool_use_id` state with an
+ *      intrinsic terminal lock
+ *   3. `inferredClosureEvents` — generate `ClosedByParentResult` events
+ *      for rows still in `running` whose parent emitted a `type: 'result'`
+ *      that is not the most recent message
+ *   4. Re-apply the inferred events so they go through the same reducer
+ *      (preserving terminal-lock semantics)
+ */
 export function deriveSubagents(messages: ClaudeStreamMessage[]): Subagent[] {
-  const byToolUseId = new Map<string, Subagent>();
-  // Subagents for which task_notification already set a final status — used
-  // so a later (or earlier) tool_result doesn't overwrite richer notification
-  // data. The SDK's notification carries the summary + usage; tool_result only
-  // tells us "the subagent returned."
-  const notificationFinalized = new Set<string>();
-  // Index of the assistant message that dispatched each subagent. Used after
-  // the main loop to detect orphaned background dispatches (parent moved on
-  // past the awaiting result without ever receiving task_notification).
-  const dispatchIndex = new Map<string, number>();
-
-  for (let i = 0; i < messages.length; i++) {
-    const m = messages[i] as any;
-
-    // 1. Parent tool_use block — surfaces a subagent as soon as it's
-    //    dispatched. Two ways a tool_use becomes a subagent:
-    //    a) name is Agent or Task (the explicit subagent-dispatch tools)
-    //    b) any tool_use with input.run_in_background === true (e.g. Bash with
-    //       a long-running build) — the SDK treats those as background tasks
-    //       too and fires the same task_started/task_notification lifecycle.
-    //    Without (b), Bash backgrounds wouldn't show up in the bar until the
-    //    SDK got around to firing task_started, and the synchronous ACK
-    //    tool_result would have no isBackground flag to gate against.
-    if (m?.type === 'assistant' && Array.isArray(m.message?.content)) {
-      for (const block of m.message.content) {
-        if (block?.type !== 'tool_use' || !block.id) continue;
-        const isAgentTool = block.name === 'Agent' || block.name === 'Task';
-        const isBackgroundDispatch = block.input?.run_in_background === true;
-        if (!isAgentTool && !isBackgroundDispatch) continue;
-
-        const sub = ensureSubagent(byToolUseId, block.id, block.input?.description ?? '');
-        if (!sub.description) sub.description = block.input?.description ?? '';
-        if (isAgentTool) sub.agentType = sub.agentType ?? block.input?.subagent_type;
-        if (isBackgroundDispatch) sub.isBackground = true;
-        if (!dispatchIndex.has(block.id)) dispatchIndex.set(block.id, i);
-      }
-      continue;
-    }
-
-    // 2. Tool results for a subagent tool_use — the parent session received the
-    //    subagent's return value, so the subagent has finished. Only used as a
-    //    fallback when task_notification never arrives (some streams emit the
-    //    tool_result but not the richer lifecycle marker).
-    //
-    //    Exception: background dispatches (run_in_background:true) get an
-    //    immediate ACK tool_result that says "Async agent launched..." — that
-    //    is NOT a completion signal. For those, only an is_error=true ACK
-    //    counts (the dispatch itself failed); a success ACK is ignored and
-    //    we wait for task_notification.
-    if (m?.type === 'user' && Array.isArray(m.message?.content)) {
-      for (const block of m.message.content) {
-        if (block?.type !== 'tool_result') continue;
-        const id: string | undefined = block.tool_use_id;
-        if (!id) continue;
-        const sub = byToolUseId.get(id);
-        if (!sub) continue;
-        if (notificationFinalized.has(id)) continue;
-        if (sub.isBackground && !block.is_error) continue;
-        sub.status = block.is_error ? 'failed' : 'completed';
-        sub.endedAt = sub.endedAt ?? new Date().toISOString();
-      }
-      continue;
-    }
-
-    // 3. Task lifecycle markers (task_started / task_progress / task_notification)
-    if (isTaskLifecycleMarker(m)) {
-      const id: string | undefined = m.tool_use_id;
-      if (!id) continue;
-      const sub = ensureSubagent(byToolUseId, id, m.description ?? '');
-
-      if (m.subtype === 'task_started') {
-        sub.taskId = m.task_id;
-        if (!sub.description) sub.description = m.description ?? '';
-        sub.startedAt = sub.startedAt ?? new Date().toISOString();
-      } else if (m.subtype === 'task_progress') {
-        const event: SubagentProgressEvent = {
-          description: m.description ?? '',
-          lastToolName: m.last_tool_name,
-          totalTokens: m.usage?.total_tokens,
-          toolUses: m.usage?.tool_uses,
-          durationMs: m.usage?.duration_ms,
-        };
-        sub.events.push(event);
-        sub.latest = event;
-        sub.taskId = sub.taskId ?? m.task_id;
-      } else if (m.subtype === 'task_notification') {
-        sub.status = m.status === 'completed' ? 'completed' : 'failed';
-        sub.summary = m.summary;
-        sub.endedAt = new Date().toISOString();
-        const finalEvent: SubagentProgressEvent = {
-          description: m.summary ?? sub.description,
-          totalTokens: m.usage?.total_tokens,
-          toolUses: m.usage?.tool_uses,
-          durationMs: m.usage?.duration_ms,
-        };
-        sub.events.push(finalEvent);
-        sub.latest = finalEvent;
-        notificationFinalized.add(id);
-      }
-      continue;
-    }
-
-    // 4. XML <task-notification> carried as a queue-operation enqueue or as an
-    //    attachment.queued_command. The CLI surfaces these for run_in_background
-    //    dispatches (Bash especially) in lieu of — or in addition to — a
-    //    structured task_notification SystemMessage. Source of truth is the
-    //    embedded <tool-use-id>; route through the same close path so the
-    //    SubagentBar gets a final event (replacing "Waiting for first
-    //    progress event…") and the spinner / amber "Awaiting Background
-    //    Work" card retire.
-    const xml = extractTaskNotificationXml(m);
-    if (xml) {
-      const parsed = parseTaskNotificationXml(xml);
-      if (parsed) {
-        const sub = byToolUseId.get(parsed.toolUseId);
-        // Only act when we know the dispatch — never invent orphan subs from
-        // notifications alone, since they routinely refer to tool_uses from
-        // earlier turns we may not have in scope.
-        if (sub && !notificationFinalized.has(parsed.toolUseId)) {
-          sub.status = parsed.status;
-          sub.summary = parsed.summary ?? sub.summary;
-          sub.endedAt = new Date().toISOString();
-          if (parsed.taskId && !sub.taskId) sub.taskId = parsed.taskId;
-          const finalEvent: SubagentProgressEvent = {
-            description: parsed.summary ?? sub.description ?? '',
-          };
-          sub.events.push(finalEvent);
-          sub.latest = finalEvent;
-          notificationFinalized.add(parsed.toolUseId);
-        }
-      }
-    }
+  const baseEvents = messagesToEvents(messages);
+  const states = applyEvents(baseEvents);
+  const closureEvents = inferredClosureEvents(
+    messages,
+    states,
+    dispatchIndicesFromEvents(baseEvents),
+  );
+  // Apply closure events directly to the existing state map. We don't
+  // re-run them through `applyEvents` because that starts from an empty
+  // map; the inferred-closure semantics are simple enough to inline here
+  // and the terminal-lock check below preserves the same invariant
+  // (`isTerminal` ↔ status ∈ TERMINAL_STATUSES).
+  for (const ev of closureEvents) {
+    if (ev.kind !== 'ClosedByParentResult') continue;
+    const s = states.get(ev.toolUseId);
+    if (!s) continue;
+    if (s.status !== 'running') continue; // terminal lock
+    s.status = 'completed_inferred';
+    s.closureSource = 'parent_result';
+    s.endedAt = s.endedAt ?? new Date().toISOString();
   }
 
-  // Orphan detection: a background dispatch is "abandoned" if the parent
-  // session moved on past its awaiting result without ever receiving a
-  // task_notification. Symptom: zombie "running" bars and ghost amber result
-  // cards on a session reloaded from disk.
-  //
-  // Heuristic: for each background subagent still in `running` after the main
-  // loop, find the first `result` event after its dispatch. If any message
-  // exists after that result (proving the parent advanced — new turn, user
-  // input, anything), mark the subagent abandoned. If the result is the
-  // latest message, the session may be live and awaiting; leave it running.
-  for (const sub of byToolUseId.values()) {
-    if (sub.status !== 'running' || !sub.isBackground) continue;
-    const dispatchedAt = dispatchIndex.get(sub.toolUseId);
-    if (dispatchedAt === undefined) continue;
-    let resultIdx = -1;
-    for (let i = dispatchedAt + 1; i < messages.length; i++) {
-      if ((messages[i] as any)?.type === 'result') {
-        resultIdx = i;
-        break;
-      }
-    }
-    if (resultIdx === -1) continue;
-    if (resultIdx < messages.length - 1) {
-      sub.status = 'abandoned';
-      sub.endedAt = sub.endedAt ?? new Date().toISOString();
-    }
-  }
-
-  return Array.from(byToolUseId.values());
+  return Array.from(states.values()).map((s) => ({
+    toolUseId: s.toolUseId,
+    taskId: s.taskId,
+    agentType: s.agentType,
+    description: s.description,
+    status: s.status,
+    startedAt: s.startedAt,
+    endedAt: s.endedAt,
+    latest: s.latest,
+    events: s.events,
+    summary: s.summary,
+    colorIndex: colorIndexFor(s.toolUseId),
+    isBackground: s.isBackground,
+    closureSource: s.closureSource,
+  }));
 }
 
 export function clearCompleted(subs: Subagent[]): Subagent[] {
@@ -282,11 +116,11 @@ export function clearCompleted(subs: Subagent[]): Subagent[] {
 }
 
 /**
- * True when at least one subagent (Agent/Task/Bash-with-run_in_background) is
- * still in `running` status. Single source of truth for "is there an
- * outstanding response?" — must match the predicate in classifyStandaloneKind
- * that decides whether a `result` event renders as `result.awaiting_background`,
- * so the spinner stays on for as long as that card would render.
+ * True when at least one subagent is still in `running` status. Kept for
+ * callers that want the predicate, but the typing-bubble bridge in
+ * `ClaudeCodeSession.tsx` no longer routes through it — a stuck-running
+ * row must not fake a live turn. See the design spec
+ * `docs/superpowers/specs/2026-05-11-subagent-tracking-refactor-design.md`.
  */
 export function hasRunningSubagent(subs: Subagent[]): boolean {
   return subs.some((s) => s.status === 'running');

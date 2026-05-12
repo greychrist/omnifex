@@ -92,6 +92,131 @@ describe("AskUserQuestionCard", () => {
     expect(onCancel).toHaveBeenCalledTimes(1);
   });
 
+  describe("Other-input Enter-to-submit", () => {
+    // Pressing Enter while typing in the "Other" text field should fire the
+    // same handler as clicking Send — but only when every question has a
+    // valid answer (otherwise the Send button would be disabled and the
+    // keystroke must be a no-op rather than submitting partial answers).
+    it("submits on Enter when the Other field is the only question and is filled in", () => {
+      const onSubmit = vi.fn();
+      render(
+        <AskUserQuestionCard
+          request={makeRequest()}
+          onSubmit={onSubmit}
+          onCancel={vi.fn()}
+        />,
+      );
+      fireEvent.click(screen.getByText("Other"));
+      const input = screen.getByPlaceholderText("Your answer…");
+      fireEvent.change(input, { target: { value: "Magenta" } });
+      fireEvent.keyDown(input, { key: "Enter" });
+
+      expect(onSubmit).toHaveBeenCalledTimes(1);
+      expect(onSubmit).toHaveBeenCalledWith({
+        questions: [
+          {
+            question: "Pick a color",
+            header: "Color",
+            options: [{ label: "Red" }, { label: "Blue" }],
+            multiSelect: false,
+          },
+        ],
+        answers: { "Pick a color": "Magenta" },
+        annotations: { "Pick a color": { notes: 'User selected Other: "Magenta"' } },
+      });
+    });
+
+    it("does NOT submit on Enter when Other is empty (Send would be disabled)", () => {
+      const onSubmit = vi.fn();
+      render(
+        <AskUserQuestionCard
+          request={makeRequest()}
+          onSubmit={onSubmit}
+          onCancel={vi.fn()}
+        />,
+      );
+      fireEvent.click(screen.getByText("Other"));
+      const input = screen.getByPlaceholderText("Your answer…");
+      fireEvent.keyDown(input, { key: "Enter" });
+
+      expect(onSubmit).not.toHaveBeenCalled();
+    });
+
+    it("does NOT submit on Enter when another question still needs an answer", () => {
+      const onSubmit = vi.fn();
+      const twoQuestion = makeRequest({
+        toolInput: {
+          questions: [
+            { question: "Pick a color", header: "Color", options: [{ label: "Red" }] },
+            { question: "Pick a fruit", header: "Fruit", options: [{ label: "Apple" }] },
+          ],
+        },
+      });
+      render(
+        <AskUserQuestionCard
+          request={twoQuestion}
+          onSubmit={onSubmit}
+          onCancel={vi.fn()}
+        />,
+      );
+      // Answer question 1 via Other, leave question 2 unanswered.
+      fireEvent.click(screen.getAllByText("Other")[0]);
+      const input = screen.getByPlaceholderText("Your answer…");
+      fireEvent.change(input, { target: { value: "Magenta" } });
+      fireEvent.keyDown(input, { key: "Enter" });
+
+      expect(onSubmit).not.toHaveBeenCalled();
+    });
+
+    it("submits on Enter once every question has an answer (Other is the last one filled)", () => {
+      const onSubmit = vi.fn();
+      const twoQuestion = makeRequest({
+        toolInput: {
+          questions: [
+            { question: "Pick a color", header: "Color", options: [{ label: "Red" }] },
+            { question: "Pick a fruit", header: "Fruit", options: [{ label: "Apple" }] },
+          ],
+        },
+      });
+      render(
+        <AskUserQuestionCard
+          request={twoQuestion}
+          onSubmit={onSubmit}
+          onCancel={vi.fn()}
+        />,
+      );
+      fireEvent.click(screen.getByText("Red"));
+      fireEvent.click(screen.getAllByText("Other")[1]);
+      const input = screen.getByPlaceholderText("Your answer…");
+      fireEvent.change(input, { target: { value: "Mango" } });
+      fireEvent.keyDown(input, { key: "Enter" });
+
+      expect(onSubmit).toHaveBeenCalledTimes(1);
+      const arg = onSubmit.mock.calls[0][0] as { answers: Record<string, string> };
+      expect(arg.answers).toEqual({ "Pick a color": "Red", "Pick a fruit": "Mango" });
+    });
+
+    it("Shift+Enter does NOT submit (reserved for newline-style intent)", () => {
+      // Defensive: if the field ever becomes multi-line, Shift+Enter should
+      // not fire submit. Even today we keep this behaviour consistent with
+      // the chat composer's split (Enter sends, Shift+Enter newline).
+      const onSubmit = vi.fn();
+      render(
+        <AskUserQuestionCard
+          request={makeRequest()}
+          onSubmit={onSubmit}
+          onCancel={vi.fn()}
+        />,
+      );
+      fireEvent.click(screen.getByText("Other"));
+      const input = screen.getByPlaceholderText("Your answer…");
+      fireEvent.change(input, { target: { value: "Magenta" } });
+      fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
+
+      expect(onSubmit).not.toHaveBeenCalled();
+    });
+  });
+
   describe("collapse / expand", () => {
     // The card can occupy ~60vh + header + footer of the chat when the agent
     // sends 3-4 questions, hiding chat context the user wants to consult

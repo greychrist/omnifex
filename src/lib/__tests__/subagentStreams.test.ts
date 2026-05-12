@@ -318,14 +318,20 @@ describe('deriveSubagents', () => {
       expect(subs[0].status).toBe('completed');
     });
 
-    it('Bash run_in_background gets marked abandoned by orphan detection (parent moved on without notification)', () => {
+    it('Bash run_in_background is marked completed_inferred when the parent advances past the result without a notification', () => {
+      // Refactored from the previous `abandoned`-on-orphan-detection assertion.
+      // The current design reserves `abandoned` for explicit "we know this
+      // didn't finish" cases (e.g. a future watchdog timeout); the
+      // safety-net inference path uses `completed_inferred` so the row
+      // renders with a distinct icon that makes the missing carrier visible.
       const subs = deriveSubagents([
         bashBackground(TOOL_USE_ID, 'Build DMG'),
         toolResult(TOOL_USE_ID, false, 'Async agent launched'),
         { type: 'result', subtype: 'success', result: 'awaiting' } as any,
         { type: 'user', message: { content: [{ type: 'text', text: 'next' }] } } as any,
       ]);
-      expect(subs[0].status).toBe('abandoned');
+      expect(subs[0].status).toBe('completed_inferred');
+      expect(subs[0].closureSource).toBe('parent_result');
     });
 
     it('Bash run_in_background with is_error=true on the ACK still flips to failed', () => {
@@ -345,17 +351,21 @@ describe('deriveSubagents', () => {
     expect(subs[0].status).toBe('failed');
   });
 
-  it('background dispatch becomes "abandoned" when a result fires and the parent moves on without task_notification', () => {
+  it('background dispatch becomes "completed_inferred" when a result fires and the parent moves on without task_notification', () => {
     // Loaded session: turn dispatched a background agent, the result event
     // closed the turn, and then either a new user message or another turn
     // happened — proving the parent moved on without the notification.
+    // Inference rule now uses completed_inferred (distinct icon) rather
+    // than abandoned, so the missing-carrier case is visible without
+    // looking like a hang.
     const subs = deriveSubagents([
       agentToolUse(TOOL_USE_ID, 'Verify', 'general-purpose', true),
       toolResult(TOOL_USE_ID, false, 'Async agent launched successfully'),
       { type: 'result', subtype: 'success', result: 'awaiting' } as any,
       { type: 'user', message: { content: [{ type: 'text', text: 'next prompt' }] } } as any,
     ]);
-    expect(subs[0].status).toBe('abandoned');
+    expect(subs[0].status).toBe('completed_inferred');
+    expect(subs[0].closureSource).toBe('parent_result');
   });
 
   it('background dispatch stays running while the result event is the latest message (live awaiting)', () => {
@@ -369,16 +379,21 @@ describe('deriveSubagents', () => {
     expect(subs[0].status).toBe('running');
   });
 
-  it('foreground subagents are never marked abandoned (they have no run_in_background flag)', () => {
-    // Without isBackground, the subagent must already be terminal via
-    // tool_result/notification — it can never reach the abandoned branch.
+  it('foreground subagents also receive completed_inferred when the parent advances past their dispatch', () => {
+    // Under the generalised inference rule, foreground Agent/Task
+    // dispatches that lose their tool_result also get closed when the
+    // parent emits a result and then continues with more activity. This
+    // is the exact scenario the user hit on the WIN session — a stuck
+    // "general-purpose" row left running because no closure carrier
+    // matched, with the parent already advanced.
     const subs = deriveSubagents([
       agentToolUse(TOOL_USE_ID, 'Verify', 'Explore', false),
       // No tool_result, no notification, but trailing user message
       { type: 'result', subtype: 'success', result: 'huh' } as any,
       { type: 'user', message: { content: [{ type: 'text', text: 'next' }] } } as any,
     ]);
-    expect(subs[0].status).toBe('running');
+    expect(subs[0].status).toBe('completed_inferred');
+    expect(subs[0].closureSource).toBe('parent_result');
   });
 
   it('background dispatch with task_notification(completed) is not abandoned even if more messages follow', () => {

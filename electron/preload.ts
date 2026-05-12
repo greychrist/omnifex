@@ -210,6 +210,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       !ALLOWED_EVENT_CHANNELS.has(channel) &&
       !channel.startsWith('session-') &&
       !channel.startsWith('claude-output:') &&
+      !channel.startsWith('claude-output-extra:') &&
       !channel.startsWith('claude-error:') &&
       !channel.startsWith('claude-complete:') &&
       !channel.startsWith('claude-notification') &&

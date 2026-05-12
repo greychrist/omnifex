@@ -16,6 +16,7 @@ import type {
   SessionOwnership,
 } from './types';
 import { classifyRuntimeEvent } from './events';
+import { createJsonlTail, type JsonlTailHandle } from './jsonl-tail';
 
 export interface RuntimeDeps {
   sendToRenderer: SendToRenderer;
@@ -52,6 +53,43 @@ export async function listenToMessages(
   deps: RuntimeDeps,
 ): Promise<void> {
   const { sendToRenderer, notificationHooks, rateLimitHook, ownership, sessions } = deps;
+  // JSONL tail for closure carriers the SDK iterator doesn't yield
+  // (queue-operation enqueue with <task-notification>, attachment
+  // queued_command). Wired up the first time we see a sessionId, since
+  // that's when the JSONL path becomes resolvable. Released in every
+  // cleanup branch below — clean close, stream error, identity-replace.
+  // See `jsonl-tail.ts` and the design spec under
+  // docs/superpowers/specs/2026-05-11-subagent-tracking-refactor-design.md.
+  let jsonlTail: JsonlTailHandle | null = null;
+  const ensureJsonlTail = (): void => {
+    if (jsonlTail || !handle.sessionId) return;
+    if (process.env.OMNIFEX_DISABLE_JSONL_TAIL === '1') return;
+    const projectId = handle.projectPath.replace(/\//g, '-');
+    const jsonlPath = path.join(handle.configDir, 'projects', projectId, `${handle.sessionId}.jsonl`);
+    jsonlTail = createJsonlTail({
+      jsonlPath,
+      onMessage: (msg) => {
+        // Surface on a separate channel so the renderer's normal
+        // claude-output:* subscription stays 1:1 with SDK output and
+        // these carriers can be routed through their own handler.
+        sendToRenderer(`claude-output-extra:${tabId}`, msg);
+      },
+      onError: (err) => {
+        // Best-effort — losing a carrier leaves a row stuck running, which
+        // is annoying but not data-corrupting. Log so the gap is visible.
+        console.warn('[sessions] jsonl-tail error:', err);
+      },
+    });
+  };
+  const teardownJsonlTail = (): void => {
+    if (!jsonlTail) return;
+    try {
+      jsonlTail.stop();
+    } catch {
+      /* ignore */
+    }
+    jsonlTail = null;
+  };
   try {
     for await (const message of handle.query) {
       const event = classifyRuntimeEvent(message);
@@ -74,6 +112,10 @@ export async function listenToMessages(
         case 'init':
           if (event.sessionId) handle.sessionId = event.sessionId;
           handle.status = 'idle';
+          // First time we know the sessionId — wire up the JSONL tail so
+          // background-Bash closure carriers (queue-operation enqueue /
+          // attachment queued_command) reach the renderer in live mode.
+          ensureJsonlTail();
           break;
         case 'rateLimit':
           // Capture rate-limit events for the rate-limits service. Wrap in
@@ -141,12 +183,18 @@ export async function listenToMessages(
     // If we're mid-switch to TUI, swallow whatever the old stream threw —
     // the mode handler owns lifecycle from here. Do NOT fire claude-error /
     // claude-complete, which would wipe renderer state (isSessionActive).
-    if (handle.mode === 'tui') return;
+    if (handle.mode === 'tui') {
+      teardownJsonlTail();
+      return;
+    }
     // If start() has already replaced this handle (StrictMode double-mount,
     // or any explicit re-start), the throw was caused by `inputChannel.close()`
     // in start() itself. Suppress all renderer-facing events so the new
     // session's listeners don't see a spurious error from the old one.
-    if (sessions.get(tabId) !== handle) return;
+    if (sessions.get(tabId) !== handle) {
+      teardownJsonlTail();
+      return;
+    }
     // Stream error — keep the session alive so the user can retry.
     // The next sendMessage() will restart the SDK query transparently.
     handle.status = 'error';
@@ -170,22 +218,30 @@ export async function listenToMessages(
     });
     // Stop the loading indicator but keep the session in the map
     sendToRenderer(`claude-complete:${tabId}`);
+    teardownJsonlTail();
     return;
   }
   // Normal stream close — clean up (unless we're mid-switch to TUI mode,
   // in which case the session stays alive and mode handles its own lifecycle)
-  if (handle.mode === 'tui') return;
+  if (handle.mode === 'tui') {
+    teardownJsonlTail();
+    return;
+  }
   // If start() has replaced this handle in the map (StrictMode double-mount
   // or an explicit re-start path), the loop terminated because start() closed
   // our inputChannel. The newly-registered handle is what the renderer cares
   // about now — emitting claude-complete here would flip its session state to
   // 'ended', and `sessions.delete(tabId)` would wipe the new handle from the
   // map. Bail without touching either.
-  if (sessions.get(tabId) !== handle) return;
+  if (sessions.get(tabId) !== handle) {
+    teardownJsonlTail();
+    return;
+  }
   handle.status = 'stopped';
   sendToRenderer(`claude-complete:${tabId}`);
   sessions.delete(tabId);
   ownership?.unregister(tabId);
+  teardownJsonlTail();
 }
 
 /**

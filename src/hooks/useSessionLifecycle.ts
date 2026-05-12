@@ -91,6 +91,19 @@ export function useSessionLifecycle({
       },
     );
 
+    // Closure carriers (queue-operation enqueue with <task-notification>,
+    // attachment queued_command with the same) that the SDK iterator
+    // doesn't yield. The main-process JSONL tail surfaces them on this
+    // separate channel so the renderer can apply them to the same message
+    // array — `deriveSubagents` then folds them through `applyEvents`
+    // identically to JSONL replay.
+    const outputExtraUnlisten = window.electronAPI.onEvent(
+      `claude-output-extra:${tabId}`,
+      (payload: any) => {
+        handleStreamMessage(payload);
+      },
+    );
+
     const errorUnlisten = window.electronAPI.onEvent(
       `claude-error:${tabId}`,
       (payload: any) => {
@@ -111,7 +124,7 @@ export function useSessionLifecycle({
       },
     );
 
-    unlistenRefs.current = [outputUnlisten, errorUnlisten, completeUnlisten];
+    unlistenRefs.current = [outputUnlisten, outputExtraUnlisten, errorUnlisten, completeUnlisten];
   };
 
   // Standard tool names — Claude Code's always-on tools. MCP tool names get

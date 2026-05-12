@@ -326,6 +326,19 @@ export function AskUserQuestionCard({ request, onSubmit, onCancel }: AskUserQues
                     autoFocus
                     value={otherTexts[i]}
                     onChange={(e) => setOtherText(i, e.target.value)}
+                    onKeyDown={(e) => {
+                      // Enter mirrors the Send button — only fires when every
+                      // question has a valid answer (same gate as the button's
+                      // `disabled={!isComplete}`). Shift+Enter is reserved
+                      // for newline-style intent (consistent with the chat
+                      // composer's send-vs-newline split), and any modifier
+                      // is treated as "not a submit shortcut."
+                      if (e.key !== "Enter") return;
+                      if (e.shiftKey || e.metaKey || e.ctrlKey || e.altKey) return;
+                      if (!isComplete) return;
+                      e.preventDefault();
+                      handleSubmit();
+                    }}
                     placeholder="Your answer…"
                     className={cn(
                       "w-full h-8 px-2.5 rounded-md text-xs",

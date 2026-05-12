@@ -54,7 +54,7 @@ import { GitWatchStatusIcon } from "./claude-code-session/GitWatchStatusIcon";
 import { resolveBranchColors } from '@/lib/branchColors';
 import type { BranchColor } from '@/lib/api';
 import { filterDisplayableMessages } from "@/lib/messageFilters";
-import { deriveSubagents, hasRunningSubagent } from "@/lib/subagentStreams";
+import { deriveSubagents } from "@/lib/subagentStreams";
 import { getLatestTodos, summarizeTodos } from "@/lib/latestTodos";
 import { SubagentBar } from "./SubagentBar";
 import { TodoBar } from "./TodoBar";
@@ -484,15 +484,15 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       ? all
       : all.filter((s) => !dismissedSubagents.has(s.toolUseId));
   }, [messages, dismissedSubagents]);
-  // Bridge the typing-bubble spinner whenever any subagent is still running:
-  // parent's turn-end result clears isLoading, but if a Task/Agent/background
-  // dispatch is still in flight there is genuinely an outstanding response.
-  // Same predicate the result-classifier uses for "Awaiting Background Work"
-  // (see classifyStandaloneKind) so the card and the spinner can't drift.
-  const awaitingBackground = useMemo(
-    () => hasRunningSubagent(subagents),
-    [subagents],
-  );
+  // Typing bubble used to bridge on `hasRunningSubagent(subagents)` so a
+  // stuck-running row would keep the spinner on after `isLoading` flipped
+  // false. That coupled visual session activity to outstanding-subagent
+  // state and faked a live turn whenever the subagent-tracking pipeline
+  // missed a closure carrier. Decoupled now — the bubble follows
+  // `isLoading` (driven by SDK turn state) and `todosInFlight`. The
+  // SubagentBar's per-row spinner remains the scoped indicator that a
+  // particular dispatch is in flight. See design spec
+  // docs/superpowers/specs/2026-05-11-subagent-tracking-refactor-design.md.
   // True iff the latest todo list still has pending or in_progress items.
   // Folded into the spinner gate so the in-tab indicator matches the
   // popover's "busy" definition (turn || agents || todos).
@@ -507,7 +507,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   const hasInflightAssistant = useClaudeSessionStore(
     (s) => s.tabs[tabIdRef.current]?.inflightAssistant != null,
   );
-  const outstandingWork = isLoading || awaitingBackground || todosInFlight;
+  const outstandingWork = isLoading || todosInFlight;
   const dismissSubagent = useCallback((toolUseId: string) => {
     setDismissedSubagents((prev) => {
       const next = new Set(prev);
