@@ -288,7 +288,19 @@ export function AnsweredAskUserQuestionCard({
                   )}
                 </div>
                 <span className="text-foreground/80 break-words">{q.question}</span>
-                <span className="italic text-foreground break-words">
+                {/* Answer rendered as an opaque pill so the assistant-card
+                    color underneath the translucent `purple/5` accent doesn't
+                    bleed through the answer text. `inline-block` + the
+                    grid cell's `minmax(0, 1.5fr)` means short answers stay
+                    compact and long answers wrap as one cohesive block
+                    (vs `<span>`'s inline behaviour, which would fragment
+                    the background across line boxes). */}
+                <span
+                  className={cn(
+                    'inline-block italic text-foreground break-words',
+                    'rounded-md bg-background px-2 py-0.5',
+                  )}
+                >
                   {otherText
                     ? <>You typed: “{otherText}”</>
                     : hasAnswer
