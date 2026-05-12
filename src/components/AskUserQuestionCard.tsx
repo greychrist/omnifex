@@ -212,7 +212,12 @@ export function AskUserQuestionCard({ request, onSubmit, onCancel }: AskUserQues
               "focus:outline-none focus-visible:ring-1 focus-visible:ring-ring",
             )}
           >
-            {collapsed ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}
+            {/* Match TodoBar / SubagentBar's chevron convention: expanded
+                shows ChevronDown ("click to collapse downward"), collapsed
+                shows ChevronUp ("click to expand upward"). The prior shape
+                pointed the opposite way and was visually inconsistent with
+                the two sibling bars in the same chat region. */}
+            {collapsed ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
           </button>
         </div>
 
