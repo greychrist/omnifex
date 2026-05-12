@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.27] — 2026-05-12
+
+Quality-of-life pass on two surfaces that had grown loud: the slash-command picker and the application log. The picker now opens on a Project filter (the one you actually want), Left/Right arrows cycle filter tabs, and the SDK-sourced "Default" tab is renamed to "Claude" — with `project` and `user` scopes split into separate tabs. The log gains two verbose-source toggles (Claude hook events, Usage runner) so the bulk info-level chatter can be silenced without losing warnings and errors, plus a new "Toast on errors" feature that pops a corner toast with a "View in Log" action whenever a real error is recorded, so you can correlate noisy stack traces back to the action that triggered them.
+
+Installers remain **unsigned**.
+
+### Added
+
+- **Slash-command picker: Left/Right arrow keys cycle filter tabs.** Wraps at both ends — `Project → User → Claude → All → Project`. `↑/↓` still moves the highlighted command and `Enter`/`Esc` still select/close.
+- **Slash-command picker: separate `User` tab.** Previously the `Project` filter lumped together project-scoped and user-scoped (global custom) commands; they're now two tabs. The per-row scope badge mirrors the change.
+- **Log: "Claude hook events" verbose toggle.** Gates info/debug entries from the `claude-hooks` source (hook stream is otherwise extremely chatty). Default **off**. Warn/error always pass through regardless.
+- **Log: "Usage runner" verbose toggle.** Gates info/debug entries from the `usage-runner` source. Default **off**. Warn/error always pass through.
+- **Log: "Toast on errors" notifications.** When any error-level entry is recorded, a 6-second corner toast surfaces `[source] first-line-of-message…` with a **View in Log** action. Tapping the action opens the Settings → Log tab pre-filtered to `level=error`. Identical `source+message` pairs within a 2-second window are deduped so a burst doesn't stack toasts. Default **on**; toggle lives alongside the verbose-source switches.
+- **`LoggingService` accepts a `shouldAccept(entry)` predicate and an `onError(entry)` observer.** Both are evaluated live on every `writeBatch`, so toggling the new settings takes effect on the next event without an app restart. Observer exceptions are swallowed so a misbehaving handler can't break the write path.
+
+### Changed
+
+- **Slash-command picker tab order: `Project · User · Claude · All`.** `Project` is selected on open (was `All`). Per-row scope badges now read `project` / `user` / `claude` to match.
+- **Slash-command picker: "Default" → "Claude".** The tab and per-row badge for SDK-sourced commands (`scope: "default"`) display as `Claude`. The underlying scope value is unchanged so persisted commands still resolve correctly.
+- **Toast component supports an optional action button.** New `action?: { label, onClick }` prop renders a bordered text button to the left of the dismiss `×`. Existing toasts (success/info confirmations) are unaffected.
+
+### Fixed
+
+- **Slash-command picker: "Project" filter now actually means project-scoped.** Previously the filter passed both `project` and `user` scopes, which made the label misleading once user-scoped commands existed.
+
 ## [0.4.26] — 2026-05-12
 
 A new first-order chat-feed card for answered `AskUserQuestion` interactions, plus a per-kind colour picker in Appearance settings. The answered card pulls a resolved Q+A out of the assistant bubble it used to nest inside and renders it as its own response — header label, accent colour, icon, icon chrome, and timestamp footer all driven by the standard `MessageCard` shell so every Appearance edit for `tool.askUserQuestion.answered` takes effect end-to-end. Accent colour gates that customisation: the per-kind palette dropdown is replaced with a free-form HTML5 colour picker plus a hex text field, and the KindEditor's row order now matches the cards' visual hierarchy (hide-in-compact → header + accent → icon → icon chrome).
