@@ -453,13 +453,15 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
               }
             }
           }
-          // The card itself wraps in `flex justify-start` + Card w-[95%],
-          // matching the assistant card's first-order chrome — so we just
-          // return it directly with no wrapper.
+          // Card wraps itself in MessageCard, so we return it directly.
+          // `message` is passed through so MessageCard's footer can show
+          // the receivedAt timestamp and the debug raw-JSON copy button
+          // in the same shape every other first-order card uses.
           return (
             <AnsweredAskUserQuestionCard
               input={(tu as { input?: unknown }).input}
               resultContent={resultContent}
+              message={message}
             />
           );
         }
@@ -675,20 +677,18 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                     
                     // Function to render the appropriate tool widget
                     const renderToolWidget = () => {
-                      // AskUserQuestion — historical record of the agent's
-                      // question plus the user's pick(s). Renders only once
-                      // the matching tool_result has landed; while the user
-                      // is still answering, the live AskUserQuestionCard
-                      // (from the synthetic permission_request) carries the
-                      // interaction and this widget yields to the generic
-                      // fallback so the chronological tool_use position
-                      // isn't doubly-rendered.
-                      if (toolName === 'askuserquestion' && toolResult) {
-                        renderedSomething = true;
-                        const rc = toolResult.content;
-                        const resultContent = typeof rc === 'string' ? rc : JSON.stringify(rc);
-                        return <AnsweredAskUserQuestionCard input={input} resultContent={resultContent} />;
-                      }
+                      // AskUserQuestion is now always elevated to its own
+                      // first-order card via the `tool.askUserQuestion.answered`
+                      // standalone-kind branch above; rendering it again
+                      // here (in-bubble for mixed-content assistant
+                      // messages) would create card-in-card. Mixed-content
+                      // cases — where the agent emits text or thinking
+                      // alongside the AskUserQuestion tool_use in the same
+                      // message — are rare and fall through to the generic
+                      // tool_use display below. If they become a problem,
+                      // the fix is to add a thin embedded variant on
+                      // AnsweredAskUserQuestionCard, not to special-case
+                      // this widget path again.
 
                       // Task / Agent tool — subagent dispatch
                       if (isSubagentDispatch(content.name) && input) {
@@ -1179,7 +1179,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                           );
                           if (toolUse) {
                             const toolName = toolUse.name?.toLowerCase() ?? '';
-                            const toolsWithWidgets = ['task','edit','multiedit','todowrite','todoread','ls','read','glob','bash','write','grep','websearch','webfetch','askuserquestion'];
+                            const toolsWithWidgets = ['task','edit','multiedit','todowrite','todoread','ls','read','glob','bash','write','grep','websearch','webfetch'];
                             if (isSubagentDispatch(toolUse.name)) {
                               isTaskReturn = true;
                               taskDescription = (toolUse.input as { description?: string } | undefined)?.description;

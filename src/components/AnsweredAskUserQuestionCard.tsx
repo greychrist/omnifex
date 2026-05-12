@@ -1,16 +1,9 @@
 import { useMemo } from 'react';
 import { cn } from '@/lib/utils';
-import { accentStyleFor, swatchFor } from '@/lib/accentStyle';
+import { swatchFor } from '@/lib/accentStyle';
 import { useMessageRenderingConfig } from '@/contexts/MessageRenderingContext';
-import { KindHeader } from '@/components/KindHeader';
-import { Card, CardContent } from '@/components/ui/card';
-import { IconRenderer } from '@/components/settings-panels/appearance/iconMap';
-import { iconNameFor } from '@/lib/kindPresentation';
-import {
-  iconSizeClassName,
-  iconWrapperClassName,
-  iconWrapperStyle,
-} from '@/lib/typographyClasses';
+import { MessageCard } from '@/components/MessageCard';
+import type { ClaudeStreamMessage } from '@/types/claudeStream';
 
 /**
  * Historical view of an answered `AskUserQuestion` interaction. Renders the
@@ -53,6 +46,11 @@ interface AnsweredAskUserQuestionCardProps {
    *  result hasn't landed yet — in that case the card renders just the
    *  questions with the picks blank, matching the "live awaiting" state. */
   resultContent?: string;
+  /** The originating assistant `ClaudeStreamMessage`. Passed through to
+   *  `MessageCard` so its footer can show the receivedAt timestamp and
+   *  expose the debug raw-JSON copy button in the same shape every other
+   *  first-order card uses. */
+  message?: ClaudeStreamMessage;
 }
 
 interface ParsedAnswerPayload {
@@ -224,11 +222,17 @@ const KIND_ID = 'tool.askUserQuestion.answered';
 export function AnsweredAskUserQuestionCard({
   input,
   resultContent,
+  message,
 }: AnsweredAskUserQuestionCardProps) {
   const { config } = useMessageRenderingConfig();
-  const accentStyle = accentStyleFor(config, KIND_ID);
+  // The per-question header labels are coloured with the kind's accent
+  // swatch. Everything else card-chrome — outer shell, icon column,
+  // KindHeader, timestamp footer, debug raw-JSON copy — comes from
+  // `MessageCard`, which routes through the same MessageRenderingConfig
+  // helpers (`iconWrapperClassName`, `iconSizeClassName`, etc.) every
+  // other first-order card uses. A user's Settings → Chats edits for
+  // this kind take effect end-to-end with no per-card wiring.
   const accentSwatch = swatchFor(config, KIND_ID);
-  const iconName = iconNameFor(config, KIND_ID);
 
   const questions = useMemo(() => parseQuestions(input), [input]);
   const payload = useMemo(
@@ -238,110 +242,78 @@ export function AnsweredAskUserQuestionCard({
 
   if (questions.length === 0) return null;
 
-  // First-order response template — same outer chrome the assistant card
-  // uses in `StreamMessage.tsx` (Card + flex justify-start + 95% width +
-  // avatar icon column + body column with KindHeader). Routing every
-  // visual concern through the shared MessageRenderingConfig means a
-  // user's Appearance edits for this kind (label, icon, iconSize,
-  // iconBordered, accent) take effect with no per-card wiring.
   return (
-    <div className="flex justify-start" data-testid="answered-ask-user-question-card">
-      <Card className="border w-[95%] relative" style={accentStyle}>
-        <CardContent className="p-4">
-          <div className="flex items-start gap-3">
-            {/* Avatar icon — honours kind's icon name, iconSize, and
-                iconBordered config. Same pattern as the assistant card's
-                bot avatar. */}
-            <div
-              className={iconWrapperClassName(config, KIND_ID)}
-              style={iconWrapperStyle(config, accentSwatch, KIND_ID)}
-            >
-              <IconRenderer
-                name={iconName && iconName !== 'none' ? iconName : 'CircleHelp'}
-                className={iconSizeClassName(config, KIND_ID)}
-              />
-            </div>
-            <div className="flex-1 space-y-2 min-w-0 overflow-x-auto">
-              {/* Label-only KindHeader — `showIcon` is omitted because
-                  the avatar above is the icon. A user-set `headerLabel`
-                  in Settings → Chats wins; otherwise the dynamic
-                  singular/plural fallback applies. */}
-              <KindHeader
-                kindId={KIND_ID}
-                fallbackLabel={
-                  questions.length === 1
-                    ? 'Question answered'
-                    : `${questions.length} questions answered`
-                }
-              />
-              {/* Three-column subgrid: headers / questions / answers all
-                  align vertically across rows. Each question is its own
-                  subgrid so the parent's column tracks govern alignment
-                  without auto-placement collisions. Columns:
-                    1. auto              — header label (widest wins)
-                    2. minmax(0, 1fr)    — question text
-                    3. minmax(0, 1.5fr)  — answer (italic; slightly wider
-                                           than the question column so
-                                           multi-word Other-text answers
-                                           breathe)
-                  For Other answers the answer cell renders
-                  `You typed: "<text>"` directly. */}
+    <div data-testid="answered-ask-user-question-card">
+      <MessageCard
+        kindId={KIND_ID}
+        message={message}
+        headerFallbackLabel={
+          questions.length === 1
+            ? 'Question answered'
+            : `${questions.length} questions answered`
+        }
+      >
+        {/* Three-column subgrid: headers / questions / answers all align
+            vertically across rows. Each question is its own subgrid so
+            the parent's column tracks govern alignment without
+            auto-placement collisions. Columns:
+              1. auto              — header label (widest wins)
+              2. minmax(0, 1fr)    — question text
+              3. minmax(0, 1.5fr)  — answer (italic; slightly wider than
+                                     the question column so multi-word
+                                     Other-text answers breathe)
+            For Other answers the answer cell renders
+            `You typed: "<text>"` directly. */}
+        <div
+          className={cn(
+            'grid items-baseline gap-x-3 gap-y-1.5',
+            'grid-cols-[auto_minmax(0,1fr)_minmax(0,1.5fr)]',
+            'text-xs leading-snug',
+          )}
+        >
+          {questions.map((q, i) => {
+            const answer = payload?.answers?.[q.question];
+            const note = payload?.annotations?.[q.question]?.notes;
+            const otherText = extractOtherText(note);
+            const hasAnswer = answer != null && answer.length > 0;
+            return (
               <div
-                className={cn(
-                  'grid items-baseline gap-x-3 gap-y-1.5',
-                  'grid-cols-[auto_minmax(0,1fr)_minmax(0,1.5fr)]',
-                  'text-xs leading-snug',
-                )}
+                key={i}
+                className="grid grid-cols-subgrid col-span-3 items-baseline gap-x-3"
               >
-                {questions.map((q, i) => {
-                  const answer = payload?.answers?.[q.question];
-                  const note = payload?.annotations?.[q.question]?.notes;
-                  const otherText = extractOtherText(note);
-                  const hasAnswer = answer != null && answer.length > 0;
-                  return (
-                    <div
-                      key={i}
-                      className="grid grid-cols-subgrid col-span-3 items-baseline gap-x-3"
+                {/* Header label — accent-coloured, no background. Always
+                    emit the cell (empty if absent) so column-1 alignment
+                    is preserved across rows. */}
+                <div className="flex items-baseline">
+                  {q.header && (
+                    <span
+                      className="text-[10px] uppercase tracking-wide font-semibold"
+                      style={{ color: accentSwatch }}
                     >
-                      {/* Header label — accent-coloured, no background.
-                          Always emit the cell (empty if absent) so the
-                          column-1 alignment is preserved across rows. */}
-                      <div className="flex items-baseline">
-                        {q.header && (
-                          <span
-                            className="text-[10px] uppercase tracking-wide font-semibold"
-                            style={{ color: accentSwatch }}
-                          >
-                            {q.header}
-                          </span>
-                        )}
-                      </div>
-                      <span className="text-foreground/80 break-words">{q.question}</span>
-                      {/* Answer rendered as an opaque pill so the
-                          assistant-card colour beneath the translucent
-                          accent doesn't bleed through. `inline-block`
-                          keeps the pill sized to its content and lets
-                          long answers wrap as one cohesive block. */}
-                      <span
-                        className={cn(
-                          'inline-block italic text-foreground break-words',
-                          'rounded-md bg-background px-2 py-0.5',
-                        )}
-                      >
-                        {otherText
-                          ? <>You typed: “{otherText}”</>
-                          : hasAnswer
-                            ? answer
-                            : '(no answer recorded)'}
-                      </span>
-                    </div>
-                  );
-                })}
+                      {q.header}
+                    </span>
+                  )}
+                </div>
+                <span className="text-foreground/80 break-words">{q.question}</span>
+                {/* Answer rendered as an opaque pill so the card's
+                    translucent accent doesn't bleed through. */}
+                <span
+                  className={cn(
+                    'inline-block italic text-foreground break-words',
+                    'rounded-md bg-background px-2 py-0.5',
+                  )}
+                >
+                  {otherText
+                    ? <>You typed: “{otherText}”</>
+                    : hasAnswer
+                      ? answer
+                      : '(no answer recorded)'}
+                </span>
               </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+            );
+          })}
+        </div>
+      </MessageCard>
     </div>
   );
 }
