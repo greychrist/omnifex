@@ -453,18 +453,14 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
               }
             }
           }
-          // Match the assistant card's `flex justify-start` + ~95% width
-          // so the answered card sits where an assistant bubble would —
-          // anchored left, breathing room on the right.
+          // The card itself wraps in `flex justify-start` + Card w-[95%],
+          // matching the assistant card's first-order chrome — so we just
+          // return it directly with no wrapper.
           return (
-            <div className="flex justify-start">
-              <div className="w-[95%]">
-                <AnsweredAskUserQuestionCard
-                  input={(tu as { input?: unknown }).input}
-                  resultContent={resultContent}
-                />
-              </div>
-            </div>
+            <AnsweredAskUserQuestionCard
+              input={(tu as { input?: unknown }).input}
+              resultContent={resultContent}
+            />
           );
         }
       }
