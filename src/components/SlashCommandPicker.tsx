@@ -23,7 +23,9 @@ interface SlashCommandPickerProps {
 }
 
 const SCOPE_LABEL: Record<string, string> = {
-  default: "default",
+  // Per-row badge for SDK-sourced commands. The scope value stays "default"
+  // (that's the SDK's own term) but we surface it to the user as "claude".
+  default: "claude",
   project: "project",
   user: "user",
 };
@@ -34,12 +36,15 @@ const SCOPE_COLOR: Record<string, string> = {
   user: "bg-violet-500/15 text-violet-400",
 };
 
-type ScopeFilter = "all" | "default" | "project";
+type ScopeFilter = "project" | "user" | "default" | "all";
 
+// Order matters: tab order is also the left/right-arrow cycle order, and the
+// first entry is the initial selection on open.
 const SCOPE_FILTERS: { value: ScopeFilter; label: string }[] = [
-  { value: "all", label: "All" },
-  { value: "default", label: "Default" },
   { value: "project", label: "Project" },
+  { value: "user", label: "User" },
+  { value: "default", label: "Claude" },
+  { value: "all", label: "All" },
 ];
 
 const DESCRIPTION_PREVIEW_LENGTH = 60;
@@ -103,7 +108,7 @@ export const SlashCommandPicker: React.FC<SlashCommandPickerProps> = ({
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [searchQuery, setSearchQuery] = useState(initialQuery);
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [scopeFilter, setScopeFilter] = useState<ScopeFilter>("all");
+  const [scopeFilter, setScopeFilter] = useState<ScopeFilter>(SCOPE_FILTERS[0].value);
 
   const commandListRef = useRef<HTMLDivElement>(null);
 
@@ -118,9 +123,8 @@ export const SlashCommandPicker: React.FC<SlashCommandPickerProps> = ({
 
     const query = searchQuery.toLowerCase();
     let filtered = commands.filter(cmd => {
-      // Scope filter
-      if (scopeFilter === "default" && cmd.scope !== "default") return false;
-      if (scopeFilter === "project" && cmd.scope !== "project" && cmd.scope !== "user") return false;
+      // Scope filter — "all" passes everything; the others require an exact match.
+      if (scopeFilter !== "all" && cmd.scope !== scopeFilter) return false;
 
       // Text search
       if (!query) return true;
@@ -176,6 +180,19 @@ export const SlashCommandPicker: React.FC<SlashCommandPickerProps> = ({
           e.preventDefault();
           setSelectedIndex(prev => Math.min(filteredCommands.length - 1, prev + 1));
           break;
+        case 'ArrowLeft':
+        case 'ArrowRight': {
+          e.preventDefault();
+          const delta = e.key === 'ArrowRight' ? 1 : -1;
+          setScopeFilter(prev => {
+            const idx = SCOPE_FILTERS.findIndex(f => f.value === prev);
+            const len = SCOPE_FILTERS.length;
+            // Wrap on both ends so the cycle is continuous.
+            const next = (idx + delta + len) % len;
+            return SCOPE_FILTERS[next].value;
+          });
+          break;
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -411,7 +428,7 @@ export const SlashCommandPicker: React.FC<SlashCommandPickerProps> = ({
       {/* Footer */}
       <div className="border-t border-border p-2 shrink-0">
         <p className="text-xs text-muted-foreground text-center">
-          ↑↓ Navigate &bull; Enter Select &bull; Esc Close
+          ↑↓ Navigate &bull; ←→ Switch tab &bull; Enter Select &bull; Esc Close
         </p>
       </div>
     </motion.div>
