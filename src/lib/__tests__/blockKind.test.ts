@@ -65,6 +65,22 @@ describe('classifyBlockKind', () => {
     expect(classifyBlockKind(parent.message!.content![0], parent)).toBe('assistant.toolUse');
   });
 
+  it('classifies AskUserQuestion tool_use as its own answered-pair kind', () => {
+    // Pairs with the tool_result via the StreamMessage widget so scrollback
+    // shows a single Q+A card rather than blending into generic toolUse.
+    const parent = assistant([
+      { type: 'tool_use', name: 'AskUserQuestion', input: { questions: [{ question: 'pick', options: [] }] } },
+    ]);
+    expect(classifyBlockKind(parent.message!.content![0], parent)).toBe('tool.askUserQuestion.answered');
+  });
+
+  it('AskUserQuestion classification is case-insensitive on the tool name', () => {
+    const parent = assistant([
+      { type: 'tool_use', name: 'askuserquestion', input: { questions: [] } },
+    ]);
+    expect(classifyBlockKind(parent.message!.content![0], parent)).toBe('tool.askUserQuestion.answered');
+  });
+
   it('classifies user image blocks', () => {
     const parent = user([{ type: 'image', source: { type: 'base64', data: '...' } }]);
     expect(classifyBlockKind(parent.message!.content![0], parent)).toBe('user.image');

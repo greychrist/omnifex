@@ -31,6 +31,7 @@ import { getClaudeSyntaxTheme } from "@/lib/claudeSyntaxTheme";
 import { buildMarkdownComponents } from "@/lib/markdownComponents";
 import { useTheme } from "@/hooks";
 import type { ClaudeStreamMessage } from "@/types/claudeStream";
+import { AnsweredAskUserQuestionCard } from "@/components/AnsweredAskUserQuestionCard";
 import {
   TodoWidget,
   TodoReadWidget,
@@ -604,6 +605,21 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                     
                     // Function to render the appropriate tool widget
                     const renderToolWidget = () => {
+                      // AskUserQuestion — historical record of the agent's
+                      // question plus the user's pick(s). Renders only once
+                      // the matching tool_result has landed; while the user
+                      // is still answering, the live AskUserQuestionCard
+                      // (from the synthetic permission_request) carries the
+                      // interaction and this widget yields to the generic
+                      // fallback so the chronological tool_use position
+                      // isn't doubly-rendered.
+                      if (toolName === 'askuserquestion' && toolResult) {
+                        renderedSomething = true;
+                        const rc = toolResult.content;
+                        const resultContent = typeof rc === 'string' ? rc : JSON.stringify(rc);
+                        return <AnsweredAskUserQuestionCard input={input} resultContent={resultContent} />;
+                      }
+
                       // Task / Agent tool — subagent dispatch
                       if (isSubagentDispatch(content.name) && input) {
                         renderedSomething = true;
@@ -1093,7 +1109,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                           );
                           if (toolUse) {
                             const toolName = toolUse.name?.toLowerCase() ?? '';
-                            const toolsWithWidgets = ['task','edit','multiedit','todowrite','todoread','ls','read','glob','bash','write','grep','websearch','webfetch'];
+                            const toolsWithWidgets = ['task','edit','multiedit','todowrite','todoread','ls','read','glob','bash','write','grep','websearch','webfetch','askuserquestion'];
                             if (isSubagentDispatch(toolUse.name)) {
                               isTaskReturn = true;
                               taskDescription = (toolUse.input as { description?: string } | undefined)?.description;

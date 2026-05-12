@@ -26,6 +26,7 @@ const KNOWN_TOOL_NAMES_LOWER: ReadonlySet<string> = new Set([
   'grep',
   'websearch',
   'webfetch',
+  'askuserquestion',
 ]);
 
 /**
@@ -105,6 +106,14 @@ export function classifyBlockKind(
       return text.length > 0 ? 'assistant.thinking' : null;
     }
     if (block.type === 'tool_use') {
+      // AskUserQuestion is special: the historical render pairs the
+      // tool_use with the matching tool_result as a single Q+A card, so
+      // route it to its own kind for independent Appearance theming and
+      // compact-mode hiding rather than blending into the generic
+      // `assistant.toolUse` accent.
+      if (typeof block.name === 'string' && block.name.toLowerCase() === 'askuserquestion') {
+        return 'tool.askUserQuestion.answered';
+      }
       return isKnownToolName(block.name) ? 'assistant.toolUse' : 'assistant.toolUse.unknown';
     }
     // Anthropic-hosted server-side tools (code_execution, web_search,
