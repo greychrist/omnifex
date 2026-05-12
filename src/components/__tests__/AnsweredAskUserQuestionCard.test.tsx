@@ -100,15 +100,19 @@ describe('AnsweredAskUserQuestionCard (wire format — synthesised string)', () 
     expect(screen.getByText('A, B')).toBeTruthy();
   });
 
-  it('shows the italic "You typed:" sub-line when the user selected Other', () => {
+  it('shows the italic "You typed:" form when the user selected Other (and only that form)', () => {
     render(
       <AnsweredAskUserQuestionCard
         input={input([{ question: 'Pick', options: [{ label: 'X' }] }])}
         resultContent={resultWire({ Pick: 'Magenta' }, ['Magenta'])}
       />,
     );
-    // The text shows with curly quotes around it ("Magenta").
+    // The italic line renders the typed text with curly quotes.
     expect(screen.getByText(/You typed:.*Magenta/)).toBeTruthy();
+    // And the raw text "Magenta" doesn't render a second time outside the
+    // "You typed:" line — the answer column shows the typed form
+    // exclusively for Other answers (no duplication).
+    expect(screen.getAllByText(/Magenta/).length).toBe(1);
   });
 
   it('omits the "You typed:" sub-line when there is no annotation', () => {
@@ -149,12 +153,11 @@ describe('AnsweredAskUserQuestionCard (wire format — synthesised string)', () 
     expect(screen.queryByText('(no answer recorded)')).toBeNull();
     expect(screen.getByText('Blue')).toBeTruthy();
     expect(screen.getByText('TypeScript, Python')).toBeTruthy();
-    // The long Other-answer appears twice in the rendered card — once as
-    // the answer column for the verify-mode question, once inside the
-    // italic "You typed:" sub-line. Both are expected.
-    expect(screen.getAllByText(/This is a test, custom, answer/).length).toBe(2);
-    // Only the verify-mode question came from Other; the "You typed:" line
-    // should appear exactly once.
+    // Other answers now render exclusively as the italic "You typed: …"
+    // form in the answer column — the prior layout duplicated the raw
+    // value in a separate column too, which read as noise.
+    expect(screen.getAllByText(/This is a test, custom, answer/).length).toBe(1);
+    expect(screen.getByText(/You typed:.*This is a test/)).toBeTruthy();
     expect(screen.getAllByText(/You typed:/).length).toBe(1);
   });
 

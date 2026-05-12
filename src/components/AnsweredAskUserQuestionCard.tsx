@@ -244,22 +244,22 @@ export function AnsweredAskUserQuestionCard({
           </div>
         </div>
 
-        {/* Four-column grid so headers / questions / arrows / answers all
-            align vertically across rows. Each question is its own subgrid
-            (`grid-cols-subgrid` + `col-span-4`) so the parent grid's column
-            tracks govern alignment but the "You typed:" sub-line stays
-            grouped with its question instead of fighting auto-placement
-            with the next row's header. The parent's columns:
-              1. auto                      — header chip (widest header wins)
-              2. minmax(0, 1fr)            — question text (shrink + wrap)
-              3. auto                      — arrow
-              4. minmax(0, 1.5fr)          — answer (shrink + wrap, slightly
-                                              wider than the question column
-                                              so multi-word answers breathe) */}
+        {/* Three-column subgrid: headers / questions / answers all align
+            vertically across rows. Each question is its own subgrid so
+            the parent's column tracks govern alignment without
+            auto-placement collisions. Columns:
+              1. auto              — header chip (widest header wins)
+              2. minmax(0, 1fr)    — question text
+              3. minmax(0, 1.5fr)  — answer (italic; slightly wider than
+                                     the question column so multi-word
+                                     Other-text answers breathe)
+            For Other answers the answer cell renders `You typed: "<text>"`
+            directly — the previous layout duplicated the typed text in
+            both the answer column and a sub-line, which read as noise. */}
         <div
           className={cn(
             'grid items-baseline gap-x-3 gap-y-1.5',
-            'grid-cols-[auto_minmax(0,1fr)_auto_minmax(0,1.5fr)]',
+            'grid-cols-[auto_minmax(0,1fr)_minmax(0,1.5fr)]',
             'text-xs leading-snug',
           )}
         >
@@ -267,10 +267,11 @@ export function AnsweredAskUserQuestionCard({
             const answer = payload?.answers?.[q.question];
             const note = payload?.annotations?.[q.question]?.notes;
             const otherText = extractOtherText(note);
+            const hasAnswer = answer != null && answer.length > 0;
             return (
               <div
                 key={i}
-                className="grid grid-cols-subgrid col-span-4 items-baseline gap-x-3 gap-y-0.5"
+                className="grid grid-cols-subgrid col-span-3 items-baseline gap-x-3"
               >
                 {/* Header chip — always emit the cell (empty if absent)
                     so column-1 alignment is preserved across rows. */}
@@ -287,19 +288,13 @@ export function AnsweredAskUserQuestionCard({
                   )}
                 </div>
                 <span className="text-foreground/80 break-words">{q.question}</span>
-                <span className="text-muted-foreground">→</span>
-                <span className="font-medium text-foreground break-words">
-                  {answer && answer.length > 0 ? answer : '(no answer recorded)'}
+                <span className="italic font-medium text-foreground break-words">
+                  {otherText
+                    ? <>You typed: “{otherText}”</>
+                    : hasAnswer
+                      ? answer
+                      : '(no answer recorded)'}
                 </span>
-                {/* You-typed sub-line lives in the same subgrid, anchored
-                    under the answer column (col 4) so it visually
-                    subordinates to the value it explains. Long Other-text
-                    is the common case — give it room to wrap. */}
-                {otherText && (
-                  <div className="col-start-4 col-span-1 text-[11px] italic text-muted-foreground break-words">
-                    You typed: “{otherText}”
-                  </div>
-                )}
               </div>
             );
           })}
