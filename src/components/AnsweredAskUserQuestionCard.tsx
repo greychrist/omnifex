@@ -1,8 +1,8 @@
 import { useMemo } from 'react';
-import { MessageCircleQuestion } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { accentStyleFor, swatchFor } from '@/lib/accentStyle';
 import { useMessageRenderingConfig } from '@/contexts/MessageRenderingContext';
+import { KindHeader } from '@/components/KindHeader';
 
 /**
  * Historical view of an answered `AskUserQuestion` interaction. Renders the
@@ -234,15 +234,21 @@ export function AnsweredAskUserQuestionCard({
       data-testid="answered-ask-user-question-card"
     >
       <div className="p-3 space-y-2">
-        <div className="flex items-center gap-2">
-          <MessageCircleQuestion
-            className="h-4 w-4 shrink-0"
-            style={{ color: accentSwatch }}
-          />
-          <div className="text-xs font-medium text-foreground/90">
-            {questions.length === 1 ? 'Question answered' : `${questions.length} questions answered`}
-          </div>
-        </div>
+        {/* Header label + icon both come from MessageRenderingConfig via
+            KindHeader — so a user-set `headerLabel` in Settings → Chats
+            (e.g. "Question Responses") replaces the default. The
+            fallback is the dynamic singular/plural text used when the
+            config slot is null. */}
+        <KindHeader
+          kindId="tool.askUserQuestion.answered"
+          fallbackLabel={
+            questions.length === 1
+              ? 'Question answered'
+              : `${questions.length} questions answered`
+          }
+          fallbackIcon="CircleHelp"
+          showIcon
+        />
 
         {/* Three-column subgrid: headers / questions / answers all align
             vertically across rows. Each question is its own subgrid so
