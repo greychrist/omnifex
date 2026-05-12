@@ -396,6 +396,80 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
       return <SummaryWidget summary={message.summary} leafUuid={message.leafUuid} />;
     }
 
+    // AskUserQuestion pair — elevate the answered card to a top-level
+    // chat-feed message (no surrounding assistant bubble) and hide the
+    // companion user message that carries just the tool_result. The kind
+    // classifier in `messageKind.ts` only returns these for the clean
+    // "single-block message" case; mixed assistant messages with text
+    // or thinking alongside the tool_use fall through to the in-bubble
+    // rendering below (renderToolWidget still has its own AskUserQuestion
+    // branch for that path).
+    {
+      const upstandingKind = classifyStandaloneKind(message, streamMessages);
+      if (upstandingKind === "tool.askUserQuestion.answered.result") {
+        // The data is folded into the assistant-side answered card a few
+        // rows up; rendering this user message as its own bubble would be
+        // a redundant JSON-blob row.
+        return null;
+      }
+      if (
+        upstandingKind === "tool.askUserQuestion.answered"
+        && message.type === "assistant"
+        && message.message
+        && Array.isArray(message.message.content)
+      ) {
+        const tu = message.message.content.find(
+          (b): b is Extract<typeof b, { type: "tool_use" }> =>
+            b?.type === "tool_use"
+            && typeof (b as { name?: string }).name === "string"
+            && (b as { name?: string }).name!.toLowerCase() === "askuserquestion",
+        );
+        if (tu) {
+          // Look up the matching tool_result directly from `streamMessages`
+          // rather than the `toolResults` state cache: the cache is
+          // populated by a useEffect, so on the first render after the
+          // result lands `getToolResult` would still return null and the
+          // card would flash "(no answer recorded)" for one frame.
+          // Classification already guarantees the result is in
+          // streamMessages by the time we reach here.
+          const tuId = (tu as { id?: string }).id;
+          let resultContent: string | undefined;
+          if (tuId) {
+            outer: for (const m of streamMessages) {
+              if (m.type !== "user") continue;
+              const blocks = (m as { message?: { content?: unknown } }).message?.content;
+              if (!Array.isArray(blocks)) continue;
+              for (const b of blocks) {
+                const block = b as { type?: string; tool_use_id?: string; content?: unknown };
+                if (block?.type === "tool_result" && block.tool_use_id === tuId) {
+                  resultContent =
+                    typeof block.content === "string"
+                      ? block.content
+                      : block.content != null
+                        ? JSON.stringify(block.content)
+                        : undefined;
+                  break outer;
+                }
+              }
+            }
+          }
+          // Match the assistant card's `flex justify-start` + ~95% width
+          // so the answered card sits where an assistant bubble would —
+          // anchored left, breathing room on the right.
+          return (
+            <div className="flex justify-start">
+              <div className="w-[95%]">
+                <AnsweredAskUserQuestionCard
+                  input={(tu as { input?: unknown }).input}
+                  resultContent={resultContent}
+                />
+              </div>
+            </div>
+          );
+        }
+      }
+    }
+
     // System initialization message - use the original rich widget
     if (message.type === "system" && message.subtype === "init") {
       return (

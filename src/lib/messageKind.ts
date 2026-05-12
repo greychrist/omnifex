@@ -5,6 +5,57 @@ import { detectSkillInjection } from './skillDetection';
 import { isSystemContextText } from './blockKind';
 
 /**
+ * Renderable in the chat feed for the purpose of "is this message
+ * effectively a single-thing message?" decisions. Mirrors the predicate
+ * `compactGrouping.ts` uses for the same question — kept inline here so
+ * the two files stay independent. (An empty text block or signature-only
+ * thinking block doesn't count.)
+ */
+function isRenderableBlockLocal(b: unknown): boolean {
+  if (!b || typeof b !== 'object') return false;
+  const block = b as { type?: string; text?: unknown; thinking?: unknown };
+  if (block.type === 'tool_use' || block.type === 'tool_result' || block.type === 'image') return true;
+  if (block.type === 'text') {
+    const t = typeof block.text === 'string' ? block.text.trim() : '';
+    return t.length > 0;
+  }
+  if (block.type === 'thinking') {
+    const t = typeof block.thinking === 'string' ? block.thinking.trim() : '';
+    return t.length > 0;
+  }
+  return false;
+}
+
+function hasMatchingToolResult(toolUseId: string, allMessages: ClaudeStreamMessage[]): boolean {
+  for (const m of allMessages) {
+    if (m.type !== 'user') continue;
+    const content = (m as { message?: { content?: unknown } }).message?.content;
+    if (!Array.isArray(content)) continue;
+    for (const b of content) {
+      const block = b as { type?: string; tool_use_id?: string };
+      if (block?.type === 'tool_result' && block.tool_use_id === toolUseId) return true;
+    }
+  }
+  return false;
+}
+
+function findMatchingToolUseName(
+  toolUseId: string,
+  allMessages: ClaudeStreamMessage[],
+): string | undefined {
+  for (const m of allMessages) {
+    if (m.type !== 'assistant') continue;
+    const content = (m as { message?: { content?: unknown } }).message?.content;
+    if (!Array.isArray(content)) continue;
+    for (const b of content) {
+      const block = b as { type?: string; id?: string; name?: string };
+      if (block?.type === 'tool_use' && block.id === toolUseId) return block.name;
+    }
+  }
+  return undefined;
+}
+
+/**
  * Classify a stream message as a single "standalone" rendering kind — i.e. a
  * message whose rendered output is exactly one kind card and can be filtered
  * as a unit in compact mode.
@@ -51,6 +102,48 @@ export function classifyStandaloneKind(
   // Compaction summaries arrive as a synthetic "summary" type with a leafUuid.
   if (msg.type === 'summary' && msg.summary && msg.leafUuid) {
     return 'summary.compaction';
+  }
+
+  // AskUserQuestion: elevate the answered Q+A card to a first-order
+  // chat-feed message (no surrounding assistant bubble) when the wrapping
+  // assistant message would only contain the tool_use, and hide the user
+  // message that just carries the matching tool_result. Only fires once
+  // the tool_result has actually landed — while the user is mid-answer
+  // the live `permission.askUserQuestion` prompt is the visible card and
+  // the in-bubble fallback handles the assistant message normally.
+  if (msg.type === 'assistant') {
+    const content = (msg as { message?: { content?: unknown } }).message?.content;
+    if (Array.isArray(content)) {
+      const renderable = content.filter(isRenderableBlockLocal);
+      if (renderable.length === 1) {
+        const only = renderable[0] as { type?: string; name?: string; id?: string };
+        if (
+          only.type === 'tool_use'
+          && typeof only.name === 'string'
+          && only.name.toLowerCase() === 'askuserquestion'
+          && typeof only.id === 'string'
+          && hasMatchingToolResult(only.id, allMessages)
+        ) {
+          return 'tool.askUserQuestion.answered';
+        }
+      }
+    }
+  }
+
+  if (msg.type === 'user') {
+    const content = (msg as { message?: { content?: unknown } }).message?.content;
+    if (Array.isArray(content)) {
+      const renderable = content.filter(isRenderableBlockLocal);
+      if (renderable.length === 1) {
+        const only = renderable[0] as { type?: string; tool_use_id?: string };
+        if (only.type === 'tool_result' && typeof only.tool_use_id === 'string') {
+          const name = findMatchingToolUseName(only.tool_use_id, allMessages);
+          if (typeof name === 'string' && name.toLowerCase() === 'askuserquestion') {
+            return 'tool.askUserQuestion.answered.result';
+          }
+        }
+      }
+    }
   }
 
   if (msg.type === 'system') {

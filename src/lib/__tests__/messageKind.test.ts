@@ -83,6 +83,120 @@ describe('classifyStandaloneKind', () => {
     );
   });
 
+  describe('AskUserQuestion answered-pair elevation', () => {
+    // Once an AskUserQuestion exchange has completed (tool_use + matching
+    // tool_result both in the stream), the renderer pulls the Q+A card
+    // out of the assistant bubble and shows it as its own first-order
+    // chat message. The classifier returns separate kinds for each side
+    // so the renderer can dispatch — assistant side renders the card,
+    // user side returns null.
+
+    const askUserQuestion = (id: string): ClaudeStreamMessage =>
+      ({
+        type: 'assistant',
+        message: {
+          content: [
+            {
+              type: 'tool_use',
+              id,
+              name: 'AskUserQuestion',
+              input: { questions: [{ question: 'Pick', options: [{ label: 'A' }] }] },
+            },
+          ],
+        },
+      } as unknown as ClaudeStreamMessage);
+
+    const askUserQuestionResult = (toolUseId: string): ClaudeStreamMessage =>
+      ({
+        type: 'user',
+        message: {
+          content: [
+            {
+              type: 'tool_result',
+              tool_use_id: toolUseId,
+              content: 'User has answered your questions: "Pick"="A". You can now continue with the user\'s answers in mind.',
+            },
+          ],
+        },
+      } as unknown as ClaudeStreamMessage);
+
+    it('classifies the assistant message as tool.askUserQuestion.answered once the tool_result has landed', () => {
+      const tu = askUserQuestion('toolu_AUQ');
+      const tr = askUserQuestionResult('toolu_AUQ');
+      expect(classifyStandaloneKind(tu, [tu, tr])).toBe('tool.askUserQuestion.answered');
+    });
+
+    it('classifies the paired user message as tool.askUserQuestion.answered.result', () => {
+      const tu = askUserQuestion('toolu_AUQ');
+      const tr = askUserQuestionResult('toolu_AUQ');
+      expect(classifyStandaloneKind(tr, [tu, tr])).toBe('tool.askUserQuestion.answered.result');
+    });
+
+    it('does NOT elevate while the tool_result is still pending (live mid-answer state)', () => {
+      // While the user is still answering, the live AskUserQuestionCard
+      // (rendered from the synthetic permission_request) is doing the
+      // visible work. The assistant message stays unclassified so the
+      // in-bubble fallback path handles it.
+      const tu = askUserQuestion('toolu_AUQ');
+      expect(classifyStandaloneKind(tu, [tu])).toBeNull();
+    });
+
+    it('does NOT elevate when the assistant message has other renderable content alongside the tool_use', () => {
+      // Mixed content — text or thinking blocks — should keep the
+      // in-bubble rendering so the prose isn't lost.
+      const mixed = {
+        type: 'assistant',
+        message: {
+          content: [
+            { type: 'text', text: 'Let me ask you something.' },
+            {
+              type: 'tool_use',
+              id: 'toolu_AUQ',
+              name: 'AskUserQuestion',
+              input: { questions: [{ question: 'q', options: [{ label: 'a' }] }] },
+            },
+          ],
+        },
+      } as unknown as ClaudeStreamMessage;
+      const tr = askUserQuestionResult('toolu_AUQ');
+      expect(classifyStandaloneKind(mixed, [mixed, tr])).toBeNull();
+    });
+
+    it('does NOT classify a user tool_result whose matching tool_use was not AskUserQuestion', () => {
+      const readToolUse = {
+        type: 'assistant',
+        message: {
+          content: [{ type: 'tool_use', id: 'toolu_R', name: 'Read', input: {} }],
+        },
+      } as unknown as ClaudeStreamMessage;
+      const tr = askUserQuestionResult('toolu_R');
+      expect(classifyStandaloneKind(tr, [readToolUse, tr])).toBeNull();
+    });
+
+    it('ignores empty text blocks when checking single-block elevation', () => {
+      // The SDK sometimes precedes a tool_use with an empty text block.
+      // It shouldn't disqualify the assistant message from elevation.
+      const withEmptyText = {
+        type: 'assistant',
+        message: {
+          content: [
+            { type: 'text', text: '' },
+            {
+              type: 'tool_use',
+              id: 'toolu_AUQ',
+              name: 'AskUserQuestion',
+              input: { questions: [{ question: 'q', options: [{ label: 'a' }] }] },
+            },
+          ],
+        },
+      } as unknown as ClaudeStreamMessage;
+      const tr = askUserQuestionResult('toolu_AUQ');
+      expect(classifyStandaloneKind(withEmptyText, [withEmptyText, tr])).toBe(
+        'tool.askUserQuestion.answered',
+      );
+    });
+  });
+
   it('falls back to permission.request when tool_name is absent', () => {
     expect(classifyStandaloneKind(permReq(undefined), [])).toBe('permission.request');
   });
