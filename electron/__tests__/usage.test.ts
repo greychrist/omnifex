@@ -360,6 +360,32 @@ describe('usage service', () => {
       expect(proj1!.total_tokens).toBe(150);
       expect(proj2!.total_tokens).toBe(400);
     });
+
+    // Regression for the dashed-project-name bug: the encoded dir
+    // `-Users-greg-Repos-work-pi-tuitive-fe` naively decodes to
+    // `/Users/greg/Repos/work/pi/tuitive/fe`, which is wrong. The real
+    // cwd is recoverable from any JSONL entry's `cwd` field; usage
+    // should use that for the breakdown's project_path.
+    it('recovers a project_path with literal dashes from the JSONL cwd field', () => {
+      const configDir = makeTmp();
+      buildConfigDir(configDir, [
+        {
+          name: '-Users-greg-Repos-work-pi-tuitive-fe',
+          sessions: [
+            [
+              { ...assistantMessage({ input: 10, output: 5 }), cwd: '/Users/greg/Repos/work/pi-tuitive-fe' },
+            ],
+          ],
+        },
+      ]);
+
+      const accounts = makeAccountsService([configDir]);
+      const service = createUsageService(accounts);
+      const stats = service.getUsageStats();
+
+      expect(stats.by_project.length).toBe(1);
+      expect(stats.by_project[0].project_path).toBe('/Users/greg/Repos/work/pi-tuitive-fe');
+    });
   });
 
   // -------------------------------------------------------------------------

@@ -135,6 +135,13 @@ interface RawMessage {
     model?: string;
   };
   timestamp?: string;
+  /**
+   * Working directory at the time the session entry was written. Claude
+   * Code stamps this onto user / assistant / tool-use entries; we use it
+   * to recover paths with literal dashes that the lossy `/` → `-` dir
+   * encoding can't round-trip.
+   */
+  cwd?: string;
 }
 
 interface ParsedUsage {
@@ -165,13 +172,31 @@ function getCostPerToken(model: string): { input: number; output: number } {
 
 // ---------------------------------------------------------------------------
 // Project path decoding
-// Converts a directory name like '-Users-greg-myproject' → '/Users/greg/myproject'
+//
+// Claude Code's `/` → `-` dir-name encoding is lossy: `pi-tuitive-fe` and
+// `pi/tuitive/fe` collide. The authoritative recovery source is the `cwd`
+// field on JSONL entries, so we prefer that and fall back to the naive
+// dash-to-slash swap only when no JSONL is available or none carries cwd.
 // ---------------------------------------------------------------------------
 
-function decodeProjectPath(dirName: string): string {
+function decodeProjectPathNaive(dirName: string): string {
   // dirName starts with '-', e.g. '-Users-greg-myproject'
   // Replace all '-' with '/' to get '/Users/greg/myproject'
   return dirName.replace(/-/g, '/');
+}
+
+function recoverProjectPathFromMessages(messages: RawMessage[]): string | null {
+  // Cap to keep cold-cache cost bounded on very long sessions; `cwd`
+  // appears on essentially every user/assistant entry so the first
+  // handful suffices in practice.
+  const cap = Math.min(messages.length, 50);
+  for (let i = 0; i < cap; i++) {
+    const cwd = messages[i]?.cwd;
+    if (typeof cwd === 'string' && cwd.startsWith('/')) {
+      return cwd;
+    }
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -237,7 +262,6 @@ function scanConfigDir(
     if (!projectEntry.isDirectory()) continue;
 
     const projectDirName = projectEntry.name;
-    const projectPath = decodeProjectPath(projectDirName);
     const projectDir = path.join(projectsDir, projectDirName);
 
     let sessionFiles: fs.Dirent[];
@@ -252,12 +276,22 @@ function scanConfigDir(
       continue;
     }
 
+    // Recover the true project path by sampling `cwd` from each JSONL we
+    // read until one yields it. Stays null until then so we know to use
+    // the naive fallback if every file is empty / cwd-less / corrupt.
+    let recoveredProjectPath: string | null = null;
+
     for (const sessionEntry of sessionFiles) {
       if (!sessionEntry.isFile() || !sessionEntry.name.endsWith('.jsonl')) continue;
 
       const sessionFile = path.join(projectDir, sessionEntry.name);
       const sessionId = path.basename(sessionEntry.name, '.jsonl');
       const messages = readJsonlFile(sessionFile, logging);
+
+      if (recoveredProjectPath === null) {
+        recoveredProjectPath = recoverProjectPathFromMessages(messages);
+      }
+      const projectPath = recoveredProjectPath ?? decodeProjectPathNaive(projectDirName);
 
       for (const msg of messages) {
         if (msg.type !== 'assistant') continue;

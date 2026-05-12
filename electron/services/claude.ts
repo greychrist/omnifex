@@ -247,15 +247,80 @@ function findProjectConfigDir(
 }
 
 /**
- * Decode a project ID (Claude-style path encoding) to the original file path.
- * Claude encodes project paths by replacing leading '/' with '' and '/' with '-'.
- * We reverse: decode '-' as '/' and prepend '/'.
+ * Naive decode of a project ID (Claude-style path encoding) to the
+ * original file path. Claude Code encodes by stripping the leading '/'
+ * and replacing all '/' with '-'. The encoding is **lossy** —
+ * `/Users/g/pi-tuitive-fe` and `/Users/g/pi/tuitive/fe` both encode to
+ * `-Users-g-pi-tuitive-fe`. Use `recoverProjectPath()` whenever the
+ * project dir is available; this naive form is the fallback for when
+ * no JSONL exists yet.
  */
 function decodeProjectId(projectId: string): string {
   // Strip leading dash if present, then replace all dashes with slashes.
   // Result always starts with "/" so it's an absolute path.
   const stripped = projectId.replace(/^-+/, '');
   return '/' + stripped.replace(/-/g, '/');
+}
+
+/**
+ * Recover the true project path by reading the authoritative `cwd` from
+ * the first JSONL entry that carries one. Falls back to the naive decode
+ * when no JSONL exists, no entry has `cwd`, or the files are unreadable.
+ *
+ * The authoritative source: Claude Code writes `cwd` onto user / assistant
+ * / tool-use entries in the session JSONL. Any of them is fine — the
+ * field reflects where the session was rooted at the time the entry was
+ * written, which is what the project dir represents.
+ *
+ * Cost: one short `readFileSync` of the first JSONL plus a per-line
+ * JSON.parse until `cwd` is found. We scan at most ~50 lines per
+ * project; for the typical Recent-Projects list of ~20 entries this
+ * adds well under 50ms of cold-cache IO.
+ */
+function recoverProjectPath(projectDir: string, projectId: string): string {
+  const fallback = decodeProjectId(projectId);
+
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(projectDir, { withFileTypes: true });
+  } catch {
+    return fallback;
+  }
+
+  const jsonlFiles = entries
+    .filter((e) => e.isFile() && e.name.endsWith('.jsonl'))
+    .map((e) => e.name)
+    .sort(); // Stable order — pick the first by name; any one with cwd is fine.
+
+  for (const name of jsonlFiles) {
+    let content: string;
+    try {
+      content = fs.readFileSync(path.join(projectDir, name), 'utf8');
+    } catch {
+      continue;
+    }
+
+    const lines = content.split('\n');
+    // Cap to keep cold-cache cost bounded on very long sessions; `cwd`
+    // appears on essentially every user/assistant entry so the first
+    // handful suffices in practice.
+    const cap = Math.min(lines.length, 50);
+    for (let i = 0; i < cap; i++) {
+      const line = lines[i].trim();
+      if (!line) continue;
+      try {
+        const obj = JSON.parse(line) as Record<string, unknown>;
+        const cwd = obj.cwd;
+        if (typeof cwd === 'string' && cwd.startsWith('/')) {
+          return cwd;
+        }
+      } catch {
+        // Corrupt line — keep trying.
+      }
+    }
+  }
+
+  return fallback;
 }
 
 function encodeProjectId(projectPath: string): string {
@@ -443,7 +508,7 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
           }
         }
 
-        const projectPath = decodeProjectId(projectId);
+        const projectPath = recoverProjectPath(projectDir, projectId);
         projects.push({
           id: projectId,
           path: projectPath,
@@ -517,7 +582,7 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
 
       const { firstMessage, firstTimestamp, lastTimestamp } =
         extractSessionMetadata(filePath);
-      const decodedPath = projectPath ?? decodeProjectId(projectId);
+      const decodedPath = projectPath ?? recoverProjectPath(projectDir, projectId);
 
       sessions.push({
         id: sessionId,

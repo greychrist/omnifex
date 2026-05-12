@@ -76,6 +76,82 @@ describe('claude service', () => {
       const found = projects.find((p) => p.id === projectId);
       expect(found).toBeDefined();
     });
+
+    // Regression: Claude Code's project-dir encoding (/ → -) is lossy.
+    // `-Users-greg-Repos-work-pi-tuitive-fe` could decode to either
+    // `/Users/greg/Repos/work/pi-tuitive-fe` (correct) or
+    // `/Users/greg/Repos/work/pi/tuitive/fe` (naive). The authoritative
+    // recovery is the `cwd` field on any JSONL entry inside the project
+    // dir; only the JSONL knows where the dashes really sit.
+    it('recovers a project path with literal dashes from the JSONL cwd field', async () => {
+      const configDir = path.join(tmpDir, '.claude-recover');
+      const projectId = '-Users-greg-Repos-work-pi-tuitive-fe';
+      const realPath = '/Users/greg/Repos/work/pi-tuitive-fe';
+      const projectDir = path.join(configDir, 'projects', projectId);
+      fs.mkdirSync(projectDir, { recursive: true });
+
+      const sessionFile = path.join(projectDir, 'sess-1.jsonl');
+      fs.writeFileSync(
+        sessionFile,
+        JSON.stringify({ type: 'user', cwd: realPath, message: { role: 'user', content: 'hi' } }) + '\n',
+      );
+
+      accounts.createAccount('Test', configDir, 'pro');
+
+      const projects = await service.listProjects();
+      const found = projects.find((p) => p.id === projectId);
+      expect(found).toBeDefined();
+      expect(found!.path).toBe(realPath);
+    });
+
+    it('falls back to naive decode when no JSONL exists in the project dir', async () => {
+      const configDir = path.join(tmpDir, '.claude-empty');
+      const projectId = '-Users-greg-myproject';
+      const projectDir = path.join(configDir, 'projects', projectId);
+      fs.mkdirSync(projectDir, { recursive: true });
+
+      accounts.createAccount('Test', configDir, 'pro');
+
+      const projects = await service.listProjects();
+      const found = projects.find((p) => p.id === projectId);
+      expect(found).toBeDefined();
+      // No JSONL → no cwd to recover; naive decode is best-effort.
+      expect(found!.path).toBe('/Users/greg/myproject');
+    });
+
+    it('falls back to naive decode when JSONL has no cwd field', async () => {
+      const configDir = path.join(tmpDir, '.claude-no-cwd');
+      const projectId = '-Users-greg-myproject';
+      const projectDir = path.join(configDir, 'projects', projectId);
+      fs.mkdirSync(projectDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(projectDir, 'sess.jsonl'),
+        JSON.stringify({ type: 'system', subtype: 'init' }) + '\n',
+      );
+
+      accounts.createAccount('Test', configDir, 'pro');
+
+      const projects = await service.listProjects();
+      const found = projects.find((p) => p.id === projectId);
+      expect(found!.path).toBe('/Users/greg/myproject');
+    });
+
+    it('falls back to naive decode when JSONL is corrupt', async () => {
+      const configDir = path.join(tmpDir, '.claude-corrupt');
+      const projectId = '-Users-greg-myproject';
+      const projectDir = path.join(configDir, 'projects', projectId);
+      fs.mkdirSync(projectDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(projectDir, 'sess.jsonl'),
+        'not valid json at all\n',
+      );
+
+      accounts.createAccount('Test', configDir, 'pro');
+
+      const projects = await service.listProjects();
+      const found = projects.find((p) => p.id === projectId);
+      expect(found!.path).toBe('/Users/greg/myproject');
+    });
   });
 
   // -------------------------------------------------------------------------
