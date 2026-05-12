@@ -31,6 +31,15 @@ export interface BuildSdkOptionsDeps {
    * resolver registration (which writes to handle.elicitationResolver).
    */
   onElicitationRequest: (request: any) => Promise<ElicitationDecision>;
+  /**
+   * Polled by the stderr closure to decide whether to demote the SDK's
+   * own teardown noise (cli.js hook_9 firing during close → "Stream
+   * closed") to debug. lifecycle.stop() owns the underlying state and
+   * keeps it valid past the sessions-map deletion so late-arriving
+   * stderr from the dying subprocess still resolves to true. Optional:
+   * tests that don't exercise the shutdown path can omit it.
+   */
+  isShuttingDown?: () => boolean;
 }
 
 /**
@@ -44,7 +53,7 @@ export function buildSdkOptions(
   params: SessionStartParams,
   deps: BuildSdkOptionsDeps,
 ): Record<string, unknown> {
-  const { tabId, sendToRenderer, notificationHooks, logging, onElicitationRequest } = deps;
+  const { tabId, sendToRenderer, notificationHooks, logging, onElicitationRequest, isShuttingDown } = deps;
   const { projectPath, configDir, model, permissionMode, resumeSessionId, effort, thinking } = params;
 
   const options: Record<string, unknown> = {
@@ -145,13 +154,36 @@ export function buildSdkOptions(
   // own `--debug` output to ~/.claude-personal/debug/<sessionId>.txt (not stderr),
   // so this callback only catches unexpected stderr (crashes, fatal errors).
   if (logging) {
+    // Patterns that are benign during shutdown but real otherwise. When the
+    // renderer closes a tab, lifecycle.stop() closes the SDK input channel;
+    // the CLI's own teardown hook (cli.js hook_9) then tries to push a
+    // system-reminder via sendRequest and throws "Stream closed". Pre-this-
+    // change every tab close produced an error-level row + toast.
+    const TEARDOWN_NOISE = /Error in hook callback|Stream closed/i;
+    // "Real error" patterns — surface even during shutdown so we don't hide
+    // a genuine crash just because we asked the session to stop.
+    const REAL_ERROR = /^error[:\s]|FATAL|panic/i;
+
     options.stderr = (data: string) => {
-      // Detect error-like patterns in stderr and log at appropriate level
-      const isError = /^error[:\s]|Error in hook callback|stream closed|FATAL|panic/i.test(data);
+      const shuttingDown = isShuttingDown?.() === true;
+
+      // Order matters: TEARDOWN_NOISE is checked first so the SDK's hook-
+      // callback / stream-closed messages can be demoted during shutdown
+      // before falling through to the generic /^error/i match (which they
+      // would otherwise hit and stay at error level).
+      let level: 'error' | 'debug';
+      if (TEARDOWN_NOISE.test(data)) {
+        level = shuttingDown ? 'debug' : 'error';
+      } else if (REAL_ERROR.test(data)) {
+        level = 'error';
+      } else {
+        level = 'debug';
+      }
+
       logging.writeBatch([
         {
           timestamp: new Date().toISOString(),
-          level: isError ? 'error' : 'debug',
+          level,
           source: 'claude-sdk',
           category: `session:${tabId}`,
           message: data,

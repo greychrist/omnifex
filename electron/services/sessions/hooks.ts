@@ -32,115 +32,25 @@ export function createSessionHooks(
   if (!logging) return {};
 
   return {
-    PreToolUse: [
-      {
-        hooks: [
-          async (input: any) => {
-            try {
-              logging.writeBatch([
-                {
-                  timestamp: new Date().toISOString(),
-                  level: 'info',
-                  source: 'claude-hooks',
-                  category: `session:${tabId}`,
-                  message: `→ ${input.tool_name}`,
-                  metadata: stringifyCapped({
-                    event: 'PreToolUse',
-                    tool_name: input.tool_name,
-                    tool_input: input.tool_input,
-                    tool_use_id: input.tool_use_id,
-                  }),
-                },
-              ]);
-            } catch (err) {
-              console.error('[sessions] PreToolUse hook logging failed:', err);
-            }
-            return {};
-          },
-        ],
-      },
-    ],
-    PostToolUse: [
-      {
-        hooks: [
-          async (input: any) => {
-            try {
-              logging.writeBatch([
-                {
-                  timestamp: new Date().toISOString(),
-                  level: 'info',
-                  source: 'claude-hooks',
-                  category: `session:${tabId}`,
-                  message: `← ${input.tool_name}`,
-                  metadata: stringifyCapped({
-                    event: 'PostToolUse',
-                    tool_name: input.tool_name,
-                    tool_input: input.tool_input,
-                    tool_response: input.tool_response,
-                    tool_use_id: input.tool_use_id,
-                  }),
-                },
-              ]);
-            } catch (err) {
-              console.error('[sessions] PostToolUse hook logging failed:', err);
-            }
-            return {};
-          },
-        ],
-      },
-    ],
-    PostToolUseFailure: [
-      {
-        hooks: [
-          async (input: any) => {
-            try {
-              const errMsg = typeof input.error === 'string' ? input.error : String(input.error ?? 'unknown error');
-              logging.writeBatch([
-                {
-                  timestamp: new Date().toISOString(),
-                  level: 'error',
-                  source: 'claude-hooks',
-                  category: `session:${tabId}`,
-                  message: `✗ ${input.tool_name}: ${errMsg.slice(0, 200)}`,
-                  metadata: stringifyCapped({
-                    event: 'PostToolUseFailure',
-                    tool_name: input.tool_name,
-                    tool_input: input.tool_input,
-                    error: errMsg,
-                    tool_use_id: input.tool_use_id,
-                  }),
-                },
-              ]);
-            } catch (err) {
-              console.error('[sessions] PostToolUseFailure hook logging failed:', err);
-            }
-            return {};
-          },
-        ],
-      },
-    ],
+    // Note: PreToolUse / PostToolUse / PostToolUseFailure were retired
+    // 2026-05-12. Every tool call is already visible to the user in the
+    // chat (tool_use + tool_result blocks) and in Claude's own session
+    // JSONL on disk, so the Log tab mirror was duplicative — and
+    // PostToolUseFailure was generating error toasts for benign shell
+    // exits (grep no-match, git pull conflicts, pgrep no-result). The
+    // Log tab is now reserved for events the chat does NOT already show.
 
     // ---- Bonus hooks: SubagentStart, SubagentStop, PreCompact, FileChanged ----
 
+    // Subagent start/stop and notifications are already visible to the
+    // user — subagent UI mirrors the JSONL tail, notifications surface in
+    // the chat + tab badges. We only fire the renderer event; no app_logs
+    // mirror.
     SubagentStart: [
       {
         hooks: [
           async (input: any) => {
             try {
-              logging.writeBatch([
-                {
-                  timestamp: new Date().toISOString(),
-                  level: 'info',
-                  source: 'claude-hooks',
-                  category: `session:${tabId}`,
-                  message: `🔀 subagent started: ${input.agent_type} (${input.agent_id})`,
-                  metadata: stringifyCapped({
-                    event: 'SubagentStart',
-                    agent_id: input.agent_id,
-                    agent_type: input.agent_type,
-                  }),
-                },
-              ]);
               sendToRenderer(`claude-subagent:${tabId}`, {
                 status: 'started',
                 agent_id: input.agent_id,
@@ -159,21 +69,6 @@ export function createSessionHooks(
         hooks: [
           async (input: any) => {
             try {
-              logging.writeBatch([
-                {
-                  timestamp: new Date().toISOString(),
-                  level: 'info',
-                  source: 'claude-hooks',
-                  category: `session:${tabId}`,
-                  message: `🔀 subagent stopped: ${input.agent_type} (${input.agent_id})`,
-                  metadata: stringifyCapped({
-                    event: 'SubagentStop',
-                    agent_id: input.agent_id,
-                    agent_type: input.agent_type,
-                    last_assistant_message: input.last_assistant_message,
-                  }),
-                },
-              ]);
               sendToRenderer(`claude-subagent:${tabId}`, {
                 status: 'stopped',
                 agent_id: input.agent_id,
@@ -223,22 +118,6 @@ export function createSessionHooks(
           async (input: any) => {
             try {
               const isError = /error/i.test(input.notification_type ?? '');
-              const level = isError ? 'error' : /warn/i.test(input.notification_type ?? '') ? 'warn' : 'info';
-              logging.writeBatch([
-                {
-                  timestamp: new Date().toISOString(),
-                  level,
-                  source: 'claude-hooks',
-                  category: `session:${tabId}`,
-                  message: `💬 ${input.message ?? '(no message)'}`,
-                  metadata: stringifyCapped({
-                    event: 'Notification',
-                    notification_type: input.notification_type,
-                    title: input.title,
-                    message: input.message,
-                  }),
-                },
-              ]);
               // Emit on the existing claude-notification channel so
               // useNotifications.ts picks it up for tab badges + bring-
               // to-front. The payload shape matches what the listener

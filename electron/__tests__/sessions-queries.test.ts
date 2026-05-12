@@ -35,6 +35,7 @@ function makeHandle(query = makeQuery()): SessionHandle {
     projectPath: '/p',
     configDir: '/cfg',
     sdkOptions: {},
+    shuttingDown: false,
   };
 }
 

@@ -1953,11 +1953,79 @@ describe('sessions service — full lifecycle', () => {
   });
 
   // -------------------------------------------------------------------------
-  // Wave 3.3 — PreToolUse / PostToolUse / PostToolUseFailure hook callbacks
+  // Teardown-race: stderr arriving AFTER stop() should NOT be classified as
+  // an error. When the renderer closes a tab, lifecycle.stop() aborts the
+  // SDK input channel; the Claude Code CLI then runs its own teardown hook
+  // (hook_9) which tries to push a system-reminder via sendRequest, hits
+  // "Stream closed", and dumps the bun stack to stderr. Pre-this-change
+  // every tab close generated an error toast.
+  // -------------------------------------------------------------------------
+
+  it('start() downgrades "Stream closed" / "Error in hook callback" stderr to debug AFTER stop()', () => {
+    const writeBatch = vi.fn();
+    const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
+    const svc = createSessionsService(
+      sendToRenderer as any,
+      {
+        showNotification: showNotification as any,
+        incrementUnread: incrementUnread as any,
+      },
+      fakeLogging as any,
+    );
+    const fake = installFakeQuery();
+
+    svc.start({
+      tabId: 'tab-shutdown',
+      projectPath: '/p',
+      configDir: '/c',
+      model: 'sonnet',
+      permissionMode: 'default',
+    });
+
+    const options = fake.getCapturedOptions();
+
+    // Same input that fires during normal operation → error (real bug)
+    options.stderr('Error in hook callback hook_9: Stream closed');
+    const lastCall = writeBatch.mock.calls.at(-1);
+    expect(lastCall).toBeDefined();
+    expect(lastCall![0][0].level).toBe('error');
+
+    // Now close the tab — flip the shutdown flag
+    svc.stop('tab-shutdown');
+
+    writeBatch.mockClear();
+
+    // After shutdown the SAME stderr arrives (the CLI's hook_9 firing on its
+    // way out). It should be classified as debug, not error — no toast.
+    options.stderr('Error in hook callback hook_9: Stream closed');
+    expect(writeBatch.mock.calls[0][0][0].level).toBe('debug');
+
+    // Bare "Stream closed" is also benign during shutdown
+    options.stderr('error: Stream closed');
+    expect(writeBatch.mock.calls[1][0][0].level).toBe('debug');
+
+    // Real errors (FATAL/panic) during shutdown still surface — we shouldn't
+    // hide a genuine crash just because we asked to stop.
+    options.stderr('FATAL: out of memory');
+    expect(writeBatch.mock.calls[2][0][0].level).toBe('error');
+
+    svc.stopAll();
+  });
+
+  // -------------------------------------------------------------------------
+  // Wave 3.3 — tool-call audit hooks were retired (chat already mirrors them)
+  //
+  // PreToolUse / PostToolUse / PostToolUseFailure used to write info/error
+  // rows into app_logs. Every event is already visible to the user in the
+  // chat (tool_use + tool_result blocks) and in Claude's own session JSONL,
+  // and PostToolUseFailure was firing error toasts for benign tool exits
+  // (grep no-match, git pull conflicts, etc.). The whole tool-call mirror
+  // path was dropped 2026-05-12; the Log tab is now reserved for app/session
+  // concerns the chat doesn't show.
   // -------------------------------------------------------------------------
 
   describe('Wave 3.3 audit hooks', () => {
-    it('start() sets PreToolUse, PostToolUse, and PostToolUseFailure hook matchers when logging is provided', () => {
+    it('start() does NOT register PreToolUse / PostToolUse / PostToolUseFailure hooks', () => {
       const writeBatch = vi.fn();
       const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
       const svc = createSessionsService(
@@ -1975,172 +2043,20 @@ describe('sessions service — full lifecycle', () => {
       });
 
       const options = fake.getCapturedOptions();
+      // Hooks object exists (other lifecycle hooks still register) but the
+      // tool-call mirror hooks are gone.
       expect(options.hooks).toBeDefined();
-      expect(Array.isArray(options.hooks.PreToolUse)).toBe(true);
-      expect(Array.isArray(options.hooks.PostToolUse)).toBe(true);
-      expect(Array.isArray(options.hooks.PostToolUseFailure)).toBe(true);
-      expect(typeof options.hooks.PreToolUse[0].hooks[0]).toBe('function');
-      expect(typeof options.hooks.PostToolUse[0].hooks[0]).toBe('function');
-      expect(typeof options.hooks.PostToolUseFailure[0].hooks[0]).toBe('function');
+      expect(options.hooks.PreToolUse).toBeUndefined();
+      expect(options.hooks.PostToolUse).toBeUndefined();
+      expect(options.hooks.PostToolUseFailure).toBeUndefined();
 
       svc.stopAll();
     });
 
-    it('PreToolUse callback logs an info entry with tool name + input + returns {}', async () => {
-      const writeBatch = vi.fn();
-      const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
-      const svc = createSessionsService(
-        sendToRenderer as any,
-        { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
-        fakeLogging as any,
-      );
-      const fake = installFakeQuery();
-      svc.start({
-        tabId: 'hooks-pre',
-        projectPath: '/p',
-        configDir: '/c',
-        model: 'sonnet',
-        permissionMode: 'default',
-      });
-
-      const preHook = fake.getCapturedOptions().hooks.PreToolUse[0].hooks[0];
-      const result = await preHook(
-        {
-          session_id: 'sess-abc',
-          transcript_path: '/t',
-          cwd: '/p',
-          hook_event_name: 'PreToolUse',
-          tool_name: 'Bash',
-          tool_input: { command: 'ls -la' },
-          tool_use_id: 'tu-1',
-        },
-        'tu-1',
-        { signal: new AbortController().signal },
-      );
-
-      expect(result).toEqual({});
-      expect(writeBatch).toHaveBeenCalledTimes(1);
-      const entry = writeBatch.mock.calls[0][0][0];
-      expect(entry).toMatchObject({
-        level: 'info',
-        source: 'claude-hooks',
-        category: 'session:hooks-pre',
-      });
-      expect(entry.message).toContain('Bash');
-      expect(entry.message).toContain('→');
-      expect(typeof entry.metadata).toBe('string');
-      const meta = JSON.parse(entry.metadata);
-      expect(meta.event).toBe('PreToolUse');
-      expect(meta.tool_name).toBe('Bash');
-      expect(meta.tool_input).toEqual({ command: 'ls -la' });
-      expect(meta.tool_use_id).toBe('tu-1');
-
-      svc.stopAll();
-    });
-
-    it('PostToolUse callback logs an info entry with tool name + input + response + returns {}', async () => {
-      const writeBatch = vi.fn();
-      const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
-      const svc = createSessionsService(
-        sendToRenderer as any,
-        { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
-        fakeLogging as any,
-      );
-      const fake = installFakeQuery();
-      svc.start({
-        tabId: 'hooks-post',
-        projectPath: '/p',
-        configDir: '/c',
-        model: 'sonnet',
-        permissionMode: 'default',
-      });
-
-      const postHook = fake.getCapturedOptions().hooks.PostToolUse[0].hooks[0];
-      const result = await postHook(
-        {
-          session_id: 'sess-abc',
-          transcript_path: '/t',
-          cwd: '/p',
-          hook_event_name: 'PostToolUse',
-          tool_name: 'Read',
-          tool_input: { file_path: '/etc/passwd' },
-          tool_response: { content: 'root:x:0:0...' },
-          tool_use_id: 'tu-2',
-        },
-        'tu-2',
-        { signal: new AbortController().signal },
-      );
-
-      expect(result).toEqual({});
-      expect(writeBatch).toHaveBeenCalledTimes(1);
-      const entry = writeBatch.mock.calls[0][0][0];
-      expect(entry).toMatchObject({
-        level: 'info',
-        source: 'claude-hooks',
-        category: 'session:hooks-post',
-      });
-      expect(entry.message).toContain('Read');
-      expect(entry.message).toContain('←');
-      const meta = JSON.parse(entry.metadata);
-      expect(meta.event).toBe('PostToolUse');
-      expect(meta.tool_name).toBe('Read');
-      expect(meta.tool_response).toEqual({ content: 'root:x:0:0...' });
-
-      svc.stopAll();
-    });
-
-    it('PostToolUseFailure callback logs an error entry with the error + returns {}', async () => {
-      const writeBatch = vi.fn();
-      const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
-      const svc = createSessionsService(
-        sendToRenderer as any,
-        { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
-        fakeLogging as any,
-      );
-      const fake = installFakeQuery();
-      svc.start({
-        tabId: 'hooks-err',
-        projectPath: '/p',
-        configDir: '/c',
-        model: 'sonnet',
-        permissionMode: 'default',
-      });
-
-      const failHook = fake.getCapturedOptions().hooks.PostToolUseFailure[0].hooks[0];
-      const result = await failHook(
-        {
-          session_id: 'sess-abc',
-          transcript_path: '/t',
-          cwd: '/p',
-          hook_event_name: 'PostToolUseFailure',
-          tool_name: 'Bash',
-          tool_input: { command: 'nonexistent-cmd' },
-          tool_use_id: 'tu-3',
-          error: 'command not found: nonexistent-cmd',
-        },
-        'tu-3',
-        { signal: new AbortController().signal },
-      );
-
-      expect(result).toEqual({});
-      expect(writeBatch).toHaveBeenCalledTimes(1);
-      const entry = writeBatch.mock.calls[0][0][0];
-      expect(entry).toMatchObject({
-        level: 'error',
-        source: 'claude-hooks',
-        category: 'session:hooks-err',
-      });
-      expect(entry.message).toContain('Bash');
-      expect(entry.message).toContain('✗');
-      expect(entry.message).toContain('command not found');
-      const meta = JSON.parse(entry.metadata);
-      expect(meta.event).toBe('PostToolUseFailure');
-      expect(meta.error).toContain('command not found');
-
-      svc.stopAll();
-    });
-
-    it('hook metadata is truncated if the tool response is huge (no unbounded log rows)', async () => {
+    it('hook metadata is truncated for kept hooks with large payloads (no unbounded log rows)', async () => {
+      // Truncation safety net moved to SessionEnd since the tool-call mirror
+      // hooks were retired. SessionEnd still writes structured metadata so
+      // it remains a representative test for stringifyCapped().
       const writeBatch = vi.fn();
       const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
       const svc = createSessionsService(
@@ -2157,20 +2073,17 @@ describe('sessions service — full lifecycle', () => {
         permissionMode: 'default',
       });
 
-      const postHook = fake.getCapturedOptions().hooks.PostToolUse[0].hooks[0];
-      const hugeContent = 'x'.repeat(50_000);
-      await postHook(
+      const sessionEndHook = fake.getCapturedOptions().hooks.SessionEnd[0].hooks[0];
+      const hugeReason = 'x'.repeat(50_000);
+      await sessionEndHook(
         {
           session_id: 'sess',
           transcript_path: '/t',
           cwd: '/p',
-          hook_event_name: 'PostToolUse',
-          tool_name: 'Read',
-          tool_input: { file_path: '/big' },
-          tool_response: { content: hugeContent },
-          tool_use_id: 'tu-big',
+          hook_event_name: 'SessionEnd',
+          reason: hugeReason,
         },
-        'tu-big',
+        undefined,
         { signal: new AbortController().signal },
       );
 
@@ -2198,13 +2111,17 @@ describe('sessions service — full lifecycle', () => {
       // Audit hooks should not be present without logging
       expect(options.hooks?.PreToolUse).toBeUndefined();
       expect(options.hooks?.PostToolUse).toBeUndefined();
+      expect(options.hooks?.PostToolUseFailure).toBeUndefined();
     });
 
     // -----------------------------------------------------------------------
     // Bonus hooks — SubagentStart, SubagentStop, PreCompact, FileChanged
     // -----------------------------------------------------------------------
 
-    it('SubagentStart hook logs + emits renderer event', async () => {
+    it('SubagentStart hook emits claude-subagent renderer event (does NOT write log row)', async () => {
+      // Subagent start/stop are already visible in the subagent UI (driven
+      // by the JSONL tail). The hook now only fires the renderer event;
+      // no app_logs row is written.
       const writeBatch = vi.fn();
       const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
       const svc = createSessionsService(
@@ -2225,19 +2142,18 @@ describe('sessions service — full lifecycle', () => {
       expect(options.hooks.SubagentStart).toBeDefined();
       const hook = options.hooks.SubagentStart[0].hooks[0];
 
+      writeBatch.mockClear();
+
       await hook(
         { hook_event_name: 'SubagentStart', agent_id: 'sa-1', agent_type: 'Explore', session_id: 's', transcript_path: '/t', cwd: '/p' },
         undefined,
         { signal: new AbortController().signal },
       );
 
-      expect(writeBatch).toHaveBeenCalledTimes(1);
-      const entry = writeBatch.mock.calls[0][0][0];
-      expect(entry.source).toBe('claude-hooks');
-      expect(entry.message).toContain('Explore');
-      expect(entry.message).toContain('started');
+      // No log row for subagent start (chat / UI already shows this)
+      expect(writeBatch).not.toHaveBeenCalled();
 
-      // Renderer event
+      // Renderer event still fires
       const rendererCall = sendToRenderer.mock.calls.find(
         (c) => typeof c[0] === 'string' && c[0].startsWith('claude-subagent:'),
       );
@@ -2248,7 +2164,7 @@ describe('sessions service — full lifecycle', () => {
       svc.stopAll();
     });
 
-    it('SubagentStop hook logs + emits renderer event with last_assistant_message', async () => {
+    it('SubagentStop hook emits claude-subagent renderer event (does NOT write log row)', async () => {
       const writeBatch = vi.fn();
       const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
       const svc = createSessionsService(
@@ -2267,6 +2183,8 @@ describe('sessions service — full lifecycle', () => {
 
       const hook = fake.getCapturedOptions().hooks.SubagentStop[0].hooks[0];
 
+      writeBatch.mockClear();
+
       await hook(
         {
           hook_event_name: 'SubagentStop',
@@ -2283,11 +2201,17 @@ describe('sessions service — full lifecycle', () => {
         { signal: new AbortController().signal },
       );
 
-      const entry = writeBatch.mock.calls[0][0][0];
-      expect(entry.message).toContain('stopped');
-      expect(entry.message).toContain('code-reviewer');
-      const meta = JSON.parse(entry.metadata);
-      expect(meta.last_assistant_message).toContain('3 issues');
+      // No log row for subagent stop
+      expect(writeBatch).not.toHaveBeenCalled();
+
+      // Renderer event still fires with last_assistant_message
+      const rendererCall = sendToRenderer.mock.calls.find(
+        (c) => typeof c[0] === 'string' && c[0].startsWith('claude-subagent:'),
+      );
+      expect(rendererCall).toBeDefined();
+      expect((rendererCall![1] as any).status).toBe('stopped');
+      expect((rendererCall![1] as any).agent_type).toBe('code-reviewer');
+      expect((rendererCall![1] as any).last_assistant_message).toContain('3 issues');
 
       svc.stopAll();
     });
@@ -2331,7 +2255,10 @@ describe('sessions service — full lifecycle', () => {
       svc.stopAll();
     });
 
-    it('Notification hook logs + emits claude-notification for the tab badge system', async () => {
+    it('Notification hook emits claude-notification for the tab badge system (does NOT write log row)', async () => {
+      // The Notification hook only routes the SDK's user-facing notification
+      // to the renderer (tab badge + inline chat). It no longer mirrors the
+      // event into app_logs since the chat already shows the message.
       const writeBatch = vi.fn();
       const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
       const svc = createSessionsService(
@@ -2352,6 +2279,8 @@ describe('sessions service — full lifecycle', () => {
       expect(options.hooks.Notification).toBeDefined();
       const hook = options.hooks.Notification[0].hooks[0];
 
+      writeBatch.mockClear();
+
       await hook(
         {
           hook_event_name: 'Notification',
@@ -2366,14 +2295,8 @@ describe('sessions service — full lifecycle', () => {
         { signal: new AbortController().signal },
       );
 
-      // Logging
-      expect(writeBatch).toHaveBeenCalledTimes(1);
-      const entry = writeBatch.mock.calls[0][0][0];
-      expect(entry.source).toBe('claude-hooks');
-      expect(entry.message).toContain('MCP server disconnected');
-      const meta = JSON.parse(entry.metadata);
-      expect(meta.notification_type).toBe('warning');
-      expect(meta.title).toBe('Connection Lost');
+      // No app_logs row written
+      expect(writeBatch).not.toHaveBeenCalled();
 
       // Renderer event — uses the existing claude-notification channel so
       // useNotifications.ts picks it up for tab badges automatically
@@ -2406,6 +2329,8 @@ describe('sessions service — full lifecycle', () => {
 
       const hook = fake.getCapturedOptions().hooks.Notification[0].hooks[0];
 
+      writeBatch.mockClear();
+
       await hook(
         {
           hook_event_name: 'Notification',
@@ -2419,8 +2344,9 @@ describe('sessions service — full lifecycle', () => {
         { signal: new AbortController().signal },
       );
 
-      const entry = writeBatch.mock.calls[0][0][0];
-      expect(entry.level).toBe('error');
+      // No app_logs row even for error notifications — Claude already shows
+      // them in the chat as a notification system message.
+      expect(writeBatch).not.toHaveBeenCalled();
 
       const rendererCall = sendToRenderer.mock.calls.find(
         (c) => c[0] === 'claude-notification' && (c[1] as any)?.body?.includes('Fatal'),

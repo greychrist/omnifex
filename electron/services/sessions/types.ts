@@ -240,6 +240,14 @@ export interface SessionHandle {
   configDir: string;
   /** Saved SDK options so we can restart the query after a stream error. */
   sdkOptions: Record<string, unknown>;
+  /**
+   * Set to true at the top of lifecycle.stop() before the input/query
+   * channels are torn down. The factory's stderr handler consults this so
+   * that the SDK's own teardown hook (cli.js hook_9 → sendRequest → "Stream
+   * closed") is logged at debug, not error — otherwise every tab close
+   * spawned an error toast for a benign close race.
+   */
+  shuttingDown: boolean;
 }
 
 /**
