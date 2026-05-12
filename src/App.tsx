@@ -57,7 +57,12 @@ function AppContent() {
   const [homeDirectory, setHomeDirectory] = useState<string>('/');
   const [showAccountPicker, setShowAccountPicker] = useState(false);
   const [pendingProjectPath, setPendingProjectPath] = useState<string>("");
-  const [toast, setToast] = useState<{ message: string; type: "success" | "error" | "info" } | null>(null);
+  const [toast, setToast] = useState<{
+    message: string;
+    type: "success" | "error" | "info";
+    action?: { label: string; onClick: () => void };
+    duration?: number;
+  } | null>(null);
   const [projectForSettings, setProjectForSettings] = useState<Project | null>(null);
   const [previousView] = useState<View>("welcome");
 
@@ -70,6 +75,47 @@ function AppContent() {
       setLoading(false);
     }
   }, [view]);
+
+  // Subscribe to error-level log entries from the main process so the user
+  // can correlate "the app just flashed an error" with whatever they were
+  // doing. Suppression is handled main-side via `log_error_toast_enabled`;
+  // we additionally dedupe here so repeated identical errors within a short
+  // window only flash one toast instead of stacking.
+  useEffect(() => {
+    const lastShown = { key: '', at: 0 };
+    const DEDUPE_MS = 2000;
+    const unsubscribe = window.electronAPI.onEvent('log-error', (payload: unknown) => {
+      const e = payload as { source: string; message: string; category?: string | null };
+      if (!e || typeof e.message !== 'string') return;
+      const key = `${e.source}::${e.message}`;
+      const now = Date.now();
+      if (key === lastShown.key && now - lastShown.at < DEDUPE_MS) return;
+      lastShown.key = key;
+      lastShown.at = now;
+      // Trim long lines — single-line preview keeps the toast compact.
+      const preview = e.message.split('\n')[0].slice(0, 120);
+      setToast({
+        type: 'error',
+        message: `[${e.source}] ${preview}`,
+        // 6s gives time to read + reach the action button.
+        duration: 6000,
+        action: {
+          label: 'View in Log',
+          onClick: () => {
+            setToast(null);
+            createSettingsTab();
+            // Settings + LogTab both listen for this and switch their
+            // inner state in unison. Dispatched asynchronously so the
+            // Settings tab has mounted by the time the listeners fire.
+            setTimeout(() => {
+              window.dispatchEvent(new CustomEvent('log:focus-error-view'));
+            }, 0);
+          },
+        },
+      });
+    });
+    return unsubscribe;
+  }, [createSettingsTab]);
 
   // Keyboard shortcuts for tab navigation
   useEffect(() => {
@@ -477,6 +523,8 @@ function AppContent() {
           <Toast
             message={toast.message}
             type={toast.type}
+            duration={toast.duration}
+            action={toast.action}
             onDismiss={() => setToast(null)}
           />
         )}

@@ -373,8 +373,35 @@ app.whenReady().then(() => {
   const accountsService = createAccountsService(db);
   const claudeBinaryService = createClaudeBinaryService(db);
   // Logging must be constructed before sessions so the sessions service can
-  // route CLI subprocess stderr into the log store.
-  const loggingService = createLoggingService(db);
+  // route CLI subprocess stderr into the log store. The predicate reads
+  // app_settings live on every batch, so toggling the LogTab switches takes
+  // effect immediately without a restart. Defaults are "off" — info/debug
+  // entries from these two noisy sources are dropped unless the user opts
+  // in. Warn/error always pass through.
+  const loggingService = createLoggingService(db, {
+    shouldAccept: (entry) => {
+      if (entry.level !== 'info' && entry.level !== 'debug') return true;
+      if (entry.source === 'claude-hooks') {
+        return db.getSetting('log_verbose_claude_hooks') === 'true';
+      }
+      if (entry.source === 'usage-runner') {
+        return db.getSetting('log_verbose_usage_runner') === 'true';
+      }
+      return true;
+    },
+    onError: (entry) => {
+      // Default is ON. Only suppress when the user has explicitly set the
+      // toggle to 'false' — a missing setting (fresh install) still toasts.
+      if (db.getSetting('log_error_toast_enabled') === 'false') return;
+      sendToRenderer('log-error', {
+        source: entry.source,
+        message: entry.message,
+        category: entry.category ?? null,
+        level: entry.level,
+        timestamp: entry.timestamp,
+      });
+    },
+  });
   const successSound = 'greychrist_success';
   const notificationsService = _notificationsService = createNotificationsService({
     isSupported: () => Notification.isSupported(),

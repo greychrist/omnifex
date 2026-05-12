@@ -31,6 +31,27 @@ export interface LogQueryResult {
   total: number;
 }
 
+/**
+ * Optional construction-time options for {@link createLoggingService}.
+ *
+ * `shouldAccept` is evaluated once per entry on every `writeBatch` call —
+ * returning `false` drops the entry before it hits SQLite. Use it to gate
+ * known-noisy info/debug streams (claude-hooks, usage-runner) behind a
+ * user setting without sprinkling guards across every call site.
+ */
+export interface LoggingServiceOptions {
+  shouldAccept?: (entry: LogEntry) => boolean;
+  /**
+   * Fired once per error-level entry that survives `shouldAccept` and is
+   * successfully persisted. Used by main.ts to broadcast a renderer toast
+   * so the user can correlate the error with whatever they were just doing.
+   *
+   * Handler exceptions are swallowed — a misbehaving observer must never
+   * break the write path.
+   */
+  onError?: (entry: LogEntry) => void;
+}
+
 export interface LoggingService {
   writeBatch(entries: LogEntry[]): void;
   query(filters: LogQueryFilters): LogQueryResult;
@@ -99,11 +120,19 @@ function parseOlderThan(input: string): string | null {
 // Factory
 // ---------------------------------------------------------------------------
 
-export function createLoggingService(db: Database): LoggingService {
+export function createLoggingService(
+  db: Database,
+  options: LoggingServiceOptions = {},
+): LoggingService {
   const raw = db.raw;
+  const { shouldAccept, onError } = options;
 
   function writeBatch(entries: LogEntry[]): void {
     if (entries.length === 0) return;
+    if (shouldAccept) {
+      entries = entries.filter(shouldAccept);
+      if (entries.length === 0) return;
+    }
 
     const insert = raw.prepare(
       `INSERT INTO app_logs (timestamp, level, source, category, message, metadata)
@@ -124,6 +153,21 @@ export function createLoggingService(db: Database): LoggingService {
     });
 
     insertMany(entries);
+
+    // Notify observers about error-level entries after the transaction
+    // commits, so handlers see only durable state. A misbehaving handler
+    // must not break logging — each callback is isolated in its own
+    // try/catch.
+    if (onError) {
+      for (const entry of entries) {
+        if (entry.level !== 'error') continue;
+        try {
+          onError(entry);
+        } catch {
+          // intentionally swallowed
+        }
+      }
+    }
   }
 
   /**

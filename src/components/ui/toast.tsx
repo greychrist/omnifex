@@ -5,6 +5,11 @@ import { cn } from "@/lib/utils";
 
 export type ToastType = "success" | "error" | "info";
 
+interface ToastAction {
+  label: string;
+  onClick: () => void;
+}
+
 interface ToastProps {
   /**
    * The message to display
@@ -15,13 +20,20 @@ interface ToastProps {
    */
   type?: ToastType;
   /**
-   * Duration in milliseconds before auto-dismiss
+   * Duration in milliseconds before auto-dismiss. Pass 0 or a negative
+   * value to keep the toast visible until manually dismissed.
    */
   duration?: number;
   /**
    * Callback when the toast is dismissed
    */
   onDismiss?: () => void;
+  /**
+   * Optional action button rendered to the left of the close icon. Tapping
+   * it runs `onClick`; the caller is responsible for dismissing the toast
+   * if the action should also close it.
+   */
+  action?: ToastAction;
   /**
    * Optional className for styling
    */
@@ -44,6 +56,7 @@ export const Toast: React.FC<ToastProps> = ({
   type = "info",
   duration = 3000,
   onDismiss,
+  action,
   className,
 }) => {
   React.useEffect(() => {
@@ -81,10 +94,19 @@ export const Toast: React.FC<ToastProps> = ({
     >
       <span className={colors[type]}>{icons[type]}</span>
       <span className="flex-1 text-sm">{message}</span>
+      {action && (
+        <button
+          onClick={action.onClick}
+          className="text-xs font-medium px-2 py-1 rounded border border-border hover:bg-muted transition-colors whitespace-nowrap"
+        >
+          {action.label}
+        </button>
+      )}
       {onDismiss && (
         <button
           onClick={onDismiss}
           className="text-muted-foreground hover:text-foreground transition-colors"
+          aria-label="Dismiss"
         >
           <X className="h-4 w-4" />
         </button>

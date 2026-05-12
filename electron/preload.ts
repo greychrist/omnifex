@@ -223,7 +223,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       !channel.startsWith('notification-clicked') &&
       !channel.startsWith('session-git-changed:') &&
       !channel.startsWith('rate-limits:') &&
-      !channel.startsWith('tab-status:')
+      !channel.startsWith('tab-status:') &&
+      channel !== 'log-error'
     ) {
       throw new Error(`Blocked IPC event channel: ${channel}`);
     }

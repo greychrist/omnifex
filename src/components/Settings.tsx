@@ -66,6 +66,15 @@ export const Settings: React.FC<SettingsProps> = ({
     loadClaudeBinaryPath();
   }, []);
 
+  // App.tsx dispatches `log:focus-error-view` when the user clicks the
+  // "View in Log" action on an error toast. Switch the inner tab to the
+  // Log panel; LogTab handles the level-filter side of the same event.
+  useEffect(() => {
+    const handler = () => setActiveTab('log');
+    window.addEventListener('log:focus-error-view', handler);
+    return () => window.removeEventListener('log:focus-error-view', handler);
+  }, []);
+
   const loadClaudeBinaryPath = async () => {
     try {
       const path = await api.getClaudeBinaryPath();

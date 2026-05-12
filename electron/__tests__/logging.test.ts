@@ -15,6 +15,93 @@ describe('logging service', () => {
     db.close();
   });
 
+  describe('shouldAccept predicate', () => {
+    it('drops entries for which shouldAccept returns false', () => {
+      const filtered = createLoggingService(db, {
+        shouldAccept: (e) =>
+          // Drop info-level claude-hooks entries (the noisy ones); keep everything else.
+          !(e.level === 'info' && e.source === 'claude-hooks'),
+      });
+
+      filtered.writeBatch([
+        { timestamp: '2024-01-01T00:00:00Z', level: 'info', source: 'claude-hooks', message: 'noisy' },
+        { timestamp: '2024-01-01T00:00:01Z', level: 'info', source: 'frontend',     message: 'kept' },
+        { timestamp: '2024-01-01T00:00:02Z', level: 'error', source: 'claude-hooks', message: 'still kept' },
+      ]);
+
+      const result = filtered.query({});
+      const messages = result.entries.map((e) => e.message);
+      expect(messages).toContain('kept');
+      expect(messages).toContain('still kept');
+      expect(messages).not.toContain('noisy');
+      expect(result.total).toBe(2);
+    });
+
+    it('treats an empty input gracefully when filter drops everything', () => {
+      const filtered = createLoggingService(db, {
+        shouldAccept: () => false,
+      });
+      filtered.writeBatch([
+        { timestamp: '2024-01-01T00:00:00Z', level: 'info', source: 'frontend', message: 'x' },
+      ]);
+      expect(filtered.query({}).total).toBe(0);
+    });
+
+    it('fires onError for each error-level entry that survives shouldAccept', () => {
+      const seen: string[] = [];
+      const filtered = createLoggingService(db, {
+        // Drop every info entry — proves onError isn't called for dropped rows.
+        shouldAccept: (e) => e.level !== 'info',
+        onError: (e) => seen.push(`${e.source}:${e.message}`),
+      });
+
+      filtered.writeBatch([
+        { timestamp: '2024-01-01T00:00:00Z', level: 'info',  source: 'claude-hooks', message: 'noise (dropped)' },
+        { timestamp: '2024-01-01T00:00:01Z', level: 'error', source: 'claude-sdk',   message: 'bad thing 1' },
+        { timestamp: '2024-01-01T00:00:02Z', level: 'warn',  source: 'frontend',     message: 'mild' },
+        { timestamp: '2024-01-01T00:00:03Z', level: 'error', source: 'claude-hooks', message: 'bad thing 2' },
+      ]);
+
+      // Only the two error rows should have fired onError; warn and the
+      // dropped info row should not.
+      expect(seen).toEqual([
+        'claude-sdk:bad thing 1',
+        'claude-hooks:bad thing 2',
+      ]);
+    });
+
+    it('onError swallows handler exceptions so writes still succeed', () => {
+      const filtered = createLoggingService(db, {
+        onError: () => { throw new Error('handler boom'); },
+      });
+      // No throw — and the row should still be persisted.
+      filtered.writeBatch([
+        { timestamp: '2024-01-01T00:00:00Z', level: 'error', source: 'frontend', message: 'x' },
+      ]);
+      expect(filtered.query({}).total).toBe(1);
+    });
+
+    it('re-evaluates shouldAccept on every writeBatch (live setting reads)', () => {
+      // The predicate closes over an external flag; flipping it between writes
+      // proves the gate is evaluated per-call, not memoised at construction.
+      let allow = false;
+      const filtered = createLoggingService(db, {
+        shouldAccept: () => allow,
+      });
+
+      filtered.writeBatch([
+        { timestamp: '2024-01-01T00:00:00Z', level: 'info', source: 'frontend', message: 'first' },
+      ]);
+      allow = true;
+      filtered.writeBatch([
+        { timestamp: '2024-01-01T00:00:01Z', level: 'info', source: 'frontend', message: 'second' },
+      ]);
+
+      const messages = filtered.query({}).entries.map((e) => e.message);
+      expect(messages).toEqual(['second']);
+    });
+  });
+
   it('writeBatch inserts entries and query returns them all', () => {
     logging.writeBatch([
       { timestamp: '2024-01-01T00:00:00Z', level: 'info', source: 'frontend', message: 'hello' },

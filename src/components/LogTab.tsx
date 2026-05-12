@@ -12,6 +12,8 @@ import { Spinner } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -78,6 +80,40 @@ export const LogTab: React.FC = () => {
   // alone is non-destructive.
   const [olderN, setOlderN] = useState<number>(1);
   const [olderUnit, setOlderUnit] = useState<"h" | "d" | "w" | "m">("d");
+  // Verbose-source toggles. Default off — these two sources fire constantly
+  // and were originally added for debugging. The settings are read by the
+  // main-process LoggingService on every writeBatch, so flipping these
+  // takes effect on the next event without a restart.
+  const [verboseHooks, setVerboseHooks] = useState(false);
+  const [verboseUsageRunner, setVerboseUsageRunner] = useState(false);
+  // Default ON — only flips off if the user has explicitly disabled it.
+  const [toastOnErrors, setToastOnErrors] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      const h = await api.getSetting('log_verbose_claude_hooks');
+      const u = await api.getSetting('log_verbose_usage_runner');
+      const t = await api.getSetting('log_error_toast_enabled');
+      setVerboseHooks(h === 'true');
+      setVerboseUsageRunner(u === 'true');
+      // Default on: only the literal string "false" disables it.
+      setToastOnErrors(t !== 'false');
+    })();
+  }, []);
+
+  // When the user clicks "View in Log" on an error toast, App.tsx fires this
+  // event after focusing the Settings tab. Snap our filters so the error is
+  // immediately visible: level=error, all sources, no search.
+  useEffect(() => {
+    const handler = () => {
+      setLevelFilter('error');
+      setSourceFilter('all');
+      setSearchQuery('');
+      setPage(0);
+    };
+    window.addEventListener('log:focus-error-view', handler);
+    return () => window.removeEventListener('log:focus-error-view', handler);
+  }, []);
 
   // Debounce search
   useEffect(() => {
@@ -229,6 +265,68 @@ export const LogTab: React.FC = () => {
             <RefreshCw className="w-4 h-4" />
           )}
         </Button>
+      </div>
+
+      {/* Verbose-source toggles. These two streams (Claude hook events and
+          the usage CLI runner) emit info entries on nearly every action and
+          were originally turned on for debugging. Off by default; warnings
+          and errors from these sources always flow through regardless. */}
+      <div className="flex items-center flex-wrap gap-x-6 gap-y-2 mb-4 text-xs text-muted-foreground">
+        <span className="font-medium">Verbose info logging:</span>
+        <div className="flex items-center gap-2">
+          <Switch
+            id="verbose-claude-hooks"
+            checked={verboseHooks}
+            onCheckedChange={async (next) => {
+              setVerboseHooks(next);
+              try {
+                await api.saveSetting('log_verbose_claude_hooks', next ? 'true' : 'false');
+              } catch (err) {
+                console.error('Failed to save log_verbose_claude_hooks:', err);
+              }
+            }}
+          />
+          <Label htmlFor="verbose-claude-hooks" className="cursor-pointer">
+            Claude hook events
+          </Label>
+        </div>
+        <div className="flex items-center gap-2">
+          <Switch
+            id="verbose-usage-runner"
+            checked={verboseUsageRunner}
+            onCheckedChange={async (next) => {
+              setVerboseUsageRunner(next);
+              try {
+                await api.saveSetting('log_verbose_usage_runner', next ? 'true' : 'false');
+              } catch (err) {
+                console.error('Failed to save log_verbose_usage_runner:', err);
+              }
+            }}
+          />
+          <Label htmlFor="verbose-usage-runner" className="cursor-pointer">
+            Usage runner
+          </Label>
+        </div>
+        {/* Notification side — independent of the two verbose-info toggles
+            above. Errors always get persisted to the log; this only gates
+            whether a toast also pops in the corner when one is recorded. */}
+        <div className="ml-auto flex items-center gap-2">
+          <Switch
+            id="toast-on-errors"
+            checked={toastOnErrors}
+            onCheckedChange={async (next) => {
+              setToastOnErrors(next);
+              try {
+                await api.saveSetting('log_error_toast_enabled', next ? 'true' : 'false');
+              } catch (err) {
+                console.error('Failed to save log_error_toast_enabled:', err);
+              }
+            }}
+          />
+          <Label htmlFor="toast-on-errors" className="cursor-pointer">
+            Toast on errors
+          </Label>
+        </div>
       </div>
 
       {/* Log table */}
