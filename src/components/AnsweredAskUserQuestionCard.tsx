@@ -273,15 +273,15 @@ export function AnsweredAskUserQuestionCard({
                 key={i}
                 className="grid grid-cols-subgrid col-span-3 items-baseline gap-x-3"
               >
-                {/* Header chip — always emit the cell (empty if absent)
-                    so column-1 alignment is preserved across rows. */}
+                {/* Header label — always emit the cell (empty if absent)
+                    so column-1 alignment is preserved across rows. Coloured
+                    with the kind's accent swatch (purple by default) so the
+                    label pops without needing a background chip. */}
                 <div className="flex items-baseline">
                   {q.header && (
                     <span
-                      className={cn(
-                        'inline-block rounded bg-muted px-1.5 py-0.5',
-                        'text-[10px] uppercase tracking-wide text-muted-foreground font-medium',
-                      )}
+                      className="text-[10px] uppercase tracking-wide font-semibold"
+                      style={{ color: accentSwatch }}
                     >
                       {q.header}
                     </span>
