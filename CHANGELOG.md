@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.26] — 2026-05-12
+
+A new first-order chat-feed card for answered `AskUserQuestion` interactions, plus a per-kind colour picker in Appearance settings. The answered card pulls a resolved Q+A out of the assistant bubble it used to nest inside and renders it as its own response — header label, accent colour, icon, icon chrome, and timestamp footer all driven by the standard `MessageCard` shell so every Appearance edit for `tool.askUserQuestion.answered` takes effect end-to-end. Accent colour gates that customisation: the per-kind palette dropdown is replaced with a free-form HTML5 colour picker plus a hex text field, and the KindEditor's row order now matches the cards' visual hierarchy (hide-in-compact → header + accent → icon → icon chrome).
+
+Installers remain **unsigned**.
+
+### Added
+
+- **Answered-AskUserQuestion card (`tool.askUserQuestion.answered`).** Renders as its own first-order chat-feed message once the user has answered an `AskUserQuestion` prompt — anchored where the assistant bubble would be (~95% width, left-aligned), with one row per question (header label · question text · italic answer). The data round-trips from `tool_use.input.questions` + the matching `tool_result.content`. Companion kind `tool.askUserQuestion.answered.result` marks the otherwise-redundant user-side tool_result message and hides it from scrollback.
+- **Wire-format parser for the SDK's synthesised answer string.** The renderer doesn't see `JSON.stringify(updatedInput)`; the SDK rewrites the tool result into a human-readable sentence (`User has answered your questions: "Q1"="A1", "Q2"="A2, A3" user notes: User selected Other: "<typed>". You can now continue …`). Parser anchors on each question's literal text and recovers per-question annotations by matching Other-text against the answer value. Verified against live session `d6ac42ec-47c0-47ef-8b4b-81fda02fa2f5` and pinned as a regression test.
+- **Free-form accent colour picker per kind.** `KindEditor` now exposes an HTML5 `<input type="color">` plus a hex text field for the `accentColor` slot. `MessageKindConfig.accentColor` widened from `PaletteName` to `string`; `mergeConfig` accepts `#rgb`, `#rrggbb`, or `#rrggbbaa` in addition to the legacy palette-name path. New `isHexColor()` helper. New `src/lib/__tests__/accentStyle.test.ts` covering palette resolution, hex synthesis, alpha derivation, and round-trips.
+- **Enter-to-submit in `AskUserQuestion`'s "Other" input.** Pressing Enter inside the Other text field fires the same handler as the Send button, gated on the same `isComplete` predicate as the button's disabled state. Shift / Cmd / Ctrl / Alt + Enter are no-ops.
+
+### Changed
+
+- **`AnsweredAskUserQuestionCard` uses the shared `MessageCard` shell.** Two earlier passes reassembled the same chrome (Card + icon column + KindHeader + timestamp footer + `pb-9` padding) by hand, which is why a configured `iconSize` / `iconBordered` / `headerLabel` didn't take effect and the card sat shorter than every other one. The card now wraps its body in `<MessageCard kindId message headerFallbackLabel>` and reads zero config directly — accent, icon, header label, icon chrome, and footer all flow from the kind's config.
+- **`KindEditor` row order: hide-in-compact → header label + accent (paired row) → icon → icon chrome.** The previous order put the header label last and the accent in a tall dropdown next to "Hide in compact mode." Pairing header label and accent in a single grid row matches what the user sees first in scrollback.
+- **`AskUserQuestion` chevron now matches `TodoBar` / `SubagentBar` convention.** Expanded → `ChevronDown`, collapsed → `ChevronUp` (was inverted).
+- **Answered card visual polish (small iterations).** Removed the `→` column (three-column grid: header · question · answer), dropped the rounded gray pill behind question headers (uppercase + foreground-coloured label instead), italicised all answers, deduped Other answers so the typed text appears only once as `You typed: "…"`, dropped `font-medium` on the answer cell, and put the answer in an opaque `bg-background` pill so the card's translucent accent doesn't bleed through long-wrapping answers.
+
+### Fixed
+
+- **`AskUserQuestion` answers no longer show "(no answer recorded)".** Initial implementation expected the structured JSON payload as the tool_result content. The wire format is actually the synthesised sentence above; the parser now anchors on each question's text and recovers the answers verbatim.
+- **Empty in-bubble nesting for clean `AskUserQuestion` calls.** The pre-elevation in-bubble renderer was creating card-in-card after the standalone elevation landed. The in-bubble branch + the `'askuserquestion'` entry in `toolsWithWidgets` are gone; mixed-content `AskUserQuestion` calls (assistant text or thinking alongside the tool_use, a rare path) fall through to the generic tool_use display.
+
+### Removed
+
+- **Per-kind palette dropdown.** Replaced by the colour picker described above. The 21-name palette stays in the data model for backwards compatibility and the (rarely used) "retint every kind that shares a name" workflow; existing saved configs that reference palette names still resolve through `config.palette`.
+
 ## [0.4.25] — 2026-05-11
 
 Subagent tracking refactor. The renderer's `subagentStreams` was rebuilt around an event-sourced pipeline (`messagesToEvents` → `applyEvents` with an intrinsic terminal lock → inferred-closure post-pass) to fix a class of bug where a `Bash` dispatched with `run_in_background:true` would stay on the pulsing "running" indicator forever after the work had actually finished. The root cause was structural: the SDK's `query()` async iterator does not yield the `queue-operation` enqueue or `attachment.queued_command` envelopes that the CLI uses to carry the `<task-notification>` XML for background completion — they only ever landed in the on-disk JSONL. A new main-process JSONL tail (`electron/services/sessions/jsonl-tail.ts`) polls the session file at 100ms and forwards qualifying carriers to the renderer on a separate `claude-output-extra:<tabId>` IPC channel, fed into the same reducer. A safety-net `completed_inferred` status (distinct dashed-ring icon) covers the rare case where neither the live carrier nor a structured `task_notification` SystemMessage arrives but the parent has clearly advanced past its `result`. Bundled with a popover stacking fix (the session/context popover now portals to `document.body` so SubagentBar's expanded rows can't punch through it) and an `AskUserQuestion` Enter-to-submit shortcut.
