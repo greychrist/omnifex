@@ -1,7 +1,5 @@
 import { useMemo } from 'react';
 import { cn } from '@/lib/utils';
-import { swatchFor } from '@/lib/accentStyle';
-import { useMessageRenderingConfig } from '@/contexts/MessageRenderingContext';
 import { MessageCard } from '@/components/MessageCard';
 import type { ClaudeStreamMessage } from '@/types/claudeStream';
 
@@ -224,16 +222,11 @@ export function AnsweredAskUserQuestionCard({
   resultContent,
   message,
 }: AnsweredAskUserQuestionCardProps) {
-  const { config } = useMessageRenderingConfig();
-  // The per-question header labels are coloured with the kind's accent
-  // swatch. Everything else card-chrome — outer shell, icon column,
-  // KindHeader, timestamp footer, debug raw-JSON copy — comes from
-  // `MessageCard`, which routes through the same MessageRenderingConfig
-  // helpers (`iconWrapperClassName`, `iconSizeClassName`, etc.) every
-  // other first-order card uses. A user's Settings → Chats edits for
-  // this kind take effect end-to-end with no per-card wiring.
-  const accentSwatch = swatchFor(config, KIND_ID);
-
+  // All card chrome — outer shell, icon column, KindHeader, timestamp
+  // footer, debug raw-JSON copy — comes from `MessageCard`, which
+  // routes through the same MessageRenderingConfig helpers every other
+  // first-order card uses. A user's Settings → Chats edits for this
+  // kind take effect end-to-end with no per-card wiring.
   const questions = useMemo(() => parseQuestions(input), [input]);
   const payload = useMemo(
     () => parseAnswerPayload(resultContent, questions),
@@ -281,15 +274,12 @@ export function AnsweredAskUserQuestionCard({
                 key={i}
                 className="grid grid-cols-subgrid col-span-3 items-baseline gap-x-3"
               >
-                {/* Header label — accent-coloured, no background. Always
-                    emit the cell (empty if absent) so column-1 alignment
-                    is preserved across rows. */}
+                {/* Header label — bright foreground, no background.
+                    Always emit the cell (empty if absent) so column-1
+                    alignment is preserved across rows. */}
                 <div className="flex items-baseline">
                   {q.header && (
-                    <span
-                      className="text-[10px] uppercase tracking-wide font-semibold"
-                      style={{ color: accentSwatch }}
-                    >
+                    <span className="text-[10px] uppercase tracking-wide font-semibold text-foreground">
                       {q.header}
                     </span>
                   )}
