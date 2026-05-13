@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.30] — 2026-05-13
+
+The Log tab gains sortable columns. All five headers (Time, Level, Source, Category, Message) are clickable; the icon next to each header shows current sort state. Sort is server-side because the query is paginated — reordering only the visible 50 rows would be misleading.
+
+Installers remain **unsigned**.
+
+### Added
+
+- **Sortable column headers on the Log tab.** Click any header to sort by that column; click again to flip direction. Time and Level default to descending (newest / most severe first); Source / Category / Message default to ascending (A→Z reads more naturally). Level sorts by **severity** (`error > warn > info > debug`) rather than alphabetically, so the descending direction lands errors at the top instead of `debug`. Category keeps null/empty rows pinned to the bottom regardless of direction. Tie-breakers on the primary sort column fall through to `timestamp DESC, id DESC` so page boundaries stay stable when many rows share the same level or source. Sorting changes reset the view to page 0 so you don't land in the middle of an unfamiliar dataset.
+- **`orderBy` / `orderDir` parameters on `api.logQuery` and the underlying `LoggingService.query()`.** Whitelisted column set: `timestamp | level | source | category | message`. An unrecognised `orderBy` value falls back to the previous default (`timestamp DESC`) — preserves behaviour for any caller that doesn't specify a sort, and closes the SQL-injection surface that an unfiltered `ORDER BY` substitution would open. Exposed as the `LogOrderBy` / `LogOrderDir` types in `src/lib/api.ts`.
+
 ## [0.4.29] — 2026-05-12
 
 Fixes a long-standing display bug in the Recent Projects list and the Usage breakdown: any project whose folder name contains a literal dash (e.g. `pi-tuitive-fe`, `claude-agent-sdk`, `node-pty`) was rendered with its dashes turned into slashes — `~/Repos/work/pi-tuitive-fe` would appear as `~/Repos/work/pi/tuitive/fe` with the name truncated to the last segment. Root cause: Claude Code's per-project session-storage directory encoding replaces `/` with `-`, which is lossy; the naive reverse can't tell the difference. The recovered path now comes from the authoritative `cwd` field that Claude Code stamps onto every JSONL entry.
