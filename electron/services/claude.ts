@@ -264,18 +264,28 @@ function decodeProjectId(projectId: string): string {
 
 /**
  * Recover the true project path by reading the authoritative `cwd` from
- * the first JSONL entry that carries one. Falls back to the naive decode
- * when no JSONL exists, no entry has `cwd`, or the files are unreadable.
+ * the most recently written JSONL entry that carries one. Falls back to
+ * the naive decode when no JSONL exists, no entry has `cwd`, or the
+ * files are unreadable.
  *
  * The authoritative source: Claude Code writes `cwd` onto user / assistant
  * / tool-use entries in the session JSONL. Any of them is fine — the
  * field reflects where the session was rooted at the time the entry was
  * written, which is what the project dir represents.
  *
- * Cost: one short `readFileSync` of the first JSONL plus a per-line
- * JSON.parse until `cwd` is found. We scan at most ~50 lines per
- * project; for the typical Recent-Projects list of ~20 entries this
- * adds well under 50ms of cold-cache IO.
+ * Why mtime-desc, not alphabetical: when a project folder is renamed
+ * (e.g. greychrist → omnifex), Claude continues writing to the SAME
+ * encoded project-id dir but with the new cwd. Older JSONLs in that dir
+ * still carry the pre-rename cwd. JSONL filenames are random UUIDs, so
+ * alphabetical order is effectively random and may surface a stale cwd
+ * indefinitely after a rename. Newest mtime always wins, so a single new
+ * session under the new name is enough to flip the displayed path.
+ *
+ * Cost: stat each JSONL (cheap — already directory-cached), then one
+ * short `readFileSync` of the newest JSONL plus a per-line JSON.parse
+ * until `cwd` is found. We scan at most ~50 lines per project; for the
+ * typical Recent-Projects list of ~20 entries this stays well under
+ * 50ms of cold-cache IO.
  */
 function recoverProjectPath(projectDir: string, projectId: string): string {
   const fallback = decodeProjectId(projectId);
@@ -287,12 +297,21 @@ function recoverProjectPath(projectDir: string, projectId: string): string {
     return fallback;
   }
 
-  const jsonlFiles = entries
-    .filter((e) => e.isFile() && e.name.endsWith('.jsonl'))
-    .map((e) => e.name)
-    .sort(); // Stable order — pick the first by name; any one with cwd is fine.
+  const jsonlFiles: { name: string; mtimeMs: number }[] = [];
+  for (const e of entries) {
+    if (!e.isFile() || !e.name.endsWith('.jsonl')) continue;
+    let mtimeMs = 0;
+    try {
+      mtimeMs = fs.statSync(path.join(projectDir, e.name)).mtimeMs;
+    } catch {
+      // Stat failure → treat as oldest so a readable file still wins.
+    }
+    jsonlFiles.push({ name: e.name, mtimeMs });
+  }
+  // Newest first — see the rename rationale above.
+  jsonlFiles.sort((a, b) => b.mtimeMs - a.mtimeMs);
 
-  for (const name of jsonlFiles) {
+  for (const { name } of jsonlFiles) {
     let content: string;
     try {
       content = fs.readFileSync(path.join(projectDir, name), 'utf8');

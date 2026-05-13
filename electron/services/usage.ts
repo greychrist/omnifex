@@ -276,16 +276,33 @@ function scanConfigDir(
       continue;
     }
 
+    // Order JSONLs newest first so the most recent `cwd` wins when
+    // recovering the project path. Critical for renamed projects:
+    // Claude keeps writing to the same encoded project-id dir under
+    // the new cwd, but the old JSONLs still carry the pre-rename one.
+    // Without mtime ordering, a stale name can stick around indefinitely
+    // since session filenames are random UUIDs.
+    const orderedJsonl: { name: string; mtimeMs: number }[] = [];
+    for (const sessionEntry of sessionFiles) {
+      if (!sessionEntry.isFile() || !sessionEntry.name.endsWith('.jsonl')) continue;
+      let mtimeMs = 0;
+      try {
+        mtimeMs = fs.statSync(path.join(projectDir, sessionEntry.name)).mtimeMs;
+      } catch {
+        // Stat failure → treat as oldest so a readable file still wins.
+      }
+      orderedJsonl.push({ name: sessionEntry.name, mtimeMs });
+    }
+    orderedJsonl.sort((a, b) => b.mtimeMs - a.mtimeMs);
+
     // Recover the true project path by sampling `cwd` from each JSONL we
     // read until one yields it. Stays null until then so we know to use
     // the naive fallback if every file is empty / cwd-less / corrupt.
     let recoveredProjectPath: string | null = null;
 
-    for (const sessionEntry of sessionFiles) {
-      if (!sessionEntry.isFile() || !sessionEntry.name.endsWith('.jsonl')) continue;
-
-      const sessionFile = path.join(projectDir, sessionEntry.name);
-      const sessionId = path.basename(sessionEntry.name, '.jsonl');
+    for (const { name: sessionEntryName } of orderedJsonl) {
+      const sessionFile = path.join(projectDir, sessionEntryName);
+      const sessionId = path.basename(sessionEntryName, '.jsonl');
       const messages = readJsonlFile(sessionFile, logging);
 
       if (recoveredProjectPath === null) {

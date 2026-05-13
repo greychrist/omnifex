@@ -386,6 +386,45 @@ describe('usage service', () => {
       expect(stats.by_project.length).toBe(1);
       expect(stats.by_project[0].project_path).toBe('/Users/greg/Repos/work/pi-tuitive-fe');
     });
+
+    // Regression: when a project folder is renamed, older JSONLs in the same
+    // encoded project-id dir still carry the pre-rename cwd. The recovered
+    // path must reflect the CURRENT name — i.e. the newest JSONL's cwd wins,
+    // not whichever file happens to sort first by name.
+    it('prefers the newest JSONL cwd so a renamed project shows under its current path', () => {
+      const configDir = makeTmp();
+      const projectId = '-Users-greg-Repos-personal-omnifex';
+      const oldPath = '/Users/greg/Repos/personal/greychrist';
+      const newPath = '/Users/greg/Repos/personal/omnifex';
+
+      const projectDir = path.join(configDir, 'projects', projectId);
+      fs.mkdirSync(projectDir, { recursive: true });
+
+      // Older session (alphabetically first) carries the stale pre-rename cwd.
+      const olderFile = path.join(projectDir, '00000000-old.jsonl');
+      writeJsonl(olderFile, [
+        { ...assistantMessage({ input: 10, output: 5 }), cwd: oldPath },
+      ]);
+      const olderTime = new Date('2026-01-01T00:00:00Z');
+      fs.utimesSync(olderFile, olderTime, olderTime);
+
+      // Newer session (alphabetically last) carries the post-rename cwd.
+      const newerFile = path.join(projectDir, 'ffffffff-new.jsonl');
+      writeJsonl(newerFile, [
+        { ...assistantMessage({ input: 20, output: 10 }), cwd: newPath },
+      ]);
+      const newerTime = new Date('2026-05-01T00:00:00Z');
+      fs.utimesSync(newerFile, newerTime, newerTime);
+
+      const accounts = makeAccountsService([configDir]);
+      const service = createUsageService(accounts);
+      const stats = service.getUsageStats();
+
+      // All entries from this project (regardless of which JSONL they came from)
+      // collapse to the current cwd. No leakage of the stale name.
+      expect(stats.by_project.length).toBe(1);
+      expect(stats.by_project[0].project_path).toBe(newPath);
+    });
   });
 
   // -------------------------------------------------------------------------

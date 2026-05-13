@@ -104,6 +104,47 @@ describe('claude service', () => {
       expect(found!.path).toBe(realPath);
     });
 
+    // Regression: when a project folder is renamed (e.g. greychrist → omnifex),
+    // Claude continues writing to the SAME encoded project-id dir but with the
+    // new cwd. Older JSONLs in that dir still carry the pre-rename cwd. The
+    // recovered path must reflect the CURRENT name — i.e. the newest JSONL's
+    // cwd wins, not whichever file happens to sort alphabetically first by
+    // its random UUID. Without this, a renamed project shows in the UI under
+    // its old path and silently collides with any sibling using the old name.
+    it('prefers the newest JSONL cwd so a folder rename is reflected immediately', async () => {
+      const configDir = path.join(tmpDir, '.claude-rename');
+      const projectId = '-Users-greg-Repos-personal-omnifex';
+      const oldPath = '/Users/greg/Repos/personal/greychrist';
+      const newPath = '/Users/greg/Repos/personal/omnifex';
+      const projectDir = path.join(configDir, 'projects', projectId);
+      fs.mkdirSync(projectDir, { recursive: true });
+
+      // The OLDER session (alphabetically first by UUID) carries the stale cwd.
+      const olderFile = path.join(projectDir, '00000000-old-session.jsonl');
+      fs.writeFileSync(
+        olderFile,
+        JSON.stringify({ type: 'user', cwd: oldPath, message: { role: 'user', content: 'old' } }) + '\n',
+      );
+      const olderTime = new Date('2026-01-01T00:00:00Z');
+      fs.utimesSync(olderFile, olderTime, olderTime);
+
+      // The NEWER session (alphabetically last) carries the post-rename cwd.
+      const newerFile = path.join(projectDir, 'ffffffff-new-session.jsonl');
+      fs.writeFileSync(
+        newerFile,
+        JSON.stringify({ type: 'user', cwd: newPath, message: { role: 'user', content: 'new' } }) + '\n',
+      );
+      const newerTime = new Date('2026-05-01T00:00:00Z');
+      fs.utimesSync(newerFile, newerTime, newerTime);
+
+      accounts.createAccount('Test', configDir, 'pro');
+
+      const projects = await service.listProjects();
+      const found = projects.find((p) => p.id === projectId);
+      expect(found).toBeDefined();
+      expect(found!.path).toBe(newPath);
+    });
+
     it('falls back to naive decode when no JSONL exists in the project dir', async () => {
       const configDir = path.join(tmpDir, '.claude-empty');
       const projectId = '-Users-greg-myproject';
