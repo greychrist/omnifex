@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.31] — 2026-05-13
+
+Follow-up to the dashed-path fix in 0.4.29. Recovering the project path from the alphabetically-first JSONL was order-independent of when each session was written, which made the recovered path arbitrary after a folder rename: Claude keeps writing to the same encoded project-id directory with the new `cwd`, but older JSONLs in that directory still carry the pre-rename `cwd`. With random-UUID filenames, alphabetical order is effectively random, so a renamed project could keep displaying its old name indefinitely — in practice the omnifex project itself was being shown as `~/Repos/personal/greychrist`, colliding with the legacy greychrist project dir from before the repo rename.
+
+Installers remain **unsigned**.
+
+### Fixed
+
+- **Renames flip the displayed project path immediately.** `recoverProjectPath()` in `electron/services/claude.ts` now sorts JSONLs by mtime (newest first) before sampling `cwd`, so a single new session under the renamed folder is enough to update the path in the Recent Projects list and project routing. The naive `/`→`-` fallback for empty / cwd-less / corrupt project dirs is unchanged.
+- **Usage `by_project` breakdown collapses to the current path after a rename.** The same mtime-desc ordering is applied to the session scan in `electron/services/usage.ts` so token totals from pre- and post-rename sessions aggregate under one canonical path with no stale-name leakage.
+
 ## [0.4.30] — 2026-05-13
 
 The Log tab gains sortable columns. All five headers (Time, Level, Source, Category, Message) are clickable; the icon next to each header shows current sort state. Sort is server-side because the query is paginated — reordering only the visible 50 rows would be misleading.
