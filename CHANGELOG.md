@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.29] — 2026-05-12
+
+Fixes a long-standing display bug in the Recent Projects list and the Usage breakdown: any project whose folder name contains a literal dash (e.g. `pi-tuitive-fe`, `claude-agent-sdk`, `node-pty`) was rendered with its dashes turned into slashes — `~/Repos/work/pi-tuitive-fe` would appear as `~/Repos/work/pi/tuitive/fe` with the name truncated to the last segment. Root cause: Claude Code's per-project session-storage directory encoding replaces `/` with `-`, which is lossy; the naive reverse can't tell the difference. The recovered path now comes from the authoritative `cwd` field that Claude Code stamps onto every JSONL entry.
+
+Installers remain **unsigned**.
+
+### Fixed
+
+- **Recent Projects list and project routing recover the true path for any project with literal dashes in the name.** `electron/services/claude.ts` gains a `recoverProjectPath(projectDir, projectId)` helper that scans up to the first 50 lines of the alphabetically-first JSONL inside the project directory, returns the first valid `cwd`, and falls back to the existing naive `-`-to-`/` decode only when no JSONL is present, when none of the sampled entries carries `cwd`, or when the file is unreadable / corrupt. Wired into both `listProjects()` and `getProjectSessions()`. The displayed project name (driven by `path.basename(path)` on the renderer side) is now correct for every dashed folder, and account resolution against path rules is also more accurate as a side effect.
+- **Usage `by_project` breakdown uses the recovered path.** `electron/services/usage.ts`'s `scanConfigDir` now samples `cwd` opportunistically from the JSONL entries it's already reading for token counts — no additional IO — and falls back to the naive decode when no entry carries `cwd`. `RawMessage` picks up an optional `cwd?: string` field for self-documentation.
+
 ## [0.4.28] — 2026-05-12
 
 A noise pass on the error-toast pipeline added in 0.4.27. Two specific cases were treating routine chat events as app-level errors: closing a tab mid-session fired a toast for every tab (the Claude Code CLI's own teardown hook throws "Stream closed" on its way out, which our stderr classifier was catching as an error), and every shell command that exited non-zero from inside the agent — `grep` with no match, `git pull` blocked by an untracked file, `pgrep` with no result — wrote an error row even though Claude already explained the failure in the chat. The Log tab is now reserved for events the chat doesn't already show; tool-call mirroring and notification mirroring were dropped wholesale. Also rolls the Claude Agent SDK forward to track upstream.
