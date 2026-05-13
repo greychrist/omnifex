@@ -514,6 +514,10 @@ export interface LogEntry {
   metadata?: string;
 }
 
+/** Columns the Log tab can sort on. Mirrors LogOrderBy in electron/services/logging.ts. */
+export type LogOrderBy = 'timestamp' | 'level' | 'source' | 'category' | 'message';
+export type LogOrderDir = 'asc' | 'desc';
+
 export interface LogQueryFilters {
   /** Any of these log levels (OR-joined). Omit to match all levels. */
   levels?: string[];
@@ -527,6 +531,14 @@ export interface LogQueryFilters {
   until?: string;
   limit: number;
   offset: number;
+  /**
+   * Column to sort by. Defaults to `timestamp` server-side. `level`
+   * sorts by severity (error > warn > info > debug); other columns
+   * sort alphabetically.
+   */
+  orderBy?: LogOrderBy;
+  /** Sort direction. Defaults to `desc` server-side. */
+  orderDir?: LogOrderDir;
 }
 
 /** Filters accepted by logCount(). Same shape as LogQueryFilters but limit/offset are meaningless. */
@@ -1130,6 +1142,8 @@ export const api = {
       until: filters.until,
       limit: filters.limit,
       offset: filters.offset,
+      orderBy: filters.orderBy,
+      orderDir: filters.orderDir,
     });
   },
 

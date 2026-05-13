@@ -286,6 +286,96 @@ describe('logging service', () => {
   });
 
   // ---------------------------------------------------------------------------
+  // orderBy / orderDir
+  // ---------------------------------------------------------------------------
+
+  describe('query() ordering', () => {
+    // Build a small fixture spread across the columns we want sortable.
+    function seed() {
+      logging.writeBatch([
+        { timestamp: '2024-01-01T00:00:01Z', level: 'info',  source: 'frontend',    category: 'b-mid',  message: 'm-2' },
+        { timestamp: '2024-01-01T00:00:00Z', level: 'error', source: 'claude-sdk',  category: 'a-low',  message: 'm-1' },
+        { timestamp: '2024-01-01T00:00:03Z', level: 'warn',  source: 'usage-runner', category: 'c-high', message: 'm-4' },
+        { timestamp: '2024-01-01T00:00:02Z', level: 'debug', source: 'backend',     category: undefined, message: 'm-3' },
+      ]);
+    }
+
+    it('defaults to timestamp DESC when orderBy is omitted', () => {
+      seed();
+      const result = logging.query({});
+      expect(result.entries.map((e) => e.message)).toEqual(['m-4', 'm-3', 'm-2', 'm-1']);
+    });
+
+    it('orderBy=timestamp + orderDir=asc returns oldest first', () => {
+      seed();
+      const result = logging.query({ orderBy: 'timestamp', orderDir: 'asc' });
+      expect(result.entries.map((e) => e.message)).toEqual(['m-1', 'm-2', 'm-3', 'm-4']);
+    });
+
+    it('orderBy=level uses severity (error > warn > info > debug) — desc lands errors at the top', () => {
+      // Alphabetical sort on the literal level strings would put `debug`
+      // first and `warn` last, which is the opposite of what a user wants
+      // when triaging. Severity ordering matches reading intent.
+      seed();
+      const result = logging.query({ orderBy: 'level', orderDir: 'desc' });
+      expect(result.entries.map((e) => e.level)).toEqual(['error', 'warn', 'info', 'debug']);
+    });
+
+    it('orderBy=level + orderDir=asc lists debug first', () => {
+      seed();
+      const result = logging.query({ orderBy: 'level', orderDir: 'asc' });
+      expect(result.entries.map((e) => e.level)).toEqual(['debug', 'info', 'warn', 'error']);
+    });
+
+    it('orderBy=source sorts alphabetically (asc)', () => {
+      seed();
+      const result = logging.query({ orderBy: 'source', orderDir: 'asc' });
+      expect(result.entries.map((e) => e.source)).toEqual([
+        'backend',
+        'claude-sdk',
+        'frontend',
+        'usage-runner',
+      ]);
+    });
+
+    it('orderBy=category sorts alphabetically and pushes NULL/empty to a stable end', () => {
+      seed();
+      const asc = logging.query({ orderBy: 'category', orderDir: 'asc' });
+      // 'a-low', 'b-mid', 'c-high' sort alpha; the null/undefined row groups
+      // with the empty bucket. Either end is acceptable as long as the
+      // bucket is stable — we choose empty-last in asc.
+      const cats = asc.entries.map((e) => e.category ?? '');
+      expect(cats[0]).toBe('a-low');
+      expect(cats[1]).toBe('b-mid');
+      expect(cats[2]).toBe('c-high');
+      expect(cats[3]).toBe('');
+    });
+
+    it('orderBy=message sorts alphabetically (asc)', () => {
+      seed();
+      const result = logging.query({ orderBy: 'message', orderDir: 'asc' });
+      expect(result.entries.map((e) => e.message)).toEqual(['m-1', 'm-2', 'm-3', 'm-4']);
+    });
+
+    it('falls back to timestamp DESC when orderBy is an unknown column (no SQL injection surface)', () => {
+      seed();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const result = logging.query({ orderBy: 'DROP TABLE app_logs;' as any, orderDir: 'desc' });
+      expect(result.entries.map((e) => e.message)).toEqual(['m-4', 'm-3', 'm-2', 'm-1']);
+    });
+
+    it('ties on the sort column break by timestamp DESC (newest first) so order stays stable', () => {
+      logging.writeBatch([
+        { timestamp: '2024-01-01T00:00:00Z', level: 'info', source: 'frontend', message: 'first-info'  },
+        { timestamp: '2024-01-01T00:00:01Z', level: 'info', source: 'frontend', message: 'middle-info' },
+        { timestamp: '2024-01-01T00:00:02Z', level: 'info', source: 'frontend', message: 'last-info'   },
+      ]);
+      const result = logging.query({ orderBy: 'level', orderDir: 'desc' });
+      expect(result.entries.map((e) => e.message)).toEqual(['last-info', 'middle-info', 'first-info']);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
   // count()
   // ---------------------------------------------------------------------------
 

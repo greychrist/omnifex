@@ -16,6 +16,18 @@ export interface LogEntry {
   metadata?: string;
 }
 
+/**
+ * Columns the renderer can sort on. Kept narrow on purpose — anything
+ * passed for `orderBy` that isn't in this union is rejected by the
+ * service and the query falls back to the default (timestamp DESC).
+ * That serves two purposes: (1) preserves the previous behavior for
+ * callers that don't specify a sort, and (2) closes the SQL-injection
+ * surface that an unfiltered string-substitution into ORDER BY would
+ * open.
+ */
+export type LogOrderBy = 'timestamp' | 'level' | 'source' | 'category' | 'message';
+export type LogOrderDir = 'asc' | 'desc';
+
 export interface LogQueryFilters {
   levels?: string[];
   sources?: string[];
@@ -24,6 +36,17 @@ export interface LogQueryFilters {
   until?: string;
   limit?: number;
   offset?: number;
+  /**
+   * Column to sort by. Default: `timestamp`.
+   *
+   * `level` sorts by severity (error > warn > info > debug), not
+   * alphabetically — alphabetical level ordering would put `debug` first
+   * and `warn` last, which is the opposite of what a user triaging the
+   * Log tab wants.
+   */
+  orderBy?: LogOrderBy;
+  /** Sort direction. Default: `desc`. */
+  orderDir?: LogOrderDir;
 }
 
 export interface LogQueryResult {
@@ -216,6 +239,46 @@ export function createLoggingService(
     return { whereClause, params };
   }
 
+  // SQL fragments per sortable column. Whitelisting columns this way is
+  // the only safe path: we never substitute a caller-supplied string into
+  // ORDER BY directly. Each builder returns a complete clause for both
+  // direction values.
+  //
+  // - `level` uses a CASE expression so DESC lands errors at the top
+  //   (alphabetical level ordering would put `debug` first and `warn`
+  //   last — the opposite of what a user triaging the log wants).
+  // - `category` keeps NULL/empty rows pinned to the bottom regardless
+  //   of direction: an extra ASC-ordered "is empty" tag column puts real
+  //   categories first; the user-chosen direction then orders within
+  //   the non-empty bucket.
+  const ORDER_BY_SQL: Record<LogOrderBy, (dir: 'ASC' | 'DESC') => string> = {
+    timestamp: (dir) => `timestamp ${dir}`,
+    level: (dir) =>
+      `(CASE level
+          WHEN 'error' THEN 4
+          WHEN 'warn'  THEN 3
+          WHEN 'info'  THEN 2
+          WHEN 'debug' THEN 1
+          ELSE 0
+        END) ${dir}`,
+    source: (dir) => `source ${dir}`,
+    category: (dir) =>
+      `(CASE WHEN category IS NULL OR category = '' THEN 1 ELSE 0 END) ASC, category ${dir}`,
+    message: (dir) => `message ${dir}`,
+  };
+
+  function resolveOrderClause(filters: LogQueryFilters): string {
+    const requested = filters.orderBy;
+    const builder = requested && Object.prototype.hasOwnProperty.call(ORDER_BY_SQL, requested)
+      ? ORDER_BY_SQL[requested]
+      : ORDER_BY_SQL.timestamp;
+    const dir = filters.orderDir === 'asc' ? 'ASC' : 'DESC';
+    // Tie-breakers: newest first, then id DESC. Keeps page boundaries
+    // stable when many rows share the same value on the primary sort
+    // column (very common for `level` / `source`).
+    return `${builder(dir)}, timestamp DESC, id DESC`;
+  }
+
   function query(filters: LogQueryFilters): LogQueryResult {
     const { whereClause, params } = buildWhere(filters);
 
@@ -227,13 +290,14 @@ export function createLoggingService(
 
     const limit = filters.limit ?? 100;
     const offset = filters.offset ?? 0;
+    const orderClause = resolveOrderClause(filters);
 
     const entries = raw
       .prepare(
         `SELECT id, timestamp, level, source, category, message, metadata
          FROM app_logs
          ${whereClause}
-         ORDER BY timestamp DESC
+         ORDER BY ${orderClause}
          LIMIT ? OFFSET ?`
       )
       .all(...(params as []), limit, offset) as (LogEntry & { id: number })[];

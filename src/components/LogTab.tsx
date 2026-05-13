@@ -7,6 +7,9 @@ import {
   Trash2,
   AlertTriangle,
   ScrollText,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown,
 } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
@@ -29,7 +32,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { api, type LogEntry, type LogQueryResult } from "@/lib/api";
+import { api, type LogEntry, type LogQueryResult, type LogOrderBy, type LogOrderDir } from "@/lib/api";
 import {
   LOG_LEVELS,
   LOG_SOURCES,
@@ -88,6 +91,11 @@ export const LogTab: React.FC = () => {
   const [verboseUsageRunner, setVerboseUsageRunner] = useState(false);
   // Default ON — only flips off if the user has explicitly disabled it.
   const [toastOnErrors, setToastOnErrors] = useState(true);
+  // Sort state. Server-side sort (the query is paginated, so reordering
+  // only the current page would be misleading). Default matches the
+  // backend's pre-sort behavior: newest first by timestamp.
+  const [sortBy, setSortBy] = useState<LogOrderBy>("timestamp");
+  const [sortDir, setSortDir] = useState<LogOrderDir>("desc");
 
   useEffect(() => {
     (async () => {
@@ -130,6 +138,8 @@ export const LogTab: React.FC = () => {
         search: debouncedSearch || undefined,
         limit: PAGE_SIZE,
         offset: page * PAGE_SIZE,
+        orderBy: sortBy,
+        orderDir: sortDir,
       });
       setEntries(result.entries);
       setTotal(result.total);
@@ -138,16 +148,39 @@ export const LogTab: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [levelFilter, sourceFilter, debouncedSearch, page]);
+  }, [levelFilter, sourceFilter, debouncedSearch, page, sortBy, sortDir]);
 
   useEffect(() => {
     fetchLogs();
   }, [fetchLogs]);
 
-  // Reset to page 0 when filters change
+  // Reset to page 0 when filters or sort change — otherwise the user
+  // re-sorts and lands deep in the middle of an unfamiliar dataset.
   useEffect(() => {
     setPage(0);
-  }, [levelFilter, sourceFilter, debouncedSearch]);
+  }, [levelFilter, sourceFilter, debouncedSearch, sortBy, sortDir]);
+
+  // Click a column header to sort by it. Same column → flip direction;
+  // new column → pick a useful default (descending for timestamp and
+  // level — newest / most severe first; ascending for alphabetical
+  // columns where A-Z reads more naturally). Mirrors ProjectList.tsx.
+  const toggleSort = (key: LogOrderBy) => {
+    if (sortBy === key) {
+      setSortDir((prev) => (prev === "asc" ? "desc" : "asc"));
+    } else {
+      setSortBy(key);
+      setSortDir(key === "timestamp" || key === "level" ? "desc" : "asc");
+    }
+  };
+
+  const SortIcon: React.FC<{ k: LogOrderBy }> = ({ k }) => {
+    if (sortBy !== k) {
+      return <ArrowUpDown className="inline h-3 w-3 ml-1 opacity-30" />;
+    }
+    return sortDir === "asc"
+      ? <ArrowUp className="inline h-3 w-3 ml-1 opacity-80" />
+      : <ArrowDown className="inline h-3 w-3 ml-1 opacity-80" />;
+  };
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
 
@@ -340,11 +373,37 @@ export const LogTab: React.FC = () => {
             <table className="w-full text-sm">
               <thead className="bg-muted sticky top-0">
                 <tr>
-                  <th className="text-left px-3 py-2 font-medium w-40">Time</th>
-                  <th className="text-left px-3 py-2 font-medium w-16">Level</th>
-                  <th className="text-left px-3 py-2 font-medium w-20">Source</th>
-                  <th className="text-left px-3 py-2 font-medium w-24">Category</th>
-                  <th className="text-left px-3 py-2 font-medium">Message</th>
+                  <th
+                    className="text-left px-3 py-2 font-medium w-40 cursor-pointer hover:text-foreground select-none"
+                    onClick={() => toggleSort("timestamp")}
+                  >
+                    Time<SortIcon k="timestamp" />
+                  </th>
+                  <th
+                    className="text-left px-3 py-2 font-medium w-16 cursor-pointer hover:text-foreground select-none"
+                    onClick={() => toggleSort("level")}
+                    title="Sorted by severity (error > warn > info > debug), not alphabetically."
+                  >
+                    Level<SortIcon k="level" />
+                  </th>
+                  <th
+                    className="text-left px-3 py-2 font-medium w-20 cursor-pointer hover:text-foreground select-none"
+                    onClick={() => toggleSort("source")}
+                  >
+                    Source<SortIcon k="source" />
+                  </th>
+                  <th
+                    className="text-left px-3 py-2 font-medium w-24 cursor-pointer hover:text-foreground select-none"
+                    onClick={() => toggleSort("category")}
+                  >
+                    Category<SortIcon k="category" />
+                  </th>
+                  <th
+                    className="text-left px-3 py-2 font-medium cursor-pointer hover:text-foreground select-none"
+                    onClick={() => toggleSort("message")}
+                  >
+                    Message<SortIcon k="message" />
+                  </th>
                 </tr>
               </thead>
               <tbody>
