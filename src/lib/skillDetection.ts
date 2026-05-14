@@ -16,17 +16,15 @@ export function detectSkillInjection(
 ): SkillInjection | null {
   if (message.type !== 'user') return null;
 
-  const content: unknown = message.message?.content;
-  if (typeof content === 'string') {
-    if (!content.trim()) return null;
-  } else if (Array.isArray(content)) {
-    const hasToolResult = content.some((c: any) => c?.type === 'tool_result');
-    if (hasToolResult) return null;
-    const hasText = content.some((c: any) => c?.type === 'text');
-    if (!hasText) return null;
-  } else {
-    return null;
-  }
+  // Boundary normalization (lib/normalizeMessage) wraps the CLI's bare-string
+  // user prompts into single-text-block arrays at ingress, so by the time
+  // this runs `content` is always an array (or the message has no content).
+  const content = message.message?.content;
+  if (!Array.isArray(content)) return null;
+  const hasToolResult = content.some((c: any) => c?.type === 'tool_result');
+  if (hasToolResult) return null;
+  const hasText = content.some((c: any) => c?.type === 'text');
+  if (!hasText) return null;
 
   const idx = allMessages.indexOf(message);
   if (idx <= 0) return null;

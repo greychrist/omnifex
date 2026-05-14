@@ -257,16 +257,20 @@ describe('buildCompactItems', () => {
     expect(buildCompactItems([], createDefaultConfig())).toEqual([]);
   });
 
-  it('treats CLI-persisted user prompts (string content) as visible', () => {
+  it('treats reloaded user prompts (originally bare strings in JSONL) as visible', () => {
     const cfg = createDefaultConfig();
-    // Reloaded sessions: the CLI writes user prompts as bare strings,
-    // not arrays of text blocks.
-    const stringPrompt = {
+    // Boundary normalization (lib/normalizeMessage) wraps the CLI's
+    // bare-string user prompts into a single-text-block array at ingress, so
+    // by the time buildCompactItems sees them they're array-shaped. This
+    // test pins the behaviour for "what was originally a CLI bare-string
+    // prompt, now arriving normalized" — the case that previously needed a
+    // dedicated string-content branch in isMessageFullyHidden.
+    const reloadedPrompt = {
       type: 'user',
-      message: { content: 'hello from a reloaded session' },
+      message: { content: [{ type: 'text', text: 'hello from a reloaded session' }] },
     } as unknown as ClaudeStreamMessage;
     const msgs = [
-      stringPrompt,
+      reloadedPrompt,
       toolUseMsg('Read', { file_path: '/a' }),
       toolResultMsg(),
       assistantEndTurn('done'),
@@ -274,7 +278,7 @@ describe('buildCompactItems', () => {
     const items = buildCompactItems(msgs, cfg);
     expect(items.map((i: CompactItem) => i.kind)).toEqual(['single', 'group', 'single']);
     if (items[0].kind === 'single') {
-      expect(items[0].message).toBe(stringPrompt);
+      expect(items[0].message).toBe(reloadedPrompt);
     }
   });
 

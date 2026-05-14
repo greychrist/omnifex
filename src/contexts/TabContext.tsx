@@ -1,6 +1,7 @@
 import React, { createContext, useState, useContext, useCallback, useEffect, useRef } from 'react';
 import { TabPersistenceService } from '@/services/tabPersistence';
 import { SessionPersistenceService } from '@/services/sessionPersistence';
+import { sessionNameRegistry } from '@/services/sessionNameRegistry';
 import { api } from '@/lib/api';
 
 export interface Tab {
@@ -168,6 +169,18 @@ export const TabProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     };
   }, [tabs, activeTabId]);
+
+  // Mirror each chat tab's current title into the persistent session-name
+  // registry so the Log tab can show real session names — including for
+  // tabs that have since been closed (tab state is in-memory; the registry
+  // is the only place a closed tab's title still lives).
+  useEffect(() => {
+    for (const tab of tabs) {
+      if (tab.type !== 'chat') continue;
+      if (!tab.title || tab.title.trim() === '') continue;
+      sessionNameRegistry.set(tab.id, tab.title);
+    }
+  }, [tabs]);
 
   // Save tabs immediately when window is about to close
   useEffect(() => {

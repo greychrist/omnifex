@@ -84,14 +84,13 @@ export function filterDisplayableMessages(
       if (message.isMeta && !isSkillInjected) return false;
 
       const msg = message.message;
-      if (
-        !msg.content ||
-        (Array.isArray(msg.content) && msg.content.length === 0)
-      ) {
+      // Boundary normalization (see lib/normalizeMessage) guarantees
+      // `msg.content` is an array here; treat a non-array as "no content".
+      if (!Array.isArray(msg.content) || msg.content.length === 0) {
         return false;
       }
 
-      if (Array.isArray(msg.content)) {
+      {
         let hasVisibleContent = false;
         for (const content of msg.content) {
           if (content.type === "text") {

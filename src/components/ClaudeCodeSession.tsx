@@ -39,6 +39,7 @@ import { SplitPane } from "@/components/ui/split-pane";
 import { WebviewPreview } from "./WebviewPreview";
 import type { ClaudeStreamMessage } from "@/types/claudeStream";
 import { synthesizeResultMessages } from "@/lib/synthesizeResults";
+import { normalizeMessageContent } from "@/lib/normalizeMessage";
 import { maybeAutoGenerateSummaryOnLeave } from "@/lib/sessionSummaryGate";
 import { SessionModeToggle } from "./SessionModeToggle";
 import { SessionViewToggle, type ViewMode } from "./SessionViewToggle";
@@ -669,7 +670,9 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       // Convert history to messages format. JSONL entries carry their own
       // `timestamp` field per line — map it to `receivedAt` so the card
       // timestamp badge renders for resumed sessions just like for live ones.
-      const loadedMessages: ClaudeStreamMessage[] = history.map(entry => ({
+      // Normalize `message.content` to array form at this boundary so every
+      // downstream consumer sees a single shape — see lib/normalizeMessage.
+      const loadedMessages: ClaudeStreamMessage[] = history.map(entry => normalizeMessageContent({
         ...entry,
         type: entry.type || "assistant",
         receivedAt: entry.receivedAt ?? entry.timestamp,
@@ -713,6 +716,14 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
         message = payload;
         rawPayload = JSON.stringify(payload);
       }
+
+      // Normalize `message.content` to array form at the IPC boundary. The
+      // wire allows both `content: string` and `content: [...blocks]`; folding
+      // them here means downstream consumers (reducer, append, every read
+      // site in StreamMessage) see one shape. See lib/normalizeMessage for
+      // the full rationale. Idempotent on the already-array-form messages
+      // the live SDK emits today, so this is safe to apply unconditionally.
+      message = normalizeMessageContent(message);
 
 
       // stream_event: token-level partial assistant message.
@@ -1019,7 +1030,9 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       )
         .then((history) => {
           if (!history || history.length === 0) return;
-          const loaded: ClaudeStreamMessage[] = history.map((entry: any) => ({
+          // Mirror loadSessionHistory(): normalize content shape at the
+          // boundary so downstream consumers see array-form content only.
+          const loaded: ClaudeStreamMessage[] = history.map((entry: any) => normalizeMessageContent({
             ...entry,
             type: entry.type || 'assistant',
             receivedAt: entry.receivedAt ?? entry.timestamp,

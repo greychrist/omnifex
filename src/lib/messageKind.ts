@@ -191,15 +191,16 @@ export function classifyStandaloneKind(
   // Slash-command echoes / local-command stdout — the CLI wraps these in
   // <command-name>/<local-command-stdout> tags inside a user-role text
   // block, so detection is a content match on the whole message.
+  // Boundary normalization (lib/normalizeMessage) means content is always
+  // an array here.
   if (msg.type === 'user') {
-    const content: unknown = msg.message?.content as unknown;
+    const content = msg.message?.content;
+    if (!Array.isArray(content)) return null;
+
     let text = '';
-    if (typeof content === 'string') text = content;
-    else if (Array.isArray(content)) {
-      for (const block of content) {
-        if (block?.type === 'text' && typeof block.text === 'string') {
-          text += block.text;
-        }
+    for (const block of content) {
+      if (block?.type === 'text' && typeof block.text === 'string') {
+        text += block.text;
       }
     }
     if (text.includes('<command-name>')) return 'user.command';
@@ -214,7 +215,7 @@ export function classifyStandaloneKind(
     // message as system context when *every* text block looks like a
     // system injection; mixed user-typed + appended-reminder messages
     // stay null and are handled by the per-block renderer.
-    if (Array.isArray(content) && content.length > 0) {
+    if (content.length > 0) {
       let sawText = false;
       let allSystemContext = true;
       for (const block of content) {
@@ -231,8 +232,6 @@ export function classifyStandaloneKind(
         }
       }
       if (sawText && allSystemContext) return 'user.systemContext';
-    } else if (typeof content === 'string' && content.length > 0 && isSystemContextText(content)) {
-      return 'user.systemContext';
     }
   }
 

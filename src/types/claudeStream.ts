@@ -159,11 +159,14 @@ export function isResultMessage(
 
 /**
  * Returns the inner content blocks for an assistant or user message, `undefined`
- * for any other variant. Returned as `unknown` so the caller can branch on
- * `typeof content === 'string'` (user messages may carry a string payload from
- * the CLI's initial-prompt format) vs `Array.isArray(content)` without an
- * extra cast. Saves dozens of `if (msg.type === 'assistant' || ...)` narrows
- * across counters / classifiers / filters.
+ * for any other variant. Always an array post boundary-normalization (see
+ * `lib/normalizeMessage` — the CLI's bare-string user prompts get wrapped at
+ * the JSONL / IPC ingress). Returned as `unknown` because the SDK's own
+ * `BetaMessage.content` type doesn't expose `Array.isArray`-narrowable shape
+ * to callers; consumers should guard with `Array.isArray(content)` and treat
+ * non-array as "missing / malformed". Saves dozens of
+ * `if (msg.type === 'assistant' || ...)` narrows across counters / classifiers
+ * / filters.
  */
 export function getMessageContent(msg: ClaudeStreamMessage): unknown {
   if (msg.type === 'assistant') return msg.message.content;

@@ -58,13 +58,12 @@ function lastTextOf(msg: ClaudeStreamMessage): string {
  * the turn. Tool_result-only user messages appear between every tool_use
  * and the next assistant step — they are not turn boundaries.
  *
- * User messages can also have string content (not an array) — those come
- * from the CLI's initial prompt format and are treated as real prompts.
+ * Boundary normalization (lib/normalizeMessage) means content is always
+ * an array here.
  */
 function isUserTurnBoundary(msg: ClaudeStreamMessage): boolean {
   if (msg.type !== 'user') return false;
   const content = getMessageContent(msg);
-  if (typeof content === 'string') return content.length > 0;
   if (!Array.isArray(content)) return false;
   return content.some((c: any) => c?.type === 'text');
 }

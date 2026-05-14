@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Search,
   RefreshCw,
@@ -39,8 +39,47 @@ import {
   LOG_SOURCE_DISPLAY,
   type LogLevel,
 } from "@/lib/logSources";
+import { useTabContext } from "@/contexts/TabContext";
+import { sessionNameRegistry } from "@/services/sessionNameRegistry";
 
 const PAGE_SIZE = 50;
+
+// Column-width persistence — drag handles on each header write into this
+// state and persist immediately so widths survive reloads. Keys match the
+// columns rendered below; the Message column is omitted because it stretches
+// to fill the remaining space.
+type ResizableColKey = "time" | "level" | "source" | "category";
+const DEFAULT_COL_WIDTHS: Record<ResizableColKey, number> = {
+  time: 160,
+  level: 64,
+  source: 80,
+  category: 96,
+};
+const MIN_COL_WIDTH = 40;
+const COL_WIDTHS_STORAGE_KEY = "omnifex_log_column_widths_v1";
+
+function loadStoredColWidths(): Record<ResizableColKey, number> {
+  try {
+    const raw = localStorage.getItem(COL_WIDTHS_STORAGE_KEY);
+    if (!raw) return DEFAULT_COL_WIDTHS;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return DEFAULT_COL_WIDTHS;
+    return {
+      time: clampWidth(parsed.time, DEFAULT_COL_WIDTHS.time),
+      level: clampWidth(parsed.level, DEFAULT_COL_WIDTHS.level),
+      source: clampWidth(parsed.source, DEFAULT_COL_WIDTHS.source),
+      category: clampWidth(parsed.category, DEFAULT_COL_WIDTHS.category),
+    };
+  } catch {
+    return DEFAULT_COL_WIDTHS;
+  }
+}
+
+function clampWidth(n: unknown, fallback: number): number {
+  return typeof n === "number" && Number.isFinite(n) && n >= MIN_COL_WIDTH
+    ? Math.round(n)
+    : fallback;
+}
 
 const LEVEL_LABEL: Record<LogLevel, string> = {
   error: "Error",
@@ -96,6 +135,52 @@ export const LogTab: React.FC = () => {
   // backend's pre-sort behavior: newest first by timestamp.
   const [sortBy, setSortBy] = useState<LogOrderBy>("timestamp");
   const [sortDir, setSortDir] = useState<LogOrderDir>("desc");
+
+  // Column widths (resizable via drag handles on each header). Persisted
+  // to localStorage immediately on drop so the layout survives reloads.
+  const [colWidths, setColWidths] = useState<Record<ResizableColKey, number>>(
+    () => loadStoredColWidths(),
+  );
+
+  // Resolve `session:<tabId>` categories to the tab's human-readable title.
+  // We combine two sources:
+  //   • live tabs (TabContext) — the freshest title, including any rename
+  //     the user has just typed
+  //   • sessionNameRegistry — localStorage map populated by TabContext on
+  //     every tab change, used as the fallback for tabs that were closed
+  //     after the log entry was written
+  // Log entries persist long after tabs close, so without the registry the
+  // Category column on history rows would still show the bare tab id.
+  const { tabs } = useTabContext();
+  const tabTitleMap = useMemo(() => {
+    const registrySnapshot = sessionNameRegistry.snapshot();
+    const m = new Map<string, string>(Object.entries(registrySnapshot));
+    for (const tab of tabs) {
+      if (tab.type === "chat" && tab.title && tab.title.trim() !== "") {
+        m.set(tab.id, tab.title);
+      }
+    }
+    return m;
+  }, [tabs]);
+
+  // Convert a log row's `category` to the label rendered in the Category
+  // column. Categories produced by the sessions service look like
+  // `session:<tabId>`; everything else (e.g. "permission") is shown as-is.
+  const displayCategory = useCallback(
+    (raw: string | null | undefined): { label: string; tooltip: string } => {
+      if (!raw) return { label: "-", tooltip: "" };
+      const m = raw.match(/^session:(.+)$/);
+      if (!m) return { label: raw, tooltip: raw };
+      const tabId = m[1];
+      const title = tabTitleMap.get(tabId);
+      if (title) return { label: title, tooltip: `${title}\n${raw}` };
+      // Closed tab with no registry entry — show a short suffix of the id so
+      // rows from the same tab still group visually, but stay compact.
+      const short = tabId.length > 14 ? `…${tabId.slice(-12)}` : tabId;
+      return { label: `session ${short}`, tooltip: raw };
+    },
+    [tabTitleMap],
+  );
 
   useEffect(() => {
     (async () => {
@@ -172,6 +257,60 @@ export const LogTab: React.FC = () => {
       setSortDir(key === "timestamp" || key === "level" ? "desc" : "asc");
     }
   };
+
+  // Drag handler shared by every resizable header: captures the pointer,
+  // tracks deltaX, updates colWidths live, and persists the final value to
+  // localStorage on release. We attach mousemove/mouseup at the window level
+  // so the drag survives moving outside the (narrow) handle hit area.
+  const startResize = useCallback(
+    (key: ResizableColKey, startX: number, startWidth: number) => {
+      const onMove = (ev: MouseEvent) => {
+        const dx = ev.clientX - startX;
+        const next = Math.max(MIN_COL_WIDTH, Math.round(startWidth + dx));
+        setColWidths((prev) => (prev[key] === next ? prev : { ...prev, [key]: next }));
+      };
+      const onUp = () => {
+        window.removeEventListener("mousemove", onMove);
+        window.removeEventListener("mouseup", onUp);
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+        // Persist after the drop. Using a microtask-safe read of the latest
+        // state via the functional updater avoids stale captures.
+        setColWidths((latest) => {
+          try {
+            localStorage.setItem(COL_WIDTHS_STORAGE_KEY, JSON.stringify(latest));
+          } catch {
+            // localStorage quota — column widths will revert on reload, which
+            // is harmless; no need to surface a UI error.
+          }
+          return latest;
+        });
+      };
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+      window.addEventListener("mousemove", onMove);
+      window.addEventListener("mouseup", onUp);
+    },
+    [],
+  );
+
+  // Render the drag handle on the right edge of a resizable header. The
+  // header itself remains clickable for sorting; we stop propagation from
+  // the handle's own mousedown so dragging never accidentally toggles sort.
+  const ResizeHandle: React.FC<{ colKey: ResizableColKey }> = ({ colKey }) => (
+    <span
+      role="separator"
+      aria-orientation="vertical"
+      aria-label={`Resize ${colKey} column`}
+      onMouseDown={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        startResize(colKey, e.clientX, colWidths[colKey]);
+      }}
+      onClick={(e) => e.stopPropagation()}
+      className="absolute top-0 right-0 h-full w-1.5 cursor-col-resize select-none hover:bg-foreground/20 active:bg-foreground/30"
+    />
+  );
 
   const SortIcon: React.FC<{ k: LogOrderBy }> = ({ k }) => {
     if (sortBy !== k) {
@@ -370,33 +509,44 @@ export const LogTab: React.FC = () => {
               {loading ? "Loading..." : "No log entries found"}
             </div>
           ) : (
-            <table className="w-full text-sm">
+            <table className="w-full text-sm" style={{ tableLayout: "fixed" }}>
+              <colgroup>
+                <col style={{ width: colWidths.time }} />
+                <col style={{ width: colWidths.level }} />
+                <col style={{ width: colWidths.source }} />
+                <col style={{ width: colWidths.category }} />
+                <col />
+              </colgroup>
               <thead className="bg-muted sticky top-0">
                 <tr>
                   <th
-                    className="text-left px-3 py-2 font-medium w-40 cursor-pointer hover:text-foreground select-none"
+                    className="relative text-left px-3 py-2 font-medium cursor-pointer hover:text-foreground select-none"
                     onClick={() => toggleSort("timestamp")}
                   >
                     Time<SortIcon k="timestamp" />
+                    <ResizeHandle colKey="time" />
                   </th>
                   <th
-                    className="text-left px-3 py-2 font-medium w-16 cursor-pointer hover:text-foreground select-none"
+                    className="relative text-left px-3 py-2 font-medium cursor-pointer hover:text-foreground select-none"
                     onClick={() => toggleSort("level")}
                     title="Sorted by severity (error > warn > info > debug), not alphabetically."
                   >
                     Level<SortIcon k="level" />
+                    <ResizeHandle colKey="level" />
                   </th>
                   <th
-                    className="text-left px-3 py-2 font-medium w-20 cursor-pointer hover:text-foreground select-none"
+                    className="relative text-left px-3 py-2 font-medium cursor-pointer hover:text-foreground select-none"
                     onClick={() => toggleSort("source")}
                   >
                     Source<SortIcon k="source" />
+                    <ResizeHandle colKey="source" />
                   </th>
                   <th
-                    className="text-left px-3 py-2 font-medium w-24 cursor-pointer hover:text-foreground select-none"
+                    className="relative text-left px-3 py-2 font-medium cursor-pointer hover:text-foreground select-none"
                     onClick={() => toggleSort("category")}
                   >
                     Category<SortIcon k="category" />
+                    <ResizeHandle colKey="category" />
                   </th>
                   <th
                     className="text-left px-3 py-2 font-medium cursor-pointer hover:text-foreground select-none"
@@ -429,10 +579,13 @@ export const LogTab: React.FC = () => {
                           {entry.source}
                         </span>
                       </td>
-                      <td className="px-3 py-2 text-xs text-muted-foreground truncate max-w-[120px]">
-                        {entry.category || "-"}
+                      <td
+                        className="px-3 py-2 text-xs text-muted-foreground truncate"
+                        title={displayCategory(entry.category).tooltip}
+                      >
+                        {displayCategory(entry.category).label}
                       </td>
-                      <td className="px-3 py-2 text-xs truncate max-w-[400px]">
+                      <td className="px-3 py-2 text-xs truncate">
                         {entry.message}
                       </td>
                     </tr>
