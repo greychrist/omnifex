@@ -72,6 +72,21 @@ const TabContext = createContext<TabContextType | undefined>(undefined);
 // const STORAGE_KEY = 'greychrist_tabs'; // No longer needed - persistence disabled
 const MAX_TABS = 20;
 
+/**
+ * Last non-empty path segment of an absolute project path. Strips trailing
+ * slashes and accepts both POSIX and Windows separators. Returns undefined
+ * for paths that resolve to nothing meaningful (empty string, "/", "//").
+ * Used by the session-name registry mirror so the Log tab can render
+ * `session: <project> - <guid7>` even after the tab is closed.
+ */
+function projectBasename(p: string | null | undefined): string | undefined {
+  if (!p) return undefined;
+  const trimmed = String(p).replace(/[/\\]+$/, '');
+  if (!trimmed) return undefined;
+  const seg = trimmed.split(/[/\\]/).pop();
+  return seg && seg.length > 0 ? seg : undefined;
+}
+
 export const TabProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [tabs, setTabs] = useState<Tab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
@@ -170,15 +185,24 @@ export const TabProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   }, [tabs, activeTabId]);
 
-  // Mirror each chat tab's current title into the persistent session-name
-  // registry so the Log tab can show real session names — including for
-  // tabs that have since been closed (tab state is in-memory; the registry
-  // is the only place a closed tab's title still lives).
+  // Mirror each chat tab's identifying fields (title, project basename,
+  // Claude session id) into the persistent session-name registry so the
+  // Log tab's Category column can render `session: <project> - <guid7>`
+  // — including for tabs that have since been closed (tab state is
+  // in-memory; the registry is the only place a closed tab's identity
+  // still lives). The registry merges partial updates, so it's safe to
+  // call this each render — fields that aren't known yet (e.g. the
+  // sessionId before the SDK has emitted its `init` message) just stay
+  // absent until the next render writes them.
   useEffect(() => {
     for (const tab of tabs) {
       if (tab.type !== 'chat') continue;
-      if (!tab.title || tab.title.trim() === '') continue;
-      sessionNameRegistry.set(tab.id, tab.title);
+      const projectName = projectBasename(tab.projectPath);
+      sessionNameRegistry.set(tab.id, {
+        title: tab.title,
+        projectName,
+        claudeSessionId: tab.sessionId,
+      });
     }
   }, [tabs]);
 

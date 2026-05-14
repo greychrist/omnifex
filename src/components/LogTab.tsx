@@ -81,6 +81,20 @@ function clampWidth(n: unknown, fallback: number): number {
     : fallback;
 }
 
+/**
+ * Last non-empty path segment of an absolute project path. Same logic as
+ * TabContext's helper — duplicated locally rather than exported because
+ * keeping the cross-file surface small is worth more than the two lines
+ * saved. Accepts both POSIX and Windows separators; strips trailing slashes.
+ */
+function projectBasename(p: string | null | undefined): string | undefined {
+  if (!p) return undefined;
+  const trimmed = String(p).replace(/[/\\]+$/, "");
+  if (!trimmed) return undefined;
+  const seg = trimmed.split(/[/\\]/).pop();
+  return seg && seg.length > 0 ? seg : undefined;
+}
+
 const LEVEL_LABEL: Record<LogLevel, string> = {
   error: "Error",
   warn: "Warn",
@@ -142,44 +156,85 @@ export const LogTab: React.FC = () => {
     () => loadStoredColWidths(),
   );
 
-  // Resolve `session:<tabId>` categories to the tab's human-readable title.
-  // We combine two sources:
-  //   • live tabs (TabContext) — the freshest title, including any rename
-  //     the user has just typed
-  //   • sessionNameRegistry — localStorage map populated by TabContext on
-  //     every tab change, used as the fallback for tabs that were closed
-  //     after the log entry was written
-  // Log entries persist long after tabs close, so without the registry the
-  // Category column on history rows would still show the bare tab id.
+  // Resolve `session:<tabId>` categories to the user-facing label
+  //   `session: <projectName> - <claudeSessionId[0..6]>`
+  // (GitHub's 7-char short-SHA convention for the GUID).
+  //
+  // The identity comes from two sources, in priority order:
+  //   1. Live tabs (TabContext) — freshest signal, picks up renames /
+  //      project changes the moment they happen.
+  //   2. sessionNameRegistry — localStorage map mirrored from TabContext
+  //      on every tab change, used as the fallback for tabs that were
+  //      closed after the log entry was written.
+  // Log entries persist long after tabs close, so without the registry
+  // closed-tab rows have no recoverable identity at all.
   const { tabs } = useTabContext();
-  const tabTitleMap = useMemo(() => {
-    const registrySnapshot = sessionNameRegistry.snapshot();
-    const m = new Map<string, string>(Object.entries(registrySnapshot));
+  const tabIdentityMap = useMemo(() => {
+    // Start with the persisted snapshot; live tab data overwrites it
+    // below so an in-flight rename wins over a stale registry entry.
+    const m = new Map<string, {
+      title?: string;
+      projectName?: string;
+      claudeSessionId?: string;
+    }>();
+    for (const [tabId, entry] of Object.entries(sessionNameRegistry.snapshot())) {
+      m.set(tabId, {
+        title: entry.title,
+        projectName: entry.projectName,
+        claudeSessionId: entry.claudeSessionId,
+      });
+    }
     for (const tab of tabs) {
-      if (tab.type === "chat" && tab.title && tab.title.trim() !== "") {
-        m.set(tab.id, tab.title);
-      }
+      if (tab.type !== "chat") continue;
+      const existing = m.get(tab.id) ?? {};
+      m.set(tab.id, {
+        title: tab.title?.trim() || existing.title,
+        projectName: projectBasename(tab.projectPath) ?? existing.projectName,
+        claudeSessionId: tab.sessionId ?? existing.claudeSessionId,
+      });
     }
     return m;
   }, [tabs]);
 
   // Convert a log row's `category` to the label rendered in the Category
   // column. Categories produced by the sessions service look like
-  // `session:<tabId>`; everything else (e.g. "permission") is shown as-is.
+  // `session:<tabId>`; everything else (e.g. "permission") passes through
+  // as-is.
+  //
+  // Format priority (best signal first):
+  //   1. `session: <project> - <guid7>`  — both fields known
+  //   2. `session: <project>`             — only project known
+  //   3. `session: <title>`               — legacy registry entry (pre-
+  //                                          schema-upgrade) that only
+  //                                          stored a title
+  //   4. `session …<short-tabId>`         — nothing known; show enough of
+  //                                          the tabId that rows from the
+  //                                          same session still cluster
+  //                                          visually
   const displayCategory = useCallback(
     (raw: string | null | undefined): { label: string; tooltip: string } => {
       if (!raw) return { label: "-", tooltip: "" };
       const m = raw.match(/^session:(.+)$/);
       if (!m) return { label: raw, tooltip: raw };
       const tabId = m[1];
-      const title = tabTitleMap.get(tabId);
-      if (title) return { label: title, tooltip: `${title}\n${raw}` };
-      // Closed tab with no registry entry — show a short suffix of the id so
-      // rows from the same tab still group visually, but stay compact.
+      const id = tabIdentityMap.get(tabId);
+
+      if (id?.projectName && id.claudeSessionId) {
+        const label = `session: ${id.projectName} - ${id.claudeSessionId.slice(0, 7)}`;
+        return { label, tooltip: `${label}\n${id.claudeSessionId}\n${raw}` };
+      }
+      if (id?.projectName) {
+        const label = `session: ${id.projectName}`;
+        return { label, tooltip: `${label}\n${raw}` };
+      }
+      if (id?.title) {
+        const label = `session: ${id.title}`;
+        return { label, tooltip: `${label}\n${raw}` };
+      }
       const short = tabId.length > 14 ? `…${tabId.slice(-12)}` : tabId;
       return { label: `session ${short}`, tooltip: raw };
     },
-    [tabTitleMap],
+    [tabIdentityMap],
   );
 
   useEffect(() => {

@@ -1,27 +1,49 @@
 /**
- * Persistent tabId → human-readable label map.
+ * Persistent tabId → session-identity map.
  *
  * The Log tab shows the SDK-side category for every entry, which is
- * `session:<tabId>` (tabIds look like `tab-1778624839066-n893j4wui`). The
- * tab title is the user-facing session name — but tab state is in-memory
- * and disappears when a tab is closed, while log rows live forever in
- * SQLite. This registry bridges the gap: whenever a tab updates, we write
- * `tabId → title` to localStorage, so the Log tab can show real names even
- * for sessions whose tabs were closed days ago.
+ * `session:<tabId>` (tabIds look like `tab-1778624839066-n893j4wui`). Tab
+ * state is in-memory and disappears when a tab is closed, while log rows
+ * live forever in SQLite. This registry bridges the gap: whenever a tab
+ * updates, we mirror its identifying fields to localStorage so the Log tab
+ * can render real session labels even for tabs that were closed days ago.
+ *
+ * The historical entries were just `{ title }` strings; entries written by
+ * later builds carry `{ projectName, claudeSessionId, title }` so the Log
+ * tab can produce a `session: <project> - <guid7>` label without depending
+ * on the (in-memory) TabContext for closed tabs.
  *
  * Bounded by `MAX_ENTRIES` (oldest evicted first) so a runaway never blows
- * out localStorage. Only chat tabs with a real title are recorded.
+ * out localStorage. Only chat tabs with at least one identifying field are
+ * recorded.
  */
 
 const STORAGE_KEY = 'omnifex_session_name_registry_v1';
 const MAX_ENTRIES = 500;
 
-interface Entry {
-  title: string;
+/**
+ * One stored entry. All identity fields are optional because they get
+ * populated at different points in a chat tab's lifecycle:
+ *   - `title` and `projectName` are known as soon as a chat tab opens.
+ *   - `claudeSessionId` is assigned by the SDK after the first `init`
+ *     message lands, so it shows up a moment later.
+ * Each write merges with what's already stored — partial updates don't
+ * overwrite fields that were set by an earlier call.
+ */
+export interface SessionRegistryEntry {
+  title?: string;
+  projectName?: string;
+  claudeSessionId?: string;
   updatedAt: number;
 }
 
-type Registry = Record<string, Entry>;
+export interface SessionRegistryInput {
+  title?: string | null;
+  projectName?: string | null;
+  claudeSessionId?: string | null;
+}
+
+type Registry = Record<string, SessionRegistryEntry>;
 
 let cache: Registry | null = null;
 
@@ -35,6 +57,10 @@ function loadFromStorage(): Registry {
     }
     const parsed = JSON.parse(raw);
     if (parsed && typeof parsed === 'object') {
+      // Existing entries from the original v1 schema only had {title,
+      // updatedAt}; the new optional fields will simply be undefined on
+      // those rows, which is exactly what we want. No migration step
+      // needed.
       cache = parsed as Registry;
       return cache;
     }
@@ -66,35 +92,66 @@ function evictOldest(reg: Registry, target: number): void {
   }
 }
 
+/** Trim, drop empty strings; preserves `undefined` for "not provided". */
+function clean(s: string | null | undefined): string | undefined {
+  if (s == null) return undefined;
+  const t = String(s).trim();
+  return t.length > 0 ? t : undefined;
+}
+
 export const sessionNameRegistry = {
   /**
-   * Record (or refresh) the label for a tab. No-op for empty / whitespace
-   * titles so we don't poison the registry with a default placeholder.
+   * Record (or refresh) identity fields for a tab. Partial updates are
+   * merged with the stored entry — if you call with only `{ claudeSessionId }`
+   * the previously-stored `title` and `projectName` stay intact. No-op if
+   * every provided field is empty.
    */
-  set(tabId: string, title: string): void {
+  set(tabId: string, input: SessionRegistryInput): void {
     if (!tabId) return;
-    const clean = title?.trim?.() ?? '';
-    if (!clean) return;
+    const title = clean(input.title);
+    const projectName = clean(input.projectName);
+    const claudeSessionId = clean(input.claudeSessionId);
+    if (!title && !projectName && !claudeSessionId) return;
+
     const reg = { ...loadFromStorage() };
     const existing = reg[tabId];
-    if (existing && existing.title === clean) return; // no-op, avoid touching storage
-    reg[tabId] = { title: clean, updatedAt: Date.now() };
+
+    // Skip the write if every provided field already matches — avoids
+    // touching localStorage on every render cycle when the tab hasn't
+    // actually changed identity.
+    if (
+      existing &&
+      (title === undefined || existing.title === title) &&
+      (projectName === undefined || existing.projectName === projectName) &&
+      (claudeSessionId === undefined || existing.claudeSessionId === claudeSessionId)
+    ) {
+      return;
+    }
+
+    reg[tabId] = {
+      ...existing,
+      ...(title !== undefined ? { title } : {}),
+      ...(projectName !== undefined ? { projectName } : {}),
+      ...(claudeSessionId !== undefined ? { claudeSessionId } : {}),
+      updatedAt: Date.now(),
+    };
     evictOldest(reg, MAX_ENTRIES);
     persist(reg);
   },
 
-  /** Returns the stored title for the tab, or null if none recorded. */
-  get(tabId: string): string | null {
+  /** Returns the full stored entry for the tab, or null if none recorded. */
+  get(tabId: string): SessionRegistryEntry | null {
     const reg = loadFromStorage();
-    return reg[tabId]?.title ?? null;
+    return reg[tabId] ?? null;
   },
 
-  /** Returns a snapshot of all known tabId → title pairs. */
-  snapshot(): Record<string, string> {
+  /** Returns a snapshot of all known entries. */
+  snapshot(): Record<string, SessionRegistryEntry> {
     const reg = loadFromStorage();
-    const out: Record<string, string> = {};
+    // Defensive shallow copy so callers can't mutate the cache.
+    const out: Record<string, SessionRegistryEntry> = {};
     for (const k of Object.keys(reg)) {
-      out[k] = reg[k].title;
+      out[k] = { ...reg[k] };
     }
     return out;
   },
