@@ -12,6 +12,7 @@ import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import OmniFexIcon from '../../icons/icon.png';
 import { TabStatusPopover } from '@/components/TabStatusPopover';
+import { fireAndLog } from "@/lib/fireAndLog";
 const SDK_POLL_INTERVAL_MS = 60 * 60 * 1000; // 60 minutes
 // Minimum visible spin time on any upgrade check (manual click, mount,
 // or hourly SDK poll). The underlying checks can resolve in <100ms
@@ -376,14 +377,14 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
                   </span>
                   <button
                     type="button"
-                    onClick={handleInstallAnyway}
+                    onClick={fireAndLog('custom-titlebar:click', handleInstallAnyway)}
                     className="ml-1 px-1.5 py-0.5 rounded bg-destructive/80 text-destructive-foreground hover:bg-destructive text-[10px]"
                   >
                     Install anyway
                   </button>
                   <button
                     type="button"
-                    onClick={handleCancelInstall}
+                    onClick={fireAndLog('custom-titlebar:click', handleCancelInstall)}
                     className="px-1.5 py-0.5 rounded bg-muted hover:bg-muted/80 text-[10px]"
                   >
                     Cancel
@@ -391,7 +392,7 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
                 </motion.div>
               ) : (
                 <motion.button
-                  onClick={handleUpdateClick}
+                  onClick={fireAndLog('custom-titlebar:click', handleUpdateClick)}
                   initial={{ opacity: 0, scale: 0.9 }}
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.9 }}

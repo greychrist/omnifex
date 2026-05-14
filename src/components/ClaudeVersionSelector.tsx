@@ -8,6 +8,7 @@ import { api, type ClaudeInstallation } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { CheckCircle, FolderOpen, HardDrive, Settings, Terminal, Info } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
+import { fireAndLog } from "@/lib/fireAndLog";
 
 interface ClaudeVersionSelectorProps {
   /**
@@ -171,7 +172,7 @@ export const ClaudeVersionSelector: React.FC<ClaudeVersionSelectorProps> = ({
           <Label className="text-sm font-medium">Claude Installation</Label>
           <div className="p-3 border border-destructive/50 rounded-lg bg-destructive/10">
             <p className="text-sm text-destructive mb-2">{error}</p>
-            <Button onClick={loadInstallations} variant="outline" size="sm">
+            <Button onClick={fireAndLog('claude-version-selector:click', loadInstallations)} variant="outline" size="sm">
               Retry
             </Button>
           </div>
@@ -186,7 +187,7 @@ export const ClaudeVersionSelector: React.FC<ClaudeVersionSelectorProps> = ({
         </CardHeader>
         <CardContent>
           <div className="text-sm text-destructive mb-4">{error}</div>
-          <Button onClick={loadInstallations} variant="outline" size="sm">
+          <Button onClick={fireAndLog('claude-version-selector:click', loadInstallations)} variant="outline" size="sm">
             Retry
           </Button>
         </CardContent>
@@ -262,7 +263,7 @@ export const ClaudeVersionSelector: React.FC<ClaudeVersionSelectorProps> = ({
               variant="ghost"
               size="sm"
               className="h-6 w-6 p-0 flex-shrink-0"
-              onClick={() => handleRevealInFinder(selectedInstallation.path)}
+              onClick={fireAndLog('claude-version-selector:click', () => handleRevealInFinder(selectedInstallation.path))}
               title="Reveal in Finder"
             >
               <FolderOpen className="h-3.5 w-3.5" />
@@ -361,7 +362,7 @@ export const ClaudeVersionSelector: React.FC<ClaudeVersionSelectorProps> = ({
                   variant="ghost"
                   size="sm"
                   className="h-6 px-2 text-xs"
-                  onClick={() => handleRevealInFinder(selectedInstallation.path)}
+                  onClick={fireAndLog('claude-version-selector:click', () => handleRevealInFinder(selectedInstallation.path))}
                 >
                   <FolderOpen className="h-3.5 w-3.5 mr-1" />
                   Reveal

@@ -9,6 +9,7 @@ import { api, type MCPServer } from "@/lib/api";
 import { MCPServerList } from "./MCPServerList";
 import { MCPAddServer } from "./MCPAddServer";
 import { MCPImportExport } from "./MCPImportExport";
+import { fireAndLog } from "@/lib/fireAndLog";
 
 interface MCPManagerProps {
   /**
@@ -157,7 +158,7 @@ export const MCPManager: React.FC<MCPManagerProps> = ({
                     servers={servers}
                     loading={false}
                     onServerRemoved={handleServerRemoved}
-                    onRefresh={loadServers}
+                    onRefresh={fireAndLog('mcpmanager:refresh', loadServers)}
                     configDir={configDir}
                   />
                 </Card>

@@ -21,6 +21,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 import { Toast, ToastContainer } from '@/components/ui/toast';
 import type { Project } from '@/lib/api';
+import { fireAndLog } from "@/lib/fireAndLog";
 
 interface ProjectSettingsProps {
   project: Project;
@@ -184,7 +185,7 @@ export const ProjectSettings: React.FC<ProjectSettingsProps> = ({
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={addToGitIgnore}
+                          onClick={fireAndLog('project-settings:click', addToGitIgnore)}
                         >
                           Add to .gitignore
                         </Button>

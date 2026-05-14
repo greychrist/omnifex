@@ -8,6 +8,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { SelectComponent } from "@/components/ui/select";
 import { Card } from "@/components/ui/card";
 import { api } from "@/lib/api";
+import { fireAndLog } from "@/lib/fireAndLog";
 
 interface MCPAddServerProps {
   /**
@@ -346,7 +347,7 @@ export const MCPAddServer: React.FC<MCPAddServerProps> = ({
 
             <div className="pt-2">
               <Button
-                onClick={handleAddStdioServer}
+                onClick={fireAndLog('mcpadd-server:click', handleAddStdioServer)}
                 disabled={saving}
                 className="w-full gap-2 bg-primary hover:bg-primary/90"
               >
@@ -415,7 +416,7 @@ export const MCPAddServer: React.FC<MCPAddServerProps> = ({
 
             <div className="pt-2">
               <Button
-                onClick={handleAddSseServer}
+                onClick={fireAndLog('mcpadd-server:click', handleAddSseServer)}
                 disabled={saving}
                 className="w-full gap-2 bg-primary hover:bg-primary/90"
               >

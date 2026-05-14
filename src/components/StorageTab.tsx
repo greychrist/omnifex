@@ -44,6 +44,7 @@ import {
 } from "@/components/ui/tooltip";
 import { api } from "@/lib/api";
 import { Toast, ToastContainer } from "./ui/toast";
+import { fireAndLog } from "@/lib/fireAndLog";
 
 interface TableInfo {
   name: string;
@@ -526,7 +527,7 @@ export const StorageTab: React.FC = () => {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => loadTableData(currentPage - 1)}
+                  onClick={fireAndLog('storage-tab:click', () => loadTableData(currentPage - 1))}
                   disabled={currentPage === 1}
                   className="h-7 text-xs"
                 >
@@ -539,7 +540,7 @@ export const StorageTab: React.FC = () => {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => loadTableData(currentPage + 1)}
+                  onClick={fireAndLog('storage-tab:click', () => loadTableData(currentPage + 1))}
                   disabled={currentPage === tableData.total_pages}
                   className="h-7 text-xs"
                 >
@@ -634,7 +635,7 @@ export const StorageTab: React.FC = () => {
             </Button>
             <Button
               // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- array element guaranteed by length-checked iteration.
-              onClick={() => handleUpdateRow(editingRow!)}
+              onClick={fireAndLog('storage-tab:click', () => handleUpdateRow(editingRow!))}
               disabled={loading}
             >
               {loading ? (
@@ -717,7 +718,7 @@ export const StorageTab: React.FC = () => {
             </Button>
             <Button
               // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- array element guaranteed by length-checked iteration.
-              onClick={() => handleInsertRow(newRow!)}
+              onClick={fireAndLog('storage-tab:click', () => handleInsertRow(newRow!))}
               disabled={loading}
             >
               {loading ? (
@@ -764,7 +765,7 @@ export const StorageTab: React.FC = () => {
             </Button>
             <Button
               variant="destructive"
-              onClick={handleDeleteRow}
+              onClick={fireAndLog('storage-tab:click', handleDeleteRow)}
               disabled={loading}
             >
               {loading ? (
@@ -804,7 +805,7 @@ export const StorageTab: React.FC = () => {
             </Button>
             <Button
               variant="destructive"
-              onClick={handleResetDatabase}
+              onClick={fireAndLog('storage-tab:click', handleResetDatabase)}
               disabled={loading}
             >
               {loading ? (
@@ -938,7 +939,7 @@ export const StorageTab: React.FC = () => {
               Close
             </Button>
             <Button
-              onClick={handleExecuteSql}
+              onClick={fireAndLog('storage-tab:click', handleExecuteSql)}
               disabled={loading || !sqlQuery.trim()}
             >
               {loading ? (

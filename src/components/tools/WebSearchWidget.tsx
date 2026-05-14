@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { extractResultContent } from "@/components/tools/shared";
+import { fireAndLog } from "@/lib/fireAndLog";
 
 /**
  * Widget for WebSearch tool - displays web search query and results
@@ -158,7 +159,7 @@ export const WebSearchWidget: React.FC<{
                           {links.map((link, linkIdx) => (
                             <button
                               key={linkIdx}
-                              onClick={() => handleLinkClick(link.url)}
+                              onClick={fireAndLog('web-search-widget:click', () => handleLinkClick(link.url))}
                               className="group flex flex-col gap-0.5 p-2.5 rounded-md border bg-card/30 hover:bg-card/50 hover:border-blue-500/30 transition-all text-left"
                             >
                               <div className="flex items-start gap-2">

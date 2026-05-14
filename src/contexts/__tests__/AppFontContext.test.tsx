@@ -13,7 +13,7 @@ vi.mock("@/lib/api", () => ({
 
 import { api } from "@/lib/api";
 
-const Probe: React.FC<{ onState: (s: { font: string; setFont: (f: string) => void }) => void }> = ({
+const Probe: React.FC<{ onState: (s: { font: string; setFont: (f: string) => Promise<void> | void }) => void }> = ({
   onState,
 }) => {
   const ctx = useAppFont();

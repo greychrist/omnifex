@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { api, type Account } from "@/lib/api";
 import { AccountBadge } from "@/components/AccountBadge";
 import { cn } from "@/lib/utils";
+import { fireAndLog } from "@/lib/fireAndLog";
 
 interface AccountPickerDialogProps {
   open: boolean;
@@ -104,7 +105,7 @@ export const AccountPickerDialog: React.FC<AccountPickerDialogProps> = ({
           <Button variant="outline" onClick={() => { onOpenChange(false); }}>
             Cancel
           </Button>
-          <Button onClick={handleConfirm} disabled={selectedId === null || loading}>
+          <Button onClick={fireAndLog('account-picker-dialog:confirm', handleConfirm)} disabled={selectedId === null || loading}>
             {loading ? "Saving..." : "Select"}
           </Button>
         </DialogFooter>

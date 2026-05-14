@@ -15,6 +15,7 @@ import {
 import type { Project } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { AccountBadge } from "@/components/AccountBadge";
+import { fireAndLog } from "@/lib/fireAndLog";
 
 type SortKey = 'name' | 'path' | 'account' | 'sessions' | 'lastActivity';
 type SortDir = 'asc' | 'desc';
@@ -229,7 +230,7 @@ export const ProjectList: React.FC<ProjectListProps> = ({
               transition={{ duration: 0.15 }}
             >
               <Button
-                onClick={onOpenProject}
+                onClick={fireAndLog('project-list:click', onOpenProject)}
                 size="default"
                 className="flex items-center gap-2"
               >
@@ -466,7 +467,7 @@ export const ProjectList: React.FC<ProjectListProps> = ({
                   transition={{ duration: 0.15 }}
                 >
                   <Button
-                    onClick={onOpenProject}
+                    onClick={fireAndLog('project-list:click', onOpenProject)}
                     size="default"
                     className="flex items-center gap-2"
                   >

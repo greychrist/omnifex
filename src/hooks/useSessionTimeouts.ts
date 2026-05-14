@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { api } from "@/lib/api";
+import { fireAndLog } from "@/lib/fireAndLog";
 import type { ClaudeStreamMessage } from "@/types/claudeStream";
 
 /** How long to wait for a first response before checking health. */
@@ -49,7 +50,7 @@ export function useSessionTimeouts({
       const interval = setInterval(() => {
         setElapsedSeconds((prev) => prev + 1);
       }, 1000);
-      const timeout = setTimeout(async () => {
+      const timeout = setTimeout(fireAndLog('use-session-timeouts:loading-watchdog', async () => {
         // Check if the main process session is still alive before killing
         try {
           const health = await api.sessionGetHealth(tabId);
@@ -82,7 +83,7 @@ export function useSessionTimeouts({
         setIsLoading(false);
         setError(null);
         persistentSessionRef.current = false;
-      }, RESPONSE_TIMEOUT_MS);
+      }), RESPONSE_TIMEOUT_MS);
       return () => {
         clearInterval(interval);
         clearTimeout(timeout);
@@ -97,7 +98,7 @@ export function useSessionTimeouts({
   // may be hung. Reset so the next prompt auto-restarts the session.
   useEffect(() => {
     if (!isLoading) return;
-    const check = setInterval(async () => {
+    const check = setInterval(fireAndLog('use-session-timeouts:inactivity-watchdog', async () => {
       const idle = Date.now() - lastMessageTimeRef.current;
       if (idle >= INACTIVITY_TIMEOUT_MS && !waitingForPermission) {
         // Check health before killing
@@ -147,7 +148,7 @@ export function useSessionTimeouts({
           } as any,
         ]);
       }
-    }, 3000);
+    }), 3000);
     return () => { clearInterval(check); };
   }, [isLoading, waitingForPermission]);
 

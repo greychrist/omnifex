@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Spinner } from "@/components/ui/spinner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { api } from "@/lib/api";
+import { fireAndLog } from "@/lib/fireAndLog";
 interface PermissionLevel {
   label: string;
   scope: "user" | "project" | "local";
@@ -168,7 +169,7 @@ export function SessionPermissionsEditor({
                       variant="ghost"
                       size="icon"
                       className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-                      onClick={() => handleRemoveRule(level.scope, "allow", rule)}
+                      onClick={fireAndLog('session-permissions-editor:click', () => handleRemoveRule(level.scope, "allow", rule))}
                       disabled={saving}
                     >
                       <Trash2 className="h-3 w-3 text-destructive" />
@@ -195,7 +196,7 @@ export function SessionPermissionsEditor({
                       variant="ghost"
                       size="icon"
                       className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-                      onClick={() => handleRemoveRule(level.scope, "deny", rule)}
+                      onClick={fireAndLog('session-permissions-editor:click', () => handleRemoveRule(level.scope, "deny", rule))}
                       disabled={saving}
                     >
                       <Trash2 className="h-3 w-3 text-destructive" />
@@ -230,7 +231,7 @@ export function SessionPermissionsEditor({
                       className="h-7 text-xs font-mono flex-1"
                       autoFocus
                     />
-                    <Button size="sm" className="h-7 px-2 text-xs" onClick={handleAddRule} disabled={saving || !newRule.value.trim()}>
+                    <Button size="sm" className="h-7 px-2 text-xs" onClick={fireAndLog('session-permissions-editor:add-rule', handleAddRule)} disabled={saving || !newRule.value.trim()}>
                       Add
                     </Button>
                     <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => { setNewRule(null); }}>

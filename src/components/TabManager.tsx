@@ -6,6 +6,7 @@ import { AccountBadge } from './AccountBadge';
 import { useTabState } from '@/hooks/useTabState';
 import { Tab, useTabContext } from '@/contexts/TabContext';
 import { cn } from '@/lib/utils';
+import { fireAndLog } from "@/lib/fireAndLog";
 
 interface TabItemProps {
   tab: Tab;
@@ -231,15 +232,19 @@ export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
       }
     };
 
+    // handleCloseTab is async; wrap once via fireAndLog and pin the
+    // reference so add/removeEventListener see the same fn (otherwise
+    // the remove-pair never fires and the listener leaks on unmount).
+    const wrappedClose = fireAndLog('tab-manager:close-current', handleCloseTab);
     window.addEventListener('create-chat-tab', handleCreateTab);
-    window.addEventListener('close-current-tab', handleCloseTab);
+    window.addEventListener('close-current-tab', wrappedClose);
     window.addEventListener('switch-to-next-tab', handleNextTab);
     window.addEventListener('switch-to-previous-tab', handlePreviousTab);
     window.addEventListener('switch-to-tab-by-index', handleTabByIndex as EventListener);
 
     return () => {
       window.removeEventListener('create-chat-tab', handleCreateTab);
-      window.removeEventListener('close-current-tab', handleCloseTab);
+      window.removeEventListener('close-current-tab', wrappedClose);
       window.removeEventListener('switch-to-next-tab', handleNextTab);
       window.removeEventListener('switch-to-previous-tab', handlePreviousTab);
       window.removeEventListener('switch-to-tab-by-index', handleTabByIndex as EventListener);
@@ -365,7 +370,7 @@ export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
                 key={tab.id}
                 tab={tab}
                 isActive={tab.id === activeTabId}
-                onClose={handleCloseTab}
+                onClose={fireAndLog('tab-manager:close', handleCloseTab)}
                 onClick={switchToTab}
                 isDragging={draggedTabId === tab.id}
                 setDraggedTabId={setDraggedTabId}

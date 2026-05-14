@@ -1,4 +1,5 @@
 import React, { useEffect } from "react";
+import { fireAndLog } from "@/lib/fireAndLog";
 
 // ── Image utilities ─────────────────────────────────────────────────────
 
@@ -181,16 +182,20 @@ export function useImageDropZone(
       }
     };
 
+    // handleDrop is async; wrap once via fireAndLog and pin the reference
+    // so add/removeEventListener see the same fn (otherwise the
+    // remove-pair never fires and the listener leaks).
+    const wrappedDrop = fireAndLog('image-attachments:drop', handleDrop);
     document.addEventListener('dragenter', handleDragEnter);
     document.addEventListener('dragover', handleDragOver);
     document.addEventListener('dragleave', handleDragLeave);
-    document.addEventListener('drop', handleDrop);
+    document.addEventListener('drop', wrappedDrop);
 
     return () => {
       document.removeEventListener('dragenter', handleDragEnter);
       document.removeEventListener('dragover', handleDragOver);
       document.removeEventListener('dragleave', handleDragLeave);
-      document.removeEventListener('drop', handleDrop);
+      document.removeEventListener('drop', wrappedDrop);
     };
   }, [onImageDropped]);
 

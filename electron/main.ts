@@ -241,7 +241,7 @@ function createWindow(): BrowserWindow {
     const template: MenuItemConstructorOptions[] = [];
 
     if (linkURL) {
-      template.push({ label: 'Open Link', click: () => shell.openExternal(linkURL) });
+      template.push({ label: 'Open Link', click: () => { shell.openExternal(linkURL).catch((err: unknown) => { console.error('[main:open-link]', err); }); } });
       template.push({ label: 'Copy Link', click: () => clipboard.writeText(linkURL) });
       template.push({ type: 'separator' });
     }

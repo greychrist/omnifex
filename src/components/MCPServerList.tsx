@@ -19,6 +19,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { api, type MCPServer } from "@/lib/api";
+import { fireAndLog } from "@/lib/fireAndLog";
 
 interface MCPServerListProps {
   /**
@@ -241,7 +242,7 @@ export const MCPServerList: React.FC<MCPServerListProps> = ({
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => handleTestConnection(server.name)}
+                onClick={fireAndLog('mcpserver-list:click', () => handleTestConnection(server.name))}
                 disabled={testingServer === server.name}
                 className="hover:bg-green-500/10 hover:text-green-600"
               >
@@ -254,7 +255,7 @@ export const MCPServerList: React.FC<MCPServerListProps> = ({
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => handleRemoveServer(server.name)}
+                onClick={fireAndLog('mcpserver-list:click', () => handleRemoveServer(server.name))}
                 disabled={removingServer === server.name}
                 className="hover:bg-destructive/10 hover:text-destructive"
               >
@@ -285,7 +286,7 @@ export const MCPServerList: React.FC<MCPServerListProps> = ({
                         variant="ghost"
                         size="sm"
                         // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- value was just .has-checked above.
-                        onClick={() => copyCommand(server.command!, server.name)}
+                        onClick={fireAndLog('mcpserver-list:click', () => copyCommand(server.command!, server.name))}
                         className="h-6 px-2 text-xs hover:bg-primary/10"
                       >
                         <Copy className="h-3 w-3 mr-1" />

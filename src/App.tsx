@@ -24,6 +24,7 @@ import { TabManager } from "@/components/TabManager";
 import { TabContent } from "@/components/TabContent";
 import { useTabState } from "@/hooks/useTabState";
 import { StartupIntro } from "@/components/StartupIntro";
+import { fireAndLog } from "@/lib/fireAndLog";
 
 type View = 
   | "welcome" 
@@ -401,7 +402,7 @@ function AppContent() {
         return (
           <ProjectList
             projects={projects}
-            onProjectClick={handleProjectClick}
+            onProjectClick={fireAndLog('app:project-click', handleProjectClick)}
             onOpenProject={handleOpenProject}
             onDeleteProject={handleDeleteProject}
             loading={loading}
@@ -474,7 +475,7 @@ function AppContent() {
           <div className="w-full max-w-2xl h-[600px] bg-background border rounded-lg shadow-lg">
             <FilePicker
               basePath={homeDirectory}
-              onSelect={async (entry) => {
+              onSelect={fireAndLog('app:select', async (entry) => {
                 if (entry.is_directory) {
                   try {
                     // Check if account can be resolved for this path
@@ -495,7 +496,7 @@ function AppContent() {
                     setError('Failed to create project for the selected directory.');
                   }
                 }
-              }}
+              })}
               onClose={() => { setShowProjectPicker(false); }}
             />
           </div>
@@ -506,7 +507,7 @@ function AppContent() {
         open={showAccountPicker}
         onOpenChange={setShowAccountPicker}
         projectPath={pendingProjectPath}
-        onAccountSelected={async () => {
+        onAccountSelected={fireAndLog('app:account-selected', async () => {
           try {
             const project = await api.createProject(pendingProjectPath);
             await loadProjects();
@@ -515,7 +516,7 @@ function AppContent() {
             console.error('Failed to create project after account selection:', err);
             setError('Failed to create project for the selected directory.');
           }
-        }}
+        })}
       />
       
       {/* Toast Container */}

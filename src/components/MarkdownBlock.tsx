@@ -7,6 +7,7 @@ import { useTheme } from "@/hooks";
 import { getClaudeSyntaxTheme } from "@/lib/claudeSyntaxTheme";
 import { buildMarkdownComponents } from "@/lib/markdownComponents";
 import { cn } from "@/lib/utils";
+import { fireAndLog } from "@/lib/fireAndLog";
 
 type View = "rendered" | "source";
 
@@ -87,7 +88,7 @@ export const MarkdownBlock: React.FC<MarkdownBlockProps> = ({ source }) => {
         </div>
         <button
           type="button"
-          onClick={handleCopy}
+          onClick={fireAndLog('markdown-block:click', handleCopy)}
           aria-label="Copy source"
           className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
           title={copied ? "Copied!" : "Copy source"}

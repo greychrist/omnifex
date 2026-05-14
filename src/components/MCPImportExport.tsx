@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { SelectComponent } from "@/components/ui/select";
 import { api } from "@/lib/api";
+import { fireAndLog } from "@/lib/fireAndLog";
 
 interface MCPImportExportProps {
   /**
@@ -213,7 +214,7 @@ export const MCPImportExport: React.FC<MCPImportExportProps> = ({
               </div>
             </div>
             <Button
-              onClick={handleImportFromDesktop}
+              onClick={fireAndLog('mcpimport-export:click', handleImportFromDesktop)}
               disabled={importingDesktop}
               className="w-full gap-2 bg-primary hover:bg-primary/90"
             >
@@ -250,7 +251,7 @@ export const MCPImportExport: React.FC<MCPImportExportProps> = ({
               <input
                 type="file"
                 accept=".json"
-                onChange={handleJsonFileSelect}
+                onChange={fireAndLog('mcpimport-export:change', handleJsonFileSelect)}
                 disabled={importingJson}
                 className="hidden"
                 id="json-file-input"
@@ -318,7 +319,7 @@ export const MCPImportExport: React.FC<MCPImportExportProps> = ({
               </div>
             </div>
             <Button
-              onClick={handleStartMCPServer}
+              onClick={fireAndLog('mcpimport-export:click', handleStartMCPServer)}
               variant="outline"
               className="w-full gap-2 border-green-500/20 hover:bg-green-500/10 hover:text-green-600 hover:border-green-500/50"
             >

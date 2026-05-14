@@ -38,6 +38,7 @@ import {
   warnUnhandledKnownTool,
 } from "@/lib/types/toolInput";
 import { AnsweredAskUserQuestionCard } from "@/components/AnsweredAskUserQuestionCard";
+import { fireAndLog } from "@/lib/fireAndLog";
 import {
   TodoWidget,
   TodoReadWidget,
@@ -296,7 +297,7 @@ const CardTimestamp: React.FC<{
           {message && (
             <button
               type="button"
-              onClick={handleCopy}
+              onClick={fireAndLog('stream-message:click', handleCopy)}
               className="p-0.5 rounded hover:bg-muted/60 hover:text-foreground transition-colors"
               title={copied ? "Copied!" : "Copy raw message JSON"}
               aria-label="Copy raw message JSON"

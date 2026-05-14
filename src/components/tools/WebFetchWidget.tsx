@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { extractResultContent } from "@/components/tools/shared";
+import { fireAndLog } from "@/lib/fireAndLog";
 
 /**
  * Widget for WebFetch tool - displays URL fetching with optional prompts
@@ -70,7 +71,7 @@ export const WebFetchWidget: React.FC<{
           <Globe className="h-4 w-4 text-purple-500/70" />
           <span className="text-xs font-medium uppercase tracking-wider text-purple-600/70 dark:text-purple-400/70">Fetching</span>
           <button
-            onClick={handleUrlClick}
+            onClick={fireAndLog('web-fetch-widget:click', handleUrlClick)}
             className="text-sm text-foreground/80 hover:text-foreground flex-1 truncate text-left hover:underline decoration-purple-500/50"
           >
             {url}

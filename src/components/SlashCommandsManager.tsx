@@ -29,6 +29,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { api, type SlashCommand } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { COMMON_TOOL_MATCHERS } from "@/types/hooks";
+import { fireAndLog } from "@/lib/fireAndLog";
 
 interface SlashCommandsManagerProps {
   projectPath?: string;
@@ -655,7 +656,7 @@ export const SlashCommandsManager: React.FC<SlashCommandsManagerProps> = ({
               Cancel
             </Button>
             <Button
-              onClick={handleSave}
+              onClick={fireAndLog('slash-commands-manager:click', handleSave)}
               disabled={!commandForm.name || !commandForm.content || saving}
             >
               {saving ? (
@@ -702,7 +703,7 @@ export const SlashCommandsManager: React.FC<SlashCommandsManagerProps> = ({
             </Button>
             <Button
               variant="destructive"
-              onClick={confirmDelete}
+              onClick={fireAndLog('slash-commands-manager:click', confirmDelete)}
               disabled={deleting}
             >
               {deleting ? (

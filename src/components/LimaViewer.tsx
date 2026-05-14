@@ -3,6 +3,7 @@ import { HardDrive, Container, RefreshCw, AlertCircle, Play, Square, Loader2 } f
 import { api, type LimaVm, type LimaDockerContainer } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { fireAndLog } from "@/lib/fireAndLog";
 
 const POLL_INTERVAL_MS = 5000;
 
@@ -208,7 +209,7 @@ export const LimaViewer: React.FC = () => {
             Install it with <code className="font-mono px-1.5 py-0.5 rounded bg-muted">brew install lima</code>,
             then refresh.
           </p>
-          <Button variant="outline" size="sm" onClick={handleRefresh}>
+          <Button variant="outline" size="sm" onClick={fireAndLog('lima-viewer:click', handleRefresh)}>
             <RefreshCw className={cn('w-3.5 h-3.5 mr-1.5', refreshing && 'animate-spin')} />
             Refresh
           </Button>
@@ -228,7 +229,7 @@ export const LimaViewer: React.FC = () => {
             {vms.length} VM{vms.length === 1 ? '' : 's'}
           </span>
         </div>
-        <Button variant="outline" size="sm" onClick={handleRefresh} disabled={refreshing}>
+        <Button variant="outline" size="sm" onClick={fireAndLog('lima-viewer:refresh', handleRefresh)} disabled={refreshing}>
           <RefreshCw className={cn('w-3.5 h-3.5 mr-1.5', refreshing && 'animate-spin')} />
           Refresh
         </Button>

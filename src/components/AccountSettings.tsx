@@ -13,6 +13,7 @@ import { THINKING_CONFIGS, PERMISSION_MODES, EFFORT_LEVELS } from "./ControlBar"
 import { ColorSwatchGrid } from "@/components/ui/ColorSwatchGrid";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { fireAndLog } from "@/lib/fireAndLog";
 import {
   Dialog,
   DialogContent,
@@ -67,10 +68,10 @@ const DirInput: React.FC<DirInputProps> = ({ value, onChange, placeholder, compa
         variant="outline"
         size="sm"
         className={cn(h, "px-2")}
-        onClick={async () => {
+        onClick={fireAndLog('account-settings:click', async () => {
           const folder = await pickFolder(value || undefined);
           if (folder) onChange(folder);
-        }}
+        })}
         title="Browse..."
       >
         <FolderOpen className="w-3.5 h-3.5" />
@@ -635,7 +636,7 @@ export const AccountSettings: React.FC = () => {
                 variant="ghost"
                 size="sm"
                 className="h-6 px-2 text-xs text-muted-foreground hover:text-destructive"
-                onClick={() => handleDelete(account.id)}
+                onClick={fireAndLog('account-settings:click', () => handleDelete(account.id))}
                 title="Delete"
               >
                 <Trash2 className="w-3 h-3" />
@@ -786,7 +787,7 @@ export const AccountSettings: React.FC = () => {
               <Button variant="outline" onClick={cancelEdit}>
                 Cancel
               </Button>
-              <Button onClick={saveEdit}>
+              <Button onClick={fireAndLog('account-settings:click', saveEdit)}>
                 <Check className="mr-2 h-4 w-4" />
                 Save
               </Button>
@@ -844,7 +845,7 @@ export const AccountSettings: React.FC = () => {
             </div>
             <SessionDefaultsEditor value={newSessionDefaults} onChange={setNewSessionDefaults} />
             <div className="flex gap-2">
-              <Button size="sm" onClick={handleCreate} className="h-7 text-xs">
+              <Button size="sm" onClick={fireAndLog('account-settings:click', handleCreate)} className="h-7 text-xs">
                 Add
               </Button>
               <Button
@@ -889,7 +890,7 @@ export const AccountSettings: React.FC = () => {
                 variant="ghost"
                 size="sm"
                 className="h-6 px-2 text-xs text-muted-foreground hover:text-destructive"
-                onClick={() => handleRemoveRule(rule.id)}
+                onClick={fireAndLog('account-settings:click', () => handleRemoveRule(rule.id))}
               >
                 <Trash2 className="w-3 h-3" />
               </Button>
@@ -920,7 +921,7 @@ export const AccountSettings: React.FC = () => {
               </SelectContent>
             </Select>
             <div className="flex gap-2">
-              <Button size="sm" onClick={handleAddRule} className="h-7 text-xs" disabled={!newRulePrefix.trim() || newRuleAccountId === null}>
+              <Button size="sm" onClick={fireAndLog('account-settings:add-rule', handleAddRule)} className="h-7 text-xs" disabled={!newRulePrefix.trim() || newRuleAccountId === null}>
                 Add
               </Button>
               <Button
@@ -976,11 +977,11 @@ export const AccountSettings: React.FC = () => {
           <Input
             value={testPath}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setTestPath(e.target.value); }}
-            onKeyDown={(e: React.KeyboardEvent) => e.key === "Enter" && handleTestResolution()}
+            onKeyDown={fireAndLog('account-settings:key-down', async (e: React.KeyboardEvent) => { if (e.key === "Enter") await handleTestResolution(); })}
             placeholder="/Users/you/Repos/project-name"
             className="font-mono text-sm"
           />
-          <Button onClick={handleTestResolution} size="sm" variant="outline">
+          <Button onClick={fireAndLog('account-settings:click', handleTestResolution)} size="sm" variant="outline">
             Test
           </Button>
         </div>

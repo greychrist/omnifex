@@ -88,8 +88,17 @@ class LogService {
       // electronAPI not available — skip backend events
     }
 
-    // Start periodic flush
-    this.flushTimer = setInterval(() => this.flush(), FLUSH_INTERVAL_MS);
+    // Start periodic flush. We can't import fireAndLog here because this
+    // service IS the logging substrate fireAndLog calls into; instead,
+    // catch the rejection inline so a failed flush doesn't bubble out
+    // and re-trigger a console.error → captureConsole loop.
+    this.flushTimer = setInterval(() => {
+      this.flush().catch((err: unknown) => {
+        // Use the original (un-wrapped) console.error so we don't
+        // re-enter capture and cause a feedback loop.
+        this.originalConsole.error('[logService] flush failed:', err);
+      });
+    }, FLUSH_INTERVAL_MS);
   }
 
   private captureConsole(level: LogLevel, args: any[]): void {

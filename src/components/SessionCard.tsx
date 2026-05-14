@@ -6,6 +6,7 @@ import { Popover } from "@/components/ui/popover";
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import { Button } from "@/components/ui/button";
 import { HeaderLabel } from "./HeaderLabel";
+import { fireAndLog } from "@/lib/fireAndLog";
 
 // Palette for context-usage categories. Each category comes with its own
 // `color` from the SDK, but those default colors sometimes clash with our
@@ -284,7 +285,7 @@ export function SessionCard({
                     </span>
                     <button
                       type="button"
-                      onClick={handleCopySessionId}
+                      onClick={fireAndLog('session-card:click', handleCopySessionId)}
                       className="shrink-0 p-1 rounded hover:bg-muted/60 text-muted-foreground hover:text-foreground transition-colors"
                       title={sessionIdCopied ? "Copied!" : "Copy session id"}
                       aria-label="Copy session id"

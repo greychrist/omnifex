@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
 import { RotateCcw, Check, AlertCircle } from 'lucide-react';
+import { fireAndLog } from "@/lib/fireAndLog";
 import {
   api,
   PROMPT_TEMPLATE_SETTING_KEY,
@@ -118,7 +119,7 @@ export const SummaryPromptSettings: React.FC = () => {
   // etc.).
   const scheduleAutosave = (next: string) => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(async () => {
+    saveTimer.current = setTimeout(fireAndLog('summary-prompt-settings:autosave', async () => {
       saveTimer.current = null;
       if (next === savedRef.current) return;
       setError(null);
@@ -131,7 +132,7 @@ export const SummaryPromptSettings: React.FC = () => {
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Save failed.');
       }
-    }, PROMPT_AUTOSAVE_DEBOUNCE_MS);
+    }), PROMPT_AUTOSAVE_DEBOUNCE_MS);
   };
 
   const handleEnabledChange = async (next: boolean) => {
@@ -190,7 +191,7 @@ export const SummaryPromptSettings: React.FC = () => {
             <Switch
               id="sessions-summary-enabled"
               checked={enabled}
-              onCheckedChange={handleEnabledChange}
+              onCheckedChange={fireAndLog('summary-prompt-settings:checked-change', handleEnabledChange)}
               aria-label="Enable session summaries"
             />
             <label
@@ -250,7 +251,7 @@ export const SummaryPromptSettings: React.FC = () => {
               <Switch
                 id="sessions-summary-auto-on-close"
                 checked={autoOnClose}
-                onCheckedChange={handleAutoOnCloseChange}
+                onCheckedChange={fireAndLog('summary-prompt-settings:checked-change', handleAutoOnCloseChange)}
                 aria-label="Generate summaries automatically on session close"
               />
               <label

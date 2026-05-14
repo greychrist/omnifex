@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Toast, ToastContainer } from "@/components/ui/toast";
 import { api, type ClaudeMdFile } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { fireAndLog } from "@/lib/fireAndLog";
 
 interface ClaudeFileEditorProps {
   /**
@@ -121,7 +122,7 @@ export const ClaudeFileEditor: React.FC<ClaudeFileEditorProps> = ({
           </div>
           
           <Button
-            onClick={handleSave}
+            onClick={fireAndLog('claude-file-editor:click', handleSave)}
             disabled={!hasChanges || saving}
             size="sm"
           >

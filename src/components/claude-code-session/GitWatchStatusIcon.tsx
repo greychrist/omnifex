@@ -2,6 +2,7 @@ import * as React from 'react';
 import { RefreshCw, CircleAlert } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { fireAndLog } from "@/lib/fireAndLog";
 
 interface GitWatchStatusIconProps {
   /**
@@ -82,7 +83,7 @@ export const GitWatchStatusIcon: React.FC<GitWatchStatusIconProps> = ({
     <Button
       size="sm"
       variant="outline"
-      onClick={handleClick}
+      onClick={fireAndLog('git-watch-status-icon:click', handleClick)}
       disabled={userBusy}
       title={title}
       aria-label={title}

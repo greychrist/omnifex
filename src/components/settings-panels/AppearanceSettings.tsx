@@ -26,6 +26,7 @@ import { PaletteEditor } from "./appearance/PaletteEditor";
 import { TypographyEditor } from "./appearance/TypographyEditor";
 import type { SettingsPanelProps } from "./types";
 import { cn } from "@/lib/utils";
+import { fireAndLog } from "@/lib/fireAndLog";
 
 const USER_DEFAULT_KEY = "message_rendering_config_user_default";
 
@@ -412,7 +413,7 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
             type="file"
             accept="application/json"
             className="hidden"
-            onChange={importConfig}
+            onChange={fireAndLog('appearance-settings:change', importConfig)}
           />
           <Button
             type="button"
@@ -424,7 +425,7 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
             Import JSON
           </Button>
           <div className="ml-auto" />
-          <Button type="button" variant="outline" size="sm" onClick={saveAsUserDefault}>
+          <Button type="button" variant="outline" size="sm" onClick={fireAndLog('appearance-settings:click', saveAsUserDefault)}>
             <Save className="h-3.5 w-3.5 mr-1.5" />
             Save as my default
           </Button>
@@ -432,7 +433,7 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
             type="button"
             variant="outline"
             size="sm"
-            onClick={resetToUserDefault}
+            onClick={fireAndLog('appearance-settings:click', resetToUserDefault)}
             disabled={!hasUserDefault}
             title={hasUserDefault ? "Reset to your saved default" : "No personal default saved yet"}
           >

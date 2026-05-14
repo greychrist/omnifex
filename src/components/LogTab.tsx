@@ -33,6 +33,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { api, type LogEntry, type LogQueryResult, type LogOrderBy, type LogOrderDir } from "@/lib/api";
+import { fireAndLog } from "@/lib/fireAndLog";
 import {
   LOG_LEVELS,
   LOG_SOURCES,
@@ -291,7 +292,7 @@ export const LogTab: React.FC = () => {
           />
         </div>
 
-        <Button variant="outline" size="sm" onClick={fetchLogs} disabled={loading}>
+        <Button variant="outline" size="sm" onClick={fireAndLog('log-tab:refresh', fetchLogs)} disabled={loading}>
           {loading ? (
             <Spinner />
           ) : (
@@ -310,14 +311,14 @@ export const LogTab: React.FC = () => {
           <Switch
             id="verbose-claude-hooks"
             checked={verboseHooks}
-            onCheckedChange={async (next) => {
+            onCheckedChange={fireAndLog('log-tab:checked-change', async (next) => {
               setVerboseHooks(next);
               try {
                 await api.saveSetting('log_verbose_claude_hooks', next ? 'true' : 'false');
               } catch (err) {
                 console.error('Failed to save log_verbose_claude_hooks:', err);
               }
-            }}
+            })}
           />
           <Label htmlFor="verbose-claude-hooks" className="cursor-pointer">
             Claude hook events
@@ -327,14 +328,14 @@ export const LogTab: React.FC = () => {
           <Switch
             id="verbose-usage-runner"
             checked={verboseUsageRunner}
-            onCheckedChange={async (next) => {
+            onCheckedChange={fireAndLog('log-tab:checked-change', async (next) => {
               setVerboseUsageRunner(next);
               try {
                 await api.saveSetting('log_verbose_usage_runner', next ? 'true' : 'false');
               } catch (err) {
                 console.error('Failed to save log_verbose_usage_runner:', err);
               }
-            }}
+            })}
           />
           <Label htmlFor="verbose-usage-runner" className="cursor-pointer">
             Usage runner
@@ -347,14 +348,14 @@ export const LogTab: React.FC = () => {
           <Switch
             id="toast-on-errors"
             checked={toastOnErrors}
-            onCheckedChange={async (next) => {
+            onCheckedChange={fireAndLog('log-tab:checked-change', async (next) => {
               setToastOnErrors(next);
               try {
                 await api.saveSetting('log_error_toast_enabled', next ? 'true' : 'false');
               } catch (err) {
                 console.error('Failed to save log_error_toast_enabled:', err);
               }
-            }}
+            })}
           />
           <Label htmlFor="toast-on-errors" className="cursor-pointer">
             Toast on errors
@@ -546,7 +547,7 @@ export const LogTab: React.FC = () => {
           <Button
             variant="destructive"
             size="sm"
-            onClick={() => handlePruneClick(undefined, "all")}
+            onClick={fireAndLog('log-tab:click', () => handlePruneClick(undefined, "all"))}
           >
             <Trash2 className="w-3 h-3 mr-1" />
             Clear all
@@ -573,7 +574,7 @@ export const LogTab: React.FC = () => {
             <Button variant="outline" onClick={() => { setPruneDialog({ open: false, label: "" }); }}>
               Cancel
             </Button>
-            <Button variant="destructive" onClick={confirmPrune}>
+            <Button variant="destructive" onClick={fireAndLog('log-tab:click', confirmPrune)}>
               Delete
             </Button>
           </DialogFooter>

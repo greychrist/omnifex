@@ -23,6 +23,7 @@ import { useAppFont } from "@/contexts/AppFontContext";
 import { APP_FONT_CHOICES } from "@/lib/typefaceCatalog";
 import { TabPersistenceService } from "@/services/tabPersistence";
 import type { SettingsPanelProps } from "./types";
+import { fireAndLog } from "@/lib/fireAndLog";
 
 // This panel no longer reads from `<configDir>/settings.json`. The three
 // keys it used to expose (`includeCoAuthoredBy`, `verbose`,
@@ -107,7 +108,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
             </div>
             <div className="flex items-center gap-1 p-1 bg-muted/30 rounded-lg">
               <button
-                onClick={() => setTheme('gray')}
+                onClick={fireAndLog('general-settings:click', () => setTheme('gray'))}
                 className={cn(
                   "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all",
                   theme === 'gray'
@@ -119,7 +120,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
                 Gray
               </button>
               <button
-                onClick={() => setTheme('light')}
+                onClick={fireAndLog('general-settings:click', () => setTheme('light'))}
                 className={cn(
                   "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all",
                   theme === 'light'
@@ -147,7 +148,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
             <div className="w-48">
               <Select
                 value={appFont}
-                onValueChange={(v) => setAppFont(v)}
+                onValueChange={fireAndLog('general-settings:value-change', (v) => setAppFont(v))}
                 disabled={appFontLoading}
               >
                 <SelectTrigger>
@@ -217,7 +218,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
             <Switch
               id="startup-intro"
               checked={startupIntroEnabled}
-              onCheckedChange={async (checked) => {
+              onCheckedChange={fireAndLog('general-settings:checked-change', async (checked) => {
                 setStartupIntroEnabled(checked);
                 try {
                   await api.saveSetting('startup_intro_enabled', checked ? 'true' : 'false');
@@ -230,7 +231,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
                 } catch {
                   setToast({ message: 'Failed to update preference', type: 'error' });
                 }
-              }}
+              })}
             />
           </div>
 
@@ -249,20 +250,20 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
                 value={localUpdateDir}
                 placeholder="/Users/you/Repos/omnifex/out/make"
                 onChange={(e) => { setLocalUpdateDir(e.target.value); }}
-                onBlur={() => saveLocalUpdateDir(localUpdateDir)}
+                onBlur={fireAndLog('general-settings:blur', () => saveLocalUpdateDir(localUpdateDir))}
                 className="flex-1 font-mono text-xs"
               />
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={async () => {
+                onClick={fireAndLog('general-settings:click', async () => {
                   const picked = await pickFolder(localUpdateDir || undefined);
                   if (picked) {
                     setLocalUpdateDir(picked);
                     await saveLocalUpdateDir(picked);
                   }
-                }}
+                })}
               >
                 Browse…
               </Button>
@@ -271,10 +272,10 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
                   type="button"
                   variant="ghost"
                   size="sm"
-                  onClick={async () => {
+                  onClick={fireAndLog('general-settings:click', async () => {
                     setLocalUpdateDir('');
                     await saveLocalUpdateDir('');
-                  }}
+                  })}
                 >
                   Clear
                 </Button>

@@ -51,6 +51,7 @@ import {
 import { cn } from '@/lib/utils';
 import { HooksManager } from '@/lib/hooksManager';
 import { api } from '@/lib/api';
+import { fireAndLog } from "@/lib/fireAndLog";
 import {
   HooksConfiguration,
   HookEvent,
@@ -779,7 +780,7 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
                       <Button
                         variant={hasUnsavedChanges ? "default" : "outline"}
                         size="sm"
-                        onClick={handleSave}
+                        onClick={fireAndLog('hooks-editor:click', handleSave)}
                         disabled={!hasUnsavedChanges || isSaving || !projectPath}
                       >
                         {isSaving ? (

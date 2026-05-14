@@ -58,6 +58,7 @@ import { deriveSubagents } from "@/lib/subagentStreams";
 import { getLatestTodos, summarizeTodos } from "@/lib/latestTodos";
 import { SubagentBar } from "./SubagentBar";
 import { TodoBar } from "./TodoBar";
+import { fireAndLog } from "@/lib/fireAndLog";
 import { FindBar } from "./FindBar";
 import { useFindInChat } from "@/hooks/useFindInChat";
 import { exportAsJsonl, exportAsMarkdown } from "@/lib/sessionExporters";
@@ -834,7 +835,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           setSupportedModels: (models) => { setSupportedModels(models as any); },
           queuedPromptsRef,
           setQueuedPrompts,
-          handleSendPrompt,
+          handleSendPrompt: fireAndLog('claude-code-session:send-prompt-effect', handleSendPrompt),
           onError: (kind, err) =>
             { console.error(`[sessions] effect ${kind} failed:`, err); },
         });
@@ -1329,7 +1330,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                     streamMessages={messages}
                     onLinkDetected={handleLinkDetected}
                     accountType={accountResolution?.account.account_type}
-                    onResend={(text, images) => handleSendPrompt(text, selectedModel, images)}
+                    onResend={fireAndLog('claude-code-session:resend', (text, images) => handleSendPrompt(text, selectedModel, images))}
                   />
                 </div>
               ))
@@ -1344,7 +1345,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                         onLinkDetected={handleLinkDetected}
                         accountType={accountResolution?.account.account_type}
                         compact
-                        onResend={(text, images) => handleSendPrompt(text, selectedModel, images)}
+                        onResend={fireAndLog('claude-code-session:resend', (text, images) => handleSendPrompt(text, selectedModel, images))}
                       />
                     </div>
                   ) : (
@@ -1354,7 +1355,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                       streamMessages={messages}
                       accountType={accountResolution?.account.account_type}
                       onLinkDetected={handleLinkDetected}
-                      onResend={(text, images) => handleSendPrompt(text, selectedModel, images)}
+                      onResend={fireAndLog('claude-code-session:resend', (text, images) => handleSendPrompt(text, selectedModel, images))}
                     />
                   ),
                 );
@@ -1821,8 +1822,8 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             />
             <FloatingPromptInput
               ref={floatingPromptRef}
-              onSend={handleSendPrompt}
-              onCancel={handleCancelExecution}
+              onSend={fireAndLog('claude-code-session:send', handleSendPrompt)}
+              onCancel={fireAndLog('claude-code-session:cancel', handleCancelExecution)}
               isLoading={isLoading}
               disabled={!projectPath}
               projectPath={projectPath}
@@ -1932,7 +1933,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={handleCopyAsMarkdown}
+                            onClick={fireAndLog('claude-code-session:click', handleCopyAsMarkdown)}
                             className="w-full justify-start text-xs"
                           >
                             Copy as Markdown
@@ -1940,7 +1941,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={handleCopyAsJsonl}
+                            onClick={fireAndLog('claude-code-session:click', handleCopyAsJsonl)}
                             className="w-full justify-start text-xs"
                           >
                             Copy as JSONL

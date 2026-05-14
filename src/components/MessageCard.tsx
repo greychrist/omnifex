@@ -14,6 +14,7 @@ import { IconRenderer } from "@/components/settings-panels/appearance/iconMap";
 import { KindHeader } from "@/components/KindHeader";
 import type { ClaudeStreamMessage } from "@/types/claudeStream";
 import type { IconName } from "@/lib/messageRenderingConfig";
+import { fireAndLog } from "@/lib/fireAndLog";
 
 interface MessageCardProps {
   /** Drives icon, accent, and (via KindHeader) the configured header label.
@@ -184,7 +185,7 @@ const CardFooter: React.FC<{
           {(message || copyText) && (
             <button
               type="button"
-              onClick={handleCopy}
+              onClick={fireAndLog('message-card:click', handleCopy)}
               className="p-0.5 rounded hover:bg-muted/60 hover:text-foreground transition-colors"
               title={copied ? "Copied!" : "Copy"}
               aria-label="Copy"

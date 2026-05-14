@@ -5,8 +5,9 @@ import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { api, type UsageStats, type ProjectUsage } from "@/lib/api";
-import { 
-  Calendar, 
+import { fireAndLog } from "@/lib/fireAndLog";
+import {
+  Calendar,
   Filter,
   Loader2,
   Briefcase
@@ -161,7 +162,7 @@ export const UsageDashboard: React.FC<UsageDashboardProps> = ({ }) => {
               exit={{ opacity: 0, y: -10 }}
               className="mb-4 p-3 rounded-lg bg-destructive/10 border border-destructive/50 text-body-small text-destructive">
               {error}
-              <Button onClick={loadUsageStats} size="sm" className="ml-4">
+              <Button onClick={fireAndLog('usage-dashboard.original:click', loadUsageStats)} size="sm" className="ml-4">
                 Try Again
               </Button>
             </motion.div>

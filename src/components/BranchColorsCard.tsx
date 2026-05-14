@@ -7,6 +7,7 @@ import { GitBranchBadge } from '@/components/claude-code-session/GitBranchBadge'
 import { resolveBranchColors } from '@/lib/branchColors';
 import { Pencil, Plus, Trash2, Check, X } from 'lucide-react';
 import { api, type BranchColor } from '@/lib/api';
+import { fireAndLog } from "@/lib/fireAndLog";
 
 interface BranchColorsCardProps {
   projectPath: string;
@@ -93,7 +94,7 @@ export const BranchColorsCard: React.FC<BranchColorsCardProps> = ({
                 setEditing={setEditing}
                 availableBranches={availableBranches}
                 takenBranches={new Set(rows.filter((r) => r.id !== row.id).map((r) => r.branch_name))}
-                onSave={save}
+                onSave={fireAndLog('branch-colors-card:save', save)}
                 onCancel={cancel}
               />
             );
@@ -111,7 +112,7 @@ export const BranchColorsCard: React.FC<BranchColorsCardProps> = ({
               <Button size="sm" variant="ghost" onClick={() => { startEdit(row); }} className="h-7 w-7 p-0">
                 <Pencil className="h-3.5 w-3.5" />
               </Button>
-              <Button size="sm" variant="ghost" onClick={() => remove(row.id)} className="h-7 w-7 p-0">
+              <Button size="sm" variant="ghost" onClick={fireAndLog('branch-colors-card:click', () => remove(row.id))} className="h-7 w-7 p-0">
                 <Trash2 className="h-3.5 w-3.5" />
               </Button>
             </div>
@@ -124,7 +125,7 @@ export const BranchColorsCard: React.FC<BranchColorsCardProps> = ({
             setEditing={setEditing}
             availableBranches={availableBranches}
             takenBranches={new Set(rows.map((r) => r.branch_name))}
-            onSave={save}
+            onSave={fireAndLog('branch-colors-card:save', save)}
             onCancel={cancel}
           />
         )}

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Toast, ToastContainer } from "@/components/ui/toast";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { fireAndLog } from "@/lib/fireAndLog";
 
 interface MarkdownEditorProps {
   /**
@@ -88,7 +89,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
               </p>
             </div>
             <Button
-              onClick={handleSave}
+              onClick={fireAndLog('markdown-editor:click', handleSave)}
               disabled={!hasChanges || saving}
               size="default"
             >

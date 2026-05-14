@@ -8,6 +8,7 @@ import { useAccounts } from "@/contexts/AccountsContext";
 import { Filter, ChevronDown, ChevronUp } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
+import { fireAndLog } from "@/lib/fireAndLog";
 
 interface UsageDashboardProps {
   onBack: () => void;
@@ -333,7 +334,7 @@ export const UsageDashboard: React.FC<UsageDashboardProps> = ({}) => {
           ) : error ? (
             <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/50 text-sm text-destructive">
               {error}
-              <Button onClick={loadData} size="sm" className="ml-4">
+              <Button onClick={fireAndLog('usage-dashboard:click', loadData)} size="sm" className="ml-4">
                 Try Again
               </Button>
             </div>

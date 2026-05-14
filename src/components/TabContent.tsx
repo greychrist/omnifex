@@ -16,6 +16,7 @@ import type { EffortLevel, ThinkingConfig } from '@/components/FloatingPromptInp
 import { normalizeThinkingConfig } from '@/lib/thinkingConfig';
 import { useClaudeSessionStore } from '@/stores/claudeSessionStore';
 import { BranchColorsCard } from '@/components/BranchColorsCard';
+import { fireAndLog } from "@/lib/fireAndLog";
 
 // Lazy load heavy components
 const ClaudeCodeSession = lazy(() => import('@/components/ClaudeCodeSession').then(m => ({ default: m.ClaudeCodeSession })));
@@ -447,7 +448,7 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                   <div className="flex-1 min-h-0">
                     <ProjectList
                       projects={projects}
-                      onProjectClick={handleProjectClick}
+                      onProjectClick={fireAndLog('tab-content:project-click', handleProjectClick)}
                       onOpenProject={handleOpenProject}
                       onDeleteProject={handleDeleteProject}
                       loading={loading}
@@ -468,7 +469,7 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                 open={showAccountPicker}
                 onOpenChange={setShowAccountPicker}
                 projectPath={pendingProjectPath}
-                onAccountSelected={async () => {
+                onAccountSelected={fireAndLog('tab-content:account-selected', async () => {
                   try {
                     const project = await api.createProject(pendingProjectPath);
                     await loadProjects();
@@ -477,7 +478,7 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                     console.error('Failed to create project after account selection:', err);
                     setError('Failed to create project for the selected directory.');
                   }
-                }}
+                })}
               />
               {selectedProject && (
                 <AccountPickerDialog

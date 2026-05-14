@@ -12,6 +12,7 @@ import { Toast, ToastContainer } from "@/components/ui/toast";
 import { StorageTab } from "./StorageTab";
 import { LogTab } from "./LogTab";
 import { SummaryPromptSettings } from "./settings-panels/SummaryPromptSettings";
+import { fireAndLog } from "@/lib/fireAndLog";
 import {
   GeneralSettings,
   AppearanceSettings,
@@ -171,7 +172,7 @@ export const Settings: React.FC<SettingsProps> = ({
                   className="shrink-0"
                 >
                   <Button
-                    onClick={saveSettings}
+                    onClick={fireAndLog('settings:click', saveSettings)}
                     disabled={saving}
                     size="sm"
                   >

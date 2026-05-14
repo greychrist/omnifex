@@ -5,6 +5,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { ExternalLink, FileQuestion, Terminal, AlertCircle } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { ClaudeVersionSelector } from "./ClaudeVersionSelector";
+import { fireAndLog } from "@/lib/fireAndLog";
 
 interface ClaudeBinaryDialogProps {
   open: boolean;
@@ -129,7 +130,7 @@ export function ClaudeBinaryDialog({ open, onOpenChange, onSuccess, onError }: C
             Cancel
           </Button>
           <Button 
-            onClick={handleSave} 
+            onClick={fireAndLog('claude-binary-dialog:click', handleSave)} 
             disabled={isValidating || !selectedInstallation || !hasInstallations}
           >
             {isValidating ? "Validating..." : hasInstallations ? "Save Selection" : "No Installations Found"}
