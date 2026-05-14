@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ChevronDown, Edit2, FileText } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
@@ -43,14 +43,7 @@ export const ClaudeMemoriesDropdown: React.FC<ClaudeMemoriesDropdownProps> = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-  // Load CLAUDE.md files when dropdown opens
-  useEffect(() => {
-    if (isOpen && files.length === 0) {
-      logAndForget('claude-memories-dropdown:load-claude-md-files', loadClaudeMdFiles());
-    }
-  }, [isOpen]);
-  
-  const loadClaudeMdFiles = async () => {
+  const loadClaudeMdFiles = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -62,7 +55,14 @@ export const ClaudeMemoriesDropdown: React.FC<ClaudeMemoriesDropdownProps> = ({
     } finally {
       setLoading(false);
     }
-  };
+  }, [projectPath]);
+
+  // Load CLAUDE.md files when dropdown opens (and not yet loaded for this path)
+  useEffect(() => {
+    if (isOpen && files.length === 0) {
+      logAndForget('claude-memories-dropdown:load-claude-md-files', loadClaudeMdFiles());
+    }
+  }, [isOpen, files.length, loadClaudeMdFiles]);
   
   const formatFileSize = (bytes: number): string => {
     if (bytes < 1024) return `${bytes} B`;
