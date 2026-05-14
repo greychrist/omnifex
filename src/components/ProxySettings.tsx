@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
@@ -33,12 +33,28 @@ export function ProxySettings({ setToast, onChange }: ProxySettingsProps) {
     enabled: false,
   });
 
+  const loadSettings = useCallback(async () => {
+    try {
+      const loadedSettings = await window.electronAPI.invoke('get_proxy_settings') as ProxySettings;
+      setSettings(loadedSettings);
+      setOriginalSettings(loadedSettings);
+    } catch (error) {
+      console.error('Failed to load proxy settings:', error);
+      setToast({
+        message: 'Failed to load proxy settings',
+        type: 'error',
+      });
+    }
+  }, [setToast]);
+
   useEffect(() => {
     logAndForget('proxy-settings:load-settings', loadSettings());
-  }, []);
+  }, [loadSettings]);
 
-  // Save settings function
-  const saveSettings = async () => {
+  // Save settings function — closes over current `settings` so it gets
+  // recreated whenever they change. The parent gets a fresh reference
+  // through onChange below.
+  const saveSettings = useCallback(async () => {
     try {
       await window.electronAPI.invoke('save_proxy_settings', { settings });
       setOriginalSettings(settings);
@@ -54,7 +70,7 @@ export function ProxySettings({ setToast, onChange }: ProxySettingsProps) {
       });
       throw error; // Re-throw to let parent handle the error
     }
-  };
+  }, [settings, setToast]);
 
   // Notify parent component of changes
   useEffect(() => {
@@ -62,21 +78,7 @@ export function ProxySettings({ setToast, onChange }: ProxySettingsProps) {
       const hasChanges = JSON.stringify(settings) !== JSON.stringify(originalSettings);
       onChange(hasChanges, () => settings, saveSettings);
     }
-  }, [settings, originalSettings, onChange]);
-
-  const loadSettings = async () => {
-    try {
-      const loadedSettings = await window.electronAPI.invoke('get_proxy_settings') as ProxySettings;
-      setSettings(loadedSettings);
-      setOriginalSettings(loadedSettings);
-    } catch (error) {
-      console.error('Failed to load proxy settings:', error);
-      setToast({
-        message: 'Failed to load proxy settings',
-        type: 'error',
-      });
-    }
-  };
+  }, [settings, originalSettings, onChange, saveSettings]);
 
 
   const handleInputChange = (field: keyof ProxySettings, value: string) => {
