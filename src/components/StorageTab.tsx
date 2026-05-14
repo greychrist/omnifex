@@ -633,6 +633,7 @@ export const StorageTab: React.FC = () => {
               Cancel
             </Button>
             <Button
+              // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- array element guaranteed by length-checked iteration.
               onClick={() => handleUpdateRow(editingRow!)}
               disabled={loading}
             >
@@ -715,6 +716,7 @@ export const StorageTab: React.FC = () => {
               Cancel
             </Button>
             <Button
+              // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- array element guaranteed by length-checked iteration.
               onClick={() => handleInsertRow(newRow!)}
               disabled={loading}
             >

@@ -28,6 +28,7 @@ function groupByScope(plugins: SessionPluginInfo[]): [SessionPluginInfo["scope"]
   }
   return SCOPE_ORDER
     .filter((k) => buckets.has(k))
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- value was just .has-checked above.
     .map((k) => [k, buckets.get(k)!.slice().sort((a, b) => a.name.localeCompare(b.name))]);
 }
 

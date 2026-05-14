@@ -491,6 +491,7 @@ export function respondPermission(
     : updatedPermissions;
 
   // Resolve the front of the queue
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- permissionQueue.shift() guarded by length > 0 (prior check).
   const current = handle.permissionQueue.shift()!;
   current.resolve({ behavior, updatedInput, updatedPermissions: augmented });
 

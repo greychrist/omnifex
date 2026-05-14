@@ -428,6 +428,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
           (b): b is Extract<typeof b, { type: "tool_use" }> =>
             b?.type === "tool_use"
             && typeof (b as { name?: string }).name === "string"
+            // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- name guaranteed string by typeof check on prior line.
             && (b as { name?: string }).name!.toLowerCase() === "askuserquestion",
         );
         if (tu) {

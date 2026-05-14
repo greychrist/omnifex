@@ -435,6 +435,7 @@ function aggregateEntries(entries: ParsedUsage[]): UsageStats {
   // Resolve session counts and total_sessions
   let totalSessions = 0;
   for (const [projectPath, sessionSet] of sessionsByProject) {
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- projectPath came from sessionsByProject keys; byProject mirrors them.
     const projEntry = byProject.get(projectPath)!;
     projEntry.session_count = sessionSet.size;
     totalSessions += sessionSet.size;

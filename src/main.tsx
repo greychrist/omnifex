@@ -49,6 +49,7 @@ api.logCount().then((count) => {
   }
 })();
 
+// eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- document.getElementById("root") asserted at app entry.
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <ErrorBoundary>

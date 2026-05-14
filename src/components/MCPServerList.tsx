@@ -284,6 +284,7 @@ export const MCPServerList: React.FC<MCPServerListProps> = ({
                       <Button
                         variant="ghost"
                         size="sm"
+                        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- value was just .has-checked above.
                         onClick={() => copyCommand(server.command!, server.name)}
                         className="h-6 px-2 text-xs hover:bg-primary/10"
                       >

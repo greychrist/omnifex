@@ -125,6 +125,7 @@ export const FilePicker: React.FC<FilePickerProps> = React.memo(({
     
     // Check cache first
     if (globalDirectoryCache.has(cacheKey)) {
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- globalDirectoryCache.has(cacheKey) guards this get().
       setEntries(globalDirectoryCache.get(cacheKey)!);
       return;
     }
@@ -153,6 +154,7 @@ export const FilePicker: React.FC<FilePickerProps> = React.memo(({
     const cacheKey = `${currentPath}:${query}`;
     
     if (globalSearchCache.has(cacheKey)) {
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- same cache.has() guard.
       setEntries(globalSearchCache.get(cacheKey)!);
       return;
     }

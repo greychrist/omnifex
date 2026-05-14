@@ -182,6 +182,7 @@ export class SessionPersistenceService {
         if (key && key.startsWith('opcode_session_') && key !== 'opcode_session_index') {
           const newKey = key.replace('opcode_session_', 'greychrist_session_');
           if (!localStorage.getItem(newKey)) {
+            // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- value just put into the map two lines above.
             localStorage.setItem(newKey, localStorage.getItem(key)!);
             localStorage.removeItem(key);
           }

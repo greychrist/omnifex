@@ -40,6 +40,7 @@ export function createAsyncChannel<T>(maxSize?: number): AsyncChannel<T> {
       return {
         next(): Promise<IteratorResult<T>> {
           if (queue.length > 0) {
+            // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- queue.shift() guarded by length > 0 above.
             return Promise.resolve({ value: queue.shift()!, done: false });
           }
           if (closed) {

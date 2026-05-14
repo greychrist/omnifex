@@ -81,6 +81,7 @@ export const SplitPane: React.FC<SplitPaneProps> = ({
     }
 
     animationFrameRef.current = requestAnimationFrame(() => {
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- ref.current set by render before this effect runs.
       const containerWidth = containerRef.current!.offsetWidth;
       const deltaX = e.clientX - dragStartX.current;
       const deltaPercent = (deltaX / containerWidth) * 100;

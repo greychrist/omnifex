@@ -432,8 +432,10 @@ export function createSessionGitWatcher(deps: SessionGitWatcherDeps): SessionGit
     }
 
     return {
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- state.projectPath was added to byPath earlier in this fn.
       project: byPath.get(state.projectPath)!,
       worktrees: peerPaths
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- peerPaths derived from byPath; lookup is guaranteed.
         .map((p) => byPath.get(p)!)
         .sort((a, b) => a.path.localeCompare(b.path)),
     };

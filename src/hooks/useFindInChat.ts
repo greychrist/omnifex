@@ -143,6 +143,7 @@ function wrapMatches(container: HTMLElement, matches: Match[]): HTMLElement[] {
     const matchNode = offset > 0 ? node.splitText(offset) : node;
     const mark = doc.createElement('mark');
     mark.setAttribute(MARK_ATTR, '');
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- array index guaranteed valid by upstream length check.
     matchNode.parentNode!.insertBefore(mark, matchNode);
     mark.appendChild(matchNode);
     out.push(mark);

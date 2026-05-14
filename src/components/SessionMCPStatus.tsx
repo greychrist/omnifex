@@ -228,6 +228,7 @@ export const SessionMCPStatus: React.FC<SessionMCPStatusProps> = ({ tabId }) => 
                       <div>
                         <span className="text-xs font-medium text-muted-foreground mb-1 block">Tools</span>
                         <div className="flex flex-wrap gap-1">
+                          {/* eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- value was just .has-checked above. */}
                           {server.tools!.map((tool) => (
                             <Badge
                               key={tool.name}
@@ -279,6 +280,7 @@ function groupByScope(servers: SessionMcpServerStatus[]): [string, SessionMcpSer
     if (bi === -1) return -1;
     return ai - bi;
   });
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- value was just .has-checked above.
   return keys.map((k) => [k, buckets.get(k)!.slice().sort((a, b) => a.name.localeCompare(b.name))]);
 }
 
