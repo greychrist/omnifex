@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.35] — 2026-05-14
+
+Three user-visible fixes plus the architectural cleanup that closed the bug class behind one of them. The Resend regression on resumed sessions was the immediately visible symptom; the dual-shape `content` field that caused it was costing the renderer ~70 branching sites and producing roughly one quiet bug per year. Closed at the IPC / JSONL boundary instead of at every read site.
+
+Installers remain **unsigned**.
+
+### Fixed
+
+- **Resend button works on resumed sessions.** Clicking Resend on any user-message card in a session loaded from JSONL silently dropped the prompt. User messages restored from disk carry `content` as a bare string (the CLI's persistence shape), but `handleResend` assumed the typed-block-array shape the live SDK emits — extracted text was `''`, the IPC frame went out empty, no log entry, nothing visible to the user. Routed through a new `extractResendPayload` helper that handles both shapes, then collapsed to array-only after the boundary normalization below.
+- **Slash-command rendering regression caught during the same refactor.** The `<command-name>/clear</command-name>…` markup that slash commands store as in JSONL was being normalized into a single text block by the boundary fix above — and the array-path renderer was rendering the raw XML verbatim instead of routing through `CommandWidget` / `CommandOutputWidget`. Moved the command/stdout/`@-mention` image detection into the array text-block renderer so the card looks the same pre- and post-normalization.
+
+### Added
+
+- **Session identity in the Log tab's Category column.** The column previously rendered `session:tab-1778624839066-n893j4wui` — load-bearing for debugging but unreadable at a glance. Now formats as `session: <projectName> - <claudeSessionId[0..6]>` (GitHub's 7-char short-SHA convention for the GUID). Falls back to `session: <projectName>` when the SDK hasn't yet assigned a session id, and to a truncated tabId for tabs closed before this code shipped (no recoverable identity).
+- **Resizable Log table columns.** Drag handles on the right edge of Time / Level / Source / Category headers. Widths persist to `localStorage`; Message column stays flexible. Min width 40 px so a column can't be dragged to zero.
+- **`sessionNameRegistry` localStorage map.** `tabId → { title?, projectName?, claudeSessionId?, updatedAt }`, mirrored from TabContext on every tab change so the Log tab can resolve closed-tab rows. Bounded to 500 entries, oldest-evicted, backward-compatible with the title-only legacy shape from earlier drafts of this work.
+
+### Changed
+
+- **Claude message content normalized to array form at every ingress point.** New `normalizeMessageContent` helper wraps the `content: string` shape (which the Anthropic Messages API allows and the CLI's JSONL persists) into a single typed-block array at the JSONL load, JSONL reload, and live-stream IPC ingress points in `ClaudeCodeSession.tsx`. Idempotent on already-array content. Downstream consumers (StreamMessage, messageFilters, messageKind, compactGrouping, synthesizeResults, skillDetection, …) now branch on one shape, not two.
+- **Removed dead string-shape branches across the renderer.** The CLAUDE.md "refactors clean up after themselves" rule was added precisely because a previous version of this commit nearly shipped with the normalization in place but the now-unreachable defensive branches still in the read sites. Cleanup pass touched `StreamMessage.tsx` (contentStr derivation + command-flag guards + extractCopyText), `extractResendPayload`, `messageFilters`, `messageKind`, `compactGrouping`, `synthesizeResults`, `skillDetection`, plus the `getMessageContent` JSDoc to document the new array-only invariant.
+- **`CLAUDE.md` (root + `src/CLAUDE.md`) is now tracked in git** instead of gitignored. The files are project guidance, not personal notes — every contributor and every Claude session in this repo needs to see the current versions. Replaced the three explicit ignore lines with a `CLAUDE.local.md` + `**/CLAUDE.local.md` escape hatch for genuinely personal scratch notes.
+
 ## [0.4.34] — 2026-05-14
 
 Two internal cleanups born from the v0.4.32/v0.4.33 SDK-tools review pass and a follow-up audit of how OmniFex consumes the Claude Agent SDK's full message-type surface (30 variants in 0.2.141). No new user-visible features; the changes are all under the hood — but two of them close real bug classes the older code shipped silently with.
