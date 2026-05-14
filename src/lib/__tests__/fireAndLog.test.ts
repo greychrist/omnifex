@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { fireAndLog } from '../fireAndLog';
+import { fireAndLog, logAndForget } from '../fireAndLog';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -42,6 +42,24 @@ describe('fireAndLog', () => {
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const wrapped = fireAndLog('ok', async () => 'fine');
     wrapped();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  // ── logAndForget — sister helper for floating-promises ─────────────
+  // (kept inside the same describe block since they share the helper file)
+
+  it('logAndForget catches rejection of an already-initiated promise', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    logAndForget('init', Promise.reject(new Error('boom')));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(errSpy).toHaveBeenCalledOnce();
+    expect(String(errSpy.mock.calls[0][0])).toBe('[init]');
+  });
+
+  it('logAndForget does not log on resolve', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    logAndForget('init', Promise.resolve(42));
     await new Promise((r) => setTimeout(r, 0));
     expect(errSpy).not.toHaveBeenCalled();
   });

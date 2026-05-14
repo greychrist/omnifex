@@ -13,7 +13,7 @@ import { THINKING_CONFIGS, PERMISSION_MODES, EFFORT_LEVELS } from "./ControlBar"
 import { ColorSwatchGrid } from "@/components/ui/ColorSwatchGrid";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { fireAndLog } from "@/lib/fireAndLog";
+import { fireAndLog, logAndForget } from "@/lib/fireAndLog";
 import {
   Dialog,
   DialogContent,
@@ -481,14 +481,14 @@ export const AccountSettings: React.FC = () => {
       ]);
       setAccounts(accts);
       setPathRules(rules);
-      refreshAccountsContext();
+      logAndForget('account-settings:refresh-accounts-context', refreshAccountsContext());
     } catch (error) {
       console.error("Failed to load account data:", error);
     }
   };
 
   useEffect(() => {
-    loadData();
+    logAndForget('account-settings:load-data', loadData());
     api.listProjectOverrides().then(setOverrides).catch(console.error);
   }, []);
 

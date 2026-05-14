@@ -8,7 +8,7 @@ import { api, type ClaudeInstallation } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { CheckCircle, FolderOpen, HardDrive, Settings, Terminal, Info } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
-import { fireAndLog } from "@/lib/fireAndLog";
+import { fireAndLog, logAndForget } from "@/lib/fireAndLog";
 
 interface ClaudeVersionSelectorProps {
   /**
@@ -66,7 +66,7 @@ export const ClaudeVersionSelector: React.FC<ClaudeVersionSelectorProps> = ({
   const [selectedInstallation, setSelectedInstallation] = useState<ClaudeInstallation | null>(null);
 
   useEffect(() => {
-    loadInstallations();
+    logAndForget('claude-version-selector:load-installations', loadInstallations());
   }, []);
 
   useEffect(() => {

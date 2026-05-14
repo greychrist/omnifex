@@ -32,6 +32,30 @@
  *     a toast hook, or a per-action retry policy, this is the single
  *     place to wire it.
  */
+/**
+ * Sister helper for the no-floating-promises rule. Use when the call
+ * expression has *already happened* (you have a Promise in hand,
+ * not a function to invoke later). Same observability path as
+ * `fireAndLog` — a rejection routes through `console.error('[label]', err)`,
+ * which LogService captures into `app_logs`.
+ *
+ * Usage:
+ *
+ *   logAndForget('app:load-projects', loadProjects());
+ *   logAndForget('main:app-ready', app.whenReady().then(initWindow));
+ *
+ * Compared to inline `void p.catch(console.error)`:
+ *   - The label appears as `[label] <err>` in the Log tab.
+ *   - One short call instead of `void` + chained `.catch`.
+ *   - Same centralization story as `fireAndLog`.
+ */
+export function logAndForget(label: string, p: Promise<unknown>): void {
+  p.catch((err: unknown) => {
+    // LogService captures console.error → app_logs (frontend / error).
+    console.error(`[${label}]`, err);
+  });
+}
+
 export function fireAndLog<TArgs extends unknown[]>(
   label: string,
   fn: ((...args: TArgs) => Promise<unknown> | void) | undefined,

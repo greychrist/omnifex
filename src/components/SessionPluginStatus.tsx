@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Spinner } from "@/components/ui/spinner";
 import { api, type SessionPluginInfo } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { logAndForget } from "@/lib/fireAndLog";
 
 interface SessionPluginStatusProps {
   tabId: string;
@@ -49,7 +50,7 @@ export const SessionPluginStatus: React.FC<SessionPluginStatusProps> = ({ tabId 
   }, [tabId]);
 
   useEffect(() => {
-    load(false);
+    logAndForget('session-plugin-status:load', load(false));
   }, [load]);
 
   const toggle = (key: string) => {
@@ -63,7 +64,7 @@ export const SessionPluginStatus: React.FC<SessionPluginStatusProps> = ({ tabId 
 
   const handleRefresh = () => {
     setLoading(true);
-    load(true);
+    logAndForget('session-plugin-status:load', load(true));
   };
 
   if (loading) {

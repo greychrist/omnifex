@@ -38,7 +38,7 @@ import {
   warnUnhandledKnownTool,
 } from "@/lib/types/toolInput";
 import { AnsweredAskUserQuestionCard } from "@/components/AnsweredAskUserQuestionCard";
-import { fireAndLog } from "@/lib/fireAndLog";
+import { fireAndLog, logAndForget } from "@/lib/fireAndLog";
 import {
   TodoWidget,
   TodoReadWidget,
@@ -103,7 +103,7 @@ const CopyCardButton: React.FC<{ message?: any; text?: string }> = ({ message, t
     e.stopPropagation();
     const copyText = text ?? (message ? extractCopyText(message) : '');
     if (!copyText) return;
-    navigator.clipboard.writeText(copyText);
+    logAndForget('stream-message:write-text', navigator.clipboard.writeText(copyText));
     setCopied(true);
     setToast(true);
     setTimeout(() => { setCopied(false); setToast(false); }, 2000);
@@ -189,7 +189,7 @@ const UserMessageActions: React.FC<{
     e.stopPropagation();
     const copyText = extractCopyText(msg);
     if (!copyText) return;
-    navigator.clipboard.writeText(copyText);
+    logAndForget('stream-message:write-text', navigator.clipboard.writeText(copyText));
     setCopied(true);
     setTimeout(() => { setCopied(false); }, 2000);
   };

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, type UsageRunResult } from '@/lib/api';
+import { logAndForget } from "@/lib/fireAndLog";
 
 const REFRESH_MS = 5 * 60_000;
 const STALE_MS = 5 * 60_000;
@@ -56,7 +57,7 @@ export function useUsageAutoRefresh(
       setData(null);
       return;
     }
-    (async () => {
+    logAndForget('use-usage-auto-refresh:iife', (async () => {
       try {
         const cached = await api.getLastUsageCli(accountName);
         if (cancelled) return;
@@ -69,7 +70,7 @@ export function useUsageAutoRefresh(
       } catch (err) {
         if (!cancelled) console.error('[useUsageAutoRefresh] initial fetch failed', err);
       }
-    })();
+    })());
     return () => {
       cancelled = true;
     };

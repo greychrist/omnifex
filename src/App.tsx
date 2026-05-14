@@ -24,7 +24,7 @@ import { TabManager } from "@/components/TabManager";
 import { TabContent } from "@/components/TabContent";
 import { useTabState } from "@/hooks/useTabState";
 import { StartupIntro } from "@/components/StartupIntro";
-import { fireAndLog } from "@/lib/fireAndLog";
+import { fireAndLog, logAndForget } from "@/lib/fireAndLog";
 
 type View = 
   | "welcome" 
@@ -70,7 +70,7 @@ function AppContent() {
   // Load projects on mount when in projects view
   useEffect(() => {
     if (view === "projects") {
-      loadProjects();
+      logAndForget('app:load-projects', loadProjects());
     } else if (view === "welcome") {
       // Reset loading state for welcome view
       setLoading(false);
@@ -555,7 +555,7 @@ function App() {
 
   useEffect(() => {
     let timer: number | undefined;
-    (async () => {
+    logAndForget('app:iife', (async () => {
       try {
         const pref = await api.getSetting('startup_intro_enabled');
         const enabled = pref === null ? true : pref === 'true';
@@ -570,7 +570,7 @@ function App() {
         // On failure, show intro once to keep UX consistent
         timer = window.setTimeout(() => { setShowIntro(false); }, 2000);
       }
-    })();
+    })());
     return () => {
       if (timer) window.clearTimeout(timer);
     };

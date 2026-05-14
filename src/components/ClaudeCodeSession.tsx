@@ -58,7 +58,7 @@ import { deriveSubagents } from "@/lib/subagentStreams";
 import { getLatestTodos, summarizeTodos } from "@/lib/latestTodos";
 import { SubagentBar } from "./SubagentBar";
 import { TodoBar } from "./TodoBar";
-import { fireAndLog } from "@/lib/fireAndLog";
+import { fireAndLog, logAndForget } from "@/lib/fireAndLog";
 import { FindBar } from "./FindBar";
 import { useFindInChat } from "@/hooks/useFindInChat";
 import { exportAsJsonl, exportAsMarkdown } from "@/lib/sessionExporters";
@@ -297,7 +297,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     let watchId: string | null = null;
     let unsub: (() => void) | null = null;
 
-    (async () => {
+    logAndForget('claude-code-session:iife', (async () => {
       let result: { watchId: string; snapshot: import('@/lib/api').SessionGitSnapshot } | null = null;
       try {
         result = await api.startSessionGitWatch(projectPath);
@@ -316,7 +316,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       setGitWatchId(result.watchId);
       setSessionGit(result.snapshot);
       unsub = api.onSessionGitChanged(result.watchId, setSessionGit);
-    })();
+    })());
 
     return () => {
       cancelled = true;
@@ -557,7 +557,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       // Set the claudeSessionId immediately when we have a session
       setClaudeSessionId(session.id);
 
-      loadSessionHistory();
+      logAndForget('claude-code-session:load-session-history', loadSessionHistory());
     }
   }, [session]);
 
@@ -1609,7 +1609,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
               setPermissionMode={setPermissionMode}
               onStart={() => {
                 setSessionStarted(true);
-                startPersistentSession();
+                logAndForget('claude-code-session:start-persistent-session', startPersistentSession());
               }}
               onChangeAccount={() => { setShowAccountPicker(true); }}
             />
@@ -1766,11 +1766,11 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             mode={elicitationRequest?.mode}
             url={elicitationRequest?.url}
             onAccept={() => {
-              api.respondElicitation(tabIdRef.current, 'accept');
+              logAndForget('claude-code-session:respond-elicitation', api.respondElicitation(tabIdRef.current, 'accept'));
               setElicitationRequest(null);
             }}
             onDecline={() => {
-              api.respondElicitation(tabIdRef.current, 'decline');
+              logAndForget('claude-code-session:respond-elicitation', api.respondElicitation(tabIdRef.current, 'decline'));
               setElicitationRequest(null);
             }}
           />

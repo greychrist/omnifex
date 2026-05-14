@@ -9,7 +9,7 @@ import { api, type MCPServer } from "@/lib/api";
 import { MCPServerList } from "./MCPServerList";
 import { MCPAddServer } from "./MCPAddServer";
 import { MCPImportExport } from "./MCPImportExport";
-import { fireAndLog } from "@/lib/fireAndLog";
+import { fireAndLog, logAndForget } from "@/lib/fireAndLog";
 
 interface MCPManagerProps {
   /**
@@ -43,7 +43,7 @@ export const MCPManager: React.FC<MCPManagerProps> = ({
 
   // Load servers on mount
   useEffect(() => {
-    loadServers();
+    logAndForget('mcpmanager:load-servers', loadServers());
   }, []);
 
   /**
@@ -70,7 +70,7 @@ export const MCPManager: React.FC<MCPManagerProps> = ({
    * Handles server added event
    */
   const handleServerAdded = () => {
-    loadServers();
+    logAndForget('mcpmanager:load-servers', loadServers());
     setToast({ message: "MCP server added successfully!", type: "success" });
     setActiveTab("servers");
   };
@@ -87,7 +87,7 @@ export const MCPManager: React.FC<MCPManagerProps> = ({
    * Handles import completed event
    */
   const handleImportCompleted = (imported: number, failed: number) => {
-    loadServers();
+    logAndForget('mcpmanager:load-servers', loadServers());
     if (failed === 0) {
       setToast({ 
         message: `Successfully imported ${imported} server${imported > 1 ? 's' : ''}!`, 

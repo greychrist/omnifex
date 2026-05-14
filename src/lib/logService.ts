@@ -1,4 +1,5 @@
 import { api, type LogEntry } from './api';
+import { logAndForget } from "@/lib/fireAndLog";
 
 type LogLevel = 'error' | 'warn' | 'info' | 'debug';
 
@@ -120,7 +121,7 @@ class LogService {
   private addEntry(entry: LogEntry): void {
     this.buffer.push(entry);
     if (this.buffer.length >= FLUSH_BATCH_SIZE) {
-      this.flush();
+      logAndForget('log-service:flush', this.flush());
     }
   }
 

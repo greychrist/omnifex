@@ -5,7 +5,7 @@ import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { api, type UsageStats, type ProjectUsage } from "@/lib/api";
-import { fireAndLog } from "@/lib/fireAndLog";
+import { fireAndLog, logAndForget } from "@/lib/fireAndLog";
 import {
   Calendar,
   Filter,
@@ -36,7 +36,7 @@ export const UsageDashboard: React.FC<UsageDashboardProps> = ({ }) => {
   const [activeTab, setActiveTab] = useState("overview");
 
   useEffect(() => {
-    loadUsageStats();
+    logAndForget('usage-dashboard.original:load-usage-stats', loadUsageStats());
   }, [selectedDateRange]);
 
   const loadUsageStats = async () => {

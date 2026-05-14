@@ -199,11 +199,11 @@ function createWindow(): BrowserWindow {
   windows.add(win);
 
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
-    win.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
+    win.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL).catch((err: unknown) => { console.error('[main:load-url]', err); });
   } else {
     win.loadFile(
       path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`)
-    );
+    ).catch((err: unknown) => { console.error('[main:load-file]', err); });
   }
 
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
@@ -224,7 +224,7 @@ function createWindow(): BrowserWindow {
   const devServerUrl = MAIN_WINDOW_VITE_DEV_SERVER_URL;
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (classifyNavigation(url, { devServerUrl }) === 'external') {
-      shell.openExternal(url);
+      shell.openExternal(url).catch((err: unknown) => { console.error('[main:window-open-external]', err); });
     }
     return { action: 'deny' };
   });
@@ -232,7 +232,7 @@ function createWindow(): BrowserWindow {
     const decision = classifyNavigation(url, { devServerUrl });
     if (decision === 'allow') return;
     event.preventDefault();
-    if (decision === 'external') shell.openExternal(url);
+    if (decision === 'external') shell.openExternal(url).catch((err: unknown) => { console.error('[main:will-navigate-external]', err); });
   });
 
   win.webContents.on('context-menu', (_event, params) => {
@@ -275,6 +275,9 @@ protocol.registerSchemesAsPrivileged([
   { scheme: 'greychrist-file', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
 ]);
 
+// app.whenReady() returns a Promise; catch any thrown init error so it
+// surfaces in the main-process log instead of becoming an unhandled
+// rejection on the global process.
 app.whenReady().then(() => {
   // One-time userdata migration from the legacy "GreyChrist" Application
   // Support directory. Must run before any service touches userData. Old
@@ -1037,7 +1040,7 @@ app.whenReady().then(() => {
   // cannot fire calls before the main process is ready to handle them.
   _initialized = true;
   createWindow();
-});
+}).catch((err: unknown) => { console.error('[main:whenReady-init]', err); });
 
 app.on('before-quit', () => {
   _sessionsService?.stopAll();

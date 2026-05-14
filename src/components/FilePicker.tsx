@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import type { FileEntry } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { logAndForget } from "@/lib/fireAndLog";
 
 // Global caches that persist across component instances
 const globalDirectoryCache = new Map<string, FileEntry[]>();
@@ -141,7 +142,7 @@ export const FilePicker: React.FC<FilePickerProps> = ({
 
   // Load directory contents
   useEffect(() => {
-    loadDirectory(currentPath);
+    logAndForget('file-picker:load-directory', loadDirectory(currentPath));
   }, [currentPath]);
 
   // Debounced search
@@ -163,7 +164,7 @@ export const FilePicker: React.FC<FilePickerProps> = ({
       
       // Schedule fresh search after debounce
       searchDebounceRef.current = setTimeout(() => {
-        performSearch(searchQuery);
+        logAndForget('file-picker:perform-search', performSearch(searchQuery));
       }, 300);
     } else {
       setSearchResults([]);

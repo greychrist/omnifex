@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Toast, ToastContainer } from "@/components/ui/toast";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { fireAndLog } from "@/lib/fireAndLog";
+import { fireAndLog, logAndForget } from "@/lib/fireAndLog";
 
 interface MarkdownEditorProps {
   /**
@@ -40,7 +40,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
   
   // Load the system prompt on mount
   useEffect(() => {
-    loadSystemPrompt();
+    logAndForget('markdown-editor:load-system-prompt', loadSystemPrompt());
   }, []);
   
   const loadSystemPrompt = async () => {

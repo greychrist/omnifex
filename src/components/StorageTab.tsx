@@ -44,7 +44,7 @@ import {
 } from "@/components/ui/tooltip";
 import { api } from "@/lib/api";
 import { Toast, ToastContainer } from "./ui/toast";
-import { fireAndLog } from "@/lib/fireAndLog";
+import { fireAndLog, logAndForget } from "@/lib/fireAndLog";
 
 interface TableInfo {
   name: string;
@@ -106,7 +106,7 @@ export const StorageTab: React.FC = () => {
    * Load all tables on mount
    */
   useEffect(() => {
-    loadTables();
+    logAndForget('storage-tab:load-tables', loadTables());
   }, []);
 
   /**
@@ -114,7 +114,7 @@ export const StorageTab: React.FC = () => {
    */
   useEffect(() => {
     if (selectedTable) {
-      loadTableData(1);
+      logAndForget('storage-tab:load-table-data', loadTableData(1));
     }
   }, [selectedTable]);
 
@@ -169,7 +169,7 @@ export const StorageTab: React.FC = () => {
   const handleSearch = useCallback(
     (value: string) => {
       setSearchQuery(value);
-      loadTableData(1, value);
+      logAndForget('storage-tab:load-table-data', loadTableData(1, value));
     },
     [selectedTable]
   );

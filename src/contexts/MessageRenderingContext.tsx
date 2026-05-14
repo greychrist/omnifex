@@ -8,6 +8,7 @@ import {
   type MessageRenderingConfig,
 } from "@/lib/messageRenderingConfig";
 import { resolveTypeface } from "@/lib/typefaceCatalog";
+import { logAndForget } from "@/lib/fireAndLog";
 
 interface MessageRenderingContextValue {
   config: MessageRenderingConfig;
@@ -23,7 +24,7 @@ export const MessageRenderingProvider: React.FC<{ children: React.ReactNode }> =
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+    logAndForget('message-rendering-context:iife', (async () => {
       try {
         const raw = await api.getSetting(MESSAGE_RENDERING_CONFIG_KEY);
         if (!cancelled) setConfigState(parseConfig(raw));
@@ -32,7 +33,7 @@ export const MessageRenderingProvider: React.FC<{ children: React.ReactNode }> =
       } finally {
         if (!cancelled) setLoaded(true);
       }
-    })();
+    })());
     return () => {
       cancelled = true;
     };

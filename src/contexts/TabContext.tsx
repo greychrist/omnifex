@@ -2,6 +2,7 @@ import React, { createContext, useState, useContext, useCallback, useEffect, use
 import { TabPersistenceService } from '@/services/tabPersistence';
 import { SessionPersistenceService } from '@/services/sessionPersistence';
 import { api } from '@/lib/api';
+import { logAndForget } from "@/lib/fireAndLog";
 
 export interface Tab {
   id: string;
@@ -144,7 +145,7 @@ export const TabProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
     };
     
-    loadTabs();
+    logAndForget('tab-context:load-tabs', loadTabs());
   }, []);
 
   // Save tabs to localStorage with debounce

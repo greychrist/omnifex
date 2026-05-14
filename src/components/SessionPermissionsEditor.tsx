@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Spinner } from "@/components/ui/spinner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { api } from "@/lib/api";
-import { fireAndLog } from "@/lib/fireAndLog";
+import { fireAndLog, logAndForget } from "@/lib/fireAndLog";
 interface PermissionLevel {
   label: string;
   scope: "user" | "project" | "local";
@@ -44,7 +44,7 @@ export function SessionPermissionsEditor({
   }, [tabId, projectPath, configDir]);
 
   useEffect(() => {
-    loadPermissions();
+    logAndForget('session-permissions-editor:load-permissions', loadPermissions());
   }, [loadPermissions]);
 
   const toggleLevel = (scope: string) => {
@@ -111,7 +111,7 @@ export function SessionPermissionsEditor({
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => { setLoading(true); loadPermissions(); }}
+          onClick={() => { setLoading(true); logAndForget('session-permissions-editor:load-permissions', loadPermissions()); }}
           className="h-7 px-2"
         >
           <RefreshCw className="h-3 w-3" />
@@ -226,7 +226,7 @@ export function SessionPermissionsEditor({
                     <Input
                       value={newRule.value}
                       onChange={(e) => { setNewRule({ ...newRule, value: e.target.value }); }}
-                      onKeyDown={(e) => { if (e.key === "Enter") handleAddRule(); if (e.key === "Escape") setNewRule(null); }}
+                      onKeyDown={(e) => { if (e.key === "Enter") logAndForget('session-permissions-editor:handle-add-rule', handleAddRule()); if (e.key === "Escape") setNewRule(null); }}
                       placeholder='e.g. Bash(git:*) or WebFetch(domain:example.com)'
                       className="h-7 text-xs font-mono flex-1"
                       autoFocus

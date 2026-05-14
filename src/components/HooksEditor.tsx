@@ -51,7 +51,7 @@ import {
 import { cn } from '@/lib/utils';
 import { HooksManager } from '@/lib/hooksManager';
 import { api } from '@/lib/api';
-import { fireAndLog } from "@/lib/fireAndLog";
+import { fireAndLog, logAndForget } from "@/lib/fireAndLog";
 import {
   HooksConfiguration,
   HookEvent,
@@ -458,7 +458,7 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
   };
 
   useEffect(() => {
-    validateHooks();
+    logAndForget('hooks-editor:validate-hooks', validateHooks());
   }, [hooks]);
 
   const addCommand = (event: HookEvent, matcherId: string) => {

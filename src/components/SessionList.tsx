@@ -22,6 +22,7 @@ import {
   type SummaryGenerateResult,
 } from "@/lib/api";
 import { useAccounts } from "@/contexts/AccountsContext";
+import { logAndForget } from "@/lib/fireAndLog";
 
 /**
  * FNV-1a hash mirror — must produce the same output as `promptHash` in
@@ -278,7 +279,7 @@ export const SessionList: React.FC<SessionListProps> = ({
   useEffect(() => {
     if (!sessions.length || !projectPath) return;
     let cancelled = false;
-    Promise.all(
+    logAndForget('session-list:all', Promise.all(
       sessions.map(async (s) => {
         const summary = await api
           .summaryGet(s.id, projectPath, resolvedConfigDir)
@@ -288,7 +289,7 @@ export const SessionList: React.FC<SessionListProps> = ({
     ).then((entries) => {
       if (cancelled) return;
       setSummaries(new Map(entries));
-    });
+    }));
     return () => {
       cancelled = true;
     };

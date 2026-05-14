@@ -21,7 +21,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 import { Toast, ToastContainer } from '@/components/ui/toast';
 import type { Project } from '@/lib/api';
-import { fireAndLog } from "@/lib/fireAndLog";
+import { fireAndLog, logAndForget } from "@/lib/fireAndLog";
 
 interface ProjectSettingsProps {
   project: Project;
@@ -41,7 +41,7 @@ export const ProjectSettings: React.FC<ProjectSettingsProps> = ({
   const [gitIgnoreLocal, setGitIgnoreLocal] = useState(true);
 
   useEffect(() => {
-    checkGitIgnore();
+    logAndForget('project-settings:check-git-ignore', checkGitIgnore());
   }, [project]);
 
   const checkGitIgnore = async () => {

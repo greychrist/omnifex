@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import type { FileEntry } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { logAndForget } from "@/lib/fireAndLog";
 
 // Global caches that persist across component instances
 const globalDirectoryCache = new Map<string, FileEntry[]>();
@@ -147,7 +148,7 @@ export const FilePicker: React.FC<FilePickerProps> = React.memo(({
   // Search functionality
   const performSearch = useCallback(async (query: string) => {
     if (!query.trim()) {
-      loadDirectory(currentPath);
+      logAndForget('file-picker.optimized:load-directory', loadDirectory(currentPath));
       return;
     }
 
@@ -230,7 +231,7 @@ export const FilePicker: React.FC<FilePickerProps> = React.memo(({
     }
 
     searchDebounceRef.current = setTimeout(() => {
-      performSearch(searchQuery);
+      logAndForget('file-picker.optimized:perform-search', performSearch(searchQuery));
     }, 300);
 
     return () => {
@@ -242,7 +243,7 @@ export const FilePicker: React.FC<FilePickerProps> = React.memo(({
 
   // Load initial directory
   useEffect(() => {
-    loadDirectory(currentPath);
+    logAndForget('file-picker.optimized:load-directory', loadDirectory(currentPath));
   }, [currentPath, loadDirectory]);
 
   // Focus search input on mount

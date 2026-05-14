@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Spinner } from "@/components/ui/spinner";
 import { api, type SessionMcpServerStatus } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { logAndForget } from "@/lib/fireAndLog";
 
 interface SessionMCPStatusProps {
   tabId: string;
@@ -60,13 +61,13 @@ export const SessionMCPStatus: React.FC<SessionMCPStatusProps> = ({ tabId }) => 
   // a non-empty result or the panel unmounts.
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+    logAndForget('session-mcpstatus:iife', (async () => {
       while (!cancelled) {
         const ok = await loadStatus();
         if (ok || cancelled) return;
         await new Promise((r) => setTimeout(r, 2000));
       }
-    })();
+    })());
     return () => {
       cancelled = true;
     };
@@ -96,7 +97,7 @@ export const SessionMCPStatus: React.FC<SessionMCPStatusProps> = ({ tabId }) => 
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => { setLoading(true); loadStatus(); }}
+          onClick={() => { setLoading(true); logAndForget('session-mcpstatus:load-status', loadStatus()); }}
           className="mt-2"
         >
           <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
@@ -117,7 +118,7 @@ export const SessionMCPStatus: React.FC<SessionMCPStatusProps> = ({ tabId }) => 
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => { setLoading(true); loadStatus(); }}
+          onClick={() => { setLoading(true); logAndForget('session-mcpstatus:load-status', loadStatus()); }}
           className="h-7 px-2"
         >
           <RefreshCw className="h-3 w-3" />

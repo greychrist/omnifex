@@ -33,7 +33,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { api, type LogEntry, type LogQueryResult, type LogOrderBy, type LogOrderDir } from "@/lib/api";
-import { fireAndLog } from "@/lib/fireAndLog";
+import { fireAndLog, logAndForget } from "@/lib/fireAndLog";
 import {
   LOG_LEVELS,
   LOG_SOURCES,
@@ -99,7 +99,7 @@ export const LogTab: React.FC = () => {
   const [sortDir, setSortDir] = useState<LogOrderDir>("desc");
 
   useEffect(() => {
-    (async () => {
+    logAndForget('log-tab:iife', (async () => {
       const h = await api.getSetting('log_verbose_claude_hooks');
       const u = await api.getSetting('log_verbose_usage_runner');
       const t = await api.getSetting('log_error_toast_enabled');
@@ -107,7 +107,7 @@ export const LogTab: React.FC = () => {
       setVerboseUsageRunner(u === 'true');
       // Default on: only the literal string "false" disables it.
       setToastOnErrors(t !== 'false');
-    })();
+    })());
   }, []);
 
   // When the user clicks "View in Log" on an error toast, App.tsx fires this
@@ -152,7 +152,7 @@ export const LogTab: React.FC = () => {
   }, [levelFilter, sourceFilter, debouncedSearch, page, sortBy, sortDir]);
 
   useEffect(() => {
-    fetchLogs();
+    logAndForget('log-tab:fetch-logs', fetchLogs());
   }, [fetchLogs]);
 
   // Reset to page 0 when filters or sort change — otherwise the user
@@ -224,7 +224,7 @@ export const LogTab: React.FC = () => {
       setPruneDialog({ open: false, label: "" });
       setPruneCount(null);
       setPage(0);
-      fetchLogs();
+      logAndForget('log-tab:fetch-logs', fetchLogs());
     } catch (err) {
       console.error("Failed to prune logs:", err);
     }
@@ -533,10 +533,10 @@ export const LogTab: React.FC = () => {
               onClick={() => {
                 const unitWord = { h: "hour", d: "day", w: "week", m: "month" }[olderUnit];
                 const plural = olderN === 1 ? "" : "s";
-                handlePruneClick(
+                logAndForget('log-tab:prune', handlePruneClick(
                   `${olderN}${olderUnit}`,
                   `older than ${olderN} ${unitWord}${plural}`,
-                );
+                ));
               }}
               aria-label={`Delete logs older than ${olderN} ${{ h: "hour", d: "day", w: "week", m: "month" }[olderUnit]}${olderN === 1 ? "" : "s"}`}
             >

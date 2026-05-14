@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Popover } from "@/components/ui/popover";
 import { api, type ClaudeVersionStatus } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { logAndForget } from "@/lib/fireAndLog";
 
 interface TopbarProps {
   /**
@@ -53,7 +54,7 @@ export const Topbar: React.FC<TopbarProps> = ({
   
   // Check Claude version on mount
   useEffect(() => {
-    checkVersion();
+    logAndForget('topbar:check-version', checkVersion());
   }, []);
   
   const checkVersion = async () => {

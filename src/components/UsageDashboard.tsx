@@ -8,7 +8,7 @@ import { useAccounts } from "@/contexts/AccountsContext";
 import { Filter, ChevronDown, ChevronUp } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
-import { fireAndLog } from "@/lib/fireAndLog";
+import { fireAndLog, logAndForget } from "@/lib/fireAndLog";
 
 interface UsageDashboardProps {
   onBack: () => void;
@@ -232,7 +232,7 @@ export const UsageDashboard: React.FC<UsageDashboardProps> = ({}) => {
   }, [selectedDateRange]);
 
   useEffect(() => {
-    loadData();
+    logAndForget('usage-dashboard:load-data', loadData());
   }, [loadData]);
 
   // Filter stats by selected account

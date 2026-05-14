@@ -1,5 +1,6 @@
 import React, { createContext, useState, useContext, useCallback, useEffect } from 'react';
 import { api } from '../lib/api';
+import { logAndForget } from "@/lib/fireAndLog";
 
 export type ThemeMode = 'gray' | 'light';
 
@@ -61,7 +62,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
     };
 
-    loadTheme();
+    logAndForget('theme-context:load-theme', loadTheme());
   }, [applyTheme]);
 
   const setTheme = useCallback(async (newTheme: ThemeMode) => {

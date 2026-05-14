@@ -12,7 +12,7 @@ import { Toast, ToastContainer } from "@/components/ui/toast";
 import { StorageTab } from "./StorageTab";
 import { LogTab } from "./LogTab";
 import { SummaryPromptSettings } from "./settings-panels/SummaryPromptSettings";
-import { fireAndLog } from "@/lib/fireAndLog";
+import { fireAndLog, logAndForget } from "@/lib/fireAndLog";
 import {
   GeneralSettings,
   AppearanceSettings,
@@ -64,7 +64,7 @@ export const Settings: React.FC<SettingsProps> = ({
   const saveProxySettings = React.useRef<(() => Promise<void>) | null>(null);
 
   useEffect(() => {
-    loadClaudeBinaryPath();
+    logAndForget('settings:load-claude-binary-path', loadClaudeBinaryPath());
   }, []);
 
   // App.tsx dispatches `log:focus-error-view` when the user clicks the

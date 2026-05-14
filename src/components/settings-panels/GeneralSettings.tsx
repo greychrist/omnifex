@@ -23,7 +23,7 @@ import { useAppFont } from "@/contexts/AppFontContext";
 import { APP_FONT_CHOICES } from "@/lib/typefaceCatalog";
 import { TabPersistenceService } from "@/services/tabPersistence";
 import type { SettingsPanelProps } from "./types";
-import { fireAndLog } from "@/lib/fireAndLog";
+import { fireAndLog, logAndForget } from "@/lib/fireAndLog";
 
 // This panel no longer reads from `<configDir>/settings.json`. The three
 // keys it used to expose (`includeCoAuthoredBy`, `verbose`,
@@ -72,12 +72,12 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
 
   useEffect(() => {
     setTabPersistenceEnabled(TabPersistenceService.isEnabled());
-    (async () => {
+    logAndForget('general-settings:iife', (async () => {
       const pref = await api.getSetting('startup_intro_enabled');
       setStartupIntroEnabled(pref === null ? true : pref === 'true');
       const dir = await api.getSetting('local_update_dir');
       setLocalUpdateDir(dir ?? '');
-    })();
+    })());
   }, []);
 
   const saveLocalUpdateDir = async (next: string) => {

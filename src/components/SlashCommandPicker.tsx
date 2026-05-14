@@ -10,6 +10,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { logAndForget } from "@/lib/fireAndLog";
 
 interface SlashCommandPickerProps {
   projectPath?: string;
@@ -114,7 +115,7 @@ export const SlashCommandPicker: React.FC<SlashCommandPickerProps> = ({
 
   // Load commands on mount
   useEffect(() => {
-    loadCommands();
+    logAndForget('slash-command-picker:load-commands', loadCommands());
   }, [projectPath, configDir, tabId]);
 
   // Filter + sort

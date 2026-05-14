@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { api, type ClaudeMdFile } from "@/lib/api";
 import { formatUnixTimestamp } from "@/lib/date-utils";
+import { logAndForget } from "@/lib/fireAndLog";
 
 interface ClaudeMemoriesDropdownProps {
   /**
@@ -45,7 +46,7 @@ export const ClaudeMemoriesDropdown: React.FC<ClaudeMemoriesDropdownProps> = ({
   // Load CLAUDE.md files when dropdown opens
   useEffect(() => {
     if (isOpen && files.length === 0) {
-      loadClaudeMdFiles();
+      logAndForget('claude-memories-dropdown:load-claude-md-files', loadClaudeMdFiles());
     }
   }, [isOpen]);
   

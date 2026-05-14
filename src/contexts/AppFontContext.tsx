@@ -5,6 +5,7 @@ import {
   resolveTypeface,
   type Typeface,
 } from "@/lib/typefaceCatalog";
+import { logAndForget } from "@/lib/fireAndLog";
 
 const APP_FONT_STORAGE_KEY = "app_font";
 const DEFAULT_APP_FONT: Typeface = "inter";
@@ -42,7 +43,7 @@ export const AppFontProvider: React.FC<{ children: React.ReactNode }> = ({ child
         if (!cancelled) setIsLoading(false);
       }
     };
-    load();
+    logAndForget('app-font-context:load', load());
     return () => {
       cancelled = true;
     };

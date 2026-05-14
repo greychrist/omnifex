@@ -7,9 +7,10 @@ import "./styles.css";
 import AppIcon from "../icons/icon.png";
 import { logService } from "./lib/logService";
 import { api } from "./lib/api";
+import { logAndForget } from "@/lib/fireAndLog";
 
 // Initialize structured logging
-logService.initialize();
+logAndForget('main:initialize', logService.initialize());
 
 // Check log count and warn if excessive
 api.logCount().then((count) => {

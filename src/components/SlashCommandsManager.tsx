@@ -29,7 +29,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { api, type SlashCommand } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { COMMON_TOOL_MATCHERS } from "@/types/hooks";
-import { fireAndLog } from "@/lib/fireAndLog";
+import { fireAndLog, logAndForget } from "@/lib/fireAndLog";
 
 interface SlashCommandsManagerProps {
   projectPath?: string;
@@ -124,7 +124,7 @@ export const SlashCommandsManager: React.FC<SlashCommandsManagerProps> = ({
 
   // Load commands on mount or when configDir changes
   useEffect(() => {
-    loadCommands();
+    logAndForget('slash-commands-manager:load-commands', loadCommands());
   }, [projectPath, configDir]);
 
   const loadCommands = async () => {

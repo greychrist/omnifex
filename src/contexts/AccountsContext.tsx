@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { api, type Account } from '@/lib/api';
+import { logAndForget } from "@/lib/fireAndLog";
 
 interface AccountsContextType {
   accounts: Account[];
@@ -24,7 +25,7 @@ export const AccountsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   }, []);
 
   useEffect(() => {
-    refresh();
+    logAndForget('accounts-context:refresh', refresh());
   }, [refresh]);
 
   const getColor = useCallback((name: string): string | null => {

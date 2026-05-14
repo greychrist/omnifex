@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { ExternalLink, FileQuestion, Terminal, AlertCircle } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { ClaudeVersionSelector } from "./ClaudeVersionSelector";
-import { fireAndLog } from "@/lib/fireAndLog";
+import { fireAndLog, logAndForget } from "@/lib/fireAndLog";
 
 interface ClaudeBinaryDialogProps {
   open: boolean;
@@ -22,7 +22,7 @@ export function ClaudeBinaryDialog({ open, onOpenChange, onSuccess, onError }: C
 
   useEffect(() => {
     if (open) {
-      checkInstallations();
+      logAndForget('claude-binary-dialog:check-installations', checkInstallations());
     }
   }, [open]);
 

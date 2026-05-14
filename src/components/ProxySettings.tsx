@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import { logAndForget } from "@/lib/fireAndLog";
 
 export interface ProxySettings {
   http_proxy: string | null;
@@ -33,7 +34,7 @@ export function ProxySettings({ setToast, onChange }: ProxySettingsProps) {
   });
 
   useEffect(() => {
-    loadSettings();
+    logAndForget('proxy-settings:load-settings', loadSettings());
   }, []);
 
   // Save settings function

@@ -98,7 +98,7 @@ export function buildSdkOptions(
         try {
           // eslint-disable-next-line @typescript-eslint/no-require-imports -- intentional lazy load; only needed when an elicitation requests a URL.
           const { shell } = require('electron') as typeof import('electron');
-          shell.openExternal(request.url);
+          shell.openExternal(request.url).catch((err: unknown) => { console.error('[factory:elicitation-open-external]', err); });
         } catch { /* best effort */ }
       }
 

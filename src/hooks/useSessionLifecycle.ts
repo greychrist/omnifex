@@ -2,6 +2,7 @@ import { useRef, useEffect } from "react";
 import { api } from "@/lib/api";
 import type { ClaudeStreamMessage } from "@/types/claudeStream";
 import type { EffortLevel, ThinkingConfig } from "@/components/FloatingPromptInput";
+import { logAndForget } from "@/lib/fireAndLog";
 
 /** Filter out noisy stderr messages that aren't real errors. */
 function isIgnorableStderr(msg: string): boolean {
@@ -240,7 +241,7 @@ export function useSessionLifecycle({
     // warm before the renderer reloaded — jump straight to 'Active'.
     setIsSessionStarting(false);
     setIsSessionActive(true);
-    fetchInitInfo();
+    logAndForget('use-session-lifecycle:fetch-init-info', fetchInitInfo());
     return true;
   };
 
@@ -322,7 +323,7 @@ export function useSessionLifecycle({
 
     // Enrich the init message with MCP tools + account info as soon as the
     // control channel starts responding.
-    fetchInitInfo();
+    logAndForget('use-session-lifecycle:fetch-init-info', fetchInitInfo());
   };
 
   // Cleanup event listeners and track mount state

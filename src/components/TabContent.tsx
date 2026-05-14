@@ -16,7 +16,7 @@ import type { EffortLevel, ThinkingConfig } from '@/components/FloatingPromptInp
 import { normalizeThinkingConfig } from '@/lib/thinkingConfig';
 import { useClaudeSessionStore } from '@/stores/claudeSessionStore';
 import { BranchColorsCard } from '@/components/BranchColorsCard';
-import { fireAndLog } from "@/lib/fireAndLog";
+import { fireAndLog, logAndForget } from "@/lib/fireAndLog";
 
 // Lazy load heavy components
 const ClaudeCodeSession = lazy(() => import('@/components/ClaudeCodeSession').then(m => ({ default: m.ClaudeCodeSession })));
@@ -79,7 +79,7 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
   // Load projects when tab becomes active and is of type 'projects'
   useEffect(() => {
     if (isActive && tab.type === 'projects') {
-      loadProjects();
+      logAndForget('tab-content:load-projects', loadProjects());
     }
   }, [isActive, tab.type]);
   
@@ -663,7 +663,7 @@ export const TabContent: React.FC = () => {
 
     const handleCloseTab = (event: CustomEvent) => {
       const { tabId } = event.detail;
-      closeTab(tabId);
+      logAndForget('tab-content:close-tab', closeTab(tabId));
     };
 
     const handleClaudeSessionSelected = (event: CustomEvent) => {
