@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
@@ -65,9 +65,45 @@ export const ClaudeVersionSelector: React.FC<ClaudeVersionSelectorProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [selectedInstallation, setSelectedInstallation] = useState<ClaudeInstallation | null>(null);
 
+  // Refs hold the latest prop values so loadInstallations stays stable
+  // (we explicitly do NOT want a re-fetch on selectedPath/onSelect change —
+  // selectedPath changes are handled by the sync effect below).
+  const selectedPathRef = useRef(selectedPath);
+  const onSelectRef = useRef(onSelect);
+  useEffect(() => {
+    selectedPathRef.current = selectedPath;
+    onSelectRef.current = onSelect;
+  });
+
+  const loadInstallations = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const foundInstallations = await api.listClaudeInstallations();
+      setInstallations(foundInstallations);
+
+      // If we have a selected path, find and select it
+      if (selectedPathRef.current) {
+        const found = foundInstallations.find(i => i.path === selectedPathRef.current);
+        if (found) {
+          setSelectedInstallation(found);
+        }
+      } else if (foundInstallations.length > 0) {
+        // Auto-select the first (best) installation
+        setSelectedInstallation(foundInstallations[0]);
+        onSelectRef.current(foundInstallations[0]);
+      }
+    } catch (err) {
+      console.error("Failed to load Claude installations:", err);
+      setError(err instanceof Error ? err.message : "Failed to load Claude installations");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     logAndForget('claude-version-selector:load-installations', loadInstallations());
-  }, []);
+  }, [loadInstallations]);
 
   useEffect(() => {
     // Update selected installation when selectedPath changes
@@ -78,32 +114,6 @@ export const ClaudeVersionSelector: React.FC<ClaudeVersionSelectorProps> = ({
       }
     }
   }, [selectedPath, installations]);
-
-  const loadInstallations = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const foundInstallations = await api.listClaudeInstallations();
-      setInstallations(foundInstallations);
-      
-      // If we have a selected path, find and select it
-      if (selectedPath) {
-        const found = foundInstallations.find(i => i.path === selectedPath);
-        if (found) {
-          setSelectedInstallation(found);
-        }
-      } else if (foundInstallations.length > 0) {
-        // Auto-select the first (best) installation
-        setSelectedInstallation(foundInstallations[0]);
-        onSelect(foundInstallations[0]);
-      }
-    } catch (err) {
-      console.error("Failed to load Claude installations:", err);
-      setError(err instanceof Error ? err.message : "Failed to load Claude installations");
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleRevealInFinder = async (path: string) => {
     await api.revealPathInFinder(path).catch(console.error);
