@@ -186,6 +186,17 @@ export default defineConfig(
       // Common React pattern false positive (passing class methods as
       // event handlers).
       '@typescript-eslint/unbound-method': 'off',
+      // 126 sites, all of one of three patterns:
+      //   1. Async method implementing an async interface contract
+      //      (signature is Promise<T> for conformance even when the
+      //      body is synchronous).
+      //   2. Test stub returning a settled Promise without an await
+      //      (vi.fn(async () => …)).
+      //   3. IPC-handler adapters whose `Promise<T>` shape is wire-
+      //      contract, not behavioral.
+      // None are bugs; they're false positives for our architecture.
+      // The honest fix is one config line, not 126 line-level disables.
+      '@typescript-eslint/require-await': 'off',
 
       // ─── Warn (not error) for the `any`-cascade family ──
       // These all fire because of explicit `any` at the source. Gating
