@@ -257,11 +257,15 @@ export function useFindInChat({
   }, [isOpen, containerRef]);
 
   // Final cleanup on unmount in case the consumer disappears with the bar
-  // still open.
+  // still open. We capture container at effect-time rather than reading
+  // containerRef.current in cleanup: by the time React runs cleanup the
+  // ref may have been nulled out, but the <mark> nodes still live inside
+  // the captured container and unwrapMarks operates on them by reference.
   useEffect(() => {
+    const container = containerRef.current;
     return () => {
       if (marksRef.current.length > 0) {
-        unwrapMarks(containerRef.current, marksRef.current);
+        unwrapMarks(container, marksRef.current);
         marksRef.current = [];
       }
     };
