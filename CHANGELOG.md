@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.33] — 2026-05-13
+
+Code-review follow-up to the SDK type adoption in 0.4.32. Four issues surfaced by post-release review: a latent case-mismatch in the subagent dispatch branch, a maintenance hazard in the tool-result suppression list, a misleading local interface for `TodoRead`, and a missing `LS` headline in the permission card. The first is theoretical (no production code path emits lowercase tool names today, so the gap was latent rather than active), but closing it removes a foot-gun for future runtime additions. v0.4.32 is being **superseded by 0.4.33** — same SDK adoption work, with the review fixes folded in. v0.4.32's draft can be deleted from GitHub before publishing.
+
+Installers remain **unsigned**.
+
+### Fixed
+
+- **Subagent dispatch branch is now case-aligned end to end.** `isSubagentDispatch` is case-insensitive (defense-in-depth across runtimes that historically emitted lowercase tool names), but the new `asToolInputOneOf(toolName, ['Task', 'Agent'], …)` narrowing introduced in 0.4.32 was case-sensitive against PascalCase. A lowercase `'task'` would pass the guard, fail the narrow, and silently render as raw JSON. `StreamMessage.tsx` now PascalCase-normalizes the name before the narrow so both layers agree.
+- **`PermissionCard.formatToolInput` now includes an `LS` branch.** `LS` uses `path` (not `file_path`), and the generic field-probe fallback in the formatter doesn't check `path` — so a permission request for `LS` was rendering as raw JSON instead of showing the directory path as the headline. One typed branch added before the generic fallback.
+
+### Changed
+
+- **`TodoReadInput` interface no longer fabricates a `todos` field.** `TodoRead` takes no meaningful input — it reads the stored list and returns it as the tool result. The 0.4.32 interface mistakenly modelled `todos?: unknown[]` on the input side, which the widget happened to fall back gracefully for (it always extracts todos from the result), but the interface was misleading documentation. Now an empty interface with a comment that points at the real source of todos. The `StreamMessage.tsx` call site stops passing the always-undefined `todos` prop.
+- **Tool-result suppression list at `StreamMessage.tsx:1214` carries a maintenance comment.** The lowercased `toolsWithWidgets` list (used to hide the raw `tool_result` block when a typed widget already rendered the dispatch above) is independent from the PascalCase `ToolInputByName` map. Adding a new typed widget without an entry here would cause a visual double-render. The new comment makes the sync obligation visible to the next maintainer; deriving the set from a single source belongs in its own task.
+
+### Added
+
+- **Test: `GrepInputExtended` legacy fields are accessible after narrowing.** Pins the intersection — if someone removed `& { include?: string; exclude?: string }` from the type definition, the test (and `GrepWidget`) would break loudly rather than silently typing those fields as `unknown`.
+
 ## [0.4.32] — 2026-05-13
 
 Adopts the Claude Agent SDK's per-tool input schemas in the renderer. Until now, the tool-widget switch in the chat view and the headline picker on the permission prompt both reached into `tool_use.input` with structural `typeof === 'string'` guards — useful at runtime, but invisible to the type-checker, so any field rename on the SDK side would silently render an empty widget. The SDK ships those schemas as `BashInput` / `FileReadInput` / `GrepInput` / etc. via its `sdk-tools` subpath export; this release wires them in via a small name→type map so every branch narrows from `unknown` to the SDK shape before reading fields. Also rolls the SDK forward one patch.
