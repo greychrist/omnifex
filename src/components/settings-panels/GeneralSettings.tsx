@@ -227,7 +227,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
                       : 'Welcome intro disabled',
                     type: 'success'
                   });
-                } catch (e) {
+                } catch {
                   setToast({ message: 'Failed to update preference', type: 'error' });
                 }
               }}

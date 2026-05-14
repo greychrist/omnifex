@@ -563,7 +563,7 @@ function App() {
           // user disabled intro: hide immediately to avoid any overlay delay
           setShowIntro(false);
         }
-      } catch (err) {
+      } catch {
         // On failure, show intro once to keep UX consistent
         timer = window.setTimeout(() => { setShowIntro(false); }, 2000);
       }

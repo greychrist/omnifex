@@ -80,7 +80,6 @@ function parseWorktreePorcelain(buf: string, selfReal: string): WorktreeInfo[] {
   return out;
 }
 
-const DEBOUNCE_MS = 50;
 const DEFAULT_POLL_MS = 3000;
 
 function resolveGitdir(projectPath: string): string | null {

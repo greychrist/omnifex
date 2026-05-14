@@ -30,7 +30,7 @@ export function ClaudeBinaryDialog({ open, onOpenChange, onSuccess, onError }: C
       setCheckingInstallations(true);
       const installations = await api.listClaudeInstallations();
       setHasInstallations(installations.length > 0);
-    } catch (error) {
+    } catch {
       // If the API call fails, it means no installations found
       setHasInstallations(false);
     } finally {

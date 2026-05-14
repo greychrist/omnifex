@@ -274,9 +274,9 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
         matcherEvents.forEach(event => {
           const matchers = editableHooks[event];
           if (matchers.length > 0) {
-            newHooks[event] = matchers.map(({ id, expanded, ...matcher }) => ({
+            newHooks[event] = matchers.map(({ id: _id, expanded: _expanded, ...matcher }) => ({
               ...matcher,
-              hooks: matcher.hooks.map(({ id, ...hook }) => hook)
+              hooks: matcher.hooks.map(({ id: _id, ...hook }) => hook)
             }));
           }
         });
@@ -285,7 +285,7 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
         directEvents.forEach(event => {
           const commands = editableHooks[event];
           if (commands.length > 0) {
-            newHooks[event] = commands.map(({ id, ...hook }) => hook);
+            newHooks[event] = commands.map(({ id: _id, ...hook }) => hook);
           }
         });
         
@@ -308,9 +308,9 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
     matcherEvents.forEach(event => {
       const matchers = editableHooks[event];
       if (matchers.length > 0) {
-        newHooks[event] = matchers.map(({ id, expanded, ...matcher }) => ({
+        newHooks[event] = matchers.map(({ id: _id, expanded: _expanded, ...matcher }) => ({
           ...matcher,
-          hooks: matcher.hooks.map(({ id, ...hook }) => hook)
+          hooks: matcher.hooks.map(({ id: _id, ...hook }) => hook)
         }));
       }
     });
@@ -319,7 +319,7 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
     directEvents.forEach(event => {
       const commands = editableHooks[event];
       if (commands.length > 0) {
-        newHooks[event] = commands.map(({ id, ...hook }) => hook);
+        newHooks[event] = commands.map(({ id: _id, ...hook }) => hook);
       }
     });
     

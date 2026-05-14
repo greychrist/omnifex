@@ -874,7 +874,7 @@ describe('sessions service — full lifecycle', () => {
       applyFlagSettings: vi.fn().mockResolvedValue(undefined),
     };
 
-    mockedQuery.mockImplementation((args: any) => {
+    mockedQuery.mockImplementation((_args: any) => {
       callCount++;
       if (callCount === 1) return errorQuery;
       return recoveryQuery;

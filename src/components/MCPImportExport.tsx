@@ -89,7 +89,7 @@ export const MCPImportExport: React.FC<MCPImportExportProps> = ({
       let jsonData;
       try {
         jsonData = JSON.parse(content);
-      } catch (e) {
+      } catch {
         onError("Invalid JSON file. Please check the format.");
         return;
       }
@@ -115,7 +115,7 @@ export const MCPImportExport: React.FC<MCPImportExportProps> = ({
             } else {
               failed++;
             }
-          } catch (e) {
+          } catch {
             failed++;
           }
         }

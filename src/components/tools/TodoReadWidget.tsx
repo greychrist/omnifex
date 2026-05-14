@@ -36,7 +36,7 @@ export const TodoReadWidget: React.FC<{ todos?: any[]; result?: any }> = ({ todo
         const parsed = JSON.parse(result.content);
         if (Array.isArray(parsed)) todos = parsed;
         else if (parsed.todos) todos = parsed.todos;
-      } catch (e) {
+      } catch {
         // Not JSON, ignore
       }
     }

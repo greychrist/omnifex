@@ -4,7 +4,6 @@
 // callback closes over the session handle (which is created after this
 // factory runs); the caller injects it post-handle.
 
-import type { PermissionMode } from '@anthropic-ai/claude-agent-sdk';
 import { discoverWorktrees } from '../git-worktrees';
 import { createSessionHooks } from './hooks';
 import { findSystemClaudeBinary } from './binary';

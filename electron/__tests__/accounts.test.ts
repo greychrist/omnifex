@@ -222,7 +222,7 @@ describe('accounts service', () => {
     it('resolves via explicit project override', () => {
       accounts.createAccount('Default', '/home/user/.claude', 'pro');
       accounts.createAccount('Work', '/home/user/.claude-work', 'team');
-      const [def, work] = accounts.listAccounts().sort((a, b) => a.name.localeCompare(b.name));
+      const [_def, work] = accounts.listAccounts().sort((a, b) => a.name.localeCompare(b.name));
 
       accounts.setProjectOverride('/home/user/projects/myapp', work.id);
 
@@ -263,7 +263,7 @@ describe('accounts service', () => {
     it('path rule beats default account', () => {
       accounts.createAccount('Default', '/home/user/.claude', 'pro');
       accounts.createAccount('Work', '/home/user/.claude-work', 'team');
-      const [def, work] = accounts.listAccounts().sort((a, b) => a.name.localeCompare(b.name));
+      const [_def, work] = accounts.listAccounts().sort((a, b) => a.name.localeCompare(b.name));
 
       accounts.addPathRule(work.id, '/home/user/work', 0);
 

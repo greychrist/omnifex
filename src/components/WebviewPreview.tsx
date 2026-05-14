@@ -131,7 +131,7 @@ const WebviewPreviewComponent: React.FC<WebviewPreviewProps> = ({
       setInputUrl(finalUrl);
       setHasError(false);
       onUrlChange?.(finalUrl);
-    } catch (err) {
+    } catch {
       setHasError(true);
       setErrorMessage("Invalid URL");
     }

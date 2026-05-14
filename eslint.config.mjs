@@ -148,6 +148,17 @@ export default defineConfig(
         considerDefaultExhaustiveForUnions: true,
       }],
 
+      // Honor the `_`-prefix convention for intentionally-unused
+      // variables, parameters, and destructured values. tsconfig already
+      // sets noUnusedLocals/noUnusedParameters with this convention; the
+      // eslint rule needs explicit configuration to match.
+      '@typescript-eslint/no-unused-vars': ['error', {
+        argsIgnorePattern: '^_',
+        varsIgnorePattern: '^_',
+        caughtErrorsIgnorePattern: '^_',
+        destructuredArrayIgnorePattern: '^_',
+      }],
+
       // ─── Off: stylistic noise ──
       // `${val}` where val isn't a string. JS coerces; the cases where
       // this matters are subtle and infrequent. ~140 sites in this codebase.

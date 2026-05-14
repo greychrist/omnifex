@@ -51,7 +51,7 @@ export const WebSearchWidget: React.FC<{
         if (remainingText) {
           sections.push({ type: 'text', content: remainingText });
         }
-      } catch (e) {
+      } catch {
         // If parsing fails, treat it as text
         sections.push({ type: 'text', content: 'Links: [' + part });
       }
