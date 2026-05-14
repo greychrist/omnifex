@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { AlertCircle } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
@@ -41,15 +41,10 @@ export const MCPManager: React.FC<MCPManagerProps> = ({
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
   
 
-  // Load servers on mount
-  useEffect(() => {
-    logAndForget('mcpmanager:load-servers', loadServers());
-  }, []);
-
   /**
    * Loads all MCP servers
    */
-  const loadServers = async () => {
+  const loadServers = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -64,7 +59,12 @@ export const MCPManager: React.FC<MCPManagerProps> = ({
     } finally {
       setLoading(false);
     }
-  };
+  }, [configDir]);
+
+  // Load servers on mount (and whenever configDir changes — distinct account)
+  useEffect(() => {
+    logAndForget('mcpmanager:load-servers', loadServers());
+  }, [loadServers]);
 
   /**
    * Handles server added event
