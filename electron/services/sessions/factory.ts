@@ -8,6 +8,7 @@ import type { PermissionMode } from '@anthropic-ai/claude-agent-sdk';
 import { discoverWorktrees } from '../git-worktrees';
 import { createSessionHooks } from './hooks';
 import { findSystemClaudeBinary } from './binary';
+import { buildClaudeEnv } from '../util/claude-env';
 import type {
   SessionStartParams,
   SendToRenderer,
@@ -60,10 +61,10 @@ export function buildSdkOptions(
     cwd: projectPath,
     model,
     permissionMode: permissionMode as PermissionMode,
-    env: {
-      ...process.env,
-      CLAUDE_CONFIG_DIR: configDir,
-    },
+    // Routed through buildClaudeEnv so an empty / ~/.claude-resolving
+    // configDir throws here instead of silently spawning a subprocess that
+    // dumps state into the user's default ~/.claude.
+    env: buildClaudeEnv(configDir),
     // Use the full Claude Code CLI system prompt. Without this the SDK ships a minimal
     // prompt and sessions lose the plan-first / ask-clarifying-questions / tool-use
     // conventions that make Claude Code feel like Claude Code.

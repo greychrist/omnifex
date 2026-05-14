@@ -8,6 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import type { Database } from './database';
 import type { AccountsService } from './accounts';
+import { buildClaudeEnv } from './util/claude-env';
 
 /**
  * Thrown when an operation needs a Claude account for a project path but
@@ -1074,9 +1075,16 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
     } catch { /* not found */ }
     if (!binary) return 'Claude CLI not found';
 
-    const env: Record<string, string> = { ...process.env as Record<string, string> };
-    if (configDir) {
-      env['CLAUDE_CONFIG_DIR'] = configDir;
+    // Previously fell back to process.env's CLAUDE_CONFIG_DIR when configDir
+    // was missing — that silently leaks to ~/.claude when OmniFex is launched
+    // outside a shell that sets it. Refuse instead so a renderer regression
+    // surfaces as a visible error rather than invisible state-corruption.
+    let env: NodeJS.ProcessEnv;
+    try {
+      env = buildClaudeEnv(configDir);
+    } catch (err: any) {
+      console.error('[claude] getCliUsage refused:', err?.message);
+      return `Failed to fetch usage: ${err?.message ?? 'configDir invalid'}`;
     }
 
     try {

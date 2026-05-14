@@ -1,4 +1,5 @@
 import { spawn as ptySpawn, type IPty } from 'node-pty';
+import { buildClaudeEnv } from '../util/claude-env';
 
 export interface TuiSessionParams {
   tabId: string;
@@ -24,7 +25,8 @@ export function createTuiSession(params: TuiSessionParams): TuiSession {
     ['--resume', params.sessionId],
     {
       cwd: params.projectPath,
-      env: { ...process.env, CLAUDE_CONFIG_DIR: params.configDir },
+      // buildClaudeEnv throws on empty/~-resolving-to-~/.claude configDir.
+      env: buildClaudeEnv(params.configDir) as { [k: string]: string },
       cols: params.cols ?? 80,
       rows: params.rows ?? 24,
     }

@@ -7,6 +7,7 @@ import {
   type SDKResultMessage,
 } from '@anthropic-ai/claude-agent-sdk';
 import { findSystemClaudeBinary } from './factory';
+import { buildClaudeEnv } from '../util/claude-env';
 
 // ---------------------------------------------------------------------------
 // One-shot summary runner
@@ -168,7 +169,10 @@ export function createSummaryQueryRunner(
       const result = await runPrompt(opts.prompt, {
         model: opts.model,
         cwd: scratchCwd,
-        env: { ...process.env, CLAUDE_CONFIG_DIR: opts.configDir },
+        // Routed through buildClaudeEnv — empty / ~/.claude-resolving
+        // configDir throws here so a stale opts.configDir can't trigger
+        // a JSONL leak into the user's default Claude state.
+        env: buildClaudeEnv(opts.configDir),
         pathToClaudeCodeExecutable: claudeBinary,
         permissionMode: 'bypassPermissions',
         allowDangerouslySkipPermissions: true,
