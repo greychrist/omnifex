@@ -31,7 +31,7 @@ import remarkGfm from "remark-gfm";
 import { getClaudeSyntaxTheme } from "@/lib/claudeSyntaxTheme";
 import { buildMarkdownComponents } from "@/lib/markdownComponents";
 import { useTheme } from "@/hooks";
-import type { ClaudeStreamMessage } from "@/types/claudeStream";
+import type { ClaudeStreamMessage, MessageContentBlock } from "@/types/claudeStream";
 import {
   asToolInput,
   asToolInputOneOf,
@@ -71,18 +71,21 @@ import {
 /** Extract all meaningful text from a message for copying.
  *  Assumes content is already an array — see lib/normalizeMessage for the
  *  ingress boundary that guarantees it. */
-function extractCopyText(msg: any): string {
-  if (!Array.isArray(msg?.content)) return '';
+function extractCopyText(msg: unknown): string {
+  if (!msg || typeof msg !== 'object') return '';
+  const content = (msg as { content?: unknown }).content;
+  if (!Array.isArray(content)) return '';
   const parts: string[] = [];
-  for (const c of msg.content) {
-    if (c.type === 'text' && typeof c.text === 'string') {
+  for (const c of content as MessageContentBlock[]) {
+    if (c.type === 'text') {
       parts.push(c.text);
-    } else if (c.type === 'tool_use' && c.input) {
+    } else if (c.type === 'tool_use') {
       // Tool-use inputs are arbitrary record shapes; pull out the well-known
       // text-y fields so the copy button captures something readable.
-      if (typeof c.input.command === 'string') parts.push(c.input.command);
-      else if (typeof c.input.content === 'string') parts.push(c.input.content);
-      else if (typeof c.input.pattern === 'string') parts.push(c.input.pattern);
+      const input = c.input;
+      if (typeof input.command === 'string') parts.push(input.command);
+      else if (typeof input.content === 'string') parts.push(input.content);
+      else if (typeof input.pattern === 'string') parts.push(input.pattern);
     } else if (c.type === 'tool_result') {
       // Tool_result blocks still legitimately carry either string or array
       // content — that's not covered by the top-level normalization.
@@ -90,7 +93,7 @@ function extractCopyText(msg: any): string {
       else if (Array.isArray(c.content)) {
         for (const inner of c.content) {
           if (typeof inner === 'string') parts.push(inner);
-          else if (typeof inner.text === 'string') parts.push(inner.text);
+          else if ('text' in inner && typeof inner.text === 'string') parts.push(inner.text);
         }
       }
     }
@@ -99,7 +102,7 @@ function extractCopyText(msg: any): string {
 }
 
 /** Copy button with inline toast feedback. Accepts either a message object or raw text. */
-const CopyCardButton: React.FC<{ message?: any; text?: string }> = ({ message, text }) => {
+const CopyCardButton: React.FC<{ message?: unknown; text?: string }> = ({ message, text }) => {
   const [copied, setCopied] = React.useState(false);
   const [toast, setToast] = React.useState(false);
 
@@ -184,7 +187,7 @@ const DownloadableImage: React.FC<{
 
 /** Copy + optional Resend action bar for user message cards. */
 const UserMessageActions: React.FC<{
-  msg: any;
+  msg: unknown;
   onResend?: (text: string, images?: string[]) => void;
 }> = ({ msg, onResend }) => {
   const [copied, setCopied] = React.useState(false);
@@ -353,7 +356,7 @@ interface StreamMessageProps {
  */
 const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, className, streamMessages, onLinkDetected, accountType, inExpandedGroup, compact, onResend }) => {
   // State to track tool results mapped by tool call ID
-  const [toolResults, setToolResults] = useState<Map<string, any>>(new Map());
+  const [toolResults, setToolResults] = useState<Map<string, MessageContentBlock>>(new Map());
   
   // Get current theme
   const { theme } = useTheme();
@@ -365,26 +368,26 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
   
   // Extract all tool results from stream messages
   useEffect(() => {
-    const results = new Map<string, any>();
-    
+    const results = new Map<string, MessageContentBlock>();
+
     // Iterate through all messages to find tool results
     streamMessages.forEach(msg => {
-      if (msg.type === "user" && msg.message?.content && Array.isArray(msg.message.content)) {
-        msg.message.content.forEach((content: any) => {
+      if (msg.type === "user" && msg.message.content && Array.isArray(msg.message.content)) {
+        (msg.message.content as MessageContentBlock[]).forEach((content) => {
           if (content.type === "tool_result" && content.tool_use_id) {
             results.set(content.tool_use_id, content);
           }
         });
       }
     });
-    
+
     setToolResults(results);
   }, [streamMessages]);
-  
+
   // Helper to get tool result for a specific tool call ID
-  const getToolResult = (toolId: string | undefined): any => {
+  const getToolResult = (toolId: string | undefined): MessageContentBlock | null => {
     if (!toolId) return null;
-    return toolResults.get(toolId) || null;
+    return toolResults.get(toolId) ?? null;
   };
   
   try {
@@ -579,9 +582,9 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
       // whole message hides the reasoning the user explicitly asked to see.
       let suppressTextBlocks = false;
       if (msg.content && Array.isArray(msg.content)) {
-        const assistantText = msg.content
-          .filter((c: any) => c.type === 'text')
-          .map((c: any) => typeof c.text === 'string' ? c.text : '')
+        const assistantText = (msg.content as MessageContentBlock[])
+          .filter((c): c is import('@/types/claudeStream').MessageTextBlock => c.type === 'text')
+          .map((c) => c.text)
           .join('');
         if (assistantText) {
           let msgIndex = streamMessages.indexOf(message);
@@ -607,8 +610,8 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
             }
           }
           if (suppressTextBlocks) {
-            const hasOtherContent = msg.content.some(
-              (c: any) => c?.type && c.type !== 'text',
+            const hasOtherContent = (msg.content as MessageContentBlock[]).some(
+              (c) => c.type !== 'text',
             );
             if (!hasOtherContent) return null;
           }
@@ -641,15 +644,17 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
               <div className="flex-1 space-y-2 min-w-0 overflow-x-auto">
                 <KindHeader kindId="assistant.text" />
                 {(() => {
-                  const blocks: any[] = Array.isArray(msg.content) ? msg.content : [];
-                  const renderBlock = (content: any, idx: number) => {
+                  const blocks: MessageContentBlock[] = Array.isArray(msg.content) ? (msg.content as MessageContentBlock[]) : [];
+                  const renderBlock = (content: MessageContentBlock, idx: number) => {
                     // Text content - render as markdown
                     if (content.type === "text") {
                     if (suppressTextBlocks) return null;
-                    // Ensure we have a string to render
-                    const textContent = typeof content.text === 'string'
-                      ? content.text
-                      : (content.text?.text || JSON.stringify(content.text || content));
+                    // MessageTextBlock.text is typed string; the previous
+                    // defensive `content.text?.text || JSON.stringify(...)`
+                    // branch was unreachable per types. If a malformed
+                    // payload sneaks in at runtime we'll see an exception
+                    // here rather than silently stringifying the whole block.
+                    const textContent = content.text;
 
                     renderedSomething = true;
                     return (
@@ -665,7 +670,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                   // Skip signature-only blocks (SDK returns { thinking: "", signature: "..." }
                   // when showThinkingSummaries is off — there's nothing to display).
                   if (content.type === "thinking") {
-                    const thinkingText = typeof content.thinking === 'string' ? content.thinking.trim() : '';
+                    const thinkingText = content.thinking.trim();
                     if (!thinkingText) return null;
                     renderedSomething = true;
                     return (
@@ -876,14 +881,19 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                   }
 
                   const out: React.ReactNode[] = [];
-                  let pendingHidden: { block: any; idx: number }[] = [];
+                  let pendingHidden: { block: MessageContentBlock; idx: number }[] = [];
                   const flush = () => {
                     if (pendingHidden.length === 0) return;
                     const items = pendingHidden;
                     pendingHidden = [];
-                    const summary = summarizeHiddenEvents([
-                      { type: 'assistant', message: { content: items.map((i) => i.block) } } as any,
-                    ]);
+                    // Synthetic message wrapper for summarizeHiddenEvents — the
+                    // helper only reads `type` + `message.content`, so the
+                    // partial shape is sufficient.
+                    const syntheticMessage = {
+                      type: 'assistant',
+                      message: { content: items.map((i) => i.block) },
+                    } as unknown as ClaudeStreamMessage;
+                    const summary = summarizeHiddenEvents([syntheticMessage]);
                     out.push(
                       <HiddenBlocksExpander
                         key={`hb-${items[0].idx}`}
@@ -945,7 +955,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
       // "[object Object]" which starts/ends with brackets).
       const isToolResultOnly = Array.isArray(msg.content)
         && msg.content.length > 0
-        && msg.content.every((c: any) => c.type === "tool_result");
+        && (msg.content as MessageContentBlock[]).every((c) => c.type === "tool_result");
 
       // Extract text content, handling nested content arrays from tool results.
       // Top-level content is always an array post boundary normalization
@@ -953,13 +963,15 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
       // can still legitimately be string OR array — tool-result block shape
       // isn't covered by the top-level normalization.
       const contentStr = Array.isArray(msg.content)
-        ? msg.content.map((c: any) => {
-            if (typeof c.text === 'string') return c.text;
-            if (typeof c.content === 'string') return c.content;
-            if (Array.isArray(c.content)) {
-              return c.content.map((inner: any) =>
-                typeof inner === 'string' ? inner : (typeof inner.text === 'string' ? inner.text : '')
-              ).join('');
+        ? (msg.content as MessageContentBlock[]).map((c) => {
+            if (c.type === 'text') return c.text;
+            if (c.type === 'tool_result') {
+              if (typeof c.content === 'string') return c.content;
+              if (Array.isArray(c.content)) {
+                return c.content.map((inner) =>
+                  typeof inner === 'string' ? inner : ('text' in inner && typeof inner.text === 'string' ? inner.text : '')
+                ).join('');
+              }
             }
             return '';
           }).join('')
@@ -1119,7 +1131,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                     Boundary normalization (lib/normalizeMessage) guarantees
                     `msg.content` is always an array here — JSONL strings get
                     wrapped into a single text block at ingress. */}
-                {(msg.content as any[]).map((content: any, idx: number) => {
+                {(msg.content as MessageContentBlock[]).map((content, idx) => {
                   // Text block.
                   //
                   // Plain `/clear`-style slash invocations and their local
@@ -1129,10 +1141,10 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                   // boundary normalization; also extract inline
                   // `@/path/to/image.png` references as DownloadableImages.
                   if (content.type === "text") {
-                    const text = typeof content.text === 'string' ? content.text : '';
+                    const text = content.text;
                     renderedSomething = true;
 
-                    const slashMatch = text.match(/<command-name>(.+?)<\/command-name>[\s\S]*?<command-message>(.+?)<\/command-message>[\s\S]*?<command-args>(.*?)<\/command-args>/);
+                    const slashMatch = /<command-name>(.+?)<\/command-name>[\s\S]*?<command-message>(.+?)<\/command-message>[\s\S]*?<command-args>(.*?)<\/command-args>/.exec(text);
                     if (slashMatch) {
                       const [, slashName, slashMessage, slashArgs] = slashMatch;
                       return (
@@ -1145,7 +1157,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                       );
                     }
 
-                    const stdoutMatch = text.match(/<local-command-stdout>([\s\S]*?)<\/local-command-stdout>/);
+                    const stdoutMatch = /<local-command-stdout>([\s\S]*?)<\/local-command-stdout>/.exec(text);
                     if (stdoutMatch) {
                       const [, output] = stdoutMatch;
                       return <CommandOutputWidget key={idx} output={output} onLinkDetected={onLinkDetected} />;
@@ -1238,8 +1250,8 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                       const text = typeof content.content === 'string'
                         ? content.content
                         : Array.isArray(content.content)
-                          ? content.content.map((c: any) => (typeof c === 'string' ? c : c?.text ?? '')).join('\n')
-                          : (content.content?.text ?? JSON.stringify(content.content ?? ''));
+                          ? content.content.map((c) => (typeof c === 'string' ? c : ('text' in c && typeof c.text === 'string' ? c.text : ''))).join('\n')
+                          : '';
                       renderedSomething = true;
                       return (
                         <SubagentReturnedMarker
@@ -1258,21 +1270,17 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                     let contentText = '';
                     if (typeof content.content === 'string') {
                       contentText = content.content;
+                    } else if (Array.isArray(content.content)) {
+                      // Handle array of content blocks
+                      contentText = content.content
+                        .map((c) => (typeof c === 'string' ? c : ('text' in c && typeof c.text === 'string' ? c.text : JSON.stringify(c))))
+                        .join('\n');
                     } else if (content.content && typeof content.content === 'object') {
-                      // Handle object with text property
-                      if (content.content.text) {
-                        contentText = content.content.text;
-                      } else if (Array.isArray(content.content)) {
-                        // Handle array of content blocks
-                        contentText = content.content
-                          .map((c: any) => (typeof c === 'string' ? c : c.text || JSON.stringify(c)))
-                          .join('\n');
-                      } else {
-                        // Fallback to JSON stringify
-                        contentText = JSON.stringify(content.content, null, 2);
-                      }
+                      // Fallback to JSON stringify
+                      contentText = JSON.stringify(content.content, null, 2);
                     }
-                    
+
+
                     // Always show system reminders regardless of widget status
                     const reminderMatch = /<system-reminder>(.*?)<\/system-reminder>/s.exec(contentText);
                     if (reminderMatch) {
@@ -1348,11 +1356,11 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                         for (let i = streamMessages.length - 1; i >= 0; i--) {
                           const prevMsg = streamMessages[i];
                           // Only check assistant messages
-                          if (prevMsg.type === 'assistant' && prevMsg.message?.content && Array.isArray(prevMsg.message.content)) {
-                            const toolUse = prevMsg.message.content.find((c: any) => 
-                              c.type === 'tool_use' && 
+                          if (prevMsg.type === 'assistant' && prevMsg.message.content && Array.isArray(prevMsg.message.content)) {
+                            const toolUse = (prevMsg.message.content as MessageContentBlock[]).find((c) =>
+                              c.type === 'tool_use' &&
                               c.id === content.tool_use_id &&
-                              c.name?.toLowerCase() === 'ls'
+                              c.name.toLowerCase() === 'ls'
                             );
                             if (toolUse) {
                               isFromLSTool = true;
