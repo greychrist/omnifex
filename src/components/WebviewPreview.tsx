@@ -90,11 +90,6 @@ const WebviewPreviewComponent: React.FC<WebviewPreviewProps> = ({
     return () => { document.removeEventListener('keydown', handleKeyDown); };
   }, [isMaximized, onToggleMaximize]);
 
-  // Debug: Log initial URL on mount
-  useEffect(() => {
-    console.log('[WebviewPreview] Component mounted with initialUrl:', initialUrl, 'isMaximized:', isMaximized);
-  }, []);
-
   // Focus management for full screen mode
   useEffect(() => {
     if (isMaximized && containerRef.current) {
