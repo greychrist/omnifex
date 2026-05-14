@@ -42,9 +42,13 @@ AGENTS.md
 .superpowers/
 .env.superpowers/
 .mcp.json
-CLAUDE.md
-electron/CLAUDE.md
-src/CLAUDE.md
+# CLAUDE.md (root + nested) is intentionally tracked — it's project
+# guidance that any contributor or AI assistant in this repo needs to
+# see, and historically lived as ignored local-only notes. Use a
+# CLAUDE.local.md sibling for genuinely personal scratch notes if you
+# need one.
+CLAUDE.local.md
+**/CLAUDE.local.md
 
 # Local-only subagent-stream sanity-check fixture — see
 # src/lib/__tests__/subagentStreams.test.ts (the test skipIf()s when absent).
