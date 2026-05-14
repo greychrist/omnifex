@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.34] — 2026-05-14
+
+Two internal cleanups born from the v0.4.32/v0.4.33 SDK-tools review pass and a follow-up audit of how OmniFex consumes the Claude Agent SDK's full message-type surface (30 variants in 0.2.141). No new user-visible features; the changes are all under the hood — but two of them close real bug classes the older code shipped silently with.
+
+Installers remain **unsigned**.
+
+### Fixed
+
+- **Subagent dispatch is now case-aligned end to end.** v0.4.32's `asToolInputOneOf` narrowing was case-sensitive against PascalCase while `isSubagentDispatch` (used as the discriminator above it) was case-insensitive. A lowercase `'task'` would pass the guard but fail the narrow and silently render as raw JSON. `isSubagentDispatch` is now case-sensitive too; both layers agree against the SDK's wire contract; the PascalCase-normalization shim deleted.
+- **Write tool widget renders for empty content.** The `StreamMessage.tsx` Write widget gate was `writeInput?.file_path && writeInput.content` — the truthiness check sees empty content as falsy and silently dropped empty-file writes (a legitimate `touch`-style operation Claude Code emits) through to the generic JSON display. Now uses `content !== undefined`.
+- **`SDKTaskUpdatedMessage` payload is no longer silently discarded.** The SDK's `task_updated` message (subtype `task_updated`, keyed by `task_id` not `tool_use_id`) carries a `patch` describing TaskState changes (status, description, end_time, error, is_backgrounded, …). It was caught by `isTaskLifecycleMarker`'s `task_*` startsWith match and dropped from the chat timeline — but `messagesToEvents` had no branch for it, so the patch was thrown away. The only case in our pipeline where a message was filtered as if consumed but actually discarded. Now: new TaskUpdated event variant in `subagentEvents.ts`; reducer reverse-lookups subagent state by `taskId`; applies `is_backgrounded` / `description` / `error` unconditionally; applies status changes only when not finalized by `task_notification` (which remains canonical). Maps `'killed'` → `'failed'`. Sets `endedAt` from `end_time` ms when going terminal. The `Subagent` shape gains an optional `error?: string` for consumers that want to surface the SDK's structured error string (not displayed in the UI yet — visual surfacing is a follow-up).
+- **`hook_progress` no longer leaks into the chat timeline.** SDK's `system+hook_*` family is plumbing noise — `hook_started`, `hook_response`, `hook_progress` (mid-hook stdout/stderr) all describe internal hook execution and should never appear in chat. The `HOOK_LIFECYCLE_SUBTYPES` set in `messageFilters.ts` only listed `hook_started` + `hook_response` + `user_prompt_submit`, letting `hook_progress` leak in as `system.unknown` gray strips. Now includes `hook_progress`.
+
+### Changed
+
+- **Single source of truth for the renderer's tool-name list.** `ToolInputByName` (PascalCase, type-only) and `toolsWithWidgets` (lowercase, runtime array) were two hand-maintained lists that had to stay in sync by convention. `KNOWN_TOOL_NAMES` is now a const tuple in `src/lib/types/toolInput.ts`; `KnownToolName` derives from it; the lowercased `TOOLS_WITH_WIDGETS_LOWER` Set derives from it; and the `ToolInputByName` interface keys are enforced to match (compile-time, via the `<K extends KnownToolName>` constraint on `asToolInput` indexing into `ToolInputByName[K]`). `StreamMessage.tsx` imports `TOOLS_WITH_WIDGETS_LOWER` directly; the maintenance-comment block is gone.
+- **`blockKind.ts`'s internal `KNOWN_TOOL_NAMES_LOWER` is now derived from `KNOWN_TOOL_NAMES`** with two documented adjustments: `task` and `agent` removed (handled by `isSubagentDispatch` separately) and `askuserquestion` added (elevated to its own kind but still recognized as a known tool for per-block classification). Closes the third sync hazard in the codebase.
+
+### Added
+
+- **`system.permission_denied` first-class kind.** `SDKPermissionDeniedMessage` (emitted by the SDK on auto-deny short-circuits — auto-mode classifier, dontAsk mode, deny rules, headless-agent auto-deny) and the OmniFex hook synthetic on the same subtype both fell to `system.unknown` with no styling distinct from no-op telemetry. Now classified as `'system.permission_denied'` in `messageKind.ts` with a dedicated `MessageKindConfig` entry (red accent, `ShieldX` icon). Renders as a red-accented inline strip — visually distinct from the gray default but not yet a card; a dedicated card-style render branch is a follow-up.
+- **Dev-mode warning when a known tool falls through every widget branch.** `warnUnhandledKnownTool(toolName, rawInput)` in `toolInput.ts` — gated on `import.meta.env.DEV`, production no-op. Fires when `toolName` is in `KNOWN_TOOL_NAMES` but `renderToolWidget` reaches the bottom without matching, which is exactly the silent fall-through the SDK type adoption was meant to surface (malformed input on a known name → generic JSON).
+
 ## [0.4.33] — 2026-05-13
 
 Code-review follow-up to the SDK type adoption in 0.4.32. Four issues surfaced by post-release review: a latent case-mismatch in the subagent dispatch branch, a maintenance hazard in the tool-result suppression list, a misleading local interface for `TodoRead`, and a missing `LS` headline in the permission card. The first is theoretical (no production code path emits lowercase tool names today, so the gap was latent rather than active), but closing it removes a foot-gun for future runtime additions. v0.4.32 is being **superseded by 0.4.33** — same SDK adoption work, with the review fixes folded in. v0.4.32's draft can be deleted from GitHub before publishing.
