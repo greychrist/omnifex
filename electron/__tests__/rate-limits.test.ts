@@ -283,7 +283,7 @@ describe('rate-limits service', () => {
       h.service.recordEvent('/Users/test/.claude', fiveHourEvent({ utilization: 80 }));
       h.service.recordEvent('/Users/test/.claude', fiveHourEvent({ utilization: 88 }));
 
-      const pct75Fires = h.notifications.filter((n) => /75%/.test(n.body));
+      const pct75Fires = h.notifications.filter((n) => n.body.includes('75%'));
       expect(pct75Fires).toHaveLength(1);
     });
 
@@ -298,8 +298,8 @@ describe('rate-limits service', () => {
     it('jumps directly to 90% if first observation is already past it', () => {
       h.service.recordEvent('/Users/test/.claude', fiveHourEvent({ utilization: 95 }));
       const bodies = h.notifications.map((n) => n.body);
-      expect(bodies.some((b) => /75%/.test(b))).toBe(true);
-      expect(bodies.some((b) => /90%/.test(b))).toBe(true);
+      expect(bodies.some((b) => b.includes('75%'))).toBe(true);
+      expect(bodies.some((b) => b.includes('90%'))).toBe(true);
     });
 
     it('re-arms thresholds when window rolls over (new resetsAt)', () => {
@@ -312,7 +312,7 @@ describe('rate-limits service', () => {
         fiveHourEvent({ utilization: 80, resetsAt: 1_700_018_000 }),
       );
 
-      const pct75Fires = h.notifications.filter((n) => /75%/.test(n.body));
+      const pct75Fires = h.notifications.filter((n) => n.body.includes('75%'));
       expect(pct75Fires).toHaveLength(2);
     });
 

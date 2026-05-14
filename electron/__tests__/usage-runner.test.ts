@@ -485,7 +485,7 @@ describe('usage-runner', () => {
   });
 
   it('passes the scratch cwd from ensureCwd into spawnPty (not os.homedir)', async () => {
-    const seenOpts: Array<{ cwd: string; env: NodeJS.ProcessEnv }> = [];
+    const seenOpts: { cwd: string; env: NodeJS.ProcessEnv }[] = [];
     const wrapped: PtySpawner = (cmd, args, opts) => {
       seenOpts.push({ cwd: opts.cwd, env: opts.env });
       return makeScriptedSpawn(MAX_FULL_FIXTURE)(cmd, args, opts);
@@ -531,9 +531,9 @@ describe('usage-runner', () => {
       };
     };
 
-    const logs: Array<{ level: string; message: string; metadata?: string }> = [];
+    const logs: { level: string; message: string; metadata?: string }[] = [];
     const fakeLogging = {
-      writeBatch: (entries: Array<{ level: string; message: string; metadata?: string }>) => {
+      writeBatch: (entries: { level: string; message: string; metadata?: string }[]) => {
         for (const e of entries) logs.push({ level: e.level, message: e.message, metadata: e.metadata });
       },
     } as unknown as import('../services/logging').LoggingService;

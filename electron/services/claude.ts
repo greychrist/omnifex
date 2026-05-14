@@ -374,7 +374,7 @@ function extractSessionMetadata(filePath: string): {
     // Track first/last timestamps across every entry that carries one,
     // regardless of type — assistant turns, tool results, and meta entries
     // all bracket the session's wall-clock activity.
-    const ts = obj['timestamp'];
+    const ts = obj.timestamp;
     if (typeof ts === 'string') {
       if (!firstTimestamp) firstTimestamp = ts;
       lastTimestamp = ts;
@@ -382,12 +382,12 @@ function extractSessionMetadata(filePath: string): {
 
     if (firstMessage) continue; // already have the first message text
 
-    if (obj['type'] !== 'user') continue;
-    if (obj['isMeta']) continue;
+    if (obj.type !== 'user') continue;
+    if (obj.isMeta) continue;
 
-    const message = obj['message'] as Record<string, unknown> | undefined;
+    const message = obj.message as Record<string, unknown> | undefined;
     if (!message) continue;
-    const content = message['content'];
+    const content = message.content;
 
     let text: string | undefined;
     if (typeof content === 'string') {
@@ -396,8 +396,8 @@ function extractSessionMetadata(filePath: string): {
       for (const block of content) {
         if (typeof block === 'object' && block !== null) {
           const b = block as Record<string, unknown>;
-          if (b['type'] === 'text' && typeof b['text'] === 'string') {
-            text = b['text'] as string;
+          if (b.type === 'text' && typeof b.text === 'string') {
+            text = b.text;
             break;
           }
         }
@@ -972,7 +972,7 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
         const content = fs.readFileSync(settingsPath, 'utf-8');
         const parsed = JSON.parse(content);
         if (typeof parsed === 'object' && parsed !== null) {
-          return ((parsed as Record<string, unknown>)['hooks'] as Record<string, unknown>) ?? {};
+          return ((parsed as Record<string, unknown>).hooks as Record<string, unknown>) ?? {};
         }
         return {};
       } catch {
@@ -982,7 +982,7 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
 
     // user scope
     const settings = await getClaudeSettings(opts);
-    return (settings['hooks'] as Record<string, unknown>) ?? {};
+    return (settings.hooks as Record<string, unknown>) ?? {};
   }
 
   async function updateHooksConfig(
@@ -1033,7 +1033,7 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
   // -------------------------------------------------------------------------
 
   function validateHookCommand(command: string): { valid: boolean; message: string } {
-    if (!command || !command.trim()) {
+    if (!command?.trim()) {
       return { valid: false, message: 'Command must not be empty' };
     }
     return { valid: true, message: 'OK' };
@@ -1076,7 +1076,7 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
 
     const env: Record<string, string> = { ...process.env as Record<string, string> };
     if (configDir) {
-      env['CLAUDE_CONFIG_DIR'] = configDir;
+      env.CLAUDE_CONFIG_DIR = configDir;
     }
 
     try {

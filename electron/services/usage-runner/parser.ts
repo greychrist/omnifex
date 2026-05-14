@@ -1,13 +1,13 @@
-export type UsageWindow = {
+export interface UsageWindow {
   label: 'current_session' | 'week_all_models' | 'week_sonnet';
   pct_used: number;
   resets_at_label: string;
-};
+}
 
-export type UsageRow = { name: string; pct_used: number };
-export type UsageTable = { rows: UsageRow[]; more_count: number | null };
+export interface UsageRow { name: string; pct_used: number }
+export interface UsageTable { rows: UsageRow[]; more_count: number | null }
 
-export type UsageData = {
+export interface UsageData {
   session: {
     cost_usd: number;
     api_duration_s: number;
@@ -28,7 +28,7 @@ export type UsageData = {
   skills: UsageTable;
   subagents: UsageTable;
   plugins: UsageTable;
-};
+}
 
 
 export type ParseResult =
@@ -76,7 +76,7 @@ export function isUsageOutputComplete(input: string): boolean {
   // If a future CLI version emits more sections we still pass; if it emits
   // fewer (e.g. free-tier accounts that only show the session window), the
   // fast-path stays disabled and the runner falls back to the quiet timeout.
-  const required: Array<UsageWindow['label']> = ['current_session', 'week_all_models', 'week_sonnet'];
+  const required: UsageWindow['label'][] = ['current_session', 'week_all_models', 'week_sonnet'];
   for (const label of required) {
     const w = result.data.windows.find((w) => w.label === label);
     if (!w) return false;

@@ -1102,8 +1102,8 @@ describe('sessions service — full lifecycle', () => {
 
     const next = await promptIter.next();
     expect(next.done).toBe(false);
-    expect((next.value as any).type).toBe('user');
-    expect((next.value as any).message.content).toBe('hello, world');
+    expect((next.value).type).toBe('user');
+    expect((next.value).message.content).toBe('hello, world');
   });
 
   it('sendStructuredMessage pushes a structured user message into the SDK input channel', async () => {
@@ -1126,8 +1126,8 @@ describe('sessions service — full lifecycle', () => {
 
     const next = await promptIter.next();
     expect(next.done).toBe(false);
-    expect((next.value as any).type).toBe('user');
-    expect(Array.isArray((next.value as any).message.content)).toBe(true);
+    expect((next.value).type).toBe('user');
+    expect(Array.isArray((next.value).message.content)).toBe(true);
   });
 
   // -------------------------------------------------------------------------
@@ -1140,7 +1140,7 @@ describe('sessions service — full lifecycle', () => {
     const svc = createSessionsService(
       sendToRenderer as any,
       { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
-      fakeLogging as any,
+      fakeLogging,
     );
     const fake = installFakeQuery();
 
@@ -1160,12 +1160,12 @@ describe('sessions service — full lifecycle', () => {
     await new Promise((r) => setImmediate(r));
     expect(svc.getStatus('tab-perm')).toBe('waiting_permission');
     const permCall = sendToRenderer.mock.calls.find(
-      (c) => c[0] === 'claude-output:tab-perm' && (c[1] as any)?.type === 'permission_request',
+      (c) => c[0] === 'claude-output:tab-perm' && (c[1])?.type === 'permission_request',
     );
     expect(permCall).toBeDefined();
-    expect((permCall![1] as any).tool_name).toBe('Bash');
-    expect((permCall![1] as any).tool_input).toEqual({ command: 'ls -la' });
-    expect((permCall![1] as any).title).toBe('Run ls -la');
+    expect((permCall![1]).tool_name).toBe('Bash');
+    expect((permCall![1]).tool_input).toEqual({ command: 'ls -la' });
+    expect((permCall![1]).title).toBe('Run ls -la');
 
     svc.respondPermission('tab-perm', 'allow', { command: 'ls -la --color' });
     const result = await decisionPromise;
@@ -1182,7 +1182,7 @@ describe('sessions service — full lifecycle', () => {
     const svc = createSessionsService(
       sendToRenderer as any,
       { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
-      fakeLogging as any,
+      fakeLogging,
     );
     const fake = installFakeQuery();
 
@@ -1223,7 +1223,7 @@ describe('sessions service — full lifecycle', () => {
     const svc = createSessionsService(
       sendToRenderer as any,
       { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
-      fakeLogging as any,
+      fakeLogging,
     );
     const fake = installFakeQuery();
 
@@ -1262,7 +1262,7 @@ describe('sessions service — full lifecycle', () => {
     const svc = createSessionsService(
       sendToRenderer as any,
       { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
-      fakeLogging as any,
+      fakeLogging,
     );
     const fake = installFakeQuery();
 
@@ -1290,7 +1290,7 @@ describe('sessions service — full lifecycle', () => {
     const svc = createSessionsService(
       sendToRenderer as any,
       { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
-      fakeLogging as any,
+      fakeLogging,
     );
     const fake = installFakeQuery();
 
@@ -1327,7 +1327,7 @@ describe('sessions service — full lifecycle', () => {
     const svc = createSessionsService(
       sendToRenderer as any,
       { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
-      fakeLogging as any,
+      fakeLogging,
     );
     const fake = installFakeQuery();
 
@@ -1355,7 +1355,7 @@ describe('sessions service — full lifecycle', () => {
     expect(result).toMatchObject({ behavior: 'deny' });
     // Distinguishable from a user-driven deny so logging / future SDK
     // responses can branch on it.
-    expect((result as any).message).toMatch(/abort/i);
+    expect((result).message).toMatch(/abort/i);
 
     svc.stopAll();
   });
@@ -1366,7 +1366,7 @@ describe('sessions service — full lifecycle', () => {
     const svc = createSessionsService(
       sendToRenderer as any,
       { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
-      fakeLogging as any,
+      fakeLogging,
     );
     const fake = installFakeQuery();
 
@@ -1419,7 +1419,7 @@ describe('sessions service — full lifecycle', () => {
     const svc = createSessionsService(
       sendToRenderer as any,
       { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
-      fakeLogging as any,
+      fakeLogging,
     );
     const fake = installFakeQuery();
 
@@ -1444,7 +1444,7 @@ describe('sessions service — full lifecycle', () => {
     const svc = createSessionsService(
       sendToRenderer as any,
       { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
-      fakeLogging as any,
+      fakeLogging,
     );
     const fake = installFakeQuery();
 
@@ -1481,7 +1481,7 @@ describe('sessions service — full lifecycle', () => {
     const svc = createSessionsService(
       sendToRenderer as any,
       { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
-      fakeLogging as any,
+      fakeLogging,
     );
     const fake = installFakeQuery();
 
@@ -1504,13 +1504,13 @@ describe('sessions service — full lifecycle', () => {
 
     await new Promise((r) => setImmediate(r));
     const permCall = sendToRenderer.mock.calls.find(
-      (c) => c[0] === 'claude-output:tab-sug' && (c[1] as any)?.type === 'permission_request',
+      (c) => c[0] === 'claude-output:tab-sug' && (c[1])?.type === 'permission_request',
     );
     expect(permCall).toBeDefined();
-    expect((permCall![1] as any).permission_suggestions).toEqual(suggestions);
-    expect((permCall![1] as any).title).toBe('Run git status');
-    expect((permCall![1] as any).display_name).toBe('Bash');
-    expect((permCall![1] as any).description).toBe('Execute a shell command');
+    expect((permCall![1]).permission_suggestions).toEqual(suggestions);
+    expect((permCall![1]).title).toBe('Run git status');
+    expect((permCall![1]).display_name).toBe('Bash');
+    expect((permCall![1]).description).toBe('Execute a shell command');
 
     svc.respondPermission('tab-sug', 'allow');
     await decisionPromise;
@@ -1524,7 +1524,7 @@ describe('sessions service — full lifecycle', () => {
     const svc = createSessionsService(
       sendToRenderer as any,
       { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
-      fakeLogging as any,
+      fakeLogging,
     );
     const fake = installFakeQuery();
 
@@ -1559,7 +1559,7 @@ describe('sessions service — full lifecycle', () => {
     const svc = createSessionsService(
       sendToRenderer as any,
       { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
-      fakeLogging as any,
+      fakeLogging,
     );
     const fake = installFakeQuery();
 
@@ -1594,7 +1594,7 @@ describe('sessions service — full lifecycle', () => {
     const svc = createSessionsService(
       sendToRenderer as any,
       { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
-      fakeLogging as any,
+      fakeLogging,
     );
     const fake = installFakeQuery();
 
@@ -1633,7 +1633,7 @@ describe('sessions service — full lifecycle', () => {
     const svc = createSessionsService(
       sendToRenderer as any,
       { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
-      fakeLogging as any,
+      fakeLogging,
     );
     const fake = installFakeQuery();
 
@@ -1678,7 +1678,7 @@ describe('sessions service — full lifecycle', () => {
 
     const forwarded = sendToRenderer.mock.calls
       .filter((c) => c[0] === 'claude-output:tab-ts')
-      .map((c) => c[1] as any);
+      .map((c) => c[1]);
     expect(forwarded.length).toBeGreaterThanOrEqual(2);
     for (const msg of forwarded) {
       expect(typeof msg.receivedAt).toBe('string');
@@ -1824,7 +1824,7 @@ describe('sessions service — full lifecycle', () => {
     const svc = createSessionsService(
       sendToRenderer as any,
       { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
-      fakeLogging as any,
+      fakeLogging,
     );
     const fake = installFakeQuery();
 
@@ -1847,20 +1847,20 @@ describe('sessions service — full lifecycle', () => {
 
     // Renderer should have received exactly one permission_request (the first).
     const permRequests = sendToRenderer.mock.calls.filter(
-      (c) => c[0] === 'claude-output:tab-queue' && (c[1] as any)?.type === 'permission_request',
+      (c) => c[0] === 'claude-output:tab-queue' && (c[1])?.type === 'permission_request',
     );
     expect(permRequests.length).toBe(1);
-    expect((permRequests[0][1] as any).tool_name).toBe('Bash');
+    expect((permRequests[0][1]).tool_name).toBe('Bash');
 
     // Resolve the first — the second should now be emitted to the renderer.
     svc.respondPermission('tab-queue', 'allow');
     await firstPromise;
 
     const permRequestsAfter = sendToRenderer.mock.calls.filter(
-      (c) => c[0] === 'claude-output:tab-queue' && (c[1] as any)?.type === 'permission_request',
+      (c) => c[0] === 'claude-output:tab-queue' && (c[1])?.type === 'permission_request',
     );
     expect(permRequestsAfter.length).toBe(2);
-    expect((permRequestsAfter[1][1] as any).tool_name).toBe('Write');
+    expect((permRequestsAfter[1][1]).tool_name).toBe('Write');
 
     // A second notification should have fired for the queued request.
     expect(showNotification.mock.calls.length).toBeGreaterThanOrEqual(2);
@@ -1923,7 +1923,7 @@ describe('sessions service — full lifecycle', () => {
         showNotification: showNotification as any,
         incrementUnread: incrementUnread as any,
       },
-      fakeLogging as any,
+      fakeLogging,
     );
     const fake = installFakeQuery();
 
@@ -1970,7 +1970,7 @@ describe('sessions service — full lifecycle', () => {
         showNotification: showNotification as any,
         incrementUnread: incrementUnread as any,
       },
-      fakeLogging as any,
+      fakeLogging,
     );
     const fake = installFakeQuery();
 
@@ -2031,7 +2031,7 @@ describe('sessions service — full lifecycle', () => {
       const svc = createSessionsService(
         sendToRenderer as any,
         { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
-        fakeLogging as any,
+        fakeLogging,
       );
       const fake = installFakeQuery();
       svc.start({
@@ -2062,7 +2062,7 @@ describe('sessions service — full lifecycle', () => {
       const svc = createSessionsService(
         sendToRenderer as any,
         { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
-        fakeLogging as any,
+        fakeLogging,
       );
       const fake = installFakeQuery();
       svc.start({
@@ -2127,7 +2127,7 @@ describe('sessions service — full lifecycle', () => {
       const svc = createSessionsService(
         sendToRenderer as any,
         { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
-        fakeLogging as any,
+        fakeLogging,
       );
       const fake = installFakeQuery();
       svc.start({
@@ -2158,8 +2158,8 @@ describe('sessions service — full lifecycle', () => {
         (c) => typeof c[0] === 'string' && c[0].startsWith('claude-subagent:'),
       );
       expect(rendererCall).toBeDefined();
-      expect((rendererCall![1] as any).status).toBe('started');
-      expect((rendererCall![1] as any).agent_type).toBe('Explore');
+      expect((rendererCall![1]).status).toBe('started');
+      expect((rendererCall![1]).agent_type).toBe('Explore');
 
       svc.stopAll();
     });
@@ -2170,7 +2170,7 @@ describe('sessions service — full lifecycle', () => {
       const svc = createSessionsService(
         sendToRenderer as any,
         { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
-        fakeLogging as any,
+        fakeLogging,
       );
       const fake = installFakeQuery();
       svc.start({
@@ -2209,9 +2209,9 @@ describe('sessions service — full lifecycle', () => {
         (c) => typeof c[0] === 'string' && c[0].startsWith('claude-subagent:'),
       );
       expect(rendererCall).toBeDefined();
-      expect((rendererCall![1] as any).status).toBe('stopped');
-      expect((rendererCall![1] as any).agent_type).toBe('code-reviewer');
-      expect((rendererCall![1] as any).last_assistant_message).toContain('3 issues');
+      expect((rendererCall![1]).status).toBe('stopped');
+      expect((rendererCall![1]).agent_type).toBe('code-reviewer');
+      expect((rendererCall![1]).last_assistant_message).toContain('3 issues');
 
       svc.stopAll();
     });
@@ -2222,7 +2222,7 @@ describe('sessions service — full lifecycle', () => {
       const svc = createSessionsService(
         sendToRenderer as any,
         { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
-        fakeLogging as any,
+        fakeLogging,
       );
       const fake = installFakeQuery();
       svc.start({
@@ -2250,7 +2250,7 @@ describe('sessions service — full lifecycle', () => {
         (c) => typeof c[0] === 'string' && c[0].startsWith('claude-compact:'),
       );
       expect(rendererCall).toBeDefined();
-      expect((rendererCall![1] as any).trigger).toBe('auto');
+      expect((rendererCall![1]).trigger).toBe('auto');
 
       svc.stopAll();
     });
@@ -2264,7 +2264,7 @@ describe('sessions service — full lifecycle', () => {
       const svc = createSessionsService(
         sendToRenderer as any,
         { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
-        fakeLogging as any,
+        fakeLogging,
       );
       const fake = installFakeQuery();
       svc.start({
@@ -2301,11 +2301,11 @@ describe('sessions service — full lifecycle', () => {
       // Renderer event — uses the existing claude-notification channel so
       // useNotifications.ts picks it up for tab badges automatically
       const rendererCall = sendToRenderer.mock.calls.find(
-        (c) => c[0] === 'claude-notification' && (c[1] as any)?.body === 'MCP server disconnected',
+        (c) => c[0] === 'claude-notification' && (c[1])?.body === 'MCP server disconnected',
       );
       expect(rendererCall).toBeDefined();
-      expect((rendererCall![1] as any).tab_id).toBe('hook-notif');
-      expect((rendererCall![1] as any).title).toBe('Connection Lost');
+      expect((rendererCall![1]).tab_id).toBe('hook-notif');
+      expect((rendererCall![1]).title).toBe('Connection Lost');
 
       svc.stopAll();
     });
@@ -2316,7 +2316,7 @@ describe('sessions service — full lifecycle', () => {
       const svc = createSessionsService(
         sendToRenderer as any,
         { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
-        fakeLogging as any,
+        fakeLogging,
       );
       const fake = installFakeQuery();
       svc.start({
@@ -2349,9 +2349,9 @@ describe('sessions service — full lifecycle', () => {
       expect(writeBatch).not.toHaveBeenCalled();
 
       const rendererCall = sendToRenderer.mock.calls.find(
-        (c) => c[0] === 'claude-notification' && (c[1] as any)?.body?.includes('Fatal'),
+        (c) => c[0] === 'claude-notification' && (c[1])?.body?.includes('Fatal'),
       );
-      expect((rendererCall![1] as any).is_error).toBe(true);
+      expect((rendererCall![1]).is_error).toBe(true);
 
       svc.stopAll();
     });
@@ -2362,7 +2362,7 @@ describe('sessions service — full lifecycle', () => {
       const svc = createSessionsService(
         sendToRenderer as any,
         { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
-        fakeLogging as any,
+        fakeLogging,
       );
       const fake = installFakeQuery();
       svc.start({
@@ -2391,10 +2391,10 @@ describe('sessions service — full lifecycle', () => {
 
       // Should emit on claude-output:<tabId> so it appears in the chat stream
       const outputCall = sendToRenderer.mock.calls.find(
-        (c) => c[0] === 'claude-output:hook-notif-inline' && (c[1] as any)?.subtype === 'notification',
+        (c) => c[0] === 'claude-output:hook-notif-inline' && (c[1])?.subtype === 'notification',
       );
       expect(outputCall).toBeDefined();
-      const msg = outputCall![1] as any;
+      const msg = outputCall![1];
       expect(msg.type).toBe('system');
       expect(msg.subtype).toBe('notification');
       // Hook input carries `message` (per the SDK Notification hook
@@ -2413,7 +2413,7 @@ describe('sessions service — full lifecycle', () => {
       const svc = createSessionsService(
         sendToRenderer as any,
         { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
-        fakeLogging as any,
+        fakeLogging,
       );
       const fake = installFakeQuery();
       svc.start({
@@ -2440,10 +2440,10 @@ describe('sessions service — full lifecycle', () => {
       );
 
       const outputCall = sendToRenderer.mock.calls.find(
-        (c) => c[0] === 'claude-output:hook-notif-inline-err' && (c[1] as any)?.subtype === 'notification',
+        (c) => c[0] === 'claude-output:hook-notif-inline-err' && (c[1])?.subtype === 'notification',
       );
       expect(outputCall).toBeDefined();
-      expect((outputCall![1] as any).notification_type).toBe('error');
+      expect((outputCall![1]).notification_type).toBe('error');
 
       svc.stopAll();
     });
@@ -2454,7 +2454,7 @@ describe('sessions service — full lifecycle', () => {
       const svc = createSessionsService(
         sendToRenderer as any,
         { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
-        fakeLogging as any,
+        fakeLogging,
       );
       const fake = installFakeQuery();
       svc.start({
@@ -2481,10 +2481,10 @@ describe('sessions service — full lifecycle', () => {
       );
 
       const outputCall = sendToRenderer.mock.calls.find(
-        (c) => c[0] === 'claude-output:hook-notif-inline-info' && (c[1] as any)?.subtype === 'notification',
+        (c) => c[0] === 'claude-output:hook-notif-inline-info' && (c[1])?.subtype === 'notification',
       );
       expect(outputCall).toBeDefined();
-      expect((outputCall![1] as any).notification_type).toBe('info');
+      expect((outputCall![1]).notification_type).toBe('info');
 
       svc.stopAll();
     });
@@ -2495,7 +2495,7 @@ describe('sessions service — full lifecycle', () => {
       const svc = createSessionsService(
         sendToRenderer as any,
         { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
-        fakeLogging as any,
+        fakeLogging,
       );
       const fake = installFakeQuery();
       svc.start({
@@ -2532,7 +2532,7 @@ describe('sessions service — full lifecycle', () => {
       const svc = createSessionsService(
         sendToRenderer as any,
         { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
-        fakeLogging as any,
+        fakeLogging,
       );
       const fake = installFakeQuery();
       svc.start({
@@ -2567,11 +2567,11 @@ describe('sessions service — full lifecycle', () => {
 
       // Should emit on claude-output for inline display
       const outputCall = sendToRenderer.mock.calls.find(
-        (c) => c[0] === 'claude-output:hook-sess-start' && (c[1] as any)?.subtype === 'session_lifecycle',
+        (c) => c[0] === 'claude-output:hook-sess-start' && (c[1])?.subtype === 'session_lifecycle',
       );
       expect(outputCall).toBeDefined();
-      expect((outputCall![1] as any).event).toBe('start');
-      expect((outputCall![1] as any).source).toBe('startup');
+      expect((outputCall![1]).event).toBe('start');
+      expect((outputCall![1]).source).toBe('startup');
 
       svc.stopAll();
     });
@@ -2582,7 +2582,7 @@ describe('sessions service — full lifecycle', () => {
       const svc = createSessionsService(
         sendToRenderer as any,
         { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
-        fakeLogging as any,
+        fakeLogging,
       );
       const fake = installFakeQuery();
       svc.start({
@@ -2623,7 +2623,7 @@ describe('sessions service — full lifecycle', () => {
       const svc = createSessionsService(
         sendToRenderer as any,
         { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
-        fakeLogging as any,
+        fakeLogging,
       );
       const fake = installFakeQuery();
       svc.start({
@@ -2655,11 +2655,11 @@ describe('sessions service — full lifecycle', () => {
       expect(entry.message).toContain('prompt_input_exit');
 
       const outputCall = sendToRenderer.mock.calls.find(
-        (c) => c[0] === 'claude-output:hook-sess-end' && (c[1] as any)?.subtype === 'session_lifecycle',
+        (c) => c[0] === 'claude-output:hook-sess-end' && (c[1])?.subtype === 'session_lifecycle',
       );
       expect(outputCall).toBeDefined();
-      expect((outputCall![1] as any).event).toBe('end');
-      expect((outputCall![1] as any).reason).toBe('prompt_input_exit');
+      expect((outputCall![1]).event).toBe('end');
+      expect((outputCall![1]).reason).toBe('prompt_input_exit');
 
       svc.stopAll();
     });
@@ -2674,7 +2674,7 @@ describe('sessions service — full lifecycle', () => {
       const svc = createSessionsService(
         sendToRenderer as any,
         { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
-        fakeLogging as any,
+        fakeLogging,
       );
       const fake = installFakeQuery();
       svc.start({
@@ -2723,7 +2723,7 @@ describe('sessions service — full lifecycle', () => {
       const svc = createSessionsService(
         sendToRenderer as any,
         { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
-        fakeLogging as any,
+        fakeLogging,
       );
       const fake = installFakeQuery();
       svc.start({
@@ -2757,10 +2757,10 @@ describe('sessions service — full lifecycle', () => {
 
       // Should emit inline error card
       const outputCall = sendToRenderer.mock.calls.find(
-        (c) => c[0] === 'claude-output:hook-stop-fail' && (c[1] as any)?.subtype === 'stop_failure',
+        (c) => c[0] === 'claude-output:hook-stop-fail' && (c[1])?.subtype === 'stop_failure',
       );
       expect(outputCall).toBeDefined();
-      const msg = outputCall![1] as any;
+      const msg = outputCall![1];
       expect(msg.type).toBe('system');
       expect(msg.subtype).toBe('stop_failure');
       expect(msg.error_details).toBe('Too many requests in the last minute');
@@ -2774,7 +2774,7 @@ describe('sessions service — full lifecycle', () => {
       const svc = createSessionsService(
         sendToRenderer as any,
         { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
-        fakeLogging as any,
+        fakeLogging,
       );
       const fake = installFakeQuery();
       svc.start({
@@ -2816,7 +2816,7 @@ describe('sessions service — full lifecycle', () => {
       const svc = createSessionsService(
         sendToRenderer as any,
         { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
-        fakeLogging as any,
+        fakeLogging,
       );
       const fake = installFakeQuery();
       svc.start({
@@ -2853,10 +2853,10 @@ describe('sessions service — full lifecycle', () => {
 
       // Should emit on claude-output for inline display
       const outputCall = sendToRenderer.mock.calls.find(
-        (c) => c[0] === 'claude-output:hook-postcompact' && (c[1] as any)?.subtype === 'post_compact',
+        (c) => c[0] === 'claude-output:hook-postcompact' && (c[1])?.subtype === 'post_compact',
       );
       expect(outputCall).toBeDefined();
-      const msg = outputCall![1] as any;
+      const msg = outputCall![1];
       expect(msg.type).toBe('system');
       expect(msg.subtype).toBe('post_compact');
       expect(msg.trigger).toBe('auto');
@@ -2875,7 +2875,7 @@ describe('sessions service — full lifecycle', () => {
       const svc = createSessionsService(
         sendToRenderer as any,
         { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
-        fakeLogging as any,
+        fakeLogging,
       );
       const fake = installFakeQuery();
       svc.start({
@@ -2917,10 +2917,10 @@ describe('sessions service — full lifecycle', () => {
 
       // Should emit inline denial card
       const outputCall = sendToRenderer.mock.calls.find(
-        (c) => c[0] === 'claude-output:hook-perm-denied' && (c[1] as any)?.subtype === 'permission_denied',
+        (c) => c[0] === 'claude-output:hook-perm-denied' && (c[1])?.subtype === 'permission_denied',
       );
       expect(outputCall).toBeDefined();
-      const msg = outputCall![1] as any;
+      const msg = outputCall![1];
       expect(msg.type).toBe('system');
       expect(msg.subtype).toBe('permission_denied');
       expect(msg.tool_name).toBe('Bash');
@@ -2936,7 +2936,7 @@ describe('sessions service — full lifecycle', () => {
     it('UserPromptSubmit hook logs prompt and emits renderer event', async () => {
       const writeBatch = vi.fn();
       const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
-      const svc = createSessionsService(sendToRenderer as any, { showNotification: showNotification as any, incrementUnread: incrementUnread as any }, fakeLogging as any);
+      const svc = createSessionsService(sendToRenderer as any, { showNotification: showNotification as any, incrementUnread: incrementUnread as any }, fakeLogging);
       const fake = installFakeQuery();
       svc.start({ tabId: 'h-ups', projectPath: '/p', configDir: '/c', model: 'sonnet', permissionMode: 'default' });
 
@@ -2948,7 +2948,7 @@ describe('sessions service — full lifecycle', () => {
       const entry = writeBatch.mock.calls[0][0][0];
       expect(entry.message).toContain('prompt submitted');
       expect(entry.source).toBe('claude-hooks');
-      const outputCall = sendToRenderer.mock.calls.find((c) => c[0] === 'claude-output:h-ups' && (c[1] as any)?.subtype === 'user_prompt_submit');
+      const outputCall = sendToRenderer.mock.calls.find((c) => c[0] === 'claude-output:h-ups' && (c[1])?.subtype === 'user_prompt_submit');
       expect(outputCall).toBeDefined();
 
       svc.stopAll();
@@ -2957,7 +2957,7 @@ describe('sessions service — full lifecycle', () => {
     it('Setup hook logs trigger and emits renderer notification', async () => {
       const writeBatch = vi.fn();
       const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
-      const svc = createSessionsService(sendToRenderer as any, { showNotification: showNotification as any, incrementUnread: incrementUnread as any }, fakeLogging as any);
+      const svc = createSessionsService(sendToRenderer as any, { showNotification: showNotification as any, incrementUnread: incrementUnread as any }, fakeLogging);
       const fake = installFakeQuery();
       svc.start({ tabId: 'h-setup', projectPath: '/p', configDir: '/c', model: 'sonnet', permissionMode: 'default' });
 
@@ -2974,7 +2974,7 @@ describe('sessions service — full lifecycle', () => {
     it('TaskCreated hook logs + emits task_event', async () => {
       const writeBatch = vi.fn();
       const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
-      const svc = createSessionsService(sendToRenderer as any, { showNotification: showNotification as any, incrementUnread: incrementUnread as any }, fakeLogging as any);
+      const svc = createSessionsService(sendToRenderer as any, { showNotification: showNotification as any, incrementUnread: incrementUnread as any }, fakeLogging);
       const fake = installFakeQuery();
       svc.start({ tabId: 'h-tc', projectPath: '/p', configDir: '/c', model: 'sonnet', permissionMode: 'default' });
 
@@ -2982,9 +2982,9 @@ describe('sessions service — full lifecycle', () => {
       await hook({ hook_event_name: 'TaskCreated', task_id: 't1', task_subject: 'Fix bug', teammate_name: 'Explorer', session_id: 's', transcript_path: '/t', cwd: '/p' }, undefined, { signal: new AbortController().signal });
 
       expect(writeBatch.mock.calls[0][0][0].message).toContain('task created: Fix bug');
-      const outputCall = sendToRenderer.mock.calls.find((c) => c[0] === 'claude-output:h-tc' && (c[1] as any)?.subtype === 'task_event' && (c[1] as any)?.event === 'created');
+      const outputCall = sendToRenderer.mock.calls.find((c) => c[0] === 'claude-output:h-tc' && (c[1])?.subtype === 'task_event' && (c[1])?.event === 'created');
       expect(outputCall).toBeDefined();
-      expect((outputCall![1] as any).task_subject).toBe('Fix bug');
+      expect((outputCall![1]).task_subject).toBe('Fix bug');
 
       svc.stopAll();
     });
@@ -2992,7 +2992,7 @@ describe('sessions service — full lifecycle', () => {
     it('TaskCompleted hook logs + emits task_event + triggers notification', async () => {
       const writeBatch = vi.fn();
       const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
-      const svc = createSessionsService(sendToRenderer as any, { showNotification: showNotification as any, incrementUnread: incrementUnread as any }, fakeLogging as any);
+      const svc = createSessionsService(sendToRenderer as any, { showNotification: showNotification as any, incrementUnread: incrementUnread as any }, fakeLogging);
       const fake = installFakeQuery();
       svc.start({ tabId: 'h-tcomp', projectPath: '/p', configDir: '/c', model: 'sonnet', permissionMode: 'default' });
 
@@ -3000,7 +3000,7 @@ describe('sessions service — full lifecycle', () => {
       await hook({ hook_event_name: 'TaskCompleted', task_id: 't1', task_subject: 'Fix bug', teammate_name: 'Explorer', session_id: 's', transcript_path: '/t', cwd: '/p' }, undefined, { signal: new AbortController().signal });
 
       expect(writeBatch.mock.calls[0][0][0].message).toContain('task completed: Fix bug');
-      const outputCall = sendToRenderer.mock.calls.find((c) => c[0] === 'claude-output:h-tcomp' && (c[1] as any)?.subtype === 'task_event' && (c[1] as any)?.event === 'completed');
+      const outputCall = sendToRenderer.mock.calls.find((c) => c[0] === 'claude-output:h-tcomp' && (c[1])?.subtype === 'task_event' && (c[1])?.event === 'completed');
       expect(outputCall).toBeDefined();
       expect(showNotification).toHaveBeenCalled();
 
@@ -3010,7 +3010,7 @@ describe('sessions service — full lifecycle', () => {
     it('Elicitation hook logs but does not auto-accept (onElicitation handles user prompt)', async () => {
       const writeBatch = vi.fn();
       const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
-      const svc = createSessionsService(sendToRenderer as any, { showNotification: showNotification as any, incrementUnread: incrementUnread as any }, fakeLogging as any);
+      const svc = createSessionsService(sendToRenderer as any, { showNotification: showNotification as any, incrementUnread: incrementUnread as any }, fakeLogging);
       const fake = installFakeQuery();
       svc.start({ tabId: 'h-elicit', projectPath: '/p', configDir: '/c', model: 'sonnet', permissionMode: 'default' });
 
@@ -3026,7 +3026,7 @@ describe('sessions service — full lifecycle', () => {
     });
 
     it('onElicitation sends event to renderer and resolves when respondElicitation is called', async () => {
-      const svc = createSessionsService(sendToRenderer as any, { showNotification: showNotification as any, incrementUnread: incrementUnread as any }, null as any);
+      const svc = createSessionsService(sendToRenderer as any, { showNotification: showNotification as any, incrementUnread: incrementUnread as any }, null);
       const fake = installFakeQuery();
       svc.start({ tabId: 'elicit-resolve', projectPath: '/p', configDir: '/c', model: 'sonnet', permissionMode: 'default' });
 
@@ -3055,7 +3055,7 @@ describe('sessions service — full lifecycle', () => {
     });
 
     it('respondElicitation with decline returns decline action', async () => {
-      const svc = createSessionsService(sendToRenderer as any, { showNotification: showNotification as any, incrementUnread: incrementUnread as any }, null as any);
+      const svc = createSessionsService(sendToRenderer as any, { showNotification: showNotification as any, incrementUnread: incrementUnread as any }, null);
       const fake = installFakeQuery();
       svc.start({ tabId: 'elicit-decline', projectPath: '/p', configDir: '/c', model: 'sonnet', permissionMode: 'default' });
 
@@ -3076,7 +3076,7 @@ describe('sessions service — full lifecycle', () => {
     it('ElicitationResult hook logs the action', async () => {
       const writeBatch = vi.fn();
       const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
-      const svc = createSessionsService(sendToRenderer as any, { showNotification: showNotification as any, incrementUnread: incrementUnread as any }, fakeLogging as any);
+      const svc = createSessionsService(sendToRenderer as any, { showNotification: showNotification as any, incrementUnread: incrementUnread as any }, fakeLogging);
       const fake = installFakeQuery();
       svc.start({ tabId: 'h-er', projectPath: '/p', configDir: '/c', model: 'sonnet', permissionMode: 'default' });
 
@@ -3091,7 +3091,7 @@ describe('sessions service — full lifecycle', () => {
     it('ConfigChange hook logs + emits renderer event', async () => {
       const writeBatch = vi.fn();
       const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
-      const svc = createSessionsService(sendToRenderer as any, { showNotification: showNotification as any, incrementUnread: incrementUnread as any }, fakeLogging as any);
+      const svc = createSessionsService(sendToRenderer as any, { showNotification: showNotification as any, incrementUnread: incrementUnread as any }, fakeLogging);
       const fake = installFakeQuery();
       svc.start({ tabId: 'h-cc', projectPath: '/p', configDir: '/c', model: 'sonnet', permissionMode: 'default' });
 
@@ -3099,9 +3099,9 @@ describe('sessions service — full lifecycle', () => {
       await hook({ hook_event_name: 'ConfigChange', source: 'project_settings', file_path: '/p/.claude/settings.json', session_id: 's', transcript_path: '/t', cwd: '/p' }, undefined, { signal: new AbortController().signal });
 
       expect(writeBatch.mock.calls[0][0][0].message).toContain('config changed: project_settings');
-      const outputCall = sendToRenderer.mock.calls.find((c) => c[0] === 'claude-output:h-cc' && (c[1] as any)?.subtype === 'config_change');
+      const outputCall = sendToRenderer.mock.calls.find((c) => c[0] === 'claude-output:h-cc' && (c[1])?.subtype === 'config_change');
       expect(outputCall).toBeDefined();
-      expect((outputCall![1] as any).source).toBe('project_settings');
+      expect((outputCall![1]).source).toBe('project_settings');
 
       svc.stopAll();
     });
@@ -3109,7 +3109,7 @@ describe('sessions service — full lifecycle', () => {
     it('InstructionsLoaded hook logs + emits renderer event', async () => {
       const writeBatch = vi.fn();
       const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
-      const svc = createSessionsService(sendToRenderer as any, { showNotification: showNotification as any, incrementUnread: incrementUnread as any }, fakeLogging as any);
+      const svc = createSessionsService(sendToRenderer as any, { showNotification: showNotification as any, incrementUnread: incrementUnread as any }, fakeLogging);
       const fake = installFakeQuery();
       svc.start({ tabId: 'h-il', projectPath: '/p', configDir: '/c', model: 'sonnet', permissionMode: 'default' });
 
@@ -3117,10 +3117,10 @@ describe('sessions service — full lifecycle', () => {
       await hook({ hook_event_name: 'InstructionsLoaded', file_path: '/p/CLAUDE.md', memory_type: 'Project', load_reason: 'session_start', session_id: 's', transcript_path: '/t', cwd: '/p' }, undefined, { signal: new AbortController().signal });
 
       expect(writeBatch.mock.calls[0][0][0].message).toContain('instructions loaded: /p/CLAUDE.md');
-      const outputCall = sendToRenderer.mock.calls.find((c) => c[0] === 'claude-output:h-il' && (c[1] as any)?.subtype === 'instructions_loaded');
+      const outputCall = sendToRenderer.mock.calls.find((c) => c[0] === 'claude-output:h-il' && (c[1])?.subtype === 'instructions_loaded');
       expect(outputCall).toBeDefined();
-      expect((outputCall![1] as any).memory_type).toBe('Project');
-      expect((outputCall![1] as any).load_reason).toBe('session_start');
+      expect((outputCall![1]).memory_type).toBe('Project');
+      expect((outputCall![1]).load_reason).toBe('session_start');
 
       svc.stopAll();
     });
@@ -3464,7 +3464,7 @@ describe('sessions service — full lifecycle', () => {
     const svc = createSessionsService(
       sendToRenderer as any,
       { showNotification: showNotification as any, incrementUnread: incrementUnread as any },
-      fakeLogging as any,
+      fakeLogging,
     );
     const fake = installFakeQuery();
 

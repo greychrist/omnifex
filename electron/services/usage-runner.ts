@@ -416,7 +416,7 @@ export function createUsageRunnerService(deps: UsageRunnerDeps): UsageRunnerServ
   function cacheAndReturn(accountName: string, result: UsageRunResult): UsageRunResult {
     const prior = cache.get(accountName);
     // Don't replace a prior ok:true with an ok:false
-    if (result.ok || !prior || !prior.ok) cache.set(accountName, result);
+    if (result.ok || !prior?.ok) cache.set(accountName, result);
     return result;
   }
 
@@ -437,7 +437,7 @@ function defaultSpawnPty(
   opts: { cwd: string; env: NodeJS.ProcessEnv; cols: number; rows: number },
 ): FakePty {
   // Inline import so node-pty isn't loaded unless actually used.
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
+   
   const ptyModule = require('node-pty');
   const pty = ptyModule.spawn(command, args, opts);
   return {

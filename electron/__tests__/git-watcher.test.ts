@@ -20,7 +20,7 @@ async function waitFor<T>(fn: () => T | undefined, ms = 2000): Promise<T> {
   const start = Date.now();
   while (Date.now() - start < ms) {
     const v = fn();
-    if (v !== undefined && v !== null) return v as T;
+    if (v !== undefined && v !== null) return v;
     await new Promise((r) => setTimeout(r, 25));
   }
   throw new Error('waitFor timed out');
@@ -153,7 +153,7 @@ describe('git-watcher service', () => {
           sendToRenderer.mock.calls.find(
             ([channel, payload]) =>
               channel === `session-git-changed:${watchId}` &&
-              (payload as { worktrees: Array<{ branch: string }> }).worktrees.some(
+              (payload as { worktrees: { branch: string }[] }).worktrees.some(
                 (w) => w.branch === 'feat-new',
               ),
           ),
@@ -212,7 +212,7 @@ describe('git-watcher service', () => {
         const call = await waitFor(() =>
           sendToRenderer.mock.calls.find(([channel, payload]) => {
             if (channel !== `session-git-changed:${watchId}`) return false;
-            const peer = (payload as { worktrees: Array<{ branch: string; untracked: number }> }).worktrees.find(
+            const peer = (payload as { worktrees: { branch: string; untracked: number }[] }).worktrees.find(
               (w) => w.branch === 'feat-dirty',
             );
             return !!peer && peer.untracked === 1;

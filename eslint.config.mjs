@@ -51,6 +51,12 @@ export default defineConfig(
       'forge.config.ts',
       'vite.*.config.ts',
       'vitest.config.ts',
+      // Plain-JS scripts and root-level JS aren't in any tsconfig and
+      // would just produce parsing errors under typed linting. Skip
+      // for the same "future tightening" reason.
+      'main.js',
+      'postcss.config.js',
+      'scripts/**',
     ],
   },
 
@@ -59,12 +65,22 @@ export default defineConfig(
   tseslint.configs.strictTypeChecked,
   tseslint.configs.stylisticTypeChecked,
 
-  // Tell typescript-eslint to use TypeScript project services so typed
-  // rules can resolve symbols across the renderer / electron projects.
+  // Tell typescript-eslint about both TS projects (renderer + main).
+  // We use the explicit `project` array rather than `projectService: true`
+  // because projectService's nearest-tsconfig.json discovery picks up
+  // the root tsconfig.json (renderer-only) and rejects every electron
+  // file, since there's no `electron/tsconfig.json`. Listing both
+  // projects keeps electron files covered without needing to introduce
+  // a redundant tsconfig file just to satisfy discovery.
   {
+    files: ['**/*.{ts,tsx}'],
     languageOptions: {
       parserOptions: {
-        projectService: true,
+        project: [
+          './tsconfig.json',
+          './tsconfig.electron.json',
+          './tsconfig.node.json',
+        ],
         tsconfigRootDir: import.meta.dirname,
       },
     },

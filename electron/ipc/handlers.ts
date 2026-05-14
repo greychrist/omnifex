@@ -155,7 +155,7 @@ export interface Services {
     getLatest(): Promise<string | null>;
   };
   gitWatcher?: {
-    listWorktrees(projectPath: string): Promise<Array<{ path: string; branch: string | null }>>;
+    listWorktrees(projectPath: string): Promise<{ path: string; branch: string | null }[]>;
     startSession(projectPath: string): Promise<{
       watchId: string;
       snapshot: import('../services/git-watcher').SessionGitSnapshot;
@@ -321,7 +321,7 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
       return sessions?.rebind(tabId, ownerWebContentsId) ?? false;
     }),
     session_send_message: wrapWith((p: Record<string, unknown>) => sessions?.sendMessage((p?.tabId ?? p?.session_id) as string, (p?.prompt ?? p?.message) as string) ?? null),
-    session_send_structured_message: wrapWith((p: Record<string, unknown>) => sessions?.sendStructuredMessage((p?.tabId ?? p?.session_id) as string, p?.content as Array<Record<string, unknown>>) ?? null),
+    session_send_structured_message: wrapWith((p: Record<string, unknown>) => sessions?.sendStructuredMessage((p?.tabId ?? p?.session_id) as string, p?.content as Record<string, unknown>[]) ?? null),
     session_respond_permission: wrapWith((p: Record<string, unknown>) => sessions?.respondPermission((p?.tabId ?? p?.session_id) as string, p?.behavior as string, p?.updatedInput as Record<string, unknown> | undefined, p?.updatedPermissions as any) ?? null),
     session_respond_elicitation: wrapWith((p: Record<string, unknown>) => sessions?.respondElicitation((p?.tabId ?? p?.tab_id) as string, (p?.action) as string, p?.content as Record<string, unknown> | undefined) ?? null),
     session_stop: wrapWith((p: Record<string, unknown>) => sessions?.stop((p?.tabId ?? p?.session_id) as string) ?? null),
@@ -769,7 +769,7 @@ export function registerIpcHandlers(services: Services = {}): void {
     const os = require('node:os') as typeof import('node:os');
 
     const { dataUrl } = params;
-    const match = dataUrl.match(/^data:image\/(\w+);base64,(.+)$/);
+    const match = /^data:image\/(\w+);base64,(.+)$/.exec(dataUrl);
     if (!match) throw new Error('Invalid image data URL');
     const ext = match[1];
     const base64 = match[2];

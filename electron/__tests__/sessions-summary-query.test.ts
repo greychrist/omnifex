@@ -104,7 +104,7 @@ describe('createSummaryQueryRunner', () => {
   it('locks the call down: bypassPermissions, all tools disallowed, no setting sources', async () => {
     let seenOpts: Record<string, unknown> = {};
     const runPrompt: RunPromptFn = vi.fn(async (_msg, opts) => {
-      seenOpts = opts as unknown as Record<string, unknown>;
+      seenOpts = opts;
       return { type: 'result', subtype: 'success', result: '' } as never;
     });
 
@@ -214,7 +214,7 @@ describe('createSummaryQueryRunner', () => {
       ]);
       const queryFn = vi.fn(() => fake.handle);
 
-      const out = await runQueryOnce(queryFn as any, 'hello', { model: 'm' } as any);
+      const out = await runQueryOnce(queryFn as any, 'hello', { model: 'm' });
 
       expect(out).toBe(result);
       expect(fake.wasClosed()).toBe(true);
@@ -264,7 +264,7 @@ describe('createSummaryQueryRunner', () => {
       };
       const queryFn = vi.fn(() => handle);
 
-      const out = await runQueryOnce(queryFn as any, 'p', {} as any);
+      const out = await runQueryOnce(queryFn as any, 'p', {});
       expect(out).toBe(result);
     });
   });

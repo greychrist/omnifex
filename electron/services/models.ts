@@ -50,7 +50,7 @@ export function createModelsService(opts: ModelsServiceOptions = {}): ModelsServ
       [Symbol.asyncIterator]: async function* () { /* no input */ },
     };
 
-    const q = query({ prompt: emptyPrompt as any, options: options as any });
+    const q = query({ prompt: emptyPrompt as any, options: options });
 
     try {
       const models = await Promise.race([

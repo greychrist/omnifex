@@ -262,7 +262,7 @@ export function restartQuery(
 
   const q = query({
     prompt: newInputChannel,
-    options: opts as any,
+    options: opts,
   });
 
   handle.inputChannel = newInputChannel;

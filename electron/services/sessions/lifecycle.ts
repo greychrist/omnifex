@@ -144,7 +144,7 @@ export function createSessionsService(
     // Start the SDK query with the async input channel
     const q = query({
       prompt: inputChannel,
-      options: options as any,
+      options: options,
     });
 
     handle.query = q;
@@ -195,7 +195,7 @@ export function createSessionsService(
 
   function sendStructuredMessage(
     tabId: string,
-    content: Array<Record<string, unknown>>,
+    content: Record<string, unknown>[],
   ): void {
     const handle = sessions.get(tabId);
     if (!handle) return;
@@ -359,8 +359,8 @@ export function createSessionsService(
     return ids;
   }
 
-  function listSessionStatuses(): Array<{ tabId: string; status: SessionStatus }> {
-    const out: Array<{ tabId: string; status: SessionStatus }> = [];
+  function listSessionStatuses(): { tabId: string; status: SessionStatus }[] {
+    const out: { tabId: string; status: SessionStatus }[] = [];
     for (const [tabId, handle] of sessions) {
       out.push({ tabId, status: handle.status });
     }

@@ -98,7 +98,7 @@ export function createQueryPassthroughs(
     const handle = sessions.get(tabId);
     if (!handle) return;
     try {
-      await handle.query.applyFlagSettings({ permissions } as any);
+      await handle.query.applyFlagSettings({ permissions });
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error(`[sessions] applyPermissions failed for tab ${tabId}:`, err);

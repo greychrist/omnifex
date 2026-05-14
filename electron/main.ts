@@ -21,7 +21,7 @@ function fixPath(): void {
       timeout: 5000,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
-    const match = result.match(/__PATH__=(.+)/);
+    const match = /__PATH__=(.+)/.exec(result);
     if (match) {
       process.env.PATH = match[1];
       console.log('[main] Fixed PATH from shell:', match[1].split(':').length, 'entries');
@@ -959,36 +959,36 @@ app.whenReady().then(() => {
   });
 
   ipcMain.handle('updater:install', async (_event, data: any) => {
-    // eslint-disable-next-line no-console
+     
     console.log('[installer] updater:install IPC fired', { data });
     const zipPath: string = data?.zipPath ?? data?.zip_path ?? data?.url ?? data;
     const expectedVersion: string = data?.version ?? data?.expectedVersion ?? data?.expected_version;
     const force: boolean = data?.force === true;
-    // eslint-disable-next-line no-console
+     
     console.log('[installer] resolved params', { zipPath, expectedVersion, force });
 
     let stagedAppPath: string | null = null;
     try {
-      // eslint-disable-next-line no-console
+       
       console.log('[installer] step 1: stage()');
       const staged = await installerService.stage(zipPath, expectedVersion);
       stagedAppPath = staged.stagedAppPath;
-      // eslint-disable-next-line no-console
+       
       console.log('[installer] step 2: resolveTargetApp()');
       const { targetAppPath } = installerService.resolveTargetApp();
-      // eslint-disable-next-line no-console
+       
       console.log('[installer] step 3: ensureTargetWritable()', { targetAppPath });
       await installerService.ensureTargetWritable(targetAppPath);
-      // eslint-disable-next-line no-console
+       
       console.log('[installer] step 4: waitForIdle()', { force });
       await installerService.waitForIdle({ force });
-      // eslint-disable-next-line no-console
+       
       console.log('[installer] step 5: executeInstall()');
       await installerService.executeInstall(stagedAppPath, targetAppPath);
       // executeInstall calls app.quit() — we never reach this line in practice.
       return { success: true };
     } catch (err: any) {
-      // eslint-disable-next-line no-console
+       
       console.log('[installer] caught error', { name: err?.name, message: err?.message });
       // Clean up the staged temp dir if extraction succeeded but a later step failed.
       if (stagedAppPath) {

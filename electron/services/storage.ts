@@ -115,7 +115,7 @@ export function createStorageService(db: Database): StorageService {
     const params: unknown[] = [];
     let whereClause = '';
 
-    if (searchQuery && searchQuery.trim()) {
+    if (searchQuery?.trim()) {
       const textCols = columns.filter((c) =>
         ['TEXT', 'VARCHAR', 'CHAR', 'CLOB', ''].some((t) =>
           c.type.toUpperCase().includes(t)

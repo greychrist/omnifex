@@ -67,19 +67,17 @@ export function classifyRuntimeEvent(raw: unknown): RuntimeEvent {
   const m = raw as Record<string, unknown>;
 
   if (m.type === 'system' && m.subtype === 'init') {
-    const sid = typeof m.session_id === 'string' ? (m.session_id as string) : null;
+    const sid = typeof m.session_id === 'string' ? (m.session_id) : null;
     return { kind: 'init', sessionId: sid };
   }
 
   if (m.type === 'system' && m.subtype === 'compact_boundary') {
-    const meta = (m.compact_metadata ?? null) as
-      | { trigger?: unknown; pre_tokens?: unknown }
-      | null;
+    const meta = (m.compact_metadata ?? null);
     const rawTrigger = meta?.trigger;
     const trigger =
       rawTrigger === 'manual' || rawTrigger === 'auto' ? rawTrigger : null;
     const preTokens =
-      typeof meta?.pre_tokens === 'number' ? (meta.pre_tokens as number) : null;
+      typeof meta?.pre_tokens === 'number' ? (meta.pre_tokens) : null;
     return { kind: 'compact', trigger, preTokens };
   }
 
@@ -88,13 +86,13 @@ export function classifyRuntimeEvent(raw: unknown): RuntimeEvent {
   }
 
   if (m.type === 'result') {
-    const subtype = typeof m.subtype === 'string' ? (m.subtype as string) : '';
+    const subtype = typeof m.subtype === 'string' ? (m.subtype) : '';
     const isError =
       m.is_error === true ||
       subtype === 'error' ||
       subtype.startsWith('error_');
-    const result = typeof m.result === 'string' ? (m.result as string) : null;
-    const error = typeof m.error === 'string' ? (m.error as string) : null;
+    const result = typeof m.result === 'string' ? (m.result) : null;
+    const error = typeof m.error === 'string' ? (m.error) : null;
     // The SDK error variants carry an `errors: string[]` with actionable
     // text (e.g. "Context window exceeded"). Prefer the first entry over a
     // generic "Task failed" so the notification body actually tells the

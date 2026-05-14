@@ -86,7 +86,7 @@ export interface SessionsService {
    */
   rebind(tabId: string, ownerWebContentsId: number): boolean;
   sendMessage(tabId: string, prompt: string): void;
-  sendStructuredMessage(tabId: string, content: Array<Record<string, unknown>>): void;
+  sendStructuredMessage(tabId: string, content: Record<string, unknown>[]): void;
   respondPermission(
     tabId: string,
     behavior: 'allow' | 'deny',
@@ -114,7 +114,7 @@ export interface SessionsService {
   /** Diagnostic: every registered session paired with its current status,
    *  in-flight or not. The installer logs this on every gate poll so we can
    *  tell why the gate cleared when the renderer thinks sessions are active. */
-  listSessionStatuses(): Array<{ tabId: string; status: SessionStatus }>;
+  listSessionStatuses(): { tabId: string; status: SessionStatus }[];
 
   // --- Wave 2: Query-method passthroughs ----------------------------------
   /** Interrupt the current assistant turn without ending the session. */
@@ -198,12 +198,12 @@ export interface PermissionDecision {
   behavior: 'allow' | 'deny';
   updatedInput?: Record<string, unknown>;
   /** Permission rule updates to persist (for "Allow & Remember"). */
-  updatedPermissions?: Array<{
+  updatedPermissions?: {
     type: 'addRules';
-    rules: Array<{ toolName: string; ruleContent?: string }>;
+    rules: { toolName: string; ruleContent?: string }[];
     behavior: 'allow';
     destination: 'session' | 'projectSettings' | 'userSettings' | 'localSettings';
-  }>;
+  }[];
   /** Set when the SDK's `AbortSignal` fired while the request was queued —
    *  i.e. the tool use was cancelled before the user responded. Treated as a
    *  deny on the way back to the SDK, but distinguished from a user-driven

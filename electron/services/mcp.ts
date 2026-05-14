@@ -140,7 +140,7 @@ export function createMCPService(): MCPService {
       throw new Error('MCP server name is required');
     }
     const servers = getMcpServers(cd);
-    servers[name] = config as MCPServerConfig;
+    servers[name] = config;
     saveMcpServers(servers, cd);
     return { name, ...config };
   }

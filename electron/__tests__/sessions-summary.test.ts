@@ -636,7 +636,7 @@ describe('sessions-summary generateSummary (real)', () => {
     if (result.status === 'generated') {
       expect(result.summary.truncated).toBe(true);
     }
-    const firstCallArgs = (runQuery.mock.calls[0] as unknown) as Array<{ prompt: string }>;
+    const firstCallArgs = (runQuery.mock.calls[0] as unknown) as { prompt: string }[];
     expect(firstCallArgs[0].prompt).toContain('tokens elided');
   });
 

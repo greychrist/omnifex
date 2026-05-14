@@ -64,7 +64,7 @@ function findNvmInstallations(): string[] {
   const home = os.homedir();
 
   // Check NVM_BIN env var first
-  const nvmBin = process.env['NVM_BIN'];
+  const nvmBin = process.env.NVM_BIN;
   if (nvmBin) {
     const candidate = path.join(nvmBin, 'claude');
     if (fs.existsSync(candidate)) {

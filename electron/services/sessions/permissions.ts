@@ -136,7 +136,7 @@ export function augmentPermissionsWithSession(
   const out: any[] = [];
   for (const u of updates) {
     out.push(u);
-    if (u && u.type === 'addRules' && u.destination !== 'session') {
+    if (u?.type === 'addRules' && u.destination !== 'session') {
       out.push({ ...u, destination: 'session' });
     }
   }
@@ -233,7 +233,7 @@ export function createCanUseTool(
     // array (which would otherwise render as a blank row in the dialog).
     const buildDefaultRule = (): { toolName: string; ruleContent?: string } | null => {
       if (toolName === 'Bash' && typeof toolInput.command === 'string') {
-        const cmd = (toolInput.command as string).trim();
+        const cmd = (toolInput.command).trim();
         const base = cmd.split(/[\s;|&]/)[0];
         return { toolName, ruleContent: base ? `${base}:*` : cmd };
       }
@@ -259,7 +259,7 @@ export function createCanUseTool(
       }
       if (toolName === 'WebFetch' && typeof toolInput.url === 'string') {
         try {
-          const u = new URL(toolInput.url as string);
+          const u = new URL(toolInput.url);
           return { toolName, ruleContent: `domain:${u.hostname}` };
         } catch {
           return { toolName };
@@ -333,7 +333,7 @@ export function createCanUseTool(
       // the queue head if we were displaying it, and resolve as a
       // distinguishable deny.
       const onAbort = (): void => {
-        const idx = handle.permissionQueue.indexOf(entry as PendingPermission);
+        const idx = handle.permissionQueue.indexOf(entry);
         if (idx === -1) return; // Already resolved by respondPermission.
         const wasHead = idx === 0;
         handle.permissionQueue.splice(idx, 1);

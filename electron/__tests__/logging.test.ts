@@ -359,7 +359,7 @@ describe('logging service', () => {
 
     it('falls back to timestamp DESC when orderBy is an unknown column (no SQL injection surface)', () => {
       seed();
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       const result = logging.query({ orderBy: 'DROP TABLE app_logs;' as any, orderDir: 'desc' });
       expect(result.entries.map((e) => e.message)).toEqual(['m-4', 'm-3', 'm-2', 'm-1']);
     });

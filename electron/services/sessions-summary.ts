@@ -242,8 +242,8 @@ export interface ParsedSummary {
  * existing sidecar).
  */
 export function parseSummaryXML(response: string): ParsedSummary | null {
-  const headlineMatch = response.match(/<headline>([\s\S]*?)<\/headline>/);
-  const paragraphMatch = response.match(/<paragraph>([\s\S]*?)<\/paragraph>/);
+  const headlineMatch = /<headline>([\s\S]*?)<\/headline>/.exec(response);
+  const paragraphMatch = /<paragraph>([\s\S]*?)<\/paragraph>/.exec(response);
   if (!headlineMatch || !paragraphMatch) return null;
   const headline = headlineMatch[1].trim();
   const paragraph = paragraphMatch[1].trim();
@@ -478,8 +478,7 @@ export function createSessionsSummaryService(
     const promptTemplate = deps.getPromptTemplate();
     const currentPromptHash = promptHash(promptTemplate);
     if (
-      cached &&
-      cached.jsonlSize === jsonlSize &&
+      cached?.jsonlSize === jsonlSize &&
       cached.promptHash === currentPromptHash
     ) {
       return { status: 'unchanged', summary: cached };

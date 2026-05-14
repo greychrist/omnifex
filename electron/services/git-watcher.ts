@@ -62,7 +62,7 @@ function parseWorktreePorcelain(buf: string, selfReal: string): WorktreeInfo[] {
       if (line.startsWith('worktree ')) wtPath = line.slice('worktree '.length).trim();
       else if (line.startsWith('branch ')) {
         const ref = line.slice('branch '.length).trim();
-        const m = ref.match(/^refs\/heads\/(.+)$/);
+        const m = /^refs\/heads\/(.+)$/.exec(ref);
         branch = m ? m[1] : ref;
       } else if (line === 'detached') detached = true;
       else if (line === 'bare') bare = true;
@@ -97,7 +97,7 @@ function resolveGitdir(projectPath: string): string | null {
   if (stat.isFile()) {
     try {
       const content = fs.readFileSync(dotGit, 'utf8').trim();
-      const match = content.match(/^gitdir:\s*(.+)$/m);
+      const match = /^gitdir:\s*(.+)$/m.exec(content);
       if (!match) return null;
       const pointed = match[1].trim();
       return path.isAbsolute(pointed) ? pointed : path.resolve(projectPath, pointed);
@@ -119,7 +119,7 @@ function readBranch(gitdir: string | null): string | null {
     return null;
   }
 
-  const refMatch = raw.match(/^ref:\s*refs\/heads\/(.+)$/);
+  const refMatch = /^ref:\s*refs\/heads\/(.+)$/.exec(raw);
   if (refMatch) return refMatch[1].trim();
 
   if (/^[0-9a-f]{7,40}$/i.test(raw)) return raw.slice(0, 7);
@@ -151,7 +151,7 @@ function parsePorcelainV1Z(buf: string): StatusCounts {
     const xy = tok.slice(0, 2);
     if (xy === '??') untracked++;
     else if (xy !== '!!') changed++;
-    if (xy[0] === 'R' || xy[0] === 'C') i += 2;
+    if (xy.startsWith('R') || xy.startsWith('C')) i += 2;
     else i += 1;
   }
   return { changed, untracked };

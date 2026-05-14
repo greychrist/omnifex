@@ -64,7 +64,7 @@ interface UpdaterDeps {
 // ---------------------------------------------------------------------------
 
 function parseVersion(v: string): [number, number, number] | null {
-  const m = v.match(/^(\d+)\.(\d+)\.(\d+)/);
+  const m = /^(\d+)\.(\d+)\.(\d+)/.exec(v);
   if (!m) return null;
   return [Number(m[1]), Number(m[2]), Number(m[3])];
 }
@@ -151,7 +151,7 @@ export function createUpdaterService(
       return null;
     }
 
-    const candidates: Array<{ version: string; filename: string }> = [];
+    const candidates: { version: string; filename: string }[] = [];
     for (const name of entries) {
       const m = ZIP_RE.exec(name);
       if (!m) continue;

@@ -22,7 +22,7 @@ export interface InstallStatus {
    * Surfaced on `phase: 'waiting'` events so the renderer / DevTools can
    * see exactly what the gate sees when the wait ends or skips.
    */
-  tabs?: Array<{ tabId: string; status: string }>;
+  tabs?: { tabId: string; status: string }[];
 }
 
 export interface InstallerService {
@@ -48,7 +48,7 @@ export interface InstallerDeps {
      *  whether or not it counts as "in-flight". Used by the gate to log a
      *  full snapshot when it polls / clears. Optional so existing callers
      *  (and tests) keep working. */
-    listSessionStatuses?: () => Array<{ tabId: string; status: string }>;
+    listSessionStatuses?: () => { tabId: string; status: string }[];
     stopAll: () => void;
   };
   appQuit: () => void;
@@ -222,14 +222,14 @@ export function createInstallerService(deps: InstallerDeps): InstallerService {
       // Diagnostic: print every gate poll with the full per-tab status list
       // so we can tell *why* the gate cleared (no sessions, all idle, force,
       // etc.) when something looks wrong from the renderer's perspective.
-      // eslint-disable-next-line no-console
+       
       console.log('[installer] waitForIdle poll', {
         inFlight: sessions,
         inFlightIds,
         all: allTabs,
       });
       if (sessions === 0) {
-        // eslint-disable-next-line no-console
+         
         console.log('[installer] gate clear → proceeding to install', { all: allTabs });
         deps.sendToRenderer('updater:install-status', { phase: 'installing' });
         cancelToken = null;

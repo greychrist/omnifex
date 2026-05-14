@@ -143,7 +143,7 @@ interface PathRuleRow {
 function normalizeSessionDefaults(raw: unknown): SessionDefaults | undefined {
   if (!raw || typeof raw !== 'object') return undefined;
   const obj = raw as Record<string, unknown>;
-  const out: SessionDefaults = { ...obj } as SessionDefaults;
+  const out: SessionDefaults = { ...obj };
   if (obj.thinkingConfig === 'budget') {
     out.thinkingConfig = 'adaptive';
   } else if (obj.thinkingConfig !== 'adaptive' && obj.thinkingConfig !== 'disabled') {

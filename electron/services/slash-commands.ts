@@ -46,7 +46,7 @@ interface ParsedCommand {
 }
 
 function parseFrontmatter(raw: string): ParsedCommand {
-  const frontmatterMatch = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
+  const frontmatterMatch = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(raw);
   if (!frontmatterMatch) {
     return { description: '', allowed_tools: '', content: raw.trim() };
   }
@@ -58,12 +58,12 @@ function parseFrontmatter(raw: string): ParsedCommand {
   let allowed_tools = '';
 
   for (const line of yamlBlock.split('\n')) {
-    const descMatch = line.match(/^description:\s*(.*)$/);
+    const descMatch = /^description:\s*(.*)$/.exec(line);
     if (descMatch) {
       description = descMatch[1].trim();
       continue;
     }
-    const toolsMatch = line.match(/^allowed_tools:\s*(.*)$/);
+    const toolsMatch = /^allowed_tools:\s*(.*)$/.exec(line);
     if (toolsMatch) {
       allowed_tools = toolsMatch[1].trim();
     }

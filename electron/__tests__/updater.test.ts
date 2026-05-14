@@ -198,7 +198,7 @@ describe('updater service (local folder source)', () => {
         readdir: makeReaddir([]),
       });
 
-      const progressCalls: Array<{ percent: number }> = [];
+      const progressCalls: { percent: number }[] = [];
       const result = await svc.downloadUpdate(
         '/tmp/updates/OmniFex-darwin-arm64-0.4.0.zip',
         (data) => progressCalls.push(data),
@@ -213,7 +213,7 @@ describe('updater service (local folder source)', () => {
         readdir: makeReaddir([]),
       });
 
-      const progressCalls: Array<{ percent: number; bytesDownloaded: number; totalBytes: number }> = [];
+      const progressCalls: { percent: number; bytesDownloaded: number; totalBytes: number }[] = [];
       await svc.downloadUpdate(
         '/tmp/updates/OmniFex-darwin-arm64-0.4.0.zip',
         (data) => progressCalls.push(data),

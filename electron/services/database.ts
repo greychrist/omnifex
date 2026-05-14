@@ -12,7 +12,7 @@ import BetterSqlite3 from 'better-sqlite3';
  */
 export function toActionableNativeModuleError(err: unknown): Error {
   const msg = err instanceof Error ? err.message : String(err);
-  if (/NODE_MODULE_VERSION/.test(msg)) {
+  if (msg.includes('NODE_MODULE_VERSION')) {
     const hint =
       'better-sqlite3 was built for the wrong runtime ABI. ' +
       'Run `npm run rebuild:electron` before `npm start`, ' +

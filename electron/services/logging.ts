@@ -126,7 +126,7 @@ function parseOlderThan(input: string): string | null {
   }
 
   // Try duration (e.g. "1d", "2w", "30d", "12h")
-  const match = input.match(/^(\d+)([hdwm])$/);
+  const match = /^(\d+)([hdwm])$/.exec(input);
   if (match) {
     const amount = Number(match[1]);
     const unit = match[2];

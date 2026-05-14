@@ -59,7 +59,7 @@ export function buildSdkOptions(
   const options: Record<string, unknown> = {
     cwd: projectPath,
     model,
-    permissionMode: permissionMode as PermissionMode,
+    permissionMode: permissionMode,
     env: {
       ...process.env,
       CLAUDE_CONFIG_DIR: configDir,

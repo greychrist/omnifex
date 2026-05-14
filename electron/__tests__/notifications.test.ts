@@ -17,7 +17,7 @@ interface FakeNotification {
 }
 
 function makeFakeNotification(options: unknown): FakeNotification {
-  const handlers: Record<NotifEvent, Array<() => void>> = { close: [], click: [] };
+  const handlers: Record<NotifEvent, (() => void)[]> = { close: [], click: [] };
   const fake: FakeNotification = {
     options,
     shown: false,

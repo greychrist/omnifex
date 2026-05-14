@@ -512,10 +512,10 @@ describe('ipc handlers — dispatch to services', () => {
     const [tabId, perms] = services.sessions.applyPermissions.mock.calls[0];
     expect(tabId).toBe('tab-live');
     // Allow list = union of user + local (post-write), deduped.
-    expect((perms as any).allow.sort()).toEqual(
+    expect((perms).allow.sort()).toEqual(
       ['Bash(git:*)', 'Bash(npm:*)', 'Edit(/.claude/commands/*)'].sort(),
     );
-    expect((perms as any).deny).toEqual(['Bash(rm -rf:*)']);
+    expect((perms).deny).toEqual(['Bash(rm -rf:*)']);
 
     fs.rmSync(tmpDir, { recursive: true });
   });
@@ -811,7 +811,7 @@ describe('ipc handlers — error propagation', () => {
   it('wraps thrown non-Error values as Error with string message', async () => {
     const services = buildMockServices();
     services.accounts.list.mockImplementationOnce(() => {
-      // eslint-disable-next-line no-throw-literal
+       
       throw 'plain string';
     });
     const handlers = getHandlerMap(services as any);
@@ -1044,14 +1044,14 @@ describe('branch colors handlers', () => {
 
   it('branch_colors_list forwards camelCase projectPath', async () => {
     const branchColors = makeBranchColors();
-    const handlers = getHandlerMap({ branchColors: branchColors as any });
+    const handlers = getHandlerMap({ branchColors: branchColors });
     await invoke(handlers, 'branch_colors_list', { projectPath: '/p' });
     expect(branchColors.listForProject).toHaveBeenCalledWith('/p');
   });
 
   it('branch_colors_list also accepts snake_case project_path', async () => {
     const branchColors = makeBranchColors();
-    const handlers = getHandlerMap({ branchColors: branchColors as any });
+    const handlers = getHandlerMap({ branchColors: branchColors });
     await invoke(handlers, 'branch_colors_list', { project_path: '/p2' });
     expect(branchColors.listForProject).toHaveBeenCalledWith('/p2');
   });
@@ -1063,7 +1063,7 @@ describe('branch colors handlers', () => {
 
   it('branch_colors_upsert builds the upsert payload from camelCase keys', async () => {
     const branchColors = makeBranchColors();
-    const handlers = getHandlerMap({ branchColors: branchColors as any });
+    const handlers = getHandlerMap({ branchColors: branchColors });
     await invoke(handlers, 'branch_colors_upsert', {
       projectPath: '/p',
       branchName: 'feat',
@@ -1078,7 +1078,7 @@ describe('branch colors handlers', () => {
 
   it('branch_colors_upsert builds the upsert payload from snake_case keys', async () => {
     const branchColors = makeBranchColors();
-    const handlers = getHandlerMap({ branchColors: branchColors as any });
+    const handlers = getHandlerMap({ branchColors: branchColors });
     await invoke(handlers, 'branch_colors_upsert', {
       project_path: '/p',
       branch_name: 'feat',
@@ -1098,7 +1098,7 @@ describe('branch colors handlers', () => {
 
   it('branch_colors_delete forwards id', async () => {
     const branchColors = makeBranchColors();
-    const handlers = getHandlerMap({ branchColors: branchColors as any });
+    const handlers = getHandlerMap({ branchColors: branchColors });
     await invoke(handlers, 'branch_colors_delete', { id: 7 });
     expect(branchColors.delete).toHaveBeenCalledWith(7);
   });
@@ -1116,7 +1116,7 @@ describe('branch colors handlers', () => {
 describe('git_list_branches handler', () => {
   it('forwards projectPath to gitBranches.list', async () => {
     const gitBranches = { list: vi.fn().mockResolvedValue(['main', 'dev']) };
-    const handlers = getHandlerMap({ gitBranches: gitBranches as any });
+    const handlers = getHandlerMap({ gitBranches: gitBranches });
     const result = await invoke(handlers, 'git_list_branches', { projectPath: '/p' });
     expect(gitBranches.list).toHaveBeenCalledWith('/p');
     expect(result).toEqual(['main', 'dev']);
@@ -1124,7 +1124,7 @@ describe('git_list_branches handler', () => {
 
   it('accepts snake_case project_path', async () => {
     const gitBranches = { list: vi.fn().mockResolvedValue([]) };
-    const handlers = getHandlerMap({ gitBranches: gitBranches as any });
+    const handlers = getHandlerMap({ gitBranches: gitBranches });
     await invoke(handlers, 'git_list_branches', { project_path: '/p' });
     expect(gitBranches.list).toHaveBeenCalledWith('/p');
   });
@@ -1154,7 +1154,7 @@ describe('lima handlers', () => {
 
   it('lima_check_installed returns { installed: true } when service reports true', async () => {
     const lima = makeLima();
-    const handlers = getHandlerMap({ lima: lima as any });
+    const handlers = getHandlerMap({ lima: lima });
     await expect(invoke(handlers, 'lima_check_installed')).resolves.toEqual({ installed: true });
   });
 
@@ -1165,7 +1165,7 @@ describe('lima handlers', () => {
 
   it('lima_list_vms returns vm list', async () => {
     const lima = makeLima();
-    const handlers = getHandlerMap({ lima: lima as any });
+    const handlers = getHandlerMap({ lima: lima });
     await expect(invoke(handlers, 'lima_list_vms')).resolves.toEqual([{ name: 'default' }]);
   });
 
@@ -1176,21 +1176,21 @@ describe('lima handlers', () => {
 
   it('lima_list_containers forwards camelCase vmName', async () => {
     const lima = makeLima();
-    const handlers = getHandlerMap({ lima: lima as any });
+    const handlers = getHandlerMap({ lima: lima });
     await invoke(handlers, 'lima_list_containers', { vmName: 'vm1' });
     expect(lima.listContainers).toHaveBeenCalledWith('vm1');
   });
 
   it('lima_list_containers accepts snake_case vm_name', async () => {
     const lima = makeLima();
-    const handlers = getHandlerMap({ lima: lima as any });
+    const handlers = getHandlerMap({ lima: lima });
     await invoke(handlers, 'lima_list_containers', { vm_name: 'vm1' });
     expect(lima.listContainers).toHaveBeenCalledWith('vm1');
   });
 
   it('lima_list_containers returns [] without vmName', async () => {
     const lima = makeLima();
-    const handlers = getHandlerMap({ lima: lima as any });
+    const handlers = getHandlerMap({ lima: lima });
     await expect(invoke(handlers, 'lima_list_containers', {})).resolves.toEqual([]);
     expect(lima.listContainers).not.toHaveBeenCalled();
   });
@@ -1202,21 +1202,21 @@ describe('lima handlers', () => {
 
   it('lima_start_vm forwards vmName and returns null', async () => {
     const lima = makeLima();
-    const handlers = getHandlerMap({ lima: lima as any });
+    const handlers = getHandlerMap({ lima: lima });
     await expect(invoke(handlers, 'lima_start_vm', { vmName: 'vm1' })).resolves.toBeNull();
     expect(lima.startVm).toHaveBeenCalledWith('vm1');
   });
 
   it('lima_start_vm returns null without calling service when vmName missing', async () => {
     const lima = makeLima();
-    const handlers = getHandlerMap({ lima: lima as any });
+    const handlers = getHandlerMap({ lima: lima });
     await expect(invoke(handlers, 'lima_start_vm', {})).resolves.toBeNull();
     expect(lima.startVm).not.toHaveBeenCalled();
   });
 
   it('lima_stop_vm forwards vmName and returns null', async () => {
     const lima = makeLima();
-    const handlers = getHandlerMap({ lima: lima as any });
+    const handlers = getHandlerMap({ lima: lima });
     await expect(invoke(handlers, 'lima_stop_vm', { vmName: 'vm1' })).resolves.toBeNull();
     expect(lima.stopVm).toHaveBeenCalledWith('vm1');
   });
@@ -1228,7 +1228,7 @@ describe('lima handlers', () => {
 
   it('lima_start_container forwards vmName and containerId', async () => {
     const lima = makeLima();
-    const handlers = getHandlerMap({ lima: lima as any });
+    const handlers = getHandlerMap({ lima: lima });
     await expect(
       invoke(handlers, 'lima_start_container', { vmName: 'vm1', containerId: 'c1' }),
     ).resolves.toBeNull();
@@ -1237,20 +1237,20 @@ describe('lima handlers', () => {
 
   it('lima_start_container returns null when containerId missing', async () => {
     const lima = makeLima();
-    const handlers = getHandlerMap({ lima: lima as any });
+    const handlers = getHandlerMap({ lima: lima });
     await expect(invoke(handlers, 'lima_start_container', { vmName: 'vm1' })).resolves.toBeNull();
     expect(lima.startContainer).not.toHaveBeenCalled();
   });
 
   it('lima_start_container returns null when vmName missing', async () => {
     const lima = makeLima();
-    const handlers = getHandlerMap({ lima: lima as any });
+    const handlers = getHandlerMap({ lima: lima });
     await expect(invoke(handlers, 'lima_start_container', { containerId: 'c1' })).resolves.toBeNull();
   });
 
   it('lima_stop_container forwards vmName and containerId', async () => {
     const lima = makeLima();
-    const handlers = getHandlerMap({ lima: lima as any });
+    const handlers = getHandlerMap({ lima: lima });
     await expect(
       invoke(handlers, 'lima_stop_container', { vm_name: 'vm1', container_id: 'c1' }),
     ).resolves.toBeNull();
