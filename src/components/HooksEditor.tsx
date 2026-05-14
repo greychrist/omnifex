@@ -2,7 +2,7 @@
  * HooksEditor component for managing Claude Code hooks configuration
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Plus, 
@@ -61,6 +61,11 @@ import {
   COMMON_TOOL_MATCHERS,
   HOOK_TEMPLATES,
 } from '@/types/hooks';
+
+// Events with matchers (tool-related)
+const matcherEvents = ['PreToolUse', 'PostToolUse'] as const;
+// Events without matchers (non-tool-related)
+const directEvents = ['Notification', 'Stop', 'SubagentStop'] as const;
 
 interface HooksEditorProps {
   projectPath?: string;
@@ -134,11 +139,6 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [hooks, setHooks] = useState<HooksConfiguration>({});
   
-  // Events with matchers (tool-related)
-  const matcherEvents = ['PreToolUse', 'PostToolUse'] as const;
-  // Events without matchers (non-tool-related)
-  const directEvents = ['Notification', 'Stop', 'SubagentStop'] as const;
-  
   // Convert hooks to editable format with IDs
   const [editableHooks, setEditableHooks] = useState<{
     PreToolUse: EditableHookMatcher[];
@@ -209,7 +209,7 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
       // No projectPath for project/local scopes
       setHooks({});
     }
-  }, [projectPath, scope]);
+  }, [projectPath, scope, configDir]);
 
   // Reset initial mount flag when hooks prop changes
   useEffect(() => {
@@ -445,21 +445,21 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
     setShowTemplateDialog(false);
   };
 
-  const validateHooks = async () => {
+  const validateHooks = useCallback(async () => {
     if (!hooks) {
       setValidationErrors([]);
       setValidationWarnings([]);
       return;
     }
-    
+
     const result = await HooksManager.validateConfig(hooks);
     setValidationErrors(result.errors.map(e => e.message));
     setValidationWarnings(result.warnings.map(w => `${w.message} in command: ${(w.command || '').substring(0, 50)}...`));
-  };
+  }, [hooks]);
 
   useEffect(() => {
     logAndForget('hooks-editor:validate-hooks', validateHooks());
-  }, [hooks]);
+  }, [validateHooks]);
 
   const addCommand = (event: HookEvent, matcherId: string) => {
     if (!matcherEvents.includes(event as any)) return;
