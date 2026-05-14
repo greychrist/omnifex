@@ -150,6 +150,7 @@ export function createMCPService(): MCPService {
     if (!(name in servers)) {
       throw new Error(`MCP server not found: ${name}`);
     }
+        // eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- intentional removal of one property from a copied object; rest-spread alternative is more allocation-heavy.
     delete servers[name];
     saveMcpServers(servers, configDir);
     return `Removed MCP server: ${name}`;

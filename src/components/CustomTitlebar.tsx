@@ -73,7 +73,7 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
     try {
       const info = await api.checkForUpdate();
        
-      console.log('[updater] checkForUpdate() result available=' + !!info?.available);
+      console.log(`[updater] checkForUpdate() result available=${String(!!info?.available)}`);
       if (info?.available) {
         setUpdateState({
           status: 'available',
@@ -240,21 +240,21 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
   ): Promise<void> => {
     const force = activeSessions > 0;
      
-    console.log('[updater] runInstall force=' + force + ' activeSessions=' + activeSessions);
+    console.log(`[updater] runInstall force=${String(force)} activeSessions=${activeSessions}`);
     try {
       await api.installUpdate(filePath, version, force ? { force: true } : undefined);
       // executeInstall calls app.quit() on success — we never reach here.
       setUpdateState({ status: 'idle' });
     } catch (err: any) {
        
-      console.log('[updater] installUpdate failed message=' + (err?.message ?? String(err)));
+      console.log(`[updater] installUpdate failed message=${String((err?.message ?? err) as unknown)}`);
       setUpdateState({ status: 'error', downloadUrl, assetName, releaseUrl, version });
     }
   };
 
   const handleUpdateClick = async () => {
      
-    console.log('[updater] handleUpdateClick status=' + updateState.status + ' active=' + activeSessions);
+    console.log(`[updater] handleUpdateClick status=${updateState.status} active=${activeSessions}`);
     if (updateState.status === 'available') {
       const { downloadUrl, assetName, releaseUrl, version } = updateState;
       setUpdateState({ status: 'downloading', percent: 0 });
@@ -263,7 +263,7 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
         filePath = await api.downloadUpdate(downloadUrl, assetName);
       } catch (e: any) {
          
-        console.log('[updater] download failed message=' + (e?.message ?? String(e)));
+        console.log(`[updater] download failed message=${String((e?.message ?? e) as unknown)}`);
         setUpdateState({ status: 'error', downloadUrl, assetName, releaseUrl, version });
         return;
       }

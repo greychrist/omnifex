@@ -29,6 +29,7 @@ describe('proxy service', () => {
     // Restore env
     for (const [key, val] of Object.entries(savedEnv)) {
       if (val === undefined) {
+        // eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- intentional removal of one property from a copied object; rest-spread alternative is more allocation-heavy.
         delete process.env[key];
       } else {
         process.env[key] = val;

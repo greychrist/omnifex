@@ -133,6 +133,7 @@ export const LimaViewer: React.FC = () => {
     } finally {
       setPendingAction((prev) => {
         const next = { ...prev };
+        // eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- intentional removal of one property from a copied object; rest-spread alternative is more allocation-heavy.
         delete next[vmName];
         return next;
       });
@@ -149,7 +150,9 @@ export const LimaViewer: React.FC = () => {
       setActionError(err instanceof Error ? err.message : String(err));
     } finally {
       setPendingAction((prev) => {
+        // eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- intentional removal of one property from a copied object; rest-spread alternative is more allocation-heavy.
         const next = { ...prev };
+        // eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- intentional removal of one property from a copied object; rest-spread alternative is more allocation-heavy.
         delete next[vmName];
         return next;
       });
@@ -165,8 +168,10 @@ export const LimaViewer: React.FC = () => {
     } catch (err) {
       setActionError(err instanceof Error ? err.message : String(err));
     } finally {
+        // eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- intentional removal of one property from a copied object; rest-spread alternative is more allocation-heavy.
       setPendingContainerAction((prev) => {
         const next = { ...prev };
+        // eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- intentional removal of one property from a copied object; rest-spread alternative is more allocation-heavy.
         delete next[containerId];
         return next;
       });
@@ -181,9 +186,11 @@ export const LimaViewer: React.FC = () => {
       await loadContainers(vmName, 'Running');
     } catch (err) {
       setActionError(err instanceof Error ? err.message : String(err));
+        // eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- intentional removal of one property from a copied object; rest-spread alternative is more allocation-heavy.
     } finally {
       setPendingContainerAction((prev) => {
         const next = { ...prev };
+        // eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- intentional removal of one property from a copied object; rest-spread alternative is more allocation-heavy.
         delete next[containerId];
         return next;
       });
