@@ -21,6 +21,7 @@ import {
   type IncomingSuggestion,
 } from "@/lib/permissionCardLogic";
 import type { PermissionRequestPayload } from "@/lib/types/permissionRequest";
+import { asToolInput } from "@/lib/types/toolInput";
 
 interface PermissionCardProps {
   request: PermissionRequestPayload;
@@ -28,7 +29,37 @@ interface PermissionCardProps {
   onDeny: () => void;
 }
 
-function formatToolInput(input: Record<string, unknown>): string {
+/**
+ * Pick a one-line "headline" string from a tool's input for the
+ * permission-prompt preview. When the tool name is one we model in
+ * `ToolInputByName`, the field selection is driven by the SDK's
+ * typed schema (no field-name guessing). For MCP and other tools
+ * outside the map, a generic field-probe fallback preserves the
+ * pre-typed behavior so unknown tools still surface a useful label.
+ */
+function formatToolInput(toolName: string | undefined, input: Record<string, unknown>): string {
+  const bash = asToolInput(toolName, 'Bash', input);
+  if (bash?.command) return bash.command;
+
+  const read = asToolInput(toolName, 'Read', input);
+  if (read?.file_path) return read.file_path;
+  const write = asToolInput(toolName, 'Write', input);
+  if (write?.file_path) return write.file_path;
+  const edit = asToolInput(toolName, 'Edit', input);
+  if (edit?.file_path) return edit.file_path;
+  const multiEdit = asToolInput(toolName, 'MultiEdit', input);
+  if (multiEdit?.file_path) return multiEdit.file_path;
+
+  const grep = asToolInput(toolName, 'Grep', input);
+  if (grep?.pattern) return grep.pattern;
+  const glob = asToolInput(toolName, 'Glob', input);
+  if (glob?.pattern) return glob.pattern;
+
+  const webFetch = asToolInput(toolName, 'WebFetch', input);
+  if (webFetch?.url) return webFetch.url;
+
+  // Unknown / MCP / future tools: generic field probe keeps the card
+  // functional for anything not in our typed map.
   if (typeof input.command === 'string') return input.command;
   if (typeof input.file_path === 'string') return input.file_path;
   if (typeof input.pattern === 'string') return input.pattern;
@@ -101,7 +132,7 @@ export function PermissionCard({ request, onAllow, onDeny }: PermissionCardProps
         {/* Tool input preview */}
         <div className="max-h-32 overflow-auto rounded-md border border-border bg-muted/30 p-2">
           <pre className="text-xs font-mono whitespace-pre-wrap break-all">
-            {formatToolInput(toolInput)}
+            {formatToolInput(toolName, toolInput)}
           </pre>
         </div>
 

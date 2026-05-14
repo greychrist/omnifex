@@ -31,6 +31,7 @@ import { getClaudeSyntaxTheme } from "@/lib/claudeSyntaxTheme";
 import { buildMarkdownComponents } from "@/lib/markdownComponents";
 import { useTheme } from "@/hooks";
 import type { ClaudeStreamMessage } from "@/types/claudeStream";
+import { asToolInput, asToolInputOneOf } from "@/lib/types/toolInput";
 import { AnsweredAskUserQuestionCard } from "@/components/AnsweredAskUserQuestionCard";
 import {
   TodoWidget,
@@ -666,15 +667,20 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                     );
                   }
                   
-                  // Tool use - render custom widgets based on tool name
+                  // Tool use - render custom widgets based on tool name.
+                  // Tool inputs are narrowed from `unknown` to the SDK's
+                  // per-tool input types via `asToolInput` (see
+                  // src/lib/types/toolInput.ts). Tool names are PascalCase
+                  // per SDK convention; the older `.toLowerCase()` defense
+                  // was removed once the canonical wire shape was confirmed.
                   if (content.type === "tool_use") {
-                    const toolName = content.name?.toLowerCase();
-                    const input = content.input;
+                    const toolName = content.name;
+                    const rawInput: unknown = content.input;
                     const toolId = content.id;
-                    
+
                     // Get the tool result if available
                     const toolResult = getToolResult(toolId);
-                    
+
                     // Function to render the appropriate tool widget
                     const renderToolWidget = () => {
                       // AskUserQuestion is now always elevated to its own
@@ -690,97 +696,123 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                       // AnsweredAskUserQuestionCard, not to special-case
                       // this widget path again.
 
-                      // Task / Agent tool — subagent dispatch
-                      if (isSubagentDispatch(content.name) && input) {
+                      // Task / Agent tool — subagent dispatch. Uses
+                      // `isSubagentDispatch` (case-insensitive) for the
+                      // discriminator since dispatches historically arrived
+                      // under multiple casings; the typed narrowing here
+                      // matches the same set explicitly so the input is
+                      // recovered as AgentInput.
+                      const subagent = isSubagentDispatch(toolName)
+                        ? asToolInputOneOf(toolName, ['Task', 'Agent'], rawInput)
+                        : null;
+                      if (subagent) {
                         renderedSomething = true;
                         return (
                           <TaskWidget
-                            description={input.description}
-                            prompt={input.prompt}
-                            subagentType={input.subagent_type}
+                            description={subagent.input.description}
+                            prompt={subagent.input.prompt}
+                            subagentType={subagent.input.subagent_type}
                             result={toolResult}
                           />
                         );
                       }
-                      
-                      // Edit tool
-                      if (toolName === "edit" && input?.file_path) {
+
+                      // Edit
+                      const editInput = asToolInput(toolName, 'Edit', rawInput);
+                      if (editInput?.file_path) {
                         renderedSomething = true;
-                        return <EditWidget {...input} result={toolResult} />;
+                        return <EditWidget {...editInput} result={toolResult} />;
                       }
-                      
-                      // MultiEdit tool
-                      if (toolName === "multiedit" && input?.file_path && input?.edits) {
+
+                      // MultiEdit
+                      const multiEditInput = asToolInput(toolName, 'MultiEdit', rawInput);
+                      if (multiEditInput?.file_path && multiEditInput.edits) {
                         renderedSomething = true;
-                        return <MultiEditWidget {...input} result={toolResult} />;
+                        return <MultiEditWidget {...multiEditInput} result={toolResult} />;
                       }
-                      
-                      // MCP tools (starting with mcp__)
-                      if (content.name?.startsWith("mcp__")) {
+
+                      // MCP tools (anything starting with `mcp__`). The SDK
+                      // models these as `McpInput` (open-shaped); we pass
+                      // the raw input through to the generic MCP widget,
+                      // which already treats it as a JSON blob to display.
+                      if (toolName?.startsWith('mcp__')) {
                         renderedSomething = true;
-                        return <MCPWidget toolName={content.name} input={input} result={toolResult} />;
+                        return <MCPWidget toolName={toolName} input={rawInput as Record<string, unknown> | undefined} result={toolResult} />;
                       }
-                      
-                      // TodoWrite tool
-                      if (toolName === "todowrite" && input?.todos) {
+
+                      // TodoWrite
+                      const todoWriteInput = asToolInput(toolName, 'TodoWrite', rawInput);
+                      if (todoWriteInput?.todos) {
                         renderedSomething = true;
-                        return <TodoWidget todos={input.todos} result={toolResult} />;
+                        return <TodoWidget todos={todoWriteInput.todos} result={toolResult} />;
                       }
-                      
-                      // TodoRead tool
-                      if (toolName === "todoread") {
+
+                      // TodoRead
+                      const todoReadInput = asToolInput(toolName, 'TodoRead', rawInput);
+                      if (todoReadInput) {
                         renderedSomething = true;
-                        return <TodoReadWidget todos={input?.todos} result={toolResult} />;
+                        return <TodoReadWidget todos={todoReadInput.todos} result={toolResult} />;
                       }
-                      
-                      // LS tool
-                      if (toolName === "ls" && input?.path) {
+
+                      // LS
+                      const lsInput = asToolInput(toolName, 'LS', rawInput);
+                      if (lsInput?.path) {
                         renderedSomething = true;
-                        return <LSWidget path={input.path} result={toolResult} />;
+                        return <LSWidget path={lsInput.path} result={toolResult} />;
                       }
-                      
-                      // Read tool
-                      if (toolName === "read" && input?.file_path) {
+
+                      // Read
+                      const readInput = asToolInput(toolName, 'Read', rawInput);
+                      if (readInput?.file_path) {
                         renderedSomething = true;
-                        return <ReadWidget filePath={input.file_path} result={toolResult} />;
+                        return <ReadWidget filePath={readInput.file_path} result={toolResult} />;
                       }
-                      
-                      // Glob tool
-                      if (toolName === "glob" && input?.pattern) {
+
+                      // Glob
+                      const globInput = asToolInput(toolName, 'Glob', rawInput);
+                      if (globInput?.pattern) {
                         renderedSomething = true;
-                        return <GlobWidget pattern={input.pattern} result={toolResult} />;
+                        return <GlobWidget pattern={globInput.pattern} result={toolResult} />;
                       }
-                      
-                      // Bash tool
-                      if (toolName === "bash" && input?.command) {
+
+                      // Bash
+                      const bashInput = asToolInput(toolName, 'Bash', rawInput);
+                      if (bashInput?.command) {
                         renderedSomething = true;
-                        return <BashWidget command={input.command} description={input.description} result={toolResult} />;
+                        return <BashWidget command={bashInput.command} description={bashInput.description} result={toolResult} />;
                       }
-                      
-                      // Write tool
-                      if (toolName === "write" && input?.file_path && input?.content) {
+
+                      // Write
+                      const writeInput = asToolInput(toolName, 'Write', rawInput);
+                      if (writeInput?.file_path && writeInput.content) {
                         renderedSomething = true;
-                        return <WriteWidget filePath={input.file_path} content={input.content} result={toolResult} />;
+                        return <WriteWidget filePath={writeInput.file_path} content={writeInput.content} result={toolResult} />;
                       }
-                      
-                      // Grep tool
-                      if (toolName === "grep" && input?.pattern) {
+
+                      // Grep. The `include` / `exclude` fields are carried
+                      // by `GrepInputExtended` for back-compat with older
+                      // session payloads; SDK's canonical fields are
+                      // `glob` / `type` and live on `GrepInput` proper.
+                      const grepInput = asToolInput(toolName, 'Grep', rawInput);
+                      if (grepInput?.pattern) {
                         renderedSomething = true;
-                        return <GrepWidget pattern={input.pattern} include={input.include} path={input.path} exclude={input.exclude} result={toolResult} />;
+                        return <GrepWidget pattern={grepInput.pattern} include={grepInput.include} path={grepInput.path} exclude={grepInput.exclude} result={toolResult} />;
                       }
-                      
-                      // WebSearch tool
-                      if (toolName === "websearch" && input?.query) {
+
+                      // WebSearch
+                      const webSearchInput = asToolInput(toolName, 'WebSearch', rawInput);
+                      if (webSearchInput?.query) {
                         renderedSomething = true;
-                        return <WebSearchWidget query={input.query} result={toolResult} />;
+                        return <WebSearchWidget query={webSearchInput.query} result={toolResult} />;
                       }
-                      
-                      // WebFetch tool
-                      if (toolName === "webfetch" && input?.url) {
+
+                      // WebFetch
+                      const webFetchInput = asToolInput(toolName, 'WebFetch', rawInput);
+                      if (webFetchInput?.url) {
                         renderedSomething = true;
-                        return <WebFetchWidget url={input.url} prompt={input.prompt} result={toolResult} />;
+                        return <WebFetchWidget url={webFetchInput.url} prompt={webFetchInput.prompt} result={toolResult} />;
                       }
-                      
+
                       // Default - return null
                       return null;
                     };
