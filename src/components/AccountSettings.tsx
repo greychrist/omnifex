@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -473,7 +473,7 @@ export const AccountSettings: React.FC = () => {
   const [newRulePrefix, setNewRulePrefix] = useState("");
   const [newRuleAccountId, setNewRuleAccountId] = useState<number | null>(null);
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       const [accts, rules] = await Promise.all([
         api.listAccounts(),
@@ -485,12 +485,12 @@ export const AccountSettings: React.FC = () => {
     } catch (error) {
       console.error("Failed to load account data:", error);
     }
-  };
+  }, [refreshAccountsContext]);
 
   useEffect(() => {
     logAndForget('account-settings:load-data', loadData());
     api.listProjectOverrides().then(setOverrides).catch(console.error);
-  }, []);
+  }, [loadData]);
 
   const handleTestResolution = async () => {
     if (!testPath.trim()) return;
