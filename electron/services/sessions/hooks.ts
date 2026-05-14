@@ -1,6 +1,27 @@
 // Sessions module — SDK hooks factory
 // Extracted from electron/services/sessions.ts (pure refactor)
 
+import type {
+  ConfigChangeHookInput,
+  ElicitationHookInput,
+  ElicitationResultHookInput,
+  FileChangedHookInput,
+  InstructionsLoadedHookInput,
+  NotificationHookInput,
+  PermissionDeniedHookInput,
+  PostCompactHookInput,
+  PreCompactHookInput,
+  SessionEndHookInput,
+  SessionStartHookInput,
+  SetupHookInput,
+  StopFailureHookInput,
+  StopHookInput,
+  SubagentStartHookInput,
+  SubagentStopHookInput,
+  TaskCompletedHookInput,
+  TaskCreatedHookInput,
+  UserPromptSubmitHookInput,
+} from '@anthropic-ai/claude-agent-sdk';
 import type { LoggingService, SendToRenderer, NotificationHooks } from './types';
 
 // ---------------------------------------------------------------------------
@@ -49,7 +70,7 @@ export function createSessionHooks(
     SubagentStart: [
       {
         hooks: [
-          async (input: any) => {
+          async (input: SubagentStartHookInput) => {
             try {
               sendToRenderer(`claude-subagent:${tabId}`, {
                 status: 'started',
@@ -67,7 +88,7 @@ export function createSessionHooks(
     SubagentStop: [
       {
         hooks: [
-          async (input: any) => {
+          async (input: SubagentStopHookInput) => {
             try {
               sendToRenderer(`claude-subagent:${tabId}`, {
                 status: 'stopped',
@@ -86,7 +107,7 @@ export function createSessionHooks(
     PreCompact: [
       {
         hooks: [
-          async (input: any) => {
+          async (input: PreCompactHookInput) => {
             try {
               logging.writeBatch([
                 {
@@ -115,7 +136,7 @@ export function createSessionHooks(
     Notification: [
       {
         hooks: [
-          async (input: any) => {
+          async (input: NotificationHookInput) => {
             try {
               const isError = /error/i.test(input.notification_type ?? '');
               // Emit on the existing claude-notification channel so
@@ -152,7 +173,7 @@ export function createSessionHooks(
     FileChanged: [
       {
         hooks: [
-          async (input: any) => {
+          async (input: FileChangedHookInput) => {
             try {
               logging.writeBatch([
                 {
@@ -182,7 +203,7 @@ export function createSessionHooks(
     SessionStart: [
       {
         hooks: [
-          async (input: any) => {
+          async (input: SessionStartHookInput) => {
             try {
               logging.writeBatch([
                 {
@@ -217,7 +238,7 @@ export function createSessionHooks(
     SessionEnd: [
       {
         hooks: [
-          async (input: any) => {
+          async (input: SessionEndHookInput) => {
             try {
               logging.writeBatch([
                 {
@@ -252,7 +273,7 @@ export function createSessionHooks(
     Stop: [
       {
         hooks: [
-          async (input: any) => {
+          async (input: StopHookInput) => {
             try {
               logging.writeBatch([
                 {
@@ -279,12 +300,17 @@ export function createSessionHooks(
     StopFailure: [
       {
         hooks: [
-          async (input: any) => {
+          async (input: StopFailureHookInput) => {
             try {
+              // The SDK types `error` as a string union (SDKAssistantMessageError),
+              // but the runtime payload sometimes carries `{ type, message }` —
+              // sessions.test.ts asserts that shape. Cast through `unknown` and
+              // narrow defensively so both flows produce a usable label.
+              const rawError = input.error as unknown;
               const errMsg =
-                typeof input.error === 'string'
-                  ? input.error
-                  : input.error?.message ?? String(input.error ?? 'unknown error');
+                typeof rawError === 'string'
+                  ? rawError
+                  : (rawError as { message?: string } | null)?.message ?? 'unknown error';
               logging.writeBatch([
                 {
                   timestamp: new Date().toISOString(),
@@ -319,7 +345,7 @@ export function createSessionHooks(
     PostCompact: [
       {
         hooks: [
-          async (input: any) => {
+          async (input: PostCompactHookInput) => {
             try {
               logging.writeBatch([
                 {
@@ -355,7 +381,7 @@ export function createSessionHooks(
     PermissionDenied: [
       {
         hooks: [
-          async (input: any) => {
+          async (input: PermissionDeniedHookInput) => {
             try {
               logging.writeBatch([
                 {
@@ -392,7 +418,7 @@ export function createSessionHooks(
     UserPromptSubmit: [
       {
         hooks: [
-          async (input: any) => {
+          async (input: UserPromptSubmitHookInput) => {
             try {
               logging.writeBatch([{
                 timestamp: new Date().toISOString(),
@@ -418,7 +444,7 @@ export function createSessionHooks(
     Setup: [
       {
         hooks: [
-          async (input: any) => {
+          async (input: SetupHookInput) => {
             try {
               logging.writeBatch([{
                 timestamp: new Date().toISOString(),
@@ -444,7 +470,7 @@ export function createSessionHooks(
     TaskCreated: [
       {
         hooks: [
-          async (input: any) => {
+          async (input: TaskCreatedHookInput) => {
             try {
               logging.writeBatch([{
                 timestamp: new Date().toISOString(),
@@ -471,7 +497,7 @@ export function createSessionHooks(
     TaskCompleted: [
       {
         hooks: [
-          async (input: any) => {
+          async (input: TaskCompletedHookInput) => {
             try {
               logging.writeBatch([{
                 timestamp: new Date().toISOString(),
@@ -503,7 +529,7 @@ export function createSessionHooks(
     Elicitation: [
       {
         hooks: [
-          async (input: any) => {
+          async (input: ElicitationHookInput) => {
             try {
               logging.writeBatch([{
                 timestamp: new Date().toISOString(),
@@ -525,7 +551,7 @@ export function createSessionHooks(
     ElicitationResult: [
       {
         hooks: [
-          async (input: any) => {
+          async (input: ElicitationResultHookInput) => {
             try {
               logging.writeBatch([{
                 timestamp: new Date().toISOString(),
@@ -546,7 +572,7 @@ export function createSessionHooks(
     ConfigChange: [
       {
         hooks: [
-          async (input: any) => {
+          async (input: ConfigChangeHookInput) => {
             try {
               logging.writeBatch([{
                 timestamp: new Date().toISOString(),
@@ -571,7 +597,7 @@ export function createSessionHooks(
     InstructionsLoaded: [
       {
         hooks: [
-          async (input: any) => {
+          async (input: InstructionsLoadedHookInput) => {
             try {
               logging.writeBatch([{
                 timestamp: new Date().toISOString(),
