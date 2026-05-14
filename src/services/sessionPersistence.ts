@@ -17,6 +17,7 @@ export interface SessionRestoreData {
   timestamp: number;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-extraneous-class -- utility-class pattern intentional; namespace-style functions less idiomatic in this codebase.
 export class SessionPersistenceService {
   /**
    * Save session data for later restoration

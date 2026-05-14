@@ -182,6 +182,7 @@ function readStatusCounts(
           const killed = (err as NodeJS.ErrnoException & { killed?: boolean }).killed === true;
           const msg = killed
             ? `git status timed out after ${timeoutMs}ms`
+            // eslint-disable-next-line @typescript-eslint/prefer-optional-chain -- preserved for readability; auto-fix would obscure null-guard intent.
             : (stderr && stderr.toString().trim()) || (err.message || 'git status failed');
           resolve({ changed: 0, untracked: 0, error: msg });
           return;

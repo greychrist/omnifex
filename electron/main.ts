@@ -417,6 +417,7 @@ app.whenReady().then(() => {
           ? path.join(process.resourcesPath, 'assets', `${successSound}.aiff`)
           : path.join(app.getAppPath(), 'assets', `${successSound}.aiff`),
     playSound: (soundPath) => {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports -- intentional lazy load; only needed when a notification actually plays a sound.
       const { execFile } = require('node:child_process') as typeof import('node:child_process');
       execFile('afplay', [soundPath], (err: Error | null) => {
         if (err) console.error('[notification] afplay failed:', err.message);

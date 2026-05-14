@@ -237,6 +237,7 @@ describe('createSummaryQueryRunner', () => {
     it('closes the query handle even when iteration throws', async () => {
       let closed = 0;
       const handle: any = {
+        // eslint-disable-next-line require-yield -- test mock generator; intentionally non-yielding.
         async *[Symbol.asyncIterator]() {
           throw new Error('stream blew up');
         },

@@ -812,6 +812,7 @@ describe('ipc handlers — error propagation', () => {
     const services = buildMockServices();
     services.accounts.list.mockImplementationOnce(() => {
        
+      // eslint-disable-next-line @typescript-eslint/only-throw-error -- tests deliberately throw non-Error values.
       throw 'plain string';
     });
     const handlers = getHandlerMap(services as any);

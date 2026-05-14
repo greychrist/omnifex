@@ -37,6 +37,7 @@ export function createTuiSession(params: TuiSessionParams): TuiSession {
     resize: (cols, rows) => pty.resize(cols, rows),
     kill: () => {
       for (const d of disposables) {
+        // eslint-disable-next-line no-empty -- empty block intentional (no-op cleanup / placeholder).
         try { d.dispose(); } catch {}
       }
       disposables.length = 0;

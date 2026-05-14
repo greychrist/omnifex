@@ -25,6 +25,7 @@ interface UsageDashboardProps {
  * @example
  * <UsageDashboard onBack={() => setView('welcome')} />
  */
+// eslint-disable-next-line no-empty-pattern -- route-prop sink — empty destructure documents the no-args contract.
 export const UsageDashboard: React.FC<UsageDashboardProps> = ({ }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

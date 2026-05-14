@@ -101,6 +101,7 @@ function parseAnswerPayload(
     const joined = raw
       .map((b: unknown) =>
         b && typeof b === 'object' && (b as { type?: string }).type === 'text'
+          // eslint-disable-next-line @typescript-eslint/no-base-to-string -- caller controls input; falls back to JSON.stringify upstream.
           ? String((b as { text?: unknown }).text ?? '')
           : '',
       )

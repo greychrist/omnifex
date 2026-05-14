@@ -64,6 +64,7 @@ export function buildMarkdownComponents(
     code({ node: _node, className, children, ...props }: CodeComponentProps) {
       const match = /language-(\w+)/.exec(className || "");
       const lang = match?.[1];
+      // eslint-disable-next-line @typescript-eslint/no-base-to-string -- caller controls input; falls back to JSON.stringify upstream.
       const src = String(children ?? "").replace(/\n$/, "");
 
       if (lang === "markdown" || lang === "md") {

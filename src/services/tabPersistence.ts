@@ -29,6 +29,7 @@ interface SerializedTab {
   // Note: We don't persist sessionData as it's a complex object
 }
 
+// eslint-disable-next-line @typescript-eslint/no-extraneous-class -- utility-class pattern intentional; namespace-style functions less idiomatic in this codebase.
 export class TabPersistenceService {
   /**
    * Check if tab persistence is enabled

@@ -81,6 +81,7 @@ describe("AppFontProvider", () => {
     await waitFor(() => { expect(captured.font).toBe("inter"); });
 
     await act(async () => {
+      // eslint-disable-next-line @typescript-eslint/await-thenable -- await on sync helper for test flow alignment.
       await captured.setFont("plus-jakarta");
     });
 
@@ -103,6 +104,7 @@ describe("AppFontProvider", () => {
     await waitFor(() => { expect(captured.font).toBe("inter"); });
 
     await act(async () => {
+      // eslint-disable-next-line @typescript-eslint/await-thenable -- await on sync helper for test flow alignment.
       await captured.setFont("nonsense");
     });
 

@@ -865,6 +865,7 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
                     <Card className="p-8 text-center">
                       <p className="text-muted-foreground mb-4">No hooks configured for this event</p>
                       {!readOnly && (
+                        // eslint-disable-next-line @typescript-eslint/no-unused-expressions -- side-effect expression intentional in this context.
                         <Button onClick={() => { isMatcherEvent ? addMatcher(event) : addDirectCommand(event); }}>
                           <Plus className="h-4 w-4 mr-2" />
                           Add Hook
@@ -881,6 +882,7 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
                       {!readOnly && (
                         <Button
                           variant="outline"
+                          // eslint-disable-next-line @typescript-eslint/no-unused-expressions -- side-effect expression intentional in this context.
                           onClick={() => { isMatcherEvent ? addMatcher(event) : addDirectCommand(event); }}
                           className="w-full"
                         >

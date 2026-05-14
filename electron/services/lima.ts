@@ -73,6 +73,7 @@ function defaultExecLimactl(args: string[], opts: LimaExecOptions = {}): Promise
           // can distinguish "not installed" from "ran but failed".
           const errno = (err as NodeJS.ErrnoException).code;
           if (errno === 'ENOENT' || errno === 'ETIMEDOUT') {
+            // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- rejection reason is a structured non-Error object by API contract.
             reject(err);
             return;
           }

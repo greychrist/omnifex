@@ -514,6 +514,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
           style={borderStyle}
         >
           <span className="opacity-70" style={textStyle}>system.{subtype}</span>
+          {/* eslint-disable-next-line @typescript-eslint/no-base-to-string -- caller controls input; falls back to JSON.stringify upstream. */}
           {text && <span className="truncate" style={textStyle}>{String(text)}</span>}
         </div>
       );

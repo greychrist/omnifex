@@ -11,6 +11,7 @@ import {
 // SDKAssistantMessage / SDKUserMessage / SDKResultMessage / SDKSystemMessage
 // types require `uuid`, `session_id`, etc., which the runtime guards never
 // depend on — these helpers only branch on `type` / `subtype`.
+// eslint-disable-next-line @typescript-eslint/no-unnecessary-type-parameters -- API surface stability — generic param documents intent.
 const make = <T extends ClaudeStreamMessage['type']>(
   partial: Record<string, unknown> & { type: T },
 ): ClaudeStreamMessage => partial as unknown as ClaudeStreamMessage;

@@ -308,6 +308,7 @@ export const SessionList: React.FC<SessionListProps> = ({
         // hash compare (any cached sidecar is treated as fresh wrt
         // prompt). The next refresh from the backend will write a real
         // promptHash.
+        // eslint-disable-next-line @typescript-eslint/prefer-optional-chain -- preserved for readability; auto-fix would obscure null-guard intent.
         setActivePromptHash(value && value.trim() ? clientPromptHash(value) : null);
       })
       .catch(() => {

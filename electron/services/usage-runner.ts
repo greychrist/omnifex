@@ -438,6 +438,7 @@ function defaultSpawnPty(
 ): FakePty {
   // Inline import so node-pty isn't loaded unless actually used.
    
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- inline lazy load; node-pty has heavy native deps.
   const ptyModule = require('node-pty');
   const pty = ptyModule.spawn(command, args, opts);
   return {

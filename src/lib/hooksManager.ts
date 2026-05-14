@@ -11,6 +11,7 @@ import {
   HookCommand,
 } from '@/types/hooks';
 
+// eslint-disable-next-line @typescript-eslint/no-extraneous-class -- utility-class pattern intentional; namespace-style functions less idiomatic in this codebase.
 export class HooksManager {
   /**
    * Merge hooks configurations with proper priority

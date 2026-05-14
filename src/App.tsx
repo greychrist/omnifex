@@ -546,6 +546,7 @@ function App() {
         : null;
       if (cached === 'true') return true;
       if (cached === 'false') return false;
+    // eslint-disable-next-line no-empty -- empty block intentional (no-op cleanup / placeholder).
     } catch (_ignore) {}
     return true; // default if no cache
   });

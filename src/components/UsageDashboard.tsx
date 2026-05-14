@@ -191,6 +191,7 @@ const AccountSection: React.FC<{
 // Dashboard
 // ---------------------------------------------------------------------------
 
+// eslint-disable-next-line no-empty-pattern -- route-prop sink — empty destructure documents the no-args contract.
 export const UsageDashboard: React.FC<UsageDashboardProps> = ({}) => {
   const { accounts } = useAccounts();
   const [loading, setLoading] = useState(true);

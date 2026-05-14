@@ -221,6 +221,7 @@ function wrap(fn: () => unknown): HandlerFn {
   };
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unnecessary-type-parameters -- API surface stability — generic param documents intent.
 function wrapWith<P>(fn: (params: P) => unknown): HandlerFn {
   return async (_event: unknown, params?: Record<string, unknown>) => {
     try {
@@ -752,6 +753,7 @@ export function registerIpcHandlers(services: Services = {}): void {
   ipcMain.handle('window:maximize', () => {
     const win = BrowserWindow.getFocusedWindow();
     if (win) {
+      // eslint-disable-next-line @typescript-eslint/no-unused-expressions -- side-effect expression intentional in this context.
       win.isMaximized() ? win.unmaximize() : win.maximize();
     }
   });

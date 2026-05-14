@@ -7,6 +7,7 @@ describe("cn", () => {
   });
 
   it("filters out falsy values", () => {
+    // eslint-disable-next-line no-constant-binary-expression -- test guard intentional.
     expect(cn("a", false && "b", undefined, null, "c")).toBe("a c");
   });
 

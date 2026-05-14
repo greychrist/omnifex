@@ -802,6 +802,7 @@ describe('sessions service — full lifecycle', () => {
   it('keeps the session alive when the stream throws (does not delete)', async () => {
     const channel = createAsyncChannel<unknown>();
     const fakeQuery: any = {
+      // eslint-disable-next-line require-yield -- test mock generator; intentionally non-yielding.
       async *[Symbol.asyncIterator]() {
         throw new Error('stream blew up');
       },
@@ -851,6 +852,7 @@ describe('sessions service — full lifecycle', () => {
     let callCount = 0;
     const errorChannel = createAsyncChannel<unknown>();
     const errorQuery: any = {
+      // eslint-disable-next-line require-yield -- test mock generator; intentionally non-yielding.
       async *[Symbol.asyncIterator]() {
         throw new Error('Stream closed');
       },

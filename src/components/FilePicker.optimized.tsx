@@ -204,6 +204,7 @@ export const FilePicker: React.FC<FilePickerProps> = React.memo(({
         break;
       case 'Enter':
         e.preventDefault();
+        // eslint-disable-next-line no-case-declarations -- lexical declaration intentional within case scope.
         const selectedEntry = displayEntries[selectedIndex];
         if (selectedEntry) {
           if (e.shiftKey || !selectedEntry.is_directory) {

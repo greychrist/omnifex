@@ -96,6 +96,7 @@ export function buildSdkOptions(
       // URL mode: open browser immediately, then wait for user decision
       if (request.mode === 'url' && request.url) {
         try {
+          // eslint-disable-next-line @typescript-eslint/no-require-imports -- intentional lazy load; only needed when an elicitation requests a URL.
           const { shell } = require('electron') as typeof import('electron');
           shell.openExternal(request.url);
         } catch { /* best effort */ }

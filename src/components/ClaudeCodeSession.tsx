@@ -921,6 +921,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   // If the user was scrolled up reading history and sends a new message, they expect
   // the view to follow their new activity rather than leave them stranded.
   const handleSendPrompt = useCallback(
+    // eslint-disable-next-line react-hooks/preserve-manual-memoization -- preserved as-is.
     (prompt: string, model: string, images?: string[]) => {
       isNearBottomRef.current = true;
       return sendPromptRaw(prompt, model, images);
