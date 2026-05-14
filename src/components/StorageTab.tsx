@@ -103,31 +103,23 @@ export const StorageTab: React.FC = () => {
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
 
   /**
-   * Load all tables on mount
+   * Load all tables from the database. selectedTable is read through a
+   * ref so the mount fetch never gets a stale value but doesn't trigger
+   * re-fetches when the user picks a different table — that's what the
+   * loadTableData effect below is for.
    */
+  const selectedTableRef = React.useRef(selectedTable);
   useEffect(() => {
-    logAndForget('storage-tab:load-tables', loadTables());
-  }, []);
+    selectedTableRef.current = selectedTable;
+  });
 
-  /**
-   * Load table data when selected table changes
-   */
-  useEffect(() => {
-    if (selectedTable) {
-      logAndForget('storage-tab:load-table-data', loadTableData(1));
-    }
-  }, [selectedTable]);
-
-  /**
-   * Load all tables from the database
-   */
-  const loadTables = async () => {
+  const loadTables = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
       const result = await api.storageListTables();
       setTables(result);
-      if (result.length > 0 && !selectedTable) {
+      if (result.length > 0 && !selectedTableRef.current) {
         setSelectedTable(result[0].name);
       }
     } catch (err) {
@@ -136,12 +128,12 @@ export const StorageTab: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   /**
    * Load data for the selected table
    */
-  const loadTableData = async (page: number, search?: string) => {
+  const loadTableData = useCallback(async (page: number, search?: string) => {
     if (!selectedTable) return;
 
     try {
@@ -161,7 +153,23 @@ export const StorageTab: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedTable, pageSize, searchQuery]);
+
+  /**
+   * Load all tables on mount
+   */
+  useEffect(() => {
+    logAndForget('storage-tab:load-tables', loadTables());
+  }, [loadTables]);
+
+  /**
+   * Load table data when selected table changes
+   */
+  useEffect(() => {
+    if (selectedTable) {
+      logAndForget('storage-tab:load-table-data', loadTableData(1));
+    }
+  }, [selectedTable, loadTableData]);
 
   /**
    * Handle search
@@ -171,7 +179,7 @@ export const StorageTab: React.FC = () => {
       setSearchQuery(value);
       logAndForget('storage-tab:load-table-data', loadTableData(1, value));
     },
-    [selectedTable]
+    [loadTableData]
   );
 
   /**
