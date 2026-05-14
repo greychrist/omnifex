@@ -71,10 +71,10 @@ const SessionCard = React.memo<{
                   <Calendar className="h-3.5 w-3.5" />
                   <span>{formatTime(session.created_at)}</span>
                 </div>
-                {session.message_timestamp && (
+                {session.last_timestamp && (
                   <div className="flex items-center gap-1">
                     <Clock className="h-3.5 w-3.5" />
-                    <span>{formatTime(session.message_timestamp)}</span>
+                    <span>{formatTime(session.last_timestamp)}</span>
                   </div>
                 )}
               </div>

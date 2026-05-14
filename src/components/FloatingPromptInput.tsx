@@ -310,6 +310,7 @@ const FloatingPromptInputInner = (
     const key = nativeEvent.key;
     if (key === 'Process' || key === 'Unidentified') return true;
     const keyboardEvent = nativeEvent;
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- intentional IME composition detection; keyCode 229 is the only reliable signal across browsers.
     const keyCode = keyboardEvent.keyCode ?? (keyboardEvent as unknown as { which?: number }).which;
     if (keyCode === 229) return true;
     return false;

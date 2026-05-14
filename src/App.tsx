@@ -122,6 +122,7 @@ function AppContent() {
     if (view !== "tabs") return;
     
     const handleKeyDown = (e: KeyboardEvent) => {
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- navigator.userAgentData is not yet universally available; navigator.platform is the reliable cross-browser fallback for macOS detection.
       const isMac = navigator.platform.toUpperCase().includes('MAC');
       const modKey = isMac ? e.metaKey : e.ctrlKey;
       

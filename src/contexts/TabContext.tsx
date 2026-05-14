@@ -189,7 +189,7 @@ export const TabProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [tabs, activeTabId]);
 
   const generateTabId = () => {
-    return `tab-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    return `tab-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
   };
 
   const addTab = useCallback((tabData: Omit<Tab, 'id' | 'order' | 'createdAt' | 'updatedAt'>): string => {

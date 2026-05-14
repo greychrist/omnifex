@@ -25,6 +25,7 @@ api.logCount().then((count) => {
 // Add a macOS-specific class to the <html> element to enable platform-specific styling.
 (() => {
   const isMacLike = typeof navigator !== "undefined" &&
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- navigator.userAgentData is not yet universally available; navigator.platform is the reliable cross-browser fallback.
     (navigator.platform?.toLowerCase().includes("mac") ||
       navigator.userAgent?.toLowerCase().includes("mac os x"));
   if (isMacLike) {

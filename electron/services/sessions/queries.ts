@@ -137,8 +137,10 @@ export function createQueryPassthroughs(
       // ever loosens the current "non-zero collapses to adaptive on Opus
       // 4.6+" rule. `null` continues to mean "default" across versions.
       if (!config || config.type === 'disabled') {
+        // eslint-disable-next-line @typescript-eslint/no-deprecated -- per memory reference_thinking_sdk_deprecation: no clean replacement on Opus 4.6+; 0 still means "disabled" across versions.
         await handle.query.setMaxThinkingTokens(0);
       } else {
+        // eslint-disable-next-line @typescript-eslint/no-deprecated -- per memory reference_thinking_sdk_deprecation: no clean replacement on Opus 4.6+; null still means "default" across versions.
         await handle.query.setMaxThinkingTokens(null);
       }
     } catch (err) {

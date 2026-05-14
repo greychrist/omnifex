@@ -232,6 +232,7 @@ export function SessionCard({
                             isAnimationActive={false}
                           >
                             {pieData.map((entry, index) => (
+        // eslint-disable-next-line @typescript-eslint/no-deprecated -- recharts Cell remains the documented API for per-segment fill; deprecation guidance is not yet finalized.
                               <Cell key={`cell-${index}`} fill={entry.color} />
                             ))}
                           </Pie>

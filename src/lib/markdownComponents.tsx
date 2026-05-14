@@ -1,4 +1,5 @@
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import type * as React from "react";
 import type { CSSProperties } from "react";
 import type { Components, ExtraProps } from "react-markdown";
 import type { ComponentProps } from "react";
@@ -35,7 +36,7 @@ type CodeComponentProps = ComponentProps<"code"> & ExtraProps;
  */
 export function buildMarkdownComponents(
   syntaxTheme: SyntaxTheme,
-): Components & { code: (props: CodeComponentProps) => JSX.Element } {
+): Components & { code: (props: CodeComponentProps) => React.JSX.Element } {
   return {
     // Conditional <pre> passthrough.
     //
