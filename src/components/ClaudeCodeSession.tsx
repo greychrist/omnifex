@@ -76,6 +76,17 @@ import { InflightAssistantBubble } from "./InflightAssistantBubble";
 import { useTabSession, useClaudeSessionStore } from "@/stores/claudeSessionStore";
 import type { PermissionSuggestion } from "@/lib/types/permissionRequest";
 
+// Random gerund words like Claude Code CLI — hoisted to module scope so
+// pickGerund has a stable identity that effects/callbacks can list as a
+// dep without recreating on every render.
+const GERUNDS = [
+  "Honking", "Pondering", "Musing", "Cogitating", "Ruminating", "Brewing",
+  "Noodling", "Puzzling", "Tinkering", "Scheming", "Conjuring", "Percolating",
+  "Deliberating", "Contemplating", "Hatching", "Weaving", "Forging", "Crafting",
+  "Kneading", "Sifting", "Plotting", "Wrangling",
+] as const;
+const pickGerund = (): string => GERUNDS[Math.floor(Math.random() * GERUNDS.length)];
+
 interface ClaudeCodeSessionProps {
   /**
    * Optional session to resume (when clicking from SessionList)
@@ -171,16 +182,63 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     supportedModels,
     setSupportedModels,
   } = useTabSession(sessionTabId);
-  const [currentActivity, setCurrentActivity] = useState<string>("Honking");
 
-  // Random gerund words like Claude Code CLI
-  const GERUNDS = [
-    "Honking", "Pondering", "Musing", "Cogitating", "Ruminating", "Brewing",
-    "Noodling", "Puzzling", "Tinkering", "Scheming", "Conjuring", "Percolating",
-    "Deliberating", "Contemplating", "Hatching", "Weaving", "Forging", "Crafting",
-    "Kneading", "Sifting", "Plotting", "Wrangling"
-  ];
-  const pickGerund = () => GERUNDS[Math.floor(Math.random() * GERUNDS.length)];
+  // `useTabSession` returns fresh setter/handler closures every render
+  // (the wrappers in claudeSessionStore.ts re-create on each call).
+  // Capturing them in a single stable ref here lets handleStreamMessage
+  // and loadSessionHistory stay reference-stable across renders while
+  // still reading the latest underlying functions at call time — the
+  // streaming-session UX historically broke when callbacks recreated
+  // (events dropped, queued prompts re-drained on stale closures).
+  // See FOLLOW-UP-2026-05-14: ideally useTabSession would memoize its
+  // own setters via useCallback so this ref isn't needed; tracked in
+  // the architectural follow-up below the file.
+  interface StreamCtx {
+    appendMessage: typeof appendMessage;
+    insertMessageBeforeFirstUser: typeof insertMessageBeforeFirstUser;
+    handleSendPrompt:
+      | ((prompt: string, model: string, images?: string[]) => Promise<unknown> | void)
+      | null;
+    setClaudeSessionId: typeof setClaudeSessionId;
+    setContextUsage: typeof setContextUsage;
+    setExtractedSessionInfo: typeof setExtractedSessionInfo;
+    setIsLoading: typeof setIsLoading;
+    setSdkAccountInfo: typeof setSdkAccountInfo;
+    setSupportedModels: typeof setSupportedModels;
+    setMessages: typeof setMessages;
+    isMountedRef: { current: boolean } | null;
+    queuedPromptsRef: { current: unknown[] } | null;
+    setQueuedPrompts: ((next: unknown) => void) | null;
+  }
+  const streamCtxRef = useRef<StreamCtx>({
+    appendMessage,
+    insertMessageBeforeFirstUser,
+    handleSendPrompt: null,
+    setClaudeSessionId,
+    setContextUsage,
+    setExtractedSessionInfo,
+    setIsLoading,
+    setSdkAccountInfo,
+    setSupportedModels,
+    setMessages,
+    isMountedRef: null,
+    queuedPromptsRef: null,
+    setQueuedPrompts: null,
+  });
+  // Update on every render so the ref always points at the latest set.
+  // handleSendPrompt / isMountedRef / queuedPromptsRef / setQueuedPrompts
+  // are populated below, after the hooks that own them have run.
+  streamCtxRef.current.appendMessage = appendMessage;
+  streamCtxRef.current.insertMessageBeforeFirstUser = insertMessageBeforeFirstUser;
+  streamCtxRef.current.setClaudeSessionId = setClaudeSessionId;
+  streamCtxRef.current.setContextUsage = setContextUsage;
+  streamCtxRef.current.setExtractedSessionInfo = setExtractedSessionInfo;
+  streamCtxRef.current.setIsLoading = setIsLoading;
+  streamCtxRef.current.setSdkAccountInfo = setSdkAccountInfo;
+  streamCtxRef.current.setSupportedModels = setSupportedModels;
+  streamCtxRef.current.setMessages = setMessages;
+
+  const [currentActivity, setCurrentActivity] = useState<string>("Honking");
   const [error, setError] = useState<string | null>(null);
   const [rawJsonlOutput, setRawJsonlOutput] = useState<string[]>([]);
   const [copyPopoverOpen, setCopyPopoverOpen] = useState(false);
@@ -330,7 +388,10 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   // `gitStatus` keeps the existing renderer ergonomics for the project badge;
   // `worktreeList` mirrors the snapshot's `worktrees[]` for the list below.
   const gitStatus = sessionGit?.project ?? null;
-  const worktreeList = sessionGit?.worktrees ?? [];
+  // Wrap in useMemo so the `?? []` fallback doesn't create a new array
+  // identity on each render — that ripples into the gitWatchErrors useMemo
+  // below and triggers unnecessary recompute on every parent re-render.
+  const worktreeList = useMemo(() => sessionGit?.worktrees ?? [], [sessionGit?.worktrees]);
   // Aggregate per-path errors for the single header status icon. The icon is
   // green when this list is empty and red when any path is errored; the
   // tooltip lists the offending labels so the user can see *which* row is
@@ -443,12 +504,15 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     modelChanges: [] as { from: string; to: string; timestamp: number }[],
   });
 
-  // Call onProjectPathChange when component mounts with initial path
+  // Notify parent of the active projectPath. Runs on mount AND on any
+  // subsequent projectPath / callback change — parent state should track
+  // the latest path. If onProjectPathChange isn't memoized parent-side
+  // we'd briefly re-fire on its identity change; the call is idempotent.
   useEffect(() => {
     if (onProjectPathChange && projectPath) {
       onProjectPathChange(projectPath);
     }
-  }, []); // Only run on mount
+  }, [onProjectPathChange, projectPath]);
 
   // Get effective session info (from prop or extracted) - use useMemo to ensure it updates
   const effectiveSession = useMemo(() => {
@@ -551,16 +615,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Load session history if resuming
-  useEffect(() => {
-    if (session) {
-      // Set the claudeSessionId immediately when we have a session
-      setClaudeSessionId(session.id);
-
-      logAndForget('claude-code-session:load-session-history', loadSessionHistory());
-    }
-  }, [session]);
-
   // Report streaming state changes — onStreamingChange is excluded from deps
   // because it's an event callback from the parent that may not be memoized.
   // Including it causes infinite re-render loops when the parent recreates
@@ -648,15 +702,20 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     setTotalTokens(tokens);
   }, [messages]);
 
-  const loadSessionHistory = async () => {
+  // Load session history when resuming an existing session. Uses
+  // streamCtxRef for the useTabSession setters that recreate every
+  // render — without that indirection, this callback would re-create on
+  // every render and re-trigger the effect below, re-fetching history
+  // every frame.
+  const loadSessionHistory = useCallback(async () => {
     if (!session) return;
-    
+
     try {
-      setIsLoading(true);
+      streamCtxRef.current.setIsLoading(true);
       setError(null);
-      
+
       const history = await api.loadSessionHistory(session.id, session.project_id, session.project_path);
-      
+
       // Save session data for restoration
       if (history && history.length > 0) {
         SessionPersistenceService.saveSession(
@@ -666,7 +725,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           history.length
         );
       }
-      
+
       // Convert history to messages format. JSONL entries carry their own
       // `timestamp` field per line — map it to `receivedAt` so the card
       // timestamp badge renders for resumed sessions just like for live ones.
@@ -683,9 +742,9 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       // on the historical load.
       const messagesWithResults = synthesizeResultMessages(loadedMessages);
 
-      setMessages(messagesWithResults);
+      streamCtxRef.current.setMessages(messagesWithResults);
       setRawJsonlOutput(history.map(h => JSON.stringify(h)));
-      
+
       // Scroll to bottom after loading history
       setTimeout(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
@@ -694,15 +753,29 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       console.error("Failed to load session history:", err);
       setError("Failed to load session history");
     } finally {
-      setIsLoading(false);
+      streamCtxRef.current.setIsLoading(false);
     }
-  };
+  }, [session]);
 
-  // Helper to process any JSONL stream message string or object
+  // Resume effect: when a session prop is provided, seed claudeSessionId
+  // and load history. setClaudeSessionId routed through streamCtxRef
+  // because it's a useTabSession setter that recreates per render.
+  useEffect(() => {
+    if (session) {
+      streamCtxRef.current.setClaudeSessionId(session.id);
+      logAndForget('claude-code-session:load-session-history', loadSessionHistory());
+    }
+  }, [session, loadSessionHistory]);
+
+  // Helper to process any JSONL stream message string or object.
+  // Reads per-render setters via streamCtxRef so this callback stays
+  // reference-stable across renders (useSessionLifecycle reattaches its
+  // SDK event listener whenever this changes — instability there used
+  // to drop events mid-stream).
   const handleStreamMessage = useCallback((payload: string | ClaudeStreamMessage) => {
     try {
       // Don't process if component unmounted
-      if (!isMountedRef.current) return;
+      if (!streamCtxRef.current.isMountedRef?.current) return;
 
       let message: ClaudeStreamMessage;
       let rawPayload: string;
@@ -741,6 +814,8 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
         }
         return;
       }
+
+      const ctx = streamCtxRef.current;
 
       // Store raw JSONL
       setRawJsonlOutput((prev) => [...prev, rawPayload]);
@@ -802,10 +877,10 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       }
 
       if (reduced.sessionIdUpdate) {
-        setClaudeSessionId(reduced.sessionIdUpdate);
+        ctx.setClaudeSessionId(reduced.sessionIdUpdate);
       }
       if (reduced.extractedSessionInfo) {
-        setExtractedSessionInfo(reduced.extractedSessionInfo);
+        ctx.setExtractedSessionInfo(reduced.extractedSessionInfo);
       }
       if (reduced.pendingPermission) {
         setPendingPermission(reduced.pendingPermission);
@@ -814,11 +889,12 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
         userInterruptedRef.current = false;
       }
       if (reduced.clearLoading) {
-        setIsLoading(false);
+        ctx.setIsLoading(false);
       }
 
       // Execute returned effects. Effects are intentionally fire-and-forget;
       // errors are logged but never break the stream.
+      const handleSendPromptForEffect = ctx.handleSendPrompt;
       for (const effect of reduced.effects) {
         runStreamEffect(effect, {
           tabId: tabIdRef.current,
@@ -830,12 +906,15 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           },
           persistSession: ({ sessionId, projectId, projectPath: pp, messageCount }) =>
             { SessionPersistenceService.saveSession(sessionId, projectId, pp, messageCount); },
-          setSdkAccountInfo: (info) => { setSdkAccountInfo(info as any); },
-          setContextUsage: (usage) => { setContextUsage(usage as any); },
-          setSupportedModels: (models) => { setSupportedModels(models as any); },
-          queuedPromptsRef,
-          setQueuedPrompts,
-          handleSendPrompt: fireAndLog('claude-code-session:send-prompt-effect', handleSendPrompt),
+          setSdkAccountInfo: (info) => { ctx.setSdkAccountInfo(info as any); },
+          setContextUsage: (usage) => { ctx.setContextUsage(usage as any); },
+          setSupportedModels: (models) => { ctx.setSupportedModels(models as any); },
+          queuedPromptsRef: ctx.queuedPromptsRef as any,
+          setQueuedPrompts: ctx.setQueuedPrompts as any,
+          handleSendPrompt: fireAndLog(
+            'claude-code-session:send-prompt-effect',
+            handleSendPromptForEffect ?? undefined,
+          ),
           onError: (kind, err) =>
             { console.error(`[sessions] effect ${kind} failed:`, err); },
         });
@@ -868,14 +947,14 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
         return;
       }
       if (reduced.append === 'insertBeforeFirstUser') {
-        insertMessageBeforeFirstUser(message);
+        ctx.insertMessageBeforeFirstUser(message);
         return;
       }
-      appendMessage(message);
+      ctx.appendMessage(message);
     } catch (err) {
       console.error('Failed to parse message:', err, payload);
     }
-  }, [projectPath, effectiveSession, extractedSessionInfo]);
+  }, [projectPath, sessionTabId, setPendingPermission]);
 
   // Session lifecycle: persistent session management, event listeners, cleanup
   const { unlistenRefs, isMountedRef, startPersistentSession, rebindPersistentSession } = useSessionLifecycle({
@@ -929,6 +1008,15 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     },
     [sendPromptRaw],
   );
+
+  // Populate the late-bound entries on streamCtxRef now that the hooks
+  // that own them have run. handleStreamMessage reads these through the
+  // ref so it never needs to list them as deps (which would cycle, since
+  // useSessionLifecycle / useSendPrompt take handleStreamMessage as input).
+  streamCtxRef.current.handleSendPrompt = handleSendPrompt;
+  streamCtxRef.current.isMountedRef = isMountedRef;
+  streamCtxRef.current.queuedPromptsRef = queuedPromptsRef;
+  streamCtxRef.current.setQueuedPrompts = setQueuedPrompts as unknown as (next: unknown) => void;
 
   // Auto-resume / auto-start. Three distinct cases:
   //   1. Renderer reload (Cmd+R) while a session is running in the main
@@ -1032,7 +1120,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           console.error('Failed to reload history on TUI->SDK:', err);
         });
     };
-  }, [claudeSessionId, extractedSessionInfo, projectPath]);
+  }, [claudeSessionId, extractedSessionInfo, projectPath, setMessages]);
 
   // Listen for session mode changes from main process
   useEffect(() => {
@@ -1062,7 +1150,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   // Keep queuedPromptsRef in sync with state
   useEffect(() => {
     queuedPromptsRef.current = queuedPrompts;
-  }, [queuedPrompts]);
+  }, [queuedPrompts, queuedPromptsRef]);
 
   const handleCopyAsJsonl = async () => {
     await exportAsJsonl(rawJsonlOutput);
