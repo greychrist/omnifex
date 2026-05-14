@@ -19,12 +19,14 @@
  *
  * Why anchor on the full `SDKMessage` rather than enumerate variants:
  * `subagentStreams.ts` consumes `task_started`/`task_progress`/
- * `task_notification`; `messageFilters.ts` and `messageKind.ts` switch
- * on `hook_started`/`hook_response`/`hook_progress`. Enumerating only
- * the handful with first-class rendering would force every other site
- * back through casts. Using the SDK's own union and `Exclude`-ing the
- * one colliding variant is the smallest change that lets the compiler
- * narrow correctly throughout.
+ * `task_notification`/`task_updated`; `messageFilters.ts` drops the
+ * `hook_started`/`hook_progress`/`hook_response` family as plumbing
+ * noise; `messageKind.ts` classifies `hook_started`/`hook_response`
+ * (`hook_progress` is never reached because the filter strips it
+ * upstream). Enumerating only the handful with first-class rendering
+ * would force every other site back through casts. Using the SDK's
+ * own union and `Exclude`-ing the one colliding variant is the
+ * smallest change that lets the compiler narrow correctly throughout.
  */
 
 import type {

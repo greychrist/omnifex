@@ -57,11 +57,15 @@ export interface SubagentState {
    *  an immediate ACK `tool_result` that is not a completion signal; the
    *  reducer suppresses it. */
   isBackground?: boolean;
+  /** Set from `SDKTaskUpdatedMessage.patch.error` when the SDK reports a
+   *  subagent failure. `task_notification` summaries don't carry an
+   *  error string per se; this is the only carrier for it. */
+  error?: string;
   /** Inverse: which closure carrier actually finalised this row. `null` for
    *  the inferred branch (`ClosedByParentResult`) and for rows still in
    *  `running`. Useful for tests and for tooltips on the inferred-icon
    *  variant in `SubagentBar`. */
-  closureSource?: 'tool_result' | 'task_notification' | 'task_notification_xml' | 'parent_result';
+  closureSource?: 'tool_result' | 'task_notification' | 'task_notification_xml' | 'task_updated' | 'parent_result';
 }
 
 // ---------------------------------------------------------------------------
@@ -84,6 +88,24 @@ export type SubagentEvent =
     }
   | { kind: 'TaskNotification'; toolUseId: string; status: 'completed' | 'failed' | 'stopped'; summary?: string; taskId?: string; totalTokens?: number; toolUses?: number; durationMs?: number }
   | { kind: 'TaskNotificationXml'; toolUseId: string; status: 'completed' | 'failed'; summary?: string; taskId?: string }
+  | {
+      // SDKTaskUpdatedMessage patch — wire-safe TaskState changes
+      // (status, description, end_time, error, is_backgrounded, …).
+      // Keyed by `taskId` (NOT `toolUseId`) because the SDK message
+      // only carries `task_id`; the reducer maps it back to a
+      // dispatched row via `SubagentState.taskId` set by Started /
+      // Progress / Notification.
+      kind: 'TaskUpdated';
+      taskId: string;
+      patch: {
+        status?: 'pending' | 'running' | 'completed' | 'failed' | 'killed';
+        description?: string;
+        endTimeMs?: number;
+        totalPausedMs?: number;
+        error?: string;
+        isBackgrounded?: boolean;
+      };
+    }
   | { kind: 'ClosedByParentResult'; toolUseId: string };
 
 // ---------------------------------------------------------------------------
@@ -205,6 +227,28 @@ export function messagesToEvents(messages: ClaudeStreamMessage[]): SubagentEvent
 
     // 3. Structured SDK task_* SystemMessages.
     if (isTaskLifecycleMarker(m)) {
+      // task_updated rides a different shape from task_started /
+      // task_progress / task_notification: keyed by `task_id` only
+      // (no tool_use_id) and carries a `patch` object. Handle it
+      // BEFORE the `if (!id) continue;` guard below, which would
+      // otherwise drop it.
+      if (m.subtype === 'task_updated' && typeof m.task_id === 'string' && m.patch && typeof m.patch === 'object') {
+        const p = m.patch as Record<string, unknown>;
+        events.push({
+          kind: 'TaskUpdated',
+          taskId: m.task_id,
+          patch: {
+            status: typeof p.status === 'string' ? (p.status as 'pending' | 'running' | 'completed' | 'failed' | 'killed') : undefined,
+            description: typeof p.description === 'string' ? p.description : undefined,
+            endTimeMs: typeof p.end_time === 'number' ? p.end_time : undefined,
+            totalPausedMs: typeof p.total_paused_ms === 'number' ? p.total_paused_ms : undefined,
+            error: typeof p.error === 'string' ? p.error : undefined,
+            isBackgrounded: typeof p.is_backgrounded === 'boolean' ? p.is_backgrounded : undefined,
+          },
+        });
+        continue;
+      }
+
       const id: string | undefined = m.tool_use_id;
       if (!id) continue;
       if (m.subtype === 'task_started') {
@@ -399,6 +443,52 @@ export function applyEvents(events: SubagentEvent[]): Map<string, SubagentState>
         };
         s.events.push(finalEntry);
         s.latest = finalEntry;
+        break;
+      }
+      case 'TaskUpdated': {
+        // Reverse-lookup state by taskId. SubagentState.taskId is set by
+        // Started / Progress / Notification — task_updated for an
+        // unknown taskId is silently dropped (no orphan creation).
+        let s: SubagentState | undefined;
+        for (const candidate of byId.values()) {
+          if (candidate.taskId === ev.taskId) {
+            s = candidate;
+            break;
+          }
+        }
+        if (!s) break;
+
+        const { patch } = ev;
+        // Mid-flight metadata: applied unconditionally (does not conflict
+        // with terminal lock, since these don't change closure semantics).
+        if (patch.isBackgrounded !== undefined) {
+          s.isBackground = patch.isBackgrounded;
+        }
+        if (patch.description) {
+          s.description = patch.description;
+        }
+        if (patch.error) {
+          s.error = patch.error;
+        }
+
+        // Status / endedAt: TaskNotification is the canonical closure
+        // carrier. If a TaskNotification has already finalized this row,
+        // task_updated must NOT contradict it. Otherwise apply.
+        if (s.closureSource !== 'task_notification' && patch.status) {
+          if (patch.status === 'completed') {
+            s.status = 'completed';
+            s.closureSource = 'task_updated';
+          } else if (patch.status === 'failed' || patch.status === 'killed') {
+            s.status = 'failed';
+            s.closureSource = 'task_updated';
+          }
+          // 'pending' / 'running' patches do not lift terminal status —
+          // once a row is terminal, we don't un-finish it.
+        }
+
+        if (patch.endTimeMs !== undefined && isTerminal(s.status)) {
+          s.endedAt = new Date(patch.endTimeMs).toISOString();
+        }
         break;
       }
       case 'ClosedByParentResult': {

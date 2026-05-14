@@ -48,6 +48,45 @@ describe('filterDisplayableMessages', () => {
     expect(out).toHaveLength(1);
   });
 
+  describe('hook lifecycle filtering', () => {
+    // The SDK's `system+hook_*` family is plumbing noise — `hook_started`,
+    // `hook_response`, and `hook_progress` (mid-hook stdout/stderr) all
+    // describe internal hook execution and should never appear in the
+    // chat timeline by default. The set guarding `dropHookLifecycle`
+    // historically only listed `hook_started` and `hook_response`,
+    // letting `hook_progress` leak in as `system.unknown` gray strips.
+    const sysHook = (subtype: string): ClaudeStreamMessage =>
+      ({ type: 'system', subtype } as unknown as ClaudeStreamMessage);
+
+    it('drops hook_started when dropHookLifecycle is on (default)', () => {
+      const out = filterDisplayableMessages([sysHook('hook_started')]);
+      expect(out).toHaveLength(0);
+    });
+
+    it('drops hook_response when dropHookLifecycle is on (default)', () => {
+      const out = filterDisplayableMessages([sysHook('hook_response')]);
+      expect(out).toHaveLength(0);
+    });
+
+    it('drops hook_progress when dropHookLifecycle is on (default)', () => {
+      // Regression: hook_progress was missing from HOOK_LIFECYCLE_SUBTYPES
+      // and leaked into messages[] as system.unknown noise — exactly the
+      // same plumbing-noise category as hook_started / hook_response.
+      const out = filterDisplayableMessages([sysHook('hook_progress')]);
+      expect(out).toHaveLength(0);
+    });
+
+    it('keeps hook_progress when dropHookLifecycle is explicitly off', () => {
+      const out = filterDisplayableMessages([sysHook('hook_progress')], {
+        dropMeta: true,
+        dropTaskLifecycle: true,
+        dropEmptyUser: true,
+        dropHookLifecycle: false,
+      });
+      expect(out).toHaveLength(1);
+    });
+  });
+
   describe('skill-injection isMeta exemption', () => {
     // The Claude Code CLI persists skill-body injections with isMeta:true,
     // which the SDK live-stream version emits as isSynthetic:true (no isMeta).

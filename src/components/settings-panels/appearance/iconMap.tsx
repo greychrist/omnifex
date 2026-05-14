@@ -29,6 +29,7 @@ import {
   CircleHelp,
   // status / feedback
   ShieldCheck,
+  ShieldX,
   Eye,
   EyeOff,
   Lock,
@@ -111,6 +112,7 @@ const LUCIDE_MAP: Record<string, React.ComponentType<{ className?: string }>> = 
   AtSign,
   CircleHelp,
   ShieldCheck,
+  ShieldX,
   Eye,
   EyeOff,
   Lock,

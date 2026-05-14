@@ -87,6 +87,28 @@ function taskNotification(
   } as unknown as ClaudeStreamMessage;
 }
 
+// Patch shape mirrors the SDK's SDKTaskUpdatedMessage at sdk.d.ts:3619.
+// Only the fields a consumer might apply — status, description, end_time,
+// total_paused_ms, error, is_backgrounded — appear here.
+function taskUpdated(
+  taskId: string,
+  patch: {
+    status?: 'pending' | 'running' | 'completed' | 'failed' | 'killed';
+    description?: string;
+    end_time?: number;
+    total_paused_ms?: number;
+    error?: string;
+    is_backgrounded?: boolean;
+  },
+): ClaudeStreamMessage {
+  return {
+    type: 'system',
+    subtype: 'task_updated',
+    task_id: taskId,
+    patch,
+  } as unknown as ClaudeStreamMessage;
+}
+
 function toolResult(
   toolUseId: string,
   isError = false,
@@ -616,6 +638,112 @@ describe('hasRunningSubagent', () => {
 
   it('returns false on empty input', () => {
     expect(hasRunningSubagent([])).toBe(false);
+  });
+});
+
+describe('task_updated handling (SDKTaskUpdatedMessage patch application)', () => {
+  // SDKTaskUpdatedMessage carries a `patch` describing wire-safe TaskState
+  // changes (status, description, end_time, error, is_backgrounded, …).
+  // Until this batch the message was filtered from the chat timeline (via
+  // `isTaskLifecycleMarker`'s `task_*` startsWith match) but its payload
+  // was discarded — `messagesToEvents` had no branch for `task_updated`.
+  // The reducer is keyed by `toolUseId`; `task_updated` only carries
+  // `task_id`, so the reducer maps `task_id` back to the dispatched row
+  // via the `taskId` field set on SubagentState during `Started` /
+  // `Progress` / `Notification`.
+
+  it('applies is_backgrounded: true to a running subagent', () => {
+    const subs = deriveSubagents([
+      agentToolUse(TOOL_USE_ID),
+      taskStarted(TOOL_USE_ID, 'task_1'),
+      taskUpdated('task_1', { is_backgrounded: true }),
+    ]);
+    expect(subs).toHaveLength(1);
+    expect(subs[0].isBackground).toBe(true);
+    expect(subs[0].status).toBe('running');
+  });
+
+  it('updates description from patch.description', () => {
+    const subs = deriveSubagents([
+      agentToolUse(TOOL_USE_ID, 'initial desc'),
+      taskStarted(TOOL_USE_ID, 'task_1', 'initial desc'),
+      taskUpdated('task_1', { description: 'updated desc' }),
+    ]);
+    expect(subs[0].description).toBe('updated desc');
+  });
+
+  it('terminates a running subagent via patch.status = "completed"', () => {
+    const subs = deriveSubagents([
+      agentToolUse(TOOL_USE_ID),
+      taskStarted(TOOL_USE_ID, 'task_1'),
+      taskUpdated('task_1', { status: 'completed' }),
+    ]);
+    expect(subs[0].status).toBe('completed');
+  });
+
+  it('maps patch.status = "killed" to failed status', () => {
+    const subs = deriveSubagents([
+      agentToolUse(TOOL_USE_ID),
+      taskStarted(TOOL_USE_ID, 'task_1'),
+      taskUpdated('task_1', { status: 'killed' }),
+    ]);
+    expect(subs[0].status).toBe('failed');
+  });
+
+  it('exposes patch.error on the resulting Subagent shape', () => {
+    const subs = deriveSubagents([
+      agentToolUse(TOOL_USE_ID),
+      taskStarted(TOOL_USE_ID, 'task_1'),
+      taskUpdated('task_1', { status: 'failed', error: 'subagent crashed' }),
+    ]);
+    expect(subs[0].status).toBe('failed');
+    expect(subs[0].error).toBe('subagent crashed');
+  });
+
+  it('does NOT override a TaskNotification terminal status', () => {
+    // TaskNotification is the canonical completion carrier; task_updated
+    // should refine pre-terminal state but never overwrite a TaskNotification
+    // closure with a contradictory status.
+    const subs = deriveSubagents([
+      agentToolUse(TOOL_USE_ID),
+      taskStarted(TOOL_USE_ID, 'task_1'),
+      taskNotification(TOOL_USE_ID, 'completed', 'good'),
+      taskUpdated('task_1', { status: 'failed', error: 'late conflict' }),
+    ]);
+    expect(subs[0].status).toBe('completed');
+    expect(subs[0].closureSource).toBe('task_notification');
+  });
+
+  it('still applies is_backgrounded after TaskNotification (mid-flight metadata is non-conflicting)', () => {
+    // is_backgrounded is descriptive metadata, not a status change. Even
+    // after a terminal TaskNotification, an is_backgrounded patch is
+    // information about how the dispatch ran and is safe to record.
+    const subs = deriveSubagents([
+      agentToolUse(TOOL_USE_ID),
+      taskStarted(TOOL_USE_ID, 'task_1'),
+      taskNotification(TOOL_USE_ID, 'completed'),
+      taskUpdated('task_1', { is_backgrounded: true }),
+    ]);
+    expect(subs[0].status).toBe('completed');
+    expect(subs[0].isBackground).toBe(true);
+  });
+
+  it('is a no-op when task_id matches no dispatched subagent (no orphan creation)', () => {
+    const subs = deriveSubagents([
+      taskUpdated('task_unknown', { is_backgrounded: true, status: 'completed' }),
+    ]);
+    expect(subs).toHaveLength(0);
+  });
+
+  it('sets endedAt from patch.end_time (unix ms) when terminating', () => {
+    const endTimeMs = Date.UTC(2026, 4, 13, 12, 0, 0); // 2026-05-13T12:00:00Z
+    const subs = deriveSubagents([
+      agentToolUse(TOOL_USE_ID),
+      taskStarted(TOOL_USE_ID, 'task_1'),
+      taskUpdated('task_1', { status: 'completed', end_time: endTimeMs }),
+    ]);
+    expect(subs[0].status).toBe('completed');
+    expect(subs[0].endedAt).toBe(new Date(endTimeMs).toISOString());
   });
 });
 

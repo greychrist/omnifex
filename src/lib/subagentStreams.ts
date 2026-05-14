@@ -41,6 +41,11 @@ export interface Subagent {
   // on the ACK — only TaskNotification(Xml) or the inferred-closure rule
   // do that.
   isBackground?: boolean;
+  /** Set from `SDKTaskUpdatedMessage.patch.error` when the SDK reports a
+   *  subagent failure. Undefined for successful subagents and for failures
+   *  that closed via tool_result / TaskNotification (which carry summaries
+   *  but not a structured error string). */
+  error?: string;
   /** Which carrier finalised this row, if any. `'parent_result'` indicates
    *  the inferred-closure path (no direct closure carrier was seen). */
   closureSource?: SubagentState['closureSource'];
@@ -107,6 +112,7 @@ export function deriveSubagents(messages: ClaudeStreamMessage[]): Subagent[] {
     summary: s.summary,
     colorIndex: colorIndexFor(s.toolUseId),
     isBackground: s.isBackground,
+    error: s.error,
     closureSource: s.closureSource,
   }));
 }

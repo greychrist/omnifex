@@ -1,6 +1,7 @@
 import type { ClaudeStreamMessage } from '@/types/claudeStream';
 import type { MessageRenderingConfig } from './messageRenderingConfig';
 import { isSubagentDispatch } from './subagentDispatch';
+import { KNOWN_TOOL_NAMES } from './types/toolInput';
 
 /**
  * Tool names with a specialized widget in `StreamMessage.tsx`. Matched
@@ -8,24 +9,26 @@ import { isSubagentDispatch } from './subagentDispatch';
  * picking a widget). Subagent dispatch (Task / Agent) and any tool whose
  * name starts with `mcp__` are also "known" but handled separately.
  *
- * Keep this list in sync with the `renderToolWidget` switch in
- * `StreamMessage.tsx`. Anything not listed here lands in the unknown
- * `Terminal` + JSON dump fallback and classifies as
- * `assistant.toolUse.unknown`.
+ * Derived from `KNOWN_TOOL_NAMES` (the typed bridge's tuple) so it can
+ * never desync from the typed widget switch. Two adjustments to that
+ * tuple's lowercased form:
+ *   - `task` and `agent` are removed because subagent dispatch is
+ *     handled by the separate `isSubagentDispatch(name)` branch in
+ *     `isKnownToolName` below.
+ *   - `askuserquestion` is added because while it doesn't render via
+ *     the tool-use widget switch (it's elevated to a first-order
+ *     standalone kind), per-block classification still recognizes
+ *     it as a known tool to avoid falling through to
+ *     `assistant.toolUse.unknown`.
+ *
+ * Anything not covered here OR by `isSubagentDispatch` OR by the
+ * `mcp__` prefix lands in the unknown `Terminal` + JSON dump fallback
+ * and classifies as `assistant.toolUse.unknown`.
  */
 const KNOWN_TOOL_NAMES_LOWER: ReadonlySet<string> = new Set([
-  'edit',
-  'multiedit',
-  'todowrite',
-  'todoread',
-  'ls',
-  'read',
-  'glob',
-  'bash',
-  'write',
-  'grep',
-  'websearch',
-  'webfetch',
+  ...KNOWN_TOOL_NAMES
+    .map((n) => n.toLowerCase())
+    .filter((n) => n !== 'task' && n !== 'agent'),
   'askuserquestion',
 ]);
 

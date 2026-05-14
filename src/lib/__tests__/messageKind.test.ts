@@ -315,6 +315,44 @@ describe('classifyStandaloneKind', () => {
     });
   });
 
+  describe('system.permission_denied', () => {
+    // SDKPermissionDeniedMessage (`type: 'system', subtype: 'permission_denied'`)
+    // is emitted when a tool call is auto-denied without an interactive
+    // permission prompt (auto-mode classifier, dontAsk mode, headless-agent
+    // auto-deny, or a deny rule). Until this kind was first-classed it
+    // fell through to `system.unknown` and rendered as a small gray inline
+    // strip — same treatment as a no-op telemetry event. Auto-deny is a
+    // user-facing action that needs distinct visual weight.
+    const sys = (extras: Record<string, unknown>): ClaudeStreamMessage =>
+      ({
+        type: 'system',
+        subtype: 'permission_denied',
+        ...extras,
+      } as unknown as ClaudeStreamMessage);
+
+    it('classifies the SDK auto-deny shape as system.permission_denied', () => {
+      expect(
+        classifyStandaloneKind(
+          sys({ tool_name: 'Bash', tool_use_id: 'tu_1', message: 'denied by deny rule' }),
+          [],
+        ),
+      ).toBe('system.permission_denied');
+    });
+
+    it('classifies the OmniFex hook synthetic shape as system.permission_denied', () => {
+      // `electron/services/sessions/hooks.ts:355` emits its own
+      // `system + permission_denied` row when the OmniFex PermissionDenied
+      // hook fires. Different field shape (`reason` instead of `message`)
+      // but the same kind classification — both are auto-deny events.
+      expect(
+        classifyStandaloneKind(
+          sys({ tool_name: 'Edit', reason: 'blocked by user rule' }),
+          [],
+        ),
+      ).toBe('system.permission_denied');
+    });
+  });
+
   describe('user.skillInjection / user.command / user.commandOutput', () => {
     const skillToolUse = (id: string, skill: string): ClaudeStreamMessage =>
       ({

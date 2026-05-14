@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { classifyBlockKind, isBlockHiddenInCompact } from '../blockKind';
 import { createDefaultConfig } from '../messageRenderingConfig';
+import { KNOWN_TOOL_NAMES } from '../types/toolInput';
 import type { ClaudeStreamMessage } from '@/types/claudeStream';
 
 // Test factories return a structural mock whose `.message.content` is always
@@ -58,6 +59,22 @@ describe('classifyBlockKind', () => {
     expect(classifyBlockKind(parent1.message!.content![0], parent1)).toBe('assistant.toolUse');
     const parent2 = assistant([{ type: 'tool_use', name: 'Agent', input: { description: 'x' } }]);
     expect(classifyBlockKind(parent2.message!.content![0], parent2)).toBe('assistant.toolUse');
+  });
+
+  // Single-source-of-truth invariant: every PascalCase name in
+  // `KNOWN_TOOL_NAMES` (the typed bridge's tuple) must classify as a known
+  // assistant.toolUse here — never `assistant.toolUse.unknown`. Previously
+  // blockKind kept its own hand-maintained lowercase set (`KNOWN_TOOL_NAMES_LOWER`)
+  // that had to stay in sync with the typed bridge by convention; the set
+  // is now derived from `KNOWN_TOOL_NAMES` so this invariant is enforced
+  // by construction. The test pins it so any future regression to manual
+  // maintenance breaks loudly.
+  it('classifies every name in KNOWN_TOOL_NAMES as a known assistant.toolUse', () => {
+    for (const name of KNOWN_TOOL_NAMES) {
+      const parent = assistant([{ type: 'tool_use', name, input: {} }]);
+      const got = classifyBlockKind(parent.message!.content![0], parent);
+      expect(got, `tool name "${name}" should not classify as unknown`).toBe('assistant.toolUse');
+    }
   });
 
   it('classifies any mcp__* tool_use as known', () => {

@@ -157,6 +157,11 @@ export function classifyStandaloneKind(
     }
     if (msg.subtype === 'hook_started') return 'system.hook.started';
     if (msg.subtype === 'hook_response') return 'system.hook.response';
+    // SDKPermissionDeniedMessage (auto-deny short-circuit) and the OmniFex
+    // PermissionDenied hook synthetic both ride this subtype. Classify
+    // both as one user-facing kind so the renderer can give them a
+    // distinct accent instead of the generic gray system.unknown strip.
+    if (msg.subtype === 'permission_denied') return 'system.permission_denied';
     // Legacy `user_prompt_submit` subtype check: this is a hook *event* name,
     // not an SDK message subtype (the SDK never emits a system message with
     // this subtype). Historical OmniFex JSONL may carry it; tolerate via a

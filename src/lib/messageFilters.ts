@@ -4,11 +4,15 @@ import { isSubagentPrompt } from "@/lib/subagentDispatch";
 import { detectSkillInjection } from "@/lib/skillDetection";
 import type { HardFilters } from "@/lib/messageRenderingConfig";
 
-// SDK subtypes the renderer treats as hook-lifecycle noise. `user_prompt_submit`
-// is a hook *event* name (not an SDK message subtype) but historical sessions
-// stamped it as a subtype, so it stays in the set for backward compatibility.
+// SDK subtypes the renderer treats as hook-lifecycle noise. `hook_progress`
+// (mid-hook stdout/stderr) belongs in the set because it's plumbing —
+// without it the message leaked into messages[] as system.unknown gray
+// strips. `user_prompt_submit` is a hook *event* name (not an SDK
+// message subtype) but historical sessions stamped it as a subtype,
+// so it stays in the set for backward compatibility.
 const HOOK_LIFECYCLE_SUBTYPES: ReadonlySet<string> = new Set([
   "hook_started",
+  "hook_progress",
   "hook_response",
   "user_prompt_submit",
 ]);

@@ -104,6 +104,7 @@ export const ALLOWED_ICONS = [
   "CircleHelp",
   // Status / feedback
   "ShieldCheck",
+  "ShieldX",
   "Eye",
   "EyeOff",
   "Lock",
@@ -551,6 +552,18 @@ export const DEFAULT_KINDS: MessageKindConfig[] = [
     accentColor: "muted",
     alignment: "full",
     hiddenInCompact: true,
+    compactBoundaryLocked: false,
+  },
+  {
+    id: "system.permission_denied",
+    label: "Permission denied (auto)",
+    description: "Tool call auto-denied without an interactive prompt — a deny rule, dontAsk mode, the auto-mode classifier, or a headless-agent auto-deny. Distinct from the interactive permission prompt; this fires when the user already pre-decided to refuse.",
+    origin: "system",
+    icon: "ShieldX",
+    headerLabel: null,
+    accentColor: "red",
+    alignment: "full",
+    hiddenInCompact: false,
     compactBoundaryLocked: false,
   },
   {
