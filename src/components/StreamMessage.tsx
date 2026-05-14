@@ -15,6 +15,7 @@ import { summarizeHiddenEvents } from "@/lib/hiddenEventsSummary";
 import { HiddenBlocksExpander } from "@/components/HiddenBlocksExpander";
 import { SubagentReturnedMarker } from "@/components/SubagentReturnedMarker";
 import { isSubagentDispatch } from "@/lib/subagentDispatch";
+import { extractResendPayload } from "@/lib/extractResendPayload";
 import { formatDurationMs } from "@/lib/duration";
 import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
@@ -67,29 +68,32 @@ import {
   SystemContextWidget
 } from "./ToolWidgets";
 
-/** Extract all meaningful text from a message for copying. */
+/** Extract all meaningful text from a message for copying.
+ *  Assumes content is already an array — see lib/normalizeMessage for the
+ *  ingress boundary that guarantees it. */
 function extractCopyText(msg: any): string {
+  if (!Array.isArray(msg?.content)) return '';
   const parts: string[] = [];
-  if (msg.content && Array.isArray(msg.content)) {
-    for (const c of msg.content) {
-      if (c.type === 'text' && typeof c.text === 'string') {
-        parts.push(c.text);
-      } else if (c.type === 'tool_use' && c.input) {
-        if (typeof c.input.command === 'string') parts.push(c.input.command);
-        else if (typeof c.input.content === 'string') parts.push(c.input.content);
-        else if (typeof c.input.pattern === 'string') parts.push(c.input.pattern);
-      } else if (c.type === 'tool_result') {
-        if (typeof c.content === 'string') parts.push(c.content);
-        else if (Array.isArray(c.content)) {
-          for (const inner of c.content) {
-            if (typeof inner === 'string') parts.push(inner);
-            else if (typeof inner.text === 'string') parts.push(inner.text);
-          }
+  for (const c of msg.content) {
+    if (c.type === 'text' && typeof c.text === 'string') {
+      parts.push(c.text);
+    } else if (c.type === 'tool_use' && c.input) {
+      // Tool-use inputs are arbitrary record shapes; pull out the well-known
+      // text-y fields so the copy button captures something readable.
+      if (typeof c.input.command === 'string') parts.push(c.input.command);
+      else if (typeof c.input.content === 'string') parts.push(c.input.content);
+      else if (typeof c.input.pattern === 'string') parts.push(c.input.pattern);
+    } else if (c.type === 'tool_result') {
+      // Tool_result blocks still legitimately carry either string or array
+      // content — that's not covered by the top-level normalization.
+      if (typeof c.content === 'string') parts.push(c.content);
+      else if (Array.isArray(c.content)) {
+        for (const inner of c.content) {
+          if (typeof inner === 'string') parts.push(inner);
+          else if (typeof inner.text === 'string') parts.push(inner.text);
         }
       }
     }
-  } else if (typeof msg.content === 'string') {
-    parts.push(msg.content);
   }
   return parts.join('\n').trim();
 }
@@ -197,15 +201,15 @@ const UserMessageActions: React.FC<{
   const handleResend = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (!onResend) return;
-    const content: any[] = Array.isArray(msg.content) ? msg.content : [];
-    const text = content
-      .filter((c: any) => c.type === 'text')
-      .map((c: any) => c.text as string)
-      .join('\n');
-    const images = content
-      .filter((c: any) => c.type === 'image' && c.source?.type === 'base64')
-      .map((c: any) => `data:${c.source.media_type};base64,${c.source.data}`);
-    onResend(text, images.length > 0 ? images : undefined);
+    // Use the shared extractor so we handle both shapes user messages arrive in:
+    //   • live SDK stream  → content is an array of typed blocks
+    //   • resumed/JSONL    → content is a raw string
+    // The previous inline implementation only handled the array shape, which
+    // made Resend a no-op on every resumed-session message (the empty text it
+    // produced was filtered out downstream and the IPC frame went out empty).
+    const { text, images } = extractResendPayload(msg);
+    if (!text && !images) return;
+    onResend(text, images);
   };
 
   return (
@@ -943,23 +947,23 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
         && msg.content.length > 0
         && msg.content.every((c: any) => c.type === "tool_result");
 
-      // Extract text content, handling nested content arrays from tool results
-      const contentStr = typeof msg.content === 'string'
-        ? msg.content
-        : Array.isArray(msg.content)
-          ? msg.content.map((c: any) => {
-              if (typeof c === 'string') return c;
-              if (typeof c.text === 'string') return c.text;
-              if (typeof c.content === 'string') return c.content;
-              // Handle nested content arrays (e.g. tool_result.content = [{ type: "text", text: "..." }])
-              if (Array.isArray(c.content)) {
-                return c.content.map((inner: any) =>
-                  typeof inner === 'string' ? inner : (typeof inner.text === 'string' ? inner.text : '')
-                ).join('');
-              }
-              return '';
-            }).join('')
-          : '';
+      // Extract text content, handling nested content arrays from tool results.
+      // Top-level content is always an array post boundary normalization
+      // (lib/normalizeMessage); the tool_result block content (`c.content`)
+      // can still legitimately be string OR array — tool-result block shape
+      // isn't covered by the top-level normalization.
+      const contentStr = Array.isArray(msg.content)
+        ? msg.content.map((c: any) => {
+            if (typeof c.text === 'string') return c.text;
+            if (typeof c.content === 'string') return c.content;
+            if (Array.isArray(c.content)) {
+              return c.content.map((inner: any) =>
+                typeof inner === 'string' ? inner : (typeof inner.text === 'string' ? inner.text : '')
+              ).join('');
+            }
+            return '';
+          }).join('')
+        : '';
 
       // Detect system-injected context (skills, CLAUDE.md, system-reminders,
       // and hook feedback like "Stop hook feedback: ...") and render as a
@@ -1035,11 +1039,9 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
       // including the previously-hardcoded skill-injection / command /
       // command-output cases.
       const isCommand = !isToolResultOnly && !isSubagentPrompt && !skillInjection
-        && typeof contentStr === 'string'
         && contentStr.includes('<command-name>');
       const isCommandOutput = !isToolResultOnly && !isSubagentPrompt && !skillInjection
         && !isCommand
-        && typeof contentStr === 'string'
         && contentStr.includes('<local-command-stdout>');
       const userKindId = isToolResultOnly
         ? "tool.result.generic"
@@ -1113,55 +1115,64 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                     Skill: {skillInjection.skillName}
                   </div>
                 )}
-                {/* Handle content that is a simple string (e.g. from user commands) */}
-                {(typeof msg.content === 'string' || (msg.content && !Array.isArray(msg.content))) && (
-                  (() => {
-                    const contentStr = typeof msg.content === 'string' ? msg.content : String(msg.content);
-                    if (contentStr.trim() === '') return null;
+                {/* Render every block of the user message's content array.
+                    Boundary normalization (lib/normalizeMessage) guarantees
+                    `msg.content` is always an array here — JSONL strings get
+                    wrapped into a single text block at ingress. */}
+                {(msg.content as any[]).map((content: any, idx: number) => {
+                  // Text block.
+                  //
+                  // Plain `/clear`-style slash invocations and their local
+                  // stdout responses arrive as text whose body is a
+                  // pseudo-XML envelope. Render those through the dedicated
+                  // widgets so the card looks the same as it did before
+                  // boundary normalization; also extract inline
+                  // `@/path/to/image.png` references as DownloadableImages.
+                  if (content.type === "text") {
+                    const text = typeof content.text === 'string' ? content.text : '';
                     renderedSomething = true;
 
-                    // Check if it's a command message
-                    const commandMatch = /<command-name>(.+?)<\/command-name>[\s\S]*?<command-message>(.+?)<\/command-message>[\s\S]*?<command-args>(.*?)<\/command-args>/.exec(contentStr);
-                    if (commandMatch) {
-                      const [, commandName, commandMessage, commandArgs] = commandMatch;
+                    const slashMatch = text.match(/<command-name>(.+?)<\/command-name>[\s\S]*?<command-message>(.+?)<\/command-message>[\s\S]*?<command-args>(.*?)<\/command-args>/);
+                    if (slashMatch) {
+                      const [, slashName, slashMessage, slashArgs] = slashMatch;
                       return (
                         <CommandWidget
-                          commandName={commandName.trim()}
-                          commandMessage={commandMessage.trim()}
-                          commandArgs={commandArgs?.trim()}
+                          key={idx}
+                          commandName={slashName.trim()}
+                          commandMessage={slashMessage.trim()}
+                          commandArgs={slashArgs?.trim()}
                         />
                       );
                     }
 
-                    // Check if it's command output
-                    const stdoutMatch = /<local-command-stdout>([\s\S]*?)<\/local-command-stdout>/.exec(contentStr);
+                    const stdoutMatch = text.match(/<local-command-stdout>([\s\S]*?)<\/local-command-stdout>/);
                     if (stdoutMatch) {
                       const [, output] = stdoutMatch;
-                      return <CommandOutputWidget output={output} onLinkDetected={onLinkDetected} />;
+                      return <CommandOutputWidget key={idx} output={output} onLinkDetected={onLinkDetected} />;
                     }
 
-                    // Extract @-mentioned image paths and render them inline
                     const imagePathRegex = /@(\/[^\s@]+\.(?:png|jpe?g|gif|webp|svg))/gi;
                     const imagePaths: string[] = [];
-                    let textWithoutImages = contentStr;
                     let match;
-                    while ((match = imagePathRegex.exec(contentStr)) !== null) {
+                    while ((match = imagePathRegex.exec(text)) !== null) {
                       imagePaths.push(match[1]);
                     }
-                    textWithoutImages = contentStr.replace(imagePathRegex, '').trim();
+                    const textWithoutImages = imagePaths.length > 0
+                      ? text.replace(imagePathRegex, '').trim()
+                      : text;
 
                     return (
-                      <div>
+                      <div key={idx}>
                         {textWithoutImages && (
                           <div
-                            className={cn(contentClassNames(renderConfig), "mb-2")}
+                            className={cn(contentClassNames(renderConfig), "whitespace-pre-wrap")}
                             style={{ fontFamily: typographyFontFamily(renderConfig.typography.content) }}
                           >
                             {textWithoutImages}
                           </div>
                         )}
                         {imagePaths.length > 0 && (
-                          <div className="flex flex-wrap gap-2">
+                          <div className="flex flex-wrap gap-2 mt-2">
                             {imagePaths.map((p, i) => (
                               <DownloadableImage
                                 key={i}
@@ -1172,24 +1183,6 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                             ))}
                           </div>
                         )}
-                      </div>
-                    );
-                  })()
-                )}
-
-                {/* Handle content that is an array of parts */}
-                {Array.isArray(msg.content) && msg.content.map((content: any, idx: number) => {
-                  // Text block
-                  if (content.type === "text") {
-                    renderedSomething = true;
-                    return (
-                      <div key={idx}>
-                        <div
-                          className={cn(contentClassNames(renderConfig), "whitespace-pre-wrap")}
-                          style={{ fontFamily: typographyFontFamily(renderConfig.typography.content) }}
-                        >
-                          {content.text}
-                        </div>
                       </div>
                     );
                   }

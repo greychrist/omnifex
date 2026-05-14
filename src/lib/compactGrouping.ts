@@ -72,17 +72,14 @@ export function isMessageFullyHidden(
     return k.hiddenInCompact;
   }
 
-  // The CLI's persisted user prompts are bare strings (live SDK uses an
-  // array of text blocks). `getMessageContent` returns `unknown` so the
-  // typeof / Array.isArray branches below narrow cleanly.
-  const content = getMessageContent(msg);
-  // Treat any non-empty string as a visible user prompt — early-returning
-  // "fully hidden" here was sweeping reloaded prompts into hidden groups.
-  if (typeof content === 'string') return content.trim().length === 0;
+  // Boundary normalization (lib/normalizeMessage) wraps the CLI's persisted
+  // bare-string user prompts into single-text-block arrays at ingress, so
+  // every message reaches this point with array-shaped content.
   // No content / empty content = nothing to render. Treat as hidden so the
   // message joins any neighboring hidden run instead of breaking it.
   // (Emitting it as a visible "single" would inject an empty card that
   // fragments runs visually for no reason.)
+  const content = getMessageContent(msg);
   if (!Array.isArray(content) || content.length === 0) return true;
 
   let renderable = 0;

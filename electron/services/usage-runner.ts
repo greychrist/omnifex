@@ -7,6 +7,7 @@ import { resetsLabelToEpoch } from './usage-runner/resets-label';
 import { ensureTrustedScratchCwd } from './usage-runner/scratch-cwd';
 import { repairCorruptedWords } from './usage-runner/repair';
 import type { LoggingService } from './logging';
+import { buildClaudeEnv } from './util/claude-env';
 
 export interface FakePty {
   write(data: string): void;
@@ -203,7 +204,7 @@ export function createUsageRunnerService(deps: UsageRunnerDeps): UsageRunnerServ
     try {
       pty = spawnPty(binary, [], {
         cwd,
-        env: { ...process.env, CLAUDE_CONFIG_DIR: configDir },
+        env: buildClaudeEnv(configDir),
         cols: 200,
         rows: 60,
       });

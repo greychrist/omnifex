@@ -8,6 +8,7 @@ import os from 'node:os';
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import type { ModelInfo } from '@anthropic-ai/claude-agent-sdk';
 import { findBundledSdkBinaryAuto } from './claude-binary';
+import { buildClaudeEnv } from './util/claude-env';
 
 export interface ModelsService {
   listSupported(configDir: string): Promise<ModelInfo[]>;
@@ -35,12 +36,12 @@ export function createModelsService(opts: ModelsServiceOptions = {}): ModelsServ
   const timeoutMs = opts.timeoutMs ?? 8000;
 
   async function listSupported(configDir: string): Promise<ModelInfo[]> {
-    if (!configDir) {
-      throw new Error('configDir is required to list supported models');
-    }
-
+    // buildClaudeEnv enforces non-empty configDir AND rejects ~/.claude.
+    // We previously only checked emptiness here; rolling the validation
+    // into the env builder means the same guard fires uniformly across
+    // every spawn site.
     const options: Record<string, unknown> = {
-      env: { ...process.env, CLAUDE_CONFIG_DIR: configDir },
+      env: buildClaudeEnv(configDir),
       settingSources: [] as string[],
     };
     const binaryPath = findSystemClaudeBinary();
