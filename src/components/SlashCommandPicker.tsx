@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { api, type SlashCommand } from "@/lib/api";
@@ -49,6 +49,22 @@ const SCOPE_FILTERS: { value: ScopeFilter; label: string }[] = [
 ];
 
 const DESCRIPTION_PREVIEW_LENGTH = 60;
+
+const toSlashCommands = (sdkCommands: import("@/lib/api").SessionSlashCommand[]): SlashCommand[] =>
+  sdkCommands.map(cmd => ({
+    id: `default::${cmd.name}`,
+    name: cmd.name,
+    full_command: `/${cmd.name}`,
+    namespace: '',
+    scope: 'default' as const,
+    content: '',
+    description: cmd.description || '',
+    allowed_tools: [] as string[],
+    file_path: '',
+    has_bash_commands: false,
+    has_file_references: false,
+    accepts_arguments: !!cmd.argumentHint,
+  }));
 
 /**
  * Merge default and custom command lists. When a command name appears in both,
@@ -113,10 +129,51 @@ export const SlashCommandPicker: React.FC<SlashCommandPickerProps> = ({
 
   const commandListRef = useRef<HTMLDivElement>(null);
 
-  // Load commands on mount
+  const loadCommands = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+
+      const customCommands = await api.slashCommandsList(projectPath, configDir);
+
+      let defaultCommands: SlashCommand[] = [];
+      if (tabId) {
+        try {
+          const sdkCommands = await api.sessionSupportedCommands(tabId);
+          if (sdkCommands?.length) {
+            defaultCommands = toSlashCommands(sdkCommands);
+          }
+        } catch {
+          // Session may not be ready yet
+        }
+      }
+      if (!defaultCommands.length && prefetchedCommands?.length) {
+        defaultCommands = toSlashCommands(prefetchedCommands);
+      }
+
+      const merged = deduplicateCommands(defaultCommands, customCommands);
+      // Final safety: deduplicate by full_command in case any slip through
+      const seen = new Set<string>();
+      const unique = merged.filter(cmd => {
+        if (seen.has(cmd.full_command)) return false;
+        seen.add(cmd.full_command);
+        return true;
+      });
+      setCommands(unique);
+    } catch (err) {
+      console.error("Failed to load slash commands:", err);
+      setError(err instanceof Error ? err.message : 'Failed to load commands');
+      setCommands([]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [projectPath, configDir, tabId, prefetchedCommands]);
+
+  // Load commands on mount (re-runs when the loadCommands callback changes,
+  // i.e. when projectPath, configDir, tabId, or prefetchedCommands change).
   useEffect(() => {
     logAndForget('slash-command-picker:load-commands', loadCommands());
-  }, [projectPath, configDir, tabId]);
+  }, [loadCommands]);
 
   // Filter + sort
   const filteredCommands = useMemo(() => {
@@ -207,62 +264,6 @@ export const SlashCommandPicker: React.FC<SlashCommandPickerProps> = ({
       el?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     }
   }, [selectedIndex]);
-
-  const toSlashCommands = (sdkCommands: import("@/lib/api").SessionSlashCommand[]): SlashCommand[] =>
-    sdkCommands.map(cmd => ({
-      id: `default::${cmd.name}`,
-      name: cmd.name,
-      full_command: `/${cmd.name}`,
-      namespace: '',
-      scope: 'default' as const,
-      content: '',
-      description: cmd.description || '',
-      allowed_tools: [] as string[],
-      file_path: '',
-      has_bash_commands: false,
-      has_file_references: false,
-      accepts_arguments: !!cmd.argumentHint,
-    }));
-
-  const loadCommands = async () => {
-    try {
-      setIsLoading(true);
-      setError(null);
-
-      const customCommands = await api.slashCommandsList(projectPath, configDir);
-
-      let defaultCommands: SlashCommand[] = [];
-      if (tabId) {
-        try {
-          const sdkCommands = await api.sessionSupportedCommands(tabId);
-          if (sdkCommands?.length) {
-            defaultCommands = toSlashCommands(sdkCommands);
-          }
-        } catch {
-          // Session may not be ready yet
-        }
-      }
-      if (!defaultCommands.length && prefetchedCommands?.length) {
-        defaultCommands = toSlashCommands(prefetchedCommands);
-      }
-
-      const merged = deduplicateCommands(defaultCommands, customCommands);
-      // Final safety: deduplicate by full_command in case any slip through
-      const seen = new Set<string>();
-      const unique = merged.filter(cmd => {
-        if (seen.has(cmd.full_command)) return false;
-        seen.add(cmd.full_command);
-        return true;
-      });
-      setCommands(unique);
-    } catch (err) {
-      console.error("Failed to load slash commands:", err);
-      setError(err instanceof Error ? err.message : 'Failed to load commands');
-      setCommands([]);
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   // Update search query from parent
   useEffect(() => {
