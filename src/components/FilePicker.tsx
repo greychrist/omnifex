@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
@@ -136,14 +136,112 @@ export const FilePicker: React.FC<FilePickerProps> = ({
   const canGoBack = pathHistory.length > 1;
   
   // Get relative path for display
-  const relativePath = currentPath.startsWith(basePath) 
+  const relativePath = currentPath.startsWith(basePath)
     ? currentPath.slice(basePath.length) || '/'
     : currentPath;
+
+  const loadDirectory = useCallback(async (path: string) => {
+    try {
+      console.log('[FilePicker] Loading directory:', path);
+
+      // Check cache first and show immediately
+      if (globalDirectoryCache.has(path)) {
+        console.log('[FilePicker] Showing cached contents for:', path);
+        setEntries(globalDirectoryCache.get(path) || []);
+        setIsShowingCached(true);
+        setError(null);
+      } else {
+        // Only show loading if we don't have cached data
+        setIsLoading(true);
+      }
+
+      // Always fetch fresh data in background
+      const contents = await api.listDirectoryContents(path);
+      console.log('[FilePicker] Loaded fresh contents:', contents.length, 'items');
+
+      // Cache the results
+      globalDirectoryCache.set(path, contents);
+
+      // Update with fresh data
+      setEntries(contents);
+      setIsShowingCached(false);
+      setError(null);
+    } catch (err) {
+      console.error('[FilePicker] Failed to load directory:', path, err);
+      console.error('[FilePicker] Error details:', err);
+      // Only set error if we don't have cached data to show
+      if (!globalDirectoryCache.has(path)) {
+        setError(err instanceof Error ? err.message : 'Failed to load directory');
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  const performSearch = useCallback(async (query: string) => {
+    try {
+      console.log('[FilePicker] Searching for:', query, 'in:', basePath);
+
+      // Create cache key that includes both query and basePath
+      const cacheKey = `${basePath}:${query}`;
+
+      // Check cache first and show immediately
+      if (globalSearchCache.has(cacheKey)) {
+        console.log('[FilePicker] Showing cached search results for:', query);
+        setSearchResults(globalSearchCache.get(cacheKey) || []);
+        setIsShowingCached(true);
+        setError(null);
+      } else {
+        // Only show loading if we don't have cached data
+        setIsLoading(true);
+      }
+
+      // Always fetch fresh results in background
+      const results = await api.searchFiles(basePath, query);
+      console.log('[FilePicker] Fresh search results:', results.length, 'items');
+
+      // Cache the results
+      globalSearchCache.set(cacheKey, results);
+
+      // Update with fresh results
+      setSearchResults(results);
+      setIsShowingCached(false);
+      setError(null);
+    } catch (err) {
+      console.error('[FilePicker] Search failed:', query, err);
+      // Only set error if we don't have cached data to show
+      const cacheKey = `${basePath}:${query}`;
+      if (!globalSearchCache.has(cacheKey)) {
+        setError(err instanceof Error ? err.message : 'Search failed');
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  }, [basePath]);
+
+  const navigateToDirectory = useCallback((path: string) => {
+    setCurrentPath(path);
+    setPathHistory(prev => [...prev, path]);
+  }, []);
+
+  const navigateBack = useCallback(() => {
+    if (pathHistory.length > 1) {
+      const newHistory = [...pathHistory];
+      newHistory.pop(); // Remove current
+      const previousPath = newHistory[newHistory.length - 1];
+
+      // Don't go beyond the base path
+      if (previousPath.startsWith(basePath) || previousPath === basePath) {
+        setCurrentPath(previousPath);
+        setPathHistory(newHistory);
+      }
+    }
+  }, [pathHistory, basePath]);
 
   // Load directory contents
   useEffect(() => {
     logAndForget('file-picker:load-directory', loadDirectory(currentPath));
-  }, [currentPath]);
+  }, [currentPath, loadDirectory]);
 
   // Debounced search
   useEffect(() => {
@@ -176,7 +274,7 @@ export const FilePicker: React.FC<FilePickerProps> = ({
         clearTimeout(searchDebounceRef.current);
       }
     };
-  }, [searchQuery, basePath]);
+  }, [searchQuery, basePath, performSearch]);
 
   // Reset selected index when entries change
   useEffect(() => {
@@ -235,7 +333,7 @@ export const FilePicker: React.FC<FilePickerProps> = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => { window.removeEventListener('keydown', handleKeyDown); };
-  }, [entries, searchResults, selectedIndex, searchQuery, canGoBack]);
+  }, [entries, searchResults, selectedIndex, searchQuery, canGoBack, navigateBack, navigateToDirectory, onClose, onSelect]);
 
   // Scroll selected item into view
   useEffect(() => {
@@ -246,104 +344,6 @@ export const FilePicker: React.FC<FilePickerProps> = ({
       }
     }
   }, [selectedIndex]);
-
-  const loadDirectory = async (path: string) => {
-    try {
-      console.log('[FilePicker] Loading directory:', path);
-      
-      // Check cache first and show immediately
-      if (globalDirectoryCache.has(path)) {
-        console.log('[FilePicker] Showing cached contents for:', path);
-        setEntries(globalDirectoryCache.get(path) || []);
-        setIsShowingCached(true);
-        setError(null);
-      } else {
-        // Only show loading if we don't have cached data
-        setIsLoading(true);
-      }
-      
-      // Always fetch fresh data in background
-      const contents = await api.listDirectoryContents(path);
-      console.log('[FilePicker] Loaded fresh contents:', contents.length, 'items');
-      
-      // Cache the results
-      globalDirectoryCache.set(path, contents);
-      
-      // Update with fresh data
-      setEntries(contents);
-      setIsShowingCached(false);
-      setError(null);
-    } catch (err) {
-      console.error('[FilePicker] Failed to load directory:', path, err);
-      console.error('[FilePicker] Error details:', err);
-      // Only set error if we don't have cached data to show
-      if (!globalDirectoryCache.has(path)) {
-        setError(err instanceof Error ? err.message : 'Failed to load directory');
-      }
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const performSearch = async (query: string) => {
-    try {
-      console.log('[FilePicker] Searching for:', query, 'in:', basePath);
-      
-      // Create cache key that includes both query and basePath
-      const cacheKey = `${basePath}:${query}`;
-      
-      // Check cache first and show immediately
-      if (globalSearchCache.has(cacheKey)) {
-        console.log('[FilePicker] Showing cached search results for:', query);
-        setSearchResults(globalSearchCache.get(cacheKey) || []);
-        setIsShowingCached(true);
-        setError(null);
-      } else {
-        // Only show loading if we don't have cached data
-        setIsLoading(true);
-      }
-      
-      // Always fetch fresh results in background
-      const results = await api.searchFiles(basePath, query);
-      console.log('[FilePicker] Fresh search results:', results.length, 'items');
-      
-      // Cache the results
-      globalSearchCache.set(cacheKey, results);
-      
-      // Update with fresh results
-      setSearchResults(results);
-      setIsShowingCached(false);
-      setError(null);
-    } catch (err) {
-      console.error('[FilePicker] Search failed:', query, err);
-      // Only set error if we don't have cached data to show
-      const cacheKey = `${basePath}:${query}`;
-      if (!globalSearchCache.has(cacheKey)) {
-        setError(err instanceof Error ? err.message : 'Search failed');
-      }
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const navigateToDirectory = (path: string) => {
-    setCurrentPath(path);
-    setPathHistory(prev => [...prev, path]);
-  };
-
-  const navigateBack = () => {
-    if (pathHistory.length > 1) {
-      const newHistory = [...pathHistory];
-      newHistory.pop(); // Remove current
-      const previousPath = newHistory[newHistory.length - 1];
-      
-      // Don't go beyond the base path
-      if (previousPath.startsWith(basePath) || previousPath === basePath) {
-        setCurrentPath(previousPath);
-        setPathHistory(newHistory);
-      }
-    }
-  };
 
   const handleEntryClick = (entry: FileEntry) => {
     // Single click always selects (file or directory)
