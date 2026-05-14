@@ -157,6 +157,94 @@ export function isResultMessage(
   return msg.type === 'result';
 }
 
+// ---------------------------------------------------------------------------
+// Content block discriminated union
+// ---------------------------------------------------------------------------
+//
+// The Anthropic SDK ships full beta block types (BetaTextBlock,
+// BetaToolUseBlock, …) at @anthropic-ai/sdk/resources/beta/messages, but
+// @anthropic-ai/sdk is a transitive dep of the agent SDK and not in
+// OmniFex's package.json. Rather than depend on the beta module's path
+// stability, we declare a local mirror covering only the discriminants /
+// fields OmniFex's renderer actually reads. Add fields here when a new
+// consumer needs them — don't reach into `as any` at call sites.
+//
+// Optional fields use `unknown` rather than precise types because the wire
+// payload is wider than the SDK's compile-time type (e.g. tool_result.content
+// can be string | array). Callers that need the precise shape should narrow
+// at use site with their own guards.
+
+export interface MessageTextBlock {
+  type: 'text';
+  text: string;
+  citations?: unknown;
+}
+
+export interface MessageThinkingBlock {
+  type: 'thinking';
+  thinking: string;
+  signature?: string;
+}
+
+export interface MessageRedactedThinkingBlock {
+  type: 'redacted_thinking';
+  data?: string;
+}
+
+export interface MessageToolUseBlock {
+  type: 'tool_use';
+  id: string;
+  name: string;
+  input: Record<string, unknown>;
+  caller?: unknown;
+}
+
+export interface MessageServerToolUseBlock {
+  type: 'server_tool_use';
+  id?: string;
+  name?: string;
+  input?: Record<string, unknown>;
+}
+
+export interface MessageImageBlock {
+  type: 'image';
+  source?: {
+    type?: string;
+    media_type?: string;
+    data?: string;
+  };
+}
+
+export interface MessageToolResultBlock {
+  type: 'tool_result';
+  tool_use_id: string;
+  content?: string | (MessageTextBlock | MessageImageBlock | { type: string; text?: string })[];
+  is_error?: boolean;
+}
+
+/** Server-side code-execution result blocks (bash / text editor variants). */
+export interface MessageCodeExecutionResultBlock {
+  type: 'bash_code_execution_tool_result' | 'text_editor_code_execution_tool_result';
+  tool_use_id?: string;
+  content?: unknown;
+}
+
+/**
+ * Union of every content-block shape OmniFex's renderer touches. Use with
+ * `Array.isArray(content)` and switch on `block.type` to narrow. Unknown
+ * future block types should fall through to a typed default — do NOT use
+ * `as any` to bypass exhaustiveness.
+ */
+export type MessageContentBlock =
+  | MessageTextBlock
+  | MessageThinkingBlock
+  | MessageRedactedThinkingBlock
+  | MessageToolUseBlock
+  | MessageServerToolUseBlock
+  | MessageImageBlock
+  | MessageToolResultBlock
+  | MessageCodeExecutionResultBlock;
+
 /**
  * Returns the inner content blocks for an assistant or user message, `undefined`
  * for any other variant. Always an array post boundary-normalization (see

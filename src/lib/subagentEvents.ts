@@ -21,7 +21,20 @@
  * post-pass inference rule to produce the legacy `Subagent[]` shape.
  */
 
-import type { ClaudeStreamMessage } from '@/types/claudeStream';
+import type {
+  SDKTaskNotificationMessage,
+  SDKTaskProgressMessage,
+  SDKTaskStartedMessage,
+  SDKTaskUpdatedMessage,
+} from '@anthropic-ai/claude-agent-sdk';
+import type { ClaudeStreamMessage, MessageContentBlock } from '@/types/claudeStream';
+
+/** Type predicate covering every SDK task_* lifecycle subtype the renderer cares about. */
+type TaskLifecycleMessage =
+  | SDKTaskStartedMessage
+  | SDKTaskProgressMessage
+  | SDKTaskNotificationMessage
+  | SDKTaskUpdatedMessage;
 
 // ---------------------------------------------------------------------------
 // Public state types
@@ -160,9 +173,11 @@ function parseTaskNotificationXml(text: string): ParsedTaskNotification | null {
   };
 }
 
-export function isTaskLifecycleMarker(m: unknown): boolean {
-  const msg = m as { type?: string; subtype?: string } | null;
-  return !!msg && msg.type === 'system' && typeof msg.subtype === 'string' && msg.subtype.startsWith('task_');
+export function isTaskLifecycleMarker(m: unknown): m is TaskLifecycleMessage {
+  if (!m || typeof m !== 'object') return false;
+  const obj = m as { type?: unknown; subtype?: unknown };
+  if (obj.type !== 'system') return false;
+  return typeof obj.subtype === 'string' && obj.subtype.startsWith('task_');
 }
 
 // ---------------------------------------------------------------------------
@@ -182,24 +197,25 @@ export function messagesToEvents(messages: ClaudeStreamMessage[]): SubagentEvent
   const events: SubagentEvent[] = [];
 
   for (let i = 0; i < messages.length; i++) {
-    const m = messages[i] as any;
+    const m = messages[i];
 
     // 1. Dispatch — assistant tool_use blocks where the tool either is
     //    Agent/Task explicitly OR rides run_in_background:true (background
     //    Bash etc.). Without the background branch, long-running shell
     //    dispatches wouldn't surface until task_started fires.
-    if (m?.type === 'assistant' && Array.isArray(m.message?.content)) {
-      for (const block of m.message.content) {
-        if (block?.type !== 'tool_use' || !block.id) continue;
+    if (m.type === 'assistant' && Array.isArray(m.message.content)) {
+      for (const block of m.message.content as MessageContentBlock[]) {
+        if (block.type !== 'tool_use' || !block.id) continue;
         const isAgentTool = block.name === 'Agent' || block.name === 'Task';
-        const isBackgroundDispatch = block.input?.run_in_background === true;
+        const input = block.input;
+        const isBackgroundDispatch = input.run_in_background === true;
         if (!isAgentTool && !isBackgroundDispatch) continue;
         events.push({
           kind: 'Dispatched',
           toolUseId: block.id,
           messageIdx: i,
-          description: block.input?.description ?? '',
-          agentType: isAgentTool ? block.input?.subagent_type : undefined,
+          description: typeof input.description === 'string' ? input.description : '',
+          agentType: isAgentTool && typeof input.subagent_type === 'string' ? input.subagent_type : undefined,
           isBackground: isBackgroundDispatch,
         });
       }
@@ -210,10 +226,10 @@ export function messagesToEvents(messages: ClaudeStreamMessage[]): SubagentEvent
     //    whether to interpret them as completion or as a background ACK
     //    based on the dispatch's `isBackground` flag, which was captured at
     //    Dispatched-event time.
-    if (m?.type === 'user' && Array.isArray(m.message?.content)) {
-      for (const block of m.message.content) {
-        if (block?.type !== 'tool_result') continue;
-        const id: string | undefined = block.tool_use_id;
+    if (m.type === 'user' && m.message && Array.isArray(m.message.content)) {
+      for (const block of m.message.content as MessageContentBlock[]) {
+        if (block.type !== 'tool_result') continue;
+        const id = block.tool_use_id;
         if (!id) continue;
         events.push({
           kind: 'ToolResult',
@@ -229,42 +245,47 @@ export function messagesToEvents(messages: ClaudeStreamMessage[]): SubagentEvent
     if (isTaskLifecycleMarker(m)) {
       // task_updated rides a different shape from task_started /
       // task_progress / task_notification: keyed by `task_id` only
-      // (no tool_use_id) and carries a `patch` object. Handle it
-      // BEFORE the `if (!id) continue;` guard below, which would
-      // otherwise drop it.
-      if (m.subtype === 'task_updated' && typeof m.task_id === 'string' && m.patch && typeof m.patch === 'object') {
-        const p = m.patch as Record<string, unknown>;
-        events.push({
-          kind: 'TaskUpdated',
-          taskId: m.task_id,
-          patch: {
-            status: typeof p.status === 'string' ? (p.status as 'pending' | 'running' | 'completed' | 'failed' | 'killed') : undefined,
-            description: typeof p.description === 'string' ? p.description : undefined,
-            endTimeMs: typeof p.end_time === 'number' ? p.end_time : undefined,
-            totalPausedMs: typeof p.total_paused_ms === 'number' ? p.total_paused_ms : undefined,
-            error: typeof p.error === 'string' ? p.error : undefined,
-            isBackgrounded: typeof p.is_backgrounded === 'boolean' ? p.is_backgrounded : undefined,
-          },
-        });
+      // (no tool_use_id) and carries a `patch` object. Handle it as
+      // its own branch so TS can narrow `m` for the tool_use_id-bearing
+      // siblings below.
+      if (m.subtype === 'task_updated') {
+        if (typeof m.task_id === 'string' && m.patch && typeof m.patch === 'object') {
+          const p = m.patch as Record<string, unknown>;
+          events.push({
+            kind: 'TaskUpdated',
+            taskId: m.task_id,
+            patch: {
+              status: typeof p.status === 'string' ? (p.status as 'pending' | 'running' | 'completed' | 'failed' | 'killed') : undefined,
+              description: typeof p.description === 'string' ? p.description : undefined,
+              endTimeMs: typeof p.end_time === 'number' ? p.end_time : undefined,
+              totalPausedMs: typeof p.total_paused_ms === 'number' ? p.total_paused_ms : undefined,
+              error: typeof p.error === 'string' ? p.error : undefined,
+              isBackgrounded: typeof p.is_backgrounded === 'boolean' ? p.is_backgrounded : undefined,
+            },
+          });
+        }
         continue;
       }
 
-      const id: string | undefined = m.tool_use_id;
+      // Remaining variants (task_started, task_progress, task_notification) all
+      // share the optional `tool_use_id` field. Skip if absent.
+      const id = m.tool_use_id;
       if (!id) continue;
       if (m.subtype === 'task_started') {
-        events.push({ kind: 'Started', toolUseId: id, taskId: m.task_id, description: m.description ?? '' });
+        events.push({ kind: 'Started', toolUseId: id, taskId: m.task_id, description: m.description });
       } else if (m.subtype === 'task_progress') {
         events.push({
           kind: 'Progress',
           toolUseId: id,
-          description: m.description ?? '',
+          description: m.description,
           lastToolName: m.last_tool_name,
-          totalTokens: m.usage?.total_tokens,
-          toolUses: m.usage?.tool_uses,
-          durationMs: m.usage?.duration_ms,
+          totalTokens: m.usage.total_tokens,
+          toolUses: m.usage.tool_uses,
+          durationMs: m.usage.duration_ms,
           taskId: m.task_id,
         });
-      } else if (m.subtype === 'task_notification') {
+      } else {
+        // task_notification
         events.push({
           kind: 'TaskNotification',
           toolUseId: id,
@@ -535,7 +556,7 @@ export function inferredClosureEvents(
     if (dispatchedAt === undefined) continue;
     let resultIdx = -1;
     for (let i = dispatchedAt + 1; i < messages.length; i++) {
-      if ((messages[i] as any)?.type === 'result') {
+      if (messages[i].type === 'result') {
         resultIdx = i;
         break;
       }

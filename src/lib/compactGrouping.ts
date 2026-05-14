@@ -1,4 +1,4 @@
-import type { ClaudeStreamMessage } from '@/types/claudeStream';
+import type { ClaudeStreamMessage, MessageContentBlock } from '@/types/claudeStream';
 import { getMessageContent } from '@/types/claudeStream';
 import type { MessageRenderingConfig } from './messageRenderingConfig';
 import { classifyStandaloneKind } from './messageKind';
@@ -27,9 +27,8 @@ export type CompactItem =
 function hasTodoWriteToolUse(msg: ClaudeStreamMessage): boolean {
   const content = getMessageContent(msg);
   if (!Array.isArray(content)) return false;
-  return content.some(
-    (c: any) =>
-      c?.type === 'tool_use' && typeof c?.name === 'string' && c.name.toLowerCase() === 'todowrite',
+  return (content as MessageContentBlock[]).some(
+    (c) => c.type === 'tool_use' && c.name.toLowerCase() === 'todowrite',
   );
 }
 
@@ -40,17 +39,11 @@ function findLastTodoWriteIndex(messages: ClaudeStreamMessage[]): number {
   return -1;
 }
 
-function isRenderableBlock(b: any): boolean {
+function isRenderableBlock(b: MessageContentBlock | null | undefined): boolean {
   if (!b || typeof b !== 'object') return false;
   if (b.type === 'tool_use' || b.type === 'tool_result' || b.type === 'image') return true;
-  if (b.type === 'text') {
-    const t = typeof b.text === 'string' ? b.text.trim() : '';
-    return t.length > 0;
-  }
-  if (b.type === 'thinking') {
-    const t = typeof b.thinking === 'string' ? b.thinking.trim() : '';
-    return t.length > 0;
-  }
+  if (b.type === 'text') return b.text.trim().length > 0;
+  if (b.type === 'thinking') return b.thinking.trim().length > 0;
   return false;
 }
 
@@ -84,7 +77,7 @@ export function isMessageFullyHidden(
 
   let renderable = 0;
   let hidden = 0;
-  for (const b of content) {
+  for (const b of content as MessageContentBlock[]) {
     if (!isRenderableBlock(b)) continue;
     renderable += 1;
     const blockKind = classifyBlockKind(b, msg);

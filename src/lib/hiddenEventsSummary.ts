@@ -1,4 +1,4 @@
-import type { ClaudeStreamMessage } from '@/types/claudeStream';
+import type { ClaudeStreamMessage, MessageContentBlock } from '@/types/claudeStream';
 import { getMessageContent } from '@/types/claudeStream';
 
 interface Counts {
@@ -54,18 +54,16 @@ function tally(messages: ClaudeStreamMessage[]): Counts {
     }
     const content = getMessageContent(m);
     if (!Array.isArray(content)) continue;
-    for (const b of content) {
+    for (const b of content as MessageContentBlock[]) {
       if (!b || typeof b !== 'object') continue;
-      if (b.type === 'tool_use' && typeof b.name === 'string') {
+      if (b.type === 'tool_use') {
         c[bucketTool(b.name)] += 1;
       } else if (b.type === 'tool_result') {
         c.toolResult += 1;
       } else if (b.type === 'thinking') {
-        const t = typeof b.thinking === 'string' ? b.thinking.trim() : '';
-        if (t.length > 0) c.thinking += 1;
+        if (b.thinking.trim().length > 0) c.thinking += 1;
       } else if (b.type === 'text') {
-        const t = typeof b.text === 'string' ? b.text.trim() : '';
-        if (t.length > 0) c.text += 1;
+        if (b.text.trim().length > 0) c.text += 1;
       }
     }
   }
@@ -132,16 +130,14 @@ export function countHiddenEvents(messages: ClaudeStreamMessage[]): number {
     }
     const content = getMessageContent(m);
     if (!Array.isArray(content)) continue;
-    for (const b of content) {
+    for (const b of content as MessageContentBlock[]) {
       if (!b || typeof b !== 'object') continue;
       if (b.type === 'tool_use' || b.type === 'tool_result' || b.type === 'image') {
         n += 1;
       } else if (b.type === 'thinking') {
-        const t = typeof b.thinking === 'string' ? b.thinking.trim() : '';
-        if (t.length > 0) n += 1;
+        if (b.thinking.trim().length > 0) n += 1;
       } else if (b.type === 'text') {
-        const t = typeof b.text === 'string' ? b.text.trim() : '';
-        if (t.length > 0) n += 1;
+        if (b.text.trim().length > 0) n += 1;
       }
     }
   }

@@ -26,7 +26,7 @@ export function createTuiSession(params: TuiSessionParams): TuiSession {
     {
       cwd: params.projectPath,
       // buildClaudeEnv throws on empty/~-resolving-to-~/.claude configDir.
-      env: buildClaudeEnv(params.configDir) as { [k: string]: string },
+      env: buildClaudeEnv(params.configDir),
       cols: params.cols ?? 80,
       rows: params.rows ?? 24,
     }

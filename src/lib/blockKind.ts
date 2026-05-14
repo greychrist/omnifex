@@ -1,4 +1,4 @@
-import type { ClaudeStreamMessage } from '@/types/claudeStream';
+import type { ClaudeStreamMessage, MessageContentBlock } from '@/types/claudeStream';
 import type { MessageRenderingConfig } from './messageRenderingConfig';
 import { isSubagentDispatch } from './subagentDispatch';
 import { KNOWN_TOOL_NAMES } from './types/toolInput';
@@ -93,7 +93,7 @@ function isKnownToolName(name: unknown): boolean {
  * like `user.prompt` instead of getting a per-block kind).
  */
 export function classifyBlockKind(
-  block: any,
+  block: MessageContentBlock | null | undefined,
   parent: ClaudeStreamMessage,
 ): string | null {
   if (!block || typeof block !== 'object') return null;
@@ -101,11 +101,11 @@ export function classifyBlockKind(
 
   if (role === 'assistant') {
     if (block.type === 'text') {
-      const text = typeof block.text === 'string' ? block.text.trim() : '';
+      const text = block.text.trim();
       return text.length > 0 ? 'assistant.text' : null;
     }
     if (block.type === 'thinking') {
-      const text = typeof block.thinking === 'string' ? block.thinking.trim() : '';
+      const text = block.thinking.trim();
       return text.length > 0 ? 'assistant.thinking' : null;
     }
     if (block.type === 'tool_use') {
@@ -114,7 +114,7 @@ export function classifyBlockKind(
       // route it to its own kind for independent Appearance theming and
       // compact-mode hiding rather than blending into the generic
       // `assistant.toolUse` accent.
-      if (typeof block.name === 'string' && block.name.toLowerCase() === 'askuserquestion') {
+      if (block.name.toLowerCase() === 'askuserquestion') {
         return 'tool.askUserQuestion.answered';
       }
       return isKnownToolName(block.name) ? 'assistant.toolUse' : 'assistant.toolUse.unknown';
@@ -137,7 +137,7 @@ export function classifyBlockKind(
       const innerText = typeof inner === 'string'
         ? inner
         : Array.isArray(inner)
-          ? inner.map((p: any) => (typeof p?.text === 'string' ? p.text : '')).join('\n')
+          ? inner.map((p) => (typeof (p as { text?: unknown }).text === 'string' ? (p as { text: string }).text : '')).join('\n')
           : '';
       if (innerText.includes('<system-reminder>')) return 'tool.result.systemReminder';
       return 'tool.result.generic';
@@ -152,14 +152,13 @@ export function classifyBlockKind(
       return 'tool.result.codeExecution';
     }
     if (block.type === 'text') {
-      const text = typeof block.text === 'string' ? block.text : '';
       // Claude Code / the Agent SDK surface hook output back to the model
       // as plain user text prefixed with "<HookEvent> hook feedback:"
       // (Stop / PreToolUse / PostToolUse / UserPromptSubmit / SubagentStop
       // / Notification / SessionEnd) or the "SessionStart hook additional
       // context:" variant. Also matches <system-reminder> blocks and
       // skill-load preambles. See `isSystemContextText`.
-      if (isSystemContextText(text)) return 'user.systemContext';
+      if (isSystemContextText(block.text)) return 'user.systemContext';
       // Plain user text falls through to whole-message classification
       // (user.prompt / user.subagentPrompt / user.sdkSystemBracket).
       return null;
@@ -176,7 +175,7 @@ export function classifyBlockKind(
  * mergeConfig already prevents that combination).
  */
 export function isBlockHiddenInCompact(
-  block: any,
+  block: MessageContentBlock | null | undefined,
   parent: ClaudeStreamMessage,
   config: MessageRenderingConfig,
 ): boolean {
