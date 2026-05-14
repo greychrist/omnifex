@@ -36,16 +36,20 @@ describe('FindBar', () => {
     expect(screen.getByTestId('find-count').textContent).toBe('3/5');
   });
 
+  // RTL's getByTestId returns HTMLElement by default. Use the generic
+  // overload to narrow to HTMLButtonElement so .disabled type-checks
+  // (and so eslint's no-unnecessary-type-assertion doesn't try to
+  // strip a trailing `as HTMLButtonElement` cast).
   it('disables prev/next when count is zero', () => {
     render(<FindBar {...baseProps} count={0} />);
-    expect((screen.getByTestId('find-next') as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByTestId('find-prev') as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByTestId<HTMLButtonElement>('find-next').disabled).toBe(true);
+    expect(screen.getByTestId<HTMLButtonElement>('find-prev').disabled).toBe(true);
   });
 
   it('enables prev/next when count > 0', () => {
     render(<FindBar {...baseProps} count={1} />);
-    expect((screen.getByTestId('find-next') as HTMLButtonElement).disabled).toBe(false);
-    expect((screen.getByTestId('find-prev') as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.getByTestId<HTMLButtonElement>('find-next').disabled).toBe(false);
+    expect(screen.getByTestId<HTMLButtonElement>('find-prev').disabled).toBe(false);
   });
 
   it('calls onQueryChange when the input changes', () => {

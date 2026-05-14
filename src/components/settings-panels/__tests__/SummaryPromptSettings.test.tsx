@@ -164,7 +164,10 @@ describe('SummaryPromptSettings', () => {
     });
     render(<SummaryPromptSettings />);
     await waitForLoaded();
-    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+    // Generic-typed getter narrows to HTMLTextAreaElement for .value
+    // access without needing a separate `as` cast (which the
+    // no-unnecessary-type-assertion auto-fix would strip).
+    const textarea = screen.getByRole<HTMLTextAreaElement>('textbox');
     expect(textarea.value).toBe('CUSTOM');
     vi.useFakeTimers();
     try {

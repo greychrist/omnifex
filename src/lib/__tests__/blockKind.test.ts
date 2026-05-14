@@ -72,7 +72,7 @@ describe('classifyBlockKind', () => {
   it('classifies every name in KNOWN_TOOL_NAMES as a known assistant.toolUse', () => {
     for (const name of KNOWN_TOOL_NAMES) {
       const parent = assistant([{ type: 'tool_use', name, input: {} }]);
-      const got = classifyBlockKind(parent.message!.content![0], parent);
+      const got = classifyBlockKind(parent.message.content[0], parent);
       expect(got, `tool name "${name}" should not classify as unknown`).toBe('assistant.toolUse');
     }
   });
