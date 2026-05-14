@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.32] — 2026-05-13
+
+Adopts the Claude Agent SDK's per-tool input schemas in the renderer. Until now, the tool-widget switch in the chat view and the headline picker on the permission prompt both reached into `tool_use.input` with structural `typeof === 'string'` guards — useful at runtime, but invisible to the type-checker, so any field rename on the SDK side would silently render an empty widget. The SDK ships those schemas as `BashInput` / `FileReadInput` / `GrepInput` / etc. via its `sdk-tools` subpath export; this release wires them in via a small name→type map so every branch narrows from `unknown` to the SDK shape before reading fields. Also rolls the SDK forward one patch.
+
+Installers remain **unsigned**.
+
+### Added
+
+- **`src/lib/types/toolInput.ts`: typed tool-input bridge.** Single source of truth mapping each PascalCase tool name to its SDK-shipped input schema (`Bash → BashInput`, `Read → FileReadInput`, `Grep → GrepInputExtended`, …). Exports `asToolInput(name, expected, input)` for single-tool narrowing and `asToolInputOneOf(name, expectedSet, input)` for branches that fold multiple tools (e.g. `Task` and `Agent` both dispatch a subagent). Tools that aren't shipped under `sdk-tools` as of 0.2.141 — `LS`, `TodoRead`, `MultiEdit` — get local interfaces that mirror exactly what our widgets read; swap to the SDK type if a future SDK release adds them. Helpers are pure runtime guards (name string match + object-ness check); the SDK doesn't validate shapes at runtime so neither do we. Eight new tests in `src/lib/types/__tests__/toolInput.test.ts`.
+
+### Changed
+
+- **`StreamMessage.tsx` widget switch: typed narrowing per branch.** Each `if (toolName === "bash" && input?.command)` shape is replaced with `const bashInput = asToolInput(toolName, 'Bash', rawInput); if (bashInput?.command) …`. Inside each branch, `input` is the SDK type for that tool, so the compiler catches field renames (e.g. if a future SDK release renames `Bash.command` the build breaks rather than rendering an empty bash widget). The defensive `content.name?.toLowerCase()` normalization is removed: tool names arrive PascalCase on the wire per SDK contract, and the lowercase guard was protecting against a case mismatch that never actually happened in production. Subagent dispatch (`Task` / `Agent`) uses `asToolInputOneOf` so both names route to the same `AgentInput`-typed branch.
+- **`PermissionCard.tsx`: typed headline-field selection.** `formatToolInput` now takes the tool name and uses the typed map to pick the headline field (`Bash → command`, `Read → file_path`, …). For tools outside the map (MCP, future tools), a generic field-probe fallback preserves the pre-typed behavior so the permission card never goes blank.
+- **`@anthropic-ai/claude-agent-sdk` → `0.2.141`** (was `0.2.140`). Adds `TaskCreateInput` / `TaskGetInput` / `TaskUpdateInput` / `TaskListInput` (+ matching output types) to the `sdk-tools` exports and aligns the transitive `@anthropic-ai/sdk` to `^0.93.0`. No API breakage; nothing in our code paths uses the new Task* types yet.
+
+### Known issue (carried forward, pre-existing)
+
+- `GrepWidget` reads `input.include` / `input.exclude` for the renderer header, but the SDK's `GrepInput` no longer models those fields (they were superseded upstream by `glob` / `type`). The typed bridge captures this as `GrepInputExtended = GrepInput & { include?: string; exclude?: string }` so the widget behavior is unchanged; replacing `include`/`exclude` with the SDK-canonical `glob`/`type` belongs in its own task and is tracked there.
+
 ## [0.4.31] — 2026-05-13
 
 Follow-up to the dashed-path fix in 0.4.29. Recovering the project path from the alphabetically-first JSONL was order-independent of when each session was written, which made the recovered path arbitrary after a folder rename: Claude keeps writing to the same encoded project-id directory with the new `cwd`, but older JSONLs in that directory still carry the pre-rename `cwd`. With random-UUID filenames, alphabetical order is effectively random, so a renamed project could keep displaying its old name indefinitely — in practice the omnifex project itself was being shown as `~/Repos/personal/greychrist`, colliding with the legacy greychrist project dir from before the repo rename.
