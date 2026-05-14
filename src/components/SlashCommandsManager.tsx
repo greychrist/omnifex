@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
   Plus, 
@@ -122,12 +122,7 @@ export const SlashCommandsManager: React.FC<SlashCommandsManagerProps> = ({
   const [commandToDelete, setCommandToDelete] = useState<SlashCommand | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  // Load commands on mount or when configDir changes
-  useEffect(() => {
-    logAndForget('slash-commands-manager:load-commands', loadCommands());
-  }, [projectPath, configDir]);
-
-  const loadCommands = async () => {
+  const loadCommands = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -139,7 +134,12 @@ export const SlashCommandsManager: React.FC<SlashCommandsManagerProps> = ({
     } finally {
       setLoading(false);
     }
-  };
+  }, [projectPath, configDir]);
+
+  // Load commands on mount or when projectPath/configDir changes
+  useEffect(() => {
+    logAndForget('slash-commands-manager:load-commands', loadCommands());
+  }, [loadCommands]);
 
   const handleCreateNew = () => {
     setEditingCommand(null);
