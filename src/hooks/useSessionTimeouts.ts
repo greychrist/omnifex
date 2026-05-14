@@ -42,6 +42,14 @@ export function useSessionTimeouts({
   const [timedOutMessageIndex, setTimedOutMessageIndex] = useState<number | null>(null);
   const lastMessageTimeRef = useRef<number>(Date.now());
 
+  // Latest-messages ref so the watchdog timeout reads the current array
+  // when it fires, without needing the messages array itself in the
+  // effect's deps (which would reset the timer on every render).
+  const messagesRef = useRef(messages);
+  useEffect(() => {
+    messagesRef.current = messages;
+  });
+
   // Track elapsed time while loading + response timeout
   useEffect(() => {
     if (isLoading) {
@@ -73,12 +81,15 @@ export function useSessionTimeouts({
           /* health check failed — treat as dead */
         }
 
-        // Session is dead or errored — reset
-        const lastUserIdx = [...messages]
+        // Session is dead or errored — reset. Read latest messages via
+        // ref so the index points at the actual last-user message at
+        // fire-time, not at effect-setup time.
+        const currentMessages = messagesRef.current;
+        const lastUserIdx = [...currentMessages]
           .reverse()
           .findIndex((m) => m.type === "user" && !m.isMeta);
         if (lastUserIdx !== -1) {
-          setTimedOutMessageIndex(messages.length - 1 - lastUserIdx);
+          setTimedOutMessageIndex(currentMessages.length - 1 - lastUserIdx);
         }
         setIsLoading(false);
         setError(null);
@@ -92,7 +103,7 @@ export function useSessionTimeouts({
       setLoadingStartTime(null);
       setElapsedSeconds(0);
     }
-  }, [isLoading, messages.length]);
+  }, [isLoading, messages.length, tabId, setIsLoading, setMessages, setError, persistentSessionRef]);
 
   // Inactivity detection — if loading and no stream messages for 15s, the session
   // may be hung. Reset so the next prompt auto-restarts the session.
@@ -150,7 +161,7 @@ export function useSessionTimeouts({
       }
     }), 3000);
     return () => { clearInterval(check); };
-  }, [isLoading, waitingForPermission]);
+  }, [isLoading, waitingForPermission, tabId, setIsLoading, setMessages, persistentSessionRef]);
 
   return {
     elapsedSeconds,
