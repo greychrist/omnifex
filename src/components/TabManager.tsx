@@ -169,7 +169,6 @@ export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
   const {
     tabs,
     activeTabId,
-    createChatTab,
     createProjectsTab,
     closeTab,
     switchToTab,
@@ -249,7 +248,7 @@ export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
       window.removeEventListener('switch-to-previous-tab', handlePreviousTab);
       window.removeEventListener('switch-to-tab-by-index', handleTabByIndex as EventListener);
     };
-  }, [tabs, activeTabId, createChatTab, closeTab, switchToTab]);
+  }, [tabs, activeTabId, createProjectsTab, closeTab, switchToTab]);
 
   // Check scroll buttons visibility
   const checkScrollButtons = () => {
