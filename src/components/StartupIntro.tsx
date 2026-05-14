@@ -1,6 +1,5 @@
 import { AnimatePresence, motion } from "framer-motion";
 import OmniFexLogo from "../../icons/icon.png";
-import type { CSSProperties } from "react";
 
 /**
  * StartupIntro - a lightweight startup overlay shown on app launch.

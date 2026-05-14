@@ -72,12 +72,16 @@ export function classifyRuntimeEvent(raw: unknown): RuntimeEvent {
   }
 
   if (m.type === 'system' && m.subtype === 'compact_boundary') {
-    const meta = (m.compact_metadata ?? null);
+    // SDKCompactBoundaryMessage's `compact_metadata` shape — typed inline
+    // because the SDK types aren't pulled in here (electron main process).
+    const meta = m.compact_metadata as
+      | { trigger?: 'manual' | 'auto'; pre_tokens?: number }
+      | undefined;
     const rawTrigger = meta?.trigger;
     const trigger =
       rawTrigger === 'manual' || rawTrigger === 'auto' ? rawTrigger : null;
     const preTokens =
-      typeof meta?.pre_tokens === 'number' ? (meta.pre_tokens) : null;
+      typeof meta?.pre_tokens === 'number' ? meta.pre_tokens : null;
     return { kind: 'compact', trigger, preTokens };
   }
 

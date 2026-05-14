@@ -5,7 +5,6 @@ import {
   APP_FONT_CHOICES,
   isTypefaceId,
   resolveTypeface,
-  type Typeface,
 } from "../typefaceCatalog";
 
 describe("typefaceCatalog", () => {

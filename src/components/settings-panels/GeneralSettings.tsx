@@ -20,7 +20,7 @@ import { cn } from "@/lib/utils";
 import { ClaudeVersionSelector } from "@/components/ClaudeVersionSelector";
 import { useTheme } from "@/hooks";
 import { useAppFont } from "@/contexts/AppFontContext";
-import { APP_FONT_CHOICES, type Typeface } from "@/lib/typefaceCatalog";
+import { APP_FONT_CHOICES } from "@/lib/typefaceCatalog";
 import { TabPersistenceService } from "@/services/tabPersistence";
 import type { SettingsPanelProps } from "./types";
 

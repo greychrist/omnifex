@@ -38,14 +38,14 @@ describe('FindBar', () => {
 
   it('disables prev/next when count is zero', () => {
     render(<FindBar {...baseProps} count={0} />);
-    expect((screen.getByTestId('find-next')).disabled).toBe(true);
-    expect((screen.getByTestId('find-prev')).disabled).toBe(true);
+    expect((screen.getByTestId('find-next') as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByTestId('find-prev') as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('enables prev/next when count > 0', () => {
     render(<FindBar {...baseProps} count={1} />);
-    expect((screen.getByTestId('find-next')).disabled).toBe(false);
-    expect((screen.getByTestId('find-prev')).disabled).toBe(false);
+    expect((screen.getByTestId('find-next') as HTMLButtonElement).disabled).toBe(false);
+    expect((screen.getByTestId('find-prev') as HTMLButtonElement).disabled).toBe(false);
   });
 
   it('calls onQueryChange when the input changes', () => {
