@@ -204,7 +204,7 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
         setToast({ message: "Failed to import config", type: "error" });
       }
     },
-    [setToast],
+    [commitConfig, setToast],
   );
 
   const hardFiltersChecked = useMemo(
