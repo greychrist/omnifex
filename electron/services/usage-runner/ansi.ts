@@ -15,9 +15,13 @@
 // After processing, we collapse runs of spaces within each line so column
 // alignment slack doesn't bloat the output.
 
+// ANSI control sequences are inherently regex over control characters;
+// the lint warning here is correct in the abstract but inapplicable.
+/* eslint-disable no-control-regex */
 const CSI_FULL = /\x1b\[[0-?]*[ -/]*[@-~]/g;
 const OSC = /\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g;
-const BARE_ESC = /\x1b[NOPQ\\\^_]/g;
+const BARE_ESC = /\x1b[NOPQ\\^_]/g;
+/* eslint-enable no-control-regex */
 
 export function stripAnsi(input: string): string {
   const noEscapes = input

@@ -1,8 +1,10 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 
-export interface LabelProps
-  extends React.LabelHTMLAttributes<HTMLLabelElement> {}
+// shadcn/ui pattern: thin alias around the underlying HTML element's
+// attributes so consumers can later add Label-specific props without
+// touching every call site.
+export type LabelProps = React.LabelHTMLAttributes<HTMLLabelElement>;
 
 /**
  * Label component for form fields

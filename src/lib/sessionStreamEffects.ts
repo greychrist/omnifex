@@ -16,8 +16,9 @@ import type { StreamReducerEffect } from './sessionStreamReducer';
  */
 
 export interface StreamEffectApi {
-  sessionAccountInfo(tabId: string): Promise<unknown | null>;
-  sessionContextUsage(tabId: string): Promise<unknown | null>;
+  // `unknown` already includes null/undefined; the `| null` was redundant.
+  sessionAccountInfo(tabId: string): Promise<unknown>;
+  sessionContextUsage(tabId: string): Promise<unknown>;
   sessionSupportedModels(tabId: string): Promise<unknown[] | null>;
 }
 

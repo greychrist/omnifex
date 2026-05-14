@@ -1025,7 +1025,7 @@ export const api = {
     return apiCall("session_stop", { tabId });
   },
 
-  async getSessionInfo(tabId: string): Promise<any | null> {
+  async getSessionInfo(tabId: string): Promise<unknown> {
     return apiCall("session_get_info", { tabId });
   },
 

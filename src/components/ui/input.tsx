@@ -1,8 +1,10 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 
-export interface InputProps
-  extends React.InputHTMLAttributes<HTMLInputElement> {}
+// shadcn/ui pattern: thin alias around the underlying HTML element's
+// attributes so consumers can later add Input-specific props without
+// touching every call site.
+export type InputProps = React.InputHTMLAttributes<HTMLInputElement>;
 
 /**
  * Input component for text/number inputs

@@ -53,6 +53,10 @@ export const CommandOutputWidget: React.FC<{
     }
   }, [output, onLinkDetected]);
 
+  // ANSI sequences are inherently regex over control characters;
+  // the no-control-regex lint warning is correct in the abstract but
+  // inapplicable to terminal-output parsing.
+  /* eslint-disable no-control-regex */
   // Parse ANSI codes for basic styling
   const parseAnsiToReact = (text: string) => {
     // Simple ANSI parsing - handles bold (\u001b[1m) and reset (\u001b[22m)
@@ -92,6 +96,7 @@ export const CommandOutputWidget: React.FC<{
 
     return elements;
   };
+  /* eslint-enable no-control-regex */
 
   return (
     <div className="rounded-lg border bg-background/50 overflow-hidden">

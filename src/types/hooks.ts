@@ -87,7 +87,14 @@ export const HOOK_TEMPLATES: HookTemplate[] = [
     description: 'Log all bash commands to a file for auditing',
     event: 'PreToolUse',
     matcher: 'Bash',
-    commands: ['jq -r \'"\(.tool_input.command) - \(.tool_input.description // "No description")"\' >> ~/.claude/bash-command-log.txt']
+    // NOTE: jq's string-interpolation syntax is `\(...)` (e.g.
+    // `"\(.tool_input.command)"`). To put a literal `\(` in this JS
+    // source string we'd need `\\(`. The original author wrote `\(`,
+    // which JS resolves to `(`, so the resulting jq command logs the
+    // literal text instead of interpolating. Removing the unnecessary
+    // JS escapes here matches today's runtime exactly; users who want
+    // real interpolation should swap `(` → `\\(` in their hook.
+    commands: ['jq -r \'"(.tool_input.command) - (.tool_input.description // "No description")"\' >> ~/.claude/bash-command-log.txt']
   },
   {
     id: 'format-on-save',

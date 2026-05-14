@@ -155,6 +155,6 @@ export function isTypefaceId(value: unknown): value is Typeface {
 }
 
 /** Look up a typeface by id, falling back to Inter when unknown. */
-export function resolveTypeface(id: Typeface | string): TypefaceMeta {
+export function resolveTypeface(id: string): TypefaceMeta {
   return isTypefaceId(id) ? TYPEFACE_BY_ID[id] : TYPEFACE_BY_ID.inter;
 }

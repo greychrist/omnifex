@@ -1,8 +1,10 @@
 import * as React from "react"
 import { cn } from "@/lib/utils"
 
-export interface TextareaProps
-  extends React.TextareaHTMLAttributes<HTMLTextAreaElement> {}
+// shadcn/ui pattern: thin alias around the underlying HTML element's
+// attributes so consumers can later add Textarea-specific props without
+// touching every call site.
+export type TextareaProps = React.TextareaHTMLAttributes<HTMLTextAreaElement>;
 
 const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
   ({ className, ...props }, ref) => {
