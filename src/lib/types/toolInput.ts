@@ -54,10 +54,14 @@ export interface LSInput {
   ignore?: string[];
 }
 
-/** TodoRead isn't in `sdk-tools` as of 0.2.141. Mirrors what `TodoReadWidget` reads. */
-export interface TodoReadInput {
-  todos?: unknown[];
-}
+/**
+ * TodoRead isn't in `sdk-tools` as of 0.2.141. The tool takes no
+ * meaningful input — it reads the stored list and returns it as the
+ * tool result. The empty interface below documents that contract;
+ * `TodoReadWidget` extracts todos from the result, not the input.
+ */
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface TodoReadInput {}
 
 /** MultiEdit isn't shipped as a distinct schema (only `FileEditInput` is single-edit). */
 export interface MultiEditInput {

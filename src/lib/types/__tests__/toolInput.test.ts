@@ -33,6 +33,29 @@ describe('asToolInput', () => {
   });
 });
 
+describe('GrepInputExtended', () => {
+  // Regression: GrepInputExtended adds optional `include` / `exclude`
+  // fields the SDK no longer models (replaced upstream by glob / type).
+  // GrepWidget still reads them for back-compat with older session
+  // payloads. If the intersection were ever removed from toolInput.ts,
+  // the call site in StreamMessage.tsx would compile (because rawInput
+  // is unknown until narrowed) but `grepInput.include` would silently
+  // become `unknown` rather than `string | undefined`. This test
+  // exercises the access pattern so the type intersection can't be
+  // removed without breaking either the test or the consumer.
+  it('exposes legacy include/exclude fields after narrowing', () => {
+    const result = asToolInput('Grep', 'Grep', {
+      pattern: 'foo',
+      include: '*.ts',
+      exclude: 'node_modules',
+    });
+    expect(result).not.toBeNull();
+    expect(result!.pattern).toBe('foo');
+    expect(result!.include).toBe('*.ts');
+    expect(result!.exclude).toBe('node_modules');
+  });
+});
+
 describe('asToolInputOneOf', () => {
   it('matches any name in the expected set', () => {
     expect(asToolInputOneOf('Task', ['Task', 'Agent'], { description: 'd', prompt: 'p' })).toEqual({

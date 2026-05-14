@@ -696,14 +696,24 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                       // AnsweredAskUserQuestionCard, not to special-case
                       // this widget path again.
 
-                      // Task / Agent tool — subagent dispatch. Uses
-                      // `isSubagentDispatch` (case-insensitive) for the
-                      // discriminator since dispatches historically arrived
-                      // under multiple casings; the typed narrowing here
-                      // matches the same set explicitly so the input is
-                      // recovered as AgentInput.
+                      // Task / Agent tool — subagent dispatch. The
+                      // discriminator is `isSubagentDispatch` (case-
+                      // insensitive) for defense-in-depth across runtimes
+                      // that historically emitted lowercase variants;
+                      // the typed narrowing below is case-sensitive
+                      // against PascalCase, so we PascalCase-normalize
+                      // the name here to keep both layers aligned.
+                      // Without this, a lowercase 'task' would pass the
+                      // guard but fail the narrow and silently fall
+                      // through to the generic JSON display.
+                      const subagentName =
+                        toolName?.toLowerCase() === 'task'
+                          ? 'Task'
+                          : toolName?.toLowerCase() === 'agent'
+                            ? 'Agent'
+                            : toolName;
                       const subagent = isSubagentDispatch(toolName)
-                        ? asToolInputOneOf(toolName, ['Task', 'Agent'], rawInput)
+                        ? asToolInputOneOf(subagentName, ['Task', 'Agent'], rawInput)
                         : null;
                       if (subagent) {
                         renderedSomething = true;
@@ -747,11 +757,11 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                         return <TodoWidget todos={todoWriteInput.todos} result={toolResult} />;
                       }
 
-                      // TodoRead
-                      const todoReadInput = asToolInput(toolName, 'TodoRead', rawInput);
-                      if (todoReadInput) {
+                      // TodoRead — input is empty by contract; widget reads
+                      // todos from the tool result, not the input.
+                      if (asToolInput(toolName, 'TodoRead', rawInput)) {
                         renderedSomething = true;
-                        return <TodoReadWidget todos={todoReadInput.todos} result={toolResult} />;
+                        return <TodoReadWidget result={toolResult} />;
                       }
 
                       // LS
@@ -1211,6 +1221,13 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                           );
                           if (toolUse) {
                             const toolName = toolUse.name?.toLowerCase() ?? '';
+                            // Maintenance note: this lowercased list MUST stay in
+                            // sync with the PascalCase keys in `ToolInputByName`
+                            // (src/lib/types/toolInput.ts) and the corresponding
+                            // branches in `renderToolWidget` above. A new typed
+                            // widget added without an entry here causes a visual
+                            // double-render — the widget shows above and the raw
+                            // tool_result block renders below it.
                             const toolsWithWidgets = ['task','edit','multiedit','todowrite','todoread','ls','read','glob','bash','write','grep','websearch','webfetch'];
                             if (isSubagentDispatch(toolUse.name)) {
                               isTaskReturn = true;

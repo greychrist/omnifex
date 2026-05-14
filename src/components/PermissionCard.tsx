@@ -55,6 +55,12 @@ function formatToolInput(toolName: string | undefined, input: Record<string, unk
   const glob = asToolInput(toolName, 'Glob', input);
   if (glob?.pattern) return glob.pattern;
 
+  // LS uses `path`, not `file_path` — the generic field probe below
+  // wouldn't pick it up, so a permission request for LS would render
+  // as raw JSON without this branch.
+  const ls = asToolInput(toolName, 'LS', input);
+  if (ls?.path) return ls.path;
+
   const webFetch = asToolInput(toolName, 'WebFetch', input);
   if (webFetch?.url) return webFetch.url;
 
