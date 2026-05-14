@@ -14,7 +14,7 @@ beforeEach(() => {
   useClaudeSessionStore.getState().__resetForTests();
 });
 
-afterEach(() => cleanup());
+afterEach(() => { cleanup(); });
 
 const assistantMsg = (text = 'ok'): ClaudeStreamMessage =>
   ({ type: 'assistant', message: { content: [{ type: 'text', text }] } } as unknown as ClaudeStreamMessage);
@@ -45,7 +45,7 @@ describe('useTabSession', () => {
     let captured: ReturnType<typeof useTabSession> | null = null;
     render(<HookHarness tabId={TAB} capture={(s) => { captured = s; }} />);
     const a = assistantMsg('a');
-    act(() => captured!.setMessages([a]));
+    act(() => { captured!.setMessages([a]); });
     expect(useClaudeSessionStore.getState().selectTab(TAB).messages).toEqual([a]);
   });
 
@@ -54,17 +54,17 @@ describe('useTabSession', () => {
     render(<HookHarness tabId={TAB} capture={(s) => { captured = s; }} />);
     const a = assistantMsg('a');
     const b = assistantMsg('b');
-    act(() => captured!.setMessages([a]));
-    act(() => captured!.setMessages((prev) => [...prev, b]));
+    act(() => { captured!.setMessages([a]); });
+    act(() => { captured!.setMessages((prev) => [...prev, b]); });
     expect(useClaudeSessionStore.getState().selectTab(TAB).messages).toEqual([a, b]);
   });
 
   it('setClaudeSessionId, setExtractedSessionInfo, setSdkAccountInfo write through', () => {
     let captured: ReturnType<typeof useTabSession> | null = null;
     render(<HookHarness tabId={TAB} capture={(s) => { captured = s; }} />);
-    act(() => captured!.setClaudeSessionId('sess-7'));
-    act(() => captured!.setExtractedSessionInfo({ sessionId: 'x', projectId: 'p' }));
-    act(() => captured!.setSdkAccountInfo({ email: 'a@b.c' } as any));
+    act(() => { captured!.setClaudeSessionId('sess-7'); });
+    act(() => { captured!.setExtractedSessionInfo({ sessionId: 'x', projectId: 'p' }); });
+    act(() => { captured!.setSdkAccountInfo({ email: 'a@b.c' }); });
     const s = useClaudeSessionStore.getState().selectTab(TAB);
     expect(s.claudeSessionId).toBe('sess-7');
     expect(s.extractedSessionInfo).toEqual({ sessionId: 'x', projectId: 'p' });
@@ -74,9 +74,9 @@ describe('useTabSession', () => {
   it('setContextUsage, setSupportedModels, setIsLoading write through', () => {
     let captured: ReturnType<typeof useTabSession> | null = null;
     render(<HookHarness tabId={TAB} capture={(s) => { captured = s; }} />);
-    act(() => captured!.setContextUsage({ used: 1, total: 2 } as any));
-    act(() => captured!.setSupportedModels([{ id: 'opus' }] as any));
-    act(() => captured!.setIsLoading(true));
+    act(() => { captured!.setContextUsage({ used: 1, total: 2 } as any); });
+    act(() => { captured!.setSupportedModels([{ id: 'opus' }] as any); });
+    act(() => { captured!.setIsLoading(true); });
     const s = useClaudeSessionStore.getState().selectTab(TAB);
     expect((s.contextUsage as any)?.used).toBe(1);
     expect(s.supportedModels.length).toBe(1);
@@ -86,8 +86,8 @@ describe('useTabSession', () => {
   it('setIsLoading with a function gets the previous value', () => {
     let captured: ReturnType<typeof useTabSession> | null = null;
     render(<HookHarness tabId={TAB} capture={(s) => { captured = s; }} />);
-    act(() => captured!.setIsLoading(true));
-    act(() => captured!.setIsLoading((prev) => !prev));
+    act(() => { captured!.setIsLoading(true); });
+    act(() => { captured!.setIsLoading((prev) => !prev); });
     expect(useClaudeSessionStore.getState().selectTab(TAB).isLoading).toBe(false);
   });
 
@@ -95,7 +95,7 @@ describe('useTabSession', () => {
     let captured: ReturnType<typeof useTabSession> | null = null;
     render(<HookHarness tabId={TAB} capture={(s) => { captured = s; }} />);
     const a = assistantMsg('a');
-    act(() => captured!.appendMessage(a));
+    act(() => { captured!.appendMessage(a); });
     expect(useClaudeSessionStore.getState().selectTab(TAB).messages).toEqual([a]);
   });
 
@@ -104,19 +104,19 @@ describe('useTabSession', () => {
     render(<HookHarness tabId={TAB} capture={(s) => { captured = s; }} />);
     const a = assistantMsg('a');
     const u = userMsg();
-    act(() => captured!.setMessages([a, u]));
-    act(() => captured!.insertMessageBeforeFirstUser(initMsg()));
+    act(() => { captured!.setMessages([a, u]); });
+    act(() => { captured!.insertMessageBeforeFirstUser(initMsg()); });
     const msgs = useClaudeSessionStore.getState().selectTab(TAB).messages;
     expect(msgs.length).toBe(3);
-    expect(msgs[1]!.type).toBe('system');
+    expect(msgs[1].type).toBe('system');
   });
 
   it('resetTab clears the slice', () => {
     let captured: ReturnType<typeof useTabSession> | null = null;
     render(<HookHarness tabId={TAB} capture={(s) => { captured = s; }} />);
-    act(() => captured!.setIsLoading(true));
-    act(() => captured!.setClaudeSessionId('s1'));
-    act(() => captured!.resetTab());
+    act(() => { captured!.setIsLoading(true); });
+    act(() => { captured!.setClaudeSessionId('s1'); });
+    act(() => { captured!.resetTab(); });
     const s = useClaudeSessionStore.getState().selectTab(TAB);
     expect(s).toEqual(EMPTY_TAB_SESSION);
   });

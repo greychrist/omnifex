@@ -34,7 +34,7 @@ export const SubagentReturnedMarker: React.FC<Props> = ({
   const preview = trimmed.length > 140 ? trimmed.slice(0, 140) + '…' : trimmed;
 
   return (
-    <Collapsible open={open} onOpenChange={(next) => runWith(() => setOpen(next))}>
+    <Collapsible open={open} onOpenChange={(next) => { runWith(() => { setOpen(next); }); }}>
       <CollapsibleTrigger
         ref={triggerRef}
         className={cn(

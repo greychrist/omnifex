@@ -70,7 +70,7 @@ export const MarkdownBlock: React.FC<MarkdownBlockProps> = ({ source }) => {
         >
           <button
             type="button"
-            onClick={() => setView("rendered")}
+            onClick={() => { setView("rendered"); }}
             aria-pressed={view === "rendered"}
             className={cn(pillBase, view === "rendered" ? pillActive : pillInactive)}
           >
@@ -78,7 +78,7 @@ export const MarkdownBlock: React.FC<MarkdownBlockProps> = ({ source }) => {
           </button>
           <button
             type="button"
-            onClick={() => setView("source")}
+            onClick={() => { setView("source"); }}
             aria-pressed={view === "source"}
             className={cn(pillBase, view === "source" ? pillActive : pillInactive)}
           >

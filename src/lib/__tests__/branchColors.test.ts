@@ -5,7 +5,7 @@ describe('resolveBranchColors', () => {
   it('returns black trunk style for main', () => {
     const r = resolveBranchColors({ pins: {}, mainFolderBranch: 'main', branches: ['main'] });
     expect(r.trunkBlack.has('main')).toBe(true);
-    expect(r.colors['main']).toBeUndefined();
+    expect(r.colors.main).toBeUndefined();
   });
 
   it('returns black trunk style for master', () => {
@@ -15,7 +15,7 @@ describe('resolveBranchColors', () => {
 
   it('returns blue for the main folder branch when not trunk', () => {
     const r = resolveBranchColors({ pins: {}, mainFolderBranch: 'develop', branches: ['develop'] });
-    expect(r.colors['develop']).toBe('#3b82f6');
+    expect(r.colors.develop).toBe('#3b82f6');
     expect(r.trunkBlack.has('develop')).toBe(false);
   });
 
@@ -25,9 +25,9 @@ describe('resolveBranchColors', () => {
       mainFolderBranch: 'develop',
       branches: ['main', 'develop'],
     });
-    expect(r.colors['main']).toBe('#ef4444');
+    expect(r.colors.main).toBe('#ef4444');
     expect(r.trunkBlack.has('main')).toBe(false);
-    expect(r.colors['develop']).toBe('#10b981');
+    expect(r.colors.develop).toBe('#10b981');
   });
 
   it('cycles worktree branches without colliding with trunk-black or main-folder blue', () => {
@@ -36,7 +36,7 @@ describe('resolveBranchColors', () => {
       mainFolderBranch: 'develop',
       branches: ['develop', 'wt-1', 'wt-2', 'wt-3'],
     });
-    expect(r.colors['develop']).toBe('#3b82f6');
+    expect(r.colors.develop).toBe('#3b82f6');
     const wts = ['wt-1', 'wt-2', 'wt-3'].map((b) => r.colors[b]);
     expect(new Set(wts).size).toBe(3);
     expect(wts.includes('#3b82f6')).toBe(false);

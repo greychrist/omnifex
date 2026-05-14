@@ -9,7 +9,7 @@ interface GitWatchStatusIconProps {
    * Empty = the whole watch is healthy. Each entry's `label` is what shows
    * in the tooltip (e.g. branch name, "project", or path basename).
    */
-  errors: Array<{ label: string; error: string }>;
+  errors: { label: string; error: string }[];
   /**
    * Trigger a reconnect for the whole tab's watch. Resolves once the main
    * process has re-armed the watch and emitted a fresh snapshot. The icon
@@ -63,8 +63,8 @@ export const GitWatchStatusIcon: React.FC<GitWatchStatusIconProps> = ({
     if (lastKey.current === snapshotKey) return;
     lastKey.current = snapshotKey;
     setAutoPulse(true);
-    const t = setTimeout(() => setAutoPulse(false), 500);
-    return () => clearTimeout(t);
+    const t = setTimeout(() => { setAutoPulse(false); }, 500);
+    return () => { clearTimeout(t); };
   }, [snapshotKey]);
 
   const spinning = userBusy || autoPulse;

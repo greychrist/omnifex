@@ -19,6 +19,6 @@ describe('normalizeThinkingConfig', () => {
     expect(normalizeThinkingConfig(undefined)).toBe('adaptive');
     expect(normalizeThinkingConfig('')).toBe('adaptive');
     expect(normalizeThinkingConfig('something-bogus')).toBe('adaptive');
-    expect(normalizeThinkingConfig(42 as unknown)).toBe('adaptive');
+    expect(normalizeThinkingConfig(42)).toBe('adaptive');
   });
 });

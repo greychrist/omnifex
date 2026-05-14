@@ -192,7 +192,7 @@ export function classifyStandaloneKind(
   // <command-name>/<local-command-stdout> tags inside a user-role text
   // block, so detection is a content match on the whole message.
   if (msg.type === 'user') {
-    const content: unknown = msg.message?.content as unknown;
+    const content: unknown = msg.message?.content;
     let text = '';
     if (typeof content === 'string') text = content;
     else if (Array.isArray(content)) {

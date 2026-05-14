@@ -101,7 +101,7 @@ export const SlashCommandsManager: React.FC<SlashCommandsManagerProps> = ({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedScope, setSelectedScope] = useState<'all' | 'project' | 'user'>(scopeFilter === 'all' ? 'all' : scopeFilter as 'project' | 'user');
+  const [selectedScope, setSelectedScope] = useState<'all' | 'project' | 'user'>(scopeFilter === 'all' ? 'all' : scopeFilter);
   const [expandedCommands, setExpandedCommands] = useState<Set<string>>(new Set());
   
   // Edit dialog state
@@ -275,8 +275,8 @@ export const SlashCommandsManager: React.FC<SlashCommandsManagerProps> = ({
       return (
         cmd.name.toLowerCase().includes(query) ||
         cmd.full_command.toLowerCase().includes(query) ||
-        (cmd.description && cmd.description.toLowerCase().includes(query)) ||
-        (cmd.namespace && cmd.namespace.toLowerCase().includes(query))
+        (cmd.description?.toLowerCase().includes(query)) ||
+        (cmd.namespace?.toLowerCase().includes(query))
       );
     }
 
@@ -284,7 +284,7 @@ export const SlashCommandsManager: React.FC<SlashCommandsManagerProps> = ({
   });
 
   // Group commands by namespace and scope
-  const groupedCommands = filteredCommands.reduce((acc, cmd) => {
+  const groupedCommands = filteredCommands.reduce<Record<string, SlashCommand[]>>((acc, cmd) => {
     const key = cmd.namespace 
       ? `${cmd.namespace} (${cmd.scope})` 
       : `${cmd.scope === 'project' ? 'Project' : 'User'} Commands`;
@@ -293,7 +293,7 @@ export const SlashCommandsManager: React.FC<SlashCommandsManagerProps> = ({
     }
     acc[key].push(cmd);
     return acc;
-  }, {} as Record<string, SlashCommand[]>);
+  }, {});
 
   return (
     <div className={cn("space-y-4", className)}>
@@ -323,13 +323,13 @@ export const SlashCommandsManager: React.FC<SlashCommandsManagerProps> = ({
             <Input
               placeholder="Search commands..."
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => { setSearchQuery(e.target.value); }}
               className="pl-9"
             />
           </div>
         </div>
         {scopeFilter === 'all' && (
-          <Select value={selectedScope} onValueChange={(value: any) => setSelectedScope(value)}>
+          <Select value={selectedScope} onValueChange={(value: any) => { setSelectedScope(value); }}>
             <SelectTrigger className="w-[150px]">
               <SelectValue />
             </SelectTrigger>
@@ -434,7 +434,7 @@ export const SlashCommandsManager: React.FC<SlashCommandsManagerProps> = ({
                               )}
                               
                               <button
-                                onClick={() => toggleExpanded(command.id)}
+                                onClick={() => { toggleExpanded(command.id); }}
                                 className="flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors"
                               >
                                 {isExpanded ? (
@@ -456,7 +456,7 @@ export const SlashCommandsManager: React.FC<SlashCommandsManagerProps> = ({
                             <Button
                               variant="ghost"
                               size="icon"
-                              onClick={() => handleEdit(command)}
+                              onClick={() => { handleEdit(command); }}
                               className="h-8 w-8"
                             >
                               <Edit className="h-4 w-4" />
@@ -464,7 +464,7 @@ export const SlashCommandsManager: React.FC<SlashCommandsManagerProps> = ({
                             <Button
                               variant="ghost"
                               size="icon"
-                              onClick={() => handleDeleteClick(command)}
+                              onClick={() => { handleDeleteClick(command); }}
                               className="h-8 w-8 text-destructive hover:text-destructive"
                             >
                               <Trash2 className="h-4 w-4" />
@@ -514,7 +514,7 @@ export const SlashCommandsManager: React.FC<SlashCommandsManagerProps> = ({
               <Label>Scope</Label>
               <Select 
                 value={commandForm.scope} 
-                onValueChange={(value: 'project' | 'user') => setCommandForm(prev => ({ ...prev, scope: value }))}
+                onValueChange={(value: 'project' | 'user') => { setCommandForm(prev => ({ ...prev, scope: value })); }}
                 disabled={scopeFilter !== 'all' || (!projectPath && commandForm.scope === 'project')}
               >
                 <SelectTrigger>
@@ -553,7 +553,7 @@ export const SlashCommandsManager: React.FC<SlashCommandsManagerProps> = ({
                 <Input
                   placeholder="e.g., review, fix-issue"
                   value={commandForm.name}
-                  onChange={(e) => setCommandForm(prev => ({ ...prev, name: e.target.value }))}
+                  onChange={(e) => { setCommandForm(prev => ({ ...prev, name: e.target.value })); }}
                 />
               </div>
               
@@ -562,7 +562,7 @@ export const SlashCommandsManager: React.FC<SlashCommandsManagerProps> = ({
                 <Input
                   placeholder="e.g., frontend, backend"
                   value={commandForm.namespace}
-                  onChange={(e) => setCommandForm(prev => ({ ...prev, namespace: e.target.value }))}
+                  onChange={(e) => { setCommandForm(prev => ({ ...prev, namespace: e.target.value })); }}
                 />
               </div>
             </div>
@@ -573,7 +573,7 @@ export const SlashCommandsManager: React.FC<SlashCommandsManagerProps> = ({
               <Input
                 placeholder="Brief description of what this command does"
                 value={commandForm.description}
-                onChange={(e) => setCommandForm(prev => ({ ...prev, description: e.target.value }))}
+                onChange={(e) => { setCommandForm(prev => ({ ...prev, description: e.target.value })); }}
               />
             </div>
 
@@ -583,7 +583,7 @@ export const SlashCommandsManager: React.FC<SlashCommandsManagerProps> = ({
               <Textarea
                 placeholder="Enter the prompt content. Use $ARGUMENTS for dynamic values."
                 value={commandForm.content}
-                onChange={(e) => setCommandForm(prev => ({ ...prev, content: e.target.value }))}
+                onChange={(e) => { setCommandForm(prev => ({ ...prev, content: e.target.value })); }}
                 className="min-h-[150px] font-mono text-sm"
               />
               <p className="text-xs text-muted-foreground">
@@ -601,7 +601,7 @@ export const SlashCommandsManager: React.FC<SlashCommandsManagerProps> = ({
                     key={tool}
                     variant={commandForm.allowedTools.includes(tool) ? "default" : "outline"}
                     size="sm"
-                    onClick={() => handleToolToggle(tool)}
+                    onClick={() => { handleToolToggle(tool); }}
                     type="button"
                   >
                     {tool}
@@ -623,7 +623,7 @@ export const SlashCommandsManager: React.FC<SlashCommandsManagerProps> = ({
                       key={example.name}
                       variant="outline"
                       size="sm"
-                      onClick={() => applyExample(example)}
+                      onClick={() => { applyExample(example); }}
                       className="justify-start"
                     >
                       <Code className="h-4 w-4 mr-2" />
@@ -651,7 +651,7 @@ export const SlashCommandsManager: React.FC<SlashCommandsManagerProps> = ({
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setEditDialogOpen(false)}>
+            <Button variant="outline" onClick={() => { setEditDialogOpen(false); }}>
               Cancel
             </Button>
             <Button

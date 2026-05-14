@@ -55,7 +55,7 @@ export interface IncomingSuggestion {
 
 /** Parse a display rule string like "Bash(git:*)" into { toolName, ruleContent }. */
 export function parseRuleString(rule: string): ParsedRule {
-  const match = rule.match(/^([A-Za-z_][A-Za-z0-9_]*)\((.+)\)$/);
+  const match = /^([A-Za-z_][A-Za-z0-9_]*)\((.+)\)$/.exec(rule);
   if (match) return { toolName: match[1], ruleContent: match[2] };
   return { toolName: rule.trim() };
 }
@@ -107,7 +107,7 @@ export function getInitialRuleString(
   fallbackToolName: string,
 ): string {
   const r = suggestion?.rules?.[0];
-  if (r && r.toolName) {
+  if (r?.toolName) {
     return r.ruleContent ? `${r.toolName}(${r.ruleContent})` : r.toolName;
   }
   return (fallbackToolName || '').trim();

@@ -102,9 +102,9 @@ export function PermissionCard({ request, onAllow, onDeny }: PermissionCardProps
   const activeScope =
     SCOPE_OPTIONS.find((o) => o.value === scope) ?? SCOPE_OPTIONS[0];
 
-  const handleSaveForSession = () => onAllow([buildSessionSuggestion(rule)]);
+  const handleSaveForSession = () => { onAllow([buildSessionSuggestion(rule)]); };
   const handleSavePermission = () =>
-    onAllow([buildPersistedSuggestion(rule, scope)]);
+    { onAllow([buildPersistedSuggestion(rule, scope)]); };
 
   return (
     <div
@@ -150,7 +150,7 @@ export function PermissionCard({ request, onAllow, onDeny }: PermissionCardProps
           <input
             type="text"
             value={rule}
-            onChange={(e) => setRule(e.target.value)}
+            onChange={(e) => { setRule(e.target.value); }}
             placeholder="e.g. Bash(git:*) or Read"
             spellCheck={false}
             className={cn(
@@ -168,7 +168,7 @@ export function PermissionCard({ request, onAllow, onDeny }: PermissionCardProps
           <label className="text-[11px] uppercase tracking-wide text-muted-foreground font-medium">
             Save to
           </label>
-          <Select value={scope} onValueChange={(v) => setScope(v as ScopeValue)}>
+          <Select value={scope} onValueChange={(v) => { setScope(v as ScopeValue); }}>
             <SelectTrigger className="h-auto py-2">
               <SelectValue>
                 <div className="flex flex-col items-start text-left">

@@ -98,7 +98,7 @@ const getProjectName = (path: string): string => {
  * Formats path to be more readable - shows full path relative to home
  * Truncates long paths with ellipsis in the middle
  */
-const getDisplayPath = (path: string, maxLength: number = 30): string => {
+const getDisplayPath = (path: string, maxLength = 30): string => {
   // Try to make path home-relative
   let displayPath = path;
   const homeIndicators = ['/Users/', '/home/'];
@@ -313,31 +313,31 @@ export const ProjectList: React.FC<ProjectListProps> = ({
                 <tr className="text-left text-[10px] uppercase tracking-wider text-muted-foreground border-b border-border/50">
                   <th
                     className="px-3 py-2 font-medium cursor-pointer hover:text-foreground select-none"
-                    onClick={() => toggleSort('name')}
+                    onClick={() => { toggleSort('name'); }}
                   >
                     Name<SortIcon k="name" />
                   </th>
                   <th
                     className="px-3 py-2 font-medium cursor-pointer hover:text-foreground select-none"
-                    onClick={() => toggleSort('path')}
+                    onClick={() => { toggleSort('path'); }}
                   >
                     Path<SortIcon k="path" />
                   </th>
                   <th
                     className="px-3 py-2 font-medium cursor-pointer hover:text-foreground select-none"
-                    onClick={() => toggleSort('account')}
+                    onClick={() => { toggleSort('account'); }}
                   >
                     Account<SortIcon k="account" />
                   </th>
                   <th
                     className="px-3 py-2 font-medium text-right cursor-pointer hover:text-foreground select-none"
-                    onClick={() => toggleSort('sessions')}
+                    onClick={() => { toggleSort('sessions'); }}
                   >
                     Sessions<SortIcon k="sessions" />
                   </th>
                   <th
                     className="px-3 py-2 font-medium text-right cursor-pointer hover:text-foreground select-none"
-                    onClick={() => toggleSort('lastActivity')}
+                    onClick={() => { toggleSort('lastActivity'); }}
                     title="When Claude last had a session for this project."
                   >
                     Last activity<SortIcon k="lastActivity" />
@@ -380,7 +380,7 @@ export const ProjectList: React.FC<ProjectListProps> = ({
                             no click target. */}
                         <button
                           type="button"
-                          onClick={() => onProjectClick(project)}
+                          onClick={() => { onProjectClick(project); }}
                           className="inline-flex items-center gap-1 text-left text-foreground hover:underline focus-visible:underline focus:outline-none"
                           title="Launch this project"
                         >
@@ -527,7 +527,7 @@ export const ProjectList: React.FC<ProjectListProps> = ({
             <Button
               type="button"
               variant="outline"
-              onClick={() => setPendingDelete(null)}
+              onClick={() => { setPendingDelete(null); }}
             >
               Cancel
             </Button>

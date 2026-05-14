@@ -96,8 +96,8 @@ describe("typographyClasses (icon helpers)", () => {
 
     it("returns the kind override when iconSize is set on the kind", () => {
       const cfg = createDefaultConfig();
-      const firstKindId = Object.keys(cfg.kinds)[0]!;
-      cfg.kinds[firstKindId]!.iconSize = "xl";
+      const firstKindId = Object.keys(cfg.kinds)[0];
+      cfg.kinds[firstKindId].iconSize = "xl";
       expect(iconSizeClassName(cfg, firstKindId)).toBe("h-8 w-8");
     });
 
@@ -145,8 +145,8 @@ describe("typographyClasses (icon helpers)", () => {
     it("respects per-kind iconBordered override", () => {
       const cfg = createDefaultConfig();
       cfg.typography.icon.bordered = true;
-      const firstKindId = Object.keys(cfg.kinds)[0]!;
-      cfg.kinds[firstKindId]!.iconBordered = false;
+      const firstKindId = Object.keys(cfg.kinds)[0];
+      cfg.kinds[firstKindId].iconBordered = false;
       expect(iconWrapperClassName(cfg, firstKindId)).toContain("mt-0.5");
     });
   });
@@ -197,8 +197,8 @@ describe("typographyClasses (icon helpers)", () => {
       const cfg = createDefaultConfig();
       cfg.typography.icon.bordered = true;
       cfg.typography.icon.bgOpacity = 100;
-      const firstKindId = Object.keys(cfg.kinds)[0]!;
-      cfg.kinds[firstKindId]!.iconBgOpacity = 25;
+      const firstKindId = Object.keys(cfg.kinds)[0];
+      cfg.kinds[firstKindId].iconBgOpacity = 25;
       const style = iconWrapperStyle(cfg, "#000", firstKindId);
       expect(style?.backgroundColor).toContain("25%");
     });

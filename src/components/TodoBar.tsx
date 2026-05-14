@@ -71,7 +71,7 @@ export const TodoBar: React.FC<TodoBarProps> = ({ messages, isLive, className })
         <div className="relative flex items-center gap-2 px-3 py-1 text-[11px]">
           <button
             type="button"
-            onClick={() => setCollapsed((c) => !c)}
+            onClick={() => { setCollapsed((c) => !c); }}
             className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"
             title={expanded ? 'Collapse todos' : 'Expand todos'}
           >
@@ -86,7 +86,7 @@ export const TodoBar: React.FC<TodoBarProps> = ({ messages, isLive, className })
           </button>
           <button
             type="button"
-            onClick={() => setDismissedKey(key)}
+            onClick={() => { setDismissedKey(key); }}
             className={cn(
               'ml-auto inline-flex items-center px-1.5 py-0.5 rounded border border-border/60 bg-background',
               'text-muted-foreground hover:text-foreground hover:bg-accent transition-colors',

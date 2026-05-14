@@ -39,7 +39,7 @@ interface AskUserQuestionCardProps {
 interface QuestionShape {
   question: string;
   header?: string;
-  options: Array<{ label: string; description?: string; preview?: string }>;
+  options: { label: string; description?: string; preview?: string }[];
   multiSelect?: boolean;
 }
 
@@ -81,7 +81,7 @@ export function AskUserQuestionCard({ request, onSubmit, onCancel }: AskUserQues
   // selections[i]: for single-select → string | null. for multi-select → string[].
   // For both modes the special value `OTHER_VALUE` means "user picked Other"
   // and the actual text lives in `otherTexts[i]`.
-  const [selections, setSelections] = useState<Array<string | string[] | null>>(
+  const [selections, setSelections] = useState<(string | string[] | null)[]>(
     () => questions.map((q) => (q.multiSelect ? [] : null)),
   );
   const [otherTexts, setOtherTexts] = useState<string[]>(() => questions.map(() => ''));
@@ -108,7 +108,7 @@ export function AskUserQuestionCard({ request, onSubmit, onCancel }: AskUserQues
       const next = prev.slice();
       const q = questions[i];
       if (q.multiSelect) {
-        const list = Array.isArray(next[i]) ? (next[i] as string[]) : [];
+        const list = Array.isArray(next[i]) ? (next[i]) : [];
         next[i] = list.includes(label) ? list.filter((l) => l !== label) : [...list, label];
       } else {
         next[i] = next[i] === label ? null : label;
@@ -203,7 +203,7 @@ export function AskUserQuestionCard({ request, onSubmit, onCancel }: AskUserQues
           </div>
           <button
             type="button"
-            onClick={() => setCollapsed((c) => !c)}
+            onClick={() => { setCollapsed((c) => !c); }}
             aria-label={collapsed ? "Expand question" : "Collapse question"}
             aria-expanded={!collapsed}
             className={cn(
@@ -260,7 +260,7 @@ export function AskUserQuestionCard({ request, onSubmit, onCancel }: AskUserQues
                     <button
                       key={opt.label}
                       type="button"
-                      onClick={() => togglePick(i, opt.label)}
+                      onClick={() => { togglePick(i, opt.label); }}
                       className={cn(
                         "w-full text-left rounded-md border px-3 py-2 transition-colors",
                         "focus:outline-none focus:ring-1 focus:ring-ring",
@@ -299,7 +299,7 @@ export function AskUserQuestionCard({ request, onSubmit, onCancel }: AskUserQues
                     appends this; the agent must not include it itself. */}
                 <button
                   type="button"
-                  onClick={() => togglePick(i, OTHER_VALUE)}
+                  onClick={() => { togglePick(i, OTHER_VALUE); }}
                   className={cn(
                     "w-full text-left rounded-md border border-dashed px-3 py-2 transition-colors",
                     "focus:outline-none focus:ring-1 focus:ring-ring",
@@ -330,7 +330,7 @@ export function AskUserQuestionCard({ request, onSubmit, onCancel }: AskUserQues
                     type="text"
                     autoFocus
                     value={otherTexts[i]}
-                    onChange={(e) => setOtherText(i, e.target.value)}
+                    onChange={(e) => { setOtherText(i, e.target.value); }}
                     onKeyDown={(e) => {
                       // Enter mirrors the Send button — only fires when every
                       // question has a valid answer (same gate as the button's

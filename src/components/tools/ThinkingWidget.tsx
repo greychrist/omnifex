@@ -32,7 +32,7 @@ export const ThinkingWidget: React.FC<{
   return (
     <div className="rounded-lg border overflow-hidden" style={style}>
       <button
-        onClick={() => setIsExpanded(!isExpanded)}
+        onClick={() => { setIsExpanded(!isExpanded); }}
         className="w-full px-4 py-3 flex items-center justify-between transition-colors"
       >
         <div className="flex items-center gap-2">

@@ -148,7 +148,7 @@ export function useSessionTimeouts({
         ]);
       }
     }, 3000);
-    return () => clearInterval(check);
+    return () => { clearInterval(check); };
   }, [isLoading, waitingForPermission]);
 
   return {

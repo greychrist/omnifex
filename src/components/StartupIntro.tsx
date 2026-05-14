@@ -30,7 +30,7 @@ export function StartupIntro({ visible }: { visible: boolean }) {
               background:
                 "radial-gradient(800px circle at 50% 55%, var(--color-primary)/8, transparent 65%)",
               pointerEvents: "none",
-            } as CSSProperties}
+            }}
           />
 
           {/* Subtle vignette */}

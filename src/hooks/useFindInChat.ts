@@ -46,7 +46,7 @@ const MARK_ATTR = 'data-find';
 const ACTIVE_CLASS = 'is-active';
 const SKIP_ATTR = 'data-find-skip';
 
-type Match = { node: Text; offset: number; length: number };
+interface Match { node: Text; offset: number; length: number }
 
 function isSkippedElement(el: Element): boolean {
   const tag = el.tagName;
@@ -239,7 +239,7 @@ export function useFindInChat({
       performWalk(wasFirstWalk);
       hasWalkedSinceOpenRef.current = true;
     }, DEBOUNCE_MS);
-    return () => clearTimeout(t);
+    return () => { clearTimeout(t); };
   }, [isOpen, query, transcriptVersion, performWalk]);
 
   // Cleanup when the bar closes — drop all marks and reset state.

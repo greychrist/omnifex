@@ -158,15 +158,15 @@ const TOOL_LABEL_BUILDERS: Record<
   Bash: (i) =>
     `Running command${
       typeof i.description === 'string'
-        ? `: ${(i.description as string).slice(0, 60)}`
+        ? `: ${(i.description).slice(0, 60)}`
         : ''
     }`,
   WebFetch: (i) =>
-    `Fetching ${typeof i.url === 'string' ? (i.url as string).slice(0, 50) : 'URL'}`,
+    `Fetching ${typeof i.url === 'string' ? (i.url).slice(0, 50) : 'URL'}`,
   WebSearch: (i) =>
     `Searching web${
       typeof i.query === 'string'
-        ? `: "${(i.query as string).slice(0, 40)}"`
+        ? `: "${(i.query).slice(0, 40)}"`
         : ''
     }`,
   Task: (i) =>

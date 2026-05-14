@@ -69,12 +69,12 @@ export const MessageKindTree: React.FC<MessageKindTreeProps> = ({
       {GROUP_ORDER.map((group) => {
         const kinds = groups[group];
         if (kinds.length === 0) return null;
-        const isCollapsed = collapsed[group] === true;
+        const isCollapsed = collapsed[group];
         return (
           <div key={group} className="mb-1">
             <button
               type="button"
-              onClick={() => setCollapsed((c) => ({ ...c, [group]: !isCollapsed }))}
+              onClick={() => { setCollapsed((c) => ({ ...c, [group]: !isCollapsed })); }}
               className="w-full flex items-center gap-1 px-2 py-1 rounded hover:bg-muted/40 text-label uppercase tracking-wider text-muted-foreground"
             >
               {isCollapsed ? (
@@ -123,7 +123,7 @@ const TreeRow: React.FC<TreeRowProps> = ({ kind, palette, selected, onSelect }) 
   return (
     <button
       type="button"
-      onClick={() => onSelect(kind.id)}
+      onClick={() => { onSelect(kind.id); }}
       className={cn(
         "w-full flex items-center gap-2 px-2 py-1.5 rounded text-left transition-colors",
         selected ? "bg-primary/10 text-foreground" : "hover:bg-muted/40 text-foreground/80",

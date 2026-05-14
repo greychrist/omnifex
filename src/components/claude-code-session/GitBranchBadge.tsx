@@ -54,12 +54,12 @@ export const GitBranchBadge: React.FC<GitBranchBadgeProps> = ({
   if (untracked > 0) titleParts.push(`${untracked} untracked`);
 
   const useColor = !isTrunk && color != null;
-  const nearBlack = useColor && isNearBlack(color!);
+  const nearBlack = useColor && isNearBlack(color);
 
   const inlineStyle = useColor
     ? nearBlack
       ? { backgroundColor: '#ffffff26', color: '#ffffff', borderColor: `${color}cc` }
-      : { backgroundColor: `${color}33`, color: color!, borderColor: `${color}4d` }
+      : { backgroundColor: `${color}33`, color: color, borderColor: `${color}4d` }
     : undefined;
 
   const badgeContent = (

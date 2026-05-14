@@ -25,7 +25,7 @@ export const ColorSwatchGrid: React.FC<ColorSwatchGridProps> = ({ value, onChang
         <button
           key={swatch}
           type="button"
-          onClick={() => onChange(swatch)}
+          onClick={() => { onChange(swatch); }}
           className={cn(
             "w-[22px] h-[22px] rounded cursor-pointer transition-shadow",
             value.toLowerCase() === swatch.toLowerCase()
@@ -39,7 +39,7 @@ export const ColorSwatchGrid: React.FC<ColorSwatchGridProps> = ({ value, onChang
       <input
         type="color"
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(e) => { onChange(e.target.value); }}
         className="w-[22px] h-[22px] rounded cursor-pointer border border-border bg-transparent"
         title="Custom color"
       />

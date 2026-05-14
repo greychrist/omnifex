@@ -74,7 +74,7 @@ export const AccountPickerDialog: React.FC<AccountPickerDialogProps> = ({
           {accounts.map((account) => (
             <button
               key={account.id}
-              onClick={() => setSelectedId(account.id)}
+              onClick={() => { setSelectedId(account.id); }}
               className={cn(
                 "flex items-center gap-3 px-4 py-3 rounded-lg border text-left transition-colors",
                 selectedId === account.id
@@ -94,14 +94,14 @@ export const AccountPickerDialog: React.FC<AccountPickerDialogProps> = ({
           <input
             type="checkbox"
             checked={remember}
-            onChange={(e) => setRemember(e.target.checked)}
+            onChange={(e) => { setRemember(e.target.checked); }}
             className="rounded"
           />
           Remember for this project
         </label>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="outline" onClick={() => { onOpenChange(false); }}>
             Cancel
           </Button>
           <Button onClick={handleConfirm} disabled={selectedId === null || loading}>

@@ -106,7 +106,7 @@ export function ClaudeBinaryDialog({ open, onOpenChange, onSuccess, onError }: C
         {!checkingInstallations && hasInstallations && (
           <div className="py-4">
             <ClaudeVersionSelector
-              onSelect={(installation) => setSelectedInstallation(installation)}
+              onSelect={(installation) => { setSelectedInstallation(installation); }}
               selectedPath={null}
             />
           </div>
@@ -123,7 +123,7 @@ export function ClaudeBinaryDialog({ open, onOpenChange, onSuccess, onError }: C
           </Button>
           <Button
             variant="outline"
-            onClick={() => onOpenChange(false)}
+            onClick={() => { onOpenChange(false); }}
             disabled={isValidating}
           >
             Cancel

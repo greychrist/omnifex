@@ -144,7 +144,7 @@ const AccountSection: React.FC<{
           <button
             type="button"
             className="w-full flex items-center justify-between"
-            onClick={() => setShowProjects((p) => !p)}
+            onClick={() => { setShowProjects((p) => !p); }}
           >
             <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
               Projects ({sortedProjects.length})
@@ -272,7 +272,7 @@ export const UsageDashboard: React.FC<UsageDashboardProps> = ({}) => {
                   key={range}
                   variant={selectedDateRange === range ? "default" : "outline"}
                   size="sm"
-                  onClick={() => setSelectedDateRange(range)}
+                  onClick={() => { setSelectedDateRange(range); }}
                   disabled={loading}
                 >
                   {range === "all"
@@ -297,7 +297,7 @@ export const UsageDashboard: React.FC<UsageDashboardProps> = ({}) => {
                     ? "bg-primary text-primary-foreground"
                     : "text-muted-foreground hover:text-foreground hover:bg-muted",
                 )}
-                onClick={() => setSelectedAccount("all")}
+                onClick={() => { setSelectedAccount("all"); }}
               >
                 All
               </button>
@@ -311,7 +311,7 @@ export const UsageDashboard: React.FC<UsageDashboardProps> = ({}) => {
                       ? "bg-primary text-primary-foreground"
                       : "text-muted-foreground hover:text-foreground hover:bg-muted",
                   )}
-                  onClick={() => setSelectedAccount(acct.name)}
+                  onClick={() => { setSelectedAccount(acct.name); }}
                 >
                   {acct.name}
                   <span className="opacity-60 uppercase text-[10px]">

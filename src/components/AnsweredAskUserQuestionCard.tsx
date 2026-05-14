@@ -159,7 +159,7 @@ function parseAnswerPayload(
   // aggregates them into one trailing sentence), so matching by answer
   // text is the only honest mapping back.
   const annotations: Record<string, { notes?: string }> = {};
-  const notesMatch = text.match(/user notes:\s*([\s\S]*?)(?:\.\s*You can now continue|$)/);
+  const notesMatch = /user notes:\s*([\s\S]*?)(?:\.\s*You can now continue|$)/.exec(text);
   if (notesMatch) {
     const notes = notesMatch[1];
     const otherTexts: string[] = Array.from(
@@ -209,7 +209,7 @@ function parseQuestions(input: unknown): QuestionShape[] {
  */
 function extractOtherText(note: string | undefined): string | null {
   if (!note) return null;
-  const m = note.match(/User selected Other:\s*["“”]?(.*?)["“”]?$/);
+  const m = /User selected Other:\s*["“”]?(.*?)["“”]?$/.exec(note);
   if (!m) return null;
   const text = m[1].trim();
   return text.length > 0 ? text : null;

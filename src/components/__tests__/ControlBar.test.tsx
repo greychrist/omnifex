@@ -12,7 +12,7 @@ import {
 } from "../ControlBar";
 import { TooltipProvider } from "../ui/tooltip-modern";
 
-afterEach(() => cleanup());
+afterEach(() => { cleanup(); });
 
 function renderInProvider(node: React.ReactNode) {
   return render(<TooltipProvider>{node}</TooltipProvider>);
@@ -71,7 +71,7 @@ describe("EffortPicker (compact)", () => {
     renderInProvider(
       <EffortPicker effort="high" open={false} onOpenChange={onOpenChange} />,
     );
-    const trigger = screen.getAllByRole("button")[0]!;
+    const trigger = screen.getAllByRole("button")[0];
     fireEvent.click(trigger);
     expect(onOpenChange).toHaveBeenCalled();
   });
@@ -108,7 +108,7 @@ describe("EffortPicker (compact)", () => {
     );
     // "Max" full name is the second occurrence (shortName == name for max)
     const matches = screen.getAllByText("Max");
-    const target = matches[matches.length - 1]!;
+    const target = matches[matches.length - 1];
     expect(() => fireEvent.click(target)).not.toThrow();
   });
 
@@ -121,7 +121,7 @@ describe("EffortPicker (compact)", () => {
         disabled
       />,
     );
-    const trigger = screen.getAllByRole("button")[0]!;
+    const trigger = screen.getAllByRole("button")[0];
     expect((trigger as HTMLButtonElement).disabled).toBe(true);
   });
 });
@@ -150,7 +150,7 @@ describe("EffortPicker (expanded)", () => {
         variant="expanded"
       />,
     );
-    fireEvent.click(screen.getAllByRole("button")[0]!);
+    fireEvent.click(screen.getAllByRole("button")[0]);
     expect(onOpenChange).toHaveBeenCalledWith(true);
   });
 });
@@ -192,7 +192,7 @@ describe("ThinkingPicker (compact)", () => {
         onOpenChange={onOpenChange}
       />,
     );
-    fireEvent.click(screen.getAllByRole("button")[0]!);
+    fireEvent.click(screen.getAllByRole("button")[0]);
     expect(onOpenChange).toHaveBeenCalled();
   });
 
@@ -223,7 +223,7 @@ describe("ThinkingPicker (compact)", () => {
     );
     // "Off" is both shortName and full name; click the option's button by walking up
     const matches = screen.getAllByText("Off");
-    const target = matches[matches.length - 1]!;
+    const target = matches[matches.length - 1];
     fireEvent.click(target);
     expect(onChange).toHaveBeenCalledWith("disabled");
     expect(onOpenChange).toHaveBeenCalledWith(false);
@@ -277,7 +277,7 @@ describe("ThinkingPicker (form)", () => {
         variant="form"
       />,
     );
-    fireEvent.click(screen.getAllByRole("button")[0]!);
+    fireEvent.click(screen.getAllByRole("button")[0]);
     expect(onOpenChange).toHaveBeenCalledWith(true);
   });
 });
@@ -328,7 +328,7 @@ describe("PermissionPicker (compact)", () => {
         onOpenChange={onOpenChange}
       />,
     );
-    fireEvent.click(screen.getAllByRole("button")[0]!);
+    fireEvent.click(screen.getAllByRole("button")[0]);
     expect(onOpenChange).toHaveBeenCalled();
   });
 
@@ -408,7 +408,7 @@ describe("PermissionPicker (form)", () => {
         variant="form"
       />,
     );
-    fireEvent.click(screen.getAllByRole("button")[0]!);
+    fireEvent.click(screen.getAllByRole("button")[0]);
     expect(onOpenChange).toHaveBeenCalledWith(true);
   });
 

@@ -37,7 +37,7 @@ describe("AppFontProvider", () => {
       </AppFontProvider>,
     );
 
-    await waitFor(() => expect(captured.font).toBe("inter"));
+    await waitFor(() => { expect(captured.font).toBe("inter"); });
   });
 
   it("loads the stored value and applies --app-font-stack", async () => {
@@ -50,7 +50,7 @@ describe("AppFontProvider", () => {
       </AppFontProvider>,
     );
 
-    await waitFor(() => expect(captured.font).toBe("geist"));
+    await waitFor(() => { expect(captured.font).toBe("geist"); });
     expect(document.documentElement.style.getPropertyValue("--app-font-stack")).toMatch(/Geist/);
   });
 
@@ -64,7 +64,7 @@ describe("AppFontProvider", () => {
       </AppFontProvider>,
     );
 
-    await waitFor(() => expect(captured.font).toBe("inter"));
+    await waitFor(() => { expect(captured.font).toBe("inter"); });
   });
 
   it("setAppFont persists and re-applies the CSS variable", async () => {
@@ -78,7 +78,7 @@ describe("AppFontProvider", () => {
       </AppFontProvider>,
     );
 
-    await waitFor(() => expect(captured.font).toBe("inter"));
+    await waitFor(() => { expect(captured.font).toBe("inter"); });
 
     await act(async () => {
       await captured.setFont("plus-jakarta");
@@ -100,7 +100,7 @@ describe("AppFontProvider", () => {
       </AppFontProvider>,
     );
 
-    await waitFor(() => expect(captured.font).toBe("inter"));
+    await waitFor(() => { expect(captured.font).toBe("inter"); });
 
     await act(async () => {
       await captured.setFont("nonsense");

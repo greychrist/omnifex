@@ -280,7 +280,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     if (defaults.model) setSelectedModel(defaults.model);
     if (defaults.thinkingConfig) setThinkingConfig(normalizeThinkingConfig(defaults.thinkingConfig));
     if (defaults.permissionMode) setPermissionMode(defaults.permissionMode);
-    if (defaults.effort) setEffort(defaults.effort as import('./FloatingPromptInput').EffortLevel);
+    if (defaults.effort) setEffort(defaults.effort);
   }, [accountResolution, sessionStarted]);
 
   // One per-tab git watch covers project status + worktree list + per-peer
@@ -335,7 +335,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   // tooltip lists the offending labels so the user can see *which* row is
   // wedged without needing per-row icons.
   const gitWatchErrors = useMemo(() => {
-    const out: Array<{ label: string; error: string }> = [];
+    const out: { label: string; error: string }[] = [];
     if (gitStatus?.error) out.push({ label: gitStatus.branch ?? 'project', error: gitStatus.error });
     for (const wt of worktreeList) {
       if (wt.error) out.push({ label: wt.branch ?? wt.path, error: wt.error });
@@ -439,7 +439,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     lastActivityTime: Date.now(),
     toolExecutionTimes: [] as number[],
     wasResumed: !!session,
-    modelChanges: [] as Array<{ from: string; to: string; timestamp: number }>,
+    modelChanges: [] as { from: string; to: string; timestamp: number }[],
   });
 
   // Call onProjectPathChange when component mounts with initial path
@@ -458,7 +458,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
         project_id: extractedSessionInfo.projectId,
         project_path: projectPath,
         created_at: Date.now(),
-      } as Session;
+      };
     }
     return null;
   }, [session, extractedSessionInfo, projectPath]);
@@ -601,7 +601,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       }
     };
     window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
+    return () => { window.removeEventListener('keydown', handler); };
   }, []);
 
   const findResults = useFindInChat({
@@ -628,7 +628,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       }
     });
     observer.observe(contentEl);
-    return () => observer.disconnect();
+    return () => { observer.disconnect(); };
   }, [waitingForPermission]);
 
   // Calculate total tokens from messages — guard against undefined fields to avoid NaN
@@ -828,15 +828,15 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             sessionSupportedModels: api.sessionSupportedModels,
           },
           persistSession: ({ sessionId, projectId, projectPath: pp, messageCount }) =>
-            SessionPersistenceService.saveSession(sessionId, projectId, pp, messageCount),
-          setSdkAccountInfo: (info) => setSdkAccountInfo(info as any),
-          setContextUsage: (usage) => setContextUsage(usage as any),
-          setSupportedModels: (models) => setSupportedModels(models as any),
+            { SessionPersistenceService.saveSession(sessionId, projectId, pp, messageCount); },
+          setSdkAccountInfo: (info) => { setSdkAccountInfo(info as any); },
+          setContextUsage: (usage) => { setContextUsage(usage as any); },
+          setSupportedModels: (models) => { setSupportedModels(models as any); },
           queuedPromptsRef,
           setQueuedPrompts,
           handleSendPrompt,
           onError: (kind, err) =>
-            console.error(`[sessions] effect ${kind} failed:`, err),
+            { console.error(`[sessions] effect ${kind} failed:`, err); },
         });
       }
 
@@ -947,10 +947,10 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
         if (!rebound) {
           await startPersistentSession(session.id);
         }
-      })().catch((err) => console.error("[auto-start] resume/rebind failed:", err));
+      })().catch((err) => { console.error("[auto-start] resume/rebind failed:", err); });
     } else if (initialSessionConfig) {
       startPersistentSession().catch((err) =>
-        console.error("[auto-start] fresh start failed:", err),
+        { console.error("[auto-start] fresh start failed:", err); },
       );
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -963,7 +963,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
         setElicitationRequest(payload);
       },
     );
-    return () => unlisten();
+    return () => { unlisten(); };
   }, []);
 
   // Rate-limit snapshots for the active account: fetch initial state on
@@ -983,7 +983,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
         for (const s of snaps) byType[s.rate_limit_type] = s;
         setRateLimitSnapshots(byType);
       })
-      .catch((err) => console.error('[rate-limits] initial fetch failed:', err));
+      .catch((err) => { console.error('[rate-limits] initial fetch failed:', err); });
 
     const unlisten = window.electronAPI.onEvent(
       'rate-limits:updated',
@@ -1054,7 +1054,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
         }
       },
     );
-    return () => unlisten();
+    return () => { unlisten(); };
   }, []);
 
   // Keep queuedPromptsRef in sync with state
@@ -1119,7 +1119,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
         console.error("stopSession also failed:", stopErr);
       }
 
-      unlistenRefs.current.forEach((unlisten) => unlisten());
+      unlistenRefs.current.forEach((unlisten) => { unlisten(); });
       unlistenRefs.current = [];
 
       setIsLoading(false);
@@ -1160,7 +1160,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     // handle.
     try { await api.stopSession(tid); } catch { /* best effort */ }
 
-    unlistenRefs.current.forEach((u) => u());
+    unlistenRefs.current.forEach((u) => { u(); });
     unlistenRefs.current = [];
 
     persistentSessionRef.current = false;
@@ -1193,7 +1193,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     }
 
     // Tear down the stream listeners attached to the dead session.
-    unlistenRefs.current.forEach((unlisten) => unlisten());
+    unlistenRefs.current.forEach((unlisten) => { unlisten(); });
     unlistenRefs.current = [];
 
     // Session-state flags
@@ -1521,8 +1521,8 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
               matchType={accountResolution.match_type}
               matchDetail={accountResolution.match_detail}
               sdkAccount={sdkAccountInfo}
-              fiveHourRateLimit={rateLimitSnapshots['five_hour'] ?? null}
-              sevenDayRateLimit={rateLimitSnapshots['seven_day'] ?? null}
+              fiveHourRateLimit={rateLimitSnapshots.five_hour ?? null}
+              sevenDayRateLimit={rateLimitSnapshots.seven_day ?? null}
               sessionStatus={sessionStatus}
             />
           )}
@@ -1609,7 +1609,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                 setSessionStarted(true);
                 startPersistentSession();
               }}
-              onChangeAccount={() => setShowAccountPicker(true)}
+              onChangeAccount={() => { setShowAccountPicker(true); }}
             />
           </div>
         )}
@@ -1708,7 +1708,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                         whileTap={{ scale: 0.97 }}
                         transition={{ duration: 0.15 }}
                       >
-                        <Button variant="ghost" size="icon" onClick={() => setQueuedPromptsCollapsed(prev => !prev)}>
+                        <Button variant="ghost" size="icon" onClick={() => { setQueuedPromptsCollapsed(prev => !prev); }}>
                           {queuedPromptsCollapsed ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
                         </Button>
                       </motion.div>
@@ -1741,7 +1741,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                           size="icon"
                           className="h-6 w-6 flex-shrink-0"
                           title="Remove from queue"
-                          onClick={() => setQueuedPrompts(prev => prev.filter(p => p.id !== queuedPrompt.id))}
+                          onClick={() => { setQueuedPrompts(prev => prev.filter(p => p.id !== queuedPrompt.id)); }}
                         >
                           <X className="h-3 w-3" />
                         </Button>
@@ -1892,7 +1892,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                         console.error('Failed to switch mode:', err);
                         const msg = err instanceof Error ? err.message : String(err);
                         setError(`Mode switch failed: ${msg}`);
-                        setTimeout(() => setError(null), 5000);
+                        setTimeout(() => { setError(null); }, 5000);
                       });
                     }}
                     disabled={modeToggleDisabled}
@@ -2029,7 +2029,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                   <Button
                     variant="ghost"
                     size="icon"
-                    onClick={() => setShowMCPPanel(false)}
+                    onClick={() => { setShowMCPPanel(false); }}
                     className="h-8 w-8"
                   >
                     <X className="h-4 w-4" />
@@ -2059,7 +2059,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                   <Button
                     variant="ghost"
                     size="icon"
-                    onClick={() => setShowPluginsPanel(false)}
+                    onClick={() => { setShowPluginsPanel(false); }}
                     className="h-8 w-8"
                   >
                     <X className="h-4 w-4" />
@@ -2089,7 +2089,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                   <Button
                     variant="ghost"
                     size="icon"
-                    onClick={() => setShowPermissionsPanel(false)}
+                    onClick={() => { setShowPermissionsPanel(false); }}
                     className="h-8 w-8"
                   >
                     <X className="h-4 w-4" />

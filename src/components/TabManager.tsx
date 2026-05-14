@@ -101,9 +101,9 @@ const TabItem: React.FC<TabItemProps> = ({ tab, isActive, onClose, onClick, isDr
           : "text-muted-foreground hover:text-foreground hover:bg-white/5",
         isDragging && "shadow-md",
       )}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-      onClick={() => onClick(tab.id)}
+      onMouseEnter={() => { setIsHovered(true); }}
+      onMouseLeave={() => { setIsHovered(false); }}
+      onClick={() => { onClick(tab.id); }}
       onDragStart={() => setDraggedTabId?.(tab.id)}
       onDragEnd={() => setDraggedTabId?.(null)}
     >
@@ -327,7 +327,7 @@ export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            onClick={() => scrollTabs('left')}
+            onClick={() => { scrollTabs('left'); }}
             className={cn(
               "p-1.5 hover:bg-muted/80 rounded-sm z-20 ml-1",
               "transition-colors duration-200 flex items-center justify-center",
@@ -406,7 +406,7 @@ export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            onClick={() => scrollTabs('right')}
+            onClick={() => { scrollTabs('right'); }}
             className={cn(
               "p-1.5 hover:bg-muted/80 rounded-sm z-20 mr-1",
               "transition-colors duration-200 flex items-center justify-center",

@@ -185,7 +185,7 @@ export const MCPImportExport: React.FC<MCPImportExportProps> = ({
             </div>
             <SelectComponent
               value={importScope}
-              onValueChange={(value: string) => setImportScope(value)}
+              onValueChange={(value: string) => { setImportScope(value); }}
               options={[
                 { value: "local", label: "Local (this project only)" },
                 { value: "project", label: "Project (shared via .mcp.json)" },

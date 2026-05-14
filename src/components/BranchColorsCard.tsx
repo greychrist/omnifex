@@ -40,10 +40,10 @@ export const BranchColorsCard: React.FC<BranchColorsCardProps> = ({
     setEditing({ id: row.id, branch: row.branch_name, color: row.color });
   };
 
-  const cancel = () => setEditing(null);
+  const cancel = () => { setEditing(null); };
 
   const save = async () => {
-    if (!editing || !editing.branch) return;
+    if (!editing?.branch) return;
     await api.upsertBranchColor({
       projectPath,
       branchName: editing.branch,
@@ -89,7 +89,7 @@ export const BranchColorsCard: React.FC<BranchColorsCardProps> = ({
             return (
               <EditorRow
                 key={row.id}
-                editing={editing!}
+                editing={editing}
                 setEditing={setEditing}
                 availableBranches={availableBranches}
                 takenBranches={new Set(rows.filter((r) => r.id !== row.id).map((r) => r.branch_name))}
@@ -108,7 +108,7 @@ export const BranchColorsCard: React.FC<BranchColorsCardProps> = ({
                 isTrunk={preview.trunkBlack.has(row.branch_name)}
               />
               <div className="flex-1" />
-              <Button size="sm" variant="ghost" onClick={() => startEdit(row)} className="h-7 w-7 p-0">
+              <Button size="sm" variant="ghost" onClick={() => { startEdit(row); }} className="h-7 w-7 p-0">
                 <Pencil className="h-3.5 w-3.5" />
               </Button>
               <Button size="sm" variant="ghost" onClick={() => remove(row.id)} className="h-7 w-7 p-0">
@@ -118,7 +118,7 @@ export const BranchColorsCard: React.FC<BranchColorsCardProps> = ({
           );
         })}
 
-        {editing && editing.id === null && (
+        {editing?.id === null && (
           <EditorRow
             editing={editing}
             setEditing={setEditing}
@@ -150,7 +150,7 @@ const EditorRow: React.FC<EditorRowProps> = ({ editing, setEditing, availableBra
   return (
     <div className="rounded border border-border/50 p-2 space-y-2">
       {branches.length > 0 ? (
-        <Select value={editing.branch} onValueChange={(v) => setEditing({ ...editing, branch: v })}>
+        <Select value={editing.branch} onValueChange={(v) => { setEditing({ ...editing, branch: v }); }}>
           <SelectTrigger className="h-8 text-xs">
             <SelectValue placeholder="Choose a branch" />
           </SelectTrigger>
@@ -163,7 +163,7 @@ const EditorRow: React.FC<EditorRowProps> = ({ editing, setEditing, availableBra
       ) : (
         <p className="text-xs text-muted-foreground">No branches detected — open a git repo first.</p>
       )}
-      <ColorSwatchGrid value={editing.color} onChange={(color) => setEditing({ ...editing, color })} />
+      <ColorSwatchGrid value={editing.color} onChange={(color) => { setEditing({ ...editing, color }); }} />
       <div className="flex gap-1 justify-end">
         <Button size="sm" variant="outline" onClick={onCancel} className="h-7 px-2 gap-1 text-xs">
           <X className="h-3.5 w-3.5" /> Cancel

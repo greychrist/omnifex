@@ -139,7 +139,7 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
         setProjectAccountName(account?.name ?? project.account_name ?? null);
         if (account) updateTab(tab.id, { accountName: account.name, accountColor: account.color, accountIcon: account.icon });
         else if (project.account_name) setProjectAccountName(project.account_name);
-      }).catch(() => setProjectAccountName(project.account_name ?? null));
+      }).catch(() => { setProjectAccountName(project.account_name ?? null); });
 
       // Resolve full account info (with match_type / match_detail) so the
       // inline new-session form can show the same Account/Config/Matched-by
@@ -158,7 +158,7 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
           if (d.thinkingConfig) setFormThinkingConfig(normalizeThinkingConfig(d.thinkingConfig));
           if (d.permissionMode) setFormPermissionMode(d.permissionMode);
         }
-      }).catch(() => setProjectAccountResolution(null));
+      }).catch(() => { setProjectAccountResolution(null); });
 
       // Update tab title to "<ProjectName>: Sessions" and flip the
       // tab icon from Folder → List so the strip reflects that the
@@ -373,7 +373,7 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                             permissionMode={formPermissionMode}
                             setPermissionMode={setFormPermissionMode}
                             onStart={handleStartNewSession}
-                            onChangeAccount={() => setShowChangeAccountDialog(true)}
+                            onChangeAccount={() => { setShowChangeAccountDialog(true); }}
                           />
                         </div>
                         {selectedProject && (
@@ -413,7 +413,7 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                             sessions={sessions}
                             projectPath={selectedProject.path}
                             onSessionClick={openSessionInTab}
-                            onOpenById={() => setShowOpenByIdDialog(true)}
+                            onOpenById={() => { setShowOpenByIdDialog(true); }}
                             onRefresh={async () => {
                               try {
                                 const fresh = await api.getProjectSessions(
@@ -680,7 +680,7 @@ export const TabContent: React.FC = () => {
         // If we're in a projects tab, update it to show the session
         // Otherwise create a new tab (for compatibility with other parts of the app)
         const currentTab = tabs.find(t => t.id === activeTabId);
-        if (currentTab && currentTab.type === 'projects') {
+        if (currentTab?.type === 'projects') {
           updateTab(currentTab.id, {
             type: 'chat',
             title: session.project_path.split('/').pop() || 'Session',
@@ -709,7 +709,7 @@ export const TabContent: React.FC = () => {
     // navigation flow instead of having to close and reopen the tab.
     const handleBackToProject = () => {
       const currentTab = tabs.find((t) => t.id === activeTabId);
-      if (currentTab && currentTab.type === 'chat') {
+      if (currentTab?.type === 'chat') {
         updateTab(currentTab.id, {
           type: 'projects',
           title: 'Projects',
@@ -725,12 +725,12 @@ export const TabContent: React.FC = () => {
     window.addEventListener('open-session-in-tab', handleOpenSessionInTab as EventListener);
     window.addEventListener('close-tab', handleCloseTab as EventListener);
     window.addEventListener('claude-session-selected', handleClaudeSessionSelected as EventListener);
-    window.addEventListener('back-to-project', handleBackToProject as EventListener);
+    window.addEventListener('back-to-project', handleBackToProject);
     return () => {
       window.removeEventListener('open-session-in-tab', handleOpenSessionInTab as EventListener);
       window.removeEventListener('close-tab', handleCloseTab as EventListener);
       window.removeEventListener('claude-session-selected', handleClaudeSessionSelected as EventListener);
-      window.removeEventListener('back-to-project', handleBackToProject as EventListener);
+      window.removeEventListener('back-to-project', handleBackToProject);
     };
   }, [createChatTab, findTabBySessionId, closeTab, updateTab, activeTabId, tabs]);
   

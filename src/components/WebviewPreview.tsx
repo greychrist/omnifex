@@ -87,7 +87,7 @@ const WebviewPreviewComponent: React.FC<WebviewPreviewProps> = ({
     };
 
     document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
+    return () => { document.removeEventListener('keydown', handleKeyDown); };
   }, [isMaximized, onToggleMaximize]);
 
   // Debug: Log initial URL on mount
@@ -116,7 +116,7 @@ const WebviewPreviewComponent: React.FC<WebviewPreviewProps> = ({
         setIsLoading(false);
       }, 1000);
 
-      return () => clearTimeout(timer);
+      return () => { clearTimeout(timer); };
     }
   }, [currentUrl]);
 
@@ -175,7 +175,7 @@ const WebviewPreviewComponent: React.FC<WebviewPreviewProps> = ({
   const handleRefresh = () => {
     setIsLoading(true);
     // In real implementation, this would call webview.reload()
-    setTimeout(() => setIsLoading(false), 1000);
+    setTimeout(() => { setIsLoading(false); }, 1000);
   };
 
   const handleGoHome = () => {
@@ -282,7 +282,7 @@ const WebviewPreviewComponent: React.FC<WebviewPreviewProps> = ({
           <div className="flex-1 relative">
             <Input
               value={inputUrl}
-              onChange={(e) => setInputUrl(e.target.value)}
+              onChange={(e) => { setInputUrl(e.target.value); }}
               onKeyDown={handleKeyDown}
               onCompositionStart={handleCompositionStart}
               onCompositionEnd={handleCompositionEnd}
@@ -342,7 +342,7 @@ const WebviewPreviewComponent: React.FC<WebviewPreviewProps> = ({
             className="absolute inset-0 w-full h-full border-0"
             title="Preview"
             sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox"
-            onLoad={() => setIsLoading(false)}
+            onLoad={() => { setIsLoading(false); }}
             onError={() => {
               setHasError(true);
               setIsLoading(false);

@@ -102,10 +102,10 @@ export function summarizeHiddenEvents(messages: ClaudeStreamMessage[]): string {
   if (c.toolResult > 0) parts.push(`processed ${plural(c.toolResult, 'tool result', 'tool results')}`);
 
   if (parts.length === 0 && c.systemEvents > 0) {
-    parts.push(`${plural(c.systemEvents, 'system event', 'system events')}`);
+    parts.push(plural(c.systemEvents, 'system event', 'system events'));
   }
   if (parts.length === 0 && c.text > 0) {
-    parts.push(`${plural(c.text, 'message', 'messages')}`);
+    parts.push(plural(c.text, 'message', 'messages'));
   }
 
   if (parts.length === 0) return '';

@@ -6,14 +6,14 @@ import { Popover } from "@/components/ui/popover";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip-modern";
 import { motion } from "framer-motion";
 
-export type Model = {
+export interface Model {
   id: string;
   name: string;
   description: string;
   icon: React.ReactNode;
   shortName: string;
   color: string;
-};
+}
 
 export const MODELS: Model[] = [
   {
@@ -69,7 +69,7 @@ export function ModelPickerDropdown({ models, selectedModel, onSelect }: ModelPi
       {models.map((model) => (
         <button
           key={model.id}
-          onClick={() => onSelect(model.id)}
+          onClick={() => { onSelect(model.id); }}
           className={cn(
             "w-full flex items-start gap-3 p-3 rounded-md transition-colors text-left",
             "hover:bg-accent",
@@ -191,7 +191,7 @@ export function ExpandedModelPicker({
           <Button
             variant="outline"
             size="sm"
-            onClick={() => onOpenChange(!open)}
+            onClick={() => { onOpenChange(!open); }}
             className="gap-2"
           >
             <span className={selectedModelData.color}>
@@ -247,7 +247,7 @@ export function FormModelPicker({
           variant="outline"
           size="sm"
           disabled={disabled}
-          onClick={() => onOpenChange(!open)}
+          onClick={() => { onOpenChange(!open); }}
           className="w-full justify-between h-9 px-3 font-normal gap-2"
         >
           <span className="flex items-center gap-2 min-w-0">

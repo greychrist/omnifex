@@ -13,9 +13,9 @@ vi.mock('framer-motion', () => ({
       get: (_, key) => {
         const Tag = key as string;
         return ({ children, ...rest }: any) => {
-          const { initial, animate, exit, transition, layout, whileTap, ...domProps } = rest as any;
+          const { initial, animate, exit, transition, layout, whileTap, ...domProps } = rest;
           void initial; void animate; void exit; void transition; void layout; void whileTap;
-          // eslint-disable-next-line react/no-children-prop
+           
           return require('react').createElement(Tag, domProps, children);
         };
       },
@@ -43,14 +43,14 @@ vi.mock('@/hooks', () => ({
   useTheme: () => ({ theme: 'gray', setTheme: async () => {} }),
 }));
 
-afterEach(() => cleanup());
+afterEach(() => { cleanup(); });
 
 function makeProject(partial: Partial<Project> & Pick<Project, 'id' | 'path'>): Project {
   return {
     sessions: [],
     created_at: 0,
     ...partial,
-  } as Project;
+  };
 }
 
 describe('ProjectList — "Last activity" sort', () => {
@@ -111,7 +111,7 @@ describe('ProjectList — click semantics', () => {
     // actions cell is exercised separately below.
     const cells = Array.from(
       container.querySelectorAll('tbody tr td'),
-    ) as HTMLTableCellElement[];
+    );
     // Skip cell[0] (name, has a button) and cell[5] (actions). Click
     // cells 1..4.
     for (const cell of cells.slice(1, 5)) {

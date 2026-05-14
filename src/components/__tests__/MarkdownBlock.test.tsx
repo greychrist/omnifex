@@ -11,7 +11,7 @@ vi.mock("@/hooks", () => ({
 
 import { MarkdownBlock } from "../MarkdownBlock";
 
-afterEach(() => cleanup());
+afterEach(() => { cleanup(); });
 
 describe("MarkdownBlock", () => {
   it("defaults to Rendered view (markdown is parsed to HTML)", () => {

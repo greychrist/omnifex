@@ -4,7 +4,7 @@ import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import { AskUserQuestionCard } from "../AskUserQuestionCard";
 import type { PermissionRequestPayload } from "@/lib/types/permissionRequest";
 
-afterEach(() => cleanup());
+afterEach(() => { cleanup(); });
 
 function makeRequest(
   overrides: Partial<PermissionRequestPayload> = {},
@@ -31,7 +31,7 @@ function makeRequest(
       ],
     },
     ...overrides,
-  } as PermissionRequestPayload;
+  };
 }
 
 describe("AskUserQuestionCard", () => {

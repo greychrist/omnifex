@@ -33,7 +33,7 @@ export const TypefacePicker: React.FC<TypefacePickerProps> = ({
   return (
     <div>
       <Label className="mb-1 block text-caption">{label}</Label>
-      <Select value={value} onValueChange={(v) => onChange(v as Typeface)}>
+      <Select value={value} onValueChange={(v) => { onChange(v as Typeface); }}>
         <SelectTrigger>
           <SelectValue />
         </SelectTrigger>

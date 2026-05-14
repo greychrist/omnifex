@@ -67,7 +67,7 @@ export const CommandOutputWidget: React.FC<{
       } else if (part === '\u001b[22m') {
         isBold = false;
         return;
-      } else if (part.match(/\u001b\[\d+m/)) {
+      } else if (/\u001b\[\d+m/.exec(part)) {
         // Ignore other ANSI codes for now
         return;
       }

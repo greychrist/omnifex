@@ -122,7 +122,7 @@ export const SlashCommandPicker: React.FC<SlashCommandPickerProps> = ({
     if (!commands.length) return [];
 
     const query = searchQuery.toLowerCase();
-    let filtered = commands.filter(cmd => {
+    const filtered = commands.filter(cmd => {
       // Scope filter — "all" passes everything; the others require an exact match.
       if (scopeFilter !== "all" && cmd.scope !== scopeFilter) return false;
 
@@ -131,8 +131,8 @@ export const SlashCommandPicker: React.FC<SlashCommandPickerProps> = ({
       return (
         cmd.name.toLowerCase().includes(query) ||
         cmd.full_command.toLowerCase().includes(query) ||
-        (cmd.namespace && cmd.namespace.toLowerCase().includes(query)) ||
-        (cmd.description && cmd.description.toLowerCase().includes(query))
+        (cmd.namespace?.toLowerCase().includes(query)) ||
+        (cmd.description?.toLowerCase().includes(query))
       );
     });
 
@@ -196,7 +196,7 @@ export const SlashCommandPicker: React.FC<SlashCommandPickerProps> = ({
       }
     };
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    return () => { window.removeEventListener('keydown', handleKeyDown); };
   }, [filteredCommands, selectedIndex, onSelect, onClose]);
 
   // Scroll selected item into view
@@ -313,7 +313,7 @@ export const SlashCommandPicker: React.FC<SlashCommandPickerProps> = ({
                       ? "bg-primary text-primary-foreground"
                       : "text-muted-foreground hover:text-foreground hover:bg-muted"
                   )}
-                  onClick={() => setScopeFilter(f.value)}
+                  onClick={() => { setScopeFilter(f.value); }}
                 >
                   {f.label}
                 </button>
@@ -373,8 +373,8 @@ export const SlashCommandPicker: React.FC<SlashCommandPickerProps> = ({
                         "cursor-pointer hover:bg-accent transition-colors",
                         isSelected && "bg-accent"
                       )}
-                      onMouseEnter={() => setSelectedIndex(index)}
-                      onClick={() => onSelect(command)}
+                      onMouseEnter={() => { setSelectedIndex(index); }}
+                      onClick={() => { onSelect(command); }}
                     >
                       <td className="px-3 py-1.5 font-mono text-primary whitespace-nowrap">
                         {command.full_command}

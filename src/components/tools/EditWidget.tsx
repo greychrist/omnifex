@@ -109,13 +109,13 @@ export const EditResultWidget: React.FC<{ content: string }> = ({ content }) => 
   for (const rawLine of lines) {
     const line = rawLine.replace(/\r$/, '');
     if (line.includes('The file') && line.includes('has been updated')) {
-      const match = line.match(/The file (.+) has been updated/);
+      const match = /The file (.+) has been updated/.exec(line);
       if (match) {
         filePath = match[1];
       }
     } else if (/^\s*\d+/.test(line)) {
       inCodeBlock = true;
-      const lineMatch = line.match(/^\s*(\d+)\t?(.*)$/);
+      const lineMatch = /^\s*(\d+)\t?(.*)$/.exec(line);
       if (lineMatch) {
         const [, lineNum, codePart] = lineMatch;
         codeLines.push({

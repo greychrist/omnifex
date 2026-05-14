@@ -35,7 +35,7 @@ export const HiddenEventsGroup: React.FC<Props> = ({
   if (count === 0) return null;
 
   return (
-    <Collapsible open={open} onOpenChange={(next) => runWith(() => setOpen(next))} className="py-1">
+    <Collapsible open={open} onOpenChange={(next) => { runWith(() => { setOpen(next); }); }} className="py-1">
       <CollapsibleTrigger
         ref={triggerRef}
         className={cn(

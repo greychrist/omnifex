@@ -78,12 +78,12 @@ export interface UsageRunData {
     cache_read: number;
     cache_write: number;
   };
-  windows: Array<{
+  windows: {
     label: 'current_session' | 'week_all_models' | 'week_sonnet';
     pct_used: number;
     resets_at_label: string;
-  }>;
-  contributing: Array<{ headline: string; detail: string }>;
+  }[];
+  contributing: { headline: string; detail: string }[];
   /**
    * Tabular breakdowns Claude shows under "What's contributing" — three
    * separate ranked lists. Each row has the entry name (which Claude
@@ -92,9 +92,9 @@ export interface UsageRunData {
    * `more_count` is the integer from a trailing `… N more` line if Claude
    * decided not to render the long tail; null when fully enumerated.
    */
-  skills: { rows: Array<{ name: string; pct_used: number }>; more_count: number | null };
-  subagents: { rows: Array<{ name: string; pct_used: number }>; more_count: number | null };
-  plugins: { rows: Array<{ name: string; pct_used: number }>; more_count: number | null };
+  skills: { rows: { name: string; pct_used: number }[]; more_count: number | null };
+  subagents: { rows: { name: string; pct_used: number }[]; more_count: number | null };
+  plugins: { rows: { name: string; pct_used: number }[]; more_count: number | null };
 }
 
 export type UsageRunResult =
@@ -163,9 +163,7 @@ export interface Session {
 /**
  * Represents the settings from ~/.claude/settings.json
  */
-export interface ClaudeSettings {
-  [key: string]: any;
-}
+export type ClaudeSettings = Record<string, any>;
 
 /**
  * Branch + working-tree status snapshot for one path (project or worktree).
@@ -811,7 +809,7 @@ export const api = {
       }
 
       // If the result is already the settings object, return it
-      return result as ClaudeSettings;
+      return result;
     } catch (error) {
       console.error("Failed to get Claude settings:", error);
       throw error;
@@ -1011,7 +1009,7 @@ export const api = {
     return apiCall("session_send_message", { tabId, prompt });
   },
 
-  async sendStructuredMessage(tabId: string, content: Array<Record<string, unknown>>): Promise<void> {
+  async sendStructuredMessage(tabId: string, content: Record<string, unknown>[]): Promise<void> {
     return apiCall("session_send_structured_message", { tabId, content });
   },
 
@@ -1276,7 +1274,7 @@ export const api = {
   async updateRateLimitSettings(
     partial: Partial<RateLimitSettings>,
   ): Promise<RateLimitSettings> {
-    return apiCall<RateLimitSettings>("update_rate_limit_settings", partial as Record<string, unknown>);
+    return apiCall<RateLimitSettings>("update_rate_limit_settings", partial);
   },
 
   /**
@@ -1308,7 +1306,7 @@ export const api = {
     args: string[] = [],
     env: Record<string, string> = {},
     url?: string,
-    scope: string = "local",
+    scope = "local",
     configDir?: string
   ): Promise<AddServerResult> {
     try {
@@ -1368,7 +1366,7 @@ export const api = {
   /**
    * Adds an MCP server from JSON configuration
    */
-  async mcpAddJson(name: string, jsonConfig: string, scope: string = "local", configDir?: string): Promise<AddServerResult> {
+  async mcpAddJson(name: string, jsonConfig: string, scope = "local", configDir?: string): Promise<AddServerResult> {
     try {
       return await apiCall<AddServerResult>("mcp_add_json", { name, jsonConfig, scope, configDir });
     } catch (error) {
@@ -1380,7 +1378,7 @@ export const api = {
   /**
    * Imports MCP servers from Claude Desktop
    */
-  async mcpAddFromClaudeDesktop(scope: string = "local", configDir?: string): Promise<ImportResult> {
+  async mcpAddFromClaudeDesktop(scope = "local", configDir?: string): Promise<ImportResult> {
     try {
       return await apiCall<ImportResult>("mcp_add_from_claude_desktop", { scope, configDir });
     } catch (error) {
@@ -1481,7 +1479,7 @@ export const api = {
    */
   async setClaudeBinaryPath(path: string): Promise<void> {
     try {
-      return await apiCall<void>("set_claude_binary_path", { path });
+      await apiCall<void>("set_claude_binary_path", { path }); return;
     } catch (error) {
       console.error("Failed to set Claude binary path:", error);
       throw error;
@@ -1681,11 +1679,11 @@ export const api = {
     updates: Record<string, any>
   ): Promise<void> {
     try {
-      return await apiCall<void>("storage_update_row", {
+      await apiCall<void>("storage_update_row", {
         tableName,
         primaryKeyValues,
         updates,
-      });
+      }); return;
     } catch (error) {
       console.error("Failed to update row:", error);
       throw error;
@@ -1703,10 +1701,10 @@ export const api = {
     primaryKeyValues: Record<string, any>
   ): Promise<void> {
     try {
-      return await apiCall<void>("storage_delete_row", {
+      await apiCall<void>("storage_delete_row", {
         tableName,
         primaryKeyValues,
-      });
+      }); return;
     } catch (error) {
       console.error("Failed to delete row:", error);
       throw error;
@@ -1754,7 +1752,7 @@ export const api = {
    */
   async storageResetDatabase(): Promise<void> {
     try {
-      return await apiCall<void>("storage_reset_database");
+      await apiCall<void>("storage_reset_database"); return;
     } catch (error) {
       console.error("Failed to reset database:", error);
       throw error;
@@ -2147,7 +2145,7 @@ export const api = {
     return apiCall<PathRule[]>('list_path_rules');
   },
 
-  async addPathRule(accountId: number, pathPrefix: string, priority: number = 0): Promise<void> {
+  async addPathRule(accountId: number, pathPrefix: string, priority = 0): Promise<void> {
     return apiCall<void>('add_path_rule', { accountId, pathPrefix, priority });
   },
 
@@ -2230,7 +2228,7 @@ export const api = {
   onSessionInFlightCount(cb: (count: number) => void): () => void {
     return window.electronAPI.onEvent(
       'session-inflight-count',
-      (data: any) => cb(typeof data?.count === 'number' ? data.count : 0),
+      (data: any) => { cb(typeof data?.count === 'number' ? data.count : 0); },
     );
   },
 
@@ -2238,7 +2236,7 @@ export const api = {
     cb: (data: {
       phase: 'waiting' | 'installing';
       activeSessions?: number;
-      tabs?: Array<{ tabId: string; status: string }>;
+      tabs?: { tabId: string; status: string }[];
     }) => void,
   ): () => void {
     return window.electronAPI.onEvent('updater:install-status', cb as any);
@@ -2274,7 +2272,7 @@ export const api = {
   onTabStatusesChanged(cb: (summaries: TabStatusSummary[]) => void): () => void {
     return window.electronAPI.onEvent(
       'tab-status:changed',
-      (data: any) => cb(Array.isArray(data) ? data : []),
+      (data: any) => { cb(Array.isArray(data) ? data : []); },
     );
   },
 

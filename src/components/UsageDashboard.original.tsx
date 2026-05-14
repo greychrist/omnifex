@@ -137,7 +137,7 @@ export const UsageDashboard: React.FC<UsageDashboardProps> = ({ }) => {
                     key={range}
                     variant={selectedDateRange === range ? "default" : "outline"}
                     size="sm"
-                    onClick={() => setSelectedDateRange(range)}
+                    onClick={() => { setSelectedDateRange(range); }}
                   >
                     {range === "all" ? "All Time" : range === "7d" ? "Last 7 Days" : "Last 30 Days"}
                   </Button>

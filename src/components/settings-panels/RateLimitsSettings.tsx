@@ -127,7 +127,7 @@ export const RateLimitsSettings: React.FC<SettingsPanelProps> = ({ setToast }) =
         <Label>5-hour window thresholds (%)</Label>
         <Input
           value={fiveHourText}
-          onChange={(e) => setFiveHourText(e.target.value)}
+          onChange={(e) => { setFiveHourText(e.target.value); }}
           onBlur={handleFiveHourBlur}
           placeholder={DEFAULT_THRESHOLDS}
           className="max-w-sm"
@@ -160,7 +160,7 @@ export const RateLimitsSettings: React.FC<SettingsPanelProps> = ({ setToast }) =
         <Label>7-day window thresholds (%)</Label>
         <Input
           value={sevenDayText}
-          onChange={(e) => setSevenDayText(e.target.value)}
+          onChange={(e) => { setSevenDayText(e.target.value); }}
           onBlur={handleSevenDayBlur}
           placeholder={DEFAULT_THRESHOLDS}
           className="max-w-sm"

@@ -155,7 +155,7 @@ export const SessionMCPStatus: React.FC<SessionMCPStatusProps> = ({ tabId }) => 
                 className="rounded-lg border border-border bg-card"
               >
                 <button
-                  onClick={() => toggleExpanded(server.name)}
+                  onClick={() => { toggleExpanded(server.name); }}
                   className="w-full flex items-center gap-3 p-3 text-left hover:bg-muted/50 transition-colors rounded-lg"
                 >
                   <Icon className={cn("h-4 w-4 shrink-0", colorClass)} />

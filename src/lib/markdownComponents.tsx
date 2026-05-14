@@ -4,7 +4,7 @@ import type { Components, ExtraProps } from "react-markdown";
 import type { ComponentProps } from "react";
 import { MarkdownBlock } from "@/components/MarkdownBlock";
 
-type SyntaxTheme = { [key: string]: CSSProperties };
+type SyntaxTheme = Record<string, CSSProperties>;
 type CodeComponentProps = ComponentProps<"code"> & ExtraProps;
 
 /**
@@ -55,7 +55,7 @@ export function buildMarkdownComponents(
       const codeChild = (node as any)?.children?.[0];
       const className: string =
         codeChild?.properties?.className?.[0] ?? "";
-      const isTagged = /^language-/.test(className);
+      const isTagged = className.startsWith("language-");
       if (isTagged) {
         return <>{children}</>;
       }
@@ -111,5 +111,5 @@ export function buildMarkdownComponents(
         </code>
       );
     },
-  } as Components & { code: (props: CodeComponentProps) => JSX.Element };
+  };
 }

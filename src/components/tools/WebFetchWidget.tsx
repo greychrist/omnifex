@@ -24,7 +24,7 @@ export const WebFetchWidget: React.FC<{
 
   // Extract result content if available
   let fetchedContent = '';
-  let isLoading = !result;
+  const isLoading = !result;
   let hasError = false;
 
   if (result) {
@@ -81,7 +81,7 @@ export const WebFetchWidget: React.FC<{
         {prompt && (
           <div className="ml-6 space-y-1">
             <button
-              onClick={() => setIsExpanded(!isExpanded)}
+              onClick={() => { setIsExpanded(!isExpanded); }}
               className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
             >
               <ChevronRight className={cn("h-3 w-3 transition-transform", isExpanded && "rotate-90")} />
@@ -134,7 +134,7 @@ export const WebFetchWidget: React.FC<{
                 </div>
                 {isTruncated && (
                   <button
-                    onClick={() => setShowFullContent(!showFullContent)}
+                    onClick={() => { setShowFullContent(!showFullContent); }}
                     className="text-xs text-purple-500 hover:text-purple-600 transition-colors flex items-center gap-1"
                   >
                     {showFullContent ? (

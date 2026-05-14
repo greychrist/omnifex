@@ -66,7 +66,7 @@ export function SessionCard({
     try {
       await navigator.clipboard.writeText(sessionId);
       setSessionIdCopied(true);
-      setTimeout(() => setSessionIdCopied(false), 1200);
+      setTimeout(() => { setSessionIdCopied(false); }, 1200);
     } catch (err) {
       console.error("Failed to copy session id:", err);
     }
@@ -75,7 +75,7 @@ export function SessionCard({
   const [chartReady, setChartReady] = React.useState(false);
   React.useEffect(() => {
     if (contextPopoverOpen) {
-      const id = requestAnimationFrame(() => setChartReady(true));
+      const id = requestAnimationFrame(() => { setChartReady(true); });
       return () => { cancelAnimationFrame(id); setChartReady(false); };
     }
     setChartReady(false);
@@ -124,9 +124,9 @@ export function SessionCard({
 
       {(() => {
         const useSdk = contextUsage !== undefined && contextUsage !== null;
-        const tokens = useSdk ? contextUsage!.totalTokens : totalTokens;
+        const tokens = useSdk ? contextUsage.totalTokens : totalTokens;
         const expectsLargeContext = !!model?.includes("[1m]");
-        const sdkLimit = useSdk ? contextUsage!.maxTokens : null;
+        const sdkLimit = useSdk ? contextUsage.maxTokens : null;
         const limit = sdkLimit != null
           ? expectsLargeContext
             ? sdkLimit
@@ -143,8 +143,8 @@ export function SessionCard({
           /free|remaining|available/i.test(name);
         const isClamped = sdkLimit != null && limit < sdkLimit;
         const sortedCategories =
-          useSdk && contextUsage!.categories.length > 0
-            ? contextUsage!.categories
+          useSdk && contextUsage.categories.length > 0
+            ? contextUsage.categories
                 .slice()
                 .sort((a, b) => b.tokens - a.tokens)
                 .filter((c) => c.tokens > 0)

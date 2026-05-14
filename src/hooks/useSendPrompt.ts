@@ -29,7 +29,7 @@ interface UseSendPromptArgs {
     promptsSent: number;
     lastActivityTime: number;
     firstMessageTime: number | null;
-    modelChanges: Array<{ from: string; to: string; timestamp: number }>;
+    modelChanges: { from: string; to: string; timestamp: number }[];
     wasResumed: boolean;
     [key: string]: any;
   }>;
@@ -114,7 +114,7 @@ export function useSendPrompt({
           );
           await api.stopSession(tabId);
           persistentSessionRef.current = false;
-          unlistenRefs.current.forEach((u) => u());
+          unlistenRefs.current.forEach((u) => { u(); });
           unlistenRefs.current = [];
         }
         setSelectedModel(model);
@@ -129,7 +129,7 @@ export function useSendPrompt({
       }
 
       // Build content blocks: text + any pasted images
-      const contentBlocks: Array<Record<string, unknown>> = [];
+      const contentBlocks: Record<string, unknown>[] = [];
       if (prompt) {
         contentBlocks.push({ type: "text", text: prompt });
       }

@@ -93,15 +93,15 @@ export const useClaudeSessionStore = create<ClaudeSessionStoreState>()(
     selectTab: (tabId) => ensureTab(get().tabs, tabId),
 
     patchTab: (tabId, patch) =>
-      set((state) => ({
+      { set((state) => ({
         tabs: {
           ...state.tabs,
           [tabId]: { ...ensureTab(state.tabs, tabId), ...patch },
         },
-      })),
+      })); },
 
     setInflightAssistantText: (tabId, uuid, text, parentToolUseId) =>
-      set((state) => {
+      { set((state) => {
         const existing = ensureTab(state.tabs, tabId);
         return {
           tabs: {
@@ -122,10 +122,10 @@ export const useClaudeSessionStore = create<ClaudeSessionStoreState>()(
             },
           },
         };
-      }),
+      }); },
 
     clearInflightAssistant: (tabId) =>
-      set((state) => {
+      { set((state) => {
         const existing = state.tabs[tabId];
         if (!existing) return state;
         return {
@@ -134,19 +134,19 @@ export const useClaudeSessionStore = create<ClaudeSessionStoreState>()(
             [tabId]: { ...existing, inflightAssistant: null },
           },
         };
-      }),
+      }); },
 
     setMessages: (tabId, next) =>
-      set((state) => {
+      { set((state) => {
         const slice = ensureTab(state.tabs, tabId);
         const messages = typeof next === 'function' ? next(slice.messages) : next;
         return {
           tabs: { ...state.tabs, [tabId]: { ...slice, messages } },
         };
-      }),
+      }); },
 
     appendMessage: (tabId, msg) =>
-      set((state) => {
+      { set((state) => {
         const slice = ensureTab(state.tabs, tabId);
         return {
           tabs: {
@@ -154,10 +154,10 @@ export const useClaudeSessionStore = create<ClaudeSessionStoreState>()(
             [tabId]: { ...slice, messages: [...slice.messages, msg] },
           },
         };
-      }),
+      }); },
 
     insertMessageBeforeFirstUser: (tabId, msg) =>
-      set((state) => {
+      { set((state) => {
         const slice = ensureTab(state.tabs, tabId);
         const idx = slice.messages.findIndex((m) => m.type === 'user');
         const messages =
@@ -167,14 +167,14 @@ export const useClaudeSessionStore = create<ClaudeSessionStoreState>()(
         return {
           tabs: { ...state.tabs, [tabId]: { ...slice, messages } },
         };
-      }),
+      }); },
 
     resetTab: (tabId) =>
-      set((state) => ({
+      { set((state) => ({
         tabs: { ...state.tabs, [tabId]: { ...EMPTY_TAB_SESSION } },
-      })),
+      })); },
 
-    __resetForTests: () => set({ tabs: {} }),
+    __resetForTests: () => { set({ tabs: {} }); },
   })),
 );
 
@@ -206,9 +206,9 @@ function makeSetter<K extends keyof TabSessionState>(
     const slice = store.selectTab(tabId);
     const value =
       typeof next === 'function'
-        ? (next as (prev: TabSessionState[K]) => TabSessionState[K])(slice[key])
+        ? (next)(slice[key])
         : next;
-    store.patchTab(tabId, { [key]: value } as Partial<TabSessionState>);
+    store.patchTab(tabId, { [key]: value });
   };
 }
 
@@ -238,8 +238,8 @@ export function useTabSession(tabId: string): UseTabSessionResult {
     setContextUsage: makeSetter(tabId, 'contextUsage'),
     setSupportedModels: makeSetter(tabId, 'supportedModels'),
     setIsLoading: makeSetter(tabId, 'isLoading'),
-    appendMessage: (msg) => appendMessage(tabId, msg),
-    insertMessageBeforeFirstUser: (msg) => insertBefore(tabId, msg),
-    resetTab: () => resetTab(tabId),
+    appendMessage: (msg) => { appendMessage(tabId, msg); },
+    insertMessageBeforeFirstUser: (msg) => { insertBefore(tabId, msg); },
+    resetTab: () => { resetTab(tabId); },
   };
 }

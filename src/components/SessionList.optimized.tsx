@@ -185,7 +185,7 @@ export const SessionList: React.FC<SessionListProps> = React.memo(({
                   key={session.id}
                   session={session}
                   projectPath={projectPath}
-                  onClick={() => handleSessionClick(session)}
+                  onClick={() => { handleSessionClick(session); }}
                   onEditClaudeFile={onEditClaudeFile}
                 />
               ))}

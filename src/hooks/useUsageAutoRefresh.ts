@@ -28,7 +28,7 @@ export interface UseUsageAutoRefreshResult {
  */
 export function useUsageAutoRefresh(
   accountName: string | null,
-  sessionActive: boolean = false,
+  sessionActive = false,
 ): UseUsageAutoRefreshResult {
   const [data, setData] = useState<UsageRunResult | null>(null);
   const [loading, setLoading] = useState(false);

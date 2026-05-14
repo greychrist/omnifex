@@ -120,8 +120,8 @@ function readFileAsDataUrl(file: File): Promise<string | null> {
   return new Promise((resolve) => {
     try {
       const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = () => resolve(null);
+      reader.onload = () => { resolve(reader.result as string); };
+      reader.onerror = () => { resolve(null); };
       reader.readAsDataURL(file);
     } catch {
       resolve(null);

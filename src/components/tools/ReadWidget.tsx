@@ -122,7 +122,7 @@ export const ReadResultWidget: React.FC<{ content: string; filePath?: string }> 
     for (const line of lines) {
       // Remove leading whitespace before parsing
       const trimmedLine = line.trimStart();
-      const match = trimmedLine.match(/^(\d+)→(.*)$/);
+      const match = /^(\d+)→(.*)$/.exec(trimmedLine);
       if (match) {
         const lineNum = parseInt(match[1], 10);
         if (minLineNumber === Infinity) {
@@ -172,7 +172,7 @@ export const ReadResultWidget: React.FC<{ content: string; filePath?: string }> 
         </div>
         {isLargeFile && (
           <button
-            onClick={() => setIsExpanded(!isExpanded)}
+            onClick={() => { setIsExpanded(!isExpanded); }}
             className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
           >
             <ChevronRight className={cn("h-3 w-3 transition-transform", isExpanded && "rotate-90")} />

@@ -156,7 +156,7 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
     
     // Initialize matcher events
     matcherEvents.forEach(event => {
-      const matchers = hooks?.[event] as HookMatcher[] | undefined;
+      const matchers = hooks?.[event];
       if (matchers && Array.isArray(matchers)) {
         result[event] = matchers.map(matcher => ({
           ...matcher,
@@ -172,7 +172,7 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
     
     // Initialize direct events
     directEvents.forEach(event => {
-      const commands = hooks?.[event] as HookCommand[] | undefined;
+      const commands = hooks?.[event];
       if (commands && Array.isArray(commands)) {
         result[event] = commands.map(hook => ({
           ...hook,
@@ -226,7 +226,7 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
     
     // Initialize matcher events
     matcherEvents.forEach(event => {
-      const matchers = hooks?.[event] as HookMatcher[] | undefined;
+      const matchers = hooks?.[event];
       if (matchers && Array.isArray(matchers)) {
         result[event] = matchers.map(matcher => ({
           ...matcher,
@@ -242,7 +242,7 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
     
     // Initialize direct events
     directEvents.forEach(event => {
-      const commands = hooks?.[event] as HookCommand[] | undefined;
+      const commands = hooks?.[event];
       if (commands && Array.isArray(commands)) {
         result[event] = commands.map(hook => ({
           ...hook,
@@ -348,7 +348,7 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
     
     setEditableHooks(prev => ({
       ...prev,
-      [event]: [...(prev[event as 'PreToolUse' | 'PostToolUse'] as EditableHookMatcher[]), newMatcher]
+      [event]: [...(prev[event as 'PreToolUse' | 'PostToolUse']), newMatcher]
     }));
   };
   
@@ -364,7 +364,7 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
     
     setEditableHooks(prev => ({
       ...prev,
-      [event]: [...(prev[event as 'Notification' | 'Stop' | 'SubagentStop'] as EditableHookCommand[]), newCommand]
+      [event]: [...(prev[event as 'Notification' | 'Stop' | 'SubagentStop']), newCommand]
     }));
   };
 
@@ -373,7 +373,7 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
     
     setEditableHooks(prev => ({
       ...prev,
-      [event]: (prev[event as 'PreToolUse' | 'PostToolUse'] as EditableHookMatcher[]).map(matcher =>
+      [event]: (prev[event as 'PreToolUse' | 'PostToolUse']).map(matcher =>
         matcher.id === matcherId ? { ...matcher, ...updates } : matcher
       )
     }));
@@ -384,7 +384,7 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
     
     setEditableHooks(prev => ({
       ...prev,
-      [event]: (prev[event as 'PreToolUse' | 'PostToolUse'] as EditableHookMatcher[]).filter(matcher => matcher.id !== matcherId)
+      [event]: (prev[event as 'PreToolUse' | 'PostToolUse']).filter(matcher => matcher.id !== matcherId)
     }));
   };
   
@@ -393,7 +393,7 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
     
     setEditableHooks(prev => ({
       ...prev,
-      [event]: (prev[event as 'Notification' | 'Stop' | 'SubagentStop'] as EditableHookCommand[]).map(cmd =>
+      [event]: (prev[event as 'Notification' | 'Stop' | 'SubagentStop']).map(cmd =>
         cmd.id === commandId ? { ...cmd, ...updates } : cmd
       )
     }));
@@ -404,7 +404,7 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
     
     setEditableHooks(prev => ({
       ...prev,
-      [event]: (prev[event as 'Notification' | 'Stop' | 'SubagentStop'] as EditableHookCommand[]).filter(cmd => cmd.id !== commandId)
+      [event]: (prev[event as 'Notification' | 'Stop' | 'SubagentStop']).filter(cmd => cmd.id !== commandId)
     }));
   };
 
@@ -424,7 +424,7 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
       
       setEditableHooks(prev => ({
         ...prev,
-        [template.event]: [...(prev[template.event as 'PreToolUse' | 'PostToolUse'] as EditableHookMatcher[]), newMatcher]
+        [template.event]: [...(prev[template.event as 'PreToolUse' | 'PostToolUse']), newMatcher]
       }));
     } else {
       // For direct events
@@ -436,7 +436,7 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
       
       setEditableHooks(prev => ({
         ...prev,
-        [template.event]: [...(prev[template.event as 'Notification' | 'Stop' | 'SubagentStop'] as EditableHookCommand[]), ...newCommands]
+        [template.event]: [...(prev[template.event as 'Notification' | 'Stop' | 'SubagentStop']), ...newCommands]
       }));
     }
     
@@ -471,7 +471,7 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
     
     setEditableHooks(prev => ({
       ...prev,
-      [event]: (prev[event as 'PreToolUse' | 'PostToolUse'] as EditableHookMatcher[]).map(matcher =>
+      [event]: (prev[event as 'PreToolUse' | 'PostToolUse']).map(matcher =>
         matcher.id === matcherId
           ? { ...matcher, hooks: [...matcher.hooks, newCommand] }
           : matcher
@@ -489,7 +489,7 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
     
     setEditableHooks(prev => ({
       ...prev,
-      [event]: (prev[event as 'PreToolUse' | 'PostToolUse'] as EditableHookMatcher[]).map(matcher =>
+      [event]: (prev[event as 'PreToolUse' | 'PostToolUse']).map(matcher =>
         matcher.id === matcherId
           ? {
               ...matcher,
@@ -507,7 +507,7 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
     
     setEditableHooks(prev => ({
       ...prev,
-      [event]: (prev[event as 'PreToolUse' | 'PostToolUse'] as EditableHookMatcher[]).map(matcher =>
+      [event]: (prev[event as 'PreToolUse' | 'PostToolUse']).map(matcher =>
         matcher.id === matcherId
           ? { ...matcher, hooks: matcher.hooks.filter(cmd => cmd.id !== commandId) }
           : matcher
@@ -522,7 +522,7 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
           variant="ghost"
           size="sm"
           className="p-0 h-6 w-6"
-          onClick={() => updateMatcher(event, matcher.id, { expanded: !matcher.expanded })}
+          onClick={() => { updateMatcher(event, matcher.id, { expanded: !matcher.expanded }); }}
         >
           {matcher.expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
         </Button>
@@ -547,7 +547,7 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
               id={`matcher-${matcher.id}`}
               placeholder="e.g., Bash, Edit|Write, mcp__.*"
               value={matcher.matcher || ''}
-              onChange={(e) => updateMatcher(event, matcher.id, { matcher: e.target.value })}
+              onChange={(e) => { updateMatcher(event, matcher.id, { matcher: e.target.value }); }}
               disabled={readOnly}
               className="flex-1"
             />
@@ -576,7 +576,7 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => removeMatcher(event, matcher.id)}
+                onClick={() => { removeMatcher(event, matcher.id); }}
               >
                 <Trash2 className="h-4 w-4" />
               </Button>
@@ -600,7 +600,7 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => addCommand(event, matcher.id)}
+                    onClick={() => { addCommand(event, matcher.id); }}
                   >
                     <Plus className="h-3 w-3 mr-1" />
                     Add Command
@@ -619,7 +619,7 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
                           <Textarea
                             placeholder="Enter shell command..."
                             value={hook.command || ''}
-                            onChange={(e) => updateCommand(event, matcher.id, hook.id, { command: e.target.value })}
+                            onChange={(e) => { updateCommand(event, matcher.id, hook.id, { command: e.target.value }); }}
                             disabled={readOnly}
                             className="font-mono text-sm min-h-[80px]"
                           />
@@ -631,9 +631,9 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
                                 type="number"
                                 placeholder="60"
                                 value={hook.timeout || ''}
-                                onChange={(e) => updateCommand(event, matcher.id, hook.id, { 
+                                onChange={(e) => { updateCommand(event, matcher.id, hook.id, { 
                                   timeout: e.target.value ? parseInt(e.target.value) : undefined 
-                                })}
+                                }); }}
                                 disabled={readOnly}
                                 className="w-20 h-8"
                               />
@@ -644,7 +644,7 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                onClick={() => removeCommand(event, matcher.id, hook.id)}
+                                onClick={() => { removeCommand(event, matcher.id, hook.id); }}
                               >
                                 <Trash2 className="h-4 w-4" />
                               </Button>
@@ -685,7 +685,7 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
           <Textarea
             placeholder="Enter shell command..."
             value={command.command || ''}
-            onChange={(e) => updateDirectCommand(event, command.id, { command: e.target.value })}
+            onChange={(e) => { updateDirectCommand(event, command.id, { command: e.target.value }); }}
             disabled={readOnly}
             className="font-mono text-sm min-h-[80px]"
           />
@@ -697,9 +697,9 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
                 type="number"
                 placeholder="60"
                 value={command.timeout || ''}
-                onChange={(e) => updateDirectCommand(event, command.id, { 
+                onChange={(e) => { updateDirectCommand(event, command.id, { 
                   timeout: e.target.value ? parseInt(e.target.value) : undefined 
-                })}
+                }); }}
                 disabled={readOnly}
                 className="w-20 h-8"
               />
@@ -710,7 +710,7 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => removeDirectCommand(event, command.id)}
+                onClick={() => { removeDirectCommand(event, command.id); }}
               >
                 <Trash2 className="h-4 w-4" />
               </Button>
@@ -770,7 +770,7 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => setShowTemplateDialog(true)}
+                      onClick={() => { setShowTemplateDialog(true); }}
                     >
                       <FileText className="h-4 w-4 mr-2" />
                       Templates
@@ -825,13 +825,13 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
           )}
 
           {/* Event Tabs */}
-          <Tabs value={selectedEvent} onValueChange={(v) => setSelectedEvent(v as HookEvent)}>
+          <Tabs value={selectedEvent} onValueChange={(v) => { setSelectedEvent(v as HookEvent); }}>
             <TabsList className="w-full">
               {(Object.keys(EVENT_INFO) as HookEvent[]).map(event => {
                 const isMatcherEvent = matcherEvents.includes(event as any);
                 const count = isMatcherEvent 
-                  ? (editableHooks[event as 'PreToolUse' | 'PostToolUse'] as EditableHookMatcher[]).length
-                  : (editableHooks[event as 'Notification' | 'Stop' | 'SubagentStop'] as EditableHookCommand[]).length;
+                  ? (editableHooks[event as 'PreToolUse' | 'PostToolUse']).length
+                  : (editableHooks[event as 'Notification' | 'Stop' | 'SubagentStop']).length;
                 
                 return (
                   <TabsTrigger key={event} value={event} className="flex items-center gap-2">
@@ -850,8 +850,8 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
             {(Object.keys(EVENT_INFO) as HookEvent[]).map(event => {
               const isMatcherEvent = matcherEvents.includes(event as any);
               const items = isMatcherEvent 
-                ? (editableHooks[event as 'PreToolUse' | 'PostToolUse'] as EditableHookMatcher[])
-                : (editableHooks[event as 'Notification' | 'Stop' | 'SubagentStop'] as EditableHookCommand[]);
+                ? (editableHooks[event as 'PreToolUse' | 'PostToolUse'])
+                : (editableHooks[event as 'Notification' | 'Stop' | 'SubagentStop']);
               
               return (
                 <TabsContent key={event} value={event} className="space-y-4">
@@ -865,7 +865,7 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
                     <Card className="p-8 text-center">
                       <p className="text-muted-foreground mb-4">No hooks configured for this event</p>
                       {!readOnly && (
-                        <Button onClick={() => isMatcherEvent ? addMatcher(event) : addDirectCommand(event)}>
+                        <Button onClick={() => { isMatcherEvent ? addMatcher(event) : addDirectCommand(event); }}>
                           <Plus className="h-4 w-4 mr-2" />
                           Add Hook
                         </Button>
@@ -881,7 +881,7 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
                       {!readOnly && (
                         <Button
                           variant="outline"
-                          onClick={() => isMatcherEvent ? addMatcher(event) : addDirectCommand(event)}
+                          onClick={() => { isMatcherEvent ? addMatcher(event) : addDirectCommand(event); }}
                           className="w-full"
                         >
                           <Plus className="h-4 w-4 mr-2" />
@@ -910,7 +910,7 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
                   <Card
                     key={template.id}
                     className="p-4 cursor-pointer hover:bg-accent"
-                    onClick={() => applyTemplate(template)}
+                    onClick={() => { applyTemplate(template); }}
                   >
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">

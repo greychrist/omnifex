@@ -32,7 +32,7 @@ beforeEach(() => {
   themeRef.current = 'gray';
 });
 
-afterEach(() => cleanup());
+afterEach(() => { cleanup(); });
 
 describe('AccountBadge — size variants', () => {
   it('defaults to text-[11px] and a 14px icon (size unspecified)', () => {

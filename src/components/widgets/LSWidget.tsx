@@ -66,12 +66,12 @@ export const LSResultWidget: React.FC<LSResultWidgetProps> = ({ content }) => {
   // Parse the directory tree structure
   const parseDirectoryTree = (rawContent: string) => {
     const lines = rawContent.split('\n');
-    const entries: Array<{
+    const entries: {
       path: string;
       name: string;
       type: 'file' | 'directory';
       level: number;
-    }> = [];
+    }[] = [];
     
     let currentPath: string[] = [];
     
@@ -85,11 +85,11 @@ export const LSResultWidget: React.FC<LSResultWidgetProps> = ({ content }) => {
       if (!line.trim()) continue;
       
       // Calculate indentation level
-      const indent = line.match(/^(\s*)/)?.[1] || '';
+      const indent = (/^(\s*)/.exec(line))?.[1] || '';
       const level = Math.floor(indent.length / 2);
       
       // Extract the entry name
-      const entryMatch = line.match(/^\s*-\s+(.+?)(\/$)?$/);
+      const entryMatch = /^\s*-\s+(.+?)(\/$)?$/.exec(line);
       if (!entryMatch) continue;
       
       const fullName = entryMatch[1];

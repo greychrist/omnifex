@@ -185,5 +185,5 @@ export function isBlockHiddenInCompact(
   const kind = config.kinds[id];
   if (!kind) return false;
   if (kind.compactBoundaryLocked) return false;
-  return kind.hiddenInCompact === true;
+  return kind.hiddenInCompact;
 }

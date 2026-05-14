@@ -55,12 +55,12 @@ describe("MessageRenderingProvider", () => {
     );
 
     await waitFor(() =>
-      expect(captured.config.typography.content.typeface).toBe("geist"),
+      { expect(captured.config.typography.content.typeface).toBe("geist"); },
     );
     await waitFor(() =>
-      expect(
+      { expect(
         document.documentElement.style.getPropertyValue("--chat-content-font"),
-      ).toMatch(/Geist/),
+      ).toMatch(/Geist/); },
     );
   });
 
@@ -79,7 +79,7 @@ describe("MessageRenderingProvider", () => {
       </MessageRenderingProvider>,
     );
 
-    await waitFor(() => expect(api.getSetting).toHaveBeenCalled());
+    await waitFor(() => { expect(api.getSetting).toHaveBeenCalled(); });
 
     await act(async () => {
       const next = { ...captured.config };
@@ -91,9 +91,9 @@ describe("MessageRenderingProvider", () => {
     });
 
     await waitFor(() =>
-      expect(
+      { expect(
         document.documentElement.style.getPropertyValue("--chat-content-font"),
-      ).toMatch(/Plus Jakarta Sans/),
+      ).toMatch(/Plus Jakarta Sans/); },
     );
   });
 });

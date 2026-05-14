@@ -29,7 +29,7 @@ export const PaletteEditor: React.FC<PaletteEditorProps> = ({ palette, onChange 
             key={name}
             name={name}
             entry={entry}
-            onChange={(patch) => onChange(name, patch)}
+            onChange={(patch) => { onChange(name, patch); }}
           />
         ))}
       </div>
@@ -62,7 +62,7 @@ const PaletteRow: React.FC<PaletteRowProps> = ({ name, entry, onChange }) => {
         id={inputId}
         type="color"
         value={entry.swatch}
-        onChange={(e) => onChange({ swatch: e.target.value })}
+        onChange={(e) => { onChange({ swatch: e.target.value }); }}
         className="h-6 w-10 rounded cursor-pointer bg-transparent border border-border/40"
         title={`Edit ${name} swatch`}
       />

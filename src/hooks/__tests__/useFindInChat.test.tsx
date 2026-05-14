@@ -29,11 +29,11 @@ function Harness({
   });
   return (
     <div>
-      <button data-testid="set-query-hello" onClick={() => setQuery('hello')}>q-hello</button>
-      <button data-testid="set-query-empty" onClick={() => setQuery('')}>q-empty</button>
-      <button data-testid="set-query-foo" onClick={() => setQuery('foo')}>q-foo</button>
-      <button data-testid="close" onClick={() => setOpen(false)}>close</button>
-      <button data-testid="bump-version" onClick={() => setVersion((v) => v + 1)}>bump</button>
+      <button data-testid="set-query-hello" onClick={() => { setQuery('hello'); }}>q-hello</button>
+      <button data-testid="set-query-empty" onClick={() => { setQuery(''); }}>q-empty</button>
+      <button data-testid="set-query-foo" onClick={() => { setQuery('foo'); }}>q-foo</button>
+      <button data-testid="close" onClick={() => { setOpen(false); }}>close</button>
+      <button data-testid="bump-version" onClick={() => { setVersion((v) => v + 1); }}>bump</button>
       <button data-testid="next" onClick={next}>next</button>
       <button data-testid="prev" onClick={prev}>prev</button>
       <span data-testid="count">{count}</span>
@@ -83,7 +83,7 @@ describe('useFindInChat', () => {
       .getByTestId('container')
       .querySelectorAll('mark[data-find]');
     expect(marks).toHaveLength(3);
-    marks.forEach((m) => expect(m.textContent?.toLowerCase()).toBe('hello'));
+    marks.forEach((m) => { expect(m.textContent?.toLowerCase()).toBe('hello'); });
   });
 
   it('keeps exactly one <mark> with .is-active at a time', () => {
@@ -144,7 +144,7 @@ describe('useFindInChat', () => {
       .getByTestId('container')
       .querySelectorAll('mark[data-find]');
     expect(marks).toHaveLength(2);
-    marks.forEach((m) => expect(m.textContent).toBe('foo'));
+    marks.forEach((m) => { expect(m.textContent).toBe('foo'); });
   });
 
   it('clears all marks when query becomes empty', () => {

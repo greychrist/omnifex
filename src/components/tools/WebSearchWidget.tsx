@@ -20,10 +20,10 @@ export const WebSearchWidget: React.FC<{
 
   // Parse the result to extract all links sections and build a structured representation
   const parseSearchResult = (resultContent: string) => {
-    const sections: Array<{
+    const sections: {
       type: 'text' | 'links';
-      content: string | Array<{ title: string; url: string }>;
-    }> = [];
+      content: string | { title: string; url: string }[];
+    }[] = [];
 
     // Split by "Links: [" to find all link sections
     const parts = resultContent.split(/Links:\s*\[/);
@@ -71,11 +71,11 @@ export const WebSearchWidget: React.FC<{
   };
 
   // Extract result content if available
-  let searchResults: {
-    sections: Array<{
+  const searchResults: {
+    sections: {
       type: 'text' | 'links';
-      content: string | Array<{ title: string; url: string }>;
-    }>;
+      content: string | { title: string; url: string }[];
+    }[];
     noResults: boolean;
   } = { sections: [], noResults: false };
 
@@ -140,7 +140,7 @@ export const WebSearchWidget: React.FC<{
                     <div key={idx} className="space-y-1.5">
                       {/* Toggle Button */}
                       <button
-                        onClick={() => toggleSection(idx)}
+                        onClick={() => { toggleSection(idx); }}
                         className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
                       >
                         {isExpanded ? (

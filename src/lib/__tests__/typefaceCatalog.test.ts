@@ -58,6 +58,6 @@ describe("typefaceCatalog", () => {
   });
 
   it("resolveTypeface falls back to inter for unknown ids", () => {
-    expect(resolveTypeface("nope" as Typeface).id).toBe("inter");
+    expect(resolveTypeface("nope").id).toBe("inter");
   });
 });

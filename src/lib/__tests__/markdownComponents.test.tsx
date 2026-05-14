@@ -11,7 +11,7 @@ vi.mock("@/hooks", () => ({
 
 import { buildMarkdownComponents } from "../markdownComponents";
 
-afterEach(() => cleanup());
+afterEach(() => { cleanup(); });
 
 describe("buildMarkdownComponents", () => {
   it("dispatches language-markdown to MarkdownBlock", () => {

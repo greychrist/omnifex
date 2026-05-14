@@ -20,7 +20,8 @@
     "pretest:watch": "npm rebuild better-sqlite3 node-pty",
     "test:watch": "vitest",
     "pretest:coverage": "npm rebuild better-sqlite3 node-pty",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint ."
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.141",
@@ -77,9 +78,14 @@
     "@vitejs/plugin-react": "^4.3.4",
     "@vitest/coverage-v8": "^4.1.4",
     "electron": "^41.2.0",
+    "eslint": "^9.39.4",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.6.0",
     "jsdom": "^29.1.1",
     "sharp": "^0.34.2",
     "typescript": "~5.6.2",
+    "typescript-eslint": "^8.59.3",
     "vite": "^6.0.3",
     "vitest": "^4.1.4"
   },

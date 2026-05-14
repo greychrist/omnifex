@@ -28,7 +28,7 @@ export interface PermissionRequestPayload {
  */
 export interface PermissionSuggestion {
   type: 'addRules';
-  rules: Array<{ toolName: string; ruleContent?: string }>;
+  rules: { toolName: string; ruleContent?: string }[];
   behavior: 'allow' | 'deny';
   destination: 'session' | 'projectSettings' | 'userSettings' | 'localSettings';
 }

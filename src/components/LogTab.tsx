@@ -120,13 +120,13 @@ export const LogTab: React.FC = () => {
       setPage(0);
     };
     window.addEventListener('log:focus-error-view', handler);
-    return () => window.removeEventListener('log:focus-error-view', handler);
+    return () => { window.removeEventListener('log:focus-error-view', handler); };
   }, []);
 
   // Debounce search
   useEffect(() => {
-    const timer = setTimeout(() => setDebouncedSearch(searchQuery), 300);
-    return () => clearTimeout(timer);
+    const timer = setTimeout(() => { setDebouncedSearch(searchQuery); }, 300);
+    return () => { clearTimeout(timer); };
   }, [searchQuery]);
 
   const fetchLogs = useCallback(async () => {
@@ -191,7 +191,7 @@ export const LogTab: React.FC = () => {
   const olderThanCutoff = (olderThan: string | undefined): string | undefined => {
     if (!olderThan) return undefined;
     const now = Date.now();
-    const match = olderThan.match(/^(\d+)([hdwm])$/);
+    const match = /^(\d+)([hdwm])$/.exec(olderThan);
     if (!match) return undefined;
     const n = Number(match[1]);
     const unitMs =
@@ -285,7 +285,7 @@ export const LogTab: React.FC = () => {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => { setSearchQuery(e.target.value); }}
             placeholder="Search messages..."
             className="pl-9"
           />
@@ -375,32 +375,32 @@ export const LogTab: React.FC = () => {
                 <tr>
                   <th
                     className="text-left px-3 py-2 font-medium w-40 cursor-pointer hover:text-foreground select-none"
-                    onClick={() => toggleSort("timestamp")}
+                    onClick={() => { toggleSort("timestamp"); }}
                   >
                     Time<SortIcon k="timestamp" />
                   </th>
                   <th
                     className="text-left px-3 py-2 font-medium w-16 cursor-pointer hover:text-foreground select-none"
-                    onClick={() => toggleSort("level")}
+                    onClick={() => { toggleSort("level"); }}
                     title="Sorted by severity (error > warn > info > debug), not alphabetically."
                   >
                     Level<SortIcon k="level" />
                   </th>
                   <th
                     className="text-left px-3 py-2 font-medium w-20 cursor-pointer hover:text-foreground select-none"
-                    onClick={() => toggleSort("source")}
+                    onClick={() => { toggleSort("source"); }}
                   >
                     Source<SortIcon k="source" />
                   </th>
                   <th
                     className="text-left px-3 py-2 font-medium w-24 cursor-pointer hover:text-foreground select-none"
-                    onClick={() => toggleSort("category")}
+                    onClick={() => { toggleSort("category"); }}
                   >
                     Category<SortIcon k="category" />
                   </th>
                   <th
                     className="text-left px-3 py-2 font-medium cursor-pointer hover:text-foreground select-none"
-                    onClick={() => toggleSort("message")}
+                    onClick={() => { toggleSort("message"); }}
                   >
                     Message<SortIcon k="message" />
                   </th>
@@ -412,7 +412,7 @@ export const LogTab: React.FC = () => {
                     <tr
                       className={`border-t cursor-pointer hover:bg-muted/30 ${LEVEL_BG[entry.level as LogLevel] || ""}`}
                       onClick={() =>
-                        setExpandedId(expandedId === entry.id ? null : (entry.id ?? null))
+                        { setExpandedId(expandedId === entry.id ? null : (entry.id ?? null)); }
                       }
                     >
                       <td className="px-3 py-2 font-mono text-xs text-muted-foreground whitespace-nowrap">
@@ -448,7 +448,7 @@ export const LogTab: React.FC = () => {
                               <pre className="text-xs font-mono whitespace-pre-wrap break-all mt-1">
                                 {(() => {
                                   try {
-                                    return JSON.stringify(JSON.parse(entry.metadata!), null, 2);
+                                    return JSON.stringify(JSON.parse(entry.metadata), null, 2);
                                   } catch {
                                     return entry.metadata;
                                   }
@@ -479,7 +479,7 @@ export const LogTab: React.FC = () => {
             variant="outline"
             size="sm"
             disabled={page === 0}
-            onClick={() => setPage((p) => p - 1)}
+            onClick={() => { setPage((p) => p - 1); }}
           >
             <ChevronLeft className="w-4 h-4" />
           </Button>
@@ -487,7 +487,7 @@ export const LogTab: React.FC = () => {
             variant="outline"
             size="sm"
             disabled={page >= totalPages - 1}
-            onClick={() => setPage((p) => p + 1)}
+            onClick={() => { setPage((p) => p + 1); }}
           >
             <ChevronRight className="w-4 h-4" />
           </Button>
@@ -499,7 +499,7 @@ export const LogTab: React.FC = () => {
               button opens the confirmation dialog. */}
           <div className="flex items-center gap-1 rounded-md border border-input pl-2">
             <span className="text-xs text-muted-foreground whitespace-nowrap">Older than</span>
-            <Select value={String(olderN)} onValueChange={(v) => setOlderN(Number(v))}>
+            <Select value={String(olderN)} onValueChange={(v) => { setOlderN(Number(v)); }}>
               <SelectTrigger className="h-7 w-14 border-0 px-2 text-xs">
                 <SelectValue />
               </SelectTrigger>
@@ -513,7 +513,7 @@ export const LogTab: React.FC = () => {
             </Select>
             <Select
               value={olderUnit}
-              onValueChange={(v) => setOlderUnit(v as "h" | "d" | "w" | "m")}
+              onValueChange={(v) => { setOlderUnit(v as "h" | "d" | "w" | "m"); }}
             >
               <SelectTrigger className="h-7 w-24 border-0 px-2 text-xs">
                 <SelectValue />
@@ -570,7 +570,7 @@ export const LogTab: React.FC = () => {
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setPruneDialog({ open: false, label: "" })}>
+            <Button variant="outline" onClick={() => { setPruneDialog({ open: false, label: "" }); }}>
               Cancel
             </Button>
             <Button variant="destructive" onClick={confirmPrune}>

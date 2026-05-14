@@ -12,9 +12,9 @@ vi.mock('framer-motion', () => ({
       get: (_, key) => {
         const Tag = key as string;
         return ({ children, ...rest }: any) => {
-          const { initial, animate, exit, transition, layout, ...domProps } = rest as any;
+          const { initial, animate, exit, transition, layout, ...domProps } = rest;
           void initial; void animate; void exit; void transition; void layout;
-          // eslint-disable-next-line react/no-children-prop
+           
           return require('react').createElement(Tag, domProps, children);
         };
       },
@@ -87,20 +87,20 @@ const renderPicker = (props: Partial<typeof baseProps> = {}) =>
 const getFilterButton = (label: string) =>
   screen.getByRole('button', { name: label });
 
-const notNull = (v: unknown) => expect(v).not.toBeNull();
-const isNull = (v: unknown) => expect(v).toBeNull();
+const notNull = (v: unknown) => { expect(v).not.toBeNull(); };
+const isNull = (v: unknown) => { expect(v).toBeNull(); };
 
 describe('SlashCommandPicker filter tabs', () => {
   it('labels the SDK-sourced filter as "Claude" (not "Default")', async () => {
     renderPicker();
-    await waitFor(() => expect(slashCommandsListMock).toHaveBeenCalled());
+    await waitFor(() => { expect(slashCommandsListMock).toHaveBeenCalled(); });
     isNull(screen.queryByRole('button', { name: 'Default' }));
     notNull(screen.queryByRole('button', { name: 'Claude' }));
   });
 
   it('renders tabs in order Project · User · Claude · All', async () => {
     renderPicker();
-    await waitFor(() => expect(slashCommandsListMock).toHaveBeenCalled());
+    await waitFor(() => { expect(slashCommandsListMock).toHaveBeenCalled(); });
     const tabBar = getFilterButton('Project').parentElement!;
     const labels = Array.from(tabBar.querySelectorAll('button')).map(b => b.textContent);
     expect(labels).toEqual(['Project', 'User', 'Claude', 'All']);
@@ -108,7 +108,7 @@ describe('SlashCommandPicker filter tabs', () => {
 
   it('selects the Project tab on open', async () => {
     renderPicker();
-    await waitFor(() => isNull(screen.queryByText(/Loading commands/)));
+    await waitFor(() => { isNull(screen.queryByText(/Loading commands/)); });
     // Only the project-scoped command should be visible; user + SDK are filtered out.
     notNull(screen.queryByText('/projonly'));
     isNull(screen.queryByText('/useronly'));
@@ -117,7 +117,7 @@ describe('SlashCommandPicker filter tabs', () => {
 
   it('User tab shows only user-scoped commands', async () => {
     renderPicker();
-    await waitFor(() => isNull(screen.queryByText(/Loading commands/)));
+    await waitFor(() => { isNull(screen.queryByText(/Loading commands/)); });
     fireEvent.click(getFilterButton('User'));
     notNull(screen.queryByText('/useronly'));
     isNull(screen.queryByText('/projonly'));
@@ -126,7 +126,7 @@ describe('SlashCommandPicker filter tabs', () => {
 
   it('Claude tab shows only SDK (default-scope) commands', async () => {
     renderPicker();
-    await waitFor(() => isNull(screen.queryByText(/Loading commands/)));
+    await waitFor(() => { isNull(screen.queryByText(/Loading commands/)); });
     fireEvent.click(getFilterButton('Claude'));
     notNull(screen.queryByText('/help'));
     notNull(screen.queryByText('/clear'));
@@ -136,7 +136,7 @@ describe('SlashCommandPicker filter tabs', () => {
 
   it('ArrowRight cycles to the next tab (Project → User)', async () => {
     renderPicker();
-    await waitFor(() => isNull(screen.queryByText(/Loading commands/)));
+    await waitFor(() => { isNull(screen.queryByText(/Loading commands/)); });
     fireEvent.keyDown(window, { key: 'ArrowRight' });
     notNull(screen.queryByText('/useronly'));
     isNull(screen.queryByText('/projonly'));
@@ -144,7 +144,7 @@ describe('SlashCommandPicker filter tabs', () => {
 
   it('ArrowLeft wraps from Project to All', async () => {
     renderPicker();
-    await waitFor(() => isNull(screen.queryByText(/Loading commands/)));
+    await waitFor(() => { isNull(screen.queryByText(/Loading commands/)); });
     fireEvent.keyDown(window, { key: 'ArrowLeft' });
     // "All" shows everything
     notNull(screen.queryByText('/projonly'));
@@ -154,7 +154,7 @@ describe('SlashCommandPicker filter tabs', () => {
 
   it('ArrowRight from the last tab (All) wraps back to Project', async () => {
     renderPicker();
-    await waitFor(() => isNull(screen.queryByText(/Loading commands/)));
+    await waitFor(() => { isNull(screen.queryByText(/Loading commands/)); });
     // Project → User → Claude → All → Project
     fireEvent.keyDown(window, { key: 'ArrowRight' });
     fireEvent.keyDown(window, { key: 'ArrowRight' });
@@ -169,7 +169,7 @@ describe('SlashCommandPicker filter tabs', () => {
     const projectCmd2 = makeCmd({ id: 'p2', name: 'projonly2', full_command: '/projonly2', scope: 'project' });
     slashCommandsListMock.mockResolvedValue([projectCmd, projectCmd2]);
     renderPicker();
-    await waitFor(() => notNull(screen.queryByText('/projonly')));
+    await waitFor(() => { notNull(screen.queryByText('/projonly')); });
     // Selected row gets the .bg-accent class; the first row should be selected on load.
     const rowOne = screen.getByText('/projonly').closest('tr')!;
     const rowTwo = screen.getByText('/projonly2').closest('tr')!;

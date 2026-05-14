@@ -17,7 +17,7 @@ import { getLanguage } from "@/components/tools/shared";
  */
 export const MultiEditWidget: React.FC<{
   file_path: string;
-  edits: Array<{ old_string: string; new_string: string }>;
+  edits: { old_string: string; new_string: string }[];
   result?: any;
 }> = ({ file_path, edits, result: _result }) => {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -39,7 +39,7 @@ export const MultiEditWidget: React.FC<{
 
         <div className="space-y-1">
           <button
-            onClick={() => setIsExpanded(!isExpanded)}
+            onClick={() => { setIsExpanded(!isExpanded); }}
             className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
           >
             <ChevronRight className={cn("h-3 w-3 transition-transform", isExpanded && "rotate-90")} />
@@ -123,7 +123,7 @@ export const MultiEditWidget: React.FC<{
  */
 export const MultiEditResultWidget: React.FC<{
   content: string;
-  edits?: Array<{ old_string: string; new_string: string }>;
+  edits?: { old_string: string; new_string: string }[];
 }> = ({ content, edits }) => {
   // If we have the edits array, show a nice diff view
   if (edits && edits.length > 0) {

@@ -62,7 +62,7 @@ function userMessage(parentToolUseId: string | null | undefined): ClaudeStreamMe
 describe("isSubagentPrompt", () => {
   it("returns false for non-user messages", () => {
     const all = [assistantWithToolUse(TOOL_ID, "Task")];
-    expect(isSubagentPrompt(all[0]!, all)).toBe(false);
+    expect(isSubagentPrompt(all[0], all)).toBe(false);
   });
 
   it("returns false when parent_tool_use_id is missing", () => {

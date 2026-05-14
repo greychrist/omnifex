@@ -15,7 +15,7 @@ export const SessionViewToggle: React.FC<Props> = ({ mode, onChange }) => {
         <button
           key={m}
           type="button"
-          onClick={() => onChange(m)}
+          onClick={() => { onChange(m); }}
           className={cn(
             'px-2 py-1 text-xs rounded',
             mode === m

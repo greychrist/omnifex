@@ -179,7 +179,7 @@ export const TabStatusPopover: React.FC = () => {
     void api.listTabStatuses().then((list) => {
       if (!cancelled) setSummaries(list);
     });
-    const off = api.onTabStatusesChanged((list) => setSummaries(list));
+    const off = api.onTabStatusesChanged((list) => { setSummaries(list); });
     return () => {
       cancelled = true;
       off();
@@ -243,7 +243,7 @@ export const TabStatusPopover: React.FC = () => {
         <button
           ref={triggerRef}
           type="button"
-          onClick={() => setOpen((v) => !v)}
+          onClick={() => { setOpen((v) => !v); }}
           aria-label="Sessions"
           className={cn(
             'relative inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium hover:bg-accent hover:text-accent-foreground transition-colors app-no-drag',

@@ -115,7 +115,7 @@ export const OpenSessionByIdDialog: React.FC<OpenSessionByIdDialogProps> = ({
         <DialogFooter>
           <Button
             variant="outline"
-            onClick={() => onOpenChange(false)}
+            onClick={() => { onOpenChange(false); }}
             disabled={loading}
           >
             Cancel

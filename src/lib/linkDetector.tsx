@@ -45,7 +45,7 @@ export function detectLinks(text: string): DetectedLink[] {
     
     // Ensure the URL has a protocol
     let fullUrl = url;
-    if (!url.match(/^https?:\/\//)) {
+    if (!(/^https?:\/\//.exec(url))) {
       // Default to http for localhost, https for others
       const isLocalhost = LOCALHOST_REGEX.test(url);
       fullUrl = `${isLocalhost ? 'http' : 'https'}://${url}`;

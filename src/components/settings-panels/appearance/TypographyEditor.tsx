@@ -78,13 +78,13 @@ const TextColumn: React.FC<TextColumnProps> = ({
     </div>
     <TypefacePicker
       value={style.typeface}
-      onChange={(next: Typeface) => onChange({ ...style, typeface: next })}
+      onChange={(next: Typeface) => { onChange({ ...style, typeface: next }); }}
     />
     <div>
       <Label className="mb-1 block text-caption">Size</Label>
       <Select
         value={style.size}
-        onValueChange={(v) => onChange({ ...style, size: v as FontSize })}
+        onValueChange={(v) => { onChange({ ...style, size: v as FontSize }); }}
       >
         <SelectTrigger>
           <SelectValue />
@@ -102,7 +102,7 @@ const TextColumn: React.FC<TextColumnProps> = ({
       <Label className="mb-1 block text-caption">Weight</Label>
       <Select
         value={style.weight}
-        onValueChange={(v) => onChange({ ...style, weight: v as FontWeight })}
+        onValueChange={(v) => { onChange({ ...style, weight: v as FontWeight }); }}
       >
         <SelectTrigger>
           <SelectValue />
@@ -120,7 +120,7 @@ const TextColumn: React.FC<TextColumnProps> = ({
       <Switch
         id={italicId}
         checked={style.italic}
-        onCheckedChange={(v) => onChange({ ...style, italic: v })}
+        onCheckedChange={(v) => { onChange({ ...style, italic: v }); }}
       />
       <Label htmlFor={italicId} className="cursor-pointer">
         Italic
@@ -146,7 +146,7 @@ const IconColumn: React.FC<IconColumnProps> = ({ icon, onChange }) => (
       <Label className="mb-1 block text-caption">Size</Label>
       <Select
         value={icon.size}
-        onValueChange={(v) => onChange({ ...icon, size: v as IconSize })}
+        onValueChange={(v) => { onChange({ ...icon, size: v as IconSize }); }}
       >
         <SelectTrigger>
           <SelectValue />
@@ -164,7 +164,7 @@ const IconColumn: React.FC<IconColumnProps> = ({ icon, onChange }) => (
       <Switch
         id="icon-bordered"
         checked={icon.bordered}
-        onCheckedChange={(v) => onChange({ ...icon, bordered: v })}
+        onCheckedChange={(v) => { onChange({ ...icon, bordered: v }); }}
       />
       <Label htmlFor="icon-bordered" className="cursor-pointer">
         Bordered chip
@@ -181,7 +181,7 @@ const IconColumn: React.FC<IconColumnProps> = ({ icon, onChange }) => (
         max={100}
         step={5}
         value={icon.bgOpacity}
-        onChange={(e) => onChange({ ...icon, bgOpacity: parseInt(e.target.value, 10) })}
+        onChange={(e) => { onChange({ ...icon, bgOpacity: parseInt(e.target.value, 10) }); }}
         disabled={!icon.bordered}
         className="flex-1 cursor-pointer disabled:cursor-not-allowed accent-foreground"
       />
@@ -209,18 +209,18 @@ export const TypographyEditor: React.FC<TypographyEditorProps> = ({ typography, 
           description={'The small label row above a card (e.g. "You", "Claude Code").'}
           style={typography.header}
           italicId="typography-header-italic"
-          onChange={(next) => onChange({ ...typography, header: next })}
+          onChange={(next) => { onChange({ ...typography, header: next }); }}
         />
         <TextColumn
           title="Content"
           description="Body text for chat messages — user prompts and assistant markdown."
           style={typography.content}
           italicId="typography-content-italic"
-          onChange={(next) => onChange({ ...typography, content: next })}
+          onChange={(next) => { onChange({ ...typography, content: next }); }}
         />
         <IconColumn
           icon={typography.icon}
-          onChange={(next) => onChange({ ...typography, icon: next })}
+          onChange={(next) => { onChange({ ...typography, icon: next }); }}
         />
       </div>
     </div>

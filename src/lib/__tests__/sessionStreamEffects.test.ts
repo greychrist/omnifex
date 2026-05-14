@@ -55,7 +55,7 @@ describe('runStreamEffect', () => {
       api: { ...makeDeps().api, sessionAccountInfo },
     });
     runStreamEffect({ kind: 'fetchAccountInfo' }, deps);
-    await vi.waitFor(() => expect(setSdkAccountInfo).toHaveBeenCalled());
+    await vi.waitFor(() => { expect(setSdkAccountInfo).toHaveBeenCalled(); });
     expect(sessionAccountInfo).toHaveBeenCalledWith('tab-1');
     expect(setSdkAccountInfo).toHaveBeenCalledWith({ name: 'gregory' });
   });
@@ -79,7 +79,7 @@ describe('runStreamEffect', () => {
       api: { ...makeDeps().api, sessionContextUsage },
     });
     runStreamEffect({ kind: 'refreshContextUsage' }, deps);
-    await vi.waitFor(() => expect(setContextUsage).toHaveBeenCalled());
+    await vi.waitFor(() => { expect(setContextUsage).toHaveBeenCalled(); });
     expect(sessionContextUsage).toHaveBeenCalledWith('tab-1');
     expect(setContextUsage).toHaveBeenCalledWith({ used: 42 });
   });
@@ -109,7 +109,7 @@ describe('runStreamEffect', () => {
       },
     });
     runStreamEffect({ kind: 'fetchSupportedModels' }, deps);
-    await vi.waitFor(() => expect(setSupportedModels).toHaveBeenCalled());
+    await vi.waitFor(() => { expect(setSupportedModels).toHaveBeenCalled(); });
     expect(setSupportedModels).toHaveBeenCalledWith(models);
   });
 
@@ -164,7 +164,7 @@ describe('runStreamEffect', () => {
   it('showPermissionPrompt is a noop (handled via reducer state patch)', () => {
     const deps = makeDeps();
     expect(() =>
-      runStreamEffect(
+      { runStreamEffect(
         {
           kind: 'showPermissionPrompt',
           payload: {
@@ -175,7 +175,7 @@ describe('runStreamEffect', () => {
           },
         },
         deps,
-      ),
+      ); },
     ).not.toThrow();
   });
 
@@ -189,7 +189,7 @@ describe('runStreamEffect', () => {
       },
     });
     runStreamEffect({ kind: 'fetchAccountInfo' }, deps);
-    await vi.waitFor(() => expect(onError).toHaveBeenCalled());
+    await vi.waitFor(() => { expect(onError).toHaveBeenCalled(); });
     expect(onError.mock.calls[0][0]).toBe('fetchAccountInfo');
     expect((onError.mock.calls[0][1] as Error).message).toBe('boom');
   });

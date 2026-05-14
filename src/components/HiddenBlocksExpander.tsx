@@ -22,7 +22,7 @@ export const HiddenBlocksExpander: React.FC<Props> = ({ count, summary, children
   if (count === 0) return null;
 
   return (
-    <Collapsible open={open} onOpenChange={(next) => runWith(() => setOpen(next))} className="my-1">
+    <Collapsible open={open} onOpenChange={(next) => { runWith(() => { setOpen(next); }); }} className="my-1">
       <CollapsibleTrigger
         ref={triggerRef}
         className={cn(

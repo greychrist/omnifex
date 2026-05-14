@@ -13,9 +13,9 @@ vi.mock('framer-motion', () => ({
         const Tag = key as string;
         return ({ children, ...rest }: any) => {
           // Strip animation-only props
-          const { initial, animate, exit, transition, layout, ...domProps } = rest as any;
+          const { initial, animate, exit, transition, layout, ...domProps } = rest;
           void initial; void animate; void exit; void transition; void layout;
-          // eslint-disable-next-line react/no-children-prop
+           
           return require('react').createElement(Tag, domProps, children);
         };
       },
@@ -34,7 +34,7 @@ vi.mock('framer-motion', () => ({
 // render — otherwise SessionList's `[projectPath, accounts]` effect
 // re-fires on every re-render and exhausts the test's
 // `mockResolvedValueOnce` after the first call.
-const STUB_ACCOUNTS: ReadonlyArray<never> = Object.freeze([]);
+const STUB_ACCOUNTS: readonly never[] = Object.freeze([]);
 vi.mock('@/contexts/AccountsContext', () => ({
   useAccounts: () => ({
     accounts: STUB_ACCOUNTS,
@@ -135,7 +135,7 @@ beforeEach(() => {
     created_at: '',
     updated_at: '',
     summaryModel: 'haiku',
-  } as any);
+  });
 
   // Reset the keyed getSetting stub on every test so individual cases
   // can override one key without leaking into others.
@@ -145,7 +145,7 @@ beforeEach(() => {
   });
 });
 
-afterEach(() => cleanup());
+afterEach(() => { cleanup(); });
 
 describe('SessionList summary rendering', () => {
   it('renders the summary headline collapsed by default and reveals the paragraph on chevron click', async () => {
@@ -174,7 +174,7 @@ describe('SessionList summary rendering', () => {
     const many: Session[] = Array.from({ length: 30 }, (_, i) => ({
       ...sessionFixture,
       id: `sess-${i + 1}`,
-    }) as Session);
+    }));
     vi.mocked(api.summaryGet).mockResolvedValue(null);
 
     render(<SessionList sessions={many} projectPath="/x" />);
@@ -229,12 +229,12 @@ describe('SessionList summary rendering', () => {
     const sessionWithDifferentSize: Session = {
       ...sessionFixture,
       file_size_bytes: 9999, // Differs from summary.jsonlSize (4096)
-    } as Session;
+    };
     render(<SessionList sessions={[sessionWithDifferentSize]} projectPath="/x" />);
     await screen.findByText('Summary headline here.');
     fireEvent.click(screen.getByRole('button', { name: /refresh summary/i }));
     await waitFor(
-      () => expect(screen.getByText('Refreshed headline.')).toBeTruthy(),
+      () => { expect(screen.getByText('Refreshed headline.')).toBeTruthy(); },
       { timeout: 2000 },
     );
   });
@@ -247,15 +247,15 @@ describe('SessionList summary rendering', () => {
     const sessionWithDifferentSize: Session = {
       ...sessionFixture,
       file_size_bytes: 9999,
-    } as Session;
+    };
     render(<SessionList sessions={[sessionWithDifferentSize]} projectPath="/x" />);
     await screen.findByText('Summary headline here.');
     fireEvent.click(screen.getByRole('button', { name: /refresh summary/i }));
     await waitFor(
       () =>
-        expect(
+        { expect(
           screen.getByText(/Summaries are off for this account/i),
-        ).toBeTruthy(),
+        ).toBeTruthy(); },
       { timeout: 2000 },
     );
   });
@@ -268,15 +268,15 @@ describe('SessionList summary rendering', () => {
     const sessionWithDifferentSize: Session = {
       ...sessionFixture,
       file_size_bytes: 9999,
-    } as Session;
+    };
     render(<SessionList sessions={[sessionWithDifferentSize]} projectPath="/x" />);
     await screen.findByText('Summary headline here.');
     fireEvent.click(screen.getByRole('button', { name: /refresh summary/i }));
     await waitFor(
       () =>
-        expect(
+        { expect(
           screen.getByText(/No summary model selected/i),
-        ).toBeTruthy(),
+        ).toBeTruthy(); },
       { timeout: 2000 },
     );
   });
@@ -319,7 +319,7 @@ describe('SessionList summary rendering', () => {
       updated_at: '',
       summarizeOnClose: true,
       summaryModel: null, // no model
-    } as any);
+    });
     render(<SessionList sessions={[sessionFixture]} projectPath="/x" />);
     await waitFor(() => {
       expect(api.summaryGet).toHaveBeenCalled();
@@ -334,7 +334,7 @@ describe('SessionList summary rendering', () => {
     const sessionWithSameSize: Session = {
       ...sessionFixture,
       file_size_bytes: 4096, // Matches summary.jsonlSize
-    } as Session;
+    };
     render(<SessionList sessions={[sessionWithSameSize]} projectPath="/x" />);
     await screen.findByText('Summary headline here.');
     const btn = screen.getByRole('button', { name: /refresh summary/i });
@@ -349,7 +349,7 @@ describe('SessionList summary rendering', () => {
     const sessionWithDifferentSize: Session = {
       ...sessionFixture,
       file_size_bytes: 9999,
-    } as Session;
+    };
     render(<SessionList sessions={[sessionWithDifferentSize]} projectPath="/x" />);
     const btn = await screen.findByRole('button', { name: /refresh summary/i });
     // Initial state: not generating.
@@ -393,7 +393,7 @@ describe('SessionList summary rendering', () => {
     const sessionWithDifferentSize: Session = {
       ...sessionFixture,
       file_size_bytes: 9999,
-    } as Session;
+    };
     render(<SessionList sessions={[sessionWithDifferentSize]} projectPath="/x" />);
     await screen.findByText('Summary headline here.');
     await waitFor(() => {
@@ -409,7 +409,7 @@ describe('SessionList summary rendering', () => {
     const sessionWithDifferentSize: Session = {
       ...sessionFixture,
       file_size_bytes: 9999,
-    } as Session;
+    };
     render(<SessionList sessions={[sessionWithDifferentSize]} projectPath="/x" />);
     const btn = await screen.findByRole('button', { name: /refresh summary/i });
     const initialTitle = btn.getAttribute('title');
@@ -450,7 +450,7 @@ describe('SessionList — click semantics', () => {
     // cells[1]=Summary, cells[2]=Session ID, cells[3]=actions.
     const cells = Array.from(
       container.querySelectorAll('tbody tr td'),
-    ) as HTMLTableCellElement[];
+    );
     expect(cells.length).toBeGreaterThanOrEqual(4);
     fireEvent.click(cells[1]);
     fireEvent.click(cells[2]);
@@ -518,8 +518,8 @@ describe('SessionList — click semantics', () => {
       fireEvent.click(iconBtn!);
       expect(listener).toHaveBeenCalledTimes(1);
       const evt = listener.mock.calls[0][0] as CustomEvent;
-      expect((evt.detail as any).session.id).toBe('sess-1');
-      expect((evt.detail as any).projectPath).toBe('/x');
+      expect((evt.detail).session.id).toBe('sess-1');
+      expect((evt.detail).projectPath).toBe('/x');
     } finally {
       window.removeEventListener('claude-session-selected', listener as EventListener);
     }
@@ -530,7 +530,7 @@ describe('SessionList — click semantics', () => {
     const sessionWithDifferentSize: Session = {
       ...sessionFixture,
       file_size_bytes: 9999,
-    } as Session;
+    };
     // jsdom has no `navigator.clipboard` — define one before clicking the
     // copy button so the stopPropagation handler doesn't blow up with an
     // unhandled "Cannot read properties of undefined (reading 'writeText')"

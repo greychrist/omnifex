@@ -38,15 +38,15 @@ export const GrepWidget: React.FC<{
   // Parse grep results to extract file paths and matches
   const parseGrepResults = (content: string) => {
     const lines = content.split('\n').filter(line => line.trim());
-    const results: Array<{
+    const results: {
       file: string;
       lineNumber: number;
       content: string;
-    }> = [];
+    }[] = [];
 
     lines.forEach(line => {
       // Common grep output format: filename:lineNumber:content
-      const match = line.match(/^(.+?):(\d+):(.*)$/);
+      const match = /^(.+?):(\d+):(.*)$/.exec(line);
       if (match) {
         results.push({
           file: match[1],
@@ -145,7 +145,7 @@ export const GrepWidget: React.FC<{
           ) : grepResults.length > 0 ? (
             <>
               <button
-                onClick={() => setIsExpanded(!isExpanded)}
+                onClick={() => { setIsExpanded(!isExpanded); }}
                 className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
               >
                 {isExpanded ? (

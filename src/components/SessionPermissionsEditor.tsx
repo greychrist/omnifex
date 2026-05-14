@@ -73,7 +73,7 @@ export function SessionPermissionsEditor({
   };
 
   const handleAddRule = async () => {
-    if (!newRule || !newRule.value.trim()) return;
+    if (!newRule?.value.trim()) return;
     setSaving(true);
     try {
       await api.sessionUpdatePermission(tabId, projectPath, configDir, {
@@ -124,7 +124,7 @@ export function SessionPermissionsEditor({
         return (
           <div key={level.scope} className="rounded-lg border border-border bg-card">
             <button
-              onClick={() => toggleLevel(level.scope)}
+              onClick={() => { toggleLevel(level.scope); }}
               className="w-full flex items-center gap-3 p-3 text-left hover:bg-muted/50 transition-colors rounded-t-lg"
             >
               <Shield className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -212,7 +212,7 @@ export function SessionPermissionsEditor({
                   <div className="flex items-center gap-1.5 pt-1">
                     <Select
                       value={newRule.behavior}
-                      onValueChange={(v) => setNewRule({ ...newRule, behavior: v as "allow" | "deny" })}
+                      onValueChange={(v) => { setNewRule({ ...newRule, behavior: v as "allow" | "deny" }); }}
                     >
                       <SelectTrigger className="h-7 text-[10px] w-auto">
                         <SelectValue />
@@ -224,7 +224,7 @@ export function SessionPermissionsEditor({
                     </Select>
                     <Input
                       value={newRule.value}
-                      onChange={(e) => setNewRule({ ...newRule, value: e.target.value })}
+                      onChange={(e) => { setNewRule({ ...newRule, value: e.target.value }); }}
                       onKeyDown={(e) => { if (e.key === "Enter") handleAddRule(); if (e.key === "Escape") setNewRule(null); }}
                       placeholder='e.g. Bash(git:*) or WebFetch(domain:example.com)'
                       className="h-7 text-xs font-mono flex-1"
@@ -233,7 +233,7 @@ export function SessionPermissionsEditor({
                     <Button size="sm" className="h-7 px-2 text-xs" onClick={handleAddRule} disabled={saving || !newRule.value.trim()}>
                       Add
                     </Button>
-                    <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => setNewRule(null)}>
+                    <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => { setNewRule(null); }}>
                       Cancel
                     </Button>
                   </div>
@@ -242,7 +242,7 @@ export function SessionPermissionsEditor({
                     variant="ghost"
                     size="sm"
                     className="h-7 text-xs text-muted-foreground mt-1"
-                    onClick={() => setNewRule({ scope: level.scope, behavior: "allow", value: "" })}
+                    onClick={() => { setNewRule({ scope: level.scope, behavior: "allow", value: "" }); }}
                   >
                     <Plus className="h-3 w-3 mr-1" />
                     Add Rule

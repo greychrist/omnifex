@@ -86,7 +86,7 @@ export const SystemContextWidget: React.FC<{ content: string }> = ({ content }) 
   let label = configuredHeader ?? "System Context";
   if (configuredHeader === null || configuredHeader === "System Context") {
     if (content.includes("Base directory for this skill:")) {
-      const skillMatch = content.match(/# (.+)/);
+      const skillMatch = /# (.+)/.exec(content);
       label = skillMatch ? `Skill: ${skillMatch[1]}` : "Skill Loaded";
     } else if (content.includes("CLAUDE.md")) {
       label = "CLAUDE.md Context";
@@ -103,7 +103,7 @@ export const SystemContextWidget: React.FC<{ content: string }> = ({ content }) 
   return (
     <div className="rounded-lg border overflow-hidden" style={style}>
       <button
-        onClick={() => setIsExpanded(!isExpanded)}
+        onClick={() => { setIsExpanded(!isExpanded); }}
         className="w-full px-4 py-2 flex items-center justify-between transition-colors"
       >
         <div className="flex items-center gap-2">
@@ -213,14 +213,14 @@ export const SystemInitializedWidget: React.FC<{
   };
 
   // Group MCP tools by provider
-  const mcpToolsByProvider = mcpTools.reduce((acc, tool) => {
+  const mcpToolsByProvider = mcpTools.reduce<Record<string, string[]>>((acc, tool) => {
     const { provider } = formatMcpToolName(tool);
     if (!acc[provider]) {
       acc[provider] = [];
     }
     acc[provider].push(tool);
     return acc;
-  }, {} as Record<string, string[]>);
+  }, {});
 
   return (
     <Card className="border" style={style}>
@@ -300,7 +300,7 @@ export const SystemInitializedWidget: React.FC<{
             {mcpTools.length > 0 && (
               <div className="space-y-2">
                 <button
-                  onClick={() => setMcpExpanded(!mcpExpanded)}
+                  onClick={() => { setMcpExpanded(!mcpExpanded); }}
                   className="flex items-center gap-2 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
                 >
                   <Package className="h-3.5 w-3.5" />

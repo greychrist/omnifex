@@ -109,7 +109,7 @@ export const LimaViewer: React.FC = () => {
     const id = setInterval(() => {
       void loadContainers(selectedVm, selectedVmStatus);
     }, POLL_INTERVAL_MS);
-    return () => clearInterval(id);
+    return () => { clearInterval(id); };
   }, [selectedVm, selectedVmStatus, loadContainers]);
 
   const handleRefresh = async () => {
@@ -232,7 +232,7 @@ export const LimaViewer: React.FC = () => {
           <AlertCircle className="h-3.5 w-3.5 shrink-0" />
           <span className="flex-1 truncate">{actionError}</span>
           <button
-            onClick={() => setActionError(null)}
+            onClick={() => { setActionError(null); }}
             className="text-muted-foreground hover:text-foreground"
             aria-label="Dismiss error"
           >
@@ -260,7 +260,7 @@ export const LimaViewer: React.FC = () => {
                 return (
                   <li key={vm.name}>
                     <button
-                      onClick={() => setSelectedVm(vm.name)}
+                      onClick={() => { setSelectedVm(vm.name); }}
                       className={cn(
                         'w-full text-left px-4 py-3 hover:bg-accent/40 transition-colors',
                         isActive && 'bg-accent',

@@ -81,7 +81,7 @@ export function useSessionLifecycle({
   // Attach the tab-scoped event listeners. Idempotent: tears down any prior
   // listeners first. Used both for fresh-start and for rebind-after-reload.
   const attachStreamListeners = () => {
-    unlistenRefs.current.forEach((u) => u());
+    unlistenRefs.current.forEach((u) => { u(); });
     unlistenRefs.current = [];
 
     const outputUnlisten = window.electronAPI.onEvent(
@@ -180,7 +180,7 @@ export function useSessionLifecycle({
       try {
         const info = await Promise.race([
           api.sessionAccountInfo(tabId),
-          new Promise<null>((resolve) => setTimeout(() => resolve(null), 2000)),
+          new Promise<null>((resolve) => setTimeout(() => { resolve(null); }, 2000)),
         ]);
         if (info) {
           setSdkAccountInfo(info);
@@ -203,7 +203,7 @@ export function useSessionLifecycle({
           ]);
           if (models?.length) setSupportedModels(models);
           if (commands?.length) setSupportedCommands(commands);
-          if (ctxUsage) setContextUsage(ctxUsage as any);
+          if (ctxUsage) setContextUsage(ctxUsage);
 
           const mcpToolNames = (mcpServers || [])
             .filter((s: any) => s.status === "connected")
@@ -304,7 +304,7 @@ export function useSessionLifecycle({
           notification_type: "error",
           title: "Session Failed to Start",
           body: `Could not start session: ${errMsg.slice(0, 300)}`,
-        } as ClaudeStreamMessage,
+        },
       ]);
       throw err; // Bubble so the caller's .catch logger still fires.
     }
@@ -340,7 +340,7 @@ export function useSessionLifecycle({
       }
 
       // Clean up listeners
-      unlistenRefs.current.forEach((unlisten) => unlisten());
+      unlistenRefs.current.forEach((unlisten) => { unlisten(); });
       unlistenRefs.current = [];
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps -- cleanup must only run on unmount

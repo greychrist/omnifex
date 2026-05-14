@@ -303,7 +303,7 @@ export const StorageTab: React.FC = () => {
   /**
    * Format cell value for display
    */
-  const formatCellValue = (value: any, maxLength: number = 100): string => {
+  const formatCellValue = (value: any, maxLength = 100): string => {
     if (value === null) return "NULL";
     if (value === undefined) return "";
     if (typeof value === "boolean") return value ? "true" : "false";
@@ -341,7 +341,7 @@ export const StorageTab: React.FC = () => {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setShowSqlEditor(true)}
+                onClick={() => { setShowSqlEditor(true); }}
                 className="gap-2 h-8 text-xs"
               >
                 <Terminal className="h-3 w-3" />
@@ -350,7 +350,7 @@ export const StorageTab: React.FC = () => {
               <Button
                 variant="destructive"
                 size="sm"
-                onClick={() => setShowResetConfirm(true)}
+                onClick={() => { setShowResetConfirm(true); }}
                 className="gap-2 h-8 text-xs"
               >
                 <RefreshCw className="h-3 w-3" />
@@ -391,7 +391,7 @@ export const StorageTab: React.FC = () => {
               <Input
                 placeholder="Search in table..."
                 value={searchQuery}
-                onChange={(e) => handleSearch(e.target.value)}
+                onChange={(e) => { handleSearch(e.target.value); }}
                 className="pl-8 h-8 text-xs"
               />
             </div>
@@ -400,7 +400,7 @@ export const StorageTab: React.FC = () => {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setNewRow({})}
+                onClick={() => { setNewRow({}); }}
                 className="gap-2 h-8 text-xs"
               >
                 <Plus className="h-3 w-3" />
@@ -492,7 +492,7 @@ export const StorageTab: React.FC = () => {
                           <Button
                             variant="ghost"
                             size="icon"
-                            onClick={() => setEditingRow(row)}
+                            onClick={() => { setEditingRow(row); }}
                             className="h-6 w-6"
                           >
                             <Edit3 className="h-3 w-3" />
@@ -500,7 +500,7 @@ export const StorageTab: React.FC = () => {
                           <Button
                             variant="ghost"
                             size="icon"
-                            onClick={() => setDeletingRow(row)}
+                            onClick={() => { setDeletingRow(row); }}
                             className="h-6 w-6 hover:text-destructive"
                           >
                             <Trash2 className="h-3 w-3" />
@@ -570,7 +570,7 @@ export const StorageTab: React.FC = () => {
       )}
 
       {/* Edit Row Dialog */}
-      <Dialog open={!!editingRow} onOpenChange={() => setEditingRow(null)}>
+      <Dialog open={!!editingRow} onOpenChange={() => { setEditingRow(null); }}>
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit Row</DialogTitle>
@@ -596,10 +596,10 @@ export const StorageTab: React.FC = () => {
                       id={`edit-${column.name}`}
                       checked={!!editingRow[column.name]}
                       onChange={(e) =>
-                        setEditingRow({
+                        { setEditingRow({
                           ...editingRow,
                           [column.name]: e.target.checked,
-                        })
+                        }); }
                       }
                       disabled={column.pk}
                       className="h-4 w-4"
@@ -610,10 +610,10 @@ export const StorageTab: React.FC = () => {
                       type={getInputType(column)}
                       value={editingRow[column.name] ?? ""}
                       onChange={(e) =>
-                        setEditingRow({
+                        { setEditingRow({
                           ...editingRow,
                           [column.name]: e.target.value,
-                        })
+                        }); }
                       }
                       disabled={column.pk}
                       placeholder={column.dflt_value || "NULL"}
@@ -629,7 +629,7 @@ export const StorageTab: React.FC = () => {
             </div>
           )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setEditingRow(null)}>
+            <Button variant="outline" onClick={() => { setEditingRow(null); }}>
               Cancel
             </Button>
             <Button
@@ -647,7 +647,7 @@ export const StorageTab: React.FC = () => {
       </Dialog>
 
       {/* New Row Dialog */}
-      <Dialog open={!!newRow} onOpenChange={() => setNewRow(null)}>
+      <Dialog open={!!newRow} onOpenChange={() => { setNewRow(null); }}>
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>New Row</DialogTitle>
@@ -681,10 +681,10 @@ export const StorageTab: React.FC = () => {
                       id={`new-${column.name}`}
                       checked={newRow[column.name] || false}
                       onChange={(e) =>
-                        setNewRow({
+                        { setNewRow({
                           ...newRow,
                           [column.name]: e.target.checked,
-                        })
+                        }); }
                       }
                       className="h-4 w-4"
                     />
@@ -694,10 +694,10 @@ export const StorageTab: React.FC = () => {
                       type={getInputType(column)}
                       value={newRow[column.name] ?? ""}
                       onChange={(e) =>
-                        setNewRow({
+                        { setNewRow({
                           ...newRow,
                           [column.name]: e.target.value,
-                        })
+                        }); }
                       }
                       placeholder={column.dflt_value || "NULL"}
                     />
@@ -711,7 +711,7 @@ export const StorageTab: React.FC = () => {
             </div>
           )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setNewRow(null)}>
+            <Button variant="outline" onClick={() => { setNewRow(null); }}>
               Cancel
             </Button>
             <Button
@@ -729,7 +729,7 @@ export const StorageTab: React.FC = () => {
       </Dialog>
 
       {/* Delete Confirmation Dialog */}
-      <Dialog open={!!deletingRow} onOpenChange={() => setDeletingRow(null)}>
+      <Dialog open={!!deletingRow} onOpenChange={() => { setDeletingRow(null); }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Delete Row</DialogTitle>
@@ -757,7 +757,7 @@ export const StorageTab: React.FC = () => {
             </div>
           )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeletingRow(null)}>
+            <Button variant="outline" onClick={() => { setDeletingRow(null); }}>
               Cancel
             </Button>
             <Button
@@ -796,7 +796,7 @@ export const StorageTab: React.FC = () => {
           <DialogFooter>
             <Button
               variant="outline"
-              onClick={() => setShowResetConfirm(false)}
+              onClick={() => { setShowResetConfirm(false); }}
             >
               Cancel
             </Button>
@@ -830,7 +830,7 @@ export const StorageTab: React.FC = () => {
               <Textarea
                 id="sql-query"
                 value={sqlQuery}
-                onChange={(e) => setSqlQuery(e.target.value)}
+                onChange={(e) => { setSqlQuery(e.target.value); }}
                 placeholder="SELECT * FROM agents LIMIT 10;"
                 className="font-mono text-sm h-32"
               />
@@ -955,7 +955,7 @@ export const StorageTab: React.FC = () => {
           <Toast
             message={toast.message}
             type={toast.type}
-            onDismiss={() => setToast(null)}
+            onDismiss={() => { setToast(null); }}
           />
         )}
       </ToastContainer>

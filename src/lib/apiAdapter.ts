@@ -20,7 +20,7 @@ const CODE_PREFIX_RE = /^(?:Error invoking remote method '[^']+': )?\[([A-Z][A-Z
 
 function decodeApiError(err: unknown): unknown {
   if (!(err instanceof Error)) return err;
-  const match = err.message.match(CODE_PREFIX_RE);
+  const match = CODE_PREFIX_RE.exec(err.message);
   if (!match) return err;
   const code = match[1];
   const cleaned = err.message.slice(match[0].length);

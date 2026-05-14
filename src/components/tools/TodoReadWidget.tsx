@@ -83,7 +83,7 @@ export const TodoReadWidget: React.FC<{ todos?: any[]; result?: any }> = ({ todo
   const filteredTodos = todos.filter(todo => {
     const matchesSearch = !searchQuery ||
       todo.content.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (todo.id && todo.id.toLowerCase().includes(searchQuery.toLowerCase()));
+      (todo.id?.toLowerCase().includes(searchQuery.toLowerCase()));
 
     const matchesStatus = statusFilter === "all" || todo.status === statusFilter;
 
@@ -440,7 +440,7 @@ export const TodoReadWidget: React.FC<{ todos?: any[]; result?: any }> = ({ todo
             type="text"
             placeholder="Search todos..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => { setSearchQuery(e.target.value); }}
             className="pl-9 h-9"
           />
         </div>
@@ -453,7 +453,7 @@ export const TodoReadWidget: React.FC<{ todos?: any[]; result?: any }> = ({ todo
                 size="sm"
                 variant={statusFilter === status ? "default" : "ghost"}
                 className="h-7 px-2 text-xs"
-                onClick={() => setStatusFilter(status)}
+                onClick={() => { setStatusFilter(status); }}
               >
                 {status === "all" ? "All" : statusConfig[status as keyof typeof statusConfig]?.label}
                 {status === "all" && (
@@ -468,7 +468,7 @@ export const TodoReadWidget: React.FC<{ todos?: any[]; result?: any }> = ({ todo
       </div>
 
       {/* View Mode Tabs */}
-      <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as typeof viewMode)}>
+      <Tabs value={viewMode} onValueChange={(v) => { setViewMode(v as typeof viewMode); }}>
         <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="list" className="text-xs">
             <LayoutList className="h-4 w-4 mr-1" />

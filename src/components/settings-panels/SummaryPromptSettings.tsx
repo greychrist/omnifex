@@ -127,7 +127,7 @@ export const SummaryPromptSettings: React.FC = () => {
         savedRef.current = next;
         setSavedFlash('prompt');
         if (flashTimer.current) clearTimeout(flashTimer.current);
-        flashTimer.current = setTimeout(() => setSavedFlash(null), 1500);
+        flashTimer.current = setTimeout(() => { setSavedFlash(null); }, 1500);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Save failed.');
       }

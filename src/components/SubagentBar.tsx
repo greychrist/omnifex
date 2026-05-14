@@ -7,7 +7,7 @@ const COLLAPSE_STORAGE_KEY = 'greychrist.subagentBar.collapsed';
 
 // Cool palette — kept close to the user-message blue but distinguishable.
 // Each entry: border + bg + dot/accent color. Tailwind-friendly utility strings.
-const PALETTE: Array<{ border: string; bg: string; dot: string; text: string }> = [
+const PALETTE: { border: string; bg: string; dot: string; text: string }[] = [
   { border: 'border-sky-400/40',    bg: 'bg-sky-400/10',    dot: 'bg-sky-400',    text: 'text-sky-400' },
   { border: 'border-indigo-400/40', bg: 'bg-indigo-400/10', dot: 'bg-indigo-400', text: 'text-indigo-400' },
   { border: 'border-cyan-400/40',   bg: 'bg-cyan-400/10',   dot: 'bg-cyan-400',   text: 'text-cyan-400' },
@@ -79,7 +79,7 @@ const SubagentRow: React.FC<SubagentRowProps> = ({ sub, onDismiss }) => {
     >
       <button
         type="button"
-        onClick={() => setExpanded((v) => !v)}
+        onClick={() => { setExpanded((v) => !v); }}
         className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left hover:bg-white/5"
       >
         <span className="flex items-center justify-center w-4 shrink-0">{statusIcon}</span>
@@ -102,7 +102,7 @@ const SubagentRow: React.FC<SubagentRowProps> = ({ sub, onDismiss }) => {
             title="Dismiss"
             onClick={(e) => {
               e.stopPropagation();
-              onDismiss!(sub.toolUseId);
+              onDismiss(sub.toolUseId);
             }}
             className="ml-1 inline-flex h-4 w-4 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground hover:bg-white/10 shrink-0"
           >
@@ -180,7 +180,7 @@ export const SubagentBar: React.FC<SubagentBarProps> = ({
       <div className="flex items-center gap-2 px-3 py-1 text-[11px] bg-muted/20 shrink-0">
         <button
           type="button"
-          onClick={() => setCollapsed((v) => !v)}
+          onClick={() => { setCollapsed((v) => !v); }}
           className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"
           title={collapsed ? 'Expand subagents' : 'Collapse subagents'}
         >

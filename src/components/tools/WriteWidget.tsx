@@ -75,7 +75,7 @@ export const WriteWidget: React.FC<{ filePath: string; content: string; result?:
         {/* Backdrop with blur */}
         <div
           className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-          onClick={() => setIsMaximized(false)}
+          onClick={() => { setIsMaximized(false); }}
         />
 
         {/* Modal content */}
@@ -90,7 +90,7 @@ export const WriteWidget: React.FC<{ filePath: string; content: string; result?:
               variant="ghost"
               size="icon"
               className="h-8 w-8"
-              onClick={() => setIsMaximized(false)}
+              onClick={() => { setIsMaximized(false); }}
             >
               <X className="h-4 w-4" />
             </Button>
@@ -141,7 +141,7 @@ export const WriteWidget: React.FC<{ filePath: string; content: string; result?:
               variant="ghost"
               size="icon"
               className="h-6 w-6"
-              onClick={() => setIsMaximized(true)}
+              onClick={() => { setIsMaximized(true); }}
             >
               <Maximize2 className="h-3 w-3" />
             </Button>

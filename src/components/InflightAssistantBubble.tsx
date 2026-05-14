@@ -33,7 +33,7 @@ export const InflightAssistantBubble: React.FC<{ tabId: string }> = ({ tabId }) 
   const syntaxTheme = useMemo(() => getClaudeSyntaxTheme(theme), [theme]);
   const mdComponents = useMemo(() => buildMarkdownComponents(syntaxTheme), [syntaxTheme]);
 
-  if (!inflight || !inflight.text) return null;
+  if (!inflight?.text) return null;
 
   return (
     <Card className="group/card relative my-1 border-border/40">

@@ -165,7 +165,7 @@ const CardFooter: React.FC<{
       if (!text) return;
       await navigator.clipboard.writeText(text);
       setCopied(true);
-      setTimeout(() => setCopied(false), 1200);
+      setTimeout(() => { setCopied(false); }, 1200);
     } catch (err) {
       console.error("Failed to copy:", err);
     }

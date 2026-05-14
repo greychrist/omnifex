@@ -3,11 +3,11 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { render, screen, cleanup, within } from '@testing-library/react';
 import { AnsweredAskUserQuestionCard } from '../AnsweredAskUserQuestionCard';
 
-afterEach(() => cleanup());
+afterEach(() => { cleanup(); });
 
 // Mirrors the SDK shape `AskUserQuestionCard.handleSubmit` produces — keep
 // these factories close to that so a wire-format drift breaks here first.
-function input(questions: Array<{ question: string; header?: string; options?: Array<{ label: string }>; multiSelect?: boolean }>) {
+function input(questions: { question: string; header?: string; options?: { label: string }[]; multiSelect?: boolean }[]) {
   return {
     questions: questions.map((q) => ({
       question: q.question,

@@ -809,12 +809,12 @@ export function mergeConfig(saved: unknown): MessageRenderingConfig {
 
   if (isRecord(saved.palette)) {
     for (const key of Object.keys(base.palette) as PaletteName[]) {
-      const entry = (saved.palette as Record<string, unknown>)[key];
+      const entry = (saved.palette)[key];
       if (isRecord(entry)) {
         const current = base.palette[key];
         base.palette[key] = {
           border: typeof entry.border === "string" ? entry.border : current.border,
-          bg: typeof entry.bg === "string" || entry.bg === null ? (entry.bg as string | null) : current.bg,
+          bg: typeof entry.bg === "string" || entry.bg === null ? (entry.bg) : current.bg,
           swatch: typeof entry.swatch === "string" ? entry.swatch : current.swatch,
         };
       }
@@ -823,7 +823,7 @@ export function mergeConfig(saved: unknown): MessageRenderingConfig {
 
   if (isRecord(saved.kinds)) {
     for (const id of Object.keys(base.kinds)) {
-      const override = (saved.kinds as Record<string, unknown>)[id];
+      const override = (saved.kinds)[id];
       if (isRecord(override)) {
         const current = base.kinds[id];
         base.kinds[id] = {
@@ -833,7 +833,7 @@ export function mergeConfig(saved: unknown): MessageRenderingConfig {
             : current.icon,
           headerLabel:
             override.headerLabel === null || typeof override.headerLabel === "string"
-              ? (override.headerLabel as string | null)
+              ? (override.headerLabel)
               : current.headerLabel,
           accentColor:
             typeof override.accentColor === "string" &&
@@ -873,7 +873,7 @@ export function mergeConfig(saved: unknown): MessageRenderingConfig {
   }
 
   if (isRecord(saved.hardFilters)) {
-    const hf = saved.hardFilters as Record<string, unknown>;
+    const hf = saved.hardFilters;
     base.hardFilters = {
       dropMeta: typeof hf.dropMeta === "boolean" ? hf.dropMeta : base.hardFilters.dropMeta,
       dropTaskLifecycle:
@@ -885,7 +885,7 @@ export function mergeConfig(saved: unknown): MessageRenderingConfig {
   }
 
   if (isRecord(saved.typography)) {
-    const t = saved.typography as Record<string, unknown>;
+    const t = saved.typography;
     base.typography = {
       header: mergeTypographyStyle(t.header, base.typography.header),
       content: mergeTypographyStyle(t.content, base.typography.content),
@@ -894,7 +894,7 @@ export function mergeConfig(saved: unknown): MessageRenderingConfig {
   }
 
   if (isRecord(saved.debug)) {
-    const d = saved.debug as Record<string, unknown>;
+    const d = saved.debug;
     base.debug = {
       showCardKindLabel:
         typeof d.showCardKindLabel === "boolean"
@@ -925,7 +925,7 @@ function mergeTypographyStyle(
   base: TypographyStyle,
 ): TypographyStyle {
   if (!isRecord(saved)) return base;
-  const raw = saved as Record<string, unknown>;
+  const raw = saved;
 
   // Migration path: legacy records have a `family` field. Map it to a
   // sensible default typeface so the user's intent (sans vs serif vs mono)
@@ -954,7 +954,7 @@ function mergeTypographyStyle(
 
 function mergeIconStyle(saved: unknown, base: IconStyle): IconStyle {
   if (!isRecord(saved)) return base;
-  const s = saved as Record<string, unknown>;
+  const s = saved;
   const opacity =
     typeof s.bgOpacity === "number" && Number.isFinite(s.bgOpacity)
       ? Math.max(0, Math.min(100, Math.round(s.bgOpacity)))

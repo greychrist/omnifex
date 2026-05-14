@@ -74,7 +74,7 @@ export const ClaudeMemoriesDropdown: React.FC<ClaudeMemoriesDropdownProps> = ({
       <Card className="overflow-hidden">
         {/* Dropdown Header */}
         <button
-          onClick={() => setIsOpen(!isOpen)}
+          onClick={() => { setIsOpen(!isOpen); }}
           className="w-full flex items-center justify-between p-3 hover:bg-accent/50 transition-colors"
         >
           <div className="flex items-center space-x-2">

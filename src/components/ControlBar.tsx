@@ -56,7 +56,7 @@ export const THINKING_CONFIGS: { id: ThinkingConfig; name: string; description: 
 
 // ── Permission ──────────────────────────────────────────────────────────
 
-export type PermissionMode = {
+export interface PermissionMode {
   id: string;
   name: string;
   description: string;
@@ -65,7 +65,7 @@ export type PermissionMode = {
   icon: React.ReactNode;
   /** Tailwind text color for the trigger and legend swatch */
   color: string;
-};
+}
 
 // Mirrors the SDK's PermissionMode union exactly:
 //   'default' | 'acceptEdits' | 'bypassPermissions' | 'plan' | 'dontAsk' | 'auto'
@@ -155,7 +155,7 @@ function EffortPickerDropdown({ effort, onSelect }: { effort: EffortLevel; onSel
       {EFFORT_LEVELS.map((level) => (
         <button
           key={level.id}
-          onClick={() => onSelect(level.id)}
+          onClick={() => { onSelect(level.id); }}
           className={cn(
             "w-full flex items-start gap-3 p-3 rounded-md transition-colors text-left",
             "hover:bg-accent",
@@ -194,7 +194,7 @@ export function EffortPicker({ effort, onEffortChange, open, onOpenChange, disab
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => onOpenChange(!open)}
+                  onClick={() => { onOpenChange(!open); }}
                   className="gap-1"
                 >
                   <span className={cn("text-xs font-semibold", currentLevel?.color)}>
@@ -226,7 +226,7 @@ export function EffortPicker({ effort, onEffortChange, open, onOpenChange, disab
             variant="outline"
             size="sm"
             disabled={disabled}
-            onClick={() => onOpenChange(!open)}
+            onClick={() => { onOpenChange(!open); }}
             className="w-full justify-between h-9 px-3 font-normal"
           >
             <span className={cn("text-xs font-semibold", currentLevel?.color)}>
@@ -309,7 +309,7 @@ function ThinkingPickerDropdown({
       {THINKING_CONFIGS.map((cfg) => (
         <button
           key={cfg.id}
-          onClick={() => onSelect(cfg.id)}
+          onClick={() => { onSelect(cfg.id); }}
           className={cn(
             "w-full flex items-start gap-3 p-3 rounded-md transition-colors text-left",
             "hover:bg-accent",
@@ -352,7 +352,7 @@ export function ThinkingPicker({
             variant="outline"
             size="sm"
             disabled={disabled}
-            onClick={() => onOpenChange(!open)}
+            onClick={() => { onOpenChange(!open); }}
             className="w-full justify-between h-9 px-3 font-normal gap-2"
           >
             <span className="flex items-center gap-2 min-w-0">
@@ -434,7 +434,7 @@ export function PermissionPicker({ permissionMode, onPermissionModeChange, open,
             variant="outline"
             size="sm"
             disabled={disabled}
-            onClick={() => onOpenChange(!open)}
+            onClick={() => { onOpenChange(!open); }}
             className="w-full justify-between h-9 px-3 font-normal gap-2"
           >
             <span className="flex items-center gap-2 min-w-0">

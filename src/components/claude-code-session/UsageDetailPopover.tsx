@@ -54,7 +54,7 @@ export function UsageDetailPopover({
       {data == null && (
         <div className="text-sm text-muted-foreground">No usage data yet.</div>
       )}
-      {data && data.ok === false && (
+      {data?.ok === false && (
         <div className="space-y-2">
           <div className="text-sm font-medium text-red-400">Couldn't fetch /usage</div>
           <div className="text-xs text-muted-foreground">{data.error}</div>
@@ -195,7 +195,7 @@ function UsageRankedTable({
   table,
 }: {
   title: string;
-  table: { rows: Array<{ name: string; pct_used: number }>; more_count: number | null };
+  table: { rows: { name: string; pct_used: number }[]; more_count: number | null };
 }) {
   // Bar width is normalized to the largest row so a 6%-leading list still
   // shows visible variation. Floor at 1% so the smallest non-zero entry

@@ -24,7 +24,7 @@ function makeHarness(initialIsLoading: boolean) {
       promptsSent: 0,
       lastActivityTime: 0,
       firstMessageTime: null as number | null,
-      modelChanges: [] as Array<{ from: string; to: string; timestamp: number }>,
+      modelChanges: [] as { from: string; to: string; timestamp: number }[],
       wasResumed: false,
     });
     const [, setIsLoading] = useState(initialIsLoading);
@@ -109,5 +109,5 @@ describe('useSendPrompt', () => {
     ]);
   });
 
-  afterEach(() => cleanup());
+  afterEach(() => { cleanup(); });
 });

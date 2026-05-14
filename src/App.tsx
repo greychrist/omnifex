@@ -122,7 +122,7 @@ function AppContent() {
     if (view !== "tabs") return;
     
     const handleKeyDown = (e: KeyboardEvent) => {
-      const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+      const isMac = navigator.platform.toUpperCase().includes('MAC');
       const modKey = isMac ? e.metaKey : e.ctrlKey;
       
       if (modKey) {
@@ -156,7 +156,7 @@ function AppContent() {
     };
 
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    return () => { window.removeEventListener('keydown', handleKeyDown); };
   }, [view]);
 
   // Listen for Claude not found events
@@ -165,9 +165,9 @@ function AppContent() {
       setShowClaudeBinaryDialog(true);
     };
 
-    window.addEventListener('claude-not-found', handleClaudeNotFound as EventListener);
+    window.addEventListener('claude-not-found', handleClaudeNotFound);
     return () => {
-      window.removeEventListener('claude-not-found', handleClaudeNotFound as EventListener);
+      window.removeEventListener('claude-not-found', handleClaudeNotFound);
     };
   }, []);
 
@@ -181,7 +181,7 @@ function AppContent() {
       createUsageTab();
     };
     window.addEventListener('navigate-to-usage-dashboard', handler);
-    return () => window.removeEventListener('navigate-to-usage-dashboard', handler);
+    return () => { window.removeEventListener('navigate-to-usage-dashboard', handler); };
   }, [createUsageTab]);
 
   /**
@@ -346,7 +346,7 @@ function AppContent() {
                 >
                   <Card 
                     className="h-64 cursor-pointer transition-all duration-200 hover:scale-105 hover:shadow-lg border border-border/50 shimmer-hover trailing-border"
-                    onClick={() => handleViewChange("cc-agents")}
+                    onClick={() => { handleViewChange("cc-agents"); }}
                   >
                     <div className="h-full flex flex-col items-center justify-center p-8">
                       <Bot className="h-16 w-16 mb-4 text-primary" />
@@ -363,7 +363,7 @@ function AppContent() {
                 >
                   <Card 
                     className="h-64 cursor-pointer transition-all duration-200 hover:scale-105 hover:shadow-lg border border-border/50 shimmer-hover trailing-border"
-                    onClick={() => handleViewChange("projects")}
+                    onClick={() => { handleViewChange("projects"); }}
                   >
                     <div className="h-full flex flex-col items-center justify-center p-8">
                       <FolderCode className="h-16 w-16 mb-4 text-primary" />
@@ -380,12 +380,12 @@ function AppContent() {
       case "editor":
         return (
           <div className="flex-1 overflow-hidden">
-            <MarkdownEditor onBack={() => handleViewChange("welcome")} />
+            <MarkdownEditor onBack={() => { handleViewChange("welcome"); }} />
           </div>
         );
       
       case "settings":
-        return <Settings onBack={() => handleViewChange("welcome")} />;
+        return <Settings onBack={() => { handleViewChange("welcome"); }} />;
       
       case "projects":
         if (selectedProject) {
@@ -419,7 +419,7 @@ function AppContent() {
       
       case "mcp":
         return (
-          <MCPManager onBack={() => handleViewChange("welcome")} />
+          <MCPManager onBack={() => { handleViewChange("welcome"); }} />
         );
       
       case "project-settings":
@@ -464,7 +464,7 @@ function AppContent() {
           // Trigger a refresh of the Claude version check
           window.location.reload();
         }}
-        onError={(message) => setToast({ message, type: "error" })}
+        onError={(message) => { setToast({ message, type: "error" }); }}
       />
 
       {/* File picker modal for selecting project directory */}
@@ -495,7 +495,7 @@ function AppContent() {
                   }
                 }
               }}
-              onClose={() => setShowProjectPicker(false)}
+              onClose={() => { setShowProjectPicker(false); }}
             />
           </div>
         </div>
@@ -525,7 +525,7 @@ function AppContent() {
             type={toast.type}
             duration={toast.duration}
             action={toast.action}
-            onDismiss={() => setToast(null)}
+            onDismiss={() => { setToast(null); }}
           />
         )}
       </ToastContainer>
@@ -558,14 +558,14 @@ function App() {
         const enabled = pref === null ? true : pref === 'true';
         if (enabled) {
           // keep intro visible and hide after duration
-          timer = window.setTimeout(() => setShowIntro(false), 2000);
+          timer = window.setTimeout(() => { setShowIntro(false); }, 2000);
         } else {
           // user disabled intro: hide immediately to avoid any overlay delay
           setShowIntro(false);
         }
       } catch (err) {
         // On failure, show intro once to keep UX consistent
-        timer = window.setTimeout(() => setShowIntro(false), 2000);
+        timer = window.setTimeout(() => { setShowIntro(false); }, 2000);
       }
     })();
     return () => {

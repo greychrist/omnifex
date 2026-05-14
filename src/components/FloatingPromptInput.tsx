@@ -309,7 +309,7 @@ const FloatingPromptInputInner = (
     if (nativeEvent.isComposing) return true;
     const key = nativeEvent.key;
     if (key === 'Process' || key === 'Unidentified') return true;
-    const keyboardEvent = nativeEvent as unknown as KeyboardEvent;
+    const keyboardEvent = nativeEvent;
     const keyCode = keyboardEvent.keyCode ?? (keyboardEvent as unknown as { which?: number }).which;
     if (keyCode === 229) return true;
     return false;
@@ -412,7 +412,7 @@ const FloatingPromptInputInner = (
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm"
-            onClick={() => setIsExpanded(false)}
+            onClick={() => { setIsExpanded(false); }}
           >
             <motion.div
               initial={{ opacity: 0, y: 8 }}
@@ -420,7 +420,7 @@ const FloatingPromptInputInner = (
               exit={{ opacity: 0, y: -8 }}
               transition={{ duration: 0.15 }}
               className="bg-background border border-border rounded-lg shadow-lg w-full max-w-2xl p-4 space-y-4"
-              onClick={(e) => e.stopPropagation()}
+              onClick={(e) => { e.stopPropagation(); }}
             >
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-medium">Compose your prompt</h3>
@@ -432,7 +432,7 @@ const FloatingPromptInputInner = (
                     <Button
                       variant="ghost"
                       size="icon"
-                      onClick={() => setIsExpanded(false)}
+                      onClick={() => { setIsExpanded(false); }}
                       className="h-8 w-8"
                     >
                       <Minimize2 className="h-4 w-4" />
@@ -535,7 +535,7 @@ const FloatingPromptInputInner = (
           {pastedImages.length > 0 && (
             <ImagePreview
               images={pastedImages}
-              onRemove={(index) => setPastedImages(prev => prev.filter((_, i) => i !== index))}
+              onRemove={(index) => { setPastedImages(prev => prev.filter((_, i) => i !== index)); }}
               className="border-b border-border"
             />
           )}
@@ -619,7 +619,7 @@ const FloatingPromptInputInner = (
                       <Button
                         variant="ghost"
                         size="icon"
-                        onClick={() => setIsExpanded(true)}
+                        onClick={() => { setIsExpanded(true); }}
                         disabled={disabled}
                         className="h-8 w-8 hover:bg-accent/50 transition-colors"
                       >
@@ -655,7 +655,7 @@ const FloatingPromptInputInner = (
 
                 {/* File Picker */}
                 <AnimatePresence>
-                  {showFilePicker && projectPath && projectPath.trim() && (
+                  {showFilePicker && projectPath?.trim() && (
                     <FilePicker
                       basePath={projectPath.trim()}
                       onSelect={handleFileSelect}
@@ -673,9 +673,9 @@ const FloatingPromptInputInner = (
                       tabId={tabId}
                       prefetchedCommands={supportedCommands}
                       onSelect={(cmd: SlashCommand) =>
-                        slash.handleSlashCommandSelect(cmd, prompt, cursorPosition, setPrompt, activeTextarea())
+                        { slash.handleSlashCommandSelect(cmd, prompt, cursorPosition, setPrompt, activeTextarea()); }
                       }
-                      onClose={() => slash.handleSlashCommandPickerClose(activeTextarea())}
+                      onClose={() => { slash.handleSlashCommandPickerClose(activeTextarea()); }}
                       initialQuery={slash.slashCommandQuery}
                       configDir={configDir}
                     />

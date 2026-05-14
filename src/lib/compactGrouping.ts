@@ -69,7 +69,7 @@ export function isMessageFullyHidden(
     const k = config.kinds[wholeKind];
     if (!k) return false;
     if (k.compactBoundaryLocked) return false;
-    return k.hiddenInCompact === true;
+    return k.hiddenInCompact;
   }
 
   // The CLI's persisted user prompts are bare strings (live SDK uses an
@@ -128,7 +128,7 @@ export function buildCompactItems(
     }
 
     const last = items[items.length - 1];
-    if (last && last.kind === 'group') {
+    if (last?.kind === 'group') {
       last.messages.push(message);
     } else {
       items.push({ kind: 'group', messages: [message], key: `g-${idx}` });

@@ -103,7 +103,7 @@ const TabsTrigger = React.forwardRef<
       role="tab"
       aria-selected={isSelected}
       disabled={disabled}
-      onClick={() => onValueChange(value)}
+      onClick={() => { onValueChange(value); }}
       className={cn(
         "inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium transition-all",
         "disabled:pointer-events-none disabled:opacity-50",

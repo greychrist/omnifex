@@ -60,7 +60,7 @@ const DirInput: React.FC<DirInputProps> = ({ value, onChange, placeholder, compa
       <Input
         placeholder={placeholder}
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(e) => { onChange(e.target.value); }}
         className={cn(h, ts, "flex-1")}
       />
       <Button
@@ -206,7 +206,7 @@ const SessionDefaultsEditor: React.FC<{
             trigger={
               <DropdownTrigger
                 open={modelOpen}
-                onClick={() => setModelOpen(!modelOpen)}
+                onClick={() => { setModelOpen(!modelOpen); }}
                 title={selectedModel?.name ?? APP_DEFAULT_LABEL}
               >
                 <span
@@ -258,7 +258,7 @@ const SessionDefaultsEditor: React.FC<{
             trigger={
               <DropdownTrigger
                 open={effortOpen}
-                onClick={() => setEffortOpen(!effortOpen)}
+                onClick={() => { setEffortOpen(!effortOpen); }}
                 title={selectedEffort?.description ?? APP_DEFAULT_LABEL}
               >
                 {selectedEffort ? (
@@ -317,7 +317,7 @@ const SessionDefaultsEditor: React.FC<{
             trigger={
               <DropdownTrigger
                 open={thinkingOpen}
-                onClick={() => setThinkingOpen(!thinkingOpen)}
+                onClick={() => { setThinkingOpen(!thinkingOpen); }}
                 title={selectedThinking?.description ?? APP_DEFAULT_LABEL}
               >
                 {selectedThinking ? (
@@ -376,7 +376,7 @@ const SessionDefaultsEditor: React.FC<{
             trigger={
               <DropdownTrigger
                 open={permsOpen}
-                onClick={() => setPermsOpen(!permsOpen)}
+                onClick={() => { setPermsOpen(!permsOpen); }}
                 title={selectedPerm?.description ?? APP_DEFAULT_LABEL}
               >
                 {selectedPerm ? (
@@ -430,7 +430,7 @@ export const AccountSettings: React.FC = () => {
   const { refresh: refreshAccountsContext } = useAccounts();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [pathRules, setPathRules] = useState<PathRule[]>([]);
-  const [overrides, setOverrides] = useState<Array<{project_path: string; account_id: number; account_name: string}>>([]);
+  const [overrides, setOverrides] = useState<{project_path: string; account_id: number; account_name: string}[]>([]);
 
   // Test resolution state
   const [testPath, setTestPath] = useState("");
@@ -626,7 +626,7 @@ export const AccountSettings: React.FC = () => {
                 variant="ghost"
                 size="sm"
                 className="h-6 px-2 text-xs text-muted-foreground"
-                onClick={() => startEdit(account)}
+                onClick={() => { startEdit(account); }}
                 title="Edit"
               >
                 <Pencil className="w-3 h-3" />
@@ -671,7 +671,7 @@ export const AccountSettings: React.FC = () => {
                   <Input
                     placeholder="Account name"
                     value={editName}
-                    onChange={(e) => setEditName(e.target.value)}
+                    onChange={(e) => { setEditName(e.target.value); }}
                     className="h-7 text-xs"
                   />
                 </div>
@@ -696,7 +696,7 @@ export const AccountSettings: React.FC = () => {
                 <input
                   type="color"
                   value={editColor}
-                  onChange={(e) => setEditColor(e.target.value)}
+                  onChange={(e) => { setEditColor(e.target.value); }}
                   className="w-7 h-7 rounded cursor-pointer border border-border bg-transparent"
                   title="Pick color"
                   aria-label="Account color"
@@ -706,7 +706,7 @@ export const AccountSettings: React.FC = () => {
                   type="button"
                   size="sm"
                   variant="outline"
-                  onClick={() => setShowEditIconPicker(true)}
+                  onClick={() => { setShowEditIconPicker(true); }}
                   className="h-7 px-2 shrink-0"
                   title="Pick icon"
                 >
@@ -754,7 +754,7 @@ export const AccountSettings: React.FC = () => {
                   <Select
                     value={editSummaryModel ?? '__none__'}
                     onValueChange={(v) =>
-                      setEditSummaryModel(v === '__none__' ? null : v)
+                      { setEditSummaryModel(v === '__none__' ? null : v); }
                     }
                   >
                     <SelectTrigger className="h-7 w-44 text-xs">
@@ -799,7 +799,7 @@ export const AccountSettings: React.FC = () => {
             <Input
               placeholder="Account name (e.g., personal)"
               value={newName}
-              onChange={(e) => setNewName(e.target.value)}
+              onChange={(e) => { setNewName(e.target.value); }}
               className="h-8 text-sm"
             />
             <DirInput
@@ -819,7 +819,7 @@ export const AccountSettings: React.FC = () => {
                   type="button"
                   size="sm"
                   variant="outline"
-                  onClick={() => setShowNewIconPicker(true)}
+                  onClick={() => { setShowNewIconPicker(true); }}
                   className="h-8 px-2"
                 >
                   {(() => {
@@ -850,7 +850,7 @@ export const AccountSettings: React.FC = () => {
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => setShowAddAccount(false)}
+                onClick={() => { setShowAddAccount(false); }}
                 className="h-7 text-xs"
               >
                 Cancel
@@ -862,7 +862,7 @@ export const AccountSettings: React.FC = () => {
             variant="link"
             size="sm"
             className="mt-2 h-6 px-0 text-xs"
-            onClick={() => setShowAddAccount(true)}
+            onClick={() => { setShowAddAccount(true); }}
           >
             <Plus className="w-3 h-3 mr-1" />
             Add account
@@ -906,7 +906,7 @@ export const AccountSettings: React.FC = () => {
             />
             <Select
               value={newRuleAccountId != null ? String(newRuleAccountId) : undefined}
-              onValueChange={(v) => setNewRuleAccountId(v ? Number(v) : null)}
+              onValueChange={(v) => { setNewRuleAccountId(v ? Number(v) : null); }}
             >
               <SelectTrigger className="w-full h-8 text-sm">
                 <SelectValue placeholder="Select account..." />
@@ -926,7 +926,7 @@ export const AccountSettings: React.FC = () => {
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => setShowAddRule(false)}
+                onClick={() => { setShowAddRule(false); }}
                 className="h-7 text-xs"
               >
                 Cancel
@@ -938,7 +938,7 @@ export const AccountSettings: React.FC = () => {
             variant="link"
             size="sm"
             className="mt-2 h-6 px-0 text-xs"
-            onClick={() => setShowAddRule(true)}
+            onClick={() => { setShowAddRule(true); }}
           >
             <Plus className="w-3 h-3 mr-1" />
             Add rule
@@ -975,7 +975,7 @@ export const AccountSettings: React.FC = () => {
         <div className="flex gap-2">
           <Input
             value={testPath}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setTestPath(e.target.value)}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setTestPath(e.target.value); }}
             onKeyDown={(e: React.KeyboardEvent) => e.key === "Enter" && handleTestResolution()}
             placeholder="/Users/you/Repos/project-name"
             className="font-mono text-sm"
@@ -1008,13 +1008,13 @@ export const AccountSettings: React.FC = () => {
         value={editIcon}
         onSelect={setEditIcon}
         isOpen={showEditIconPicker}
-        onClose={() => setShowEditIconPicker(false)}
+        onClose={() => { setShowEditIconPicker(false); }}
       />
       <IconPicker
         value={newIcon}
         onSelect={setNewIcon}
         isOpen={showNewIconPicker}
-        onClose={() => setShowNewIconPicker(false)}
+        onClose={() => { setShowNewIconPicker(false); }}
       />
     </div>
   );

@@ -67,12 +67,12 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
 
   // Reusable check-for-update function
   const checkForUpdate = useCallback(async () => {
-    // eslint-disable-next-line no-console
+     
     console.log('[updater] checkForUpdate() fired');
     setUpdateState({ status: 'checking' });
     try {
       const info = await api.checkForUpdate();
-      // eslint-disable-next-line no-console
+       
       console.log('[updater] checkForUpdate() result available=' + !!info?.available);
       if (info?.available) {
         setUpdateState({
@@ -121,7 +121,7 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
     const minSpin = new Promise<void>((resolve) =>
       setTimeout(resolve, MIN_CHECK_SPIN_MS),
     );
-    void Promise.all([work, minSpin]).finally(() => setCheckingHold(false));
+    void Promise.all([work, minSpin]).finally(() => { setCheckingHold(false); });
   }, []);
 
   // Combined one-click refresh for the upgrade-check button: app update
@@ -153,7 +153,7 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
         prev.status === 'up-to-date' ? { status: 'idle' } : prev,
       );
     }, 3000);
-    return () => clearTimeout(t);
+    return () => { clearTimeout(t); };
   }, [updateState.status, checkingSdk, referencedSdk, latestSdk]);
 
   // If a fresh SDK check (manual button or hourly poll) discovers the
@@ -174,7 +174,7 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
   // Fetch app version + check for updates + check SDK on mount
   useEffect(() => {
     api.getAppVersion().then(setAppVersion).catch(() => {});
-    api.getReferencedSdkVersion().then(setReferencedSdk).catch(() => setReferencedSdk(null));
+    api.getReferencedSdkVersion().then(setReferencedSdk).catch(() => { setReferencedSdk(null); });
     withMinSpin(Promise.all([checkForUpdate(), checkSdkVersion()]));
 
     // Re-check the SDK hourly so the badge reflects new releases without a
@@ -196,7 +196,7 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
       // Diagnostic: see exactly what the install gate reports on every tick,
       // including the per-tab status snapshot. Useful for figuring out why
       // the wait-for-idle gate cleared when sessions look active in the UI.
-      // eslint-disable-next-line no-console
+       
       console.log('[updater] install-status', data);
       setUpdateState((prev) => {
         if (prev.status === 'waiting' || prev.status === 'installing' || prev.status === 'ready') {
@@ -239,21 +239,21 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
     releaseUrl: string,
   ): Promise<void> => {
     const force = activeSessions > 0;
-    // eslint-disable-next-line no-console
+     
     console.log('[updater] runInstall force=' + force + ' activeSessions=' + activeSessions);
     try {
       await api.installUpdate(filePath, version, force ? { force: true } : undefined);
       // executeInstall calls app.quit() on success — we never reach here.
       setUpdateState({ status: 'idle' });
     } catch (err: any) {
-      // eslint-disable-next-line no-console
+       
       console.log('[updater] installUpdate failed message=' + (err?.message ?? String(err)));
       setUpdateState({ status: 'error', downloadUrl, assetName, releaseUrl, version });
     }
   };
 
   const handleUpdateClick = async () => {
-    // eslint-disable-next-line no-console
+     
     console.log('[updater] handleUpdateClick status=' + updateState.status + ' active=' + activeSessions);
     if (updateState.status === 'available') {
       const { downloadUrl, assetName, releaseUrl, version } = updateState;
@@ -262,7 +262,7 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
       try {
         filePath = await api.downloadUpdate(downloadUrl, assetName);
       } catch (e: any) {
-        // eslint-disable-next-line no-console
+         
         console.log('[updater] download failed message=' + (e?.message ?? String(e)));
         setUpdateState({ status: 'error', downloadUrl, assetName, releaseUrl, version });
         return;
@@ -289,7 +289,7 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
   };
 
   const handleInstallAnyway = async () => {
-    // eslint-disable-next-line no-console
+     
     console.log('[updater] handleInstallAnyway clicked', { status: updateState.status });
     if (updateState.status !== 'waiting') return;
     const { filePath, version } = updateState;

@@ -9,7 +9,7 @@ import {
   TooltipSimple,
 } from "../tooltip-modern";
 
-afterEach(() => cleanup());
+afterEach(() => { cleanup(); });
 
 describe("TooltipSimple", () => {
   it("renders the trigger child", () => {

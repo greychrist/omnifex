@@ -85,7 +85,7 @@ export const MCPWidget: React.FC<{
               </Badge>
               {isLargeInput && (
                 <button
-                  onClick={() => setIsExpanded(!isExpanded)}
+                  onClick={() => { setIsExpanded(!isExpanded); }}
                   className="text-violet-500 hover:text-violet-600 transition-colors"
                 >
                   {isExpanded ? (
@@ -164,7 +164,7 @@ export const MCPWidget: React.FC<{
             {!isExpanded && isLargeInput && (
               <div className="text-center mt-2">
                 <button
-                  onClick={() => setIsExpanded(true)}
+                  onClick={() => { setIsExpanded(true); }}
                   className="text-xs text-violet-500 hover:text-violet-600 transition-colors inline-flex items-center gap-1"
                 >
                   <ChevronDown className="h-3 w-3" />

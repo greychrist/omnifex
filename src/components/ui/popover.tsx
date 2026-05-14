@@ -85,7 +85,7 @@ export const Popover: React.FC<PopoverProps> = ({
     };
 
     document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+    return () => { document.removeEventListener("mousedown", handleClickOutside); };
   }, [open, setOpen]);
 
   // Close on escape
@@ -99,7 +99,7 @@ export const Popover: React.FC<PopoverProps> = ({
     };
 
     document.addEventListener("keydown", handleEscape);
-    return () => document.removeEventListener("keydown", handleEscape);
+    return () => { document.removeEventListener("keydown", handleEscape); };
   }, [open, setOpen]);
 
   // Reposition against the trigger's viewport rect whenever open. Recomputes
@@ -171,7 +171,7 @@ export const Popover: React.FC<PopoverProps> = ({
 
   return (
     <div className="relative inline-block">
-      <div ref={triggerRef} onClick={() => setOpen(!open)}>
+      <div ref={triggerRef} onClick={() => { setOpen(!open); }}>
         {trigger}
       </div>
       {portalNode && ReactDOM.createPortal(portalNode, document.body)}

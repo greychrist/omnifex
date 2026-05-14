@@ -17,7 +17,7 @@ const project = (id: string): Project => ({
   path: `/p/${id}`,
   sessions: [],
   created_at: 0,
-}) as unknown as Project;
+});
 
 const session = (id: string, projectId: string): Session => ({
   id,
@@ -25,7 +25,7 @@ const session = (id: string, projectId: string): Session => ({
   project_path: `/p/${projectId}`,
   todo_data: null,
   created_at: 0,
-}) as unknown as Session;
+});
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -74,7 +74,7 @@ describe("sessionStore.fetchProjectSessions", () => {
     (api.getProjectSessions as ReturnType<typeof vi.fn>).mockResolvedValueOnce(sessions);
     await useSessionStore.getState().fetchProjectSessions("p1");
     const s = useSessionStore.getState();
-    expect(s.sessions["p1"]).toEqual(sessions);
+    expect(s.sessions.p1).toEqual(sessions);
     expect(s.isLoadingSessions).toBe(false);
   });
 
@@ -122,7 +122,7 @@ describe("sessionStore.fetchSessionOutput", () => {
   it("stores fetched output keyed by sessionId", async () => {
     (api.getClaudeSessionOutput as ReturnType<typeof vi.fn>).mockResolvedValueOnce("hello");
     await useSessionStore.getState().fetchSessionOutput("s1");
-    expect(useSessionStore.getState().sessionOutputs["s1"]).toBe("hello");
+    expect(useSessionStore.getState().sessionOutputs.s1).toBe("hello");
     expect(useSessionStore.getState().isLoadingOutputs).toBe(false);
   });
 
@@ -145,7 +145,7 @@ describe("sessionStore.deleteSession", () => {
     const s2 = session("s2", "p1");
     useSessionStore.setState({ sessions: { p1: [s1, s2] } });
     await useSessionStore.getState().deleteSession("s1", "p1");
-    expect(useSessionStore.getState().sessions["p1"]).toEqual([s2]);
+    expect(useSessionStore.getState().sessions.p1).toEqual([s2]);
   });
 
   it("clears currentSession when deleting the active session", async () => {
@@ -184,7 +184,7 @@ describe("sessionStore.deleteSession", () => {
 
   it("handles missing project gracefully", async () => {
     await useSessionStore.getState().deleteSession("s1", "missing");
-    expect(useSessionStore.getState().sessions["missing"]).toEqual([]);
+    expect(useSessionStore.getState().sessions.missing).toEqual([]);
   });
 });
 
@@ -202,7 +202,7 @@ describe("sessionStore.handleSessionUpdate", () => {
     useSessionStore.setState({ sessions: { p1: [existing] } });
     const incoming = session("s2", "p1");
     useSessionStore.getState().handleSessionUpdate(incoming);
-    expect(useSessionStore.getState().sessions["p1"]).toEqual([incoming, existing]);
+    expect(useSessionStore.getState().sessions.p1).toEqual([incoming, existing]);
   });
 
   it("updates an existing session in place", () => {
@@ -210,13 +210,13 @@ describe("sessionStore.handleSessionUpdate", () => {
     useSessionStore.setState({ sessions: { p1: [existing] } });
     const updated = { ...existing, todo_data: { foo: 1 } } as unknown as Session;
     useSessionStore.getState().handleSessionUpdate(updated);
-    expect(useSessionStore.getState().sessions["p1"]).toEqual([updated]);
+    expect(useSessionStore.getState().sessions.p1).toEqual([updated]);
   });
 
   it("starts a new project list when project has no prior sessions", () => {
     const incoming = session("s1", "p_new");
     useSessionStore.getState().handleSessionUpdate(incoming);
-    expect(useSessionStore.getState().sessions["p_new"]).toEqual([incoming]);
+    expect(useSessionStore.getState().sessions.p_new).toEqual([incoming]);
   });
 
   it("updates currentSession when the active session is updated", () => {

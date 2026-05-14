@@ -143,7 +143,7 @@ export class HooksManager {
         // Validate commands
         if (matcher.hooks && Array.isArray(matcher.hooks)) {
           for (const hook of matcher.hooks) {
-            if (!hook.command || !hook.command.trim()) {
+            if (!hook.command?.trim()) {
               errors.push({
                 event,
                 matcher: matcher.matcher,
@@ -170,7 +170,7 @@ export class HooksManager {
       if (!directHooks || !Array.isArray(directHooks)) continue;
 
       for (const hook of directHooks) {
-        if (!hook.command || !hook.command.trim()) {
+        if (!hook.command?.trim()) {
           errors.push({
             event,
             message: 'Empty command'

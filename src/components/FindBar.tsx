@@ -79,7 +79,7 @@ export const FindBar: React.FC<FindBarProps> = ({
         ref={inputRef}
         data-testid="find-input"
         value={query}
-        onChange={(e) => onQueryChange(e.target.value)}
+        onChange={(e) => { onQueryChange(e.target.value); }}
         onKeyDown={handleKeyDown}
         placeholder="Find in chat"
         aria-label="Find in chat"

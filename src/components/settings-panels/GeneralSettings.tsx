@@ -147,7 +147,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
             <div className="w-48">
               <Select
                 value={appFont}
-                onValueChange={(v) => setAppFont(v as Typeface)}
+                onValueChange={(v) => setAppFont(v)}
                 disabled={appFontLoading}
               >
                 <SelectTrigger>
@@ -248,7 +248,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
                 type="text"
                 value={localUpdateDir}
                 placeholder="/Users/you/Repos/omnifex/out/make"
-                onChange={(e) => setLocalUpdateDir(e.target.value)}
+                onChange={(e) => { setLocalUpdateDir(e.target.value); }}
                 onBlur={() => saveLocalUpdateDir(localUpdateDir)}
                 className="flex-1 font-mono text-xs"
               />

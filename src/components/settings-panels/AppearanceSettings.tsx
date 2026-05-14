@@ -63,8 +63,8 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
   useEffect(() => {
     api
       .getSetting(USER_DEFAULT_KEY)
-      .then((raw) => setHasUserDefault(!!raw))
-      .catch(() => setHasUserDefault(false));
+      .then((raw) => { setHasUserDefault(!!raw); })
+      .catch(() => { setHasUserDefault(false); });
   }, []);
 
   // Debounced "Saved" toast: every mutate resets the timer; 800ms of quiet
@@ -273,8 +273,8 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
               kind={selectedKind}
               palette={config.palette}
               typography={config.typography}
-              onChange={(patch) => updateKind(selectedKind.id, patch)}
-              onResetKind={() => resetKind(selectedKind.id)}
+              onChange={(patch) => { updateKind(selectedKind.id, patch); }}
+              onResetKind={() => { resetKind(selectedKind.id); }}
             />
           </div>
         </div>
@@ -294,7 +294,7 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
               <button
                 key={m}
                 type="button"
-                onClick={() => setPreviewMode(m)}
+                onClick={() => { setPreviewMode(m); }}
                 className={cn(
                   "px-3 py-1.5 text-xs font-medium rounded-md transition-all capitalize",
                   previewMode === m ? "bg-background shadow-sm" : "hover:bg-background/50",
@@ -337,7 +337,7 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
               <button
                 key={m}
                 type="button"
-                onClick={() => setDefaultViewMode(m)}
+                onClick={() => { setDefaultViewMode(m); }}
                 className={cn(
                   "px-3 py-1.5 text-xs font-medium rounded-md transition-all capitalize",
                   config.defaultViewMode === m
@@ -363,25 +363,25 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
             label="Drop meta markers"
             description="Internal SDK markers with no user value."
             checked={hardFiltersChecked.dropMeta}
-            onChange={(v) => setHardFilter("dropMeta", v)}
+            onChange={(v) => { setHardFilter("dropMeta", v); }}
           />
           <FilterRow
             label="Drop task lifecycle events"
             description="Subagent task_started / task_progress events (rendered in SubagentBar)."
             checked={hardFiltersChecked.dropTaskLifecycle}
-            onChange={(v) => setHardFilter("dropTaskLifecycle", v)}
+            onChange={(v) => { setHardFilter("dropTaskLifecycle", v); }}
           />
           <FilterRow
             label="Drop empty user messages"
             description="Placeholder user messages from the SDK with no content."
             checked={hardFiltersChecked.dropEmptyUser}
-            onChange={(v) => setHardFilter("dropEmptyUser", v)}
+            onChange={(v) => { setHardFilter("dropEmptyUser", v); }}
           />
           <FilterRow
             label="Drop hook lifecycle events"
             description="SDK hook_started / hook_response / user_prompt_submit notices. Plumbing — turn off only to debug hook behavior."
             checked={hardFiltersChecked.dropHookLifecycle}
-            onChange={(v) => setHardFilter("dropHookLifecycle", v)}
+            onChange={(v) => { setHardFilter("dropHookLifecycle", v); }}
           />
         </div>
 
@@ -397,7 +397,7 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
             label="Show message kind label on cards"
             description="Render the raw SDK message type (e.g. result · success, assistant) on the bottom-left of each card. Useful when a card looks mis-classified."
             checked={config.debug.showCardKindLabel}
-            onChange={(v) => setDebugOption("showCardKindLabel", v)}
+            onChange={(v) => { setDebugOption("showCardKindLabel", v); }}
           />
         </div>
 

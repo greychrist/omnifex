@@ -111,7 +111,7 @@ export const KindEditor: React.FC<KindEditorProps> = ({
         <Switch
           checked={kind.hiddenInCompact}
           disabled={kind.compactBoundaryLocked}
-          onCheckedChange={(checked) => onChange({ hiddenInCompact: checked })}
+          onCheckedChange={(checked) => { onChange({ hiddenInCompact: checked }); }}
         />
       </div>
 
@@ -127,9 +127,9 @@ export const KindEditor: React.FC<KindEditorProps> = ({
             value={kind.headerLabel ?? ""}
             placeholder="(no header)"
             onChange={(e) =>
-              onChange({
+              { onChange({
                 headerLabel: e.target.value === "" ? null : e.target.value,
-              })
+              }); }
             }
           />
           <p className="text-caption text-muted-foreground">
@@ -146,7 +146,7 @@ export const KindEditor: React.FC<KindEditorProps> = ({
               id="accent-color"
               type="color"
               value={accentHex}
-              onChange={(e) => onChange({ accentColor: e.target.value })}
+              onChange={(e) => { onChange({ accentColor: e.target.value }); }}
               className={cn(
                 "h-9 w-12 cursor-pointer rounded-md border border-border",
                 "bg-background p-1",
@@ -181,7 +181,7 @@ export const KindEditor: React.FC<KindEditorProps> = ({
         <Label>Icon</Label>
         <Select
           value={kind.icon}
-          onValueChange={(v) => onChange({ icon: v as IconName })}
+          onValueChange={(v) => { onChange({ icon: v as IconName }); }}
         >
           <SelectTrigger>
             <SelectValue>
@@ -230,7 +230,7 @@ export const KindEditor: React.FC<KindEditorProps> = ({
           <Select
             value={kind.iconSize ?? SENTINEL_DEFAULT}
             onValueChange={(v) =>
-              onChange({ iconSize: v === SENTINEL_DEFAULT ? undefined : (v as IconSize) })
+              { onChange({ iconSize: v === SENTINEL_DEFAULT ? undefined : (v as IconSize) }); }
             }
           >
             <SelectTrigger><SelectValue /></SelectTrigger>
@@ -257,10 +257,10 @@ export const KindEditor: React.FC<KindEditorProps> = ({
                   : "off"
             }
             onValueChange={(v) =>
-              onChange({
+              { onChange({
                 iconBordered:
                   v === SENTINEL_DEFAULT ? undefined : v === "on",
-              })
+              }); }
             }
           >
             <SelectTrigger><SelectValue /></SelectTrigger>
@@ -283,9 +283,9 @@ export const KindEditor: React.FC<KindEditorProps> = ({
               checked={overrideBgOpacity}
               disabled={!effectiveBordered}
               onCheckedChange={(v) =>
-                onChange({
+                { onChange({
                   iconBgOpacity: v ? typography.icon.bgOpacity : undefined,
-                })
+                }); }
               }
             />
             <Label
@@ -302,7 +302,7 @@ export const KindEditor: React.FC<KindEditorProps> = ({
               value={effectiveBgOpacity}
               disabled={!effectiveBordered || !overrideBgOpacity}
               onChange={(e) =>
-                onChange({ iconBgOpacity: parseInt(e.target.value, 10) })
+                { onChange({ iconBgOpacity: parseInt(e.target.value, 10) }); }
               }
               className="flex-1 cursor-pointer disabled:cursor-not-allowed accent-foreground"
             />

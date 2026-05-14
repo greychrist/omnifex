@@ -70,9 +70,9 @@ export const Settings: React.FC<SettingsProps> = ({
   // "View in Log" action on an error toast. Switch the inner tab to the
   // Log panel; LogTab handles the level-filter side of the same event.
   useEffect(() => {
-    const handler = () => setActiveTab('log');
+    const handler = () => { setActiveTab('log'); };
     window.addEventListener('log:focus-error-view', handler);
-    return () => window.removeEventListener('log:focus-error-view', handler);
+    return () => { window.removeEventListener('log:focus-error-view', handler); };
   }, []);
 
   const loadClaudeBinaryPath = async () => {
@@ -261,7 +261,7 @@ export const Settings: React.FC<SettingsProps> = ({
           <Toast
             message={toast.message}
             type={toast.type}
-            onDismiss={() => setToast(null)}
+            onDismiss={() => { setToast(null); }}
           />
         )}
       </ToastContainer>

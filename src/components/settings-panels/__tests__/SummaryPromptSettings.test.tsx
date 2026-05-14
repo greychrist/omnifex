@@ -78,10 +78,10 @@ describe('SummaryPromptSettings', () => {
       screen.getByRole('switch', { name: /enable session summaries/i }),
     );
     await waitFor(() =>
-      expect(api.saveSetting).toHaveBeenCalledWith(
+      { expect(api.saveSetting).toHaveBeenCalledWith(
         'sessionsSummary.enabled',
         'false',
-      ),
+      ); },
     );
   });
 
@@ -94,10 +94,10 @@ describe('SummaryPromptSettings', () => {
       }),
     );
     await waitFor(() =>
-      expect(api.saveSetting).toHaveBeenCalledWith(
+      { expect(api.saveSetting).toHaveBeenCalledWith(
         'sessionsSummary.autoOnClose',
         'false',
-      ),
+      ); },
     );
   });
 
@@ -108,7 +108,7 @@ describe('SummaryPromptSettings', () => {
     // debounce window deterministically.
     vi.useFakeTimers();
     try {
-      const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+      const textarea = screen.getByRole('textbox');
       fireEvent.change(textarea, { target: { value: 'edited prompt body' } });
       // Inside debounce — no save yet.
       expect(
@@ -121,10 +121,10 @@ describe('SummaryPromptSettings', () => {
       vi.useRealTimers();
     }
     await waitFor(() =>
-      expect(api.saveSetting).toHaveBeenCalledWith(
+      { expect(api.saveSetting).toHaveBeenCalledWith(
         'sessionsSummary.promptTemplate',
         'edited prompt body',
-      ),
+      ); },
     );
   });
 
@@ -133,7 +133,7 @@ describe('SummaryPromptSettings', () => {
     await waitForLoaded();
     vi.useFakeTimers();
     try {
-      const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+      const textarea = screen.getByRole('textbox');
       fireEvent.change(textarea, { target: { value: 'a' } });
       await vi.advanceTimersByTimeAsync(100);
       fireEvent.change(textarea, { target: { value: 'ab' } });
@@ -164,7 +164,7 @@ describe('SummaryPromptSettings', () => {
     });
     render(<SummaryPromptSettings />);
     await waitForLoaded();
-    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+    const textarea = screen.getByRole('textbox');
     expect(textarea.value).toBe('CUSTOM');
     vi.useFakeTimers();
     try {
@@ -180,7 +180,7 @@ describe('SummaryPromptSettings', () => {
         .mocked(api.saveSetting)
         .mock.calls.filter((c) => c[0] === 'sessionsSummary.promptTemplate');
       expect(promptCalls.length).toBeGreaterThan(0);
-      const lastSaved = promptCalls[promptCalls.length - 1][1] as string;
+      const lastSaved = promptCalls[promptCalls.length - 1][1];
       expect(lastSaved).not.toBe('CUSTOM');
       expect(textarea.value).toBe(lastSaved);
     });
@@ -195,7 +195,7 @@ describe('SummaryPromptSettings', () => {
     await waitForLoaded();
     const sw = screen.getByRole('switch', {
       name: /enable session summaries/i,
-    }) as HTMLButtonElement;
+    });
     expect(sw.getAttribute('aria-checked')).toBe('false');
   });
 });

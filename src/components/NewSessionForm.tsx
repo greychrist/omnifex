@@ -176,7 +176,7 @@ export const NewSessionForm: React.FC<NewSessionFormProps> = ({
             trigger={
               <DropdownTrigger
                 open={modelOpen}
-                onClick={() => setModelOpen(!modelOpen)}
+                onClick={() => { setModelOpen(!modelOpen); }}
                 title={selectedModelData.name}
               >
                 <span className="text-[11px] truncate">{selectedModelData.name}</span>
@@ -212,7 +212,7 @@ export const NewSessionForm: React.FC<NewSessionFormProps> = ({
             trigger={
               <DropdownTrigger
                 open={effortOpen}
-                onClick={() => setEffortOpen(!effortOpen)}
+                onClick={() => { setEffortOpen(!effortOpen); }}
                 title={selectedEffort?.description}
               >
                 <span className={cn("text-[11px] font-bold shrink-0", selectedEffort?.color)}>
@@ -254,7 +254,7 @@ export const NewSessionForm: React.FC<NewSessionFormProps> = ({
             trigger={
               <DropdownTrigger
                 open={thinkingOpen}
-                onClick={() => setThinkingOpen(!thinkingOpen)}
+                onClick={() => { setThinkingOpen(!thinkingOpen); }}
                 title={selectedThinking?.description}
               >
                 <span className={cn("text-[11px] font-bold shrink-0", selectedThinking?.color)}>
@@ -296,7 +296,7 @@ export const NewSessionForm: React.FC<NewSessionFormProps> = ({
             trigger={
               <DropdownTrigger
                 open={permissionsOpen}
-                onClick={() => setPermissionsOpen(!permissionsOpen)}
+                onClick={() => { setPermissionsOpen(!permissionsOpen); }}
                 title={selectedPermission.description}
               >
                 <span className={cn("shrink-0", selectedPermission.color)}>

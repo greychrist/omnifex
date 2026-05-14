@@ -3,7 +3,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, fireEvent, screen, cleanup } from "@testing-library/react";
 import { Popover } from "../popover";
 
-afterEach(() => cleanup());
+afterEach(() => { cleanup(); });
 
 describe("Popover (uncontrolled)", () => {
   it("renders only the trigger when closed", () => {

@@ -181,7 +181,7 @@ export const useTabState = (): UseTabStateReturn => {
     });
   }, [addTab, tabs, setActiveTab]);
 
-  const closeTab = useCallback(async (id: string, force: boolean = false): Promise<boolean> => {
+  const closeTab = useCallback(async (id: string, force = false): Promise<boolean> => {
     const tab = getTabById(id);
     if (!tab) return true;
 

@@ -64,9 +64,7 @@ export function AccountCard({
   }, [refreshUsage, usageLoading]);
 
   const sdkMismatch =
-    sdkAccount !== undefined &&
-    sdkAccount !== null &&
-    sdkAccount.apiProvider !== undefined &&
+    sdkAccount?.apiProvider !== undefined &&
     sdkAccount.apiProvider !== 'firstParty';
 
   const matchLabel = matchType === "path_rule"
@@ -180,14 +178,14 @@ export function AccountCard({
                   snapshot={fiveHourRateLimit ?? null}
                   windowType="five_hour"
                   accountName={accountName}
-                  onClick={() => setUsagePopoverOpen((v) => !v)}
+                  onClick={() => { setUsagePopoverOpen((v) => !v); }}
                   hideLabel
                 />
                 <RateLimitWidget
                   snapshot={sevenDayRateLimit ?? null}
                   windowType="seven_day"
                   accountName={accountName}
-                  onClick={() => setUsagePopoverOpen((v) => !v)}
+                  onClick={() => { setUsagePopoverOpen((v) => !v); }}
                   hideLabel
                 />
               </div>

@@ -154,7 +154,7 @@ const DownloadableImage: React.FC<{
           src={src}
           alt={alt}
           className={cn(className, 'cursor-zoom-in')}
-          onClick={() => setLightboxOpen(true)}
+          onClick={() => { setLightboxOpen(true); }}
         />
         <button
           onClick={handleDownload}
@@ -190,7 +190,7 @@ const UserMessageActions: React.FC<{
     if (!copyText) return;
     navigator.clipboard.writeText(copyText);
     setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    setTimeout(() => { setCopied(false); }, 2000);
   };
 
   const handleResend = (e: React.MouseEvent) => {
@@ -203,7 +203,7 @@ const UserMessageActions: React.FC<{
       .join('\n');
     const images = content
       .filter((c: any) => c.type === 'image' && c.source?.type === 'base64')
-      .map((c: any) => `data:${c.source.media_type};base64,${c.source.data}` as string);
+      .map((c: any) => `data:${c.source.media_type};base64,${c.source.data}`);
     onResend(text, images.length > 0 ? images : undefined);
   };
 
@@ -277,7 +277,7 @@ const CardTimestamp: React.FC<{
     try {
       await navigator.clipboard.writeText(JSON.stringify(message, null, 2));
       setCopied(true);
-      setTimeout(() => setCopied(false), 1200);
+      setTimeout(() => { setCopied(false); }, 1200);
     } catch (err) {
       console.error("Failed to copy message:", err);
     }
@@ -592,8 +592,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
               if (
                 next.type === 'result' &&
                 next.subtype === 'success' &&
-                next.result &&
-                next.result.trim() === assistantText.trim()
+                next.result?.trim() === assistantText.trim()
               ) {
                 suppressTextBlocks = true;
                 break;
@@ -1119,7 +1118,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                     renderedSomething = true;
 
                     // Check if it's a command message
-                    const commandMatch = contentStr.match(/<command-name>(.+?)<\/command-name>[\s\S]*?<command-message>(.+?)<\/command-message>[\s\S]*?<command-args>(.*?)<\/command-args>/);
+                    const commandMatch = /<command-name>(.+?)<\/command-name>[\s\S]*?<command-message>(.+?)<\/command-message>[\s\S]*?<command-args>(.*?)<\/command-args>/.exec(contentStr);
                     if (commandMatch) {
                       const [, commandName, commandMessage, commandArgs] = commandMatch;
                       return (
@@ -1132,7 +1131,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                     }
 
                     // Check if it's command output
-                    const stdoutMatch = contentStr.match(/<local-command-stdout>([\s\S]*?)<\/local-command-stdout>/);
+                    const stdoutMatch = /<local-command-stdout>([\s\S]*?)<\/local-command-stdout>/.exec(contentStr);
                     if (stdoutMatch) {
                       const [, output] = stdoutMatch;
                       return <CommandOutputWidget output={output} onLinkDetected={onLinkDetected} />;
@@ -1279,7 +1278,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                     }
                     
                     // Always show system reminders regardless of widget status
-                    const reminderMatch = contentText.match(/<system-reminder>(.*?)<\/system-reminder>/s);
+                    const reminderMatch = /<system-reminder>(.*?)<\/system-reminder>/s.exec(contentText);
                     if (reminderMatch) {
                       const reminderMessage = reminderMatch[1].trim();
                       const beforeReminder = contentText.substring(0, reminderMatch.index || 0).trim();
