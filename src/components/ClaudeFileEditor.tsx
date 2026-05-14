@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import MDEditor from "@uiw/react-md-editor";
 import { motion } from "framer-motion";
 import { ArrowLeft, Save } from "lucide-react";
@@ -47,12 +47,7 @@ export const ClaudeFileEditor: React.FC<ClaudeFileEditorProps> = ({
   
   const hasChanges = content !== originalContent;
   
-  // Load the file content on mount
-  useEffect(() => {
-    logAndForget('claude-file-editor:load-file-content', loadFileContent());
-  }, [file.absolute_path]);
-  
-  const loadFileContent = async () => {
+  const loadFileContent = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -65,7 +60,12 @@ export const ClaudeFileEditor: React.FC<ClaudeFileEditorProps> = ({
     } finally {
       setLoading(false);
     }
-  };
+  }, [file.absolute_path]);
+
+  // Load the file content on mount
+  useEffect(() => {
+    logAndForget('claude-file-editor:load-file-content', loadFileContent());
+  }, [loadFileContent]);
   
   const handleSave = async () => {
     try {
