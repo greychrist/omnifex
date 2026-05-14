@@ -498,7 +498,7 @@ app.whenReady().then(() => {
       if (!enabled || !autoOn) return;
       sessionsSummaryServiceRef
         ?.generateSummary(sessionId, projectPath, configDir)
-        .catch((err) =>
+        .catch((err: unknown) =>
           console.warn('[main] auto-summarize on close failed:', err),
         );
     },

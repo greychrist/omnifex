@@ -947,9 +947,9 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
         if (!rebound) {
           await startPersistentSession(session.id);
         }
-      })().catch((err) => { console.error("[auto-start] resume/rebind failed:", err); });
+      })().catch((err: unknown) => { console.error("[auto-start] resume/rebind failed:", err); });
     } else if (initialSessionConfig) {
-      startPersistentSession().catch((err) =>
+      startPersistentSession().catch((err: unknown) =>
         { console.error("[auto-start] fresh start failed:", err); },
       );
     }
@@ -983,7 +983,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
         for (const s of snaps) byType[s.rate_limit_type] = s;
         setRateLimitSnapshots(byType);
       })
-      .catch((err) => { console.error('[rate-limits] initial fetch failed:', err); });
+      .catch((err: unknown) => { console.error('[rate-limits] initial fetch failed:', err); });
 
     const unlisten = window.electronAPI.onEvent(
       'rate-limits:updated',
@@ -1026,7 +1026,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           }));
           setMessages(synthesizeResultMessages(loaded));
         })
-        .catch((err) => {
+        .catch((err: unknown) => {
           console.error('Failed to reload history on TUI->SDK:', err);
         });
     };
@@ -1833,7 +1833,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                 setEffort(level);
                 if (persistentSessionRef.current) {
                   const tid = tabIdRef.current;
-                  api.sessionSetEffort(tid, level).catch((err) => {
+                  api.sessionSetEffort(tid, level).catch((err: unknown) => {
                     console.error('[sessions] sessionSetEffort failed:', err);
                   });
                 }
@@ -1848,7 +1848,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                     : config === 'disabled'
                     ? { type: 'disabled' as const }
                     : { type: 'enabled' as const, budgetTokens: 10000 };
-                  api.sessionSetThinking(tid, sdkConfig).catch((err) => {
+                  api.sessionSetThinking(tid, sdkConfig).catch((err: unknown) => {
                     console.error('[sessions] sessionSetThinking failed:', err);
                   });
                 }
@@ -1863,7 +1863,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                 setSelectedModel(newModel);
                 if (persistentSessionRef.current) {
                   const tid = tabIdRef.current;
-                  api.sessionSetModel(tid, newModel).catch((err) => {
+                  api.sessionSetModel(tid, newModel).catch((err: unknown) => {
                     console.error('[sessions] sessionSetModel failed:', err);
                   });
                 }
@@ -1877,7 +1877,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                 setPermissionMode(mode);
                 if (persistentSessionRef.current) {
                   const tid = tabIdRef.current;
-                  api.sessionSetPermissionMode(tid, mode).catch((err) => {
+                  api.sessionSetPermissionMode(tid, mode).catch((err: unknown) => {
                     console.error('[sessions] sessionSetPermissionMode failed:', err);
                   });
                 }
@@ -1888,7 +1888,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                   <SessionModeToggle
                     mode={sessionMode}
                     onChange={(next) => {
-                      api.setSessionMode(tabIdRef.current, next).catch((err) => {
+                      api.setSessionMode(tabIdRef.current, next).catch((err: unknown) => {
                         console.error('Failed to switch mode:', err);
                         const msg = err instanceof Error ? err.message : String(err);
                         setError(`Mode switch failed: ${msg}`);

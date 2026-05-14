@@ -44,7 +44,7 @@ export const RateLimitsSettings: React.FC<SettingsPanelProps> = ({ setToast }) =
         setFiveHourText(thresholdsToText(s.five_hour_thresholds_pct));
         setSevenDayText(thresholdsToText(s.seven_day_thresholds_pct));
       })
-      .catch((err) => {
+      .catch((err: unknown) => {
         console.error('[settings] failed to load rate-limit settings:', err);
         setToast({ message: 'Could not load rate-limit settings', type: 'error' });
       });

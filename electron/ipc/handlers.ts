@@ -583,6 +583,7 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
       const projectPath = (p?.projectPath ?? p?.project_path) as string;
       if (!projectPath) return null;
       try {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports -- intentional lazy load; eager import slows IPC startup.
         const { execFileSync } = require('node:child_process') as typeof import('node:child_process');
         return execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: projectPath, encoding: 'utf8' }).trim();
       } catch { return null; }

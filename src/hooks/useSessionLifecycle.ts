@@ -196,7 +196,7 @@ export function useSessionLifecycle({
             api.sessionSupportedModels(tabId).catch(() => []),
             api.sessionMcpServerStatus(tabId).catch(() => []),
             api.sessionContextUsage(tabId).catch(() => null),
-            api.sessionSupportedCommands(tabId).catch((err) => {
+            api.sessionSupportedCommands(tabId).catch((err: unknown) => {
               console.error('[fetchInitInfo] supportedCommands call failed:', err);
               return [];
             }),
@@ -334,7 +334,7 @@ export function useSessionLifecycle({
 
       // Stop the persistent process if the tab is being closed mid-session
       if (tabId && persistentSessionRef.current) {
-        api.stopSession(tabId).catch((err) => {
+        api.stopSession(tabId).catch((err: unknown) => {
           console.error("Failed to stop session on unmount:", err);
         });
       }

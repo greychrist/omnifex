@@ -70,7 +70,7 @@ export function runStreamEffect<Q extends QueuedPrompt = QueuedPrompt>(
         .then((info) => {
           if (info) deps.setSdkAccountInfo(info);
         })
-        .catch((err) => { deps.onError('fetchAccountInfo', err); });
+        .catch((err: unknown) => { deps.onError('fetchAccountInfo', err); });
       return;
 
     case 'refreshContextUsage':
@@ -79,7 +79,7 @@ export function runStreamEffect<Q extends QueuedPrompt = QueuedPrompt>(
         .then((usage) => {
           if (usage) deps.setContextUsage(usage);
         })
-        .catch((err) => { deps.onError('refreshContextUsage', err); });
+        .catch((err: unknown) => { deps.onError('refreshContextUsage', err); });
       return;
 
     case 'fetchSupportedModels':
@@ -88,7 +88,7 @@ export function runStreamEffect<Q extends QueuedPrompt = QueuedPrompt>(
         .then((models) => {
           if (models && models.length > 0) deps.setSupportedModels(models);
         })
-        .catch((err) => { deps.onError('fetchSupportedModels', err); });
+        .catch((err: unknown) => { deps.onError('fetchSupportedModels', err); });
       return;
 
     case 'processQueuedPrompt': {

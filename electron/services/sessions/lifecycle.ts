@@ -154,7 +154,7 @@ export function createSessionsService(
     }
 
     // Start listening in the background (don't await — fire and forget)
-    listenToMessages(tabId, handle, runtimeDeps).catch((err) => {
+    listenToMessages(tabId, handle, runtimeDeps).catch((err: unknown) => {
       console.error(`[sessions] Unhandled error in listenToMessages for tab ${tabId}:`, err);
     });
   }
@@ -418,7 +418,7 @@ export function createSessionsService(
       tui.onExit((r: { exitCode: number }) => {
         sendToRenderer(`session-tui-exit:${tabId}`, r);
         // Auto-revert to SDK mode.
-        void setMode(tabId, 'sdk').catch((e) =>
+        void setMode(tabId, 'sdk').catch((e: unknown) =>
           console.error('[sessions] auto-revert to sdk failed:', e)
         );
       });

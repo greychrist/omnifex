@@ -196,7 +196,7 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
           setHooks(config || {});
           setHasUnsavedChanges(false);
         })
-        .catch((err) => {
+        .catch((err: unknown) => {
           console.error("Failed to load hooks configuration:", err);
           setLoadError(err instanceof Error ? err.message : "Failed to load hooks configuration");
           setHooks({});

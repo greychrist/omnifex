@@ -15,7 +15,8 @@ vi.mock('framer-motion', () => ({
           // Strip animation-only props
           const { initial, animate, exit, transition, layout, ...domProps } = rest;
           void initial; void animate; void exit; void transition; void layout;
-           
+
+          // eslint-disable-next-line @typescript-eslint/no-require-imports -- vi.mock factory hoisted before module imports settle.
           return require('react').createElement(Tag, domProps, children);
         };
       },

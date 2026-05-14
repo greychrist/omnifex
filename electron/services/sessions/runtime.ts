@@ -269,7 +269,7 @@ export function restartQuery(
   handle.query = q;
   handle.status = 'starting';
 
-  listenToMessages(tabId, handle, deps).catch((err) => {
+  listenToMessages(tabId, handle, deps).catch((err: unknown) => {
     console.error(`[sessions] Unhandled error in listenToMessages for tab ${tabId}:`, err);
   });
 }
