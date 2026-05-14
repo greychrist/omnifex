@@ -378,7 +378,7 @@ export const SessionList: React.FC<SessionListProps> = ({
     return () => {
       unsubscribe?.();
     };
-  }, [projectPath]);
+  }, [projectPath, resolvedConfigDir]);
 
   // Subscribe to backend generation-state events so the per-row refresh
   // icon spins for *background* auto-on-close runs (not just the
