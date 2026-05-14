@@ -10,13 +10,14 @@
  * `unknown` upstream). This file closes the gap so each branch can
  * narrow once and read typed fields downstream.
  *
- * Keys are PascalCase tool names as Claude emits them on the wire —
- * matching the SDK's convention. The renderer historically lowercased
- * `content.name` before comparing; we drop that here in favor of
- * exact-match against the canonical SDK form. If a non-canonical name
- * ever appears, the branch falls through to the generic display
- * (which is what `.toLowerCase()` was guarding against, defensively,
- * for tools that never actually existed under a different case).
+ * Single source of truth: `KNOWN_TOOL_NAMES` is a const tuple of the
+ * PascalCase tool names we model. Everything else derives from it —
+ * the `KnownToolName` literal-union type, the lowercased
+ * `TOOLS_WITH_WIDGETS_LOWER` Set used by the tool-result suppression
+ * path in `StreamMessage.tsx`, and the runtime `isKnownToolName`
+ * guard. Adding a tool is a one-touch change to the tuple plus an
+ * entry in `ToolInputByName` (which the compiler enforces via the
+ * `<K extends KnownToolName>` constraint on `asToolInput`).
  *
  * Tools NOT shipped under `sdk-tools` as of 0.2.141 — `LS`, `TodoRead`,
  * `MultiEdit` — get local interfaces that mirror exactly what our
@@ -70,8 +71,46 @@ export interface MultiEditInput {
 }
 
 /**
+ * Single source of truth for the PascalCase tool names we model.
+ * `KnownToolName` and `TOOLS_WITH_WIDGETS_LOWER` are derived from this
+ * tuple; the `ToolInputByName` interface keys must match (enforced at
+ * compile time by the `<K extends KnownToolName>` constraint on
+ * `asToolInput` indexing into `ToolInputByName[K]`).
+ */
+export const KNOWN_TOOL_NAMES = [
+  'Bash',
+  'Edit',
+  'MultiEdit',
+  'Read',
+  'Write',
+  'Glob',
+  'Grep',
+  'TodoWrite',
+  'TodoRead',
+  'LS',
+  'WebFetch',
+  'WebSearch',
+  'Task',
+  'Agent',
+] as const;
+
+export type KnownToolName = (typeof KNOWN_TOOL_NAMES)[number];
+
+/**
+ * Lowercased mirror of `KNOWN_TOOL_NAMES` for the tool-result
+ * suppression path in `StreamMessage.tsx`. Derived — never
+ * hand-maintained — so adding a tool can never desync the two layers.
+ */
+export const TOOLS_WITH_WIDGETS_LOWER: ReadonlySet<string> = new Set(
+  KNOWN_TOOL_NAMES.map((n) => n.toLowerCase()),
+);
+
+/**
  * The canonical map of tool-name → typed input. Add an entry here
- * when a new branch in the widget switch needs typed access.
+ * when a new branch in the widget switch needs typed access. The
+ * `<K extends KnownToolName>` constraint on `asToolInput` means
+ * every key in `KNOWN_TOOL_NAMES` must appear here, or its branches
+ * fail to compile.
  */
 export interface ToolInputByName {
   Bash: BashInput;
@@ -90,7 +129,16 @@ export interface ToolInputByName {
   Agent: AgentInput;
 }
 
-export type KnownToolName = keyof ToolInputByName;
+/**
+ * Runtime guard for "this string is one of the PascalCase tool names
+ * we model." Powers the dev-mode warning below and any caller that
+ * needs a fast type-narrowed check without going through the typed
+ * map.
+ */
+export function isKnownToolName(name: unknown): name is KnownToolName {
+  if (typeof name !== 'string') return false;
+  return (KNOWN_TOOL_NAMES as readonly string[]).includes(name);
+}
 
 /**
  * Narrow `input` from `unknown` to the typed payload when `name`
@@ -116,7 +164,9 @@ export function asToolInput<K extends KnownToolName>(
  * Variant for branches that fold multiple tool names onto one widget
  * (e.g. Task / Agent both dispatch a subagent). Returns the matched
  * name alongside the narrowed input so the caller can still branch
- * on which one fired if needed.
+ * on which one fired if needed. Case-sensitive against the SDK's
+ * PascalCase contract — see `isSubagentDispatch` for the matching
+ * tightening.
  */
 export function asToolInputOneOf<K extends KnownToolName>(
   name: string | undefined,
@@ -127,4 +177,31 @@ export function asToolInputOneOf<K extends KnownToolName>(
   if (!(expected as readonly string[]).includes(name)) return null;
   if (input == null || typeof input !== 'object') return null;
   return { name: name as K, input: input as ToolInputByName[K] };
+}
+
+/**
+ * Dev-mode diagnostic: fires when a tool_use block arrives carrying a
+ * known PascalCase tool name (i.e. one we have a widget branch for)
+ * but `renderToolWidget` reached the end without matching any branch.
+ * That's the exact failure mode the SDK type adoption was meant to
+ * surface — a known name with malformed / unexpected input falls
+ * through to the generic JSON display silently.
+ *
+ * Production-no-op (gated on `import.meta.env.DEV`). Fires at most
+ * once per tool_use that hits the bottom of the switch; not throttled
+ * across multiple instances.
+ */
+export function warnUnhandledKnownTool(
+  toolName: string | undefined,
+  rawInput: unknown,
+): void {
+  if (!import.meta.env.DEV) return;
+  if (!toolName || !(KNOWN_TOOL_NAMES as readonly string[]).includes(toolName)) return;
+  const keys =
+    rawInput && typeof rawInput === 'object'
+      ? Object.keys(rawInput).join(', ') || 'none'
+      : 'none';
+  console.warn(
+    `[StreamMessage] tool_use "${toolName}" matched a known tool name but no widget branch matched. Input keys: ${keys}`,
+  );
 }

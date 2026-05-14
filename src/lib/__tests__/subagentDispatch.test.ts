@@ -3,15 +3,25 @@ import type { ClaudeStreamMessage } from "@/types/claudeStream";
 import { isSubagentDispatch, isSubagentPrompt } from "../subagentDispatch";
 
 describe("isSubagentDispatch", () => {
-  it("matches 'task' case-insensitively", () => {
+  // The Claude Agent SDK and Claude Code CLI emit subagent dispatches under
+  // PascalCase 'Task' / 'Agent' on the wire. Earlier defense-in-depth
+  // accepted lowercase / uppercase variants too, but no production code
+  // path actually emits those — verified via session reducer + JSONL replay
+  // — and the case-insensitive contract diverged from the case-sensitive
+  // narrowing in `asToolInputOneOf`, forcing a normalization shim at every
+  // call site. Tightening to PascalCase-only aligns both layers and lets
+  // the SDK contract be the single source of truth.
+  it("matches PascalCase 'Task' only", () => {
     expect(isSubagentDispatch("Task")).toBe(true);
-    expect(isSubagentDispatch("TASK")).toBe(true);
-    expect(isSubagentDispatch("task")).toBe(true);
+    expect(isSubagentDispatch("TASK")).toBe(false);
+    expect(isSubagentDispatch("task")).toBe(false);
+    expect(isSubagentDispatch("tAsK")).toBe(false);
   });
 
-  it("matches 'agent' case-insensitively", () => {
+  it("matches PascalCase 'Agent' only", () => {
     expect(isSubagentDispatch("Agent")).toBe(true);
-    expect(isSubagentDispatch("AGENT")).toBe(true);
+    expect(isSubagentDispatch("AGENT")).toBe(false);
+    expect(isSubagentDispatch("agent")).toBe(false);
   });
 
   it("rejects other tool names", () => {
