@@ -2,7 +2,7 @@ import { useEffect, useMemo } from 'react';
 import { api, type SessionContextUsage, type TabStatusSummary } from '@/lib/api';
 import type { ClaudeStreamMessage } from '@/types/claudeStream';
 import type { Subagent } from '@/lib/subagentStreams';
-import { getLatestTodos, summarizeTodos } from '@/lib/latestTodos';
+import { getTaskList, summarizeTaskList } from '@/lib/taskList';
 import { deriveWaitingFor } from '@/lib/tabWaitingFor';
 
 interface UsePublishTabStatusArgs {
@@ -55,10 +55,10 @@ export function usePublishTabStatus({
   pendingPermission,
 }: UsePublishTabStatusArgs): void {
   const summary: TabStatusSummary = useMemo(() => {
-    const todos = getLatestTodos(messages);
-    const todoSummary = todos
-      ? summarizeTodos(todos)
-      : { done: 0, total: 0, running: false };
+    const tasks = getTaskList(messages);
+    const taskSummary = tasks
+      ? summarizeTaskList(tasks)
+      : { total: 0, done: 0, inProgress: 0, pending: 0, running: false };
     const activeAgents = subagents.reduce(
       (n, s) => (s.status === 'running' ? n + 1 : n),
       0,
@@ -69,7 +69,7 @@ export function usePublishTabStatus({
     // prompt while a permission/question is open, so the install gate and
     // any other "wait for idle" consumer should still treat it as busy.
     const busy =
-      mainTurnInFlight || activeAgents > 0 || todoSummary.running || waitingFor !== null;
+      mainTurnInFlight || activeAgents > 0 || taskSummary.running || waitingFor !== null;
 
     let status: TabStatusSummary['status'];
     if (hasError) status = 'error';
@@ -85,10 +85,10 @@ export function usePublishTabStatus({
       busy,
       mainTurnInFlight,
       activeAgents,
-      todos: {
-        total: todoSummary.total,
-        completed: todoSummary.done,
-        inFlight: todoSummary.running,
+      tasks: {
+        total: taskSummary.total,
+        completed: taskSummary.done,
+        inFlight: taskSummary.running,
       },
       contextUsage: contextUsage
         ? {

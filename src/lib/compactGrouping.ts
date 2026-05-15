@@ -15,10 +15,10 @@ import { classifyBlockKind } from './blockKind';
  * still renders normally — its hidden blocks get a per-message
  * `HiddenBlocksExpander` inside `StreamMessage`.
  *
- * Under SDK 0.3.x the live todo list is surfaced by `TodoBar` at the top
- * of the chat (driven by the per-task `TaskCreate` / `TaskUpdate` stream),
- * so there's no longer a single snapshot tool_use to carve out and
- * promote here.
+ * Under SDK 0.3.x the live task list is surfaced by `TaskList` at the
+ * bottom of the chat (driven by the per-task `TaskCreate` / `TaskUpdate`
+ * stream), so there's no longer a single snapshot tool_use to carve out
+ * and promote here.
  */
 
 export type CompactItem =

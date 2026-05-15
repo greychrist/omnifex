@@ -149,13 +149,13 @@ const TabStatusCard: React.FC<TabStatusCardProps> = ({ summary, branchColor, bra
               : 'No agents'}
           </span>
         </div>
-        {summary.todos.total > 0 && (
+        {summary.tasks.total > 0 && (
           <div className="flex items-center gap-1.5 col-span-2 text-muted-foreground">
             <ListChecks size={11} />
             <span className="text-foreground">
-              {summary.todos.completed} of {summary.todos.total} todos
-              {summary.todos.inFlight && (
-                <span className="text-muted-foreground"> · {summary.todos.total - summary.todos.completed} pending</span>
+              {summary.tasks.completed} of {summary.tasks.total} tasks
+              {summary.tasks.inFlight && (
+                <span className="text-muted-foreground"> · {summary.tasks.total - summary.tasks.completed} pending</span>
               )}
             </span>
           </div>

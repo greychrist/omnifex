@@ -56,9 +56,9 @@ import { resolveBranchColors } from '@/lib/branchColors';
 import type { BranchColor } from '@/lib/api';
 import { filterDisplayableMessages } from "@/lib/messageFilters";
 import { deriveSubagents } from "@/lib/subagentStreams";
-import { getLatestTodos, summarizeTodos } from "@/lib/latestTodos";
+import { getTaskList, summarizeTaskList } from "@/lib/taskList";
 import { SubagentBar } from "./SubagentBar";
-import { TodoBar } from "./TodoBar";
+import { TaskList } from "./TaskList";
 import { fireAndLog, logAndForget } from "@/lib/fireAndLog";
 import { FindBar } from "./FindBar";
 import { useFindInChat } from "@/hooks/useFindInChat";
@@ -555,17 +555,17 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   // false. That coupled visual session activity to outstanding-subagent
   // state and faked a live turn whenever the subagent-tracking pipeline
   // missed a closure carrier. Decoupled now — the bubble follows
-  // `isLoading` (driven by SDK turn state) and `todosInFlight`. The
+  // `isLoading` (driven by SDK turn state) and `tasksInFlight`. The
   // SubagentBar's per-row spinner remains the scoped indicator that a
   // particular dispatch is in flight. See design spec
   // docs/superpowers/specs/2026-05-11-subagent-tracking-refactor-design.md.
-  // True iff the latest todo list still has pending or in_progress items.
+  // True iff the latest task list still has pending or in_progress items.
   // Folded into the spinner gate so the in-tab indicator matches the
-  // popover's "busy" definition (turn || agents || todos).
-  const todosInFlight = useMemo(() => {
-    const todos = getLatestTodos(messages);
-    if (!todos) return false;
-    return summarizeTodos(todos).running;
+  // popover's "busy" definition (turn || agents || tasks).
+  const tasksInFlight = useMemo(() => {
+    const tasks = getTaskList(messages);
+    if (!tasks) return false;
+    return summarizeTaskList(tasks).running;
   }, [messages]);
   // True when the streaming bubble is currently rendered. Used to
   // suppress the typing-dots spinner so the spinner and bubble
@@ -573,7 +573,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   const hasInflightAssistant = useClaudeSessionStore(
     (s) => s.tabs[tabIdRef.current]?.inflightAssistant != null,
   );
-  const outstandingWork = isLoading || todosInFlight;
+  const outstandingWork = isLoading || tasksInFlight;
   const dismissSubagent = useCallback((toolUseId: string) => {
     setDismissedSubagents((prev) => {
       const next = new Set(prev);
@@ -1912,7 +1912,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                 />
               )
             )}
-            <TodoBar
+            <TaskList
               messages={messages}
               isLive={isSessionActive || isSessionStarting}
             />

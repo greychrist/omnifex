@@ -586,10 +586,10 @@ export interface SessionContextUsage {
 /**
  * Per-tab status summary the renderer publishes up to main. Both the status
  * popover and the install-gate read from the aggregated list. The renderer
- * is the canonical interpreter — it knows messages, subagents, and todos —
+ * is the canonical interpreter — it knows messages, subagents, and tasks —
  * so main treats this as opaque pass-through with a few well-known fields.
  */
-export interface TabStatusTodos {
+export interface TabStatusTasks {
   total: number;
   completed: number;
   inFlight: boolean;
@@ -601,12 +601,12 @@ export interface TabStatusSummary {
   projectPath: string | null;
   /** True iff a persistent SDK session is alive for this tab. */
   sessionStarted: boolean;
-  /** Roll-up: mainTurnInFlight || activeAgents > 0 || todos.inFlight. */
+  /** Roll-up: mainTurnInFlight || activeAgents > 0 || tasks.inFlight. */
   busy: boolean;
   mainTurnInFlight: boolean;
   /** Running, un-dismissed subagents (Agent / Task / run_in_background:Bash). */
   activeAgents: number;
-  todos: TabStatusTodos;
+  tasks: TabStatusTasks;
   contextUsage: {
     totalTokens: number;
     maxTokens: number;

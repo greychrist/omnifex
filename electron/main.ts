@@ -911,7 +911,7 @@ app.whenReady().then(() => {
   });
 
   // Tab Status — renderer-published per-tab summaries (busy/idle, agent
-  // counts, todos, git, context usage). Each chat tab pushes its own state
+  // counts, tasks, git, context usage). Each chat tab pushes its own state
   // up; the popover and the install gate both read from this aggregator.
   const tabStatusService = createTabStatusService({
     broadcast: (summaries) => {

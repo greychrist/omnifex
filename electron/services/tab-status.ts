@@ -1,7 +1,7 @@
 // Tab Status — main-process aggregator for renderer-published per-tab summaries.
 //
 // Each chat tab in the renderer has all the state it needs to compute its own
-// busy/idle/in-flight summary (messages, isLoading, subagents, todos, git).
+// busy/idle/in-flight summary (messages, isLoading, subagents, tasks, git).
 // Every tab pushes its summary up via IPC; this service stores them and
 // broadcasts the full list to all renderers so the status popover can
 // subscribe to one channel.
