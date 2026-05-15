@@ -27,18 +27,36 @@ function taskCreateMsg(
 }
 
 function taskCreateResultMsg(blockId: string, taskId: string): ClaudeStreamMessage {
-  // The TaskCreate tool_result content carries the server-assigned task id.
-  // Stream messages either carry it as a JSON string or as a single-text
-  // content array; both shapes occur in practice.
+  // The TaskCreate tool_result content is a human-readable string
+  // ("Task #1 created successfully: …"). The structured `{ task: { id } }`
+  // payload rides on the OUTER SDK user message as `tool_use_result`
+  // (snake_case on the live SDK stream, camelCase `toolUseResult` in
+  // persisted JSONL — handle both).
   return {
     type: 'user',
     message: {
       content: [{
         type: 'tool_result',
         tool_use_id: blockId,
-        content: JSON.stringify({ task: { id: taskId, subject: 'unused' } }),
+        content: `Task #${taskId} created successfully: unused`,
       }],
     },
+    tool_use_result: { task: { id: taskId, subject: 'unused' } },
+  } as unknown as ClaudeStreamMessage;
+}
+
+/** JSONL-replay shape: same envelope, camelCase `toolUseResult` field name. */
+function taskCreateResultMsgJsonl(blockId: string, taskId: string): ClaudeStreamMessage {
+  return {
+    type: 'user',
+    message: {
+      content: [{
+        type: 'tool_result',
+        tool_use_id: blockId,
+        content: `Task #${taskId} created successfully: unused`,
+      }],
+    },
+    toolUseResult: { task: { id: taskId, subject: 'unused' } },
   } as unknown as ClaudeStreamMessage;
 }
 
@@ -174,6 +192,21 @@ describe('getLatestTodos', () => {
     ];
     expect(getLatestTodos(msgs)).toEqual([
       { content: 'desc only', status: 'pending' },
+    ]);
+  });
+
+  it('reads the assigned task id from the JSONL camelCase toolUseResult envelope on replay', () => {
+    // Persisted session JSONL stores the structured payload under
+    // `toolUseResult` (camelCase). The live SDK stream uses `tool_use_result`
+    // (snake_case). Both must register the task id so subsequent
+    // TaskUpdate(taskId) calls can find the row.
+    const msgs = [
+      taskCreateMsg('tu1', { subject: 'replayed' }),
+      taskCreateResultMsgJsonl('tu1', 'task_replay'),
+      taskUpdateMsg('tu2', { taskId: 'task_replay', status: 'completed' }),
+    ];
+    expect(getLatestTodos(msgs)).toEqual([
+      { content: 'replayed', status: 'completed' },
     ]);
   });
 

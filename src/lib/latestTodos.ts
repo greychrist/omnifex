@@ -18,30 +18,22 @@ interface InternalTask {
   order: number;
 }
 
-// TaskCreate's tool_result content carries the server-assigned task id. The
-// SDK ships it as a JSON string on `content`, but some replay paths wrap it
-// in a single text content block; accept both shapes.
-function parseTaskIdFromResult(content: unknown): string | null {
-  const tryParse = (raw: string): string | null => {
-    try {
-      const obj = JSON.parse(raw) as { task?: { id?: unknown } };
-      const id = obj?.task?.id;
-      return typeof id === 'string' ? id : null;
-    } catch {
-      return null;
-    }
-  };
-  if (typeof content === 'string') return tryParse(content);
-  if (Array.isArray(content)) {
-    for (const b of content) {
-      if (b && typeof b === 'object' && (b as { type?: unknown }).type === 'text') {
-        const text = (b as { text?: unknown }).text;
-        if (typeof text === 'string') {
-          const id = tryParse(text);
-          if (id) return id;
-        }
-      }
-    }
+// TaskCreate's server-assigned task id rides on the SDK user message
+// envelope, NOT inside the tool_result block. The tool_result block's
+// `content` is a human-readable string ("Task #1 created successfully:
+// …"); the structured `{ task: { id } }` payload lives on the parent
+// message as `tool_use_result` (live SDK stream, snake_case) or
+// `toolUseResult` (persisted JSONL replay, camelCase). Both must be
+// recognised so subsequent TaskUpdate(taskId) calls can find the row.
+function extractTaskIdFromEnvelope(message: unknown): string | null {
+  if (!message || typeof message !== 'object') return null;
+  const env = message as { tool_use_result?: unknown; toolUseResult?: unknown };
+  for (const payload of [env.tool_use_result, env.toolUseResult]) {
+    if (!payload || typeof payload !== 'object') continue;
+    const task = (payload as { task?: { id?: unknown } }).task;
+    if (!task || typeof task !== 'object') continue;
+    const id = task.id;
+    if (typeof id === 'string' && id.length > 0) return id;
   }
   return null;
 }
@@ -118,7 +110,7 @@ export function getLatestTodos(messages: ClaudeStreamMessage[]): TodoItem[] | nu
         if (!id) continue;
         const task = byToolUseId.get(id);
         if (!task || task.taskId) continue;
-        const taskId = parseTaskIdFromResult(block.content);
+        const taskId = extractTaskIdFromEnvelope(m);
         if (taskId) {
           task.taskId = taskId;
           byTaskId.set(taskId, task);
