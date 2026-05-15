@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.40] — 2026-05-15
+
+Card chrome cleanup. The top-right copy button on every message card is now an always-visible outlined toolbar instead of three near-identical hover-revealed buttons that had drifted apart, and the one on Execution Complete cards finally works. Also picks up the latest Claude Agent SDK patch.
+
+Installers remain **unsigned**.
+
+### Changed
+
+- **One shared `CardActionBar` for every message card.** Three near-identical implementations (`CopyCardButton`, `UserMessageActions`, and the debug copy chip in `MessageCard`) had drifted: only the user-message variant gave clean checkmark feedback, the assistant variant fired a separate floating "Copied" toast, and the result-card variant silently no-op'd because its copy helper only walked `content` while result messages keep their body on `result` / `errors`. Consolidated to one `CardActionBar` plus a shared `extractCopyText` (`src/lib/messageCopy.ts`) that handles both shapes, with checkmark-only feedback and an `extras` slot for the user-message Resend button so every action reads as one family.
+- **Header → content gap on every card.** `KindHeader`'s built-in margin bumped from `mb-1` (4px) to `mb-3` (12px) so cards have proper breathing room between the header label and the body content. Single source of truth for that spacing now lives on the header element itself.
+- **Lima page restyled to match the Sessions popover card grammar.** VM rows and container tiles now use the same two-zone shell as `TabStatusCard` (tinted header strip with status pill + name, body grid below with `HeaderLabel` left-col + value pills). Status reads as a green/amber/red/muted pill instead of a plain colored dot, with a pulsing dot inside the pill for transient states (`Starting…`, `Stopping…`, `Restarting`). Stopped VMs now wear a red pill — same palette as Broken/Error.
+- **Claude Agent SDK bumped to `0.3.143`.** Patch release that moves `@anthropic-ai/sdk` and `@modelcontextprotocol/sdk` from `dependencies` to `peerDependencies`. Both are still bundled at runtime; npm auto-installs peer deps, so nothing in OmniFex needed adjustment.
+
+### Fixed
+
+- **Copy button on Execution Complete / Execution Failed cards** now actually copies. Was a silent no-op since the helper looked only at `msg.content` (the assistant/user content-block array), but result messages keep the body on `msg.result` (success) or `msg.errors[]` (error). The unified extractor checks the result shape first.
+
 ## [0.4.39] — 2026-05-15
 
 Lets you pick which sound plays when a task finishes. Small surface change; everything sits inside Settings → General.
