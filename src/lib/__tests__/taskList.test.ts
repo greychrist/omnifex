@@ -213,6 +213,55 @@ describe('getTaskList', () => {
     expect(result?.[0].messages).toEqual([]);
   });
 
+  it('starts a fresh list when a TaskCreate fires after all prior tasks are completed', () => {
+    // Matches the old TodoBar's UX: when the agent finishes a batch of
+    // todos and then starts a new batch, the new list replaces the old
+    // rather than appending. Detection: a TaskCreate that arrives when
+    // every existing task is in `completed`.
+    const result = getTaskList([
+      taskCreateMsg('tu1', { subject: 'old A' }),
+      taskCreateResultMsg('tu1', '1'),
+      taskUpdateMsg('tu2', { taskId: '1', status: 'in_progress' }),
+      taskUpdateMsg('tu3', { taskId: '1', status: 'completed' }),
+      taskCreateMsg('tu4', { subject: 'new B' }),
+      taskCreateResultMsg('tu4', '2'),
+    ]);
+    expect(result?.map((t) => t.subject)).toEqual(['new B']);
+    expect(result?.[0].status).toBe('pending');
+  });
+
+  it('does NOT reset when a TaskCreate fires while another task is still in flight', () => {
+    // A pending or in_progress task means the agent isn't done with the
+    // current batch — a new TaskCreate is appended, not a fresh start.
+    const result = getTaskList([
+      taskCreateMsg('tu1', { subject: 'A' }),
+      taskCreateResultMsg('tu1', '1'),
+      taskCreateMsg('tu2', { subject: 'B' }),
+      taskCreateResultMsg('tu2', '2'),
+      taskUpdateMsg('tu3', { taskId: '1', status: 'in_progress' }),
+      taskUpdateMsg('tu4', { taskId: '1', status: 'completed' }),
+      // B is still pending → C is part of the same batch.
+      taskCreateMsg('tu5', { subject: 'C' }),
+      taskCreateResultMsg('tu5', '3'),
+    ]);
+    expect(result?.map((t) => t.subject)).toEqual(['A', 'B', 'C']);
+  });
+
+  it('resets repeatedly across several completed-then-new batches', () => {
+    // Each fully-completed batch yields to the next TaskCreate that arrives.
+    const result = getTaskList([
+      taskCreateMsg('tu1', { subject: 'batch1.A' }),
+      taskCreateResultMsg('tu1', '1'),
+      taskUpdateMsg('tu2', { taskId: '1', status: 'completed' }),
+      taskCreateMsg('tu3', { subject: 'batch2.A' }),
+      taskCreateResultMsg('tu3', '2'),
+      taskUpdateMsg('tu4', { taskId: '2', status: 'completed' }),
+      taskCreateMsg('tu5', { subject: 'batch3.A' }),
+      taskCreateResultMsg('tu5', '3'),
+    ]);
+    expect(result?.map((t) => t.subject)).toEqual(['batch3.A']);
+  });
+
   it('honors a TaskUpdate that renames the subject mid-flight', () => {
     const result = getTaskList([
       taskCreateMsg('tu1', { subject: 'original' }),

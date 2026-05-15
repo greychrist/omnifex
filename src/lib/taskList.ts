@@ -185,6 +185,27 @@ export function getTaskList(messages: ClaudeStreamMessage[]): TaskListEntry[] | 
 
         if (name === 'taskcreate') {
           if (!block.id) continue;
+          // Epoch-boundary reset — when the agent finishes a batch of
+          // tasks and starts a new one, the new list should replace the
+          // old, matching the legacy TodoBar's "new list empties the
+          // old" UX. Detection: a TaskCreate that arrives when EVERY
+          // existing task is already `completed`. If any task is still
+          // pending or in_progress, this is an additive TaskCreate on
+          // the same in-flight batch and we don't reset.
+          if (byToolUseId.size > 0) {
+            let anyActive = false;
+            for (const t of byToolUseId.values()) {
+              if (t.status !== 'completed') {
+                anyActive = true;
+                break;
+              }
+            }
+            if (!anyActive) {
+              byToolUseId.clear();
+              byTaskId.clear();
+              currentTaskId = null;
+            }
+          }
           sawCreate = true;
           drovenStateMachine = true;
           const subject = typeof input.subject === 'string'
