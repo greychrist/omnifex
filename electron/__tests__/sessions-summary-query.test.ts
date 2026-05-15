@@ -11,7 +11,7 @@ import {
 
 // These tests cover the one-shot summary runner that wraps the SDK's
 // streaming `query()` API to one-shot `Promise<SDKResultMessage>`
-// ergonomics (previously `unstable_v2_prompt`, deprecated in SDK 0.2.133).
+// ergonomics.
 // The hard requirement is that the subprocess's JSONL never lands inside
 // the user's real project directory — every summary call must run in a
 // throwaway cwd and the runner must sweep the resulting
@@ -179,10 +179,9 @@ describe('createSummaryQueryRunner', () => {
   });
 
   // ---------------------------------------------------------------------
-  // runQueryOnce — the wrapper that gives us back the one-shot ergonomics
-  // we lost when `unstable_v2_prompt` was deprecated. It iterates a
-  // streaming `query()` to its first `result` message and closes the
-  // query handle no matter what.
+  // runQueryOnce — the wrapper that gives one-shot ergonomics over the
+  // SDK's streaming `query()`. It iterates to the first `result` message
+  // and closes the query handle no matter what.
   // ---------------------------------------------------------------------
 
   describe('runQueryOnce', () => {

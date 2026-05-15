@@ -19,12 +19,9 @@ import { buildClaudeEnv } from '../util/claude-env';
 //   called V1 `query()` with the real project path as `cwd`, leaving
 //   throwaway one-message sessions in the user's real project session list.
 //
-//   v0.4.13 switched to `unstable_v2_prompt` for cleaner one-shot
-//   ergonomics. SDK 0.2.133 deprecated all `unstable_v2_*` symbols
-//   ("will be removed in a future release"), so v0.4.14 went back to
-//   the streaming `query()` and wrapped it in `runQueryOnce` (below) to
-//   keep the one-shot await-and-go ergonomics. Everything else about
-//   this runner stayed the same:
+//   The summary path uses the streaming `query()` API wrapped in
+//   `runQueryOnce` (below) for one-shot await-and-go ergonomics, with
+//   the following guard rails:
 //     - Pins every call to a single STABLE scratch cwd
 //       `<os.tmpdir()>/omnifex-summary-scratch`. The encoded form is the
 //       same on every call, so we don't accumulate one
@@ -68,9 +65,6 @@ export type RunPromptFn = (
  * `Query` handle on every exit path (success, no-result stream end,
  * iteration error). `query.close()` errors are swallowed so they cannot
  * mask either the result or the original iteration error.
- *
- * This restores the `unstable_v2_prompt`-style ergonomics that v0.4.13
- * relied on, without depending on the deprecated V2 surface.
  *
  * The first parameter is the SDK's `query` function, taken as a
  * dependency so unit tests can drive it without mocking the module.

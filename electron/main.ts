@@ -582,12 +582,11 @@ app.whenReady().then(() => {
         summaryModel: acct.summaryModel ?? null,
       };
     },
-    // One-shot summarization call via the V2 SDK's `unstable_v2_prompt`.
-    // The runner uses a per-call scratch cwd so the JSONL the subprocess
-    // always writes lands in a throwaway dir under
-    // `<configDir>/projects/<scratch>/` and gets swept after the call,
-    // instead of mixing throwaway summary sessions into the user's real
-    // project session list. bypassPermissions + disallowedTools:['*']
+    // One-shot summarization call. The runner uses a stable scratch cwd
+    // so the JSONL the subprocess always writes lands in a throwaway dir
+    // under `<configDir>/projects/<scratch>/` and gets swept after the
+    // call, instead of mixing throwaway summary sessions into the user's
+    // real project session list. bypassPermissions + disallowedTools:['*']
     // keep this strictly text-in / text-out.
     runQuery: createSummaryQueryRunner(),
     onSummaryUpdated: (sessionUuid) => {
