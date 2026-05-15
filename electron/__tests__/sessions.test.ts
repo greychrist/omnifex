@@ -1943,13 +1943,27 @@ describe('sessions service — full lifecycle', () => {
     options.stderr('claude: booting\n');
     expect(writeBatch.mock.calls[0][0][0].level).toBe('debug');
 
-    // Error in hook callback → error level
+    // CLI-internal "Error in hook callback hook_N: Stream closed" stderr is
+    // a known harmless noise pattern (the CLI fires a teardown / pending-
+    // tasks hook that calls back via sendRequest after the SDK input
+    // channel has already closed). Demoted unconditionally so it doesn't
+    // surface as a red row at session start.
     options.stderr('Error in hook callback hook_9: Stream closed');
-    expect(writeBatch.mock.calls[1][0][0].level).toBe('error');
+    expect(writeBatch.mock.calls[1][0][0].level).toBe('debug');
 
-    // Generic error line → error level
+    // The same noise also lands under SDK 0.3.x as a multi-line bun source-
+    // context dump with the same `Error in hook callback hook_N` opener.
+    // The classifier should still recognise it.
+    options.stderr(
+      'Error in hook callback hook_6: 9485 | ${H.map(...)}\n' +
+        '9490 | error: Stream closed\n' +
+        '  at sendRequest (/$bunfs/root/src/entrypoints/cli.js:9490:133)',
+    );
+    expect(writeBatch.mock.calls[2][0][0].level).toBe('debug');
+
+    // Generic error line not associated with a hook callback → error level
     options.stderr('error: something broke');
-    expect(writeBatch.mock.calls[2][0][0].level).toBe('error');
+    expect(writeBatch.mock.calls[3][0][0].level).toBe('error');
 
     svc.stopAll();
   });
@@ -1986,23 +2000,26 @@ describe('sessions service — full lifecycle', () => {
 
     const options = fake.getCapturedOptions();
 
-    // Same input that fires during normal operation → error (real bug)
+    // "Error in hook callback hook_N: Stream closed" is CLI-internal noise
+    // and demoted unconditionally — fires on every session start under
+    // SDK 0.3.x and once again at teardown. No actionable signal in either
+    // direction.
     options.stderr('Error in hook callback hook_9: Stream closed');
     const lastCall = writeBatch.mock.calls.at(-1);
     expect(lastCall).toBeDefined();
-    expect(lastCall![0][0].level).toBe('error');
+    expect(lastCall![0][0].level).toBe('debug');
 
     // Now close the tab — flip the shutdown flag
     svc.stop('tab-shutdown');
 
     writeBatch.mockClear();
 
-    // After shutdown the SAME stderr arrives (the CLI's hook_9 firing on its
-    // way out). It should be classified as debug, not error — no toast.
+    // After shutdown the same stderr still resolves to debug.
     options.stderr('Error in hook callback hook_9: Stream closed');
     expect(writeBatch.mock.calls[0][0][0].level).toBe('debug');
 
-    // Bare "Stream closed" is also benign during shutdown
+    // Bare "Stream closed" (not wrapped in a hook-callback line) is still
+    // a teardown-only demotion.
     options.stderr('error: Stream closed');
     expect(writeBatch.mock.calls[1][0][0].level).toBe('debug');
 

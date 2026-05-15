@@ -155,12 +155,20 @@ export function buildSdkOptions(
   // own `--debug` output to ~/.claude-personal/debug/<sessionId>.txt (not stderr),
   // so this callback only catches unexpected stderr (crashes, fatal errors).
   if (logging) {
-    // Patterns that are benign during shutdown but real otherwise. When the
-    // renderer closes a tab, lifecycle.stop() closes the SDK input channel;
-    // the CLI's own teardown hook (cli.js hook_9) then tries to push a
-    // system-reminder via sendRequest and throws "Stream closed". Pre-this-
-    // change every tab close produced an error-level row + toast.
-    const TEARDOWN_NOISE = /Error in hook callback|Stream closed/i;
+    // CLI-internal hook callbacks that fail with "Stream closed" — the CLI
+    // fires a numbered hook (its own teardown / pending-tasks reminder)
+    // that calls back via sendRequest, but the SDK input channel is already
+    // closed. Under 0.2.x this surfaced as a single line at tab close
+    // (`Error in hook callback hook_9: Stream closed`); under 0.3.x it
+    // also fires once on every session start and the bun runtime dumps a
+    // multi-line source-context block. No actionable signal either way —
+    // demoted unconditionally so it never produces a red row or toast.
+    const HOOK_CALLBACK_NOISE = /Error in hook callback hook_\d+/i;
+    // Patterns that are benign during shutdown but real otherwise. When
+    // the renderer closes a tab, lifecycle.stop() closes the SDK input
+    // channel; any bare "Stream closed" stderr after that is part of the
+    // teardown, not a crash.
+    const TEARDOWN_NOISE = /Stream closed/i;
     // "Real error" patterns — surface even during shutdown so we don't hide
     // a genuine crash just because we asked the session to stop.
     const REAL_ERROR = /^error[:\s]|FATAL|panic/i;
@@ -168,12 +176,18 @@ export function buildSdkOptions(
     options.stderr = (data: string) => {
       const shuttingDown = isShuttingDown?.() === true;
 
-      // Order matters: TEARDOWN_NOISE is checked first so the SDK's hook-
-      // callback / stream-closed messages can be demoted during shutdown
-      // before falling through to the generic /^error/i match (which they
-      // would otherwise hit and stay at error level).
+      // Order matters:
+      //   1. HOOK_CALLBACK_NOISE — always debug (CLI-internal, no actionable
+      //      signal regardless of session state).
+      //   2. TEARDOWN_NOISE — debug during shutdown only (a bare "Stream
+      //      closed" outside the hook-callback wrapper is rare and we want
+      //      to see it during normal operation).
+      //   3. REAL_ERROR — anything matching /^error/ / FATAL / panic that
+      //      survived the above filters surfaces as error level.
       let level: 'error' | 'debug';
-      if (TEARDOWN_NOISE.test(data)) {
+      if (HOOK_CALLBACK_NOISE.test(data)) {
+        level = 'debug';
+      } else if (TEARDOWN_NOISE.test(data)) {
         level = shuttingDown ? 'debug' : 'error';
       } else if (REAL_ERROR.test(data)) {
         level = 'error';
