@@ -61,20 +61,12 @@ export const TaskList: React.FC<TaskListProps> = ({ messages, isLive, className 
   );
 
   return (
-    // Bottom-anchored: header sits at the visual base of the chat area;
-    // the expanded panel grows UPWARD by rendering above it.
+    // Header stays at the top of this block (the "drawer handle"); the
+    // expanded panel grows below it in DOM order. Because the whole
+    // block is shrink-0 inside ClaudeCodeSession's flex-column layout,
+    // expanding pushes the chat list above us upward — the header
+    // visually slides UP as the panel reveals itself.
     <div className={cn('shrink-0 flex flex-col', className)}>
-      {expanded && (
-        <div
-          className="overflow-y-auto border-t border-border/40 bg-background/95"
-          style={{ maxHeight: '50vh' }}
-        >
-          {entries.map((entry) => (
-            <TaskRow key={entry.id} entry={entry} />
-          ))}
-        </div>
-      )}
-
       <div className="relative shrink-0 border-t border-border/40">
         <div
           aria-hidden="true"
@@ -126,6 +118,17 @@ export const TaskList: React.FC<TaskListProps> = ({ messages, isLive, className 
           </button>
         </div>
       </div>
+
+      {expanded && (
+        <div
+          className="overflow-y-auto bg-background/95"
+          style={{ maxHeight: '50vh' }}
+        >
+          {entries.map((entry) => (
+            <TaskRow key={entry.id} entry={entry} />
+          ))}
+        </div>
+      )}
     </div>
   );
 };
