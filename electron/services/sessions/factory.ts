@@ -31,15 +31,6 @@ export interface BuildSdkOptionsDeps {
    * resolver registration (which writes to handle.elicitationResolver).
    */
   onElicitationRequest: (request: any) => Promise<ElicitationDecision>;
-  /**
-   * Polled by the stderr closure to decide whether to demote the SDK's
-   * own teardown noise (cli.js hook_9 firing during close → "Stream
-   * closed") to debug. lifecycle.stop() owns the underlying state and
-   * keeps it valid past the sessions-map deletion so late-arriving
-   * stderr from the dying subprocess still resolves to true. Optional:
-   * tests that don't exercise the shutdown path can omit it.
-   */
-  isShuttingDown?: () => boolean;
 }
 
 /**
@@ -53,7 +44,7 @@ export function buildSdkOptions(
   params: SessionStartParams,
   deps: BuildSdkOptionsDeps,
 ): Record<string, unknown> {
-  const { tabId, sendToRenderer, notificationHooks, logging, onElicitationRequest, isShuttingDown } = deps;
+  const { tabId, sendToRenderer, notificationHooks, logging, onElicitationRequest } = deps;
   const { projectPath, configDir, model, permissionMode, resumeSessionId, effort, thinking } = params;
 
   const options: Record<string, unknown> = {
@@ -155,40 +146,41 @@ export function buildSdkOptions(
   // own `--debug` output to ~/.claude-personal/debug/<sessionId>.txt (not stderr),
   // so this callback only catches unexpected stderr (crashes, fatal errors).
   if (logging) {
-    // CLI-internal hook callbacks that fail with "Stream closed" — the CLI
-    // fires a numbered hook (its own teardown / pending-tasks reminder)
-    // that calls back via sendRequest, but the SDK input channel is already
-    // closed. Under 0.2.x this surfaced as a single line at tab close
-    // (`Error in hook callback hook_9: Stream closed`); under 0.3.x it
-    // also fires once on every session start and the bun runtime dumps a
-    // multi-line source-context block. No actionable signal either way —
-    // demoted unconditionally so it never produces a red row or toast.
-    const HOOK_CALLBACK_NOISE = /Error in hook callback hook_\d+/i;
-    // Patterns that are benign during shutdown but real otherwise. When
-    // the renderer closes a tab, lifecycle.stop() closes the SDK input
-    // channel; any bare "Stream closed" stderr after that is part of the
-    // teardown, not a crash.
-    const TEARDOWN_NOISE = /Stream closed/i;
-    // "Real error" patterns — surface even during shutdown so we don't hide
-    // a genuine crash just because we asked the session to stop.
+    // CLI-internal noise patterns under SDK 0.3.x. The CLI fires a numbered
+    // hook (its own teardown / pending-tasks reminder) that calls back via
+    // sendRequest after the SDK input channel has already closed, and the
+    // bun runtime dumps the full source-context block to stderr. Bun chunks
+    // that dump across multiple writes — sometimes the leading
+    // `Error in hook callback hook_N` line lands in one chunk and the
+    // trailing `error: Stream closed\n  at sendRequest (/$bunfs/...)` stack
+    // lands in another — so a regex that only matched the preamble would
+    // demote the head but let the tail surface as a red row anyway.
+    //
+    // Under 0.3.x the CLI never emits "Stream closed" or a `/$bunfs/` stack
+    // frame from any non-noise path, so the safest classifier matches any
+    // of:
+    //   - `Error in hook callback hook_N` (leading dump line)
+    //   - `Stream closed` (trailing error line, or shutdown teardown)
+    //   - `/$bunfs/` (bun runtime stack frames -- only the bundled CLI uses
+    //     this scheme, never a real OmniFex code path)
+    //   - bun source-context lines (`^\d+ | ...`) (the body of the dump)
+    // and demotes the whole match to debug regardless of shutdown state.
+    // shuttingDown is no longer consulted because both head and tail of
+    // the dump are now uniformly classified as noise.
+    const CLI_NOISE = /Error in hook callback hook_\d+|Stream closed|\/\$bunfs\/|^\s*\d+\s*\|\s/im;
+    // "Real error" patterns — anything matching after the noise sieve
+    // surfaces as error level. Stays generous because legitimate crashes
+    // do typically start with "error:" / FATAL / panic.
     const REAL_ERROR = /^error[:\s]|FATAL|panic/i;
 
     options.stderr = (data: string) => {
-      const shuttingDown = isShuttingDown?.() === true;
-
-      // Order matters:
-      //   1. HOOK_CALLBACK_NOISE — always debug (CLI-internal, no actionable
-      //      signal regardless of session state).
-      //   2. TEARDOWN_NOISE — debug during shutdown only (a bare "Stream
-      //      closed" outside the hook-callback wrapper is rare and we want
-      //      to see it during normal operation).
-      //   3. REAL_ERROR — anything matching /^error/ / FATAL / panic that
-      //      survived the above filters surfaces as error level.
+      // Order matters: CLI_NOISE is checked first so the bun-runtime dump
+      // can be demoted before falling through to the generic /^error/ match
+      // (which it would otherwise hit on the trailing `error: Stream closed`
+      // line and stay at error level).
       let level: 'error' | 'debug';
-      if (HOOK_CALLBACK_NOISE.test(data)) {
+      if (CLI_NOISE.test(data)) {
         level = 'debug';
-      } else if (TEARDOWN_NOISE.test(data)) {
-        level = shuttingDown ? 'debug' : 'error';
       } else if (REAL_ERROR.test(data)) {
         level = 'error';
       } else {

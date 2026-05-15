@@ -1961,9 +1961,26 @@ describe('sessions service — full lifecycle', () => {
     );
     expect(writeBatch.mock.calls[2][0][0].level).toBe('debug');
 
+    // The bun runtime sometimes splits its stack dump across multiple
+    // stderr writes. Without the "Error in hook callback hook_N" preamble
+    // a trailing chunk is just the stack — its `error: Stream closed` /
+    // `at sendRequest (/$bunfs/…)` lines must STILL be demoted, because
+    // there's no other carrier for this signal in the 0.3.x SDK era.
+    options.stderr(
+      'error: Stream closed\n' +
+        '      at sendRequest (/$bunfs/root/src/entrypoints/cli.js:9490:133)\n' +
+        '      at <anonymous> (/$bunfs/root/src/entrypoints/cli.js:8951:17119)',
+    );
+    expect(writeBatch.mock.calls[3][0][0].level).toBe('debug');
+
+    // A bun source-context line on its own (e.g. `9485 | ...`) is also
+    // part of a dump and should never be flagged.
+    options.stderr('9485 | ${H.map((q) => `- ${q.description}`)}');
+    expect(writeBatch.mock.calls[4][0][0].level).toBe('debug');
+
     // Generic error line not associated with a hook callback → error level
     options.stderr('error: something broke');
-    expect(writeBatch.mock.calls[3][0][0].level).toBe('error');
+    expect(writeBatch.mock.calls[5][0][0].level).toBe('error');
 
     svc.stopAll();
   });

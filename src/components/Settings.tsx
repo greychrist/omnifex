@@ -53,7 +53,20 @@ export const Settings: React.FC<SettingsProps> = ({
 }) => {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState("general");
+  // sessionStorage handoff from App.tsx's "View in Log" action — read AND
+  // clear on first render so a stale value from a prior toast can't sticky
+  // the Settings tab onto Log on a subsequent unrelated open. The
+  // `log:focus-error-view` window event covers the warm-mount case below.
+  const [activeTab, setActiveTab] = useState<string>(() => {
+    try {
+      const seed = window.sessionStorage.getItem('omnifex:settings-initial-tab');
+      if (seed) {
+        window.sessionStorage.removeItem('omnifex:settings-initial-tab');
+        return seed;
+      }
+    } catch { /* private mode etc — fall through to default */ }
+    return 'general';
+  });
   const [currentBinaryPath, setCurrentBinaryPath] = useState<string | null>(null);
   const [selectedInstallation, setSelectedInstallation] = useState<ClaudeInstallation | null>(null);
   const [binaryPathChanged, setBinaryPathChanged] = useState(false);

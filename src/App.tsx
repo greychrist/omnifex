@@ -104,10 +104,21 @@ function AppContent() {
           label: 'View in Log',
           onClick: () => {
             setToast(null);
+            // sessionStorage handoff covers the cold-mount case: if no
+            // Settings tab exists, createSettingsTab() schedules a fresh
+            // mount and Settings' useState initializer reads this key on
+            // first render, so the inner tab opens directly on `log`
+            // instead of defaulting to `general`. The window event below
+            // covers the warm-mount case where the Settings tab was
+            // already open — it switches inner state without remount.
+            try {
+              window.sessionStorage.setItem('omnifex:settings-initial-tab', 'log');
+            } catch { /* private mode etc — fall back to the event path */ }
             createSettingsTab();
-            // Settings + LogTab both listen for this and switch their
-            // inner state in unison. Dispatched asynchronously so the
-            // Settings tab has mounted by the time the listeners fire.
+            // Settings + LogTab listen for this and switch their inner
+            // state in unison when the Settings tab is already mounted.
+            // Dispatched asynchronously so any newly-mounted tab has
+            // attached its listener by the time the event fires.
             setTimeout(() => {
               window.dispatchEvent(new CustomEvent('log:focus-error-view'));
             }, 0);

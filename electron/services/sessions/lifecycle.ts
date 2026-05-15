@@ -51,14 +51,6 @@ export function createSessionsService(
   onSessionClosed: ((sessionId: string, projectPath: string, configDir: string) => void) | null = null,
 ): SessionsService {
   const sessions = new Map<string, SessionHandle>();
-  // Tabs currently being torn down. Populated at the top of stop() before
-  // the SDK input channel is closed, and removed only when the dying
-  // subprocess's late stderr has plausibly drained (next start() for the
-  // same tabId, or when the service shuts down). Survives the
-  // `sessions.delete(tabId)` inside stop() so the factory's stderr
-  // closure can still consult it when CLI teardown noise lands after the
-  // handle is gone.
-  const shuttingDownTabs = new Set<string>();
   // Hoisted so both the public return and stop()'s plugin-cache eviction
   // share the same instance.
   const queryPassthroughs = createQueryPassthroughs(sessions, sendToRenderer);
@@ -106,17 +98,7 @@ export function createSessionsService(
             resolve(decision);
           };
         }),
-      // The factory's stderr closure consults this to demote SDK teardown
-      // noise to debug during shutdown. Backed by a Set that outlives the
-      // handle in `sessions` (which stop() deletes immediately), so
-      // late-arriving stderr from the dying subprocess still resolves true.
-      isShuttingDown: () => shuttingDownTabs.has(tabId),
     });
-
-    // A previous session for this tab may have been mid-shutdown when its
-    // process finally drained. Clear the bit so the new session starts in
-    // a clean "not shutting down" state.
-    shuttingDownTabs.delete(tabId);
 
     // Create handle first so the canUseTool callback can reference it
     const handle: SessionHandle = {
@@ -136,7 +118,6 @@ export function createSessionsService(
         return configDir;
       })(),
       sdkOptions: options,
-      shuttingDown: false,
     };
 
     options.canUseTool = createCanUseTool(handle, tabId, sendToRenderer, notificationHooks, logging);
@@ -274,18 +255,6 @@ export function createSessionsService(
   function stop(tabId: string): void {
     const handle = sessions.get(tabId);
     if (!handle) return;
-
-    // Signal shutdown BEFORE tearing down channels so the factory's stderr
-    // handler can downgrade the SDK's own teardown noise (cli.js hook_9
-    // firing during the close, throwing "Stream closed" from sendRequest)
-    // to debug instead of error. Without this every tab close generated
-    // an error toast. Tracked in shuttingDownTabs (a Set kept on the
-    // service) rather than handle.shuttingDown alone because we delete
-    // the handle from `sessions` further down — the Set survives so a
-    // stderr line arriving from the dying subprocess after that delete
-    // still sees the shutdown state.
-    handle.shuttingDown = true;
-    shuttingDownTabs.add(tabId);
 
     // Capture identity before teardown so the close hook still fires for
     // sessions that have a known sessionId (UUID).
