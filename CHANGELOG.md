@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.39] — 2026-05-15
+
+Lets you pick which sound plays when a task finishes. Small surface change; everything sits inside Settings → General.
+
+Installers remain **unsigned**.
+
+### Added
+
+- **User-selectable notification sounds.** New Notification Sounds section in Settings → General with two pickers — one for task-success and one for task-failure — backed by a 16-entry catalog: the bundled OmniFex chime, 14 macOS system sounds (Basso, Blow, Bottle, Frog, Funk, Glass, Hero, Morse, Ping, Pop, Purr, Sosumi, Submarine, Tink), and "No sound". Each picker has a play-test button next to it; changing a sound auto-previews the new pick. "No sound" makes the OS notification fully silent and skips the in-window `afplay` when the app is focused. Choices persist as `notification_sound_success` / `notification_sound_error` in `app_settings` and are read per-call, so changes take effect on the next notification without a restart.
+
+### Changed
+
+- **Notifications service deps simplified.** The previous `getSoundPath(isError)` dep plus the hard-coded `'greychrist_success'` / `'Basso'` sound strings collapsed into one `resolveSound(isError) → { afplayPath, nativeName }` resolver, called once per notification so the DB lookup happens lazily. Notifications honor `silent: true` when the resolved native name is `null`.
+
 ## [0.4.38] — 2026-05-15
 
 Big release built around treating the SDK 0.3.x **Task primitive** as a first-class UI feature instead of a flat todo counter, plus a backend half for the long-broken `@`-mention file browser. Two follow-ups to the 0.4.37 wire-shape fix close a stderr-noise regression and the FilePicker's missing IPC handlers.
