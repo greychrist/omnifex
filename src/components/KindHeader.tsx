@@ -47,7 +47,7 @@ export const KindHeader: React.FC<KindHeaderProps> = ({
   const swatchStyle = swatch ? { color: swatch } : undefined;
 
   return (
-    <div className={cn("flex items-center gap-2 mb-1", className)}>
+    <div className={cn("flex items-center gap-2 mb-3", className)}>
       {showIcon && iconName && iconName !== "none" && (
         <span style={swatchStyle}>
           <IconRenderer name={iconName} className="h-4 w-4" />

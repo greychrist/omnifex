@@ -39,7 +39,8 @@ import {
   warnUnhandledKnownTool,
 } from "@/lib/types/toolInput";
 import { AnsweredAskUserQuestionCard } from "@/components/AnsweredAskUserQuestionCard";
-import { fireAndLog, logAndForget } from "@/lib/fireAndLog";
+import { CardActionBar, CardActionButton, CardActionDivider } from "@/components/CardActionBar";
+import { fireAndLog } from "@/lib/fireAndLog";
 import {
   TodoReadWidget,
   LSWidget,
@@ -70,68 +71,11 @@ import {
 /** Extract all meaningful text from a message for copying.
  *  Assumes content is already an array — see lib/normalizeMessage for the
  *  ingress boundary that guarantees it. */
-function extractCopyText(msg: unknown): string {
-  if (!msg || typeof msg !== 'object') return '';
-  const content = (msg as { content?: unknown }).content;
-  if (!Array.isArray(content)) return '';
-  const parts: string[] = [];
-  for (const c of content as MessageContentBlock[]) {
-    if (c.type === 'text') {
-      parts.push(c.text);
-    } else if (c.type === 'tool_use') {
-      // Tool-use inputs are arbitrary record shapes; pull out the well-known
-      // text-y fields so the copy button captures something readable.
-      const input = c.input;
-      if (typeof input.command === 'string') parts.push(input.command);
-      else if (typeof input.content === 'string') parts.push(input.content);
-      else if (typeof input.pattern === 'string') parts.push(input.pattern);
-    } else if (c.type === 'tool_result') {
-      // Tool_result blocks still legitimately carry either string or array
-      // content — that's not covered by the top-level normalization.
-      if (typeof c.content === 'string') parts.push(c.content);
-      else if (Array.isArray(c.content)) {
-        for (const inner of c.content) {
-          if (typeof inner === 'string') parts.push(inner);
-          else if ('text' in inner && typeof inner.text === 'string') parts.push(inner.text);
-        }
-      }
-    }
-  }
-  return parts.join('\n').trim();
-}
-
-/** Copy button with inline toast feedback. Accepts either a message object or raw text. */
-const CopyCardButton: React.FC<{ message?: unknown; text?: string }> = ({ message, text }) => {
-  const [copied, setCopied] = React.useState(false);
-  const [toast, setToast] = React.useState(false);
-
-  const handleCopy = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    const copyText = text ?? (message ? extractCopyText(message) : '');
-    if (!copyText) return;
-    logAndForget('stream-message:write-text', navigator.clipboard.writeText(copyText));
-    setCopied(true);
-    setToast(true);
-    setTimeout(() => { setCopied(false); setToast(false); }, 2000);
-  };
-
-  return (
-    <>
-      <button
-        onClick={handleCopy}
-        className="absolute top-1 right-1 p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 opacity-0 group-hover/card:opacity-100 transition-opacity z-10"
-        title="Copy content"
-      >
-        {copied ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
-      </button>
-      {toast && (
-        <div className="absolute top-1 right-8 z-20 bg-emerald-900/90 text-emerald-100 text-xs px-2 py-1 rounded shadow-lg max-w-[300px] truncate pointer-events-none">
-          Copied
-        </div>
-      )}
-    </>
-  );
-};
+// Shared message-copy helper. Lives in `src/lib/messageCopy.ts` so the
+// card action bar can use the same extraction logic; what's defined here
+// used to walk only `content` (an array on assistant/user messages) and
+// silently no-op'd on result cards, which is the bug that motivated the
+// consolidation.
 
 /** Image with a hover-reveal download button + click-to-zoom lightbox. */
 const DownloadableImage: React.FC<{
@@ -184,25 +128,13 @@ const DownloadableImage: React.FC<{
   );
 };
 
-/** Copy + optional Resend action bar for user message cards. */
-const UserMessageActions: React.FC<{
+/** Resend extra slot for the shared `CardActionBar` on user message cards. */
+const ResendExtra: React.FC<{
   msg: unknown;
-  onResend?: (text: string, images?: string[]) => void;
+  onResend: (text: string, images?: string[]) => void;
 }> = ({ msg, onResend }) => {
-  const [copied, setCopied] = React.useState(false);
-
-  const handleCopy = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    const copyText = extractCopyText(msg);
-    if (!copyText) return;
-    logAndForget('stream-message:write-text', navigator.clipboard.writeText(copyText));
-    setCopied(true);
-    setTimeout(() => { setCopied(false); }, 2000);
-  };
-
   const handleResend = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!onResend) return;
     // Use the shared extractor so we handle both shapes user messages arrive in:
     //   • live SDK stream  → content is an array of typed blocks
     //   • resumed/JSONL    → content is a raw string
@@ -213,26 +145,13 @@ const UserMessageActions: React.FC<{
     if (!text && !images) return;
     onResend(text, images);
   };
-
   return (
-    <div className="absolute top-1 right-1 flex items-center gap-0.5 z-10 opacity-0 group-hover/card:opacity-100 transition-opacity">
-      <button
-        onClick={handleCopy}
-        className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50"
-        title="Copy content"
-      >
-        {copied ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
-      </button>
-      {onResend && (
-        <button
-          onClick={handleResend}
-          className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50"
-          title="Resend message"
-        >
-          <RotateCcw className="h-3.5 w-3.5" />
-        </button>
-      )}
-    </div>
+    <>
+      <CardActionDivider />
+      <CardActionButton onClick={handleResend} title="Resend message" ariaLabel="Resend message">
+        <RotateCcw className="h-3.5 w-3.5" />
+      </CardActionButton>
+    </>
   );
 };
 
@@ -628,7 +547,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
           className={cn("border w-[95%] relative group/card", className)}
           style={assistantStyle}
         >
-          <CopyCardButton message={msg} />
+          <CardActionBar message={msg} />
           <CardContent className="p-4 pb-9">
             <div className="flex items-start gap-3">
               <div
@@ -1098,9 +1017,13 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
         <div className={isToolResultOnly ? "" : "flex justify-end"}>
         <Card className={cn(cardStyle.className, !isToolResultOnly && "w-[95%]", "group/card relative")} style={cardStyle.style}>
           {!isToolResultOnly ? (
-            <UserMessageActions msg={msg} onResend={showResend ? onResend : undefined} />
+            <CardActionBar
+              message={msg}
+              ariaLabel="User message actions"
+              extras={showResend && onResend ? <ResendExtra msg={msg} onResend={onResend} /> : undefined}
+            />
           ) : (
-            <CopyCardButton message={msg} />
+            <CardActionBar message={msg} />
           )}
           <CardContent className="p-4 pb-9">
             <div className="flex items-start gap-3">
@@ -1487,7 +1410,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
 
       return (
         <Card className={cn("border relative group/card", className)} style={resultStyle}>
-          <CopyCardButton message={message} />
+          <CardActionBar message={message} />
           <CardContent className="p-4 pb-9">
             <div className="flex items-start gap-3">
               <div

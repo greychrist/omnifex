@@ -3,6 +3,7 @@ import { HardDrive, Container, RefreshCw, AlertCircle, Play, Square, Loader2 } f
 import { api, type LimaVm, type LimaDockerContainer } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { HeaderLabel } from './HeaderLabel';
 import { fireAndLog } from "@/lib/fireAndLog";
 
 const POLL_INTERVAL_MS = 5000;
@@ -19,22 +20,43 @@ function formatBytes(bytes: number): string {
   return `${n.toFixed(n >= 10 || i === 0 ? 0 : 1)} ${units[i]}`;
 }
 
-function statusColor(status: string): string {
+// Status-pill palettes — mirror TabStatusPopover.STATUS_COLOR so the Lima
+// page reads in the same visual language (green = healthy, amber = in
+// flight, red = error, muted = inert). Foreground + tinted background +
+// optional pulsing dot. The pill always includes the dot when transient
+// so VM/container lifecycle changes are obvious at a glance.
+function vmPillPalette(status: string, pending: 'starting' | 'stopping' | undefined): string {
+  if (pending) return 'text-amber-300 bg-amber-500/20';
   const s = status.toLowerCase();
-  if (s === 'running') return 'bg-green-500';
-  if (s === 'stopped') return 'bg-zinc-500';
-  if (s === 'broken' || s === 'error') return 'bg-red-500';
-  return 'bg-amber-500';
+  if (s === 'running') return 'text-emerald-400 bg-emerald-500/10';
+  if (s === 'stopped') return 'text-red-400 bg-red-500/15';
+  if (s === 'broken' || s === 'error') return 'text-red-400 bg-red-500/15';
+  return 'text-amber-300 bg-amber-500/15';
 }
 
-function containerStateColor(state: string): string {
+function containerPillPalette(state: string, pending: 'starting' | 'stopping' | undefined): string {
+  if (pending) return 'text-amber-300 bg-amber-500/20';
   const s = state.toLowerCase();
-  if (s === 'running') return 'bg-green-500';
-  if (s === 'exited' || s === 'dead') return 'bg-zinc-500';
-  if (s === 'paused') return 'bg-amber-500';
-  if (s === 'restarting') return 'bg-blue-500';
-  return 'bg-zinc-400';
+  if (s === 'running') return 'text-emerald-400 bg-emerald-500/10';
+  if (s === 'exited' || s === 'dead' || s === 'created') return 'text-muted-foreground bg-muted/40';
+  if (s === 'paused') return 'text-amber-300 bg-amber-500/15';
+  if (s === 'restarting') return 'text-blue-300 bg-blue-500/15';
+  return 'text-muted-foreground bg-muted/40';
 }
+
+// Shared shell: the two-zone card from TabStatusCard (TabStatusPopover.tsx).
+// Used by both VM rows and container tiles so a single style change
+// propagates to both lists.
+const CARD_SHELL =
+  'rounded-md border-0 overflow-hidden bg-[color-mix(in_oklch,var(--color-background)_40%,var(--color-muted))] shadow-[0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_45%,transparent),2px_2px_4px_rgb(0_0_0/0.08)]';
+
+const CARD_HEADER =
+  'w-full flex items-center justify-between gap-3 px-3 py-2 bg-muted shadow-[inset_0_-1px_0_0_color-mix(in_oklch,var(--color-muted-foreground)_45%,transparent)] transition-colors text-left';
+
+// Mono value pill — bg-background + 1px inset border. Mirrors the
+// "Context Size" / branch pill treatment in TabStatusCard.
+const VALUE_PILL =
+  'inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-mono font-medium text-foreground bg-background shadow-[0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_45%,transparent)]';
 
 export const LimaViewer: React.FC = () => {
   const [installed, setInstalled] = useState<boolean | null>(null);
@@ -251,107 +273,108 @@ export const LimaViewer: React.FC = () => {
 
       {/* Master/detail */}
       <div className="flex-1 flex overflow-hidden">
-        {/* VM list (left) */}
-        <div className="w-[320px] shrink-0 border-r border-border/50 overflow-y-auto">
+        {/* VM list (left) — TabStatusCard idiom: card-per-row, tinted
+            header strip with status pill + name + chevron, body grid
+            below with HeaderLabel left-col + value-pill right-col. */}
+        <div className="w-[340px] shrink-0 border-r border-border/50 overflow-y-auto">
           {vms.length === 0 ? (
             <div className="p-4 text-sm text-muted-foreground">
               No Lima VMs configured. Create one with{' '}
               <code className="font-mono px-1 rounded bg-muted">limactl create</code>.
             </div>
           ) : (
-            <ul className="divide-y divide-border/40">
+            <div className="p-2 space-y-1.5">
               {vms.map((vm) => {
                 const isActive = selectedVm === vm.name;
                 const action = pendingAction[vm.name];
                 const isRunning = vm.status === 'Running';
                 const isStopped = vm.status === 'Stopped';
+                const pillLabel = action === 'starting'
+                  ? 'Starting…'
+                  : action === 'stopping'
+                    ? 'Stopping…'
+                    : vm.status;
+                const showDot = !!action || vm.status.toLowerCase() === 'broken';
                 return (
-                  <li key={vm.name}>
+                  <div key={vm.name} className={cn(CARD_SHELL, isActive && 'ring-1 ring-accent')}>
+                    {/* Header strip — clickable to select. */}
                     <button
+                      type="button"
                       onClick={() => { setSelectedVm(vm.name); }}
-                      className={cn(
-                        'w-full text-left px-4 py-3 hover:bg-accent/40 transition-colors',
-                        isActive && 'bg-accent',
-                      )}
+                      className={cn(CARD_HEADER, 'hover:bg-accent/40', isActive && 'bg-accent/60')}
                     >
-                      {/* Top row: name + status */}
-                      <div className="flex items-center gap-2 mb-2">
-                        <span
-                          className={cn('inline-block h-2 w-2 rounded-full shrink-0', statusColor(vm.status))}
-                          aria-hidden
-                        />
-                        <span className="text-sm font-medium truncate flex-1">{vm.name}</span>
+                      <div className="flex items-center gap-2 min-w-0">
                         <span
                           className={cn(
-                            'text-[10px] uppercase tracking-wider shrink-0',
-                            action
-                              ? 'text-muted-foreground'
-                              : isRunning
-                              ? 'text-green-400'
-                              : isStopped
-                              ? 'text-red-400'
-                              : 'text-muted-foreground',
+                            'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide',
+                            vmPillPalette(vm.status, action),
                           )}
                         >
-                          {action === 'starting' ? 'Starting…' : action === 'stopping' ? 'Stopping…' : vm.status}
+                          {showDot && (
+                            <span className="inline-block h-1.5 w-1.5 rounded-full bg-current animate-pulse" />
+                          )}
+                          {pillLabel}
                         </span>
+                        <span className="truncate text-sm font-medium">{vm.name}</span>
                       </div>
-
-                      {/* Compact metadata — two pairs per row */}
-                      <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[11px] font-mono mb-2">
-                        <div className="flex items-baseline gap-1.5 min-w-0">
-                          <span className="text-muted-foreground/60 shrink-0">arch</span>
-                          <span className="text-foreground/80 truncate">{vm.arch}</span>
-                        </div>
-                        <div className="flex items-baseline gap-1.5 min-w-0">
-                          <span className="text-muted-foreground/60 shrink-0">cpu</span>
-                          <span className="text-foreground/80">{vm.cpus}</span>
-                        </div>
-                        <div className="flex items-baseline gap-1.5 min-w-0">
-                          <span className="text-muted-foreground/60 shrink-0">mem</span>
-                          <span className="text-foreground/80 truncate">{formatBytes(vm.memoryBytes)}</span>
-                        </div>
-                        <div className="flex items-baseline gap-1.5 min-w-0">
-                          <span className="text-muted-foreground/60 shrink-0">disk</span>
-                          <span className="text-foreground/80 truncate">{formatBytes(vm.diskBytes)}</span>
-                        </div>
-                      </div>
-
-                      {/* Action button bar — segmented look */}
-                      <div className="inline-flex items-center rounded border border-border bg-background overflow-hidden">
-                        {action ? (
-                          <span className="h-7 w-14 inline-flex items-center justify-center text-muted-foreground">
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          </span>
-                        ) : (
-                          <>
-                            <button
-                              type="button"
-                              disabled={!isStopped}
-                              onClick={(e) => { e.stopPropagation(); void handleStart(vm.name); }}
-                              className="h-7 w-7 inline-flex items-center justify-center text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed"
-                              title={isStopped ? `Start ${vm.name}` : `Already ${vm.status.toLowerCase()}`}
-                            >
-                              <Play className="h-3.5 w-3.5" />
-                            </button>
-                            <span className="h-5 w-px bg-border" aria-hidden />
-                            <button
-                              type="button"
-                              disabled={!isRunning}
-                              onClick={(e) => { e.stopPropagation(); void handleStop(vm.name); }}
-                              className="h-7 w-7 inline-flex items-center justify-center text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed"
-                              title={isRunning ? `Stop ${vm.name}` : `Already ${vm.status.toLowerCase()}`}
-                            >
-                              <Square className="h-3.5 w-3.5" />
-                            </button>
-                          </>
-                        )}
-                      </div>
+                      <span className="text-[10px] text-muted-foreground shrink-0">→</span>
                     </button>
-                  </li>
+
+                    {/* Body — metadata grid + action bar. */}
+                    <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 px-3 pb-2.5 pt-2 text-xs">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <HeaderLabel className="inline-block w-10 shrink-0">Arch</HeaderLabel>
+                        <span className={VALUE_PILL}>{vm.arch}</span>
+                      </div>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <HeaderLabel className="inline-block w-10 shrink-0">CPU</HeaderLabel>
+                        <span className={VALUE_PILL}>{vm.cpus}</span>
+                      </div>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <HeaderLabel className="inline-block w-10 shrink-0">Mem</HeaderLabel>
+                        <span className={VALUE_PILL}>{formatBytes(vm.memoryBytes)}</span>
+                      </div>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <HeaderLabel className="inline-block w-10 shrink-0">Disk</HeaderLabel>
+                        <span className={VALUE_PILL}>{formatBytes(vm.diskBytes)}</span>
+                      </div>
+
+                      <div className="col-span-2 pt-1">
+                        <div className="inline-flex items-center rounded border border-border bg-background overflow-hidden">
+                          {action ? (
+                            <span className="h-7 w-14 inline-flex items-center justify-center text-muted-foreground">
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            </span>
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                disabled={!isStopped}
+                                onClick={(e) => { e.stopPropagation(); void handleStart(vm.name); }}
+                                className="h-7 w-7 inline-flex items-center justify-center text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed"
+                                title={isStopped ? `Start ${vm.name}` : `Already ${vm.status.toLowerCase()}`}
+                              >
+                                <Play className="h-3.5 w-3.5" />
+                              </button>
+                              <span className="h-5 w-px bg-border" aria-hidden />
+                              <button
+                                type="button"
+                                disabled={!isRunning}
+                                onClick={(e) => { e.stopPropagation(); void handleStop(vm.name); }}
+                                className="h-7 w-7 inline-flex items-center justify-center text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed"
+                                title={isRunning ? `Stop ${vm.name}` : `Already ${vm.status.toLowerCase()}`}
+                              >
+                                <Square className="h-3.5 w-3.5" />
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 );
               })}
-            </ul>
+            </div>
           )}
         </div>
 
@@ -393,74 +416,81 @@ export const LimaViewer: React.FC = () => {
                     const cState = c.state.toLowerCase();
                     const cIsRunning = cState === 'running';
                     const cIsStopped = ['exited', 'created', 'dead'].includes(cState);
+                    const cPillLabel = cAction === 'starting'
+                      ? 'Starting…'
+                      : cAction === 'stopping'
+                        ? 'Stopping…'
+                        : c.state;
+                    const cShowDot = !!cAction || cState === 'restarting' || cState === 'paused';
                     return (
-                      <li
-                        key={c.id}
-                        className="rounded border border-border/60 bg-background/40 p-3 flex flex-col hover:bg-accent/40 transition-colors"
-                      >
-                        {/* Top row: name + state */}
-                        <div className="flex items-center gap-2 mb-2">
-                          <span
-                            className={cn('inline-block h-2 w-2 rounded-full shrink-0', containerStateColor(c.state))}
-                            aria-hidden
-                          />
-                          <span className="text-sm font-medium truncate flex-1 font-mono">{c.name}</span>
-                          <span
-                            className={cn(
-                              'text-[10px] uppercase tracking-wider shrink-0 font-mono',
-                              cAction
-                                ? 'text-muted-foreground'
-                                : cIsRunning
-                                ? 'text-green-400'
-                                : cIsStopped
-                                ? 'text-red-400'
-                                : 'text-muted-foreground',
-                            )}
-                          >
-                            {cAction === 'starting' ? 'starting…' : cAction === 'stopping' ? 'stopping…' : c.state}
-                          </span>
+                      <li key={c.id} className={cn(CARD_SHELL, 'flex flex-col')}>
+                        {/* Header strip — non-interactive (no drill-in target). */}
+                        <div className={CARD_HEADER}>
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span
+                              className={cn(
+                                'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide',
+                                containerPillPalette(c.state, cAction),
+                              )}
+                            >
+                              {cShowDot && (
+                                <span className="inline-block h-1.5 w-1.5 rounded-full bg-current animate-pulse" />
+                              )}
+                              {cPillLabel}
+                            </span>
+                            <span className="truncate text-sm font-medium font-mono" title={c.name}>
+                              {c.name}
+                            </span>
+                          </div>
                         </div>
 
-                        {/* Stacked metadata */}
-                        <dl className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 text-[11px] font-mono mb-2">
-                          <dt className="text-muted-foreground/60">image</dt>
-                          <dd className="text-foreground/80 truncate" title={c.image}>{c.image}</dd>
-                          <dt className="text-muted-foreground/60">status</dt>
-                          <dd className="text-foreground/80 truncate" title={c.status}>{c.status || '—'}</dd>
-                          <dt className="text-muted-foreground/60">ports</dt>
-                          <dd className="text-foreground/80 break-all" title={c.ports}>{c.ports || '—'}</dd>
-                        </dl>
+                        {/* Body — metadata + action bar pinned to the bottom. */}
+                        <div className="px-3 pb-2.5 pt-2 text-xs flex-1 flex flex-col">
+                          <div className="grid grid-cols-[5rem_1fr] gap-x-3 gap-y-1.5 mb-2">
+                            <HeaderLabel className="self-center">Image</HeaderLabel>
+                            <span className={cn(VALUE_PILL, 'truncate min-w-0')} title={c.image}>
+                              <span className="truncate">{c.image}</span>
+                            </span>
+                            <HeaderLabel className="self-center">Status</HeaderLabel>
+                            <span className={cn(VALUE_PILL, 'truncate min-w-0')} title={c.status}>
+                              <span className="truncate">{c.status || '—'}</span>
+                            </span>
+                            <HeaderLabel className="self-center">Ports</HeaderLabel>
+                            <span className={cn(VALUE_PILL, 'break-all min-w-0')} title={c.ports}>
+                              <span className="break-all">{c.ports || '—'}</span>
+                            </span>
+                          </div>
 
-                        {/* Action button bar (anchored to card bottom) */}
-                        <div className="mt-auto pt-2">
-                          <div className="inline-flex items-center rounded border border-border bg-background overflow-hidden">
-                            {cAction ? (
-                              <span className="h-7 w-14 inline-flex items-center justify-center text-muted-foreground">
-                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                              </span>
-                            ) : (
-                              <>
-                                <button
-                                  type="button"
-                                  disabled={!cIsStopped}
-                                  onClick={() => void handleStartContainer(selectedVmObj.name, c.id)}
-                                  className="h-7 w-7 inline-flex items-center justify-center text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed"
-                                  title={cIsStopped ? `Start ${c.name}` : `Already ${c.state}`}
-                                >
-                                  <Play className="h-3.5 w-3.5" />
-                                </button>
-                                <span className="h-5 w-px bg-border" aria-hidden />
-                                <button
-                                  type="button"
-                                  disabled={!cIsRunning}
-                                  onClick={() => void handleStopContainer(selectedVmObj.name, c.id)}
-                                  className="h-7 w-7 inline-flex items-center justify-center text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed"
-                                  title={cIsRunning ? `Stop ${c.name}` : `Already ${c.state}`}
-                                >
-                                  <Square className="h-3.5 w-3.5" />
-                                </button>
-                              </>
-                            )}
+                          <div className="mt-auto pt-1">
+                            <div className="inline-flex items-center rounded border border-border bg-background overflow-hidden">
+                              {cAction ? (
+                                <span className="h-7 w-14 inline-flex items-center justify-center text-muted-foreground">
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                </span>
+                              ) : (
+                                <>
+                                  <button
+                                    type="button"
+                                    disabled={!cIsStopped}
+                                    onClick={() => void handleStartContainer(selectedVmObj.name, c.id)}
+                                    className="h-7 w-7 inline-flex items-center justify-center text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed"
+                                    title={cIsStopped ? `Start ${c.name}` : `Already ${c.state}`}
+                                  >
+                                    <Play className="h-3.5 w-3.5" />
+                                  </button>
+                                  <span className="h-5 w-px bg-border" aria-hidden />
+                                  <button
+                                    type="button"
+                                    disabled={!cIsRunning}
+                                    onClick={() => void handleStopContainer(selectedVmObj.name, c.id)}
+                                    className="h-7 w-7 inline-flex items-center justify-center text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed"
+                                    title={cIsRunning ? `Stop ${c.name}` : `Already ${c.state}`}
+                                  >
+                                    <Square className="h-3.5 w-3.5" />
+                                  </button>
+                                </>
+                              )}
+                            </div>
                           </div>
                         </div>
                       </li>
