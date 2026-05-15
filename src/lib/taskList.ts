@@ -200,6 +200,25 @@ export function getTaskList(messages: ClaudeStreamMessage[]): TaskListEntry[] | 
 
   for (let i = 0; i < messages.length; i++) {
     const m = messages[i];
+
+    // Inline inference: a `result` message marks the end of an SDK turn.
+    // Any task that's still non-terminal at this point is "stranded" —
+    // the agent ended the turn without an explicit TaskUpdate(completed).
+    // Mark them completed in-place so:
+    //   (a) the bar matches the user's intuition ("agent said done, list
+    //       looks done") across reloads,
+    //   (b) the thinking-bubble gate (driven by tasks-in-flight) goes
+    //       quiet when the session is genuinely idle,
+    //   (c) the next TaskCreate's epoch-reset check sees an all-completed
+    //       map and clears the slate for the new batch.
+    if ((m as { type?: string }).type === 'result') {
+      for (const t of byToolUseId.values()) {
+        if (t.status !== 'completed') t.status = 'completed';
+      }
+      currentTaskId = null;
+      continue;
+    }
+
     const content = getMessageContent(m);
     if (!Array.isArray(content)) continue;
     const blocks = content as MessageContentBlock[];
@@ -309,26 +328,6 @@ export function getTaskList(messages: ClaudeStreamMessage[]): TaskListEntry[] | 
   }
 
   if (!sawCreate) return null;
-
-  // Post-pass inference: agents commonly forget the final
-  // TaskUpdate(completed) on the last task — they do the work and emit
-  // a summary, leaving the task stuck in_progress (or pending under the
-  // queue-fallback path). The SDK's `result` message marks turn end, so
-  // any task that still has work-in-flight at that point is treated as
-  // completed. Untouched pending tasks stay pending — we don't infer
-  // completion for work that never started.
-  const turnEnded = messages.some(
-    (m) => (m as { type?: string }).type === 'result',
-  );
-  if (turnEnded) {
-    for (const t of byToolUseId.values()) {
-      if (t.status === 'in_progress') {
-        t.status = 'completed';
-      } else if (t.status === 'pending' && t.messages.length > 0) {
-        t.status = 'completed';
-      }
-    }
-  }
 
   const entries: TaskListEntry[] = [...byToolUseId.values()]
     .sort((a, b) => a.order - b.order)

@@ -245,17 +245,55 @@ describe('getTaskList', () => {
     expect(result?.map((t) => t.status)).toEqual(['completed', 'completed']);
   });
 
-  it('leaves pending tasks pending when they accumulated no work, even after a result message', () => {
-    // Pure pending tasks — the agent never started the work and never
-    // attributed messages to them. The turn ended; we don't assume the
-    // agent secretly finished untouched tasks. They stay pending.
+  it('infers completion for a pending task with no messages once the turn has ended', () => {
+    // Earlier this case stayed pending forever — leaving "1 pending"
+    // stuck in the bar across reloads and keeping the thinking-bubble
+    // gate (driven by tasks-in-flight) lit. Once the agent's turn has
+    // ended via a result message, anything still pending is treated as
+    // abandoned-or-forgotten and marked completed.
     const resultMsg = { type: 'result', subtype: 'success', result: '' } as unknown as ClaudeStreamMessage;
     const result = getTaskList([
       taskCreateMsg('tu1', { subject: 'never touched' }),
       taskCreateResultMsg('tu1', '1'),
       resultMsg,
     ]);
+    expect(result?.[0].status).toBe('completed');
+  });
+
+  it('drops the prior batch and shows only the new post-result batch as mid-flight', () => {
+    // A previous turn ended (result fired) with one completed task,
+    // then the user sent another prompt and the agent created a fresh
+    // task. The new task hasn't been worked on yet — it should appear
+    // pending on its own, with the old batch cleared from the visible
+    // list (matches the "new list empties the old" epoch-boundary UX).
+    const oldResult = { type: 'result', subtype: 'success', result: '' } as unknown as ClaudeStreamMessage;
+    const result = getTaskList([
+      taskCreateMsg('tu1', { subject: 'finished long ago' }),
+      taskCreateResultMsg('tu1', '1'),
+      taskUpdateMsg('tu2', { taskId: '1', status: 'completed' }),
+      oldResult,
+      taskCreateMsg('tu3', { subject: 'mid-flight new task' }),
+      taskCreateResultMsg('tu3', '2'),
+    ]);
+    expect(result?.map((t) => t.subject)).toEqual(['mid-flight new task']);
     expect(result?.[0].status).toBe('pending');
+  });
+
+  it('clears the prior batch even when an old task was pending at result time', () => {
+    // The exact bug behind "5/6 done · 1 pending stuck across reloads":
+    // a pending task that never got attributed messages survived the
+    // result message and lingered into the next batch. Under the
+    // aggressive inference rule it's inferred-completed at result time,
+    // and then the next TaskCreate's epoch-reset clears it.
+    const oldResult = { type: 'result', subtype: 'success', result: '' } as unknown as ClaudeStreamMessage;
+    const result = getTaskList([
+      taskCreateMsg('tu1', { subject: 'untouched' }),
+      taskCreateResultMsg('tu1', '1'),
+      oldResult,
+      taskCreateMsg('tu2', { subject: 'fresh start' }),
+      taskCreateResultMsg('tu2', '2'),
+    ]);
+    expect(result?.map((t) => t.subject)).toEqual(['fresh start']);
   });
 
   it('leaves in_progress tasks alone when no result message has fired yet', () => {
