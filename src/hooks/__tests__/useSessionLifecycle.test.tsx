@@ -363,6 +363,88 @@ describe('useSessionLifecycle — unmount cleanup', () => {
 });
 
 describe('useSessionLifecycle — fetchInitInfo enrichment', () => {
+  it('keeps polling mcpServerStatus while any server is pending, then stops once every server is terminal', async () => {
+    // Under SDK 0.3.x MCP servers connect in the background; slow servers
+    // surface as `status: 'pending'` in the first init response. We must
+    // re-poll until every server reaches a terminal state — connected,
+    // failed, needs-auth, or disabled — so the renderer's tool list isn't
+    // permanently missing tools from a still-warming server.
+    vi.useFakeTimers();
+    try {
+      (api.startSession as any).mockResolvedValueOnce(undefined);
+      (api.sessionAccountInfo as any).mockResolvedValue({
+        name: 'work', account_type: 'pro', config_dir: '/cfg',
+      });
+      (api.sessionSupportedModels as any).mockResolvedValue([]);
+      (api.sessionSupportedCommands as any).mockResolvedValue([]);
+      (api.sessionContextUsage as any).mockResolvedValue(null);
+      // First poll: foo connected with one tool, bar still warming up.
+      // Second poll: both servers connected.
+      (api.sessionMcpServerStatus as any)
+        .mockResolvedValueOnce([
+          { name: 'foo', status: 'connected', tools: [{ name: 'a' }] },
+          { name: 'bar', status: 'pending' },
+        ])
+        .mockResolvedValueOnce([
+          { name: 'foo', status: 'connected', tools: [{ name: 'a' }] },
+          { name: 'bar', status: 'connected', tools: [{ name: 'b' }] },
+        ]);
+
+      const { result } = renderHook(harness());
+      await act(async () => { await result.current.lifecycle.startPersistentSession(); });
+      // Flush the first poll's microtasks.
+      await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+
+      let init = result.current.messagesRef.current[0] as any;
+      expect(init.tools).toContain('mcp__foo__a');
+      expect(init.tools).not.toContain('mcp__bar__b');
+      expect(api.sessionMcpServerStatus).toHaveBeenCalledTimes(1);
+
+      // Advance past the 1500ms re-poll wait. After the second poll the
+      // pending server has flipped to connected and its tool is merged in.
+      await act(async () => { await vi.advanceTimersByTimeAsync(1500); });
+
+      init = result.current.messagesRef.current[0] as any;
+      expect(init.tools).toContain('mcp__foo__a');
+      expect(init.tools).toContain('mcp__bar__b');
+      expect(api.sessionMcpServerStatus).toHaveBeenCalledTimes(2);
+
+      // Now every server is terminal — no third poll should ever fire.
+      await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+      expect(api.sessionMcpServerStatus).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('stops polling when every server is in a non-pending terminal state (failed / needs-auth / disabled)', async () => {
+    vi.useFakeTimers();
+    try {
+      (api.startSession as any).mockResolvedValueOnce(undefined);
+      (api.sessionAccountInfo as any).mockResolvedValue({
+        name: 'work', account_type: 'pro', config_dir: '/cfg',
+      });
+      (api.sessionSupportedModels as any).mockResolvedValue([]);
+      (api.sessionSupportedCommands as any).mockResolvedValue([]);
+      (api.sessionContextUsage as any).mockResolvedValue(null);
+      (api.sessionMcpServerStatus as any).mockResolvedValueOnce([
+        { name: 'a', status: 'failed' },
+        { name: 'b', status: 'needs-auth' },
+        { name: 'c', status: 'disabled' },
+      ]);
+
+      const { result } = renderHook(harness());
+      await act(async () => { await result.current.lifecycle.startPersistentSession(); });
+      await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+      expect(api.sessionMcpServerStatus).toHaveBeenCalledTimes(1);
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+      expect(api.sessionMcpServerStatus).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('writes account info, supported models/commands, context usage and re-upserts init with MCP tools', async () => {
     (api.startSession as any).mockResolvedValueOnce(undefined);
     (api.sessionAccountInfo as any).mockResolvedValue({

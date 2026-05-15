@@ -169,6 +169,24 @@ export function useSessionLifecycle({
     });
   };
 
+  // SDK MCP server statuses we treat as terminal — once every server is in
+  // one of these we stop re-polling. `pending` is the only non-terminal
+  // status under SDK 0.3.x, which connects slow MCP servers in the
+  // background; if we stopped on first response we'd miss tools from any
+  // server still warming up.
+  const TERMINAL_MCP_STATUSES: ReadonlySet<string> = new Set([
+    "connected", "failed", "needs-auth", "disabled",
+  ]);
+
+  const computeMcpToolNames = (mcpServers: import("@/lib/api").SessionMcpServerStatus[]): string[] =>
+    mcpServers
+      .filter((s) => s.status === "connected")
+      .flatMap((s) =>
+        (s.tools || []).map(
+          (t) => `mcp__${s.name.replace(/[^a-zA-Z0-9]/g, "_")}__${t.name}`,
+        ),
+      );
+
   // Fetch SDK-derived metadata (account info, supported models/commands, MCP
   // tool list, context usage) once the CLI subprocess is responsive on its
   // control channel. Claude Code's CLI doesn't answer control queries until
@@ -177,48 +195,61 @@ export function useSessionLifecycle({
   // status badge from 'Starting…' to 'Active' the moment the first response
   // lands so the UI matches reality.
   const fetchInitInfo = async () => {
-    while (isMountedRef.current) {
+    // Phase 1: poll sessionAccountInfo until the control channel answers.
+    let info: import("@/lib/api").SessionAccountInfo | null = null;
+    while (isMountedRef.current && !info) {
       try {
-        const info = await Promise.race([
+        info = await Promise.race([
           api.sessionAccountInfo(tabId),
           new Promise<null>((resolve) => setTimeout(() => { resolve(null); }, 2000)),
         ]);
-        if (info) {
-          setSdkAccountInfo(info);
-          // Mirror the rebind path (setIsSessionStarting(false) +
-          // setIsSessionActive(true)) — the session has answered, so it's no
-          // longer "Starting…". Without this, downstream consumers that
-          // distinguish starting vs. active (e.g. the tab status popover)
-          // get stuck on "Starting…" forever.
-          setIsSessionStarting(false);
-          setIsSessionActive(true);
-
-          const [models, mcpServers, ctxUsage, commands] = await Promise.all([
-            api.sessionSupportedModels(tabId).catch(() => []),
-            api.sessionMcpServerStatus(tabId).catch(() => []),
-            api.sessionContextUsage(tabId).catch(() => null),
-            api.sessionSupportedCommands(tabId).catch((err: unknown) => {
-              console.error('[fetchInitInfo] supportedCommands call failed:', err);
-              return [];
-            }),
-          ]);
-          if (models?.length) setSupportedModels(models);
-          if (commands?.length) setSupportedCommands(commands);
-          if (ctxUsage) setContextUsage(ctxUsage);
-
-          const mcpToolNames = (mcpServers || [])
-            .filter((s: any) => s.status === "connected")
-            .flatMap((s: any) =>
-              (s.tools || []).map(
-                (t: any) =>
-                  `mcp__${s.name.replace(/[^a-zA-Z0-9]/g, "_")}__${t.name}`,
-              ),
-            );
-          upsertInitMessage([...STANDARD_TOOLS, ...mcpToolNames]);
-          return;
-        }
       } catch {
         /* subprocess not ready yet */
+      }
+      if (!info) {
+        if (!isMountedRef.current) return;
+        await new Promise((r) => setTimeout(r, 1500));
+      }
+    }
+    if (!info) return;
+
+    setSdkAccountInfo(info);
+    // Mirror the rebind path — the session has answered, so it's no
+    // longer "Starting…". Without this, downstream consumers that
+    // distinguish starting vs. active (e.g. the tab status popover)
+    // get stuck on "Starting…" forever.
+    setIsSessionStarting(false);
+    setIsSessionActive(true);
+
+    // Phase 2: fetch the one-shot enrichment data (models, commands,
+    // context usage) once.
+    const [models, ctxUsage, commands] = await Promise.all([
+      api.sessionSupportedModels(tabId).catch(() => []),
+      api.sessionContextUsage(tabId).catch(() => null),
+      api.sessionSupportedCommands(tabId).catch((err: unknown) => {
+        console.error('[fetchInitInfo] supportedCommands call failed:', err);
+        return [];
+      }),
+    ]);
+    if (models?.length) setSupportedModels(models);
+    if (commands?.length) setSupportedCommands(commands);
+    if (ctxUsage) setContextUsage(ctxUsage);
+
+    // Phase 3: poll mcpServerStatus until every server reaches a terminal
+    // state. Under SDK 0.3.x slow servers report `status: 'pending'` from
+    // the first init response until they finish their background connect.
+    // Each successful poll re-upserts the init message so freshly-connected
+    // tools appear without waiting for the rest.
+    while (isMountedRef.current) {
+      let mcpServers: import("@/lib/api").SessionMcpServerStatus[] | null = null;
+      try {
+        mcpServers = await api.sessionMcpServerStatus(tabId);
+      } catch {
+        /* transient — keep polling */
+      }
+      if (mcpServers) {
+        upsertInitMessage([...STANDARD_TOOLS, ...computeMcpToolNames(mcpServers)]);
+        if (mcpServers.every((s) => TERMINAL_MCP_STATUSES.has(s.status))) return;
       }
       if (!isMountedRef.current) return;
       await new Promise((r) => setTimeout(r, 1500));
