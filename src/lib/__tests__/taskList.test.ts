@@ -201,6 +201,75 @@ describe('getTaskList', () => {
     expect(result?.[1].messages).toEqual([work]);      // B
   });
 
+  it('infers completion for an in_progress task when a result message ended the turn', () => {
+    // Agents commonly forget the final TaskUpdate(completed) on the last
+    // task — they do the work and emit a summary, leaving the task stuck
+    // in_progress. The `result` message proves the turn finished, so on
+    // reload the task should still appear as completed (matches the live
+    // session's apparent state and the user's intuition that "the work
+    // is done, the task is done").
+    const work = assistantText('working on it');
+    const resultMsg = {
+      type: 'result',
+      subtype: 'success',
+      result: 'all done',
+    } as unknown as ClaudeStreamMessage;
+    const result = getTaskList([
+      taskCreateMsg('tu1', { subject: 'finish this' }),
+      taskCreateResultMsg('tu1', '1'),
+      taskUpdateMsg('tu2', { taskId: '1', status: 'in_progress' }),
+      work,
+      resultMsg,
+    ]);
+    expect(result?.[0].status).toBe('completed');
+  });
+
+  it('infers completion for a pending task that accumulated messages, after a result message', () => {
+    // Queue-fallback case: agent never used in_progress, just batched
+    // TaskCreates and TaskUpdate(completed)d one by one. If the last
+    // task in the batch got attributed work but never explicitly
+    // completed, treat it as completed at turn end.
+    const work = assistantText('did the work for the last one');
+    const resultMsg = { type: 'result', subtype: 'success', result: '' } as unknown as ClaudeStreamMessage;
+    const result = getTaskList([
+      taskCreateMsg('tu1', { subject: 'A' }),
+      taskCreateResultMsg('tu1', '1'),
+      taskCreateMsg('tu2', { subject: 'B' }),
+      taskCreateResultMsg('tu2', '2'),
+      taskUpdateMsg('tu3', { taskId: '1', status: 'completed' }),
+      // B becomes the queue head, accumulates `work`, but never gets
+      // an explicit TaskUpdate(completed) before the turn ends.
+      work,
+      resultMsg,
+    ]);
+    expect(result?.map((t) => t.status)).toEqual(['completed', 'completed']);
+  });
+
+  it('leaves pending tasks pending when they accumulated no work, even after a result message', () => {
+    // Pure pending tasks — the agent never started the work and never
+    // attributed messages to them. The turn ended; we don't assume the
+    // agent secretly finished untouched tasks. They stay pending.
+    const resultMsg = { type: 'result', subtype: 'success', result: '' } as unknown as ClaudeStreamMessage;
+    const result = getTaskList([
+      taskCreateMsg('tu1', { subject: 'never touched' }),
+      taskCreateResultMsg('tu1', '1'),
+      resultMsg,
+    ]);
+    expect(result?.[0].status).toBe('pending');
+  });
+
+  it('leaves in_progress tasks alone when no result message has fired yet', () => {
+    // Mid-turn — the agent is genuinely still working. No inference.
+    const work = assistantText('still going');
+    const result = getTaskList([
+      taskCreateMsg('tu1', { subject: 'in flight' }),
+      taskCreateResultMsg('tu1', '1'),
+      taskUpdateMsg('tu2', { taskId: '1', status: 'in_progress' }),
+      work,
+    ]);
+    expect(result?.[0].status).toBe('in_progress');
+  });
+
   it('stops attributing once every task is terminal', () => {
     const between = assistantText('a comment with nothing to attribute to');
     const result = getTaskList([

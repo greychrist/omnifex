@@ -310,6 +310,26 @@ export function getTaskList(messages: ClaudeStreamMessage[]): TaskListEntry[] | 
 
   if (!sawCreate) return null;
 
+  // Post-pass inference: agents commonly forget the final
+  // TaskUpdate(completed) on the last task — they do the work and emit
+  // a summary, leaving the task stuck in_progress (or pending under the
+  // queue-fallback path). The SDK's `result` message marks turn end, so
+  // any task that still has work-in-flight at that point is treated as
+  // completed. Untouched pending tasks stay pending — we don't infer
+  // completion for work that never started.
+  const turnEnded = messages.some(
+    (m) => (m as { type?: string }).type === 'result',
+  );
+  if (turnEnded) {
+    for (const t of byToolUseId.values()) {
+      if (t.status === 'in_progress') {
+        t.status = 'completed';
+      } else if (t.status === 'pending' && t.messages.length > 0) {
+        t.status = 'completed';
+      }
+    }
+  }
+
   const entries: TaskListEntry[] = [...byToolUseId.values()]
     .sort((a, b) => a.order - b.order)
     .map((t) => {
