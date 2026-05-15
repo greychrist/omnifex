@@ -180,6 +180,10 @@ export interface Services {
     startContainer(vmName: string, containerId: string): Promise<void>;
     stopContainer(vmName: string, containerId: string): Promise<void>;
   };
+  filesystem?: {
+    listDirectoryContents(directoryPath: string): Promise<unknown[]>;
+    searchFiles(basePath: string, query: string): Promise<unknown[]>;
+  };
 }
 
 // The handler type used in the map — receives the IPC event plus the params
@@ -238,7 +242,7 @@ function wrapWith<P>(fn: (params: P) => unknown): HandlerFn {
  * renderer gets a defined (but empty) response rather than a blocked channel.
  */
 export function getHandlerMap(services: Services = {}): Record<string, HandlerFn> {
-  const { accounts, claude, sessions, usage, rateLimits, usageRunner, claudeBinary, mcp, slashCommands, sessionsSummary, logging, database, proxy, permissionsIO, models, sdkVersion, gitWatcher, branchColors, gitBranches, lima } = services;
+  const { accounts, claude, sessions, usage, rateLimits, usageRunner, claudeBinary, mcp, slashCommands, sessionsSummary, logging, database, proxy, permissionsIO, models, sdkVersion, gitWatcher, branchColors, gitBranches, lima, filesystem } = services;
 
   const map: Record<string, HandlerFn> = {
     // ── Accounts ──────────────────────────────────────────────────────────────
@@ -677,6 +681,19 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
       if (!vmName || !containerId || !lima) return null;
       await lima.stopContainer(vmName, containerId);
       return null;
+    }),
+
+    // ── Filesystem (FilePicker @-mention browser) ─────────────────────────────
+    list_directory_contents: wrapWith((p: Record<string, unknown>) => {
+      const directoryPath = (p?.directoryPath ?? p?.directory_path) as string;
+      if (!directoryPath) throw new Error('directoryPath is required');
+      return filesystem?.listDirectoryContents(directoryPath) ?? [];
+    }),
+    search_files: wrapWith((p: Record<string, unknown>) => {
+      const basePath = (p?.basePath ?? p?.base_path) as string;
+      const query = (p?.query as string) ?? '';
+      if (!basePath) throw new Error('basePath is required');
+      return filesystem?.searchFiles(basePath, query) ?? [];
     }),
   };
 

@@ -155,6 +155,10 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   'lima_start_container',
   'lima_stop_container',
 
+  // Filesystem (FilePicker @-mention browser)
+  'list_directory_contents',
+  'search_files',
+
   // SDK version
   'get_referenced_sdk_version',
   'get_latest_sdk_version',

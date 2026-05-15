@@ -53,6 +53,7 @@ import { createProxyService } from './services/proxy';
 import { createMCPService } from './services/mcp';
 import { createModelsService } from './services/models';
 import { createSlashCommandsService } from './services/slash-commands';
+import { createFilesystemService } from './services/filesystem';
 import {
   createSessionsSummaryService,
   DEFAULT_SUMMARY_PROMPT,
@@ -661,6 +662,7 @@ app.whenReady().then(() => {
   const branchColorsService = createBranchColorsService(db);
   const gitBranchesService = { list: listGitBranches };
   const limaService = createLimaService();
+  const filesystemService = createFilesystemService();
 
   registerIpcHandlers({
     database: db,
@@ -872,6 +874,7 @@ app.whenReady().then(() => {
       stopContainer: (vmName: string, containerId: string) =>
         limaService.stopContainer(vmName, containerId),
     },
+    filesystem: filesystemService,
   });
 
   ipcMain.handle('get_app_version', () => app.getVersion());
