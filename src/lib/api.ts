@@ -1810,6 +1810,26 @@ export const api = {
   },
 
   /**
+   * Play a notification sound for preview purposes. The renderer can't reach
+   * `afplay` directly, so the main process resolves the sound ID and shells
+   * out. Resolves to `{ played: false, path: null }` when the ID is unknown
+   * or the choice is "none".
+   */
+  async previewNotificationSound(
+    id: string,
+  ): Promise<{ played: boolean; path: string | null }> {
+    try {
+      return await apiCall<{ played: boolean; path: string | null }>(
+        'preview_notification_sound',
+        { id },
+      );
+    } catch (error) {
+      console.error(`Failed to preview notification sound ${id}:`, error);
+      return { played: false, path: null };
+    }
+  },
+
+  /**
    * Get hooks configuration for a specific scope.
    * `configDir` is required for the `user` scope so we never silently read ~/.claude.
    */

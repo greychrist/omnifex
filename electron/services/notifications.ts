@@ -10,11 +10,23 @@ export interface NotificationClickPayload {
   tabId?: string;
 }
 
+export interface NotificationSoundResolution {
+  /** Absolute file path to feed `afplay` when the window is focused. `null` skips playback. */
+  afplayPath: string | null;
+  /** Value for macOS `Notification.sound`. `null` makes the notification silent. */
+  nativeName: string | null;
+}
+
 export interface NotificationsDeps {
   createNotification: (opts: NotificationConstructorOptions) => NotificationLike;
   isSupported: () => boolean;
   playSound: (path: string) => void;
-  getSoundPath: (isError: boolean) => string;
+  /**
+   * Resolves the user's currently-configured sound for the given event class.
+   * Called once per `show()` so picker changes take effect immediately
+   * without restarting the service.
+   */
+  resolveSound: (isError: boolean) => NotificationSoundResolution;
   isWindowFocused: () => boolean;
   focusWindow: () => void;
   onNotificationClick?: (payload: NotificationClickPayload) => void;
@@ -47,8 +59,10 @@ export function createNotificationsService(deps: NotificationsDeps): Notificatio
     show(title, body, isError, payload, options) {
       if (!deps.isSupported()) return;
 
+      const sound = deps.resolveSound(isError);
+
       if (deps.isWindowFocused()) {
-        deps.playSound(deps.getSoundPath(isError));
+        if (sound.afplayPath) deps.playSound(sound.afplayPath);
         return;
       }
 
@@ -56,8 +70,8 @@ export function createNotificationsService(deps: NotificationsDeps): Notificatio
         title,
         subtitle: options?.subtitle ?? (isError ? 'Task Failed' : 'Task Complete'),
         body,
-        silent: false,
-        sound: isError ? 'Basso' : 'greychrist_success',
+        silent: sound.nativeName === null,
+        ...(sound.nativeName ? { sound: sound.nativeName } : {}),
       });
 
       active.add(notif);

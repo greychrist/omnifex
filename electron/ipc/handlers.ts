@@ -184,6 +184,9 @@ export interface Services {
     listDirectoryContents(directoryPath: string): Promise<unknown[]>;
     searchFiles(basePath: string, query: string): Promise<unknown[]>;
   };
+  notificationSounds?: {
+    preview(id: string): { played: boolean; path: string | null };
+  };
 }
 
 // The handler type used in the map — receives the IPC event plus the params
@@ -242,7 +245,7 @@ function wrapWith<P>(fn: (params: P) => unknown): HandlerFn {
  * renderer gets a defined (but empty) response rather than a blocked channel.
  */
 export function getHandlerMap(services: Services = {}): Record<string, HandlerFn> {
-  const { accounts, claude, sessions, usage, rateLimits, usageRunner, claudeBinary, mcp, slashCommands, sessionsSummary, logging, database, proxy, permissionsIO, models, sdkVersion, gitWatcher, branchColors, gitBranches, lima, filesystem } = services;
+  const { accounts, claude, sessions, usage, rateLimits, usageRunner, claudeBinary, mcp, slashCommands, sessionsSummary, logging, database, proxy, permissionsIO, models, sdkVersion, gitWatcher, branchColors, gitBranches, lima, filesystem, notificationSounds } = services;
 
   const map: Record<string, HandlerFn> = {
     // ── Accounts ──────────────────────────────────────────────────────────────
@@ -582,6 +585,9 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
       database?.saveSetting(p?.key as string, p?.value as string);
       return null;
     }),
+    preview_notification_sound: wrapWith((p: Record<string, unknown>) =>
+      notificationSounds?.preview((p?.id ?? '') as string) ?? { played: false, path: null },
+    ),
 
     // ── Git ──────────────────────────────────────────────────────────────────
     get_git_branch: wrapWith(async (p: Record<string, unknown>) => {

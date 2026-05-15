@@ -198,6 +198,7 @@ describe('ipc handlers — structure', () => {
       'storage_execute_sql',
       'get_setting',
       'save_setting',
+      'preview_notification_sound',
       // Proxy
       'get_proxy_settings',
       // Git

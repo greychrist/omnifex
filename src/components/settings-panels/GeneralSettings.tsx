@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import {
   AlertCircle,
   Check,
+  Volume2,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -24,6 +25,14 @@ import { APP_FONT_CHOICES } from "@/lib/typefaceCatalog";
 import { TabPersistenceService } from "@/services/tabPersistence";
 import type { SettingsPanelProps } from "./types";
 import { fireAndLog, logAndForget } from "@/lib/fireAndLog";
+import {
+  NOTIFICATION_SOUND_CHOICES,
+  NOTIFICATION_SOUND_SETTING_KEYS,
+  DEFAULT_SUCCESS_SOUND,
+  DEFAULT_ERROR_SOUND,
+  normalizeNotificationSoundId,
+  type NotificationSoundId,
+} from "@/lib/notificationSounds";
 
 // This panel no longer reads from `<configDir>/settings.json`. The three
 // keys it used to expose (`includeCoAuthoredBy`, `verbose`,
@@ -69,6 +78,8 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
   // in app_settings and read lazily by the main-process updater on every
   // check, so changes here take effect immediately without a restart.
   const [localUpdateDir, setLocalUpdateDir] = useState<string>('');
+  const [successSound, setSuccessSound] = useState<NotificationSoundId>(DEFAULT_SUCCESS_SOUND);
+  const [errorSound, setErrorSound] = useState<NotificationSoundId>(DEFAULT_ERROR_SOUND);
 
   useEffect(() => {
     setTabPersistenceEnabled(TabPersistenceService.isEnabled());
@@ -77,8 +88,32 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
       setStartupIntroEnabled(pref === null ? true : pref === 'true');
       const dir = await api.getSetting('local_update_dir');
       setLocalUpdateDir(dir ?? '');
+      const successRaw = await api.getSetting(NOTIFICATION_SOUND_SETTING_KEYS.success);
+      setSuccessSound(normalizeNotificationSoundId(successRaw, DEFAULT_SUCCESS_SOUND));
+      const errorRaw = await api.getSetting(NOTIFICATION_SOUND_SETTING_KEYS.error);
+      setErrorSound(normalizeNotificationSoundId(errorRaw, DEFAULT_ERROR_SOUND));
     })());
   }, []);
+
+  const saveSound = async (
+    kind: 'success' | 'error',
+    next: NotificationSoundId,
+  ) => {
+    const key = NOTIFICATION_SOUND_SETTING_KEYS[kind];
+    try {
+      await api.saveSetting(key, next);
+      if (next !== 'none') {
+        // Fire-and-forget preview so the user hears the change immediately.
+        void api.previewNotificationSound(next);
+      }
+      setToast({
+        message: `${kind === 'success' ? 'Success' : 'Error'} sound updated`,
+        type: 'success',
+      });
+    } catch {
+      setToast({ message: 'Failed to save notification sound', type: 'error' });
+    }
+  };
 
   const saveLocalUpdateDir = async (next: string) => {
     try {
@@ -233,6 +268,113 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
                 }
               })}
             />
+          </div>
+
+          {/* Notification Sounds — pick what plays when a task completes
+              (success) and when one fails (error). Choices persist as
+              `notification_sound_success` / `notification_sound_error` in
+              app_settings and take effect on the next notification without
+              a restart. Selecting "No sound" makes the OS notification
+              silent and skips afplay while the window is focused. */}
+          <div className="border-t border-border pt-4 mt-2" />
+          <div className="space-y-3">
+            <div>
+              <Label>Notification Sounds</Label>
+              <p className="text-caption text-muted-foreground mt-1">
+                Choose what plays when a task finishes. Changing a sound
+                previews it; the test button replays the current choice.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-between gap-3">
+              <Label htmlFor="notif-sound-success" className="text-body-small">
+                Success sound
+              </Label>
+              <div className="flex items-center gap-2">
+                <div className="w-48">
+                  <Select
+                    value={successSound}
+                    onValueChange={fireAndLog(
+                      'general-settings:value-change',
+                      (v) => {
+                        const next = normalizeNotificationSoundId(v, DEFAULT_SUCCESS_SOUND);
+                        setSuccessSound(next);
+                        void saveSound('success', next);
+                      },
+                    )}
+                  >
+                    <SelectTrigger id="notif-sound-success">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {NOTIFICATION_SOUND_CHOICES.map((c) => (
+                        <SelectItem key={c.id} value={c.id}>
+                          {c.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={successSound === 'none'}
+                  onClick={fireAndLog('general-settings:click', () =>
+                    api.previewNotificationSound(successSound),
+                  )}
+                  title="Play test sound"
+                  aria-label="Play test success sound"
+                >
+                  <Volume2 className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between gap-3">
+              <Label htmlFor="notif-sound-error" className="text-body-small">
+                Error sound
+              </Label>
+              <div className="flex items-center gap-2">
+                <div className="w-48">
+                  <Select
+                    value={errorSound}
+                    onValueChange={fireAndLog(
+                      'general-settings:value-change',
+                      (v) => {
+                        const next = normalizeNotificationSoundId(v, DEFAULT_ERROR_SOUND);
+                        setErrorSound(next);
+                        void saveSound('error', next);
+                      },
+                    )}
+                  >
+                    <SelectTrigger id="notif-sound-error">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {NOTIFICATION_SOUND_CHOICES.map((c) => (
+                        <SelectItem key={c.id} value={c.id}>
+                          {c.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={errorSound === 'none'}
+                  onClick={fireAndLog('general-settings:click', () =>
+                    api.previewNotificationSound(errorSound),
+                  )}
+                  title="Play test sound"
+                  aria-label="Play test error sound"
+                >
+                  <Volume2 className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
           </div>
 
           {/* Update Source Folder */}

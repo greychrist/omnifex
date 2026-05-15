@@ -132,6 +132,7 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   'storage_reset_database',
   'get_setting',
   'save_setting',
+  'preview_notification_sound',
 
   // Branch colors
   'branch_colors_list',

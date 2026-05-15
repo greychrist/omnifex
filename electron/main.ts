@@ -44,6 +44,12 @@ import { createAccountsService } from './services/accounts';
 import { createClaudeBinaryService } from './services/claude-binary';
 import { createSessionsService } from './services/sessions';
 import { createNotificationsService } from './services/notifications';
+import {
+  createNotificationSoundsService,
+  resolveNotificationSound,
+  isNotificationSoundId,
+  type NotificationSoundId,
+} from './services/notification-sounds';
 import { createClaudeService } from './services/claude';
 import { createUsageService } from './services/usage';
 import { createRateLimitsService } from './services/rate-limits';
@@ -406,7 +412,16 @@ app.whenReady().then(() => {
       });
     },
   });
-  const successSound = 'greychrist_success';
+  // Resolves the user's currently-configured sound from app_settings on every
+  // call so picker changes take effect without restarting the service. Falls
+  // back to the historical defaults (OmniFex chime / Basso) when the keys are
+  // missing or hold a value not in the catalog.
+  const readConfiguredSound = (isError: boolean): NotificationSoundId => {
+    const key = isError ? 'notification_sound_error' : 'notification_sound_success';
+    const raw = db.getSetting(key);
+    if (isNotificationSoundId(raw)) return raw;
+    return isError ? 'Basso' : 'greychrist_success';
+  };
   const notificationsService = _notificationsService = createNotificationsService({
     isSupported: () => Notification.isSupported(),
     isWindowFocused: () => anyWindowFocused(),
@@ -414,12 +429,12 @@ app.whenReady().then(() => {
     onNotificationClick: ({ tabId }) => {
       if (tabId) sendToRenderer('notification-clicked', { tabId });
     },
-    getSoundPath: (isError) =>
-      isError
-        ? '/System/Library/Sounds/Basso.aiff'
-        : app.isPackaged
-          ? path.join(process.resourcesPath, 'assets', `${successSound}.aiff`)
-          : path.join(app.getAppPath(), 'assets', `${successSound}.aiff`),
+    resolveSound: (isError) =>
+      resolveNotificationSound(readConfiguredSound(isError), {
+        appPath: app.getAppPath(),
+        resourcesPath: process.resourcesPath,
+        isPackaged: app.isPackaged,
+      }),
     playSound: (soundPath) => {
       // eslint-disable-next-line @typescript-eslint/no-require-imports -- intentional lazy load; only needed when a notification actually plays a sound.
       const { execFile } = require('node:child_process') as typeof import('node:child_process');
@@ -664,6 +679,19 @@ app.whenReady().then(() => {
   const limaService = createLimaService();
   const filesystemService = createFilesystemService();
 
+  const notificationSoundsService = createNotificationSoundsService({
+    appPath: app.getAppPath(),
+    resourcesPath: process.resourcesPath,
+    isPackaged: app.isPackaged,
+    play: (soundPath) => {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports -- intentional lazy load; only needed when the renderer requests a preview.
+      const { execFile } = require('node:child_process') as typeof import('node:child_process');
+      execFile('afplay', [soundPath], (err: Error | null) => {
+        if (err) console.error('[notification-preview] afplay failed:', err.message);
+      });
+    },
+  });
+
   registerIpcHandlers({
     database: db,
     // Accounts adapter — maps handler interface to service methods
@@ -875,6 +903,7 @@ app.whenReady().then(() => {
         limaService.stopContainer(vmName, containerId),
     },
     filesystem: filesystemService,
+    notificationSounds: notificationSoundsService,
   });
 
   ipcMain.handle('get_app_version', () => app.getVersion());

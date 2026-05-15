@@ -65,7 +65,10 @@ function makeHarness(): Harness {
     focusWindow,
     onNotificationClick,
     playSound,
-    getSoundPath: (isError: boolean) => (isError ? '/error.aiff' : '/success.aiff'),
+    resolveSound: (isError: boolean) =>
+      isError
+        ? { afplayPath: '/error.aiff', nativeName: 'Basso' }
+        : { afplayPath: '/success.aiff', nativeName: 'greychrist_success' },
     createNotification: (opts) => {
       const n = makeFakeNotification(opts);
       created.push(n);
@@ -137,6 +140,46 @@ describe('notifications service', () => {
       });
     });
 
+    it('skips afplay when the resolved sound is "none" and the window is focused', () => {
+      const created: FakeNotification[] = [];
+      const playSound = vi.fn();
+      const svc = createNotificationsService({
+        isSupported: () => true,
+        isWindowFocused: () => true,
+        focusWindow: vi.fn(),
+        playSound,
+        resolveSound: () => ({ afplayPath: null, nativeName: null }),
+        createNotification: (opts) => {
+          const n = makeFakeNotification(opts);
+          created.push(n);
+          return n;
+        },
+      });
+      svc.show('T', 'B', false);
+      expect(playSound).not.toHaveBeenCalled();
+      expect(created).toHaveLength(0);
+    });
+
+    it('posts a silent notification when the resolved sound is "none" and the window is unfocused', () => {
+      const created: FakeNotification[] = [];
+      const svc = createNotificationsService({
+        isSupported: () => true,
+        isWindowFocused: () => false,
+        focusWindow: vi.fn(),
+        playSound: vi.fn(),
+        resolveSound: () => ({ afplayPath: null, nativeName: null }),
+        createNotification: (opts) => {
+          const n = makeFakeNotification(opts);
+          created.push(n);
+          return n;
+        },
+      });
+      svc.show('T', 'B', false);
+      expect(created).toHaveLength(1);
+      expect(created[0].options).toMatchObject({ silent: true });
+      expect((created[0].options as { sound?: string }).sound).toBeUndefined();
+    });
+
     it('honors a custom subtitle override', () => {
       h.service.show('OmniFex', 'Pick a side?', false, { tabId: 't1' }, { subtitle: 'Question' });
       expect(h.created[0].options).toMatchObject({
@@ -172,7 +215,7 @@ describe('notifications service', () => {
         isWindowFocused: () => false,
         focusWindow: vi.fn(),
         playSound: vi.fn(),
-        getSoundPath: () => '/s.aiff',
+        resolveSound: () => ({ afplayPath: '/s.aiff', nativeName: 'greychrist_success' }),
         createNotification: (opts) => {
           const n = makeFakeNotification(opts);
           created.push(n);
