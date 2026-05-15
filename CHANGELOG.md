@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.36] — 2026-05-15
+
+Claude Agent SDK 0.3.142 upgrade. The release notes flag three breaking changes; two of them required actual code work, the third (`unstable_v2_*` / `SDKSession*` symbol removal) was already cleared in v0.4.14 and only left stale doc-comments behind. Two of the three changes are user-visible — slow MCP servers no longer "disappear" from the tool list, and the live todo list keeps working under the new per-task event model. The third is internal.
+
+Installers remain **unsigned**.
+
+### Changed
+
+- **Claude Agent SDK bumped to `0.3.142`** (from `0.2.141`). Two related surface changes in our code (described below) plus a sweep through `electron/main.ts` and `electron/services/sessions/summary-query.ts` to drop stale doc-comments referencing the long-removed `unstable_v2_prompt` API.
+- **MCP server connections under SDK 0.3.x complete in the background.** Slow MCP servers now report `status: 'pending'` in the first init response rather than blocking the SDK for up to 5s like 0.2.x did. `useSessionLifecycle`'s `fetchInitInfo` previously snapshotted that one response, so any tools from a server still warming up stayed missing from the renderer's tool list for the rest of the session. `fetchInitInfo` is now structured in three explicit phases — account-info poll, one-shot enrichment (models / commands / context usage), then a polling loop on `mcpServerStatus` that re-upserts the synthetic `system:init` message every 1.5s until every server reports a terminal status (`connected | failed | needs-auth | disabled`). Freshly-connected tools appear without waiting for the slowest server.
+
+### Fixed
+
+- **Live todo list keeps working under SDK 0.3.x's per-task event model.** The SDK replaced the snapshot-shaped `TodoWrite` tool (one tool_use carrying a `todos[]` array) with discrete `TaskCreate(subject, description, activeForm?)` and `TaskUpdate(taskId, status?, subject?, …)` tool_use blocks; there is no longer a single tool_use that carries the full list, so `getLatestTodos` reading the snapshot off the last `TodoWrite` returned nothing. The function is rewritten as an accumulator that walks tool_use + tool_result blocks and reduces a keyed-by-`task_id` map: tasks are seeded by `tool_use.id` on `TaskCreate` (so the row appears optimistically before the server-assigned id arrives back on the tool_result), then re-keyed to the assigned `task_id`; subsequent `TaskUpdate` calls patch status / subject / activeForm; `TaskUpdate(status: 'deleted')` drops the row. Creation order is preserved across renames and status flips. The `TodoBar` consumer needed no change.
+
+### Removed
+
+- **The per-tool `TodoWidget` and its associated render pipeline.** Per-block rendering doesn't fit the new `TaskCreate` / `TaskUpdate` shape (each call is a small atomic mutation, not a list snapshot); the live list is already surfaced inline by `TodoBar`. `compactGrouping` no longer carves out a "most recent TodoWrite" promotion. `messageFilters` drops `todowrite` from the tool-result-suppression list (with no widget, the tool_result must render normally instead of being silently dropped). `KNOWN_TOOL_NAMES` drops `TodoWrite` — old JSONLs render via the generic JSON path. `sessionStreamReducer` gains per-`Task*` activity labels; `hiddenEventsSummary`'s `todo` bucket is extended to recognize the new tool names; `SystemWidget` gets icon entries for `TaskCreate` / `TaskUpdate` / `TaskGet` / `TaskList`; `useSessionLifecycle`'s `STANDARD_TOOLS` list adds `TaskCreate` / `TaskGet` / `TaskList` / `TaskUpdate` alongside the already-present `TaskOutput` / `TaskStop`.
+
 ## [0.4.35] — 2026-05-14
 
 Three user-visible fixes plus the architectural cleanup that closed the bug class behind one of them. The Resend regression on resumed sessions was the immediately visible symptom; the dual-shape `content` field that caused it was costing the renderer ~70 branching sites and producing roughly one quiet bug per year. Closed at the IPC / JSONL boundary instead of at every read site.
