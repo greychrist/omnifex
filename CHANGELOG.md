@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.37] — 2026-05-15
+
+Single-fix follow-up to 0.4.36. The SDK-upgrade release rewrote `latestTodos` to accumulate per-task state from the new `TaskCreate` / `TaskUpdate` event stream, but the rewrite shipped against a fabricated wire shape: the unit-test fixture treated the `tool_result` block's `content` field as a JSON-stringified `{ task: { id } }` payload, so the implementation tried to `JSON.parse` it. The real shape — verified against live session JSONL under `~/.claude-personal/projects/.../*.jsonl` — is that `tool_result.content` is a plain-English string ("Task #1 created successfully: …") and the structured `{ task: { id } }` payload rides on the OUTER SDK user message envelope as `tool_use_result` (snake_case, live stream) or `toolUseResult` (camelCase, persisted JSONL replay). `JSON.parse` failed on every TaskCreate result, the task id was never registered, every subsequent `TaskUpdate(taskId)` was silently dropped, and the TodoBar effectively never advanced beyond `pending`. 0.4.36's unit tests covered the (wrong) contract perfectly — they did not catch the real bug.
+
+Installers remain **unsigned**.
+
+### Fixed
+
+- **TodoBar now actually reflects `TaskCreate` / `TaskUpdate` activity.** `src/lib/latestTodos.ts` replaces `parseTaskIdFromResult(content)` with `extractTaskIdFromEnvelope(m)`, which reads `tool_use_result` or `toolUseResult` off the parent SDK user message envelope and accepts only string ids. The test helper was rewritten to mint envelopes that mirror real JSONL records, and a dedicated regression test for the camelCase JSONL-replay variant was added so the snake_case vs camelCase wire-shape distinction can't quietly regress again.
+
 ## [0.4.36] — 2026-05-15
 
 Claude Agent SDK 0.3.142 upgrade. The release notes flag three breaking changes; two of them required actual code work, the third (`unstable_v2_*` / `SDKSession*` symbol removal) was already cleared in v0.4.14 and only left stale doc-comments behind. Two of the three changes are user-visible — slow MCP servers no longer "disappear" from the tool list, and the live todo list keeps working under the new per-task event model. The third is internal.
