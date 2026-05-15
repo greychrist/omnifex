@@ -106,6 +106,36 @@ function coerceSdkStatus(s: unknown): TaskStatus | 'deleted' | null {
 }
 
 /**
+ * Pick the task an incoming work-message belongs to. Used by getTaskList's
+ * attribution pass.
+ *
+ *   1. Explicit in_progress wins — if the agent took the trouble to mark
+ *      a task in_progress, we trust that signal even when the queue
+ *      order would suggest otherwise.
+ *   2. Otherwise fall back to the EARLIEST non-terminal task in creation
+ *      order — the "next up" item in the queue. This catches the common
+ *      batched-up-front workflow where the agent creates A, B, C all at
+ *      once and never bothers with in_progress updates.
+ *   3. If every task is terminal, return null so nothing is attributed.
+ */
+function pickAttributionTarget(
+  byToolUseId: Map<string, InternalTask>,
+  byTaskId: Map<string, InternalTask>,
+  currentTaskId: string | null,
+): InternalTask | null {
+  if (currentTaskId !== null) {
+    const explicit = byTaskId.get(currentTaskId);
+    if (explicit && explicit.status !== 'completed') return explicit;
+  }
+  let earliest: InternalTask | null = null;
+  for (const t of byToolUseId.values()) {
+    if (t.status === 'completed') continue;
+    if (earliest === null || t.order < earliest.order) earliest = t;
+  }
+  return earliest;
+}
+
+/**
  * Inspect the message's top-level content blocks and decide whether the
  * message should be attributed to the currently-in_progress task. Returns
  * false when the message is "structural" (TaskCreate / TaskUpdate
@@ -174,8 +204,6 @@ export function getTaskList(messages: ClaudeStreamMessage[]): TaskListEntry[] | 
     if (!Array.isArray(content)) continue;
     const blocks = content as MessageContentBlock[];
 
-    let drovenStateMachine = false;
-
     for (const block of blocks) {
       if (!block || typeof block !== 'object') continue;
 
@@ -207,7 +235,6 @@ export function getTaskList(messages: ClaudeStreamMessage[]): TaskListEntry[] | 
             }
           }
           sawCreate = true;
-          drovenStateMachine = true;
           const subject = typeof input.subject === 'string'
             ? input.subject
             : typeof input.description === 'string'
@@ -228,7 +255,6 @@ export function getTaskList(messages: ClaudeStreamMessage[]): TaskListEntry[] | 
           if (!taskId) continue;
           const task = byTaskId.get(taskId);
           if (!task) continue;
-          drovenStateMachine = true;
           const mappedStatus = coerceSdkStatus(input.status);
           if (mappedStatus === 'deleted') {
             byTaskId.delete(taskId);
@@ -258,20 +284,25 @@ export function getTaskList(messages: ClaudeStreamMessage[]): TaskListEntry[] | 
         if (taskId) {
           task.taskId = taskId;
           byTaskId.set(taskId, task);
-          drovenStateMachine = true;
         }
       }
     }
 
-    // Attribution: messages that DIDN'T drive the state machine (i.e.
-    // real work output) and were emitted while a task is in_progress get
-    // attributed to that task. A mixed message that both drove the state
-    // machine AND contains attributable content gets a relaxed pass
-    // through isAttributable() so its non-Task* blocks aren't lost.
-    if (currentTaskId === null) continue;
-    if (drovenStateMachine && !isAttributable(m)) continue;
-    if (!drovenStateMachine && !isAttributable(m)) continue;
-    const target = byTaskId.get(currentTaskId);
+    // Attribution rule:
+    //   1. If a task is explicitly in_progress, the message belongs to it.
+    //   2. Otherwise, the message belongs to the EARLIEST non-terminal
+    //      task in the current epoch — the "next up" task in the queue.
+    //      This is necessary because the Task* primitive doesn't ship
+    //      per-task progress events, and many agents skip the in_progress
+    //      step entirely (TaskCreate batch → work → TaskUpdate completed),
+    //      which would otherwise leave every message unattributed.
+    //   3. If every task is terminal, nothing gets attributed.
+    //
+    // Structural messages (Task* tool_use / their tool_results) are
+    // filtered out by `isAttributable` so the panel never renders
+    // meta-rows about itself.
+    if (!isAttributable(m)) continue;
+    const target = pickAttributionTarget(byToolUseId, byTaskId, currentTaskId);
     if (!target) continue;
     target.messages.push(m);
     target.messageIndices.push(i);

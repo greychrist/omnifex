@@ -138,15 +138,77 @@ describe('getTaskList', () => {
     expect(result?.[0].messageIndices).toHaveLength(2);
   });
 
-  it('attributes nothing to a task that never went in_progress (pending → completed direct)', () => {
-    const orphan = assistantText('this was emitted while nothing was in_progress');
+  it('falls back to earliest non-terminal task when no task is in_progress', () => {
+    // Common real-world case: the agent skips the in_progress step and
+    // goes TaskCreate → do work → TaskUpdate(completed). Without a
+    // fallback every message would be unattributed; the SDK doesn't ship
+    // a "this work belongs to that task" signal, so we use the queue
+    // ordering: until task #1 completes, work belongs to #1; then to #2;
+    // and so on.
+    const work = assistantText('working on the fast task');
     const result = getTaskList([
       taskCreateMsg('tu1', { subject: 'fast task' }),
       taskCreateResultMsg('tu1', '1'),
-      orphan,
+      work,
       taskUpdateMsg('tu2', { taskId: '1', status: 'completed' }),
     ]);
     expect(result?.[0].status).toBe('completed');
+    expect(result?.[0].messages).toEqual([work]);
+  });
+
+  it('attributes batched-up-front work to the right task by queue order (no in_progress used)', () => {
+    // Realistic batched flow: agent creates A, B, C up front, then does
+    // work and completes them one by one with no in_progress updates.
+    const a1 = assistantText('a-1');
+    const a2 = readToolUse('r1', '/a');
+    const b1 = assistantText('b-1');
+    const c1 = assistantText('c-1');
+    const result = getTaskList([
+      taskCreateMsg('tu1', { subject: 'A' }),
+      taskCreateResultMsg('tu1', '1'),
+      taskCreateMsg('tu2', { subject: 'B' }),
+      taskCreateResultMsg('tu2', '2'),
+      taskCreateMsg('tu3', { subject: 'C' }),
+      taskCreateResultMsg('tu3', '3'),
+      a1, a2,
+      taskUpdateMsg('tu4', { taskId: '1', status: 'completed' }),
+      b1,
+      taskUpdateMsg('tu5', { taskId: '2', status: 'completed' }),
+      c1,
+      taskUpdateMsg('tu6', { taskId: '3', status: 'completed' }),
+    ]);
+    expect(result?.[0].messages).toEqual([a1, a2]);
+    expect(result?.[1].messages).toEqual([b1]);
+    expect(result?.[2].messages).toEqual([c1]);
+  });
+
+  it('prefers an explicit in_progress task over the queue fallback', () => {
+    // If the agent DOES use in_progress, that overrides queue order
+    // even when the in_progress task is later in the queue.
+    const work = assistantText('working out of order');
+    const result = getTaskList([
+      taskCreateMsg('tu1', { subject: 'A' }),
+      taskCreateResultMsg('tu1', '1'),
+      taskCreateMsg('tu2', { subject: 'B' }),
+      taskCreateResultMsg('tu2', '2'),
+      // B explicitly marked in_progress despite A being earlier in queue
+      taskUpdateMsg('tu3', { taskId: '2', status: 'in_progress' }),
+      work,
+      taskUpdateMsg('tu4', { taskId: '2', status: 'completed' }),
+    ]);
+    // Work should belong to B (in_progress override), not A (queue fallback).
+    expect(result?.[0].messages).toEqual([]);          // A
+    expect(result?.[1].messages).toEqual([work]);      // B
+  });
+
+  it('stops attributing once every task is terminal', () => {
+    const between = assistantText('a comment with nothing to attribute to');
+    const result = getTaskList([
+      taskCreateMsg('tu1', { subject: 'A' }),
+      taskCreateResultMsg('tu1', '1'),
+      taskUpdateMsg('tu2', { taskId: '1', status: 'completed' }),
+      between,
+    ]);
     expect(result?.[0].messages).toEqual([]);
   });
 
