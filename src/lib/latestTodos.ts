@@ -1,4 +1,5 @@
-import type { ClaudeStreamMessage } from '@/types/claudeStream';
+import type { ClaudeStreamMessage, MessageContentBlock } from '@/types/claudeStream';
+import { getMessageContent } from '@/types/claudeStream';
 
 export type TodoStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled';
 
@@ -8,29 +9,135 @@ export interface TodoItem {
   activeForm?: string;
 }
 
-export function getLatestTodos(messages: ClaudeStreamMessage[]): TodoItem[] | null {
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const m = messages[i];
-    if (m.type !== 'assistant') continue;
-    const content = m.message?.content;
-    if (!Array.isArray(content)) continue;
-    for (const block of content) {
-      if (
-        block?.type === 'tool_use' &&
-        typeof block?.name === 'string' &&
-        block.name.toLowerCase() === 'todowrite'
-      ) {
-        // BetaToolUseBlock.input is typed as `unknown` (tool-shape-specific).
-        const input = (block.input ?? {}) as { todos?: unknown };
-        const todos = input.todos;
-        if (Array.isArray(todos) && todos.length > 0) {
-          return todos as TodoItem[];
+interface InternalTask {
+  toolUseId: string;
+  taskId?: string;
+  subject: string;
+  status: TodoStatus;
+  activeForm?: string;
+  order: number;
+}
+
+// TaskCreate's tool_result content carries the server-assigned task id. The
+// SDK ships it as a JSON string on `content`, but some replay paths wrap it
+// in a single text content block; accept both shapes.
+function parseTaskIdFromResult(content: unknown): string | null {
+  const tryParse = (raw: string): string | null => {
+    try {
+      const obj = JSON.parse(raw) as { task?: { id?: unknown } };
+      const id = obj?.task?.id;
+      return typeof id === 'string' ? id : null;
+    } catch {
+      return null;
+    }
+  };
+  if (typeof content === 'string') return tryParse(content);
+  if (Array.isArray(content)) {
+    for (const b of content) {
+      if (b && typeof b === 'object' && (b as { type?: unknown }).type === 'text') {
+        const text = (b as { text?: unknown }).text;
+        if (typeof text === 'string') {
+          const id = tryParse(text);
+          if (id) return id;
         }
-        return null;
       }
     }
   }
   return null;
+}
+
+function coerceSdkStatus(s: unknown): TodoStatus | 'deleted' | null {
+  if (s === 'pending' || s === 'in_progress' || s === 'completed') return s;
+  if (s === 'deleted') return 'deleted';
+  return null;
+}
+
+/**
+ * Reduce the live message stream into the current todo list under SDK 0.3.x.
+ *
+ * Where the legacy SDK shipped one snapshot-shaped `TodoWrite` tool_use
+ * per turn, the new model drives per-task mutations through discrete
+ * `TaskCreate(subject, description, activeForm?)` and
+ * `TaskUpdate(taskId, status?, subject?, activeForm?)` tool_use blocks.
+ * `TaskCreate`'s server-assigned `task.id` rides back on the corresponding
+ * `tool_result`; subsequent `TaskUpdate` calls reference that id.
+ *
+ * The accumulator keys in-flight rows by `tool_use.id` immediately so the
+ * UI can show a freshly-created task before its tool_result arrives, then
+ * re-keys to the assigned `task_id` as soon as we see it. `TaskUpdate`
+ * with `status: 'deleted'` drops the row entirely.
+ */
+export function getLatestTodos(messages: ClaudeStreamMessage[]): TodoItem[] | null {
+  const byToolUseId = new Map<string, InternalTask>();
+  const byTaskId = new Map<string, InternalTask>();
+  let order = 0;
+  let sawCreate = false;
+
+  for (const m of messages) {
+    const content = getMessageContent(m);
+    if (!Array.isArray(content)) continue;
+    for (const block of content as MessageContentBlock[]) {
+      if (!block || typeof block !== 'object') continue;
+
+      if (block.type === 'tool_use') {
+        const name = typeof block.name === 'string' ? block.name.toLowerCase() : '';
+        const input = block.input;
+        if (name === 'taskcreate') {
+          if (!block.id) continue;
+          sawCreate = true;
+          const subject = typeof input.subject === 'string'
+            ? input.subject
+            : typeof input.description === 'string'
+              ? input.description
+              : '';
+          const task: InternalTask = {
+            toolUseId: block.id,
+            subject,
+            status: 'pending',
+            activeForm: typeof input.activeForm === 'string' ? input.activeForm : undefined,
+            order: order++,
+          };
+          byToolUseId.set(block.id, task);
+        } else if (name === 'taskupdate') {
+          const taskId = typeof input.taskId === 'string' ? input.taskId : undefined;
+          if (!taskId) continue;
+          const task = byTaskId.get(taskId);
+          if (!task) continue;
+          const mappedStatus = coerceSdkStatus(input.status);
+          if (mappedStatus === 'deleted') {
+            byTaskId.delete(taskId);
+            byToolUseId.delete(task.toolUseId);
+            continue;
+          }
+          if (mappedStatus) task.status = mappedStatus;
+          if (typeof input.subject === 'string') task.subject = input.subject;
+          if (typeof input.activeForm === 'string') task.activeForm = input.activeForm;
+        }
+      } else if (block.type === 'tool_result') {
+        const id = block.tool_use_id;
+        if (!id) continue;
+        const task = byToolUseId.get(id);
+        if (!task || task.taskId) continue;
+        const taskId = parseTaskIdFromResult(block.content);
+        if (taskId) {
+          task.taskId = taskId;
+          byTaskId.set(taskId, task);
+        }
+      }
+    }
+  }
+
+  if (!sawCreate) return null;
+
+  const items: TodoItem[] = [...byToolUseId.values()]
+    .sort((a, b) => a.order - b.order)
+    .map((t) => {
+      const item: TodoItem = { content: t.subject, status: t.status };
+      if (t.activeForm) item.activeForm = t.activeForm;
+      return item;
+    });
+
+  return items.length > 0 ? items : null;
 }
 
 export function summarizeTodos(todos: TodoItem[]): {

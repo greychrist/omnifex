@@ -6,7 +6,6 @@
  * thin ToolWidgets.tsx dispatcher that re-exports us).
  */
 
-export { TodoWidget } from "./TodoWidget";
 export { LSWidget, LSResultWidget } from "./LSWidget";
 export { ReadWidget, ReadResultWidget } from "./ReadWidget";
 export { GlobWidget } from "./GlobWidget";

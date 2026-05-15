@@ -41,7 +41,10 @@ function bucketTool(name: string): keyof Counts {
   if (n === 'grep' || n === 'glob' || n === 'ls' || n === 'find') return 'search';
   if (n === 'websearch' || n === 'webfetch') return 'web';
   if (n === 'task') return 'task';
-  if (n === 'todowrite' || n === 'todoread') return 'todo';
+  if (
+    n === 'todowrite' || n === 'todoread' ||
+    n === 'taskcreate' || n === 'taskupdate' || n === 'taskget' || n === 'tasklist'
+  ) return 'todo';
   return 'otherTool';
 }
 

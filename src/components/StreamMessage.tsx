@@ -41,7 +41,6 @@ import {
 import { AnsweredAskUserQuestionCard } from "@/components/AnsweredAskUserQuestionCard";
 import { fireAndLog, logAndForget } from "@/lib/fireAndLog";
 import {
-  TodoWidget,
   TodoReadWidget,
   LSWidget,
   ReadWidget,
@@ -753,13 +752,6 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                       if (toolName?.startsWith('mcp__')) {
                         renderedSomething = true;
                         return <MCPWidget toolName={toolName} input={rawInput as Record<string, unknown> | undefined} result={toolResult} />;
-                      }
-
-                      // TodoWrite
-                      const todoWriteInput = asToolInput(toolName, 'TodoWrite', rawInput);
-                      if (todoWriteInput?.todos) {
-                        renderedSomething = true;
-                        return <TodoWidget todos={todoWriteInput.todos} result={toolResult} />;
                       }
 
                       // TodoRead — input is empty by contract; widget reads

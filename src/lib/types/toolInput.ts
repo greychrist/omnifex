@@ -32,7 +32,6 @@ import type {
   FileWriteInput,
   GlobInput,
   GrepInput,
-  TodoWriteInput,
   WebFetchInput,
   WebSearchInput,
 } from '@anthropic-ai/claude-agent-sdk/sdk-tools';
@@ -85,7 +84,6 @@ export const KNOWN_TOOL_NAMES = [
   'Write',
   'Glob',
   'Grep',
-  'TodoWrite',
   'TodoRead',
   'LS',
   'WebFetch',
@@ -120,7 +118,6 @@ export interface ToolInputByName {
   Write: FileWriteInput;
   Glob: GlobInput;
   Grep: GrepInputExtended;
-  TodoWrite: TodoWriteInput;
   TodoRead: TodoReadInput;
   LS: LSInput;
   WebFetch: WebFetchInput;

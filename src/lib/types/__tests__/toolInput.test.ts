@@ -144,7 +144,7 @@ describe('KNOWN_TOOL_NAMES / TOOLS_WITH_WIDGETS_LOWER', () => {
     expect(new Set(KNOWN_TOOL_NAMES)).toEqual(
       new Set([
         'Bash', 'Edit', 'MultiEdit', 'Read', 'Write', 'Glob', 'Grep',
-        'TodoWrite', 'TodoRead', 'LS', 'WebFetch', 'WebSearch',
+        'TodoRead', 'LS', 'WebFetch', 'WebSearch',
         'Task', 'Agent',
       ]),
     );

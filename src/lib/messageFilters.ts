@@ -121,7 +121,6 @@ export function filterDisplayableMessages(
                     const toolsWithWidgets = [
                       "edit",
                       "multiedit",
-                      "todowrite",
                       "ls",
                       "read",
                       "glob",

@@ -15,29 +15,15 @@ import { classifyBlockKind } from './blockKind';
  * still renders normally — its hidden blocks get a per-message
  * `HiddenBlocksExpander` inside `StreamMessage`.
  *
- * Special carve-out: the most recent `TodoWrite` tool_use is always
- * promoted to a top-level visible card so the live todo list stays
- * inspectable even when `assistant.toolUse` is hidden.
+ * Under SDK 0.3.x the live todo list is surfaced by `TodoBar` at the top
+ * of the chat (driven by the per-task `TaskCreate` / `TaskUpdate` stream),
+ * so there's no longer a single snapshot tool_use to carve out and
+ * promote here.
  */
 
 export type CompactItem =
   | { kind: 'single'; message: ClaudeStreamMessage; key: string }
   | { kind: 'group'; messages: ClaudeStreamMessage[]; key: string };
-
-function hasTodoWriteToolUse(msg: ClaudeStreamMessage): boolean {
-  const content = getMessageContent(msg);
-  if (!Array.isArray(content)) return false;
-  return (content as MessageContentBlock[]).some(
-    (c) => c.type === 'tool_use' && c.name.toLowerCase() === 'todowrite',
-  );
-}
-
-function findLastTodoWriteIndex(messages: ClaudeStreamMessage[]): number {
-  for (let i = messages.length - 1; i >= 0; i--) {
-    if (hasTodoWriteToolUse(messages[i])) return i;
-  }
-  return -1;
-}
 
 function isRenderableBlock(b: MessageContentBlock | null | undefined): boolean {
   if (!b || typeof b !== 'object') return false;
@@ -105,12 +91,10 @@ export function buildCompactItems(
   messages: ClaudeStreamMessage[],
   config: MessageRenderingConfig,
 ): CompactItem[] {
-  const latestTodoIdx = findLastTodoWriteIndex(messages);
   const items: CompactItem[] = [];
 
   messages.forEach((message, idx) => {
-    const isLatestTodo = idx === latestTodoIdx;
-    const fullyHidden = !isLatestTodo && isMessageFullyHidden(message, messages, config);
+    const fullyHidden = isMessageFullyHidden(message, messages, config);
 
     if (!fullyHidden) {
       items.push({ kind: 'single', message, key: `m-${idx}` });

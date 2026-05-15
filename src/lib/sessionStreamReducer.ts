@@ -174,6 +174,19 @@ const TOOL_LABEL_BUILDERS: Record<
       typeof i.subagent_type === 'string' ? ` (${i.subagent_type})` : ''
     }`,
   TodoWrite: () => 'Updating todos',
+  TaskCreate: (i) =>
+    `Adding todo${
+      typeof i.subject === 'string' ? `: ${(i.subject).slice(0, 60)}` : ''
+    }`,
+  TaskUpdate: (i) => {
+    const status = typeof i.status === 'string' ? i.status : '';
+    if (status === 'completed') return 'Completing todo';
+    if (status === 'in_progress') return 'Starting todo';
+    if (status === 'deleted') return 'Removing todo';
+    return 'Updating todo';
+  },
+  TaskList: () => 'Listing todos',
+  TaskGet: () => 'Reading todo',
 };
 
 function toolUseLabel(name: string, input: Record<string, unknown>): string {

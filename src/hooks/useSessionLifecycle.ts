@@ -135,7 +135,8 @@ export function useSessionLifecycle({
     "EnterPlanMode", "EnterWorktree", "ExitPlanMode", "ExitWorktree", "Glob",
     "Grep", "ListMcpResourcesTool", "LSP", "Monitor", "NotebookEdit",
     "NotebookRead", "Read", "ReadMcpResourceTool", "RemoteTrigger",
-    "ScheduleWakeup", "SendMessage", "Skill", "TaskOutput", "TaskStop",
+    "ScheduleWakeup", "SendMessage", "Skill",
+    "TaskCreate", "TaskGet", "TaskList", "TaskOutput", "TaskStop", "TaskUpdate",
     "TeamCreate", "TeamDelete", "TodoRead", "TodoWrite", "Toolbox", "WebFetch",
     "WebSearch", "Write",
   ];

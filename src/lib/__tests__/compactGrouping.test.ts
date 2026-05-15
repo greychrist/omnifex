@@ -129,62 +129,6 @@ describe('buildCompactItems', () => {
     }
   });
 
-  it('promotes the latest TodoWrite tool_use as a visible single', () => {
-    const cfg = createDefaultConfig();
-    const latestTodo = toolUseMsg('TodoWrite', { todos: [{ content: 'x', status: 'in_progress' }] });
-    const msgs = [
-      userText('do stuff'),
-      toolUseMsg('Read', { file_path: '/a' }),
-      toolResultMsg(),
-      latestTodo,
-      toolResultMsg(),
-      toolUseMsg('Bash', { command: 'ls' }),
-      toolResultMsg(),
-      assistantEndTurn('done'),
-    ];
-    const items = buildCompactItems(msgs, cfg);
-    // user + group(Read+result) + latestTodo(single) + group(result+Bash+result) + assistant
-    expect(items.map((i: CompactItem) => i.kind)).toEqual([
-      'single',
-      'group',
-      'single',
-      'group',
-      'single',
-    ]);
-    const promoted = items[2];
-    if (promoted.kind === 'single') {
-      expect(promoted.message).toBe(latestTodo);
-    }
-  });
-
-  it('only promotes the LAST TodoWrite when multiple exist', () => {
-    const cfg = createDefaultConfig();
-    const earlierTodo = toolUseMsg('TodoWrite', { todos: [{ content: 'a', status: 'pending' }] });
-    const latestTodo = toolUseMsg('TodoWrite', { todos: [{ content: 'a', status: 'in_progress' }] });
-    const msgs = [
-      userText('work'),
-      earlierTodo,
-      toolResultMsg(),
-      toolUseMsg('Bash', { command: 'ls' }),
-      toolResultMsg(),
-      latestTodo,
-      toolResultMsg(),
-      assistantEndTurn('done'),
-    ];
-    const items = buildCompactItems(msgs, cfg);
-    expect(items.map((i: CompactItem) => i.kind)).toEqual([
-      'single',
-      'group',
-      'single',
-      'group',
-      'single',
-    ]);
-    const firstGroup = items[1];
-    if (firstGroup.kind === 'group') {
-      expect(firstGroup.messages).toContain(earlierTodo);
-    }
-  });
-
   it('renders a partially-hidden assistant message as a visible single', () => {
     const cfg = createDefaultConfig();
     const mixed = assistantWithBlocks([

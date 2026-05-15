@@ -8,7 +8,6 @@
  */
 
 export {
-  TodoWidget,
   LSWidget,
   LSResultWidget,
   ReadWidget,

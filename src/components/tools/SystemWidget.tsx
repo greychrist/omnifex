@@ -175,6 +175,10 @@ export const SystemInitializedWidget: React.FC<{
     'webfetch': Globe,
     'todoread': ListChecks,
     'todowrite': ListPlus,
+    'taskcreate': ListPlus,
+    'taskupdate': ListChecks,
+    'taskget': ListChecks,
+    'tasklist': ListChecks,
     'websearch': Globe2,
   };
 
