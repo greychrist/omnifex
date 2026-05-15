@@ -3025,7 +3025,12 @@ describe('sessions service — full lifecycle', () => {
       svc.stopAll();
     });
 
-    it('TaskCompleted hook logs + emits task_event + triggers notification', async () => {
+    it('TaskCompleted hook logs + emits task_event but does NOT trigger a notification', async () => {
+      // OS-level notifications + tab-unread badges on every task completion
+      // are noise — under the SDK 0.3.x Task* primitive the agent typically
+      // creates a batch of 3-10 todos per turn, and a notification per
+      // completion floods the user. The log row + chat-stream task_event
+      // are kept; the dock/badge/native notification calls are dropped.
       const writeBatch = vi.fn();
       const fakeLogging = { writeBatch, query: vi.fn(), count: vi.fn(), prune: vi.fn() };
       const svc = createSessionsService(sendToRenderer as any, { showNotification: showNotification as any, incrementUnread: incrementUnread as any }, fakeLogging);
@@ -3038,7 +3043,8 @@ describe('sessions service — full lifecycle', () => {
       expect(writeBatch.mock.calls[0][0][0].message).toContain('task completed: Fix bug');
       const outputCall = sendToRenderer.mock.calls.find((c) => c[0] === 'claude-output:h-tcomp' && (c[1])?.subtype === 'task_event' && (c[1])?.event === 'completed');
       expect(outputCall).toBeDefined();
-      expect(showNotification).toHaveBeenCalled();
+      expect(showNotification).not.toHaveBeenCalled();
+      expect(incrementUnread).not.toHaveBeenCalled();
 
       svc.stopAll();
     });

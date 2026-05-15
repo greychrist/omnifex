@@ -89,7 +89,6 @@ export function createSessionsService(
     const options = buildSdkOptions(params, {
       tabId,
       sendToRenderer,
-      notificationHooks,
       logging,
       onElicitationRequest: (_request) =>
         new Promise<ElicitationDecision>((resolve) => {

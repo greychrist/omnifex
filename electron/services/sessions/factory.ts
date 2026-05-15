@@ -11,7 +11,6 @@ import { buildClaudeEnv } from '../util/claude-env';
 import type {
   SessionStartParams,
   SendToRenderer,
-  NotificationHooks,
   LoggingService,
   ElicitationDecision,
 } from './types';
@@ -23,7 +22,6 @@ export { findSystemClaudeBinary } from './binary';
 export interface BuildSdkOptionsDeps {
   tabId: string;
   sendToRenderer: SendToRenderer;
-  notificationHooks: NotificationHooks;
   logging: LoggingService | null;
   /**
    * Called when the SDK requests an elicitation. The factory wires this
@@ -44,7 +42,7 @@ export function buildSdkOptions(
   params: SessionStartParams,
   deps: BuildSdkOptionsDeps,
 ): Record<string, unknown> {
-  const { tabId, sendToRenderer, notificationHooks, logging, onElicitationRequest } = deps;
+  const { tabId, sendToRenderer, logging, onElicitationRequest } = deps;
   const { projectPath, configDir, model, permissionMode, resumeSessionId, effort, thinking } = params;
 
   const options: Record<string, unknown> = {
@@ -200,7 +198,7 @@ export function buildSdkOptions(
   }
 
   // Audit hooks — createSessionHooks handles null logging internally
-  options.hooks = createSessionHooks(tabId, logging, sendToRenderer, notificationHooks);
+  options.hooks = createSessionHooks(tabId, logging, sendToRenderer);
 
   // Resolve the binary up front so the SDK doesn't fall back to its own
   // bundled copy when a system install is available. Fail fast with an

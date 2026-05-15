@@ -22,7 +22,7 @@ import type {
   TaskCreatedHookInput,
   UserPromptSubmitHookInput,
 } from '@anthropic-ai/claude-agent-sdk';
-import type { LoggingService, SendToRenderer, NotificationHooks } from './types';
+import type { LoggingService, SendToRenderer } from './types';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -48,7 +48,6 @@ export function createSessionHooks(
   tabId: string,
   logging: LoggingService | null,
   sendToRenderer: SendToRenderer,
-  notificationHooks: NotificationHooks,
 ): Record<string, unknown> {
   if (!logging) return {};
 
@@ -494,6 +493,11 @@ export function createSessionHooks(
     ],
 
     // ---- #20 TaskCompleted ----
+    // The Log row + chat-stream task_event stay; the OS-level notification
+    // + dock-unread badge are intentionally NOT fired. Under the SDK 0.3.x
+    // Task primitive the agent typically creates a batch of 3-10 todos per
+    // turn, so a notification per completion floods the user. The TaskList
+    // panel already surfaces per-task status visually.
     TaskCompleted: [
       {
         hooks: [
@@ -513,10 +517,6 @@ export function createSessionHooks(
                 task_description: input.task_description,
                 teammate_name: input.teammate_name, team_name: input.team_name,
               });
-              try {
-                notificationHooks.showNotification?.(`Task Complete: ${input.task_subject}`, input.teammate_name ? `Completed by ${input.teammate_name}` : 'Task finished', false, { tabId });
-                notificationHooks.incrementUnread?.();
-              } catch { /* notification optional */ }
             } catch (err) { console.error('[sessions] TaskCompleted hook failed:', err); }
             return {};
           },
