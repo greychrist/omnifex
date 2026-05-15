@@ -27,11 +27,13 @@ function taskCreateMsg(
 }
 
 function taskCreateResultMsg(blockId: string, taskId: string): ClaudeStreamMessage {
-  // The TaskCreate tool_result content is a human-readable string
-  // ("Task #1 created successfully: …"). The structured `{ task: { id } }`
-  // payload rides on the OUTER SDK user message as `tool_use_result`
-  // (snake_case on the live SDK stream, camelCase `toolUseResult` in
-  // persisted JSONL — handle both).
+  // LIVE SDK stream shape — verified against the CLI's bundled
+  // `mapToolResultToToolResultBlockParam`, which generates exactly:
+  //   { tool_use_id, type: 'tool_result',
+  //     content: `Task #${q.id} created successfully: ${q.subject}` }
+  // and ships NO `tool_use_result` envelope. The structured
+  // `{ task: { id } }` payload is only attached when the CLI persists
+  // the row to JSONL (see `taskCreateResultMsgJsonl` below).
   return {
     type: 'user',
     message: {
@@ -41,11 +43,12 @@ function taskCreateResultMsg(blockId: string, taskId: string): ClaudeStreamMessa
         content: `Task #${taskId} created successfully: unused`,
       }],
     },
-    tool_use_result: { task: { id: taskId, subject: 'unused' } },
   } as unknown as ClaudeStreamMessage;
 }
 
-/** JSONL-replay shape: same envelope, camelCase `toolUseResult` field name. */
+/** JSONL-replay shape: same content string PLUS the camelCase `toolUseResult`
+ *  envelope the CLI writes to disk. Verified against a real session at
+ *  ~/.claude-personal/projects/-Users-gregorychristie-Repos-personal-WIN/. */
 function taskCreateResultMsgJsonl(blockId: string, taskId: string): ClaudeStreamMessage {
   return {
     type: 'user',
