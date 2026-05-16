@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, cleanup } from "@testing-library/react";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 // MarkdownBlock (rendered for markdown fences) calls useTheme(); mock so
 // jsdom doesn't need a ThemeProvider.
@@ -117,6 +118,32 @@ describe("buildMarkdownComponents", () => {
     expect(code).toBeTruthy();
     // Newlines preserved in the rendered text.
     expect(code?.textContent ?? "").toContain("line-one\nline-two\nline-three");
+  });
+
+  it("re-render with the same components prop preserves the inner code DOM node", () => {
+    // Regression: StreamMessage used to rebuild `mdComponents` on every
+    // render. ReactMarkdown saw a new `components` prop, re-rendered its
+    // tree, and the inner SyntaxHighlighter created fresh DOM nodes —
+    // wiping any active text selection inside the inner code card.
+    // With a stable `components` prop, React's reconciler must keep the
+    // <code> DOM node identical across re-renders.
+    const components = buildMarkdownComponents({});
+    const remarkPlugins = [remarkGfm];
+    const md = "```typescript\nconst x = 1;\n```\n";
+    const { container, rerender } = render(
+      <ReactMarkdown remarkPlugins={remarkPlugins} components={components}>
+        {md}
+      </ReactMarkdown>,
+    );
+    const codeBefore = container.querySelector("code");
+    expect(codeBefore).toBeTruthy();
+    rerender(
+      <ReactMarkdown remarkPlugins={remarkPlugins} components={components}>
+        {md}
+      </ReactMarkdown>,
+    );
+    const codeAfter = container.querySelector("code");
+    expect(codeAfter).toBe(codeBefore);
   });
 
   it("renders code with no language as plain <code> (inline code path)", () => {

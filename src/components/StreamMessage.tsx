@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   Terminal,
   AlertCircle,
@@ -67,6 +67,11 @@ import {
   SystemInitializedWidget,
   SystemContextWidget
 } from "./ToolWidgets";
+
+// Stable module-level reference: ReactMarkdown re-renders if `remarkPlugins`
+// is a new array each call, which rebuilds nested Prism syntax-highlighted
+// code blocks and kills active text selection in the inner card.
+const REMARK_PLUGINS = [remarkGfm];
 
 /** Extract all meaningful text from a message for copying.
  *  Assumes content is already an array — see lib/normalizeMessage for the
@@ -276,10 +281,13 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
   // State to track tool results mapped by tool call ID
   const [toolResults, setToolResults] = useState<Map<string, MessageContentBlock>>(new Map());
   
-  // Get current theme
+  // Get current theme. Memoize the derived theme + components map so
+  // ReactMarkdown sees stable prop references across renders — without
+  // this, every render rebuilds the Prism-highlighted code DOM and the
+  // browser drops any active text selection inside the inner code card.
   const { theme } = useTheme();
-  const syntaxTheme = getClaudeSyntaxTheme(theme);
-  const mdComponents = buildMarkdownComponents(syntaxTheme);
+  const syntaxTheme = useMemo(() => getClaudeSyntaxTheme(theme), [theme]);
+  const mdComponents = useMemo(() => buildMarkdownComponents(syntaxTheme), [syntaxTheme]);
 
   // Per-kind accent colors, live-reload from Appearance settings
   const { config: renderConfig } = useMessageRenderingConfig();
@@ -577,7 +585,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                     renderedSomething = true;
                     return (
                       <div key={idx} className="prose prose-sm dark:prose-invert max-w-none">
-                        <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
+                        <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={mdComponents}>
                           {textContent}
                         </ReactMarkdown>
                       </div>
@@ -1424,7 +1432,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
 
                 {message.subtype === 'success' && message.result && (
                   <div className="prose prose-sm dark:prose-invert max-w-none">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
+                    <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={mdComponents}>
                       {message.result}
                     </ReactMarkdown>
                   </div>

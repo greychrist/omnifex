@@ -1020,6 +1020,21 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     [sendPromptRaw],
   );
 
+  // Stable resend callback. Without memoization, every render of this
+  // component handed every `StreamMessage` a fresh `onResend` function ref,
+  // which defeated `React.memo` and forced the inner `ReactMarkdown` →
+  // `SyntaxHighlighter` tree to rebuild — wiping any active text selection
+  // inside the inner code card.
+  const handleResend = useCallback(
+    (text: string, images: string[] | undefined) =>
+      handleSendPrompt(text, selectedModel, images),
+    [handleSendPrompt, selectedModel],
+  );
+  const onResendStable = useMemo(
+    () => fireAndLog('claude-code-session:resend', handleResend),
+    [handleResend],
+  );
+
   // Populate the late-bound entries on streamCtxRef now that the hooks
   // that own them have run. handleStreamMessage reads these through the
   // ref so it never needs to list them as deps (which would cycle, since
@@ -1431,7 +1446,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                     streamMessages={messages}
                     onLinkDetected={handleLinkDetected}
                     accountType={accountResolution?.account.account_type}
-                    onResend={fireAndLog('claude-code-session:resend', (text, images) => handleSendPrompt(text, selectedModel, images))}
+                    onResend={onResendStable}
                   />
                 </div>
               ))
@@ -1446,7 +1461,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                         onLinkDetected={handleLinkDetected}
                         accountType={accountResolution?.account.account_type}
                         compact
-                        onResend={fireAndLog('claude-code-session:resend', (text, images) => handleSendPrompt(text, selectedModel, images))}
+                        onResend={onResendStable}
                       />
                     </div>
                   ) : (
@@ -1456,7 +1471,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                       streamMessages={messages}
                       accountType={accountResolution?.account.account_type}
                       onLinkDetected={handleLinkDetected}
-                      onResend={fireAndLog('claude-code-session:resend', (text, images) => handleSendPrompt(text, selectedModel, images))}
+                      onResend={onResendStable}
                     />
                   ),
                 );
