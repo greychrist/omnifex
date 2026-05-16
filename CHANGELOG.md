@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.41] — 2026-05-15
+
+Fixes a slash-command input quirk where typed commands took an extra Enter to clear.
+
+Installers remain **unsigned**.
+
+### Fixed
+
+- **Slash command no longer needs three Enters.** After picking a command, AnimatePresence kept the `SlashCommandPicker` mounted briefly for its exit animation, and its window-level Enter listener re-fired `onSelect` on the next keypress — repopulating the textarea after the send and forcing a third Enter to clear it. The picker now guards its window listener with an `isClosedRef` so it bails out after the first Enter/Escape.
+
 ## [0.4.40] — 2026-05-15
 
 Card chrome cleanup. The top-right copy button on every message card is now an always-visible outlined toolbar instead of three near-identical hover-revealed buttons that had drifted apart, and the one on Execution Complete cards finally works. Also picks up the latest Claude Agent SDK patch.
