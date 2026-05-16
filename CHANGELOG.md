@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.42] — 2026-05-16
+
+Fixes a long-standing chat annoyance where selecting text inside a syntax-highlighted code card would silently deselect on the next incidental re-render — so dragging across a code block to copy a value often "fought back."
+
+Installers remain **unsigned**.
+
+### Fixed
+
+- **Text selection inside Prism-highlighted code cards no longer deselects on re-render.** `StreamMessage` rebuilt `syntaxTheme`, `mdComponents`, and `[remarkGfm]` on every render, and `ClaudeCodeSession` handed every message card a fresh `onResend` arrow each render. `ReactMarkdown` saw new props → `react-syntax-highlighter` produced brand-new `<span>` DOM nodes → the browser dropped any active text selection anchored on them. Memoized `syntaxTheme`/`mdComponents`, hoisted `[remarkGfm]` to a module constant, and stabilized `onResend` with `useCallback` so `React.memo` on `StreamMessage` actually holds.
+
 ## [0.4.41] — 2026-05-15
 
 Fixes a slash-command input quirk where typed commands took an extra Enter to clear.
