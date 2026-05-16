@@ -165,6 +165,19 @@ describe('SlashCommandPicker filter tabs', () => {
     isNull(screen.queryByText('/useronly'));
   });
 
+  it('only fires onSelect once when Enter is pressed twice in a row', async () => {
+    // Repro for the bug where the picker, kept mounted briefly by AnimatePresence's
+    // exit animation, would re-fire onSelect on the next Enter — after the parent
+    // had already moved on to "send". This caused the typed command to repopulate
+    // the textarea after the first send, requiring a second Enter to finally clear.
+    const onSelect = vi.fn();
+    renderPicker({ onSelect });
+    await waitFor(() => { notNull(screen.queryByText('/projonly')); });
+    fireEvent.keyDown(window, { key: 'Enter' });
+    fireEvent.keyDown(window, { key: 'Enter' });
+    expect(onSelect).toHaveBeenCalledTimes(1);
+  });
+
   it('still navigates command list with ArrowUp/ArrowDown (does not regress)', async () => {
     // Two project commands so up/down has somewhere to go.
     const projectCmd2 = makeCmd({ id: 'p2', name: 'projonly2', full_command: '/projonly2', scope: 'project' });

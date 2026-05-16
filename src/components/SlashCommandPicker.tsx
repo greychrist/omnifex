@@ -128,6 +128,12 @@ export const SlashCommandPicker: React.FC<SlashCommandPickerProps> = ({
   const [scopeFilter, setScopeFilter] = useState<ScopeFilter>(SCOPE_FILTERS[0].value);
 
   const commandListRef = useRef<HTMLDivElement>(null);
+  // Set once a selection or close has fired. AnimatePresence (in the parent)
+  // keeps the picker mounted during its exit animation, so without this guard
+  // the window-level keydown listener would re-fire onSelect when the user
+  // presses Enter again to send the picked command — repopulating the textarea
+  // after the send and forcing a second Enter to clear it.
+  const isClosedRef = useRef(false);
 
   const loadCommands = useCallback(async () => {
     try {
@@ -219,14 +225,17 @@ export const SlashCommandPicker: React.FC<SlashCommandPickerProps> = ({
   // Keyboard navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (isClosedRef.current) return;
       switch (e.key) {
         case 'Escape':
           e.preventDefault();
+          isClosedRef.current = true;
           onClose();
           break;
         case 'Enter':
           e.preventDefault();
           if (filteredCommands.length > 0 && selectedIndex < filteredCommands.length) {
+            isClosedRef.current = true;
             onSelect(filteredCommands[selectedIndex]);
           }
           break;
