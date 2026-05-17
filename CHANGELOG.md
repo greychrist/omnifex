@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.45] — 2026-05-17
+
+Two fixes to the in-app updater that surfaced during v0.4.43 → v0.4.44 testing.
+
+Installers remain **unsigned**.
+
+### Fixed
+
+- **Manual update check no longer returns stale "up to date" right after a publish.** GitHub's CDN caches `releases/latest` for ~60s; clicks within that window after a new release would silently miss the upgrade. The fetch now appends `?_=<timestamp>` so the cache key differs on every check, and sends `Cache-Control: no-cache` so any intermediary revalidates.
+- **Download no longer auto-installs.** When the download finished, the updater would immediately call `runInstall`, blowing past the "Install Update" affordance the UI was supposed to surface. The user now has to click "Install Update" deliberately to proceed.
+
 ## [0.4.44] — 2026-05-17
 
 End-to-end verification release for the GitHub-Releases-based in-app updater introduced in v0.4.43. No functional code changes. Existing v0.4.43 installs should see this build, download the `.zip` asset, and prompt to install.
