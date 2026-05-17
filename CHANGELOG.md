@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.43] — 2026-05-17
+
+The in-app updater now polls the public GitHub repo for new releases. The previous local-folder scanner is gone; manual builds still install via drag-from-DMG.
+
+Installers remain **unsigned**.
+
+### Changed
+
+- **Updater switched to GitHub Releases as the sole update source.** OmniFex now polls `GET /repos/greychrist/omnifex/releases/latest` (anonymous, ~60 req/hr/IP) and streams the matching `OmniFex-darwin-arm64-<version>.zip` asset to `$TMPDIR` with real progress events; downloads follow GitHub's CDN redirects. The previous local-folder scanner (`local_update_dir` setting, "Update Source Folder" section in General settings) was removed along with its pickFolder helper. Existing `local_update_dir` rows in `app_settings` are now orphaned and harmless — nothing reads the key.
+- **README rewritten for the current Electron architecture.** Was still pre-migration Tauri/Rust content under the old GreyChrist name. Now reflects multi-account routing, sessions on the Agent SDK, custom agents via CLI, MCP management, usage analytics, and CLAUDE.md / hooks editing. Install instructions point at the Releases page; build instructions use Electron Forge (`npm start` / `npm run make`).
+- **Titlebar byline now reads "by GreyChrist"** (was "by GreyChrist, LLC"); the LLC suffix is retained where it's legally required (LICENSE if/when added) but not on user-visible chrome.
+
+### Note for v0.4.42 users
+
+This is the first OmniFex build with the GitHub-based updater, so the v0.4.42 → v0.4.43 step is a one-time manual drag-install from the `.dmg`. From v0.4.43 forward, the in-app updater handles future versions automatically.
+
 ## [0.4.42] — 2026-05-16
 
 Fixes a long-standing chat annoyance where selecting text inside a syntax-highlighted code card would silently deselect on the next incidental re-render — so dragging across a code block to copy a value often "fought back."
