@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.44] — 2026-05-17
+
+End-to-end verification release for the GitHub-Releases-based in-app updater introduced in v0.4.43. No functional code changes. Existing v0.4.43 installs should see this build, download the `.zip` asset, and prompt to install.
+
+Installers remain **unsigned**.
+
+### Changed
+
+- Bump version to exercise the v0.4.43 auto-update path.
+
 ## [0.4.43] — 2026-05-17
 
 The in-app updater now polls the public GitHub repo for new releases. The previous local-folder scanner is gone; manual builds still install via drag-from-DMG.
