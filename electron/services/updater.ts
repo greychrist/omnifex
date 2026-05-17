@@ -155,13 +155,19 @@ export function createUpdaterService(
     const repo = getGitHubRepo();
     if (!repo) return null;
 
-    const url = `https://api.github.com/repos/${repo}/releases/latest`;
+    // Cache-bust the URL so GitHub's edge cache (which holds releases/latest
+    // for ~60s) can't return stale data right after a publish — observed in
+    // v0.4.43→v0.4.44 testing where the manual update check returned the old
+    // version for ~minute after the new release went live. Belt-and-suspenders:
+    // also send Cache-Control: no-cache so any intermediary revalidates.
+    const url = `https://api.github.com/repos/${repo}/releases/latest?_=${Date.now()}`;
     let release: GitHubRelease;
     try {
       const res = await fetchImpl(url, {
         headers: {
           'Accept': 'application/vnd.github+json',
           'User-Agent': 'OmniFex-Updater',
+          'Cache-Control': 'no-cache',
         },
       });
       if (!res.ok) {

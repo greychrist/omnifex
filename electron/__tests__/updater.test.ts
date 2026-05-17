@@ -89,7 +89,53 @@ describe('updater service', () => {
 
       await svc.checkForUpdate();
 
-      expect(calls).toEqual(['https://api.github.com/repos/greychrist/omnifex/releases/latest']);
+      expect(calls).toHaveLength(1);
+      expect(calls[0]).toMatch(
+        /^https:\/\/api\.github\.com\/repos\/greychrist\/omnifex\/releases\/latest\?/,
+      );
+    });
+
+    it('cache-busts each call with a unique query param so edge caches cannot return stale data', async () => {
+      // GitHub's CDN caches releases/latest for ~60s. Without a cache-buster,
+      // a check ~30s after a new release publishes can return the previous
+      // version as "latest", which we observed in v0.4.43→v0.4.44 testing.
+      const calls: string[] = [];
+      const fakeFetch: typeof fetch = (async (url: any) => {
+        calls.push(String(url));
+        return { ok: true, status: 200, json: async () => goodRelease };
+      }) as any;
+
+      const svc = createUpdaterService('0.4.0', {
+        getGitHubRepo: () => 'greychrist/omnifex',
+        fetch: fakeFetch,
+      });
+
+      await svc.checkForUpdate();
+      // Spin until at least one ms has passed so Date.now() differs on the second call.
+      await new Promise((r) => setTimeout(r, 2));
+      await svc.checkForUpdate();
+
+      expect(calls).toHaveLength(2);
+      expect(calls[0]).not.toBe(calls[1]);
+    });
+
+    it('sends Cache-Control: no-cache so the GitHub edge revalidates', async () => {
+      const recordedInit: RequestInit[] = [];
+      const fakeFetch: typeof fetch = (async (_url: any, init?: RequestInit) => {
+        recordedInit.push(init ?? {});
+        return { ok: true, status: 200, json: async () => goodRelease };
+      }) as any;
+
+      const svc = createUpdaterService('0.4.0', {
+        getGitHubRepo: () => 'greychrist/omnifex',
+        fetch: fakeFetch,
+      });
+
+      await svc.checkForUpdate();
+
+      const headers = recordedInit[0]?.headers as Record<string, string> | undefined;
+      const cc = headers?.['Cache-Control'] ?? headers?.['cache-control'];
+      expect(cc).toMatch(/no-cache/i);
     });
 
     it('sends a User-Agent header (GitHub API requires one)', async () => {
