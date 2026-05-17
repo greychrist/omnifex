@@ -263,18 +263,22 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
       try {
         filePath = await api.downloadUpdate(downloadUrl, assetName);
       } catch (e: any) {
-         
+
         console.log(`[updater] download failed message=${String((e?.message ?? e) as unknown)}`);
         setUpdateState({ status: 'error', downloadUrl, assetName, releaseUrl, version });
         return;
       }
+      // Stop at 'ready' — the user must click the "Install Update" button to
+      // proceed. We used to auto-install here, which (a) skipped past the
+      // visible "Install Update" affordance and (b) made the wait-for-idle
+      // gate unnecessarily eager when sessions were mid-turn.
       setUpdateState({ status: 'ready', filePath, version });
-      await runInstall(filePath, version, downloadUrl, assetName, releaseUrl);
     } else if (updateState.status === 'ready') {
       const { filePath, version } = updateState;
       await runInstall(filePath, version, filePath, '', '');
     } else if (updateState.status === 'error') {
-      // Retry: re-download then install.
+      // Retry: re-download. Install requires a second click on the resulting
+      // "Install Update" button, same as the happy-path 'available' branch.
       const { downloadUrl, assetName, releaseUrl, version } = updateState;
       setUpdateState({ status: 'downloading', percent: 0 });
       let filePath: string;
@@ -285,7 +289,6 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
         return;
       }
       setUpdateState({ status: 'ready', filePath, version });
-      await runInstall(filePath, version, downloadUrl, assetName, releaseUrl);
     }
   };
 
