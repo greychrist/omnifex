@@ -4,7 +4,6 @@ import {
   Check,
   Volume2,
 } from "lucide-react";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Card } from "@/components/ui/card";
@@ -41,22 +40,6 @@ import {
 // load-bearing-but-rarely-tuned (Claude defaults to 30 days). Anyone who
 // still wants to tune those can edit the per-account settings.json directly.
 
-// Opens a macOS folder picker and returns the chosen path, or null on cancel.
-// Duplicated from AccountSettings.tsx's pickFolder; pulled inline to keep this
-// settings panel self-contained.
-async function pickFolder(defaultPath?: string): Promise<string | null> {
-  try {
-    const paths = await window.electronAPI.showOpenDialog({
-      properties: ['openDirectory'],
-      title: 'Select Update Source Folder',
-      defaultPath: defaultPath || (await api.getHomeDirectory()),
-    }) as string[] | null;
-    return paths?.[0] ?? null;
-  } catch {
-    return null;
-  }
-}
-
 interface GeneralSettingsProps extends SettingsPanelProps {
   currentBinaryPath: string | null;
   binaryPathChanged: boolean;
@@ -73,11 +56,6 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
   const { appFont, setAppFont, isLoading: appFontLoading } = useAppFont();
   const [tabPersistenceEnabled, setTabPersistenceEnabled] = useState(true);
   const [startupIntroEnabled, setStartupIntroEnabled] = useState(true);
-  // The directory the updater scans for newer OmniFex-<semver>-arm64.dmg
-  // builds. Empty string → updates disabled. Persisted as `local_update_dir`
-  // in app_settings and read lazily by the main-process updater on every
-  // check, so changes here take effect immediately without a restart.
-  const [localUpdateDir, setLocalUpdateDir] = useState<string>('');
   const [successSound, setSuccessSound] = useState<NotificationSoundId>(DEFAULT_SUCCESS_SOUND);
   const [errorSound, setErrorSound] = useState<NotificationSoundId>(DEFAULT_ERROR_SOUND);
 
@@ -86,8 +64,6 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
     logAndForget('general-settings:iife', (async () => {
       const pref = await api.getSetting('startup_intro_enabled');
       setStartupIntroEnabled(pref === null ? true : pref === 'true');
-      const dir = await api.getSetting('local_update_dir');
-      setLocalUpdateDir(dir ?? '');
       const successRaw = await api.getSetting(NOTIFICATION_SOUND_SETTING_KEYS.success);
       setSuccessSound(normalizeNotificationSoundId(successRaw, DEFAULT_SUCCESS_SOUND));
       const errorRaw = await api.getSetting(NOTIFICATION_SOUND_SETTING_KEYS.error);
@@ -112,18 +88,6 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
       });
     } catch {
       setToast({ message: 'Failed to save notification sound', type: 'error' });
-    }
-  };
-
-  const saveLocalUpdateDir = async (next: string) => {
-    try {
-      await api.saveSetting('local_update_dir', next);
-      setToast({
-        message: next ? `Update source set to ${next}` : 'Update source cleared',
-        type: 'success',
-      });
-    } catch {
-      setToast({ message: 'Failed to save update source', type: 'error' });
     }
   };
 
@@ -377,53 +341,6 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
             </div>
           </div>
 
-          {/* Update Source Folder */}
-          <div className="space-y-2">
-            <Label htmlFor="local-update-dir">Update Source Folder</Label>
-            <p className="text-caption text-muted-foreground">
-              Folder that holds locally-built <code>OmniFex-&lt;version&gt;-arm64.dmg</code> files.
-              OmniFex scans this folder and offers an update when a newer version is present.
-              Leave empty to disable update checks.
-            </p>
-            <div className="flex items-center gap-2">
-              <Input
-                id="local-update-dir"
-                type="text"
-                value={localUpdateDir}
-                placeholder="/Users/you/Repos/omnifex/out/make"
-                onChange={(e) => { setLocalUpdateDir(e.target.value); }}
-                onBlur={fireAndLog('general-settings:blur', () => saveLocalUpdateDir(localUpdateDir))}
-                className="flex-1 font-mono text-xs"
-              />
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={fireAndLog('general-settings:click', async () => {
-                  const picked = await pickFolder(localUpdateDir || undefined);
-                  if (picked) {
-                    setLocalUpdateDir(picked);
-                    await saveLocalUpdateDir(picked);
-                  }
-                })}
-              >
-                Browse…
-              </Button>
-              {localUpdateDir && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={fireAndLog('general-settings:click', async () => {
-                    setLocalUpdateDir('');
-                    await saveLocalUpdateDir('');
-                  })}
-                >
-                  Clear
-                </Button>
-              )}
-            </div>
-          </div>
         </div>
       </div>
     </Card>

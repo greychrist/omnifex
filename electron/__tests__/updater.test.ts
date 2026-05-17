@@ -2,225 +2,266 @@ import { describe, it, expect } from 'vitest';
 import { createUpdaterService } from '../services/updater';
 
 // ---------------------------------------------------------------------------
-// Helpers for the local-folder updater
+// Test fixtures
 // ---------------------------------------------------------------------------
 
-/**
- * Build a fake readdir that returns the given filenames for one directory.
- * Real fs operations are never performed in tests.
- */
-function makeReaddir(files: string[]): (dir: string) => Promise<string[]> {
-  return async () => files;
+const goodRelease = {
+  tag_name: 'v0.4.42',
+  name: 'v0.4.42',
+  body: '## Fixed\n- stop killing text selection inside Prism code cards',
+  html_url: 'https://github.com/greychrist/omnifex/releases/tag/v0.4.42',
+  assets: [
+    {
+      name: 'OmniFex-0.4.42-arm64.dmg',
+      browser_download_url: 'https://github.com/greychrist/omnifex/releases/download/v0.4.42/OmniFex-0.4.42-arm64.dmg',
+      size: 100,
+    },
+    {
+      name: 'OmniFex-darwin-arm64-0.4.42.zip',
+      browser_download_url: 'https://github.com/greychrist/omnifex/releases/download/v0.4.42/OmniFex-darwin-arm64-0.4.42.zip',
+      size: 200,
+    },
+  ],
+};
+
+function makeFetchOk(data: unknown): typeof fetch {
+  return (async () => ({
+    ok: true,
+    status: 200,
+    json: async () => data,
+  })) as unknown as typeof fetch;
 }
 
-/**
- * Build a fake readdir that throws ENOENT (directory does not exist).
- */
-function makeMissingReaddir(): (dir: string) => Promise<string[]> {
-  return async () => {
-    const err = new Error('ENOENT: no such file or directory');
-    (err as any).code = 'ENOENT';
-    throw err;
-  };
+function makeFetchStatus(status: number): typeof fetch {
+  return (async () => ({
+    ok: false,
+    status,
+    json: async () => ({}),
+  })) as unknown as typeof fetch;
+}
+
+function makeFetchThrows(message: string): typeof fetch {
+  return (async () => {
+    throw new Error(message);
+  }) as unknown as typeof fetch;
 }
 
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
-describe('updater service (local folder source)', () => {
+describe('updater service', () => {
   describe('checkForUpdate()', () => {
-    it('returns null when no local update directory is configured', async () => {
-      const svc = createUpdaterService('0.3.12', {
-        getLocalUpdateDir: () => null,
-        readdir: makeReaddir(['OmniFex-darwin-arm64-0.4.0.zip']), // should never be read
-      });
-
-      const result = await svc.checkForUpdate();
-
-      expect(result).toBeNull();
-    });
-
-    it('returns null when local update directory is empty string', async () => {
-      const svc = createUpdaterService('0.3.12', {
-        getLocalUpdateDir: () => '',
-        readdir: makeReaddir(['OmniFex-darwin-arm64-0.4.0.zip']),
-      });
-
-      const result = await svc.checkForUpdate();
-
-      expect(result).toBeNull();
-    });
-
-    it('returns null when the local directory does not exist (ENOENT)', async () => {
-      const svc = createUpdaterService('0.3.12', {
-        getLocalUpdateDir: () => '/nonexistent/path',
-        readdir: makeMissingReaddir(),
-      });
-
-      const result = await svc.checkForUpdate();
-
-      expect(result).toBeNull();
-    });
-
-    it('writes a debug log entry when the configured update dir is unreadable', async () => {
-      const collected: any[] = [];
-      const fakeLogger: any = {
-        writeBatch: (entries: any[]) => collected.push(...entries),
-        query: () => { throw new Error('not used'); },
-        count: () => { throw new Error('not used'); },
-        prune: () => { throw new Error('not used'); },
-      };
-
-      const svc = createUpdaterService('0.3.12', {
-        getLocalUpdateDir: () => '/nonexistent/path',
-        readdir: makeMissingReaddir(),
-        logging: fakeLogger,
-      });
-
-      await svc.checkForUpdate();
-
-      const match = collected.find(
-        (e) => String(e.source) === 'updater' && /local_update_dir|readdir|scan/i.test(String(e.message)),
-      );
-      expect(match).toBeDefined();
-      expect(match.level).toBe('debug');
-    });
-
-    it('does NOT log when local_update_dir is disabled (null/empty)', async () => {
-      const collected: any[] = [];
-      const fakeLogger: any = {
-        writeBatch: (entries: any[]) => collected.push(...entries),
-        query: () => { throw new Error('not used'); },
-        count: () => { throw new Error('not used'); },
-        prune: () => { throw new Error('not used'); },
-      };
-
-      const svc = createUpdaterService('0.3.12', {
-        getLocalUpdateDir: () => '',
-        readdir: makeReaddir([]),
-        logging: fakeLogger,
-      });
-
-      await svc.checkForUpdate();
-
-      // Empty = deliberately disabled; don't spam the log panel on every check.
-      expect(collected.length).toBe(0);
-    });
-
-    it('returns null when the directory contains no matching ZIP files', async () => {
-      const svc = createUpdaterService('0.3.12', {
-        getLocalUpdateDir: () => '/tmp/updates',
-        readdir: makeReaddir(['README.txt', 'random.zip', 'OmniFex.zip']),
-      });
-
-      const result = await svc.checkForUpdate();
-
-      expect(result).toBeNull();
-    });
-
-    it('returns null when all local ZIPs are the same as or older than current version', async () => {
-      const svc = createUpdaterService('0.3.12', {
-        getLocalUpdateDir: () => '/tmp/updates',
-        readdir: makeReaddir([
-          'OmniFex-darwin-arm64-0.3.10.zip',
-          'OmniFex-darwin-arm64-0.3.11.zip',
-          'OmniFex-darwin-arm64-0.3.12.zip', // exact match to current
-        ]),
-      });
-
-      const result = await svc.checkForUpdate();
-
-      expect(result).toBeNull();
-    });
-
-    it('returns UpdateInfo for the newest ZIP when one exists that is newer than current', async () => {
-      const svc = createUpdaterService('0.3.12', {
-        getLocalUpdateDir: () => '/tmp/updates',
-        readdir: makeReaddir([
-          'OmniFex-darwin-arm64-0.3.10.zip',
-          'OmniFex-darwin-arm64-0.3.12.zip',
-          'OmniFex-darwin-arm64-0.4.0.zip',
-          'OmniFex-darwin-arm64-0.3.15.zip',
-        ]),
+    it('returns UpdateInfo from GitHub for a newer release', async () => {
+      const svc = createUpdaterService('0.4.0', {
+        getGitHubRepo: () => 'greychrist/omnifex',
+        fetch: makeFetchOk(goodRelease),
       });
 
       const result = await svc.checkForUpdate();
 
       expect(result).not.toBeNull();
       expect(result!.available).toBe(true);
-      expect(result!.version).toBe('0.4.0');
-      expect(result!.assetName).toBe('OmniFex-darwin-arm64-0.4.0.zip');
-      // downloadUrl is an absolute path to the local file (or a file:// URL)
-      expect(result!.downloadUrl).toContain('OmniFex-darwin-arm64-0.4.0.zip');
-      expect(result!.downloadUrl).toContain('/tmp/updates');
+      expect(result!.version).toBe('0.4.42');
+      expect(result!.assetName).toBe('OmniFex-darwin-arm64-0.4.42.zip');
+      expect(result!.downloadUrl).toBe(
+        'https://github.com/greychrist/omnifex/releases/download/v0.4.42/OmniFex-darwin-arm64-0.4.42.zip',
+      );
+      expect(result!.releaseUrl).toBe('https://github.com/greychrist/omnifex/releases/tag/v0.4.42');
+      expect(result!.releaseNotes).toContain('Fixed');
     });
 
-    it('ignores files that do not match the OmniFex-darwin-arm64-<semver>.zip pattern', async () => {
-      const svc = createUpdaterService('0.3.12', {
-        getLocalUpdateDir: () => '/tmp/updates',
-        readdir: makeReaddir([
-          'OmniFex-darwin-arm64-0.4.0.zip',   // matches
-          'OmniFex-0.4.0.zip',                    // missing platform/arch prefix
-          'OmniFex-darwin-arm64-foo.zip',         // not semver
-          'omnifex-darwin-arm64-0.4.0.zip',       // lowercase
-          'OtherApp-darwin-arm64-0.4.0.zip',      // wrong name
-          'OmniFex-darwin-arm64-0.4.0.zip.txt',   // extra extension
-        ]),
+    it('hits releases/latest for the configured repo', async () => {
+      const calls: string[] = [];
+      const fakeFetch: typeof fetch = (async (url: any) => {
+        calls.push(String(url));
+        return {
+          ok: true,
+          status: 200,
+          json: async () => goodRelease,
+        };
+      }) as any;
+
+      const svc = createUpdaterService('0.4.0', {
+        getGitHubRepo: () => 'greychrist/omnifex',
+        fetch: fakeFetch,
+      });
+
+      await svc.checkForUpdate();
+
+      expect(calls).toEqual(['https://api.github.com/repos/greychrist/omnifex/releases/latest']);
+    });
+
+    it('sends a User-Agent header (GitHub API requires one)', async () => {
+      const recordedInit: RequestInit[] = [];
+      const fakeFetch: typeof fetch = (async (_url: any, init?: RequestInit) => {
+        recordedInit.push(init ?? {});
+        return { ok: true, status: 200, json: async () => goodRelease };
+      }) as any;
+
+      const svc = createUpdaterService('0.4.0', {
+        getGitHubRepo: () => 'greychrist/omnifex',
+        fetch: fakeFetch,
+      });
+
+      await svc.checkForUpdate();
+
+      const headers = recordedInit[0]?.headers as Record<string, string> | undefined;
+      const ua = headers?.['User-Agent'] ?? headers?.['user-agent'];
+      expect(ua).toBeTruthy();
+    });
+
+    it('returns null when the release is not newer than current', async () => {
+      const svc = createUpdaterService('0.4.42', {
+        getGitHubRepo: () => 'greychrist/omnifex',
+        fetch: makeFetchOk(goodRelease),
+      });
+
+      expect(await svc.checkForUpdate()).toBeNull();
+    });
+
+    it('returns null when GitHub returns 404', async () => {
+      const svc = createUpdaterService('0.4.0', {
+        getGitHubRepo: () => 'greychrist/omnifex',
+        fetch: makeFetchStatus(404),
+      });
+
+      expect(await svc.checkForUpdate()).toBeNull();
+    });
+
+    it('returns null when GitHub returns 403 (rate limit)', async () => {
+      const svc = createUpdaterService('0.4.0', {
+        getGitHubRepo: () => 'greychrist/omnifex',
+        fetch: makeFetchStatus(403),
+      });
+
+      expect(await svc.checkForUpdate()).toBeNull();
+    });
+
+    it('returns null when fetch throws (network error)', async () => {
+      const svc = createUpdaterService('0.4.0', {
+        getGitHubRepo: () => 'greychrist/omnifex',
+        fetch: makeFetchThrows('ENOTFOUND'),
+      });
+
+      expect(await svc.checkForUpdate()).toBeNull();
+    });
+
+    it('returns null when the release has no matching darwin-arm64 ZIP asset', async () => {
+      const dmgOnly = { ...goodRelease, assets: [goodRelease.assets[0]] };
+      const svc = createUpdaterService('0.4.0', {
+        getGitHubRepo: () => 'greychrist/omnifex',
+        fetch: makeFetchOk(dmgOnly),
+      });
+
+      expect(await svc.checkForUpdate()).toBeNull();
+    });
+
+    it('does NOT call GitHub when getGitHubRepo returns null', async () => {
+      let called = false;
+      const fakeFetch: typeof fetch = (async () => {
+        called = true;
+        return { ok: true, status: 200, json: async () => goodRelease };
+      }) as any;
+
+      const svc = createUpdaterService('0.4.0', {
+        getGitHubRepo: () => null,
+        fetch: fakeFetch,
       });
 
       const result = await svc.checkForUpdate();
 
-      expect(result).not.toBeNull();
-      expect(result!.version).toBe('0.4.0');
-    });
-
-    it('supports version suffixes like 0.3.6a in filename parsing', async () => {
-      // Filenames like `OmniFex-darwin-arm64-0.3.6a.zip` could show up; the
-      // updater should either parse them as 0.3.6 (ignoring the suffix, like
-      // isNewer already does) or reject them — but not crash.
-      const svc = createUpdaterService('0.3.12', {
-        getLocalUpdateDir: () => '/tmp/updates',
-        readdir: makeReaddir(['OmniFex-darwin-arm64-0.3.6a.zip']), // 0.3.6 < 0.3.12
-      });
-
-      const result = await svc.checkForUpdate();
-
-      // Strict semver + older version → no update
+      expect(called).toBe(false);
       expect(result).toBeNull();
+    });
+
+    it('does NOT call GitHub when getGitHubRepo returns empty string', async () => {
+      let called = false;
+      const fakeFetch: typeof fetch = (async () => {
+        called = true;
+        return { ok: true, status: 200, json: async () => goodRelease };
+      }) as any;
+
+      const svc = createUpdaterService('0.4.0', {
+        getGitHubRepo: () => '',
+        fetch: fakeFetch,
+      });
+
+      await svc.checkForUpdate();
+
+      expect(called).toBe(false);
+    });
+
+    it('writes a debug log entry when the GitHub fetch fails', async () => {
+      const collected: any[] = [];
+      const fakeLogger: any = {
+        writeBatch: (entries: any[]) => collected.push(...entries),
+        query: () => { throw new Error('not used'); },
+        count: () => { throw new Error('not used'); },
+        prune: () => { throw new Error('not used'); },
+      };
+      const svc = createUpdaterService('0.4.0', {
+        getGitHubRepo: () => 'greychrist/omnifex',
+        fetch: makeFetchThrows('ENOTFOUND'),
+        logging: fakeLogger,
+      });
+
+      await svc.checkForUpdate();
+
+      const match = collected.find(
+        (e) => String(e.source) === 'updater' && /github|fetch/i.test(String(e.message)),
+      );
+      expect(match).toBeDefined();
+      expect(match.level).toBe('debug');
     });
   });
 
   describe('downloadUpdate()', () => {
-    it('returns the local file path immediately (no network fetch)', async () => {
-      const svc = createUpdaterService('0.3.12', {
-        getLocalUpdateDir: () => '/tmp/updates',
-        readdir: makeReaddir([]),
+    it('streams the URL via downloadFile and reports progress', async () => {
+      const progressEvents: { percent: number; bytesDownloaded: number; totalBytes: number }[] = [];
+      const downloadCalls: { url: string; destPath: string }[] = [];
+
+      const svc = createUpdaterService('0.4.0', {
+        getGitHubRepo: () => 'greychrist/omnifex',
+        tmpdir: () => '/tmp/fake',
+        downloadFile: async ({ url, destPath, onProgress }) => {
+          downloadCalls.push({ url, destPath });
+          onProgress(50, 100);
+          onProgress(100, 100);
+        },
       });
 
-      const progressCalls: { percent: number }[] = [];
       const result = await svc.downloadUpdate(
-        '/tmp/updates/OmniFex-darwin-arm64-0.4.0.zip',
-        (data) => progressCalls.push(data),
+        'https://github.com/greychrist/omnifex/releases/download/v0.4.42/OmniFex-darwin-arm64-0.4.42.zip',
+        (data) => progressEvents.push(data),
+        'OmniFex-darwin-arm64-0.4.42.zip',
       );
 
-      expect(result).toBe('/tmp/updates/OmniFex-darwin-arm64-0.4.0.zip');
+      expect(downloadCalls).toHaveLength(1);
+      expect(downloadCalls[0].url).toContain('OmniFex-darwin-arm64-0.4.42.zip');
+      expect(downloadCalls[0].destPath).toBe('/tmp/fake/OmniFex-darwin-arm64-0.4.42.zip');
+      expect(result).toBe(downloadCalls[0].destPath);
+      expect(progressEvents.length).toBeGreaterThanOrEqual(2);
+      expect(progressEvents[progressEvents.length - 1].percent).toBe(100);
     });
 
-    it('fires a single onProgress({ percent: 100 }) call for UI parity', async () => {
-      const svc = createUpdaterService('0.3.12', {
-        getLocalUpdateDir: () => '/tmp/updates',
-        readdir: makeReaddir([]),
+    it('derives the destination filename from the URL when assetName is omitted', async () => {
+      const downloadCalls: { destPath: string }[] = [];
+      const svc = createUpdaterService('0.4.0', {
+        getGitHubRepo: () => 'greychrist/omnifex',
+        tmpdir: () => '/tmp/fake',
+        downloadFile: async ({ destPath, onProgress }) => {
+          downloadCalls.push({ destPath });
+          onProgress(100, 100);
+        },
       });
 
-      const progressCalls: { percent: number; bytesDownloaded: number; totalBytes: number }[] = [];
       await svc.downloadUpdate(
-        '/tmp/updates/OmniFex-darwin-arm64-0.4.0.zip',
-        (data) => progressCalls.push(data),
+        'https://github.com/greychrist/omnifex/releases/download/v0.4.42/OmniFex-darwin-arm64-0.4.42.zip',
+        () => {},
       );
 
-      expect(progressCalls).toHaveLength(1);
-      expect(progressCalls[0].percent).toBe(100);
+      expect(downloadCalls[0].destPath).toMatch(/OmniFex-darwin-arm64-0\.4\.42\.zip$/);
     });
   });
 });

@@ -340,7 +340,7 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
               </span>
             )}
           </span>
-          <span className="text-[11px] text-muted-foreground">by GreyChrist, LLC</span>
+          <span className="text-[11px] text-muted-foreground">by GreyChrist</span>
         </div>
       </div>
 

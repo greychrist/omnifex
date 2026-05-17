@@ -16,7 +16,8 @@ export function buildHelperScript(params: HelperScriptParams): string {
   if (DANGEROUS_CHARS.test(params.targetAppPath) || DANGEROUS_CHARS.test(params.stagedAppPath)) {
     // Reject shell-unsafe characters defensively. Paths produced by the
     // installer come from process.execPath / os.tmpdir() and won't have them,
-    // but a misconfigured local_update_dir shouldn't be able to inject shell.
+    // but a defense-in-depth check guards against any future caller passing
+    // attacker-influenced paths into shell.
     throw new Error('helper-script: refusing path containing shell-unsafe character');
   }
   return [

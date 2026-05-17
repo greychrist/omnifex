@@ -909,10 +909,10 @@ app.whenReady().then(() => {
   ipcMain.handle('get_app_version', () => app.getVersion());
 
   // --- Updater IPC (registered separately because it uses ipcMain directly) ---
-  // Reads the user-configured local update folder from app_settings on every
-  // check so that changes in the Settings UI take effect without restarting.
+  // Anonymous GitHub API (60/hr/IP) is plenty for a desktop client that
+  // checks on launch + on demand. See updater.ts header for history.
   const updaterService = createUpdaterService(app.getVersion(), {
-    getLocalUpdateDir: () => db.getSetting('local_update_dir'),
+    getGitHubRepo: () => 'greychrist/omnifex',
     logging: loggingService,
   });
 

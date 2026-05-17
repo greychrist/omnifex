@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-OmniFex (by GreyChrist, LLC) is an **Electron** desktop app for Claude Code. The current product surface centers on multi-account routing, interactive Claude sessions, custom agents, MCP management, and usage analytics.
+OmniFex (by GreyChrist) is an **Electron** desktop app for Claude Code. The current product surface centers on multi-account routing, interactive Claude sessions, custom agents, MCP management, and usage analytics.
 
 The shipping app is OmniFex. Internal identifiers like `greychrist.db`, the `greychrist-file://` protocol, and localStorage keys retain the legacy name to avoid migration churn — only the user-facing brand and the repo/folder name changed.
 

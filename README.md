@@ -1,167 +1,136 @@
-
 <div align="center">
-  <img src="src-tauri/icons/icon.png" alt="GreyChrist Logo" width="120" height="120">
+  <img src="icons/icon.png" alt="OmniFex Logo" width="120" height="120">
 
-  <h1>GreyChrist</h1>
-  
+  <h1>OmniFex</h1>
+
   <p>
-    <strong>A powerful GUI app and Toolkit for Claude Code</strong>
+    <strong>A desktop GUI for Claude Code with first-class multi-account support.</strong>
   </p>
   <p>
-    <strong>Create custom agents, manage interactive Claude Code sessions, run secure background agents, and more.</strong>
+    Route projects to specific Claude accounts, run interactive sessions and custom agents,
+    manage MCP servers, edit CLAUDE.md files, and track usage — all without leaving the app.
   </p>
 </div>
 
 > [!NOTE]
-> This project is not affiliated with, endorsed by, or sponsored by Anthropic. Claude is a trademark of Anthropic, PBC. This is an independent developer project using Claude.
-> 
-> GreyChrist is a fork of [opcode](https://github.com/getAsterisk/opcode) by Asterisk, licensed under AGPL-3.0.
+> This project is not affiliated with, endorsed by, or sponsored by Anthropic. Claude is a trademark of Anthropic, PBC. This is an independent project that uses Claude Code.
+>
+> OmniFex is a long-running fork of [opcode](https://github.com/getAsterisk/opcode) by Asterisk, licensed under AGPL-3.0. It has since been rewritten on Electron and reshaped around multi-account workflows; little of the original Tauri/Rust codebase remains.
 
-## Overview
+## Status
 
-**GreyChrist** is a desktop application that transforms how you interact with Claude Code. Built with Tauri 2, it provides a GUI for managing Claude Code sessions, creating custom agents, tracking usage across multiple accounts, and more.
+OmniFex is **macOS (Apple Silicon) only** and ships as an **unsigned** build. macOS Gatekeeper will block the first launch — right-click → **Open** to bypass it once. A proper Developer ID signature is on the roadmap.
 
 ## Features
 
-### Project & Session Management
-- **Visual Project Browser**: Navigate through all your Claude Code projects
-- **Session History**: View and resume past coding sessions with full context
-- **Smart Search**: Find projects and sessions quickly with built-in search
-- **Multi-Account Support**: Bind projects to specific Claude accounts with path-based routing
+### Multi-account routing
+- Bind projects to specific Claude accounts via path-prefix rules.
+- Longest-match-wins resolution with explicit per-project overrides.
+- Each session, agent, hook, MCP, and CLAUDE.md read/write is launched under the resolved account's `CLAUDE_CONFIG_DIR`.
 
-### CC Agents
-- **Custom AI Agents**: Create specialized agents with custom system prompts and behaviors
-- **Agent Library**: Build a collection of purpose-built agents for different tasks
-- **Background Execution**: Run agents in separate processes for non-blocking operations
-- **Execution History**: Track all agent runs with detailed logs and performance metrics
+### Interactive Claude Code sessions
+- Tabbed chat surface running on top of the official [`@anthropic-ai/claude-agent-sdk`](https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk).
+- Streaming output, permission prompts, slash commands, and per-tab status.
 
-### Usage Analytics Dashboard
-- **Cost Tracking**: Monitor your Claude API usage and costs in real-time
-- **Token Analytics**: Detailed breakdown by model, project, and time period
-- **Multi-Account Aggregation**: Usage tracked per account with account-type cost logic
-- **Visual Charts**: Usage trends and patterns across accounts
+### Custom agents
+- Define agents with custom system prompts, MCP access, and tools.
+- Run them as background tasks through the Claude CLI; track history and logs.
 
-### MCP Server Management
-- **Server Registry**: Manage Model Context Protocol servers from a central UI
-- **Easy Configuration**: Add servers via UI or import from existing configs
-- **Connection Testing**: Verify server connectivity before use
-- **Claude Desktop Import**: Import server configurations from Claude Desktop
+### MCP server management
+- Add, edit, and test MCP servers from the UI.
+- Import server configs from Claude Desktop and Claude Code.
 
-### Timeline & Checkpoints
-- **Session Versioning**: Create checkpoints at any point in your coding session
-- **Visual Timeline**: Navigate through your session history with a branching timeline
-- **Instant Restore**: Jump back to any checkpoint with one click
-- **Fork Sessions**: Create new branches from existing checkpoints
+### Usage analytics
+- Aggregate token and cost usage across every configured account.
+- Breakdowns by model, project, and time period.
 
-### CLAUDE.md Management
-- **Built-in Editor**: Edit CLAUDE.md files directly within the app
-- **Live Preview**: See your markdown rendered in real-time
-- **Project Scanner**: Find all CLAUDE.md files in your projects
+### CLAUDE.md and hooks
+- Inline editor with live preview for CLAUDE.md files.
+- View and edit Claude Code hooks config from the same surface.
 
-## Installation
+## Install
+
+### Download (recommended)
+
+Grab the latest macOS arm64 build from the [Releases page](https://github.com/greychrist/omnifex/releases/latest):
+
+- `OmniFex-<version>-arm64.dmg` — drag-install to `/Applications`.
+- `OmniFex-darwin-arm64-<version>.zip` — used by the in-app auto-updater.
+
+On first launch macOS will refuse to open the app because it isn't signed by a Developer ID — right-click the app icon and choose **Open**, then confirm. You only need to do this once.
+
+Once installed, OmniFex checks `releases/latest` on launch and offers in-place updates when a new version is published.
 
 ### Prerequisites
 
-- **Claude Code CLI**: Install from [Claude's official site](https://claude.ai/code)
+- **Claude Code CLI** installed and authenticated. See [Anthropic's setup guide](https://docs.anthropic.com/en/docs/claude-code).
+- Apple Silicon Mac running a current macOS.
 
-### Build from Source
+## Build from source
 
-1. **Clone the Repository**
-   ```bash
-   git clone https://github.com/greychrist/omnifex.git
-   cd omnifex
-   ```
-
-2. **Install Frontend Dependencies**
-   ```bash
-   npm install
-   ```
-
-3. **Build the Application**
-   
-   **For Development (with hot reload)**
-   ```bash
-   npm run dev          # Start Vite
-   npx tauri dev        # Start Tauri (in another terminal)
-   ```
-   
-   **For Production Build**
-   ```bash
-   npx tauri build
-   ```
-
-#### Platform-Specific Dependencies
-
-**Linux (Ubuntu/Debian)**
 ```bash
-sudo apt update
-sudo apt install -y \
-  libwebkit2gtk-4.1-dev \
-  libgtk-3-dev \
-  libayatana-appindicator3-dev \
-  librsvg2-dev \
-  patchelf \
-  build-essential \
-  curl \
-  wget \
-  file \
-  libssl-dev \
-  libxdo-dev \
-  libsoup-3.0-dev \
-  libjavascriptcoregtk-4.1-dev
+git clone https://github.com/greychrist/omnifex.git
+cd omnifex
+npm install
+npm start            # run in dev (Electron Forge + Vite)
 ```
 
-**macOS**
+For a production build:
+
 ```bash
-xcode-select --install
+npm run make         # produces .dmg and .zip in out/make/
 ```
 
-**Windows**
-- Install [Microsoft C++ Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/)
-- Install [WebView2](https://developer.microsoft.com/microsoft-edge/webview2/)
+Other useful scripts:
 
-## Tech Stack
-
-- **Frontend**: React 18 + TypeScript + Vite 6
-- **Backend**: Rust with Tauri 2
-- **UI Framework**: Tailwind CSS v4 + shadcn/ui
-- **Database**: SQLite (via rusqlite)
-
-## Project Structure
-
-```
-GreyChrist/
-├── src/                   # React frontend
-│   ├── components/        # UI components
-│   ├── lib/               # API client & utilities
-│   └── assets/            # Static assets
-├── src-tauri/             # Rust backend
-│   ├── src/
-│   │   ├── commands/      # Tauri command handlers
-│   │   ├── checkpoint/    # Timeline management
-│   │   ├── accounts/      # Multi-account management
-│   │   └── process/       # Process management
-│   └── tests/             # Rust test suite
-├── icons/                 # App icons for bundling
-└── assets/                # Source design files (PSD, iconsets)
+```bash
+npm run check        # tsc --noEmit across renderer and main process
+npm test             # vitest one-shot
+npm run test:coverage
+npm run rebuild:electron   # rebuild better-sqlite3 / node-pty for Electron's ABI
 ```
 
-## Security
+## Tech stack
 
-1. **Process Isolation**: Agents run in separate processes
-2. **Permission Control**: Configure file and network access per agent
-3. **Local Storage**: All data stays on your machine
-4. **No Telemetry**: No data collection or tracking
-5. **Open Source**: Full transparency through open source code
+- **Runtime**: Electron 41 (Node 22, Chromium)
+- **Renderer**: React 18 + TypeScript + Vite + Tailwind v4 + Radix / shadcn
+- **Main process**: TypeScript on Node, services wired through a typed IPC layer
+- **Persistence**: `better-sqlite3`
+- **Claude integration**: `@anthropic-ai/claude-agent-sdk` for interactive sessions, Claude CLI for agents
+
+## Project structure
+
+```
+omnifex/
+├── electron/              # Main process
+│   ├── main.ts            # App bootstrap, service wiring
+│   ├── preload.ts         # IPC allow-list
+│   ├── ipc/               # IPC handlers
+│   ├── services/          # Business logic (accounts, sessions, agents, mcp, usage, …)
+│   └── __tests__/         # Vitest suites for main-process code
+├── src/                   # Renderer (React)
+│   ├── components/        # UI
+│   ├── contexts/          # Theme, tabs, accounts
+│   ├── stores/            # Zustand stores
+│   └── lib/               # Typed API surface (api.ts) + IPC adapter
+├── icons/                 # App icon assets
+└── assets/                # Source design files (PSDs, audio)
+```
+
+## Security and privacy
+
+- All persistence is local. No telemetry, no analytics, no remote logging.
+- The main process talks to Anthropic only through the Claude Code SDK and CLI you have installed; OmniFex itself sends nothing to Anthropic.
+- Per-tab permission gating for tool use, mirroring Claude Code's native permission model.
 
 ## License
 
-This project is licensed under the AGPL-3.0 License - see the [LICENSE](LICENSE) file for details.
+AGPL-3.0 — see [LICENSE](LICENSE).
 
-Originally forked from [opcode](https://github.com/getAsterisk/opcode) by [Asterisk](https://asterisk.so/).
+OmniFex is published by GreyChrist.
 
 ## Acknowledgments
 
-- Originally created by [Asterisk](https://asterisk.so/) as [opcode](https://github.com/getAsterisk/opcode)
-- Built with [Tauri](https://tauri.app/)
-- [Claude](https://claude.ai) by Anthropic
+- Originally forked from [opcode](https://github.com/getAsterisk/opcode) by [Asterisk](https://asterisk.so/).
+- Built on [Electron](https://www.electronjs.org/) and the [Claude Agent SDK](https://docs.anthropic.com/en/docs/claude-code).
+- [Claude](https://claude.ai) by Anthropic.
