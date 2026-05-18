@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.46] — 2026-05-17
+
+Dependency bumps from Dependabot's first sweep on the public repo, plus the in-flight verification cut for the cache-bust fix from v0.4.45 — a click on the update-check button in v0.4.45 should detect this release without needing a restart.
+
+Installers remain **unsigned**.
+
+### Changed
+
+- **Dependency updates** addressing CVEs flagged by Dependabot:
+  - `hono` 4.12.12 → 4.12.19 (CSS declaration injection in JSX SSR)
+  - `postcss` 8.5.9 → 8.5.14 (XSS via unescaped `</style>` in CSS stringify)
+  - `fast-uri` 3.1.0 → 3.1.2 (host confusion via percent-encoded delimiters)
+  - `@xmldom/xmldom` 0.8.12 → 0.8.13 (XML injection through unvalidated DocumentType serialization)
+  - `ip-address` + `express-rate-limit` (transitive bumps)
+
+### Known remaining
+
+`tar` (dev-only, deep transitive in Electron Forge), `prismjs` (no compatible upgrade on the pinned range), `@tootallnate/once`, and `tmp` still have open Dependabot alerts without auto-fix PRs. None affect user-facing code at runtime; addressing them requires manual upgrade investigation.
+
 ## [0.4.45] — 2026-05-17
 
 Two fixes to the in-app updater that surfaced during v0.4.43 → v0.4.44 testing.
