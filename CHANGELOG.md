@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.47] — 2026-05-18
+
+Claude Agent SDK patch bump.
+
+Installers remain **unsigned**.
+
+### Changed
+
+- **`@anthropic-ai/claude-agent-sdk` 0.3.143 → 0.3.144.** Assistant messages and `StopFailure` hooks now report `error: 'model_not_found'` instead of the generic `'invalid_request'` when the selected model isn't available; users get a cleaner error string with no app code changes needed. The other change in 0.3.144 (a new `extract` export for `bun build --compile` consumers) doesn't apply to us.
+
 ## [0.4.46] — 2026-05-17
 
 Dependency bumps from Dependabot's first sweep on the public repo, plus the in-flight verification cut for the cache-bust fix from v0.4.45 — a click on the update-check button in v0.4.45 should detect this release without needing a restart.
