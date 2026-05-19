@@ -37,6 +37,7 @@ function makeAccountsService(accounts: Account[]): AccountsService {
     listProjectOverrides: () => [],
     explainResolution: () => null,
     discoverAccounts: async () => [],
+    scanForNewAccounts: async () => [],
   };
 }
 

@@ -2190,6 +2190,15 @@ export const api = {
   },
 
   /**
+   * Scan $HOME for `.claude*` config dirs not yet represented by an existing
+   * account, and create accounts for each. Resolution semantics unchanged —
+   * this just populates the picker. Returns the newly-created Accounts.
+   */
+  async scanForNewAccounts(): Promise<Account[]> {
+    return apiCall<Account[]>('scan_for_new_accounts');
+  },
+
+  /**
    * Resolve account for a project path with explanation of why it matched
    */
   async explainAccountResolution(projectPath: string): Promise<{

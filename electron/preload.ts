@@ -16,6 +16,7 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   'set_project_account_override',
   'list_project_overrides',
   'discover_accounts',
+  'scan_for_new_accounts',
   'explain_account_resolution',
 
   // Claude

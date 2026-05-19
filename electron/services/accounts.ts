@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import type { Database } from './database';
+import { nameFromConfigDir } from './first-run-discovery';
 
 // ---------------------------------------------------------------------------
 // Public interfaces
@@ -101,6 +102,16 @@ export interface AccountsService {
   explainResolution(projectPath: string): ResolutionExplanation | null;
 
   discoverAccounts(): Promise<[string, string][]>;
+  /**
+   * Scans `$HOME` for `.claude*` config dirs and creates an Account row for
+   * each one that isn't already represented by an existing account's
+   * `configDir`. Returns the newly-created accounts. Names are derived via
+   * `nameFromConfigDir` in `first-run-discovery.ts` (e.g. `.claude` → "Claude",
+   * `.claude-work` → "Work"). Resolution semantics are unchanged — no path
+   * rules are created. Intended for the Settings escape hatch when a user
+   * adds a new `.claude-*` dir after first launch.
+   */
+  scanForNewAccounts(): Promise<Account[]>;
 }
 
 // ---------------------------------------------------------------------------
@@ -486,6 +497,20 @@ export function createAccountsService(db: Database): AccountsService {
     return results;
   }
 
+  async function scanForNewAccounts(): Promise<Account[]> {
+    const found = await discoverAccounts();
+    if (found.length === 0) return [];
+
+    const existing = new Set(listAccounts().map((a) => a.config_dir));
+    const created: Account[] = [];
+    for (const [dirName, configDir] of found) {
+      if (existing.has(configDir)) continue;
+      const acct = createAccount(nameFromConfigDir(dirName), configDir);
+      created.push(acct);
+    }
+    return created;
+  }
+
   // -------------------------------------------------------------------------
   // Return service object
   // -------------------------------------------------------------------------
@@ -504,5 +529,6 @@ export function createAccountsService(db: Database): AccountsService {
     listProjectOverrides,
     explainResolution,
     discoverAccounts,
+    scanForNewAccounts,
   };
 }

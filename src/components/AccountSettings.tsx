@@ -441,6 +441,9 @@ export const AccountSettings: React.FC = () => {
     match_detail: string;
   } | null>(null);
   const [testError, setTestError] = useState<string | null>(null);
+  // Inline status for the "Scan for ~/.claude*" escape-hatch button. Cleared
+  // automatically the next time the button is clicked.
+  const [scanStatus, setScanStatus] = useState<{ kind: 'info' | 'success' | 'error'; message: string } | null>(null);
 
   // Add account form
   const [showAddAccount, setShowAddAccount] = useState(false);
@@ -859,15 +862,58 @@ export const AccountSettings: React.FC = () => {
             </div>
           </div>
         ) : (
-          <Button
-            variant="link"
-            size="sm"
-            className="mt-2 h-6 px-0 text-xs"
-            onClick={() => { setShowAddAccount(true); }}
+          <div className="mt-2 flex items-center gap-3">
+            <Button
+              variant="link"
+              size="sm"
+              className="h-6 px-0 text-xs"
+              onClick={() => { setShowAddAccount(true); }}
+            >
+              <Plus className="w-3 h-3 mr-1" />
+              Add account
+            </Button>
+            <Button
+              variant="link"
+              size="sm"
+              className="h-6 px-0 text-xs"
+              onClick={fireAndLog('account-settings:click', async () => {
+                setScanStatus(null);
+                try {
+                  const created = await api.scanForNewAccounts();
+                  if (created.length === 0) {
+                    setScanStatus({
+                      kind: 'info',
+                      message: 'No new ~/.claude* directories found.',
+                    });
+                  } else {
+                    const names = created.map((a) => a.name).join(', ');
+                    setScanStatus({
+                      kind: 'success',
+                      message: `Added ${created.length} account${created.length === 1 ? '' : 's'}: ${names}`,
+                    });
+                    await loadData();
+                  }
+                } catch (err) {
+                  console.error('scanForNewAccounts failed:', err);
+                  setScanStatus({ kind: 'error', message: 'Scan failed. See console for details.' });
+                }
+              })}
+            >
+              Scan for ~/.claude* dirs
+            </Button>
+          </div>
+        )}
+        {scanStatus && (
+          <p
+            className={cn(
+              'mt-2 text-xs',
+              scanStatus.kind === 'success' && 'text-emerald-600 dark:text-emerald-400',
+              scanStatus.kind === 'error' && 'text-destructive',
+              scanStatus.kind === 'info' && 'text-muted-foreground',
+            )}
           >
-            <Plus className="w-3 h-3 mr-1" />
-            Add account
-          </Button>
+            {scanStatus.message}
+          </p>
         )}
       </div>
 

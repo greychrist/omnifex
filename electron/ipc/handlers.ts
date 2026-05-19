@@ -28,6 +28,7 @@ export interface Services {
     setProjectOverride(projectPath: string, accountId: unknown): unknown;
     listProjectOverrides(): unknown;
     discoverAccounts(): unknown;
+    scanForNewAccounts(): unknown;
     explainResolution(projectPath: string): unknown;
   };
   claude?: {
@@ -261,6 +262,7 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     set_project_account_override: wrapWith((p: Record<string, unknown>) => accounts?.setProjectOverride((p?.projectPath ?? p?.project_path) as string, p?.accountId ?? p?.account_id) ?? null),
     list_project_overrides: wrap(() => accounts?.listProjectOverrides() ?? null),
     discover_accounts: wrap(() => accounts?.discoverAccounts() ?? null),
+    scan_for_new_accounts: wrap(() => accounts?.scanForNewAccounts() ?? null),
     explain_account_resolution: wrapWith((p: Record<string, unknown>) => accounts?.explainResolution((p?.projectPath ?? p?.project_path) as string) ?? null),
 
     // ── Claude ────────────────────────────────────────────────────────────────

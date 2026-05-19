@@ -75,6 +75,7 @@ function makeAccountsService(configDirs: string[]): AccountsService {
     listProjectOverrides: () => [],
     explainResolution: () => null,
     discoverAccounts: async () => [],
+    scanForNewAccounts: async () => [],
   };
 }
 
@@ -881,6 +882,7 @@ describe('usage service', () => {
         listProjectOverrides: () => [],
         explainResolution: () => null,
         discoverAccounts: async () => [],
+        scanForNewAccounts: async () => [],
       });
 
       const result = svc.getStatsByAccount();
@@ -927,6 +929,7 @@ describe('usage service', () => {
         listProjectOverrides: () => [],
         explainResolution: () => null,
         discoverAccounts: async () => [],
+        scanForNewAccounts: async () => [],
       });
 
       // Only include April 9-15

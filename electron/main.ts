@@ -41,6 +41,7 @@ process.on('unhandledRejection', (err) => {
 });
 import { createDatabase, ensureDefaultSettings } from './services/database';
 import { createAccountsService } from './services/accounts';
+import { runFirstTimeDiscovery } from './services/first-run-discovery';
 import { createClaudeBinaryService } from './services/claude-binary';
 import { createSessionsService } from './services/sessions';
 import { createNotificationsService } from './services/notifications';
@@ -381,6 +382,21 @@ app.whenReady().then(() => {
     [AUTO_ON_CLOSE_SETTING_KEY]: 'true',
   });
   const accountsService = createAccountsService(db);
+
+  // First-launch account discovery: if this is a fresh install with no
+  // accounts yet, scan $HOME for `.claude*` dirs and create one account per
+  // match. Resolution still requires explicit choice — this just populates
+  // the picker so it isn't empty when the user opens their first project.
+  // One-and-done via the `discovery_completed` flag; the Settings panel has
+  // a manual "Scan for Claude config directories" button for later additions.
+  void runFirstTimeDiscovery({
+    accounts: accountsService,
+    db,
+    discover: () => accountsService.discoverAccounts(),
+  }).catch((err: unknown) => {
+    console.error('[first-run-discovery] failed:', err);
+  });
+
   const claudeBinaryService = createClaudeBinaryService(db);
   // Logging must be constructed before sessions so the sessions service can
   // route CLI subprocess stderr into the log store. The predicate reads
@@ -736,6 +752,7 @@ app.whenReady().then(() => {
         accountsService.setProjectOverride(projectPath, accountId),
       listProjectOverrides: () => accountsService.listProjectOverrides(),
       discoverAccounts: () => accountsService.discoverAccounts(),
+      scanForNewAccounts: () => accountsService.scanForNewAccounts(),
       explainResolution: (projectPath: string) =>
         accountsService.explainResolution(projectPath),
     },

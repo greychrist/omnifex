@@ -351,6 +351,21 @@ describe('accounts service', () => {
       const discovered = await accounts.discoverAccounts();
       expect(Array.isArray(discovered)).toBe(true);
     });
+
+    it('scanForNewAccounts returns an array', async () => {
+      const created = await accounts.scanForNewAccounts();
+      expect(Array.isArray(created)).toBe(true);
+    });
+
+    it('scanForNewAccounts does not duplicate accounts on a second call', async () => {
+      await accounts.scanForNewAccounts();
+      const countAfterFirst = accounts.listAccounts().length;
+
+      const secondPass = await accounts.scanForNewAccounts();
+
+      expect(secondPass).toEqual([]);
+      expect(accounts.listAccounts()).toHaveLength(countAfterFirst);
+    });
   });
 
   // -----------------------------------------------------------------------
