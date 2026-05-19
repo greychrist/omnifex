@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.48] — 2026-05-19
+
+A fresh OmniFex install no longer dead-ends new users at an empty account picker.
+
+Installers remain **unsigned**.
+
+### Added
+
+- **Auto-discovery of `~/.claude*` config directories on first launch.** Previously, a fresh install opened with zero accounts. The moment a user tried to open a project, `AccountPickerDialog` appeared with an empty list of accounts — the only path forward was Settings → Accounts → manually type a config path. (The `discoverAccounts` IPC was wired end-to-end but had no UI caller.) Now on Electron main boot, if there are no accounts and the new `discovery_completed` app_setting is unset, the main process scans `$HOME` for `.claude*` dirs and creates one Account row per match. Names derive from the dir name (`.claude` → "Claude", `.claude-work` → "Work", `.claude-side_project` → "Side Project"). Users can rename freely in Settings.
+- **"Scan for `~/.claude*` dirs" button in Settings → Accounts.** Manual escape hatch for adding a new config directory after first launch — useful when a user installs OmniFex first, then later creates a `.claude-work` and wants to import it without typing the path. Skips any directory whose `config_dir` already matches an existing account.
+
+### Notes on intentional non-behavior
+
+- **Resolution semantics are unchanged.** `AccountsService.resolve()` still goes override → longest path rule → null. Discovery only populates the picker so it isn't an empty void; it does not designate a default account, create path rules, or pick for the user.
+- **One-and-done discovery.** The `discovery_completed` flag prevents silent re-creation if a user later deletes accounts in Settings. Use the Scan button to re-import.
+
 ## [0.4.47] — 2026-05-18
 
 Claude Agent SDK patch bump.
