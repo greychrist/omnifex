@@ -208,7 +208,8 @@ export function AskUserQuestionCard({ request, onSubmit, onCancel }: AskUserQues
             aria-expanded={!collapsed}
             className={cn(
               "shrink-0 -mt-0.5 -mr-0.5 h-6 w-6 inline-flex items-center justify-center rounded-md",
-              "text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors",
+              "border border-border bg-background",
+              "text-muted-foreground hover:text-foreground hover:bg-accent transition-colors",
               "focus:outline-none focus-visible:ring-1 focus-visible:ring-ring",
             )}
           >

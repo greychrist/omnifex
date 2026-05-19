@@ -82,11 +82,16 @@ export const TaskList: React.FC<TaskListProps> = ({ messages, isLive, className 
             className="inline-flex items-center gap-1.5 text-muted-foreground hover:text-foreground"
             title={expanded ? 'Collapse task list' : 'Expand task list'}
           >
-            {expanded ? (
-              <ChevronDown className="h-3.5 w-3.5" />
-            ) : (
-              <ChevronUp className="h-3.5 w-3.5" />
-            )}
+            <span
+              className="inline-flex items-center justify-center h-6 w-6 rounded-md border border-border bg-background shrink-0"
+              aria-hidden
+            >
+              {expanded ? (
+                <ChevronDown className="h-3.5 w-3.5" />
+              ) : (
+                <ChevronUp className="h-3.5 w-3.5" />
+              )}
+            </span>
             <span className="font-medium text-foreground">Task List:</span>
             <span className="text-foreground/90 tabular-nums">
               {summary.done}/{summary.total} done

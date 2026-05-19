@@ -181,10 +181,15 @@ export const SubagentBar: React.FC<SubagentBarProps> = ({
         <button
           type="button"
           onClick={() => { setCollapsed((v) => !v); }}
-          className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"
+          className="inline-flex items-center gap-1.5 text-muted-foreground hover:text-foreground"
           title={collapsed ? 'Expand subagents' : 'Collapse subagents'}
         >
-          {collapsed ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+          <span
+            className="inline-flex items-center justify-center h-6 w-6 rounded-md border border-border bg-background shrink-0"
+            aria-hidden
+          >
+            {collapsed ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+          </span>
           <Bot className="h-3.5 w-3.5" />
           <span className="font-medium">
             Subagents ({subagents.length})
