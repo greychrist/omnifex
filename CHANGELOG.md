@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.49] — 2026-05-19
+
+Major idle-CPU regression fix in the renderer, plus a few small features and dep bumps.
+
+Installers remain **unsigned**.
+
+### Fixed
+
+- **Renderer no longer burns 100%+ CPU at idle.** Performance profiling traced the burn to Framer Motion's per-frame animation loop (`safeToRemove` / `startAnimation` / `initAnimation` calls running indefinitely) — we were pinned to a year-old `12.0.0-alpha.1`. Bumping to the current stable `12.39.0` makes the loop park when nothing's actively animating. Before/after traces show the dominant function dropping from **92.3%** of total execution time to under 3%. No code changes required.
+
+### Added
+
+- **Copy-image button on chat images.** Hover any image in a chat session to reveal a small toolbar at top-right; the existing Download button is now joined by a Copy button that writes the image straight to the system clipboard. JPEG/WebP sources get re-encoded as PNG via an offscreen canvas first because Chromium's clipboard is only reliable for `image/png`.
+
+### Changed
+
+- **Chevron toggles on TaskList, SubagentBar, and the agent-question card** now wear the same `rounded-md border border-border bg-background` shape as the chat copy buttons, so the toggles read as obviously interactive. Click region on TaskList and SubagentBar stays wide (the styled span is purely visual; the parent button still handles the click).
+- **`@anthropic-ai/claude-agent-sdk` 0.3.144 → 0.3.145.** Patch bump for parity with Claude Code v2.1.145. Permission-bypass fixes and MCP prompt error-handling improvements flow through without code changes on our side.
+
+### Accessibility
+
+- **Image lightbox now has a screen-reader title.** Silences Radix's "DialogContent requires a DialogTitle" warning. Uses the image's `alt` text, falls back to "Image preview".
+
 ## [0.4.48] — 2026-05-19
 
 A fresh OmniFex install no longer dead-ends new users at an empty account picker.
