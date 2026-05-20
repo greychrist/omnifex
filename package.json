@@ -46,7 +46,7 @@
     "clsx": "^2.1.1",
     "date-fns": "^3.6.0",
     "diff": "^8.0.2",
-    "framer-motion": "^12.0.0-alpha.1",
+    "framer-motion": "^12.39.0",
     "lucide-react": "^0.468.0",
     "node-pty": "^1.1.0",
     "react": "^18.3.1",
