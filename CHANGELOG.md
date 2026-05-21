@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.51] — 2026-05-21
+
+Single-account fix: users with only the stock `~/.claude` config directory (no `.claude-personal` / `.claude-work` setup) were blocked from starting any session.
+
+Installers remain **unsigned**.
+
+### Fixed
+
+- **`~/.claude` is now allowed when explicitly configured.** Every Claude subprocess routes through `buildClaudeEnv`, which since v0.3.x has hard-rejected any `configDir` resolving to `<home>/.claude` with `"the Claude Code default location OmniFex explicitly avoids"`. The guard was added to catch leaks where an empty/missing `CLAUDE_CONFIG_DIR` silently falls back to `~/.claude`, but it also blocked legitimate single-account users whose only Claude config dir IS `~/.claude`. The "no silent default" property is already enforced upstream at the resolution layer (`accounts.resolve()` returns null when no override or path-rule matches), so by the time a `configDir` reaches the env builder it was already picked deliberately by an account row. The empty / whitespace / non-string guards stay — those are the actual leak shape.
+
 ## [0.4.50] — 2026-05-21
 
 The renderer's idle-CPU regression turned out to NOT be Framer Motion. This release lands the actual root cause plus supporting fixes for missing log diagnostics and a Claude Code 2.1.146 TUI compatibility break.
