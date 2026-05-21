@@ -17,6 +17,30 @@ const NOISE_PATTERNS = [
   /\[PostHog\.js\]/,
 ];
 
+// Plain `JSON.stringify(new Error('boom'))` returns `'{}'` because
+// Error.message and Error.stack are non-enumerable. That dropped every
+// stream-render exception on the floor and made the renderer's runaway-CPU
+// regression invisible. Format Errors explicitly at the top level and via a
+// replacer so nested Errors also surface.
+function formatError(e: Error): string {
+  const head = `${e.name}: ${e.message}`;
+  return e.stack ? `${head}\n${e.stack}` : head;
+}
+
+export function formatLogArgs(args: unknown[]): string {
+  return args
+    .map((a) => {
+      if (typeof a === 'string') return a;
+      if (a instanceof Error) return formatError(a);
+      return JSON.stringify(a, (_key, value) =>
+        value instanceof Error
+          ? { name: value.name, message: value.message, stack: value.stack }
+          : value,
+      );
+    })
+    .join(' ');
+}
+
 class LogService {
   private static instance: LogService;
   private buffer: LogEntry[] = [];
@@ -103,9 +127,7 @@ class LogService {
   }
 
   private captureConsole(level: LogLevel, args: any[]): void {
-    const message = args
-      .map((a) => (typeof a === 'string' ? a : JSON.stringify(a)))
-      .join(' ');
+    const message = formatLogArgs(args);
 
     // Filter noise
     if (NOISE_PATTERNS.some((p) => p.test(message))) return;
