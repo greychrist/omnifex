@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.52] — 2026-05-21
+
+Session-header workspace polish for users with lots of worktrees, plus a Claude Code 2.1.147 parity bump.
+
+Installers remain **unsigned**.
+
+### Added
+
+- **Resizable session header.** The header bar (back button / account card / branch+worktrees / session card) now has a drag handle at its bottom edge. Drag down to grow it; the embedded worktree list flexes to fill whatever room you give it. Double-click the handle to reset to natural sizing. Height persists across tabs and reloads via localStorage.
+- **Worktree list scrolls past 3 entries.** When you haven't resized the header, the worktree column caps at ~3 visible branches with a slim always-visible scrollbar (so the affordance is obvious — no more guessing whether more are hidden). When you resize the header bigger, the cap drops and the list fills the available space.
+- **Worktree count in the header.** The label now reads `worktrees (N)` so you can see at a glance how many sibling branches are in play.
+
+### Changed
+
+- **`@anthropic-ai/claude-agent-sdk` 0.3.146 → 0.3.147.** Patch bump for parity with Claude Code v2.1.147. Notable upstream fixes that land for OmniFex sessions: uncaught exception at the end of streaming via the Agent SDK, and pasted text being delivered as `[Pasted text #N]` placeholders instead of the actual content.
+
 ## [0.4.51] — 2026-05-21
 
 Single-account fix: users with only the stock `~/.claude` config directory (no `.claude-personal` / `.claude-work` setup) were blocked from starting any session.
