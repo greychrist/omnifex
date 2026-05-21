@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.50] — 2026-05-21
+
+The renderer's idle-CPU regression turned out to NOT be Framer Motion. This release lands the actual root cause plus supporting fixes for missing log diagnostics and a Claude Code 2.1.146 TUI compatibility break.
+
+Installers remain **unsigned**.
+
+### Fixed
+
+- **Renderer no longer burns 100%+ CPU at idle (actually, this time).** 0.4.49's note attributed the idle-CPU loop to a stale `framer-motion` alpha and bumped to 12.39.0 — that bump was a no-op for the underlying bug. Profiling under the new SDK showed `performWorkUntilDeadline` at 58% self time and a tower of React scheduler `postMessage` frames: classic continuous-re-render symptom. Root cause: `TabContent` passes inline arrow closures for callback props (`onProjectPathChange`) on every render, and `TabContext.updateTab` always allocated a new tabs array + new `updatedAt: new Date()` even for no-op updates. `ClaudeCodeSession`'s `useEffect(..., [onProjectPathChange, projectPath])` therefore re-fired on every parent render → called the prop → updated context state → re-rendered the parent → … Two fixes: ref-capture the callback (mirroring the existing `onStreamingChange` pattern in the same file) so the effect keys on `projectPath` only, and make `updateTab` idempotent when every updated field already equals the existing value so future mistakes can't self-amplify.
+- **`/usage` panel updates again under Claude Code 2.1.146.** The pty screen-scraper waited for `"shift+tab to cycle"` in the TUI welcome banner; 2.1.146 lays out the banner with cursor-positioning ANSI escapes instead of literal spaces, so after `stripAnsi` the marker arrived as `"shift+tabtocycle"` and never matched. Every usage poll timed out silently. The matcher now normalizes whitespace on both sides; the trust-dialog matcher gets the same treatment.
+- **Renderer log entries now include real error messages.** `logService.captureConsole` serialized log args via `JSON.stringify`, which drops `Error.message` and `Error.stack` because they're non-enumerable — so every caught exception logged as `{}`. Format `Error` instances explicitly at the top level, and use a JSON replacer so nested Errors also surface. (Without this we couldn't see what was throwing in the render loop above.)
+
+### Changed
+
+- **`@anthropic-ai/claude-agent-sdk` 0.3.145 → 0.3.146.** Patch bump for parity with Claude Code v2.1.146. Notable upstream fix: uncaught exception at the end of streaming sessions when running via the Agent SDK.
+
+### Removed
+
+- **Dead `onBack` / `onProjectSettings` props on `ClaudeCodeSession`** plus the unused `SessionHeader` component they fed. The props were declared in `ClaudeCodeSessionProps` and force-passed by `TabContent`, but `ClaudeCodeSession` never destructured or invoked them — the only consumer was `SessionHeader`, which is itself never rendered anywhere. -199 lines.
+
 ## [0.4.49] — 2026-05-19
 
 Major idle-CPU regression fix in the renderer, plus a few small features and dep bumps.
