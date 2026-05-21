@@ -505,15 +505,22 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     modelChanges: [] as { from: string; to: string; timestamp: number }[],
   });
 
-  // Notify parent of the active projectPath. Runs on mount AND on any
-  // subsequent projectPath / callback change — parent state should track
-  // the latest path. If onProjectPathChange isn't memoized parent-side
-  // we'd briefly re-fire on its identity change; the call is idempotent.
+  // Notify parent of the active projectPath. TabContent passes a fresh
+  // inline closure for this prop on every render and its `updateTab`
+  // implementation always allocates a new tabs array + new `updatedAt`
+  // Date — so if we depended on the callback identity, the cycle would
+  // be: parent render → new closure → effect fires → updateTab → parent
+  // re-render → new closure → … (renderer pegged at >100% CPU at idle).
+  // Capture the latest callback in a ref like onStreamingChange below
+  // and key the effect on `projectPath` only, so it runs exactly once
+  // per real change.
+  const onProjectPathChangeRef = useRef(onProjectPathChange);
+  onProjectPathChangeRef.current = onProjectPathChange;
   useEffect(() => {
-    if (onProjectPathChange && projectPath) {
-      onProjectPathChange(projectPath);
+    if (onProjectPathChangeRef.current && projectPath) {
+      onProjectPathChangeRef.current(projectPath);
     }
-  }, [onProjectPathChange, projectPath]);
+  }, [projectPath]);
 
   // Get effective session info (from prop or extracted) - use useMemo to ensure it updates
   const effectiveSession = useMemo(() => {
