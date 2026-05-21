@@ -247,13 +247,23 @@ export function createUsageRunnerService(deps: UsageRunnerDeps): UsageRunnerServ
     // Add new entries here when Claude rewords the footer again. The
     // failure mode is loud (timeout + raw buffer in Log tab), so the next
     // drift is easy to diagnose.
+    // Claude Code 2.1.146 lays out parts of the banner with cursor-
+    // positioning ANSI escapes (CUF, etc.) instead of literal space chars.
+    // After stripAnsi the visible characters remain but the spaces are gone
+    // (e.g. `shift+tab to cycle` arrives as `shift+tabtocycle`). Normalize
+    // whitespace on both sides so the matcher survives any inter-word
+    // spacing variant the TUI produces.
     const READY_MARKERS = ['for shortcuts', 'shift+tab to cycle'];
     const TRUST_MARKER = 'trust this folder';
+    const compact = (s: string) => s.replace(/\s+/g, '');
+    const COMPACT_READY_MARKERS = READY_MARKERS.map(compact);
+    const COMPACT_TRUST_MARKER = compact(TRUST_MARKER);
     let trustConfirmed = false;
     let readyLogged = false;
     while (Date.now() < hardDeadline) {
       const stripped = stripAnsi(buffer);
-      const ready = READY_MARKERS.some((m) => stripped.includes(m));
+      const compactStripped = compact(stripped);
+      const ready = COMPACT_READY_MARKERS.some((m) => compactStripped.includes(m));
       const quiet = Date.now() - lastByteAt >= settleQuietMs;
       if (ready && quiet) {
         if (!readyLogged) {
@@ -262,7 +272,7 @@ export function createUsageRunnerService(deps: UsageRunnerDeps): UsageRunnerServ
         }
         break;
       }
-      if (!trustConfirmed && stripped.includes(TRUST_MARKER)) {
+      if (!trustConfirmed && compactStripped.includes(COMPACT_TRUST_MARKER)) {
         // Defensive — the scratch-cwd helper pre-trusts the folder, so
         // this branch shouldn't fire under normal operation. If it does,
         // log it so we can tell whether the trust mark stopped sticking.

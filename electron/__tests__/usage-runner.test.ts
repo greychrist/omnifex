@@ -484,6 +484,51 @@ describe('usage-runner', () => {
     expect(result.parsed.windows.length).toBe(3);
   });
 
+  it('recognizes the 2.1.146 welcome footer even when ANSI stripping collapses inter-word spaces', async () => {
+    // Claude Code 2.1.146 lays out the welcome banner with cursor-positioning
+    // escapes for some inter-word spacing rather than literal space chars.
+    // After stripAnsi() the visible characters remain but the spacing is gone,
+    // so a literal substring match for "shift+tab to cycle" misses. The
+    // matcher must normalize whitespace on both sides. Captured live by Greg.
+    const accounts = makeFakeAccountsService();
+    const rateLimits = makeFakeRateLimits();
+    const stripped146 = '⏵⏵automodeon (shift+tabtocycle)·←foragents◉xhigh·/effort';
+    const spawn146: PtySpawner = () => {
+      const dataHandlers: ((d: string) => void)[] = [];
+      const exitHandlers: ((code: { exitCode: number }) => void)[] = [];
+      let killed = false;
+      setTimeout(() => {
+        if (killed) return;
+        for (const h of dataHandlers) h(stripped146);
+      }, 5);
+      return {
+        write: (data: string) => {
+          if (data.includes('/usage')) {
+            setTimeout(() => {
+              if (killed) return;
+              for (const h of dataHandlers) h(MAX_FULL_FIXTURE);
+            }, 30);
+          }
+        },
+        kill: () => { killed = true; for (const h of exitHandlers) h({ exitCode: 0 }); },
+        onData: (cb) => { dataHandlers.push(cb); },
+        onExit: (cb) => { exitHandlers.push(cb); },
+      };
+    };
+    const observedAt = Date.UTC(2023, 10, 15, 10, 40, 0);
+    const runner = createUsageRunnerService({
+      accounts, rateLimits,
+      spawnPty: spawn146,
+      findClaudeBinary: () => '/fake/claude',
+      now: () => observedAt,
+      ...TUNING,
+    });
+    const result = await runner.run('personal');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.parsed.windows.length).toBe(3);
+  });
+
   it('passes the scratch cwd from ensureCwd into spawnPty (not os.homedir)', async () => {
     const seenOpts: { cwd: string; env: NodeJS.ProcessEnv }[] = [];
     const wrapped: PtySpawner = (cmd, args, opts) => {
