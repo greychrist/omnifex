@@ -88,6 +88,15 @@ const GERUNDS = [
 ] as const;
 const pickGerund = (): string => GERUNDS[Math.floor(Math.random() * GERUNDS.length)];
 
+// User-resizable session header. Height persists across tabs/sessions via
+// localStorage. When unset (null), the header sizes to its natural content
+// (driven by the back button + the worktree column's default 5.25rem cap).
+// Once the user drags the bottom edge, the inner worktree list flexes to fill
+// the available vertical space instead of clamping to 3-and-a-peek.
+const HEADER_HEIGHT_KEY = 'omnifex.session-header-height';
+const MIN_HEADER_HEIGHT = 60;
+const MAX_HEADER_HEIGHT = 600;
+
 interface ClaudeCodeSessionProps {
   /**
    * Optional session to resume (when clicking from SessionList)
@@ -287,6 +296,53 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   const [sessionGit, setSessionGit] = useState<import('@/lib/api').SessionGitSnapshot | null>(null);
   const [gitWatchId, setGitWatchId] = useState<string | null>(null);
   const [branchPins, setBranchPins] = useState<Record<string, string>>({});
+
+  // Resizable header — null = natural sizing (default), number = user pick.
+  const [headerHeight, setHeaderHeight] = useState<number | null>(() => {
+    const raw = window.localStorage.getItem(HEADER_HEIGHT_KEY);
+    if (!raw) return null;
+    const n = Number(raw);
+    return Number.isFinite(n) && n >= MIN_HEADER_HEIGHT ? Math.min(MAX_HEADER_HEIGHT, n) : null;
+  });
+  const headerRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (headerHeight == null) return;
+    window.localStorage.setItem(HEADER_HEIGHT_KEY, String(headerHeight));
+  }, [headerHeight]);
+  const handleHeaderResizeStart = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const headerEl = headerRef.current;
+    if (!headerEl) return;
+    const startY = e.clientY;
+    const startHeight = headerHeight ?? headerEl.getBoundingClientRect().height;
+    const handleEl = e.currentTarget;
+    handleEl.setPointerCapture(e.pointerId);
+    const prevBodyUserSelect = document.body.style.userSelect;
+    const prevBodyCursor = document.body.style.cursor;
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'ns-resize';
+    const onMove = (ev: PointerEvent) => {
+      const next = Math.max(
+        MIN_HEADER_HEIGHT,
+        Math.min(MAX_HEADER_HEIGHT, startHeight + (ev.clientY - startY)),
+      );
+      setHeaderHeight(next);
+    };
+    const onUp = () => {
+      handleEl.removeEventListener('pointermove', onMove);
+      handleEl.removeEventListener('pointerup', onUp);
+      handleEl.removeEventListener('pointercancel', onUp);
+      document.body.style.userSelect = prevBodyUserSelect;
+      document.body.style.cursor = prevBodyCursor;
+    };
+    handleEl.addEventListener('pointermove', onMove);
+    handleEl.addEventListener('pointerup', onUp);
+    handleEl.addEventListener('pointercancel', onUp);
+  }, [headerHeight]);
+  const handleHeaderResizeReset = useCallback(() => {
+    setHeaderHeight(null);
+    window.localStorage.removeItem(HEADER_HEIGHT_KEY);
+  }, []);
 
   React.useEffect(() => {
     if (!projectPath) {
@@ -1614,7 +1670,11 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   return (
     <TooltipProvider>
       <div className={cn("flex flex-col h-full bg-background", className)}>
-        <div className="flex items-start gap-2 px-4 py-1.5 border-b border-border/30 bg-muted shrink-0">
+        <div
+          ref={headerRef}
+          className="relative flex items-start gap-2 px-4 py-1.5 border-b border-border/30 bg-muted shrink-0"
+          style={headerHeight != null ? { height: headerHeight } : undefined}
+        >
           <TooltipSimple content="Back to Project page" side="bottom">
             <Button
               size="sm"
@@ -1641,7 +1701,12 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             />
           )}
           {gitStatus?.branch && (
-            <div className="flex items-start gap-3 rounded-md border-0 bg-background/40 px-2 py-1 shadow-[0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_30%,transparent),2px_2px_4px_rgb(0_0_0/0.08)]">
+            <div
+              className={cn(
+                "flex items-start gap-3 rounded-md border-0 bg-background/40 px-2 py-1 shadow-[0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_30%,transparent),2px_2px_4px_rgb(0_0_0/0.08)]",
+                headerHeight != null && "self-stretch min-h-0",
+              )}
+            >
               <div className="flex flex-col items-start gap-0.5">
                 <HeaderLabel>branch</HeaderLabel>
                 <GitBranchBadge
@@ -1655,9 +1720,19 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                 />
               </div>
               {worktreeList.length > 0 && (
-                <div className="flex flex-col items-start gap-0.5">
-                  <HeaderLabel>worktrees</HeaderLabel>
-                  <div className="flex flex-col items-start gap-1">
+                <div
+                  className={cn(
+                    "flex flex-col items-start gap-0.5",
+                    headerHeight != null && "self-stretch min-h-0",
+                  )}
+                >
+                  <HeaderLabel>worktrees ({worktreeList.length})</HeaderLabel>
+                  <div
+                    className={cn(
+                      "flex flex-col items-start gap-1 overflow-y-auto pr-1 scrollbar-thin",
+                      headerHeight != null ? "flex-1 min-h-0" : "max-h-[5.25rem]",
+                    )}
+                  >
                     {worktreeList.map((wt) => {
                       const branchName = wt.branch ?? '(detached)';
                       return (
@@ -1706,6 +1781,17 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             clearReason={clearButtonReason}
             sessionId={claudeSessionId}
           />
+          <div
+            role="separator"
+            aria-orientation="horizontal"
+            aria-label="Resize session header (double-click to reset)"
+            onPointerDown={handleHeaderResizeStart}
+            onDoubleClick={handleHeaderResizeReset}
+            className="group absolute bottom-0 left-0 right-0 h-1.5 cursor-ns-resize touch-none"
+            title={headerHeight != null ? 'Drag to resize · double-click to reset' : 'Drag to resize'}
+          >
+            <div className="absolute left-1/2 -translate-x-1/2 bottom-0 h-0.5 w-12 rounded-full bg-foreground/15 transition-colors group-hover:bg-foreground/40" />
+          </div>
         </div>
         {!sessionStarted && (
           <div className="flex-1 flex items-center justify-center p-8">
