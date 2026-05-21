@@ -517,18 +517,6 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
               initialProjectPath={tab.initialProjectPath || ''}
               tabId={tab.id}
               initialSessionConfig={tab.initialSessionConfig}
-              onBack={() => {
-                // Go back to projects view in the same tab. Also clear
-                // the per-tab icon override — the chat tab might still
-                // be carrying it from a previous projects → sessions
-                // drill-down, and the projects landing page wants the
-                // type-default Folder icon back.
-                updateTab(tab.id, {
-                  type: 'projects',
-                  title: 'Projects',
-                  icon: undefined,
-                });
-              }}
               onStreamingChange={(isStreaming, sessionId) => {
                 // Persist the SDK session ID to the tab so it survives app restart
                 if (sessionId) {

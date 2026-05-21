@@ -124,14 +124,6 @@ interface ClaudeCodeSessionProps {
     };
   };
   /**
-   * Callback to go back
-   */
-  onBack: () => void;
-  /**
-   * Callback to open hooks configuration
-   */
-  onProjectSettings?: (projectPath: string) => void;
-  /**
    * Optional className for styling
    */
   className?: string;
@@ -146,10 +138,7 @@ interface ClaudeCodeSessionProps {
 }
 
 /**
- * ClaudeCodeSession component for interactive Claude Code sessions
- *
- * @example
- * <ClaudeCodeSession onBack={() => setView('projects')} />
+ * ClaudeCodeSession component for interactive Claude Code sessions.
  */
 export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   session,
