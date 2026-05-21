@@ -36,10 +36,9 @@ export function createModelsService(opts: ModelsServiceOptions = {}): ModelsServ
   const timeoutMs = opts.timeoutMs ?? 8000;
 
   async function listSupported(configDir: string): Promise<ModelInfo[]> {
-    // buildClaudeEnv enforces non-empty configDir AND rejects ~/.claude.
-    // We previously only checked emptiness here; rolling the validation
-    // into the env builder means the same guard fires uniformly across
-    // every spawn site.
+    // buildClaudeEnv enforces non-empty configDir. We previously only checked
+    // emptiness here; rolling the validation into the env builder means the
+    // same guard fires uniformly across every spawn site.
     const options: Record<string, unknown> = {
       env: buildClaudeEnv(configDir),
       settingSources: [] as string[],

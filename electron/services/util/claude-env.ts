@@ -9,33 +9,29 @@ import path from 'node:path';
  * Why this needs to be one helper rather than five copies of
  * `{ ...process.env, CLAUDE_CONFIG_DIR: configDir }`:
  *
- *   • Every leak we've ever had to ~/.claude/ has come from the same shape:
- *     a `configDir` parameter being empty, undefined, the wrong path, or just
- *     literally `~/.claude` — and the spawn site silently passing it through.
- *     Claude Code defaults to `~/.claude` when CLAUDE_CONFIG_DIR is missing or
- *     unreadable, so any empty/wrong value lands there.
- *   • OmniFex never uses `~/.claude` for anything (users have account-scoped
- *     `~/.claude-personal`, `~/.claude-work`, `~/.claude-local`, etc.).
- *     `~/.claude` showing up at a spawn site is unambiguously a bug.
+ *   • The only leak shape that actually matters is `configDir` arriving empty,
+ *     whitespace, or non-string — Claude Code falls back to `~/.claude` when
+ *     CLAUDE_CONFIG_DIR is missing or unreadable, so any such value silently
+ *     hijacks the user's default config. We throw on those inputs to surface
+ *     account-resolution bugs at the spawn site instead of corrupting state.
+ *   • `~/.claude` itself is a legitimate destination: single-account users
+ *     who never created `.claude-personal` / `.claude-work` configure an
+ *     account pointing at the stock dir, and that needs to work. The "don't
+ *     silently default to it" property is enforced at the resolution layer
+ *     (accounts.resolve() returns null when no override/path-rule matches),
+ *     not here — by the time a configDir reaches this function it was already
+ *     picked deliberately.
  *   • Spreading `process.env` first preserves `ANTHROPIC_BASE_URL`,
  *     `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_*`, `HTTP_PROXY`, etc. — anything the
  *     user set in their shell environment that we shouldn't drop. The
  *     overrides parameter lets a caller add account-specific extras
  *     (e.g. a future per-account proxy override) without redoing the spread.
  *
- * Throws (loudly, intentionally) on:
- *   - empty / whitespace / non-string `configDir`
- *   - any path that resolves to `<HOMEDIR>/.claude` (the leak we're guarding
- *     against — there is no legitimate reason for an OmniFex spawn to land
- *     there)
- *
- * Does NOT silently fall back to a default account. Falling back at the spawn
- * layer would mask account-resolution bugs upstream — the no-account case
- * needs to be handled at the resolution layer (return null, surface skip
- * code), not papered over here.
+ * Throws (loudly, intentionally) on empty / whitespace / non-string
+ * `configDir`. Does NOT silently fall back to a default account — the
+ * no-account case is handled at the resolution layer (return null, surface
+ * skip code), not papered over here.
  */
-
-const FORBIDDEN_BASENAME = '.claude';
 
 export type ClaudeEnvExtras = Record<string, string | undefined>;
 
@@ -62,14 +58,6 @@ export function buildClaudeEnv(
   const home = homedirFn();
   const expanded = expandTilde(trimmed, home);
   const resolved = path.resolve(expanded);
-
-  if (resolved === path.join(home, FORBIDDEN_BASENAME)) {
-    throw new Error(
-      `[claude-env] configDir resolves to ${resolved}, which is the Claude Code default location ` +
-        'OmniFex explicitly avoids. Every Claude session must run under an account-scoped ' +
-        '(e.g. ~/.claude-personal, ~/.claude-work) config dir.',
-    );
-  }
 
   const baseEnv = deps.processEnv ?? process.env;
 

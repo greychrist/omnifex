@@ -24,8 +24,7 @@ describe('buildClaudeEnv', () => {
     expect(env.CLAUDE_CONFIG_DIR).toBe('/Users/test/.claude-work');
   });
 
-  it('expands a bare ~ to the home directory (but rejects on next step if it lands on ~/.claude)', () => {
-    // Bare ~ → /Users/test, which is NOT ~/.claude, so it passes through.
+  it('expands a bare ~ to the home directory', () => {
     const env = buildClaudeEnv('~', {}, fakeDeps());
     expect(env.CLAUDE_CONFIG_DIR).toBe(HOME);
   });
@@ -87,23 +86,20 @@ describe('buildClaudeEnv', () => {
     expect(() => buildClaudeEnv(undefined, {}, fakeDeps())).toThrow(/must be a string/);
   });
 
-  it('throws when configDir resolves to ~/.claude (the OmniFex-leak guard)', () => {
-    expect(() => buildClaudeEnv('~/.claude', {}, fakeDeps())).toThrow(
-      /Claude Code default location/,
-    );
-    expect(() => buildClaudeEnv('/Users/test/.claude', {}, fakeDeps())).toThrow(
-      /Claude Code default location/,
-    );
-    // Even with trailing slash / extra segments resolving to the same place.
-    expect(() =>
-      buildClaudeEnv('/Users/test/.claude/', {}, fakeDeps()),
-    ).toThrow(/Claude Code default location/);
-    expect(() =>
-      buildClaudeEnv('/Users/test/foo/../.claude', {}, fakeDeps()),
-    ).toThrow(/Claude Code default location/);
+  it('allows ~/.claude when explicitly configured (single-account users)', () => {
+    // Single-account users with only the stock ~/.claude need this to work.
+    // The "no silent default" property is enforced at the resolution layer
+    // (accounts.resolve() returns null if no override/rule matches), not here
+    // — so any configDir that arrives at buildClaudeEnv was already chosen
+    // explicitly by an account row.
+    const env = buildClaudeEnv('~/.claude', {}, fakeDeps());
+    expect(env.CLAUDE_CONFIG_DIR).toBe(path.join(HOME, '.claude'));
+
+    const env2 = buildClaudeEnv(path.join(HOME, '.claude'), {}, fakeDeps());
+    expect(env2.CLAUDE_CONFIG_DIR).toBe(path.join(HOME, '.claude'));
   });
 
-  it('does NOT reject ~/.claude-personal / ~/.claude-work (the legitimate forms)', () => {
+  it('allows the account-scoped forms (~/.claude-personal, etc.)', () => {
     expect(() =>
       buildClaudeEnv('~/.claude-personal', {}, fakeDeps()),
     ).not.toThrow();
@@ -113,13 +109,6 @@ describe('buildClaudeEnv', () => {
     expect(() =>
       buildClaudeEnv('~/.claude-local', {}, fakeDeps()),
     ).not.toThrow();
-  });
-
-  it('rejects ~/.claude even when the user explicitly types it', () => {
-    // The point of this guard: even if a user enters ~/.claude in Account
-    // Settings (perhaps mistakenly), refuse to spawn — surface the bug at
-    // spawn time instead of silently corrupting their default Claude state.
-    expect(() => buildClaudeEnv(path.join(HOME, '.claude'), {}, fakeDeps())).toThrow();
   });
 
   it('uses the real process.env / homedir when deps are omitted', () => {
