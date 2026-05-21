@@ -272,13 +272,24 @@ export const TabProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [activeTabId]);
 
   const updateTab = useCallback((id: string, updates: Partial<Tab>) => {
-    setTabs(prevTabs => 
-      prevTabs.map(tab => 
-        tab.id === id 
-          ? { ...tab, ...updates, updatedAt: new Date() }
-          : tab
-      )
-    );
+    setTabs(prevTabs => {
+      let changed = false;
+      const nextTabs = prevTabs.map(tab => {
+        if (tab.id !== id) return tab;
+        // Shallow-equal each updated key against the existing value. If
+        // nothing differs, return the same tab reference so the tabs
+        // array reference also stays stable. Prevents an unstable caller
+        // (e.g. an inline callback prop re-fired by a parent re-render)
+        // from amplifying into a sustained render loop — see
+        // ClaudeCodeSession's onProjectPathChange ref-capture fix.
+        const keys = Object.keys(updates) as (keyof Tab)[];
+        const allEqual = keys.every((k) => tab[k] === updates[k]);
+        if (allEqual) return tab;
+        changed = true;
+        return { ...tab, ...updates, updatedAt: new Date() };
+      });
+      return changed ? nextTabs : prevTabs;
+    });
   }, []);
 
   const setActiveTab = useCallback((id: string) => {

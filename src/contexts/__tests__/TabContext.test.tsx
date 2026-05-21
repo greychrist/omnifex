@@ -163,6 +163,58 @@ describe('TabContext — updateTab / setActiveTab / reorderTabs', () => {
     expect(tab.updatedAt.getTime()).toBeGreaterThan(before);
   });
 
+  it('updateTab is a no-op when every update field already equals the tab value', async () => {
+    // Regression guard: a misbehaving caller (e.g. an unstable callback
+    // prop fired by a useEffect dep change) used to drive an infinite
+    // render loop because updateTab always allocated a new tabs array
+    // and a new `updatedAt: new Date()`, even when nothing actually
+    // changed. Identical updates must now preserve identity so the loop
+    // cannot self-sustain even if a future callback slips through
+    // unprotected.
+    const { result } = renderHook(() => useTabContext(), { wrapper });
+    await waitFor(() => { expect(result.current.tabs.length).toBe(1); });
+    const id = result.current.tabs[0].id;
+    const tabsBefore = result.current.tabs;
+    const tabBefore = result.current.tabs[0];
+    const updatedAtBefore = tabBefore.updatedAt;
+
+    await new Promise<void>((r) => setTimeout(r, 5));
+    act(() => {
+      result.current.updateTab(id, {
+        title: tabBefore.title,
+        status: tabBefore.status,
+        type: tabBefore.type,
+      });
+    });
+
+    expect(result.current.tabs).toBe(tabsBefore);
+    expect(result.current.tabs[0]).toBe(tabBefore);
+    expect(result.current.tabs[0].updatedAt).toBe(updatedAtBefore);
+  });
+
+  it('updateTab still applies when a single field genuinely changes', async () => {
+    // Companion to the no-op idempotency test: when even one field
+    // differs, the tab object identity must update and updatedAt must
+    // move forward so consumers reliably observe the change.
+    const { result } = renderHook(() => useTabContext(), { wrapper });
+    await waitFor(() => { expect(result.current.tabs.length).toBe(1); });
+    const id = result.current.tabs[0].id;
+    const tabBefore = result.current.tabs[0];
+    const updatedAtBefore = tabBefore.updatedAt.getTime();
+
+    await new Promise<void>((r) => setTimeout(r, 5));
+    act(() => {
+      result.current.updateTab(id, {
+        title: tabBefore.title,
+        status: 'running',
+      });
+    });
+
+    expect(result.current.tabs[0]).not.toBe(tabBefore);
+    expect(result.current.tabs[0].status).toBe('running');
+    expect(result.current.tabs[0].updatedAt.getTime()).toBeGreaterThan(updatedAtBefore);
+  });
+
   it('setActiveTab clears hasUnreadResult on the targeted tab', async () => {
     const { result } = renderHook(() => useTabContext(), { wrapper });
     await waitFor(() => { expect(result.current.tabs.length).toBe(1); });
