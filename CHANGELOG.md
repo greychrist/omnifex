@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.54] — 2026-05-22
+
+Tiny follow-up to v0.4.53. SDK parity bump that restores correct telemetry attribution on every Claude subprocess OmniFex spawns.
+
+Installers remain **unsigned**.
+
+### Changed
+
+- **`@anthropic-ai/claude-agent-sdk` 0.3.148 → 0.3.149.** Fixes the SDK dropping `CLAUDE_AGENT_SDK_VERSION` (used for User-Agent and telemetry) whenever a custom `options.env` is supplied. OmniFex always supplies a custom env (via `buildClaudeEnv`), so every session/agent/usage spawn we'd launched was hitting Anthropic's API with the wrong User-Agent. After this bump our subprocesses identify correctly again. Companion docs correction in the same release confirms `Options.env` replaces (rather than merges with) the subprocess environment, which is the contract `buildClaudeEnv` already meets by spreading `process.env` first.
+
 ## [0.4.53] — 2026-05-22
 
 `/usage` is alive again. Three compounding bugs against Claude Code 2.1.146+ had been silently failing every poll since the CLI auto-updated — for some users for over a week.
