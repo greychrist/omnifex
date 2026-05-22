@@ -72,7 +72,13 @@ const SECTION_HEADERS = {
 export function isUsageOutputComplete(input: string): boolean {
   const result = parseUsageOutput(input);
   if (!result.ok) return false;
-  // All three known windows must have parsed, with a non-empty resets line.
+  // All three known windows must have parsed. A non-empty Resets line is
+  // required EXCEPT for 0%-used windows — observed in Claude Code 2.1.148:
+  // when Sonnet usage is 0%, the TUI renders the header + bar but omits the
+  // Resets line entirely (nothing to reset to). Without the carve-out the
+  // fast-path would never fire for that common case, forcing every poll to
+  // wait the full quiet timeout.
+  //
   // If a future CLI version emits more sections we still pass; if it emits
   // fewer (e.g. free-tier accounts that only show the session window), the
   // fast-path stays disabled and the runner falls back to the quiet timeout.
@@ -80,7 +86,7 @@ export function isUsageOutputComplete(input: string): boolean {
   for (const label of required) {
     const w = result.data.windows.find((w) => w.label === label);
     if (!w) return false;
-    if (!w.resets_at_label.trim()) return false;
+    if (w.pct_used > 0 && !w.resets_at_label.trim()) return false;
   }
   return true;
 }

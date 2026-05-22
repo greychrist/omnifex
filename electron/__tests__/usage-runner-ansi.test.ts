@@ -17,8 +17,23 @@ describe('stripAnsi', () => {
   it('converts cursor-next-line (E) to a newline', () => {
     expect(stripAnsi('row1\x1b[1Erow2')).toBe('row1\nrow2');
   });
-  it('drops other CSI sequences (cursor up, erase, position)', () => {
-    expect(stripAnsi('a\x1b[2A\x1b[2Kb\x1b[10;5Hc')).toBe('abc');
+  it('drops cursor-up and erase CSI sequences', () => {
+    expect(stripAnsi('a\x1b[2A\x1b[2Kb')).toBe('ab');
+  });
+  it('converts cursor-position (H) to a space so per-cell-positioned TUI renderings stay parseable', () => {
+    // Real-world break observed 2026-05-22 (Claude Code 2.1.148): the
+    // /usage TUI lays out each label as a positioned cell using CUP
+    // (`\x1b[<row>;<col>H`) between words instead of literal spaces. The
+    // prior stripper mapped H → empty, fusing labels into "Totalcost:" /
+    // "Currentsession" / "Currentweek(allmodels)" and breaking every
+    // section-header and field regex in the parser.
+    expect(stripAnsi('Total\x1b[1;7Hcost:\x1b[1;25H$0.0000')).toBe('Total cost: $0.0000');
+  });
+  it('converts horizontal-position-absolute (G) to a space', () => {
+    expect(stripAnsi('Current\x1b[10Gsession')).toBe('Current session');
+  });
+  it('converts horizontal-vertical-position (f, alt CUP) to a space', () => {
+    expect(stripAnsi('a\x1b[1;5fb')).toBe('a b');
   });
   it('removes OSC sequences (BEL terminated)', () => {
     expect(stripAnsi('\x1b]0;title\x07hi')).toBe('hi');

@@ -75,9 +75,23 @@ export interface UsageRunnerDeps {
    * what we have. Defaults to 3000ms.
    */
   incompleteParseGraceMs?: number;
+  /**
+   * When the buffer shows the literal "Loading usage data" placeholder AND
+   * the parse is still incomplete, use this longer grace period instead of
+   * `incompleteParseGraceMs`. Claude Code 2.1.146+ async-loads rate-limit
+   * blocks from the server after rendering the Session block, and the
+   * network call can sit quiet for many seconds with no pty bytes. The
+   * standard 3s grace expires before the response arrives and we end up
+   * snapshotting only the placeholder → `no_windows` parse failure on
+   * every poll. Defaults to 12000ms, leaving headroom under the 20s hard
+   * timeout. Capped at hardTimeoutMs at use site.
+   */
+  loadingDataGraceMs?: number;
   hardTimeoutMs?: number;
   killGraceMs?: number;
 }
+
+const LOADING_DATA_MARKER = 'Loading usage data';
 
 const PARSER_LABEL_TO_RATE_LIMIT_TYPE: Record<UsageData['windows'][number]['label'], string> = {
   current_session: 'five_hour',
@@ -115,6 +129,7 @@ export function createUsageRunnerService(deps: UsageRunnerDeps): UsageRunnerServ
   const usageQuietMs = deps.usageQuietMs ?? 1500;
   const fullRenderQuietMs = deps.fullRenderQuietMs ?? 200;
   const incompleteParseGraceMs = deps.incompleteParseGraceMs ?? 3000;
+  const loadingDataGraceMs = deps.loadingDataGraceMs ?? 12000;
   const hardTimeoutMs = deps.hardTimeoutMs ?? 20000;
   const killGraceMs = deps.killGraceMs ?? 500;
   const ensureCwd: (accountKey: string, configDir: string) => string =
@@ -321,6 +336,8 @@ export function createUsageRunnerService(deps: UsageRunnerDeps): UsageRunnerServ
     let stableSince = Date.now();
     let completeSince: number | null = null;
     let graceLogged = false;
+    const compactPty = (s: string): string => s.replace(/\s+/g, '');
+    const COMPACT_LOADING_DATA = compactPty(LOADING_DATA_MARKER);
     while (Date.now() < hardDeadline) {
       if (buffer.length !== lastSeenLen) {
         lastSeenLen = buffer.length;
@@ -329,23 +346,29 @@ export function createUsageRunnerService(deps: UsageRunnerDeps): UsageRunnerServ
         graceLogged = false;
       }
       if (buffer.length > beforeUsage) {
-        if (completeSince == null && isUsageOutputComplete(stripAnsi(buffer.slice(beforeUsage)))) {
+        const stripped = stripAnsi(buffer.slice(beforeUsage));
+        if (completeSince == null && isUsageOutputComplete(stripped)) {
           completeSince = Date.now();
         }
         // Fast path — fully complete render.
         if (completeSince != null && Date.now() - completeSince >= fullRenderQuietMs) break;
         // Quiet for `usageQuietMs`. If the parse is also complete we
         // would have already broken via the fast path, so reaching here
-        // means the parse is incomplete. Wait for `incompleteParseGraceMs`
-        // additional time to give Claude a chance to async-render the
-        // missing block, then snapshot whatever we have.
+        // means the parse is incomplete. The grace period depends on
+        // whether the TUI is in its async-load state: when the literal
+        // "Loading usage data" placeholder is visible (Claude Code
+        // 2.1.146+), use the longer `loadingDataGraceMs` so the server
+        // response has time to arrive. Otherwise use the standard grace.
+        const seenLoading = compactPty(stripped).includes(COMPACT_LOADING_DATA);
+        const grace = seenLoading ? loadingDataGraceMs : incompleteParseGraceMs;
         const quietFor = Date.now() - stableSince;
-        if (quietFor >= usageQuietMs + incompleteParseGraceMs) break;
+        if (quietFor >= usageQuietMs + grace) break;
         if (quietFor >= usageQuietMs && !graceLogged) {
           logInfo('parse incomplete — extending wait for late chunk', {
             account: accountName,
             quiet_for_ms: quietFor,
-            grace_ms: incompleteParseGraceMs,
+            grace_ms: grace,
+            seen_loading_placeholder: seenLoading,
           });
           graceLogged = true;
         }

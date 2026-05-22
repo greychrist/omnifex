@@ -8,8 +8,17 @@
 //   `\x1b[<n>B` (cursor down)   → newline (one per occurrence)
 //   `\x1b[<n>E` (cursor next ln) → newline
 //   `\x1b[...m` (SGR / color)    → empty
-//   `\x1b[<n>C` (cursor forward) → single space (preserves word breaks)
-//   any other CSI                → empty
+//   `\x1b[<n>C` (cursor forward)        → single space (preserves word breaks)
+//   `\x1b[<n>G` (HPA — horizontal abs)  → single space
+//   `\x1b[<r>;<c>H` (CUP — cursor pos)  → single space
+//   `\x1b[<r>;<c>f` (HVP — alt CUP)     → single space
+//   any other CSI                       → empty
+//
+// The H/G/f mappings landed 2026-05-22 after Claude Code 2.1.146+ began
+// laying out the `/usage` TUI as positioned per-word cells. Dropping
+// those escapes to empty fused labels into `Totalcost:` /
+// `Currentsession` / `Currentweek(allmodels)`, which broke every
+// section-header and field regex in the parser.
 //
 // OSC sequences and bare ESC commands are pure noise — stripped to empty.
 // After processing, we collapse runs of spaces within each line so column
@@ -30,7 +39,7 @@ export function stripAnsi(input: string): string {
     .replace(CSI_FULL, (seq) => {
       const cmd = seq[seq.length - 1];
       if (cmd === 'B' || cmd === 'E') return '\n';
-      if (cmd === 'C') return ' ';
+      if (cmd === 'C' || cmd === 'G' || cmd === 'H' || cmd === 'f') return ' ';
       return '';
     });
   return noEscapes

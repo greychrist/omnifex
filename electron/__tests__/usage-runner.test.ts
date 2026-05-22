@@ -268,6 +268,81 @@ describe('usage-runner', () => {
     ]);
   });
 
+  it('keeps waiting while "Loading usage data…" placeholder is visible (Claude Code 2.1.146+ async load)', async () => {
+    // Real-world break observed in app_logs after CLI auto-updated past
+    // 2.1.146: /usage now async-loads the rate-limit blocks. The TUI first
+    // renders the Session block + a "Loading usage data…" placeholder,
+    // then goes quiet for several seconds while it hits the server, then
+    // streams in the three Current * blocks once the response arrives.
+    //
+    // Prior logic snapshotted at usageQuietMs + incompleteParseGraceMs
+    // (default 1.5 + 3 = 4.5s) and missed the entire rate-limit payload,
+    // resulting in `no_windows` parse failures on every poll.
+    //
+    // Fix: while the buffer contains the loading-data placeholder and the
+    // parse is incomplete, extend the wait past the standard grace period.
+    const accounts = makeFakeAccountsService();
+    const rateLimits = makeFakeRateLimits();
+    const sessionBlock = MAX_FULL_FIXTURE.slice(
+      0,
+      MAX_FULL_FIXTURE.indexOf('Current session'),
+    );
+    const placeholder = '\nLoading usage data…\n';
+    const rateLimitBlocks = MAX_FULL_FIXTURE.slice(
+      MAX_FULL_FIXTURE.indexOf('Current session'),
+    );
+    const lateData: PtySpawner = () => {
+      const dataHandlers: ((d: string) => void)[] = [];
+      const exitHandlers: ((code: { exitCode: number }) => void)[] = [];
+      let killed = false;
+      setTimeout(() => {
+        if (killed) return;
+        for (const h of dataHandlers) h('? for shortcuts ');
+      }, 5);
+      return {
+        write: (data: string) => {
+          if (data.includes('/usage')) {
+            // Session block + loading placeholder arrives quickly…
+            setTimeout(() => {
+              if (killed) return;
+              for (const h of dataHandlers) h(sessionBlock + placeholder);
+            }, 30);
+            // …then the buffer goes quiet for 500ms — well past the
+            // standard usageQuietMs (80) + incompleteParseGraceMs (100) =
+            // 180ms total grace. Prior logic snapshotted at 180ms quiet.
+            setTimeout(() => {
+              if (killed) return;
+              for (const h of dataHandlers) h(rateLimitBlocks);
+            }, 600);
+          }
+        },
+        kill: () => { killed = true; for (const h of exitHandlers) h({ exitCode: 0 }); },
+        onData: (cb) => { dataHandlers.push(cb); },
+        onExit: (cb) => { exitHandlers.push(cb); },
+      };
+    };
+    const observedAt = Date.UTC(2023, 10, 15, 10, 40, 0);
+    const runner = createUsageRunnerService({
+      accounts, rateLimits,
+      spawnPty: lateData,
+      findClaudeBinary: () => '/fake/claude',
+      now: () => observedAt,
+      settleQuietMs: 30,
+      usageQuietMs: 80,
+      fullRenderQuietMs: 50,
+      incompleteParseGraceMs: 100,
+      hardTimeoutMs: 5000,
+      killGraceMs: 0,
+      ensureCwd: () => '/tmp/test-scratch-cwd',
+    });
+    const result = await runner.run('personal');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.parsed.windows.map((w) => w.label).sort()).toEqual([
+      'current_session', 'week_all_models', 'week_sonnet',
+    ]);
+  });
+
   it('does eventually snapshot a partial parse if the late chunk never arrives', async () => {
     // Counterpart to the above: if Sonnet truly isn't coming (e.g. free
     // tier with only 2 windows), don't wait the full hardTimeoutMs.
