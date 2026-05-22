@@ -9,6 +9,7 @@
     "prestart": "electron-rebuild -f -w better-sqlite3,node-pty 2>/dev/null || true",
     "start": "electron-forge start",
     "package": "electron-forge package",
+    "premake": "npm rebuild macos-alias fs-xattr",
     "make": "electron-forge make",
     "dev": "vite --config vite.renderer.config.ts",
     "build": "tsc && vite build --config vite.renderer.config.ts",
