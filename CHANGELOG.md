@@ -7,15 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.4.54] — 2026-05-22
+## [0.4.55] — 2026-05-22
 
-Tiny follow-up to v0.4.53. SDK parity bump that restores correct telemetry attribution on every Claude subprocess OmniFex spawns.
+Follow-up to v0.4.53. SDK parity bump that restores correct telemetry attribution on every Claude subprocess OmniFex spawns, plus a build-pipeline fix that makes `npm run make` self-healing across Node version upgrades.
+
+(There is no v0.4.54. The tag was pushed early and the build failed mid-release on a Node ABI mismatch before any artifacts were published. Per the runbook policy of never re-pointing a pushed tag, this release rolls forward as v0.4.55 with the build fix included.)
 
 Installers remain **unsigned**.
 
 ### Changed
 
 - **`@anthropic-ai/claude-agent-sdk` 0.3.148 → 0.3.149.** Fixes the SDK dropping `CLAUDE_AGENT_SDK_VERSION` (used for User-Agent and telemetry) whenever a custom `options.env` is supplied. OmniFex always supplies a custom env (via `buildClaudeEnv`), so every session/agent/usage spawn we'd launched was hitting Anthropic's API with the wrong User-Agent. After this bump our subprocesses identify correctly again. Companion docs correction in the same release confirms `Options.env` replaces (rather than merges with) the subprocess environment, which is the contract `buildClaudeEnv` already meets by spreading `process.env` first.
+
+### Fixed
+
+- **`npm run make` no longer breaks after a system Node version upgrade.** The dmg-maker pulls in two native modules (`macos-alias`, `fs-xattr`) that run in the Forge process itself and need to match the system Node ABI — but the existing prestart/pretest/rebuild:electron pre-hooks only cover runtime modules (`better-sqlite3` + `node-pty`). When Node bumped 20 → 22 between releases these two stayed on the old ABI and `npm run make` died mid-release with a `NODE_MODULE_VERSION` mismatch. Added a `premake` hook that rebuilds them, scoped to the two known-affected modules so it doesn't flip-flop the runtime modules' Electron ABI state every build.
 
 ## [0.4.53] — 2026-05-22
 
