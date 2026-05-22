@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.53] — 2026-05-22
+
+`/usage` is alive again. Three compounding bugs against Claude Code 2.1.146+ had been silently failing every poll since the CLI auto-updated — for some users for over a week.
+
+Installers remain **unsigned**.
+
+### Fixed
+
+- **`/usage` polling restored across all accounts.** Three independent bugs stacked on top of each other after the Claude Code 2.1.146+ TUI refactor; each one alone would have broken parsing.
+  - *Async-load placeholder.* The TUI now renders the Session block + a `Loading usage data…` placeholder, then sits quiet on a network round-trip for several seconds before streaming in the three rate-limit blocks. Our 4.5s combined quiet+grace timeout expired before the data arrived, snapshotting only the placeholder → `no_windows` parse failure on every poll. Added a `loadingDataGraceMs` (default 12s) used instead of the standard grace whenever the placeholder marker is observed.
+  - *Per-word cursor positioning.* The new TUI lays out each label as an absolutely-positioned cell using CUP / HPA / HVP escapes (`H`, `G`, `f`) between words instead of literal spaces. The ANSI stripper mapped those to empty, fusing `Total cost:` → `Totalcost:`, `Current session` → `Currentsession`, etc. — every parser regex stopped matching. Now treats those three CSI commands as a single space (same as the existing CUF/`C` handling).
+  - *Zero-percent windows missing Resets.* When Sonnet usage is at 0%, the TUI omits the `Resets ...` line entirely (nothing to reset to). The parser handled this fine but `isUsageOutputComplete` rejected it, blocking the fast-path on every successful render and forcing every poll to wait the full quiet timeout. The check now only requires a Resets line for windows with non-zero usage.
+
+### Changed
+
+- **`@anthropic-ai/claude-agent-sdk` 0.3.147 → 0.3.148.** Parity bump tracking Claude Code 2.1.148, itself a one-line hotfix for the Bash-tool exit-127 regression introduced in 2.1.147.
+
 ## [0.4.52] — 2026-05-21
 
 Session-header workspace polish for users with lots of worktrees, plus a Claude Code 2.1.147 parity bump.
