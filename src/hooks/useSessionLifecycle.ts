@@ -1,5 +1,5 @@
 import { useRef, useEffect } from "react";
-import { api } from "@/lib/api";
+import { api, type SessionMode } from "@/lib/api";
 import type { ClaudeStreamMessage } from "@/types/claudeStream";
 import type { EffortLevel, ThinkingConfig } from "@/components/FloatingPromptInput";
 import { logAndForget } from "@/lib/fireAndLog";
@@ -20,6 +20,7 @@ interface UseSessionLifecycleArgs {
   permissionMode: string;
   effort: EffortLevel;
   thinkingConfig: ThinkingConfig;
+  sessionStartMode?: SessionMode;
   accountResolution: {
     account: { name: string; account_type: string; config_dir: string };
     match_type: string;
@@ -64,6 +65,7 @@ export function useSessionLifecycle({
   permissionMode,
   effort,
   thinkingConfig,
+  sessionStartMode,
   accountResolution,
   persistentSessionRef,
   setIsSessionStarting,
@@ -317,6 +319,7 @@ export function useSessionLifecycle({
         configDir,
         sdkEffort,
         sdkThinking,
+        sessionStartMode,
       );
     } catch (err) {
       // Surface session-start failures to the user. The most common cause

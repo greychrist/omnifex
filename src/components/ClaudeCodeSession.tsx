@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover } from "@/components/ui/popover";
-import { api, type Session, type RateLimitSnapshot, type Account } from "@/lib/api";
+import { api, type Session, type RateLimitSnapshot, type Account, type SessionMode } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { NewSessionForm } from "./NewSessionForm";
 import { AccountPickerDialog } from "./AccountPickerDialog";
@@ -121,6 +121,7 @@ interface ClaudeCodeSessionProps {
     effort: EffortLevel;
     thinkingConfig?: ThinkingConfig;
     permissionMode: string;
+    sessionStartMode?: SessionMode;
     accountResolution?: {
       account: {
         name: string;
@@ -289,6 +290,11 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     // at the seed point so the rest of the component works in the
     // tightened two-state schema.
     normalizeThinkingConfig(initialSessionConfig?.thinkingConfig),
+  );
+  // Session start mode — chosen in the pre-session form. Defaults to 'sdk'
+  // (today's behavior). Set to 'tui' to start via local CLI without SDK budget.
+  const [sessionStartMode, setSessionStartMode] = useState<SessionMode>(
+    initialSessionConfig?.sessionStartMode ?? 'sdk',
   );
   // Unified per-tab git snapshot — project + all sibling worktrees streamed
   // from a single main-process watcher. Null until `startSessionGitWatch`
@@ -514,7 +520,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   // these states are the UI-reactive mirror so the badge rerenders.
   const [isSessionStarting, setIsSessionStarting] = useState(false);
   const [isSessionActive, setIsSessionActive] = useState(false);
-  const [sessionMode, setSessionMode] = useState<'sdk' | 'tui'>('sdk');
+  const [sessionMode, setSessionMode] = useState<SessionMode>('sdk');
   const tabIdRef = useRef(tabId || 'default');
   // Drop any per-tab inflight buffer when this tab unmounts so the
   // module-level Map doesn't leak across long-lived renderer sessions.
@@ -1027,6 +1033,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     permissionMode,
     effort,
     thinkingConfig,
+    sessionStartMode,
     accountResolution,
     persistentSessionRef,
     setIsSessionStarting,
@@ -1207,7 +1214,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     const unlisten = window.electronAPI.onEvent(
       `session-mode:${tabIdRef.current}`,
       (...args: unknown[]) => {
-        const payload = args[0] as { mode?: 'sdk' | 'tui' } | undefined;
+        const payload = args[0] as { mode?: SessionMode } | undefined;
         if (payload?.mode === 'sdk' || payload?.mode === 'tui') {
           setSessionMode(payload.mode);
           // A mode switch means the main process has a live session handle
@@ -1805,6 +1812,8 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
               setThinkingConfig={setThinkingConfig}
               permissionMode={permissionMode}
               setPermissionMode={setPermissionMode}
+              sessionStartMode={sessionStartMode}
+              setSessionStartMode={setSessionStartMode}
               onStart={() => {
                 setSessionStarted(true);
                 logAndForget('claude-code-session:start-persistent-session', startPersistentSession());

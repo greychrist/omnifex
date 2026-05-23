@@ -14,7 +14,7 @@ import {
   type ThinkingConfig,
 } from "./ControlBar";
 import { MODELS } from "./ModelPicker";
-import type { SessionDefaults } from "@/lib/api";
+import type { SessionDefaults, SessionMode } from "@/lib/api";
 
 export interface NewSessionFormAccountResolution {
   account: { name: string; account_type: string; config_dir: string; session_defaults?: SessionDefaults };
@@ -32,6 +32,8 @@ interface NewSessionFormProps {
   setThinkingConfig: (config: ThinkingConfig) => void;
   permissionMode: string;
   setPermissionMode: (mode: string) => void;
+  sessionStartMode: SessionMode;
+  setSessionStartMode: (mode: SessionMode) => void;
   onStart: () => void;
   onChangeAccount?: () => void;
   className?: string;
@@ -106,6 +108,8 @@ export const NewSessionForm: React.FC<NewSessionFormProps> = ({
   setThinkingConfig,
   permissionMode,
   setPermissionMode,
+  sessionStartMode,
+  setSessionStartMode,
   onStart,
   onChangeAccount,
   className,
@@ -326,6 +330,19 @@ export const NewSessionForm: React.FC<NewSessionFormProps> = ({
             }
           />
         </div>
+      </div>
+
+      <div className="flex items-center gap-2 text-sm pt-1">
+        <input
+          id="start-in-terminal"
+          type="checkbox"
+          checked={sessionStartMode === 'tui'}
+          onChange={(e) => { setSessionStartMode(e.target.checked ? 'tui' : 'sdk'); }}
+          className="rounded border-input"
+        />
+        <label htmlFor="start-in-terminal" className="cursor-pointer text-muted-foreground">
+          Start in Terminal mode (uses local Claude CLI, no SDK budget)
+        </label>
       </div>
 
       <Button className="w-full" onClick={onStart}>

@@ -2,7 +2,7 @@ import React, { createContext, useState, useContext, useCallback, useEffect, use
 import { TabPersistenceService } from '@/services/tabPersistence';
 import { SessionPersistenceService } from '@/services/sessionPersistence';
 import { sessionNameRegistry } from '@/services/sessionNameRegistry';
-import { api } from '@/lib/api';
+import { api, type SessionMode } from '@/lib/api';
 import { logAndForget } from "@/lib/fireAndLog";
 
 export interface Tab {
@@ -24,6 +24,7 @@ export interface Tab {
     effort: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
     thinkingConfig?: 'adaptive' | 'disabled';
     permissionMode: string;
+    sessionStartMode?: SessionMode;
     /**
      * Account override selected by the user on the project landing page.
      * When present, ClaudeCodeSession seeds its accountResolution from this

@@ -118,6 +118,7 @@ describe('useSessionLifecycle — startPersistentSession happy path', () => {
       '/cfg',
       'medium',
       { type: 'adaptive' },
+      undefined,
     );
     expect(result.current.persistentSessionRef.current).toBe(true);
     // Listeners attached on the four claude-* channels.
