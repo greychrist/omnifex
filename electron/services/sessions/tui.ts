@@ -20,9 +20,10 @@ export interface TuiSession {
 }
 
 export function createTuiSession(params: TuiSessionParams): TuiSession {
+  const args = params.sessionId ? ['--resume', params.sessionId] : [];
   const pty: IPty = ptySpawn(
     params.claudeBinaryPath,
-    ['--resume', params.sessionId],
+    args,
     {
       cwd: params.projectPath,
       // buildClaudeEnv throws on empty/~-resolving-to-~/.claude configDir.

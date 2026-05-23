@@ -53,6 +53,9 @@ export async function listenToMessages(
   handle: SessionHandle,
   deps: RuntimeDeps,
 ): Promise<void> {
+  // listenToMessages is only called for SDK-mode sessions. If query is null
+  // (TUI cold-start), there is nothing to iterate — return immediately.
+  if (!handle.query) return;
   const { sendToRenderer, notificationHooks, rateLimitHook, ownership, sessions } = deps;
   // JSONL tail for closure carriers the SDK iterator doesn't yield
   // (queue-operation enqueue with <task-notification>, attachment
@@ -192,7 +195,7 @@ export async function listenToMessages(
     // hangs around in handle.query holding subprocess resources until
     // either stop() or restartQuery() eventually replaces it.
     try {
-      handle.query.close();
+      handle.query?.close();
     } catch (closeErr) {
       console.warn('[sessions] query.close on stream error threw:', closeErr);
     }

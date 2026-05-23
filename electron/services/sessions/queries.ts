@@ -31,6 +31,7 @@ export function createQueryPassthroughs(
   async function interrupt(tabId: string): Promise<void> {
     const handle = sessions.get(tabId);
     if (!handle) return;
+    if (!handle.query) return; // TUI mode — no SDK query to interrupt
     try {
       await handle.query.interrupt();
     } catch (err) {
@@ -54,6 +55,7 @@ export function createQueryPassthroughs(
   async function setModel(tabId: string, model?: string): Promise<void> {
     const handle = sessions.get(tabId);
     if (!handle) return;
+    if (!handle.query) return; // TUI mode — no SDK query to mutate
     try {
       await handle.query.setModel(model);
     } catch (err) {
@@ -64,6 +66,7 @@ export function createQueryPassthroughs(
   async function setPermissionMode(tabId: string, mode: PermissionMode): Promise<void> {
     const handle = sessions.get(tabId);
     if (!handle) return;
+    if (!handle.query) return; // TUI mode — no SDK query to mutate
     handle.sdkOptions.permissionMode = mode;
     if (mode === 'bypassPermissions') {
       handle.sdkOptions.allowDangerouslySkipPermissions = true;
@@ -78,6 +81,7 @@ export function createQueryPassthroughs(
   async function setEffort(tabId: string, level: 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null): Promise<void> {
     const handle = sessions.get(tabId);
     if (!handle) return;
+    if (!handle.query) return; // TUI mode — no SDK query to mutate
     try {
       await handle.query.applyFlagSettings({ effortLevel: level ?? undefined } as any);
     } catch (err) {
@@ -97,6 +101,7 @@ export function createQueryPassthroughs(
   ): Promise<void> {
     const handle = sessions.get(tabId);
     if (!handle) return;
+    if (!handle.query) return; // TUI mode — no SDK query to mutate
     try {
       await handle.query.applyFlagSettings({ permissions });
     } catch (err) {
@@ -122,6 +127,7 @@ export function createQueryPassthroughs(
   async function setThinking(tabId: string, config: SessionStartParams['thinking']): Promise<void> {
     const handle = sessions.get(tabId);
     if (!handle) return;
+    if (!handle.query) return; // TUI mode — no SDK query to mutate
     try {
       // Two states only as of v0.4.21 — the SDK's `setMaxThinkingTokens`
       // collapses every non-zero value to adaptive on Opus 4.6+, so the
@@ -151,6 +157,7 @@ export function createQueryPassthroughs(
   async function getAccountInfo(tabId: string): Promise<AccountInfo | null> {
     const handle = sessions.get(tabId);
     if (!handle) return null;
+    if (!handle.query) return null; // TUI mode — no SDK query
     try {
       return await handle.query.accountInfo();
     } catch (err) {
@@ -164,6 +171,7 @@ export function createQueryPassthroughs(
   ): Promise<SDKControlGetContextUsageResponse | null> {
     const handle = sessions.get(tabId);
     if (!handle) return null;
+    if (!handle.query) return null; // TUI mode — no SDK query
     try {
       return await handle.query.getContextUsage();
     } catch (err) {
@@ -178,6 +186,7 @@ export function createQueryPassthroughs(
       console.warn(`[sessions] getSupportedCommands: no handle for tab ${tabId}`);
       return [];
     }
+    if (!handle.query) return []; // TUI mode — no SDK query
     try {
       const cmds = await handle.query.supportedCommands();
       return cmds;
@@ -190,6 +199,7 @@ export function createQueryPassthroughs(
   async function getSupportedModels(tabId: string): Promise<ModelInfo[]> {
     const handle = sessions.get(tabId);
     if (!handle) return [];
+    if (!handle.query) return []; // TUI mode — no SDK query
     try {
       return await handle.query.supportedModels();
     } catch (err) {
@@ -201,6 +211,7 @@ export function createQueryPassthroughs(
   async function getSupportedAgents(tabId: string): Promise<AgentInfo[]> {
     const handle = sessions.get(tabId);
     if (!handle) return [];
+    if (!handle.query) return []; // TUI mode — no SDK query
     try {
       return await handle.query.supportedAgents();
     } catch (err) {
@@ -212,6 +223,7 @@ export function createQueryPassthroughs(
   async function getMcpServerStatus(tabId: string): Promise<McpServerStatus[]> {
     const handle = sessions.get(tabId);
     if (!handle) return [];
+    if (!handle.query) return []; // TUI mode — no SDK query
 
     // Ask the SDK for live MCP server status (includes tools, versions, scopes).
     // Times out after 3s so the panel doesn't hang if the session is still starting.
@@ -239,6 +251,7 @@ export function createQueryPassthroughs(
   async function getPlugins(tabId: string, force = false): Promise<EnrichedPlugin[]> {
     const handle = sessions.get(tabId);
     if (!handle) return [];
+    if (!handle.query) return []; // TUI mode — no SDK query
     if (!force) {
       const cached = pluginCache.get(tabId);
       if (cached) return cached;

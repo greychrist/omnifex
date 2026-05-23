@@ -36,6 +36,8 @@ import {
   restartQuery,
   type RuntimeDeps,
 } from './runtime';
+import { discoverNewSessionFile } from './tui-coldstart';
+import { createTuiJsonlListener } from './tui-jsonl';
 
 // ---------------------------------------------------------------------------
 // Factory
@@ -70,11 +72,18 @@ export function createSessionsService(
   function start(params: SessionStartParams): void {
     const { tabId, projectPath, configDir } = params;
 
+    if (params.mode === 'tui') {
+      void startTuiColdStart(params);
+      return;
+    }
+
     // Close any existing session for this tab
     const existing = sessions.get(tabId);
     if (existing) {
-      existing.inputChannel.close();
-      existing.query.close();
+      existing.tuiJsonl?.stop();
+      existing.tuiDetach?.();
+      if (existing.inputChannel) existing.inputChannel.close();
+      if (existing.query) { try { existing.query.close(); } catch { /* ignore */ } }
       sessions.delete(tabId);
       ownership?.unregister(tabId);
       queryPassthroughs.evictPluginCache(tabId);
@@ -101,13 +110,14 @@ export function createSessionsService(
 
     // Create handle first so the canUseTool callback can reference it
     const handle: SessionHandle = {
-      query: null as any, // set below
+      query: null, // set below
       inputChannel,
       sessionId: null,
       status: 'starting',
       mode: 'sdk',
       tui: null,
       tuiDetach: null,
+      tuiJsonl: null,
       permissionResolver: null,
       permissionQueue: [],
       elicitationResolver: null,
@@ -153,6 +163,7 @@ export function createSessionsService(
   function sendMessage(tabId: string, prompt: string): void {
     const handle = sessions.get(tabId);
     if (!handle) return;
+    if (!handle.inputChannel || !handle.query) return; // TUI mode — input goes through PTY
 
     ensureLiveQuery(tabId, handle);
 
@@ -179,6 +190,7 @@ export function createSessionsService(
   ): void {
     const handle = sessions.get(tabId);
     if (!handle) return;
+    if (!handle.inputChannel || !handle.query) return; // TUI mode — input goes through PTY
 
     ensureLiveQuery(tabId, handle);
 
@@ -261,9 +273,10 @@ export function createSessionsService(
     const closedProjectPath = handle.projectPath;
     const closedConfigDir = handle.configDir;
 
+    handle.tuiJsonl?.stop();
     handle.tuiDetach?.();
-    handle.inputChannel.close();
-    handle.query.close();
+    if (handle.inputChannel) handle.inputChannel.close();
+    if (handle.query) { try { handle.query.close(); } catch { /* ignore */ } }
     sessions.delete(tabId);
     ownership?.unregister(tabId);
     // Evict the per-tab plugin cache so closed-tab entries don't accumulate
@@ -372,7 +385,7 @@ export function createSessionsService(
 
       // Close the SDK query cleanly.
       try { handle.query?.close?.(); } catch { /* best effort */ }
-      handle.inputChannel.close();
+      if (handle.inputChannel) handle.inputChannel.close();
 
       const tui = createTuiSession({
         tabId,
@@ -396,6 +409,8 @@ export function createSessionsService(
       sendToRenderer(`session-mode:${tabId}`, { mode: 'tui' });
     } else {
       // tui -> sdk: kill the pty, then re-start the SDK query with resume.
+      handle.tuiJsonl?.stop();
+      handle.tuiJsonl = null;
       handle.tuiDetach?.();
       handle.tui = null;
       handle.tuiDetach = null;
@@ -418,6 +433,115 @@ export function createSessionsService(
 
   function getMode(tabId: string): SessionMode | null {
     return sessions.get(tabId)?.mode ?? null;
+  }
+
+  // -------------------------------------------------------------------------
+  // startTuiColdStart()
+  // -------------------------------------------------------------------------
+
+  async function startTuiColdStart(params: SessionStartParams): Promise<void> {
+    const { tabId, projectPath, configDir } = params;
+    if (!configDir) throw new Error(`configDir is required to start session for tab ${tabId}`);
+
+    // Close any existing session for this tab
+    const existing = sessions.get(tabId);
+    if (existing) {
+      existing.tuiJsonl?.stop();
+      existing.tuiDetach?.();
+      if (existing.inputChannel) existing.inputChannel.close();
+      if (existing.query) { try { existing.query.close(); } catch { /* ignore */ } }
+      sessions.delete(tabId);
+      ownership?.unregister(tabId);
+      queryPassthroughs.evictPluginCache(tabId);
+    }
+
+    const binaryPath = findSystemClaudeBinary();
+    if (!binaryPath) throw new Error('startTuiColdStart: claude binary not found');
+
+    const handle: SessionHandle = {
+      query: null,
+      inputChannel: null,
+      sessionId: null,
+      status: 'starting',
+      mode: 'tui',
+      tui: null,
+      tuiDetach: null,
+      tuiJsonl: null,
+      permissionResolver: null,
+      permissionQueue: [],
+      elicitationResolver: null,
+      projectPath,
+      configDir,
+      sdkOptions: {},
+    };
+    sessions.set(tabId, handle);
+    if (params.ownerWebContentsId !== undefined) {
+      ownership?.register(tabId, params.ownerWebContentsId);
+    }
+
+    // Snapshot existing JSONLs and start discovery before spawning the PTY,
+    // so the baseline is taken pre-creation.
+    const discoveryP = discoverNewSessionFile({ configDir, projectPath });
+
+    const tui = createTuiSession({
+      tabId,
+      projectPath,
+      configDir,
+      sessionId: '', // cold-start: no --resume; sessionId discovered post-spawn
+      claudeBinaryPath: binaryPath,
+    });
+
+    tui.onData((data: string) => sendToRenderer(`session-tui-data:${tabId}`, data));
+    tui.onExit((r: { exitCode: number }) => {
+      sendToRenderer(`session-tui-exit:${tabId}`, r);
+      handle.tuiJsonl?.stop();
+      handle.tuiJsonl = null;
+      handle.status = 'stopped';
+      sendToRenderer(`claude-complete:${tabId}`);
+      // Only mutate the shared map if we are still the current session for this tab.
+      // A `stop()` followed by a new `start()` on the same tabId will have already
+      // registered a different handle; deleting here would orphan it.
+      if (sessions.get(tabId) === handle) {
+        sessions.delete(tabId);
+        ownership?.unregister(tabId);
+      }
+    });
+
+    handle.tui = tui;
+    handle.tuiDetach = () => { try { tui.kill(); } catch { /* ignore */ } };
+    sendToRenderer(`session-mode:${tabId}`, { mode: 'tui' });
+
+    try {
+      const { sessionId, jsonlPath } = await discoveryP;
+      // Guard: stop() or a concurrent start() may have replaced us while we awaited.
+      // If we're no longer the registered handle for this tab, drop the listener
+      // we were about to create — `stop()` already tore down the PTY.
+      if (sessions.get(tabId) !== handle) return;
+      handle.sessionId = sessionId;
+      handle.status = 'idle';
+
+      handle.tuiJsonl = createTuiJsonlListener({
+        tabId,
+        projectPath,
+        jsonlPath,
+        sendToRenderer,
+        notificationHooks,
+        onInit: () => {
+          // sessionId already known from discovery; ignore subsequent inits.
+        },
+      });
+    } catch (err) {
+      // Discovery failed (timeout, etc.) — tear down the PTY so it doesn't
+      // outlive the failed startup. The identity guard mirrors Fix 1.
+      if (sessions.get(tabId) === handle) {
+        handle.tuiDetach?.();
+        handle.tuiDetach = null;
+        handle.tui = null;
+        handle.status = 'error';
+        sendToRenderer(`claude-error:${tabId}`, err instanceof Error ? err.message : String(err));
+      }
+      console.error('[sessions] TUI cold-start discovery failed:', err);
+    }
   }
 
   // -------------------------------------------------------------------------
