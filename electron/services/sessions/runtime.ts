@@ -16,6 +16,7 @@ import type {
   SessionOwnership,
 } from './types';
 import { classifyRuntimeEvent } from './events';
+import { dispatchResultNotification } from './notifications';
 import { createJsonlTail, type JsonlTailHandle } from './jsonl-tail';
 
 export interface RuntimeDeps {
@@ -153,25 +154,13 @@ export async function listenToMessages(
       sendToRenderer(`claude-output:${tabId}`, message);
 
       if (event.kind === 'result') {
-        const projectName = path.basename(handle.projectPath) || 'OmniFex';
-        const title = `OmniFex — ${projectName}`;
-
-        // Emit to renderer for in-app tab badge handling
-        sendToRenderer('claude-notification', {
-          tab_id: tabId,
-          title,
-          body: event.body,
-          is_error: event.isError,
+        dispatchResultNotification({
+          tabId,
+          projectPath: handle.projectPath,
+          event,
+          sendToRenderer,
+          notificationHooks,
         });
-
-        // Fire native OS notification + dock badge
-        try {
-          notificationHooks.showNotification?.(title, event.body, event.isError, { tabId });
-          notificationHooks.incrementUnread?.();
-        } catch (e) {
-          console.error('[sessions] notification hook failed:', e);
-        }
-
         // Turn is over — flip to 'idle' so the installer's wait-for-idle
         // gate doesn't block on a tab that's just sitting waiting for the
         // user. The 'turn' branch above will move us back to 'running' the
