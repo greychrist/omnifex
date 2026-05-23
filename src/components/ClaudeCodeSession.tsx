@@ -43,7 +43,7 @@ import { normalizeMessageContent } from "@/lib/normalizeMessage";
 import { maybeAutoGenerateSummaryOnLeave } from "@/lib/sessionSummaryGate";
 import { SessionModeToggle } from "./SessionModeToggle";
 import { SessionViewToggle, type ViewMode } from "./SessionViewToggle";
-import { TerminalView } from './TerminalView';
+import { TuiSessionLayout } from './TuiSessionLayout';
 import { HiddenEventsGroup } from "./HiddenEventsGroup";
 import { buildCompactItems } from "@/lib/compactGrouping";
 import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
@@ -1846,7 +1846,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
               left={
                 <div className="h-full flex flex-col">
                   {sessionMode === 'tui' ? (
-                    <TerminalView tabId={tabIdRef.current} />
+                    <TuiSessionLayout tabId={tabIdRef.current} />
                   ) : (
                     messagesList
                   )}
@@ -1871,7 +1871,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             // Original layout when no preview
             <div className="h-full flex flex-col">
               {sessionMode === 'tui' ? (
-                <TerminalView tabId={tabIdRef.current} />
+                <TuiSessionLayout tabId={tabIdRef.current} />
               ) : (
                 messagesList
               )}
