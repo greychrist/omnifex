@@ -36,10 +36,10 @@ import {
   restartQuery,
   type RuntimeDeps,
 } from './runtime';
-import { discoverNewSessionFile } from './tui-coldstart';
 import { createTuiJsonlListener } from './tui-jsonl';
 import { encodeProjectKey } from './summary-query';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 
 // ---------------------------------------------------------------------------
 // Factory
@@ -394,6 +394,7 @@ export function createSessionsService(
         projectPath: handle.projectPath,
         configDir: handle.configDir,
         sessionId: handle.sessionId,
+        resume: true, // mid-session toggle continues the existing session
         claudeBinaryPath: binaryPath,
       });
 
@@ -482,10 +483,22 @@ export function createSessionsService(
     const binaryPath = findSystemClaudeBinary();
     if (!binaryPath) throw new Error('startTuiColdStart: claude binary not found');
 
+    // Generate the sessionId ourselves and pass it via `--session-id` so the
+    // CLI creates the session deterministically — no race against discovery
+    // polling, no interactive resume picker, no 10s timeout window. The
+    // JSONL file path is known upfront.
+    const sessionId = randomUUID();
+    const jsonlPath = path.join(
+      configDir,
+      'projects',
+      encodeProjectKey(projectPath),
+      `${sessionId}.jsonl`,
+    );
+
     const handle: SessionHandle = {
       query: null,
       inputChannel: null,
-      sessionId: null,
+      sessionId,
       status: 'starting',
       mode: 'tui',
       tui: null,
@@ -503,15 +516,12 @@ export function createSessionsService(
       ownership?.register(tabId, params.ownerWebContentsId);
     }
 
-    // Snapshot existing JSONLs and start discovery before spawning the PTY,
-    // so the baseline is taken pre-creation.
-    const discoveryP = discoverNewSessionFile({ configDir, projectPath });
-
     const tui = createTuiSession({
       tabId,
       projectPath,
       configDir,
-      sessionId: '', // cold-start: no --resume; sessionId discovered post-spawn
+      sessionId,
+      resume: false, // cold-start: --session-id <uuid> creates a fresh session
       claudeBinaryPath: binaryPath,
     });
 
@@ -533,40 +543,24 @@ export function createSessionsService(
 
     handle.tui = tui;
     handle.tuiDetach = () => { try { tui.kill(); } catch { /* ignore */ } };
+
+    // Attach the JSONL listener immediately. `createJsonlTail` handles the
+    // ENOENT case — it polls until the CLI creates the file, then starts
+    // forwarding lines. No race, no timeout.
+    handle.tuiJsonl = createTuiJsonlListener({
+      tabId,
+      projectPath,
+      jsonlPath,
+      sendToRenderer,
+      notificationHooks,
+      onInit: () => {
+        // sessionId is already set on the handle; ignore CLI re-inits.
+      },
+      onStatusChange: (status) => { handle.status = status; },
+    });
+
+    handle.status = 'idle';
     sendToRenderer(`session-mode:${tabId}`, { mode: 'tui' });
-
-    try {
-      const { sessionId, jsonlPath } = await discoveryP;
-      // Guard: stop() or a concurrent start() may have replaced us while we awaited.
-      // If we're no longer the registered handle for this tab, drop the listener
-      // we were about to create — `stop()` already tore down the PTY.
-      if (sessions.get(tabId) !== handle) return;
-      handle.sessionId = sessionId;
-      handle.status = 'idle';
-
-      handle.tuiJsonl = createTuiJsonlListener({
-        tabId,
-        projectPath,
-        jsonlPath,
-        sendToRenderer,
-        notificationHooks,
-        onInit: () => {
-          // sessionId already known from discovery; ignore subsequent inits.
-        },
-        onStatusChange: (status) => { handle.status = status; },
-      });
-    } catch (err) {
-      // Discovery failed (timeout, etc.) — tear down the PTY so it doesn't
-      // outlive the failed startup. The identity guard mirrors Fix 1.
-      if (sessions.get(tabId) === handle) {
-        handle.tuiDetach?.();
-        handle.tuiDetach = null;
-        handle.tui = null;
-        handle.status = 'error';
-        sendToRenderer(`claude-error:${tabId}`, err instanceof Error ? err.message : String(err));
-      }
-      console.error('[sessions] TUI cold-start discovery failed:', err);
-    }
   }
 
   // -------------------------------------------------------------------------

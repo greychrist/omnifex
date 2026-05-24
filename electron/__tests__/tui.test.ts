@@ -35,7 +35,7 @@ describe('TuiSession', () => {
     mockedSpawn.mockReset();
   });
 
-  it('spawns `claude --resume <sessionId>` in the project cwd with CLAUDE_CONFIG_DIR set', () => {
+  it('spawns `claude --resume <sessionId>` when resume=true', () => {
     const fake = makeFakePty();
     mockedSpawn.mockReturnValue(fake as any);
 
@@ -44,6 +44,7 @@ describe('TuiSession', () => {
       projectPath: '/Users/test/proj',
       configDir: '/Users/test/.claude-alice',
       sessionId: 'session-abc',
+      resume: true,
       claudeBinaryPath: '/usr/local/bin/claude',
     });
 
@@ -55,12 +56,31 @@ describe('TuiSession', () => {
     expect((opts as any).env.CLAUDE_CONFIG_DIR).toBe('/Users/test/.claude-alice');
   });
 
+  it('spawns `claude --session-id <uuid>` when resume=false (cold-start)', () => {
+    const fake = makeFakePty();
+    mockedSpawn.mockReturnValue(fake as any);
+
+    createTuiSession({
+      tabId: 't1b',
+      projectPath: '/Users/test/proj',
+      configDir: '/Users/test/.claude-alice',
+      sessionId: 'aabbccdd-eeff-0011-2233-445566778899',
+      resume: false,
+      claudeBinaryPath: '/usr/local/bin/claude',
+    });
+
+    expect(mockedSpawn).toHaveBeenCalledTimes(1);
+    const [, args] = mockedSpawn.mock.calls[0];
+    expect(args).toEqual(['--session-id', 'aabbccdd-eeff-0011-2233-445566778899']);
+  });
+
   it('forwards pty data chunks to the onData callback', () => {
     const fake = makeFakePty();
     mockedSpawn.mockReturnValue(fake as any);
 
     const tui = createTuiSession({
       tabId: 't2', projectPath: '/p', configDir: '/c', sessionId: 's',
+      resume: true,
       claudeBinaryPath: '/usr/local/bin/claude',
     });
     const received: string[] = [];
@@ -78,6 +98,7 @@ describe('TuiSession', () => {
 
     const tui = createTuiSession({
       tabId: 't3', projectPath: '/p', configDir: '/c', sessionId: 's',
+      resume: true,
       claudeBinaryPath: '/usr/local/bin/claude',
     });
     const exits: any[] = [];
@@ -94,6 +115,7 @@ describe('TuiSession', () => {
 
     const tui = createTuiSession({
       tabId: 't4', projectPath: '/p', configDir: '/c', sessionId: 's',
+      resume: true,
       claudeBinaryPath: '/usr/local/bin/claude',
     });
 
