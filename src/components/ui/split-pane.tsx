@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
-import { GripVertical } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface SplitPaneProps {
@@ -190,16 +190,19 @@ export const SplitPane: React.FC<SplitPaneProps> = ({
         {/* Expand hit area for easier dragging */}
         <div className="absolute inset-y-0 -left-2 -right-2 z-10" />
 
-        {/* Visible grip handle — shadcn-style pill with grip icon */}
+        {/* Two outward-pointing arrows flanking the divider line — indicates
+            drag direction visually. The divider's own background renders the
+            vertical line between them. */}
         <div
           className={cn(
-            "z-20 flex h-4 w-3 items-center justify-center rounded-sm border bg-border",
+            "z-20 flex items-center gap-0 text-muted-foreground",
             "transition-colors duration-150",
-            "group-hover:bg-primary/20 group-hover:border-primary/40",
-            isDragging && "bg-primary/30 border-primary"
+            "group-hover:text-primary",
+            isDragging && "text-primary"
           )}
         >
-          <GripVertical className="h-2.5 w-2.5" />
+          <ChevronLeft className="h-3 w-3 -mr-1" />
+          <ChevronRight className="h-3 w-3 -ml-1" />
         </div>
       </div>
 
