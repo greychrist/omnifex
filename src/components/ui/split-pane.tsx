@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
+import { GripVertical } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface SplitPaneProps {
@@ -171,11 +172,11 @@ export const SplitPane: React.FC<SplitPaneProps> = ({
       {/* Divider */}
       <div
         className={cn(
-          "relative flex-shrink-0 group",
-          "w-1 hover:w-2 transition-all duration-150",
-          "bg-border hover:bg-primary/50",
+          "relative flex-shrink-0 group flex items-center justify-center",
+          "w-px bg-border transition-colors duration-150",
+          "hover:bg-primary/50",
           "cursor-col-resize",
-          isDragging && "bg-primary w-2"
+          isDragging && "bg-primary"
         )}
         onMouseDown={handleMouseDown}
         onKeyDown={handleKeyDown}
@@ -188,17 +189,17 @@ export const SplitPane: React.FC<SplitPaneProps> = ({
       >
         {/* Expand hit area for easier dragging */}
         <div className="absolute inset-y-0 -left-2 -right-2 z-10" />
-        
-        {/* Visual indicator dots */}
-        <div className={cn(
-          "absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2",
-          "flex flex-col items-center justify-center gap-1",
-          "opacity-0 group-hover:opacity-100 transition-opacity",
-          isDragging && "opacity-100"
-        )}>
-          <div className="w-1 h-1 bg-primary rounded-full" />
-          <div className="w-1 h-1 bg-primary rounded-full" />
-          <div className="w-1 h-1 bg-primary rounded-full" />
+
+        {/* Visible grip handle — shadcn-style pill with grip icon */}
+        <div
+          className={cn(
+            "z-20 flex h-4 w-3 items-center justify-center rounded-sm border bg-border",
+            "transition-colors duration-150",
+            "group-hover:bg-primary/20 group-hover:border-primary/40",
+            isDragging && "bg-primary/30 border-primary"
+          )}
+        >
+          <GripVertical className="h-2.5 w-2.5" />
         </div>
       </div>
 
