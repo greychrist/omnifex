@@ -21,7 +21,7 @@ const SUCCESS_STOP_REASONS: ReadonlySet<string> = new Set([
   'stop_sequence',
 ]);
 
-// Live-stream session rates matching today's handleStreamMessage cost calc.
+// Token cost rates used for session cost estimation.
 const INPUT_RATE_PER_TOKEN = 0.000003;
 const OUTPUT_RATE_PER_TOKEN = 0.000015;
 

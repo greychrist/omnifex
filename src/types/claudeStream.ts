@@ -43,14 +43,14 @@ import type { PermissionSuggestion } from '../lib/types/permissionRequest';
  * Fields the main process attaches to every message as it crosses the IPC
  * boundary. Live messages receive `receivedAt`; JSONL-reloaded messages
  * carry `timestamp`. `synthesized` marks result rows reconstructed by
- * `synthesizeResultMessages` rather than emitted by the SDK.
+ * the JSONL synthesizer rather than emitted by the SDK.
  */
 export interface OmnifexEnvelope {
   /** ISO timestamp stamped when the main process received the message from the SDK stream. */
   receivedAt?: string;
   /** Wall-clock timestamp from JSONL history. Distinct from `receivedAt`. */
   timestamp?: string;
-  /** True on messages reconstructed by `synthesizeResultMessages` rather than emitted live. */
+  /** True on messages reconstructed by the JSONL synthesizer rather than emitted live. */
   synthesized?: boolean;
   /**
    * Annotation applied by OmniFex's JSONL loader to messages the SDK marked
@@ -73,7 +73,7 @@ type AnchoredSDKMessage = Exclude<SDKMessage, SDKNotificationMessage>;
 /**
  * `permission_request` is OmniFex-synthetic — it travels on the same
  * `claude-output:<tabId>` channel as SDK messages and is normalised
- * onto `PermissionRequestPayload` by `sessionStreamReducer`. Snake_case
+ * onto `PermissionRequestPayload` by the JSONL classifier. Snake_case
  * field names match the wire format emitted by `permissions.ts`.
  */
 export interface PermissionRequestMessage extends OmnifexEnvelope {

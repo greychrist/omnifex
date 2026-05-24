@@ -4,18 +4,6 @@ import type { ClaudeStreamMessage } from "@/types/claudeStream";
 import type { EffortLevel, ThinkingConfig } from "@/components/FloatingPromptInput";
 import { logAndForget } from "@/lib/fireAndLog";
 
-function isJsonlPipelineEnabled(): boolean {
-  try {
-    if (typeof window === 'undefined') return true;
-    const value = window.localStorage.getItem('omnifex:jsonl-pipeline');
-    // Default ON. Set to 'off' in DevTools to fall back to legacy
-    // handleStreamMessage path for debugging.
-    return value !== 'off';
-  } catch {
-    return true;
-  }
-}
-
 /** Filter out noisy stderr messages that aren't real errors. */
 function isIgnorableStderr(msg: string): boolean {
   if (!msg) return false;
@@ -49,7 +37,6 @@ interface UseSessionLifecycleArgs {
    */
   setIsSessionStarting: React.Dispatch<React.SetStateAction<boolean>>;
   setIsSessionActive: React.Dispatch<React.SetStateAction<boolean>>;
-  handleStreamMessage: (payload: string | ClaudeStreamMessage) => void;
   handleJsonlLine: (payload: string | object) => void;
   setIsLoading: React.Dispatch<React.SetStateAction<boolean>>;
   setMessages: React.Dispatch<React.SetStateAction<ClaudeStreamMessage[]>>;
@@ -83,7 +70,6 @@ export function useSessionLifecycle({
   persistentSessionRef,
   setIsSessionStarting,
   setIsSessionActive,
-  handleStreamMessage,
   handleJsonlLine,
   setIsLoading,
   setMessages,
@@ -103,9 +89,7 @@ export function useSessionLifecycle({
 
     const outputUnlisten = window.electronAPI.onEvent(
       `claude-output:${tabId}`,
-      isJsonlPipelineEnabled()
-        ? (...args: unknown[]) => { handleJsonlLine(args[0] as string | object); }
-        : (...args: unknown[]) => { handleStreamMessage(args[0] as string | ClaudeStreamMessage); },
+      (...args: unknown[]) => { handleJsonlLine(args[0] as string | object); },
     );
 
     // Closure carriers (queue-operation enqueue with <task-notification>,
@@ -116,9 +100,7 @@ export function useSessionLifecycle({
     // identically to JSONL replay.
     const outputExtraUnlisten = window.electronAPI.onEvent(
       `claude-output-extra:${tabId}`,
-      (payload: any) => {
-        handleStreamMessage(payload);
-      },
+      (payload: unknown) => { handleJsonlLine(payload as string | object); },
     );
 
     const errorUnlisten = window.electronAPI.onEvent(
