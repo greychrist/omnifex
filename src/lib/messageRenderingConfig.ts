@@ -726,17 +726,29 @@ export const DEFAULT_TYPOGRAPHY: Typography = {
 // ─── hard filters ───────────────────────────────────────────────────────────
 
 export interface HardFilters {
-  dropMeta: boolean;
-  dropTaskLifecycle: boolean;
-  dropEmptyUser: boolean;
-  dropHookLifecycle: boolean;
+  // JSONL node filters — apply to messages[] populated from JSONL
+  dropBookkeeping: boolean;          // last-prompt, permission-mode, ai-title, file-history-snapshot
+  dropHookSummaries: boolean;        // system/stop_hook_summary
+  dropEmptyUser: boolean;            // user with empty or tool_result-only content
+  dropClosureCarriers: boolean;      // queue-operation, queued_command attachments
+  dropSystemInformational: boolean;  // system/away_summary, system/local_command, system/informational
+  // Live overlay filters — apply to SDK iterator overlay channels (SDK mode only)
+  hidePartialStreaming: boolean;     // stream_event (typewriter effect)
+  hideSubagentLifecycle: boolean;    // task_started/updated/progress (SubagentBar)
+  hideHookLifecycle: boolean;        // hook_started/progress/response
+  hideRateLimitNotices: boolean;     // rate_limit_event
 }
 
 export const DEFAULT_HARD_FILTERS: HardFilters = {
-  dropMeta: true,
-  dropTaskLifecycle: true,
+  dropBookkeeping: true,
+  dropHookSummaries: false,
   dropEmptyUser: true,
-  dropHookLifecycle: true,
+  dropClosureCarriers: true,
+  dropSystemInformational: false,
+  hidePartialStreaming: false,
+  hideSubagentLifecycle: false,
+  hideHookLifecycle: false,
+  hideRateLimitNotices: false,
 };
 
 // ─── debug ──────────────────────────────────────────────────────────────────
@@ -872,15 +884,30 @@ export function mergeConfig(saved: unknown): MessageRenderingConfig {
     }
   }
 
+  // Hard filters — migrate legacy keys (dropMeta, dropTaskLifecycle,
+  // dropHookLifecycle) into the new JSONL-aware shape. New fields take
+  // their default unless an explicit user value exists.
   if (isRecord(saved.hardFilters)) {
     const hf = saved.hardFilters;
+    const has = (k: string) => Object.prototype.hasOwnProperty.call(hf, k);
+    const bool = (k: string, fallback: boolean): boolean =>
+      typeof hf[k] === "boolean" ? (hf[k] as boolean) : fallback;
     base.hardFilters = {
-      dropMeta: typeof hf.dropMeta === "boolean" ? hf.dropMeta : base.hardFilters.dropMeta,
-      dropTaskLifecycle:
-        typeof hf.dropTaskLifecycle === "boolean" ? hf.dropTaskLifecycle : base.hardFilters.dropTaskLifecycle,
-      dropEmptyUser: typeof hf.dropEmptyUser === "boolean" ? hf.dropEmptyUser : base.hardFilters.dropEmptyUser,
-      dropHookLifecycle:
-        typeof hf.dropHookLifecycle === "boolean" ? hf.dropHookLifecycle : base.hardFilters.dropHookLifecycle,
+      dropBookkeeping: has("dropBookkeeping")
+        ? bool("dropBookkeeping", base.hardFilters.dropBookkeeping)
+        : bool("dropMeta", base.hardFilters.dropBookkeeping),
+      dropHookSummaries: bool("dropHookSummaries", base.hardFilters.dropHookSummaries),
+      dropEmptyUser: bool("dropEmptyUser", base.hardFilters.dropEmptyUser),
+      dropClosureCarriers: bool("dropClosureCarriers", base.hardFilters.dropClosureCarriers),
+      dropSystemInformational: bool("dropSystemInformational", base.hardFilters.dropSystemInformational),
+      hidePartialStreaming: bool("hidePartialStreaming", base.hardFilters.hidePartialStreaming),
+      hideSubagentLifecycle: has("hideSubagentLifecycle")
+        ? bool("hideSubagentLifecycle", base.hardFilters.hideSubagentLifecycle)
+        : bool("dropTaskLifecycle", base.hardFilters.hideSubagentLifecycle),
+      hideHookLifecycle: has("hideHookLifecycle")
+        ? bool("hideHookLifecycle", base.hardFilters.hideHookLifecycle)
+        : bool("dropHookLifecycle", base.hardFilters.hideHookLifecycle),
+      hideRateLimitNotices: bool("hideRateLimitNotices", base.hardFilters.hideRateLimitNotices),
     };
   }
 

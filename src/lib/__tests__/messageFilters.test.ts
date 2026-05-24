@@ -76,12 +76,17 @@ describe('filterDisplayableMessages', () => {
       expect(out).toHaveLength(0);
     });
 
-    it('keeps hook_progress when dropHookLifecycle is explicitly off', () => {
+    it('keeps hook_progress when hideHookLifecycle is explicitly off', () => {
       const out = filterDisplayableMessages([sysHook('hook_progress')], {
-        dropMeta: true,
-        dropTaskLifecycle: true,
+        dropBookkeeping: true,
+        dropHookSummaries: false,
         dropEmptyUser: true,
-        dropHookLifecycle: false,
+        dropClosureCarriers: true,
+        dropSystemInformational: false,
+        hidePartialStreaming: false,
+        hideSubagentLifecycle: false,
+        hideHookLifecycle: false,
+        hideRateLimitNotices: false,
       });
       expect(out).toHaveLength(1);
     });

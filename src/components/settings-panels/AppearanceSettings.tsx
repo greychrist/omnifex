@@ -209,10 +209,15 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
 
   const hardFiltersChecked = useMemo(
     () => ({
-      dropMeta: config.hardFilters.dropMeta,
-      dropTaskLifecycle: config.hardFilters.dropTaskLifecycle,
+      dropBookkeeping: config.hardFilters.dropBookkeeping,
+      dropHookSummaries: config.hardFilters.dropHookSummaries,
       dropEmptyUser: config.hardFilters.dropEmptyUser,
-      dropHookLifecycle: config.hardFilters.dropHookLifecycle,
+      dropClosureCarriers: config.hardFilters.dropClosureCarriers,
+      dropSystemInformational: config.hardFilters.dropSystemInformational,
+      hidePartialStreaming: config.hardFilters.hidePartialStreaming,
+      hideSubagentLifecycle: config.hardFilters.hideSubagentLifecycle,
+      hideHookLifecycle: config.hardFilters.hideHookLifecycle,
+      hideRateLimitNotices: config.hardFilters.hideRateLimitNotices,
     }),
     [config.hardFilters],
   );
@@ -352,37 +357,77 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
           </div>
         </div>
 
-        {/* Hard filters */}
+        {/* JSONL node filters */}
         <div className="space-y-3 pt-4 border-t border-border">
           <div>
-            <Label>Hard filters</Label>
+            <Label>JSONL node filters</Label>
             <p className="text-caption text-muted-foreground mt-1">
-              Messages dropped before rendering. Turn off for debugging only.
+              Filter messages by their source node type. Apply to every session.
             </p>
           </div>
           <FilterRow
-            label="Drop meta markers"
-            description="Internal SDK markers with no user value."
-            checked={hardFiltersChecked.dropMeta}
-            onChange={(v) => { setHardFilter("dropMeta", v); }}
+            label="Drop bookkeeping"
+            description="last-prompt, permission-mode, ai-title, file-history-snapshot — CLI internal state with no user-facing value."
+            checked={hardFiltersChecked.dropBookkeeping}
+            onChange={(v) => { setHardFilter("dropBookkeeping", v); }}
           />
           <FilterRow
-            label="Drop task lifecycle events"
-            description="Subagent task_started / task_progress events (rendered in SubagentBar)."
-            checked={hardFiltersChecked.dropTaskLifecycle}
-            onChange={(v) => { setHardFilter("dropTaskLifecycle", v); }}
+            label="Drop hook summaries"
+            description="system/stop_hook_summary — post-hook execution rollups."
+            checked={hardFiltersChecked.dropHookSummaries}
+            onChange={(v) => { setHardFilter("dropHookSummaries", v); }}
           />
           <FilterRow
-            label="Drop empty user messages"
-            description="Placeholder user messages from the SDK with no content."
+            label="Drop empty/tool-only user messages"
+            description="User messages with no text content (typically tool_result replies)."
             checked={hardFiltersChecked.dropEmptyUser}
             onChange={(v) => { setHardFilter("dropEmptyUser", v); }}
           />
           <FilterRow
-            label="Drop hook lifecycle events"
-            description="SDK hook_started / hook_response / user_prompt_submit notices. Plumbing — turn off only to debug hook behavior."
-            checked={hardFiltersChecked.dropHookLifecycle}
-            onChange={(v) => { setHardFilter("dropHookLifecycle", v); }}
+            label="Drop closure carriers"
+            description="queue-operation and queued_command attachments — background-bash plumbing."
+            checked={hardFiltersChecked.dropClosureCarriers}
+            onChange={(v) => { setHardFilter("dropClosureCarriers", v); }}
+          />
+          <FilterRow
+            label="Drop system informational"
+            description="system/away_summary, system/local_command, system/informational — diagnostic and slash-command echoes."
+            checked={hardFiltersChecked.dropSystemInformational}
+            onChange={(v) => { setHardFilter("dropSystemInformational", v); }}
+          />
+        </div>
+
+        {/* SDK-overlay filters */}
+        <div className="space-y-3 pt-4 border-t border-border">
+          <div>
+            <Label>Live overlay filters <span className="text-muted-foreground text-xs">(SDK mode only)</span></Label>
+            <p className="text-caption text-muted-foreground mt-1">
+              Apply to live-only event streams from the SDK iterator. No effect in Terminal mode.
+            </p>
+          </div>
+          <FilterRow
+            label="Hide partial token streaming"
+            description="stream_event — typewriter effect during assistant responses."
+            checked={hardFiltersChecked.hidePartialStreaming}
+            onChange={(v) => { setHardFilter("hidePartialStreaming", v); }}
+          />
+          <FilterRow
+            label="Hide subagent lifecycle"
+            description="task_started / task_progress / task_updated — drives SubagentBar."
+            checked={hardFiltersChecked.hideSubagentLifecycle}
+            onChange={(v) => { setHardFilter("hideSubagentLifecycle", v); }}
+          />
+          <FilterRow
+            label="Hide hook lifecycle"
+            description="hook_started / hook_progress / hook_response — drives hook progress UI."
+            checked={hardFiltersChecked.hideHookLifecycle}
+            onChange={(v) => { setHardFilter("hideHookLifecycle", v); }}
+          />
+          <FilterRow
+            label="Hide rate-limit notices"
+            description="rate_limit_event — drives budget telemetry."
+            checked={hardFiltersChecked.hideRateLimitNotices}
+            onChange={(v) => { setHardFilter("hideRateLimitNotices", v); }}
           />
         </div>
 
