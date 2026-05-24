@@ -40,6 +40,10 @@ export function createSynthesizer(): Synthesizer {
   let initFired = false;
   let turnStartAt: string | null = null;
   let pendingAssistant: Extract<JsonlNode, { kind: 'assistant' }> | null = null;
+  // synthCandidate: assistant with terminal stop waiting to see if a real result
+  // arrives next. If it does, the synth is cancelled. If anything else arrives
+  // (or flush is called), the synth is emitted first.
+  let synthCandidate: Extract<JsonlNode, { kind: 'assistant' }> | null = null;
 
   const out: JsonlNode[] = [];
 
@@ -81,6 +85,13 @@ export function createSynthesizer(): Synthesizer {
     });
   }
 
+  /** Emit the deferred synth-result if one is waiting and nothing cancelled it. */
+  function maybeFlushSynth(): void {
+    if (!synthCandidate) return;
+    emitResult(synthCandidate);
+    synthCandidate = null;
+  }
+
   function flushPending(): void {
     if (!pendingAssistant) return;
     // Unterminated turn — emit an error result.
@@ -108,8 +119,17 @@ export function createSynthesizer(): Synthesizer {
         maybeEmitInit(node.sessionId, cwd, receivedAt);
       }
 
+      // Real result from the SDK iterator — cancel any pending synth (real wins).
+      if (node.kind === 'real-result') {
+        synthCandidate = null;
+        out.push(node);
+        return [...out];
+      }
+
       if (node.kind === 'user' && node.userKind === 'prompt') {
-        // New turn boundary. Flush any pending unterminated turn first.
+        // New turn boundary. Flush any deferred synth from the previous turn,
+        // then flush any pending unterminated assistant.
+        maybeFlushSynth();
         flushPending();
         turnStartAt = node.receivedAt;
         out.push(node);
@@ -118,11 +138,14 @@ export function createSynthesizer(): Synthesizer {
 
       if (node.kind === 'assistant') {
         const stop = node.raw.message.stop_reason ?? null;
+        // Any non-result event arriving after a deferred synth means the real
+        // result didn't come — flush the synth now.
+        maybeFlushSynth();
         out.push(node);
         if (typeof stop === 'string' && TERMINAL_STOP_REASONS.has(stop)) {
-          // Terminal turn-ender — emit result, clear pending.
+          // Terminal turn-ender — defer synth emit to see if real result follows.
           pendingAssistant = null;
-          emitResult(node);
+          synthCandidate = node;
         } else {
           // Mid-turn (tool_use) or partial (null) — hold for potential flush.
           pendingAssistant = node;
@@ -130,12 +153,16 @@ export function createSynthesizer(): Synthesizer {
         return [...out];
       }
 
+      // Any other node: flush deferred synth first (real result didn't arrive).
+      maybeFlushSynth();
       out.push(node);
       return [...out];
     },
 
     flush(): JsonlNode[] {
       out.length = 0;
+      // Emit deferred synth before checking for an unterminated turn.
+      maybeFlushSynth();
       flushPending();
       return [...out];
     },

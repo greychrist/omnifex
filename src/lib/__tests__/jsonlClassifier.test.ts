@@ -236,4 +236,40 @@ describe('classifyJsonlLine', () => {
       expect(node.sessionId).toBe('cs-camel');
     }
   });
+
+  it('classifies result events as real-result', () => {
+    const sample = {
+      type: 'result',
+      subtype: 'success',
+      session_id: 'sdk-sid-3',
+      result: 'All done.',
+      is_error: false,
+      duration_ms: 3000,
+      total_cost_usd: 0.0012,
+      stop_reason: 'end_turn',
+      usage: { input_tokens: 200, output_tokens: 80 },
+    };
+    const node = classifyJsonlLine(sample);
+    expect(node?.kind).toBe('real-result');
+    if (node?.kind === 'real-result') {
+      expect(node.sessionId).toBe('sdk-sid-3');
+      expect(node.raw.type).toBe('result');
+      expect(node.raw.subtype).toBe('success');
+      expect(node.raw.is_error).toBe(false);
+    }
+  });
+
+  it('classifies result event with error subtype', () => {
+    const sample = {
+      type: 'result',
+      subtype: 'error_during_execution',
+      session_id: 'sdk-sid-4',
+      is_error: true,
+    };
+    const node = classifyJsonlLine(sample);
+    expect(node?.kind).toBe('real-result');
+    if (node?.kind === 'real-result') {
+      expect(node.raw.is_error).toBe(true);
+    }
+  });
 });

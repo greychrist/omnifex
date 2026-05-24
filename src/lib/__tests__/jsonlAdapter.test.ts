@@ -60,6 +60,30 @@ describe('jsonlNodeToStreamMessage', () => {
     expect((msg as any).synthesized).toBe(true);
   });
 
+  it('passes through a real-result node as its raw shape with receivedAt', () => {
+    const node: JsonlNode = {
+      kind: 'real-result',
+      raw: {
+        type: 'result',
+        subtype: 'success',
+        result: 'done',
+        is_error: false,
+        duration_ms: 1500,
+        total_cost_usd: 0.0005,
+        stop_reason: 'end_turn',
+      } as any,
+      sessionId: 'sdk-sid-5',
+      receivedAt: '2026-05-24T10:00:01Z',
+    };
+    const msg = jsonlNodeToStreamMessage(node);
+    expect(msg?.type).toBe('result');
+    expect((msg as any).subtype).toBe('success');
+    expect((msg as any).is_error).toBe(false);
+    expect((msg as any).receivedAt).toBe('2026-05-24T10:00:01Z');
+    // real results should NOT have the synthesized flag
+    expect((msg as any).synthesized).toBeUndefined();
+  });
+
   it('returns null for overlay kinds (they do not enter messages[])', () => {
     expect(jsonlNodeToStreamMessage({ kind: 'stream-event', uuid: 'u', deltaText: 'x' })).toBeNull();
     expect(jsonlNodeToStreamMessage({ kind: 'rate-limit', info: { status: 'allowed' } })).toBeNull();

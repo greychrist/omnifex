@@ -86,6 +86,17 @@ export interface FileSnapshotRaw extends RawLineBase {
   isSnapshotUpdate?: boolean;
 }
 
+export interface RealResultRaw extends RawLineBase {
+  type: 'result';
+  subtype?: string;
+  result?: string;
+  is_error?: boolean;
+  duration_ms?: number;
+  total_cost_usd?: number;
+  usage?: Record<string, unknown>;
+  stop_reason?: string | null;
+}
+
 export type SystemSubtype =
   | 'init'
   | 'notification'
@@ -146,6 +157,8 @@ export type JsonlNode =
   | { kind: 'file-history-snapshot'; raw: FileSnapshotRaw }
   // System sub-variants
   | { kind: 'system'; subtype: SystemSubtype; raw: SystemRaw; sessionId: string; receivedAt: string }
+  // Real result from SDK iterator (per-turn summary emitted after assistant terminal stop)
+  | { kind: 'real-result'; raw: RealResultRaw; sessionId: string; receivedAt: string }
   // Synthesized (not on disk; manufactured by the synthesizer)
   | { kind: 'synthesized-init'; sessionId: string; cwd: string; receivedAt: string }
   | { kind: 'synthesized-result'; sessionId: string; isError: boolean; subtype: string; body: string; durationMs: number; usage: UsageShape; totalCostUsd: number; stopReason: string | null; receivedAt: string }

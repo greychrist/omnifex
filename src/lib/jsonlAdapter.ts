@@ -38,6 +38,13 @@ export function jsonlNodeToStreamMessage(node: JsonlNode): ClaudeStreamMessage |
         synthesized: true,
       } as unknown as ClaudeStreamMessage;
     }
+    case 'real-result': {
+      const raw = (node as { raw: unknown }).raw as ClaudeStreamMessage;
+      if ('receivedAt' in node && node.receivedAt) {
+        (raw as { receivedAt?: string }).receivedAt = node.receivedAt;
+      }
+      return raw;
+    }
     case 'synthesized-result': {
       return {
         type: 'result',
