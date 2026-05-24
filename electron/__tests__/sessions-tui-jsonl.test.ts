@@ -132,6 +132,67 @@ describe('createTuiJsonlListener', () => {
     expect(onInit).toHaveBeenCalledTimes(1);
   });
 
+  it('fires notification on assistant message with terminal stop_reason', async () => {
+    const showNotification = vi.fn();
+    const sendToRenderer = vi.fn();
+    fs.writeFileSync(jsonlPath, '');
+    handle = createTuiJsonlListener({
+      tabId: 'tab-synth',
+      projectPath: '/Users/test/myproj',
+      jsonlPath,
+      sendToRenderer,
+      notificationHooks: { showNotification },
+      onInit: () => {},
+    });
+    fs.appendFileSync(
+      jsonlPath,
+      JSON.stringify({
+        type: 'assistant',
+        sessionId: 'sid',
+        timestamp: '2026-05-24T12:00:00Z',
+        message: {
+          role: 'assistant',
+          content: [{ type: 'text', text: 'all done' }],
+          stop_reason: 'end_turn',
+        },
+      }) + '\n',
+    );
+    await waitUntil(() => showNotification.mock.calls.length > 0);
+    expect(showNotification).toHaveBeenCalledWith(
+      'OmniFex — myproj',
+      'all done',
+      false,
+      { tabId: 'tab-synth' },
+    );
+  });
+
+  it('does NOT fire notification on assistant with non-terminal stop_reason (tool_use)', async () => {
+    const showNotification = vi.fn();
+    fs.writeFileSync(jsonlPath, '');
+    handle = createTuiJsonlListener({
+      tabId: 'tab-tu',
+      projectPath: '/p',
+      jsonlPath,
+      sendToRenderer: vi.fn(),
+      notificationHooks: { showNotification },
+      onInit: () => {},
+    });
+    fs.appendFileSync(
+      jsonlPath,
+      JSON.stringify({
+        type: 'assistant',
+        sessionId: 'sid',
+        message: {
+          role: 'assistant',
+          content: [{ type: 'text', text: 'using a tool' }],
+          stop_reason: 'tool_use',
+        },
+      }) + '\n',
+    );
+    await wait(400);
+    expect(showNotification).not.toHaveBeenCalled();
+  });
+
   it('fires the notification helper on a result line', async () => {
     const showNotification = vi.fn();
     const sendToRenderer = vi.fn();

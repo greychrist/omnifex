@@ -20,6 +20,54 @@ import { classifyRuntimeEvent } from './events';
 import { dispatchResultNotification } from './notifications';
 import type { NotificationHooks, SendToRenderer } from './types';
 
+const TERMINAL_STOP_REASONS: ReadonlySet<string> = new Set([
+  'end_turn',
+  'stop_sequence',
+  'max_tokens',
+  'refusal',
+  'model_context_window_exceeded',
+]);
+
+const SUCCESS_STOP_REASONS: ReadonlySet<string> = new Set([
+  'end_turn',
+  'stop_sequence',
+]);
+
+/**
+ * Build a synthetic `result` RuntimeEvent from a JSONL assistant line that
+ * carries a terminal stop_reason. The CLI's interactive TUI never writes
+ * top-level `result` lines, so we manufacture one here so the shared
+ * notification helper (`dispatchResultNotification`) fires identically to
+ * SDK mode.
+ *
+ * Returns null when the stop_reason is non-terminal (tool_use, null, etc.),
+ * meaning the turn isn't done yet.
+ */
+function synthResultFromAssistant(raw: unknown): { isError: boolean; body: string } | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  if (r.type !== 'assistant') return null;
+  const msg = r.message as Record<string, unknown> | undefined;
+  if (!msg) return null;
+  const stop = typeof msg.stop_reason === 'string' ? msg.stop_reason : null;
+  if (!stop || !TERMINAL_STOP_REASONS.has(stop)) return null;
+  const isError = !SUCCESS_STOP_REASONS.has(stop);
+  const content = msg.content;
+  const body = extractAssistantText(content) || (isError ? 'Task failed' : 'Task complete');
+  return { isError, body: body.slice(0, 200) };
+}
+
+function extractAssistantText(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+  return content
+    .filter((c): c is { type: string; text?: string } =>
+      !!c && typeof c === 'object' && (c as { type?: string }).type === 'text'
+    )
+    .map((c) => (typeof c.text === 'string' ? c.text : ''))
+    .join('');
+}
+
 export interface CreateTuiJsonlListenerArgs {
   tabId: string;
   projectPath: string;
@@ -82,6 +130,21 @@ export function createTuiJsonlListener(args: CreateTuiJsonlListenerArgs): TuiJso
           onStatusChange?.('running');
           break;
         // streamEvent / rateLimit / compact — no status change
+      }
+
+      // JSONL has no top-level `result` lines (only the SDK iterator produces
+      // those). Synthesize one from any `assistant` line with a terminal
+      // stop_reason so the OS notification fires.
+      const synth = synthResultFromAssistant(msg);
+      if (synth) {
+        dispatchResultNotification({
+          tabId,
+          projectPath,
+          event: { kind: 'result', isError: synth.isError, body: synth.body },
+          sendToRenderer,
+          notificationHooks,
+        });
+        onStatusChange?.('idle');
       }
     },
     onError: (err) => {
