@@ -109,11 +109,15 @@ export function createSessionsService(
         }),
     });
 
-    // Create handle first so the canUseTool callback can reference it
+    // Create handle first so the canUseTool callback can reference it.
+    // For resume, pre-populate handle.sessionId from params so consumers
+    // like setMode('tui') don't have to wait for the SDK iterator's
+    // system:init echo — the id is already known by the caller. The
+    // iterator will overwrite it with the same value on init.
     const handle: SessionHandle = {
       query: null, // set below
       inputChannel,
-      sessionId: null,
+      sessionId: params.resumeSessionId ?? null,
       status: 'starting',
       mode: 'sdk',
       tui: null,
