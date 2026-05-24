@@ -18,6 +18,7 @@ import type {
 import { classifyRuntimeEvent } from './events';
 import { dispatchResultNotification } from './notifications';
 import { createJsonlTail, type JsonlTailHandle } from './jsonl-tail';
+import { encodeProjectKey } from './summary-query';
 
 export interface RuntimeDeps {
   sendToRenderer: SendToRenderer;
@@ -68,7 +69,7 @@ export async function listenToMessages(
   const ensureJsonlTail = (): void => {
     if (jsonlTail || !handle.sessionId) return;
     if (process.env.OMNIFEX_DISABLE_JSONL_TAIL === '1') return;
-    const projectId = handle.projectPath.replace(/\//g, '-');
+    const projectId = encodeProjectKey(handle.projectPath);
     const jsonlPath = path.join(handle.configDir, 'projects', projectId, `${handle.sessionId}.jsonl`);
     jsonlTail = createJsonlTail({
       jsonlPath,
