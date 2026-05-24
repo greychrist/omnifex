@@ -201,20 +201,13 @@ export function getTaskList(messages: ClaudeStreamMessage[]): TaskListEntry[] | 
   for (let i = 0; i < messages.length; i++) {
     const m = messages[i];
 
-    // Inline inference: a `result` message marks the end of an SDK turn.
-    // Any task that's still non-terminal at this point is "stranded" —
-    // the agent ended the turn without an explicit TaskUpdate(completed).
-    // Mark them completed in-place so:
-    //   (a) the bar matches the user's intuition ("agent said done, list
-    //       looks done") across reloads,
-    //   (b) the thinking-bubble gate (driven by tasks-in-flight) goes
-    //       quiet when the session is genuinely idle,
-    //   (c) the next TaskCreate's epoch-reset check sees an all-completed
-    //       map and clears the slate for the new batch.
+    // Per-turn boundary. Detach the currently in-progress attribution
+    // (so messages emitted between turns aren't attributed). DO NOT
+    // force-complete remaining tasks: `result` fires once per turn,
+    // not once per session, so subagents that span multiple turns
+    // need their pending tasks to stay pending. The renderer's
+    // task-list summarizer treats real-state pending tasks correctly.
     if ((m as { type?: string }).type === 'result') {
-      for (const t of byToolUseId.values()) {
-        if (t.status !== 'completed') t.status = 'completed';
-      }
       currentTaskId = null;
       continue;
     }
