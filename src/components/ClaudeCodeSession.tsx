@@ -60,7 +60,7 @@ import { GitWatchStatusIcon } from "./claude-code-session/GitWatchStatusIcon";
 import { resolveBranchColors } from '@/lib/branchColors';
 import type { BranchColor } from '@/lib/api';
 import { filterDisplayableMessages } from "@/lib/messageFilters";
-import { deriveSubagents } from "@/lib/subagentStreams";
+import { deriveSubagents, createSubagentColorAllocator } from "@/lib/subagentStreams";
 import { getTaskList, summarizeTaskList } from "@/lib/taskList";
 import { SubagentBar } from "./SubagentBar";
 import { TaskList } from "./TaskList";
@@ -604,9 +604,10 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
 
   // Subagent (background task) state, derived from the raw stream.
   // Rendered above the prompt input so parallel Agent/Task dispatches are visible.
+  const colorAllocatorRef = useRef(createSubagentColorAllocator());
   const [dismissedSubagents, setDismissedSubagents] = useState<Set<string>>(new Set());
   const subagents = useMemo(() => {
-    const all = deriveSubagents(messages);
+    const all = deriveSubagents(messages, colorAllocatorRef.current);
     return dismissedSubagents.size === 0
       ? all
       : all.filter((s) => !dismissedSubagents.has(s.toolUseId));
@@ -636,6 +637,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   );
   const outstandingWork = isLoading || tasksInFlight;
   const dismissSubagent = useCallback((toolUseId: string) => {
+    colorAllocatorRef.current.release(toolUseId);
     setDismissedSubagents((prev) => {
       const next = new Set(prev);
       next.add(toolUseId);
@@ -643,6 +645,9 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     });
   }, []);
   const dismissAllCompletedSubagents = useCallback(() => {
+    for (const s of subagents) {
+      if (s.status !== 'running') colorAllocatorRef.current.release(s.toolUseId);
+    }
     setDismissedSubagents((prev) => {
       const next = new Set(prev);
       for (const s of subagents) {

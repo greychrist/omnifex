@@ -51,7 +51,7 @@ export interface Subagent {
   closureSource?: SubagentState['closureSource'];
 }
 
-export const SUBAGENT_PALETTE_SIZE = 6;
+export const SUBAGENT_PALETTE_SIZE = 16;
 
 export function colorIndexFor(toolUseId: string): number {
   let hash = 0;
@@ -59,6 +59,57 @@ export function colorIndexFor(toolUseId: string): number {
     hash = (hash + toolUseId.charCodeAt(i)) >>> 0;
   }
   return hash % SUBAGENT_PALETTE_SIZE;
+}
+
+/**
+ * Color allocator for subagent rows. Stateful within a session — tracks
+ * which palette indices are currently held by live tool_use_ids so new
+ * subagents get a guaranteed-unique index until the palette saturates.
+ *
+ * Stability contract:
+ *  - Same toolUseId → same index for the allocator's lifetime
+ *  - Different toolUseIds → different indices when ≤ palette size are live
+ *  - On release(toolUseId), the index frees up for the next allocation
+ *  - When > palette size are live simultaneously, the overflow falls back
+ *    to hash-mod and accepts collisions
+ */
+export interface SubagentColorAllocator {
+  /** Get-or-assign the color index for this toolUseId. */
+  acquire(toolUseId: string): number;
+  /** Release the slot held by toolUseId. Safe to call on unknown ids. */
+  release(toolUseId: string): void;
+}
+
+export function createSubagentColorAllocator(): SubagentColorAllocator {
+  const assigned = new Map<string, number>();
+  const used = new Set<number>();
+
+  return {
+    acquire(toolUseId: string): number {
+      const existing = assigned.get(toolUseId);
+      if (existing !== undefined) return existing;
+      // Pick lowest unused index, hash-mod fallback if all used.
+      let chosen = -1;
+      for (let i = 0; i < SUBAGENT_PALETTE_SIZE; i++) {
+        if (!used.has(i)) { chosen = i; break; }
+      }
+      if (chosen === -1) chosen = colorIndexFor(toolUseId);
+      assigned.set(toolUseId, chosen);
+      used.add(chosen);
+      return chosen;
+    },
+    release(toolUseId: string): void {
+      const idx = assigned.get(toolUseId);
+      if (idx === undefined) return;
+      assigned.delete(toolUseId);
+      // Only free the slot if no other toolUseId holds it (hash-mod fallback
+      // can produce collisions where multiple ids map to the same index).
+      for (const otherIdx of assigned.values()) {
+        if (otherIdx === idx) return;
+      }
+      used.delete(idx);
+    },
+  };
 }
 
 export const isTaskLifecycleMarker = _isTaskLifecycleMarker;
@@ -76,7 +127,10 @@ export const isTaskLifecycleMarker = _isTaskLifecycleMarker;
  *   4. Re-apply the inferred events so they go through the same reducer
  *      (preserving terminal-lock semantics)
  */
-export function deriveSubagents(messages: ClaudeStreamMessage[]): Subagent[] {
+export function deriveSubagents(
+  messages: ClaudeStreamMessage[],
+  allocator?: SubagentColorAllocator,
+): Subagent[] {
   const baseEvents = messagesToEvents(messages);
   const states = applyEvents(baseEvents);
   const closureEvents = inferredClosureEvents(
@@ -110,7 +164,7 @@ export function deriveSubagents(messages: ClaudeStreamMessage[]): Subagent[] {
     latest: s.latest,
     events: s.events,
     summary: s.summary,
-    colorIndex: colorIndexFor(s.toolUseId),
+    colorIndex: allocator ? allocator.acquire(s.toolUseId) : colorIndexFor(s.toolUseId),
     isBackground: s.isBackground,
     error: s.error,
     closureSource: s.closureSource,

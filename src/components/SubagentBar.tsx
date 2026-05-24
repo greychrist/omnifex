@@ -5,15 +5,29 @@ import type { Subagent } from '@/lib/subagentStreams';
 
 const COLLAPSE_STORAGE_KEY = 'greychrist.subagentBar.collapsed';
 
-// Cool palette — kept close to the user-message blue but distinguishable.
-// Each entry: border + bg + dot/accent color. Tailwind-friendly utility strings.
+// 16-slot palette — one distinct hue per slot so concurrent subagents never
+// share a colour until all 16 are live simultaneously (extremely rare).
+// The allocator in subagentStreams guarantees ordered assignment so slot 0
+// always goes to the first dispatched subagent, slot 1 to the second, etc.
 const PALETTE: { border: string; bg: string; dot: string; text: string }[] = [
-  { border: 'border-sky-400/40',    bg: 'bg-sky-400/10',    dot: 'bg-sky-400',    text: 'text-sky-400' },
-  { border: 'border-indigo-400/40', bg: 'bg-indigo-400/10', dot: 'bg-indigo-400', text: 'text-indigo-400' },
-  { border: 'border-cyan-400/40',   bg: 'bg-cyan-400/10',   dot: 'bg-cyan-400',   text: 'text-cyan-400' },
-  { border: 'border-teal-400/40',   bg: 'bg-teal-400/10',   dot: 'bg-teal-400',   text: 'text-teal-400' },
-  { border: 'border-violet-400/40', bg: 'bg-violet-400/10', dot: 'bg-violet-400', text: 'text-violet-400' },
-  { border: 'border-emerald-400/40',bg: 'bg-emerald-400/10',dot: 'bg-emerald-400',text: 'text-emerald-400' },
+  // 0–5 original set
+  { border: 'border-sky-400/40',     bg: 'bg-sky-400/10',     dot: 'bg-sky-400',     text: 'text-sky-400' },
+  { border: 'border-indigo-400/40',  bg: 'bg-indigo-400/10',  dot: 'bg-indigo-400',  text: 'text-indigo-400' },
+  { border: 'border-cyan-400/40',    bg: 'bg-cyan-400/10',    dot: 'bg-cyan-400',    text: 'text-cyan-400' },
+  { border: 'border-teal-400/40',    bg: 'bg-teal-400/10',    dot: 'bg-teal-400',    text: 'text-teal-400' },
+  { border: 'border-violet-400/40',  bg: 'bg-violet-400/10',  dot: 'bg-violet-400',  text: 'text-violet-400' },
+  { border: 'border-emerald-400/40', bg: 'bg-emerald-400/10', dot: 'bg-emerald-400', text: 'text-emerald-400' },
+  // 6–15 ten new hues, evenly spaced around the wheel
+  { border: 'border-rose-400/40',    bg: 'bg-rose-400/10',    dot: 'bg-rose-400',    text: 'text-rose-400' },
+  { border: 'border-orange-400/40',  bg: 'bg-orange-400/10',  dot: 'bg-orange-400',  text: 'text-orange-400' },
+  { border: 'border-amber-400/40',   bg: 'bg-amber-400/10',   dot: 'bg-amber-400',   text: 'text-amber-400' },
+  { border: 'border-lime-400/40',    bg: 'bg-lime-400/10',    dot: 'bg-lime-400',    text: 'text-lime-400' },
+  { border: 'border-green-400/40',   bg: 'bg-green-400/10',   dot: 'bg-green-400',   text: 'text-green-400' },
+  { border: 'border-blue-400/40',    bg: 'bg-blue-400/10',    dot: 'bg-blue-400',    text: 'text-blue-400' },
+  { border: 'border-purple-400/40',  bg: 'bg-purple-400/10',  dot: 'bg-purple-400',  text: 'text-purple-400' },
+  { border: 'border-fuchsia-400/40', bg: 'bg-fuchsia-400/10', dot: 'bg-fuchsia-400', text: 'text-fuchsia-400' },
+  { border: 'border-pink-400/40',    bg: 'bg-pink-400/10',    dot: 'bg-pink-400',    text: 'text-pink-400' },
+  { border: 'border-yellow-400/40',  bg: 'bg-yellow-400/10',  dot: 'bg-yellow-400',  text: 'text-yellow-400' },
 ];
 
 function formatElapsed(ms?: number): string {
