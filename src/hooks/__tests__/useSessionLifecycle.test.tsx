@@ -296,14 +296,14 @@ describe('useSessionLifecycle — rebindPersistentSession', () => {
 });
 
 describe('useSessionLifecycle — event listener behavior', () => {
-  it('forwards claude-output payloads to handleStreamMessage', async () => {
+  it('forwards claude-output payloads to handleJsonlLine (JSONL pipeline enabled by default)', async () => {
     (api.startSession as any).mockResolvedValueOnce(undefined);
-    const handleStreamMessage = vi.fn();
-    const { result } = renderHook(harness({ handleStreamMessage }));
+    const handleJsonlLine = vi.fn();
+    const { result } = renderHook(harness({ handleJsonlLine }));
     await act(async () => { await result.current.lifecycle.startPersistentSession(); });
 
     act(() => { eventListeners['claude-output:tab-life']('{"type":"user"}'); });
-    expect(handleStreamMessage).toHaveBeenCalledWith('{"type":"user"}');
+    expect(handleJsonlLine).toHaveBeenCalledWith('{"type":"user"}');
   });
 
   it('forwards claude-output-extra (closure carrier channel) to handleStreamMessage too', async () => {

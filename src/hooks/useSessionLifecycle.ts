@@ -6,9 +6,13 @@ import { logAndForget } from "@/lib/fireAndLog";
 
 function isJsonlPipelineEnabled(): boolean {
   try {
-    return typeof window !== 'undefined' && window.localStorage.getItem('omnifex:jsonl-pipeline') === 'on';
+    if (typeof window === 'undefined') return true;
+    const value = window.localStorage.getItem('omnifex:jsonl-pipeline');
+    // Default ON. Set to 'off' in DevTools to fall back to legacy
+    // handleStreamMessage path for debugging.
+    return value !== 'off';
   } catch {
-    return false;
+    return true;
   }
 }
 
