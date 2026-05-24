@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.56] — 2026-05-24
+
+The big one. Introduces **Terminal mode** — an embedded `claude` TUI for sessions, alongside the existing SDK mode — and rebuilds the renderer's message pipeline around the on-disk JSONL session file as the single source of truth. Terminal mode runs the CLI in a PTY (`--session-id <uuid>`), so it doesn't count against the SDK's upcoming monthly programmatic budget; same Claude, same conversation, no metering.
+
+The new pipeline (classifier → synthesizer → adapter) handles both modes through one render path. Resume sessions, SDK live, and Terminal live all flow through the same code. Three weeks of regressions found and fixed along the way are included.
+
+Installers remain **unsigned**.
+
+### Added
+
+- **Terminal mode.** Per-session toggle between SDK mode (default) and Terminal mode. Cold-start spawns `claude --session-id <uuid>` in a PTY with a pre-generated UUID — no race against a session-discovery poll, no CLI resume-picker prompt to trip over. The PTY runs in xterm.js on the left half of the session view; the right half is the same rich message cards SDK mode renders. Resizable split with a thin pill handle (style matches the session-header resize bar). Split position persists per user via `localStorage`. Mode toggle in the session toolbar; default-mode-per-session toggle on the new-session form.
+- **JSONL classifier** (`src/lib/jsonlClassifier.ts`). One pure `classifyJsonlLine(raw)` function that turns every shape the CLI writes into a typed `JsonlNode` discriminated union. 18 kinds spanning conversation content, system subtypes (`init`, `notification`, `stop_hook_summary`, `compact_boundary`, etc.), closure carriers, bookkeeping, real `result` events from the SDK iterator, and overlay events. Tolerant of both camelCase (`sessionId`) and snake_case (`session_id`) field naming so on-disk JSONL and SDK-iterator messages classify identically.
+- **JSONL synthesizer** (`src/lib/jsonlSynthesizer.ts`). Streaming + batch state machine that injects synthesized `init` (session start) and `result` (turn complete) events JSONL doesn't persist. The CLI's interactive TUI writes assistant messages with `stop_reason` but no top-level `result` line; the synthesizer manufactures the Execution Complete card from the assistant's terminal stop_reason. Defers its emit by one event so a real `result` event from the SDK iterator (when present) wins; no duplicate cards.
+- **TUI-mode OS notifications.** Turn-complete OS notifications now fire in Terminal mode at the same moments they do in SDK mode, triggered by detecting terminal stop_reason on assistant lines in the JSONL tail.
+- **Subagent palette: 16 hues + no-repeat allocator.** Was 6 hues with pure hash-mod-6 → collisions guaranteed above 5 concurrent subagents. New `createSubagentColorAllocator` picks the lowest unused index, releases slots on dismissal, falls back to hash-mod only when >16 are concurrently live.
+- **Settings → Chats: JSONL-node-aware filters.** Two grouped sections — "JSONL node filters" (drop bookkeeping, hook summaries, empty user, closure carriers, system informational) and "Live overlay filters (SDK mode only)" (hide partial streaming, subagent lifecycle, hook lifecycle, rate-limit notices). Legacy keys (`dropMeta`, `dropTaskLifecycle`, `dropHookLifecycle`) migrate automatically on first load.
+
+### Changed
+
+- **Renderer message pipeline unified.** Both modes feed `messages[]` through `classifyJsonlLine → synthesizer → adapter` — no more SDK-only vs TUI-only code paths in the renderer. `handleStreamMessage` deleted (~1600 lines removed); the new `handleJsonlLine` is the single entry point. `loadSessionHistory` (resume) routes through the same pipeline as the live tail.
+- **`@anthropic-ai/claude-agent-sdk` 0.3.149 → 0.3.150.**
+- **`runtime.ts` uses canonical `encodeProjectKey`.** Was using ad-hoc `replace('/','-')` which diverged from the NFC-normalized helper used elsewhere. Non-ASCII project paths no longer cause the SDK tail and the TUI tail to watch different files.
+
+### Fixed
+
+- **Session-resume mode toggle no longer races.** Opening an old session in SDK mode and immediately toggling to Terminal mode used to fail with `setMode("tui"): session has no sessionId yet` — the backend hadn't seen the SDK's `system:init` echo yet. `handle.sessionId` is now seeded from `params.resumeSessionId` synchronously at start.
+- **"Contemplating…" no longer sticks on after a turn.** The classifier was returning null for `type:'result'` events, dropping them before they reached the reducer's `clearLoading` handler. The result-card synthesizer's deferred-emit (above) also covers cases where no real result arrives. Both bugs together caused some SDK-mode turns to render the assistant message but never the Execution Complete card, leaving the spinner stuck. Belt and suspenders.
+- **TUI cold-start errors propagate to the renderer.** `start({mode:'tui'})` used to do `void startTuiColdStart(params)`, swallowing rejections — the IPC resolved successfully and the renderer's error toast never fired, leaving the user stuck on "Starting…" if the Claude binary couldn't be found. `start()` now returns the cold-start promise; the renderer's existing catch handler does its job.
+- **Task list no longer marks tasks done prematurely.** `getTaskList` was force-completing every non-finished task on every `result` event — fine for a one-shot SDK session, fatal for multi-turn subagents whose TodoWrite spans turns. Stopped force-completing; tasks now reflect their actual TaskUpdate state.
+- **Closure carriers no longer render as YOU messages.** `<task-notification>` carriers and `queued_command` attachments are now correctly dropped from the rendered message list (filter wiring added in Phase 2.2 settings work; this release locks the contract with regression tests).
+- **TUI panel scrolling.** Both panes had indeterminate height because `TuiSessionLayout`'s outer flex didn't claim its parent's height. Fixed with `flex-1 min-h-0`.
+- **Mode toggle disabled state explains itself.** Until the session has a sessionId, the toggle is greyed out with "Session ID not yet available — wait a moment" rather than a misleading "Start a session first."
+- **`col-resize` cursor over the resize handle.** Global stylesheet's `[tabindex]:not([tabindex="-1"]) { cursor: pointer }` was overriding the Tailwind class on the SplitPane divider (which has a `tabIndex` for keyboard a11y). Inline style now wins.
+
+### Removed
+
+- **`sessionStreamReducer.ts`, `sessionStreamEffects.ts`, `synthesizeResults.ts`, and the legacy `handleStreamMessage` SDK-event path** — all subsumed by the unified JSONL pipeline + the restored reducer that handleJsonlLine now uses. Net ≈1600 lines deleted, ≈900 added in the new pipeline modules.
+
 ## [0.4.55] — 2026-05-22
 
 Follow-up to v0.4.53. SDK parity bump that restores correct telemetry attribution on every Claude subprocess OmniFex spawns, plus a build-pipeline fix that makes `npm run make` self-healing across Node version upgrades.
