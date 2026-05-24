@@ -27,7 +27,12 @@ export function classifyJsonlLine(raw: unknown): JsonlNode | null {
   const type = r.type;
   if (typeof type !== 'string') return null;
 
-  const sessionId = typeof r.sessionId === 'string' ? r.sessionId : '';
+  const sessionId =
+    typeof r.sessionId === 'string'
+      ? r.sessionId
+      : typeof r.session_id === 'string'
+        ? r.session_id
+        : '';
   const receivedAt = typeof r.timestamp === 'string' ? r.timestamp : new Date().toISOString();
 
   switch (type) {
@@ -109,6 +114,8 @@ function classifyQueueOp(r: Record<string, unknown>, sessionId: string, received
 }
 
 const SYSTEM_SUBTYPES: ReadonlySet<SystemSubtype> = new Set<SystemSubtype>([
+  'init',
+  'notification',
   'stop_hook_summary',
   'local_command',
   'api_error',

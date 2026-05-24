@@ -87,6 +87,8 @@ export interface FileSnapshotRaw extends RawLineBase {
 }
 
 export type SystemSubtype =
+  | 'init'
+  | 'notification'
   | 'stop_hook_summary'
   | 'local_command'
   | 'api_error'

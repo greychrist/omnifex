@@ -179,4 +179,61 @@ describe('classifyJsonlLine', () => {
     });
     expect(node).toBeNull();
   });
+
+  it('classifies system/init (SDK iterator shape)', () => {
+    const sample = {
+      type: 'system',
+      subtype: 'init',
+      session_id: 'sdk-sid-1',
+      cwd: '/p',
+    };
+    const node = classifyJsonlLine(sample);
+    expect(node?.kind).toBe('system');
+    if (node?.kind === 'system') {
+      expect(node.subtype).toBe('init');
+      expect(node.sessionId).toBe('sdk-sid-1');
+    }
+  });
+
+  it('classifies system/notification (SDK iterator shape)', () => {
+    const sample = {
+      type: 'system',
+      subtype: 'notification',
+      session_id: 'sdk-sid-2',
+      notification_type: 'error',
+      title: 'oops',
+      body: 'something broke',
+    };
+    const node = classifyJsonlLine(sample);
+    expect(node?.kind).toBe('system');
+    if (node?.kind === 'system') {
+      expect(node.subtype).toBe('notification');
+    }
+  });
+
+  it('reads snake_case session_id for SDK iterator messages', () => {
+    const sample = {
+      type: 'assistant',
+      session_id: 'sdk-snake',
+      message: { role: 'assistant', content: [] },
+    };
+    const node = classifyJsonlLine(sample);
+    expect(node?.kind).toBe('assistant');
+    if (node?.kind === 'assistant') {
+      expect(node.sessionId).toBe('sdk-snake');
+    }
+  });
+
+  it('prefers camelCase sessionId over snake_case when both present', () => {
+    const sample = {
+      type: 'assistant',
+      sessionId: 'cs-camel',
+      session_id: 'should-not-win',
+      message: { role: 'assistant', content: [] },
+    };
+    const node = classifyJsonlLine(sample);
+    if (node?.kind === 'assistant') {
+      expect(node.sessionId).toBe('cs-camel');
+    }
+  });
 });
