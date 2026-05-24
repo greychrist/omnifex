@@ -168,19 +168,17 @@ export const SplitPane: React.FC<SplitPaneProps> = ({
         {left}
       </div>
 
-      {/* Divider — thin bar that thickens on hover. The OS-level
-          `col-resize` cursor (two arrows flanking a vertical line) is
-          the visual affordance when the mouse hovers.
+      {/* Divider — thin static bar with a small centered pill handle,
+          matching the session-header resize bar style. No hover-expand.
+          The OS-level `col-resize` cursor (two arrows flanking a vertical
+          line) is the affordance when the mouse hovers.
           NOTE: inline style is required to beat the global stylesheet
           (styles.css:367) that applies `cursor: pointer` to anything
-          with a non-negative tabindex. Without inline, the divider
-          shows the pointer hand instead of col-resize. */}
+          with a non-negative tabindex. */}
       <div
         className={cn(
-          "relative flex-shrink-0 group",
-          "w-1 hover:w-2 transition-all duration-150",
-          "bg-border hover:bg-primary/50",
-          isDragging && "bg-primary w-2"
+          "relative flex-shrink-0 group w-px bg-border",
+          isDragging && "bg-foreground/40"
         )}
         style={{ cursor: 'col-resize' }}
         onMouseDown={handleMouseDown}
@@ -192,10 +190,19 @@ export const SplitPane: React.FC<SplitPaneProps> = ({
         aria-valuemin={0}
         aria-valuemax={100}
       >
-        {/* Expand hit area for easier dragging — also needs explicit
-            col-resize so the cursor doesn't flicker between hover-on-bar
-            and hover-on-hit-area zones. */}
+        {/* Expand hit area for easier dragging — invisible but col-resize. */}
         <div className="absolute inset-y-0 -left-2 -right-2 z-10" style={{ cursor: 'col-resize' }} />
+
+        {/* Small centered pill — visual handle. Mirrors the session-header
+            horizontal resize bar but rotated for vertical divider. */}
+        <div
+          className={cn(
+            "absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-20",
+            "w-0.5 h-12 rounded-full bg-foreground/15 transition-colors",
+            "group-hover:bg-foreground/40",
+            isDragging && "bg-foreground/60"
+          )}
+        />
       </div>
 
       {/* Right pane */}
