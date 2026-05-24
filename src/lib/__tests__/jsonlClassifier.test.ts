@@ -79,4 +79,104 @@ describe('classifyJsonlLine', () => {
       expect(stamp).toBeGreaterThanOrEqual(before);
     }
   });
+
+  it('classifies last-prompt lines', () => {
+    const node = classifyJsonlLine(JSONL_SAMPLES['last-prompt']);
+    expect(node?.kind).toBe('last-prompt');
+  });
+
+  it('classifies permission-mode lines', () => {
+    const node = classifyJsonlLine(JSONL_SAMPLES['permission-mode']);
+    expect(node?.kind).toBe('permission-mode');
+  });
+
+  it('classifies ai-title lines', () => {
+    const node = classifyJsonlLine(JSONL_SAMPLES['ai-title']);
+    expect(node?.kind).toBe('ai-title');
+  });
+
+  it('classifies file-history-snapshot lines', () => {
+    const node = classifyJsonlLine(JSONL_SAMPLES['file-history-snapshot']);
+    expect(node?.kind).toBe('file-history-snapshot');
+  });
+
+  it('classifies system/stop_hook_summary', () => {
+    const node = classifyJsonlLine(JSONL_SAMPLES['system/stop_hook_summary']);
+    expect(node?.kind).toBe('system');
+    if (node?.kind === 'system') {
+      expect(node.subtype).toBe('stop_hook_summary');
+    }
+  });
+
+  it('classifies system/local_command', () => {
+    const node = classifyJsonlLine(JSONL_SAMPLES['system/local_command']);
+    expect(node?.kind).toBe('system');
+    if (node?.kind === 'system') {
+      expect(node.subtype).toBe('local_command');
+    }
+  });
+
+  it('classifies system/api_error', () => {
+    const node = classifyJsonlLine(JSONL_SAMPLES['system/api_error']);
+    expect(node?.kind).toBe('system');
+    if (node?.kind === 'system') {
+      expect(node.subtype).toBe('api_error');
+    }
+  });
+
+  it('classifies system/turn_duration', () => {
+    const node = classifyJsonlLine(JSONL_SAMPLES['system/turn_duration']);
+    expect(node?.kind).toBe('system');
+    if (node?.kind === 'system') {
+      expect(node.subtype).toBe('turn_duration');
+    }
+  });
+
+  it('classifies system/away_summary', () => {
+    const node = classifyJsonlLine(JSONL_SAMPLES['system/away_summary']);
+    expect(node?.kind).toBe('system');
+    if (node?.kind === 'system') {
+      expect(node.subtype).toBe('away_summary');
+    }
+  });
+
+  it('classifies system/compact_boundary (manual sample — not in fixtures)', () => {
+    const sample = {
+      type: 'system',
+      subtype: 'compact_boundary',
+      sessionId: 'sid',
+      timestamp: '2026-05-24T00:00:00Z',
+      compactMetadata: { trigger: 'manual' },
+    };
+    const node = classifyJsonlLine(sample);
+    expect(node?.kind).toBe('system');
+    if (node?.kind === 'system') {
+      expect(node.subtype).toBe('compact_boundary');
+    }
+  });
+
+  it('classifies system/informational (manual sample — not in fixtures)', () => {
+    const sample = {
+      type: 'system',
+      subtype: 'informational',
+      sessionId: 'sid',
+      timestamp: '2026-05-24T00:00:00Z',
+      content: 'info',
+    };
+    const node = classifyJsonlLine(sample);
+    expect(node?.kind).toBe('system');
+    if (node?.kind === 'system') {
+      expect(node.subtype).toBe('informational');
+    }
+  });
+
+  it('returns null for system with unknown subtype', () => {
+    const node = classifyJsonlLine({
+      type: 'system',
+      subtype: 'future_unknown_subtype',
+      sessionId: 'sid',
+      timestamp: '2026-05-24T00:00:00Z',
+    });
+    expect(node).toBeNull();
+  });
 });

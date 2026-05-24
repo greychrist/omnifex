@@ -4,6 +4,12 @@ import type {
   UserRaw,
   AttachmentRaw,
   QueueOpRaw,
+  LastPromptRaw,
+  PermissionModeRaw,
+  AiTitleRaw,
+  FileSnapshotRaw,
+  SystemRaw,
+  SystemSubtype,
 } from '@/types/jsonl';
 
 /**
@@ -33,8 +39,18 @@ export function classifyJsonlLine(raw: unknown): JsonlNode | null {
       return classifyAttachment(r, sessionId, receivedAt);
     case 'queue-operation':
       return classifyQueueOp(r, sessionId, receivedAt);
+    case 'last-prompt':
+      return classifyLastPrompt(r, sessionId);
+    case 'permission-mode':
+      return classifyPermissionMode(r, sessionId);
+    case 'ai-title':
+      return classifyAiTitle(r, sessionId);
+    case 'file-history-snapshot':
+      return classifyFileSnapshot(r);
+    case 'system':
+      return classifySystem(r, sessionId, receivedAt);
     default:
-      return null; // Other types covered in Task 4.
+      return null;
   }
 }
 
@@ -87,6 +103,64 @@ function classifyQueueOp(r: Record<string, unknown>, sessionId: string, received
   return {
     kind: 'queue-operation',
     raw: r as unknown as QueueOpRaw,
+    sessionId,
+    receivedAt,
+  };
+}
+
+const SYSTEM_SUBTYPES: ReadonlySet<SystemSubtype> = new Set<SystemSubtype>([
+  'stop_hook_summary',
+  'local_command',
+  'api_error',
+  'turn_duration',
+  'away_summary',
+  'compact_boundary',
+  'informational',
+]);
+
+function classifyLastPrompt(r: Record<string, unknown>, sessionId: string): JsonlNode | null {
+  if (typeof r.lastPrompt !== 'string') return null;
+  return {
+    kind: 'last-prompt',
+    raw: r as unknown as LastPromptRaw,
+    sessionId,
+  };
+}
+
+function classifyPermissionMode(r: Record<string, unknown>, sessionId: string): JsonlNode | null {
+  if (typeof r.permissionMode !== 'string') return null;
+  return {
+    kind: 'permission-mode',
+    raw: r as unknown as PermissionModeRaw,
+    sessionId,
+  };
+}
+
+function classifyAiTitle(r: Record<string, unknown>, sessionId: string): JsonlNode | null {
+  if (typeof r.aiTitle !== 'string') return null;
+  return {
+    kind: 'ai-title',
+    raw: r as unknown as AiTitleRaw,
+    sessionId,
+  };
+}
+
+function classifyFileSnapshot(r: Record<string, unknown>): JsonlNode | null {
+  if (r.snapshot === undefined) return null;
+  return {
+    kind: 'file-history-snapshot',
+    raw: r as unknown as FileSnapshotRaw,
+  };
+}
+
+function classifySystem(r: Record<string, unknown>, sessionId: string, receivedAt: string): JsonlNode | null {
+  const subtype = r.subtype;
+  if (typeof subtype !== 'string') return null;
+  if (!SYSTEM_SUBTYPES.has(subtype as SystemSubtype)) return null;
+  return {
+    kind: 'system',
+    subtype: subtype as SystemSubtype,
+    raw: r as unknown as SystemRaw,
     sessionId,
     receivedAt,
   };
