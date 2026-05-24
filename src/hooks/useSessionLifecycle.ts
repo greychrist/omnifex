@@ -1,5 +1,5 @@
 import { useRef, useEffect } from "react";
-import { api } from "@/lib/api";
+import { api, type SessionMode } from "@/lib/api";
 import type { ClaudeStreamMessage } from "@/types/claudeStream";
 import type { EffortLevel, ThinkingConfig } from "@/components/FloatingPromptInput";
 import { logAndForget } from "@/lib/fireAndLog";
@@ -20,6 +20,7 @@ interface UseSessionLifecycleArgs {
   permissionMode: string;
   effort: EffortLevel;
   thinkingConfig: ThinkingConfig;
+  sessionStartMode?: SessionMode;
   accountResolution: {
     account: { name: string; account_type: string; config_dir: string };
     match_type: string;
@@ -36,7 +37,7 @@ interface UseSessionLifecycleArgs {
    */
   setIsSessionStarting: React.Dispatch<React.SetStateAction<boolean>>;
   setIsSessionActive: React.Dispatch<React.SetStateAction<boolean>>;
-  handleStreamMessage: (payload: string | ClaudeStreamMessage) => void;
+  handleJsonlLine: (payload: string | object) => void;
   setIsLoading: React.Dispatch<React.SetStateAction<boolean>>;
   setMessages: React.Dispatch<React.SetStateAction<ClaudeStreamMessage[]>>;
   setSdkAccountInfo: React.Dispatch<React.SetStateAction<import("@/lib/api").SessionAccountInfo | null>>;
@@ -64,11 +65,12 @@ export function useSessionLifecycle({
   permissionMode,
   effort,
   thinkingConfig,
+  sessionStartMode,
   accountResolution,
   persistentSessionRef,
   setIsSessionStarting,
   setIsSessionActive,
-  handleStreamMessage,
+  handleJsonlLine,
   setIsLoading,
   setMessages,
   setSdkAccountInfo,
@@ -87,9 +89,7 @@ export function useSessionLifecycle({
 
     const outputUnlisten = window.electronAPI.onEvent(
       `claude-output:${tabId}`,
-      (payload: any) => {
-        handleStreamMessage(payload);
-      },
+      (...args: unknown[]) => { handleJsonlLine(args[0] as string | object); },
     );
 
     // Closure carriers (queue-operation enqueue with <task-notification>,
@@ -100,9 +100,7 @@ export function useSessionLifecycle({
     // identically to JSONL replay.
     const outputExtraUnlisten = window.electronAPI.onEvent(
       `claude-output-extra:${tabId}`,
-      (payload: any) => {
-        handleStreamMessage(payload);
-      },
+      (payload: unknown) => { handleJsonlLine(payload as string | object); },
     );
 
     const errorUnlisten = window.electronAPI.onEvent(
@@ -317,6 +315,7 @@ export function useSessionLifecycle({
         configDir,
         sdkEffort,
         sdkThinking,
+        sessionStartMode,
       );
     } catch (err) {
       // Surface session-start failures to the user. The most common cause

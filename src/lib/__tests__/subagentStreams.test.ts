@@ -9,6 +9,7 @@ import {
   hasRunningSubagent,
   colorIndexFor,
   SUBAGENT_PALETTE_SIZE,
+  createSubagentColorAllocator,
 } from '../subagentStreams';
 
 const TOOL_USE_ID = 'toolu_TEST_1';
@@ -161,6 +162,49 @@ describe('colorIndexFor', () => {
     const ids = ['toolu_a', 'toolu_b', 'toolu_c', 'toolu_d', 'toolu_e', 'toolu_f', 'toolu_g'];
     const colors = new Set(ids.map(colorIndexFor));
     expect(colors.size).toBeGreaterThan(1);
+  });
+});
+
+describe('createSubagentColorAllocator', () => {
+  it('assigns distinct indices to N <= palette size toolUseIds', () => {
+    const allocator = createSubagentColorAllocator();
+    const indices = new Set<number>();
+    for (let i = 0; i < SUBAGENT_PALETTE_SIZE; i++) {
+      indices.add(allocator.acquire(`tool-${i}`));
+    }
+    expect(indices.size).toBe(SUBAGENT_PALETTE_SIZE);
+  });
+
+  it('returns the same index for the same toolUseId on repeated calls', () => {
+    const allocator = createSubagentColorAllocator();
+    const first = allocator.acquire('tool-x');
+    const second = allocator.acquire('tool-x');
+    expect(first).toBe(second);
+  });
+
+  it('release frees the slot for a future allocation', () => {
+    const allocator = createSubagentColorAllocator();
+    const ids: string[] = [];
+    for (let i = 0; i < SUBAGENT_PALETTE_SIZE; i++) ids.push(`t-${i}`);
+    const idx0 = allocator.acquire(ids[0]);
+    for (let i = 1; i < SUBAGENT_PALETTE_SIZE; i++) allocator.acquire(ids[i]);
+    allocator.release(ids[0]);
+    // Newcomer should take the freed slot.
+    expect(allocator.acquire('newcomer')).toBe(idx0);
+  });
+
+  it('falls back to hash-mod when palette is saturated', () => {
+    const allocator = createSubagentColorAllocator();
+    for (let i = 0; i < SUBAGENT_PALETTE_SIZE; i++) allocator.acquire(`t-${i}`);
+    // Overflow — should not throw, returns a valid index in [0, PALETTE_SIZE).
+    const overflowIdx = allocator.acquire('overflow');
+    expect(overflowIdx).toBeGreaterThanOrEqual(0);
+    expect(overflowIdx).toBeLessThan(SUBAGENT_PALETTE_SIZE);
+  });
+
+  it('release is a no-op for an unknown toolUseId', () => {
+    const allocator = createSubagentColorAllocator();
+    expect(() => allocator.release('never-acquired')).not.toThrow();
   });
 });
 

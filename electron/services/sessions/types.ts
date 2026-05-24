@@ -68,6 +68,13 @@ export interface SessionStartParams {
     | { type: 'disabled' };
   /** webContents.id of the window that started this session — used to route tab-scoped events back to that window only. */
   ownerWebContentsId?: number;
+  /**
+   * Choose the session backend. Defaults to `'sdk'` (today's behavior).
+   * `'tui'` spawns the CLI in a PTY without `--resume` and drives the
+   * renderer from the session's JSONL file. Use TUI mode when programmatic
+   * API budget is exhausted or the user prefers terminal-primary UX.
+   */
+  mode?: SessionMode;
 }
 
 /** Lets the service tell the main process which window owns each tab, so tab-scoped events are routed per-window. */
@@ -77,7 +84,7 @@ export interface SessionOwnership {
 }
 
 export interface SessionsService {
-  start(params: SessionStartParams): void;
+  start(params: SessionStartParams): void | Promise<void>;
   /**
    * Re-attach an existing session to a (new) owner webContents without tearing
    * down the SDK query. Returns true if a session was found and re-bound,
@@ -223,14 +230,18 @@ export interface ElicitationDecision {
 }
 
 export interface SessionHandle {
-  query: Query;
-  inputChannel: AsyncChannel<SDKUserMessage>;
+  /** Null in TUI cold-start sessions (no SDK query). */
+  query: Query | null;
+  /** Null in TUI cold-start sessions (no SDK input channel). */
+  inputChannel: AsyncChannel<SDKUserMessage> | null;
   sessionId: string | null;
   status: SessionStatus;
   mode: SessionMode;
   tui: import('./tui').TuiSession | null;
   /** Cleanup hook that detaches the current tui's data/exit forwarders. */
   tuiDetach: (() => void) | null;
+  /** Stop handle for the TUI JSONL listener (null in SDK mode). */
+  tuiJsonl: import('./tui-jsonl').TuiJsonlHandle | null;
   permissionResolver: ((decision: PermissionDecision) => void) | null;
   /** Queue of permission requests waiting for user response */
   permissionQueue: PendingPermission[];

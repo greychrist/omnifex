@@ -16,7 +16,9 @@ import type {
   SessionOwnership,
 } from './types';
 import { classifyRuntimeEvent } from './events';
+import { dispatchResultNotification } from './notifications';
 import { createJsonlTail, type JsonlTailHandle } from './jsonl-tail';
+import { encodeProjectKey } from './summary-query';
 
 export interface RuntimeDeps {
   sendToRenderer: SendToRenderer;
@@ -52,6 +54,9 @@ export async function listenToMessages(
   handle: SessionHandle,
   deps: RuntimeDeps,
 ): Promise<void> {
+  // listenToMessages is only called for SDK-mode sessions. If query is null
+  // (TUI cold-start), there is nothing to iterate — return immediately.
+  if (!handle.query) return;
   const { sendToRenderer, notificationHooks, rateLimitHook, ownership, sessions } = deps;
   // JSONL tail for closure carriers the SDK iterator doesn't yield
   // (queue-operation enqueue with <task-notification>, attachment
@@ -64,7 +69,7 @@ export async function listenToMessages(
   const ensureJsonlTail = (): void => {
     if (jsonlTail || !handle.sessionId) return;
     if (process.env.OMNIFEX_DISABLE_JSONL_TAIL === '1') return;
-    const projectId = handle.projectPath.replace(/\//g, '-');
+    const projectId = encodeProjectKey(handle.projectPath);
     const jsonlPath = path.join(handle.configDir, 'projects', projectId, `${handle.sessionId}.jsonl`);
     jsonlTail = createJsonlTail({
       jsonlPath,
@@ -153,25 +158,13 @@ export async function listenToMessages(
       sendToRenderer(`claude-output:${tabId}`, message);
 
       if (event.kind === 'result') {
-        const projectName = path.basename(handle.projectPath) || 'OmniFex';
-        const title = `OmniFex — ${projectName}`;
-
-        // Emit to renderer for in-app tab badge handling
-        sendToRenderer('claude-notification', {
-          tab_id: tabId,
-          title,
-          body: event.body,
-          is_error: event.isError,
+        dispatchResultNotification({
+          tabId,
+          projectPath: handle.projectPath,
+          event,
+          sendToRenderer,
+          notificationHooks,
         });
-
-        // Fire native OS notification + dock badge
-        try {
-          notificationHooks.showNotification?.(title, event.body, event.isError, { tabId });
-          notificationHooks.incrementUnread?.();
-        } catch (e) {
-          console.error('[sessions] notification hook failed:', e);
-        }
-
         // Turn is over — flip to 'idle' so the installer's wait-for-idle
         // gate doesn't block on a tab that's just sitting waiting for the
         // user. The 'turn' branch above will move us back to 'running' the
@@ -203,7 +196,7 @@ export async function listenToMessages(
     // hangs around in handle.query holding subprocess resources until
     // either stop() or restartQuery() eventually replaces it.
     try {
-      handle.query.close();
+      handle.query?.close();
     } catch (closeErr) {
       console.warn('[sessions] query.close on stream error threw:', closeErr);
     }

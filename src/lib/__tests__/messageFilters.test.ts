@@ -76,12 +76,17 @@ describe('filterDisplayableMessages', () => {
       expect(out).toHaveLength(0);
     });
 
-    it('keeps hook_progress when dropHookLifecycle is explicitly off', () => {
+    it('keeps hook_progress when hideHookLifecycle is explicitly off', () => {
       const out = filterDisplayableMessages([sysHook('hook_progress')], {
-        dropMeta: true,
-        dropTaskLifecycle: true,
+        dropBookkeeping: true,
+        dropHookSummaries: false,
         dropEmptyUser: true,
-        dropHookLifecycle: false,
+        dropClosureCarriers: true,
+        dropSystemInformational: false,
+        hidePartialStreaming: false,
+        hideSubagentLifecycle: false,
+        hideHookLifecycle: false,
+        hideRateLimitNotices: false,
       });
       expect(out).toHaveLength(1);
     });
@@ -146,6 +151,81 @@ describe('filterDisplayableMessages', () => {
       ];
       const out = filterDisplayableMessages(messages);
       expect(out).toHaveLength(3);
+    });
+  });
+
+  describe('closure carrier filtering (dropClosureCarriers)', () => {
+    const closureCarrierFilters = {
+      dropBookkeeping: false,
+      dropHookSummaries: false,
+      dropEmptyUser: false,
+      dropClosureCarriers: true,
+      dropSystemInformational: false,
+      hidePartialStreaming: false,
+      hideSubagentLifecycle: false,
+      hideHookLifecycle: false,
+      hideRateLimitNotices: false,
+    };
+
+    it('drops queue-operation closure carriers when dropClosureCarriers is on', () => {
+      const messages = [
+        { type: 'user', message: { role: 'user', content: [{ type: 'text', text: 'hi' }] } },
+        {
+          type: 'queue-operation',
+          operation: 'enqueue',
+          content: '<task-notification><tool-use-id>x</tool-use-id></task-notification>',
+        },
+        { type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'ok' }] } },
+      ] as unknown as ClaudeStreamMessage[];
+      const filtered = filterDisplayableMessages(messages, closureCarrierFilters);
+      expect(filtered).toHaveLength(2);
+      expect(filtered.map((m) => m.type)).toEqual(['user', 'assistant']);
+    });
+
+    it('drops attachment.queued_command closure carriers when dropClosureCarriers is on', () => {
+      const messages = [
+        {
+          type: 'attachment',
+          attachment: {
+            type: 'queued_command',
+            prompt: '<task-notification>...</task-notification>',
+          },
+        },
+        { type: 'user', message: { role: 'user', content: [{ type: 'text', text: 'hi' }] } },
+      ] as unknown as ClaudeStreamMessage[];
+      const filtered = filterDisplayableMessages(messages, closureCarrierFilters);
+      expect(filtered).toHaveLength(1);
+      expect(filtered[0].type).toBe('user');
+    });
+
+    it('keeps non-queued_command attachments when dropClosureCarriers is on', () => {
+      // Regular file/image attachments must not be caught by the closure-carrier filter.
+      const messages = [
+        {
+          type: 'attachment',
+          attachment: {
+            type: 'file',
+            path: '/tmp/foo.txt',
+          },
+        },
+      ] as unknown as ClaudeStreamMessage[];
+      const filtered = filterDisplayableMessages(messages, closureCarrierFilters);
+      expect(filtered).toHaveLength(1);
+    });
+
+    it('keeps queue-operation messages when dropClosureCarriers is off', () => {
+      const messages = [
+        {
+          type: 'queue-operation',
+          operation: 'enqueue',
+          content: '<task-notification/>',
+        },
+      ] as unknown as ClaudeStreamMessage[];
+      const filtered = filterDisplayableMessages(messages, {
+        ...closureCarrierFilters,
+        dropClosureCarriers: false,
+      });
+      expect(filtered).toHaveLength(1);
     });
   });
 });

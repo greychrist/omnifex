@@ -27,13 +27,22 @@ export interface CreateJsonlTailArgs {
   /** Absolute path to the JSONL file to watch. Need not exist yet — the
    *  tail will poll for its appearance. */
   jsonlPath: string;
-  /** Called for each forwarded line. Carrier types only (see file header).
-   *  Already-parsed JSON; the caller does not need to JSON.parse. */
+  /** Called for each forwarded line. Already-parsed JSON; the caller does
+   *  not need to JSON.parse. */
   onMessage: (msg: unknown) => void;
   /** Called for unexpected errors. Failures are otherwise silent (the tail
    *  is best-effort — losing the carrier means a row stays `running`,
    *  which is annoying but not data-corrupting). */
   onError?: (err: unknown) => void;
+  /**
+   * Which parsed lines to forward. Defaults to `'closure-carriers'` so
+   * existing SDK-mode call sites keep their narrow surface.
+   * - `'closure-carriers'`: only `queue-operation`/`attachment` lines that
+   *   carry `<task-notification>` XML (today's behavior).
+   * - `'all'`: every parsed line, regardless of type. Used by TUI mode to
+   *   drive the rich-message panel and notifications from JSONL.
+   */
+  filter?: 'closure-carriers' | 'all';
 }
 
 export interface JsonlTailHandle {
@@ -60,7 +69,7 @@ const ENOENT_POLL_MS = 200;
  * narrow — the renderer can assume any message it receives on that channel
  * is a closure carrier.
  */
-function isClosureCarrier(parsed: unknown): boolean {
+export function isClosureCarrier(parsed: unknown): boolean {
   if (!parsed || typeof parsed !== 'object') return false;
   const m = parsed as Record<string, unknown>;
   if (m.type === 'queue-operation') {
@@ -80,7 +89,7 @@ function isClosureCarrier(parsed: unknown): boolean {
 }
 
 export function createJsonlTail(args: CreateJsonlTailArgs): JsonlTailHandle {
-  const { jsonlPath, onMessage, onError } = args;
+  const { jsonlPath, onMessage, onError, filter = 'closure-carriers' } = args;
   let offset = 0;
   let pendingTail = '';
   let drainPoll: NodeJS.Timeout | null = null;
@@ -94,6 +103,8 @@ export function createJsonlTail(args: CreateJsonlTailArgs): JsonlTailHandle {
       /* swallow — the consumer is best-effort */
     }
   };
+
+  const shouldForward = filter === 'all' ? () => true : isClosureCarrier;
 
   const drain = (): void => {
     if (stopped) return;
@@ -151,7 +162,7 @@ export function createJsonlTail(args: CreateJsonlTailArgs): JsonlTailHandle {
       } catch {
         continue;
       }
-      if (isClosureCarrier(parsed)) {
+      if (shouldForward(parsed)) {
         try {
           onMessage(parsed);
         } catch (err) {

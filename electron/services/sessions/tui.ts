@@ -5,7 +5,15 @@ export interface TuiSessionParams {
   tabId: string;
   projectPath: string;
   configDir: string;
+  /** UUID for the session. Required — cold-start callers generate one
+   *  via crypto.randomUUID() and pass `resume: false`; mid-session toggle
+   *  callers pass the existing sessionId with `resume: true`. */
   sessionId: string;
+  /** When true, spawn with `--resume <sessionId>` (continue existing).
+   *  When false, spawn with `--session-id <sessionId>` (create new with
+   *  the supplied UUID). The latter avoids the CLI's interactive resume
+   *  picker that was causing cold-start timeouts. */
+  resume: boolean;
   claudeBinaryPath: string;
   cols?: number;
   rows?: number;
@@ -20,9 +28,11 @@ export interface TuiSession {
 }
 
 export function createTuiSession(params: TuiSessionParams): TuiSession {
+  const flag = params.resume ? '--resume' : '--session-id';
+  const args = [flag, params.sessionId];
   const pty: IPty = ptySpawn(
     params.claudeBinaryPath,
-    ['--resume', params.sessionId],
+    args,
     {
       cwd: params.projectPath,
       // buildClaudeEnv throws on empty/~-resolving-to-~/.claude configDir.

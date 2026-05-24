@@ -5,8 +5,8 @@ import path from 'node:path';
 import os from 'node:os';
 import { createJsonlTail, type JsonlTailHandle } from '../services/sessions/jsonl-tail';
 
-// Cooperative settle: the tail uses fs.watchFile with a 100ms poll interval,
-// so we need at least one full poll cycle plus margin per assertion. 300ms
+// Cooperative settle: the tail uses setInterval + statSync with a 100ms poll
+// interval, so we need at least one full poll cycle plus margin per assertion. 300ms
 // is a safe upper bound that keeps the suite well under 5s wall time.
 function wait(ms = 300): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
@@ -245,5 +245,37 @@ describe('createJsonlTail', () => {
     );
     await waitUntil(() => received.length >= 2);
     expect(received).toHaveLength(2);
+  });
+
+  it('forwards every parsed line when filter is "all"', async () => {
+    fs.writeFileSync(jsonlPath, '');
+    tail = createJsonlTail({
+      jsonlPath,
+      filter: 'all',
+      onMessage: (m) => received.push(m),
+    });
+    fs.appendFileSync(
+      jsonlPath,
+      JSON.stringify({ type: 'system', subtype: 'init', session_id: 'abc' }) + '\n' +
+      JSON.stringify({ type: 'user', message: { role: 'user', content: 'hi' } }) + '\n' +
+      JSON.stringify({ type: 'result', subtype: 'success', result: 'done' }) + '\n',
+    );
+    await waitUntil(() => received.length >= 3);
+    expect(received).toHaveLength(3);
+    expect((received[0] as { type: string }).type).toBe('system');
+    expect((received[1] as { type: string }).type).toBe('user');
+    expect((received[2] as { type: string }).type).toBe('result');
+  });
+
+  it('ignores non-carrier lines when filter defaults to "closure-carriers"', async () => {
+    fs.writeFileSync(jsonlPath, '');
+    start();
+    fs.appendFileSync(
+      jsonlPath,
+      JSON.stringify({ type: 'system', subtype: 'init', session_id: 'abc' }) + '\n' +
+      JSON.stringify({ type: 'user', message: { role: 'user', content: 'hi' } }) + '\n',
+    );
+    await wait(400);
+    expect(received).toHaveLength(0);
   });
 });

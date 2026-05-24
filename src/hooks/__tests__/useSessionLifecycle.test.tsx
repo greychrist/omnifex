@@ -50,7 +50,7 @@ interface HarnessOverrides {
   initialPersistent?: boolean;
   setIsSessionActive?: ReturnType<typeof vi.fn>;
   setIsLoading?: ReturnType<typeof vi.fn>;
-  handleStreamMessage?: ReturnType<typeof vi.fn>;
+  handleJsonlLine?: ReturnType<typeof vi.fn>;
   setSdkAccountInfo?: ReturnType<typeof vi.fn>;
   setSupportedModels?: ReturnType<typeof vi.fn>;
   setSupportedCommands?: ReturnType<typeof vi.fn>;
@@ -81,7 +81,7 @@ function harness(overrides: HarnessOverrides = {}) {
           isStartingRef.current = typeof v === 'function' ? v(isStartingRef.current) : v;
         },
         setIsSessionActive: (overrides.setIsSessionActive ?? vi.fn()) as any,
-        handleStreamMessage: (overrides.handleStreamMessage ?? vi.fn()) as any,
+        handleJsonlLine: (overrides.handleJsonlLine ?? vi.fn()) as any,
         setIsLoading: (overrides.setIsLoading ?? vi.fn()) as any,
         setMessages: ((updater: any) => {
           messagesRef.current = typeof updater === 'function'
@@ -118,6 +118,7 @@ describe('useSessionLifecycle — startPersistentSession happy path', () => {
       '/cfg',
       'medium',
       { type: 'adaptive' },
+      undefined,
     );
     expect(result.current.persistentSessionRef.current).toBe(true);
     // Listeners attached on the four claude-* channels.
@@ -164,7 +165,7 @@ describe('useSessionLifecycle — startPersistentSession happy path', () => {
           persistentSessionRef,
           setIsSessionStarting: vi.fn(),
           setIsSessionActive: vi.fn(),
-          handleStreamMessage: vi.fn(),
+          handleJsonlLine: vi.fn(),
           setIsLoading: vi.fn(),
           setMessages: ((updater: any) => {
             messagesRef.current = typeof updater === 'function' ? updater(messagesRef.current) : updater;
@@ -196,7 +197,7 @@ describe('useSessionLifecycle — startPersistentSession happy path', () => {
         accountResolution: { account: { name: 'a', account_type: 'pro', config_dir: '/c' }, match_type: 'rule', match_detail: '' },
         persistentSessionRef,
         setIsSessionStarting: vi.fn(), setIsSessionActive: vi.fn(),
-        handleStreamMessage: vi.fn(), setIsLoading: vi.fn(),
+        handleJsonlLine: vi.fn(), setIsLoading: vi.fn(),
         setMessages: ((u: any) => { messagesRef.current = typeof u === 'function' ? u(messagesRef.current) : u; }) as any,
         setSdkAccountInfo: vi.fn(), setSupportedModels: vi.fn(),
         setSupportedCommands: vi.fn(), setContextUsage: vi.fn(),
@@ -292,25 +293,25 @@ describe('useSessionLifecycle — rebindPersistentSession', () => {
 });
 
 describe('useSessionLifecycle — event listener behavior', () => {
-  it('forwards claude-output payloads to handleStreamMessage', async () => {
+  it('forwards claude-output payloads to handleJsonlLine (JSONL pipeline enabled by default)', async () => {
     (api.startSession as any).mockResolvedValueOnce(undefined);
-    const handleStreamMessage = vi.fn();
-    const { result } = renderHook(harness({ handleStreamMessage }));
+    const handleJsonlLine = vi.fn();
+    const { result } = renderHook(harness({ handleJsonlLine }));
     await act(async () => { await result.current.lifecycle.startPersistentSession(); });
 
     act(() => { eventListeners['claude-output:tab-life']('{"type":"user"}'); });
-    expect(handleStreamMessage).toHaveBeenCalledWith('{"type":"user"}');
+    expect(handleJsonlLine).toHaveBeenCalledWith('{"type":"user"}');
   });
 
-  it('forwards claude-output-extra (closure carrier channel) to handleStreamMessage too', async () => {
+  it('forwards claude-output-extra (closure carrier channel) to handleJsonlLine', async () => {
     (api.startSession as any).mockResolvedValueOnce(undefined);
-    const handleStreamMessage = vi.fn();
-    const { result } = renderHook(harness({ handleStreamMessage }));
+    const handleJsonlLine = vi.fn();
+    const { result } = renderHook(harness({ handleJsonlLine }));
     await act(async () => { await result.current.lifecycle.startPersistentSession(); });
 
-    const payload = { type: 'system', subtype: 'task_notification' };
+    const payload = { type: 'queue-operation', operation: 'enqueue', content: '<task-notification>...</task-notification>' };
     act(() => { eventListeners['claude-output-extra:tab-life'](payload); });
-    expect(handleStreamMessage).toHaveBeenCalledWith(payload);
+    expect(handleJsonlLine).toHaveBeenCalledWith(payload);
   });
 
   it('ignores benign stderr ("no stdin data received in", "proceeding without it")', async () => {

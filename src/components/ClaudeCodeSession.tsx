@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover } from "@/components/ui/popover";
-import { api, type Session, type RateLimitSnapshot, type Account } from "@/lib/api";
+import { api, type Session, type RateLimitSnapshot, type Account, type SessionMode } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { NewSessionForm } from "./NewSessionForm";
 import { AccountPickerDialog } from "./AccountPickerDialog";
@@ -38,12 +38,17 @@ import { TooltipProvider, TooltipSimple } from "@/components/ui/tooltip-modern";
 import { SplitPane } from "@/components/ui/split-pane";
 import { WebviewPreview } from "./WebviewPreview";
 import type { ClaudeStreamMessage } from "@/types/claudeStream";
-import { synthesizeResultMessages } from "@/lib/synthesizeResults";
 import { normalizeMessageContent } from "@/lib/normalizeMessage";
+import { classifyJsonlLine } from '@/lib/jsonlClassifier';
+import { createSynthesizer, synthesizeBatch } from '@/lib/jsonlSynthesizer';
+import { jsonlNodeToStreamMessage } from '@/lib/jsonlAdapter';
+import { reduceSessionStreamMessage } from '@/lib/sessionStreamReducer';
+import { runStreamEffect } from '@/lib/sessionStreamEffects';
+import { appendInflightDelta } from '@/lib/inflightCoalescer';
 import { maybeAutoGenerateSummaryOnLeave } from "@/lib/sessionSummaryGate";
 import { SessionModeToggle } from "./SessionModeToggle";
 import { SessionViewToggle, type ViewMode } from "./SessionViewToggle";
-import { TerminalView } from './TerminalView';
+import { TuiSessionLayout } from './TuiSessionLayout';
 import { HiddenEventsGroup } from "./HiddenEventsGroup";
 import { buildCompactItems } from "@/lib/compactGrouping";
 import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
@@ -55,7 +60,7 @@ import { GitWatchStatusIcon } from "./claude-code-session/GitWatchStatusIcon";
 import { resolveBranchColors } from '@/lib/branchColors';
 import type { BranchColor } from '@/lib/api';
 import { filterDisplayableMessages } from "@/lib/messageFilters";
-import { deriveSubagents } from "@/lib/subagentStreams";
+import { deriveSubagents, createSubagentColorAllocator } from "@/lib/subagentStreams";
 import { getTaskList, summarizeTaskList } from "@/lib/taskList";
 import { SubagentBar } from "./SubagentBar";
 import { TaskList } from "./TaskList";
@@ -70,9 +75,7 @@ import { usePublishTabStatus } from "@/hooks/usePublishTabStatus";
 import { useTabContext } from "@/contexts/TabContext";
 // Virtualizer removed — flat list for reliable scrolling
 import { SessionPersistenceService } from "@/services/sessionPersistence";
-import { reduceSessionStreamMessage } from "@/lib/sessionStreamReducer";
-import { runStreamEffect } from "@/lib/sessionStreamEffects";
-import { appendInflightDelta, clearInflightBuffer } from "@/lib/inflightCoalescer";
+import { clearInflightBuffer } from "@/lib/inflightCoalescer";
 import { InflightAssistantBubble } from "./InflightAssistantBubble";
 import { useTabSession, useClaudeSessionStore } from "@/stores/claudeSessionStore";
 import type { PermissionSuggestion } from "@/lib/types/permissionRequest";
@@ -121,6 +124,7 @@ interface ClaudeCodeSessionProps {
     effort: EffortLevel;
     thinkingConfig?: ThinkingConfig;
     permissionMode: string;
+    sessionStartMode?: SessionMode;
     accountResolution?: {
       account: {
         name: string;
@@ -184,7 +188,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
 
   // `useTabSession` returns fresh setter/handler closures every render
   // (the wrappers in claudeSessionStore.ts re-create on each call).
-  // Capturing them in a single stable ref here lets handleStreamMessage
+  // Capturing them in a single stable ref here lets handleJsonlLine
   // and loadSessionHistory stay reference-stable across renders while
   // still reading the latest underlying functions at call time — the
   // streaming-session UX historically broke when callbacks recreated
@@ -289,6 +293,11 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     // at the seed point so the rest of the component works in the
     // tightened two-state schema.
     normalizeThinkingConfig(initialSessionConfig?.thinkingConfig),
+  );
+  // Session start mode — chosen in the pre-session form. Defaults to 'sdk'
+  // (today's behavior). Set to 'tui' to start via local CLI without SDK budget.
+  const [sessionStartMode, setSessionStartMode] = useState<SessionMode>(
+    initialSessionConfig?.sessionStartMode ?? 'sdk',
   );
   // Unified per-tab git snapshot — project + all sibling worktrees streamed
   // from a single main-process watcher. Null until `startSessionGitWatch`
@@ -499,9 +508,9 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   const [findQuery, setFindQuery] = useState('');
   const persistentSessionRef = useRef(false);
   // Live mirror of `isLoading` for call-time reads inside useSendPrompt's
-  // queue gate. The drain path (setTimeout in runStreamEffect) holds onto a
-  // captured handleSendPrompt across renders; reading from the ref avoids
-  // the stale-closure bug where drained prompts silently re-queue.
+  // queue gate. The drain path holds onto a captured handleSendPrompt
+  // across renders; reading from the ref avoids the stale-closure bug
+  // where drained prompts silently re-queue.
   const isLoadingRef = useRef(false);
   useEffect(() => { isLoadingRef.current = isLoading; }, [isLoading]);
   // Two distinct states for the status badge:
@@ -514,7 +523,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   // these states are the UI-reactive mirror so the badge rerenders.
   const [isSessionStarting, setIsSessionStarting] = useState(false);
   const [isSessionActive, setIsSessionActive] = useState(false);
-  const [sessionMode, setSessionMode] = useState<'sdk' | 'tui'>('sdk');
+  const [sessionMode, setSessionMode] = useState<SessionMode>('sdk');
   const tabIdRef = useRef(tabId || 'default');
   // Drop any per-tab inflight buffer when this tab unmounts so the
   // module-level Map doesn't leak across long-lived renderer sessions.
@@ -595,9 +604,10 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
 
   // Subagent (background task) state, derived from the raw stream.
   // Rendered above the prompt input so parallel Agent/Task dispatches are visible.
+  const colorAllocatorRef = useRef(createSubagentColorAllocator());
   const [dismissedSubagents, setDismissedSubagents] = useState<Set<string>>(new Set());
   const subagents = useMemo(() => {
-    const all = deriveSubagents(messages);
+    const all = deriveSubagents(messages, colorAllocatorRef.current);
     return dismissedSubagents.size === 0
       ? all
       : all.filter((s) => !dismissedSubagents.has(s.toolUseId));
@@ -627,6 +637,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   );
   const outstandingWork = isLoading || tasksInFlight;
   const dismissSubagent = useCallback((toolUseId: string) => {
+    colorAllocatorRef.current.release(toolUseId);
     setDismissedSubagents((prev) => {
       const next = new Set(prev);
       next.add(toolUseId);
@@ -634,6 +645,9 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     });
   }, []);
   const dismissAllCompletedSubagents = useCallback(() => {
+    for (const s of subagents) {
+      if (s.status !== 'running') colorAllocatorRef.current.release(s.toolUseId);
+    }
     setDismissedSubagents((prev) => {
       const next = new Set(prev);
       for (const s of subagents) {
@@ -779,23 +793,23 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
         );
       }
 
-      // Convert history to messages format. JSONL entries carry their own
-      // `timestamp` field per line — map it to `receivedAt` so the card
-      // timestamp badge renders for resumed sessions just like for live ones.
-      // Normalize `message.content` to array form at this boundary so every
-      // downstream consumer sees a single shape — see lib/normalizeMessage.
-      const loadedMessages: ClaudeStreamMessage[] = history.map(entry => normalizeMessageContent({
-        ...entry,
-        type: entry.type || "assistant",
-        receivedAt: entry.receivedAt ?? entry.timestamp,
-      }));
+      // Route through the JSONL classifier → synthesizer → adapter pipeline.
+      // The classifier normalizes timestamp→receivedAt and discriminates
+      // every line into a typed JsonlNode; synthesizeBatch injects the
+      // synthesized-init and synthesized-result nodes that produce the
+      // "Execution Complete" card; the adapter translates back to
+      // ClaudeStreamMessage. normalizeMessageContent handles string→array
+      // content for downstream consumers expecting array form.
+      const nodes = history
+        .map((entry) => classifyJsonlLine(entry))
+        .filter((n): n is NonNullable<typeof n> => n !== null);
 
-      // The Claude CLI's JSONL session file does not persist live SDK
-      // `result` messages. Synthesize them from per-turn data so the
-      // "Execution Complete" card appears for every completed turn when a
-      // session is resumed. Live sessions are unaffected — this only runs
-      // on the historical load.
-      const messagesWithResults = synthesizeResultMessages(loadedMessages);
+      const synthesized = synthesizeBatch(nodes);
+
+      const messagesWithResults: ClaudeStreamMessage[] = synthesized
+        .map((n) => jsonlNodeToStreamMessage(n))
+        .filter((m): m is NonNullable<typeof m> => m !== null)
+        .map((m) => normalizeMessageContent(m));
 
       streamCtxRef.current.setMessages(messagesWithResults);
       setRawJsonlOutput(history.map(h => JSON.stringify(h)));
@@ -822,200 +836,195 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     }
   }, [session, loadSessionHistory]);
 
-  // Helper to process any JSONL stream message string or object.
-  // Reads per-render setters via streamCtxRef so this callback stays
-  // reference-stable across renders (useSessionLifecycle reattaches its
-  // SDK event listener whenever this changes — instability there used
-  // to drop events mid-stream).
-  const handleStreamMessage = useCallback((payload: string | ClaudeStreamMessage) => {
+  // One synthesizer instance per session lifetime. State persists across
+  // messages so init-once and turn-tracking work correctly.
+  const synthesizerRef = useRef(createSynthesizer());
+
+  const handleJsonlLine = useCallback((payload: string | object) => {
     try {
-      // Don't process if component unmounted
       if (!streamCtxRef.current.isMountedRef?.current) return;
-
-      let message: ClaudeStreamMessage;
-      let rawPayload: string;
-
+      let raw: unknown;
+      let rawString: string;
       if (typeof payload === 'string') {
-        rawPayload = payload;
-        message = JSON.parse(payload) as ClaudeStreamMessage;
+        rawString = payload;
+        raw = JSON.parse(payload);
       } else {
-        message = payload;
-        rawPayload = JSON.stringify(payload);
+        raw = payload;
+        rawString = JSON.stringify(payload);
       }
 
-      // Normalize `message.content` to array form at the IPC boundary. The
-      // wire allows both `content: string` and `content: [...blocks]`; folding
-      // them here means downstream consumers (reducer, append, every read
-      // site in StreamMessage) see one shape. See lib/normalizeMessage for
-      // the full rationale. Idempotent on the already-array-form messages
-      // the live SDK emits today, so this is safe to apply unconditionally.
-      message = normalizeMessageContent(message);
+      // permission_request — OmniFex-synthetic envelope from the main-process
+      // permissions service. Not a JSONL record; classifier doesn't know it.
+      if (raw && typeof raw === 'object' && (raw as any).type === 'permission_request') {
+        const msg = raw as any;
+        setPendingPermission({
+          requestId: msg.request_id,
+          toolName: msg.tool_name,
+          toolInput: msg.tool_input ?? {},
+          title: msg.title,
+          displayName: msg.display_name,
+          description: msg.description,
+          decisionReason: msg.decision_reason,
+          blockedPath: msg.blocked_path,
+          suggestions: msg.permission_suggestions ?? [],
+        });
+        return;
+      }
 
-
-      // stream_event: token-level partial assistant message.
-      // Filter to text-only deltas from the parent agent and route through
-      // the coalescer. Subagent partials and non-text deltas drop. Early-
-      // return BEFORE setRawJsonlOutput because (a) these are ephemeral
-      // partials the SDK doesn't persist, and (b) per-token state thrash
-      // on this component is the exact perf cost the RAF coalescer exists
-      // to avoid.
-      if (message.type === 'stream_event') {
-        const m = message as any;
-        if (m.parent_tool_use_id != null) return; // skip subagent partials (null OR undefined)
+      // stream_event — SDK iterator overlay channel (token partials).
+      // Not in JSONL; route partials to the inflight coalescer for the
+      // typewriter effect. Subagent partials and non-text deltas drop.
+      if (raw && typeof raw === 'object' && (raw as any).type === 'stream_event') {
+        const m = raw as any;
+        if (m.parent_tool_use_id != null) return;
         const event = m.event;
         if (
           event?.type === 'content_block_delta' &&
           event.delta?.type === 'text_delta' &&
           typeof event.delta.text === 'string'
         ) {
-          appendInflightDelta(
-            tabIdRef.current,
-            m.uuid,
-            event.delta.text,
-            m.parent_tool_use_id,
-          );
+          appendInflightDelta(tabIdRef.current, m.uuid, event.delta.text, m.parent_tool_use_id);
         }
         return;
       }
 
+      // Classify + synthesize. Synthesizer injects synth-init on first
+      // sessioned node and synth-result after assistant with terminal
+      // stop_reason. Adapter converts both to ClaudeStreamMessage shape so
+      // the reducer can process them identically to SDK iterator events.
+      const node = classifyJsonlLine(raw);
+      if (!node) return;
+      const produced = synthesizerRef.current.push(node);
+      const streamMessages = produced
+        .map((n) => jsonlNodeToStreamMessage(n))
+        .filter((m): m is NonNullable<ReturnType<typeof jsonlNodeToStreamMessage>> => m !== null)
+        .map((m) => normalizeMessageContent(m));
+      if (streamMessages.length === 0) return;
+
+      // Store raw line (only the original input, not the synthesized rows).
+      setRawJsonlOutput((prev) => [...prev, rawString]);
+
       const ctx = streamCtxRef.current;
 
-      // Store raw JSONL
-      setRawJsonlOutput((prev) => [...prev, rawPayload]);
-
-      // Pure reducer handles: append decisions, session-id extraction,
-      // permission detection, userInterrupted suppression, init dedup,
-      // result-turn handling, post-event refresh requests, AND activity
-      // labels, metrics, cost. Read live tab state from the store so the
-      // reducer sees the post-batch values, not the render-time closure.
-      const liveSlice = useClaudeSessionStore
-        .getState()
-        .selectTab(sessionTabId);
-      const hasExistingInit = liveSlice.messages.some(
-        (m) => m.type === 'system' && m.subtype === 'init',
-      );
-      const reduced = reduceSessionStreamMessage(message, {
-        projectPath,
-        hasExistingInit,
-        hasExtractedSession: !!liveSlice.extractedSessionInfo,
-        userInterrupted: userInterruptedRef.current,
-        messagesLength: liveSlice.messages.length,
-      });
-
-      // Activity label
-      if (reduced.activityUpdate) {
-        setCurrentActivity(
-          reduced.activityUpdate.kind === 'literal'
-            ? reduced.activityUpdate.label
-            : pickGerund(),
+      // Each stream message goes through the reducer for its side effects:
+      // activity labels, metrics, cost, session-id extraction, permission
+      // dispatch, userInterrupted suppression, post-event refresh effects,
+      // and the append/skip/insert decision. The reducer is pure — same
+      // contract as the old SDK-iterator path.
+      for (const message of streamMessages) {
+        const liveSlice = useClaudeSessionStore.getState().selectTab(sessionTabId);
+        const hasExistingInit = liveSlice.messages.some(
+          (m) => m.type === 'system' && m.subtype === 'init',
         );
-      }
-
-      // Metric deltas — fold into the live ref. Snap lastActivityTime to
-      // now when the message implied activity.
-      const m = reduced.metrics;
-      if (
-        m.toolsExecuted ||
-        m.toolsFailed ||
-        m.filesCreated ||
-        m.filesModified ||
-        m.filesDeleted ||
-        m.codeBlocksGenerated ||
-        m.errorsEncountered ||
-        m.bumpLastActivity
-      ) {
-        const live = sessionMetrics.current;
-        live.toolsExecuted += m.toolsExecuted;
-        live.toolsFailed += m.toolsFailed;
-        live.filesCreated += m.filesCreated;
-        live.filesModified += m.filesModified;
-        live.filesDeleted += m.filesDeleted;
-        live.codeBlocksGenerated += m.codeBlocksGenerated;
-        live.errorsEncountered += m.errorsEncountered;
-        if (m.bumpLastActivity) live.lastActivityTime = Date.now();
-      }
-
-      if (reduced.costDelta > 0) {
-        setSessionCost((prev) => prev + reduced.costDelta);
-      }
-
-      if (reduced.sessionIdUpdate) {
-        ctx.setClaudeSessionId(reduced.sessionIdUpdate);
-      }
-      if (reduced.extractedSessionInfo) {
-        ctx.setExtractedSessionInfo(reduced.extractedSessionInfo);
-      }
-      if (reduced.pendingPermission) {
-        setPendingPermission(reduced.pendingPermission);
-      }
-      if (reduced.clearUserInterrupted) {
-        userInterruptedRef.current = false;
-      }
-      if (reduced.clearLoading) {
-        ctx.setIsLoading(false);
-      }
-
-      // Execute returned effects. Effects are intentionally fire-and-forget;
-      // errors are logged but never break the stream.
-      const handleSendPromptForEffect = ctx.handleSendPrompt;
-      for (const effect of reduced.effects) {
-        runStreamEffect(effect, {
-          tabId: tabIdRef.current,
+        const reduced = reduceSessionStreamMessage(message, {
           projectPath,
-          api: {
-            sessionAccountInfo: api.sessionAccountInfo,
-            sessionContextUsage: api.sessionContextUsage,
-            sessionSupportedModels: api.sessionSupportedModels,
-          },
-          persistSession: ({ sessionId, projectId, projectPath: pp, messageCount }) =>
-            { SessionPersistenceService.saveSession(sessionId, projectId, pp, messageCount); },
-          setSdkAccountInfo: (info) => { ctx.setSdkAccountInfo(info as any); },
-          setContextUsage: (usage) => { ctx.setContextUsage(usage as any); },
-          setSupportedModels: (models) => { ctx.setSupportedModels(models as any); },
-          queuedPromptsRef: ctx.queuedPromptsRef as any,
-          setQueuedPrompts: ctx.setQueuedPrompts as any,
-          handleSendPrompt: fireAndLog(
-            'claude-code-session:send-prompt-effect',
-            handleSendPromptForEffect ?? undefined,
-          ),
-          onError: (kind, err) =>
-            { console.error(`[sessions] effect ${kind} failed:`, err); },
+          hasExistingInit,
+          hasExtractedSession: !!liveSlice.extractedSessionInfo,
+          userInterrupted: userInterruptedRef.current,
+          messagesLength: liveSlice.messages.length,
         });
-      }
 
-      // Reconcile inflight slot:
-      //  - On any assistant append, the canonical complete message has landed;
-      //    clear the inflight slot and any unflushed deltas so the streaming
-      //    bubble unmounts as the canonical bubble in messages[] takes its place.
-      //  - On any error notification, clear so the streaming bubble doesn't
-      //    sit stale next to an error card.
-      const store = useClaudeSessionStore.getState();
-      if (reduced.append === 'append' && message.type === 'assistant') {
-        store.clearInflightAssistant(tabIdRef.current);
-        clearInflightBuffer(tabIdRef.current);
-      }
-      if (
-        message.type === 'system' &&
-        message.subtype === 'notification' &&
-        // notification_type isn't typed yet — see the Tier B follow-up in
-        // the audit. Cast stays until that lands.
-        /error/i.test(String((message as any).notification_type ?? ''))
-      ) {
-        store.clearInflightAssistant(tabIdRef.current);
-        clearInflightBuffer(tabIdRef.current);
-      }
+        if (reduced.activityUpdate) {
+          setCurrentActivity(
+            reduced.activityUpdate.kind === 'literal'
+              ? reduced.activityUpdate.label
+              : pickGerund(),
+          );
+        }
 
-      // Fold the message into messages[] per the reducer's append decision.
-      if (reduced.append === 'skip') {
-        return;
+        const m = reduced.metrics;
+        if (
+          m.toolsExecuted ||
+          m.toolsFailed ||
+          m.filesCreated ||
+          m.filesModified ||
+          m.filesDeleted ||
+          m.codeBlocksGenerated ||
+          m.errorsEncountered ||
+          m.bumpLastActivity
+        ) {
+          const live = sessionMetrics.current;
+          live.toolsExecuted += m.toolsExecuted;
+          live.toolsFailed += m.toolsFailed;
+          live.filesCreated += m.filesCreated;
+          live.filesModified += m.filesModified;
+          live.filesDeleted += m.filesDeleted;
+          live.codeBlocksGenerated += m.codeBlocksGenerated;
+          live.errorsEncountered += m.errorsEncountered;
+          if (m.bumpLastActivity) live.lastActivityTime = Date.now();
+        }
+
+        if (reduced.costDelta > 0) {
+          setSessionCost((prev) => prev + reduced.costDelta);
+        }
+
+        if (reduced.sessionIdUpdate) {
+          ctx.setClaudeSessionId(reduced.sessionIdUpdate);
+        }
+        if (reduced.extractedSessionInfo) {
+          ctx.setExtractedSessionInfo(reduced.extractedSessionInfo);
+        }
+        if (reduced.pendingPermission) {
+          setPendingPermission(reduced.pendingPermission);
+        }
+        if (reduced.clearUserInterrupted) {
+          userInterruptedRef.current = false;
+        }
+        if (reduced.clearLoading) {
+          ctx.setIsLoading(false);
+        }
+
+        const handleSendPromptForEffect = ctx.handleSendPrompt;
+        for (const effect of reduced.effects) {
+          runStreamEffect(effect, {
+            tabId: tabIdRef.current,
+            projectPath,
+            api: {
+              sessionAccountInfo: api.sessionAccountInfo,
+              sessionContextUsage: api.sessionContextUsage,
+              sessionSupportedModels: api.sessionSupportedModels,
+            },
+            persistSession: ({ sessionId, projectId, projectPath: pp, messageCount }) =>
+              { SessionPersistenceService.saveSession(sessionId, projectId, pp, messageCount); },
+            setSdkAccountInfo: (info) => { ctx.setSdkAccountInfo(info as any); },
+            setContextUsage: (usage) => { ctx.setContextUsage(usage as any); },
+            setSupportedModels: (models) => { ctx.setSupportedModels(models as any); },
+            queuedPromptsRef: ctx.queuedPromptsRef as any,
+            setQueuedPrompts: ctx.setQueuedPrompts as any,
+            handleSendPrompt: fireAndLog(
+              'claude-code-session:send-prompt-effect',
+              handleSendPromptForEffect ?? undefined,
+            ),
+            onError: (kind, err) =>
+              { console.error(`[sessions] effect ${kind} failed:`, err); },
+          });
+        }
+
+        // Reconcile inflight assistant: clear streaming bubble when canonical
+        // message arrives or an error notification lands.
+        const store = useClaudeSessionStore.getState();
+        if (reduced.append === 'append' && message.type === 'assistant') {
+          store.clearInflightAssistant(tabIdRef.current);
+          clearInflightBuffer(tabIdRef.current);
+        }
+        if (
+          message.type === 'system' &&
+          message.subtype === 'notification' &&
+          /error/i.test(String((message as any).notification_type ?? ''))
+        ) {
+          store.clearInflightAssistant(tabIdRef.current);
+          clearInflightBuffer(tabIdRef.current);
+        }
+
+        if (reduced.append === 'skip') continue;
+        if (reduced.append === 'insertBeforeFirstUser') {
+          ctx.insertMessageBeforeFirstUser(message);
+          continue;
+        }
+        ctx.appendMessage(message);
       }
-      if (reduced.append === 'insertBeforeFirstUser') {
-        ctx.insertMessageBeforeFirstUser(message);
-        return;
-      }
-      ctx.appendMessage(message);
     } catch (err) {
-      console.error('Failed to parse message:', err, payload);
+      console.error('handleJsonlLine failed:', err, payload);
     }
   }, [projectPath, sessionTabId, setPendingPermission]);
 
@@ -1027,11 +1036,12 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     permissionMode,
     effort,
     thinkingConfig,
+    sessionStartMode,
     accountResolution,
     persistentSessionRef,
     setIsSessionStarting,
     setIsSessionActive,
-    handleStreamMessage,
+    handleJsonlLine,
     setIsLoading,
     setMessages,
     setSdkAccountInfo,
@@ -1088,9 +1098,8 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   );
 
   // Populate the late-bound entries on streamCtxRef now that the hooks
-  // that own them have run. handleStreamMessage reads these through the
-  // ref so it never needs to list them as deps (which would cycle, since
-  // useSessionLifecycle / useSendPrompt take handleStreamMessage as input).
+  // that own them have run. handleJsonlLine reads these through the ref
+  // so it never needs to list them as deps.
   streamCtxRef.current.handleSendPrompt = handleSendPrompt;
   streamCtxRef.current.isMountedRef = isMountedRef;
   streamCtxRef.current.queuedPromptsRef = queuedPromptsRef;
@@ -1187,14 +1196,16 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       )
         .then((history) => {
           if (!history || history.length === 0) return;
-          // Mirror loadSessionHistory(): normalize content shape at the
-          // boundary so downstream consumers see array-form content only.
-          const loaded: ClaudeStreamMessage[] = history.map((entry: any) => normalizeMessageContent({
-            ...entry,
-            type: entry.type || 'assistant',
-            receivedAt: entry.receivedAt ?? entry.timestamp,
-          }));
-          setMessages(synthesizeResultMessages(loaded));
+          // Mirror loadSessionHistory(): route through classify→synthesize→adapt.
+          const nodes = history
+            .map((entry: unknown) => classifyJsonlLine(entry))
+            .filter((n): n is NonNullable<typeof n> => n !== null);
+          const synthesized = synthesizeBatch(nodes);
+          const loaded: ClaudeStreamMessage[] = synthesized
+            .map((n) => jsonlNodeToStreamMessage(n))
+            .filter((m): m is NonNullable<typeof m> => m !== null)
+            .map((m) => normalizeMessageContent(m));
+          setMessages(loaded);
         })
         .catch((err: unknown) => {
           console.error('Failed to reload history on TUI->SDK:', err);
@@ -1207,7 +1218,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     const unlisten = window.electronAPI.onEvent(
       `session-mode:${tabIdRef.current}`,
       (...args: unknown[]) => {
-        const payload = args[0] as { mode?: 'sdk' | 'tui' } | undefined;
+        const payload = args[0] as { mode?: SessionMode } | undefined;
         if (payload?.mode === 'sdk' || payload?.mode === 'tui') {
           setSessionMode(payload.mode);
           // A mode switch means the main process has a live session handle
@@ -1636,12 +1647,14 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     window.dispatchEvent(new CustomEvent('back-to-project'));
   };
 
-  const modeToggleDisabled = !isSessionActive || waitingForPermission;
+  const modeToggleDisabled = !isSessionActive || waitingForPermission || !claudeSessionId;
   const modeToggleReason = !isSessionActive
     ? 'Start a session first'
-    : waitingForPermission
-      ? 'Resolve the permission dialog first'
-      : undefined;
+    : !claudeSessionId
+      ? 'Session ID not yet available — wait a moment'
+      : waitingForPermission
+        ? 'Resolve the permission dialog first'
+        : undefined;
 
 
   const sessionStatus: 'starting' | 'active' | 'ended' | undefined =
@@ -1805,6 +1818,8 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
               setThinkingConfig={setThinkingConfig}
               permissionMode={permissionMode}
               setPermissionMode={setPermissionMode}
+              sessionStartMode={sessionStartMode}
+              setSessionStartMode={setSessionStartMode}
               onStart={() => {
                 setSessionStarted(true);
                 logAndForget('claude-code-session:start-persistent-session', startPersistentSession());
@@ -1846,7 +1861,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
               left={
                 <div className="h-full flex flex-col">
                   {sessionMode === 'tui' ? (
-                    <TerminalView tabId={tabIdRef.current} />
+                    <TuiSessionLayout tabId={tabIdRef.current} messagesView={messagesList} />
                   ) : (
                     messagesList
                   )}
@@ -1871,7 +1886,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             // Original layout when no preview
             <div className="h-full flex flex-col">
               {sessionMode === 'tui' ? (
-                <TerminalView tabId={tabIdRef.current} />
+                <TuiSessionLayout tabId={tabIdRef.current} messagesView={messagesList} />
               ) : (
                 messagesList
               )}

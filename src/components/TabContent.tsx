@@ -4,7 +4,7 @@ import { useTabState } from '@/hooks/useTabState';
 import { Tab } from '@/contexts/TabContext';
 import { Plus, ArrowLeft } from 'lucide-react';
 import { Spinner } from '@/components/ui/spinner';
-import { api, type Project, type Session } from '@/lib/api';
+import { api, type Project, type Session, type SessionMode } from '@/lib/api';
 import { ProjectList } from '@/components/ProjectList';
 import { SessionList } from '@/components/SessionList';
 import { AccountPickerDialog } from '@/components/AccountPickerDialog';
@@ -55,6 +55,7 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
   const [formEffort, setFormEffort] = React.useState<EffortLevel>('high');
   const [formThinkingConfig, setFormThinkingConfig] = React.useState<ThinkingConfig>('adaptive');
   const [formPermissionMode, setFormPermissionMode] = React.useState<string>('acceptEdits');
+  const [formSessionStartMode, setFormSessionStartMode] = React.useState<SessionMode>('sdk');
   const [projectAccountResolution, setProjectAccountResolution] = React.useState<NewSessionFormAccountResolution | null>(null);
 
   const [projectBranches, setProjectBranches] = React.useState<string[]>([]);
@@ -270,6 +271,7 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
         effort: formEffort,
         thinkingConfig: formThinkingConfig,
         permissionMode: formPermissionMode,
+        sessionStartMode: formSessionStartMode,
         accountResolution: projectAccountResolution ?? undefined,
       },
     });
@@ -373,6 +375,8 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                             setThinkingConfig={setFormThinkingConfig}
                             permissionMode={formPermissionMode}
                             setPermissionMode={setFormPermissionMode}
+                            sessionStartMode={formSessionStartMode}
+                            setSessionStartMode={setFormSessionStartMode}
                             onStart={handleStartNewSession}
                             onChangeAccount={() => { setShowChangeAccountDialog(true); }}
                           />

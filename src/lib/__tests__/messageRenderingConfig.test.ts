@@ -131,9 +131,28 @@ describe("messageRenderingConfig", () => {
     });
 
     it("merges hard-filter toggles", () => {
-      const cfg = mergeConfig({ hardFilters: { dropMeta: false } });
-      expect(cfg.hardFilters.dropMeta).toBe(false);
-      expect(cfg.hardFilters.dropTaskLifecycle).toBe(true);
+      const cfg = mergeConfig({ hardFilters: { dropBookkeeping: false } });
+      expect(cfg.hardFilters.dropBookkeeping).toBe(false);
+      // Other new fields keep their defaults
+      expect(cfg.hardFilters.dropEmptyUser).toBe(true);
+      expect(cfg.hardFilters.hideSubagentLifecycle).toBe(false);
+    });
+
+    it("migrates legacy hardFilter keys (dropMeta → dropBookkeeping, dropTaskLifecycle → hideSubagentLifecycle, dropHookLifecycle → hideHookLifecycle)", () => {
+      const legacyConfig = {
+        version: 1,
+        hardFilters: {
+          dropMeta: false,
+          dropTaskLifecycle: false,
+          dropEmptyUser: false,
+          dropHookLifecycle: false,
+        },
+      };
+      const merged = mergeConfig(legacyConfig as any);
+      expect(merged.hardFilters.dropBookkeeping).toBe(false);
+      expect(merged.hardFilters.hideSubagentLifecycle).toBe(false);
+      expect(merged.hardFilters.dropEmptyUser).toBe(false);
+      expect(merged.hardFilters.hideHookLifecycle).toBe(false);
     });
 
     it("exposes the new palette entries (brown/chocolate/tan/black)", () => {

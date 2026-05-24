@@ -29,6 +29,7 @@ function makeHandle(query = makeQuery()): SessionHandle {
     mode: 'sdk',
     tui: null,
     tuiDetach: null,
+    tuiJsonl: null,
     permissionResolver: null,
     permissionQueue: [],
     elicitationResolver: null,

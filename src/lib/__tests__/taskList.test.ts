@@ -201,13 +201,11 @@ describe('getTaskList', () => {
     expect(result?.[1].messages).toEqual([work]);      // B
   });
 
-  it('infers completion for an in_progress task when a result message ended the turn', () => {
-    // Agents commonly forget the final TaskUpdate(completed) on the last
-    // task — they do the work and emit a summary, leaving the task stuck
-    // in_progress. The `result` message proves the turn finished, so on
-    // reload the task should still appear as completed (matches the live
-    // session's apparent state and the user's intuition that "the work
-    // is done, the task is done").
+  it('leaves an in_progress task as in_progress when a turn-level result arrives (no force-complete)', () => {
+    // The agent started a task but did not emit TaskUpdate(completed) before
+    // the turn ended. Previously the `result` event force-completed it, but
+    // that behavior broke multi-turn subagents. Now the task stays in_progress
+    // and the UI reflects the actual agent state rather than a synthetic guess.
     const work = assistantText('working on it');
     const resultMsg = {
       type: 'result',
@@ -221,14 +219,15 @@ describe('getTaskList', () => {
       work,
       resultMsg,
     ]);
-    expect(result?.[0].status).toBe('completed');
+    expect(result?.[0].status).toBe('in_progress');
   });
 
-  it('infers completion for a pending task that accumulated messages, after a result message', () => {
+  it('leaves a pending task as pending when a turn-level result arrives (no force-complete)', () => {
     // Queue-fallback case: agent never used in_progress, just batched
-    // TaskCreates and TaskUpdate(completed)d one by one. If the last
-    // task in the batch got attributed work but never explicitly
-    // completed, treat it as completed at turn end.
+    // TaskCreates and TaskUpdate(completed)d one by one. Previously the
+    // `result` event force-completed any remaining tasks, but that broke
+    // multi-turn subagents. Now task B correctly stays pending — it reflects
+    // actual agent state rather than a synthetic guess.
     const work = assistantText('did the work for the last one');
     const resultMsg = { type: 'result', subtype: 'success', result: '' } as unknown as ClaudeStreamMessage;
     const result = getTaskList([
@@ -242,22 +241,21 @@ describe('getTaskList', () => {
       work,
       resultMsg,
     ]);
-    expect(result?.map((t) => t.status)).toEqual(['completed', 'completed']);
+    expect(result?.map((t) => t.status)).toEqual(['completed', 'pending']);
   });
 
-  it('infers completion for a pending task with no messages once the turn has ended', () => {
-    // Earlier this case stayed pending forever — leaving "1 pending"
-    // stuck in the bar across reloads and keeping the thinking-bubble
-    // gate (driven by tasks-in-flight) lit. Once the agent's turn has
-    // ended via a result message, anything still pending is treated as
-    // abandoned-or-forgotten and marked completed.
+  it('leaves a never-touched pending task as pending when a turn-level result arrives', () => {
+    // Previously treated as abandoned-or-forgotten and force-completed, but
+    // that broke multi-turn subagents. A pending task stays pending — the
+    // summarizer's `running: true` correctly keeps the indicator lit, and
+    // subsequent turns' TaskUpdate(completed) are the canonical signal.
     const resultMsg = { type: 'result', subtype: 'success', result: '' } as unknown as ClaudeStreamMessage;
     const result = getTaskList([
       taskCreateMsg('tu1', { subject: 'never touched' }),
       taskCreateResultMsg('tu1', '1'),
       resultMsg,
     ]);
-    expect(result?.[0].status).toBe('completed');
+    expect(result?.[0].status).toBe('pending');
   });
 
   it('drops the prior batch and shows only the new post-result batch as mid-flight', () => {
@@ -279,12 +277,13 @@ describe('getTaskList', () => {
     expect(result?.[0].status).toBe('pending');
   });
 
-  it('clears the prior batch even when an old task was pending at result time', () => {
-    // The exact bug behind "5/6 done · 1 pending stuck across reloads":
-    // a pending task that never got attributed messages survived the
-    // result message and lingered into the next batch. Under the
-    // aggressive inference rule it's inferred-completed at result time,
-    // and then the next TaskCreate's epoch-reset clears it.
+  it('does NOT epoch-reset when a result arrives with a pending task still in the batch', () => {
+    // Previously, the result force-completed "untouched" and then the next
+    // TaskCreate triggered an epoch-reset (seeing all-completed). Without
+    // force-completion, "untouched" stays pending, so the next TaskCreate
+    // is additive (not a reset) — both tasks appear in the final list.
+    // This is the CORRECT behavior: the pending task from the previous turn
+    // is still unfinished and should remain visible.
     const oldResult = { type: 'result', subtype: 'success', result: '' } as unknown as ClaudeStreamMessage;
     const result = getTaskList([
       taskCreateMsg('tu1', { subject: 'untouched' }),
@@ -293,7 +292,9 @@ describe('getTaskList', () => {
       taskCreateMsg('tu2', { subject: 'fresh start' }),
       taskCreateResultMsg('tu2', '2'),
     ]);
-    expect(result?.map((t) => t.subject)).toEqual(['fresh start']);
+    expect(result?.map((t) => t.subject)).toEqual(['untouched', 'fresh start']);
+    expect(result?.[0].status).toBe('pending');
+    expect(result?.[1].status).toBe('pending');
   });
 
   it('leaves in_progress tasks alone when no result message has fired yet', () => {
@@ -438,6 +439,32 @@ describe('getTaskList', () => {
       taskUpdateMsg('tu2', { taskId: '1', subject: 'renamed' }),
     ]);
     expect(result?.[0].subject).toBe('renamed');
+  });
+
+  it('does NOT force-complete pending tasks when a turn-level result event lands', () => {
+    // Constructed sequence mirroring real agent behavior:
+    //  - TaskCreate creates 3 tasks (T1, T2, T3) → pending
+    //  - TaskUpdate marks T1 completed
+    //  - A `result` message arrives (per-turn synthesized in the new pipeline)
+    //  - T2 and T3 should REMAIN pending (the agent hasn't done them yet)
+    const messages = [
+      taskCreateMsg('tu1', { subject: 'T1' }),
+      taskCreateResultMsg('tu1', 'task-1'),
+      taskCreateMsg('tu2', { subject: 'T2' }),
+      taskCreateResultMsg('tu2', 'task-2'),
+      taskCreateMsg('tu3', { subject: 'T3' }),
+      taskCreateResultMsg('tu3', 'task-3'),
+      taskUpdateMsg('tu4', { taskId: 'task-1', status: 'completed' }),
+      // Turn-level result lands (per-turn synthesized in TUI mode, real in SDK mode)
+      { type: 'result', subtype: 'success', result: 'ok', is_error: false } as unknown as ClaudeStreamMessage,
+    ];
+
+    const tasks = getTaskList(messages);
+    expect(tasks).not.toBeNull();
+    const byId = new Map(tasks!.map((t) => [t.id, t]));
+    expect(byId.get('task-1')?.status).toBe('completed');
+    expect(byId.get('task-2')?.status).toBe('pending');
+    expect(byId.get('task-3')?.status).toBe('pending');
   });
 });
 

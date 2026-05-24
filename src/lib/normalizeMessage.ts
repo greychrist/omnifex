@@ -21,7 +21,7 @@
  * The fix is one-shot normalization at the boundary:
  *
  *   • `loadSessionHistory()` applies this to each row after JSONL parse.
- *   • `handleStreamMessage()` applies this to each parsed live message.
+ *   • `handleJsonlLine()` applies this to each parsed live message.
  *
  * After both call sites, every downstream consumer can assume array form.
  *

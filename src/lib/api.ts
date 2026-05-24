@@ -516,6 +516,9 @@ export interface LogEntry {
 export type LogOrderBy = 'timestamp' | 'level' | 'source' | 'category' | 'message';
 export type LogOrderDir = 'asc' | 'desc';
 
+/** Session execution mode: SDK (interactive) or TUI (terminal UI). */
+export type SessionMode = 'sdk' | 'tui';
+
 export interface LogQueryFilters {
   /** Any of these log levels (OR-joined). Omit to match all levels. */
   levels?: string[];
@@ -990,8 +993,8 @@ export const api = {
 
   // ─── Persistent Session API ───────────────────────────────────────
 
-  async startSession(tabId: string, projectPath: string, model: string, permissionMode: string, resumeSessionId?: string, configDir?: string, effort?: string, thinking?: Record<string, unknown>): Promise<void> {
-    return apiCall("session_start", { tabId, projectPath, model, permissionMode, resumeSessionId, configDir, effort, thinking });
+  async startSession(tabId: string, projectPath: string, model: string, permissionMode: string, resumeSessionId?: string, configDir?: string, effort?: string, thinking?: Record<string, unknown>, mode?: SessionMode): Promise<void> {
+    return apiCall("session_start", { tabId, projectPath, model, permissionMode, resumeSessionId, configDir, effort, thinking, mode });
   },
 
   /**
@@ -1102,7 +1105,7 @@ export const api = {
   },
 
   /** Switch the session between SDK mode and TUI mode. */
-  async setSessionMode(tabId: string, mode: 'sdk' | 'tui'): Promise<void> {
+  async setSessionMode(tabId: string, mode: SessionMode): Promise<void> {
     return apiCall('session_set_mode', { tabId, mode });
   },
 
