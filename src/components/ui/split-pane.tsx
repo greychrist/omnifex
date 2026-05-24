@@ -170,15 +170,19 @@ export const SplitPane: React.FC<SplitPaneProps> = ({
 
       {/* Divider — thin bar that thickens on hover. The OS-level
           `col-resize` cursor (two arrows flanking a vertical line) is
-          the visual affordance when the mouse hovers. */}
+          the visual affordance when the mouse hovers.
+          NOTE: inline style is required to beat the global stylesheet
+          (styles.css:367) that applies `cursor: pointer` to anything
+          with a non-negative tabindex. Without inline, the divider
+          shows the pointer hand instead of col-resize. */}
       <div
         className={cn(
           "relative flex-shrink-0 group",
           "w-1 hover:w-2 transition-all duration-150",
           "bg-border hover:bg-primary/50",
-          "cursor-col-resize",
           isDragging && "bg-primary w-2"
         )}
+        style={{ cursor: 'col-resize' }}
         onMouseDown={handleMouseDown}
         onKeyDown={handleKeyDown}
         tabIndex={0}
@@ -188,8 +192,10 @@ export const SplitPane: React.FC<SplitPaneProps> = ({
         aria-valuemin={0}
         aria-valuemax={100}
       >
-        {/* Expand hit area for easier dragging */}
-        <div className="absolute inset-y-0 -left-2 -right-2 z-10" />
+        {/* Expand hit area for easier dragging — also needs explicit
+            col-resize so the cursor doesn't flicker between hover-on-bar
+            and hover-on-hit-area zones. */}
+        <div className="absolute inset-y-0 -left-2 -right-2 z-10" style={{ cursor: 'col-resize' }} />
       </div>
 
       {/* Right pane */}
