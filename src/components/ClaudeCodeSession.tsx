@@ -38,8 +38,10 @@ import { TooltipProvider, TooltipSimple } from "@/components/ui/tooltip-modern";
 import { SplitPane } from "@/components/ui/split-pane";
 import { WebviewPreview } from "./WebviewPreview";
 import type { ClaudeStreamMessage } from "@/types/claudeStream";
-import { synthesizeResultMessages } from "@/lib/synthesizeResults";
 import { normalizeMessageContent } from "@/lib/normalizeMessage";
+import { classifyJsonlLine } from '@/lib/jsonlClassifier';
+import { synthesizeBatch } from '@/lib/jsonlSynthesizer';
+import { jsonlNodeToStreamMessage } from '@/lib/jsonlAdapter';
 import { maybeAutoGenerateSummaryOnLeave } from "@/lib/sessionSummaryGate";
 import { SessionModeToggle } from "./SessionModeToggle";
 import { SessionViewToggle, type ViewMode } from "./SessionViewToggle";
@@ -785,23 +787,23 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
         );
       }
 
-      // Convert history to messages format. JSONL entries carry their own
-      // `timestamp` field per line — map it to `receivedAt` so the card
-      // timestamp badge renders for resumed sessions just like for live ones.
-      // Normalize `message.content` to array form at this boundary so every
-      // downstream consumer sees a single shape — see lib/normalizeMessage.
-      const loadedMessages: ClaudeStreamMessage[] = history.map(entry => normalizeMessageContent({
-        ...entry,
-        type: entry.type || "assistant",
-        receivedAt: entry.receivedAt ?? entry.timestamp,
-      }));
+      // Route through the JSONL classifier → synthesizer → adapter pipeline.
+      // The classifier normalizes timestamp→receivedAt and discriminates
+      // every line into a typed JsonlNode; synthesizeBatch injects the
+      // synthesized-init and synthesized-result nodes that produce the
+      // "Execution Complete" card; the adapter translates back to
+      // ClaudeStreamMessage. normalizeMessageContent handles string→array
+      // content for downstream consumers expecting array form.
+      const nodes = history
+        .map((entry) => classifyJsonlLine(entry))
+        .filter((n): n is NonNullable<typeof n> => n !== null);
 
-      // The Claude CLI's JSONL session file does not persist live SDK
-      // `result` messages. Synthesize them from per-turn data so the
-      // "Execution Complete" card appears for every completed turn when a
-      // session is resumed. Live sessions are unaffected — this only runs
-      // on the historical load.
-      const messagesWithResults = synthesizeResultMessages(loadedMessages);
+      const synthesized = synthesizeBatch(nodes);
+
+      const messagesWithResults: ClaudeStreamMessage[] = synthesized
+        .map((n) => jsonlNodeToStreamMessage(n))
+        .filter((m): m is NonNullable<typeof m> => m !== null)
+        .map((m) => normalizeMessageContent(m));
 
       streamCtxRef.current.setMessages(messagesWithResults);
       setRawJsonlOutput(history.map(h => JSON.stringify(h)));
@@ -1194,14 +1196,16 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       )
         .then((history) => {
           if (!history || history.length === 0) return;
-          // Mirror loadSessionHistory(): normalize content shape at the
-          // boundary so downstream consumers see array-form content only.
-          const loaded: ClaudeStreamMessage[] = history.map((entry: any) => normalizeMessageContent({
-            ...entry,
-            type: entry.type || 'assistant',
-            receivedAt: entry.receivedAt ?? entry.timestamp,
-          }));
-          setMessages(synthesizeResultMessages(loaded));
+          // Mirror loadSessionHistory(): route through classify→synthesize→adapt.
+          const nodes = history
+            .map((entry: unknown) => classifyJsonlLine(entry))
+            .filter((n): n is NonNullable<typeof n> => n !== null);
+          const synthesized = synthesizeBatch(nodes);
+          const loaded: ClaudeStreamMessage[] = synthesized
+            .map((n) => jsonlNodeToStreamMessage(n))
+            .filter((m): m is NonNullable<typeof m> => m !== null)
+            .map((m) => normalizeMessageContent(m));
+          setMessages(loaded);
         })
         .catch((err: unknown) => {
           console.error('Failed to reload history on TUI->SDK:', err);
