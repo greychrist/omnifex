@@ -84,7 +84,7 @@ export interface SessionOwnership {
 }
 
 export interface SessionsService {
-  start(params: SessionStartParams): void;
+  start(params: SessionStartParams): void | Promise<void>;
   /**
    * Re-attach an existing session to a (new) owner webContents without tearing
    * down the SDK query. Returns true if a session was found and re-bound,

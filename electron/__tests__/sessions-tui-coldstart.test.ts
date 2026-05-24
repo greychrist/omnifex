@@ -33,6 +33,23 @@ import { spawn as ptySpawn } from 'node-pty';
 import { createSessionsService } from '../services/sessions';
 
 describe('start({ mode: "tui" })', () => {
+  it('propagates cold-start errors (missing configDir) so IPC rejects', async () => {
+    vi.mocked(ptySpawn).mockReset();
+    const sendToRenderer = vi.fn();
+    const sessions = createSessionsService(sendToRenderer);
+    // Intentionally omit configDir — startTuiColdStart throws synchronously.
+    const result = sessions.start({
+      tabId: 'cold-err',
+      projectPath: '/Users/test/proj',
+      configDir: '',
+      model: '',
+      permissionMode: '',
+      mode: 'tui',
+    });
+    // start() now returns a promise for TUI mode — it must reject.
+    await expect(Promise.resolve(result)).rejects.toThrow(/configDir/i);
+  });
+
   it('spawns claude with --session-id <uuid> and sets handle.sessionId to that uuid immediately', async () => {
     const tmpConfig = fs.mkdtempSync(path.join(os.tmpdir(), 'omnifex-startcold-'));
     const projectPath = '/Users/test/proj';

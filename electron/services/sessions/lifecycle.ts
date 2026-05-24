@@ -71,12 +71,11 @@ export function createSessionsService(
   // start()
   // -------------------------------------------------------------------------
 
-  function start(params: SessionStartParams): void {
+  function start(params: SessionStartParams): void | Promise<void> {
     const { tabId, projectPath, configDir } = params;
 
     if (params.mode === 'tui') {
-      void startTuiColdStart(params);
-      return;
+      return startTuiColdStart(params);
     }
 
     // Close any existing session for this tab
