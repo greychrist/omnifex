@@ -42,6 +42,9 @@ import { normalizeMessageContent } from "@/lib/normalizeMessage";
 import { classifyJsonlLine } from '@/lib/jsonlClassifier';
 import { createSynthesizer, synthesizeBatch } from '@/lib/jsonlSynthesizer';
 import { jsonlNodeToStreamMessage } from '@/lib/jsonlAdapter';
+import { reduceSessionStreamMessage } from '@/lib/sessionStreamReducer';
+import { runStreamEffect } from '@/lib/sessionStreamEffects';
+import { appendInflightDelta } from '@/lib/inflightCoalescer';
 import { maybeAutoGenerateSummaryOnLeave } from "@/lib/sessionSummaryGate";
 import { SessionModeToggle } from "./SessionModeToggle";
 import { SessionViewToggle, type ViewMode } from "./SessionViewToggle";
@@ -836,17 +839,17 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     try {
       if (!streamCtxRef.current.isMountedRef?.current) return;
       let raw: unknown;
+      let rawString: string;
       if (typeof payload === 'string') {
+        rawString = payload;
         raw = JSON.parse(payload);
       } else {
         raw = payload;
+        rawString = JSON.stringify(payload);
       }
 
-      // permission_request is an OmniFex-synthetic envelope injected by the
-      // main-process permissions service onto the same claude-output channel
-      // as JSONL data. It is NOT a JSONL record — the classifier doesn't know
-      // it — so we intercept it here, normalize to camelCase, and hand off to
-      // usePermissions before running the JSONL path.
+      // permission_request — OmniFex-synthetic envelope from the main-process
+      // permissions service. Not a JSONL record; classifier doesn't know it.
       if (raw && typeof raw === 'object' && (raw as any).type === 'permission_request') {
         const msg = raw as any;
         setPendingPermission({
@@ -863,6 +866,27 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
         return;
       }
 
+      // stream_event — SDK iterator overlay channel (token partials).
+      // Not in JSONL; route partials to the inflight coalescer for the
+      // typewriter effect. Subagent partials and non-text deltas drop.
+      if (raw && typeof raw === 'object' && (raw as any).type === 'stream_event') {
+        const m = raw as any;
+        if (m.parent_tool_use_id != null) return;
+        const event = m.event;
+        if (
+          event?.type === 'content_block_delta' &&
+          event.delta?.type === 'text_delta' &&
+          typeof event.delta.text === 'string'
+        ) {
+          appendInflightDelta(tabIdRef.current, m.uuid, event.delta.text, m.parent_tool_use_id);
+        }
+        return;
+      }
+
+      // Classify + synthesize. Synthesizer injects synth-init on first
+      // sessioned node and synth-result after assistant with terminal
+      // stop_reason. Adapter converts both to ClaudeStreamMessage shape so
+      // the reducer can process them identically to SDK iterator events.
       const node = classifyJsonlLine(raw);
       if (!node) return;
       const produced = synthesizerRef.current.push(node);
@@ -871,15 +895,133 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
         .filter((m): m is NonNullable<ReturnType<typeof jsonlNodeToStreamMessage>> => m !== null)
         .map((m) => normalizeMessageContent(m));
       if (streamMessages.length === 0) return;
-      // Append to messages[].
-      const setMessages = streamCtxRef.current.setMessages;
-      if (setMessages) {
-        setMessages((prev) => [...prev, ...streamMessages]);
+
+      // Store raw line (only the original input, not the synthesized rows).
+      setRawJsonlOutput((prev) => [...prev, rawString]);
+
+      const ctx = streamCtxRef.current;
+
+      // Each stream message goes through the reducer for its side effects:
+      // activity labels, metrics, cost, session-id extraction, permission
+      // dispatch, userInterrupted suppression, post-event refresh effects,
+      // and the append/skip/insert decision. The reducer is pure — same
+      // contract as the old SDK-iterator path.
+      for (const message of streamMessages) {
+        const liveSlice = useClaudeSessionStore.getState().selectTab(sessionTabId);
+        const hasExistingInit = liveSlice.messages.some(
+          (m) => m.type === 'system' && m.subtype === 'init',
+        );
+        const reduced = reduceSessionStreamMessage(message, {
+          projectPath,
+          hasExistingInit,
+          hasExtractedSession: !!liveSlice.extractedSessionInfo,
+          userInterrupted: userInterruptedRef.current,
+          messagesLength: liveSlice.messages.length,
+        });
+
+        if (reduced.activityUpdate) {
+          setCurrentActivity(
+            reduced.activityUpdate.kind === 'literal'
+              ? reduced.activityUpdate.label
+              : pickGerund(),
+          );
+        }
+
+        const m = reduced.metrics;
+        if (
+          m.toolsExecuted ||
+          m.toolsFailed ||
+          m.filesCreated ||
+          m.filesModified ||
+          m.filesDeleted ||
+          m.codeBlocksGenerated ||
+          m.errorsEncountered ||
+          m.bumpLastActivity
+        ) {
+          const live = sessionMetrics.current;
+          live.toolsExecuted += m.toolsExecuted;
+          live.toolsFailed += m.toolsFailed;
+          live.filesCreated += m.filesCreated;
+          live.filesModified += m.filesModified;
+          live.filesDeleted += m.filesDeleted;
+          live.codeBlocksGenerated += m.codeBlocksGenerated;
+          live.errorsEncountered += m.errorsEncountered;
+          if (m.bumpLastActivity) live.lastActivityTime = Date.now();
+        }
+
+        if (reduced.costDelta > 0) {
+          setSessionCost((prev) => prev + reduced.costDelta);
+        }
+
+        if (reduced.sessionIdUpdate) {
+          ctx.setClaudeSessionId(reduced.sessionIdUpdate);
+        }
+        if (reduced.extractedSessionInfo) {
+          ctx.setExtractedSessionInfo(reduced.extractedSessionInfo);
+        }
+        if (reduced.pendingPermission) {
+          setPendingPermission(reduced.pendingPermission);
+        }
+        if (reduced.clearUserInterrupted) {
+          userInterruptedRef.current = false;
+        }
+        if (reduced.clearLoading) {
+          ctx.setIsLoading(false);
+        }
+
+        const handleSendPromptForEffect = ctx.handleSendPrompt;
+        for (const effect of reduced.effects) {
+          runStreamEffect(effect, {
+            tabId: tabIdRef.current,
+            projectPath,
+            api: {
+              sessionAccountInfo: api.sessionAccountInfo,
+              sessionContextUsage: api.sessionContextUsage,
+              sessionSupportedModels: api.sessionSupportedModels,
+            },
+            persistSession: ({ sessionId, projectId, projectPath: pp, messageCount }) =>
+              { SessionPersistenceService.saveSession(sessionId, projectId, pp, messageCount); },
+            setSdkAccountInfo: (info) => { ctx.setSdkAccountInfo(info as any); },
+            setContextUsage: (usage) => { ctx.setContextUsage(usage as any); },
+            setSupportedModels: (models) => { ctx.setSupportedModels(models as any); },
+            queuedPromptsRef: ctx.queuedPromptsRef as any,
+            setQueuedPrompts: ctx.setQueuedPrompts as any,
+            handleSendPrompt: fireAndLog(
+              'claude-code-session:send-prompt-effect',
+              handleSendPromptForEffect ?? undefined,
+            ),
+            onError: (kind, err) =>
+              { console.error(`[sessions] effect ${kind} failed:`, err); },
+          });
+        }
+
+        // Reconcile inflight assistant: clear streaming bubble when canonical
+        // message arrives or an error notification lands.
+        const store = useClaudeSessionStore.getState();
+        if (reduced.append === 'append' && message.type === 'assistant') {
+          store.clearInflightAssistant(tabIdRef.current);
+          clearInflightBuffer(tabIdRef.current);
+        }
+        if (
+          message.type === 'system' &&
+          message.subtype === 'notification' &&
+          /error/i.test(String((message as any).notification_type ?? ''))
+        ) {
+          store.clearInflightAssistant(tabIdRef.current);
+          clearInflightBuffer(tabIdRef.current);
+        }
+
+        if (reduced.append === 'skip') continue;
+        if (reduced.append === 'insertBeforeFirstUser') {
+          ctx.insertMessageBeforeFirstUser(message);
+          continue;
+        }
+        ctx.appendMessage(message);
       }
     } catch (err) {
-      console.error('handleJsonlLine failed:', err);
+      console.error('handleJsonlLine failed:', err, payload);
     }
-  }, [setPendingPermission]);
+  }, [projectPath, sessionTabId, setPendingPermission]);
 
   // Session lifecycle: persistent session management, event listeners, cleanup
   const { unlistenRefs, isMountedRef, startPersistentSession, rebindPersistentSession } = useSessionLifecycle({
