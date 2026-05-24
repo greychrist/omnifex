@@ -1,5 +1,4 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface SplitPaneProps {
@@ -169,14 +168,16 @@ export const SplitPane: React.FC<SplitPaneProps> = ({
         {left}
       </div>
 
-      {/* Divider */}
+      {/* Divider — thin bar that thickens on hover. The OS-level
+          `col-resize` cursor (two arrows flanking a vertical line) is
+          the visual affordance when the mouse hovers. */}
       <div
         className={cn(
-          "relative flex-shrink-0 group flex items-center justify-center",
-          "w-px bg-border transition-colors duration-150",
-          "hover:bg-primary/50",
+          "relative flex-shrink-0 group",
+          "w-1 hover:w-2 transition-all duration-150",
+          "bg-border hover:bg-primary/50",
           "cursor-col-resize",
-          isDragging && "bg-primary"
+          isDragging && "bg-primary w-2"
         )}
         onMouseDown={handleMouseDown}
         onKeyDown={handleKeyDown}
@@ -189,21 +190,6 @@ export const SplitPane: React.FC<SplitPaneProps> = ({
       >
         {/* Expand hit area for easier dragging */}
         <div className="absolute inset-y-0 -left-2 -right-2 z-10" />
-
-        {/* Two outward-pointing arrows flanking the divider line — indicates
-            drag direction visually. The divider's own background renders the
-            vertical line between them. */}
-        <div
-          className={cn(
-            "z-20 flex items-center gap-0 text-muted-foreground",
-            "transition-colors duration-150",
-            "group-hover:text-primary",
-            isDragging && "text-primary"
-          )}
-        >
-          <ChevronLeft className="h-3 w-3 -mr-1" />
-          <ChevronRight className="h-3 w-3 -ml-1" />
-        </div>
       </div>
 
       {/* Right pane */}
