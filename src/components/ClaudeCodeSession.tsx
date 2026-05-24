@@ -1643,12 +1643,14 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     window.dispatchEvent(new CustomEvent('back-to-project'));
   };
 
-  const modeToggleDisabled = !isSessionActive || waitingForPermission;
+  const modeToggleDisabled = !isSessionActive || waitingForPermission || !claudeSessionId;
   const modeToggleReason = !isSessionActive
     ? 'Start a session first'
-    : waitingForPermission
-      ? 'Resolve the permission dialog first'
-      : undefined;
+    : !claudeSessionId
+      ? 'Session ID not yet available — wait a moment'
+      : waitingForPermission
+        ? 'Resolve the permission dialog first'
+        : undefined;
 
 
   const sessionStatus: 'starting' | 'active' | 'ended' | undefined =
@@ -1855,7 +1857,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
               left={
                 <div className="h-full flex flex-col">
                   {sessionMode === 'tui' ? (
-                    <TuiSessionLayout tabId={tabIdRef.current} />
+                    <TuiSessionLayout tabId={tabIdRef.current} messagesView={messagesList} />
                   ) : (
                     messagesList
                   )}
@@ -1880,7 +1882,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             // Original layout when no preview
             <div className="h-full flex flex-col">
               {sessionMode === 'tui' ? (
-                <TuiSessionLayout tabId={tabIdRef.current} />
+                <TuiSessionLayout tabId={tabIdRef.current} messagesView={messagesList} />
               ) : (
                 messagesList
               )}

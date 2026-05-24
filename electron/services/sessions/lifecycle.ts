@@ -38,6 +38,8 @@ import {
 } from './runtime';
 import { discoverNewSessionFile } from './tui-coldstart';
 import { createTuiJsonlListener } from './tui-jsonl';
+import { encodeProjectKey } from './summary-query';
+import path from 'node:path';
 
 // ---------------------------------------------------------------------------
 // Factory
@@ -398,6 +400,8 @@ export function createSessionsService(
       tui.onData((data: string) => sendToRenderer(`session-tui-data:${tabId}`, data));
       tui.onExit((r: { exitCode: number }) => {
         sendToRenderer(`session-tui-exit:${tabId}`, r);
+        handle.tuiJsonl?.stop();
+        handle.tuiJsonl = null;
         // Auto-revert to SDK mode.
         void setMode(tabId, 'sdk').catch((e: unknown) =>
           console.error('[sessions] auto-revert to sdk failed:', e)
@@ -407,6 +411,26 @@ export function createSessionsService(
       handle.tui = tui;
       handle.tuiDetach = () => { try { tui.kill(); } catch { /* best effort */ } };
       sendToRenderer(`session-mode:${tabId}`, { mode: 'tui' });
+
+      // Wire up the JSONL listener so mid-session toggle gets the same
+      // message rendering and status tracking as cold-start TUI mode.
+      const jsonlPath = path.join(
+        handle.configDir,
+        'projects',
+        encodeProjectKey(handle.projectPath),
+        `${handle.sessionId}.jsonl`,
+      );
+      handle.tuiJsonl = createTuiJsonlListener({
+        tabId,
+        projectPath: handle.projectPath,
+        jsonlPath,
+        sendToRenderer,
+        notificationHooks,
+        onInit: () => {
+          // sessionId is already known (precondition for the toggle); ignore.
+        },
+        onStatusChange: (status) => { handle.status = status; },
+      });
     } else {
       // tui -> sdk: kill the pty, then re-start the SDK query with resume.
       handle.tuiJsonl?.stop();
@@ -529,6 +553,7 @@ export function createSessionsService(
         onInit: () => {
           // sessionId already known from discovery; ignore subsequent inits.
         },
+        onStatusChange: (status) => { handle.status = status; },
       });
     } catch (err) {
       // Discovery failed (timeout, etc.) — tear down the PTY so it doesn't

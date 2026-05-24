@@ -69,7 +69,7 @@ const ENOENT_POLL_MS = 200;
  * narrow — the renderer can assume any message it receives on that channel
  * is a closure carrier.
  */
-function isClosureCarrier(parsed: unknown): boolean {
+export function isClosureCarrier(parsed: unknown): boolean {
   if (!parsed || typeof parsed !== 'object') return false;
   const m = parsed as Record<string, unknown>;
   if (m.type === 'queue-operation') {

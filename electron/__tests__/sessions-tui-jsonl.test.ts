@@ -34,7 +34,7 @@ describe('createTuiJsonlListener', () => {
     try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* ignore */ }
   });
 
-  it('forwards every parsed line on session-jsonl:<tabId>', async () => {
+  it('forwards every parsed line on claude-output:<tabId>', async () => {
     const sendToRenderer = vi.fn();
     fs.writeFileSync(jsonlPath, '');
     handle = createTuiJsonlListener({
@@ -49,8 +49,59 @@ describe('createTuiJsonlListener', () => {
       jsonlPath,
       JSON.stringify({ type: 'user', message: { role: 'user', content: 'hi' } }) + '\n',
     );
-    await waitUntil(() => sendToRenderer.mock.calls.some(c => c[0] === 'session-jsonl:tab-1'));
-    expect(sendToRenderer).toHaveBeenCalledWith('session-jsonl:tab-1', expect.objectContaining({ type: 'user' }));
+    await waitUntil(() => sendToRenderer.mock.calls.some(c => c[0] === 'claude-output:tab-1'));
+    expect(sendToRenderer).toHaveBeenCalledWith('claude-output:tab-1', expect.objectContaining({ type: 'user' }));
+  });
+
+  it('routes closure carriers to claude-output-extra:<tabId>', async () => {
+    const sendToRenderer = vi.fn();
+    fs.writeFileSync(jsonlPath, '');
+    handle = createTuiJsonlListener({
+      tabId: 'tab-cc',
+      projectPath: '/p',
+      jsonlPath,
+      sendToRenderer,
+      notificationHooks: {},
+      onInit: () => {},
+    });
+    fs.appendFileSync(
+      jsonlPath,
+      JSON.stringify({
+        type: 'queue-operation',
+        operation: 'enqueue',
+        content: '<task-notification>x</task-notification>',
+      }) + '\n',
+    );
+    await waitUntil(() =>
+      sendToRenderer.mock.calls.some((c) => (c[0] as string).startsWith('claude-output-extra:'))
+    );
+    // Closure carrier must NOT go on the main channel.
+    const mainCalls = sendToRenderer.mock.calls.filter(
+      (c) => (c[0] as string) === 'claude-output:tab-cc'
+    );
+    expect(mainCalls).toHaveLength(0);
+  });
+
+  it('reports status running on turn events and idle on result/init', async () => {
+    const onStatusChange = vi.fn();
+    fs.writeFileSync(jsonlPath, '');
+    handle = createTuiJsonlListener({
+      tabId: 'tab-status',
+      projectPath: '/p',
+      jsonlPath,
+      sendToRenderer: vi.fn(),
+      notificationHooks: {},
+      onInit: () => {},
+      onStatusChange,
+    });
+    fs.appendFileSync(
+      jsonlPath,
+      JSON.stringify({ type: 'system', subtype: 'init', session_id: 'sid' }) + '\n' +
+      JSON.stringify({ type: 'assistant', message: { role: 'assistant', content: [] } }) + '\n' +
+      JSON.stringify({ type: 'result', subtype: 'success', result: 'done' }) + '\n',
+    );
+    await waitUntil(() => onStatusChange.mock.calls.length >= 3);
+    expect(onStatusChange.mock.calls.map((c) => c[0])).toEqual(['idle', 'running', 'idle']);
   });
 
   it('reports sessionId via onInit when system:init lands, firing exactly once', async () => {
