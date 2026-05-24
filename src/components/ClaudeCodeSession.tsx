@@ -40,7 +40,7 @@ import { WebviewPreview } from "./WebviewPreview";
 import type { ClaudeStreamMessage } from "@/types/claudeStream";
 import { normalizeMessageContent } from "@/lib/normalizeMessage";
 import { classifyJsonlLine } from '@/lib/jsonlClassifier';
-import { synthesizeBatch } from '@/lib/jsonlSynthesizer';
+import { createSynthesizer, synthesizeBatch } from '@/lib/jsonlSynthesizer';
 import { jsonlNodeToStreamMessage } from '@/lib/jsonlAdapter';
 import { maybeAutoGenerateSummaryOnLeave } from "@/lib/sessionSummaryGate";
 import { SessionModeToggle } from "./SessionModeToggle";
@@ -1027,6 +1027,38 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     }
   }, [projectPath, sessionTabId, setPendingPermission]);
 
+  // One synthesizer instance per session lifetime. State persists across
+  // messages so init-once and turn-tracking work correctly.
+  const synthesizerRef = useRef(createSynthesizer());
+
+  const handleJsonlLine = useCallback((payload: string | object) => {
+    try {
+      if (!streamCtxRef.current.isMountedRef?.current) return;
+      let raw: unknown;
+      if (typeof payload === 'string') {
+        raw = JSON.parse(payload);
+      } else {
+        raw = payload;
+      }
+      const node = classifyJsonlLine(raw);
+      if (!node) return;
+      const produced = synthesizerRef.current.push(node);
+      const streamMessages = produced
+        .map((n) => jsonlNodeToStreamMessage(n))
+        .filter((m): m is NonNullable<ReturnType<typeof jsonlNodeToStreamMessage>> => m !== null)
+        .map((m) => normalizeMessageContent(m));
+      if (streamMessages.length === 0) return;
+      // Append to messages[]. setMessages uses the store-level setter to stay
+      // consistent with handleStreamMessage's pattern.
+      const setMessages = streamCtxRef.current.setMessages;
+      if (setMessages) {
+        setMessages((prev) => [...prev, ...streamMessages]);
+      }
+    } catch (err) {
+      console.error('handleJsonlLine failed:', err);
+    }
+  }, []);
+
   // Session lifecycle: persistent session management, event listeners, cleanup
   const { unlistenRefs, isMountedRef, startPersistentSession, rebindPersistentSession } = useSessionLifecycle({
     tabId: tabIdRef.current,
@@ -1041,6 +1073,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     setIsSessionStarting,
     setIsSessionActive,
     handleStreamMessage,
+    handleJsonlLine,
     setIsLoading,
     setMessages,
     setSdkAccountInfo,

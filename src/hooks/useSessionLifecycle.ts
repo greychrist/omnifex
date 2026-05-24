@@ -4,6 +4,14 @@ import type { ClaudeStreamMessage } from "@/types/claudeStream";
 import type { EffortLevel, ThinkingConfig } from "@/components/FloatingPromptInput";
 import { logAndForget } from "@/lib/fireAndLog";
 
+function isJsonlPipelineEnabled(): boolean {
+  try {
+    return typeof window !== 'undefined' && window.localStorage.getItem('omnifex:jsonl-pipeline') === 'on';
+  } catch {
+    return false;
+  }
+}
+
 /** Filter out noisy stderr messages that aren't real errors. */
 function isIgnorableStderr(msg: string): boolean {
   if (!msg) return false;
@@ -38,6 +46,7 @@ interface UseSessionLifecycleArgs {
   setIsSessionStarting: React.Dispatch<React.SetStateAction<boolean>>;
   setIsSessionActive: React.Dispatch<React.SetStateAction<boolean>>;
   handleStreamMessage: (payload: string | ClaudeStreamMessage) => void;
+  handleJsonlLine: (payload: string | object) => void;
   setIsLoading: React.Dispatch<React.SetStateAction<boolean>>;
   setMessages: React.Dispatch<React.SetStateAction<ClaudeStreamMessage[]>>;
   setSdkAccountInfo: React.Dispatch<React.SetStateAction<import("@/lib/api").SessionAccountInfo | null>>;
@@ -71,6 +80,7 @@ export function useSessionLifecycle({
   setIsSessionStarting,
   setIsSessionActive,
   handleStreamMessage,
+  handleJsonlLine,
   setIsLoading,
   setMessages,
   setSdkAccountInfo,
@@ -89,9 +99,9 @@ export function useSessionLifecycle({
 
     const outputUnlisten = window.electronAPI.onEvent(
       `claude-output:${tabId}`,
-      (payload: any) => {
-        handleStreamMessage(payload);
-      },
+      isJsonlPipelineEnabled()
+        ? (...args: unknown[]) => { handleJsonlLine(args[0] as string | object); }
+        : (...args: unknown[]) => { handleStreamMessage(args[0] as string | ClaudeStreamMessage); },
     );
 
     // Closure carriers (queue-operation enqueue with <task-notification>,

@@ -51,6 +51,7 @@ interface HarnessOverrides {
   setIsSessionActive?: ReturnType<typeof vi.fn>;
   setIsLoading?: ReturnType<typeof vi.fn>;
   handleStreamMessage?: ReturnType<typeof vi.fn>;
+  handleJsonlLine?: ReturnType<typeof vi.fn>;
   setSdkAccountInfo?: ReturnType<typeof vi.fn>;
   setSupportedModels?: ReturnType<typeof vi.fn>;
   setSupportedCommands?: ReturnType<typeof vi.fn>;
@@ -82,6 +83,7 @@ function harness(overrides: HarnessOverrides = {}) {
         },
         setIsSessionActive: (overrides.setIsSessionActive ?? vi.fn()) as any,
         handleStreamMessage: (overrides.handleStreamMessage ?? vi.fn()) as any,
+        handleJsonlLine: (overrides.handleJsonlLine ?? vi.fn()) as any,
         setIsLoading: (overrides.setIsLoading ?? vi.fn()) as any,
         setMessages: ((updater: any) => {
           messagesRef.current = typeof updater === 'function'
@@ -166,6 +168,7 @@ describe('useSessionLifecycle — startPersistentSession happy path', () => {
           setIsSessionStarting: vi.fn(),
           setIsSessionActive: vi.fn(),
           handleStreamMessage: vi.fn(),
+          handleJsonlLine: vi.fn(),
           setIsLoading: vi.fn(),
           setMessages: ((updater: any) => {
             messagesRef.current = typeof updater === 'function' ? updater(messagesRef.current) : updater;
@@ -197,7 +200,7 @@ describe('useSessionLifecycle — startPersistentSession happy path', () => {
         accountResolution: { account: { name: 'a', account_type: 'pro', config_dir: '/c' }, match_type: 'rule', match_detail: '' },
         persistentSessionRef,
         setIsSessionStarting: vi.fn(), setIsSessionActive: vi.fn(),
-        handleStreamMessage: vi.fn(), setIsLoading: vi.fn(),
+        handleStreamMessage: vi.fn(), handleJsonlLine: vi.fn(), setIsLoading: vi.fn(),
         setMessages: ((u: any) => { messagesRef.current = typeof u === 'function' ? u(messagesRef.current) : u; }) as any,
         setSdkAccountInfo: vi.fn(), setSupportedModels: vi.fn(),
         setSupportedCommands: vi.fn(), setContextUsage: vi.fn(),
