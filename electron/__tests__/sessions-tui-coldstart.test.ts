@@ -15,12 +15,6 @@ vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
   query: vi.fn(),
 }));
 
-vi.mock('../services/sessions/factory', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../services/sessions/factory')>();
-  return { ...actual, findSystemClaudeBinary: () => '/usr/local/bin/claude' };
-});
-
-// Also mock the binary module (used transitively via factory re-export).
 vi.mock('../services/sessions/binary', () => ({
   findSystemClaudeBinary: vi.fn(() => '/usr/local/bin/claude'),
 }));

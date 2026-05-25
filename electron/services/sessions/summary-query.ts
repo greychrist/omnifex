@@ -1,7 +1,8 @@
 import * as fsPromises from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { spawn, type ChildProcessByStdio } from 'node:child_process';
+import type { Readable } from 'node:stream';
 import { findSystemClaudeBinary } from './binary';
 import { buildClaudeEnv } from '../util/claude-env';
 
@@ -76,11 +77,15 @@ export async function runCliOnce(p: RunPromptParams): Promise<string> {
   args.push('--permission-mode', 'bypassPermissions');
   args.push('--disallowed-tools', '*');
 
-  const child: ChildProcessWithoutNullStreams = spawn(p.claudeBinary, args, {
-    cwd: p.cwd,
-    env: buildClaudeEnv(p.configDir),
-    stdio: ['ignore', 'pipe', 'pipe'],
-  }) as ChildProcessWithoutNullStreams;
+  const child: ChildProcessByStdio<null, Readable, Readable> = spawn(
+    p.claudeBinary,
+    args,
+    {
+      cwd: p.cwd,
+      env: buildClaudeEnv(p.configDir),
+      stdio: ['ignore', 'pipe', 'pipe'],
+    },
+  ) as ChildProcessByStdio<null, Readable, Readable>;
 
   let stdout = '';
   let stderr = '';

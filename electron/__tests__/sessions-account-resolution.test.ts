@@ -1,31 +1,28 @@
 // @vitest-environment node
 import { describe, it, expect, vi } from 'vitest';
 
-// The SDK is invoked inside start(); stub it so the test doesn't actually
-// spawn a Claude subprocess.
-vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
-  query: vi.fn(() => ({
-    async *[Symbol.asyncIterator]() { /* never yields */ },
-    close: vi.fn(),
-  })),
-  startup: vi.fn(() => ({
-    then(onFulfilled: (warmQuery: unknown) => unknown) {
-      return Promise.resolve(onFulfilled({
-        query: () => ({
-          async *[Symbol.asyncIterator]() { /* never yields */ },
-          close: vi.fn(),
-        }),
-        close: vi.fn(),
-      }));
-    },
+// Stub the engine so start() doesn't actually spawn a Claude subprocess.
+vi.mock('../services/agents/claude-cli-engine', () => ({
+  createClaudeCliEngine: vi.fn(() => ({
+    kind: 'claude',
+    start: vi.fn(async () => {}),
+    send: vi.fn(async () => {}),
+    sendStructured: vi.fn(async () => {}),
+    sendControlRequest: vi.fn(async () => undefined),
+    respondPermission: vi.fn(async () => {}),
+    interrupt: vi.fn(async () => {}),
+    close: vi.fn(async () => {}),
+    kill: vi.fn(),
+    getResumeId: vi.fn(() => null),
+    getInitData: vi.fn(() => null),
+    onMessage: vi.fn(() => ({ dispose() {} })),
+    onPermissionRequest: vi.fn(() => ({ dispose() {} })),
+    onError: vi.fn(() => ({ dispose() {} })),
+    onExit: vi.fn(() => ({ dispose() {} })),
   })),
 }));
 
 // Avoid actual binary resolution.
-vi.mock('../services/sessions/factory', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../services/sessions/factory')>();
-  return { ...actual, findSystemClaudeBinary: () => '/usr/local/bin/claude' };
-});
 vi.mock('../services/sessions/binary', () => ({
   findSystemClaudeBinary: vi.fn(() => '/usr/local/bin/claude'),
 }));
