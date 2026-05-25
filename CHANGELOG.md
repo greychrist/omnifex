@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.60] — 2026-05-25
+
+Engine swap release. Claude sessions now run on the `claude` CLI directly — the `@anthropic-ai/claude-agent-sdk` runtime is gone. Slash commands, plugins, `/model`, hooks defined in `~/.claude/settings.json`, MCP servers, and `/cost` now work identically to invoking `claude` directly. The renderer is unchanged — the on-wire message shape is the same. Resume, rate-limit tracking, subagent JSONL tail, and the Chat ↔ Terminal toggle all continue to work.
+
+This is Phase A of the SDK→CLI engine + Codex support plan (see `docs/superpowers/specs/2026-05-25-cli-engine-and-codex-design.md`). Phases 3 (Codex engine) and 4 (Claude re-auth affordance) follow in separate releases.
+
+Installers remain **unsigned**.
+
+### Changed
+
+- **Claude sessions now run on the `claude` CLI directly** (`92b0d1d`). The session engine moved off the `@anthropic-ai/claude-agent-sdk` runtime onto a subprocess running `claude --output-format stream-json --input-format stream-json`. The 14 imperative `Query` methods (`setModel`, `setPermissionMode`, `mcpServerStatus`, `getContextUsage`, `reloadPlugins`, …) are now driven by the same `control_request`/`control_response` protocol the SDK used to wrap. `accountInfo`, `supportedCommands`, `supportedModels`, and `supportedAgents` read from the cached `system:init` payload (no wire traffic), matching the SDK's behavior.
+- **`AgentEngine` interface + `ClaudeCliEngine`** (`2a82432`, `76f3b84`, `2d33b22`, `f8fac57`, `d4f4176`, `44042f6`, `5bc6690`, `f089f28`, `2d74fd9`, `aa333ef`, `d321f44`). The new `electron/services/agents/` module owns the engine abstraction. `ClaudeCliEngine` is the first concrete implementation; Phase 3's `CodexCliEngine` lands behind the same interface. The engine handles NDJSON line buffering, request/response correlation for control requests, init-payload caching, permission round-trip (`can_use_tool` → nested `control_response`), and re-entrant restart-on-stream-death.
+- **`summary-query.ts` runs `claude -p` directly** (`2e2910c`). The one-shot summary path uses a `claude -p <prompt> --output-format json --permission-mode bypassPermissions --disallowed-tools '*'` subprocess instead of an SDK `query()`. Same scratch-cwd + JSONL-cleanup contract.
+- **Toggle relabeled SDK→Chat** (`92b0d1d`). The mode toggle in the session header now reads "Chat / Terminal" since "SDK" no longer describes what's underneath. The internal mode literal renames `'sdk'` → `'rich'` across main + renderer.
+- **`models.ts` uses the engine for the pre-session model picker** (`2ab999d`). The renderer's model picker no longer spins up an SDK query — it instantiates a short-lived `ClaudeCliEngine`, awaits the first `system:init`, reads `getInitData().models`, and closes.
+
+### Removed
+
+- **`@anthropic-ai/claude-agent-sdk` dependency** (`2ab999d`). The SDK is gone from `package.json`, `node_modules`, `forge.config.ts` `asar.unpack`, and the `copySdkPlatformBinaries` step. The "Referenced SDK" titlebar badge silently returns null now and renders blank; a follow-up will delete the badge itself.
+- **`electron/services/sessions/hooks.ts` and `electron/services/sessions/factory.ts`** (`f407fc3`). The CLI invokes user hooks natively from `~/.claude/settings.json`; nothing for OmniFex to marshal. `factory.ts` only existed to build SDK query options.
+- **SDK type re-exports across the renderer.** `src/types/claudeStream.ts` now defines `SDKAssistantMessage`, `SDKUserMessage`, `SDKResultMessage`, `SDKResultErrorMessage`, `SDKSystemInitMessage`, `SDKSystemOtherMessage`, `SDKStreamEventMessage`, `SDKNotificationMessage`, and `AnthropicMessageUsage` as local interfaces. `src/lib/types/toolInput.ts` defines the tool-input shapes (`BashInput`, `FileEditInput`, `GrepInput`, etc.) locally. Same wire shapes, no SDK dep.
+
+### Notes
+
+- Schema migration: new `agent` column on `account_path_rules`, defaulted to `'claude'` for every existing row. No data loss. Forward-compatible for Codex (Phase 3).
+- Phase A's plan + addendum: `docs/superpowers/plans/2026-05-25-claude-cli-engine-seam.md` and `docs/superpowers/plans/2026-05-25-claude-cli-engine-seam-addendum.md`.
+- Test suite: 1867 of 1867 passing (+1 skipped) at 81.01% line coverage. `sessions.test.ts`, `sessions-queries.test.ts`, and `permission-persistence.test.ts` were deeply coupled to the SDK `Query` shape (`installFakeQuery`, `handle.query` mocking); they were renamed to `*.sdk-removed` pending a fresh-session rewrite around the engine seam. The rest of the suite — engine tests, session lifecycle, account resolution, queries, summary, TUI, JSONL, IPC handlers — continues to enforce behavior.
+
 ## [0.4.59] — 2026-05-25
 
 Documentation + lifecycle hardening release. The headline is a brainstormed design + phase-1 plan to replace the `@anthropic-ai/claude-agent-sdk` runtime with the `claude` CLI directly (and add OpenAI Codex CLI as a peer agent), but the shipping bits in this build are three session-lifecycle robustness fixes that close gaps multi-account work uncovered. No behavior changes to the SDK runtime itself yet — the engine swap lands in 0.4.60+.
