@@ -154,6 +154,29 @@ const migrations: Migration[] = [
       }
     },
   },
+  {
+    version: 9,
+    description:
+      'Add agent column to account_path_rules (forward-compat for Codex routing). ' +
+      'Defaults to "claude" so every existing rule keeps its current behavior.',
+    up: (db) => {
+      // Skip if the table hasn't been created yet — runMigrations tests
+      // bootstrap a minimal schema and rely on every migration being a no-op
+      // when its target table is missing.
+      const tableExists = db
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name='account_path_rules'"
+        )
+        .get();
+      if (!tableExists) return;
+      const cols = db.pragma('table_info(account_path_rules)') as { name: string }[];
+      if (!cols.some((c) => c.name === 'agent')) {
+        db.prepare(
+          "ALTER TABLE account_path_rules ADD COLUMN agent TEXT NOT NULL DEFAULT 'claude'"
+        ).run();
+      }
+    },
+  },
 ];
 
 /**

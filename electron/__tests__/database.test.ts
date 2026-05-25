@@ -58,6 +58,34 @@ describe('database', () => {
     expect(cols).toContain('claude_binary');
   });
 
+  it('account_path_rules has agent column defaulting to "claude"', () => {
+    const info = db.raw
+      .prepare('PRAGMA table_info(account_path_rules)')
+      .all() as { name: string }[];
+    const cols = info.map((c) => c.name);
+    expect(cols).toContain('agent');
+
+    db.raw
+      .prepare(
+        "INSERT INTO accounts (name, config_dir) VALUES ('a1', '/tmp/a1')"
+      )
+      .run();
+    const accountId = (
+      db.raw.prepare("SELECT id FROM accounts WHERE name = 'a1'").get() as {
+        id: number;
+      }
+    ).id;
+    db.raw
+      .prepare(
+        'INSERT INTO account_path_rules (account_id, path_prefix, priority) VALUES (?, ?, ?)'
+      )
+      .run(accountId, '/proj', 0);
+    const row = db.raw
+      .prepare('SELECT agent FROM account_path_rules WHERE account_id = ?')
+      .get(accountId) as { agent: string };
+    expect(row.agent).toBe('claude');
+  });
+
   it('getSetting and saveSetting work', () => {
     db.saveSetting('theme', 'dark');
     expect(db.getSetting('theme')).toBe('dark');
