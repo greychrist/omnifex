@@ -51,7 +51,10 @@ export function createClaudeCliEngine(
   let sessionId: string | null = null;
   const messageCallbacks: Array<(m: AgentMessage) => void> = [];
   const permissionCallbacks: Array<(r: AgentPermissionRequest) => void> = [];
+  const exitCallbacks: Array<(info: AgentEngineExit) => void> = [];
+  const errorCallbacks: Array<(err: Error) => void> = [];
   let lineBuf = '';
+  let stderrBuf = '';
 
   function emitMessage(line: string): void {
     const trimmed = line.trim();
@@ -125,6 +128,28 @@ export function createClaudeCliEngine(
     });
   }
 
+  function wireStderr(stderr: NodeJS.ReadableStream): void {
+    stderr.on('data', (chunk: Buffer | string) => {
+      stderrBuf += typeof chunk === 'string' ? chunk : chunk.toString('utf8');
+      let nl = stderrBuf.indexOf('\n');
+      while (nl !== -1) {
+        const line = stderrBuf.slice(0, nl).trim();
+        stderrBuf = stderrBuf.slice(nl + 1);
+        if (line) {
+          const err = new Error(line);
+          for (const cb of errorCallbacks) {
+            try {
+              cb(err);
+            } catch {
+              /* subscriber threw */
+            }
+          }
+        }
+        nl = stderrBuf.indexOf('\n');
+      }
+    });
+  }
+
   async function start(p: AgentStartParams): Promise<void> {
     sessionId = p.resumeSessionId ?? sessionId;
     const args = buildArgs(p);
@@ -133,6 +158,17 @@ export function createClaudeCliEngine(
       env: buildClaudeEnv(p.configDir),
     }) as ChildProcessWithoutNullStreams;
     wireStdout(child.stdout);
+    wireStderr(child.stderr);
+    child.on('exit', (code, signal) => {
+      const info: AgentEngineExit = { code: code ?? -1, signal };
+      for (const cb of exitCallbacks) {
+        try {
+          cb(info);
+        } catch {
+          /* subscriber threw */
+        }
+      }
+    });
   }
 
   async function send(text: string): Promise<void> {
@@ -235,11 +271,23 @@ export function createClaudeCliEngine(
       },
     };
   }
-  function onError(_cb: (err: Error) => void): Disposable {
-    return { dispose() {} };
+  function onError(cb: (err: Error) => void): Disposable {
+    errorCallbacks.push(cb);
+    return {
+      dispose() {
+        const i = errorCallbacks.indexOf(cb);
+        if (i !== -1) errorCallbacks.splice(i, 1);
+      },
+    };
   }
-  function onExit(_cb: (info: AgentEngineExit) => void): Disposable {
-    return { dispose() {} };
+  function onExit(cb: (info: AgentEngineExit) => void): Disposable {
+    exitCallbacks.push(cb);
+    return {
+      dispose() {
+        const i = exitCallbacks.indexOf(cb);
+        if (i !== -1) exitCallbacks.splice(i, 1);
+      },
+    };
   }
 
   return {

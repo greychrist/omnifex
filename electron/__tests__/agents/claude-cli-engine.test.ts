@@ -261,6 +261,65 @@ describe('ClaudeCliEngine permission protocol', () => {
   });
 });
 
+describe('ClaudeCliEngine lifecycle callbacks', () => {
+  async function flushMicrotasks(): Promise<void> {
+    await new Promise((r) => setImmediate(r));
+  }
+
+  it('onExit fires when child emits exit', async () => {
+    const fake = makeFakeChild();
+    mockedSpawn.mockReturnValue(fake as never);
+    const engine = createClaudeCliEngine({
+      tabId: 'tab-exit',
+      claudeBinaryPath: '/usr/local/bin/claude',
+    });
+    const exits: import('../../services/agents/types').AgentEngineExit[] = [];
+    engine.onExit((info) => exits.push(info));
+    await engine.start({ projectPath: '/p', configDir: '/c' });
+
+    fake.emit('exit', 0, null);
+    await flushMicrotasks();
+
+    expect(exits).toHaveLength(1);
+    expect(exits[0].code).toBe(0);
+    expect(exits[0].signal).toBeNull();
+  });
+
+  it('onError fires on stderr lines', async () => {
+    const fake = makeFakeChild();
+    mockedSpawn.mockReturnValue(fake as never);
+    const engine = createClaudeCliEngine({
+      tabId: 'tab-err',
+      claudeBinaryPath: '/usr/local/bin/claude',
+    });
+    const errs: Error[] = [];
+    engine.onError((e) => errs.push(e));
+    await engine.start({ projectPath: '/p', configDir: '/c' });
+
+    fake.stderr.push('connection refused\n');
+    await flushMicrotasks();
+
+    expect(errs).toHaveLength(1);
+    expect(errs[0].message).toContain('connection refused');
+  });
+
+  it('close() sends SIGTERM and is idempotent', async () => {
+    const fake = makeFakeChild();
+    mockedSpawn.mockReturnValue(fake as never);
+    const engine = createClaudeCliEngine({
+      tabId: 'tab-cls',
+      claudeBinaryPath: '/usr/local/bin/claude',
+    });
+    await engine.start({ projectPath: '/p', configDir: '/c' });
+
+    await engine.close();
+    await engine.close();
+
+    expect(fake.kill).toHaveBeenCalledTimes(1);
+    expect(fake.kill).toHaveBeenCalledWith('SIGTERM');
+  });
+});
+
 describe('ClaudeCliEngine.interrupt()', () => {
   it('writes a control_request:interrupt to stdin', async () => {
     const fake = makeFakeChild();
