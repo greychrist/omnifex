@@ -261,6 +261,143 @@ describe('ClaudeCliEngine permission protocol', () => {
   });
 });
 
+describe('ClaudeCliEngine.sendControlRequest', () => {
+  async function flushMicrotasks(): Promise<void> {
+    await new Promise((r) => setImmediate(r));
+  }
+
+  it('writes a control_request with auto-generated id and resolves on matching response', async () => {
+    const fake = makeFakeChild();
+    mockedSpawn.mockReturnValue(fake as never);
+    const engine = createClaudeCliEngine({
+      tabId: 'tab-ctrl',
+      claudeBinaryPath: '/usr/local/bin/claude',
+    });
+    await engine.start({ projectPath: '/p', configDir: '/c' });
+
+    const pending = engine.sendControlRequest<{ ok: true }>('set_model', { model: 'sonnet' });
+
+    expect(fake.stdin._writes).toHaveLength(1);
+    const sent = JSON.parse(fake.stdin._writes[0].trim());
+    expect(sent.type).toBe('control_request');
+    expect(typeof sent.request_id).toBe('string');
+    expect(sent.request_id.length).toBeGreaterThan(0);
+    expect(sent.request.subtype).toBe('set_model');
+    expect(sent.request.model).toBe('sonnet');
+
+    fake.stdout.push(
+      JSON.stringify({
+        type: 'control_response',
+        response: {
+          subtype: 'success',
+          request_id: sent.request_id,
+          response: { ok: true },
+        },
+      }) + '\n',
+    );
+    await flushMicrotasks();
+
+    await expect(pending).resolves.toEqual({ ok: true });
+  });
+
+  it('resolves concurrent in-flight requests to the right promises', async () => {
+    const fake = makeFakeChild();
+    mockedSpawn.mockReturnValue(fake as never);
+    const engine = createClaudeCliEngine({
+      tabId: 'tab-conc',
+      claudeBinaryPath: '/usr/local/bin/claude',
+    });
+    await engine.start({ projectPath: '/p', configDir: '/c' });
+
+    const a = engine.sendControlRequest<{ tag: 'A' }>('get_a');
+    const b = engine.sendControlRequest<{ tag: 'B' }>('get_b');
+
+    const sentA = JSON.parse(fake.stdin._writes[0].trim());
+    const sentB = JSON.parse(fake.stdin._writes[1].trim());
+
+    // Reply in reverse order.
+    fake.stdout.push(
+      JSON.stringify({
+        type: 'control_response',
+        response: {
+          subtype: 'success',
+          request_id: sentB.request_id,
+          response: { tag: 'B' },
+        },
+      }) + '\n',
+    );
+    fake.stdout.push(
+      JSON.stringify({
+        type: 'control_response',
+        response: {
+          subtype: 'success',
+          request_id: sentA.request_id,
+          response: { tag: 'A' },
+        },
+      }) + '\n',
+    );
+    await flushMicrotasks();
+
+    await expect(a).resolves.toEqual({ tag: 'A' });
+    await expect(b).resolves.toEqual({ tag: 'B' });
+  });
+
+  it('rejects when control_response.subtype is "error"', async () => {
+    const fake = makeFakeChild();
+    mockedSpawn.mockReturnValue(fake as never);
+    const engine = createClaudeCliEngine({
+      tabId: 'tab-err',
+      claudeBinaryPath: '/usr/local/bin/claude',
+    });
+    await engine.start({ projectPath: '/p', configDir: '/c' });
+
+    const pending = engine.sendControlRequest('mcp_status');
+    // Pre-subscribe so the rejection produced when we push the error response
+    // below isn't classified as "unhandled" — `expect().rejects` only attaches
+    // after the awaited microtask.
+    const assertion = expect(pending).rejects.toThrow(/boom/);
+
+    const sent = JSON.parse(fake.stdin._writes[0].trim());
+
+    fake.stdout.push(
+      JSON.stringify({
+        type: 'control_response',
+        response: {
+          subtype: 'error',
+          request_id: sent.request_id,
+          error: 'boom',
+        },
+      }) + '\n',
+    );
+    await flushMicrotasks();
+
+    await assertion;
+  });
+
+  it('resolves to undefined for void responses', async () => {
+    const fake = makeFakeChild();
+    mockedSpawn.mockReturnValue(fake as never);
+    const engine = createClaudeCliEngine({
+      tabId: 'tab-void',
+      claudeBinaryPath: '/usr/local/bin/claude',
+    });
+    await engine.start({ projectPath: '/p', configDir: '/c' });
+
+    const pending = engine.sendControlRequest('interrupt');
+    const sent = JSON.parse(fake.stdin._writes[0].trim());
+
+    fake.stdout.push(
+      JSON.stringify({
+        type: 'control_response',
+        response: { subtype: 'success', request_id: sent.request_id },
+      }) + '\n',
+    );
+    await flushMicrotasks();
+
+    await expect(pending).resolves.toBeUndefined();
+  });
+});
+
 describe('ClaudeCliEngine restart-on-stream-death', () => {
   async function flushMicrotasks(): Promise<void> {
     await new Promise((r) => setImmediate(r));
@@ -356,7 +493,11 @@ describe('ClaudeCliEngine lifecycle callbacks', () => {
 });
 
 describe('ClaudeCliEngine.interrupt()', () => {
-  it('writes a control_request:interrupt to stdin', async () => {
+  async function flushMicrotasks(): Promise<void> {
+    await new Promise((r) => setImmediate(r));
+  }
+
+  it('writes a control_request:interrupt to stdin and awaits the matching response', async () => {
     const fake = makeFakeChild();
     mockedSpawn.mockReturnValue(fake as never);
     const engine = createClaudeCliEngine({
@@ -365,14 +506,22 @@ describe('ClaudeCliEngine.interrupt()', () => {
     });
     await engine.start({ projectPath: '/p', configDir: '/c' });
 
-    await engine.interrupt();
+    const pending = engine.interrupt();
 
     expect(fake.stdin._writes).toHaveLength(1);
     const parsed = JSON.parse(fake.stdin._writes[0].trim());
     expect(parsed.type).toBe('control_request');
-    expect(parsed.subtype).toBe('interrupt');
+    expect(parsed.request.subtype).toBe('interrupt');
     expect(typeof parsed.request_id).toBe('string');
-    expect(parsed.request_id.length).toBeGreaterThan(0);
+
+    fake.stdout.push(
+      JSON.stringify({
+        type: 'control_response',
+        response: { subtype: 'success', request_id: parsed.request_id },
+      }) + '\n',
+    );
+    await flushMicrotasks();
+    await expect(pending).resolves.toBeUndefined();
   });
 });
 

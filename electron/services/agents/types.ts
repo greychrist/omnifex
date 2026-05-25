@@ -52,11 +52,39 @@ export interface AgentEngineExit {
   signal?: string | null;
 }
 
+/**
+ * Engine-cached payload from the session's first system:init message.
+ * `accountInfo` / `supportedCommands` / `supportedModels` / `supportedAgents`
+ * were SDK Query methods that read from this same cached payload; pulling them
+ * off the engine avoids a round-trip to the CLI for data we already have.
+ *
+ * Fields are intentionally `unknown` at the engine layer — the sessions
+ * service casts to the proper SDK shape at the call site. Keeping the engine
+ * agent-agnostic means it shouldn't import SDK types.
+ */
+export interface InitData {
+  account?: unknown;
+  commands?: unknown[];
+  models?: unknown[];
+  agents?: unknown[];
+}
+
 export interface AgentEngine {
   readonly kind: AgentKind;
 
   start(params: AgentStartParams): Promise<void>;
   send(text: string): Promise<void>;
+  /**
+   * Write a control_request to the CLI's stdin and await its matching
+   * control_response. Used for the imperative SDK Query surface (set_model,
+   * mcp_status, get_context_usage, …). Rejects when the CLI returns
+   * `control_response.subtype: 'error'` or when the engine is torn down
+   * with the request still pending.
+   */
+  sendControlRequest<T = unknown>(
+    subtype: string,
+    params?: Record<string, unknown>,
+  ): Promise<T>;
   respondPermission(
     requestId: string,
     decision: 'allow' | 'deny',
@@ -68,6 +96,9 @@ export interface AgentEngine {
 
   /** Resume id captured from the engine's session-start payload, if any. */
   getResumeId(): string | null;
+
+  /** Cached system:init payload fields, or null pre-init. */
+  getInitData(): InitData | null;
 
   onMessage(cb: (m: AgentMessage) => void): Disposable;
   onPermissionRequest(cb: (r: AgentPermissionRequest) => void): Disposable;

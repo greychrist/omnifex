@@ -7,6 +7,7 @@ import type {
   AgentPermissionRequest,
   AgentStartParams,
   Disposable,
+  InitData,
 } from './types';
 
 export interface CreateClaudeCliEngineParams {
@@ -49,10 +50,16 @@ export function createClaudeCliEngine(
 ): AgentEngine {
   let child: ChildProcessWithoutNullStreams | null = null;
   let sessionId: string | null = null;
+  let initData: InitData | null = null;
   const messageCallbacks: Array<(m: AgentMessage) => void> = [];
   const permissionCallbacks: Array<(r: AgentPermissionRequest) => void> = [];
   const exitCallbacks: Array<(info: AgentEngineExit) => void> = [];
   const errorCallbacks: Array<(err: Error) => void> = [];
+  const pendingControlRequests = new Map<
+    string,
+    { resolve: (v: unknown) => void; reject: (e: Error) => void }
+  >();
+  let nextRequestSeq = 1;
   let lineBuf = '';
   let stderrBuf = '';
 
@@ -73,7 +80,29 @@ export function createClaudeCliEngine(
       session_id?: string;
       request_id?: string;
       tool_name?: string;
+      response?: {
+        subtype?: string;
+        request_id?: string;
+        response?: unknown;
+        error?: string;
+      };
     };
+
+    // Match control_response back to the awaiting sendControlRequest promise.
+    // The SDK envelope is {type:'control_response', response:{subtype, request_id, response?, error?}}.
+    if (p?.type === 'control_response' && p?.response?.request_id) {
+      const id = p.response.request_id;
+      const entry = pendingControlRequests.get(id);
+      if (entry) {
+        pendingControlRequests.delete(id);
+        if (p.response.subtype === 'error') {
+          entry.reject(new Error(p.response.error ?? 'unknown control_response error'));
+        } else {
+          entry.resolve(p.response.response);
+        }
+      }
+      return;
+    }
 
     // Route permission requests to permission callbacks only; they don't
     // belong in the transcript stream — the renderer's UI prompt is the
@@ -229,17 +258,36 @@ export function createClaudeCliEngine(
     });
   }
 
-  async function interrupt(): Promise<void> {
-    if (!child || !child.stdin.writable) return;
-    const requestId = `int-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const obj = { type: 'control_request', subtype: 'interrupt', request_id: requestId };
-    const line = JSON.stringify(obj) + '\n';
-    await new Promise<void>((resolve, reject) => {
+  function sendControlRequest<T = unknown>(
+    subtype: string,
+    params?: Record<string, unknown>,
+  ): Promise<T> {
+    if (!child || !child.stdin.writable) {
+      return Promise.reject(new Error('ClaudeCliEngine.sendControlRequest: child not running'));
+    }
+    const requestId = `req-${nextRequestSeq++}-${Date.now().toString(36)}`;
+    const envelope = {
+      type: 'control_request',
+      request_id: requestId,
+      request: { subtype, ...(params ?? {}) },
+    };
+    const line = JSON.stringify(envelope) + '\n';
+    return new Promise<T>((resolve, reject) => {
+      pendingControlRequests.set(requestId, {
+        resolve: resolve as (v: unknown) => void,
+        reject,
+      });
       child!.stdin.write(line, (err) => {
-        if (err) reject(err);
-        else resolve();
+        if (err) {
+          pendingControlRequests.delete(requestId);
+          reject(err);
+        }
       });
     });
+  }
+
+  async function interrupt(): Promise<void> {
+    await sendControlRequest('interrupt');
   }
 
   async function close(): Promise<void> {
@@ -266,6 +314,10 @@ export function createClaudeCliEngine(
 
   function getResumeId(): string | null {
     return sessionId;
+  }
+
+  function getInitData(): InitData | null {
+    return initData;
   }
 
   function onMessage(cb: (m: AgentMessage) => void): Disposable {
@@ -309,11 +361,13 @@ export function createClaudeCliEngine(
     kind: 'claude',
     start,
     send,
+    sendControlRequest,
     respondPermission,
     interrupt,
     close,
     kill,
     getResumeId,
+    getInitData,
     onMessage,
     onPermissionRequest,
     onError,
