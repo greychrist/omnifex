@@ -74,7 +74,6 @@ import { createUpdaterService } from './services/updater';
 import { createInstallerService } from './services/installer';
 import { createTabStatusService, type TabStatusSummary } from './services/tab-status';
 import { migrateUserData } from './services/userdata-migration';
-import { createSdkVersionService } from './services/sdk-version';
 import { createSessionGitWatcher, listWorktrees } from './services/git-watcher';
 import { createBranchColorsService } from './services/branch-colors';
 import { listBranches as listGitBranches } from './services/git-branches';
@@ -85,8 +84,6 @@ import { classifyNavigation } from './navigation-policy';
 
 declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string | undefined;
 declare const MAIN_WINDOW_VITE_NAME: string;
-// Baked in at build time by vite.main.config.ts — see resolveReferencedSdkVersion.
-declare const __GREYCHRIST_REFERENCED_SDK_VERSION__: string;
 
 const windows = new Set<BrowserWindow>();
 const router = createWindowRouter();
@@ -652,48 +649,6 @@ app.whenReady().then(() => {
   });
   sessionsSummaryServiceRef = sessionsSummaryService;
   const modelsService = createModelsService();
-  const sdkVersionService = createSdkVersionService({
-    readSdkPackageJson: async () => {
-      // Prefer the value baked in at build time — it's the exact version
-      // Vite resolved when bundling main.js, and it's the only source that
-      // works in the packaged app (where node_modules is tree-shaken away).
-      if (typeof __GREYCHRIST_REFERENCED_SDK_VERSION__ === 'string'
-          && __GREYCHRIST_REFERENCED_SDK_VERSION__.length > 0) {
-        return { version: __GREYCHRIST_REFERENCED_SDK_VERSION__ };
-      }
-      // Dev fallback: read the installed package.json directly if the
-      // build-time constant wasn't defined for some reason (e.g. running
-      // main.ts outside of Vite).
-      try {
-        const sdkPkgPath = path.join(
-          app.getAppPath(),
-          'node_modules',
-          '@anthropic-ai',
-          'claude-agent-sdk',
-          'package.json',
-        );
-        const raw = await fs.promises.readFile(sdkPkgPath, 'utf8');
-        return JSON.parse(raw) as { version?: string };
-      } catch {
-        return null;
-      }
-    },
-    fetchLatestVersion: async () => {
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 10_000);
-      try {
-        const res = await fetch(
-          'https://registry.npmjs.org/@anthropic-ai/claude-agent-sdk/latest',
-          { signal: ctrl.signal },
-        );
-        if (!res.ok) return '';
-        const body = (await res.json()) as { version?: string };
-        return body?.version ?? '';
-      } finally {
-        clearTimeout(timer);
-      }
-    },
-  });
   const sessionGitWatcher = _gitWatcherService = createSessionGitWatcher({
     sendToRenderer,
   });
@@ -902,10 +857,6 @@ app.whenReady().then(() => {
     // Models adapter — standalone model catalog lookup (no active session)
     models: {
       listSupported: (configDir: string) => modelsService.listSupported(configDir),
-    },
-    sdkVersion: {
-      getReferenced: () => sdkVersionService.getReferenced(),
-      getLatest: () => sdkVersionService.getLatest(),
     },
     gitWatcher: {
       listWorktrees: (projectPath: string) => listWorktrees(projectPath),

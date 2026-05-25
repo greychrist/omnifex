@@ -33,7 +33,7 @@ export type EffortLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 export const EFFORT_LEVELS: { id: EffortLevel; name: string; description: string; shortName: string; color: string }[] = [
   { id: 'low', name: 'Low', description: 'Minimal thinking, fastest responses', shortName: 'Lo', color: 'text-blue-600' },
   { id: 'medium', name: 'Medium', description: 'Moderate thinking', shortName: 'Med', color: 'text-green-600' },
-  { id: 'high', name: 'High', description: 'Deep reasoning (SDK default)', shortName: 'Hi', color: 'text-yellow-600' },
+  { id: 'high', name: 'High', description: 'Deep reasoning (CLI default)', shortName: 'Hi', color: 'text-yellow-600' },
   { id: 'xhigh', name: 'Extra High', description: 'Deeper than high (Opus 4.7 only; falls back to High elsewhere)', shortName: 'Xhi', color: 'text-orange-600' },
   { id: 'max', name: 'Max', description: 'Maximum effort (Opus 4.6/4.7 only)', shortName: 'Max', color: 'text-red-600' },
 ];

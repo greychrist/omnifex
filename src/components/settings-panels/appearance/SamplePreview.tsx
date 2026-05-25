@@ -87,7 +87,7 @@ export const SamplePreview: React.FC<SamplePreviewProps> = ({
       {config.debug.showCardKindLabel && (
         <div
           className="absolute bottom-1 left-2 px-1.5 py-0.5 rounded-md border bg-background text-[10px] text-foreground/80 font-mono pointer-events-none select-none"
-          title="SDK message type · subtype (debug overlay)"
+          title="message type · subtype (debug overlay)"
         >
           {debugLabelForKind(kind)}
         </div>

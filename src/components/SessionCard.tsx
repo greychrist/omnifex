@@ -269,7 +269,7 @@ export function SessionCard({
                   </>
                 ) : (
                   <div className="text-xs text-muted-foreground italic">
-                    Category breakdown not yet available — waiting for the SDK
+                    Category breakdown not yet available — waiting for the CLI
                     to report per-category usage.
                   </div>
                 )}

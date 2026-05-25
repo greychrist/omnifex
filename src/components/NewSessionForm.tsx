@@ -341,7 +341,7 @@ export const NewSessionForm: React.FC<NewSessionFormProps> = ({
           className="rounded border-input"
         />
         <label htmlFor="start-in-terminal" className="cursor-pointer text-muted-foreground">
-          Start in Terminal mode (uses local Claude CLI, no SDK budget)
+          Start in Terminal mode (PTY-driven session)
         </label>
       </div>
 

@@ -30,7 +30,7 @@ export type LogLevel = (typeof LOG_LEVELS)[number];
 export const LOG_SOURCE_DISPLAY: Record<LogSource, { label: string; chipClass: string }> = {
   frontend: { label: 'Frontend', chipClass: 'bg-sky-500/20 text-sky-300' },
   backend: { label: 'Backend', chipClass: 'bg-slate-500/20 text-slate-300' },
-  'claude-sdk': { label: 'Claude SDK', chipClass: 'bg-amber-500/20 text-amber-300' },
+  'claude-sdk': { label: 'Claude CLI', chipClass: 'bg-amber-500/20 text-amber-300' },
   'claude-hooks': { label: 'Claude Hooks', chipClass: 'bg-emerald-500/20 text-emerald-300' },
   usage: { label: 'Usage', chipClass: 'bg-purple-500/20 text-purple-300' },
   'usage-runner': { label: 'Usage Runner', chipClass: 'bg-violet-500/20 text-violet-300' },

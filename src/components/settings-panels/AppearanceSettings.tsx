@@ -397,12 +397,12 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
           />
         </div>
 
-        {/* SDK-overlay filters */}
+        {/* Live-stream overlay filters */}
         <div className="space-y-3 pt-4 border-t border-border">
           <div>
-            <Label>Live overlay filters <span className="text-muted-foreground text-xs">(SDK mode only)</span></Label>
+            <Label>Live overlay filters <span className="text-muted-foreground text-xs">(Chat mode only)</span></Label>
             <p className="text-caption text-muted-foreground mt-1">
-              Apply to live-only event streams from the SDK iterator. No effect in Terminal mode.
+              Apply to live-only event streams from the Claude CLI. No effect in Terminal mode.
             </p>
           </div>
           <FilterRow
@@ -441,7 +441,7 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
           </div>
           <FilterRow
             label="Show message kind label on cards"
-            description="Render the raw SDK message type (e.g. result · success, assistant) on the bottom-left of each card. Useful when a card looks mis-classified."
+            description="Render the raw message type (e.g. result · success, assistant) on the bottom-left of each card. Useful when a card looks mis-classified."
             checked={config.debug.showCardKindLabel}
             onChange={(v) => { setDebugOption("showCardKindLabel", v); }}
           />

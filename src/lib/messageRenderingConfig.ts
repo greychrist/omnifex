@@ -245,11 +245,11 @@ export const DEFAULT_KINDS: MessageKindConfig[] = [
   },
   {
     id: "user.sdkSystemBracket",
-    label: "SDK system message",
-    description: "Short bracketed SDK notices like [Request interrupted].",
+    label: "CLI system message",
+    description: "Short bracketed CLI notices like [Request interrupted].",
     origin: "system",
     icon: "ℹ",
-    headerLabel: "SDK System Message",
+    headerLabel: "CLI System Message",
     accentColor: "info",
     alignment: "full",
     hiddenInCompact: true,
@@ -271,7 +271,7 @@ export const DEFAULT_KINDS: MessageKindConfig[] = [
   {
     id: "user.skillInjection",
     label: "Skill injection",
-    description: "User-role message injected by the SDK after a Skill tool runs (the SKILL.md body).",
+    description: "User-role message injected by the CLI after a Skill tool runs (the SKILL.md body).",
     origin: "system",
     icon: "Sparkles",
     // Headerless — the renderer shows a dynamic "Skill: {skillName}" line
@@ -393,8 +393,8 @@ export const DEFAULT_KINDS: MessageKindConfig[] = [
     label: "Code execution result",
     description:
       "Result of an Anthropic-hosted server-side tool — bash_code_execution_tool_result or " +
-      "text_editor_code_execution_tool_result. Currently not surfaced through the Agent SDK CLI; " +
-      "registered defensively so future SDK versions don't fall through to the unknown widget.",
+      "text_editor_code_execution_tool_result. Currently not surfaced through the Claude CLI; " +
+      "registered defensively so future CLI versions don't fall through to the unknown widget.",
     origin: "tool",
     icon: "Terminal",
     headerLabel: "Code Execution",
@@ -485,7 +485,7 @@ export const DEFAULT_KINDS: MessageKindConfig[] = [
   {
     id: "system.notification.stop",
     label: "Stop notification",
-    description: "User-initiated or SDK stop signals.",
+    description: "User-initiated or CLI stop signals.",
     origin: "system",
     icon: "CircleStop",
     headerLabel: null,
@@ -497,7 +497,7 @@ export const DEFAULT_KINDS: MessageKindConfig[] = [
   {
     id: "system.notification.warn",
     label: "Warning notification",
-    description: "Non-fatal SDK warnings.",
+    description: "Non-fatal CLI warnings.",
     origin: "system",
     icon: "⚠",
     headerLabel: null,
@@ -509,7 +509,7 @@ export const DEFAULT_KINDS: MessageKindConfig[] = [
   {
     id: "system.notification.info",
     label: "Info notification",
-    description: "Informational SDK notices.",
+    description: "Informational CLI notices.",
     origin: "system",
     icon: "none",
     headerLabel: null,
@@ -521,7 +521,7 @@ export const DEFAULT_KINDS: MessageKindConfig[] = [
   {
     id: "system.hook.started",
     label: "Hook started",
-    description: "SDK lifecycle event fired when a configured hook begins.",
+    description: "CLI lifecycle event fired when a configured hook begins.",
     origin: "system",
     icon: "Plug",
     headerLabel: null,
@@ -533,7 +533,7 @@ export const DEFAULT_KINDS: MessageKindConfig[] = [
   {
     id: "system.hook.response",
     label: "Hook response",
-    description: "SDK lifecycle event reporting a hook's exit code and output.",
+    description: "CLI lifecycle event reporting a hook's exit code and output.",
     origin: "system",
     icon: "Plug",
     headerLabel: null,
@@ -545,7 +545,7 @@ export const DEFAULT_KINDS: MessageKindConfig[] = [
   {
     id: "system.userPromptSubmit",
     label: "User-prompt-submit lifecycle",
-    description: "SDK lifecycle event emitted when a user prompt is accepted, before any UserPromptSubmit hook runs.",
+    description: "CLI lifecycle event emitted when a user prompt is accepted, before any UserPromptSubmit hook runs.",
     origin: "system",
     icon: "Send",
     headerLabel: null,
@@ -732,7 +732,7 @@ export interface HardFilters {
   dropEmptyUser: boolean;            // user with empty or tool_result-only content
   dropClosureCarriers: boolean;      // queue-operation, queued_command attachments
   dropSystemInformational: boolean;  // system/away_summary, system/local_command, system/informational
-  // Live overlay filters — apply to SDK iterator overlay channels (SDK mode only)
+  // Live overlay filters — apply to CLI overlay channels (Chat mode only)
   hidePartialStreaming: boolean;     // stream_event (typewriter effect)
   hideSubagentLifecycle: boolean;    // task_started/updated/progress (SubagentBar)
   hideHookLifecycle: boolean;        // hook_started/progress/response
@@ -754,7 +754,7 @@ export const DEFAULT_HARD_FILTERS: HardFilters = {
 // ─── debug ──────────────────────────────────────────────────────────────────
 
 export interface DebugOptions {
-  /** When true, every message card renders its raw SDK type (and subtype if
+  /** When true, every message card renders its raw message type (and subtype if
    *  present) on the bottom-left, so mis-classified cards are obvious. */
   showCardKindLabel: boolean;
 }

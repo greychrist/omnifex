@@ -161,10 +161,6 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   'list_directory_contents',
   'search_files',
 
-  // SDK version
-  'get_referenced_sdk_version',
-  'get_latest_sdk_version',
-
   // Proxy
   'get_proxy_settings',
   'save_proxy_settings',

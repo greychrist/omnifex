@@ -1656,22 +1656,6 @@ export const api = {
     await apiCall("lima_stop_container", { vmName, containerId });
   },
 
-  /**
-   * The SDK version the current build is compiled against (installed in
-   * node_modules). Returns null if it cannot be resolved.
-   */
-  async getReferencedSdkVersion(): Promise<string | null> {
-    return apiCall("get_referenced_sdk_version");
-  },
-
-  /**
-   * The latest published SDK version on the npm registry. Returns null on
-   * network failure or parse error.
-   */
-  async getLatestSdkVersion(): Promise<string | null> {
-    return apiCall("get_latest_sdk_version");
-  },
-
   // Storage API methods
 
   /**

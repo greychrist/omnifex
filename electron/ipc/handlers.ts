@@ -156,10 +156,6 @@ export interface Services {
   models?: {
     listSupported(configDir: string): unknown;
   };
-  sdkVersion?: {
-    getReferenced(): Promise<string | null>;
-    getLatest(): Promise<string | null>;
-  };
   gitWatcher?: {
     listWorktrees(projectPath: string): Promise<{ path: string; branch: string | null }[]>;
     startSession(projectPath: string): Promise<{
@@ -251,7 +247,7 @@ function wrapWith<P>(fn: (params: P) => unknown): HandlerFn {
  * renderer gets a defined (but empty) response rather than a blocked channel.
  */
 export function getHandlerMap(services: Services = {}): Record<string, HandlerFn> {
-  const { accounts, claude, sessions, usage, rateLimits, usageRunner, claudeBinary, mcp, slashCommands, sessionsSummary, logging, database, proxy, permissionsIO, models, sdkVersion, gitWatcher, branchColors, gitBranches, lima, filesystem, notificationSounds } = services;
+  const { accounts, claude, sessions, usage, rateLimits, usageRunner, claudeBinary, mcp, slashCommands, sessionsSummary, logging, database, proxy, permissionsIO, models, gitWatcher, branchColors, gitBranches, lima, filesystem, notificationSounds } = services;
 
   const map: Record<string, HandlerFn> = {
     // ── Accounts ──────────────────────────────────────────────────────────────
@@ -610,10 +606,6 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     // ── Proxy ─────────────────────────────────────────────────────────────────
     get_proxy_settings: wrap(() => proxy?.getSettings() ?? null),
     save_proxy_settings: wrapWith((p: Record<string, unknown>) => proxy?.saveSettings(p) ?? null),
-
-    // ── SDK version ──────────────────────────────────────────────────────────
-    get_referenced_sdk_version: wrap(() => sdkVersion?.getReferenced() ?? null),
-    get_latest_sdk_version: wrap(() => sdkVersion?.getLatest() ?? null),
 
     // ── Git watcher ──────────────────────────────────────────────────────────
     list_git_worktrees: wrapWith(async (p: Record<string, unknown>) => {

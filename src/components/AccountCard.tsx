@@ -102,7 +102,7 @@ export function AccountCard({
                     ) : (
                       <ShieldCheck className="w-3 h-3 text-green-400" />
                     )}
-                    SDK-reported account
+                    CLI-reported account
                   </div>
                   <div className="flex flex-col gap-1 text-xs">
                     {sdkAccount.email && (

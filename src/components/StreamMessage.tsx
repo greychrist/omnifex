@@ -297,7 +297,7 @@ const CardTimestamp: React.FC<{
       {kindLabel && (
         <div
           className="absolute bottom-1 left-2 flex items-center gap-1.5 px-1.5 py-0.5 rounded-md border bg-background text-[10px] text-foreground/80 font-mono select-none"
-          title="SDK message type · subtype"
+          title="message type · subtype"
         >
           <span className="pointer-events-none">{kindLabel}</span>
           {message && (

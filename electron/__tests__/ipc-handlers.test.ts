@@ -100,7 +100,6 @@ function buildMockServices() {
     logging: mockService(['writeBatch', 'query'] as const),
     proxy: mockService(['getSettings', 'saveSettings'] as const),
     permissionsIO: createPermissionsIOService(),
-    sdkVersion: mockService(['getReferenced', 'getLatest'] as const),
     gitWatcher: mockService(['startSession', 'stopSession', 'reconnectSession', 'listWorktrees'] as const),
   };
 }
@@ -206,9 +205,6 @@ describe('ipc handlers — structure', () => {
       'start_session_git_watch',
       'stop_session_git_watch',
       'reconnect_session_git_watch',
-      // SDK version
-      'get_referenced_sdk_version',
-      'get_latest_sdk_version',
     ];
 
     for (const channel of required) {
@@ -714,22 +710,6 @@ describe('ipc handlers — dispatch to services', () => {
 
     expect(services.proxy.getSettings).toHaveBeenCalledTimes(1);
     expect(services.proxy.saveSettings).toHaveBeenCalledWith({ enabled: true });
-  });
-
-  // ── SDK version ─────────────────────────────────────────────────────────
-
-  it('get_referenced_sdk_version routes through the service', async () => {
-    services.sdkVersion.getReferenced.mockResolvedValueOnce('1.2.3');
-    const result = await invoke(handlers, 'get_referenced_sdk_version');
-    expect(result).toBe('1.2.3');
-    expect(services.sdkVersion.getReferenced).toHaveBeenCalledTimes(1);
-  });
-
-  it('get_latest_sdk_version routes through the service', async () => {
-    services.sdkVersion.getLatest.mockResolvedValueOnce('2.0.0');
-    const result = await invoke(handlers, 'get_latest_sdk_version');
-    expect(result).toBe('2.0.0');
-    expect(services.sdkVersion.getLatest).toHaveBeenCalledTimes(1);
   });
 
   // ── Git watcher ─────────────────────────────────────────────────────────

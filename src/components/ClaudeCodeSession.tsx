@@ -1302,7 +1302,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           setMessages(loaded);
         })
         .catch((err: unknown) => {
-          console.error('Failed to reload history on TUI->SDK:', err);
+          console.error('Failed to reload history on TUI->Chat:', err);
         });
     };
   }, [claudeSessionId, extractedSessionInfo, projectPath, setMessages]);

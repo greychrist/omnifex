@@ -101,7 +101,7 @@ export const RateLimitsSettings: React.FC<SettingsPanelProps> = ({ setToast }) =
       <div>
         <h3 className="text-heading-4 mb-1">Rate-limit notifications</h3>
         <p className="text-caption text-muted-foreground">
-          OmniFex captures Anthropic's rate-limit signals from the Agent SDK as your sessions
+          OmniFex captures Anthropic's rate-limit signals from the Claude CLI as your sessions
           stream. Use these settings to control when you're notified about your 5-hour and 7-day
           windows.
         </p>
@@ -177,7 +177,7 @@ export const RateLimitsSettings: React.FC<SettingsPanelProps> = ({ setToast }) =
 
       <div className="border-t border-border/50 pt-4">
         <p className="text-caption text-muted-foreground">
-          Whenever Anthropic's SDK reports an{' '}
+          Whenever the Claude CLI reports an{' '}
           <code className="font-mono">allowed_warning</code> or{' '}
           <code className="font-mono">rejected</code> status, you'll get a notification regardless
           of these thresholds — those are authoritative signals from the API.
