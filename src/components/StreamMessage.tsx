@@ -1512,13 +1512,13 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                   </div>
                 )}
 
-                {/* SDKResultError carries `errors: string[]` (plural). The
-                    pre-SDK-anchored shape exposed a legacy `error` field that
-                    never matched the SDK wire — drop the lookup and join the
-                    typed array instead. */}
-                {message.subtype !== 'success' && message.errors?.length ? (
-                  <div className="text-sm text-destructive">{message.errors.join('\n')}</div>
-                ) : null}
+                {/* SDKResultErrorMessage carries `errors: string[]` (plural). */}
+                {message.subtype !== 'success' && (() => {
+                  const err = message as import('@/types/claudeStream').SDKResultErrorMessage;
+                  return err.errors?.length
+                    ? <div className="text-sm text-destructive">{err.errors.join('\n')}</div>
+                    : null;
+                })()}
 
                 <hr className="border-t border-border/50 my-2" />
                 <div className="text-xs text-muted-foreground space-y-1">
@@ -1531,10 +1531,10 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                   {message.num_turns !== undefined && (
                     <div>Turns: {message.num_turns}</div>
                   )}
-                  {message.usage && (
+                  {message.usage && (message.usage.input_tokens !== undefined || message.usage.output_tokens !== undefined) && (
                     <div>
-                      Total tokens: {message.usage.input_tokens + message.usage.output_tokens} 
-                      ({message.usage.input_tokens} in, {message.usage.output_tokens} out)
+                      Total tokens: {(message.usage.input_tokens ?? 0) + (message.usage.output_tokens ?? 0)}
+                      {' '}({message.usage.input_tokens ?? 0} in, {message.usage.output_tokens ?? 0} out)
                     </div>
                   )}
                 </div>

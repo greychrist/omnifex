@@ -24,17 +24,75 @@
  * widgets read. Swap to the SDK type if a future release adds them.
  */
 
-import type {
-  AgentInput,
-  BashInput,
-  FileEditInput,
-  FileReadInput,
-  FileWriteInput,
-  GlobInput,
-  GrepInput,
-  WebFetchInput,
-  WebSearchInput,
-} from '@anthropic-ai/claude-agent-sdk/sdk-tools';
+// Tool input shapes formerly imported from
+// `@anthropic-ai/claude-agent-sdk/sdk-tools`. After the SDK was removed
+// (Phase A) they live here as plain interfaces. Field sets match what
+// the widgets in `StreamMessage.tsx` and `PermissionCard.tsx` read.
+
+export interface AgentInput {
+  description: string;
+  prompt: string;
+  subagent_type?: string;
+}
+
+export interface BashInput {
+  command: string;
+  description?: string;
+  run_in_background?: boolean;
+  timeout?: number;
+}
+
+export interface FileEditInput {
+  file_path: string;
+  old_string: string;
+  new_string: string;
+  replace_all?: boolean;
+}
+
+export interface FileReadInput {
+  file_path: string;
+  offset?: number;
+  limit?: number;
+  pages?: string;
+}
+
+export interface FileWriteInput {
+  file_path: string;
+  content: string;
+}
+
+export interface GlobInput {
+  pattern: string;
+  path?: string;
+}
+
+export interface GrepInput {
+  pattern: string;
+  path?: string;
+  glob?: string;
+  type?: string;
+  output_mode?: 'content' | 'files_with_matches' | 'count';
+  '-A'?: number;
+  '-B'?: number;
+  '-C'?: number;
+  '-i'?: boolean;
+  '-n'?: boolean;
+  '-o'?: boolean;
+  context?: number;
+  head_limit?: number;
+  multiline?: boolean;
+}
+
+export interface WebFetchInput {
+  url: string;
+  prompt: string;
+}
+
+export interface WebSearchInput {
+  query: string;
+  allowed_domains?: string[];
+  blocked_domains?: string[];
+}
 
 /**
  * Grep's SDK shape no longer models `include` / `exclude` — those were

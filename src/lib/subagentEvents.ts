@@ -21,15 +21,50 @@
  * post-pass inference rule to produce the legacy `Subagent[]` shape.
  */
 
-import type {
-  SDKTaskNotificationMessage,
-  SDKTaskProgressMessage,
-  SDKTaskStartedMessage,
-  SDKTaskUpdatedMessage,
-} from '@anthropic-ai/claude-agent-sdk';
 import type { ClaudeStreamMessage, MessageContentBlock } from '@/types/claudeStream';
 
-/** Type predicate covering every SDK task_* lifecycle subtype the renderer cares about. */
+/**
+ * Per-variant shapes formerly imported from the SDK. The wire payloads
+ * come from the CLI directly now (via `system+task_*` messages on the
+ * claude-output channel); the field sets here mirror what the CLI emits.
+ */
+interface SDKTaskStartedMessage {
+  type: 'system';
+  subtype: 'task_started';
+  task_id?: string;
+  tool_use_id?: string;
+  description?: string;
+  [k: string]: unknown;
+}
+interface SDKTaskProgressMessage {
+  type: 'system';
+  subtype: 'task_progress';
+  task_id?: string;
+  tool_use_id?: string;
+  description?: string;
+  last_tool_name?: string;
+  usage: { total_tokens?: number; tool_uses?: number; duration_ms?: number };
+  [k: string]: unknown;
+}
+interface SDKTaskNotificationMessage {
+  type: 'system';
+  subtype: 'task_notification';
+  task_id?: string;
+  tool_use_id?: string;
+  status?: 'completed' | 'failed' | 'stopped' | string;
+  summary?: string;
+  usage?: { total_tokens?: number; tool_uses?: number; duration_ms?: number };
+  [k: string]: unknown;
+}
+interface SDKTaskUpdatedMessage {
+  type: 'system';
+  subtype: 'task_updated';
+  task_id?: string;
+  patch?: Record<string, unknown>;
+  [k: string]: unknown;
+}
+
+/** Type predicate covering every task_* lifecycle subtype the renderer cares about. */
 type TaskLifecycleMessage =
   | SDKTaskStartedMessage
   | SDKTaskProgressMessage
@@ -272,12 +307,12 @@ export function messagesToEvents(messages: ClaudeStreamMessage[]): SubagentEvent
       const id = m.tool_use_id;
       if (!id) continue;
       if (m.subtype === 'task_started') {
-        events.push({ kind: 'Started', toolUseId: id, taskId: m.task_id, description: m.description });
+        events.push({ kind: 'Started', toolUseId: id, taskId: m.task_id ?? '', description: m.description ?? '' });
       } else if (m.subtype === 'task_progress') {
         events.push({
           kind: 'Progress',
           toolUseId: id,
-          description: m.description,
+          description: m.description ?? '',
           lastToolName: m.last_tool_name,
           totalTokens: m.usage.total_tokens,
           toolUses: m.usage.tool_uses,

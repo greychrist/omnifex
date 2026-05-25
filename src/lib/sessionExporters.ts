@@ -22,11 +22,15 @@ export async function exportAsMarkdown(
 
   for (const msg of messages) {
     if (msg.type === "system" && msg.subtype === "init") {
+      // Cast to escape the type-system limitation: TS doesn't narrow the
+      // discriminated union past `type+subtype` cleanly when the union has
+      // 4+ system variants and one has a branded-string subtype.
+      const init = msg as import('@/types/claudeStream').SDKSystemInitMessage;
       markdown += `## System Initialization\n\n`;
-      markdown += `- Session ID: \`${msg.session_id || "N/A"}\`\n`;
-      markdown += `- Model: \`${msg.model || "default"}\`\n`;
-      if (msg.cwd) markdown += `- Working Directory: \`${msg.cwd}\`\n`;
-      if (msg.tools?.length) markdown += `- Tools: ${msg.tools.join(", ")}\n`;
+      markdown += `- Session ID: \`${init.session_id || "N/A"}\`\n`;
+      markdown += `- Model: \`${init.model || "default"}\`\n`;
+      if (init.cwd) markdown += `- Working Directory: \`${init.cwd}\`\n`;
+      if (init.tools?.length) markdown += `- Tools: ${init.tools.join(", ")}\n`;
       markdown += `\n`;
     } else if (msg.type === "assistant" && msg.message) {
       markdown += `## Assistant\n\n`;
@@ -75,9 +79,12 @@ export async function exportAsMarkdown(
       if (msg.subtype === 'success' && msg.result) {
         markdown += `${msg.result}\n\n`;
       }
-      // SDKResultError carries `errors: string[]` (the SDK's plural form).
-      if (msg.subtype !== 'success' && msg.errors?.length) {
-        markdown += `**Error:** ${msg.errors.join('\n')}\n\n`;
+      // SDKResultError carries `errors: string[]` (the CLI's plural form).
+      if (msg.subtype !== 'success') {
+        const err = msg as import('@/types/claudeStream').SDKResultErrorMessage;
+        if (err.errors?.length) {
+          markdown += `**Error:** ${err.errors.join('\n')}\n\n`;
+        }
       }
     }
   }

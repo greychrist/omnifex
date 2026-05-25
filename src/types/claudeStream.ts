@@ -29,15 +29,197 @@
  * smallest change that lets the compiler narrow correctly throughout.
  */
 
-import type {
-  SDKAssistantMessage,
-  SDKMessage,
-  SDKNotificationMessage,
-  SDKResultMessage,
-  SDKUserMessage,
-  SDKUserMessageReplay,
-} from '@anthropic-ai/claude-agent-sdk';
 import type { PermissionSuggestion } from '../lib/types/permissionRequest';
+
+// ---------------------------------------------------------------------------
+// On-wire message shapes
+// ---------------------------------------------------------------------------
+//
+// These mirror what the `claude` CLI emits over its stream-json output
+// channel. Used to be re-exports from `@anthropic-ai/claude-agent-sdk`;
+// after the SDK was removed (Phase A) they live here as plain interfaces.
+// The fields are intentionally permissive (`message: unknown`, top-level
+// passthrough via index signature) because the renderer's only narrowing
+// need is on the top-level `type` discriminator.
+
+/**
+ * Anthropic message-usage block as the CLI emits it on assistant /
+ * result messages. Field set matches `BetaUsage` from the upstream SDK,
+ * with everything optional because partial streams emit a partial usage
+ * object early in the turn.
+ */
+export interface AnthropicMessageUsage {
+  input_tokens?: number;
+  output_tokens?: number;
+  cache_creation_input_tokens?: number;
+  cache_read_input_tokens?: number;
+  cache_creation?: { ephemeral_5m_input_tokens?: number; ephemeral_1h_input_tokens?: number };
+  server_tool_use?: Record<string, unknown>;
+  service_tier?: string;
+}
+
+export interface SDKAssistantMessage {
+  type: 'assistant';
+  message: {
+    id?: string;
+    role?: 'assistant';
+    content?: MessageContentBlock[];
+    model?: string;
+    stop_reason?: string | null;
+    stop_sequence?: string | null;
+    usage?: AnthropicMessageUsage;
+  };
+  parent_tool_use_id?: string | null;
+  session_id?: string;
+  uuid?: string;
+}
+
+export interface SDKUserMessage {
+  type: 'user';
+  message: { role: 'user'; content: MessageContentBlock[] | string };
+  parent_tool_use_id: string | null;
+  session_id?: string;
+  uuid?: string;
+}
+
+/** JSONL-replay variant — same wire shape as `SDKUserMessage`. */
+export type SDKUserMessageReplay = SDKUserMessage;
+
+/**
+ * Fields shared by all `type: 'result'` variants regardless of subtype.
+ */
+interface SDKResultBase {
+  type: 'result';
+  duration_ms?: number;
+  duration_api_ms?: number;
+  is_error?: boolean;
+  num_turns?: number;
+  session_id?: string;
+  total_cost_usd?: number;
+  usage?: AnthropicMessageUsage;
+  permission_denials?: unknown[];
+}
+
+/** Successful turn result. Carries the assistant's final `result` text. */
+export interface SDKResultMessage extends SDKResultBase {
+  subtype: 'success';
+  result?: string;
+}
+
+/**
+ * SDK's REPL-internal notification queue shape. OmniFex's own
+ * `SystemNotificationMessage` (below) occupies the same `system+notification`
+ * discriminator with a different shape; this SDK variant is never currently
+ * emitted to the renderer but is kept declared so the union below can
+ * exclude it cleanly.
+ */
+export interface SDKNotificationMessage {
+  type: 'system';
+  subtype: 'notification';
+  key?: string;
+  text?: string;
+  priority?: 'info' | 'warn' | 'error';
+}
+
+/**
+ * `system+init` carries the session bootstrap snapshot. Fields below cover
+ * what the renderer reads; `[k: string]: unknown` keeps it permissive for
+ * upstream additions.
+ */
+export interface SDKSystemInitMessage {
+  type: 'system';
+  subtype: 'init';
+  session_id?: string;
+  uuid?: string;
+  cwd?: string;
+  model?: string;
+  permissionMode?: string;
+  tools?: string[];
+  mcp_servers?: unknown[];
+  slash_commands?: string[];
+  commands?: unknown[];
+  agents?: unknown[];
+  models?: unknown[];
+  account?: unknown;
+  output_style?: string;
+  skills?: unknown[];
+  plugins?: unknown[];
+}
+
+/**
+ * Error variant of `result`. The CLI emits `subtype !== 'success'` with
+ * an `errors: string[]` field.
+ */
+/**
+ * Error variant. Carries `errors: string[]`. Subtypes the CLI emits
+ * include `error_max_turns` and `error_during_execution`; the union is
+ * `string & not 'success'` so narrowing on `subtype !== 'success'`
+ * works against the parent `Result | ResultError` shape.
+ */
+export type SDKResultErrorSubtype = 'error_max_turns' | 'error_during_execution' | (string & { __brand?: never });
+export interface SDKResultErrorMessage extends SDKResultBase {
+  subtype: Exclude<SDKResultErrorSubtype, 'success'>;
+  errors?: string[];
+  result?: string;
+}
+
+/**
+ * Catch-all for `system+<subtype>` messages we haven't explicitly modeled
+ * (task_started, task_progress, task_notification, compact_boundary, etc.).
+ * Kept slim — no index signature — so it doesn't poison narrowing on the
+ * other union members (a `[k: string]: unknown` here would widen
+ * `msg.message` on assistant/user variants to `unknown`). Exclude 'init'
+ * so `subtype === 'init'` cleanly narrows to `SDKSystemInitMessage`.
+ */
+export type SDKSystemOtherSubtype =
+  | 'compact_boundary'
+  | 'task_started'
+  | 'task_progress'
+  | 'task_notification'
+  | 'task_updated'
+  | 'hook_started'
+  | 'hook_response'
+  | 'permission_denied'
+  | 'user_prompt_submit'
+  | 'rate_limit_event';
+export interface SDKSystemOtherMessage {
+  type: 'system';
+  // 'init' lives on SDKSystemInitMessage; 'notification' lives on
+  // SystemNotificationMessage. Subtypes outside this literal set go
+  // through casts at the call site.
+  subtype: SDKSystemOtherSubtype;
+  // Common opaque fields callers may pluck off — kept individually-typed
+  // (no index signature) so they don't widen other variants in the union.
+  task_id?: string;
+  tool_use_id?: string;
+  description?: string;
+  status?: string;
+  summary?: string;
+  last_tool_name?: string;
+  usage?: AnthropicMessageUsage & { total_tokens?: number; tool_uses?: number; duration_ms?: number };
+  patch?: Record<string, unknown>;
+  notification_type?: 'info' | 'warn' | 'error' | 'stop';
+  title?: string;
+  body?: string;
+  text?: string;
+  key?: string;
+  priority?: string;
+}
+
+/** Per-token delta. Renderer ignores its body. */
+export interface SDKStreamEventMessage {
+  type: 'stream_event';
+}
+
+export type SDKMessage =
+  | SDKAssistantMessage
+  | SDKUserMessage
+  | SDKResultMessage
+  | SDKResultErrorMessage
+  | SDKNotificationMessage
+  | SDKSystemInitMessage
+  | SDKSystemOtherMessage
+  | SDKStreamEventMessage;
 
 /**
  * Fields the main process attaches to every message as it crosses the IPC

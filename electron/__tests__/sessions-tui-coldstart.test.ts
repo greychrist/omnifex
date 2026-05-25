@@ -11,10 +11,6 @@ import os from 'node:os';
 
 vi.mock('node-pty', () => ({ spawn: vi.fn() }));
 
-vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
-  query: vi.fn(),
-}));
-
 vi.mock('../services/sessions/binary', () => ({
   findSystemClaudeBinary: vi.fn(() => '/usr/local/bin/claude'),
 }));
