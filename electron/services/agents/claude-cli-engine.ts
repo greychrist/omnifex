@@ -106,8 +106,26 @@ export function createClaudeCliEngine(
     wireStdout(child.stdout);
   }
 
-  async function send(_text: string): Promise<void> {
-    // Implemented in Task 5.
+  async function send(text: string): Promise<void> {
+    if (!child || !child.stdin.writable) {
+      throw new Error('ClaudeCliEngine.send: child not running');
+    }
+    const payload = {
+      type: 'user',
+      message: {
+        role: 'user',
+        content: [{ type: 'text', text }],
+      },
+      parent_tool_use_id: null,
+      session_id: sessionId ?? '',
+    };
+    const line = JSON.stringify(payload) + '\n';
+    await new Promise<void>((resolve, reject) => {
+      child!.stdin.write(line, (err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
   }
 
   async function respondPermission(

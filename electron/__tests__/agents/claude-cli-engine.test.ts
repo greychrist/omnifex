@@ -179,3 +179,37 @@ describe('ClaudeCliEngine', () => {
 // Type alias used by the new tests above. Imported lazily so the existing
 // spawn-skeleton tests don't need to know about it.
 type AgentMessageT = import('../../services/agents/types').AgentMessage;
+
+describe('ClaudeCliEngine.send()', () => {
+  async function flushMicrotasks(): Promise<void> {
+    await new Promise((r) => setImmediate(r));
+  }
+
+  it('writes a well-formed stream-json user message to stdin', async () => {
+    const fake = makeFakeChild();
+    mockedSpawn.mockReturnValue(fake as never);
+    const engine = createClaudeCliEngine({
+      tabId: 'tab-send',
+      claudeBinaryPath: '/usr/local/bin/claude',
+    });
+    await engine.start({ projectPath: '/p', configDir: '/c' });
+
+    fake.stdout.push(
+      JSON.stringify({ type: 'system', subtype: 'init', session_id: 'send-sess' }) +
+        '\n',
+    );
+    await flushMicrotasks();
+
+    await engine.send('hello world');
+
+    expect(fake.stdin._writes).toHaveLength(1);
+    const raw = fake.stdin._writes[0];
+    expect(raw.endsWith('\n')).toBe(true);
+    const parsed = JSON.parse(raw.trim());
+    expect(parsed.type).toBe('user');
+    expect(parsed.message.role).toBe('user');
+    expect(parsed.message.content[0].text).toBe('hello world');
+    expect(parsed.session_id).toBe('send-sess');
+    expect(parsed.parent_tool_use_id).toBeNull();
+  });
+});
