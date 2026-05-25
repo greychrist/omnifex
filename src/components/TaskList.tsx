@@ -5,7 +5,6 @@ import {
   Circle,
   CheckCircle2,
   Loader2,
-  ListChecks,
   ListTodo,
   ChevronRight,
   FileText,
@@ -54,12 +53,6 @@ export const TaskList: React.FC<TaskListProps> = ({ messages, isLive, className 
 
   const expanded = !collapsed;
   const running = summary.running;
-
-  const StatusIcon = running ? Loader2 : ListChecks;
-  const statusIconClass = cn(
-    'h-3.5 w-3.5',
-    running ? 'text-muted-foreground animate-spin' : 'text-emerald-400',
-  );
 
   return (
     // Header stays at the top of this block (the "drawer handle"); the
@@ -110,7 +103,6 @@ export const TaskList: React.FC<TaskListProps> = ({ messages, isLive, className 
                 {summary.pending} pending
               </span>
             )}
-            <StatusIcon className={statusIconClass} />
           </button>
           <button
             type="button"

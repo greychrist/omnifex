@@ -393,9 +393,7 @@ export function reduceSessionStreamMessage(
   if (message.type === 'result') {
     if (ctx.userInterrupted) {
       result.clearUserInterrupted = true;
-      const isError =
-        (message as { is_error?: boolean }).is_error ||
-        ((message as { subtype?: string }).subtype?.includes('error') ?? false);
+      const isError = (message as { is_error?: boolean }).is_error === true;
       if (isError) {
         // Deliberate cancel — swallow the SDK's post-interrupt error result so
         // "Execution Failed" doesn't flash. Drop it from messages too.

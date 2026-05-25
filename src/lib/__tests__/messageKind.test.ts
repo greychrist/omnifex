@@ -75,6 +75,34 @@ describe('classifyStandaloneKind', () => {
     expect(classifyStandaloneKind(summary(), [])).toBe('summary.compaction');
   });
 
+  describe('result.error gating: only on is_error===true', () => {
+    // Regression: the previous predicate was `subtype.includes('error')`, which
+    // false-positived on benign SDK subtypes (e.g. a transient result event
+    // whose subtype string contained "error" but whose is_error was false /
+    // absent). The SDK canonical signal is is_error: true; we should rely on
+    // that exclusively. Both real error subtypes (error_max_turns and
+    // error_during_execution) carry is_error: true, so this loses no signal.
+    it('does NOT classify error_max_turns without is_error as result.error', () => {
+      const r = { type: 'result', subtype: 'error_max_turns', result: '' } as unknown as ClaudeStreamMessage;
+      expect(classifyStandaloneKind(r, [r])).not.toBe('result.error');
+    });
+
+    it('does NOT classify error_during_execution without is_error as result.error', () => {
+      const r = { type: 'result', subtype: 'error_during_execution', result: '' } as unknown as ClaudeStreamMessage;
+      expect(classifyStandaloneKind(r, [r])).not.toBe('result.error');
+    });
+
+    it('DOES classify a result with is_error: true as result.error regardless of subtype', () => {
+      const r = { type: 'result', subtype: 'success', is_error: true, result: 'boom' } as unknown as ClaudeStreamMessage;
+      expect(classifyStandaloneKind(r, [r])).toBe('result.error');
+    });
+
+    it('DOES classify error_max_turns WITH is_error: true as result.error', () => {
+      const r = { type: 'result', subtype: 'error_max_turns', is_error: true, result: '' } as unknown as ClaudeStreamMessage;
+      expect(classifyStandaloneKind(r, [r])).toBe('result.error');
+    });
+  });
+
   it('routes AskUserQuestion permission requests to their own kind', () => {
     // Distinct kind so the AskUserQuestionCard's accent color is editable
     // independently of the generic Bash/Read permission prompt.

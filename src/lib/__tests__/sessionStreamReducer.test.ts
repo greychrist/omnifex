@@ -149,6 +149,20 @@ describe('reduceSessionStreamMessage', () => {
     expect(r.clearUserInterrupted).toBe(true);
   });
 
+  it('userInterrupted with a subtype that merely contains "error" but is_error:false does NOT suppress', () => {
+    // Regression: the old predicate `subtype.includes('error')` would drop
+    // benign result events whose subtype string happened to contain "error"
+    // (e.g. `error_max_turns` reported informationally without is_error).
+    // Suppression must require the canonical SDK signal, is_error===true.
+    const r = reduceSessionStreamMessage(
+      { type: 'result', subtype: 'error_max_turns', result: '' } as unknown as ClaudeStreamMessage,
+      { ...baseCtx, userInterrupted: true },
+    );
+    expect(r.append).toBe('append');
+    expect(r.clearLoading).toBe(true);
+    expect(r.clearUserInterrupted).toBe(true);
+  });
+
   it('non-meaningful messages (assistant) just append with no effects', () => {
     const msg = {
       type: 'assistant',

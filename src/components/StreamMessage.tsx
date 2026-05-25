@@ -1477,9 +1477,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
           || classifiedKind === "result.awaiting_background"
           || classifiedKind === "result.success"
           ? classifiedKind
-          : (message.is_error || message.subtype?.includes("error")
-              ? "result.error"
-              : "result.success");
+          : (message.is_error === true ? "result.error" : "result.success");
       const isError = resultKindId === "result.error";
       const isAwaiting = resultKindId === "result.awaiting_background";
       const resultStyle = accentStyleFor(renderConfig, resultKindId);

@@ -84,8 +84,11 @@ export function classifyStandaloneKind(
   }
 
   if (msg.type === 'result') {
-    const sub = msg.subtype;
-    if (sub && /error/i.test(String(sub))) return 'result.error';
+    // Canonical SDK signal: is_error: true is set for both error_max_turns
+    // and error_during_execution. The substring match on subtype was too
+    // loose and flagged benign events whose subtype merely contained the
+    // word "error".
+    if ((msg as { is_error?: boolean }).is_error === true) return 'result.error';
     // Sibling of result.success: when this turn ends with a still-running
     // subagent dispatch, the parent is genuinely "idle, awaiting wake-up"
     // rather than fully complete. The SDK does not distinguish these in the
