@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.57] — 2026-05-24
+
+Session lifecycle refactor: the single `SessionStatus` enum conflated "is the connection up?" with "what is the turn doing?", forcing every consumer to disjunction-match across multiple values and hiding bugs like "stuck on starting" behind synthetic UI filler. Split into two orthogonal axes — `sessionStatus` (the phone call) and `conversationStatus` (the back-and-forth) — with the invariant enforced in main and reflected in the renderer. Authoritative model captured in `docs/session-lifecycle.md` and referenced from `CLAUDE.md` so future agents stop spinning on the same questions.
+
+Installers remain **unsigned**.
+
+### Added
+
+- **`docs/session-lifecycle.md`.** The authoritative model: three orthogonal axes (`sessionStatus`, `conversationStatus`, per-item task/subagent state), state invariants, SDK-event-to-state mapping, the canonical in-flight rollup, IPC contract, and anti-patterns. Linked from `CLAUDE.md` so any change to session/status code reads it first.
+- **`SessionInspectorPanel` raw axes.** Two new rows under Lifecycle show the raw `sessionStatus` enum and `conversationStatus` value (or italic `null` marker) so the live state is verifiable at a glance.
+
+### Changed
+
+- **`SessionStatus` split.** Was `starting | running | idle | waiting_permission | stopped | error`. Now `sessionStatus: starting | started | error | stopped` plus `conversationStatus: idle | running | waiting_permission`, with `conversationStatus` strictly `null` whenever `sessionStatus !== 'started'`. `setStatus` in `electron/services/sessions/status.ts` enforces the invariant on every transition.
+- **`session-status:<tabId>` event payload.** Emits both fields on every transition; renderer reflects them through `useSessionLifecycle`. `sessionGetHealth` IPC return shape carries both axes.
+- **In-flight predicate.** `listInFlightTabIds` and the renderer's `promptStatus` rollup now key on `conversationStatus !== null && conversationStatus !== 'idle'` plus subagents/tasks per the doc. `sessionStatus === 'starting'` is no longer considered in-flight by itself.
+- **Subagent bar header laid out like the task list.** "Subagents: X/Y done" with an N-running pill, trailing status icon (emerald `ListChecks` at rest, spinning `Loader2` while running), and the same sky-400 pulsing background. Completed subagent checkmarks use `text-emerald-400` to match the task list's per-row icons.
+- **Domain icons on bar headers.** TaskList gets a `ListTodo` icon before its title; SubagentBar's `Bot` icon moved into the title row. Both styled `text-foreground` to match the title text.
+- **Side-panel shrinkage covers the bars.** When any side panel (inspector, MCP, plugins, permissions) is open, the TaskList / SubagentBar / permission cards / `FloatingPromptInput` slide left with `sm:mr-96` — they no longer overlay the panel.
+
+### Removed
+
+- **Synthetic `system:init` placeholder.** `startPersistentSession` no longer inserts a placeholder init message into the chat. An empty chat now honestly indicates "the SDK iterator hasn't yielded init yet" instead of hiding a stuck-on-starting session behind filler. The MCP-tool enrichment path (`enrichInitTools`) is now strictly merge-into-existing; if no real init exists, it's a no-op.
+- **Renderer dual-boolean state for sessions.** `isSessionStarting` / `isSessionActive` `useState` removed from `ClaudeCodeSession`; both are now derived predicates over `sessionStatus`. `sessionStarted` (the form vs. chat-view gate) also derived — pure `sessionStatus !== 'stopped'` once the hook seeds initial status from `hasPendingStart`.
+
 ## [0.4.56] — 2026-05-24
 
 The big one. Introduces **Terminal mode** — an embedded `claude` TUI for sessions, alongside the existing SDK mode — and rebuilds the renderer's message pipeline around the on-disk JSONL session file as the single source of truth. Terminal mode runs the CLI in a PTY (`--session-id <uuid>`), so it doesn't count against the SDK's upcoming monthly programmatic budget; same Claude, same conversation, no metering.
