@@ -96,4 +96,86 @@ describe('ClaudeCliEngine', () => {
       expect(args).toEqual(expect.arrayContaining(['--resume', 'sess-resume-abc']));
     });
   });
+
+  describe('onMessage', () => {
+    async function flushMicrotasks(): Promise<void> {
+      await new Promise((r) => setImmediate(r));
+    }
+
+    it('parses NDJSON lines into onMessage events', async () => {
+      const fake = makeFakeChild();
+      mockedSpawn.mockReturnValue(fake as never);
+      const engine = createClaudeCliEngine({
+        tabId: 'tm',
+        claudeBinaryPath: '/usr/local/bin/claude',
+      });
+      const received: AgentMessageT[] = [];
+      engine.onMessage((m) => received.push(m));
+
+      await engine.start({ projectPath: '/p', configDir: '/c' });
+
+      fake.stdout.push(
+        JSON.stringify({ type: 'system', subtype: 'init', session_id: 's1' }) + '\n',
+      );
+      fake.stdout.push(
+        JSON.stringify({ type: 'assistant', message: { content: 'hi' } }) + '\n',
+      );
+      await flushMicrotasks();
+
+      expect(received).toHaveLength(2);
+      expect(received[0].agent).toBe('claude');
+      expect(received[0].tabId).toBe('tm');
+      expect((received[0].payload as { type: string }).type).toBe('system');
+      expect((received[1].payload as { type: string }).type).toBe('assistant');
+    });
+
+    it('handles split lines across chunk boundaries', async () => {
+      const fake = makeFakeChild();
+      mockedSpawn.mockReturnValue(fake as never);
+      const engine = createClaudeCliEngine({
+        tabId: 'tm2',
+        claudeBinaryPath: '/usr/local/bin/claude',
+      });
+      const received: AgentMessageT[] = [];
+      engine.onMessage((m) => received.push(m));
+
+      await engine.start({ projectPath: '/p', configDir: '/c' });
+
+      const full = JSON.stringify({ type: 'assistant', message: { id: 'm1' } });
+      const halfway = Math.floor(full.length / 2);
+      fake.stdout.push(full.slice(0, halfway));
+      await flushMicrotasks();
+      expect(received).toHaveLength(0);
+
+      fake.stdout.push(full.slice(halfway) + '\n');
+      await flushMicrotasks();
+
+      expect(received).toHaveLength(1);
+      expect((received[0].payload as { message: { id: string } }).message.id).toBe('m1');
+    });
+
+    it('captures session_id from system:init for getResumeId()', async () => {
+      const fake = makeFakeChild();
+      mockedSpawn.mockReturnValue(fake as never);
+      const engine = createClaudeCliEngine({
+        tabId: 'tm3',
+        claudeBinaryPath: '/usr/local/bin/claude',
+      });
+
+      await engine.start({ projectPath: '/p', configDir: '/c' });
+      expect(engine.getResumeId()).toBeNull();
+
+      fake.stdout.push(
+        JSON.stringify({ type: 'system', subtype: 'init', session_id: 'freshid' }) +
+          '\n',
+      );
+      await flushMicrotasks();
+
+      expect(engine.getResumeId()).toBe('freshid');
+    });
+  });
 });
+
+// Type alias used by the new tests above. Imported lazily so the existing
+// spawn-skeleton tests don't need to know about it.
+type AgentMessageT = import('../../services/agents/types').AgentMessage;

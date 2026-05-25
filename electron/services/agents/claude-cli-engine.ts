@@ -49,6 +49,52 @@ export function createClaudeCliEngine(
 ): AgentEngine {
   let child: ChildProcessWithoutNullStreams | null = null;
   let sessionId: string | null = null;
+  const messageCallbacks: Array<(m: AgentMessage) => void> = [];
+  let lineBuf = '';
+
+  function emitMessage(line: string): void {
+    const trimmed = line.trim();
+    if (!trimmed) return;
+    let payload: unknown;
+    try {
+      payload = JSON.parse(trimmed);
+    } catch {
+      // Drop malformed lines — Claude only ever emits well-formed JSON on
+      // stdout; anything else is noise that doesn't belong in the transcript.
+      return;
+    }
+    const p = payload as { type?: string; subtype?: string; session_id?: string };
+    if (p?.type === 'system' && p?.subtype === 'init' && typeof p.session_id === 'string') {
+      sessionId = p.session_id;
+    }
+    const msg: AgentMessage = {
+      agent: 'claude',
+      tabId: factory.tabId,
+      receivedAt: new Date().toISOString(),
+      sessionId,
+      payload,
+    };
+    for (const cb of messageCallbacks) {
+      try {
+        cb(msg);
+      } catch {
+        /* subscriber threw — swallow so one bad listener can't poison the rest */
+      }
+    }
+  }
+
+  function wireStdout(stdout: NodeJS.ReadableStream): void {
+    stdout.on('data', (chunk: Buffer | string) => {
+      lineBuf += typeof chunk === 'string' ? chunk : chunk.toString('utf8');
+      let nl = lineBuf.indexOf('\n');
+      while (nl !== -1) {
+        const line = lineBuf.slice(0, nl);
+        lineBuf = lineBuf.slice(nl + 1);
+        emitMessage(line);
+        nl = lineBuf.indexOf('\n');
+      }
+    });
+  }
 
   async function start(p: AgentStartParams): Promise<void> {
     sessionId = p.resumeSessionId ?? sessionId;
@@ -57,6 +103,7 @@ export function createClaudeCliEngine(
       cwd: p.projectPath,
       env: buildClaudeEnv(p.configDir),
     }) as ChildProcessWithoutNullStreams;
+    wireStdout(child.stdout);
   }
 
   async function send(_text: string): Promise<void> {
@@ -101,8 +148,14 @@ export function createClaudeCliEngine(
     return sessionId;
   }
 
-  function onMessage(_cb: (m: AgentMessage) => void): Disposable {
-    return { dispose() {} };
+  function onMessage(cb: (m: AgentMessage) => void): Disposable {
+    messageCallbacks.push(cb);
+    return {
+      dispose() {
+        const i = messageCallbacks.indexOf(cb);
+        if (i !== -1) messageCallbacks.splice(i, 1);
+      },
+    };
   }
   function onPermissionRequest(_cb: (r: AgentPermissionRequest) => void): Disposable {
     return { dispose() {} };
