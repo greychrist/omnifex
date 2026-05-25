@@ -261,6 +261,27 @@ describe('ClaudeCliEngine permission protocol', () => {
   });
 });
 
+describe('ClaudeCliEngine.interrupt()', () => {
+  it('writes a control_request:interrupt to stdin', async () => {
+    const fake = makeFakeChild();
+    mockedSpawn.mockReturnValue(fake as never);
+    const engine = createClaudeCliEngine({
+      tabId: 'tab-int',
+      claudeBinaryPath: '/usr/local/bin/claude',
+    });
+    await engine.start({ projectPath: '/p', configDir: '/c' });
+
+    await engine.interrupt();
+
+    expect(fake.stdin._writes).toHaveLength(1);
+    const parsed = JSON.parse(fake.stdin._writes[0].trim());
+    expect(parsed.type).toBe('control_request');
+    expect(parsed.subtype).toBe('interrupt');
+    expect(typeof parsed.request_id).toBe('string');
+    expect(parsed.request_id.length).toBeGreaterThan(0);
+  });
+});
+
 describe('ClaudeCliEngine.send()', () => {
   async function flushMicrotasks(): Promise<void> {
     await new Promise((r) => setImmediate(r));

@@ -179,7 +179,16 @@ export function createClaudeCliEngine(
   }
 
   async function interrupt(): Promise<void> {
-    // Implemented in Task 7.
+    if (!child || !child.stdin.writable) return;
+    const requestId = `int-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const obj = { type: 'control_request', subtype: 'interrupt', request_id: requestId };
+    const line = JSON.stringify(obj) + '\n';
+    await new Promise<void>((resolve, reject) => {
+      child!.stdin.write(line, (err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
   }
 
   async function close(): Promise<void> {
