@@ -7,7 +7,7 @@
 // `SessionsService` IPC surface.
 
 import { createAsyncChannel } from '../async-channel';
-import { query } from '@anthropic-ai/claude-agent-sdk';
+import { startup } from '@anthropic-ai/claude-agent-sdk';
 import type { SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 import type {
   SessionHandle,
@@ -54,6 +54,52 @@ function resolveSessionId(resumeId?: string): string {
   return resumeId ?? randomUUID();
 }
 
+function initMessageFromControlResponse(
+  init: Record<string, unknown>,
+  fallback: {
+    projectPath: string;
+    model: string;
+    permissionMode: string;
+  },
+): Record<string, unknown> {
+  const commands = Array.isArray(init.commands)
+    ? init.commands
+      .map((cmd) => typeof cmd === 'object' && cmd !== null && 'name' in cmd
+        ? (cmd as { name?: unknown }).name
+        : null)
+      .filter((name): name is string => typeof name === 'string')
+    : [];
+  const agents = Array.isArray(init.agents)
+    ? init.agents
+      .map((agent) => typeof agent === 'object' && agent !== null && 'name' in agent
+        ? (agent as { name?: unknown }).name
+        : null)
+      .filter((name): name is string => typeof name === 'string')
+    : [];
+
+  return {
+    type: 'system',
+    subtype: 'init',
+    session_id: typeof init.session_id === 'string'
+      ? init.session_id
+      : typeof init.uuid === 'string'
+        ? init.uuid
+        : '',
+    cwd: typeof init.cwd === 'string' ? init.cwd : fallback.projectPath,
+    model: typeof init.model === 'string' ? init.model : fallback.model,
+    permissionMode: typeof init.permissionMode === 'string'
+      ? init.permissionMode
+      : fallback.permissionMode,
+    tools: Array.isArray(init.tools) ? init.tools : [],
+    mcp_servers: Array.isArray(init.mcp_servers) ? init.mcp_servers : [],
+    slash_commands: commands,
+    agents,
+    output_style: typeof init.output_style === 'string' ? init.output_style : undefined,
+    skills: Array.isArray(init.skills) ? init.skills : [],
+    plugins: Array.isArray(init.plugins) ? init.plugins : [],
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Factory
 // ---------------------------------------------------------------------------
@@ -66,6 +112,15 @@ export function createSessionsService(
   persistPermissionRule: PersistPermissionRuleFn | null = null,
   rateLimitHook: RateLimitHook | null = null,
   onSessionClosed: ((sessionId: string, projectPath: string, configDir: string) => void) | null = null,
+  /**
+   * Optional account resolver. When provided, main re-resolves the configDir
+   * for cold-start SDK sessions at the moment of `start()` so a path-rule
+   * change between form-mount and Start-click doesn't spawn under a stale
+   * account. Skipped for resumes (the resume id is tied to the owning
+   * account's JSONL) and when `manualAccountOverride: true` is passed
+   * (user explicitly picked an account on the form).
+   */
+  resolveAccountConfigDir: ((projectPath: string) => string | null) | null = null,
 ): SessionsService {
   const sessions = new Map<string, SessionHandle>();
   // Hoisted so both the public return and stop()'s plugin-cache eviction
@@ -85,10 +140,39 @@ export function createSessionsService(
   // -------------------------------------------------------------------------
 
   function start(params: SessionStartParams): void | Promise<void> {
-    const { tabId, projectPath, configDir } = params;
+    const { tabId, projectPath } = params;
+
+    // Re-resolve the configDir from current account rules so a path-rule
+    // change between form-mount and Start-click doesn't spawn under a
+    // stale account. Skipped for: (1) resumes — the resume id is tied to
+    // a specific account's JSONL, re-routing it would orphan the saved
+    // transcript; (2) explicit user overrides — the user deliberately
+    // picked a non-rule account on the form; (3) when no resolver was
+    // injected — back-compat for unit tests that construct the service
+    // bare. See `docs/session-lifecycle.md`.
+    let configDir = params.configDir;
+    const shouldReResolve =
+      !params.resumeSessionId &&
+      !params.manualAccountOverride &&
+      resolveAccountConfigDir !== null;
+    if (shouldReResolve) {
+      const resolved = resolveAccountConfigDir(projectPath);
+      if (resolved) {
+        if (resolved !== configDir && logging) {
+          logging.writeBatch([{
+            timestamp: new Date().toISOString(),
+            level: 'info',
+            source: 'backend',
+            category: `session:${tabId}`,
+            message: `re-resolved configDir on start: renderer=${configDir} → main=${resolved}`,
+          }]);
+        }
+        configDir = resolved;
+      }
+    }
 
     if (params.mode === 'tui') {
-      return startTuiColdStart(params);
+      return startTuiColdStart({ ...params, configDir });
     }
 
     // Close any existing session for this tab
@@ -146,13 +230,6 @@ export function createSessionsService(
 
     options.canUseTool = createCanUseTool(handle, tabId, sendToRenderer, notificationHooks, logging);
 
-    // Start the SDK query with the async input channel
-    const q = query({
-      prompt: inputChannel,
-      options: options,
-    });
-
-    handle.query = q;
     sessions.set(tabId, handle);
     if (params.ownerWebContentsId !== undefined) {
       ownership?.register(tabId, params.ownerWebContentsId);
@@ -167,8 +244,54 @@ export function createSessionsService(
       conversationStatus: null,
     });
 
-    listenToMessages(tabId, handle, runtimeDeps).catch((err: unknown) => {
-      console.error(`[sessions] Unhandled error in listenToMessages for tab ${tabId}:`, err);
+    void startup({ options }).then((warmQuery) => {
+      if (sessions.get(tabId) !== handle || handle.inputChannel !== inputChannel) {
+        try {
+          warmQuery.close();
+        } catch {
+          /* ignore */
+        }
+        return;
+      }
+
+      const q = warmQuery.query(inputChannel);
+      handle.query = q;
+      if (typeof q.initializationResult === 'function') {
+        void q.initializationResult().then((init) => {
+          if (sessions.get(tabId) !== handle) return;
+          const initMessage = initMessageFromControlResponse(init as Record<string, unknown>, {
+            projectPath,
+            model: params.model,
+            permissionMode: params.permissionMode,
+          });
+          const sid = typeof initMessage.session_id === 'string' ? initMessage.session_id : '';
+          if (sid) handle.sessionId = sid;
+          setStatus(handle, { sessionStatus: 'started', conversationStatus: 'idle' }, tabId, sendToRenderer);
+          sendToRenderer(`claude-output:${tabId}`, {
+            ...initMessage,
+            receivedAt: new Date().toISOString(),
+          });
+        }).catch((err: unknown) => {
+          if (sessions.get(tabId) !== handle) return;
+          console.warn('[sessions] initializationResult after startup failed:', err);
+        });
+      }
+      listenToMessages(tabId, handle, runtimeDeps).catch((err: unknown) => {
+        console.error(`[sessions] Unhandled error in listenToMessages for tab ${tabId}:`, err);
+      });
+    }).catch((err: unknown) => {
+      if (sessions.get(tabId) !== handle) return;
+      setStatus(handle, { sessionStatus: 'error' }, tabId, sendToRenderer);
+      const errMsg = err instanceof Error ? err.message : String(err);
+      sendToRenderer(`claude-error:${tabId}`, errMsg);
+      sendToRenderer(`claude-output:${tabId}`, {
+        type: 'system',
+        subtype: 'notification',
+        notification_type: 'error',
+        title: 'Session Error',
+        body: `Error: ${errMsg.slice(0, 200)}`,
+      });
+      sendToRenderer(`claude-complete:${tabId}`);
     });
   }
 
@@ -186,9 +309,11 @@ export function createSessionsService(
   function sendMessage(tabId: string, prompt: string): void {
     const handle = sessions.get(tabId);
     if (!handle) return;
-    if (!handle.inputChannel || !handle.query) return; // TUI mode — input goes through PTY
+    if (!handle.inputChannel) return; // TUI mode — input goes through PTY
 
-    ensureLiveQuery(tabId, handle);
+    if (handle.query) {
+      ensureLiveQuery(tabId, handle);
+    }
 
     // Mark the conversation as in-flight before the SDK has a chance to
     // echo anything back, so the in-flight gate reacts to the user's
@@ -214,9 +339,11 @@ export function createSessionsService(
   ): void {
     const handle = sessions.get(tabId);
     if (!handle) return;
-    if (!handle.inputChannel || !handle.query) return; // TUI mode — input goes through PTY
+    if (!handle.inputChannel) return; // TUI mode — input goes through PTY
 
-    ensureLiveQuery(tabId, handle);
+    if (handle.query) {
+      ensureLiveQuery(tabId, handle);
+    }
 
     // See sendMessage() — keep conversationStatus in sync with submit, not echo.
     setStatus(handle, { conversationStatus: 'running' }, tabId, sendToRenderer);
@@ -330,6 +457,10 @@ export function createSessionsService(
 
   function getSessionId(tabId: string): string | null {
     return sessions.get(tabId)?.sessionId ?? null;
+  }
+
+  function getConfigDir(tabId: string): string | null {
+    return sessions.get(tabId)?.configDir ?? null;
   }
 
   function getStatus(tabId: string): { sessionStatus: SessionStatus; conversationStatus: ConversationStatus | null } {
@@ -554,8 +685,11 @@ export function createSessionsService(
     // so the JSONL file path is known up front (no discovery race, no
     // resume-picker dialog). The CLI in pty mode handles `--session-id`
     // cleanly — unlike the SDK's stream-json mode, where pinning makes
-    // the CLI suppress init and the control channel.
-    const sessionId = resolveSessionId();
+    // the CLI suppress init and the control channel. When the caller
+    // passes resumeSessionId, reuse it and switch the CLI to `--resume`
+    // so the prior conversation continues instead of starting fresh.
+    const resuming = !!params.resumeSessionId;
+    const sessionId = resolveSessionId(params.resumeSessionId);
     const jsonlPath = path.join(
       configDir,
       'projects',
@@ -590,7 +724,10 @@ export function createSessionsService(
       projectPath,
       configDir,
       sessionId,
-      resume: false, // cold-start: --session-id <uuid> creates a fresh session
+      // resume=true → CLI spawns with `--resume <id>` (continues prior turns).
+      // resume=false → CLI spawns with `--session-id <id>` (fresh session
+      // with a caller-chosen UUID so the JSONL path is known up front).
+      resume: resuming,
       claudeBinaryPath: binaryPath,
     });
 
@@ -658,6 +795,7 @@ export function createSessionsService(
     stop,
     stopAll,
     getSessionId,
+    getConfigDir,
     getStatus,
     getInfo,
     getHealth,

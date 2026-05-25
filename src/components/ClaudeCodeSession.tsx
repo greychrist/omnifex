@@ -67,6 +67,7 @@ import { getTaskList, summarizeTaskList } from "@/lib/taskList";
 import { SubagentBar } from "./SubagentBar";
 import { TaskList } from "./TaskList";
 import { fireAndLog, logAndForget } from "@/lib/fireAndLog";
+import { decideAutoStart } from "@/lib/sessionAutoStart";
 import { FindBar } from "./FindBar";
 import { useFindInChat } from "@/hooks/useFindInChat";
 import { exportAsJsonl, exportAsMarkdown } from "@/lib/sessionExporters";
@@ -150,6 +151,13 @@ interface ClaudeCodeSessionProps {
    * Callback when project path changes
    */
   onProjectPathChange?: (path: string) => void;
+  /**
+   * Whether this tab is currently the visible/active one. Gates the
+   * auto-start effect so restored-but-inactive chat tabs don't fire
+   * rebind/resume on app launch. The session activates the first time
+   * the user views the tab. See `src/lib/sessionAutoStart.ts`.
+   */
+  isActive?: boolean;
 }
 
 /**
@@ -163,6 +171,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   className,
   onStreamingChange,
   onProjectPathChange,
+  isActive = true,
 }) => {
   const [projectPath] = useState(initialProjectPath || session?.project_path || "");
   // Stream-derived per-tab state lives in `claudeSessionStore`. The hook
@@ -1196,20 +1205,26 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   //      session id to resume from, just spawn a fresh one with the
   //      pre-filled config the user already chose. Skips the second click.
   useEffect(() => {
-    if (persistentSessionRef.current) return;
-    if (session) {
+    const action = decideAutoStart({
+      isActive,
+      alreadyStarted: persistentSessionRef.current,
+      hasSession: !!session,
+      hasInitialSessionConfig: !!initialSessionConfig,
+    });
+    if (action === 'skip') return;
+    if (action === 'rebind-or-resume' && session) {
       (async () => {
         const rebound = await rebindPersistentSession();
         if (!rebound) {
           await startPersistentSession(session.id);
         }
       })().catch((err: unknown) => { console.error("[auto-start] resume/rebind failed:", err); });
-    } else if (initialSessionConfig) {
+    } else if (action === 'fresh-start') {
       startPersistentSession().catch((err: unknown) =>
         { console.error("[auto-start] fresh start failed:", err); },
       );
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isActive]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Listen for elicitation requests from MCP servers
   useEffect(() => {
@@ -1418,23 +1433,29 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   const handleReconnect = async () => {
     const tid = tabIdRef.current;
 
-    // Best-effort stop of any zombie main-process session for this tab so
-    // start() doesn't trip its existing-session-cleanup path on a half-dead
-    // handle.
+    // Reset our local connected-flag so rebind actually attempts the IPC.
+    // (rebindPersistentSession short-circuits to true when the ref is true.)
+    persistentSessionRef.current = false;
+
+    // Try the cheap rebind first — if main still has a healthy handle for
+    // this tab (e.g. after a renderer hot-reload), we reattach without
+    // spawning a new SDK process. Previously this code stopped the session
+    // first, which guaranteed rebind would fail and the cold-resume path
+    // always ran — defeating the comment's "cheap rebind first" intent.
+    const rebound = await rebindPersistentSession().catch(() => false);
+    if (rebound) return;
+
+    // Rebind failed — main has no live handle (or a zombie one). Tear
+    // down anything stale, reset renderer state, then cold-start, resuming
+    // from claudeSessionId when available so the message history continues.
     try { await api.stopSession(tid); } catch { /* best effort */ }
 
     unlistenRefs.current.forEach((u) => { u(); });
     unlistenRefs.current = [];
 
-    persistentSessionRef.current = false;
     resetStatus({ sessionStatus: 'stopped', conversationStatus: null });
     setIsLoading(false);
     setError(null);
-
-    // Try the cheap rebind first — if the main process session was already
-    // restarted by a hot reload the rebind succeeds and we're done.
-    const rebound = await rebindPersistentSession().catch(() => false);
-    if (rebound) return;
 
     try {
       await startPersistentSession(claudeSessionId ?? undefined);

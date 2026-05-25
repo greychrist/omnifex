@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createAsyncChannel } from '../services/async-channel';
 import { createSessionsService, type SessionsService } from '../services/sessions';
-import { query as sdkQuery } from '@anthropic-ai/claude-agent-sdk';
+import { query as sdkQuery, startup as sdkStartup } from '@anthropic-ai/claude-agent-sdk';
 
 // ---------------------------------------------------------------------------
 // Mock the Claude Agent SDK
@@ -9,6 +9,7 @@ import { query as sdkQuery } from '@anthropic-ai/claude-agent-sdk';
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
   query: vi.fn(),
+  startup: vi.fn(),
 }));
 
 vi.mock('../services/sessions/tui', () => ({
@@ -22,12 +23,36 @@ vi.mock('../services/sessions/binary', () => ({
 }));
 
 const mockedQuery = vi.mocked(sdkQuery);
+const mockedStartup = vi.mocked(sdkStartup);
 
 import { createTuiSession as _createTuiSession } from '../services/sessions/tui';
 const mockedCreateTuiSession = vi.mocked(_createTuiSession);
 
 import { findSystemClaudeBinary as _findSystemClaudeBinary } from '../services/sessions/binary';
 const mockedFindSystemClaudeBinary = vi.mocked(_findSystemClaudeBinary);
+
+function syncResolved<T>(value: T): Promise<T> {
+  return {
+    then(onFulfilled: (value: T) => unknown, onRejected?: (reason: unknown) => unknown) {
+      try {
+        return Promise.resolve(onFulfilled(value));
+      } catch (err) {
+        if (onRejected) return Promise.resolve(onRejected(err));
+        return Promise.reject(err);
+      }
+    },
+  } as Promise<T>;
+}
+
+function installStartupBridge(): void {
+  mockedStartup.mockImplementation((args: any) => {
+    const warmQuery = {
+      query: (prompt: any) => mockedQuery({ prompt, options: args?.options }),
+      close: vi.fn(),
+    };
+    return syncResolved(warmQuery as any);
+  });
+}
 
 // ---------------------------------------------------------------------------
 // A controllable fake `Query`. The sessions service treats the return value of
@@ -54,6 +79,7 @@ function installFakeQuery(): FakeQueryHandle {
   const channel = createAsyncChannel<unknown>();
   let closed = false;
   let capturedArgs: any = null;
+  let capturedPrompt: any = null;
 
   const fakeQuery: any = {
     [Symbol.asyncIterator]: () => channel[Symbol.asyncIterator](),
@@ -90,9 +116,22 @@ function installFakeQuery(): FakeQueryHandle {
     applyFlagSettings: vi.fn().mockResolvedValue(undefined),
   };
 
+  const fakeWarmQuery = {
+    query: vi.fn((prompt: any) => {
+      return mockedQuery({ prompt, options: capturedArgs?.options });
+    }),
+    close: vi.fn(),
+  };
+
   mockedQuery.mockImplementation((args: any) => {
-    capturedArgs = args ?? null;
+    capturedArgs = args ?? capturedArgs;
+    capturedPrompt = args?.prompt ?? null;
     return fakeQuery;
+  });
+
+  mockedStartup.mockImplementation((args: any) => {
+    capturedArgs = args ?? null;
+    return syncResolved(fakeWarmQuery as any);
   });
 
   return {
@@ -101,7 +140,7 @@ function installFakeQuery(): FakeQueryHandle {
     closeMessages: () => channel.close(),
     wasClosed: () => closed,
     getCapturedOptions: () => capturedArgs?.options ?? null,
-    getCapturedPrompt: () => capturedArgs?.prompt ?? null,
+    getCapturedPrompt: () => capturedPrompt,
   };
 }
 
@@ -208,6 +247,8 @@ describe('sessions service — empty state guards', () => {
 
   beforeEach(() => {
     mockedQuery.mockReset();
+    mockedStartup.mockReset();
+    installStartupBridge();
     sendToRenderer = vi.fn();
     service = createSessionsService(sendToRenderer as any);
   });
@@ -252,6 +293,8 @@ describe('sessions service — full lifecycle', () => {
 
   beforeEach(() => {
     mockedQuery.mockReset();
+    mockedStartup.mockReset();
+    installStartupBridge();
     sendToRenderer = vi.fn();
     showNotification = vi.fn();
     incrementUnread = vi.fn();
@@ -483,6 +526,127 @@ describe('sessions service — full lifecycle', () => {
     );
     expect(statusCalls.length).toBeGreaterThan(0);
     expect(statusCalls[0][1]).toEqual({ sessionStatus: 'starting', conversationStatus: null });
+  });
+
+  it('start() prewarms the SDK and can reach started before the first user prompt', async () => {
+    const channel = createAsyncChannel<unknown>();
+    const fakeQuery: any = {
+      [Symbol.asyncIterator]: () => channel[Symbol.asyncIterator](),
+      close: vi.fn(),
+      initializationResult: vi.fn().mockResolvedValue({
+        session_id: 'prewarm-id',
+        commands: [{ name: 'review' }],
+        agents: [{ name: 'Explore' }],
+        models: [],
+        output_style: 'default',
+      }),
+      interrupt: vi.fn().mockResolvedValue(undefined),
+      setPermissionMode: vi.fn().mockResolvedValue(undefined),
+      setModel: vi.fn().mockResolvedValue(undefined),
+      accountInfo: vi.fn().mockResolvedValue({ email: 'test@example.com', apiProvider: 'firstParty' }),
+      getContextUsage: vi.fn().mockResolvedValue(null),
+      supportedCommands: vi.fn().mockResolvedValue([]),
+      supportedModels: vi.fn().mockResolvedValue([]),
+      supportedAgents: vi.fn().mockResolvedValue([]),
+      setMaxThinkingTokens: vi.fn().mockResolvedValue(undefined),
+      applyFlagSettings: vi.fn().mockResolvedValue(undefined),
+    };
+    let resolveWarm: ((warmQuery: any) => void) | null = null;
+    let capturedPrompt: any = null;
+    const warmQuery = {
+      query: vi.fn((prompt: any) => {
+        capturedPrompt = prompt;
+        return fakeQuery;
+      }),
+      close: vi.fn(),
+    };
+
+    mockedQuery.mockReset();
+    mockedStartup.mockReset();
+    mockedStartup.mockImplementation(() => new Promise((resolve) => {
+      resolveWarm = resolve;
+    }));
+
+    service.start({
+      tabId: 'tab-prewarm',
+      projectPath: '/p',
+      configDir: '/c',
+      model: 'sonnet',
+      permissionMode: 'default',
+    });
+
+    expect(mockedStartup).toHaveBeenCalledTimes(1);
+    expect(warmQuery.query).not.toHaveBeenCalled();
+    expect(service.getStatus('tab-prewarm')).toEqual({
+      sessionStatus: 'starting',
+      conversationStatus: null,
+    });
+
+    resolveWarm!(warmQuery);
+    await flush();
+
+    expect(warmQuery.query).toHaveBeenCalledTimes(1);
+    expect(capturedPrompt).toBeTruthy();
+    await flush();
+
+    expect(service.getStatus('tab-prewarm')).toEqual({
+      sessionStatus: 'started',
+      conversationStatus: 'idle',
+    });
+    expect(service.getSessionId('tab-prewarm')).toBe('prewarm-id');
+    expect(sendToRenderer).toHaveBeenCalledWith(
+      'claude-output:tab-prewarm',
+      expect.objectContaining({
+        type: 'system',
+        subtype: 'init',
+        session_id: 'prewarm-id',
+        cwd: '/p',
+        model: 'sonnet',
+      }),
+    );
+  });
+
+  it('queues a prompt submitted while SDK prewarm is still pending', async () => {
+    let resolveWarm: ((warmQuery: any) => void) | null = null;
+    let capturedPrompt: any = null;
+    const warmQuery = {
+      query: vi.fn((prompt: any) => {
+        capturedPrompt = prompt;
+        return {
+          [Symbol.asyncIterator]: () => createAsyncChannel<unknown>()[Symbol.asyncIterator](),
+          close: vi.fn(),
+        };
+      }),
+      close: vi.fn(),
+    };
+
+    mockedQuery.mockReset();
+    mockedStartup.mockReset();
+    mockedStartup.mockImplementation(() => new Promise((resolve) => {
+      resolveWarm = resolve;
+    }));
+
+    service.start({
+      tabId: 'tab-queued-before-warm',
+      projectPath: '/p',
+      configDir: '/c',
+      model: 'sonnet',
+      permissionMode: 'default',
+    });
+    service.sendMessage('tab-queued-before-warm', 'hello before warm');
+
+    resolveWarm!(warmQuery);
+    await flush();
+
+    const promptIter = capturedPrompt[Symbol.asyncIterator]();
+    const first = await promptIter.next();
+    expect(first.value).toMatchObject({
+      type: 'user',
+      message: {
+        role: 'user',
+        content: 'hello before warm',
+      },
+    });
   });
 
   it('passes effort and thinking options to the SDK query when provided', () => {

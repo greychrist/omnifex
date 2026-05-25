@@ -1028,8 +1028,8 @@ export const api = {
 
   // ─── Persistent Session API ───────────────────────────────────────
 
-  async startSession(tabId: string, projectPath: string, model: string, permissionMode: string, resumeSessionId?: string, configDir?: string, effort?: string, thinking?: Record<string, unknown>, mode?: SessionMode): Promise<void> {
-    return apiCall("session_start", { tabId, projectPath, model, permissionMode, resumeSessionId, configDir, effort, thinking, mode });
+  async startSession(tabId: string, projectPath: string, model: string, permissionMode: string, resumeSessionId?: string, configDir?: string, effort?: string, thinking?: Record<string, unknown>, mode?: SessionMode, manualAccountOverride?: boolean): Promise<void> {
+    return apiCall("session_start", { tabId, projectPath, model, permissionMode, resumeSessionId, configDir, effort, thinking, mode, manualAccountOverride });
   },
 
   /**

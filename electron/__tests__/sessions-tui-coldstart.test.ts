@@ -95,4 +95,44 @@ describe('start({ mode: "tui" })', () => {
 
     fs.rmSync(tmpConfig, { recursive: true, force: true });
   });
+
+  it('reuses resumeSessionId and spawns claude with --resume when provided', async () => {
+    const tmpConfig = fs.mkdtempSync(path.join(os.tmpdir(), 'omnifex-tuiresume-'));
+    const projectPath = '/Users/test/proj';
+    fs.mkdirSync(path.join(tmpConfig, 'projects', '-Users-test-proj'), { recursive: true });
+
+    const fakePty = {
+      write: vi.fn(),
+      resize: vi.fn(),
+      kill: vi.fn(),
+      onData: () => ({ dispose: () => {} }),
+      onExit: () => ({ dispose: () => {} }),
+    };
+    vi.mocked(ptySpawn).mockReset();
+    vi.mocked(ptySpawn).mockReturnValue(fakePty as any);
+
+    const sendToRenderer = vi.fn();
+    const sessions = createSessionsService(sendToRenderer);
+
+    const existingId = '11111111-2222-3333-4444-555555555555';
+
+    sessions.start({
+      tabId: 'tui-resume-1',
+      projectPath,
+      configDir: tmpConfig,
+      model: '',
+      permissionMode: '',
+      mode: 'tui',
+      resumeSessionId: existingId,
+    });
+
+    // handle.sessionId should be the passed id, not a freshly minted one.
+    expect(sessions.getSessionId('tui-resume-1')).toBe(existingId);
+
+    // CLI must be spawned with --resume <existingId>, not --session-id.
+    const spawnArgs = vi.mocked(ptySpawn).mock.calls[0][1];
+    expect(spawnArgs).toEqual(['--resume', existingId]);
+
+    fs.rmSync(tmpConfig, { recursive: true, force: true });
+  });
 });

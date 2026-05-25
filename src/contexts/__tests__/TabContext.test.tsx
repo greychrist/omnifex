@@ -30,8 +30,11 @@ vi.mock('@/services/sessionNameRegistry', () => ({
 vi.mock('@/lib/api', () => ({
   api: {
     listAccounts: vi.fn(async () => [{ id: 1, name: 'work', account_type: 'pro', config_dir: '/c' }]),
+    stopSession: vi.fn(async () => undefined),
   },
 }));
+
+import { api } from '@/lib/api';
 
 // window.electronAPI.onEvent — used for the notification-clicked listener.
 beforeEach(() => {
@@ -144,6 +147,34 @@ describe('TabContext — addTab / removeTab', () => {
     act(() => { result.current.removeTab(onlyId); });
     expect(result.current.tabs.length).toBe(0);
     expect(result.current.activeTabId).toBeNull();
+  });
+
+  it('removeTab on a chat tab fires api.stopSession so the main-process SDK handle is torn down', async () => {
+    const { result } = renderHook(() => useTabContext(), { wrapper });
+    await waitFor(() => { expect(result.current.tabs.length).toBe(1); });
+
+    let chatId = '';
+    act(() => {
+      chatId = result.current.addTab({ type: 'chat', title: 'C', status: 'idle', hasUnsavedChanges: false });
+    });
+    (api.stopSession as ReturnType<typeof vi.fn>).mockClear();
+
+    act(() => { result.current.removeTab(chatId); });
+    expect(api.stopSession).toHaveBeenCalledWith(chatId);
+  });
+
+  it('removeTab on a non-chat tab does NOT fire api.stopSession', async () => {
+    const { result } = renderHook(() => useTabContext(), { wrapper });
+    await waitFor(() => { expect(result.current.tabs.length).toBe(1); });
+
+    let settingsId = '';
+    act(() => {
+      settingsId = result.current.addTab({ type: 'settings', title: 'S', status: 'idle', hasUnsavedChanges: false });
+    });
+    (api.stopSession as ReturnType<typeof vi.fn>).mockClear();
+
+    act(() => { result.current.removeTab(settingsId); });
+    expect(api.stopSession).not.toHaveBeenCalled();
   });
 });
 

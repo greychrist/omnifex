@@ -40,7 +40,7 @@ export type {
  * Lifecycle states. See `docs/session-lifecycle.md` for the full model.
  *
  * SessionStatus is the connection axis ("the phone call"):
- *  - starting: query() fired, awaiting SDK system:init
+ *  - starting: SDK startup/query fired, awaiting SDK system:init
  *  - started:  SDK answered; session has a GUID; ready for conversation
  *  - error:    stream errored, kept alive for retry
  *  - stopped:  cleanly closed
@@ -85,6 +85,16 @@ export interface SessionStartParams {
    * API budget is exhausted or the user prefers terminal-primary UX.
    */
   mode?: SessionMode;
+  /**
+   * True when the user explicitly picked a non-default account for this
+   * session on the new-session form (`match_type === 'manual_override'`).
+   * When true, main trusts `configDir` as-is. When false/undefined, main
+   * re-resolves the account from current rules at session start — so that
+   * a path-rule change between form-mount and Start-click doesn't spawn
+   * the session under a stale account. Ignored when `resumeSessionId` is
+   * set (resumes always anchor to the configDir that owns the JSONL).
+   */
+  manualAccountOverride?: boolean;
 }
 
 /** Lets the service tell the main process which window owns each tab, so tab-scoped events are routed per-window. */
@@ -118,6 +128,11 @@ export interface SessionsService {
   stop(tabId: string): void;
   stopAll(): void;
   getSessionId(tabId: string): string | null;
+  /** Return the configDir actually used to spawn this session — useful for
+   *  callers that need to anchor JSONL or permission writes to the same
+   *  account main resolved (which may differ from the renderer's cached
+   *  account-resolution snapshot). */
+  getConfigDir(tabId: string): string | null;
   getStatus(tabId: string): { sessionStatus: SessionStatus; conversationStatus: ConversationStatus | null };
   getInfo(tabId: string): {
     sessionId: string | null;

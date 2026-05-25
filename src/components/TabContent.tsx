@@ -521,6 +521,7 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
               initialProjectPath={tab.initialProjectPath || ''}
               tabId={tab.id}
               initialSessionConfig={tab.initialSessionConfig}
+              isActive={isActive}
               onStreamingChange={(isStreaming, sessionId) => {
                 // Persist the SDK session ID to the tab so it survives app restart
                 if (sessionId) {

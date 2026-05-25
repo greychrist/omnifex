@@ -259,8 +259,9 @@ export const TabProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const removeTab = useCallback((id: string) => {
     setTabs(prevTabs => {
+      const removedTab = prevTabs.find(tab => tab.id === id);
       const filteredTabs = prevTabs.filter(tab => tab.id !== id);
-      
+
       // Reorder remaining tabs
       const reorderedTabs = filteredTabs.map((tab, index) => ({
         ...tab,
@@ -274,6 +275,19 @@ export const TabProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setActiveTabId(reorderedTabs[newActiveIndex].id);
       } else if (reorderedTabs.length === 0) {
         setActiveTabId(null);
+      }
+
+      // Tab close is the only path that should tear down a main-process SDK
+      // session. React unmount alone must NOT — Cmd+R reload, StrictMode
+      // double-invoke, and tab visibility flips all trigger unmounts but
+      // should keep the live session so rebind can claim it. main.stop()
+      // is idempotent and a no-op for tabs with no live handle, so it's
+      // safe to fire for any chat tab regardless of running state.
+      if (removedTab?.type === 'chat') {
+        logAndForget(
+          `tab-context:stop-session-on-close:${id}`,
+          api.stopSession(id),
+        );
       }
 
       return reorderedTabs;

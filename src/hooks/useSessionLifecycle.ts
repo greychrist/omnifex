@@ -252,7 +252,18 @@ export function useSessionLifecycle({
     if (!info) return;
 
     setSdkAccountInfo(info);
-    // Status badge is owned by main process — no flip here. Just enrich.
+    // Control-channel readiness is a real readiness signal. The SDK answers
+    // sessionAccountInfo above before the streamed `system:init` arrives, so
+    // flip the connection axis here so the badge reaches 'Active' without
+    // waiting for the first user prompt. claudeSessionId stays null until
+    // the SDK streams its real system:init (post-prompt) — see
+    // `docs/session-lifecycle.md`. SDK 0.3.150's control-channel
+    // `initializationResult` response does not carry a session_id, so
+    // there's nothing to surface pre-prompt without pinning a UUID.
+    setSessionStatus('started');
+    setConversationStatus((prev) =>
+      prev === 'running' || prev === 'waiting_permission' ? prev : 'idle',
+    );
 
     // Phase 2: fetch the one-shot enrichment data (models, commands,
     // context usage) once.
@@ -314,7 +325,12 @@ export function useSessionLifecycle({
     }).catch((err: unknown) => {
       console.warn('[rebindPersistentSession] sessionGetHealth failed:', err);
     });
-    logAndForget('use-session-lifecycle:fetch-init-info', fetchInitInfo());
+    // See startPersistentSession: skip SDK control-channel polling for TUI
+    // sessions — handle.query is null there and the polling would never
+    // resolve.
+    if (sessionStartMode !== 'tui') {
+      logAndForget('use-session-lifecycle:fetch-init-info', fetchInitInfo());
+    }
     return true;
   };
 
@@ -360,6 +376,14 @@ export function useSessionLifecycle({
         : thinkingConfig === "disabled"
           ? { type: "disabled" as const }
           : { type: "enabled" as const, budgetTokens: 10000 };
+    // Signal "user explicitly picked this account on the form" so main
+    // doesn't re-resolve and overwrite their choice. `manual_override`
+    // is set by AccountPickerDialog → setProjectAccountResolution in
+    // TabContent (and the equivalent in ClaudeCodeSession's in-session
+    // account swap). Everything else (path_rule / override-from-DB) is
+    // safe for main to re-resolve fresh.
+    const manualAccountOverride =
+      accountResolution?.match_type === 'manual_override';
     try {
       await api.startSession(
         tabId,
@@ -371,6 +395,7 @@ export function useSessionLifecycle({
         sdkEffort,
         sdkThinking,
         sessionStartMode,
+        manualAccountOverride,
       );
       // No state flips here. Main process owns lifecycle status and emits
       // `session-status:<tabId>` events; ClaudeCodeSession subscribes.
@@ -410,8 +435,13 @@ export function useSessionLifecycle({
     // (see docs/session-lifecycle.md).
 
     // Enrich the SDK's init message with MCP tools as soon as the
-    // control channel starts responding.
-    logAndForget('use-session-lifecycle:fetch-init-info', fetchInitInfo());
+    // control channel starts responding. Skipped for TUI mode — TUI
+    // sessions have no SDK Query, so accountInfo()/mcpServerStatus()
+    // would return null forever and the polling loop would spin every
+    // 1.5s until tab close. TUI metadata comes from JSONL instead.
+    if (sessionStartMode !== 'tui') {
+      logAndForget('use-session-lifecycle:fetch-init-info', fetchInitInfo());
+    }
   };
 
   // Cleanup event listeners and track mount state
@@ -420,13 +450,13 @@ export function useSessionLifecycle({
 
     return () => {
       isMountedRef.current = false;
-
-      // Stop the persistent process if the tab is being closed mid-session
-      if (tabId && persistentSessionRef.current) {
-        api.stopSession(tabId).catch((err: unknown) => {
-          console.error("Failed to stop session on unmount:", err);
-        });
-      }
+      // Note: api.stopSession is NOT called here. React unmount alone must
+      // not tear down a main-process SDK session — Cmd+R reload, StrictMode
+      // double-invoke, and tab-visibility flips all trigger unmounts but
+      // should keep the live session so rebind can claim it. The only
+      // intentional teardown happens on explicit tab close (see
+      // TabContext.removeTab) and on app quit (see main.ts before-quit
+      // → sessionsService.stopAll).
 
       // Clean up listeners
       unlistenRefs.current.forEach((unlisten) => { unlisten(); });

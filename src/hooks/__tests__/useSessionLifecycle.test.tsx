@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
-import { useRef } from 'react';
+import React, { useRef, StrictMode } from 'react';
 import type { ClaudeStreamMessage } from '@/types/claudeStream';
 
 vi.mock('@/lib/api', () => ({
@@ -113,6 +113,7 @@ describe('useSessionLifecycle — startPersistentSession happy path', () => {
       'medium',
       { type: 'adaptive' },
       undefined,
+      false,
     );
     expect(result.current.persistentSessionRef.current).toBe(true);
     // Listeners attached on the four claude-* channels plus session-status.
@@ -367,14 +368,19 @@ describe('useSessionLifecycle — event listener behavior', () => {
 });
 
 describe('useSessionLifecycle — unmount cleanup', () => {
-  it('calls api.stopSession on unmount when a session was running', async () => {
+  it('does NOT call api.stopSession on unmount, even when a session was running', async () => {
+    // Tear-down responsibility moved to TabContext.removeTab. React unmount
+    // alone (Cmd+R reload, StrictMode double-invoke, tab-visibility flips)
+    // must not kill a live main-process session — otherwise rebind has
+    // nothing to claim. Only explicit tab close should stop sessions.
     (api.startSession as any).mockResolvedValueOnce(undefined);
     const { result, unmount } = renderHook(harness());
     await act(async () => { await result.current.lifecycle.startPersistentSession(); });
     expect(result.current.persistentSessionRef.current).toBe(true);
 
     unmount();
-    expect(api.stopSession).toHaveBeenCalledWith('tab-life');
+    await new Promise((r) => setTimeout(r, 10));
+    expect(api.stopSession).not.toHaveBeenCalled();
   });
 
   it('does NOT call api.stopSession when no session was started', () => {
@@ -513,7 +519,12 @@ describe('useSessionLifecycle — fetchInitInfo enrichment', () => {
     expect(init.tools).toContain('mcp__foo_server__do_x');
   });
 
-  it('does not insert a synthetic init when the real one has not arrived', async () => {
+  it('flips sessionStatus to started from control-channel readiness, without inserting a synthetic init', async () => {
+    // After sessionAccountInfo() answers, fetchInitInfo treats the control
+    // channel as live and pushes sessionStatus → started so the badge reaches
+    // 'Active' without waiting for the first prompt. claudeSessionId stays
+    // null — SDK 0.3.150 doesn't surface a session_id pre-prompt; the real
+    // GUID arrives later via the streamed system:init through claude-output.
     (api.startSession as any).mockResolvedValueOnce(undefined);
     (api.sessionAccountInfo as any).mockResolvedValue({
       name: 'work', account_type: 'pro', config_dir: '/cfg',
@@ -521,13 +532,19 @@ describe('useSessionLifecycle — fetchInitInfo enrichment', () => {
     (api.sessionMcpServerStatus as any).mockResolvedValueOnce([
       { name: 'mcp1', status: 'connected', tools: [{ name: 't' }] },
     ]);
-    // No seeded init — chat starts empty.
-    const { result } = renderHook(harness());
+    const handleJsonlLine = vi.fn();
+    const { result } = renderHook(harness({ handleJsonlLine }));
     await act(async () => { await result.current.lifecycle.startPersistentSession(); });
     await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
 
-    // enrichInitTools is a no-op when no real init exists. Messages stays empty.
-    expect(result.current.messagesRef.current).toHaveLength(0);
+    expect(result.current.lifecycle.sessionStatus).toBe('started');
+    expect(result.current.lifecycle.conversationStatus).toBe('idle');
+    // No synthetic system:init was injected from the renderer side. The
+    // sessionGetHealth poll path was removed once we accepted that the SDK
+    // can't surface a session_id before the first prompt.
+    expect(handleJsonlLine).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'system', subtype: 'init' }),
+    );
   });
 });
 
@@ -611,5 +628,23 @@ describe('useSessionLifecycle — sessionStatus + conversationStatus', () => {
     act(() => { eventListeners['session-status:tab-life']({}); });
     expect(result.current.lifecycle.sessionStatus).toBe('started');
     expect(result.current.lifecycle.conversationStatus).toBe('idle');
+  });
+});
+
+describe('useSessionLifecycle — StrictMode-safe', () => {
+  // The hook's cleanup no longer calls api.stopSession — tear-down is
+  // explicit via TabContext.removeTab on tab close. This test pins that
+  // contract: even under StrictMode's setup → cleanup → setup double-invoke,
+  // a session that was running stays running. Without that invariant the
+  // SDK query gets torn down between the two setups and the new session
+  // sits stuck at sessionStatus='starting'.
+  it('does not stop the session under StrictMode\'s simulated unmount/remount', async () => {
+    renderHook(harness({ initialPersistent: true }), {
+      wrapper: ({ children }: { children: React.ReactNode }) => (
+        <StrictMode>{children}</StrictMode>
+      ),
+    });
+    await act(async () => { await new Promise((r) => setTimeout(r, 10)); });
+    expect(api.stopSession).not.toHaveBeenCalled();
   });
 });

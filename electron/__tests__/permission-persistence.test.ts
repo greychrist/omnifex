@@ -16,12 +16,26 @@ import path from 'node:path';
 import { createAsyncChannel } from '../services/async-channel';
 import { createSessionsService, type SessionsService } from '../services/sessions';
 import { createPermissionsIOService } from '../services/permissions-io';
-import { query as sdkQuery } from '@anthropic-ai/claude-agent-sdk';
+import { query as sdkQuery, startup as sdkStartup } from '@anthropic-ai/claude-agent-sdk';
 
-vi.mock('@anthropic-ai/claude-agent-sdk', () => ({ query: vi.fn() }));
+vi.mock('@anthropic-ai/claude-agent-sdk', () => ({ query: vi.fn(), startup: vi.fn() }));
 vi.mock('../services/sessions/tui', () => ({ createTuiSession: vi.fn() }));
 
 const mockedQuery = vi.mocked(sdkQuery);
+const mockedStartup = vi.mocked(sdkStartup);
+
+function syncResolved<T>(value: T): Promise<T> {
+  return {
+    then(onFulfilled: (value: T) => unknown, onRejected?: (reason: unknown) => unknown) {
+      try {
+        return Promise.resolve(onFulfilled(value));
+      } catch (err) {
+        if (onRejected) return Promise.resolve(onRejected(err));
+        return Promise.reject(err);
+      }
+    },
+  } as Promise<T>;
+}
 
 function installFakeQuery() {
   const channel = createAsyncChannel<unknown>();
@@ -35,6 +49,10 @@ function installFakeQuery() {
     capturedArgs = args ?? null;
     return fakeQuery;
   });
+  mockedStartup.mockImplementation((args: any) => syncResolved({
+    query: (prompt: any) => mockedQuery({ prompt, options: args?.options }),
+    close: vi.fn(),
+  } as any));
   return {
     getCapturedOptions: () => capturedArgs?.options ?? null,
   };
@@ -49,6 +67,7 @@ describe('end-to-end permission persistence', () => {
 
   beforeEach(() => {
     mockedQuery.mockReset();
+    mockedStartup.mockReset();
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'greychrist-perm-e2e-'));
     configDir = path.join(tmpDir, 'config');
     projectPath = path.join(tmpDir, 'project');
