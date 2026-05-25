@@ -151,6 +151,21 @@ export function createClaudeCliEngine(
   }
 
   async function start(p: AgentStartParams): Promise<void> {
+    // Re-entrant: callers use this to restart on stream death. Tear down the
+    // old child first so we don't leak an unparented subprocess, and reset
+    // the stdout buffer so a half-line from the dead child can't poison
+    // the fresh one.
+    if (child !== null) {
+      try {
+        child.kill('SIGTERM');
+      } catch {
+        /* already gone */
+      }
+      child = null;
+    }
+    lineBuf = '';
+    stderrBuf = '';
+
     sessionId = p.resumeSessionId ?? sessionId;
     const args = buildArgs(p);
     child = spawn(factory.claudeBinaryPath, args, {

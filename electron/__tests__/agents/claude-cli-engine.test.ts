@@ -36,11 +36,11 @@ function makeFakeChild(): FakeChild {
   return emitter;
 }
 
-describe('ClaudeCliEngine', () => {
-  beforeEach(() => {
-    mockedSpawn.mockReset();
-  });
+beforeEach(() => {
+  mockedSpawn.mockReset();
+});
 
+describe('ClaudeCliEngine', () => {
   describe('start()', () => {
     it('spawns the claude binary with stream-json IO flags and CLAUDE_CONFIG_DIR set', async () => {
       const fake = makeFakeChild();
@@ -258,6 +258,41 @@ describe('ClaudeCliEngine permission protocol', () => {
     expect(parsed.type).toBe('control_response');
     expect(parsed.request_id).toBe('pr2');
     expect(parsed.decision).toBe('allow');
+  });
+});
+
+describe('ClaudeCliEngine restart-on-stream-death', () => {
+  async function flushMicrotasks(): Promise<void> {
+    await new Promise((r) => setImmediate(r));
+  }
+
+  it('start() is re-entrant — second call with resumeSessionId spawns a fresh child with --resume', async () => {
+    const first = makeFakeChild();
+    const second = makeFakeChild();
+    mockedSpawn.mockReturnValueOnce(first as never).mockReturnValueOnce(second as never);
+
+    const engine = createClaudeCliEngine({
+      tabId: 'tab-rs',
+      claudeBinaryPath: '/usr/local/bin/claude',
+    });
+
+    await engine.start({ projectPath: '/p', configDir: '/c' });
+    first.stdout.push(
+      JSON.stringify({ type: 'system', subtype: 'init', session_id: 'sess-rs' }) + '\n',
+    );
+    await flushMicrotasks();
+    first.emit('exit', 1, null);
+    await flushMicrotasks();
+
+    await engine.start({
+      projectPath: '/p',
+      configDir: '/c',
+      resumeSessionId: engine.getResumeId() ?? undefined,
+    });
+
+    expect(mockedSpawn).toHaveBeenCalledTimes(2);
+    const secondArgs = mockedSpawn.mock.calls[1][1] as string[];
+    expect(secondArgs).toEqual(expect.arrayContaining(['--resume', 'sess-rs']));
   });
 });
 
