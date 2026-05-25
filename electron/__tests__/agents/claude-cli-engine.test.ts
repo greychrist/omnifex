@@ -261,6 +261,44 @@ describe('ClaudeCliEngine permission protocol', () => {
   });
 });
 
+describe('ClaudeCliEngine.getInitData', () => {
+  async function flushMicrotasks(): Promise<void> {
+    await new Promise((r) => setImmediate(r));
+  }
+
+  it('captures account/commands/models/agents from system:init', async () => {
+    const fake = makeFakeChild();
+    mockedSpawn.mockReturnValue(fake as never);
+    const engine = createClaudeCliEngine({
+      tabId: 'tab-init',
+      claudeBinaryPath: '/usr/local/bin/claude',
+    });
+    await engine.start({ projectPath: '/p', configDir: '/c' });
+
+    expect(engine.getInitData()).toBeNull();
+
+    fake.stdout.push(
+      JSON.stringify({
+        type: 'system',
+        subtype: 'init',
+        session_id: 's',
+        account: { email: 'a@b.com', organizationName: 'org' },
+        commands: [{ name: 'help' }, { name: 'clear' }],
+        models: [{ id: 'sonnet' }, { id: 'opus' }],
+        agents: [{ name: 'reviewer' }],
+      }) + '\n',
+    );
+    await flushMicrotasks();
+
+    const init = engine.getInitData();
+    expect(init).not.toBeNull();
+    expect((init!.account as { email: string }).email).toBe('a@b.com');
+    expect(init!.commands).toHaveLength(2);
+    expect(init!.models).toHaveLength(2);
+    expect(init!.agents).toHaveLength(1);
+  });
+});
+
 describe('ClaudeCliEngine.sendControlRequest', () => {
   async function flushMicrotasks(): Promise<void> {
     await new Promise((r) => setImmediate(r));

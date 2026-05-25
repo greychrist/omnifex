@@ -125,8 +125,23 @@ export function createClaudeCliEngine(
       return;
     }
 
-    if (p?.type === 'system' && p?.subtype === 'init' && typeof p.session_id === 'string') {
-      sessionId = p.session_id;
+    if (p?.type === 'system' && p?.subtype === 'init') {
+      if (typeof p.session_id === 'string') sessionId = p.session_id;
+      // Cache catalog fields the SDK formerly exposed via Query.accountInfo()
+      // and friends. We don't type the inner shapes here — the engine stays
+      // SDK-type-free; sessions/queries.ts casts at the call site.
+      const init = payload as {
+        account?: unknown;
+        commands?: unknown[];
+        models?: unknown[];
+        agents?: unknown[];
+      };
+      initData = {
+        account: init.account,
+        commands: init.commands,
+        models: init.models,
+        agents: init.agents,
+      };
     }
     const msg: AgentMessage = {
       agent: 'claude',
