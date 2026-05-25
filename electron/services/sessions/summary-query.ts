@@ -1,39 +1,34 @@
 import * as fsPromises from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import {
-  query,
-  type Options,
-  type SDKResultMessage,
-} from '@anthropic-ai/claude-agent-sdk';
-import { findSystemClaudeBinary } from './factory';
+import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { findSystemClaudeBinary } from './binary';
 import { buildClaudeEnv } from '../util/claude-env';
 
 // ---------------------------------------------------------------------------
-// One-shot summary runner
+// One-shot summary runner — `claude -p <prompt> --output-format json`
 //
 // Background:
-//   The Claude Code subprocess always persists a JSONL under
+//   The Claude Code CLI always persists a JSONL under
 //     <CLAUDE_CONFIG_DIR>/projects/<encoded-cwd>/<uuid>.jsonl
-//   regardless of which SDK API surface you use. Earlier the summary path
-//   called V1 `query()` with the real project path as `cwd`, leaving
-//   throwaway one-message sessions in the user's real project session list.
+//   regardless of which CLI mode you invoke. Earlier the summary path
+//   called the SDK's `query()` with the real project path as `cwd`,
+//   leaving throwaway one-message sessions in the user's real project
+//   session list.
 //
-//   The summary path uses the streaming `query()` API wrapped in
-//   `runQueryOnce` (below) for one-shot await-and-go ergonomics, with
-//   the following guard rails:
+//   The summary path now invokes `claude -p` (print mode) wrapped in
+//   `runCliOnce` (below) for one-shot await-and-go ergonomics, with the
+//   following guard rails:
 //     - Pins every call to a single STABLE scratch cwd
 //       `<os.tmpdir()>/omnifex-summary-scratch`. The encoded form is the
 //       same on every call, so we don't accumulate one
 //       `<configDir>/projects/-var-folders-...-omnifex-summary-XXXXX/`
 //       folder per call. After each call we wipe the contents of the
 //       encoded projects dir.
-//     - `settingSources: []` keeps CLAUDE.md and project settings out
-//       of the summary prompt (set explicitly for defensiveness).
-//     - `permissionMode: 'bypassPermissions'` +
-//       `allowDangerouslySkipPermissions: true` + `disallowedTools: ['*']`
-//       — summarization writes nothing and reads nothing; it just gets
-//       a model response back as a string.
+//     - `--permission-mode bypassPermissions` skips approval prompts —
+//       summarization runs as a one-shot, no human in the loop.
+//     - `--disallowed-tools '*'` blocks every tool — the summary prompt
+//       has no need to read or write.
 //
 //   Concurrency note: if two summary calls overlap, they share the same
 //   projects dir. The cleanup `rm -rf` of one call may unlink the other's
@@ -47,69 +42,97 @@ const SCRATCH_DIR_NAME = 'omnifex-summary-scratch';
 
 export interface SummaryQueryOptions {
   prompt: string;
-  /** SDK model id, e.g. 'claude-haiku-4-5'. */
+  /** CLI model id, e.g. 'claude-haiku-4-5'. */
   model: string;
   /** The resolved account's CLAUDE_CONFIG_DIR — auth lives here. */
   configDir: string;
 }
 
-/** Subset of the SDK call surface we depend on — exposed for testing. */
-export type RunPromptFn = (
-  message: string,
-  options: Options,
-) => Promise<SDKResultMessage>;
+export interface RunPromptParams {
+  /** Resolved claude binary path. */
+  claudeBinary: string;
+  /** The summary prompt to send. */
+  prompt: string;
+  /** Optional model id. */
+  model?: string;
+  /** Resolved CLAUDE_CONFIG_DIR for the call. */
+  configDir: string;
+  /** Pinned scratch cwd so the JSONL stays in a predictable, sweep-able location. */
+  cwd: string;
+}
+
+/** Subset of the CLI runner surface we depend on — exposed for testing. */
+export type RunPromptFn = (params: RunPromptParams) => Promise<string>;
 
 /**
- * One-shot wrapper around the SDK's streaming `query()` API. Iterates
- * until the first `result` message and returns it; closes the underlying
- * `Query` handle on every exit path (success, no-result stream end,
- * iteration error). `query.close()` errors are swallowed so they cannot
- * mask either the result or the original iteration error.
- *
- * The first parameter is the SDK's `query` function, taken as a
- * dependency so unit tests can drive it without mocking the module.
+ * Spawn `claude -p <prompt> --output-format json` and resolve with the
+ * `result` field of the CLI's JSON reply. Rejects on non-zero exit with
+ * a message that includes captured stderr. Exposed as a default
+ * implementation of `RunPromptFn` for the runner factory.
  */
-export async function runQueryOnce(
-  queryFn: typeof query,
-  message: string,
-  options: Options,
-): Promise<SDKResultMessage> {
-  const q = queryFn({ prompt: message, options });
-  try {
-    for await (const msg of q as AsyncIterable<unknown>) {
-      if ((msg as { type?: string } | null)?.type === 'result') {
-        return msg as SDKResultMessage;
+export async function runCliOnce(p: RunPromptParams): Promise<string> {
+  const args: string[] = ['-p', p.prompt, '--output-format', 'json'];
+  if (p.model) args.push('--model', p.model);
+  args.push('--permission-mode', 'bypassPermissions');
+  args.push('--disallowed-tools', '*');
+
+  const child: ChildProcessWithoutNullStreams = spawn(p.claudeBinary, args, {
+    cwd: p.cwd,
+    env: buildClaudeEnv(p.configDir),
+    stdio: ['ignore', 'pipe', 'pipe'],
+  }) as ChildProcessWithoutNullStreams;
+
+  let stdout = '';
+  let stderr = '';
+  child.stdout.on('data', (chunk: Buffer | string) => {
+    stdout += typeof chunk === 'string' ? chunk : chunk.toString('utf8');
+  });
+  child.stderr.on('data', (chunk: Buffer | string) => {
+    stderr += typeof chunk === 'string' ? chunk : chunk.toString('utf8');
+  });
+
+  return await new Promise<string>((resolve, reject) => {
+    child.once('error', reject);
+    child.once('exit', (code, signal) => {
+      if (code !== 0) {
+        reject(
+          new Error(
+            `claude -p exited ${code ?? 'null'}${
+              signal ? ` (signal ${signal})` : ''
+            }: ${stderr.trim().slice(0, 500)}`,
+          ),
+        );
+        return;
       }
-    }
-    throw new Error('SDK query ended without a result message');
-  } finally {
-    try {
-      q.close();
-    } catch {
-      // best-effort — never let close() mask the real outcome
-    }
-  }
+      try {
+        const parsed = JSON.parse(stdout) as { result?: unknown };
+        const result = typeof parsed?.result === 'string' ? parsed.result.trim() : '';
+        resolve(result);
+      } catch (e) {
+        reject(
+          new Error(
+            `claude -p returned non-JSON: ${stdout.slice(0, 200)} (parse error: ${
+              e instanceof Error ? e.message : String(e)
+            })`,
+          ),
+        );
+      }
+    });
+  });
 }
 
 export interface SummaryQueryDeps {
   /**
-   * Defaults to a `runQueryOnce(query, …)` wrapper around the SDK's
-   * streaming `query()`. Injected in tests.
+   * Defaults to `runCliOnce`. Injected in tests so they don't need to
+   * actually spawn the CLI.
    */
   runPrompt?: RunPromptFn;
   /** Defaults to `os.tmpdir()`. Injected in tests. */
   tmpRoot?: string;
   /**
-   * Resolve the Claude Code binary to spawn. Defaults to the same probe
-   * the V1 sessions/factory path uses (`findSystemClaudeBinary` →
-   * system installs → SDK-bundled per-platform binary). Injected in tests.
-   *
-   * Setting this explicitly is important: the V2 SDK's auto-resolution
-   * (`require.resolve` from the SDK's own module URL) works in plain Node
-   * but fails inside Electron's bundled main process — the spawn fails
-   * with `[ENOTDIR] spawn ENOTDIR`. Passing `pathToClaudeCodeExecutable`
-   * explicitly bypasses that resolver, the same way the interactive
-   * sessions path has always done.
+   * Resolve the Claude Code binary. Defaults to `findSystemClaudeBinary`
+   * (system installs → SDK-bundled per-platform binary). Injected in
+   * tests so they can pin to a fake path without depending on disk state.
    */
   resolveClaudeBinary?: () => string | null;
 }
@@ -129,23 +152,17 @@ export function encodeProjectKey(absPath: string): string {
 export function createSummaryQueryRunner(
   deps: SummaryQueryDeps = {},
 ): (opts: SummaryQueryOptions) => Promise<string> {
-  const runPrompt: RunPromptFn =
-    deps.runPrompt ?? ((message, options) => runQueryOnce(query, message, options));
+  const runPrompt: RunPromptFn = deps.runPrompt ?? runCliOnce;
   const tmpRoot = deps.tmpRoot ?? os.tmpdir();
   const resolveClaudeBinary = deps.resolveClaudeBinary ?? findSystemClaudeBinary;
   const scratchCwd = path.join(tmpRoot, SCRATCH_DIR_NAME);
 
   return async function runSummaryQuery(opts: SummaryQueryOptions): Promise<string> {
-    // Resolve the binary up front for the same reason the interactive
-    // session path does — the SDK's auto-resolver fails inside Electron's
-    // bundled main process (spawn ENOTDIR). Fail fast with a clear error
-    // when no binary can be found, so the renderer surfaces something
-    // diagnosable instead of an opaque spawn error.
     const claudeBinary = resolveClaudeBinary();
     if (!claudeBinary) {
       throw new Error(
         'Claude binary not found: no system install and no SDK-bundled fallback. ' +
-          'Configure a CLI path in Account Settings or reinstall @anthropic-ai/claude-agent-sdk.',
+          'Configure a CLI path in Account Settings.',
       );
     }
 
@@ -160,24 +177,16 @@ export function createSummaryQueryRunner(
     );
 
     try {
-      const result = await runPrompt(opts.prompt, {
+      return await runPrompt({
+        claudeBinary,
+        prompt: opts.prompt,
         model: opts.model,
+        configDir: opts.configDir,
         cwd: scratchCwd,
-        // Routed through buildClaudeEnv — empty / ~/.claude-resolving
-        // configDir throws here so a stale opts.configDir can't trigger
-        // a JSONL leak into the user's default Claude state.
-        env: buildClaudeEnv(opts.configDir),
-        pathToClaudeCodeExecutable: claudeBinary,
-        permissionMode: 'bypassPermissions',
-        allowDangerouslySkipPermissions: true,
-        disallowedTools: ['*'],
-        settingSources: [],
       });
-      if (result.subtype === 'success') return result.result;
-      return '';
     } finally {
-      // Sweep the JSONL the subprocess wrote. Best-effort — the dir may
-      // not exist on early failure, and we don't want cleanup errors to
+      // Sweep the JSONL the CLI wrote. Best-effort — the dir may not
+      // exist on early failure, and we don't want cleanup errors to
       // mask the real outcome of the call. The scratch cwd itself is
       // intentionally left alone; reusing it across calls is the whole
       // point of this design.
