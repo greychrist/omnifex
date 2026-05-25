@@ -59,6 +59,13 @@ export function createClaudeCliEngine(
     string,
     { resolve: (v: unknown) => void; reject: (e: Error) => void }
   >();
+  /**
+   * Permission requests originate at the CLI; we forward them to the
+   * renderer and remember the originating tool_use_id keyed by request_id
+   * so the eventual control_response can mirror it (the SDK echoes
+   * `toolUseID` back in its PermissionResult).
+   */
+  const pendingPermissionToolUseIds = new Map<string, string>();
   let nextRequestSeq = 1;
   let lineBuf = '';
   let stderrBuf = '';
@@ -79,7 +86,12 @@ export function createClaudeCliEngine(
       subtype?: string;
       session_id?: string;
       request_id?: string;
-      tool_name?: string;
+      request?: {
+        subtype?: string;
+        tool_name?: string;
+        tool_use_id?: string;
+        input?: unknown;
+      };
       response?: {
         subtype?: string;
         request_id?: string;
@@ -104,16 +116,20 @@ export function createClaudeCliEngine(
       return;
     }
 
-    // Route permission requests to permission callbacks only; they don't
-    // belong in the transcript stream — the renderer's UI prompt is the
-    // consumer, not the message list.
-    if (p?.type === 'control_request' && p?.subtype === 'permission_request') {
+    // Route can_use_tool to the permission UI; not the transcript stream.
+    // Envelope is nested: {type:'control_request', request_id, request:{subtype:'can_use_tool', tool_name, input, tool_use_id, ...}}.
+    if (p?.type === 'control_request' && p?.request?.subtype === 'can_use_tool') {
+      const requestId = String(p.request_id ?? '');
+      const toolUseId = p.request.tool_use_id ?? '';
+      if (requestId && toolUseId) {
+        pendingPermissionToolUseIds.set(requestId, toolUseId);
+      }
       const req: AgentPermissionRequest = {
         agent: 'claude',
-        requestId: String(p.request_id ?? ''),
+        requestId,
         kind: 'tool',
-        summary: `Permission requested for tool: ${p.tool_name ?? 'unknown'}`,
-        payload,
+        summary: `Permission requested for tool: ${p.request.tool_name ?? 'unknown'}`,
+        payload: p.request,
       };
       for (const cb of permissionCallbacks) {
         try {
@@ -258,13 +274,34 @@ export function createClaudeCliEngine(
     payload?: unknown,
   ): Promise<void> {
     if (!child || !child.stdin.writable) return;
-    const obj: Record<string, unknown> = {
-      type: 'control_response',
-      request_id: requestId,
-      decision,
+    const toolUseId = pendingPermissionToolUseIds.get(requestId) ?? '';
+    pendingPermissionToolUseIds.delete(requestId);
+
+    // Build the PermissionResult body the CLI expects. `payload` from
+    // sessions/permissions.ts carries renderer-side extras like updatedInput
+    // / updatedPermissions; merge them onto the base shape so the CLI sees
+    // exactly what the SDK used to send.
+    const permissionResult: Record<string, unknown> = {
+      behavior: decision,
+      toolUseID: toolUseId,
     };
-    if (payload !== undefined) obj.input = payload;
-    const line = JSON.stringify(obj) + '\n';
+    if (payload && typeof payload === 'object') {
+      Object.assign(permissionResult, payload as Record<string, unknown>);
+      // Re-pin behavior/toolUseID after the spread so a caller can't
+      // accidentally clobber them.
+      permissionResult.behavior = decision;
+      permissionResult.toolUseID = toolUseId;
+    }
+
+    const envelope = {
+      type: 'control_response',
+      response: {
+        subtype: 'success',
+        request_id: requestId,
+        response: permissionResult,
+      },
+    };
+    const line = JSON.stringify(envelope) + '\n';
     await new Promise<void>((resolve, reject) => {
       child!.stdin.write(line, (err) => {
         if (err) reject(err);

@@ -185,7 +185,7 @@ describe('ClaudeCliEngine permission protocol', () => {
     await new Promise((r) => setImmediate(r));
   }
 
-  it('forwards control_request:permission_request to onPermissionRequest', async () => {
+  it('forwards control_request:can_use_tool to onPermissionRequest', async () => {
     const fake = makeFakeChild();
     mockedSpawn.mockReturnValue(fake as never);
     const engine = createClaudeCliEngine({
@@ -200,10 +200,13 @@ describe('ClaudeCliEngine permission protocol', () => {
     fake.stdout.push(
       JSON.stringify({
         type: 'control_request',
-        subtype: 'permission_request',
         request_id: 'pr1',
-        tool_name: 'Bash',
-        input: { command: 'ls' },
+        request: {
+          subtype: 'can_use_tool',
+          tool_name: 'Bash',
+          input: { command: 'ls' },
+          tool_use_id: 'tu_abc',
+        },
       }) + '\n',
     );
     await flushMicrotasks();
@@ -214,9 +217,10 @@ describe('ClaudeCliEngine permission protocol', () => {
     expect(reqs[0].kind).toBe('tool');
     expect(reqs[0].summary).toContain('Bash');
     expect((reqs[0].payload as { tool_name: string }).tool_name).toBe('Bash');
+    expect((reqs[0].payload as { tool_use_id: string }).tool_use_id).toBe('tu_abc');
   });
 
-  it('does NOT also emit permission_request as a normal onMessage', async () => {
+  it('does NOT also emit can_use_tool as a normal onMessage', async () => {
     const fake = makeFakeChild();
     mockedSpawn.mockReturnValue(fake as never);
     const engine = createClaudeCliEngine({
@@ -231,10 +235,13 @@ describe('ClaudeCliEngine permission protocol', () => {
     fake.stdout.push(
       JSON.stringify({
         type: 'control_request',
-        subtype: 'permission_request',
         request_id: 'pr-x',
-        tool_name: 'Read',
-        input: {},
+        request: {
+          subtype: 'can_use_tool',
+          tool_name: 'Read',
+          input: {},
+          tool_use_id: 'tu_x',
+        },
       }) + '\n',
     );
     await flushMicrotasks();
@@ -242,22 +249,41 @@ describe('ClaudeCliEngine permission protocol', () => {
     expect(msgs).toHaveLength(0);
   });
 
-  it('respondPermission ships a control_response on stdin with right id', async () => {
+  it('respondPermission ships a nested control_response with toolUseID mirrored', async () => {
     const fake = makeFakeChild();
     mockedSpawn.mockReturnValue(fake as never);
     const engine = createClaudeCliEngine({
       tabId: 'tab-perm3',
       claudeBinaryPath: '/usr/local/bin/claude',
     });
+    const reqs: import('../../services/agents/types').AgentPermissionRequest[] = [];
+    engine.onPermissionRequest((r) => reqs.push(r));
     await engine.start({ projectPath: '/p', configDir: '/c' });
 
-    await engine.respondPermission('pr2', 'allow');
+    fake.stdout.push(
+      JSON.stringify({
+        type: 'control_request',
+        request_id: 'pr2',
+        request: {
+          subtype: 'can_use_tool',
+          tool_name: 'Bash',
+          input: { command: 'ls' },
+          tool_use_id: 'tu_42',
+        },
+      }) + '\n',
+    );
+    await flushMicrotasks();
+
+    await engine.respondPermission('pr2', 'allow', { updatedInput: { command: 'ls -la' } });
 
     expect(fake.stdin._writes).toHaveLength(1);
     const parsed = JSON.parse(fake.stdin._writes[0].trim());
     expect(parsed.type).toBe('control_response');
-    expect(parsed.request_id).toBe('pr2');
-    expect(parsed.decision).toBe('allow');
+    expect(parsed.response.subtype).toBe('success');
+    expect(parsed.response.request_id).toBe('pr2');
+    expect(parsed.response.response.behavior).toBe('allow');
+    expect(parsed.response.response.toolUseID).toBe('tu_42');
+    expect(parsed.response.response.updatedInput).toEqual({ command: 'ls -la' });
   });
 });
 
