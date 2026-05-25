@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.58] — 2026-05-24
+
+Security patch release. v0.4.57's DMG/ZIP were packaged before the dependency override fix landed; this release ships the patched runtime deps.
+
+Installers remain **unsigned**.
+
+### Fixed
+
+- **`qs` 6.15.1 → 6.15.2.** Fixes a remotely-triggerable DoS where `qs.stringify` crashes on `null`/`undefined` entries in comma-format arrays with `encodeValuesOnly: true` ([GHSA-q8mj-m7cp-5q26](https://github.com/advisories/GHSA-q8mj-m7cp-5q26)). Pulled in transitively via `@anthropic-ai/claude-agent-sdk → @modelcontextprotocol/sdk → express → body-parser`. Pinned via `overrides` in `package.json`.
+- **`prismjs` 1.27.0 → 1.30.0.** Fixes a DOM-clobbering vulnerability in the syntax-highlighter ([GHSA-x7hr-w5r2-h6wg](https://github.com/advisories/GHSA-x7hr-w5r2-h6wg)). Pulled in transitively via `react-syntax-highlighter → refractor`. Pinned via `overrides`.
+
+The 8 remaining dependabot alerts (tar x6, tmp, @tootallnate/once) are all dev-only — reachable only through `@electron-forge/*` build tooling, not the shipped app. They're waiting on a Forge release that bumps its tar dep.
+
 ## [0.4.57] — 2026-05-24
 
 Session lifecycle refactor: the single `SessionStatus` enum conflated "is the connection up?" with "what is the turn doing?", forcing every consumer to disjunction-match across multiple values and hiding bugs like "stuck on starting" behind synthetic UI filler. Split into two orthogonal axes — `sessionStatus` (the phone call) and `conversationStatus` (the back-and-forth) — with the invariant enforced in main and reflected in the renderer. Authoritative model captured in `docs/session-lifecycle.md` and referenced from `CLAUDE.md` so future agents stop spinning on the same questions.
