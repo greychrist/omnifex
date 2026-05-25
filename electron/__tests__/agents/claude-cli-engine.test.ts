@@ -180,6 +180,87 @@ describe('ClaudeCliEngine', () => {
 // spawn-skeleton tests don't need to know about it.
 type AgentMessageT = import('../../services/agents/types').AgentMessage;
 
+describe('ClaudeCliEngine permission protocol', () => {
+  async function flushMicrotasks(): Promise<void> {
+    await new Promise((r) => setImmediate(r));
+  }
+
+  it('forwards control_request:permission_request to onPermissionRequest', async () => {
+    const fake = makeFakeChild();
+    mockedSpawn.mockReturnValue(fake as never);
+    const engine = createClaudeCliEngine({
+      tabId: 'tab-perm',
+      claudeBinaryPath: '/usr/local/bin/claude',
+    });
+    const reqs: import('../../services/agents/types').AgentPermissionRequest[] = [];
+    engine.onPermissionRequest((r) => reqs.push(r));
+
+    await engine.start({ projectPath: '/p', configDir: '/c' });
+
+    fake.stdout.push(
+      JSON.stringify({
+        type: 'control_request',
+        subtype: 'permission_request',
+        request_id: 'pr1',
+        tool_name: 'Bash',
+        input: { command: 'ls' },
+      }) + '\n',
+    );
+    await flushMicrotasks();
+
+    expect(reqs).toHaveLength(1);
+    expect(reqs[0].agent).toBe('claude');
+    expect(reqs[0].requestId).toBe('pr1');
+    expect(reqs[0].kind).toBe('tool');
+    expect(reqs[0].summary).toContain('Bash');
+    expect((reqs[0].payload as { tool_name: string }).tool_name).toBe('Bash');
+  });
+
+  it('does NOT also emit permission_request as a normal onMessage', async () => {
+    const fake = makeFakeChild();
+    mockedSpawn.mockReturnValue(fake as never);
+    const engine = createClaudeCliEngine({
+      tabId: 'tab-perm2',
+      claudeBinaryPath: '/usr/local/bin/claude',
+    });
+    const msgs: AgentMessageT[] = [];
+    engine.onMessage((m) => msgs.push(m));
+    engine.onPermissionRequest(() => {});
+
+    await engine.start({ projectPath: '/p', configDir: '/c' });
+    fake.stdout.push(
+      JSON.stringify({
+        type: 'control_request',
+        subtype: 'permission_request',
+        request_id: 'pr-x',
+        tool_name: 'Read',
+        input: {},
+      }) + '\n',
+    );
+    await flushMicrotasks();
+
+    expect(msgs).toHaveLength(0);
+  });
+
+  it('respondPermission ships a control_response on stdin with right id', async () => {
+    const fake = makeFakeChild();
+    mockedSpawn.mockReturnValue(fake as never);
+    const engine = createClaudeCliEngine({
+      tabId: 'tab-perm3',
+      claudeBinaryPath: '/usr/local/bin/claude',
+    });
+    await engine.start({ projectPath: '/p', configDir: '/c' });
+
+    await engine.respondPermission('pr2', 'allow');
+
+    expect(fake.stdin._writes).toHaveLength(1);
+    const parsed = JSON.parse(fake.stdin._writes[0].trim());
+    expect(parsed.type).toBe('control_response');
+    expect(parsed.request_id).toBe('pr2');
+    expect(parsed.decision).toBe('allow');
+  });
+});
+
 describe('ClaudeCliEngine.send()', () => {
   async function flushMicrotasks(): Promise<void> {
     await new Promise((r) => setImmediate(r));

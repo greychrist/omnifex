@@ -50,6 +50,7 @@ export function createClaudeCliEngine(
   let child: ChildProcessWithoutNullStreams | null = null;
   let sessionId: string | null = null;
   const messageCallbacks: Array<(m: AgentMessage) => void> = [];
+  const permissionCallbacks: Array<(r: AgentPermissionRequest) => void> = [];
   let lineBuf = '';
 
   function emitMessage(line: string): void {
@@ -63,7 +64,35 @@ export function createClaudeCliEngine(
       // stdout; anything else is noise that doesn't belong in the transcript.
       return;
     }
-    const p = payload as { type?: string; subtype?: string; session_id?: string };
+    const p = payload as {
+      type?: string;
+      subtype?: string;
+      session_id?: string;
+      request_id?: string;
+      tool_name?: string;
+    };
+
+    // Route permission requests to permission callbacks only; they don't
+    // belong in the transcript stream — the renderer's UI prompt is the
+    // consumer, not the message list.
+    if (p?.type === 'control_request' && p?.subtype === 'permission_request') {
+      const req: AgentPermissionRequest = {
+        agent: 'claude',
+        requestId: String(p.request_id ?? ''),
+        kind: 'tool',
+        summary: `Permission requested for tool: ${p.tool_name ?? 'unknown'}`,
+        payload,
+      };
+      for (const cb of permissionCallbacks) {
+        try {
+          cb(req);
+        } catch {
+          /* subscriber threw */
+        }
+      }
+      return;
+    }
+
     if (p?.type === 'system' && p?.subtype === 'init' && typeof p.session_id === 'string') {
       sessionId = p.session_id;
     }
@@ -129,11 +158,24 @@ export function createClaudeCliEngine(
   }
 
   async function respondPermission(
-    _requestId: string,
-    _decision: 'allow' | 'deny',
-    _payload?: unknown,
+    requestId: string,
+    decision: 'allow' | 'deny',
+    payload?: unknown,
   ): Promise<void> {
-    // Implemented in Task 6.
+    if (!child || !child.stdin.writable) return;
+    const obj: Record<string, unknown> = {
+      type: 'control_response',
+      request_id: requestId,
+      decision,
+    };
+    if (payload !== undefined) obj.input = payload;
+    const line = JSON.stringify(obj) + '\n';
+    await new Promise<void>((resolve, reject) => {
+      child!.stdin.write(line, (err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
   }
 
   async function interrupt(): Promise<void> {
@@ -175,8 +217,14 @@ export function createClaudeCliEngine(
       },
     };
   }
-  function onPermissionRequest(_cb: (r: AgentPermissionRequest) => void): Disposable {
-    return { dispose() {} };
+  function onPermissionRequest(cb: (r: AgentPermissionRequest) => void): Disposable {
+    permissionCallbacks.push(cb);
+    return {
+      dispose() {
+        const i = permissionCallbacks.indexOf(cb);
+        if (i !== -1) permissionCallbacks.splice(i, 1);
+      },
+    };
   }
   function onError(_cb: (err: Error) => void): Disposable {
     return { dispose() {} };
