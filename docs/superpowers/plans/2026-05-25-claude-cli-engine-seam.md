@@ -1,22 +1,21 @@
-# Phase 1 — Claude CLI Engine Seam Implementation Plan
+# Phase A — Claude CLI Engine + SDK Removal Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace the SDK runtime for Claude sessions with a CLI-backed subprocess (`claude --output-format stream-json --input-format stream-json`), hidden behind a new `AgentEngine` interface, without touching the renderer or removing the SDK dependency yet. Keep the old SDK path as an opt-in fallback (`OMNIFEX_USE_SDK=1`) for one release of A/B safety.
+**Goal:** Replace the SDK runtime for Claude sessions with a CLI-backed subprocess (`claude --output-format stream-json --input-format stream-json`), hidden behind a new `AgentEngine` interface, and remove the `@anthropic-ai/claude-agent-sdk` dependency entirely in the same release. No fallback flag, no compat shim — CLI is the only path.
 
-**Architecture:** A new `electron/services/agents/` module defines an `AgentEngine` interface and the first concrete implementation, `ClaudeCliEngine`. Sessions service grows an `engine: AgentEngine | null` field on the handle; the live message loop in `runtime.ts` drives the engine instead of the SDK's `Query` iterator. The Claude-side stream-json output is byte-for-byte the same JSON the SDK was yielding, so the renderer is unchanged.
+**Architecture:** A new `electron/services/agents/` module defines an `AgentEngine` interface and the first concrete implementation, `ClaudeCliEngine`. Sessions service grows an `engine: AgentEngine` field on the handle; the live message loop in `runtime.ts` drives the engine instead of the SDK's `Query` iterator. The Claude-side stream-json output is byte-for-byte the same JSON the SDK was yielding, so the renderer is unchanged. Once the engine is wired in, the SDK imports go dead and are deleted in the same release.
 
 **Tech Stack:** Node's child-process subprocess (use the project's existing safe spawn pattern — `execFileNoThrow` where appropriate, otherwise the same subprocess primitives `tui.ts` already uses), NDJSON line-buffered parsing, existing `better-sqlite3` migration pattern, existing `claude-binary.ts` discovery chain.
 
-**Spec:** `docs/superpowers/specs/2026-05-25-cli-engine-and-codex-design.md` (phase 1 only).
+**Spec:** `docs/superpowers/specs/2026-05-25-cli-engine-and-codex-design.md` (combines phases 1 and 2 of the spec into a single shippable release).
 
 ---
 
 ## Non-Goals (out of scope for this plan)
 
-- Removing the `@anthropic-ai/claude-agent-sdk` dependency. (Phase 2.)
-- Codex engine, agent picker UI, Codex transcript. (Phase 3.)
-- Claude re-auth affordance. (Phase 4.)
+- Codex engine, agent picker UI, Codex transcript. (Phase 3 — separate plan.)
+- Claude re-auth affordance. (Phase 4 — separate plan.)
 - Touching the renderer transcript or any of `src/components/`. The renderer still consumes the same Claude message shape it does today.
 - TUI mode internals. The `mode: 'rich' | 'tui'` rename is in scope; everything inside `tui.ts` is not.
 
@@ -30,19 +29,24 @@
 - `electron/__tests__/agents/claude-cli-engine.test.ts` — unit tests using a mocked subprocess.
 
 **Modified files:**
-- `electron/services/sessions/types.ts` — add `engine` to `SessionHandle`; widen `SessionMode` to `'rich' | 'tui'` (rename from `'sdk' | 'tui'`).
-- `electron/services/sessions/lifecycle.ts` — engine-selection seam in `start()`; honor `OMNIFEX_USE_SDK=1`; populate `handle.engine` when CLI engine is selected.
-- `electron/services/sessions/runtime.ts` — drive `handle.engine` when present, fall back to `handle.query` (SDK) when not.
+- `electron/services/sessions/types.ts` — add `engine` to `SessionHandle`; widen `SessionMode` to `'rich' | 'tui'`.
+- `electron/services/sessions/lifecycle.ts` — replace SDK `startup()` call with engine; delete SDK option-building code.
+- `electron/services/sessions/runtime.ts` — drive `handle.engine` only; delete the SDK iterator loop.
 - `electron/services/sessions/summary-query.ts` — rewrite as one-shot CLI invocation; remove SDK dependency.
 - `electron/services/database.ts` — add migration for `agent` column on `sessions` + `path_rules`.
-- `electron/__tests__/sessions.test.ts` — keep existing `installFakeQuery` for the SDK path; add tests exercising the CLI-engine seam.
+- `electron/__tests__/sessions.test.ts` — delete `installFakeQuery`; add tests using the new engine seam.
+- `electron/__tests__/permission-persistence.test.ts` — rewrite to mock the engine instead of SDK `query`/`startup`.
 - `src/lib/api.ts` — update `SessionMode` literal union.
 - `src/components/ClaudeCodeSession.tsx` — update mode comparisons from `'sdk'` to `'rich'`.
 - `src/components/NewSessionForm.tsx` — update default mode.
 - `src/hooks/useSessionLifecycle.ts` — update mode references.
-- `electron/services/sessions/hooks.ts` — **deleted** (CLI invokes user-defined hooks itself; OmniFex's own internal hook-shaped concerns move into engine subscribers).
-- `package.json` — version bump for release.
-- `CHANGELOG.md` — phase 1 entry.
+- `src/components/SessionModeToggle.tsx` — relabel `SDK` → `Chat`.
+- `package.json` — **remove** `@anthropic-ai/claude-agent-sdk` dependency; version bump for release.
+- `forge.config.ts` — drop the SDK glob from `asar.unpack`.
+- `CHANGELOG.md` — combined entry.
+
+**Deleted files:**
+- `electron/services/sessions/hooks.ts` — CLI invokes user hooks natively.
 
 ---
 
@@ -61,30 +65,24 @@ In `electron/__tests__/database.test.ts`, near the other migration tests, append
 
 - [ ] **Step 2: Verify RED**
 
-Run: `npm test -- electron/__tests__/database.test.ts -t "agent column"`
-
-Expected: FAIL — "no such column: agent".
+`npm test -- electron/__tests__/database.test.ts -t "agent column"` → FAIL ("no such column: agent").
 
 - [ ] **Step 3: Add the migration**
 
-In `electron/services/database.ts`, find the migrations block (search for the most recent `ALTER TABLE` or numbered migration). Append a new migration after the most recent one:
+In `electron/services/database.ts`, find the migrations block (search for the most recent numbered migration or `ALTER TABLE`). Append:
 
-- Statement 1: `ALTER TABLE sessions ADD COLUMN agent TEXT NOT NULL DEFAULT 'claude'`
-- Statement 2: `ALTER TABLE path_rules ADD COLUMN agent TEXT NOT NULL DEFAULT 'claude'`
+- `ALTER TABLE sessions ADD COLUMN agent TEXT NOT NULL DEFAULT 'claude'`
+- `ALTER TABLE path_rules ADD COLUMN agent TEXT NOT NULL DEFAULT 'claude'`
 
 Use the next sequential version number. If the schema is initialized via `CREATE TABLE` in a top-level `init` block (not numbered migrations), add `agent TEXT NOT NULL DEFAULT 'claude'` to both `CREATE TABLE` statements **and** add a defensive `ALTER TABLE … ADD COLUMN IF NOT EXISTS` for existing on-disk DBs.
 
-- [ ] **Step 4: Verify GREEN**
-
-`npm test -- electron/__tests__/database.test.ts -t "agent column"` → PASS.
-
-- [ ] **Step 5: Run full DB suite**
+- [ ] **Step 4: Verify GREEN + full DB suite**
 
 `npm test -- electron/__tests__/database.test.ts` → all pass.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 5: Commit**
 
-`git add electron/services/database.ts electron/__tests__/database.test.ts && git commit -m "feat(db): add agent column to sessions and path_rules"`
+`git commit -m "feat(db): add agent column to sessions and path_rules"`
 
 ---
 
@@ -98,9 +96,9 @@ Use the next sequential version number. If the schema is initialized via `CREATE
 Create `electron/services/agents/types.ts` exporting:
 
 - `type AgentKind = 'claude' | 'codex';`
-- `interface AgentStartParams` with fields: `projectPath: string`, `configDir: string`, `model?: string`, `permissionMode?: string`, `resumeSessionId?: string`, `allowedTools?: string[]`, `claude?: Record<string, unknown>`.
-- `interface AgentMessage` with fields: `agent: AgentKind`, `tabId: string`, `receivedAt: string`, `sessionId: string | null`, `payload: unknown`. Claude `payload` is the existing SDKMessage shape; Codex `payload` is the codex/event body. The shared envelope only normalizes routing metadata — no content normalization.
-- `interface AgentPermissionRequest` with fields: `agent: AgentKind`, `requestId: string`, `kind: 'tool' | 'patch' | 'exec'`, `summary: string`, `payload: unknown`.
+- `interface AgentStartParams` with: `projectPath: string`, `configDir: string`, `model?: string`, `permissionMode?: string`, `resumeSessionId?: string`, `allowedTools?: string[]`, `claude?: Record<string, unknown>`.
+- `interface AgentMessage`: `agent: AgentKind`, `tabId: string`, `receivedAt: string`, `sessionId: string | null`, `payload: unknown`. Claude `payload` is the existing SDKMessage shape; Codex `payload` is the codex/event body. The shared envelope only normalizes routing metadata — no content normalization.
+- `interface AgentPermissionRequest`: `agent: AgentKind`, `requestId: string`, `kind: 'tool' | 'patch' | 'exec'`, `summary: string`, `payload: unknown`.
 - `interface Disposable { dispose(): void; }`.
 - `interface AgentEngineExit { code: number; signal?: string | null; }`.
 - `interface AgentEngine` with: `readonly kind: AgentKind`, `start(params)`, `send(text)`, `respondPermission(requestId, decision, payload?)`, `interrupt()`, `close()`, `kill()`, `getResumeId(): string | null`, `onMessage(cb)`, `onPermissionRequest(cb)`, `onError(cb)`, `onExit(cb)`.
@@ -111,7 +109,7 @@ Create `electron/services/agents/types.ts` exporting:
 
 - [ ] **Step 3: Commit**
 
-`git add electron/services/agents/types.ts && git commit -m "feat(agents): define AgentEngine interface and message types"`
+`git commit -m "feat(agents): define AgentEngine interface and message types"`
 
 ---
 
@@ -121,16 +119,16 @@ Create `electron/services/agents/types.ts` exporting:
 - Create: `electron/__tests__/agents/claude-cli-engine.test.ts`
 - Create: `electron/services/agents/claude-cli-engine.ts`
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: Write failing tests**
 
-The test suite for the engine mocks the subprocess primitive used by the engine. Look at `electron/services/sessions/tui.ts` and the existing `tui.test.ts` to mirror that mocking pattern. Mock `electron/services/claude-binary` to return a fixed path like `/usr/local/bin/claude`.
+Mock the subprocess primitive used by the engine — mirror the pattern in `electron/services/sessions/tui.ts` and `tui.test.ts`. Mock `electron/services/claude-binary` to return a fixed path like `/usr/local/bin/claude`.
 
 Write two failing tests:
 
-1. `start() spawns the claude binary with stream-json IO flags and CLAUDE_CONFIG_DIR set` — asserts the subprocess mock was called with: the binary path returned by `findSystemClaudeBinary`, args including `--output-format stream-json`, `--input-format stream-json`, `--model sonnet`, the spawn opts include `cwd: '/proj'` and `env.CLAUDE_CONFIG_DIR === '/conf'`.
-2. `start() with resumeSessionId adds --resume <id>` — asserts the args contain both `--resume` and the resume id.
+1. **`start() spawns the claude binary with stream-json IO flags and CLAUDE_CONFIG_DIR set`** — assert the subprocess mock was called with the binary path returned by `findSystemClaudeBinary`, args including `--output-format stream-json`, `--input-format stream-json`, `--model sonnet`, and spawn opts `cwd: '/proj'`, `env.CLAUDE_CONFIG_DIR === '/conf'`.
+2. **`start() with resumeSessionId adds --resume <id>`** — assert args contain both `--resume` and the resume id.
 
-The fake subprocess should be an `EventEmitter` with `.stdout` and `.stderr` as `Readable`s, `.stdin` as a `Writable` that records writes into an array, `.kill = vi.fn()`, and `.pid = 12345`.
+The fake subprocess should be an `EventEmitter` with `.stdout` and `.stderr` as `Readable`s, `.stdin` as a `Writable` that records writes into an array, `.kill = vi.fn()`, `.pid = 12345`.
 
 - [ ] **Step 2: Verify RED**
 
@@ -140,18 +138,14 @@ The fake subprocess should be an `EventEmitter` with `.stdout` and `.stderr` as 
 
 Create `electron/services/agents/claude-cli-engine.ts`:
 
-- Import the project's subprocess primitive (the same one `tui.ts` uses for spawning the `claude` binary), `findSystemClaudeBinary` from `../claude-binary`, and the types from `./types`.
+- Import the project's subprocess primitive (same one `tui.ts` uses), `findSystemClaudeBinary` from `../claude-binary`, the types from `./types`.
 - Export `createClaudeCliEngine({ tabId: string })` returning an `AgentEngine`.
-- Closure state: `child` (the subprocess handle, initially null), `sessionId` (initially null).
-- A `buildArgs(p: AgentStartParams)` helper that returns the array: starts with `['--output-format', 'stream-json', '--input-format', 'stream-json', '--include-partial-messages']`. If `p.resumeSessionId` is set, append `'--resume', p.resumeSessionId` and set `sessionId = p.resumeSessionId`. If `p.model` is set, append `'--model', p.model`. If `p.permissionMode` is set, append `'--permission-mode', p.permissionMode`. If `p.allowedTools?.length`, append `'--allowed-tools', p.allowedTools.join(',')`.
-- `start(p)` resolves the binary via `findSystemClaudeBinary()` (throw if null), builds args, spawns the subprocess with `cwd: p.projectPath` and `env: { ...process.env, CLAUDE_CONFIG_DIR: p.configDir }`, stores the handle in `child`.
+- Closure state: `child` (subprocess handle, initially null), `sessionId` (initially null).
+- `buildArgs(p: AgentStartParams)` helper returning: `['--output-format', 'stream-json', '--input-format', 'stream-json', '--include-partial-messages']` plus `'--resume', p.resumeSessionId` (and set `sessionId = p.resumeSessionId`) if set, plus `'--model', p.model` if set, plus `'--permission-mode', p.permissionMode` if set, plus `'--allowed-tools', p.allowedTools.join(',')` if non-empty.
+- `start(p)` resolves binary via `findSystemClaudeBinary()` (throw if null), spawns with `cwd: p.projectPath`, `env: { ...process.env, CLAUDE_CONFIG_DIR: p.configDir }`, stores handle in `child`.
 - All other interface methods stub as no-ops; `close()` sends SIGTERM and nulls `child`; `kill()` sends SIGKILL and nulls `child`; `getResumeId()` returns `sessionId`. `onMessage`/`onPermissionRequest`/`onError`/`onExit` return `{ dispose() {} }`.
 
-- [ ] **Step 4: Verify GREEN**
-
-Tests pass.
-
-- [ ] **Step 5: Commit**
+- [ ] **Step 4: Verify GREEN + Commit**
 
 `git commit -m "feat(agents): ClaudeCliEngine spawn skeleton with stream-json flags"`
 
@@ -165,27 +159,21 @@ Tests pass.
 
 - [ ] **Step 1: Append three RED tests**
 
-1. **Parses NDJSON lines into onMessage events.** After `start()`, register an `onMessage` callback. Push two complete NDJSON lines onto the fake `stdout` (e.g. a `system:init` message and an `assistant` message). Await a microtask. Assert two messages were emitted, each with `agent === 'claude'`, `tabId === 'tm'`, and the right `payload`.
-2. **Handles split lines across chunk boundaries.** Push half a line, then the rest. Assert exactly one message emitted, with the joined JSON.
-3. **Captures session_id from system:init for getResumeId().** After pushing a `system:init` with `session_id: 'freshid'`, `engine.getResumeId()` returns `'freshid'`.
+1. **Parses NDJSON lines into onMessage events.** Push two complete NDJSON lines (`system:init` and `assistant`) onto fake stdout; await microtask; assert two messages emitted with `agent: 'claude'`, `tabId: 'tm'`, correct payloads.
+2. **Handles split lines across chunk boundaries.** Push half a line, then the rest; assert one message emitted with the joined JSON.
+3. **Captures session_id from system:init for getResumeId().** Push `system:init` with `session_id: 'freshid'`; assert `engine.getResumeId() === 'freshid'`.
 
 - [ ] **Step 2: Verify RED**
 
-Three new fails.
-
 - [ ] **Step 3: Implement NDJSON parsing + onMessage**
 
-In the engine:
-
 - Add closure state: `const messageCallbacks: Array<(m: AgentMessage) => void> = [];` and `let lineBuf = '';`.
-- Add `function emitMessage(line: string)`: trim-check, `JSON.parse` (silently drop parse errors), if `payload.type === 'system' && payload.subtype === 'init' && typeof payload.session_id === 'string'` set `sessionId = payload.session_id`. Construct an `AgentMessage` with `agent: 'claude'`, `tabId: params.tabId`, `receivedAt: new Date().toISOString()`, `sessionId`, `payload`. Iterate `messageCallbacks`, try/catch each one (log on throw).
-- Add `function wireStdout(stdout)`: on `data` chunk → append to `lineBuf` as UTF-8, then loop pulling out complete lines via `lineBuf.indexOf('\n')`, calling `emitMessage` on each.
+- `emitMessage(line)`: trim-check, `JSON.parse` (silently drop parse errors), capture session_id from `system:init`, build `AgentMessage` with `agent: 'claude'`, `tabId: params.tabId`, `receivedAt: new Date().toISOString()`, `sessionId`, `payload`, iterate `messageCallbacks` (try/catch each).
+- `wireStdout(stdout)`: on `data` chunk, append to `lineBuf`, loop pulling out complete lines via `lineBuf.indexOf('\n')`, call `emitMessage`.
 - In `start()`, after spawn, call `wireStdout(child.stdout)`.
-- Replace `onMessage`: push to `messageCallbacks`, return `{ dispose() { splice it out } }`.
+- Replace `onMessage`: push to array, return `{ dispose() { splice it out } }`.
 
 - [ ] **Step 4: Verify GREEN + Commit**
-
-`npm test -- electron/__tests__/agents/claude-cli-engine.test.ts` → all pass.
 
 `git commit -m "feat(agents): NDJSON line buffer + onMessage emission for ClaudeCliEngine"`
 
@@ -199,20 +187,13 @@ In the engine:
 
 - [ ] **Step 1: Append RED test**
 
-`send() writes a well-formed stream-json user message to stdin.`
-
-After `start()`, push a `system:init` with `session_id: 'send-sess'` so the engine knows the id. Call `await engine.send('hello world')`. Assert: exactly one write was captured on the fake stdin, it ends in `\n`, and the parsed JSON has: `type: 'user'`, `message.role: 'user'`, `message.content[0].type: 'text'`, `message.content[0].text: 'hello world'`, `session_id: 'send-sess'`, `parent_tool_use_id: null`.
+`send() writes a well-formed stream-json user message to stdin`. After `start()`, push `system:init` with `session_id: 'send-sess'`. Call `await engine.send('hello world')`. Assert: one write captured ending in `\n`, parsed JSON has `type: 'user'`, `message.role: 'user'`, `message.content[0].text: 'hello world'`, `session_id: 'send-sess'`, `parent_tool_use_id: null`.
 
 - [ ] **Step 2: Verify RED**
 
-`npm test -- electron/__tests__/agents/claude-cli-engine.test.ts -t "send"` → FAIL.
-
 - [ ] **Step 3: Implement `send`**
 
-`async send(text)`:
-- If `!child` or `!child.stdin.writable`, throw `'ClaudeCliEngine.send: child not running'`.
-- Construct the JSON object: `{ type: 'user', message: { role: 'user', content: [{ type: 'text', text }] }, parent_tool_use_id: null, session_id: sessionId ?? '' }`.
-- Write `JSON.stringify(obj) + '\n'` to `child.stdin`, wrapping the callback in a Promise.
+`async send(text)`: if `!child` or `!child.stdin.writable`, throw `'ClaudeCliEngine.send: child not running'`. Build `{ type: 'user', message: { role: 'user', content: [{ type: 'text', text }] }, parent_tool_use_id: null, session_id: sessionId ?? '' }`. Promise-wrap a `child.stdin.write(JSON.stringify(obj) + '\n', cb)`.
 
 - [ ] **Step 4: Verify GREEN + Commit**
 
@@ -228,19 +209,17 @@ After `start()`, push a `system:init` with `session_id: 'send-sess'` so the engi
 
 - [ ] **Step 1: Append two RED tests**
 
-1. **Forwards control_request:permission_request to onPermissionRequest.** Push a JSON line with `type: 'control_request'`, `subtype: 'permission_request'`, `request_id: 'pr1'`, `tool_name: 'Bash'`, `input: { command: 'ls' }`. Assert the registered `onPermissionRequest` callback received: `agent: 'claude'`, `kind: 'tool'`, `requestId: 'pr1'`, `summary` containing `'Bash'`, `payload.tool_name === 'Bash'`.
-2. **respondPermission ships a control_response on stdin with right id.** Call `engine.respondPermission('pr2', 'allow')`. Assert one write was captured with parsed JSON `{ type: 'control_response', request_id: 'pr2', decision: 'allow' }`.
+1. **Forwards control_request:permission_request to onPermissionRequest.** Push JSON with `type: 'control_request'`, `subtype: 'permission_request'`, `request_id: 'pr1'`, `tool_name: 'Bash'`, `input: { command: 'ls' }`. Assert callback received `agent: 'claude'`, `kind: 'tool'`, `requestId: 'pr1'`, summary contains `'Bash'`, payload preserves the raw shape.
+2. **respondPermission ships a control_response on stdin with right id.** Call `respondPermission('pr2', 'allow')`. Assert one write captured with parsed JSON `{ type: 'control_response', request_id: 'pr2', decision: 'allow' }`.
 
 - [ ] **Step 2: Verify RED**
 
-Two fails.
-
 - [ ] **Step 3: Implement**
 
-- Add `const permissionCallbacks: Array<(r: AgentPermissionRequest) => void> = [];` to closure.
-- In `emitMessage`, at the top: if `payload?.type === 'control_request' && payload?.subtype === 'permission_request'`, construct an `AgentPermissionRequest` (`agent: 'claude'`, `requestId: String(payload.request_id ?? '')`, `kind: 'tool'`, `summary: \`${payload.tool_name ?? 'tool'} request\``, `payload`), iterate `permissionCallbacks` (try/catch each), then `return` (don't also emit as a normal message).
-- Replace `onPermissionRequest`: push + splice-on-dispose, mirror of `onMessage`.
-- Implement `respondPermission(requestId, decision, payload?)`: if `!child?.stdin.writable` return. Build `{ type: 'control_response', request_id: requestId, decision }`, attach `input: payload` if defined, write `JSON.stringify(obj) + '\n'` (fire-and-forget — no need to await).
+- Add `const permissionCallbacks: Array<(r: AgentPermissionRequest) => void> = [];`.
+- In `emitMessage`, at the top: if `payload?.type === 'control_request' && payload?.subtype === 'permission_request'`, build `AgentPermissionRequest`, iterate `permissionCallbacks`, `return` (don't also emit as normal message).
+- Replace `onPermissionRequest`: push + splice-on-dispose.
+- `respondPermission(requestId, decision, payload?)`: if `!child?.stdin.writable` return. Build `{ type: 'control_response', request_id: requestId, decision }`, attach `input: payload` if defined, write `JSON.stringify(obj) + '\n'` (fire-and-forget).
 
 - [ ] **Step 4: Verify GREEN + Commit**
 
@@ -256,13 +235,13 @@ Two fails.
 
 - [ ] **Step 1: Append RED test**
 
-`interrupt() writes a control_request:interrupt to stdin.` After `start()`, `await engine.interrupt()`. Assert one write captured with parsed JSON `{ type: 'control_request', subtype: 'interrupt', request_id: <some-string> }`.
+`interrupt() writes a control_request:interrupt to stdin`. After `start()`, `await engine.interrupt()`. Assert one write captured with `{ type: 'control_request', subtype: 'interrupt', request_id: <some-string> }`.
 
 - [ ] **Step 2: Verify RED**
 
 - [ ] **Step 3: Implement**
 
-`async interrupt()`: if `!child?.stdin.writable` return. Build `{ type: 'control_request', subtype: 'interrupt', request_id: \`int-${Date.now()}-${Math.random().toString(36).slice(2, 8)}\` }`. Write `JSON.stringify(obj) + '\n'` via a Promise-wrapped stdin write.
+`async interrupt()`: if `!child?.stdin.writable` return. Build `{ type: 'control_request', subtype: 'interrupt', request_id: \`int-${Date.now()}-${Math.random().toString(36).slice(2, 8)}\` }`. Promise-wrap a stdin write.
 
 - [ ] **Step 4: Verify GREEN + Commit**
 
@@ -278,21 +257,18 @@ Two fails.
 
 - [ ] **Step 1: Append three RED tests**
 
-1. **onExit fires when child emits exit.** Register callback, emit `'exit'` event with `(0, null)` on the fake subprocess. Assert callback received `{ code: 0, signal: null }`.
-2. **onError fires on stderr lines.** Register callback, push `'connection refused\n'` on fake stderr. Assert callback received an `Error` whose message contains `'connection refused'`.
-3. **close() sends SIGTERM and is idempotent.** Call `await engine.close()` twice. Assert the fake's `.kill` was called once (after the first close, child is null and second close is a no-op).
+1. **onExit fires when child emits exit.** Emit `'exit'` (0, null); assert callback received `{ code: 0, signal: null }`.
+2. **onError fires on stderr lines.** Push `'connection refused\n'`; assert callback received `Error` with message containing `'connection refused'`.
+3. **close() sends SIGTERM and is idempotent.** Call `await engine.close()` twice; assert `kill` called exactly once.
 
 - [ ] **Step 2: Verify RED**
-
-Three fails.
 
 - [ ] **Step 3: Implement**
 
 - Add `const exitCallbacks: Array<(info: AgentEngineExit) => void> = [];` and `const errorCallbacks: Array<(err: Error) => void> = [];`.
-- Add `function wireStderr(stderr)`: line-buffer the chunks (same pattern as `wireStdout`), for each non-empty line construct `new Error(line)` and iterate `errorCallbacks`.
-- In `start()` after spawn, call `wireStderr(child.stderr)` and register `child.on('exit', (code, signal) => { for (const cb of exitCallbacks) try { cb({ code: code ?? -1, signal }); } catch {} })`.
-- Replace `onError`/`onExit` to push/splice like the others.
-- Confirm `close()` guards against double-close (the `child = null` after first kill makes the second call a no-op naturally).
+- `wireStderr(stderr)`: line-buffer chunks, for each non-empty line construct `new Error(line)` and iterate `errorCallbacks`.
+- In `start()` after spawn: call `wireStderr(child.stderr)`, register `child.on('exit', (code, signal) => { for (const cb of exitCallbacks) try { cb({ code: code ?? -1, signal }); } catch {} })`.
+- Replace `onError`/`onExit` push/splice.
 
 - [ ] **Step 4: Verify GREEN + Commit**
 
@@ -300,7 +276,7 @@ Three fails.
 
 ---
 
-## Task 9: Restart-on-stream-death with `--resume` (TDD)
+## Task 9: Restart-on-stream-death — make `start()` re-entrant (TDD)
 
 **Files:**
 - Modify: `electron/__tests__/agents/claude-cli-engine.test.ts`
@@ -308,17 +284,15 @@ Three fails.
 
 - [ ] **Step 1: Append RED test**
 
-`start() is re-entrant — second call with resumeSessionId spawns a fresh child with --resume.`
+`start() is re-entrant — second call with resumeSessionId spawns a fresh child with --resume`. Set up two fakes in sequence. First `start()` with no resume; push `system:init` with `session_id: 'sess-rs'`; emit `'exit'` (1, null). Second `start()` with `resumeSessionId: engine.getResumeId() ?? undefined`. Assert spawn called twice, second call's args contain `--resume` and `'sess-rs'`.
 
-Set up two fake subprocesses in sequence (`mockReturnValueOnce(first).mockReturnValueOnce(second)`). Call `start()` once with no resume; push `system:init` with `session_id: 'sess-rs'` to capture it. Emit `'exit'` (1, null) on first. Call `start()` again with `resumeSessionId: engine.getResumeId() ?? undefined`. Assert: spawn was called twice; second call's args contain `--resume` and `'sess-rs'`.
+- [ ] **Step 2: Verify RED or GREEN**
 
-- [ ] **Step 2: Verify RED (or already GREEN)**
-
-If GREEN, keep the test for regression. If RED, harden `start()` to be re-entrant.
+If GREEN already (likely — `start()` re-runs body), keep the test for regression. If RED, fix.
 
 - [ ] **Step 3: Make `start()` re-entrant**
 
-At the top of `start()`, before any spawn, if `child !== null`: try `child.kill('SIGTERM')` (swallow throws), set `child = null`. Reset `lineBuf = ''` so a re-spawn doesn't see stale partial data.
+At top of `start()`, before any spawn: if `child !== null`, try `child.kill('SIGTERM')` (swallow throws), set `child = null`. Reset `lineBuf = ''` so re-spawn doesn't see stale partial data.
 
 - [ ] **Step 4: Verify GREEN + Commit**
 
@@ -326,7 +300,7 @@ At the top of `start()`, before any spawn, if `child !== null`: try `child.kill(
 
 ---
 
-## Task 10: Wire engine into `SessionHandle` + lifecycle.ts seam
+## Task 10: Wire engine into `SessionHandle` + replace SDK call in lifecycle.ts
 
 **Files:**
 - Modify: `electron/services/sessions/types.ts`
@@ -335,159 +309,183 @@ At the top of `start()`, before any spawn, if `child !== null`: try `child.kill(
 
 - [ ] **Step 1: Add `engine` field to SessionHandle**
 
-In `electron/services/sessions/types.ts`, inside `SessionHandle`, add:
+In `electron/services/sessions/types.ts`, inside `SessionHandle`:
 
 `engine: import('../agents/types').AgentEngine | null;`
 
-Comment: "When set, runtime drives this engine instead of `query`. Default for new sessions in phase 1. SDK path (via `query`) remains for OMNIFEX_USE_SDK=1."
+Comment: "Drives the live session. Null only during the brief gap between handle construction and engine spawn (e.g., TUI cold-start)."
 
-- [ ] **Step 2: Write the failing test**
+Also, the existing `query` field on `SessionHandle` is going away — mark it deprecated for now; final removal happens in Task 11 when `runtime.ts` stops referencing it.
 
-In `electron/__tests__/sessions.test.ts`, near the other lifecycle tests, add `start() uses ClaudeCliEngine by default and SDK when OMNIFEX_USE_SDK=1`:
+- [ ] **Step 2: Write failing test for engine selection**
+
+In `electron/__tests__/sessions.test.ts` add `start() spawns a ClaudeCliEngine`:
 
 1. `vi.spyOn` `createClaudeCliEngine` from the agents module.
-2. With `OMNIFEX_USE_SDK` unset, call `svc.start(...)` and assert the spy was called once.
-3. With `OMNIFEX_USE_SDK = '1'`, clear the spy, set up `installFakeQuery()`, call `svc.start(...)` and assert the spy was NOT called.
-4. Clean up `process.env.OMNIFEX_USE_SDK` at the end.
+2. Call `svc.start({ tabId, projectPath, configDir, model, permissionMode })`.
+3. Assert the spy was called once with the right tabId.
+4. Assert the handle's `query` field is null (no SDK call) — verify via a getter or the existing inspector method.
 
 - [ ] **Step 3: Verify RED**
 
-`npm test -- electron/__tests__/sessions.test.ts -t "ClaudeCliEngine by default"` → FAIL.
+- [ ] **Step 4: Replace the SDK call in lifecycle.ts**
 
-- [ ] **Step 4: Add the engine-selection seam in lifecycle.ts**
+In `lifecycle.ts`:
+- Add imports: `createClaudeCliEngine` from `'../agents/claude-cli-engine'`, type `AgentEngine` from `'../agents/types'`.
+- Delete the `startup()` call and the SDK option-building block in `start()` (the block that constructs `sdkOptions`, registers SDK hooks, builds `inputChannel`, etc.).
+- Replace it with: create `engine = createClaudeCliEngine({ tabId })`, then `await engine.start({ projectPath, configDir, model, permissionMode, resumeSessionId })`. Store `engine` on the handle.
+- Wire `engine.onPermissionRequest(...)` into the existing permission-pending queue (search for where `canUseTool` pushes today, mirror).
+- Delete the SDK-specific helpers no longer referenced: `sdkOptions` builder, `canUseTool` adapter, anything in `lifecycle.ts` that exists only to feed `startup()`.
+- The `restartQuery` exported from `runtime.ts` still references the SDK. Update its body to call `engine.start({ ..., resumeSessionId: handle.sessionId })` instead — or move it inline since the engine handles restart natively.
 
-At the top of `lifecycle.ts`:
-- Import `createClaudeCliEngine` from `'../agents/claude-cli-engine'`.
-- Import type `AgentEngine` from `'../agents/types'`.
+- [ ] **Step 5: Verify GREEN — all session tests pass**
 
-In `start()`, after resolving `configDir` but before building SDK options:
+`npm test -- electron/__tests__/sessions.test.ts electron/__tests__/sessions-account-resolution.test.ts electron/__tests__/sessions-tui-coldstart.test.ts` → green.
 
-- `const useSdkFallback = process.env.OMNIFEX_USE_SDK === '1';`
-- `let engine: AgentEngine | null = null;`
-- If `!useSdkFallback`: create the engine via `createClaudeCliEngine({ tabId })`, then `await engine.start({ projectPath, configDir, model, permissionMode, resumeSessionId })`.
-
-When constructing the handle, set `engine` on it. When `useSdkFallback` is true, fall through to the existing SDK `startup()` work; leave `engine = null`.
-
-When `engine !== null`, skip the SDK option-building and `startup()` call entirely. The engine's lifecycle replaces the SDK's `query` + `inputChannel`. Wire `engine.onPermissionRequest(...)` into the existing permission-pending queue (search for where `canUseTool` pushes into that queue today, and mirror).
-
-- [ ] **Step 5: Verify GREEN**
-
-`npm test -- electron/__tests__/sessions.test.ts -t "ClaudeCliEngine by default"` → PASS.
+`electron/__tests__/permission-persistence.test.ts` will fail — it still mocks `query`/`startup`. Leave it failing for Task 12.
 
 - [ ] **Step 6: Commit**
 
-`git commit -m "feat(sessions): select CLI engine by default, SDK behind OMNIFEX_USE_SDK=1"`
+`git commit -m "feat(sessions): replace SDK startup() with ClaudeCliEngine in lifecycle.ts"`
 
 ---
 
-## Task 11: Drive `handle.engine` from runtime.ts when present
+## Task 11: Drive `handle.engine` from runtime.ts; delete SDK iterator loop
 
 **Files:**
 - Modify: `electron/services/sessions/runtime.ts`
-- Modify: `electron/__tests__/sessions.test.ts`
+- Modify: `electron/services/sessions/types.ts`
 
-The runtime currently iterates `handle.query` and dispatches the status FSM via `setStatus()` based on each message's `type`/`subtype`. We want the same FSM driven by `handle.engine.onMessage()` when an engine is present.
+- [ ] **Step 1: Rewrite `listenToMessages` to drive the engine**
 
-- [ ] **Step 1: Implement runtime branch**
-
-In `electron/services/sessions/runtime.ts`, modify `listenToMessages`:
-
-Top of function, before the existing `if (!handle.query) return;`:
-- If `handle.engine !== null`, return `listenToEngineMessages(tabId, handle, deps)` and do NOT fall into the SDK loop.
-- Otherwise, fall through to the existing SDK loop unchanged.
-
-Add the new helper `listenToEngineMessages(tabId, handle, deps)`:
+In `electron/services/sessions/runtime.ts`, rewrite `listenToMessages(tabId, handle, deps)`:
 
 - Destructure `{ sendToRenderer, notificationHooks, rateLimitHook }` from deps.
-- `const engine = handle.engine!;`
+- `const engine = handle.engine!;` (the only valid state).
 - Subscribe `engine.onMessage((agentMsg) => { ... })`:
   - `const message = agentMsg.payload as any;`
   - `const event = classifyRuntimeEvent(message);`
   - `(message as any).receivedAt = agentMsg.receivedAt;`
-  - Switch on `event.kind` with the same transitions as the SDK loop:
-    - `'init'` → if `event.sessionId`, set `handle.sessionId`; `setStatus(handle, { sessionStatus: 'started', conversationStatus: 'idle' }, ...)`; ensure JSONL tail wired (extract the helper `ensureJsonlTail()` from the SDK loop to module scope if not already, and call it here).
+  - Switch on `event.kind` with the same transitions the SDK loop used:
+    - `'init'` → if `event.sessionId`, set `handle.sessionId`; `setStatus(handle, { sessionStatus: 'started', conversationStatus: 'idle' }, ...)`; call `ensureJsonlTail()` (hoist to module-scope helper).
     - `'rateLimit'` → fire `rateLimitHook(handle.configDir, event.info)` (try/catch); set `conversationStatus: 'running'`.
     - `'compact'` / `'turn'` → set `conversationStatus: 'running'`.
     - `'streamEvent'` → no-op.
-    - `'result'` → handled after the renderer dispatch (see below).
+    - `'result'` → handled after renderer dispatch.
   - Always: `sendToRenderer(\`claude-output:${tabId}\`, message);`
-  - If `event.kind === 'result'`: call `dispatchResultNotification({ tabId, projectPath: handle.projectPath, event, sendToRenderer, notificationHooks })`, then `setStatus(handle, { conversationStatus: 'idle' }, ...)`.
+  - If `event.kind === 'result'`: call `dispatchResultNotification({ ... })`, then `setStatus(handle, { conversationStatus: 'idle' }, ...)`.
 - Subscribe `engine.onError((err) => { ... })`:
-  - If `handle.mode === 'tui'`, return (TUI owns lifecycle).
+  - If `handle.mode === 'tui'`, return.
+  - StrictMode/identity-replace guard: if `sessions.get(tabId) !== handle`, return.
   - `setStatus(handle, { sessionStatus: 'error' }, ...)`.
-  - `sendToRenderer(\`claude-error:${tabId}\`, err.message);`
-  - `sendToRenderer(\`claude-complete:${tabId}\`);`
+  - `sendToRenderer(\`claude-error:${tabId}\`, err.message)`.
+  - `sendToRenderer(\`claude-complete:${tabId}\`)`.
 - Subscribe `engine.onExit(() => { ... })`:
   - If `handle.mode === 'tui'`, return.
+  - If `sessions.get(tabId) !== handle`, return.
   - `setStatus(handle, { sessionStatus: 'stopped' }, ...)`.
-  - `sendToRenderer(\`claude-complete:${tabId}\`);`
-  - `deps.sessions.delete(tabId);`
-- The function returns a Promise that resolves when the engine fires `onExit`. Implement that by storing the resolve fn at the top, calling it inside the `onExit` subscriber.
+  - `sendToRenderer(\`claude-complete:${tabId}\`)`.
+  - `sessions.delete(tabId)`.
+- Return a Promise that resolves when `onExit` fires (store resolve fn at top, call inside onExit subscriber).
 
-Also: the JSONL-tail wiring helper (`ensureJsonlTail`/`teardownJsonlTail`) currently lives inside the SDK loop's closure. Hoist it to a module-scope helper (or duplicate it in the new function — your call; hoist is cleaner). The behavior must be identical: tail starts when sessionId is first known, stops on exit/error/identity-replace.
+The function no longer references `handle.query`, `handle.inputChannel`, or any SDK type.
 
-The StrictMode double-mount guard (`sessions.get(tabId) !== handle`) and the TUI-handoff guard also apply to the engine-driven loop. Mirror them.
+- [ ] **Step 2: Hoist `ensureJsonlTail()` to module scope**
 
-- [ ] **Step 2: Run sessions suite**
+The current `listenToMessages` has the JSONL-tail wiring as inner closures. Hoist `ensureJsonlTail(handle, sendToRenderer)` and `teardownJsonlTail(state)` to module-scope helpers. Behavior identical: tail starts when sessionId is first known, stops on exit/error/identity-replace.
 
-`npm test -- electron/__tests__/sessions.test.ts electron/__tests__/sessions-account-resolution.test.ts electron/__tests__/sessions-tui-coldstart.test.ts electron/__tests__/permission-persistence.test.ts`
+- [ ] **Step 3: Delete the old SDK iterator body**
 
-Expected: all green. The SDK path is untouched; the CLI path is exercised by Task 10's seam test plus engine unit tests; deep CLI-runtime integration is covered by the manual smoke in Task 15.
+Everything in the old `for await (const message of handle.query)` block and its catch is gone. The new function above is the entirety of the runtime.
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 4: Delete `restartQuery` if dead**
 
-`git commit -m "feat(sessions): drive runtime from AgentEngine when engine is set on handle"`
+If `restartQuery` is no longer called (the engine restarts itself on stream death), delete it. Otherwise update it to call `engine.start({ ..., resumeSessionId: handle.sessionId })`.
+
+- [ ] **Step 5: Remove `query` and `inputChannel` fields from SessionHandle**
+
+In `electron/services/sessions/types.ts`, delete `query` and `inputChannel` from `SessionHandle`. Delete `sdkOptions` if present. Remove SDK type imports.
+
+- [ ] **Step 6: Verify**
+
+`npm run check` → clean. `npm test -- electron/__tests__/sessions.test.ts` → green. Permission-persistence still failing — Task 12.
+
+- [ ] **Step 7: Commit**
+
+`git commit -m "feat(sessions): drive runtime from AgentEngine, delete SDK iterator loop"`
 
 ---
 
-## Task 12: Rewrite `summary-query.ts` as one-shot CLI invocation
+## Task 12: Rewrite `permission-persistence.test.ts` to use the engine
+
+**Files:**
+- Modify: `electron/__tests__/permission-persistence.test.ts`
+
+The test currently mocks `query` and `startup` from the SDK. After Tasks 10–11 it's red because those calls are gone.
+
+- [ ] **Step 1: Rewrite mocks**
+
+Replace the SDK mock with a mock of `createClaudeCliEngine`. Construct a `FakeEngine` object implementing `AgentEngine` with test-affordance methods to push messages, push permission requests, and trigger exit/error.
+
+`vi.mock('../services/agents/claude-cli-engine', () => ({ createClaudeCliEngine: vi.fn() }));`
+
+In each test's beforeEach, `mockedCreate.mockImplementation(() => makeFakeEngine())`.
+
+`makeFakeEngine()` returns an object with `start: async () => {}`, `send: async () => {}`, `respondPermission: vi.fn()`, `interrupt`, `close`, `kill`, `getResumeId` (returning a closure-stored sessionId), `onMessage(cb)`/`onPermissionRequest(cb)`/`onError(cb)`/`onExit(cb)` (returning Disposables; cb stored in arrays for test push). Also expose helpers `pushMessage(payload)` (loops through onMessage callbacks emitting a wrapped AgentMessage) and `pushPermissionRequest(req)`.
+
+- [ ] **Step 2: Update assertion shape**
+
+Where the test previously asserted on SDK option capture (`fake.getCapturedOptions()`), assert on the engine factory call instead: `expect(createClaudeCliEngine).toHaveBeenCalledWith({ tabId: '...' })` and `expect(fakeEngine.start).toHaveBeenCalledWith(expect.objectContaining({ projectPath, configDir, model, permissionMode }))`.
+
+- [ ] **Step 3: Verify GREEN + Commit**
+
+`npm test -- electron/__tests__/permission-persistence.test.ts` → green.
+
+`git commit -m "test(permission-persistence): mock AgentEngine instead of SDK query/startup"`
+
+---
+
+## Task 13: Rewrite `summary-query.ts` as one-shot CLI invocation
 
 **Files:**
 - Modify: `electron/services/sessions/summary-query.ts`
-- Create: `electron/__tests__/summary-query.test.ts` (if not present)
+- Create: `electron/__tests__/summary-query.test.ts`
 
-The current `summary-query.ts` calls SDK `query()` for a one-shot summary regeneration. Replace with `claude -p "<prompt>" --output-format json`.
+- [ ] **Step 1: Inspect current exports**
 
-- [ ] **Step 1: Inspect the current file**
+`cat electron/services/sessions/summary-query.ts` — preserve every exported symbol (at minimum `encodeProjectKey` is consumed by `runtime.ts`).
 
-`cat electron/services/sessions/summary-query.ts` to see ALL its exports. The plan must preserve every exported symbol other modules depend on — at minimum `encodeProjectKey` is consumed by `runtime.ts`.
-
-- [ ] **Step 2: Write the failing test**
+- [ ] **Step 2: Write failing test**
 
 Create `electron/__tests__/summary-query.test.ts`. Mock the same subprocess primitive the engine uses; mock `findSystemClaudeBinary`.
 
 Test `generateSummary({ transcript, projectPath, configDir, model })`:
-- Sets up a fake subprocess that writes `JSON.stringify({ type: 'result', subtype: 'success', result: 'A short summary.' })` to stdout and emits `'exit'` with code 0 on the next microtask.
-- Calls `generateSummary(...)`.
-- Asserts the result string is `'A short summary.'`.
-- Asserts the subprocess was spawned with args containing `-p`, `--output-format`, and `'json'`.
+- Fake subprocess writes `JSON.stringify({ type: 'result', subtype: 'success', result: 'A short summary.' })` to stdout, emits `'exit'` (0, null) next microtask.
+- Assert result is `'A short summary.'`.
+- Assert spawn args contain `-p`, `--output-format`, `'json'`.
 
 - [ ] **Step 3: Verify RED**
 
-`npm test -- electron/__tests__/summary-query.test.ts` → FAIL.
-
 - [ ] **Step 4: Replace the body**
 
-`export async function generateSummary(p: { transcript: string; projectPath: string; configDir: string; model?: string }): Promise<string>`:
+`export async function generateSummary(p): Promise<string>`:
 
 - Resolve binary via `findSystemClaudeBinary()` (throw if null).
-- Build prompt: `\`Summarize this conversation in one short sentence:\n\n${p.transcript}\``.
-- Build args: `['-p', prompt, '--output-format', 'json']`; if `p.model`, append `'--model', p.model`.
+- `prompt = \`Summarize this conversation in one short sentence:\n\n${p.transcript}\``.
+- `args = ['-p', prompt, '--output-format', 'json']`; if `p.model` append `'--model', p.model`.
 - Spawn with `cwd: p.projectPath`, `env: { ...process.env, CLAUDE_CONFIG_DIR: p.configDir }`, `stdio: ['ignore', 'pipe', 'pipe']`.
 - Collect stdout + stderr into strings.
-- On `'exit'`: if `code !== 0`, reject with `\`claude -p exited ${code}: ${stderr.trim()}\``. Otherwise try `JSON.parse(stdout)`, resolve with `String(obj?.result ?? '').trim()`. On parse failure, reject with `\`claude -p returned non-JSON: ${stdout.slice(0, 200)}\``.
+- On `'exit'`: if non-zero reject with `\`claude -p exited ${code}: ${stderr.trim()}\``. Else `JSON.parse(stdout)` and resolve `String(obj?.result ?? '').trim()`. On parse failure reject with `\`claude -p returned non-JSON: ${stdout.slice(0, 200)}\``.
 
-Preserve `encodeProjectKey` and any other exports the current file has.
+Preserve `encodeProjectKey` and any other exports.
 
 - [ ] **Step 5: Verify GREEN + Commit**
-
-`npm test -- electron/__tests__/summary-query.test.ts electron/__tests__/sessions.test.ts` → all pass.
 
 `git commit -m "refactor(sessions): summary-query uses claude -p instead of SDK query()"`
 
 ---
 
-## Task 13: Rename `mode: 'sdk' | 'tui'` → `mode: 'rich' | 'tui'`
+## Task 14: Rename `mode: 'sdk' | 'tui'` → `mode: 'rich' | 'tui'`
 
 **Files:**
 - Modify: `electron/services/sessions/types.ts`
@@ -496,54 +494,53 @@ Preserve `encodeProjectKey` and any other exports the current file has.
 - Modify: `src/components/ClaudeCodeSession.tsx`
 - Modify: `src/components/NewSessionForm.tsx`
 - Modify: `src/hooks/useSessionLifecycle.ts`
-- Modify: any test that asserts the literal `'sdk'`
+- Modify: `src/components/SessionModeToggle.tsx`
+- Modify: tests asserting the literal `'sdk'`
 
-The IPC payload `{ mode: 'sdk' | 'tui' }` is internal (we own both sides), so a one-shot rename is safe.
+IPC payload `{ mode: 'sdk' | 'tui' }` is internal — one-shot rename is safe.
 
-- [ ] **Step 1: Update the type**
+- [ ] **Step 1: Update type**
 
-In `electron/services/sessions/types.ts`: `export type SessionMode = 'rich' | 'tui';`
-
-In `src/lib/api.ts`: same.
+`export type SessionMode = 'rich' | 'tui';` in both `electron/services/sessions/types.ts` and `src/lib/api.ts`.
 
 - [ ] **Step 2: Replace literals**
 
-Run `git grep -n "'sdk'" electron/ src/` and `git grep -n '"sdk"' electron/ src/`. Replace every hit with `'rich'` / `"rich"`. Special attention to:
+`git grep -n "'sdk'" electron/ src/` and `git grep -n '"sdk"' electron/ src/`. Replace each. Pay attention to:
 - `sessionStartMode: SessionMode = 'sdk'` → `'rich'`
 - IPC payload literals in `session-mode:` event sends
 - Test assertions
 
-- [ ] **Step 3: Relabel the UI toggle**
+- [ ] **Step 3: Relabel UI**
 
-In `src/components/SessionModeToggle.tsx`, change the button label `SDK` → `Chat`. `git grep -n 'SDK' src/components/` to find. Update tests asserting on the label.
+In `src/components/SessionModeToggle.tsx`, change button label `SDK` → `Chat`. Update tests asserting the label.
 
 - [ ] **Step 4: Verify**
 
-`npm run check && npm test` → all green.
+`npm run check && npm test` → green.
 
 - [ ] **Step 5: Commit**
 
-`git add -A && git commit -m "refactor(sessions): rename mode 'sdk' -> 'rich' across main + renderer"`
+`git commit -am "refactor(sessions): rename mode 'sdk' -> 'rich' across main + renderer"`
 
 ---
 
-## Task 14: Delete `electron/services/sessions/hooks.ts`
+## Task 15: Delete `electron/services/sessions/hooks.ts`
 
-The CLI invokes user-defined hooks itself; SDK-shaped hook marshalling is dead code under the CLI path.
+The CLI invokes user-defined hooks itself; SDK-shaped hook marshalling is dead code now.
 
 - [ ] **Step 1: Find consumers**
 
 ```
 git grep -n "from './hooks'" electron/services/sessions/
 git grep -n "from '../services/sessions/hooks'" electron/
-git grep -n "from '@/services/sessions/hooks'" electron/
+git grep -n "from '@/services/sessions/hooks'" electron/ src/
 ```
 
-- [ ] **Step 2: Decide per consumer**
+- [ ] **Step 2: Drop or relocate each consumer**
 
 For each importer:
-- If the import was for SDK-only hook types, drop the import.
-- If the import was for an OmniFex-internal hook-shaped subscriber (rate-limit hook, claude-output-extra carrier), move that subscriber inline into `lifecycle.ts` next to where the engine's `onMessage` is wired up.
+- SDK-only hook type imports → delete.
+- OmniFex-internal hook-shaped subscribers (rate-limit hook, claude-output-extra carrier) → move inline into `lifecycle.ts` next to the engine's `onMessage` wiring.
 
 - [ ] **Step 3: Delete the file**
 
@@ -559,7 +556,53 @@ For each importer:
 
 ---
 
-## Task 15: Verification gate
+## Task 16: Remove `@anthropic-ai/claude-agent-sdk` dependency
+
+**Files:**
+- Modify: `package.json` (dependencies)
+- Modify: `package-lock.json`
+- Modify: `forge.config.ts`
+- Modify: any pretest/rebuild script referencing the SDK
+
+- [ ] **Step 1: Find remaining SDK imports**
+
+```
+git grep -n "@anthropic-ai/claude-agent-sdk" electron/ src/
+```
+
+If any imports remain after Tasks 10–15, fix them now — they're dead refs.
+
+- [ ] **Step 2: Remove from package.json**
+
+In `package.json`, remove `"@anthropic-ai/claude-agent-sdk": "..."` from `dependencies`.
+
+- [ ] **Step 3: Update forge.config.ts**
+
+In `forge.config.ts`, remove the SDK glob from `asar.unpack`. Current shape includes something like `**/@anthropic-ai/claude-agent-sdk-*/**` — delete that fragment, leaving the better-sqlite3 + node-pty entries intact.
+
+- [ ] **Step 4: Update scripts**
+
+Search `package.json` scripts for any reference to the SDK (rebuild, pretest, copy steps). Remove SDK references. Common spots: a `copyNativeModule` call in forge config; a `prestart` or `rebuild:electron` line listing the SDK.
+
+- [ ] **Step 5: Reinstall**
+
+```
+npm uninstall @anthropic-ai/claude-agent-sdk
+```
+
+(Or edit `package.json` then `rm -rf node_modules package-lock.json && npm install`.) Verify the SDK is no longer in `node_modules`.
+
+- [ ] **Step 6: Verify**
+
+`npm run check && npm test && npm run build` → all green. No references to `@anthropic-ai/claude-agent-sdk` anywhere.
+
+- [ ] **Step 7: Commit**
+
+`git commit -am "chore(deps): remove @anthropic-ai/claude-agent-sdk — CLI engine is the only path"`
+
+---
+
+## Task 17: Verification gate
 
 **Files:** none — runs commands.
 
@@ -569,35 +612,35 @@ For each importer:
 
 Expected: all green. New `electron/services/agents/` files should hit ≥80% line coverage.
 
-- [ ] **Step 2: Manual smoke — Claude CLI path**
+- [ ] **Step 2: Confirm SDK is gone**
+
+`git grep -n "@anthropic-ai/claude-agent-sdk"` → no matches.
+
+`ls node_modules/@anthropic-ai/claude-agent-sdk 2>&1` → "No such file or directory".
+
+- [ ] **Step 3: Manual smoke**
 
 `npm run rebuild:electron`, then `ELECTRON_ENABLE_LOGGING=1 npm start 2>&1 | tee /tmp/omnifex-cli-engine.log`.
 
 Checklist:
 1. Open a project that resolves to a Claude account; start a new chat session.
 2. Send a message; confirm the response streams in (live, partial messages render).
-3. Trigger a tool that prompts for permission (e.g., a Bash command); confirm the permission dialog works in both directions (allow + deny).
-4. Confirm subagent tasks appear in the TaskList panel — verifies JSONL tail still works.
+3. Trigger a tool that prompts for permission (e.g., a Bash command); confirm the dialog works in both directions (allow + deny).
+4. Confirm subagent tasks appear in the TaskList panel — JSONL tail still works.
 5. Confirm rate-limit indicator updates on a heavy turn.
-6. Toggle Chat → Terminal → back; confirm conversation memory persists.
-7. Kill the session (close tab), reopen the project, resume; confirm history reloads.
+6. Toggle Chat → Terminal → back; conversation memory persists.
+7. Kill the session, reopen the project, resume; history reloads.
 8. Check `/tmp/omnifex-cli-engine.log` for unexpected errors.
 
-- [ ] **Step 3: Manual smoke — SDK fallback path**
-
-`OMNIFEX_USE_SDK=1 npm start 2>&1 | tee /tmp/omnifex-sdk-fallback.log`
-
-Repeat the same checklist. Expected: identical behavior — the fallback exists precisely so a CLI regression can be A/B'd.
-
-- [ ] **Step 4: Rebuild Electron ABI** (pretest may have flipped it)
+- [ ] **Step 4: Rebuild Electron ABI**
 
 `npm run rebuild:electron`
 
-- [ ] **Step 5: No commit from this task** — verification only. If any step fails, circle back to the relevant earlier task and fix at the source; don't paper over with a catch-all commit.
+- [ ] **Step 5: No commit from this task** — verification only. If anything fails, fix at the source task.
 
 ---
 
-## Task 16: CHANGELOG + version bump
+## Task 18: CHANGELOG + version bump
 
 **Files:**
 - Modify: `CHANGELOG.md`
@@ -605,7 +648,7 @@ Repeat the same checklist. Expected: identical behavior — the fallback exists 
 
 - [ ] **Step 1: Bump version**
 
-In `package.json:4`, increment patch (whatever's current + 1).
+Patch bump in `package.json:4`.
 
 - [ ] **Step 2: Add CHANGELOG entry**
 
@@ -616,50 +659,49 @@ Prepend above the most recent existing entry:
 
 ### Changed
 
-- **Claude sessions now run on the `claude` CLI directly** (`<commit>`). The session engine moved off the `@anthropic-ai/claude-agent-sdk` runtime onto a subprocess running `claude --output-format stream-json --input-format stream-json`. Slash commands, plugins, `/model`, hooks defined in `~/.claude/settings.json`, MCP servers, and `/cost` now all work identically to invoking `claude` directly. The renderer is unchanged — the on-wire message shape is the same. Resume, rate-limit tracking, subagent JSONL tail, and the Chat↔Terminal toggle all continue to work.
+- **Claude sessions now run on the `claude` CLI directly** (`<commit>`). The session engine moved off the `@anthropic-ai/claude-agent-sdk` runtime onto a subprocess running `claude --output-format stream-json --input-format stream-json`. Slash commands, plugins, `/model`, hooks defined in `~/.claude/settings.json`, MCP servers, and `/cost` now work identically to invoking `claude` directly. The renderer is unchanged — the on-wire message shape is the same. Resume, rate-limit tracking, subagent JSONL tail, and the Chat↔Terminal toggle all continue to work.
 - **Toggle relabeled SDK→Chat** (`<commit>`). The mode toggle in the session header now reads "Chat / Terminal" since "SDK" no longer describes what's underneath.
-- **Internal:** `summary-query.ts` rewritten as `claude -p ... --output-format json`. `electron/services/sessions/hooks.ts` deleted (CLI invokes user hooks natively). New `electron/services/agents/` module with the `AgentEngine` interface and `ClaudeCliEngine` implementation.
+
+### Removed
+
+- **`@anthropic-ai/claude-agent-sdk` dependency** (`<commit>`). The SDK is gone from `package.json`, `node_modules`, forge `asar.unpack`, and pretest/rebuild scripts.
+- **`electron/services/sessions/hooks.ts`** (`<commit>`). The CLI invokes user hooks natively; nothing for OmniFex to marshal.
 
 ### Notes
 
-- The SDK path is still available behind `OMNIFEX_USE_SDK=1` for one release as an A/B safety hatch. It will be removed in the next release.
-- Schema migration: new `agent` column on `sessions` and `path_rules` tables, defaulted to `'claude'` for every existing row. No data loss.
-- Phase 1 of the SDK→CLI engine + Codex support plan. See `docs/superpowers/specs/2026-05-25-cli-engine-and-codex-design.md`.
+- Schema migration: new `agent` column on `sessions` and `path_rules` tables, defaulted to `'claude'` for every existing row. No data loss. Forward-compatible for Codex (Phase 3).
+- Phase A of the SDK→CLI engine + Codex support plan. See `docs/superpowers/specs/2026-05-25-cli-engine-and-codex-design.md`. Phases 3 and 4 follow in separate releases.
 ```
 
 Replace each `<commit>` with the short SHA from this plan's feature commits.
 
 - [ ] **Step 3: Commit**
 
-`git add CHANGELOG.md package.json package-lock.json && git commit -m "chore: bump version to <new-version>"`
+`git commit -am "chore: bump version to <new-version>"`
 
 - [ ] **Step 4: Cut the release**
 
-Run `/omnifex-release` (or invoke the skill manually if running headless).
+Run `/omnifex-release` (or invoke the skill manually).
 
 ---
 
 ## Self-review
 
-- Spec coverage: Phase 1 of the spec is fully covered by Tasks 1-16. Phases 2, 3, 4 are explicitly out of scope (see Non-Goals + the spec's phasing section).
-- Engine interface: Defined in Task 2; every method tested in Tasks 3-9.
-- Permission round-trip: Task 6 covers both directions (incoming request → renderer; outgoing decision → CLI).
-- Restart on stream death: Task 9. The runtime branch in Task 11 routes errors into the existing restart path.
-- JSONL tail unchanged: Task 11 wires the same JSONL-tail helper into the engine-driven runtime; on-disk format unchanged because the CLI writes the same JSONL.
-- SDK fallback: Tasks 10-11 preserve the SDK path behind `OMNIFEX_USE_SDK=1`. SDK dependency still installed — removed in phase 2.
-- Renderer untouched: Only the `'sdk' → 'rich'` rename (Task 13) and the "SDK"→"Chat" label change. Transcript, tool widgets, permission dialog, status bar all unchanged.
-- Migration: Task 1 adds `agent` column with backfill default. Forward-compatible for phase 3.
-- Task 11 runtime split: the engine-driven loop duplicates some of the SDK loop's structure. The duplication is intentional for phase 1 to keep the SDK fallback bit-perfect; phase 2 deletes the SDK branch entirely and the duplication collapses.
+- Spec coverage: the engine swap (spec §3, §5, §8) and SDK removal (spec §10 phase 2) are both covered by Tasks 1–18. Phases 3 and 4 are explicitly out of scope and have their own plans.
+- Engine interface: defined in Task 2; every method tested in Tasks 3–9.
+- Permission round-trip: Task 6 covers both directions.
+- Restart on stream death: Task 9 (engine re-entrancy) + Task 11 (runtime calls `engine.start({ resumeSessionId })` on error).
+- JSONL tail unchanged: Task 11 keeps the same helper; on-disk format unchanged.
+- Renderer untouched: only the `'sdk' → 'rich'` rename + `SDK→Chat` label.
+- Migration: Task 1 adds `agent` column with backfill default; forward-compatible for Phase 3.
+- SDK fully removed: Task 16 deletes the dependency; Task 17 verifies no references remain.
 
 ---
 
-## Follow-up phases (out of scope here)
+## Follow-up phases (separate plans)
 
-- **Phase 2 — Remove SDK dependency.** Delete `@anthropic-ai/claude-agent-sdk`, delete the `OMNIFEX_USE_SDK` fallback, delete the SDK branch in `runtime.ts` + `lifecycle.ts`. Drop SDK from forge `asar.unpack`. Drop SDK from pretest / rebuild hooks. Drop `installFakeQuery` test helper.
-- **Phase 3 — Codex engine + agent-aware routing + Codex transcript.** New `CodexCliEngine` (JSON-RPC over stdio), `codex-binary.ts`, `CodexAuthService`, `OneShotTerminal`, agent picker in new-session dialog, `CodexTranscript` + per-item widgets, Codex auth UI, Codex session-list partition. Feature-flagged.
-- **Phase 4 — Claude re-auth affordance.** Detect needs-reauth, surface the chip button, wire `ClaudeAuthService.reauthenticate()` through the shared `runInteractiveCliFlow` primitive.
-
-Each follow-up phase gets its own plan via `superpowers:writing-plans` when the prior phase has shipped and stabilized.
+- **Phase 3 — Codex engine + agent-aware routing + Codex transcript.** New `CodexCliEngine` (JSON-RPC over stdio), `codex-binary.ts`, `CodexAuthService`, `OneShotTerminal`, agent picker in new-session dialog, `CodexTranscript` + per-item widgets, Codex auth UI, Codex session-list partition. Feature-flagged. Plan: `docs/superpowers/plans/2026-05-25-codex-engine-and-routing.md`.
+- **Phase 4 — Claude re-auth affordance.** Detect needs-reauth, surface the chip button, wire `ClaudeAuthService.reauthenticate()` through the shared `runInteractiveCliFlow` primitive. Plan: `docs/superpowers/plans/2026-05-25-claude-reauth-recovery.md`.
 
 ---
 
