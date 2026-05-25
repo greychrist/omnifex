@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.59] — 2026-05-25
+
+Documentation + lifecycle hardening release. The headline is a brainstormed design + phase-1 plan to replace the `@anthropic-ai/claude-agent-sdk` runtime with the `claude` CLI directly (and add OpenAI Codex CLI as a peer agent), but the shipping bits in this build are three session-lifecycle robustness fixes that close gaps multi-account work uncovered. No behavior changes to the SDK runtime itself yet — the engine swap lands in 0.4.60+.
+
+Installers remain **unsigned**.
+
+### Added
+
+- **Spec: SDK→CLI engine + Codex support** (`docs/superpowers/specs/2026-05-25-cli-engine-and-codex-design.md`). Designs the replacement of the SDK runtime with a CLI-backed subprocess behind a new `AgentEngine` interface, with OpenAI Codex CLI landing as a peer agent. Covers the engine seam, per-agent transcripts on a shared chrome, schema migration (agent column on sessions + path_rules), pty-based in-app login for Codex and Claude re-auth recovery, and a four-phase rollout that keeps TUI mode intact.
+- **Plan: Phase 1 — Claude CLI engine seam** (`docs/superpowers/plans/2026-05-25-claude-cli-engine-seam.md`). 16-task TDD plan for the first deliverable: introduce the `AgentEngine` interface + `ClaudeCliEngine`, route sessions through it by default, keep the SDK path behind `OMNIFEX_USE_SDK=1` for one release of A/B safety.
+
+### Fixed
+
+- **Sessions: re-resolve account at session start** (`c763f10`). A path-rule change between form-mount and the user clicking Start could spawn the session under a stale account. The lifecycle service now re-resolves the configDir from current rules at start time. Resumes and manual account picks are exempt — both anchor to a specific account intentionally.
+- **Sessions: gate auto-start on tab active state** (`c763f10`). Restoring N saved chat tabs at launch was firing N rebind/resume attempts and spawning N Claude subprocesses for tabs the user had not opened. A new `decideAutoStart()` pure helper gates the auto-start effect on `isActive`.
+- **Sessions: tear down on tab close** (`c763f10`). React unmount alone (Cmd+R reload, StrictMode, visibility flips) should keep the main-process session alive so rebind can claim it. Explicit tab close is the one path that should stop it. `TabContext.removeTab` now calls `api.stopSession(id)` for chat tabs.
+- **Messages: classify result errors by `is_error`, not subtype regex** (`d9fdd37`). The substring match `/error/i` on `result.subtype` was flagging benign events whose subtype merely contained the word "error". Switched to the canonical SDK signal — `is_error: true` — which is set for both `error_max_turns` and `error_during_execution`.
+
+### Changed
+
+- **Internal:** lifecycle.ts moved from SDK `query()` to the newer `startup()` entrypoint with cleaner shutdown semantics. `SessionsService.getConfigDir(tabId)` exposes the configDir actually used so callers can anchor JSONL/permission writes to the same account main resolved.
+
 ## [0.4.58] — 2026-05-24
 
 Security patch release. v0.4.57's DMG/ZIP were packaged before the dependency override fix landed; this release ships the patched runtime deps.
