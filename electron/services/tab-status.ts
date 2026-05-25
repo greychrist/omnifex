@@ -36,7 +36,15 @@ export interface TabStatusService {
   publish(summary: TabStatusSummary): void;
   remove(tabId: string): void;
   list(): TabStatusSummary[];
+  /** Tabs that are "busy" in the install-gate sense (work in flight OR
+   * waiting on the user). Use when you want to wait for everything to
+   * settle before doing something destructive. */
   busyTabIds(): string[];
+  /** Tabs whose agent is actively doing work (promptStatus === 'working').
+   * Distinct from `busyTabIds()` — excludes "paused on user input" tabs.
+   * Use for surfacing "N sessions still running" to the user
+   * (e.g. the upgrade-button warning). */
+  workingTabIds(): string[];
   clearAll(): void;
 }
 
@@ -84,6 +92,16 @@ export function createTabStatusService(
     busyTabIds() {
       const out: string[] = [];
       for (const s of summaries.values()) if (s.busy) out.push(s.tabId);
+      return out;
+    },
+
+    workingTabIds() {
+      const out: string[] = [];
+      for (const s of summaries.values()) {
+        if ((s as { promptStatus?: unknown }).promptStatus === 'working') {
+          out.push(s.tabId);
+        }
+      }
       return out;
     },
 

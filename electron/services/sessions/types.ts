@@ -37,21 +37,31 @@ export type {
 // ---------------------------------------------------------------------------
 
 /**
- * Lifecycle states for a session handle.
+ * Lifecycle states. See `docs/session-lifecycle.md` for the full model.
  *
- * 'running' means the SDK turn is in flight — actively producing output, or
- * about to. 'idle' means the session is alive but the last turn finished
- * (the SDK emitted a `result` message); we're sitting on the input channel
- * waiting for the user. The installer's wait-for-idle gate uses this split
- * to avoid blocking on tabs that are merely open.
+ * SessionStatus is the connection axis ("the phone call"):
+ *  - starting: query() fired, awaiting SDK system:init
+ *  - started:  SDK answered; session has a GUID; ready for conversation
+ *  - error:    stream errored, kept alive for retry
+ *  - stopped:  cleanly closed
+ *
+ * ConversationStatus is the turn axis ("the back-and-forth"). It must be
+ * `null` whenever sessionStatus !== 'started' — a conversation with nothing
+ * on the other end makes no sense.
+ *  - idle:               no turn in flight; either side may speak next
+ *  - running:            user message in flight or Claude generating
+ *  - waiting_permission: Claude requested a tool; awaiting user approval
  */
 export type SessionStatus =
   | 'starting'
-  | 'running'
+  | 'started'
+  | 'error'
+  | 'stopped';
+
+export type ConversationStatus =
   | 'idle'
-  | 'waiting_permission'
-  | 'stopped'
-  | 'error';
+  | 'running'
+  | 'waiting_permission';
 
 export type SessionMode = 'sdk' | 'tui';
 
@@ -108,20 +118,35 @@ export interface SessionsService {
   stop(tabId: string): void;
   stopAll(): void;
   getSessionId(tabId: string): string | null;
-  getStatus(tabId: string): SessionStatus;
-  getInfo(tabId: string): { sessionId: string | null; status: SessionStatus } | null;
-  getHealth(tabId: string): { alive: boolean; status: SessionStatus; sessionId: string | null };
+  getStatus(tabId: string): { sessionStatus: SessionStatus; conversationStatus: ConversationStatus | null };
+  getInfo(tabId: string): {
+    sessionId: string | null;
+    sessionStatus: SessionStatus;
+    conversationStatus: ConversationStatus | null;
+  } | null;
+  getHealth(tabId: string): {
+    alive: boolean;
+    sessionId: string | null;
+    sessionStatus: SessionStatus;
+    conversationStatus: ConversationStatus | null;
+  };
   isActive(tabId: string): boolean;
   /** Return all tab IDs that currently have a registered session handle. */
   listActiveTabIds(): string[];
-  /** Return tab IDs whose session is mid-turn — `'starting'`, `'running'`,
-   *  or `'waiting_permission'`. Used by the installer to gate auto-update so
-   *  that idle/open sessions don't block. */
+  /** Return tab IDs whose conversation is in-flight — conversationStatus
+   *  not idle (running or waiting_permission). Used by the installer to
+   *  gate auto-update so the user isn't interrupted mid-turn. Tabs whose
+   *  sessionStatus is 'starting'/'stopped'/'error' do NOT count.
+   *  See `docs/session-lifecycle.md`. */
   listInFlightTabIds(): string[];
-  /** Diagnostic: every registered session paired with its current status,
-   *  in-flight or not. The installer logs this on every gate poll so we can
-   *  tell why the gate cleared when the renderer thinks sessions are active. */
-  listSessionStatuses(): { tabId: string; status: SessionStatus }[];
+  /** Diagnostic: every registered session paired with both status axes.
+   *  The installer logs this on every gate poll so we can tell why the
+   *  gate cleared when the renderer thinks sessions are active. */
+  listSessionStatuses(): {
+    tabId: string;
+    sessionStatus: SessionStatus;
+    conversationStatus: ConversationStatus | null;
+  }[];
 
   // --- Wave 2: Query-method passthroughs ----------------------------------
   /** Interrupt the current assistant turn without ending the session. */
@@ -235,7 +260,13 @@ export interface SessionHandle {
   /** Null in TUI cold-start sessions (no SDK input channel). */
   inputChannel: AsyncChannel<SDKUserMessage> | null;
   sessionId: string | null;
-  status: SessionStatus;
+  /** Connection axis. See docs/session-lifecycle.md. */
+  sessionStatus: SessionStatus;
+  /**
+   * Turn axis. Must be `null` whenever sessionStatus !== 'started'.
+   * Enforced by `setStatus` in `./status.ts`.
+   */
+  conversationStatus: ConversationStatus | null;
   mode: SessionMode;
   tui: import('./tui').TuiSession | null;
   /** Cleanup hook that detaches the current tui's data/exit forwarders. */

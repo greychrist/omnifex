@@ -1064,10 +1064,14 @@ app.whenReady().then(() => {
   // changes when a session enters/leaves a turn, not per stream message.
   let lastInFlightCount = -1;
   const broadcastInFlight = (): void => {
-    // Mirror the install-gate's source-of-truth choice: prefer the
-    // renderer-published busy count once any tab has reported in.
+    // Drives the upgrade-button "active sessions" warning. Use
+    // `workingTabIds` (promptStatus === 'working') so the warning fires
+    // only when the agent is genuinely doing work — not when a session
+    // is just paused on a permission prompt. The install-gate itself
+    // keeps using `busyTabIds` for its broader "wait for everything to
+    // settle" semantics.
     const fromRenderer = tabStatusService.list().length > 0
-      ? tabStatusService.busyTabIds().length
+      ? tabStatusService.workingTabIds().length
       : null;
     const count = fromRenderer ?? sessionsService.listInFlightTabIds().length;
     if (count === lastInFlightCount) return;

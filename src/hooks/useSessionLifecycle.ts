@@ -1,5 +1,5 @@
-import { useRef, useEffect } from "react";
-import { api, type SessionMode } from "@/lib/api";
+import { useRef, useEffect, useState } from "react";
+import { api, type SessionMode, type SessionStatus, type ConversationStatus } from "@/lib/api";
 import type { ClaudeStreamMessage } from "@/types/claudeStream";
 import type { EffortLevel, ThinkingConfig } from "@/components/FloatingPromptInput";
 import { logAndForget } from "@/lib/fireAndLog";
@@ -28,15 +28,12 @@ interface UseSessionLifecycleArgs {
   } | null;
   persistentSessionRef: React.MutableRefObject<boolean>;
   /**
-   * Header badge states. Split so the UI can distinguish "subprocess is up
-   * but SDK control channel hasn't answered yet" (Starting…) from "SDK is
-   * fully warm and metadata is populated" (Active). `setIsSessionStarting`
-   * flips true as soon as api.startSession resolves; `setIsSessionActive`
-   * flips true only once fetchInitInfo receives a real control-channel
-   * response. Both flip false when the session ends.
+   * If the component is mounting with a session to resume or a
+   * preconfigured fresh start, pass `true` so the initial sessionStatus
+   * is 'starting' instead of 'stopped'. Prevents a one-frame flash of
+   * the empty-state form before the auto-start effect fires.
    */
-  setIsSessionStarting: React.Dispatch<React.SetStateAction<boolean>>;
-  setIsSessionActive: React.Dispatch<React.SetStateAction<boolean>>;
+  hasPendingStart?: boolean;
   handleJsonlLine: (payload: string | object) => void;
   setIsLoading: React.Dispatch<React.SetStateAction<boolean>>;
   setMessages: React.Dispatch<React.SetStateAction<ClaudeStreamMessage[]>>;
@@ -56,6 +53,26 @@ interface UseSessionLifecycleReturn {
    * Used after a renderer reload (Cmd+R) so prompts keep flowing.
    */
   rebindPersistentSession: () => Promise<boolean>;
+  /**
+   * Connection axis. Single source of truth, driven by the main process
+   * via `session-status:<tabId>` events plus optimistic updates from
+   * `startPersistentSession` (set to 'starting' before IPC). Defaults to
+   * 'stopped' before any activity. See `docs/session-lifecycle.md`.
+   */
+  sessionStatus: SessionStatus;
+  /**
+   * Turn axis. Null whenever `sessionStatus !== 'started'`. Driven the
+   * same way as `sessionStatus`.
+   */
+  conversationStatus: ConversationStatus | null;
+  /**
+   * Synchronous setter for callers that need to reset both axes
+   * independent of a main-process event — e.g. the stop / clear /
+   * reconnect handlers that tear down the event listeners themselves
+   * and therefore won't receive main's eventual `'stopped'` event.
+   * Prefer reacting to events over calling this directly.
+   */
+  resetStatus: (next: { sessionStatus: SessionStatus; conversationStatus: ConversationStatus | null }) => void;
 }
 
 export function useSessionLifecycle({
@@ -68,8 +85,7 @@ export function useSessionLifecycle({
   sessionStartMode,
   accountResolution,
   persistentSessionRef,
-  setIsSessionStarting,
-  setIsSessionActive,
+  hasPendingStart,
   handleJsonlLine,
   setIsLoading,
   setMessages,
@@ -80,6 +96,18 @@ export function useSessionLifecycle({
 }: UseSessionLifecycleArgs): UseSessionLifecycleReturn {
   const unlistenRefs = useRef<(() => void)[]>([]);
   const isMountedRef = useRef(true);
+  const [sessionStatus, setSessionStatus] = useState<SessionStatus>(
+    () => hasPendingStart ? 'starting' : 'stopped',
+  );
+  // conversationStatus is null whenever sessionStatus !== 'started'.
+  // The setStatus emitter on main enforces this; the listener below
+  // preserves it on the renderer side.
+  const [conversationStatus, setConversationStatus] = useState<ConversationStatus | null>(null);
+
+  const resetStatus = (next: { sessionStatus: SessionStatus; conversationStatus: ConversationStatus | null }) => {
+    setSessionStatus(next.sessionStatus);
+    setConversationStatus(next.sessionStatus === 'started' ? next.conversationStatus : null);
+  };
 
   // Attach the tab-scoped event listeners. Idempotent: tears down any prior
   // listeners first. Used both for fresh-start and for rebind-after-reload.
@@ -117,17 +145,40 @@ export function useSessionLifecycle({
         if (isMountedRef.current) {
           setIsLoading(false);
           persistentSessionRef.current = false;
-          setIsSessionStarting(false);
-          setIsSessionActive(false);
+          // Status flip is owned by main process — it emits a final
+          // `session-status:<tabId>` with 'stopped' on clean close. The
+          // listener below catches it.
         }
       },
     );
 
-    unlistenRefs.current = [outputUnlisten, outputExtraUnlisten, errorUnlisten, completeUnlisten];
+    // Single source of truth for the lifecycle badge. Main process emits
+    // `session-status:<tabId>` on every transition along either axis.
+    // The payload always carries both fields. See docs/session-lifecycle.md.
+    const statusUnlisten = window.electronAPI.onEvent(
+      `session-status:${tabId}`,
+      (...args: unknown[]) => {
+        if (!isMountedRef.current) return;
+        const payload = args[0] as {
+          sessionStatus?: SessionStatus;
+          conversationStatus?: ConversationStatus | null;
+        } | undefined;
+        if (!payload?.sessionStatus) return;
+        setSessionStatus(payload.sessionStatus);
+        // Invariant: conversationStatus is null unless sessionStatus is 'started'.
+        if (payload.sessionStatus !== 'started') {
+          setConversationStatus(null);
+        } else {
+          setConversationStatus(payload.conversationStatus ?? null);
+        }
+      },
+    );
+
+    unlistenRefs.current = [outputUnlisten, outputExtraUnlisten, errorUnlisten, completeUnlisten, statusUnlisten];
   };
 
-  // Standard tool names — Claude Code's always-on tools. MCP tool names get
-  // appended in fetchInitInfo once the SDK control channel responds.
+  // Standard tool names — Claude Code's always-on tools. Merged with MCP
+  // tool names in fetchInitInfo once the SDK reports MCP server status.
   const STANDARD_TOOLS = [
     "Task", "AskUserQuestion", "Bash", "CronCreate", "CronList", "Edit",
     "EnterPlanMode", "EnterWorktree", "ExitPlanMode", "ExitWorktree", "Glob",
@@ -139,32 +190,20 @@ export function useSessionLifecycle({
     "WebSearch", "Write",
   ];
 
-  // Synthesize/update the synthetic system:init message. Called twice:
-  //   1. Immediately after api.startSession resolves, with standard tools
-  //      only — so the chat renders the session header right away instead
-  //      of looking blank while the CLI subprocess warms up.
-  //   2. From fetchInitInfo once the SDK control channel answers — merges
-  //      in MCP tool names. Replaces the existing init message in-place
-  //      instead of adding a second one.
-  const upsertInitMessage = (tools: string[]) => {
+  // Enrich the SDK's real `system:init` message with MCP tool names once
+  // they're known. No-op if the real init hasn't arrived yet — we never
+  // insert a synthetic placeholder, so an empty chat means the SDK hasn't
+  // yielded init (see docs/session-lifecycle.md). Preserves session_id and
+  // every other field on the real init; only the `tools` list changes.
+  const enrichInitTools = (tools: string[]) => {
     setMessages((prev) => {
       const idx = prev.findIndex(
         (m) => m.type === "system" && (m as any).subtype === "init",
       );
-      const init = {
-        type: "system" as const,
-        subtype: "init",
-        session_id: "",
-        model: selectedModel,
-        cwd: projectPath,
-        tools,
-      } as any;
-      if (idx >= 0) {
-        const next = [...prev];
-        next[idx] = { ...next[idx], ...init };
-        return next;
-      }
-      return [init, ...prev];
+      if (idx < 0) return prev;
+      const next = [...prev];
+      next[idx] = { ...next[idx], tools } as any;
+      return next;
     });
   };
 
@@ -213,12 +252,7 @@ export function useSessionLifecycle({
     if (!info) return;
 
     setSdkAccountInfo(info);
-    // Mirror the rebind path — the session has answered, so it's no
-    // longer "Starting…". Without this, downstream consumers that
-    // distinguish starting vs. active (e.g. the tab status popover)
-    // get stuck on "Starting…" forever.
-    setIsSessionStarting(false);
-    setIsSessionActive(true);
+    // Status badge is owned by main process — no flip here. Just enrich.
 
     // Phase 2: fetch the one-shot enrichment data (models, commands,
     // context usage) once.
@@ -247,7 +281,7 @@ export function useSessionLifecycle({
         /* transient — keep polling */
       }
       if (mcpServers) {
-        upsertInitMessage([...STANDARD_TOOLS, ...computeMcpToolNames(mcpServers)]);
+        enrichInitTools([...STANDARD_TOOLS, ...computeMcpToolNames(mcpServers)]);
         if (mcpServers.every((s) => TERMINAL_MCP_STATUSES.has(s.status))) return;
       }
       if (!isMountedRef.current) return;
@@ -267,20 +301,41 @@ export function useSessionLifecycle({
     if (!rebound) return false;
     attachStreamListeners();
     persistentSessionRef.current = true;
-    // A successful rebind means the main-process session was already fully
-    // warm before the renderer reloaded — jump straight to 'Active'.
-    setIsSessionStarting(false);
-    setIsSessionActive(true);
+    // Seed both status axes from the live main-process handle. The
+    // renderer just reloaded, so we may have missed recent transitions.
+    // After this, the `session-status:<tabId>` listener catches any
+    // subsequent change. Best-effort — leave status as-is on failure.
+    api.sessionGetHealth(tabId).then((health) => {
+      if (!isMountedRef.current || !health.alive) return;
+      setSessionStatus(health.sessionStatus);
+      setConversationStatus(
+        health.sessionStatus === 'started' ? health.conversationStatus : null,
+      );
+    }).catch((err: unknown) => {
+      console.warn('[rebindPersistentSession] sessionGetHealth failed:', err);
+    });
     logAndForget('use-session-lifecycle:fetch-init-info', fetchInitInfo());
     return true;
   };
 
   const startPersistentSession = async (resumeId?: string) => {
     if (persistentSessionRef.current) return; // Already running
+    // Claim the slot synchronously — `api.startSession` awaits IPC and
+    // account resolution, so a second concurrent call that hits the guard
+    // above before this one's promise resolves would otherwise also fire
+    // `startSession`, spawning a duplicate SDK query with a fresh UUID
+    // and leaking the first one. React StrictMode double-mount and rapid
+    // re-renders both trigger this. The error branch below resets the
+    // ref so a failed start doesn't permanently lock out the tab.
+    persistentSessionRef.current = true;
 
-    // Show 'Starting…' badge immediately — the main-process session handle
-    // doesn't exist yet but the user has kicked off a start.
-    setIsSessionStarting(true);
+    // Show 'Starting…' badge immediately. Main process emits its own
+    // `session-status: starting` event once `start()` runs, but that may
+    // fire before the listener below has attached — set it eagerly so the
+    // UI reflects the user's action regardless. Subsequent main-process
+    // events overwrite this. conversationStatus stays null per invariant.
+    setSessionStatus('starting');
+    setConversationStatus(null);
     attachStreamListeners();
 
     // Resolve account fresh at session start (the cached state may not be ready yet)
@@ -317,6 +372,10 @@ export function useSessionLifecycle({
         sdkThinking,
         sessionStartMode,
       );
+      // No state flips here. Main process owns lifecycle status and emits
+      // `session-status:<tabId>` events; ClaudeCodeSession subscribes.
+      // GUID arrives via `system:init` on `claude-output:<tabId>` and
+      // flows through the reducer to claudeSessionId.
     } catch (err) {
       // Surface session-start failures to the user. The most common cause
       // is "no account resolved for this project path" (configDir is
@@ -326,7 +385,10 @@ export function useSessionLifecycle({
       // badge with no clue what went wrong.
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error("[startPersistentSession] api.startSession failed:", err);
-      setIsSessionStarting(false);
+      // Release the slot we claimed above so the user can retry.
+      persistentSessionRef.current = false;
+      setSessionStatus('error');
+      setConversationStatus(null);
       setIsLoading(false);
       setMessages((prev) => [
         ...prev,
@@ -340,19 +402,14 @@ export function useSessionLifecycle({
       ]);
       throw err; // Bubble so the caller's .catch logger still fires.
     }
-    persistentSessionRef.current = true;
-    // Intentionally NOT flipping isSessionActive here — fetchInitInfo flips
-    // it once the SDK control channel actually answers, which matches what
-    // the user sees in the MCP / account / tools panels.
+    // persistentSessionRef was claimed synchronously above. Session status
+    // is owned by the main process and flips to 'started' on the SDK's
+    // first system:init. We deliberately do NOT render a placeholder init
+    // here — an empty chat is the honest UI for "session not yet alive."
+    // If the chat stays empty, the SDK iterator hasn't yielded init yet
+    // (see docs/session-lifecycle.md).
 
-    // Render a synthetic system:init right away so the chat header + tool
-    // list appear immediately. The Claude Code CLI subprocess doesn't answer
-    // control-channel queries (accountInfo, mcpServerStatus, supportedCommands)
-    // until after it's processed a first stdin message, so without this the
-    // chat would look blank until the user sends their first prompt.
-    upsertInitMessage([...STANDARD_TOOLS]);
-
-    // Enrich the init message with MCP tools + account info as soon as the
+    // Enrich the SDK's init message with MCP tools as soon as the
     // control channel starts responding.
     logAndForget('use-session-lifecycle:fetch-init-info', fetchInitInfo());
   };
@@ -382,5 +439,8 @@ export function useSessionLifecycle({
     isMountedRef,
     startPersistentSession,
     rebindPersistentSession,
+    sessionStatus,
+    conversationStatus,
+    resetStatus,
   };
 }

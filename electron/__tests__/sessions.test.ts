@@ -217,7 +217,7 @@ describe('sessions service — empty state guards', () => {
   });
 
   it('getStatus returns stopped for unknown tab', () => {
-    expect(service.getStatus('unknown')).toBe('stopped');
+    expect(service.getStatus('unknown')).toEqual({ sessionStatus: 'stopped', conversationStatus: null });
   });
 
   it('getSessionId returns null for unknown tab', () => {
@@ -437,9 +437,8 @@ describe('sessions service — full lifecycle', () => {
     expect(options.agentProgressSummaries).toBe(true);
   });
 
-  it('start() forwards resumeSessionId as options.resume when provided', () => {
+  it('start() resume: forwards options.resume, seeds handle.sessionId from caller, does NOT pin options.sessionId', () => {
     const fake = installFakeQuery();
-
     service.start({
       tabId: 'tab-resume',
       projectPath: '/p',
@@ -451,6 +450,39 @@ describe('sessions service — full lifecycle', () => {
 
     const options = fake.getCapturedOptions();
     expect(options.resume).toBe('old-session-id');
+    expect(options.sessionId).toBeUndefined();
+    expect(service.getInfo('tab-resume')!.sessionId).toBe('old-session-id');
+  });
+
+  it('start() cold-start: does NOT pin options.sessionId; handle.sessionId stays null until system:init', () => {
+    const fake = installFakeQuery();
+    service.start({
+      tabId: 'tab-cold',
+      projectPath: '/p',
+      configDir: '/c',
+      model: 'opus',
+      permissionMode: 'default',
+    });
+    const options = fake.getCapturedOptions();
+    expect(options.sessionId).toBeUndefined();
+    expect(options.resume).toBeUndefined();
+    expect(service.getInfo('tab-cold')!.sessionId).toBeNull();
+  });
+
+  it('start() emits session-status:<tabId> with status=starting synchronously', () => {
+    installFakeQuery();
+    service.start({
+      tabId: 'tab-status',
+      projectPath: '/p',
+      configDir: '/c',
+      model: 'opus',
+      permissionMode: 'default',
+    });
+    const statusCalls = sendToRenderer.mock.calls.filter(
+      (c: any[]) => c[0] === 'session-status:tab-status',
+    );
+    expect(statusCalls.length).toBeGreaterThan(0);
+    expect(statusCalls[0][1]).toEqual({ sessionStatus: 'starting', conversationStatus: null });
   });
 
   it('passes effort and thinking options to the SDK query when provided', () => {
@@ -517,8 +549,10 @@ describe('sessions service — full lifecycle', () => {
     expect(service.isActive('alive')).toBe(true);
     const info = service.getInfo('alive');
     expect(info).not.toBeNull();
-    expect(info!.sessionId).toBeNull(); // not yet, waiting for init
-    expect(info!.status).toBe('starting');
+    // SDK cold-start: sessionId arrives via system:init from the SDK.
+    expect(info!.sessionId).toBeNull();
+    expect(info!.sessionStatus).toBe('starting');
+    expect(info!.conversationStatus).toBeNull();
   });
 
   it('listActiveTabIds returns all currently-registered tab IDs', () => {
@@ -563,7 +597,7 @@ describe('sessions service — full lifecycle', () => {
     // Init alone doesn't mean a turn is in flight — the session is alive
     // but the user hasn't sent anything yet. Status must be 'idle' so the
     // installer's wait-for-idle gate doesn't block on it.
-    expect(service.getStatus('tab-init-idle')).toBe('idle');
+    expect(service.getStatus('tab-init-idle')).toEqual({ sessionStatus: 'started', conversationStatus: 'idle' });
     expect(service.listInFlightTabIds()).not.toContain('tab-init-idle');
   });
 
@@ -580,10 +614,10 @@ describe('sessions service — full lifecycle', () => {
 
     fake.pushMessage({ type: 'system', subtype: 'init', session_id: 'sess-r' });
     await flush();
-    expect(service.getStatus('tab-running')).toBe('idle');
+    expect(service.getStatus('tab-running')).toEqual({ sessionStatus: 'started', conversationStatus: 'idle' });
 
     service.sendMessage('tab-running', 'hello');
-    expect(service.getStatus('tab-running')).toBe('running');
+    expect(service.getStatus('tab-running')).toEqual({ sessionStatus: 'started', conversationStatus: 'running' });
   });
 
   it('moves a tab to status "idle" after a result message', async () => {
@@ -605,12 +639,12 @@ describe('sessions service — full lifecycle', () => {
     await flush();
     // Init alone leaves the session 'idle' (no turn yet); a turn must
     // start (sendMessage or an assistant message) to flip 'running'.
-    expect(service.getStatus('tab-idle')).toBe('idle');
+    expect(service.getStatus('tab-idle')).toEqual({ sessionStatus: 'started', conversationStatus: 'idle' });
 
     // Simulate a turn: assistant message → result.
     fake.pushMessage({ type: 'assistant', message: { role: 'assistant', content: 'hi' } });
     await flush();
-    expect(service.getStatus('tab-idle')).toBe('running');
+    expect(service.getStatus('tab-idle')).toEqual({ sessionStatus: 'started', conversationStatus: 'running' });
 
     fake.pushMessage({
       type: 'result',
@@ -620,7 +654,7 @@ describe('sessions service — full lifecycle', () => {
     });
     await flush();
 
-    expect(service.getStatus('tab-idle')).toBe('idle');
+    expect(service.getStatus('tab-idle')).toEqual({ sessionStatus: 'started', conversationStatus: 'idle' });
   });
 
   it('listInFlightTabIds excludes idle sessions', async () => {
@@ -632,6 +666,10 @@ describe('sessions service — full lifecycle', () => {
       model: 'sonnet',
       permissionMode: 'default',
     });
+    // init → started+idle. assistant → running. Without init first, the
+    // setStatus invariant would clamp conversationStatus to null, since
+    // a conversation can't exist on a non-'started' session.
+    fakeBusy.pushMessage({ type: 'system', subtype: 'init', session_id: 'busy-id' });
     fakeBusy.pushMessage({ type: 'assistant', message: { role: 'assistant', content: 'thinking' } });
     await flush();
 
@@ -663,7 +701,7 @@ describe('sessions service — full lifecycle', () => {
     fake.pushMessage({ type: 'system', subtype: 'init', session_id: 's-p' });
     fake.pushMessage({ type: 'result', subtype: 'success', result: 'done', is_error: false });
     await flush();
-    expect(service.getStatus('tab-perm')).toBe('idle');
+    expect(service.getStatus('tab-perm')).toEqual({ sessionStatus: 'started', conversationStatus: 'idle' });
     expect(service.listInFlightTabIds()).toEqual([]);
 
     // Simulate a tool-permission gate firing — the canPermit hook flips
@@ -675,7 +713,7 @@ describe('sessions service — full lifecycle', () => {
     }
     await flush();
 
-    if (service.getStatus('tab-perm') === 'waiting_permission') {
+    if (service.getStatus('tab-perm').conversationStatus === 'waiting_permission') {
       expect(service.listInFlightTabIds()).toEqual(['tab-perm']);
     }
   });
@@ -700,7 +738,7 @@ describe('sessions service — full lifecycle', () => {
 
     expect(service.getSessionId('tab-init')).toBe('sess-xyz');
     // Init alone keeps the session 'idle' — no turn has started yet.
-    expect(service.getStatus('tab-init')).toBe('idle');
+    expect(service.getStatus('tab-init')).toEqual({ sessionStatus: 'started', conversationStatus: 'idle' });
     expect(sendToRenderer).toHaveBeenCalledWith(
       'claude-output:tab-init',
       expect.objectContaining({ type: 'system', session_id: 'sess-xyz' }),
@@ -838,7 +876,7 @@ describe('sessions service — full lifecycle', () => {
     expect(sendToRenderer).toHaveBeenCalledWith('claude-complete:tab-throw');
     // Session stays alive in error state — NOT deleted
     expect(service.isActive('tab-throw')).toBe(true);
-    expect(service.getStatus('tab-throw')).toBe('error');
+    expect(service.getStatus('tab-throw')).toEqual({ sessionStatus: 'error', conversationStatus: null });
     // The dead Query handle should be closed so its internals are released.
     // Otherwise it sits in handle.query holding subprocess resources until
     // stop() or restartQuery() replaces it.
@@ -893,7 +931,7 @@ describe('sessions service — full lifecycle', () => {
     await flush(4);
 
     // Session is in error state but still tracked
-    expect(service.getStatus('tab-recover')).toBe('error');
+    expect(service.getStatus('tab-recover')).toEqual({ sessionStatus: 'error', conversationStatus: null });
     expect(service.isActive('tab-recover')).toBe(true);
 
     // User sends a new message — should trigger query restart
@@ -904,12 +942,15 @@ describe('sessions service — full lifecycle', () => {
     expect(callCount).toBe(2);
     expect(mockedQuery).toHaveBeenCalledTimes(2);
 
-    // Push a message through the recovery stream to confirm the loop is alive
+    // Push init + a message through the recovery stream to confirm the loop is alive.
+    // Per the model, conversationStatus only flips while sessionStatus is 'started';
+    // the SDK iterator yields system:init first.
+    recoveryChannel.push({ type: 'system', subtype: 'init', session_id: 'recover-id' });
     recoveryChannel.push({ type: 'assistant', message: { role: 'assistant', content: 'recovered' } });
     await flush();
 
-    // The new listenToMessages loop sets status to 'running' on first message
-    expect(service.getStatus('tab-recover')).toBe('running');
+    // The new listenToMessages loop sets conversationStatus='running' on first turn-event message.
+    expect(service.getStatus('tab-recover')).toEqual({ sessionStatus: 'started', conversationStatus: 'running' });
     expect(sendToRenderer).toHaveBeenCalledWith(
       'claude-output:tab-recover',
       expect.objectContaining({ type: 'assistant' }),
@@ -979,7 +1020,7 @@ describe('sessions service — full lifecycle', () => {
 
     await flush(4);
 
-    expect(service.getStatus('tab-resume')).toBe('error');
+    expect(service.getStatus('tab-resume')).toEqual({ sessionStatus: 'error', conversationStatus: null });
     expect(service.getSessionId('tab-resume')).toBe(SESSION_UUID);
 
     // Trigger restart.
@@ -1147,6 +1188,10 @@ describe('sessions service — full lifecycle', () => {
     const fake = installFakeQuery();
 
     svc.start({ tabId: 'tab-perm', projectPath: '/p', configDir: '/c', model: 'sonnet', permissionMode: 'default' });
+    // Push init so the session is 'started' — canUseTool sets conversationStatus,
+    // which the setStatus invariant clamps to null on a non-'started' session.
+    fake.pushMessage({ type: 'system', subtype: 'init', session_id: 'perm-id' });
+    await new Promise((r) => setImmediate(r));
 
     const canUseTool = fake.getCapturedOptions().canUseTool;
     expect(typeof canUseTool).toBe('function');
@@ -1160,7 +1205,7 @@ describe('sessions service — full lifecycle', () => {
     });
 
     await new Promise((r) => setImmediate(r));
-    expect(svc.getStatus('tab-perm')).toBe('waiting_permission');
+    expect(svc.getStatus('tab-perm')).toEqual({ sessionStatus: 'started', conversationStatus: 'waiting_permission' });
     const permCall = sendToRenderer.mock.calls.find(
       (c) => c[0] === 'claude-output:tab-perm' && (c[1])?.type === 'permission_request',
     );
@@ -1173,7 +1218,7 @@ describe('sessions service — full lifecycle', () => {
     const result = await decisionPromise;
     expect(result.behavior).toBe('allow');
     expect(result.updatedInput).toEqual({ command: 'ls -la --color' });
-    expect(svc.getStatus('tab-perm')).toBe('running');
+    expect(svc.getStatus('tab-perm')).toEqual({ sessionStatus: 'started', conversationStatus: 'running' });
 
     svc.stopAll();
   });
@@ -3517,6 +3562,9 @@ describe('sessions service — full lifecycle', () => {
       model: 'sonnet',
       permissionMode: 'acceptEdits',
     });
+    // canUseTool sets conversationStatus, which requires sessionStatus='started'.
+    fake.pushMessage({ type: 'system', subtype: 'init', session_id: 'auto-partial-id' });
+    await new Promise((r) => setImmediate(r));
 
     const canUseTool = fake.getCapturedOptions().canUseTool;
     // Fire canUseTool but don't await — we want to see the permission_request
@@ -3528,7 +3576,7 @@ describe('sessions service — full lifecycle', () => {
 
     await new Promise((r) => setImmediate(r));
 
-    expect(svc.getStatus('tab-auto-partial')).toBe('waiting_permission');
+    expect(svc.getStatus('tab-auto-partial')).toEqual({ sessionStatus: 'started', conversationStatus: 'waiting_permission' });
     expect(sendToRenderer).toHaveBeenCalledWith(
       'claude-output:tab-auto-partial',
       expect.objectContaining({ type: 'permission_request', tool_name: 'Edit' }),
@@ -3610,6 +3658,10 @@ describe('sessions service — full lifecycle', () => {
     );
     const fake = installFakeQuery();
     svc.start({ tabId: 'tab-gate', projectPath: '/p', configDir: '/c', model: 'sonnet', permissionMode: 'default' });
+    // Push init so the session is 'started' and conversation can flip to
+    // waiting_permission (the setStatus invariant blocks it otherwise).
+    fake.pushMessage({ type: 'system', subtype: 'init', session_id: 'gate-id' });
+    await new Promise((r) => setImmediate(r));
 
     // Force into waiting_permission
     const canUseTool = fake.getCapturedOptions().canUseTool;
@@ -3646,7 +3698,7 @@ describe('sessions service — full lifecycle', () => {
     mockedQuery.mockClear();
     mockedQuery.mockReturnValue(installFakeQuery().query);
     await svc.setMode('tab-starting', 'sdk');
-    expect(svc.getStatus('tab-starting')).toBe('starting');
+    expect(svc.getStatus('tab-starting')).toEqual({ sessionStatus: 'starting', conversationStatus: null });
 
     // Now re-switch to TUI BEFORE the first post-restart message arrives.
     // With the relaxed gate this should succeed.
@@ -3719,7 +3771,7 @@ describe('sessions service — full lifecycle', () => {
     expect(mockedQuery).toHaveBeenCalledTimes(1);
     const restartCall = restartFake.getCapturedOptions();
     expect(restartCall.resume).toBe('sess-round');
-    expect(svc.getStatus('rt')).toBe('starting');
+    expect(svc.getStatus('rt')).toEqual({ sessionStatus: 'starting', conversationStatus: null });
 
     svc.stopAll();
     mockedCreateTuiSession.mockReset();
@@ -3795,7 +3847,7 @@ describe('sessions service — getHealth', () => {
 
   it('returns alive:false, status:stopped, sessionId:null for unknown tab', () => {
     const health = service.getHealth('unknown-tab');
-    expect(health).toEqual({ alive: false, status: 'stopped', sessionId: null });
+    expect(health).toEqual({ alive: false, sessionId: null, sessionStatus: 'stopped', conversationStatus: null });
   });
 
   it('returns alive:true with current status and sessionId for an active session', () => {
@@ -3811,8 +3863,9 @@ describe('sessions service — getHealth', () => {
 
     const health = service.getHealth('health-tab');
     expect(health.alive).toBe(true);
-    expect(health.status).toBe('starting');
-    expect(health.sessionId).toBeNull(); // no init message yet
+    expect(health.sessionStatus).toBe('starting');
+    expect(health.conversationStatus).toBeNull();
+    expect(health.sessionId).toBeNull();
   });
 });
 

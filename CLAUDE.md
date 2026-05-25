@@ -29,6 +29,10 @@ Worktrees for this repo live in `~/Repos/personal/worktrees/omnifex/<branch-name
 
 Any change that touches Claude Code permission rules, path-rule formatting, or the permissions UI: read `docs/permission-syntax.md` **and** https://code.claude.com/docs/en/permissions before editing. Rule-format gotchas (`/` vs `//` paths, gitignore-style globs, shell-operator boundaries) are load-bearing and have caused every permissions regression to date.
 
+## Session Lifecycle
+
+Any change that touches session status, conversation status, the spinner / in-flight predicate, the status popover, `useSessionLifecycle`, or anything under `electron/services/sessions/`: read `docs/session-lifecycle.md` first. It defines the three orthogonal state axes (`sessionStatus`, `conversationStatus`, per-item task/subagent status), the invariants between them, the canonical in-flight rollup, and the anti-patterns that have repeatedly caused session-stuck-on-starting bugs.
+
 ## Research And Code Intelligence
 
 - Start from evidence, not memory.

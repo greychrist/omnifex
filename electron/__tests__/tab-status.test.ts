@@ -87,6 +87,17 @@ describe('TabStatusService', () => {
     expect(svc.busyTabIds().sort()).toEqual(['busy-1', 'busy-2']);
   });
 
+  it('workingTabIds returns only tabs whose promptStatus is "working"', () => {
+    const svc = createTabStatusService({ broadcast });
+    // A tab can be `busy=true` (waiting on user permission) but
+    // promptStatus='ready' — workingTabIds should EXCLUDE it.
+    svc.publish(summary('waiting-on-user', true, { promptStatus: 'ready' }));
+    svc.publish(summary('agent-working', true, { promptStatus: 'working' }));
+    svc.publish(summary('quiet', false, { promptStatus: 'ready' }));
+    svc.publish(summary('no-prompt-field', false)); // legacy / non-chat tab
+    expect(svc.workingTabIds()).toEqual(['agent-working']);
+  });
+
   it('list preserves insertion order (matches tab-bar order from the renderer)', () => {
     const svc = createTabStatusService({ broadcast });
     svc.publish(summary('first', false));

@@ -9,6 +9,7 @@ vi.mock('@/lib/api', () => ({
     startSession: vi.fn(),
     stopSession: vi.fn().mockResolvedValue(undefined),
     sessionRebind: vi.fn().mockResolvedValue(false),
+    sessionGetHealth: vi.fn().mockResolvedValue({ alive: false, sessionId: null, sessionStatus: 'stopped', conversationStatus: null }),
     sessionAccountInfo: vi.fn().mockResolvedValue(null),
     sessionSupportedModels: vi.fn().mockResolvedValue([]),
     sessionSupportedCommands: vi.fn().mockResolvedValue([]),
@@ -48,7 +49,6 @@ import { useSessionLifecycle } from '../useSessionLifecycle';
 interface HarnessOverrides {
   messages?: ClaudeStreamMessage[];
   initialPersistent?: boolean;
-  setIsSessionActive?: ReturnType<typeof vi.fn>;
   setIsLoading?: ReturnType<typeof vi.fn>;
   handleJsonlLine?: ReturnType<typeof vi.fn>;
   setSdkAccountInfo?: ReturnType<typeof vi.fn>;
@@ -61,7 +61,6 @@ function harness(overrides: HarnessOverrides = {}) {
   return () => {
     const persistentSessionRef = useRef(overrides.initialPersistent ?? false);
     const messagesRef = useRef<ClaudeStreamMessage[]>(overrides.messages ?? []);
-    const isStartingRef = useRef<boolean>(false);
 
     return {
       lifecycle: useSessionLifecycle({
@@ -77,10 +76,6 @@ function harness(overrides: HarnessOverrides = {}) {
           match_detail: '',
         },
         persistentSessionRef,
-        setIsSessionStarting: (v: any) => {
-          isStartingRef.current = typeof v === 'function' ? v(isStartingRef.current) : v;
-        },
-        setIsSessionActive: (overrides.setIsSessionActive ?? vi.fn()) as any,
         handleJsonlLine: (overrides.handleJsonlLine ?? vi.fn()) as any,
         setIsLoading: (overrides.setIsLoading ?? vi.fn()) as any,
         setMessages: ((updater: any) => {
@@ -95,13 +90,12 @@ function harness(overrides: HarnessOverrides = {}) {
       }),
       persistentSessionRef,
       messagesRef,
-      isStartingRef,
     };
   };
 }
 
 describe('useSessionLifecycle — startPersistentSession happy path', () => {
-  it('flips Starting badge true, attaches listeners, calls api.startSession with resolved config, and seeds the init message', async () => {
+  it('flips Starting badge true, attaches listeners, calls api.startSession with resolved config, and renders no placeholder init', async () => {
     (api.startSession as any).mockResolvedValueOnce(undefined);
     const { result } = renderHook(harness());
 
@@ -121,18 +115,17 @@ describe('useSessionLifecycle — startPersistentSession happy path', () => {
       undefined,
     );
     expect(result.current.persistentSessionRef.current).toBe(true);
-    // Listeners attached on the four claude-* channels.
+    // Listeners attached on the four claude-* channels plus session-status.
     expect(Object.keys(eventListeners).sort()).toEqual([
       'claude-complete:tab-life',
       'claude-error:tab-life',
       'claude-output-extra:tab-life',
       'claude-output:tab-life',
+      'session-status:tab-life',
     ]);
-    // Synthetic system:init message was inserted at the head.
-    const init = result.current.messagesRef.current[0] as any;
-    expect(init.type).toBe('system');
-    expect(init.subtype).toBe('init');
-    expect(init.tools).toContain('Bash');
+    // No placeholder init is rendered — the chat stays empty until the
+    // SDK iterator yields its real system:init via claude-output.
+    expect(result.current.messagesRef.current).toHaveLength(0);
   });
 
   it('is a no-op when persistentSessionRef is already true', async () => {
@@ -141,6 +134,27 @@ describe('useSessionLifecycle — startPersistentSession happy path', () => {
       await result.current.lifecycle.startPersistentSession();
     });
     expect(api.startSession).not.toHaveBeenCalled();
+  });
+
+  it('debounces concurrent calls — two rapid startPersistentSession invocations spawn only one session', async () => {
+    // Pending promise so both calls overlap on the await rather than serializing.
+    let resolveStart: (v: string) => void = () => {};
+    (api.startSession as any).mockImplementationOnce(
+      () => new Promise<string>((r) => { resolveStart = r; }),
+    );
+
+    const { result } = renderHook(harness());
+
+    await act(async () => {
+      // Fire both before either resolves — simulates StrictMode double-mount
+      // or a rapid re-render firing the auto-start effect twice.
+      const a = result.current.lifecycle.startPersistentSession();
+      const b = result.current.lifecycle.startPersistentSession();
+      resolveStart('uuid-1');
+      await Promise.all([a, b]);
+    });
+
+    expect((api.startSession as any).mock.calls.length).toBe(1);
   });
 
   it('falls back to api.resolveAccountForProject when accountResolution lacks a config_dir', async () => {
@@ -163,8 +177,6 @@ describe('useSessionLifecycle — startPersistentSession happy path', () => {
           thinkingConfig: 'adaptive',
           accountResolution: null,
           persistentSessionRef,
-          setIsSessionStarting: vi.fn(),
-          setIsSessionActive: vi.fn(),
           handleJsonlLine: vi.fn(),
           setIsLoading: vi.fn(),
           setMessages: ((updater: any) => {
@@ -196,7 +208,6 @@ describe('useSessionLifecycle — startPersistentSession happy path', () => {
         permissionMode: 'default', effort: 'medium', thinkingConfig: 'disabled',
         accountResolution: { account: { name: 'a', account_type: 'pro', config_dir: '/c' }, match_type: 'rule', match_detail: '' },
         persistentSessionRef,
-        setIsSessionStarting: vi.fn(), setIsSessionActive: vi.fn(),
         handleJsonlLine: vi.fn(), setIsLoading: vi.fn(),
         setMessages: ((u: any) => { messagesRef.current = typeof u === 'function' ? u(messagesRef.current) : u; }) as any,
         setSdkAccountInfo: vi.fn(), setSupportedModels: vi.fn(),
@@ -210,21 +221,21 @@ describe('useSessionLifecycle — startPersistentSession happy path', () => {
 });
 
 describe('useSessionLifecycle — startPersistentSession error surface', () => {
-  it('appends a synthetic error message and clears the Starting badge when startSession rejects', async () => {
+  it('appends a synthetic error message and flips sessionStatus to "error" when startSession rejects', async () => {
     (api.startSession as any).mockRejectedValueOnce(
       new Error('No Claude account could be resolved for project'),
     );
     const setIsLoading = vi.fn();
     const { result } = renderHook(harness({ setIsLoading }));
 
-    expect(result.current.isStartingRef.current).toBe(false);
+    expect(result.current.lifecycle.sessionStatus).toBe('stopped');
     expect(result.current.messagesRef.current).toHaveLength(0);
 
     await act(async () => {
       await result.current.lifecycle.startPersistentSession().catch(() => {});
     });
 
-    expect(result.current.isStartingRef.current).toBe(false);
+    expect(result.current.lifecycle.sessionStatus).toBe('error');
     expect(setIsLoading).toHaveBeenCalledWith(false);
 
     const msgs = result.current.messagesRef.current as any[];
@@ -268,16 +279,22 @@ describe('useSessionLifecycle — rebindPersistentSession', () => {
     expect(result.current.persistentSessionRef.current).toBe(false);
   });
 
-  it('returns true, attaches listeners, sets persistent flag, and flips badges when rebind succeeds', async () => {
+  it('returns true, attaches listeners, sets persistent flag, and seeds both axes from sessionGetHealth when rebind succeeds', async () => {
     (api.sessionRebind as any).mockResolvedValueOnce(true);
-    const setIsSessionActive = vi.fn();
-    const { result } = renderHook(harness({ setIsSessionActive }));
+    (api.sessionGetHealth as any).mockResolvedValueOnce({
+      alive: true, sessionId: 'uuid-warm', sessionStatus: 'started', conversationStatus: 'idle',
+    });
+    const { result } = renderHook(harness());
     let rebound = false;
     await act(async () => { rebound = await result.current.lifecycle.rebindPersistentSession(); });
+    // Flush the post-rebind sessionGetHealth microtask chain.
+    await act(async () => { await Promise.resolve(); });
     expect(rebound).toBe(true);
     expect(result.current.persistentSessionRef.current).toBe(true);
-    expect(setIsSessionActive).toHaveBeenCalledWith(true);
+    expect(result.current.lifecycle.sessionStatus).toBe('started');
+    expect(result.current.lifecycle.conversationStatus).toBe('idle');
     expect(Object.keys(eventListeners)).toContain('claude-output:tab-life');
+    expect(Object.keys(eventListeners)).toContain('session-status:tab-life');
   });
 
   it('returns false (and logs) when api.sessionRebind rejects', async () => {
@@ -330,18 +347,22 @@ describe('useSessionLifecycle — event listener behavior', () => {
     errorSpy.mockRestore();
   });
 
-  it('claude-complete clears loading + persistent flag and flips both badges off', async () => {
+  it('claude-complete clears loading + persistent flag; status is owned by main-process session-status event', async () => {
     (api.startSession as any).mockResolvedValueOnce(undefined);
     const setIsLoading = vi.fn();
-    const setIsSessionActive = vi.fn();
-    const { result } = renderHook(harness({ setIsLoading, setIsSessionActive }));
+    const { result } = renderHook(harness({ setIsLoading }));
     await act(async () => { await result.current.lifecycle.startPersistentSession(); });
     expect(result.current.persistentSessionRef.current).toBe(true);
 
     act(() => { eventListeners['claude-complete:tab-life'](undefined); });
     expect(setIsLoading).toHaveBeenCalledWith(false);
     expect(result.current.persistentSessionRef.current).toBe(false);
-    expect(setIsSessionActive).toHaveBeenLastCalledWith(false);
+
+    // Main process emits the 'stopped' transition on the session-status
+    // channel; the hook reflects it. Payload carries both axes.
+    act(() => { eventListeners['session-status:tab-life']({ sessionStatus: 'stopped', conversationStatus: null }); });
+    expect(result.current.lifecycle.sessionStatus).toBe('stopped');
+    expect(result.current.lifecycle.conversationStatus).toBeNull();
   });
 });
 
@@ -391,7 +412,10 @@ describe('useSessionLifecycle — fetchInitInfo enrichment', () => {
           { name: 'bar', status: 'connected', tools: [{ name: 'b' }] },
         ]);
 
-      const { result } = renderHook(harness());
+      // Seed a real init message — without it, enrichInitTools is a no-op
+      // by design (it only merges into the SDK's actual init, never inserts).
+      const seededInit = [{ type: 'system', subtype: 'init', session_id: 'real-id', model: 'sonnet', cwd: '/r', tools: [] } as any];
+      const { result } = renderHook(harness({ messages: seededInit }));
       await act(async () => { await result.current.lifecycle.startPersistentSession(); });
       // Flush the first poll's microtasks.
       await act(async () => { await vi.advanceTimersByTimeAsync(0); });
@@ -446,7 +470,7 @@ describe('useSessionLifecycle — fetchInitInfo enrichment', () => {
     }
   });
 
-  it('writes account info, supported models/commands, context usage and re-upserts init with MCP tools', async () => {
+  it('writes account info, supported models/commands, context usage and enriches the real init with MCP tools', async () => {
     (api.startSession as any).mockResolvedValueOnce(undefined);
     (api.sessionAccountInfo as any).mockResolvedValue({
       name: 'work',
@@ -467,7 +491,10 @@ describe('useSessionLifecycle — fetchInitInfo enrichment', () => {
     const setSupportedCommands = vi.fn();
     const setContextUsage = vi.fn();
 
+    // Seed a real init so enrichInitTools has something to merge into.
+    const seededInit = [{ type: 'system', subtype: 'init', session_id: 'real-id', model: 'sonnet', cwd: '/r', tools: [] } as any];
     const { result } = renderHook(harness({
+      messages: seededInit,
       setSdkAccountInfo, setSupportedModels, setSupportedCommands, setContextUsage,
     }));
 
@@ -484,5 +511,105 @@ describe('useSessionLifecycle — fetchInitInfo enrichment', () => {
     // tool name (mangled per the standard mcp__<server>__<tool> convention).
     const init = result.current.messagesRef.current[0] as any;
     expect(init.tools).toContain('mcp__foo_server__do_x');
+  });
+
+  it('does not insert a synthetic init when the real one has not arrived', async () => {
+    (api.startSession as any).mockResolvedValueOnce(undefined);
+    (api.sessionAccountInfo as any).mockResolvedValue({
+      name: 'work', account_type: 'pro', config_dir: '/cfg',
+    });
+    (api.sessionMcpServerStatus as any).mockResolvedValueOnce([
+      { name: 'mcp1', status: 'connected', tools: [{ name: 't' }] },
+    ]);
+    // No seeded init — chat starts empty.
+    const { result } = renderHook(harness());
+    await act(async () => { await result.current.lifecycle.startPersistentSession(); });
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+
+    // enrichInitTools is a no-op when no real init exists. Messages stays empty.
+    expect(result.current.messagesRef.current).toHaveLength(0);
+  });
+});
+
+describe('useSessionLifecycle — sessionStatus + conversationStatus', () => {
+  it('defaults to sessionStatus=stopped, conversationStatus=null before any activity', () => {
+    const { result } = renderHook(harness());
+    expect(result.current.lifecycle.sessionStatus).toBe('stopped');
+    expect(result.current.lifecycle.conversationStatus).toBeNull();
+  });
+
+  it('flips sessionStatus to "starting" synchronously when startPersistentSession is called, before IPC resolves', async () => {
+    let resolveStart: () => void = () => {};
+    (api.startSession as any).mockImplementationOnce(
+      () => new Promise<void>((r) => { resolveStart = () => { r(); }; }),
+    );
+    const { result } = renderHook(harness());
+
+    let p: Promise<void>;
+    act(() => { p = result.current.lifecycle.startPersistentSession(); });
+    expect(result.current.lifecycle.sessionStatus).toBe('starting');
+    expect(result.current.lifecycle.conversationStatus).toBeNull();
+
+    await act(async () => { resolveStart(); await p!; });
+  });
+
+  it('reflects sessionStatus=started + conversationStatus transitions from main-process events', async () => {
+    (api.startSession as any).mockResolvedValueOnce(undefined);
+    const { result } = renderHook(harness());
+    await act(async () => { await result.current.lifecycle.startPersistentSession(); });
+
+    // system:init → started + idle
+    act(() => {
+      eventListeners['session-status:tab-life']({ sessionStatus: 'started', conversationStatus: 'idle' });
+    });
+    expect(result.current.lifecycle.sessionStatus).toBe('started');
+    expect(result.current.lifecycle.conversationStatus).toBe('idle');
+
+    // turn → running
+    act(() => {
+      eventListeners['session-status:tab-life']({ sessionStatus: 'started', conversationStatus: 'running' });
+    });
+    expect(result.current.lifecycle.conversationStatus).toBe('running');
+
+    // canUseTool → waiting_permission
+    act(() => {
+      eventListeners['session-status:tab-life']({ sessionStatus: 'started', conversationStatus: 'waiting_permission' });
+    });
+    expect(result.current.lifecycle.conversationStatus).toBe('waiting_permission');
+  });
+
+  it('forces conversationStatus to null when sessionStatus leaves "started" (invariant)', async () => {
+    (api.startSession as any).mockResolvedValueOnce(undefined);
+    const { result } = renderHook(harness());
+    await act(async () => { await result.current.lifecycle.startPersistentSession(); });
+
+    act(() => {
+      eventListeners['session-status:tab-life']({ sessionStatus: 'started', conversationStatus: 'running' });
+    });
+    expect(result.current.lifecycle.conversationStatus).toBe('running');
+
+    // Even if main accidentally sent a conversationStatus alongside a
+    // non-started sessionStatus, the hook clears it per the invariant.
+    act(() => {
+      eventListeners['session-status:tab-life']({ sessionStatus: 'error', conversationStatus: 'running' });
+    });
+    expect(result.current.lifecycle.sessionStatus).toBe('error');
+    expect(result.current.lifecycle.conversationStatus).toBeNull();
+  });
+
+  it('ignores payloads without a sessionStatus field', async () => {
+    (api.startSession as any).mockResolvedValueOnce(undefined);
+    const { result } = renderHook(harness());
+    await act(async () => { await result.current.lifecycle.startPersistentSession(); });
+
+    act(() => {
+      eventListeners['session-status:tab-life']({ sessionStatus: 'started', conversationStatus: 'idle' });
+    });
+    expect(result.current.lifecycle.sessionStatus).toBe('started');
+
+    act(() => { eventListeners['session-status:tab-life'](undefined); });
+    act(() => { eventListeners['session-status:tab-life']({}); });
+    expect(result.current.lifecycle.sessionStatus).toBe('started');
+    expect(result.current.lifecycle.conversationStatus).toBe('idle');
   });
 });

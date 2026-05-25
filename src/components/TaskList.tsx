@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   Loader2,
   ListChecks,
+  ListTodo,
   ChevronRight,
   FileText,
   Terminal,
@@ -92,6 +93,7 @@ export const TaskList: React.FC<TaskListProps> = ({ messages, isLive, className 
                 <ChevronUp className="h-3.5 w-3.5" />
               )}
             </span>
+            <ListTodo className="h-3.5 w-3.5 text-foreground" />
             <span className="font-medium text-foreground">Task List:</span>
             <span className="text-foreground/90 tabular-nums">
               {summary.done}/{summary.total} done

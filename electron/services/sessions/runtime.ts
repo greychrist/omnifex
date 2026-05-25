@@ -19,6 +19,7 @@ import { classifyRuntimeEvent } from './events';
 import { dispatchResultNotification } from './notifications';
 import { createJsonlTail, type JsonlTailHandle } from './jsonl-tail';
 import { encodeProjectKey } from './summary-query';
+import { setStatus } from './status';
 
 export interface RuntimeDeps {
   sendToRenderer: SendToRenderer;
@@ -105,26 +106,29 @@ export async function listenToMessages(
       // and the renderer treats that case as "no timestamp".
       (message as any).receivedAt = new Date().toISOString();
 
-      // Status transitions:
-      //  - 'init' means the session is alive but no turn is in flight yet
-      //    → 'idle' so the installer's wait-for-idle gate doesn't block.
-      //  - 'result' is handled below (also flips to 'idle').
-      //  - Anything else (assistant / tool_use / tool_result / etc.) means
-      //    the SDK is mid-turn → 'running'.
-      // sendMessage() also sets 'running' eagerly so the gate reacts the
-      // moment the user submits, before the SDK echoes anything.
+      // Two-axis status transitions (see docs/session-lifecycle.md):
+      //  - 'init':   connection comes up. sessionStatus → 'started',
+      //              conversationStatus → 'idle' (alive, no turn yet).
+      //  - 'turn' / 'rateLimit' / 'compact': mid-turn signals →
+      //              conversationStatus → 'running'. sessionStatus stays
+      //              'started' (or is forced to 'started' if a transient
+      //              caller dropped it).
+      //  - 'result': turn done → conversationStatus → 'idle'.
+      //  - 'streamEvent': per-token delta. Status driven by turn-level
+      //              events, not deltas.
+      // sendMessage() also sets conversationStatus → 'running' eagerly so
+      // the in-flight gate reacts the moment the user submits, before the
+      // SDK echoes anything.
       switch (event.kind) {
         case 'init':
           if (event.sessionId) handle.sessionId = event.sessionId;
-          handle.status = 'idle';
+          setStatus(handle, { sessionStatus: 'started', conversationStatus: 'idle' }, tabId, sendToRenderer);
           // First time we know the sessionId — wire up the JSONL tail so
           // background-Bash closure carriers (queue-operation enqueue /
           // attachment queued_command) reach the renderer in live mode.
           ensureJsonlTail();
           break;
         case 'rateLimit':
-          // Capture rate-limit events for the rate-limits service. Wrap in
-          // try/catch so a downstream bug never kills the session stream.
           if (rateLimitHook) {
             try {
               rateLimitHook(handle.configDir, event.info);
@@ -132,22 +136,16 @@ export async function listenToMessages(
               console.error('[sessions] rate-limit hook failed:', err);
             }
           }
-          handle.status = 'running';
+          setStatus(handle, { conversationStatus: 'running' }, tabId, sendToRenderer);
           break;
         case 'compact':
-          // Stream paused for compaction. Treat as 'running' for now —
-          // the FSM doesn't have a separate 'compacting' status today,
-          // but classifying separately leaves room for one if/when the
-          // status badge wants to distinguish it.
-          handle.status = 'running';
+          setStatus(handle, { conversationStatus: 'running' }, tabId, sendToRenderer);
           break;
         case 'streamEvent':
-          // Token-level partial delta (emitted because includePartialMessages: true
-          // is set in factory.ts). Keep status as-is: status transitions are driven
-          // by turn-level events, not per-token deltas.
+          // Per-token delta — status driven by turn-level events, not deltas.
           break;
         case 'turn':
-          handle.status = 'running';
+          setStatus(handle, { conversationStatus: 'running' }, tabId, sendToRenderer);
           break;
         case 'result':
           // status flip happens after notification dispatch below
@@ -165,11 +163,11 @@ export async function listenToMessages(
           sendToRenderer,
           notificationHooks,
         });
-        // Turn is over — flip to 'idle' so the installer's wait-for-idle
-        // gate doesn't block on a tab that's just sitting waiting for the
-        // user. The 'turn' branch above will move us back to 'running' the
-        // moment the next message lands on the stream.
-        handle.status = 'idle';
+        // Turn is over — conversationStatus → 'idle' so the in-flight
+        // gate doesn't block on a tab that's just sitting waiting for
+        // the user. The 'turn' branch above will move us back to
+        // 'running' the moment the next message lands on the stream.
+        setStatus(handle, { conversationStatus: 'idle' }, tabId, sendToRenderer);
       }
     }
   } catch (err) {
@@ -190,7 +188,9 @@ export async function listenToMessages(
     }
     // Stream error — keep the session alive so the user can retry.
     // The next sendMessage() will restart the SDK query transparently.
-    handle.status = 'error';
+    // setStatus forces conversationStatus to null when sessionStatus !=
+    // 'started', so the conversation cleanly tears down with the connection.
+    setStatus(handle, { sessionStatus: 'error' }, tabId, sendToRenderer);
     // Close the dead Query handle so its internals are released. The
     // SDK's Query.close() is idempotent; without this the dying handle
     // hangs around in handle.query holding subprocess resources until
@@ -230,7 +230,7 @@ export async function listenToMessages(
     teardownJsonlTail();
     return;
   }
-  handle.status = 'stopped';
+  setStatus(handle, { sessionStatus: 'stopped' }, tabId, sendToRenderer);
   sendToRenderer(`claude-complete:${tabId}`);
   sessions.delete(tabId);
   ownership?.unregister(tabId);
@@ -260,7 +260,7 @@ export function restartQuery(
 
   handle.inputChannel = newInputChannel;
   handle.query = q;
-  handle.status = 'starting';
+  setStatus(handle, { sessionStatus: 'starting' }, tabId, deps.sendToRenderer);
 
   listenToMessages(tabId, handle, deps).catch((err: unknown) => {
     console.error(`[sessions] Unhandled error in listenToMessages for tab ${tabId}:`, err);

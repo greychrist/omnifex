@@ -22,7 +22,7 @@ export interface InstallStatus {
    * Surfaced on `phase: 'waiting'` events so the renderer / DevTools can
    * see exactly what the gate sees when the wait ends or skips.
    */
-  tabs?: { tabId: string; status: string }[];
+  tabs?: { tabId: string; sessionStatus: string; conversationStatus: string | null }[];
 }
 
 export interface InstallerService {
@@ -40,15 +40,20 @@ export interface InstallerService {
 
 export interface InstallerDeps {
   sessionsService: {
-    /** Tabs whose SDK turn is in flight — `'starting'`, `'running'`, or
-     *  `'waiting_permission'`. Idle/open sessions are excluded so the
-     *  installer doesn't block on tabs sitting at a prompt. */
+    /** Tabs whose conversation is in flight — `conversationStatus` is
+     *  non-null and non-idle (running / waiting_permission). Idle and
+     *  starting sessions are excluded so the installer doesn't block on
+     *  tabs that aren't mid-turn. See docs/session-lifecycle.md. */
     listInFlightTabIds: () => string[];
-    /** Diagnostic: every session main knows about, with its current status,
+    /** Diagnostic: every session main knows about, with both status axes,
      *  whether or not it counts as "in-flight". Used by the gate to log a
      *  full snapshot when it polls / clears. Optional so existing callers
      *  (and tests) keep working. */
-    listSessionStatuses?: () => { tabId: string; status: string }[];
+    listSessionStatuses?: () => {
+      tabId: string;
+      sessionStatus: string;
+      conversationStatus: string | null;
+    }[];
     stopAll: () => void;
   };
   appQuit: () => void;

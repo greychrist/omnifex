@@ -48,6 +48,14 @@ export interface Tab {
   accountColor?: string | null;  // for chat tabs - resolved account color
   accountIcon?: string | null;   // for chat tabs - resolved account icon
   status: 'active' | 'idle' | 'running' | 'complete' | 'error';
+  /**
+   * Is the agent doing work right now? Driven by ClaudeCodeSession from
+   * the same rollup as TabStatusSummary.promptStatus (mainTurnInFlight
+   * OR active task OR running subagent). 'ready' when quiet.
+   * Drives the TabManager spinner and (indirectly via TabStatusSummary)
+   * the popover badge + upgrade gate. Independent of `status` (lifecycle).
+   */
+  promptStatus?: 'working' | 'ready';
   hasUnsavedChanges: boolean;
   hasUnreadResult?: boolean;
   order: number;

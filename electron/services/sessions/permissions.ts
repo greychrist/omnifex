@@ -12,6 +12,7 @@ import type {
   NotificationHooks,
   PersistPermissionRuleFn,
 } from './types';
+import { setStatus } from './status';
 
 function currentPermissionMode(handle: SessionHandle): string {
   const mode = handle.sdkOptions.permissionMode;
@@ -357,8 +358,8 @@ export function createCanUseTool(
             } catch (e) {
               console.error('[sessions] permission notification hook failed:', e);
             }
-          } else if (handle.status === 'waiting_permission') {
-            handle.status = 'running';
+          } else if (handle.conversationStatus === 'waiting_permission') {
+            setStatus(handle, { conversationStatus: 'running' }, tabId, sendToRenderer);
           }
         }
 
@@ -379,7 +380,7 @@ export function createCanUseTool(
 
       // If this is the only item in the queue, show it immediately
       if (handle.permissionQueue.length === 1) {
-        handle.status = 'waiting_permission';
+        setStatus(handle, { conversationStatus: 'waiting_permission' }, tabId, sendToRenderer);
         sendToRenderer(`claude-output:${tabId}`, payload);
 
         // Notify the user that a permission decision is needed
@@ -544,7 +545,9 @@ export function respondPermission(
       console.error('[sessions] permission notification hook failed:', e);
     }
   } else {
-    handle.status = 'running';
+    // Queue drained — back to running until the SDK emits its 'result'
+    // for this turn, at which point runtime.ts flips to 'idle'.
+    setStatus(handle, { conversationStatus: 'running' }, tabId, sendToRenderer);
   }
 }
 

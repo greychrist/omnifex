@@ -13,6 +13,7 @@ import type {
   SessionHandle,
   SessionStartParams,
   SessionStatus,
+  ConversationStatus,
   SessionMode,
   SessionsService,
   SendToRenderer,
@@ -40,6 +41,18 @@ import { createTuiJsonlListener } from './tui-jsonl';
 import { encodeProjectKey } from './summary-query';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { setStatus } from './status';
+
+/**
+ * Single source of truth for "what sessionId will this session use?" —
+ * shared by SDK cold-start, SDK resume, and TUI cold-start so all three
+ * paths agree on the resolution rule. Resume keeps the caller's id;
+ * cold-start mints a fresh UUID synchronously so handle.sessionId is
+ * never null after start() returns.
+ */
+function resolveSessionId(resumeId?: string): string {
+  return resumeId ?? randomUUID();
+}
 
 // ---------------------------------------------------------------------------
 // Factory
@@ -94,8 +107,6 @@ export function createSessionsService(
 
     // Build the SDK options. The factory excludes `canUseTool` because
     // that callback closes over the handle (which is created below).
-    // Elicitation requests are routed to a resolver that the runtime
-    // writes to handle.elicitationResolver in respondElicitation().
     const options = buildSdkOptions(params, {
       tabId,
       sendToRenderer,
@@ -109,16 +120,15 @@ export function createSessionsService(
         }),
     });
 
-    // Create handle first so the canUseTool callback can reference it.
-    // For resume, pre-populate handle.sessionId from params so consumers
-    // like setMode('tui') don't have to wait for the SDK iterator's
-    // system:init echo — the id is already known by the caller. The
-    // iterator will overwrite it with the same value on init.
+    // sessionId starts null for cold-start (set on the SDK's first init)
+    // and seeded from resumeSessionId for resume (so consumers like
+    // setMode('tui') don't have to wait for the init echo).
     const handle: SessionHandle = {
       query: null, // set below
       inputChannel,
       sessionId: params.resumeSessionId ?? null,
-      status: 'starting',
+      sessionStatus: 'starting',
+      conversationStatus: null,
       mode: 'sdk',
       tui: null,
       tuiDetach: null,
@@ -148,7 +158,15 @@ export function createSessionsService(
       ownership?.register(tabId, params.ownerWebContentsId);
     }
 
-    // Start listening in the background (don't await — fire and forget)
+    // Tell the renderer we're in 'starting' — handle was just created,
+    // SDK has not emitted anything yet. The runtime will transition to
+    // sessionStatus='started' + conversationStatus='idle' on the first
+    // system:init. conversationStatus is null until then per the model.
+    sendToRenderer(`session-status:${tabId}`, {
+      sessionStatus: 'starting',
+      conversationStatus: null,
+    });
+
     listenToMessages(tabId, handle, runtimeDeps).catch((err: unknown) => {
       console.error(`[sessions] Unhandled error in listenToMessages for tab ${tabId}:`, err);
     });
@@ -160,7 +178,7 @@ export function createSessionsService(
 
   function ensureLiveQuery(tabId: string, handle: SessionHandle): void {
     // If the previous stream errored, restart the SDK query transparently
-    if (handle.status === 'error') {
+    if (handle.sessionStatus === 'error') {
       restartQuery(tabId, handle, runtimeDeps);
     }
   }
@@ -172,10 +190,11 @@ export function createSessionsService(
 
     ensureLiveQuery(tabId, handle);
 
-    // Mark the turn as in-flight before the SDK has a chance to echo
-    // anything back, so the installer's wait-for-idle gate reacts to the
-    // user's submit immediately.
-    handle.status = 'running';
+    // Mark the conversation as in-flight before the SDK has a chance to
+    // echo anything back, so the in-flight gate reacts to the user's
+    // submit immediately. The user only sends messages on a 'started'
+    // session, so this transition is safe.
+    setStatus(handle, { conversationStatus: 'running' }, tabId, sendToRenderer);
 
     const message: SDKUserMessage = {
       type: 'user',
@@ -199,8 +218,8 @@ export function createSessionsService(
 
     ensureLiveQuery(tabId, handle);
 
-    // See sendMessage() — keep status in sync with submit, not echo.
-    handle.status = 'running';
+    // See sendMessage() — keep conversationStatus in sync with submit, not echo.
+    setStatus(handle, { conversationStatus: 'running' }, tabId, sendToRenderer);
 
     const message: SDKUserMessage = {
       type: 'user',
@@ -313,14 +332,24 @@ export function createSessionsService(
     return sessions.get(tabId)?.sessionId ?? null;
   }
 
-  function getStatus(tabId: string): SessionStatus {
-    return sessions.get(tabId)?.status ?? 'stopped';
+  function getStatus(tabId: string): { sessionStatus: SessionStatus; conversationStatus: ConversationStatus | null } {
+    const handle = sessions.get(tabId);
+    if (!handle) return { sessionStatus: 'stopped', conversationStatus: null };
+    return { sessionStatus: handle.sessionStatus, conversationStatus: handle.conversationStatus };
   }
 
-  function getInfo(tabId: string): { sessionId: string | null; status: SessionStatus } | null {
+  function getInfo(tabId: string): {
+    sessionId: string | null;
+    sessionStatus: SessionStatus;
+    conversationStatus: ConversationStatus | null;
+  } | null {
     const handle = sessions.get(tabId);
     if (!handle) return null;
-    return { sessionId: handle.sessionId, status: handle.status };
+    return {
+      sessionId: handle.sessionId,
+      sessionStatus: handle.sessionStatus,
+      conversationStatus: handle.conversationStatus,
+    };
   }
 
   function isActive(tabId: string): boolean {
@@ -331,13 +360,16 @@ export function createSessionsService(
     return Array.from(sessions.keys());
   }
 
+  // In-flight = conversationStatus is non-null and non-idle. See
+  // docs/session-lifecycle.md — sessionStatus='starting'/'error'/'stopped'
+  // do NOT count; only a conversation that's actually mid-turn or paused
+  // on a permission prompt blocks the installer's wait-for-idle gate.
   function listInFlightTabIds(): string[] {
     const ids: string[] = [];
     for (const [tabId, handle] of sessions) {
       if (
-        handle.status === 'starting' ||
-        handle.status === 'running' ||
-        handle.status === 'waiting_permission'
+        handle.conversationStatus !== null &&
+        handle.conversationStatus !== 'idle'
       ) {
         ids.push(tabId);
       }
@@ -345,18 +377,42 @@ export function createSessionsService(
     return ids;
   }
 
-  function listSessionStatuses(): { tabId: string; status: SessionStatus }[] {
-    const out: { tabId: string; status: SessionStatus }[] = [];
+  function listSessionStatuses(): {
+    tabId: string;
+    sessionStatus: SessionStatus;
+    conversationStatus: ConversationStatus | null;
+  }[] {
+    const out: {
+      tabId: string;
+      sessionStatus: SessionStatus;
+      conversationStatus: ConversationStatus | null;
+    }[] = [];
     for (const [tabId, handle] of sessions) {
-      out.push({ tabId, status: handle.status });
+      out.push({
+        tabId,
+        sessionStatus: handle.sessionStatus,
+        conversationStatus: handle.conversationStatus,
+      });
     }
     return out;
   }
 
-  function getHealth(tabId: string): { alive: boolean; status: SessionStatus; sessionId: string | null } {
+  function getHealth(tabId: string): {
+    alive: boolean;
+    sessionId: string | null;
+    sessionStatus: SessionStatus;
+    conversationStatus: ConversationStatus | null;
+  } {
     const handle = sessions.get(tabId);
-    if (!handle) return { alive: false, status: 'stopped', sessionId: null };
-    return { alive: true, status: handle.status, sessionId: handle.sessionId };
+    if (!handle) {
+      return { alive: false, sessionId: null, sessionStatus: 'stopped', conversationStatus: null };
+    }
+    return {
+      alive: true,
+      sessionId: handle.sessionId,
+      sessionStatus: handle.sessionStatus,
+      conversationStatus: handle.conversationStatus,
+    };
   }
 
   async function setMode(tabId: string, mode: SessionMode): Promise<void> {
@@ -364,16 +420,19 @@ export function createSessionsService(
     if (!handle) throw new Error(`setMode: unknown tab ${tabId}`);
     if (handle.mode === mode) return;
 
-    // Gate: allow switching while the SDK is running, idle (between turns),
-    // or in the transient 'starting' state (post-restart, before the first
-    // message arrives). Block only when a permission dialog is open or the
-    // session is dead.
-    if (
-      handle.status !== 'running' &&
-      handle.status !== 'idle' &&
-      handle.status !== 'starting'
-    ) {
-      throw new Error(`setMode: not allowed while status is "${handle.status}"`);
+    // Gate: allow switching while the SDK is mid-turn or idle on a
+    // started session, or in the transient 'starting' state (post-
+    // restart, before the first message arrives). Block when paused on
+    // a permission prompt or the session is dead.
+    const conn = handle.sessionStatus;
+    const conv = handle.conversationStatus;
+    const allowed =
+      conn === 'starting' ||
+      (conn === 'started' && (conv === 'idle' || conv === 'running'));
+    if (!allowed) {
+      throw new Error(
+        `setMode: not allowed while sessionStatus="${conn}" conversationStatus="${conv ?? 'null'}"`,
+      );
     }
 
     if (mode === 'tui') {
@@ -433,7 +492,12 @@ export function createSessionsService(
         onInit: () => {
           // sessionId is already known (precondition for the toggle); ignore.
         },
-        onStatusChange: (status) => { handle.status = status; },
+        onStatusChange: (status) => {
+          // TUI JSONL reports turn-level idle/running. Connection is
+          // already 'started' for a mid-session toggle, so we just need
+          // to update conversationStatus.
+          setStatus(handle, { sessionStatus: 'started', conversationStatus: status }, tabId, sendToRenderer);
+        },
       });
     } else {
       // tui -> sdk: kill the pty, then re-start the SDK query with resume.
@@ -486,11 +550,12 @@ export function createSessionsService(
     const binaryPath = findSystemClaudeBinary();
     if (!binaryPath) throw new Error('startTuiColdStart: claude binary not found');
 
-    // Generate the sessionId ourselves and pass it via `--session-id` so the
-    // CLI creates the session deterministically — no race against discovery
-    // polling, no interactive resume picker, no 10s timeout window. The
-    // JSONL file path is known upfront.
-    const sessionId = randomUUID();
+    // TUI pre-mints the UUID and passes it to the CLI via `--session-id`
+    // so the JSONL file path is known up front (no discovery race, no
+    // resume-picker dialog). The CLI in pty mode handles `--session-id`
+    // cleanly — unlike the SDK's stream-json mode, where pinning makes
+    // the CLI suppress init and the control channel.
+    const sessionId = resolveSessionId();
     const jsonlPath = path.join(
       configDir,
       'projects',
@@ -502,7 +567,8 @@ export function createSessionsService(
       query: null,
       inputChannel: null,
       sessionId,
-      status: 'starting',
+      sessionStatus: 'starting',
+      conversationStatus: null,
       mode: 'tui',
       tui: null,
       tuiDetach: null,
@@ -533,7 +599,7 @@ export function createSessionsService(
       sendToRenderer(`session-tui-exit:${tabId}`, r);
       handle.tuiJsonl?.stop();
       handle.tuiJsonl = null;
-      handle.status = 'stopped';
+      setStatus(handle, { sessionStatus: 'stopped' }, tabId, sendToRenderer);
       sendToRenderer(`claude-complete:${tabId}`);
       // Only mutate the shared map if we are still the current session for this tab.
       // A `stop()` followed by a new `start()` on the same tabId will have already
@@ -559,10 +625,22 @@ export function createSessionsService(
       onInit: () => {
         // sessionId is already set on the handle; ignore CLI re-inits.
       },
-      onStatusChange: (status) => { handle.status = status; },
+      onStatusChange: (status) => {
+        // First JSONL line means the CLI has spun up — sessionStatus
+        // flips to 'started' here; subsequent calls just update the
+        // conversation axis.
+        setStatus(handle, { sessionStatus: 'started', conversationStatus: status }, tabId, sendToRenderer);
+      },
     });
 
-    handle.status = 'idle';
+    // TUI cold-start: handle is up, CLI is being spawned, JSONL listener
+    // attached. Once the CLI writes its first JSONL line, the listener's
+    // onStatusChange will flip us to started+idle/running. For now we're
+    // still 'starting' with no conversation.
+    sendToRenderer(`session-status:${tabId}`, {
+      sessionStatus: 'starting',
+      conversationStatus: null,
+    });
     sendToRenderer(`session-mode:${tabId}`, { mode: 'tui' });
   }
 

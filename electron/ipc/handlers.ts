@@ -62,7 +62,12 @@ export interface Services {
     respondElicitation(tabId: string, action: string, content?: Record<string, unknown>): unknown;
     stop(sessionId: string): unknown;
     getInfo(sessionId: string): unknown;
-    getHealth(sessionId: string): { alive: boolean; status: string; sessionId: string | null };
+    getHealth(sessionId: string): {
+      alive: boolean;
+      sessionId: string | null;
+      sessionStatus: string;
+      conversationStatus: string | null;
+    };
     // Wave 2 — Query-method passthroughs
     interrupt(sessionId: string): unknown;
     setModel(sessionId: string, model?: string): unknown;
@@ -336,7 +341,7 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     session_respond_elicitation: wrapWith((p: Record<string, unknown>) => sessions?.respondElicitation((p?.tabId ?? p?.tab_id) as string, (p?.action) as string, p?.content as Record<string, unknown> | undefined) ?? null),
     session_stop: wrapWith((p: Record<string, unknown>) => sessions?.stop((p?.tabId ?? p?.session_id) as string) ?? null),
     session_get_info: wrapWith((p: Record<string, unknown>) => sessions?.getInfo((p?.tabId ?? p?.session_id) as string) ?? null),
-    session_get_health: wrapWith((p: Record<string, unknown>) => sessions?.getHealth((p?.tabId ?? p?.session_id) as string) ?? { alive: false, status: 'stopped', sessionId: null }),
+    session_get_health: wrapWith((p: Record<string, unknown>) => sessions?.getHealth((p?.tabId ?? p?.session_id) as string) ?? { alive: false, sessionId: null, sessionStatus: 'stopped', conversationStatus: null }),
     // Wave 2 — Query-method passthroughs
     session_interrupt: wrapWith((p: Record<string, unknown>) => sessions?.interrupt((p?.tabId ?? p?.session_id) as string) ?? null),
     session_set_model: wrapWith((p: Record<string, unknown>) => sessions?.setModel((p?.tabId ?? p?.session_id) as string, p?.model as string | undefined) ?? null),

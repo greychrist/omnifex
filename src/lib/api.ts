@@ -519,6 +519,27 @@ export type LogOrderDir = 'asc' | 'desc';
 /** Session execution mode: SDK (interactive) or TUI (terminal UI). */
 export type SessionMode = 'sdk' | 'tui';
 
+/**
+ * Connection axis of the session. See `docs/session-lifecycle.md`.
+ * Mirrors `SessionStatus` in `electron/services/sessions/types.ts` —
+ * keep both unions in sync.
+ */
+export type SessionStatus =
+  | 'starting'
+  | 'started'
+  | 'error'
+  | 'stopped';
+
+/**
+ * Turn axis of the session. Must be `null` whenever sessionStatus !==
+ * 'started'. Mirrors `ConversationStatus` in
+ * `electron/services/sessions/types.ts`.
+ */
+export type ConversationStatus =
+  | 'idle'
+  | 'running'
+  | 'waiting_permission';
+
 export interface LogQueryFilters {
   /** Any of these log levels (OR-joined). Omit to match all levels. */
   levels?: string[];
@@ -606,6 +627,20 @@ export interface TabStatusSummary {
   sessionStarted: boolean;
   /** Roll-up: mainTurnInFlight || activeAgents > 0 || tasks.inFlight. */
   busy: boolean;
+  /**
+   * Is Claude currently doing work on this session?
+   *  - 'working' (yellow) if ANY of: waiting on a Claude response,
+   *    active task in_progress, or running subagent.
+   *  - 'ready'   (green)  if all three are quiet.
+   *
+   * Independent of `status` (which is the lifecycle: starting / idle /
+   * error / etc.) — promptStatus is purely "is the agent busy", and
+   * drives the tab spinner, the popover badge, and the upgrade-gate
+   * warning. Distinct from `busy` (which folds in `waitingFor`) by
+   * design: a session waiting on the user is not "working" — it's
+   * waiting on you.
+   */
+  promptStatus: 'working' | 'ready';
   mainTurnInFlight: boolean;
   /** Running, un-dismissed subagents (Agent / Task / run_in_background:Bash). */
   activeAgents: number;
@@ -1032,8 +1067,18 @@ export const api = {
     return apiCall("session_get_info", { tabId });
   },
 
-  async sessionGetHealth(tabId: string): Promise<{ alive: boolean; status: string; sessionId: string | null }> {
-    return apiCall("session_get_health", { tabId });
+  async sessionGetHealth(tabId: string): Promise<{
+    alive: boolean;
+    sessionId: string | null;
+    sessionStatus: SessionStatus;
+    conversationStatus: ConversationStatus | null;
+  }> {
+    return apiCall("session_get_health", { tabId }) as Promise<{
+      alive: boolean;
+      sessionId: string | null;
+      sessionStatus: SessionStatus;
+      conversationStatus: ConversationStatus | null;
+    }>;
   },
 
   // ─── Wave 2: Query-method passthroughs ──────────────────────────

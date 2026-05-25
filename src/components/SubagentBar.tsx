@@ -1,5 +1,17 @@
 import React, { useEffect, useState } from 'react';
-import { ChevronDown, ChevronRight, ChevronUp, Bot, CheckCircle2, CircleDashed, AlertCircle, Ghost, X } from 'lucide-react';
+import {
+  ChevronDown,
+  ChevronRight,
+  ChevronUp,
+  Bot,
+  CheckCircle2,
+  CircleDashed,
+  AlertCircle,
+  Ghost,
+  X,
+  ListChecks,
+  Loader2,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Subagent } from '@/lib/subagentStreams';
 
@@ -52,7 +64,10 @@ const SubagentRow: React.FC<SubagentRowProps> = ({ sub, onDismiss }) => {
 
   const statusIcon =
     sub.status === 'completed' ? (
-      <CheckCircle2 className={cn('h-3.5 w-3.5', color.text)} />
+      // Mirrors the TaskList's completed row — green check, not the
+      // per-subagent palette color, so "done" reads the same way across
+      // both bars at a glance.
+      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
     ) : sub.status === 'completed_inferred' ? (
       // Distinct icon for inferred completion — the parent emitted a
       // `result` and moved on, but we never received a direct closure
@@ -151,7 +166,7 @@ const SubagentRow: React.FC<SubagentRowProps> = ({ sub, onDismiss }) => {
           })}
           {sub.status === 'completed' && sub.summary && (
             <div className="flex items-start gap-2 text-[11px] pt-1">
-              <CheckCircle2 className={cn('h-3 w-3 mt-0.5 shrink-0', color.text)} />
+              <CheckCircle2 className="h-3 w-3 mt-0.5 shrink-0 text-emerald-400" />
               <span className="text-foreground/70 italic">{sub.summary}</span>
             </div>
           )}
@@ -185,57 +200,83 @@ export const SubagentBar: React.FC<SubagentBarProps> = ({
   }, [collapsed]);
 
   if (subagents.length === 0) return null;
-  const completedCount = subagents.filter((s) => s.status !== 'running').length;
-  const runningCount = subagents.length - completedCount;
+  const total = subagents.length;
+  const runningCount = subagents.filter((s) => s.status === 'running').length;
+  const doneCount = total - runningCount;
+  const running = runningCount > 0;
+  const expanded = !collapsed;
+
+  // Mirrors TaskList's header status icon: green ListChecks at rest,
+  // spinning Loader2 while any subagent is running.
+  const StatusIcon = running ? Loader2 : ListChecks;
+  const statusIconClass = cn(
+    'h-3.5 w-3.5',
+    running ? 'text-muted-foreground animate-spin' : 'text-emerald-400',
+  );
 
   return (
-    <div className={cn('shrink-0 border-t border-border/40 flex flex-col', className)}>
-      {/* Header — always visible */}
-      <div className="flex items-center gap-2 px-3 py-1 text-[11px] bg-muted/20 shrink-0">
-        <button
-          type="button"
-          onClick={() => { setCollapsed((v) => !v); }}
-          className="inline-flex items-center gap-1.5 text-muted-foreground hover:text-foreground"
-          title={collapsed ? 'Expand subagents' : 'Collapse subagents'}
-        >
-          <span
-            className="inline-flex items-center justify-center h-6 w-6 rounded-md border border-border bg-background shrink-0"
-            aria-hidden
+    <div className={cn('shrink-0 flex flex-col', className)}>
+      {/* Header — laid out identically to the TaskList header so the two
+          bars feel like the same thing in different domains. */}
+      <div className="relative shrink-0 border-t border-border/40">
+        <div
+          aria-hidden="true"
+          className={cn(
+            'absolute inset-0 bg-sky-400/15',
+            running && 'animate-pulse',
+          )}
+        />
+        <div className="relative flex items-center gap-2 px-3 py-1 text-[11px]">
+          <button
+            type="button"
+            onClick={() => { setCollapsed((v) => !v); }}
+            className="inline-flex items-center gap-1.5 text-muted-foreground hover:text-foreground"
+            title={expanded ? 'Collapse subagents' : 'Expand subagents'}
           >
-            {collapsed ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-          </span>
-          <Bot className="h-3.5 w-3.5" />
-          <span className="font-medium">
-            Subagents ({subagents.length})
-          </span>
-          <span className="text-muted-foreground/70">
-            {runningCount > 0 && `${runningCount} running`}
-            {runningCount > 0 && completedCount > 0 && ' · '}
-            {completedCount > 0 && `${completedCount} done`}
-          </span>
-        </button>
-        <div className="ml-auto">
+            <span
+              className="inline-flex items-center justify-center h-6 w-6 rounded-md border border-border bg-background shrink-0"
+              aria-hidden
+            >
+              {expanded ? (
+                <ChevronDown className="h-3.5 w-3.5" />
+              ) : (
+                <ChevronUp className="h-3.5 w-3.5" />
+              )}
+            </span>
+            <Bot className="h-3.5 w-3.5 text-foreground" />
+            <span className="font-medium text-foreground">Subagents:</span>
+            <span className="text-foreground/90 tabular-nums">
+              {doneCount}/{total} done
+            </span>
+            {runningCount > 0 && (
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full border border-sky-400/40 bg-sky-400/10 text-sky-400 tabular-nums">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                {runningCount} running
+              </span>
+            )}
+            <StatusIcon className={statusIconClass} />
+          </button>
           {onDismissAllCompleted && (
             <button
               type="button"
               onClick={onDismissAllCompleted}
-              disabled={completedCount === 0}
+              disabled={doneCount === 0}
               className={cn(
-                'inline-flex items-center px-1.5 py-0.5 rounded border border-border/60 bg-background',
+                'ml-auto inline-flex items-center px-1.5 py-0.5 rounded border border-border/60 bg-background',
                 'text-muted-foreground hover:text-foreground hover:bg-accent transition-colors',
                 'disabled:opacity-30 disabled:hover:bg-background disabled:cursor-not-allowed',
               )}
-              title={completedCount > 0 ? `Clear ${completedCount} done` : 'No completed subagents'}
+              title={doneCount > 0 ? `Clear ${doneCount} done` : 'No completed subagents'}
             >
-              Clear done{completedCount > 0 ? ` (${completedCount})` : ''}
+              Clear done{doneCount > 0 ? ` (${doneCount})` : ''}
             </button>
           )}
         </div>
       </div>
 
       {/* Scrollable list — capped at half the viewport */}
-      {!collapsed && (
-        <div className="overflow-y-auto" style={{ maxHeight: '50vh' }}>
+      {expanded && (
+        <div className="overflow-y-auto bg-background/95" style={{ maxHeight: '50vh' }}>
           {subagents.map((sub) => (
             <SubagentRow key={sub.toolUseId} sub={sub} onDismiss={onDismiss} />
           ))}

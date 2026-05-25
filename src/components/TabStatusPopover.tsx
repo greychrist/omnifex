@@ -11,8 +11,8 @@ import { HeaderLabel } from './HeaderLabel';
 const STATUS_LABEL: Record<TabStatusSummary['status'], string> = {
   'not-started': 'Not started',
   starting: 'Starting…',
-  idle: 'Idle',
-  busy: 'Busy',
+  idle: 'Ready',
+  busy: 'Working',
   error: 'Error',
 };
 
@@ -22,6 +22,16 @@ const STATUS_COLOR: Record<TabStatusSummary['status'], string> = {
   idle: 'text-emerald-400 bg-emerald-500/10',
   busy: 'text-amber-300 bg-amber-500/20',
   error: 'text-red-400 bg-red-500/15',
+};
+
+const PROMPT_LABEL: Record<TabStatusSummary['promptStatus'], string> = {
+  working: 'Working',
+  ready: 'Ready',
+};
+
+const PROMPT_COLOR: Record<TabStatusSummary['promptStatus'], string> = {
+  working: 'text-amber-300 bg-amber-500/20',
+  ready: 'text-emerald-400 bg-emerald-500/10',
 };
 
 // "Waiting on the user" overrides the busy badge with a more specific
@@ -57,19 +67,42 @@ const TabStatusCard: React.FC<TabStatusCardProps> = ({ summary, branchColor, bra
         className="w-full flex items-center justify-between gap-3 px-3 py-2 bg-muted shadow-[inset_0_-1px_0_0_color-mix(in_oklch,var(--color-muted-foreground)_45%,transparent)] hover:bg-accent/40 transition-colors text-left app-no-drag"
       >
         <div className="flex items-center gap-2 min-w-0">
-          <span
-            className={cn(
-              'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide',
-              summary.waitingFor ? WAITING_COLOR : STATUS_COLOR[summary.status],
-            )}
-          >
-            {(summary.waitingFor || summary.status === 'busy') && (
-              <span className="inline-block h-1.5 w-1.5 rounded-full bg-current animate-pulse" />
-            )}
-            {summary.waitingFor
+          {(() => {
+            // Badge precedence:
+            //  1. waitingFor (permission / question) — indigo, user action needed
+            //  2. lifecycle: not-started / starting / error — use STATUS_*
+            //  3. promptStatus (working / ready) — green/yellow, drives the
+            //     spinner consumers too. Replaces the old `idle`/`busy` pair
+            //     so the badge cleanly reflects "is the agent doing work".
+            const useLifecycle =
+              summary.status === 'not-started' ||
+              summary.status === 'starting' ||
+              summary.status === 'error';
+            const color = summary.waitingFor
+              ? WAITING_COLOR
+              : useLifecycle
+                ? STATUS_COLOR[summary.status]
+                : PROMPT_COLOR[summary.promptStatus];
+            const label = summary.waitingFor
               ? WAITING_LABEL[summary.waitingFor]
-              : STATUS_LABEL[summary.status]}
-          </span>
+              : useLifecycle
+                ? STATUS_LABEL[summary.status]
+                : PROMPT_LABEL[summary.promptStatus];
+            const pulse = !!summary.waitingFor || (!useLifecycle && summary.promptStatus === 'working');
+            return (
+              <span
+                className={cn(
+                  'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide',
+                  color,
+                )}
+              >
+                {pulse && (
+                  <span className="inline-block h-1.5 w-1.5 rounded-full bg-current animate-pulse" />
+                )}
+                {label}
+              </span>
+            );
+          })()}
           <span className="truncate text-sm font-medium">{summary.title}</span>
         </div>
         <span className="text-[10px] text-muted-foreground shrink-0">→</span>
@@ -226,7 +259,9 @@ export const TabStatusPopover: React.FC = () => {
     if (!tabIdSet.has(s.tabId)) ordered.push(s);
   }
 
-  const busyCount = ordered.filter((s) => s.busy).length;
+  // Working count drives the tooltip "N working of M" — uses the same
+  // promptStatus signal as the per-tab badge and the upgrade gate.
+  const busyCount = ordered.filter((s) => s.promptStatus === 'working').length;
 
   const branchResolution = resolveBranchColors({
     pins: {},
@@ -237,7 +272,7 @@ export const TabStatusPopover: React.FC = () => {
   return (
     <div className="relative inline-block">
       <TooltipSimple
-        content={busyCount > 0 ? `${busyCount} busy of ${ordered.length}` : 'Tab status'}
+        content={busyCount > 0 ? `${busyCount} working of ${ordered.length}` : 'Tab status'}
         side="bottom"
       >
         <button

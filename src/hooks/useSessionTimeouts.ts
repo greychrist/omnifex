@@ -62,7 +62,7 @@ export function useSessionTimeouts({
         // Check if the main process session is still alive before killing
         try {
           const health = await api.sessionGetHealth(tabId);
-          if (health.alive && health.status !== "error") {
+          if (health.alive && health.sessionStatus !== "error") {
             // Session is alive — show warning but don't kill it
             setMessages((prev) => [
               ...prev,
@@ -115,7 +115,7 @@ export function useSessionTimeouts({
         // Check health before killing
         try {
           const health = await api.sessionGetHealth(tabId);
-          if (health.alive && health.status !== "error") {
+          if (health.alive && health.sessionStatus !== "error") {
             // Session is alive — show warning but keep waiting
             setMessages((prev) => {
               // Don't spam warnings. Only system+notification messages carry

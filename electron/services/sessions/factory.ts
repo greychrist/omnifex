@@ -219,6 +219,10 @@ export function buildSdkOptions(
   if (resumeSessionId) {
     options.resume = resumeSessionId;
   }
+  // Do NOT pin `options.sessionId` on cold-start: it makes the CLI suppress
+  // `system:init` (and defer the control channel until the first prompt).
+  // The SDK mints its own UUID and emits init quickly without the pin; we
+  // learn the GUID from that real init via the claude-output:<tabId> path.
 
   return options;
 }

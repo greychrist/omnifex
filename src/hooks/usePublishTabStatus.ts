@@ -65,11 +65,16 @@ export function usePublishTabStatus({
     );
     const mainTurnInFlight = isLoading;
     const waitingFor = deriveWaitingFor(pendingPermission);
-    // Waiting on the user counts as busy: the session can't accept a new
-    // prompt while a permission/question is open, so the install gate and
-    // any other "wait for idle" consumer should still treat it as busy.
-    const busy =
-      mainTurnInFlight || activeAgents > 0 || taskSummary.running || waitingFor !== null;
+    // promptStatus: is the agent actually doing work right now?
+    // Spec: working iff (waiting on Claude response) OR (any in-progress
+    // task) OR (any running subagent). Does NOT include `waitingFor` —
+    // a session waiting on the user is "ready" for the user, not working.
+    const promptStatus: 'working' | 'ready' =
+      mainTurnInFlight || activeAgents > 0 || taskSummary.running ? 'working' : 'ready';
+    // `busy` keeps its existing semantic (also folds in waitingFor) for
+    // the install-gate's "wait for idle" path — a paused-on-permission
+    // tab shouldn't be torn down mid-flight either.
+    const busy = promptStatus === 'working' || waitingFor !== null;
 
     let status: TabStatusSummary['status'];
     if (hasError) status = 'error';
@@ -83,6 +88,7 @@ export function usePublishTabStatus({
       projectPath,
       sessionStarted,
       busy,
+      promptStatus,
       mainTurnInFlight,
       activeAgents,
       tasks: {

@@ -70,14 +70,17 @@ const TabItem: React.FC<TabItemProps> = ({ tab, isActive, onClose, onClick, isDr
         </span>
       );
     }
-    switch (tab.status) {
-      case 'running':
-        return <Spinner className="size-3" />;
-      case 'error':
-        return <AlertCircle className="w-3 h-3 text-red-500" />;
-      default:
-        return null;
+    if (tab.status === 'error') {
+      return <AlertCircle className="w-3 h-3 text-red-500" />;
     }
+    // Spinner reflects promptStatus (working = agent is doing work: main
+    // turn in flight, active task, or running subagent). Falls back to
+    // the older `status === 'running'` for tabs that haven't published
+    // promptStatus yet (non-chat tabs or pre-mount).
+    if (tab.promptStatus === 'working' || (!tab.promptStatus && tab.status === 'running')) {
+      return <Spinner className="size-3" />;
+    }
+    return null;
   };
 
   const Icon = getTabIcon(tab);

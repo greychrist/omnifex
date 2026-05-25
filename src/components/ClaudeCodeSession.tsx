@@ -9,7 +9,9 @@ import {
   Package,
   Shield,
   ArrowLeft,
+  PanelRightOpen,
 } from "lucide-react";
+import { SessionInspectorPanel } from "@/components/SessionInspectorPanel";
 import { Button } from "@/components/ui/button";
 import { Popover } from "@/components/ui/popover";
 import { api, type Session, type RateLimitSnapshot, type Account, type SessionMode } from "@/lib/api";
@@ -274,7 +276,10 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   // Pre-session config: show setup panel for new sessions until user clicks
   // Start. When the tab was opened from the project view's inline form,
   // initialSessionConfig is set and we skip the panel entirely.
-  const [sessionStarted, setSessionStarted] = useState(!!session || !!initialSessionConfig);
+  // sessionStarted was previously a useState — deleted in favor of a
+  // derivation over `sessionStatus` (from useSessionLifecycle) and the
+  // mount-time session props. The actual derived constant is defined
+  // below, after the hook call.
   const [selectedModel, setSelectedModel] = useState<string>(initialSessionConfig?.model ?? "opus[1m]");
   // Permission mode — the full SDK set ("default" | "acceptEdits" | "plan"
   // | "bypassPermissions"). Pre-session and in-session pickers both use
@@ -384,10 +389,14 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   }, [projectPath, hasInitialAccountOverride]);
 
   // Apply per-account session defaults once when the account first resolves,
-  // but only for new sessions (not when resuming or launched with explicit config).
+  // but only for new sessions (not when resuming or launched with explicit
+  // config). The mount-time check (`!!session || !!initialSessionConfig`)
+  // matches what the deleted `sessionStarted` state was seeded with —
+  // `accountDefaultsApplied.current` then prevents subsequent re-runs.
   const accountDefaultsApplied = useRef(false);
   useEffect(() => {
-    if (!accountResolution || accountDefaultsApplied.current || sessionStarted) return;
+    if (!accountResolution || accountDefaultsApplied.current) return;
+    if (!!session || !!initialSessionConfig) return;
     const defaults = accountResolution.account.session_defaults;
     if (!defaults) return;
     accountDefaultsApplied.current = true;
@@ -395,7 +404,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     if (defaults.thinkingConfig) setThinkingConfig(normalizeThinkingConfig(defaults.thinkingConfig));
     if (defaults.permissionMode) setPermissionMode(defaults.permissionMode);
     if (defaults.effort) setEffort(defaults.effort);
-  }, [accountResolution, sessionStarted]);
+  }, [accountResolution, session, initialSessionConfig]);
 
   // One per-tab git watch covers project status + worktree list + per-peer
   // status. The main process owns the fs.watch / poll machinery; we just
@@ -513,17 +522,21 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   // where drained prompts silently re-queue.
   const isLoadingRef = useRef(false);
   useEffect(() => { isLoadingRef.current = isLoading; }, [isLoading]);
-  // Two distinct states for the status badge:
-  //  - isSessionStarting: true between api.startSession firing and the SDK
-  //    control channel answering. Maps to 'Starting…' in the header.
-  //  - isSessionActive: true once fetchInitInfo receives a response (account
-  //    info, MCP tools). Maps to 'Active'.
-  // persistentSessionRef stays the source of truth for synchronous checks
-  // inside async handlers (e.g. whether to start a session on first prompt);
-  // these states are the UI-reactive mirror so the badge rerenders.
-  const [isSessionStarting, setIsSessionStarting] = useState(false);
-  const [isSessionActive, setIsSessionActive] = useState(false);
+  // Session lifecycle status comes from the useSessionLifecycle hook
+  // (single source of truth), which subscribes to main-process
+  // `session-status:<tabId>` events. We derive the legacy boolean flags
+  // (isSessionStarting / isSessionActive) below — they keep call sites
+  // readable but are no longer independent state.
   const [sessionMode, setSessionMode] = useState<SessionMode>('sdk');
+  // Open/close state for the SessionInspectorPanel — persisted across
+  // app sessions so the user's preference sticks.
+  const INSPECTOR_PREF_KEY = 'omnifex_session_inspector_open';
+  const [inspectorOpen, setInspectorOpen] = useState<boolean>(() => {
+    try { return localStorage.getItem(INSPECTOR_PREF_KEY) === '1'; } catch { return false; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem(INSPECTOR_PREF_KEY, inspectorOpen ? '1' : '0'); } catch { /* private mode etc. */ }
+  }, [inspectorOpen]);
   const tabIdRef = useRef(tabId || 'default');
   // Drop any per-tab inflight buffer when this tab unmounts so the
   // module-level Map doesn't leak across long-lived renderer sessions.
@@ -657,26 +670,27 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     });
   }, [subagents]);
 
-  // Publish this tab's busy/idle summary up to main on every change. The
-  // status popover and the install-gate both read from the aggregated list.
-  const { getTabById } = useTabContext();
+  // Tab context for title / promptStatus mirror. The usePublishTabStatus
+  // call lives further down — it depends on `isSessionActive` /
+  // `isSessionStarting`, which are derived from `useSessionLifecycle`'s
+  // `sessionStatus`.
+  const { getTabById, updateTab } = useTabContext();
   const tabTitle = getTabById(tabIdRef.current)?.title ?? projectPath ?? tabIdRef.current;
-  usePublishTabStatus({
-    tabId: tabIdRef.current,
-    title: tabTitle,
-    projectPath: projectPath ?? null,
-    sessionStarted: isSessionActive,
-    isStarting: isSessionStarting,
-    isLoading,
-    hasError: error !== null,
-    messages,
-    subagents,
-    contextUsage,
-    branch: gitStatus?.branch ?? null,
-    filesChanged: gitStatus?.changed ?? 0,
-    filesUntracked: gitStatus?.untracked ?? 0,
-    pendingPermission,
-  });
+
+  // promptStatus + tab mirror live further down — they depend on
+  // `conversationStatus` from `useSessionLifecycle`. Subagent count and
+  // task summary are pure derivations from messages/subagents state and
+  // stay here so other code below can read them.
+  const activeSubagentCount = subagents.reduce(
+    (n, s) => (s.status === 'running' ? n + 1 : n),
+    0,
+  );
+  const taskListSummary = useMemo(() => {
+    const tasks = getTaskList(messages);
+    return tasks
+      ? summarizeTaskList(tasks)
+      : { total: 0, done: 0, inProgress: 0, pending: 0, running: false };
+  }, [messages]);
 
   const [viewMode, setViewMode] = useState<ViewMode>('compact');
 
@@ -1029,7 +1043,15 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   }, [projectPath, sessionTabId, setPendingPermission]);
 
   // Session lifecycle: persistent session management, event listeners, cleanup
-  const { unlistenRefs, isMountedRef, startPersistentSession, rebindPersistentSession } = useSessionLifecycle({
+  const {
+    unlistenRefs,
+    isMountedRef,
+    startPersistentSession,
+    rebindPersistentSession,
+    sessionStatus,
+    conversationStatus,
+    resetStatus,
+  } = useSessionLifecycle({
     tabId: tabIdRef.current,
     projectPath,
     selectedModel,
@@ -1039,8 +1061,11 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     sessionStartMode,
     accountResolution,
     persistentSessionRef,
-    setIsSessionStarting,
-    setIsSessionActive,
+    // Seed sessionStatus to 'starting' (instead of 'stopped') when this
+    // tab is mounting with a session to resume or a preconfigured fresh
+    // start — the auto-start effect below will kick in shortly, and this
+    // skips the one-frame flash of the empty-state form.
+    hasPendingStart: !!session || !!initialSessionConfig,
     handleJsonlLine,
     setIsLoading,
     setMessages,
@@ -1048,6 +1073,60 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     setSupportedModels,
     setSupportedCommands,
     setContextUsage,
+  });
+  // Derived predicates over the two canonical axes. See
+  // docs/session-lifecycle.md for the model:
+  //  - isSessionStarting → connection dialing
+  //  - isSessionActive   → connection up ('started'); covers all
+  //                        conversationStatus values
+  const isSessionStarting = sessionStatus === 'starting';
+  const isSessionActive = sessionStatus === 'started';
+  // "Has the user committed to a session in this tab?" Gates the
+  // NewSessionForm empty-state vs. the chat view. The hook seeds
+  // sessionStatus to 'starting' at mount when there's a session to
+  // resume or a preconfigured fresh start (see hasPendingStart above),
+  // so this single check covers all cases without a one-frame flash.
+  const sessionStarted = sessionStatus !== 'stopped';
+
+  // Canonical in-flight predicate. See docs/session-lifecycle.md.
+  // 'working' iff:
+  //  - conversationStatus is non-null and non-idle (mid-turn or paused on
+  //    a permission prompt), OR
+  //  - any subagent is running, OR
+  //  - any task is in_progress.
+  // isLoading is the renderer's local mirror of "user submitted, waiting on
+  // first SDK echo." Including it as well prevents a frame of "ready" in
+  // the brief window between submit and the SDK acknowledging it.
+  const isConversationInFlight =
+    conversationStatus !== null && conversationStatus !== 'idle';
+  const promptStatus: 'working' | 'ready' =
+    isLoading || isConversationInFlight || activeSubagentCount > 0 || taskListSummary.running
+      ? 'working'
+      : 'ready';
+  const lastPromptStatusRef = useRef<'working' | 'ready' | null>(null);
+  useEffect(() => {
+    if (lastPromptStatusRef.current === promptStatus) return;
+    lastPromptStatusRef.current = promptStatus;
+    updateTab(tabIdRef.current, { promptStatus });
+  }, [promptStatus, updateTab]);
+
+  // Publish this tab's busy/idle summary up to main on every change. The
+  // status popover and the install-gate both read from the aggregated list.
+  usePublishTabStatus({
+    tabId: tabIdRef.current,
+    title: tabTitle,
+    projectPath: projectPath ?? null,
+    sessionStarted: isSessionActive,
+    isStarting: isSessionStarting,
+    isLoading,
+    hasError: error !== null,
+    messages,
+    subagents,
+    contextUsage,
+    branch: gitStatus?.branch ?? null,
+    filesChanged: gitStatus?.changed ?? 0,
+    filesUntracked: gitStatus?.untracked ?? 0,
+    pendingPermission,
   });
 
   // Prompt sending and queuing
@@ -1222,10 +1301,10 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
         if (payload?.mode === 'sdk' || payload?.mode === 'tui') {
           setSessionMode(payload.mode);
           // A mode switch means the main process has a live session handle
-          // on the other side of the toggle. Keep the header badge 'Active'
+          // on the other side of the toggle. Keep the header badge active
           // rather than dropping back to 'Starting…' while the restarted
           // SDK query waits for its first message.
-          setIsSessionActive(true);
+          resetStatus({ sessionStatus: 'started', conversationStatus: 'idle' });
           // On return to SDK mode, reload history from the JSONL file.
           // TUI-mode turns wrote to the session file but never flowed
           // through our claude-output events, so they're missing from
@@ -1237,6 +1316,10 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     );
     return () => { unlisten(); };
   }, []);
+
+  // session-status events are now consumed by useSessionLifecycle, which
+  // exposes the resulting `sessionStatus` enum. Derived `isSessionStarting`
+  // / `isSessionActive` predicates above.
 
   // Keep queuedPromptsRef in sync with state
   useEffect(() => {
@@ -1305,8 +1388,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
 
       setIsLoading(false);
       persistentSessionRef.current = false;
-      setIsSessionStarting(false);
-      setIsSessionActive(false);
+      resetStatus({ sessionStatus: 'stopped', conversationStatus: null });
       setError(null);
       setQueuedPrompts([]);
 
@@ -1345,8 +1427,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     unlistenRefs.current = [];
 
     persistentSessionRef.current = false;
-    setIsSessionStarting(false);
-    setIsSessionActive(false);
+    resetStatus({ sessionStatus: 'stopped', conversationStatus: null });
     setIsLoading(false);
     setError(null);
 
@@ -1379,8 +1460,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
 
     // Session-state flags
     persistentSessionRef.current = false;
-    setIsSessionStarting(false);
-    setIsSessionActive(false);
+    resetStatus({ sessionStatus: 'stopped', conversationStatus: null });
     setIsLoading(false);
     setError(null);
     setQueuedPrompts([]);
@@ -1657,7 +1737,12 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
         : undefined;
 
 
-  const sessionStatus: 'starting' | 'active' | 'ended' | undefined =
+  // Three-state display badge (legacy) derived from the canonical
+  // SessionStatus enum + `sessionStarted` (has-the-user-ever-engaged).
+  // 6→3 collapse: starting → 'starting'; idle/running/waiting_permission →
+  // 'active'; stopped/error → 'ended'. Renamed from `sessionStatus` to
+  // avoid colliding with the hook's canonical name.
+  const displayStatus: 'starting' | 'active' | 'ended' | undefined =
     !sessionStarted
       ? undefined
       : isSessionActive
@@ -1710,7 +1795,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
               sdkAccount={sdkAccountInfo}
               fiveHourRateLimit={rateLimitSnapshots.five_hour ?? null}
               sevenDayRateLimit={rateLimitSnapshots.seven_day ?? null}
-              sessionStatus={sessionStatus}
+              sessionStatus={displayStatus}
             />
           )}
           {gitStatus?.branch && (
@@ -1783,7 +1868,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             totalTokens={totalTokens}
             model={selectedModel}
             contextUsage={contextUsage}
-            sessionStatus={sessionStatus}
+            sessionStatus={displayStatus}
             onReconnect={() => void handleReconnect()}
             onClear={() => {
               if (window.confirm('Clear the conversation and start a fresh session? This wipes all messages in this tab and cannot be undone.')) {
@@ -1821,7 +1906,8 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
               sessionStartMode={sessionStartMode}
               setSessionStartMode={setSessionStartMode}
               onStart={() => {
-                setSessionStarted(true);
+                // sessionStarted is derived from sessionStatus — startPersistentSession
+                // sets it to 'starting' synchronously, which flips sessionStarted true.
                 logAndForget('claude-code-session:start-persistent-session', startPersistentSession());
               }}
               onChangeAccount={() => { setShowAccountPicker(true); }}
@@ -1850,11 +1936,148 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
         )}
         <div className="flex-1 min-h-0 w-full flex flex-col relative">
 
+        {/* Side panels — all positioned absolutely inside this chat-body
+            wrapper so they stay within the content area (below the session
+            header, above the prompt input). The messages list gets
+            `sm:mr-96` to slide out of the way; the prompt input is below
+            the wrapper and stays full width. Shared `panelClass` keeps
+            every panel in lockstep. */}
+        {(() => {
+          const panelClass = "absolute right-0 top-0 bottom-0 w-full sm:w-96 bg-background border-l border-border shadow-xl z-20 overflow-hidden";
+          const panelMotion = {
+            initial: { x: "100%" },
+            animate: { x: 0 },
+            exit: { x: "100%" },
+            transition: { duration: 0.2, ease: "easeOut" as const },
+          };
+          return (
+            <>
+              <AnimatePresence>
+                {inspectorOpen && (
+                  <motion.div {...panelMotion} className={panelClass}>
+                    <SessionInspectorPanel
+                      open={inspectorOpen}
+                      onClose={() => { setInspectorOpen(false); }}
+                      sessionId={claudeSessionId}
+                      status={displayStatus}
+                      sessionStatus={sessionStatus}
+                      conversationStatus={conversationStatus}
+                      mode={sessionMode}
+                      model={selectedModel}
+                      account={accountResolution ? {
+                        name: accountResolution.account.name,
+                        configDir: accountResolution.account.config_dir,
+                      } : null}
+                      projectPath={projectPath ?? null}
+                      branch={gitStatus?.branch ?? null}
+                      promptStatus={promptStatus}
+                      mainTurnInFlight={isLoading}
+                      activeAgents={activeSubagentCount}
+                      tasks={{
+                        total: taskListSummary.total,
+                        inProgress: taskListSummary.inProgress,
+                        completed: taskListSummary.done,
+                        pending: taskListSummary.pending,
+                      }}
+                    />
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              <AnimatePresence>
+                {showMCPPanel && (
+                  <motion.div {...panelMotion} className={panelClass}>
+                    <div className="h-full flex flex-col">
+                      <div className="flex items-center justify-between p-4 border-b border-border">
+                        <h3 className="text-lg font-semibold">MCP Servers</h3>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => { setShowMCPPanel(false); }}
+                          className="h-8 w-8"
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      <div className="flex-1 overflow-y-auto">
+                        <SessionMCPStatus tabId={tabIdRef.current} />
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              <AnimatePresence>
+                {showPluginsPanel && (
+                  <motion.div {...panelMotion} className={panelClass}>
+                    <div className="h-full flex flex-col">
+                      <div className="flex items-center justify-between p-4 border-b border-border">
+                        <h3 className="text-lg font-semibold">Plugins</h3>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => { setShowPluginsPanel(false); }}
+                          className="h-8 w-8"
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      <div className="flex-1 overflow-y-auto">
+                        <SessionPluginStatus tabId={tabIdRef.current} />
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              <AnimatePresence>
+                {showPermissionsPanel && (
+                  <motion.div {...panelMotion} className={panelClass}>
+                    <div className="h-full flex flex-col">
+                      <div className="flex items-center justify-between p-4 border-b border-border">
+                        <h3 className="text-lg font-semibold">Permissions</h3>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => { setShowPermissionsPanel(false); }}
+                          className="h-8 w-8"
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      <div className="flex-1 overflow-y-auto">
+                        <SessionPermissionsEditor
+                          tabId={tabIdRef.current}
+                          projectPath={projectPath}
+                          configDir={accountResolution?.account.config_dir || ''}
+                        />
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </>
+          );
+        })()}
+
         {/* Main Content Area */}
         <div className={cn(
           "flex-1 min-h-0 overflow-hidden transition-all duration-300 relative",
-          (showMCPPanel || showPluginsPanel || showPermissionsPanel) && "sm:mr-96"
+          (showMCPPanel || showPluginsPanel || showPermissionsPanel || inspectorOpen) && "sm:mr-96"
         )}>
+          {/* Session Inspector toggle — top-right of the content area.
+              Hidden while the panel is open (the panel has its own close X). */}
+          {!inspectorOpen && (
+            <button
+              type="button"
+              onClick={() => { setInspectorOpen(true); }}
+              className="absolute top-2 right-2 z-20 rounded p-1.5 bg-background/80 backdrop-blur border border-border text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shadow-sm"
+              title="Show session inspector"
+              aria-label="Show session inspector"
+            >
+              <PanelRightOpen className="w-4 h-4" />
+            </button>
+          )}
           {showPreview ? (
             // Split pane layout when preview is active
             <SplitPane
@@ -1990,7 +2213,11 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
 
           <div className={cn(
             "shrink-0 transition-all duration-300 z-50",
-            (showMCPPanel || showPluginsPanel || showPermissionsPanel) && "sm:mr-96"
+            // Match the Main Content Area's shrinkage so TaskList,
+            // SubagentBar, and the prompt input slide out from under any
+            // open side panel instead of overlaying it. Without this the
+            // panel is visible behind the (translucent) bar backgrounds.
+            (showMCPPanel || showPluginsPanel || showPermissionsPanel || inspectorOpen) && "sm:mr-96",
           )}>
             {pendingPermission && (
               // The SDK gates the built-in `AskUserQuestion` tool through the
@@ -2228,99 +2455,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
 
         </ErrorBoundary>}
 
-        {/* MCP Servers Panel */}
-        <AnimatePresence>
-          {showMCPPanel && (
-            <motion.div
-              initial={{ x: "100%" }}
-              animate={{ x: 0 }}
-              exit={{ x: "100%" }}
-              transition={{ duration: 0.2, ease: "easeOut" }}
-              className="fixed right-0 top-0 h-full w-full sm:w-96 bg-background border-l border-border shadow-xl z-30 overflow-hidden"
-            >
-              <div className="h-full flex flex-col">
-                <div className="flex items-center justify-between p-4 border-b border-border">
-                  <h3 className="text-lg font-semibold">MCP Servers</h3>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => { setShowMCPPanel(false); }}
-                    className="h-8 w-8"
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                </div>
-                <div className="flex-1 overflow-y-auto">
-                  <SessionMCPStatus tabId={tabIdRef.current} />
-                </div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Plugins Panel */}
-        <AnimatePresence>
-          {showPluginsPanel && (
-            <motion.div
-              initial={{ x: "100%" }}
-              animate={{ x: 0 }}
-              exit={{ x: "100%" }}
-              transition={{ duration: 0.2, ease: "easeOut" }}
-              className="fixed right-0 top-0 h-full w-full sm:w-96 bg-background border-l border-border shadow-xl z-30 overflow-hidden"
-            >
-              <div className="h-full flex flex-col">
-                <div className="flex items-center justify-between p-4 border-b border-border">
-                  <h3 className="text-lg font-semibold">Plugins</h3>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => { setShowPluginsPanel(false); }}
-                    className="h-8 w-8"
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                </div>
-                <div className="flex-1 overflow-y-auto">
-                  <SessionPluginStatus tabId={tabIdRef.current} />
-                </div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Permissions Panel */}
-        <AnimatePresence>
-          {showPermissionsPanel && (
-            <motion.div
-              initial={{ x: "100%" }}
-              animate={{ x: 0 }}
-              exit={{ x: "100%" }}
-              transition={{ duration: 0.2, ease: "easeOut" }}
-              className="fixed right-0 top-0 h-full w-full sm:w-96 bg-background border-l border-border shadow-xl z-30 overflow-hidden"
-            >
-              <div className="h-full flex flex-col">
-                <div className="flex items-center justify-between p-4 border-b border-border">
-                  <h3 className="text-lg font-semibold">Permissions</h3>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => { setShowPermissionsPanel(false); }}
-                    className="h-8 w-8"
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                </div>
-                <div className="flex-1 overflow-y-auto">
-                  <SessionPermissionsEditor
-                    tabId={tabIdRef.current}
-                    projectPath={projectPath}
-                    configDir={accountResolution?.account.config_dir || ''}
-                  />
-                </div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
       </div>
 
       {/* Slash Commands Settings Dialog */}
