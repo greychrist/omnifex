@@ -246,16 +246,13 @@ export function createClaudeCliEngine(
     });
   }
 
-  async function send(text: string): Promise<void> {
+  async function writeUserMessage(content: unknown): Promise<void> {
     if (!child || !child.stdin.writable) {
       throw new Error('ClaudeCliEngine.send: child not running');
     }
     const payload = {
       type: 'user',
-      message: {
-        role: 'user',
-        content: [{ type: 'text', text }],
-      },
+      message: { role: 'user', content },
       parent_tool_use_id: null,
       session_id: sessionId ?? '',
     };
@@ -266,6 +263,14 @@ export function createClaudeCliEngine(
         else resolve();
       });
     });
+  }
+
+  async function send(text: string): Promise<void> {
+    await writeUserMessage([{ type: 'text', text }]);
+  }
+
+  async function sendStructured(content: unknown[]): Promise<void> {
+    await writeUserMessage(content);
   }
 
   async function respondPermission(
@@ -413,6 +418,7 @@ export function createClaudeCliEngine(
     kind: 'claude',
     start,
     send,
+    sendStructured,
     sendControlRequest,
     respondPermission,
     interrupt,

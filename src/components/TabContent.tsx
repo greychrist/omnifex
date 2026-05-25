@@ -55,7 +55,7 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
   const [formEffort, setFormEffort] = React.useState<EffortLevel>('high');
   const [formThinkingConfig, setFormThinkingConfig] = React.useState<ThinkingConfig>('adaptive');
   const [formPermissionMode, setFormPermissionMode] = React.useState<string>('acceptEdits');
-  const [formSessionStartMode, setFormSessionStartMode] = React.useState<SessionMode>('sdk');
+  const [formSessionStartMode, setFormSessionStartMode] = React.useState<SessionMode>('rich');
   const [projectAccountResolution, setProjectAccountResolution] = React.useState<NewSessionFormAccountResolution | null>(null);
 
   const [projectBranches, setProjectBranches] = React.useState<string[]>([]);

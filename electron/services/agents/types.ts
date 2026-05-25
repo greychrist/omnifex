@@ -75,6 +75,13 @@ export interface AgentEngine {
   start(params: AgentStartParams): Promise<void>;
   send(text: string): Promise<void>;
   /**
+   * Send a structured user message with explicit content blocks (text +
+   * image attachments, etc.). The renderer's compose box uses this when
+   * the user attaches images alongside text. `content` is the same array
+   * the SDK accepted in SDKUserMessage.message.content.
+   */
+  sendStructured(content: unknown[]): Promise<void>;
+  /**
    * Write a control_request to the CLI's stdin and await its matching
    * control_response. Used for the imperative SDK Query surface (set_model,
    * mcp_status, get_context_usage, …). Rejects when the CLI returns

@@ -2,8 +2,8 @@ import { cn } from '@/lib/utils';
 import { Terminal, MessageSquare } from 'lucide-react';
 
 interface SessionModeToggleProps {
-  mode: 'sdk' | 'tui';
-  onChange: (mode: 'sdk' | 'tui') => void;
+  mode: 'rich' | 'tui';
+  onChange: (mode: 'rich' | 'tui') => void;
   disabled?: boolean;
   disabledReason?: string;
 }
@@ -22,14 +22,14 @@ export function SessionModeToggle({
       <button
         type="button"
         disabled={disabled}
-        onClick={() => { onChange('sdk'); }}
+        onClick={() => { onChange('rich'); }}
         className={cn(
           'flex items-center gap-1 px-2 py-1 text-xs rounded disabled:pointer-events-none',
-          mode === 'sdk' ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground',
+          mode === 'rich' ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground',
         )}
       >
         <MessageSquare className="h-3 w-3" />
-        SDK
+        Chat
       </button>
       <button
         type="button"

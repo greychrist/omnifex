@@ -1,14 +1,11 @@
 // Sessions module — controller (factory + session management)
 //
-// Thin glue layer that composes `factory.buildSdkOptions` (SDK options
-// assembly), `runtime.listenToMessages` / `runtime.restartQuery` (the
-// stream FSM), and the per-tab `permissions.canUseTool` callback.
-// Holds the live `Map<tabId, SessionHandle>` and exposes the public
+// Thin glue layer that composes the agent engine (subprocess speaking
+// stream-json to `claude`), `runtime.listenToMessages` (the FSM driven by
+// engine events), and the per-tab permission-request handler. Holds the
+// live `Map<tabId, SessionHandle>` and exposes the public
 // `SessionsService` IPC surface.
 
-import { createAsyncChannel } from '../async-channel';
-import { startup } from '@anthropic-ai/claude-agent-sdk';
-import type { SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 import type {
   SessionHandle,
   SessionStartParams,
@@ -26,12 +23,12 @@ import type {
   ElicitationDecision,
 } from './types';
 import {
-  createCanUseTool,
+  createPermissionRequestHandler,
   respondPermission as respondPermissionImpl,
 } from './permissions';
 import { createQueryPassthroughs } from './queries';
 import { createTuiSession } from './tui';
-import { buildSdkOptions, findSystemClaudeBinary } from './factory';
+import { findSystemClaudeBinary } from './binary';
 import {
   listenToMessages,
   restartQuery,
@@ -39,9 +36,11 @@ import {
 } from './runtime';
 import { createTuiJsonlListener } from './tui-jsonl';
 import { encodeProjectKey } from './summary-query';
+import { createClaudeCliEngine } from '../agents/claude-cli-engine';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { setStatus } from './status';
+
 
 /**
  * Single source of truth for "what sessionId will this session use?" —
@@ -54,51 +53,6 @@ function resolveSessionId(resumeId?: string): string {
   return resumeId ?? randomUUID();
 }
 
-function initMessageFromControlResponse(
-  init: Record<string, unknown>,
-  fallback: {
-    projectPath: string;
-    model: string;
-    permissionMode: string;
-  },
-): Record<string, unknown> {
-  const commands = Array.isArray(init.commands)
-    ? init.commands
-      .map((cmd) => typeof cmd === 'object' && cmd !== null && 'name' in cmd
-        ? (cmd as { name?: unknown }).name
-        : null)
-      .filter((name): name is string => typeof name === 'string')
-    : [];
-  const agents = Array.isArray(init.agents)
-    ? init.agents
-      .map((agent) => typeof agent === 'object' && agent !== null && 'name' in agent
-        ? (agent as { name?: unknown }).name
-        : null)
-      .filter((name): name is string => typeof name === 'string')
-    : [];
-
-  return {
-    type: 'system',
-    subtype: 'init',
-    session_id: typeof init.session_id === 'string'
-      ? init.session_id
-      : typeof init.uuid === 'string'
-        ? init.uuid
-        : '',
-    cwd: typeof init.cwd === 'string' ? init.cwd : fallback.projectPath,
-    model: typeof init.model === 'string' ? init.model : fallback.model,
-    permissionMode: typeof init.permissionMode === 'string'
-      ? init.permissionMode
-      : fallback.permissionMode,
-    tools: Array.isArray(init.tools) ? init.tools : [],
-    mcp_servers: Array.isArray(init.mcp_servers) ? init.mcp_servers : [],
-    slash_commands: commands,
-    agents,
-    output_style: typeof init.output_style === 'string' ? init.output_style : undefined,
-    skills: Array.isArray(init.skills) ? init.skills : [],
-    plugins: Array.isArray(init.plugins) ? init.plugins : [],
-  };
-}
 
 // ---------------------------------------------------------------------------
 // Factory
@@ -180,40 +134,46 @@ export function createSessionsService(
     if (existing) {
       existing.tuiJsonl?.stop();
       existing.tuiDetach?.();
-      if (existing.inputChannel) existing.inputChannel.close();
-      if (existing.query) { try { existing.query.close(); } catch { /* ignore */ } }
+      if (existing.engine) { void existing.engine.close().catch(() => { /* ignore */ }); }
       sessions.delete(tabId);
       ownership?.unregister(tabId);
       queryPassthroughs.evictPluginCache(tabId);
     }
 
-    const inputChannel = createAsyncChannel<SDKUserMessage>(1000);
+    if (!configDir) {
+      throw new Error(`configDir is required to start session for tab ${tabId}`);
+    }
 
-    // Build the SDK options. The factory excludes `canUseTool` because
-    // that callback closes over the handle (which is created below).
-    const options = buildSdkOptions(params, {
-      tabId,
-      sendToRenderer,
-      logging,
-      onElicitationRequest: (_request) =>
-        new Promise<ElicitationDecision>((resolve) => {
-          handle.elicitationResolver = (decision) => {
-            handle.elicitationResolver = null;
-            resolve(decision);
-          };
-        }),
-    });
+    const binaryPath = findSystemClaudeBinary();
+    if (!binaryPath) {
+      sendToRenderer(`session-status:${tabId}`, {
+        sessionStatus: 'error',
+        conversationStatus: null,
+      });
+      sendToRenderer(`claude-error:${tabId}`, 'claude binary not found');
+      sendToRenderer(`claude-complete:${tabId}`);
+      return;
+    }
 
-    // sessionId starts null for cold-start (set on the SDK's first init)
-    // and seeded from resumeSessionId for resume (so consumers like
-    // setMode('tui') don't have to wait for the init echo).
+    const engine = createClaudeCliEngine({ tabId, claudeBinaryPath: binaryPath });
+
+    // sessionId starts null for cold-start (set on the engine's first
+    // system:init) and seeded from resumeSessionId for resume (so
+    // consumers like setMode('tui') don't have to wait for the echo).
     const handle: SessionHandle = {
-      query: null, // set below
-      inputChannel,
+      engine,
+      initData: null,
+      permissionMode: params.permissionMode,
+      startParams: {
+        projectPath,
+        configDir,
+        model: params.model,
+        permissionMode: params.permissionMode,
+      },
       sessionId: params.resumeSessionId ?? null,
       sessionStatus: 'starting',
       conversationStatus: null,
-      mode: 'sdk',
+      mode: 'rich',
       tui: null,
       tuiDetach: null,
       tuiJsonl: null,
@@ -221,64 +181,38 @@ export function createSessionsService(
       permissionQueue: [],
       elicitationResolver: null,
       projectPath,
-      configDir: (() => {
-        if (!configDir) throw new Error(`configDir is required to start session for tab ${tabId}`);
-        return configDir;
-      })(),
-      sdkOptions: options,
+      configDir,
     };
-
-    options.canUseTool = createCanUseTool(handle, tabId, sendToRenderer, notificationHooks, logging);
 
     sessions.set(tabId, handle);
     if (params.ownerWebContentsId !== undefined) {
       ownership?.register(tabId, params.ownerWebContentsId);
     }
 
-    // Tell the renderer we're in 'starting' — handle was just created,
-    // SDK has not emitted anything yet. The runtime will transition to
-    // sessionStatus='started' + conversationStatus='idle' on the first
-    // system:init. conversationStatus is null until then per the model.
+    // Wire permission-request handler before start so the very first
+    // can_use_tool from the CLI lands in the queue.
+    engine.onPermissionRequest(
+      createPermissionRequestHandler(handle, tabId, sendToRenderer, notificationHooks, logging),
+    );
+
+    // Subscribe runtime listeners (onMessage / onError / onExit).
+    listenToMessages(tabId, handle, runtimeDeps).catch((err: unknown) => {
+      console.error(`[sessions] Unhandled error in listenToMessages for tab ${tabId}:`, err);
+    });
+
+    // Renderer status: 'starting'. Runtime flips to started+idle on the
+    // first system:init message from the engine.
     sendToRenderer(`session-status:${tabId}`, {
       sessionStatus: 'starting',
       conversationStatus: null,
     });
 
-    void startup({ options }).then((warmQuery) => {
-      if (sessions.get(tabId) !== handle || handle.inputChannel !== inputChannel) {
-        try {
-          warmQuery.close();
-        } catch {
-          /* ignore */
-        }
-        return;
-      }
-
-      const q = warmQuery.query(inputChannel);
-      handle.query = q;
-      if (typeof q.initializationResult === 'function') {
-        void q.initializationResult().then((init) => {
-          if (sessions.get(tabId) !== handle) return;
-          const initMessage = initMessageFromControlResponse(init as Record<string, unknown>, {
-            projectPath,
-            model: params.model,
-            permissionMode: params.permissionMode,
-          });
-          const sid = typeof initMessage.session_id === 'string' ? initMessage.session_id : '';
-          if (sid) handle.sessionId = sid;
-          setStatus(handle, { sessionStatus: 'started', conversationStatus: 'idle' }, tabId, sendToRenderer);
-          sendToRenderer(`claude-output:${tabId}`, {
-            ...initMessage,
-            receivedAt: new Date().toISOString(),
-          });
-        }).catch((err: unknown) => {
-          if (sessions.get(tabId) !== handle) return;
-          console.warn('[sessions] initializationResult after startup failed:', err);
-        });
-      }
-      listenToMessages(tabId, handle, runtimeDeps).catch((err: unknown) => {
-        console.error(`[sessions] Unhandled error in listenToMessages for tab ${tabId}:`, err);
-      });
+    void engine.start({
+      projectPath,
+      configDir,
+      model: params.model,
+      permissionMode: params.permissionMode,
+      resumeSessionId: params.resumeSessionId,
     }).catch((err: unknown) => {
       if (sessions.get(tabId) !== handle) return;
       setStatus(handle, { sessionStatus: 'error' }, tabId, sendToRenderer);
@@ -299,8 +233,8 @@ export function createSessionsService(
   // sendMessage() / sendStructuredMessage()
   // -------------------------------------------------------------------------
 
-  function ensureLiveQuery(tabId: string, handle: SessionHandle): void {
-    // If the previous stream errored, restart the SDK query transparently
+  function ensureLiveEngine(tabId: string, handle: SessionHandle): void {
+    // If the previous stream errored, restart the engine transparently.
     if (handle.sessionStatus === 'error') {
       restartQuery(tabId, handle, runtimeDeps);
     }
@@ -309,28 +243,18 @@ export function createSessionsService(
   function sendMessage(tabId: string, prompt: string): void {
     const handle = sessions.get(tabId);
     if (!handle) return;
-    if (!handle.inputChannel) return; // TUI mode — input goes through PTY
+    if (!handle.engine) return; // TUI cold-start — input goes through PTY
+    if (handle.mode === 'tui') return;
 
-    if (handle.query) {
-      ensureLiveQuery(tabId, handle);
-    }
+    ensureLiveEngine(tabId, handle);
 
-    // Mark the conversation as in-flight before the SDK has a chance to
-    // echo anything back, so the in-flight gate reacts to the user's
-    // submit immediately. The user only sends messages on a 'started'
-    // session, so this transition is safe.
+    // Mark the conversation as in-flight before the engine echoes anything
+    // back, so the in-flight gate reacts to the user's submit immediately.
     setStatus(handle, { conversationStatus: 'running' }, tabId, sendToRenderer);
 
-    const message: SDKUserMessage = {
-      type: 'user',
-      message: {
-        role: 'user',
-        content: prompt,
-      },
-      parent_tool_use_id: null,
-    };
-
-    handle.inputChannel.push(message);
+    void handle.engine.send(prompt).catch((err: unknown) => {
+      console.error(`[sessions] engine.send failed for tab ${tabId}:`, err);
+    });
   }
 
   function sendStructuredMessage(
@@ -339,25 +263,16 @@ export function createSessionsService(
   ): void {
     const handle = sessions.get(tabId);
     if (!handle) return;
-    if (!handle.inputChannel) return; // TUI mode — input goes through PTY
+    if (!handle.engine) return;
+    if (handle.mode === 'tui') return;
 
-    if (handle.query) {
-      ensureLiveQuery(tabId, handle);
-    }
+    ensureLiveEngine(tabId, handle);
 
-    // See sendMessage() — keep conversationStatus in sync with submit, not echo.
     setStatus(handle, { conversationStatus: 'running' }, tabId, sendToRenderer);
 
-    const message: SDKUserMessage = {
-      type: 'user',
-      message: {
-        role: 'user',
-        content: content as any,
-      },
-      parent_tool_use_id: null,
-    };
-
-    handle.inputChannel.push(message);
+    void handle.engine.sendStructured(content).catch((err: unknown) => {
+      console.error(`[sessions] engine.sendStructured failed for tab ${tabId}:`, err);
+    });
   }
 
   // -------------------------------------------------------------------------
@@ -426,8 +341,9 @@ export function createSessionsService(
 
     handle.tuiJsonl?.stop();
     handle.tuiDetach?.();
-    if (handle.inputChannel) handle.inputChannel.close();
-    if (handle.query) { try { handle.query.close(); } catch { /* ignore */ } }
+    if (handle.engine) {
+      void handle.engine.close().catch(() => { /* ignore */ });
+    }
     sessions.delete(tabId);
     ownership?.unregister(tabId);
     // Evict the per-tab plugin cache so closed-tab entries don't accumulate
@@ -574,13 +490,14 @@ export function createSessionsService(
       const binaryPath = findSystemClaudeBinary();
       if (!binaryPath) throw new Error('setMode("tui"): claude binary not found');
 
-      // Mark as tui BEFORE closing the SDK query so that the listenToMessages
+      // Mark as tui BEFORE closing the engine so that the runtime's
       // cleanup guard sees mode === 'tui' and skips the session deletion.
       handle.mode = 'tui';
 
-      // Close the SDK query cleanly.
-      try { handle.query?.close?.(); } catch { /* best effort */ }
-      if (handle.inputChannel) handle.inputChannel.close();
+      // Close the engine cleanly.
+      if (handle.engine) {
+        try { await handle.engine.close(); } catch { /* best effort */ }
+      }
 
       const tui = createTuiSession({
         tabId,
@@ -596,9 +513,9 @@ export function createSessionsService(
         sendToRenderer(`session-tui-exit:${tabId}`, r);
         handle.tuiJsonl?.stop();
         handle.tuiJsonl = null;
-        // Auto-revert to SDK mode.
-        void setMode(tabId, 'sdk').catch((e: unknown) =>
-          console.error('[sessions] auto-revert to sdk failed:', e)
+        // Auto-revert to rich mode.
+        void setMode(tabId, 'rich').catch((e: unknown) =>
+          console.error('[sessions] auto-revert to rich failed:', e)
         );
       });
 
@@ -631,17 +548,28 @@ export function createSessionsService(
         },
       });
     } else {
-      // tui -> sdk: kill the pty, then re-start the SDK query with resume.
+      // tui -> rich: kill the pty, then re-start the engine with --resume.
       handle.tuiJsonl?.stop();
       handle.tuiJsonl = null;
       handle.tuiDetach?.();
       handle.tui = null;
       handle.tuiDetach = null;
-      handle.mode = 'sdk';
-      sendToRenderer(`session-mode:${tabId}`, { mode: 'sdk' });
+      handle.mode = 'rich';
+      sendToRenderer(`session-mode:${tabId}`, { mode: 'rich' });
 
-      // Re-start the SDK query on the same session id. Re-use the original
-      // SDK options captured on the handle.
+      // Re-start the engine on the same session id. start() is re-entrant.
+      if (!handle.engine) {
+        // Cold-start TUI sessions never had an engine. Build one now.
+        const binaryPath = findSystemClaudeBinary();
+        if (!binaryPath) throw new Error('setMode("rich"): claude binary not found');
+        handle.engine = createClaudeCliEngine({ tabId, claudeBinaryPath: binaryPath });
+        handle.engine.onPermissionRequest(
+          createPermissionRequestHandler(handle, tabId, sendToRenderer, notificationHooks, logging),
+        );
+        listenToMessages(tabId, handle, runtimeDeps).catch((err: unknown) => {
+          console.error(`[sessions] Unhandled error in listenToMessages for tab ${tabId}:`, err);
+        });
+      }
       restartQuery(tabId, handle, runtimeDeps);
     }
   }
@@ -671,8 +599,9 @@ export function createSessionsService(
     if (existing) {
       existing.tuiJsonl?.stop();
       existing.tuiDetach?.();
-      if (existing.inputChannel) existing.inputChannel.close();
-      if (existing.query) { try { existing.query.close(); } catch { /* ignore */ } }
+      if (existing.engine) {
+        void existing.engine.close().catch(() => { /* ignore */ });
+      }
       sessions.delete(tabId);
       ownership?.unregister(tabId);
       queryPassthroughs.evictPluginCache(tabId);
@@ -698,8 +627,15 @@ export function createSessionsService(
     );
 
     const handle: SessionHandle = {
-      query: null,
-      inputChannel: null,
+      engine: null,
+      initData: null,
+      permissionMode: params.permissionMode,
+      startParams: {
+        projectPath,
+        configDir,
+        model: params.model,
+        permissionMode: params.permissionMode,
+      },
       sessionId,
       sessionStatus: 'starting',
       conversationStatus: null,
@@ -712,7 +648,6 @@ export function createSessionsService(
       elicitationResolver: null,
       projectPath,
       configDir,
-      sdkOptions: {},
     };
     sessions.set(tabId, handle);
     if (params.ownerWebContentsId !== undefined) {

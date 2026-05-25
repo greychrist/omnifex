@@ -14,7 +14,7 @@ export interface SessionInspectorPanelProps {
   sessionStatus: SessionStatus;
   /** Raw turn axis. Null whenever sessionStatus !== 'started'. */
   conversationStatus: ConversationStatus | null;
-  mode: 'sdk' | 'tui';
+  mode: 'rich' | 'tui';
   model: string;
   account: { name: string; configDir: string } | null;
   projectPath: string | null;

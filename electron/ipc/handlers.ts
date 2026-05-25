@@ -81,7 +81,7 @@ export interface Services {
     getSupportedModels(sessionId: string): unknown;
     getMcpServerStatus(sessionId: string): unknown;
     getPlugins(sessionId: string, force?: boolean): unknown;
-    setMode(tabId: string, mode: 'sdk' | 'tui'): Promise<unknown>;
+    setMode(tabId: string, mode: 'rich' | 'tui'): Promise<unknown>;
     tuiWrite(tabId: string, data: string): unknown;
     tuiResize(tabId: string, cols: number, rows: number): unknown;
     getMode(tabId: string): unknown;
@@ -357,7 +357,7 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     session_set_mode: wrapWith((p: Record<string, unknown>) =>
       sessions?.setMode(
         (p?.tabId ?? p?.session_id) as string,
-        (p?.mode ?? p?.session_mode) as 'sdk' | 'tui',
+        (p?.mode ?? p?.session_mode) as 'rich' | 'tui',
       ) ?? null
     ),
     session_tui_write: wrapWith((p: Record<string, unknown>) =>

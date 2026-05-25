@@ -1,36 +1,73 @@
 // Sessions module — shared types
 // Extracted from electron/services/sessions.ts (pure refactor)
 
-import type { AsyncChannel } from '../async-channel';
 import type { LoggingService } from '../logging';
+import type { AgentEngine, InitData } from '../agents/types';
 
 // ---------------------------------------------------------------------------
-// SDK re-exports
+// SDK type re-exports (now defined locally — SDK dep removed)
 // ---------------------------------------------------------------------------
+//
+// The SDK formerly owned these shapes; the CLI emits the same payloads
+// over stream-json, so we keep the type names + structures for callers
+// that already use them. Marked `unknown` where the SDK type was deep —
+// the runtime behavior doesn't depend on shape, only on field presence
+// at the call site.
 
-import type {
-  SDKUserMessage,
-  Query,
-  PermissionMode,
-  AccountInfo,
-  AgentInfo,
-  ModelInfo,
-  SlashCommand,
-  SDKControlGetContextUsageResponse,
-} from '@anthropic-ai/claude-agent-sdk';
-import type { McpServerStatus } from '@anthropic-ai/claude-agent-sdk';
+export type PermissionMode =
+  | 'default'
+  | 'acceptEdits'
+  | 'bypassPermissions'
+  | 'plan';
 
-export type {
-  SDKUserMessage,
-  Query,
-  PermissionMode,
-  AccountInfo,
-  AgentInfo,
-  ModelInfo,
-  SlashCommand,
-  SDKControlGetContextUsageResponse,
-  McpServerStatus,
-};
+export interface AccountInfo {
+  email?: string;
+  organizationName?: string;
+  organizationRole?: string;
+  [k: string]: unknown;
+}
+
+export interface ModelInfo {
+  id: string;
+  displayName?: string;
+  [k: string]: unknown;
+}
+
+export interface AgentInfo {
+  name: string;
+  description?: string;
+  [k: string]: unknown;
+}
+
+export interface SlashCommand {
+  name: string;
+  description?: string;
+  [k: string]: unknown;
+}
+
+export interface McpServerStatus {
+  name: string;
+  status?: string;
+  [k: string]: unknown;
+}
+
+export interface SDKControlGetContextUsageResponse {
+  total_tokens?: number;
+  remaining_tokens?: number;
+  [k: string]: unknown;
+}
+
+/**
+ * SDKUserMessage was an SDK input type. The CLI engine accepts text via
+ * `engine.send(text)` and structured content via `engine.sendStructured(content)`,
+ * so we no longer need this shape inside the sessions module — kept as
+ * an opaque alias for the brief window where callers haven't migrated.
+ */
+export interface SDKUserMessage {
+  type: 'user';
+  message: { role: 'user'; content: unknown };
+  parent_tool_use_id: string | null;
+}
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -63,7 +100,13 @@ export type ConversationStatus =
   | 'running'
   | 'waiting_permission';
 
-export type SessionMode = 'sdk' | 'tui';
+/**
+ * Session backend toggle. `'rich'` is the structured engine-driven chat
+ * UX (Claude CLI in stream-json mode); `'tui'` spawns the CLI in a PTY.
+ * The literal was previously `'sdk' | 'tui'` — renamed when the SDK
+ * runtime was replaced.
+ */
+export type SessionMode = 'rich' | 'tui';
 
 export interface SessionStartParams {
   tabId: string;
@@ -79,10 +122,10 @@ export interface SessionStartParams {
   /** webContents.id of the window that started this session — used to route tab-scoped events back to that window only. */
   ownerWebContentsId?: number;
   /**
-   * Choose the session backend. Defaults to `'sdk'` (today's behavior).
+   * Choose the session backend. Defaults to `'rich'` (engine-driven chat).
    * `'tui'` spawns the CLI in a PTY without `--resume` and drives the
-   * renderer from the session's JSONL file. Use TUI mode when programmatic
-   * API budget is exhausted or the user prefers terminal-primary UX.
+   * renderer from the session's JSONL file. Use TUI mode when the user
+   * prefers terminal-primary UX.
    */
   mode?: SessionMode;
   /**
@@ -270,10 +313,33 @@ export interface ElicitationDecision {
 }
 
 export interface SessionHandle {
-  /** Null in TUI cold-start sessions (no SDK query). */
-  query: Query | null;
-  /** Null in TUI cold-start sessions (no SDK input channel). */
-  inputChannel: AsyncChannel<SDKUserMessage> | null;
+  /**
+   * Drives the live session. Null only in TUI cold-start sessions, where
+   * the CLI is spoken to via PTY (TuiSession), not via stream-json.
+   */
+  engine: AgentEngine | null;
+  /**
+   * Cached system:init payload (account, commands, models, agents).
+   * Mirrors `engine.getInitData()` so queries.ts can read it synchronously.
+   * Null until the first system:init arrives.
+   */
+  initData: InitData | null;
+  /**
+   * Remembered for queries.ts (currentPermissionMode) and for the engine
+   * restart path. Starts from start() params; updated by setPermissionMode.
+   */
+  permissionMode: string;
+  /**
+   * Start params remembered so the runtime can call `engine.start({
+   * resumeSessionId })` after stream-death recovery without re-resolving
+   * the account or rebuilding the model/permissionMode/etc. inputs.
+   */
+  startParams: {
+    projectPath: string;
+    configDir: string;
+    model?: string;
+    permissionMode?: string;
+  };
   sessionId: string | null;
   /** Connection axis. See docs/session-lifecycle.md. */
   sessionStatus: SessionStatus;
@@ -286,7 +352,7 @@ export interface SessionHandle {
   tui: import('./tui').TuiSession | null;
   /** Cleanup hook that detaches the current tui's data/exit forwarders. */
   tuiDetach: (() => void) | null;
-  /** Stop handle for the TUI JSONL listener (null in SDK mode). */
+  /** Stop handle for the TUI JSONL listener (null in rich mode). */
   tuiJsonl: import('./tui-jsonl').TuiJsonlHandle | null;
   permissionResolver: ((decision: PermissionDecision) => void) | null;
   /** Queue of permission requests waiting for user response */
@@ -295,8 +361,6 @@ export interface SessionHandle {
   elicitationResolver: ((decision: ElicitationDecision) => void) | null;
   projectPath: string;
   configDir: string;
-  /** Saved SDK options so we can restart the query after a stream error. */
-  sdkOptions: Record<string, unknown>;
 }
 
 /**

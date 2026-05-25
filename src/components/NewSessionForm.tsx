@@ -337,7 +337,7 @@ export const NewSessionForm: React.FC<NewSessionFormProps> = ({
           id="start-in-terminal"
           type="checkbox"
           checked={sessionStartMode === 'tui'}
-          onChange={(e) => { setSessionStartMode(e.target.checked ? 'tui' : 'sdk'); }}
+          onChange={(e) => { setSessionStartMode(e.target.checked ? 'tui' : 'rich'); }}
           className="rounded border-input"
         />
         <label htmlFor="start-in-terminal" className="cursor-pointer text-muted-foreground">

@@ -516,8 +516,8 @@ export interface LogEntry {
 export type LogOrderBy = 'timestamp' | 'level' | 'source' | 'category' | 'message';
 export type LogOrderDir = 'asc' | 'desc';
 
-/** Session execution mode: SDK (interactive) or TUI (terminal UI). */
-export type SessionMode = 'sdk' | 'tui';
+/** Session execution mode: 'rich' (engine-driven chat) or 'tui' (terminal UI). */
+export type SessionMode = 'rich' | 'tui';
 
 /**
  * Connection axis of the session. See `docs/session-lifecycle.md`.

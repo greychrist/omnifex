@@ -308,10 +308,10 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     // tightened two-state schema.
     normalizeThinkingConfig(initialSessionConfig?.thinkingConfig),
   );
-  // Session start mode — chosen in the pre-session form. Defaults to 'sdk'
-  // (today's behavior). Set to 'tui' to start via local CLI without SDK budget.
+  // Session start mode — chosen in the pre-session form. Defaults to 'rich'
+  // (engine-driven chat). Set to 'tui' to start via local CLI in a PTY.
   const [sessionStartMode, setSessionStartMode] = useState<SessionMode>(
-    initialSessionConfig?.sessionStartMode ?? 'sdk',
+    initialSessionConfig?.sessionStartMode ?? 'rich',
   );
   // Unified per-tab git snapshot — project + all sibling worktrees streamed
   // from a single main-process watcher. Null until `startSessionGitWatch`
@@ -536,7 +536,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   // `session-status:<tabId>` events. We derive the legacy boolean flags
   // (isSessionStarting / isSessionActive) below — they keep call sites
   // readable but are no longer independent state.
-  const [sessionMode, setSessionMode] = useState<SessionMode>('sdk');
+  const [sessionMode, setSessionMode] = useState<SessionMode>('rich');
   // Open/close state for the SessionInspectorPanel — persisted across
   // app sessions so the user's preference sticks.
   const INSPECTOR_PREF_KEY = 'omnifex_session_inspector_open';
@@ -1313,7 +1313,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       `session-mode:${tabIdRef.current}`,
       (...args: unknown[]) => {
         const payload = args[0] as { mode?: SessionMode } | undefined;
-        if (payload?.mode === 'sdk' || payload?.mode === 'tui') {
+        if (payload?.mode === 'rich' || payload?.mode === 'tui') {
           setSessionMode(payload.mode);
           // A mode switch means the main process has a live session handle
           // on the other side of the toggle. Keep the header badge active
@@ -1325,7 +1325,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           // through our claude-output events, so they're missing from
           // messages[]. The ref indirection keeps this stable across
           // the effect's [] deps while reading live state.
-          if (payload.mode === 'sdk') reloadHistoryRef.current();
+          if (payload.mode === 'rich') reloadHistoryRef.current();
         }
       },
     );

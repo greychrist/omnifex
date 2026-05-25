@@ -825,7 +825,7 @@ app.whenReady().then(() => {
       getSupportedModels: (sessionId: string) => sessionsService.getSupportedModels(sessionId),
       getMcpServerStatus: (sessionId: string) => sessionsService.getMcpServerStatus(sessionId),
       getPlugins: (sessionId: string, force?: boolean) => sessionsService.getPlugins(sessionId, force),
-      setMode: (tabId: string, mode: 'sdk' | 'tui') => sessionsService.setMode(tabId, mode),
+      setMode: (tabId: string, mode: 'rich' | 'tui') => sessionsService.setMode(tabId, mode),
       tuiWrite: (tabId: string, data: string) => sessionsService.tuiWrite(tabId, data),
       tuiResize: (tabId: string, cols: number, rows: number) =>
         sessionsService.tuiResize(tabId, cols, rows),

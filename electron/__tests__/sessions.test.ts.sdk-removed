@@ -3861,7 +3861,7 @@ describe('sessions service — full lifecycle', () => {
     // Go back to SDK — restartQuery sets status to 'starting'
     mockedQuery.mockClear();
     mockedQuery.mockReturnValue(installFakeQuery().query);
-    await svc.setMode('tab-starting', 'sdk');
+    await svc.setMode('tab-starting', 'rich');
     expect(svc.getStatus('tab-starting')).toEqual({ sessionStatus: 'starting', conversationStatus: null });
 
     // Now re-switch to TUI BEFORE the first post-restart message arrives.
@@ -3929,9 +3929,9 @@ describe('sessions service — full lifecycle', () => {
     mockedQuery.mockClear();
     const restartFake = installFakeQuery();
 
-    await svc.setMode('rt', 'sdk');
+    await svc.setMode('rt', 'rich');
 
-    expect(svc.getMode('rt')).toBe('sdk');
+    expect(svc.getMode('rt')).toBe('rich');
     expect(mockedQuery).toHaveBeenCalledTimes(1);
     const restartCall = restartFake.getCapturedOptions();
     expect(restartCall.resume).toBe('sess-round');
@@ -3988,7 +3988,7 @@ describe('sessions service — full lifecycle', () => {
     exitCallback({ exitCode: 0 });
     await new Promise((r) => setImmediate(r));
 
-    expect(svc.getMode('auto')).toBe('sdk');
+    expect(svc.getMode('auto')).toBe('rich');
 
     svc.stopAll();
     mockedCreateTuiSession.mockReset();

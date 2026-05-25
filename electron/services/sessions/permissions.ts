@@ -12,11 +12,11 @@ import type {
   NotificationHooks,
   PersistPermissionRuleFn,
 } from './types';
+import type { AgentPermissionRequest } from '../agents/types';
 import { setStatus } from './status';
 
 function currentPermissionMode(handle: SessionHandle): string {
-  const mode = handle.sdkOptions.permissionMode;
-  return typeof mode === 'string' ? mode : 'default';
+  return handle.permissionMode || 'default';
 }
 
 const NOTIF_BODY_CAP = 140;
@@ -145,30 +145,26 @@ export function augmentPermissionsWithSession(
 }
 
 // ---------------------------------------------------------------------------
-// createCanUseTool — the SDK's canUseTool callback
+// handleEnginePermissionRequest — engine.onPermissionRequest subscriber
+//
+// The SDK era had createCanUseTool: an async callback the SDK awaited for
+// each tool use. We resolved a promise via respondPermission, the callback
+// returned a PermissionResult, the SDK shipped it back to the CLI.
+//
+// In the CLI-engine era the flow inverts: the CLI sends a
+// control_request:can_use_tool, the engine surfaces it via
+// onPermissionRequest, and we (1) enqueue + render exactly the same UI
+// payload as before so the renderer is unchanged, then (2) on user click,
+// call engine.respondPermission directly with the decision body.
 // ---------------------------------------------------------------------------
 
-export function createCanUseTool(
+export function createPermissionRequestHandler(
   handle: SessionHandle,
   tabId: string,
   sendToRenderer: SendToRenderer,
   notificationHooks: NotificationHooks,
   logging: LoggingService | null = null,
-): (
-  toolName: string,
-  toolInput: Record<string, unknown>,
-  toolOptions: {
-    signal: AbortSignal;
-    suggestions?: any[];
-    blockedPath?: string;
-    decisionReason?: string;
-    title?: string;
-    displayName?: string;
-    description?: string;
-    toolUseID: string;
-    agentID?: string;
-  },
-) => Promise<any> {
+): (req: AgentPermissionRequest) => void {
   const logEntry = (entry: {
     level: 'info' | 'warn' | 'error';
     message: string;
@@ -191,24 +187,65 @@ export function createCanUseTool(
     }
   };
 
-  return async (
+  // Helper: build a sensible default rule from the tool name and input.
+  // Used when the CLI gives us no suggestions OR an empty rules array
+  // (which would render as a blank row in the dialog).
+  function buildDefaultRule(
     toolName: string,
     toolInput: Record<string, unknown>,
-    toolOptions: {
-      signal: AbortSignal;
-      suggestions?: any[];
-      blockedPath?: string;
-      decisionReason?: string;
+  ): { toolName: string; ruleContent?: string } | null {
+    if (toolName === 'Bash' && typeof toolInput.command === 'string') {
+      const cmd = (toolInput.command).trim();
+      const base = cmd.split(/[\s;|&]/)[0];
+      return { toolName, ruleContent: base ? `${base}:*` : cmd };
+    }
+    if (
+      toolName === 'Write' ||
+      toolName === 'Edit' ||
+      toolName === 'MultiEdit' ||
+      toolName === 'Read' ||
+      toolName === 'NotebookEdit'
+    ) {
+      const fp = typeof toolInput.file_path === 'string' ? toolInput.file_path : undefined;
+      if (!fp) return { toolName };
+      return { toolName, ruleContent: formatFilePathForRule(fp, handle.projectPath) };
+    }
+    if (toolName === 'Glob' || toolName === 'Grep') {
+      const pattern = typeof toolInput.pattern === 'string' ? toolInput.pattern : undefined;
+      return pattern ? { toolName, ruleContent: pattern } : { toolName };
+    }
+    if (toolName === 'WebFetch' && typeof toolInput.url === 'string') {
+      try {
+        const u = new URL(toolInput.url);
+        return { toolName, ruleContent: `domain:${u.hostname}` };
+      } catch {
+        return { toolName };
+      }
+    }
+    return { toolName };
+  }
+
+  return (req: AgentPermissionRequest): void => {
+    // req.payload was the raw CLI control_request.request body — has
+    // tool_name, input, tool_use_id, permission_suggestions, title, etc.
+    const rawPayload = req.payload as {
+      tool_name?: string;
+      input?: Record<string, unknown>;
+      tool_use_id?: string;
+      permission_suggestions?: unknown[];
+      blocked_path?: string;
+      decision_reason?: string;
       title?: string;
-      displayName?: string;
+      display_name?: string;
       description?: string;
-      toolUseID: string;
-      agentID?: string;
-    },
-  ): Promise<any> => {
-    const requestId = `perm-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+    };
+    const toolName = rawPayload.tool_name ?? 'unknown';
+    const toolInput = rawPayload.input ?? {};
+    const toolUseID = rawPayload.tool_use_id ?? '';
+    const requestId = req.requestId;
     const permissionMode = currentPermissionMode(handle);
 
+    // bypassPermissions: auto-allow without prompting the user.
     if (permissionMode === 'bypassPermissions') {
       logEntry({
         level: 'info',
@@ -216,61 +253,19 @@ export function createCanUseTool(
         metadata: {
           event: 'permission.decision',
           tool_name: toolName,
-          tool_use_id: toolOptions.toolUseID,
+          tool_use_id: toolUseID,
           behavior: 'allow',
           persisted: false,
           permission_mode: permissionMode,
           auto_allowed: true,
         },
       });
-      return {
-        behavior: 'allow' as const,
-        updatedInput: toolInput,
-      };
+      handle.engine?.respondPermission(requestId, 'allow', { updatedInput: toolInput })
+        .catch((e: unknown) => console.error('[sessions] engine.respondPermission failed:', e));
+      return;
     }
 
-    // Build a sensible default rule from the tool name and input. Used when
-    // the SDK gives us nothing OR gives us a suggestion with an empty rules
-    // array (which would otherwise render as a blank row in the dialog).
-    const buildDefaultRule = (): { toolName: string; ruleContent?: string } | null => {
-      if (toolName === 'Bash' && typeof toolInput.command === 'string') {
-        const cmd = (toolInput.command).trim();
-        const base = cmd.split(/[\s;|&]/)[0];
-        return { toolName, ruleContent: base ? `${base}:*` : cmd };
-      }
-      if (
-        toolName === 'Write' ||
-        toolName === 'Edit' ||
-        toolName === 'MultiEdit' ||
-        toolName === 'Read' ||
-        toolName === 'NotebookEdit'
-      ) {
-        const fp = typeof toolInput.file_path === 'string' ? toolInput.file_path : undefined;
-        if (!fp) return { toolName };
-        // Format per Claude Code's gitignore-style rule syntax: prefer a
-        // project-anchored relative path ("/rel/path") when the file lives
-        // inside the session root, fall back to double-slash absolute
-        // ("//abs/path") otherwise. A naive single-slash absolute path is
-        // SILENTLY ineffective — it would be parsed as project-relative.
-        return { toolName, ruleContent: formatFilePathForRule(fp, handle.projectPath) };
-      }
-      if (toolName === 'Glob' || toolName === 'Grep') {
-        const pattern = typeof toolInput.pattern === 'string' ? toolInput.pattern : undefined;
-        return pattern ? { toolName, ruleContent: pattern } : { toolName };
-      }
-      if (toolName === 'WebFetch' && typeof toolInput.url === 'string') {
-        try {
-          const u = new URL(toolInput.url);
-          return { toolName, ruleContent: `domain:${u.hostname}` };
-        } catch {
-          return { toolName };
-        }
-      }
-      // Any tool can be allowed by bare name as a last resort.
-      return { toolName };
-    };
-
-    let suggestions = toolOptions.suggestions;
+    let suggestions = rawPayload.permission_suggestions;
     const needsDefault =
       !suggestions ||
       suggestions.length === 0 ||
@@ -284,7 +279,7 @@ export function createCanUseTool(
           ),
       );
     if (needsDefault) {
-      const defaultRule = buildDefaultRule();
+      const defaultRule = buildDefaultRule(toolName, toolInput);
       if (defaultRule) {
         suggestions = [{
           type: 'addRules',
@@ -300,11 +295,11 @@ export function createCanUseTool(
       request_id: requestId,
       tool_name: toolName,
       tool_input: toolInput,
-      title: toolOptions.title,
-      display_name: toolOptions.displayName,
-      description: toolOptions.description,
-      decision_reason: toolOptions.decisionReason,
-      blocked_path: toolOptions.blockedPath,
+      title: rawPayload.title,
+      display_name: rawPayload.display_name,
+      description: rawPayload.description,
+      decision_reason: rawPayload.decision_reason,
+      blocked_path: rawPayload.blocked_path,
       permission_suggestions: suggestions,
     };
 
@@ -314,155 +309,49 @@ export function createCanUseTool(
       metadata: {
         event: 'permission.request',
         tool_name: toolName,
-        tool_use_id: toolOptions.toolUseID,
+        tool_use_id: toolUseID,
         tool_input: toolInput,
         request_id: requestId,
         suggestions,
       },
     });
 
-    const decision = await new Promise<PermissionDecision>((resolve) => {
-      const entry: PendingPermission & { payload: any } = { requestId, resolve, payload };
-      handle.permissionQueue.push(entry);
-
-      // The SDK passes an `AbortSignal` that fires when the tool use is
-      // no longer needed (user pressed interrupt mid-permission, parent
-      // task cancelled, session being torn down). Without this listener
-      // the Promise never settles and the SDK's tool pipeline hangs for
-      // this session. Match the queue-management semantics of
-      // respondPermission: splice out wherever this entry sits, advance
-      // the queue head if we were displaying it, and resolve as a
-      // distinguishable deny.
-      const onAbort = (): void => {
-        const idx = handle.permissionQueue.indexOf(entry);
-        if (idx === -1) return; // Already resolved by respondPermission.
-        const wasHead = idx === 0;
-        handle.permissionQueue.splice(idx, 1);
-
-        if (wasHead) {
-          if (handle.permissionQueue.length > 0) {
-            // Show the next queued request, mirroring respondPermission's tail.
-            const next = handle.permissionQueue[0] as PendingPermission & { payload: any };
-            sendToRenderer(`claude-output:${tabId}`, next.payload);
-            const projectName = path.basename(handle.projectPath) || 'OmniFex';
-            const title = `OmniFex — ${projectName}`;
-            const { body, subtitle } = permissionNotificationContent(
-              next.payload.tool_name,
-              next.payload.tool_input,
-              { title: next.payload.title, displayName: next.payload.display_name },
-            );
-            sendToRenderer('claude-notification', { tab_id: tabId, title, body, is_error: false });
-            try {
-              notificationHooks.showNotification?.(title, body, false, { tabId }, { subtitle });
-              notificationHooks.incrementUnread?.();
-            } catch (e) {
-              console.error('[sessions] permission notification hook failed:', e);
-            }
-          } else if (handle.conversationStatus === 'waiting_permission') {
-            setStatus(handle, { conversationStatus: 'running' }, tabId, sendToRenderer);
-          }
-        }
-
-        resolve({ behavior: 'deny', aborted: true });
-      };
-
-      if (toolOptions.signal) {
-        if (toolOptions.signal.aborted) {
-          // Listener won't fire for already-aborted signals; invoke the
-          // handler directly so we don't enqueue a request that nobody
-          // is waiting on. We pushed the entry before checking on
-          // purpose so the splice path runs unmodified.
-          onAbort();
-          return;
-        }
-        toolOptions.signal.addEventListener('abort', onAbort, { once: true });
-      }
-
-      // If this is the only item in the queue, show it immediately
-      if (handle.permissionQueue.length === 1) {
-        setStatus(handle, { conversationStatus: 'waiting_permission' }, tabId, sendToRenderer);
-        sendToRenderer(`claude-output:${tabId}`, payload);
-
-        // Notify the user that a permission decision is needed
-        const projectName = path.basename(handle.projectPath) || 'OmniFex';
-        const title = `OmniFex — ${projectName}`;
-        const { body, subtitle } = permissionNotificationContent(toolName, toolInput, {
-          title: toolOptions.title,
-          displayName: toolOptions.displayName,
-        });
-        sendToRenderer('claude-notification', { tab_id: tabId, title, body, is_error: false });
-        try {
-          notificationHooks.showNotification?.(title, body, false, { tabId }, { subtitle });
-          notificationHooks.incrementUnread?.();
-        } catch (e) {
-          console.error('[sessions] permission notification hook failed:', e);
-        }
-      }
-      // Otherwise it waits — sendNextPermission will show it when the current one resolves
-    });
-
-    if (decision.aborted) {
-      logEntry({
-        level: 'info',
-        message: `permission aborted: ${toolName}`,
-        metadata: {
-          event: 'permission.aborted',
-          tool_name: toolName,
-          tool_use_id: toolOptions.toolUseID,
-        },
-      });
-      return {
-        behavior: 'deny' as const,
-        message: 'Aborted by SDK before user response',
-      };
-    }
-
-    if (decision.behavior === 'allow') {
-      // updatedInput is REQUIRED and must be the original tool input
-      // (or a modified version). Passing {} breaks the SDK.
-      const result: Record<string, unknown> = {
-        behavior: 'allow',
-        updatedInput: decision.updatedInput ?? toolInput,
-      };
-      const persisted =
-        !!decision.updatedPermissions && decision.updatedPermissions.length > 0;
-      if (persisted) {
-        result.updatedPermissions = decision.updatedPermissions;
-      }
-
-      const firstPerm = decision.updatedPermissions?.[0];
-      logEntry({
-        level: 'info',
-        message: `permission decision: allow ${toolName}${persisted ? ' (saved)' : ' (session only)'}`,
-        metadata: {
-          event: 'permission.decision',
-          tool_name: toolName,
-          tool_use_id: toolOptions.toolUseID,
-          behavior: 'allow',
-          persisted,
-          destination: firstPerm?.destination,
-          rules: firstPerm?.rules,
-        },
-      });
-
-      return result;
-    }
-
-    logEntry({
-      level: 'info',
-      message: `permission decision: deny ${toolName}`,
-      metadata: {
-        event: 'permission.decision',
-        tool_name: toolName,
-        tool_use_id: toolOptions.toolUseID,
-        behavior: 'deny',
-        persisted: false,
+    // Enqueue. respondPermission (below) will ship the decision back to
+    // the engine when the user clicks. We carry the original tool input
+    // and rule suggestions on the queue entry so respondPermission can
+    // build the PermissionResult without re-parsing.
+    const entry: PendingPermission & {
+      payload: any;
+      toolInput: Record<string, unknown>;
+    } = {
+      requestId,
+      resolve: () => {
+        /* not used in the engine flow — kept for type compat with PendingPermission */
       },
-    });
-    return {
-      behavior: 'deny' as const,
-      message: 'User denied permission',
+      payload,
+      toolInput,
     };
+    handle.permissionQueue.push(entry);
+
+    // If this is the only item in the queue, show it immediately.
+    if (handle.permissionQueue.length === 1) {
+      setStatus(handle, { conversationStatus: 'waiting_permission' }, tabId, sendToRenderer);
+      sendToRenderer(`claude-output:${tabId}`, payload);
+
+      const projectName = path.basename(handle.projectPath) || 'OmniFex';
+      const title = `OmniFex — ${projectName}`;
+      const { body, subtitle } = permissionNotificationContent(toolName, toolInput, {
+        title: rawPayload.title,
+        displayName: rawPayload.display_name,
+      });
+      sendToRenderer('claude-notification', { tab_id: tabId, title, body, is_error: false });
+      try {
+        notificationHooks.showNotification?.(title, body, false, { tabId }, { subtitle });
+        notificationHooks.incrementUnread?.();
+      } catch (e) {
+        console.error('[sessions] permission notification hook failed:', e);
+      }
+    }
   };
 }
 
@@ -483,18 +372,38 @@ export function respondPermission(
   if (handle.permissionQueue.length === 0) return;
 
   // Mirror persistent allow/deny rules with a session-destination twin so the
-  // SDK applies them to the running query immediately. Without this twin, the
-  // rule would land on disk but never enter the live process's rule cache,
-  // and the very next matching tool_use would re-prompt — exactly the
-  // "permissions never really stick" symptom.
+  // CLI applies them to the running session immediately. Without this twin,
+  // the rule would land on disk but never enter the live process's rule
+  // cache, and the very next matching tool_use would re-prompt — exactly
+  // the "permissions never really stick" symptom.
   const augmented = behavior === 'allow'
     ? augmentPermissionsWithSession(updatedPermissions)
     : updatedPermissions;
 
-  // Resolve the front of the queue
+  // Pop the head of the queue and ship the decision back to the engine.
   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- permissionQueue.shift() guarded by length > 0 (prior check).
-  const current = handle.permissionQueue.shift()!;
-  current.resolve({ behavior, updatedInput, updatedPermissions: augmented });
+  const current = handle.permissionQueue.shift()! as PendingPermission & {
+    toolInput?: Record<string, unknown>;
+  };
+
+  if (handle.engine) {
+    // PermissionResult body: behavior, updatedInput, optionally
+    // updatedPermissions. The engine attaches the matching toolUseID
+    // automatically from its pending-permission map.
+    const permissionResultBody: Record<string, unknown> = { behavior };
+    if (behavior === 'allow') {
+      // updatedInput is required for allow. Fall back to the captured
+      // original input (mirrors the SDK's "passing {} breaks it" rule).
+      permissionResultBody.updatedInput = updatedInput ?? current.toolInput ?? {};
+      if (augmented && augmented.length > 0) {
+        permissionResultBody.updatedPermissions = augmented;
+      }
+    } else {
+      permissionResultBody.message = 'User denied permission';
+    }
+    handle.engine.respondPermission(current.requestId, behavior, permissionResultBody)
+      .catch((e: unknown) => console.error('[sessions] engine.respondPermission failed:', e));
+  }
 
   // Persist any rules whose destination isn't "session" — the SDK may also
   // write these internally, but we persist ourselves so rules always land on
