@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.61] — 2026-05-26
+
+Session-lifecycle stability + TUI ergonomics. Fixes the "messages disappear from the chat but come back when you toggle modes" bug, makes the rendered chat toggleable in TUI mode, and stops the "No conversation found with session ID …" error that booted you out of a session if you switched to Terminal before sending any messages.
+
+Installers remain **unsigned**.
+
+### Fixed
+
+- **Chat no longer goes deaf on benign CLI stderr** (`c9461eb`). `runtime.engine.onError` fired on every non-empty stderr line — MCP-auth notices, deprecation warnings, plugin chatter — and emitted `claude-complete`, which the renderer treats as "session over, drop all IPC listeners for this tab." Net effect: one noisy stderr line silently rendered the chat deaf for the rest of the session, even though the CLI kept running and writing JSONL (which is why messages reappeared after a mode toggle reloaded the transcript from disk). Errors now route to `app_logs` at `level=error` so the existing log-error toast fires, and `claude-complete` is reserved for `engine.onExit` — i.e. the CLI subprocess actually exiting.
+- **Switching to Terminal mode immediately after Start no longer boots you out** (`c9461eb`). `setMode('tui')` was unconditionally passing `resume:true`, so the CLI errored with "No conversation found with session ID …" when no JSONL existed yet. It now stats the expected JSONL path first — file present → `--resume <id>`, file absent → `--session-id <id>` (fresh transcript pinned to the same UUID). Same sessionId either way, so the JSONL tail, status events, and rebind flow keep working.
+- **`handleJsonlLine` errors now toast immediately** (`c9461eb`). The catch wrote to `console.error`, which `LogService` batches every 2 seconds — too slow for the toast to correlate with what the user just saw, and easy to lose on reload. It now calls `api.logWriteBatch` directly at `level=error` with a payload preview as metadata.
+
+### Added
+
+- **Chat-bubble toggle in TUI layout** (`c9461eb`). A `MessageSquare` icon overlaid on the terminal pane shows/hides the rendered chat alongside the TUI. Tints to the primary color when chat is showing, muted when hidden. Default is hidden every time you enter Terminal mode — the terminal stays the primary surface unless you opt in. Within-mount toggling works as expected; the choice doesn't persist across mode-switches.
+
 ## [0.4.60] — 2026-05-25
 
 Engine swap release. Claude sessions now run on the `claude` CLI directly — the `@anthropic-ai/claude-agent-sdk` runtime is gone. Slash commands, plugins, `/model`, hooks defined in `~/.claude/settings.json`, MCP servers, and `/cost` now work identically to invoking `claude` directly. The renderer is unchanged — the on-wire message shape is the same. Resume, rate-limit tracking, subagent JSONL tail, and the Chat ↔ Terminal toggle all continue to work.
