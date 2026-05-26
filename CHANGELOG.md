@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.62] — 2026-05-26
+
+Terminal-mode polish. The TUI gets its own card matching the rendered-chat surface (border + scroll-to-top/bottom buttons), Settings → Chats grows a Terminal tab with font / size / cursor-style pickers, the floating message box now injects into the TUI's PTY in Terminal mode, the Appearance settings page is tabbed (line variant) instead of a long scroll, and `conversationStatus` is derived from the transcript instead of being flipped by every CLI event.
+
+Installers remain **unsigned**.
+
+### Added
+
+- **Terminal section in Appearance settings** (`b770acd`, `a4eacc1`). New Terminal tab in Settings → Chats with three controls: font (mono-only TypefacePicker), font size (10–20 px, clamped to [8, 32] on merge), and cursor style (Block / Underline / Bar). Changes apply live — `TerminalView` updates `term.options.fontSize` / `term.options.cursorStyle` in place via a settings-driven effect, so adjusting either doesn't drop scrollback.
+- **Floating message box injects into TUI** (`b770acd`). In Terminal mode the bottom prompt writes `<prompt>\r` to the PTY via `api.tuiWrite`, identical to typing into xterm and pressing Enter. Empty prompts no-op; images dropped silently (CLI stdin doesn't accept them).
+- **Scroll-to-top / scroll-to-bottom buttons on the TUI** (`b770acd`). `TerminalView` is now a `forwardRef` exposing a `TerminalViewHandle` (`scrollToTop`, `scrollToBottom`) that the wrapping card's buttons drive.
+- **`Tabs` line variant** (`b770acd`). New `variant: 'pill' | 'line'` prop on the `Tabs` primitive. Line variant: no list-level border, only the active trigger gets a foreground-coloured underline, label and underline share colour. Used by the new tabbed Appearance page.
+
+### Changed
+
+- **TUI redesign — no more side-by-side rendered chat** (`b770acd`). `TuiSessionLayout` houses the terminal in the same bordered card chrome `messagesList` uses, with scroll buttons in the bottom-right and the Session Inspector toggle floating top-right. The rendered chat is gone from TUI mode — toggle to Chat for that surface. Side benefit: kills the JSONL-replay path that was driving `conversationStatus` to running on TUI entry.
+- **Appearance settings → tabs instead of one long scroll** (`b770acd`). Six tabs (Message kinds, Turn preview, Typography, Terminal, Global, Palette) replace the stacked cards. Active tab persists in `sessionStorage` across remounts. Import/Export/Save-as-default/Reset-to-factory hoisted to a footer card so they're available regardless of which tab is open.
+- **`conversationStatus` is derived, not stored** (`b770acd`). The runtime's event-driven flips were marking `running` on incidental messages — so a freshly-opened session that had never been spoken to showed "Prompt status: WORKING". New `src/lib/deriveConversationStatus.ts` computes it from three signals the inspector already shows: `waitingOnClaude` (the transcript ends in anything other than a `result` row), any task with status !== 'complete', any subagent with status !== 'complete'. Idle iff all three are settled. `usePublishTabStatus.mainTurnInFlight` now uses the same `deriveWaitingOnClaude(messages)` so the inspector's "Waiting on Claude" row matches.
+
+### Fixed
+
+- **Session no longer shows "running" on a fresh start** (`b770acd`). Direct consequence of the conversationStatus derivation above. A just-spawned session with zero messages now correctly reports `idle`.
+
+### Removed
+
+- **Rendered-chat toggle from TUI mode** (`b770acd`). The chat-bubble toggle introduced briefly in 0.4.61 is gone alongside the side-by-side rendered chat — Chat mode covers that surface.
+
 ## [0.4.61] — 2026-05-26
 
 Session-lifecycle stability + TUI ergonomics. Fixes the "messages disappear from the chat but come back when you toggle modes" bug, makes the rendered chat toggleable in TUI mode, and stops the "No conversation found with session ID …" error that booted you out of a session if you switched to Terminal before sending any messages.
