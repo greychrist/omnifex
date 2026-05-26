@@ -13,7 +13,7 @@ import {
 import { IconRenderer } from "@/components/settings-panels/appearance/iconMap";
 import { KindHeader } from "@/components/KindHeader";
 import type { ClaudeStreamMessage } from "@/types/claudeStream";
-import type { IconName } from "@/lib/messageRenderingConfig";
+import type { BorderStyle, IconName } from "@/lib/messageRenderingConfig";
 import { fireAndLog } from "@/lib/fireAndLog";
 
 interface MessageFrameCardProps {
@@ -47,6 +47,10 @@ interface MessageFrameCardProps {
    *  card's top-right (writes this text). When omitted and `message` is
    *  set, the debug footer's raw-JSON copy button is used instead. */
   copyText?: string;
+  /** Override the border-style on the card chrome. Defaults to the value
+   *  in the kind config (usually `solid`). Pass explicitly when the caller
+   *  needs to diverge from config (e.g. `dashed` for the unknown fallback). */
+  borderStyle?: BorderStyle;
 }
 
 /**
@@ -72,11 +76,15 @@ export const MessageFrameCard: React.FC<MessageFrameCardProps> = ({
   widthClassName,
   className,
   copyText,
+  borderStyle,
 }) => {
   const { config } = useMessageRenderingConfig();
   const accentStyle = accentStyleFor(config, kindId);
   const swatch = swatchFor(config, kindId);
   const iconName = iconOverride ?? iconNameFor(config, kindId) ?? "none";
+  // Resolve borderStyle: explicit prop > kind config > 'solid'
+  const resolvedBorderStyle =
+    borderStyle ?? config.kinds[kindId]?.borderStyle ?? 'solid';
 
   const justify =
     alignment === "right"
@@ -91,7 +99,7 @@ export const MessageFrameCard: React.FC<MessageFrameCardProps> = ({
     <div className={cn("flex", justify)}>
       <Card
         className={cn("border relative", width, className)}
-        style={accentStyle}
+        style={{ ...accentStyle, borderStyle: resolvedBorderStyle }}
       >
         <CardContent className="p-4 pb-9">
           <div className="flex items-start gap-3">
