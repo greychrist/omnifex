@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { jsonlNodeToStreamMessage } from '../jsonlAdapter';
+import { classifyJsonlLine } from '@/lib/jsonlClassifier';
 import type { JsonlNode } from '@/types/jsonl';
 
 describe('jsonlNodeToStreamMessage', () => {
@@ -98,5 +99,28 @@ describe('jsonlNodeToStreamMessage', () => {
     };
     const msg = jsonlNodeToStreamMessage(node);
     expect(msg?.type).toBe('last-prompt');
+  });
+});
+
+describe('jsonlNodeToStreamMessage — streamKind', () => {
+  it('sets streamKind on adapted messages', () => {
+    const node = classifyJsonlLine({
+      type: 'user',
+      sessionId: 's1',
+      timestamp: '2026-05-26T00:00:00.000Z',
+      isMeta: true,
+      sourceToolUseID: 'toolu_x',
+      message: { role: 'user', content: [{ type: 'text', text: 'Base directory for this skill: /x' }] },
+    });
+    expect(node).not.toBeNull();
+    const msg = jsonlNodeToStreamMessage(node!);
+    expect(msg?.streamKind).toBe('user.meta.skill');
+  });
+
+  it('sets streamKind = "unknown" for an unknown classification', () => {
+    const node = classifyJsonlLine({ type: 'mystery', timestamp: '2026-05-26T00:00:00.000Z' });
+    expect(node?.kind).toBe('unknown');
+    const msg = jsonlNodeToStreamMessage(node!);
+    expect(msg?.streamKind).toBe('unknown');
   });
 });

@@ -240,6 +240,13 @@ export interface OmnifexEnvelope {
    * injection, system context). Not emitted on live-stream messages.
    */
   isMeta?: boolean;
+  /**
+   * Dotted kind ID set by the classifier (e.g. "user.prompt",
+   * "assistant.thinking", "result.success", "unknown"). Downstream
+   * consumers — filters, blockKind, renderer, compactGrouping —
+   * read this instead of re-deriving from type/subtype.
+   */
+  streamKind?: string;
 }
 
 /**
