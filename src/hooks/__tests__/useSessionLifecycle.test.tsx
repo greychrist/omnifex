@@ -340,22 +340,34 @@ describe('useSessionLifecycle — event listener behavior', () => {
     errorSpy.mockRestore();
   });
 
-  it('claude-complete clears loading + persistent flag; status is owned by main-process session-status event', async () => {
+  it('claude-complete clears loading + persistent flag AND disposes all session listeners', async () => {
+    // claude-complete is main's authoritative "this session is over" signal.
+    // We use it to dispose the per-session IPC listeners so closed tabs don't
+    // leak preload-world ipcRenderer subscriptions. In production, main emits
+    // session-status:stopped *before* claude-complete (see runtime.ts onExit
+    // ordering), so the renderer has already reflected the stopped state by
+    // the time the disposal runs.
     (api.startSession as any).mockResolvedValueOnce(undefined);
     const setIsLoading = vi.fn();
     const { result } = renderHook(harness({ setIsLoading }));
     await act(async () => { await result.current.lifecycle.startPersistentSession(); });
     expect(result.current.persistentSessionRef.current).toBe(true);
 
-    act(() => { eventListeners['claude-complete:tab-life'](undefined); });
-    expect(setIsLoading).toHaveBeenCalledWith(false);
-    expect(result.current.persistentSessionRef.current).toBe(false);
-
-    // Main process emits the 'stopped' transition on the session-status
-    // channel; the hook reflects it. Payload carries both axes.
+    // Main emits stopped status first; renderer reflects it.
     act(() => { eventListeners['session-status:tab-life']({ sessionStatus: 'stopped', conversationStatus: null }); });
     expect(result.current.lifecycle.sessionStatus).toBe('stopped');
     expect(result.current.lifecycle.conversationStatus).toBeNull();
+
+    // Then main emits claude-complete; renderer clears state AND disposes
+    // its listeners.
+    act(() => { eventListeners['claude-complete:tab-life'](undefined); });
+    expect(setIsLoading).toHaveBeenCalledWith(false);
+    expect(result.current.persistentSessionRef.current).toBe(false);
+    // The unsubscribe functions registered with electronAPI.onEvent removed
+    // their channel entries from the test's eventListeners map.
+    expect(eventListeners['claude-output:tab-life']).toBeUndefined();
+    expect(eventListeners['session-status:tab-life']).toBeUndefined();
+    expect(eventListeners['session-init:tab-life']).toBeUndefined();
   });
 });
 

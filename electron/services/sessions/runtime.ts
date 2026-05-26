@@ -146,11 +146,6 @@ export function listenToMessages(
           break;
       }
 
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        require('node:fs').appendFileSync('/tmp/omnifex-engine.log',
-          `${new Date().toISOString()} [${tabId}] EMIT claude-output type=${(message as any).type ?? '?'} subtype=${(message as any).subtype ?? ''}\n`);
-      } catch { /* ignore */ }
       sendToRenderer(`claude-output:${tabId}`, message);
 
       if (event.kind === 'result') {

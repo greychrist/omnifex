@@ -214,11 +214,6 @@ export function createSessionsService(
     // Tell the renderer we're live. This must broadcast BEFORE the engine
     // can produce messages so the renderer's session state is in
     // 'started' when claude-output:<tabId> events arrive.
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      require('node:fs').appendFileSync('/tmp/omnifex-engine.log',
-        `${new Date().toISOString()} [${tabId}] EMIT session-status started/idle + session-init ${sessionId}\n`);
-    } catch { /* ignore */ }
     sendToRenderer(`session-status:${tabId}`, {
       sessionStatus: 'started',
       conversationStatus: 'idle',

@@ -217,8 +217,13 @@ export function SessionCard({
 
                 {useSdk && sortedCategories.length > 0 && chartReady ? (
                   <>
-                    <div className="h-72 -mx-2">
-                      <ResponsiveContainer width="100%" height="100%">
+                    <div className="h-72 w-full -mx-2">
+                      {/* minWidth/minHeight=0 silences the Recharts "width(-1)"
+                          warning that fires when the portal-rendered popover
+                          content hasn't fully laid out before the first paint.
+                          Without them, ResponsiveContainer reads its parent as
+                          unmeasured and aborts the layout pass with the warn. */}
+                      <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                         <PieChart>
                           <Pie
                             data={pieData}

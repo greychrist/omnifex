@@ -916,16 +916,12 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       // stop_reason. Adapter converts both to ClaudeStreamMessage shape so
       // the reducer can process them identically to SDK iterator events.
       const node = classifyJsonlLine(raw);
-      // eslint-disable-next-line no-console
-      console.log('[DIAG handleJsonlLine] raw.type=', (raw as any)?.type, 'subtype=', (raw as any)?.subtype, '→ node=', node?.kind ?? 'null');
       if (!node) return;
       const produced = synthesizerRef.current.push(node);
       const streamMessages = produced
         .map((n) => jsonlNodeToStreamMessage(n))
         .filter((m): m is NonNullable<ReturnType<typeof jsonlNodeToStreamMessage>> => m !== null)
         .map((m) => normalizeMessageContent(m));
-      // eslint-disable-next-line no-console
-      console.log('[DIAG handleJsonlLine] produced', produced.length, 'streamMessages', streamMessages.length, streamMessages.map((m) => `${(m as any).type}/${(m as any).subtype ?? ''}`).join(','));
       if (streamMessages.length === 0) return;
 
       // Store raw line (only the original input, not the synthesized rows).
@@ -1045,15 +1041,11 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           clearInflightBuffer(tabIdRef.current);
         }
 
-        // eslint-disable-next-line no-console
-        console.log('[DIAG reducer]', (message as any).type, '/', (message as any).subtype ?? '', '→ append=', reduced.append);
         if (reduced.append === 'skip') continue;
         if (reduced.append === 'insertBeforeFirstUser') {
           ctx.insertMessageBeforeFirstUser(message);
           continue;
         }
-        // eslint-disable-next-line no-console
-        console.log('[DIAG appendMessage] type=', (message as any).type);
         ctx.appendMessage(message);
       }
     } catch (err) {

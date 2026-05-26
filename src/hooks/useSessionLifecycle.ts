@@ -115,19 +115,9 @@ export function useSessionLifecycle({
     unlistenRefs.current.forEach((u) => { u(); });
     unlistenRefs.current = [];
 
-    // eslint-disable-next-line no-console -- diagnostic during phase-a debug
-    console.log('[DIAG attach]', tabId, 'channels=', [
-      `claude-output:${tabId}`,
-      `session-status:${tabId}`,
-      `session-init:${tabId}`,
-    ]);
     const outputUnlisten = window.electronAPI.onEvent(
       `claude-output:${tabId}`,
-      (...args: unknown[]) => {
-        // eslint-disable-next-line no-console -- diagnostic
-        console.log('[DIAG recv claude-output]', tabId, (args[0] as any)?.type, (args[0] as any)?.subtype);
-        handleJsonlLine(args[0] as string | object);
-      },
+      (...args: unknown[]) => { handleJsonlLine(args[0] as string | object); },
     );
 
     // Closure carriers (queue-operation enqueue with <task-notification>,
@@ -149,6 +139,15 @@ export function useSessionLifecycle({
       },
     );
 
+    // `claude-complete:<tabId>` is main's authoritative "this session is
+    // done" signal — fires on user stop, session error, AND on tab close
+    // (TabContext.removeTab → api.stopSession → main emits complete). It's
+    // the right place to tear listeners down: no more events are coming on
+    // this tab, so holding the IPC subscriptions just leaks. State setters
+    // are gated on isMountedRef because the React tree may already be gone
+    // by the time complete arrives (tab close races React unmount); the
+    // listener teardown runs unconditionally because ipcRenderer.removeListener
+    // is safe regardless of React state.
     const completeUnlisten = window.electronAPI.onEvent(
       `claude-complete:${tabId}`,
       () => {
@@ -157,8 +156,14 @@ export function useSessionLifecycle({
           persistentSessionRef.current = false;
           // Status flip is owned by main process — it emits a final
           // `session-status:<tabId>` with 'stopped' on clean close. The
-          // listener below catches it.
+          // listener below catches it (before we dispose it below).
         }
+        // Dispose all listeners for this session. Safe to run even though we
+        // are inside one of them — Node EventEmitter (and ipcRenderer) tolerate
+        // removeListener mid-dispatch. The next startPersistentSession call
+        // re-creates them via attachStreamListeners.
+        unlistenRefs.current.forEach((u) => u());
+        unlistenRefs.current = [];
       },
     );
 
@@ -168,8 +173,6 @@ export function useSessionLifecycle({
     const statusUnlisten = window.electronAPI.onEvent(
       `session-status:${tabId}`,
       (...args: unknown[]) => {
-        // eslint-disable-next-line no-console -- diagnostic
-        console.log('[DIAG recv session-status]', tabId, args[0]);
         if (!isMountedRef.current) return;
         const payload = args[0] as {
           sessionStatus?: SessionStatus;
@@ -194,8 +197,6 @@ export function useSessionLifecycle({
     const initUnlisten = window.electronAPI.onEvent(
       `session-init:${tabId}`,
       (...args: unknown[]) => {
-        // eslint-disable-next-line no-console -- diagnostic
-        console.log('[DIAG recv session-init]', tabId, args[0]);
         if (!isMountedRef.current) return;
         const payload = args[0] as { sessionId?: string } | undefined;
         if (payload?.sessionId) onSessionInit(payload.sessionId);
@@ -344,25 +345,35 @@ export function useSessionLifecycle({
     // when the CLI emits its real `system:init` mid-first-turn.
   };
 
-  // Cleanup event listeners and track mount state
+  // Mount/unmount lifecycle.
+  //
+  // React StrictMode mounts → unmounts → re-mounts components on first
+  // render. Our auto-start effect handles the first mount (fresh-start
+  // attaches listeners), then the StrictMode unmount tears every listener
+  // off, then the second mount sees persistentSessionRef=true and skips
+  // startPersistentSession — leaving the tab with zero IPC listeners for
+  // the rest of its life. Main keeps emitting claude-output / session-status
+  // / session-init into the void.
+  //
+  // Two-part fix:
+  //   1. On EVERY mount, if a session is already live (persistentRef=true)
+  //      but listeners are empty, re-attach. Idempotent — attachStreamListeners
+  //      tears down any existing listeners first.
+  //   2. Keep listeners alive across unmount. The unmount runs synchronously
+  //      before re-mount in StrictMode and before any IPC event from main
+  //      reaches the renderer, so tearing them off here loses real events.
+  //      Listeners are owned by the main-process session, not the React tree;
+  //      cleanup belongs in tab-close (TabContext.removeTab) and app-quit
+  //      (main.ts before-quit → sessionsService.stopAll).
   useEffect(() => {
     isMountedRef.current = true;
-
+    if (persistentSessionRef.current && unlistenRefs.current.length === 0) {
+      attachStreamListeners();
+    }
     return () => {
       isMountedRef.current = false;
-      // Note: api.stopSession is NOT called here. React unmount alone must
-      // not tear down a main-process SDK session — Cmd+R reload, StrictMode
-      // double-invoke, and tab-visibility flips all trigger unmounts but
-      // should keep the live session so rebind can claim it. The only
-      // intentional teardown happens on explicit tab close (see
-      // TabContext.removeTab) and on app quit (see main.ts before-quit
-      // → sessionsService.stopAll).
-
-      // Clean up listeners
-      unlistenRefs.current.forEach((unlisten) => { unlisten(); });
-      unlistenRefs.current = [];
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- cleanup must only run on unmount
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- mount-only effect; tabId is stable per hook instance
 
   return {
     unlistenRefs,

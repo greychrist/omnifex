@@ -1,20 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import { appendFileSync } from 'node:fs';
 import { buildClaudeEnv } from '../util/claude-env';
-
-// Temp diagnostic — writes engine events to /tmp/omnifex-engine.log so we can
-// see spawn/init/exit timing without going through the app-log DB (which
-// isn't capturing v0.4.60 main-process traffic during dev).
-function debugLog(line: string): void {
-  try {
-    appendFileSync(
-      '/tmp/omnifex-engine.log',
-      `${new Date().toISOString()} ${line}\n`,
-    );
-  } catch {
-    /* ignore */
-  }
-}
 import type {
   AgentEngine,
   AgentEngineExit,
@@ -122,11 +107,9 @@ export function createClaudeCliEngine(
     } catch {
       // Drop malformed lines — Claude only ever emits well-formed JSON on
       // stdout; anything else is noise that doesn't belong in the transcript.
-      debugLog(`[${factory.tabId}] DROP non-JSON: ${trimmed.slice(0, 120)}`);
       return;
     }
     const _peek = payload as { type?: string; subtype?: string };
-    debugLog(`[${factory.tabId}] recv ${_peek?.type ?? '?'}/${_peek?.subtype ?? ''} (${messageCallbacks.length} cbs)`);
     const p = payload as {
       type?: string;
       subtype?: string;
@@ -282,14 +265,12 @@ export function createClaudeCliEngine(
     sessionId = p.sessionId;
 
     const args = buildArgs(p);
-    debugLog(`[${factory.tabId}] spawn ${factory.claudeBinaryPath} ${args.join(' ')} cwd=${p.projectPath} configDir=${p.configDir}`);
     try {
       child = spawn(factory.claudeBinaryPath, args, {
         cwd: p.projectPath,
         env: buildClaudeEnv(p.configDir),
       }) as ChildProcessWithoutNullStreams;
     } catch (err) {
-      debugLog(`[${factory.tabId}] spawn THREW: ${err instanceof Error ? err.message : String(err)}`);
       throw err;
     }
 
@@ -297,14 +278,12 @@ export function createClaudeCliEngine(
     wireStderr(child.stderr);
 
     child.on('error', (err: Error) => {
-      debugLog(`[${factory.tabId}] child ERROR: ${err.message}`);
       for (const cb of errorCallbacks) {
         try { cb(err); } catch { /* swallow */ }
       }
     });
 
     child.on('exit', (code, signal) => {
-      debugLog(`[${factory.tabId}] child EXIT code=${code} signal=${signal}`);
       const info: AgentEngineExit = { code: code ?? -1, signal };
       for (const cb of exitCallbacks) {
         try { cb(info); } catch { /* swallow */ }
@@ -319,7 +298,6 @@ export function createClaudeCliEngine(
       const childRef = child!;
       const onSpawn = (): void => {
         childRef.off('error', onErr);
-        debugLog(`[${factory.tabId}] child SPAWNED ok, pid=${childRef.pid}`);
         resolve();
       };
       const onErr = (err: Error): void => {
@@ -341,9 +319,7 @@ export function createClaudeCliEngine(
     if (CLI_ARGV_PERMISSION_MODES.has(mode)) return; // already pinned via argv
     try {
       await sendControlRequest('set_permission_mode', { mode });
-      debugLog(`[${factory.tabId}] set_permission_mode '${mode}' applied via control_request`);
     } catch (err) {
-      debugLog(`[${factory.tabId}] set_permission_mode '${mode}' REJECTED: ${(err as Error).message}`);
       // Non-fatal — CLI keeps whatever mode it defaulted to.
     }
   }
@@ -359,14 +335,11 @@ export function createClaudeCliEngine(
       session_id: sessionId ?? '',
     };
     const line = JSON.stringify(payload) + '\n';
-    debugLog(`[${factory.tabId}] send user message: ${line.trim().slice(0, 160)}`);
     await new Promise<void>((resolve, reject) => {
       child!.stdin.write(line, (err) => {
         if (err) {
-          debugLog(`[${factory.tabId}] send WRITE FAILED: ${err.message}`);
           reject(err);
         } else {
-          debugLog(`[${factory.tabId}] send write callback ok`);
           resolve();
         }
       });
