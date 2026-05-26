@@ -51,6 +51,11 @@ interface MessageFrameCardProps {
    *  in the kind config (usually `solid`). Pass explicitly when the caller
    *  needs to diverge from config (e.g. `dashed` for the unknown fallback). */
   borderStyle?: BorderStyle;
+  /** Optional toolbar node rendered absolutely inside the card (top-right).
+   *  Use this to attach a `CardActionBar` to the card. The card applies
+   *  `group/card relative` so the bar can position itself with
+   *  `absolute top-1 right-1`. */
+  actionBar?: React.ReactNode;
 }
 
 /**
@@ -77,6 +82,7 @@ export const MessageFrameCard: React.FC<MessageFrameCardProps> = ({
   className,
   copyText,
   borderStyle,
+  actionBar,
 }) => {
   const { config } = useMessageRenderingConfig();
   const accentStyle = accentStyleFor(config, kindId);
@@ -98,9 +104,10 @@ export const MessageFrameCard: React.FC<MessageFrameCardProps> = ({
   return (
     <div className={cn("flex", justify)}>
       <Card
-        className={cn("border relative", width, className)}
+        className={cn("border relative group/card", width, className)}
         style={{ ...accentStyle, borderStyle: resolvedBorderStyle }}
       >
+        {actionBar}
         <CardContent className="p-4 pb-9">
           <div className="flex items-start gap-3">
             {iconName !== "none" && (

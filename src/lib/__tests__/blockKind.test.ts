@@ -233,3 +233,88 @@ describe('isBlockHiddenInCompact', () => {
     expect(isBlockHiddenInCompact(parent.message.content[0], parent, config)).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// lastCardIdx regression — mirrors the algorithm in StreamMessage.tsx so
+// we can verify that compact mode correctly skips hiddenInCompact blocks when
+// selecting the toolbar anchor.
+// ---------------------------------------------------------------------------
+describe('lastCardIdx algorithm (compact toolbar anchor)', () => {
+  /**
+   * Re-implements the StreamMessage lastCardIdx IIFE so we can unit-test the
+   * logic without mounting the full component. This must stay in sync with the
+   * implementation in StreamMessage.tsx.
+   */
+  function computeLastCardIdx(
+    visibleBlocks: any[],
+    message: ClaudeStreamMessage,
+    renderConfig: ReturnType<typeof createDefaultConfig>,
+    hidingActive: boolean,
+  ): number {
+    let last = visibleBlocks.length - 1;
+    for (let i = visibleBlocks.length - 1; i >= 0; i--) {
+      const blockKind = classifyBlockKind(visibleBlocks[i], message);
+      const presentation = blockKind
+        ? ((renderConfig.kinds[blockKind]?.presentation ?? 'card') as string)
+        : 'card';
+      if (presentation !== 'card') continue;
+      if (hidingActive) {
+        const willBeHidden = isBlockHiddenInCompact(visibleBlocks[i], message, renderConfig);
+        if (willBeHidden) continue;
+      }
+      last = i;
+      break;
+    }
+    return last;
+  }
+
+  it('[text, tool_use, tool_use] compact=true → lastCardIdx=0 (text block, not last tool_use)', () => {
+    // This is the critical regression case from the bug report.
+    // Before the fix, lastCardIdx was 2 (last tool_use), which is hiddenInCompact.
+    // The toolbar would render inside HiddenBlocksExpander (collapsed) — invisible.
+    // After the fix, lastCardIdx is 0 (the text block), which is always visible.
+    const config = createDefaultConfig();
+    const blocks = [
+      { type: 'text', text: 'Here is the result.' },
+      { type: 'tool_use', name: 'Read', input: { file_path: 'a.ts' } },
+      { type: 'tool_use', name: 'Bash', input: { command: 'ls' } },
+    ];
+    const message = assistant(blocks);
+    const visibleBlocks = blocks; // none suppressed
+    expect(computeLastCardIdx(visibleBlocks, message, config, true)).toBe(0);
+  });
+
+  it('[text, tool_use, tool_use] compact=false → lastCardIdx=2 (last block wins without compact filter)', () => {
+    // Without compact mode, the old behaviour is preserved: last card block wins.
+    const config = createDefaultConfig();
+    const blocks = [
+      { type: 'text', text: 'Here is the result.' },
+      { type: 'tool_use', name: 'Read', input: { file_path: 'a.ts' } },
+      { type: 'tool_use', name: 'Bash', input: { command: 'ls' } },
+    ];
+    const message = assistant(blocks);
+    const visibleBlocks = blocks;
+    expect(computeLastCardIdx(visibleBlocks, message, config, false)).toBe(2);
+  });
+
+  it('[tool_use, tool_use] compact=true, all blocks hidden → falls back to last block (index 1)', () => {
+    // When every visible block is hiddenInCompact the fallback is the last
+    // block (index length-1). This matches the "last block of any kind"
+    // fallback in the implementation.
+    const config = createDefaultConfig();
+    const blocks = [
+      { type: 'tool_use', name: 'Read', input: { file_path: 'a.ts' } },
+      { type: 'tool_use', name: 'Bash', input: { command: 'ls' } },
+    ];
+    const message = assistant(blocks);
+    const visibleBlocks = blocks;
+    expect(computeLastCardIdx(visibleBlocks, message, config, true)).toBe(1);
+  });
+
+  it('[text] compact=true → lastCardIdx=0 (single visible card block)', () => {
+    const config = createDefaultConfig();
+    const blocks = [{ type: 'text', text: 'Single reply.' }];
+    const message = assistant(blocks);
+    expect(computeLastCardIdx(blocks, message, config, true)).toBe(0);
+  });
+});

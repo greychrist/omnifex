@@ -8,6 +8,13 @@ export interface MessageFrameProps {
    *  If not found in config, falls back to the `unknown` kind. */
   streamKind: string;
   children: React.ReactNode;
+  /** Optional toolbar node for card-presentation frames. Forwarded to
+   *  `MessageFrameCard.actionBar` so it renders absolutely inside the card.
+   *  Ignored for side-line presentation. */
+  actionBar?: React.ReactNode;
+  /** Optional message to forward to `MessageFrameCard` for the timestamp
+   *  footer and debug raw-JSON copy button. */
+  message?: import('@/types/claudeStream').ClaudeStreamMessage;
 }
 
 /**
@@ -18,7 +25,7 @@ export interface MessageFrameProps {
  * kind's `presentation` field. This is the single choke-point that drives
  * every presentation variant; callers only need to know `streamKind`.
  */
-export const MessageFrame: React.FC<MessageFrameProps> = ({ streamKind, children }) => {
+export const MessageFrame: React.FC<MessageFrameProps> = ({ streamKind, children, actionBar, message }) => {
   const { config } = useMessageRenderingConfig();
   const kind = config.kinds[streamKind] ?? config.kinds['unknown'];
 
@@ -30,7 +37,7 @@ export const MessageFrame: React.FC<MessageFrameProps> = ({ streamKind, children
   if (kind.presentation === 'card') {
     return (
       <div data-frame-variant="card">
-        <MessageFrameCard kindId={kind.id}>
+        <MessageFrameCard kindId={kind.id} actionBar={actionBar} message={message}>
           {children}
         </MessageFrameCard>
       </div>
