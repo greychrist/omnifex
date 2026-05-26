@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { cn } from '@/lib/utils';
-import { MessageCard } from '@/components/MessageCard';
+import { MessageFrameCard as MessageCard } from '@/components/StreamMessage/MessageFrameCard';
 import type { ClaudeStreamMessage } from '@/types/claudeStream';
 
 /**

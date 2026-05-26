@@ -16,7 +16,7 @@ import type { ClaudeStreamMessage } from "@/types/claudeStream";
 import type { IconName } from "@/lib/messageRenderingConfig";
 import { fireAndLog } from "@/lib/fireAndLog";
 
-interface MessageCardProps {
+interface MessageFrameCardProps {
   /** Drives icon, accent, and (via KindHeader) the configured header label.
    *  Must match an entry in DEFAULT_KINDS. */
   kindId: string;
@@ -55,13 +55,13 @@ interface MessageCardProps {
  * label from Appearance settings), bottom timestamp, and debug raw-JSON
  * label/copy. Body content is the children.
  *
- * Migrating a kind to MessageCard means: pick a kindId, pass `message`,
+ * Migrating a kind to MessageFrameCard means: pick a kindId, pass `message`,
  * and put whatever was previously inside the inline `<Card><CardContent>...`
  * tree into `children`. Per-kind overrides (icon, accent, header label,
  * compact-mode visibility) all flow through the existing config without
  * any per-call wiring.
  */
-export const MessageCard: React.FC<MessageCardProps> = ({
+export const MessageFrameCard: React.FC<MessageFrameCardProps> = ({
   kindId,
   message,
   children,
@@ -206,3 +206,8 @@ const CardFooter: React.FC<{
     </>
   );
 };
+
+// ─── back-compat aliases ───────────────────────────────────────────────────
+
+export const MessageCard = MessageFrameCard;
+export type MessageCardProps = MessageFrameCardProps;
