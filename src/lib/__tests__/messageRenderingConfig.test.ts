@@ -140,7 +140,7 @@ describe("messageRenderingConfig", () => {
 
     it("migrates legacy hardFilter keys (dropMeta → dropBookkeeping, dropTaskLifecycle → hideSubagentLifecycle, dropHookLifecycle → hideHookLifecycle)", () => {
       const legacyConfig = {
-        version: 1,
+        version: 2,
         hardFilters: {
           dropMeta: false,
           dropTaskLifecycle: false,

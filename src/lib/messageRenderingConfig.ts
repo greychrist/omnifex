@@ -168,8 +168,10 @@ export type IconName = (typeof ALLOWED_ICONS)[number];
 
 // ─── message kinds ──────────────────────────────────────────────────────────
 
-export type Origin = "user" | "assistant" | "system" | "tool" | "subagent";
+export type Origin = "user" | "assistant" | "system" | "result" | "bookkeeping" | "fallback";
 export type Alignment = "left" | "right" | "full";
+export type Presentation = 'card' | 'side-line';
+export type BorderStyle = 'solid' | 'dashed';
 
 export interface MessageKindConfig {
   id: string;
@@ -201,6 +203,12 @@ export interface MessageKindConfig {
   iconSize?: IconSize;
   iconBordered?: boolean;
   iconBgOpacity?: number; // 0–100
+
+  // New in v2:
+  presentation: Presentation;
+  borderStyle: BorderStyle;
+  /** Only meaningful on the `unknown` row. */
+  showRawPayload?: boolean;
 }
 
 export type MessageKindsById = Record<string, MessageKindConfig>;
@@ -807,7 +815,7 @@ export const DEFAULT_TERMINAL: Terminal = {
 // ─── top-level config ───────────────────────────────────────────────────────
 
 export interface MessageRenderingConfig {
-  version: 1;
+  version: 2;
   defaultViewMode: "compact" | "verbose";
   palette: Palette;
   kinds: MessageKindsById;
@@ -821,7 +829,7 @@ export function createDefaultConfig(): MessageRenderingConfig {
   const kinds: MessageKindsById = {};
   for (const k of DEFAULT_KINDS) kinds[k.id] = { ...k };
   return {
-    version: 1,
+    version: 2,
     defaultViewMode: "verbose",
     palette: structuredClone(DEFAULT_PALETTE),
     kinds,
