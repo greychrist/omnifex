@@ -27,7 +27,30 @@ export const MessageRenderingProvider: React.FC<{ children: React.ReactNode }> =
     logAndForget('message-rendering-context:iife', (async () => {
       try {
         const raw = await api.getSetting(MESSAGE_RENDERING_CONFIG_KEY);
-        if (!cancelled) setConfigState(parseConfig(raw));
+        // Version guard: if the persisted config is missing or pre-v2, reset
+        // to fresh defaults and record the migration in app_logs.
+        let parsed: unknown = null;
+        try { parsed = raw ? (JSON.parse(raw) as unknown) : null; } catch { /* handled below */ }
+        const persistedVersion =
+          parsed !== null && typeof parsed === 'object' && parsed !== null && 'version' in parsed
+            ? (parsed as { version?: unknown }).version
+            : undefined;
+        if (!raw || (typeof persistedVersion === 'number' ? persistedVersion : 1) < 2) {
+          const fresh = createDefaultConfig();
+          if (!cancelled) {
+            await api.saveSetting(MESSAGE_RENDERING_CONFIG_KEY, JSON.stringify(fresh));
+            await api.logWriteBatch([{
+              timestamp: new Date().toISOString(),
+              level: 'info',
+              source: 'frontend',
+              category: 'settings:message-rendering',
+              message: 'reset message rendering config v1 → v2 defaults',
+            }]);
+            setConfigState(fresh);
+          }
+        } else {
+          if (!cancelled) setConfigState(parseConfig(raw));
+        }
       } catch {
         /* keep defaults */
       } finally {
