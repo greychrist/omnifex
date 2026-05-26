@@ -19,9 +19,7 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
 import { swatchFor } from "@/lib/accentStyle";
-import { headerLabelFor, iconNameFor } from "@/lib/kindPresentation";
 import { contentClassNames, typographyFontFamily } from "@/lib/typographyClasses";
-import { IconRenderer } from "@/components/settings-panels/appearance/iconMap";
 import { KindHeader } from "@/components/KindHeader";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -236,7 +234,6 @@ const ResendExtra: React.FC<{
 
 interface StreamMessageProps {
   message: ClaudeStreamMessage;
-  className?: string;
   streamMessages: ClaudeStreamMessage[];
   onLinkDetected?: (url: string) => void;
   /** When set, cost is hidden for subscription account types (e.g. "max"). */
@@ -258,7 +255,7 @@ interface StreamMessageProps {
 /**
  * Component to render a single Claude Code stream message
  */
-const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, className, streamMessages, onLinkDetected, accountType, inExpandedGroup, compact, onResend }) => {
+const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamMessages, onLinkDetected, accountType, inExpandedGroup, compact, onResend }) => {
   // State to track tool results mapped by tool call ID
   const [toolResults, setToolResults] = useState<Map<string, MessageContentBlock>>(new Map());
   
@@ -850,38 +847,13 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
         const trimmed = contentStr.trim();
         const isSdkSystemMessage = trimmed.startsWith('[') && trimmed.endsWith(']') && trimmed.length < 200;
         if (isSdkSystemMessage) {
-          // Strip the brackets and render as an info-level notification
+          // Strip the brackets and route through MessageFrame so Appearance
+          // config controls the chrome (icon, accent, presentation).
           const inner = trimmed.slice(1, -1);
-          const sdkSwatch = swatchFor(renderConfig, "user.sdkSystemBracket");
-          const sdkIconName = iconNameFor(renderConfig, "user.sdkSystemBracket") ?? "ℹ";
-          const sdkHeader = headerLabelFor(renderConfig, "user.sdkSystemBracket");
-          const sdkStyle: React.CSSProperties = sdkSwatch
-            ? { borderColor: sdkSwatch, color: sdkSwatch }
-            : {};
           return (
-            <div
-              className={cn(
-                "flex items-center gap-2 text-xs font-mono py-1.5 px-3 border-l-2",
-                !sdkSwatch && "border-muted-foreground/30",
-                className,
-              )}
-              style={sdkStyle}
-            >
-              {sdkIconName !== "none" && (
-                <span
-                  className={sdkSwatch ? "" : "text-muted-foreground"}
-                  style={sdkSwatch ? { color: sdkSwatch } : undefined}
-                >
-                  <IconRenderer name={sdkIconName} className="inline h-3.5 w-3.5" />
-                </span>
-              )}
-              <span
-                className={sdkSwatch ? "" : "text-muted-foreground"}
-                style={sdkSwatch ? { color: sdkSwatch } : undefined}
-              >
-                {sdkHeader ? `${sdkHeader}: ${inner}` : inner}
-              </span>
-            </div>
+            <MessageFrame streamKind="user.sdkSystemBracket" message={message}>
+              <span className="text-xs font-mono">{inner}</span>
+            </MessageFrame>
           );
         }
       }
@@ -1264,7 +1236,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                     return (
                       <div key={idx} className="space-y-2">
                         {content.is_error
-                          ? <KindHeader kindId="result.error" fallbackLabel="Tool Error" fallbackIcon="AlertCircle" showIcon />
+                          ? <KindHeader kindId="result.error_during_execution" fallbackLabel="Tool Error" fallbackIcon="AlertCircle" showIcon />
                           : <KindHeader kindId="tool.result.generic" fallbackLabel="Tool Result" />}
                         <div className="ml-6 p-2 bg-background rounded-md border">
                           <pre className="text-xs font-mono overflow-x-auto whitespace-pre-wrap">
@@ -1287,12 +1259,12 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
     if (message.type === "result") {
       const classifiedKind = classifyStandaloneKind(message, streamMessages);
       const resultKindId =
-        classifiedKind === "result.error"
+        classifiedKind === "result.error_during_execution"
           || classifiedKind === "result.awaiting_background"
           || classifiedKind === "result.success"
           ? classifiedKind
-          : (message.is_error === true ? "result.error" : "result.success");
-      const isError = resultKindId === "result.error";
+          : (message.is_error === true ? "result.error_during_execution" : "result.success");
+      const isError = resultKindId === "result.error_during_execution";
       const isAwaiting = resultKindId === "result.awaiting_background";
       const resultFallbackLabel = isError
         ? "Execution Failed"
