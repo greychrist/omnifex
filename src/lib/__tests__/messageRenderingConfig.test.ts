@@ -118,6 +118,31 @@ describe("messageRenderingConfig", () => {
       expect(cfg.kinds["assistant.thinking"].hiddenInCompact).toBe(false);
     });
 
+    it("persists presentation, borderStyle, and showRawPayload through merge", () => {
+      const persisted = {
+        version: 2,
+        kinds: {
+          "user.prompt": { presentation: "side-line", borderStyle: "dashed" },
+          "unknown": { showRawPayload: false },
+        },
+      };
+      const merged = mergeConfig(persisted);
+      expect(merged.kinds["user.prompt"].presentation).toBe("side-line");
+      expect(merged.kinds["user.prompt"].borderStyle).toBe("dashed");
+      expect(merged.kinds["unknown"].showRawPayload).toBe(false);
+    });
+
+    it("rejects invalid presentation and borderStyle values", () => {
+      const cfg = mergeConfig({
+        kinds: {
+          "user.prompt": { presentation: "balloon", borderStyle: "dotted" },
+        },
+      });
+      // Falls back to defaults
+      expect(cfg.kinds["user.prompt"].presentation).toBe("card");
+      expect(cfg.kinds["user.prompt"].borderStyle).toBe("solid");
+    });
+
     it("merges palette entries by name", () => {
       const cfg = mergeConfig({
         palette: {

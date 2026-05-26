@@ -243,6 +243,11 @@ export const DEFAULT_KINDS: MessageKindConfig[] = [
   { id: "user.meta.skill", label: "Skill body", description: "Skill content injected by the harness.", origin: "user", icon: "Sparkles", headerLabel: "Skill", accentColor: "purple", alignment: "left", hiddenInCompact: false, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
   { id: "user.meta.attachment", label: "Image attachment marker", description: "Inline marker that travels with a user prompt containing an image.", origin: "user", icon: "Image", headerLabel: null, accentColor: "muted", alignment: "left", hiddenInCompact: true, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
   { id: "user.meta.other", label: "Harness injection (other)", description: "Other isMeta=true user records we don't have a more specific kind for.", origin: "user", icon: "Info", headerLabel: null, accentColor: "muted", alignment: "left", hiddenInCompact: false, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
+  { id: "user.subagentPrompt", label: "Subagent prompt", description: "Prompt forwarded to a subagent.", origin: "user", icon: "User", headerLabel: "Subagent", accentColor: "purple", alignment: "left", hiddenInCompact: false, compactBoundaryLocked: false, presentation: "card", borderStyle: "solid" },
+  { id: "user.command", label: "Slash command", description: "A /slash command the user invoked.", origin: "user", icon: "ChevronRight", headerLabel: null, accentColor: "muted", alignment: "left", hiddenInCompact: false, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
+  { id: "user.commandOutput", label: "Command output", description: "Output of a slash command.", origin: "user", icon: "Terminal", headerLabel: null, accentColor: "muted", alignment: "left", hiddenInCompact: false, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
+  { id: "user.skillInjection", label: "Skill injection (legacy)", description: "Live-stream variant of skill-body injection.", origin: "user", icon: "Sparkles", headerLabel: "Skill", accentColor: "purple", alignment: "left", hiddenInCompact: false, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
+  { id: "user.sdkSystemBracket", label: "SDK system bracket", description: "Bracketed system messages from the SDK (e.g. [Request interrupted by user]).", origin: "user", icon: "Info", headerLabel: null, accentColor: "muted", alignment: "left", hiddenInCompact: false, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
 
   // ───── SYSTEM ─────
   { id: "system.init", label: "Session init", description: "CLI session initialization.", origin: "system", icon: "Power", headerLabel: null, accentColor: "sysInit", alignment: "left", hiddenInCompact: true, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
@@ -254,6 +259,7 @@ export const DEFAULT_KINDS: MessageKindConfig[] = [
   { id: "system.away_summary", label: "Away summary", description: "Summary of what happened while user was away.", origin: "system", icon: "FileText", headerLabel: "Away summary", accentColor: "info", alignment: "left", hiddenInCompact: false, compactBoundaryLocked: false, presentation: "card", borderStyle: "solid" },
   { id: "system.compact_boundary", label: "Compact boundary", description: "Marks where the conversation was compacted.", origin: "system", icon: "Scissors", headerLabel: "Compacted", accentColor: "muted", alignment: "left", hiddenInCompact: false, compactBoundaryLocked: false, presentation: "card", borderStyle: "solid", widget: "CompactBoundaryWidget" },
   { id: "system.informational", label: "Informational", description: "Generic informational system message.", origin: "system", icon: "Info", headerLabel: null, accentColor: "muted", alignment: "left", hiddenInCompact: true, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
+  { id: "system.permission_denied", label: "Permission denied", description: "Tool call denied by permission check.", origin: "system", icon: "ShieldOff", headerLabel: null, accentColor: "red", alignment: "left", hiddenInCompact: false, compactBoundaryLocked: false, presentation: "card", borderStyle: "solid" },
 
   // ───── RESULT ─────
   { id: "result.success", label: "Result · success", description: "Successful turn end.", origin: "result", icon: "Check", headerLabel: null, accentColor: "green", alignment: "left", hiddenInCompact: true, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
@@ -262,6 +268,11 @@ export const DEFAULT_KINDS: MessageKindConfig[] = [
   { id: "result.max_tokens", label: "Result · max tokens", description: "Turn ended because max_tokens was reached.", origin: "result", icon: "AlertTriangle", headerLabel: "Max tokens", accentColor: "amber", alignment: "left", hiddenInCompact: false, compactBoundaryLocked: false, presentation: "card", borderStyle: "solid" },
   { id: "result.refusal", label: "Result · refusal", description: "Assistant declined to respond.", origin: "result", icon: "ShieldOff", headerLabel: "Refused", accentColor: "amber", alignment: "left", hiddenInCompact: false, compactBoundaryLocked: false, presentation: "card", borderStyle: "solid" },
   { id: "result.context_window_exceeded", label: "Result · context window exceeded", description: "Conversation exceeded the model's context window.", origin: "result", icon: "AlertTriangle", headerLabel: "Context window exceeded", accentColor: "red", alignment: "left", hiddenInCompact: false, compactBoundaryLocked: false, presentation: "card", borderStyle: "solid" },
+  { id: "result.awaiting_background", label: "Awaiting background tasks", description: "Turn paused waiting for background tools.", origin: "result", icon: "Clock", headerLabel: null, accentColor: "amber", alignment: "left", hiddenInCompact: false, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
+
+  // ───── PERMISSION ─────
+  { id: "permission.request", label: "Permission request", description: "Permission prompt for a tool call.", origin: "system", icon: "Shield", headerLabel: "Permission", accentColor: "amber", alignment: "left", hiddenInCompact: false, compactBoundaryLocked: false, presentation: "card", borderStyle: "solid" },
+  { id: "permission.askUserQuestion", label: "User question", description: "AskUserQuestion tool prompt.", origin: "system", icon: "HelpCircle", headerLabel: "Question", accentColor: "blue", alignment: "left", hiddenInCompact: false, compactBoundaryLocked: false, presentation: "card", borderStyle: "solid" },
 
   // ───── BOOKKEEPING (surfaced per Greg's "full control" preference) ─────
   { id: "attachment", label: "Attachment", description: "Attachment metadata record.", origin: "bookkeeping", icon: "Paperclip", headerLabel: null, accentColor: "muted", alignment: "left", hiddenInCompact: true, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
@@ -519,6 +530,18 @@ export function mergeConfig(saved: unknown): MessageRenderingConfig {
             Number.isFinite(override.iconBgOpacity)
               ? Math.max(0, Math.min(100, Math.round(override.iconBgOpacity)))
               : undefined,
+          presentation:
+            override.presentation === "card" || override.presentation === "side-line"
+              ? override.presentation
+              : current.presentation,
+          borderStyle:
+            override.borderStyle === "solid" || override.borderStyle === "dashed"
+              ? override.borderStyle
+              : current.borderStyle,
+          showRawPayload:
+            typeof override.showRawPayload === "boolean"
+              ? override.showRawPayload
+              : current.showRawPayload,
         };
       }
     }
