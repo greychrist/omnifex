@@ -1,5 +1,20 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { appendFileSync } from 'node:fs';
 import { buildClaudeEnv } from '../util/claude-env';
+
+// Temp diagnostic — writes engine events to /tmp/omnifex-engine.log so we can
+// see spawn/init/exit timing without going through the app-log DB (which
+// isn't capturing v0.4.60 main-process traffic during dev).
+function debugLog(line: string): void {
+  try {
+    appendFileSync(
+      '/tmp/omnifex-engine.log',
+      `${new Date().toISOString()} ${line}\n`,
+    );
+  } catch {
+    /* ignore */
+  }
+}
 import type {
   AgentEngine,
   AgentEngineExit,
@@ -16,27 +31,55 @@ export interface CreateClaudeCliEngineParams {
 }
 
 /**
- * Build the argv for `claude` in stream-json IO mode.
+ * The CLI's argv `--permission-mode` only accepts these four values. OmniFex
+ * also supports `'auto'` and `'dontAsk'` — those go via the stream-json
+ * `set_permission_mode` control_request after spawn; passing them on argv
+ * makes the CLI exit 1. For unsupported values we omit the argv flag (CLI
+ * defaults to 'default') and reapply via control_request post-spawn.
+ */
+const CLI_ARGV_PERMISSION_MODES = new Set([
+  'default',
+  'acceptEdits',
+  'bypassPermissions',
+  'plan',
+]);
+
+/**
+ * Build the argv for `claude` in stream-json headless mode. Per the docs at
+ * https://code.claude.com/docs/en/cli-reference:
  *
- * Resume is wired via `--resume <id>`; the CLI re-emits a `system:init`
- * payload with the resumed session_id so the engine's `getResumeId()` stays
- * accurate without us doing anything extra.
+ *  - `--input-format`/`--output-format stream-json` enable bi-directional
+ *    NDJSON over stdio (the headless protocol)
+ *  - `--verbose` is required when `--output-format=stream-json` (CLI exits
+ *    1 with "When using --print, --output-format=stream-json requires
+ *    --verbose" otherwise)
+ *  - `--include-partial-messages` enables `stream_event` token deltas
+ *  - `--session-id` (cold) or `--resume` (warm) pins the session UUID at
+ *    spawn so the JSONL path is known up front
+ *  - `--permission-prompt-tool stdio` routes `can_use_tool` permission
+ *    prompts through the stream-json channel (where we handle them)
+ *    instead of trying to draw a TTY dialog
+ *  - `--setting-sources=user,project,local` loads CLAUDE.md, project
+ *    settings, and skills (otherwise the CLI runs in isolated mode)
  */
 function buildArgs(p: AgentStartParams): string[] {
   const args: string[] = [
-    '--output-format',
-    'stream-json',
-    '--input-format',
-    'stream-json',
+    '--output-format', 'stream-json',
+    '--input-format', 'stream-json',
+    '--verbose',
     '--include-partial-messages',
+    '--permission-prompt-tool', 'stdio',
+    '--setting-sources', 'user,project,local',
   ];
-  if (p.resumeSessionId) {
-    args.push('--resume', p.resumeSessionId);
+  if (p.resume) {
+    args.push('--resume', p.sessionId);
+  } else {
+    args.push('--session-id', p.sessionId);
   }
   if (p.model) {
     args.push('--model', p.model);
   }
-  if (p.permissionMode) {
+  if (p.permissionMode && CLI_ARGV_PERMISSION_MODES.has(p.permissionMode)) {
     args.push('--permission-mode', p.permissionMode);
   }
   if (p.allowedTools && p.allowedTools.length > 0) {
@@ -79,8 +122,11 @@ export function createClaudeCliEngine(
     } catch {
       // Drop malformed lines — Claude only ever emits well-formed JSON on
       // stdout; anything else is noise that doesn't belong in the transcript.
+      debugLog(`[${factory.tabId}] DROP non-JSON: ${trimmed.slice(0, 120)}`);
       return;
     }
+    const _peek = payload as { type?: string; subtype?: string };
+    debugLog(`[${factory.tabId}] recv ${_peek?.type ?? '?'}/${_peek?.subtype ?? ''} (${messageCallbacks.length} cbs)`);
     const p = payload as {
       type?: string;
       subtype?: string;
@@ -210,40 +256,96 @@ export function createClaudeCliEngine(
     });
   }
 
+  /**
+   * Spawn the `claude` CLI in stream-json headless mode and resolve when the
+   * subprocess is alive and ready to accept input.
+   *
+   * "Ready" here is the OS-level `'spawn'` event — the CLI accepts stdin
+   * immediately after spawn. There is no application-level handshake to
+   * await; the CLI doesn't emit a `system:init` until mid-first-turn (after
+   * the client sends a user message), and that message is data-capture only,
+   * not a readiness signal.
+   *
+   * Re-entrant: callers invoke this again to restart after stream death.
+   * Tears down any prior child cleanly first.
+   */
   async function start(p: AgentStartParams): Promise<void> {
-    // Re-entrant: callers use this to restart on stream death. Tear down the
-    // old child first so we don't leak an unparented subprocess, and reset
-    // the stdout buffer so a half-line from the dead child can't poison
-    // the fresh one.
     if (child !== null) {
-      try {
-        child.kill('SIGTERM');
-      } catch {
-        /* already gone */
-      }
+      try { child.kill('SIGTERM'); } catch { /* already gone */ }
       child = null;
     }
     lineBuf = '';
     stderrBuf = '';
 
-    sessionId = p.resumeSessionId ?? sessionId;
+    // The session UUID is pinned at spawn — caller-supplied, never derived
+    // from a wire message. JSONL path becomes resolvable from this id alone.
+    sessionId = p.sessionId;
+
     const args = buildArgs(p);
-    child = spawn(factory.claudeBinaryPath, args, {
-      cwd: p.projectPath,
-      env: buildClaudeEnv(p.configDir),
-    }) as ChildProcessWithoutNullStreams;
+    debugLog(`[${factory.tabId}] spawn ${factory.claudeBinaryPath} ${args.join(' ')} cwd=${p.projectPath} configDir=${p.configDir}`);
+    try {
+      child = spawn(factory.claudeBinaryPath, args, {
+        cwd: p.projectPath,
+        env: buildClaudeEnv(p.configDir),
+      }) as ChildProcessWithoutNullStreams;
+    } catch (err) {
+      debugLog(`[${factory.tabId}] spawn THREW: ${err instanceof Error ? err.message : String(err)}`);
+      throw err;
+    }
+
     wireStdout(child.stdout);
     wireStderr(child.stderr);
-    child.on('exit', (code, signal) => {
-      const info: AgentEngineExit = { code: code ?? -1, signal };
-      for (const cb of exitCallbacks) {
-        try {
-          cb(info);
-        } catch {
-          /* subscriber threw */
-        }
+
+    child.on('error', (err: Error) => {
+      debugLog(`[${factory.tabId}] child ERROR: ${err.message}`);
+      for (const cb of errorCallbacks) {
+        try { cb(err); } catch { /* swallow */ }
       }
     });
+
+    child.on('exit', (code, signal) => {
+      debugLog(`[${factory.tabId}] child EXIT code=${code} signal=${signal}`);
+      const info: AgentEngineExit = { code: code ?? -1, signal };
+      for (const cb of exitCallbacks) {
+        try { cb(info); } catch { /* swallow */ }
+      }
+    });
+
+    // Wait for the OS-level 'spawn' event — confirms the process is alive
+    // and the binary was actually exec'd. Rejects if the spawn fails (ENOENT
+    // for a missing binary, EACCES, etc.) so lifecycle can transition to
+    // 'error' with a useful message.
+    await new Promise<void>((resolve, reject) => {
+      const childRef = child!;
+      const onSpawn = (): void => {
+        childRef.off('error', onErr);
+        debugLog(`[${factory.tabId}] child SPAWNED ok, pid=${childRef.pid}`);
+        resolve();
+      };
+      const onErr = (err: Error): void => {
+        childRef.off('spawn', onSpawn);
+        reject(err);
+      };
+      childRef.once('spawn', onSpawn);
+      childRef.once('error', onErr);
+    });
+  }
+
+  /**
+   * Apply a permission mode the CLI's argv parser doesn't accept (`'auto'`,
+   * `'dontAsk'`). Lifecycle calls this after start() resolves when the
+   * caller's requested mode isn't in `CLI_ARGV_PERMISSION_MODES`. Idempotent
+   * for known-CLI modes (they were already set on argv).
+   */
+  async function applyExtendedPermissionMode(mode: string): Promise<void> {
+    if (CLI_ARGV_PERMISSION_MODES.has(mode)) return; // already pinned via argv
+    try {
+      await sendControlRequest('set_permission_mode', { mode });
+      debugLog(`[${factory.tabId}] set_permission_mode '${mode}' applied via control_request`);
+    } catch (err) {
+      debugLog(`[${factory.tabId}] set_permission_mode '${mode}' REJECTED: ${(err as Error).message}`);
+      // Non-fatal — CLI keeps whatever mode it defaulted to.
+    }
   }
 
   async function writeUserMessage(content: unknown): Promise<void> {
@@ -257,10 +359,16 @@ export function createClaudeCliEngine(
       session_id: sessionId ?? '',
     };
     const line = JSON.stringify(payload) + '\n';
+    debugLog(`[${factory.tabId}] send user message: ${line.trim().slice(0, 160)}`);
     await new Promise<void>((resolve, reject) => {
       child!.stdin.write(line, (err) => {
-        if (err) reject(err);
-        else resolve();
+        if (err) {
+          debugLog(`[${factory.tabId}] send WRITE FAILED: ${err.message}`);
+          reject(err);
+        } else {
+          debugLog(`[${factory.tabId}] send write callback ok`);
+          resolve();
+        }
       });
     });
   }
@@ -417,6 +525,7 @@ export function createClaudeCliEngine(
   return {
     kind: 'claude',
     start,
+    applyExtendedPermissionMode,
     send,
     sendStructured,
     sendControlRequest,

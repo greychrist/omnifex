@@ -51,10 +51,7 @@ interface HarnessOverrides {
   initialPersistent?: boolean;
   setIsLoading?: ReturnType<typeof vi.fn>;
   handleJsonlLine?: ReturnType<typeof vi.fn>;
-  setSdkAccountInfo?: ReturnType<typeof vi.fn>;
-  setSupportedModels?: ReturnType<typeof vi.fn>;
-  setSupportedCommands?: ReturnType<typeof vi.fn>;
-  setContextUsage?: ReturnType<typeof vi.fn>;
+  onSessionInit?: ReturnType<typeof vi.fn>;
 }
 
 function harness(overrides: HarnessOverrides = {}) {
@@ -83,10 +80,7 @@ function harness(overrides: HarnessOverrides = {}) {
             ? updater(messagesRef.current)
             : updater;
         }) as any,
-        setSdkAccountInfo: (overrides.setSdkAccountInfo ?? vi.fn()) as any,
-        setSupportedModels: (overrides.setSupportedModels ?? vi.fn()) as any,
-        setSupportedCommands: (overrides.setSupportedCommands ?? vi.fn()) as any,
-        setContextUsage: (overrides.setContextUsage ?? vi.fn()) as any,
+        onSessionInit: (overrides.onSessionInit ?? vi.fn()) as any,
       }),
       persistentSessionRef,
       messagesRef,
@@ -116,12 +110,14 @@ describe('useSessionLifecycle — startPersistentSession happy path', () => {
       false,
     );
     expect(result.current.persistentSessionRef.current).toBe(true);
-    // Listeners attached on the four claude-* channels plus session-status.
+    // Listeners attached on the four claude-* channels plus session-status
+    // and session-init (sessionId pinned at spawn).
     expect(Object.keys(eventListeners).sort()).toEqual([
       'claude-complete:tab-life',
       'claude-error:tab-life',
       'claude-output-extra:tab-life',
       'claude-output:tab-life',
+      'session-init:tab-life',
       'session-status:tab-life',
     ]);
     // No placeholder init is rendered — the chat stays empty until the
@@ -183,10 +179,7 @@ describe('useSessionLifecycle — startPersistentSession happy path', () => {
           setMessages: ((updater: any) => {
             messagesRef.current = typeof updater === 'function' ? updater(messagesRef.current) : updater;
           }) as any,
-          setSdkAccountInfo: vi.fn(),
-          setSupportedModels: vi.fn(),
-          setSupportedCommands: vi.fn(),
-          setContextUsage: vi.fn(),
+          onSessionInit: vi.fn(),
         }),
       };
     };
@@ -211,8 +204,7 @@ describe('useSessionLifecycle — startPersistentSession happy path', () => {
         persistentSessionRef,
         handleJsonlLine: vi.fn(), setIsLoading: vi.fn(),
         setMessages: ((u: any) => { messagesRef.current = typeof u === 'function' ? u(messagesRef.current) : u; }) as any,
-        setSdkAccountInfo: vi.fn(), setSupportedModels: vi.fn(),
-        setSupportedCommands: vi.fn(), setContextUsage: vi.fn(),
+        onSessionInit: vi.fn(),
       });
     };
     const { result } = renderHook(useLocal);
@@ -390,161 +382,36 @@ describe('useSessionLifecycle — unmount cleanup', () => {
   });
 });
 
-describe('useSessionLifecycle — fetchInitInfo enrichment', () => {
-  it('keeps polling mcpServerStatus while any server is pending, then stops once every server is terminal', async () => {
-    // Under SDK 0.3.x MCP servers connect in the background; slow servers
-    // surface as `status: 'pending'` in the first init response. We must
-    // re-poll until every server reaches a terminal state — connected,
-    // failed, needs-auth, or disabled — so the renderer's tool list isn't
-    // permanently missing tools from a still-warming server.
-    vi.useFakeTimers();
-    try {
-      (api.startSession as any).mockResolvedValueOnce(undefined);
-      (api.sessionAccountInfo as any).mockResolvedValue({
-        name: 'work', account_type: 'pro', config_dir: '/cfg',
-      });
-      (api.sessionSupportedModels as any).mockResolvedValue([]);
-      (api.sessionSupportedCommands as any).mockResolvedValue([]);
-      (api.sessionContextUsage as any).mockResolvedValue(null);
-      // First poll: foo connected with one tool, bar still warming up.
-      // Second poll: both servers connected.
-      (api.sessionMcpServerStatus as any)
-        .mockResolvedValueOnce([
-          { name: 'foo', status: 'connected', tools: [{ name: 'a' }] },
-          { name: 'bar', status: 'pending' },
-        ])
-        .mockResolvedValueOnce([
-          { name: 'foo', status: 'connected', tools: [{ name: 'a' }] },
-          { name: 'bar', status: 'connected', tools: [{ name: 'b' }] },
-        ]);
-
-      // Seed a real init message — without it, enrichInitTools is a no-op
-      // by design (it only merges into the SDK's actual init, never inserts).
-      const seededInit = [{ type: 'system', subtype: 'init', session_id: 'real-id', model: 'sonnet', cwd: '/r', tools: [] } as any];
-      const { result } = renderHook(harness({ messages: seededInit }));
-      await act(async () => { await result.current.lifecycle.startPersistentSession(); });
-      // Flush the first poll's microtasks.
-      await act(async () => { await vi.advanceTimersByTimeAsync(0); });
-
-      let init = result.current.messagesRef.current[0] as any;
-      expect(init.tools).toContain('mcp__foo__a');
-      expect(init.tools).not.toContain('mcp__bar__b');
-      expect(api.sessionMcpServerStatus).toHaveBeenCalledTimes(1);
-
-      // Advance past the 1500ms re-poll wait. After the second poll the
-      // pending server has flipped to connected and its tool is merged in.
-      await act(async () => { await vi.advanceTimersByTimeAsync(1500); });
-
-      init = result.current.messagesRef.current[0] as any;
-      expect(init.tools).toContain('mcp__foo__a');
-      expect(init.tools).toContain('mcp__bar__b');
-      expect(api.sessionMcpServerStatus).toHaveBeenCalledTimes(2);
-
-      // Now every server is terminal — no third poll should ever fire.
-      await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
-      expect(api.sessionMcpServerStatus).toHaveBeenCalledTimes(2);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('stops polling when every server is in a non-pending terminal state (failed / needs-auth / disabled)', async () => {
-    vi.useFakeTimers();
-    try {
-      (api.startSession as any).mockResolvedValueOnce(undefined);
-      (api.sessionAccountInfo as any).mockResolvedValue({
-        name: 'work', account_type: 'pro', config_dir: '/cfg',
-      });
-      (api.sessionSupportedModels as any).mockResolvedValue([]);
-      (api.sessionSupportedCommands as any).mockResolvedValue([]);
-      (api.sessionContextUsage as any).mockResolvedValue(null);
-      (api.sessionMcpServerStatus as any).mockResolvedValueOnce([
-        { name: 'a', status: 'failed' },
-        { name: 'b', status: 'needs-auth' },
-        { name: 'c', status: 'disabled' },
-      ]);
-
-      const { result } = renderHook(harness());
-      await act(async () => { await result.current.lifecycle.startPersistentSession(); });
-      await act(async () => { await vi.advanceTimersByTimeAsync(0); });
-      expect(api.sessionMcpServerStatus).toHaveBeenCalledTimes(1);
-
-      await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
-      expect(api.sessionMcpServerStatus).toHaveBeenCalledTimes(1);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('writes account info, supported models/commands, context usage and enriches the real init with MCP tools', async () => {
+describe('useSessionLifecycle — session-init event', () => {
+  it('invokes onSessionInit with the pinned sessionId when main emits session-init', async () => {
+    // The CLI engine pins a UUID at spawn and main forwards it on
+    // `session-init:<tabId>` before any stream message arrives. This is
+    // how claudeSessionId / extractedSessionInfo get seeded immediately,
+    // unlocking UI gated on them (mode toggle, model picker, persistence).
     (api.startSession as any).mockResolvedValueOnce(undefined);
-    (api.sessionAccountInfo as any).mockResolvedValue({
-      name: 'work',
-      account_type: 'pro',
-      config_dir: '/cfg',
-    });
-    (api.sessionSupportedModels as any).mockResolvedValueOnce([
-      { id: 'sonnet', label: 'Sonnet' },
-    ]);
-    (api.sessionSupportedCommands as any).mockResolvedValueOnce([{ name: '/help' }]);
-    (api.sessionMcpServerStatus as any).mockResolvedValueOnce([
-      { name: 'foo!server', status: 'connected', tools: [{ name: 'do_x' }] },
-    ]);
-    (api.sessionContextUsage as any).mockResolvedValueOnce({ used: 100, total: 1000 });
-
-    const setSdkAccountInfo = vi.fn();
-    const setSupportedModels = vi.fn();
-    const setSupportedCommands = vi.fn();
-    const setContextUsage = vi.fn();
-
-    // Seed a real init so enrichInitTools has something to merge into.
-    const seededInit = [{ type: 'system', subtype: 'init', session_id: 'real-id', model: 'sonnet', cwd: '/r', tools: [] } as any];
-    const { result } = renderHook(harness({
-      messages: seededInit,
-      setSdkAccountInfo, setSupportedModels, setSupportedCommands, setContextUsage,
-    }));
-
+    const onSessionInit = vi.fn();
+    const { result } = renderHook(harness({ onSessionInit }));
     await act(async () => { await result.current.lifecycle.startPersistentSession(); });
-    // fetchInitInfo is fired via logAndForget; flush its microtasks/promise chain.
-    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
 
-    expect(setSdkAccountInfo).toHaveBeenCalledWith({ name: 'work', account_type: 'pro', config_dir: '/cfg' });
-    expect(setSupportedModels).toHaveBeenCalled();
-    expect(setSupportedCommands).toHaveBeenCalled();
-    expect(setContextUsage).toHaveBeenCalled();
-
-    // After enrichment, the init message should now contain the MCP-derived
-    // tool name (mangled per the standard mcp__<server>__<tool> convention).
-    const init = result.current.messagesRef.current[0] as any;
-    expect(init.tools).toContain('mcp__foo_server__do_x');
+    act(() => {
+      eventListeners['session-init:tab-life']({ sessionId: 'uuid-cold-start' });
+    });
+    expect(onSessionInit).toHaveBeenCalledWith('uuid-cold-start');
   });
 
-  it('flips sessionStatus to started from control-channel readiness, without inserting a synthetic init', async () => {
-    // After sessionAccountInfo() answers, fetchInitInfo treats the control
-    // channel as live and pushes sessionStatus → started so the badge reaches
-    // 'Active' without waiting for the first prompt. claudeSessionId stays
-    // null — SDK 0.3.150 doesn't surface a session_id pre-prompt; the real
-    // GUID arrives later via the streamed system:init through claude-output.
-    (api.startSession as any).mockResolvedValueOnce(undefined);
-    (api.sessionAccountInfo as any).mockResolvedValue({
-      name: 'work', account_type: 'pro', config_dir: '/cfg',
+  it('rebindPersistentSession re-seeds claudeSessionId via onSessionInit from sessionGetHealth', async () => {
+    (api.sessionRebind as any).mockResolvedValueOnce(true);
+    (api.sessionGetHealth as any).mockResolvedValueOnce({
+      alive: true,
+      sessionId: 'uuid-warm',
+      sessionStatus: 'started',
+      conversationStatus: 'idle',
     });
-    (api.sessionMcpServerStatus as any).mockResolvedValueOnce([
-      { name: 'mcp1', status: 'connected', tools: [{ name: 't' }] },
-    ]);
-    const handleJsonlLine = vi.fn();
-    const { result } = renderHook(harness({ handleJsonlLine }));
-    await act(async () => { await result.current.lifecycle.startPersistentSession(); });
-    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
-
-    expect(result.current.lifecycle.sessionStatus).toBe('started');
-    expect(result.current.lifecycle.conversationStatus).toBe('idle');
-    // No synthetic system:init was injected from the renderer side. The
-    // sessionGetHealth poll path was removed once we accepted that the SDK
-    // can't surface a session_id before the first prompt.
-    expect(handleJsonlLine).not.toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'system', subtype: 'init' }),
-    );
+    const onSessionInit = vi.fn();
+    const { result } = renderHook(harness({ onSessionInit }));
+    await act(async () => { await result.current.lifecycle.rebindPersistentSession(); });
+    await act(async () => { await Promise.resolve(); });
+    expect(onSessionInit).toHaveBeenCalledWith('uuid-warm');
   });
 });
 

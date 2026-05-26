@@ -5,6 +5,7 @@ import { describe, it, expect, vi } from 'vitest';
 vi.mock('../services/agents/claude-cli-engine', () => ({
   createClaudeCliEngine: vi.fn(() => ({
     kind: 'claude',
+    applyExtendedPermissionMode: vi.fn(async () => {}),
     start: vi.fn(async () => {}),
     send: vi.fn(async () => {}),
     sendStructured: vi.fn(async () => {}),

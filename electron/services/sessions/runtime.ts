@@ -102,6 +102,12 @@ export function listenToMessages(
   let exitResolve: (() => void) | null = null;
   const done = new Promise<void>((resolve) => { exitResolve = resolve; });
 
+  // Attach the JSONL tail immediately — sessionId is pinned at spawn
+  // (lifecycle minted it before calling us), so the tail path is known.
+  // The tail surfaces background-Bash queue-operation carriers and
+  // queued_command attachments that the stream-json output may not yield.
+  ensureJsonlTail(handle, tabId, jsonlState, sendToRenderer);
+
   const subscriptions = [
     engine.onMessage((agentMsg: AgentMessage) => {
       const message = agentMsg.payload as Record<string, unknown>;
@@ -110,13 +116,14 @@ export function listenToMessages(
 
       switch (event.kind) {
         case 'init':
-          if (event.sessionId) handle.sessionId = event.sessionId;
-          // Mirror the engine's init cache onto the handle so queries.ts
-          // can read account/commands/models/agents synchronously without
-          // an engine round-trip.
-          handle.initData = engine.getInitData();
-          setStatus(handle, { sessionStatus: 'started', conversationStatus: 'idle' }, tabId, sendToRenderer);
-          ensureJsonlTail(handle, tabId, jsonlState, sendToRenderer);
+          // The CLI emits `system:init` mid-turn AFTER the first user
+          // message, NOT on spawn. By the time this fires, lifecycle has
+          // already flipped sessionStatus to 'started' from engine.start()
+          // resolution. We do NOT setStatus here — doing so would stomp
+          // conversationStatus from 'running' back to 'idle' mid-turn and
+          // flicker the loading indicator. Only capture catalog data
+          // (commands/models/agents/account) that arrives in this payload:
+          if (!handle.initData) handle.initData = engine.getInitData();
           break;
         case 'rateLimit':
           if (rateLimitHook) {
@@ -139,6 +146,11 @@ export function listenToMessages(
           break;
       }
 
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        require('node:fs').appendFileSync('/tmp/omnifex-engine.log',
+          `${new Date().toISOString()} [${tabId}] EMIT claude-output type=${(message as any).type ?? '?'} subtype=${(message as any).subtype ?? ''}\n`);
+      } catch { /* ignore */ }
       sendToRenderer(`claude-output:${tabId}`, message);
 
       if (event.kind === 'result') {
@@ -210,14 +222,23 @@ export function restartQuery(
   deps: RuntimeDeps,
 ): void {
   if (!handle.engine) return;
+  if (!handle.sessionId) {
+    console.error(`[sessions] restartQuery: no sessionId for tab ${tabId}`);
+    return;
+  }
   setStatus(handle, { sessionStatus: 'starting' }, tabId, deps.sendToRenderer);
   void handle.engine.start({
     projectPath: handle.startParams.projectPath,
     configDir: handle.startParams.configDir,
     model: handle.startParams.model,
     permissionMode: handle.startParams.permissionMode,
-    resumeSessionId: handle.sessionId ?? undefined,
+    // Resume the same session id so the JSONL continues uninterrupted.
+    sessionId: handle.sessionId,
+    resume: true,
+  }).then(() => {
+    setStatus(handle, { sessionStatus: 'started', conversationStatus: 'idle' }, tabId, deps.sendToRenderer);
   }).catch((err: unknown) => {
     console.error(`[sessions] engine.start (restart) failed for tab ${tabId}:`, err);
+    setStatus(handle, { sessionStatus: 'error' }, tabId, deps.sendToRenderer);
   });
 }

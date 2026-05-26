@@ -29,6 +29,7 @@ function makeFakeEngine(opts?: {
 
   const engine: AgentEngine = {
     kind: 'claude',
+    applyExtendedPermissionMode: vi.fn(async () => {}),
     start: vi.fn(async () => {
       if (opts?.startReject) throw opts.startReject;
       if (opts?.delayMs) {

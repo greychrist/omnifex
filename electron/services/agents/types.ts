@@ -17,7 +17,17 @@ export interface AgentStartParams {
   configDir: string;
   model?: string;
   permissionMode?: string;
-  resumeSessionId?: string;
+  /**
+   * Stable UUID for the session. The caller mints this for cold-start
+   * sessions and reuses it across engine restarts. Pinned at spawn via
+   * the CLI's `--session-id` (cold) or `--resume` (warm) so the JSONL
+   * path is known up front and resume after stream-death keeps the same
+   * id. Required — we no longer wait for the CLI to emit one mid-turn.
+   */
+  sessionId: string;
+  /** True when sessionId points at an existing JSONL the CLI should
+   *  continue. False for fresh sessions. */
+  resume: boolean;
   allowedTools?: string[];
   /** Engine-specific extras. Claude reads its own keys; others ignore. */
   claude?: Record<string, unknown>;
@@ -73,6 +83,14 @@ export interface AgentEngine {
   readonly kind: AgentKind;
 
   start(params: AgentStartParams): Promise<void>;
+  /**
+   * Apply a permission mode that the CLI's argv parser doesn't accept
+   * (e.g. 'auto', 'dontAsk'). Called by lifecycle after `start()` resolves.
+   * No-op for modes already set via argv. Engine-specific because Codex's
+   * approval model is structured differently — kept off the cross-agent
+   * `sendControlRequest` to keep that interface protocol-agnostic.
+   */
+  applyExtendedPermissionMode(mode: string): Promise<void>;
   send(text: string): Promise<void>;
   /**
    * Send a structured user message with explicit content blocks (text +

@@ -20,6 +20,7 @@ export interface StreamEffectApi {
   sessionAccountInfo(tabId: string): Promise<unknown>;
   sessionContextUsage(tabId: string): Promise<unknown>;
   sessionSupportedModels(tabId: string): Promise<unknown[] | null>;
+  sessionSupportedCommands(tabId: string): Promise<unknown[] | null>;
 }
 
 export interface QueuedPrompt {
@@ -44,6 +45,7 @@ export interface StreamEffectDeps<Q extends QueuedPrompt = QueuedPrompt> {
   setSdkAccountInfo: (info: unknown) => void;
   setContextUsage: (usage: unknown) => void;
   setSupportedModels: (models: unknown[]) => void;
+  setSupportedCommands: (commands: unknown[]) => void;
   queuedPromptsRef: { current: Q[] };
   setQueuedPrompts: (next: Q[]) => void;
   handleSendPrompt: (prompt: string, model: string, images?: string[]) => void;
@@ -89,6 +91,15 @@ export function runStreamEffect<Q extends QueuedPrompt = QueuedPrompt>(
           if (models && models.length > 0) deps.setSupportedModels(models);
         })
         .catch((err: unknown) => { deps.onError('fetchSupportedModels', err); });
+      return;
+
+    case 'fetchSupportedCommands':
+      deps.api
+        .sessionSupportedCommands(deps.tabId)
+        .then((commands) => {
+          if (commands && commands.length > 0) deps.setSupportedCommands(commands);
+        })
+        .catch((err: unknown) => { deps.onError('fetchSupportedCommands', err); });
       return;
 
     case 'processQueuedPrompt': {

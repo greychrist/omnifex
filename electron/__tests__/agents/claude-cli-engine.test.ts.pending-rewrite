@@ -33,6 +33,10 @@ function makeFakeChild(): FakeChild {
   emitter.stdin = stdin;
   emitter.kill = vi.fn();
   emitter.pid = 12345;
+  // engine.start() awaits the OS-level 'spawn' event before resolving.
+  // Real spawn fires it on next tick; emulate that here so tests don't
+  // need to drive it manually.
+  setImmediate(() => emitter.emit('spawn'));
   return emitter;
 }
 
@@ -112,7 +116,7 @@ describe('ClaudeCliEngine', () => {
       const received: AgentMessageT[] = [];
       engine.onMessage((m) => received.push(m));
 
-      await engine.start({ projectPath: '/p', configDir: '/c' });
+      await engine.start({ projectPath: '/p', configDir: '/c', sessionId: 'test-sess', resume: false });
 
       fake.stdout.push(
         JSON.stringify({ type: 'system', subtype: 'init', session_id: 's1' }) + '\n',
@@ -139,7 +143,7 @@ describe('ClaudeCliEngine', () => {
       const received: AgentMessageT[] = [];
       engine.onMessage((m) => received.push(m));
 
-      await engine.start({ projectPath: '/p', configDir: '/c' });
+      await engine.start({ projectPath: '/p', configDir: '/c', sessionId: 'test-sess', resume: false });
 
       const full = JSON.stringify({ type: 'assistant', message: { id: 'm1' } });
       const halfway = Math.floor(full.length / 2);
@@ -162,7 +166,7 @@ describe('ClaudeCliEngine', () => {
         claudeBinaryPath: '/usr/local/bin/claude',
       });
 
-      await engine.start({ projectPath: '/p', configDir: '/c' });
+      await engine.start({ projectPath: '/p', configDir: '/c', sessionId: 'test-sess', resume: false });
       expect(engine.getResumeId()).toBeNull();
 
       fake.stdout.push(
@@ -195,7 +199,7 @@ describe('ClaudeCliEngine permission protocol', () => {
     const reqs: import('../../services/agents/types').AgentPermissionRequest[] = [];
     engine.onPermissionRequest((r) => reqs.push(r));
 
-    await engine.start({ projectPath: '/p', configDir: '/c' });
+    await engine.start({ projectPath: '/p', configDir: '/c', sessionId: 'test-sess', resume: false });
 
     fake.stdout.push(
       JSON.stringify({
@@ -231,7 +235,7 @@ describe('ClaudeCliEngine permission protocol', () => {
     engine.onMessage((m) => msgs.push(m));
     engine.onPermissionRequest(() => {});
 
-    await engine.start({ projectPath: '/p', configDir: '/c' });
+    await engine.start({ projectPath: '/p', configDir: '/c', sessionId: 'test-sess', resume: false });
     fake.stdout.push(
       JSON.stringify({
         type: 'control_request',
@@ -258,7 +262,7 @@ describe('ClaudeCliEngine permission protocol', () => {
     });
     const reqs: import('../../services/agents/types').AgentPermissionRequest[] = [];
     engine.onPermissionRequest((r) => reqs.push(r));
-    await engine.start({ projectPath: '/p', configDir: '/c' });
+    await engine.start({ projectPath: '/p', configDir: '/c', sessionId: 'test-sess', resume: false });
 
     fake.stdout.push(
       JSON.stringify({
@@ -299,7 +303,7 @@ describe('ClaudeCliEngine.getInitData', () => {
       tabId: 'tab-init',
       claudeBinaryPath: '/usr/local/bin/claude',
     });
-    await engine.start({ projectPath: '/p', configDir: '/c' });
+    await engine.start({ projectPath: '/p', configDir: '/c', sessionId: 'test-sess', resume: false });
 
     expect(engine.getInitData()).toBeNull();
 
@@ -337,7 +341,7 @@ describe('ClaudeCliEngine.sendControlRequest', () => {
       tabId: 'tab-ctrl',
       claudeBinaryPath: '/usr/local/bin/claude',
     });
-    await engine.start({ projectPath: '/p', configDir: '/c' });
+    await engine.start({ projectPath: '/p', configDir: '/c', sessionId: 'test-sess', resume: false });
 
     const pending = engine.sendControlRequest<{ ok: true }>('set_model', { model: 'sonnet' });
 
@@ -371,7 +375,7 @@ describe('ClaudeCliEngine.sendControlRequest', () => {
       tabId: 'tab-conc',
       claudeBinaryPath: '/usr/local/bin/claude',
     });
-    await engine.start({ projectPath: '/p', configDir: '/c' });
+    await engine.start({ projectPath: '/p', configDir: '/c', sessionId: 'test-sess', resume: false });
 
     const a = engine.sendControlRequest<{ tag: 'A' }>('get_a');
     const b = engine.sendControlRequest<{ tag: 'B' }>('get_b');
@@ -413,7 +417,7 @@ describe('ClaudeCliEngine.sendControlRequest', () => {
       tabId: 'tab-err',
       claudeBinaryPath: '/usr/local/bin/claude',
     });
-    await engine.start({ projectPath: '/p', configDir: '/c' });
+    await engine.start({ projectPath: '/p', configDir: '/c', sessionId: 'test-sess', resume: false });
 
     const pending = engine.sendControlRequest('mcp_status');
     // Pre-subscribe so the rejection produced when we push the error response
@@ -445,7 +449,7 @@ describe('ClaudeCliEngine.sendControlRequest', () => {
       tabId: 'tab-void',
       claudeBinaryPath: '/usr/local/bin/claude',
     });
-    await engine.start({ projectPath: '/p', configDir: '/c' });
+    await engine.start({ projectPath: '/p', configDir: '/c', sessionId: 'test-sess', resume: false });
 
     const pending = engine.sendControlRequest('interrupt');
     const sent = JSON.parse(fake.stdin._writes[0].trim());
@@ -477,7 +481,7 @@ describe('ClaudeCliEngine restart-on-stream-death', () => {
       claudeBinaryPath: '/usr/local/bin/claude',
     });
 
-    await engine.start({ projectPath: '/p', configDir: '/c' });
+    await engine.start({ projectPath: '/p', configDir: '/c', sessionId: 'test-sess', resume: false });
     first.stdout.push(
       JSON.stringify({ type: 'system', subtype: 'init', session_id: 'sess-rs' }) + '\n',
     );
@@ -511,7 +515,7 @@ describe('ClaudeCliEngine lifecycle callbacks', () => {
     });
     const exits: import('../../services/agents/types').AgentEngineExit[] = [];
     engine.onExit((info) => exits.push(info));
-    await engine.start({ projectPath: '/p', configDir: '/c' });
+    await engine.start({ projectPath: '/p', configDir: '/c', sessionId: 'test-sess', resume: false });
 
     fake.emit('exit', 0, null);
     await flushMicrotasks();
@@ -530,7 +534,7 @@ describe('ClaudeCliEngine lifecycle callbacks', () => {
     });
     const errs: Error[] = [];
     engine.onError((e) => errs.push(e));
-    await engine.start({ projectPath: '/p', configDir: '/c' });
+    await engine.start({ projectPath: '/p', configDir: '/c', sessionId: 'test-sess', resume: false });
 
     fake.stderr.push('connection refused\n');
     await flushMicrotasks();
@@ -546,7 +550,7 @@ describe('ClaudeCliEngine lifecycle callbacks', () => {
       tabId: 'tab-cls',
       claudeBinaryPath: '/usr/local/bin/claude',
     });
-    await engine.start({ projectPath: '/p', configDir: '/c' });
+    await engine.start({ projectPath: '/p', configDir: '/c', sessionId: 'test-sess', resume: false });
 
     await engine.close();
     await engine.close();
@@ -568,7 +572,7 @@ describe('ClaudeCliEngine.interrupt()', () => {
       tabId: 'tab-int',
       claudeBinaryPath: '/usr/local/bin/claude',
     });
-    await engine.start({ projectPath: '/p', configDir: '/c' });
+    await engine.start({ projectPath: '/p', configDir: '/c', sessionId: 'test-sess', resume: false });
 
     const pending = engine.interrupt();
 
@@ -601,7 +605,7 @@ describe('ClaudeCliEngine.send()', () => {
       tabId: 'tab-send',
       claudeBinaryPath: '/usr/local/bin/claude',
     });
-    await engine.start({ projectPath: '/p', configDir: '/c' });
+    await engine.start({ projectPath: '/p', configDir: '/c', sessionId: 'test-sess', resume: false });
 
     fake.stdout.push(
       JSON.stringify({ type: 'system', subtype: 'init', session_id: 'send-sess' }) +

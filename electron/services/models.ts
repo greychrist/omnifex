@@ -6,9 +6,9 @@
 
 import fs from 'node:fs';
 import os from 'node:os';
+import { randomUUID } from 'node:crypto';
 import { findBundledSdkBinaryAuto } from './claude-binary';
 import { createClaudeCliEngine } from './agents/claude-cli-engine';
-import type { Disposable, InitData } from './agents/types';
 
 export interface ModelInfo {
   /** Stable model identifier (e.g. "claude-sonnet-4-6"). */
@@ -59,35 +59,26 @@ export function createModelsService(opts: ModelsServiceOptions = {}): ModelsServ
       claudeBinaryPath: binaryPath,
     });
 
-    const initPromise = new Promise<InitData | null>((resolve) => {
-      let messageSub: Disposable | null = null;
-      let exitSub: Disposable | null = null;
-      const settle = (value: InitData | null): void => {
-        if (messageSub) messageSub.dispose();
-        if (exitSub) exitSub.dispose();
-        resolve(value);
-      };
-      messageSub = engine.onMessage(() => {
-        const data = engine.getInitData();
-        if (data) settle(data);
-      });
-      exitSub = engine.onExit(() => { settle(null); });
-    });
-
     try {
       // cwd is best-effort: anything readable will do — the CLI won't read
-      // the project on a never-prompted handshake. tmpdir is universal and
-      // doesn't leak the user's working directory into the request.
+      // the project on this handshake. tmpdir is universal and doesn't leak
+      // the user's working directory into the request.
       await engine.start({
         projectPath: os.tmpdir(),
         configDir,
+        sessionId: randomUUID(),
+        resume: false,
       });
 
-      const data = await Promise.race([
-        initPromise,
+      // Drive the SDK-equivalent `initialize` control_request to get the
+      // model catalog back. The CLI returns model/command/agent catalogs
+      // in the control_response — no need to send a user message and wait
+      // for system:init.
+      const resp = await Promise.race([
+        engine.sendControlRequest<{ models?: unknown[] }>('initialize'),
         new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs)),
       ]);
-      const models = data?.models;
+      const models = (resp as { models?: unknown[] } | null)?.models;
       return Array.isArray(models) ? (models as ModelInfo[]) : [];
     } catch (err) {
       console.error('[models] listSupported failed:', err);

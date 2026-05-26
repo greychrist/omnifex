@@ -2,7 +2,6 @@ import { useRef, useEffect, useState } from "react";
 import { api, type SessionMode, type SessionStatus, type ConversationStatus } from "@/lib/api";
 import type { ClaudeStreamMessage } from "@/types/claudeStream";
 import type { EffortLevel, ThinkingConfig } from "@/components/FloatingPromptInput";
-import { logAndForget } from "@/lib/fireAndLog";
 
 /** Filter out noisy stderr messages that aren't real errors. */
 function isIgnorableStderr(msg: string): boolean {
@@ -37,10 +36,14 @@ interface UseSessionLifecycleArgs {
   handleJsonlLine: (payload: string | object) => void;
   setIsLoading: React.Dispatch<React.SetStateAction<boolean>>;
   setMessages: React.Dispatch<React.SetStateAction<ClaudeStreamMessage[]>>;
-  setSdkAccountInfo: React.Dispatch<React.SetStateAction<import("@/lib/api").SessionAccountInfo | null>>;
-  setSupportedModels: React.Dispatch<React.SetStateAction<import("@/lib/api").SessionModelInfo[]>>;
-  setSupportedCommands: React.Dispatch<React.SetStateAction<import("@/lib/api").SessionSlashCommand[]>>;
-  setContextUsage: React.Dispatch<React.SetStateAction<import("@/lib/api").SessionContextUsage | null>>;
+  /**
+   * Called when the main process emits `session-init:<tabId>` — i.e. the
+   * CLI subprocess has been spawned and a pinned sessionId is known. Fires
+   * before any `claude-output:` message arrives, so the renderer can seed
+   * claudeSessionId / extractedSessionInfo (and unlock UI gated on them)
+   * without waiting for the CLI's eventual `system:init` stream message.
+   */
+  onSessionInit: (sessionId: string) => void;
 }
 
 interface UseSessionLifecycleReturn {
@@ -89,10 +92,7 @@ export function useSessionLifecycle({
   handleJsonlLine,
   setIsLoading,
   setMessages,
-  setSdkAccountInfo,
-  setSupportedModels,
-  setSupportedCommands,
-  setContextUsage,
+  onSessionInit,
 }: UseSessionLifecycleArgs): UseSessionLifecycleReturn {
   const unlistenRefs = useRef<(() => void)[]>([]);
   const isMountedRef = useRef(true);
@@ -115,17 +115,27 @@ export function useSessionLifecycle({
     unlistenRefs.current.forEach((u) => { u(); });
     unlistenRefs.current = [];
 
+    // eslint-disable-next-line no-console -- diagnostic during phase-a debug
+    console.log('[DIAG attach]', tabId, 'channels=', [
+      `claude-output:${tabId}`,
+      `session-status:${tabId}`,
+      `session-init:${tabId}`,
+    ]);
     const outputUnlisten = window.electronAPI.onEvent(
       `claude-output:${tabId}`,
-      (...args: unknown[]) => { handleJsonlLine(args[0] as string | object); },
+      (...args: unknown[]) => {
+        // eslint-disable-next-line no-console -- diagnostic
+        console.log('[DIAG recv claude-output]', tabId, (args[0] as any)?.type, (args[0] as any)?.subtype);
+        handleJsonlLine(args[0] as string | object);
+      },
     );
 
     // Closure carriers (queue-operation enqueue with <task-notification>,
-    // attachment queued_command with the same) that the SDK iterator
-    // doesn't yield. The main-process JSONL tail surfaces them on this
-    // separate channel so the renderer can apply them to the same message
-    // array — `deriveSubagents` then folds them through `applyEvents`
-    // identically to JSONL replay.
+    // attachment queued_command with the same) that the CLI stream-json
+    // output may not surface. The main-process JSONL tail surfaces them on
+    // this separate channel so the renderer can apply them to the same
+    // message array — `deriveSubagents` then folds them through
+    // `applyEvents` identically to JSONL replay.
     const outputExtraUnlisten = window.electronAPI.onEvent(
       `claude-output-extra:${tabId}`,
       (payload: unknown) => { handleJsonlLine(payload as string | object); },
@@ -158,6 +168,8 @@ export function useSessionLifecycle({
     const statusUnlisten = window.electronAPI.onEvent(
       `session-status:${tabId}`,
       (...args: unknown[]) => {
+        // eslint-disable-next-line no-console -- diagnostic
+        console.log('[DIAG recv session-status]', tabId, args[0]);
         if (!isMountedRef.current) return;
         const payload = args[0] as {
           sessionStatus?: SessionStatus;
@@ -174,130 +186,30 @@ export function useSessionLifecycle({
       },
     );
 
-    unlistenRefs.current = [outputUnlisten, outputExtraUnlisten, errorUnlisten, completeUnlisten, statusUnlisten];
-  };
-
-  // Standard tool names — Claude Code's always-on tools. Merged with MCP
-  // tool names in fetchInitInfo once the SDK reports MCP server status.
-  const STANDARD_TOOLS = [
-    "Task", "AskUserQuestion", "Bash", "CronCreate", "CronList", "Edit",
-    "EnterPlanMode", "EnterWorktree", "ExitPlanMode", "ExitWorktree", "Glob",
-    "Grep", "ListMcpResourcesTool", "LSP", "Monitor", "NotebookEdit",
-    "NotebookRead", "Read", "ReadMcpResourceTool", "RemoteTrigger",
-    "ScheduleWakeup", "SendMessage", "Skill",
-    "TaskCreate", "TaskGet", "TaskList", "TaskOutput", "TaskStop", "TaskUpdate",
-    "TeamCreate", "TeamDelete", "TodoRead", "TodoWrite", "Toolbox", "WebFetch",
-    "WebSearch", "Write",
-  ];
-
-  // Enrich the SDK's real `system:init` message with MCP tool names once
-  // they're known. No-op if the real init hasn't arrived yet — we never
-  // insert a synthetic placeholder, so an empty chat means the SDK hasn't
-  // yielded init (see docs/session-lifecycle.md). Preserves session_id and
-  // every other field on the real init; only the `tools` list changes.
-  const enrichInitTools = (tools: string[]) => {
-    setMessages((prev) => {
-      const idx = prev.findIndex(
-        (m) => m.type === "system" && (m as any).subtype === "init",
-      );
-      if (idx < 0) return prev;
-      const next = [...prev];
-      next[idx] = { ...next[idx], tools } as any;
-      return next;
-    });
-  };
-
-  // SDK MCP server statuses we treat as terminal — once every server is in
-  // one of these we stop re-polling. `pending` is the only non-terminal
-  // status under SDK 0.3.x, which connects slow MCP servers in the
-  // background; if we stopped on first response we'd miss tools from any
-  // server still warming up.
-  const TERMINAL_MCP_STATUSES: ReadonlySet<string> = new Set([
-    "connected", "failed", "needs-auth", "disabled",
-  ]);
-
-  const computeMcpToolNames = (mcpServers: import("@/lib/api").SessionMcpServerStatus[]): string[] =>
-    mcpServers
-      .filter((s) => s.status === "connected")
-      .flatMap((s) =>
-        (s.tools || []).map(
-          (t) => `mcp__${s.name.replace(/[^a-zA-Z0-9]/g, "_")}__${t.name}`,
-        ),
-      );
-
-  // Fetch SDK-derived metadata (account info, supported models/commands, MCP
-  // tool list, context usage) once the CLI subprocess is responsive on its
-  // control channel. Claude Code's CLI doesn't answer control queries until
-  // after it has processed a first stdin message, so this polls indefinitely
-  // (bounded only by component unmount via isMountedRef). Flips the session
-  // status badge from 'Starting…' to 'Active' the moment the first response
-  // lands so the UI matches reality.
-  const fetchInitInfo = async () => {
-    // Phase 1: poll sessionAccountInfo until the control channel answers.
-    let info: import("@/lib/api").SessionAccountInfo | null = null;
-    while (isMountedRef.current && !info) {
-      try {
-        info = await Promise.race([
-          api.sessionAccountInfo(tabId),
-          new Promise<null>((resolve) => setTimeout(() => { resolve(null); }, 2000)),
-        ]);
-      } catch {
-        /* subprocess not ready yet */
-      }
-      if (!info) {
+    // `session-init:<tabId>` carries the pinned sessionId the moment the
+    // CLI subprocess is alive — before any stream message arrives. Lets
+    // the component seed claudeSessionId / extractedSessionInfo and unlock
+    // UI gated on them (mode toggle, model picker, persistence) without
+    // waiting for the CLI's mid-first-turn `system:init`.
+    const initUnlisten = window.electronAPI.onEvent(
+      `session-init:${tabId}`,
+      (...args: unknown[]) => {
+        // eslint-disable-next-line no-console -- diagnostic
+        console.log('[DIAG recv session-init]', tabId, args[0]);
         if (!isMountedRef.current) return;
-        await new Promise((r) => setTimeout(r, 1500));
-      }
-    }
-    if (!info) return;
-
-    setSdkAccountInfo(info);
-    // Control-channel readiness is a real readiness signal. The SDK answers
-    // sessionAccountInfo above before the streamed `system:init` arrives, so
-    // flip the connection axis here so the badge reaches 'Active' without
-    // waiting for the first user prompt. claudeSessionId stays null until
-    // the SDK streams its real system:init (post-prompt) — see
-    // `docs/session-lifecycle.md`. SDK 0.3.150's control-channel
-    // `initializationResult` response does not carry a session_id, so
-    // there's nothing to surface pre-prompt without pinning a UUID.
-    setSessionStatus('started');
-    setConversationStatus((prev) =>
-      prev === 'running' || prev === 'waiting_permission' ? prev : 'idle',
+        const payload = args[0] as { sessionId?: string } | undefined;
+        if (payload?.sessionId) onSessionInit(payload.sessionId);
+      },
     );
 
-    // Phase 2: fetch the one-shot enrichment data (models, commands,
-    // context usage) once.
-    const [models, ctxUsage, commands] = await Promise.all([
-      api.sessionSupportedModels(tabId).catch(() => []),
-      api.sessionContextUsage(tabId).catch(() => null),
-      api.sessionSupportedCommands(tabId).catch((err: unknown) => {
-        console.error('[fetchInitInfo] supportedCommands call failed:', err);
-        return [];
-      }),
-    ]);
-    if (models?.length) setSupportedModels(models);
-    if (commands?.length) setSupportedCommands(commands);
-    if (ctxUsage) setContextUsage(ctxUsage);
-
-    // Phase 3: poll mcpServerStatus until every server reaches a terminal
-    // state. Under SDK 0.3.x slow servers report `status: 'pending'` from
-    // the first init response until they finish their background connect.
-    // Each successful poll re-upserts the init message so freshly-connected
-    // tools appear without waiting for the rest.
-    while (isMountedRef.current) {
-      let mcpServers: import("@/lib/api").SessionMcpServerStatus[] | null = null;
-      try {
-        mcpServers = await api.sessionMcpServerStatus(tabId);
-      } catch {
-        /* transient — keep polling */
-      }
-      if (mcpServers) {
-        enrichInitTools([...STANDARD_TOOLS, ...computeMcpToolNames(mcpServers)]);
-        if (mcpServers.every((s) => TERMINAL_MCP_STATUSES.has(s.status))) return;
-      }
-      if (!isMountedRef.current) return;
-      await new Promise((r) => setTimeout(r, 1500));
-    }
+    unlistenRefs.current = [
+      outputUnlisten,
+      outputExtraUnlisten,
+      errorUnlisten,
+      completeUnlisten,
+      statusUnlisten,
+      initUnlisten,
+    ];
   };
 
   const rebindPersistentSession = async (): Promise<boolean> => {
@@ -322,15 +234,12 @@ export function useSessionLifecycle({
       setConversationStatus(
         health.sessionStatus === 'started' ? health.conversationStatus : null,
       );
+      // Re-seed claudeSessionId on rebind — the renderer just reloaded and
+      // may have lost it. The main process still holds the pinned id.
+      if (health.sessionId) onSessionInit(health.sessionId);
     }).catch((err: unknown) => {
       console.warn('[rebindPersistentSession] sessionGetHealth failed:', err);
     });
-    // See startPersistentSession: skip SDK control-channel polling for TUI
-    // sessions — handle.query is null there and the polling would never
-    // resolve.
-    if (sessionStartMode !== 'tui') {
-      logAndForget('use-session-lifecycle:fetch-init-info', fetchInitInfo());
-    }
     return true;
   };
 
@@ -399,8 +308,8 @@ export function useSessionLifecycle({
       );
       // No state flips here. Main process owns lifecycle status and emits
       // `session-status:<tabId>` events; ClaudeCodeSession subscribes.
-      // GUID arrives via `system:init` on `claude-output:<tabId>` and
-      // flows through the reducer to claudeSessionId.
+      // sessionId arrives via `session-init:<tabId>` the moment the
+      // subprocess spawns, so claudeSessionId is seeded immediately.
     } catch (err) {
       // Surface session-start failures to the user. The most common cause
       // is "no account resolved for this project path" (configDir is
@@ -427,21 +336,12 @@ export function useSessionLifecycle({
       ]);
       throw err; // Bubble so the caller's .catch logger still fires.
     }
-    // persistentSessionRef was claimed synchronously above. Session status
-    // is owned by the main process and flips to 'started' on the SDK's
-    // first system:init. We deliberately do NOT render a placeholder init
-    // here — an empty chat is the honest UI for "session not yet alive."
-    // If the chat stays empty, the SDK iterator hasn't yielded init yet
-    // (see docs/session-lifecycle.md).
-
-    // Enrich the SDK's init message with MCP tools as soon as the
-    // control channel starts responding. Skipped for TUI mode — TUI
-    // sessions have no SDK Query, so accountInfo()/mcpServerStatus()
-    // would return null forever and the polling loop would spin every
-    // 1.5s until tab close. TUI metadata comes from JSONL instead.
-    if (sessionStartMode !== 'tui') {
-      logAndForget('use-session-lifecycle:fetch-init-info', fetchInitInfo());
-    }
+    // persistentSessionRef was claimed synchronously above. The main
+    // process emits `session-status: started/idle` and `session-init`
+    // (with the pinned sessionId) the moment the CLI subprocess is alive,
+    // so the badge and claudeSessionId both update without any renderer-
+    // side polling. Account / models / commands flow through the reducer
+    // when the CLI emits its real `system:init` mid-first-turn.
   };
 
   // Cleanup event listeners and track mount state

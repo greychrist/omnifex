@@ -32,6 +32,7 @@ export type StreamReducerEffect =
   | { kind: 'refreshContextUsage' }
   | { kind: 'fetchAccountInfo' }
   | { kind: 'fetchSupportedModels' }
+  | { kind: 'fetchSupportedCommands' }
   | {
       kind: 'saveSessionPersistence';
       sessionId: string;
@@ -376,6 +377,7 @@ export function reduceSessionStreamMessage(
       effects.push({ kind: 'fetchAccountInfo' });
       effects.push({ kind: 'refreshContextUsage' });
       effects.push({ kind: 'fetchSupportedModels' });
+      effects.push({ kind: 'fetchSupportedCommands' });
     }
 
     result.append = ctx.hasExistingInit ? 'skip' : 'insertBeforeFirstUser';

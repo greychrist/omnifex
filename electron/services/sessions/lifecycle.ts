@@ -157,9 +157,19 @@ export function createSessionsService(
 
     const engine = createClaudeCliEngine({ tabId, claudeBinaryPath: binaryPath });
 
-    // sessionId starts null for cold-start (set on the engine's first
-    // system:init) and seeded from resumeSessionId for resume (so
-    // consumers like setMode('tui') don't have to wait for the echo).
+    // CLI sessions are identified by a UUID pinned at spawn. For cold-start
+    // we mint a fresh one; for resume we reuse the caller's id. JSONL path
+    // is known up front either way.
+    const sessionId = params.resumeSessionId ?? randomUUID();
+    const resume = !!params.resumeSessionId;
+
+    // The CLI is ready to accept stdin the moment we spawn it — there is
+    // no application-level "ready" handshake in stream-json mode. We
+    // construct the handle in the 'started' state from the start; any
+    // spawn failure flips us to 'error' via engine.onError / onExit
+    // (wired by listenToMessages). This is honest about the CLI's actual
+    // model and unblocks the renderer immediately so `claude-output:`
+    // events have a place to land.
     const handle: SessionHandle = {
       engine,
       initData: null,
@@ -170,9 +180,9 @@ export function createSessionsService(
         model: params.model,
         permissionMode: params.permissionMode,
       },
-      sessionId: params.resumeSessionId ?? null,
-      sessionStatus: 'starting',
-      conversationStatus: null,
+      sessionId,
+      sessionStatus: 'started',
+      conversationStatus: 'idle',
       mode: 'rich',
       tui: null,
       tuiDetach: null,
@@ -185,34 +195,61 @@ export function createSessionsService(
     };
 
     sessions.set(tabId, handle);
+    // Register tab ownership BEFORE any message can route through
+    // `claude-output:<tabId>` — without this the routing table drops
+    // tab-scoped events on the floor.
     if (params.ownerWebContentsId !== undefined) {
       ownership?.register(tabId, params.ownerWebContentsId);
     }
 
-    // Wire permission-request handler before start so the very first
-    // can_use_tool from the CLI lands in the queue.
+    // Wire permission-request handler + runtime message subscribers
+    // before spawning so the very first message lands somewhere.
     engine.onPermissionRequest(
       createPermissionRequestHandler(handle, tabId, sendToRenderer, notificationHooks, logging),
     );
-
-    // Subscribe runtime listeners (onMessage / onError / onExit).
     listenToMessages(tabId, handle, runtimeDeps).catch((err: unknown) => {
       console.error(`[sessions] Unhandled error in listenToMessages for tab ${tabId}:`, err);
     });
 
-    // Renderer status: 'starting'. Runtime flips to started+idle on the
-    // first system:init message from the engine.
+    // Tell the renderer we're live. This must broadcast BEFORE the engine
+    // can produce messages so the renderer's session state is in
+    // 'started' when claude-output:<tabId> events arrive.
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      require('node:fs').appendFileSync('/tmp/omnifex-engine.log',
+        `${new Date().toISOString()} [${tabId}] EMIT session-status started/idle + session-init ${sessionId}\n`);
+    } catch { /* ignore */ }
     sendToRenderer(`session-status:${tabId}`, {
-      sessionStatus: 'starting',
-      conversationStatus: null,
+      sessionStatus: 'started',
+      conversationStatus: 'idle',
+    });
+    // Push the pinned sessionId immediately so the renderer can seed
+    // claudeSessionId without waiting for the CLI's `system:init` (which
+    // only arrives mid-first-turn in stream-json mode). Anything the UI
+    // gates on claudeSessionId — mode toggle, model picker, persistence —
+    // becomes interactive the moment the user clicks Start.
+    sendToRenderer(`session-init:${tabId}`, {
+      sessionId,
+      projectPath,
     });
 
+    // Spawn the CLI. Fire-and-forget — failures route through engine.onError
+    // and engine.onExit, which the runtime translates into sessionStatus
+    // transitions + error notifications.
     void engine.start({
       projectPath,
       configDir,
       model: params.model,
       permissionMode: params.permissionMode,
-      resumeSessionId: params.resumeSessionId,
+      sessionId,
+      resume,
+    }).then(async () => {
+      if (sessions.get(tabId) !== handle) return;
+      // Apply OmniFex-extended permission modes ('auto', 'dontAsk') the
+      // CLI's argv parser doesn't accept. No-op for argv-valid modes.
+      if (params.permissionMode) {
+        await engine.applyExtendedPermissionMode(params.permissionMode);
+      }
     }).catch((err: unknown) => {
       if (sessions.get(tabId) !== handle) return;
       setStatus(handle, { sessionStatus: 'error' }, tabId, sendToRenderer);
