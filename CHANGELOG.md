@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.63] — 2026-05-26
+
+Tiny follow-up. The "you have N sessions still working" warning on the upgrade button now stays visible across the `ready` state too, so the visual cue isn't lost at the exact moment you're about to click Install.
+
+Installers remain **unsigned**.
+
+### Fixed
+
+- **Active-sessions warning visible on 'Install Update'** (`a3a6b30`). The amber "N active — Install Anyway" treatment (AlertCircle + label) was only wired for the `available` update state. Once the download finished and the button flipped to `ready`, the warning vanished — the user lost the cue right before clicking. The `ready` state now mirrors the same warning chrome when `activeSessions > 0`. `runInstall` already auto-sets `force=true` when active sessions exist, so behaviour is unchanged; this just preserves the visible warning through `available → downloading → ready` if sessions remain busy.
+
 ## [0.4.62] — 2026-05-26
 
 Terminal-mode polish. The TUI gets its own card matching the rendered-chat surface (border + scroll-to-top/bottom buttons), Settings → Chats grows a Terminal tab with font / size / cursor-style pickers, the floating message box now injects into the TUI's PTY in Terminal mode, the Appearance settings page is tabbed (line variant) instead of a long scroll, and `conversationStatus` is derived from the transcript instead of being flipped by every CLI event.
