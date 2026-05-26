@@ -97,6 +97,13 @@ export interface RealResultRaw extends RawLineBase {
   stop_reason?: string | null;
 }
 
+export type UserKind =
+  | 'prompt'
+  | 'tool-result'
+  | 'meta-skill'
+  | 'meta-attachment'
+  | 'meta-other';
+
 export type SystemSubtype =
   | 'init'
   | 'notification'
@@ -146,8 +153,9 @@ export interface UsageShape {
 export type JsonlNode =
   // Conversation content (persisted to JSONL)
   | { kind: 'assistant'; raw: AssistantRaw; sessionId: string; receivedAt: string }
-  | { kind: 'user'; raw: UserRaw; sessionId: string; receivedAt: string; userKind: 'prompt' | 'tool-result' }
+  | { kind: 'user'; raw: UserRaw; sessionId: string; receivedAt: string; userKind: UserKind }
   | { kind: 'attachment'; raw: AttachmentRaw; sessionId: string; receivedAt: string }
+  | { kind: 'unknown'; raw: Record<string, unknown>; sessionId: string; receivedAt: string }
   // Closure carriers (background-bash plumbing)
   | { kind: 'queue-operation'; raw: QueueOpRaw; sessionId: string; receivedAt: string }
   // CLI bookkeeping (TUI-only in practice)
