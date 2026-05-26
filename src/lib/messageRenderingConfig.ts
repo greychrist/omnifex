@@ -763,6 +763,22 @@ export const DEFAULT_DEBUG: DebugOptions = {
   showCardKindLabel: false,
 };
 
+// ─── terminal ───────────────────────────────────────────────────────────────
+//
+// Settings specific to the xterm surface in TUI mode. Lives next to typography
+// because both are user-facing presentation knobs and they share the same
+// import/export config blob — but the terminal lives in its own section to
+// avoid coupling to message-card structure that doesn't apply.
+
+export interface Terminal {
+  /** Catalog typeface ID. Mono fonts only — the picker filters to family='mono'. */
+  typeface: Typeface;
+}
+
+export const DEFAULT_TERMINAL: Terminal = {
+  typeface: "jetbrains-mono",
+};
+
 // ─── top-level config ───────────────────────────────────────────────────────
 
 export interface MessageRenderingConfig {
@@ -772,6 +788,7 @@ export interface MessageRenderingConfig {
   kinds: MessageKindsById;
   hardFilters: HardFilters;
   typography: Typography;
+  terminal: Terminal;
   debug: DebugOptions;
 }
 
@@ -785,6 +802,7 @@ export function createDefaultConfig(): MessageRenderingConfig {
     kinds,
     hardFilters: { ...DEFAULT_HARD_FILTERS },
     typography: structuredClone(DEFAULT_TYPOGRAPHY),
+    terminal: { ...DEFAULT_TERMINAL },
     debug: { ...DEFAULT_DEBUG },
   };
 }
@@ -928,6 +946,16 @@ export function mergeConfig(saved: unknown): MessageRenderingConfig {
           ? d.showCardKindLabel
           : base.debug.showCardKindLabel,
     };
+  }
+
+  if (isRecord(saved.terminal)) {
+    const t = saved.terminal;
+    if (isTypefaceId(t.typeface)) {
+      base.terminal = { typeface: t.typeface };
+    }
+    // Unknown / missing typeface → leave the default in place. No partial-shape
+    // merging here yet — Terminal is a single-key record; expand when it gains
+    // more fields.
   }
 
   return base;

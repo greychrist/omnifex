@@ -15,6 +15,13 @@ interface TypefacePickerProps {
   label?: string;
   value: Typeface;
   onChange: (next: Typeface) => void;
+  /**
+   * Restrict the dropdown to the given family tags. Use this for surfaces
+   * where the choice is semantically constrained — e.g. the terminal picker
+   * passes `['mono']` because non-mono fonts break xterm's column grid.
+   * Defaults to every family (all groups visible).
+   */
+  families?: readonly FamilyTag[];
 }
 
 const GROUP_ORDER: { tag: FamilyTag; label: string }[] = [
@@ -29,7 +36,11 @@ export const TypefacePicker: React.FC<TypefacePickerProps> = ({
   label = "Font",
   value,
   onChange,
+  families,
 }) => {
+  const visibleGroups = families
+    ? GROUP_ORDER.filter((g) => families.includes(g.tag))
+    : GROUP_ORDER;
   return (
     <div>
       <Label className="mb-1 block text-caption">{label}</Label>
@@ -38,7 +49,7 @@ export const TypefacePicker: React.FC<TypefacePickerProps> = ({
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          {GROUP_ORDER.map((group) => {
+          {visibleGroups.map((group) => {
             const items = TYPEFACE_CATALOG.filter((t) => t.family === group.tag);
             if (items.length === 0) return null;
             return (

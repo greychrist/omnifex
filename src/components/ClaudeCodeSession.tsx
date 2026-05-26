@@ -51,6 +51,8 @@ import { maybeAutoGenerateSummaryOnLeave } from "@/lib/sessionSummaryGate";
 import { SessionModeToggle } from "./SessionModeToggle";
 import { SessionViewToggle, type ViewMode } from "./SessionViewToggle";
 import { TuiSessionLayout } from './TuiSessionLayout';
+import { createTuiPromptHandler } from '@/lib/tuiPromptHandler';
+import { deriveConversationStatus } from '@/lib/deriveConversationStatus';
 import { HiddenEventsGroup } from "./HiddenEventsGroup";
 import { buildCompactItems } from "@/lib/compactGrouping";
 import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
@@ -1084,7 +1086,11 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     startPersistentSession,
     rebindPersistentSession,
     sessionStatus,
-    conversationStatus,
+    // conversationStatus from the hook is no longer trusted — it was
+    // event-driven (`turn` events from the runtime), which flipped
+    // `running` on incidental messages. The renderer derives it locally
+    // below from the same three signals the inspector already shows.
+    conversationStatus: _hookConversationStatus,
     resetStatus,
   } = useSessionLifecycle({
     tabId: tabIdRef.current,
@@ -1128,21 +1134,21 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   // so this single check covers all cases without a one-frame flash.
   const sessionStarted = sessionStatus !== 'stopped';
 
-  // Canonical in-flight predicate. See docs/session-lifecycle.md.
-  // 'working' iff:
-  //  - conversationStatus is non-null and non-idle (mid-turn or paused on
-  //    a permission prompt), OR
-  //  - any subagent is running, OR
-  //  - any task is in_progress.
-  // isLoading is the renderer's local mirror of "user submitted, waiting on
-  // first SDK echo." Including it as well prevents a frame of "ready" in
-  // the brief window between submit and the SDK acknowledging it.
+  // conversationStatus is derived, not stored. Three inputs, AND'd to
+  // idle: (1) the transcript ends in an execution-complete row, (2) no
+  // tasks are in progress, (3) no subagents are running. Anything else
+  // is 'running'. See `src/lib/deriveConversationStatus.ts` and
+  // `docs/session-lifecycle.md`.
+  const conversationStatus = deriveConversationStatus({
+    sessionStatus,
+    messages,
+    hasIncompleteTasks: taskListSummary.running,
+    hasIncompleteSubagents: activeSubagentCount > 0,
+  });
   const isConversationInFlight =
     conversationStatus !== null && conversationStatus !== 'idle';
   const promptStatus: 'working' | 'ready' =
-    isLoading || isConversationInFlight || activeSubagentCount > 0 || taskListSummary.running
-      ? 'working'
-      : 'ready';
+    isConversationInFlight ? 'working' : 'ready';
   const lastPromptStatusRef = useRef<'working' | 'ready' | null>(null);
   useEffect(() => {
     if (lastPromptStatusRef.current === promptStatus) return;
@@ -2136,7 +2142,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
               left={
                 <div className="h-full flex flex-col">
                   {sessionMode === 'tui' ? (
-                    <TuiSessionLayout tabId={tabIdRef.current} messagesView={messagesList} />
+                    <TuiSessionLayout tabId={tabIdRef.current} />
                   ) : (
                     messagesList
                   )}
@@ -2161,7 +2167,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             // Original layout when no preview
             <div className="h-full flex flex-col">
               {sessionMode === 'tui' ? (
-                <TuiSessionLayout tabId={tabIdRef.current} messagesView={messagesList} />
+                <TuiSessionLayout tabId={tabIdRef.current} />
               ) : (
                 messagesList
               )}
@@ -2314,7 +2320,16 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             />
             <FloatingPromptInput
               ref={floatingPromptRef}
-              onSend={fireAndLog('claude-code-session:send', handleSendPrompt)}
+              // In TUI mode, route the prompt straight into the CLI's PTY —
+              // identical to the user typing it into xterm and pressing
+              // Enter. The rich-mode handleSendPrompt path uses the engine's
+              // stream-json stdin, which the TUI subprocess isn't listening
+              // on. See src/lib/tuiPromptHandler.ts.
+              onSend={
+                sessionMode === 'tui'
+                  ? fireAndLog('claude-code-session:send-tui', createTuiPromptHandler(tabIdRef.current))
+                  : fireAndLog('claude-code-session:send', handleSendPrompt)
+              }
               onCancel={fireAndLog('claude-code-session:cancel', handleCancelExecution)}
               isLoading={isLoading}
               disabled={!projectPath}

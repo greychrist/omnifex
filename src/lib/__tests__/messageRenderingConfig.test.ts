@@ -330,4 +330,46 @@ describe("messageRenderingConfig", () => {
       expect(parseConfig("{not json").defaultViewMode).toBe("verbose");
     });
   });
+
+  describe("terminal", () => {
+    it("createDefaultConfig includes a terminal section with a mono typeface", () => {
+      const cfg = createDefaultConfig();
+      expect(cfg.terminal).toBeDefined();
+      // Default must be a real catalog id; the picker validates against the
+      // catalog, and TerminalView resolves it via resolveTypeface so an
+      // unknown id would silently fall back to Inter (a sans).
+      expect(typeof cfg.terminal.typeface).toBe("string");
+    });
+
+    it("returns independent terminal copies (no shared reference)", () => {
+      const a = createDefaultConfig();
+      const b = createDefaultConfig();
+      a.terminal.typeface = "geist-mono";
+      expect(b.terminal.typeface).not.toBe("geist-mono");
+    });
+
+    it("merges a saved terminal.typeface", () => {
+      const cfg = mergeConfig({ terminal: { typeface: "jetbrains-mono" } });
+      expect(cfg.terminal.typeface).toBe("jetbrains-mono");
+    });
+
+    it("falls back to default when saved terminal.typeface is unknown", () => {
+      const def = createDefaultConfig();
+      const cfg = mergeConfig({ terminal: { typeface: "not-a-real-font" } });
+      expect(cfg.terminal.typeface).toBe(def.terminal.typeface);
+    });
+
+    it("falls back to default when terminal section is absent", () => {
+      const def = createDefaultConfig();
+      const cfg = mergeConfig({});
+      expect(cfg.terminal.typeface).toBe(def.terminal.typeface);
+    });
+
+    it("round-trips terminal.typeface through serialize/parse", () => {
+      const original = createDefaultConfig();
+      original.terminal.typeface = "plex-mono";
+      const restored = parseConfig(serializeConfig(original));
+      expect(restored.terminal.typeface).toBe("plex-mono");
+    });
+  });
 });

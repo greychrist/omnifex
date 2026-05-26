@@ -1,127 +1,68 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import { MessageSquare } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { TerminalView } from './TerminalView';
-import { SplitPane } from '@/components/ui/split-pane';
+import { useCallback, useRef } from 'react';
+import { ChevronUp, ChevronDown } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { TooltipSimple } from '@/components/ui/tooltip-modern';
+import { TerminalView, type TerminalViewHandle } from './TerminalView';
 
 interface TuiSessionLayoutProps {
   tabId: string;
-  messagesView: ReactNode;
-}
-
-const SPLIT_STORAGE_KEY = 'omnifex:tui-split-position';
-const DEFAULT_SPLIT = 40; // terminal 40%, panel 60% — panel is primary read surface
-
-// Rendered-chat visibility is intentionally NOT persisted: every time the
-// user enters TUI mode they get the terminal full-screen, which is what
-// they asked for when they switched modes. Restoring a prior "shown" state
-// across mode-toggles surprised users who treat the mode switch itself as
-// a request to hide chat. The chat-bubble toggle still works within a
-// single mount.
-
-interface TerminalPaneProps {
-  tabId: string;
-  showRendered: boolean;
-  onToggle: () => void;
 }
 
 /**
- * Terminal pane with the rendered-chat toggle overlaid in its own
- * top-right corner. Living inside the terminal pane (not the outer
- * layout) means the affordance always reads as "an action on the TUI
- * side", and avoids colliding with the SessionInspector toggle that
- * lives at top-right of the parent content area.
- */
-function TerminalPane({ tabId, showRendered, onToggle }: TerminalPaneProps) {
-  return (
-    <div className="relative h-full w-full">
-      <TerminalView tabId={tabId} />
-      <button
-        type="button"
-        onClick={onToggle}
-        className={cn(
-          'absolute top-2 right-2 z-20 rounded p-1.5 bg-background/80 backdrop-blur border border-border hover:bg-muted transition-colors shadow-sm',
-          // When chat is showing, the icon reads as "active" so the user
-          // can tell at a glance which mode they're in without reading the
-          // tooltip; when hidden it stays muted, matching the other
-          // floating affordances on this surface.
-          showRendered
-            ? 'text-primary border-primary/40'
-            : 'text-muted-foreground hover:text-foreground',
-        )}
-        title={showRendered ? 'Hide rendered chat' : 'Show rendered chat'}
-        aria-label={showRendered ? 'Hide rendered chat' : 'Show rendered chat'}
-      >
-        <MessageSquare className="w-4 h-4" />
-      </button>
-    </div>
-  );
-}
-
-/**
- * Resizable horizontal split for TUI-mode sessions. Terminal (left) handles
- * all interactive CLI state — permission prompts, slash commands, typing.
- * The messagesView (right) is the SDK-mode messagesList; same renderer,
- * same styling. The user can drag the divider to adjust; their preference
- * persists across sessions via localStorage.
+ * Single-pane TUI layout. Houses the xterm terminal inside the same card
+ * chrome the rendered chat (`messagesList` in `ClaudeCodeSession.tsx`) uses
+ * — muted outer wrapper, bordered rounded card, scroll-to-top / scroll-to-
+ * bottom buttons in the bottom-right corner. The Session Inspector toggle
+ * floats above this card from `ClaudeCodeSession`'s Main Content Area, so
+ * the top-right slot stays clear for it.
  *
- * The right pane is also toggleable via the icon overlaid on the terminal
- * — collapsing it gives the terminal full width, and the same icon opens
- * it back up. Visibility persists per-user via localStorage.
+ * There is no rendered-chat side-by-side here anymore: the user toggles to
+ * Chat mode for that surface. Keeping both visible at once was duplicating
+ * the transcript and feeding the wrong signal into the in-flight rollup
+ * (replayed JSONL `turn`-classified rows flipped conversationStatus).
  */
-export function TuiSessionLayout({ tabId, messagesView }: TuiSessionLayoutProps) {
-  const [splitPosition, setSplitPosition] = useState<number>(() => {
-    try {
-      const raw = localStorage.getItem(SPLIT_STORAGE_KEY);
-      if (raw === null) return DEFAULT_SPLIT;
-      const parsed = Number.parseFloat(raw);
-      if (!Number.isFinite(parsed) || parsed < 10 || parsed > 90) return DEFAULT_SPLIT;
-      return parsed;
-    } catch {
-      return DEFAULT_SPLIT;
-    }
-  });
+export function TuiSessionLayout({ tabId }: TuiSessionLayoutProps) {
+  const terminalRef = useRef<TerminalViewHandle>(null);
 
-  const [showRendered, setShowRendered] = useState<boolean>(false);
-
-  const onSplitChange = useCallback((next: number) => {
-    setSplitPosition(next);
+  const handleScrollToTop = useCallback(() => {
+    terminalRef.current?.scrollToTop();
   }, []);
 
-  const onToggleRendered = useCallback(() => {
-    setShowRendered((prev) => !prev);
+  const handleScrollToBottom = useCallback(() => {
+    terminalRef.current?.scrollToBottom();
   }, []);
-
-  // Persist split width — separate effect so the typing-during-drag burst
-  // writes to localStorage at most once per render commit, not on every
-  // mousemove.
-  useEffect(() => {
-    try {
-      localStorage.setItem(SPLIT_STORAGE_KEY, String(splitPosition));
-    } catch {
-      /* private mode / quota — non-fatal */
-    }
-  }, [splitPosition]);
-
-  if (!showRendered) {
-    return (
-      <div className="flex-1 min-h-0 flex w-full">
-        <TerminalPane tabId={tabId} showRendered={showRendered} onToggle={onToggleRendered} />
-      </div>
-    );
-  }
 
   return (
-    <div className="flex-1 min-h-0 flex w-full">
-      <SplitPane
-        left={<TerminalPane tabId={tabId} showRendered={showRendered} onToggle={onToggleRendered} />}
-        right={<div className="h-full flex flex-col">{messagesView}</div>}
-        initialSplit={splitPosition}
-        minLeftWidth={300}
-        minRightWidth={350}
-        onSplitChange={onSplitChange}
-        className="border-r border-border"
-      />
+    <div className="flex-1 min-h-0 px-10 py-2 bg-muted/30 relative">
+      <div className="absolute right-1 bottom-6 z-10 flex flex-col gap-1">
+        <TooltipSimple content="Scroll to top" side="left">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleScrollToTop}
+            aria-label="Scroll to top"
+            className="h-8 w-8 hover:bg-accent/50 transition-colors bg-background/80 backdrop-blur-sm border border-border/50"
+          >
+            <ChevronUp className="h-3.5 w-3.5" />
+          </Button>
+        </TooltipSimple>
+        <TooltipSimple content="Scroll to bottom" side="left">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleScrollToBottom}
+            aria-label="Scroll to bottom"
+            className="h-8 w-8 hover:bg-accent/50 transition-colors bg-background/80 backdrop-blur-sm border border-border/50"
+          >
+            <ChevronDown className="h-3.5 w-3.5" />
+          </Button>
+        </TooltipSimple>
+      </div>
+      <div className="h-full relative border border-border/50 rounded-lg bg-background overflow-hidden">
+        <div className="h-full w-full px-2 py-2">
+          <TerminalView ref={terminalRef} tabId={tabId} />
+        </div>
+      </div>
     </div>
   );
 }

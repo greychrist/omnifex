@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   createDefaultConfig,
   parseConfig,
@@ -15,6 +16,7 @@ import {
   type Palette,
   type PaletteEntry,
   type PaletteName,
+  type Terminal,
   type Typography,
 } from "@/lib/messageRenderingConfig";
 import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
@@ -24,6 +26,7 @@ import { SamplePreview } from "./appearance/SamplePreview";
 import { TurnPreview } from "./appearance/TurnPreview";
 import { PaletteEditor } from "./appearance/PaletteEditor";
 import { TypographyEditor } from "./appearance/TypographyEditor";
+import { TerminalEditor } from "./appearance/TerminalEditor";
 import type { SettingsPanelProps } from "./types";
 import { cn } from "@/lib/utils";
 import { fireAndLog } from "@/lib/fireAndLog";
@@ -56,6 +59,19 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
   const [selectedId, setSelectedId] = useState<string>(FIRST_KIND_ID);
   const [previewMode, setPreviewMode] = useState<"compact" | "verbose">(config.defaultViewMode);
   const [hasUserDefault, setHasUserDefault] = useState(false);
+  // Surface every section behind tabs instead of a single long scroll.
+  // Persisted across remounts via sessionStorage so a quick trip back to
+  // the page doesn't snap the user back to "kinds" — but cleared on app
+  // restart so cold-launches always land on the most common surface first.
+  const [activeTab, setActiveTab] = useState<string>(() => {
+    try {
+      return sessionStorage.getItem('omnifex:appearance-tab') ?? 'kinds';
+    } catch { return 'kinds'; }
+  });
+  useEffect(() => {
+    try { sessionStorage.setItem('omnifex:appearance-tab', activeTab); }
+    catch { /* private mode / quota — non-fatal */ }
+  }, [activeTab]);
   const importInputRef = useRef<HTMLInputElement>(null);
   const saveToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -101,6 +117,13 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
   const setTypography = useCallback(
     (next: Typography) => {
       mutate((prev) => ({ ...prev, typography: next }));
+    },
+    [mutate],
+  );
+
+  const setTerminal = useCallback(
+    (next: Terminal) => {
+      mutate((prev) => ({ ...prev, terminal: next }));
     },
     [mutate],
   );
@@ -237,218 +260,246 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
   };
 
   return (
-    <div className="space-y-6">
-      {/* App font moved to General → just below Theme. The chat surface
-          still picks per-element typefaces via the Typography card below. */}
+    <div className="space-y-4">
+      <Tabs value={activeTab} onValueChange={setActiveTab} variant="line" className="w-full">
+        <TabsList>
+          <TabsTrigger value="kinds">Message kinds</TabsTrigger>
+          <TabsTrigger value="turns">Turn preview</TabsTrigger>
+          <TabsTrigger value="typography">Typography</TabsTrigger>
+          <TabsTrigger value="terminal">Terminal</TabsTrigger>
+          <TabsTrigger value="global">Global</TabsTrigger>
+          <TabsTrigger value="palette">Palette</TabsTrigger>
+        </TabsList>
 
-      {/* Master-detail: tree + editor */}
-      <Card className="p-6">
-        <div className="flex items-start justify-between gap-4 mb-4">
-          <div>
-            <h3 className="text-heading-4">Message kinds</h3>
-            <p className="text-caption text-muted-foreground mt-1">
-              Choose a kind on the left to edit its icon, accent color, header, and
-              compact-mode visibility.
-            </p>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-[220px_minmax(0,1fr)] gap-6">
-          <div className="lg:border-r lg:pr-4 lg:border-border">
-            <MessageKindTree
-              config={config}
-              selectedId={selectedId}
-              onSelect={setSelectedId}
-            />
-          </div>
-
-          <div className="min-w-0 space-y-4">
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <Label>Sample</Label>
-                <span className="text-caption text-muted-foreground">
-                  Live preview — reflects your edits immediately.
-                </span>
-              </div>
-              <div className="rounded-md border border-border bg-background p-4">
-                <SamplePreview kind={selectedKind} palette={config.palette} />
+        <TabsContent value="kinds" className="mt-4">
+          <Card className="p-6">
+            <div className="flex items-start justify-between gap-4 mb-4">
+              <div>
+                <h3 className="text-heading-4">Message kinds</h3>
+                <p className="text-caption text-muted-foreground mt-1">
+                  Choose a kind on the left to edit its icon, accent color, header, and
+                  compact-mode visibility.
+                </p>
               </div>
             </div>
 
-            <KindEditor
-              kind={selectedKind}
-              palette={config.palette}
-              typography={config.typography}
-              onChange={(patch) => { updateKind(selectedKind.id, patch); }}
-              onResetKind={() => { resetKind(selectedKind.id); }}
-            />
-          </div>
-        </div>
-      </Card>
+            <div className="grid grid-cols-1 lg:grid-cols-[220px_minmax(0,1fr)] gap-6">
+              <div className="lg:border-r lg:pr-4 lg:border-border">
+                <MessageKindTree
+                  config={config}
+                  selectedId={selectedId}
+                  onSelect={setSelectedId}
+                />
+              </div>
 
-      {/* Full-turn compact/verbose preview */}
-      <Card className="p-6 space-y-3">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-heading-4">Turn preview</h3>
-            <p className="text-caption text-muted-foreground mt-1">
-              See what a full turn looks like in compact vs. verbose mode.
-            </p>
-          </div>
-          <div className="flex items-center gap-1 p-1 bg-muted/30 rounded-lg">
-            {(["verbose", "compact"] as const).map((m) => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => { setPreviewMode(m); }}
-                className={cn(
-                  "px-3 py-1.5 text-xs font-medium rounded-md transition-all capitalize",
-                  previewMode === m ? "bg-background shadow-sm" : "hover:bg-background/50",
-                )}
-              >
-                {m}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="rounded-md border border-border bg-background p-4">
-          <TurnPreview config={config} mode={previewMode} />
-        </div>
-      </Card>
+              <div className="min-w-0 space-y-4">
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <Label>Sample</Label>
+                    <span className="text-caption text-muted-foreground">
+                      Live preview — reflects your edits immediately.
+                    </span>
+                  </div>
+                  <div className="rounded-md border border-border bg-background p-4">
+                    <SamplePreview kind={selectedKind} palette={config.palette} />
+                  </div>
+                </div>
 
-      {/* Typography */}
-      <Card className="p-6">
-        <TypographyEditor typography={config.typography} onChange={setTypography} />
-      </Card>
+                <KindEditor
+                  kind={selectedKind}
+                  palette={config.palette}
+                  typography={config.typography}
+                  onChange={(patch) => { updateKind(selectedKind.id, patch); }}
+                  onResetKind={() => { resetKind(selectedKind.id); }}
+                />
+              </div>
+            </div>
+          </Card>
+        </TabsContent>
 
-      {/* Global */}
-      <Card className="p-6 space-y-6">
-        <div>
-          <h3 className="text-heading-4">Global</h3>
-          <p className="text-caption text-muted-foreground mt-1">
-            Defaults and hard filters that apply to every session.
-          </p>
-        </div>
+        <TabsContent value="turns" className="mt-4">
+          <Card className="p-6 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-heading-4">Turn preview</h3>
+                <p className="text-caption text-muted-foreground mt-1">
+                  See what a full turn looks like in compact vs. verbose mode.
+                </p>
+              </div>
+              <div className="flex items-center gap-1 p-1 bg-muted/30 rounded-lg">
+                {(["verbose", "compact"] as const).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => { setPreviewMode(m); }}
+                    className={cn(
+                      "px-3 py-1.5 text-xs font-medium rounded-md transition-all capitalize",
+                      previewMode === m ? "bg-background shadow-sm" : "hover:bg-background/50",
+                    )}
+                  >
+                    {m}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="rounded-md border border-border bg-background p-4">
+              <TurnPreview config={config} mode={previewMode} />
+            </div>
+          </Card>
+        </TabsContent>
 
-        {/* Default view mode */}
-        <div className="flex items-center justify-between">
-          <div>
-            <Label>Default view mode</Label>
-            <p className="text-caption text-muted-foreground mt-1">
-              Initial view when a session opens.
-            </p>
-          </div>
-          <div className="flex items-center gap-1 p-1 bg-muted/30 rounded-lg">
-            {(["verbose", "compact"] as const).map((m) => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => { setDefaultViewMode(m); }}
-                className={cn(
-                  "px-3 py-1.5 text-xs font-medium rounded-md transition-all capitalize",
-                  config.defaultViewMode === m
-                    ? "bg-background shadow-sm"
-                    : "hover:bg-background/50",
-                )}
-              >
-                {m}
-              </button>
-            ))}
-          </div>
-        </div>
+        <TabsContent value="typography" className="mt-4">
+          <Card className="p-6">
+            <TypographyEditor typography={config.typography} onChange={setTypography} />
+          </Card>
+        </TabsContent>
 
-        {/* JSONL node filters */}
-        <div className="space-y-3 pt-4 border-t border-border">
-          <div>
-            <Label>JSONL node filters</Label>
-            <p className="text-caption text-muted-foreground mt-1">
-              Filter messages by their source node type. Apply to every session.
-            </p>
-          </div>
-          <FilterRow
-            label="Drop bookkeeping"
-            description="last-prompt, permission-mode, ai-title, file-history-snapshot — CLI internal state with no user-facing value."
-            checked={hardFiltersChecked.dropBookkeeping}
-            onChange={(v) => { setHardFilter("dropBookkeeping", v); }}
-          />
-          <FilterRow
-            label="Drop hook summaries"
-            description="system/stop_hook_summary — post-hook execution rollups."
-            checked={hardFiltersChecked.dropHookSummaries}
-            onChange={(v) => { setHardFilter("dropHookSummaries", v); }}
-          />
-          <FilterRow
-            label="Drop empty/tool-only user messages"
-            description="User messages with no text content (typically tool_result replies)."
-            checked={hardFiltersChecked.dropEmptyUser}
-            onChange={(v) => { setHardFilter("dropEmptyUser", v); }}
-          />
-          <FilterRow
-            label="Drop closure carriers"
-            description="queue-operation and queued_command attachments — background-bash plumbing."
-            checked={hardFiltersChecked.dropClosureCarriers}
-            onChange={(v) => { setHardFilter("dropClosureCarriers", v); }}
-          />
-          <FilterRow
-            label="Drop system informational"
-            description="system/away_summary, system/local_command, system/informational — diagnostic and slash-command echoes."
-            checked={hardFiltersChecked.dropSystemInformational}
-            onChange={(v) => { setHardFilter("dropSystemInformational", v); }}
-          />
-        </div>
+        <TabsContent value="terminal" className="mt-4">
+          <Card className="p-6">
+            <TerminalEditor terminal={config.terminal} onChange={setTerminal} />
+          </Card>
+        </TabsContent>
 
-        {/* Live-stream overlay filters */}
-        <div className="space-y-3 pt-4 border-t border-border">
-          <div>
-            <Label>Live overlay filters <span className="text-muted-foreground text-xs">(Chat mode only)</span></Label>
-            <p className="text-caption text-muted-foreground mt-1">
-              Apply to live-only event streams from the Claude CLI. No effect in Terminal mode.
-            </p>
-          </div>
-          <FilterRow
-            label="Hide partial token streaming"
-            description="stream_event — typewriter effect during assistant responses."
-            checked={hardFiltersChecked.hidePartialStreaming}
-            onChange={(v) => { setHardFilter("hidePartialStreaming", v); }}
-          />
-          <FilterRow
-            label="Hide subagent lifecycle"
-            description="task_started / task_progress / task_updated — drives SubagentBar."
-            checked={hardFiltersChecked.hideSubagentLifecycle}
-            onChange={(v) => { setHardFilter("hideSubagentLifecycle", v); }}
-          />
-          <FilterRow
-            label="Hide hook lifecycle"
-            description="hook_started / hook_progress / hook_response — drives hook progress UI."
-            checked={hardFiltersChecked.hideHookLifecycle}
-            onChange={(v) => { setHardFilter("hideHookLifecycle", v); }}
-          />
-          <FilterRow
-            label="Hide rate-limit notices"
-            description="rate_limit_event — drives budget telemetry."
-            checked={hardFiltersChecked.hideRateLimitNotices}
-            onChange={(v) => { setHardFilter("hideRateLimitNotices", v); }}
-          />
-        </div>
+        <TabsContent value="global" className="mt-4">
+          <Card className="p-6 space-y-6">
+            <div>
+              <h3 className="text-heading-4">Global</h3>
+              <p className="text-caption text-muted-foreground mt-1">
+                Defaults and hard filters that apply to every session.
+              </p>
+            </div>
 
-        {/* Debug */}
-        <div className="space-y-3 pt-4 border-t border-border">
-          <div>
-            <Label>Debug</Label>
-            <p className="text-caption text-muted-foreground mt-1">
-              Diagnostic overlays for troubleshooting message rendering.
-            </p>
-          </div>
-          <FilterRow
-            label="Show message kind label on cards"
-            description="Render the raw message type (e.g. result · success, assistant) on the bottom-left of each card. Useful when a card looks mis-classified."
-            checked={config.debug.showCardKindLabel}
-            onChange={(v) => { setDebugOption("showCardKindLabel", v); }}
-          />
-        </div>
+            {/* Default view mode */}
+            <div className="flex items-center justify-between">
+              <div>
+                <Label>Default view mode</Label>
+                <p className="text-caption text-muted-foreground mt-1">
+                  Initial view when a session opens.
+                </p>
+              </div>
+              <div className="flex items-center gap-1 p-1 bg-muted/30 rounded-lg">
+                {(["verbose", "compact"] as const).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => { setDefaultViewMode(m); }}
+                    className={cn(
+                      "px-3 py-1.5 text-xs font-medium rounded-md transition-all capitalize",
+                      config.defaultViewMode === m
+                        ? "bg-background shadow-sm"
+                        : "hover:bg-background/50",
+                    )}
+                  >
+                    {m}
+                  </button>
+                ))}
+              </div>
+            </div>
 
-        {/* Actions */}
-        <div className="flex flex-wrap items-center gap-2 pt-4 border-t border-border">
+            {/* JSONL node filters */}
+            <div className="space-y-3 pt-4 border-t border-border">
+              <div>
+                <Label>JSONL node filters</Label>
+                <p className="text-caption text-muted-foreground mt-1">
+                  Filter messages by their source node type. Apply to every session.
+                </p>
+              </div>
+              <FilterRow
+                label="Drop bookkeeping"
+                description="last-prompt, permission-mode, ai-title, file-history-snapshot — CLI internal state with no user-facing value."
+                checked={hardFiltersChecked.dropBookkeeping}
+                onChange={(v) => { setHardFilter("dropBookkeeping", v); }}
+              />
+              <FilterRow
+                label="Drop hook summaries"
+                description="system/stop_hook_summary — post-hook execution rollups."
+                checked={hardFiltersChecked.dropHookSummaries}
+                onChange={(v) => { setHardFilter("dropHookSummaries", v); }}
+              />
+              <FilterRow
+                label="Drop empty/tool-only user messages"
+                description="User messages with no text content (typically tool_result replies)."
+                checked={hardFiltersChecked.dropEmptyUser}
+                onChange={(v) => { setHardFilter("dropEmptyUser", v); }}
+              />
+              <FilterRow
+                label="Drop closure carriers"
+                description="queue-operation and queued_command attachments — background-bash plumbing."
+                checked={hardFiltersChecked.dropClosureCarriers}
+                onChange={(v) => { setHardFilter("dropClosureCarriers", v); }}
+              />
+              <FilterRow
+                label="Drop system informational"
+                description="system/away_summary, system/local_command, system/informational — diagnostic and slash-command echoes."
+                checked={hardFiltersChecked.dropSystemInformational}
+                onChange={(v) => { setHardFilter("dropSystemInformational", v); }}
+              />
+            </div>
+
+            {/* Live-stream overlay filters */}
+            <div className="space-y-3 pt-4 border-t border-border">
+              <div>
+                <Label>Live overlay filters <span className="text-muted-foreground text-xs">(Chat mode only)</span></Label>
+                <p className="text-caption text-muted-foreground mt-1">
+                  Apply to live-only event streams from the Claude CLI. No effect in Terminal mode.
+                </p>
+              </div>
+              <FilterRow
+                label="Hide partial token streaming"
+                description="stream_event — typewriter effect during assistant responses."
+                checked={hardFiltersChecked.hidePartialStreaming}
+                onChange={(v) => { setHardFilter("hidePartialStreaming", v); }}
+              />
+              <FilterRow
+                label="Hide subagent lifecycle"
+                description="task_started / task_progress / task_updated — drives SubagentBar."
+                checked={hardFiltersChecked.hideSubagentLifecycle}
+                onChange={(v) => { setHardFilter("hideSubagentLifecycle", v); }}
+              />
+              <FilterRow
+                label="Hide hook lifecycle"
+                description="hook_started / hook_progress / hook_response — drives hook progress UI."
+                checked={hardFiltersChecked.hideHookLifecycle}
+                onChange={(v) => { setHardFilter("hideHookLifecycle", v); }}
+              />
+              <FilterRow
+                label="Hide rate-limit notices"
+                description="rate_limit_event — drives budget telemetry."
+                checked={hardFiltersChecked.hideRateLimitNotices}
+                onChange={(v) => { setHardFilter("hideRateLimitNotices", v); }}
+              />
+            </div>
+
+            {/* Debug */}
+            <div className="space-y-3 pt-4 border-t border-border">
+              <div>
+                <Label>Debug</Label>
+                <p className="text-caption text-muted-foreground mt-1">
+                  Diagnostic overlays for troubleshooting message rendering.
+                </p>
+              </div>
+              <FilterRow
+                label="Show message kind label on cards"
+                description="Render the raw message type (e.g. result · success, assistant) on the bottom-left of each card. Useful when a card looks mis-classified."
+                checked={config.debug.showCardKindLabel}
+                onChange={(v) => { setDebugOption("showCardKindLabel", v); }}
+              />
+            </div>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="palette" className="mt-4">
+          <Card className="p-6">
+            <PaletteEditor palette={config.palette} onChange={updatePalette} />
+          </Card>
+        </TabsContent>
+      </Tabs>
+
+      {/* Actions live below the tabs so import / export / save-default /
+          reset-to-factory are always one click away regardless of which
+          tab is open. */}
+      <Card className="p-4">
+        <div className="flex flex-wrap items-center gap-2">
           <Button type="button" variant="outline" size="sm" onClick={exportConfig}>
             <Download className="h-3.5 w-3.5 mr-1.5" />
             Export JSON
@@ -496,13 +547,6 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
             Reset to factory
           </Button>
         </div>
-      </Card>
-
-      {/* Palette — kept at the bottom because retinting the palette is a
-          rare bulk operation that's easier to find when looking for it
-          than it is to scroll past every time. */}
-      <Card className="p-6">
-        <PaletteEditor palette={config.palette} onChange={updatePalette} />
       </Card>
 
       <p className="text-caption text-muted-foreground text-center">

@@ -1,103 +1,61 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { forwardRef, useImperativeHandle } from 'react';
+import { TooltipProvider } from '../ui/tooltip-modern';
 import { TuiSessionLayout } from '../TuiSessionLayout';
 
-// TerminalView mounts a real xterm instance against the DOM, which jsdom
-// can't satisfy. Stub it with a marker div so we can assert visibility
-// without booting the terminal.
+function renderInProvider(node: React.ReactNode) {
+  return render(<TooltipProvider>{node}</TooltipProvider>);
+}
+
+// Mock TerminalView with a forwardRef stub that exposes the same imperative
+// handle the real component does, so we can verify scroll-to-top / scroll-to-
+// bottom button wiring without booting xterm in jsdom.
+const scrollToTopSpy = vi.fn();
+const scrollToBottomSpy = vi.fn();
+
 vi.mock('../TerminalView', () => ({
-  TerminalView: ({ tabId }: { tabId: string }) => (
-    <div data-testid="terminal-view" data-tab={tabId}>TerminalView</div>
+  TerminalView: forwardRef<{ scrollToTop: () => void; scrollToBottom: () => void }, { tabId: string }>(
+    (props, ref) => {
+      useImperativeHandle(ref, () => ({
+        scrollToTop: scrollToTopSpy,
+        scrollToBottom: scrollToBottomSpy,
+      }));
+      return <div data-testid="terminal-view" data-tab={props.tabId}>TerminalView</div>;
+    },
   ),
 }));
 
-const LEGACY_SHOW_STORAGE_KEY = 'omnifex:tui-show-rendered';
-
-beforeEach(() => {
-  localStorage.clear();
+afterEach(() => {
+  cleanup();
+  scrollToTopSpy.mockReset();
+  scrollToBottomSpy.mockReset();
 });
-afterEach(() => { cleanup(); });
 
-describe('TuiSessionLayout — rendered-chat toggle', () => {
-  it('hides the messages pane by default (TUI is the primary surface)', () => {
-    render(
-      <TuiSessionLayout
-        tabId="tab-1"
-        messagesView={<div data-testid="messages-view">messages</div>}
-      />,
-    );
-
+describe('TuiSessionLayout — single-pane card', () => {
+  it('renders the TerminalView (no rendered-chat side-by-side)', () => {
+    renderInProvider(<TuiSessionLayout tabId="tab-1" />);
     expect(screen.getByTestId('terminal-view')).toBeTruthy();
-    expect(screen.queryByTestId('messages-view')).toBeNull();
-    expect(screen.getByRole('button', { name: /show rendered chat/i })).toBeTruthy();
   });
 
-  it('shows the messages pane when the toggle button is clicked', () => {
-    render(
-      <TuiSessionLayout
-        tabId="tab-1"
-        messagesView={<div data-testid="messages-view">messages</div>}
-      />,
-    );
-
-    fireEvent.click(screen.getByRole('button', { name: /show rendered chat/i }));
-    expect(screen.getByTestId('messages-view')).toBeTruthy();
-    expect(screen.getByRole('button', { name: /hide rendered chat/i })).toBeTruthy();
+  it('exposes scroll-to-top and scroll-to-bottom buttons', () => {
+    renderInProvider(<TuiSessionLayout tabId="tab-1" />);
+    expect(screen.getByRole('button', { name: /scroll to top/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /scroll to bottom/i })).toBeTruthy();
   });
 
-  it('hides the messages pane again when toggled off', () => {
-    render(
-      <TuiSessionLayout
-        tabId="tab-1"
-        messagesView={<div data-testid="messages-view">messages</div>}
-      />,
-    );
-
-    fireEvent.click(screen.getByRole('button', { name: /show rendered chat/i }));
-    fireEvent.click(screen.getByRole('button', { name: /hide rendered chat/i }));
-    expect(screen.queryByTestId('messages-view')).toBeNull();
+  it('clicking scroll-to-top calls TerminalView.scrollToTop', () => {
+    renderInProvider(<TuiSessionLayout tabId="tab-1" />);
+    fireEvent.click(screen.getByRole('button', { name: /scroll to top/i }));
+    expect(scrollToTopSpy).toHaveBeenCalledTimes(1);
+    expect(scrollToBottomSpy).not.toHaveBeenCalled();
   });
 
-  it('does NOT persist the visible state across mounts (always starts hidden)', () => {
-    const { unmount } = render(
-      <TuiSessionLayout
-        tabId="tab-1"
-        messagesView={<div data-testid="messages-view">messages</div>}
-      />,
-    );
-
-    fireEvent.click(screen.getByRole('button', { name: /show rendered chat/i }));
-    expect(screen.getByTestId('messages-view')).toBeTruthy();
-
-    unmount();
-
-    render(
-      <TuiSessionLayout
-        tabId="tab-1"
-        messagesView={<div data-testid="messages-view">messages</div>}
-      />,
-    );
-
-    // Fresh mount = fresh "hidden" state, regardless of prior in-session
-    // toggling. The terminal is the primary surface every time the user
-    // enters TUI mode.
-    expect(screen.queryByTestId('messages-view')).toBeNull();
-    expect(screen.getByRole('button', { name: /show rendered chat/i })).toBeTruthy();
-  });
-
-  it('ignores a stale "true" value left in localStorage by an earlier build', () => {
-    // Earlier versions of this component persisted visibility under this
-    // key. Existing users may have it set; we now default to hidden.
-    localStorage.setItem(LEGACY_SHOW_STORAGE_KEY, 'true');
-
-    render(
-      <TuiSessionLayout
-        tabId="tab-1"
-        messagesView={<div data-testid="messages-view">messages</div>}
-      />,
-    );
-
-    expect(screen.queryByTestId('messages-view')).toBeNull();
+  it('clicking scroll-to-bottom calls TerminalView.scrollToBottom', () => {
+    renderInProvider(<TuiSessionLayout tabId="tab-1" />);
+    fireEvent.click(screen.getByRole('button', { name: /scroll to bottom/i }));
+    expect(scrollToBottomSpy).toHaveBeenCalledTimes(1);
+    expect(scrollToTopSpy).not.toHaveBeenCalled();
   });
 });

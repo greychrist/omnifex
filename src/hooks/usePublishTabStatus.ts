@@ -4,6 +4,7 @@ import type { ClaudeStreamMessage } from '@/types/claudeStream';
 import type { Subagent } from '@/lib/subagentStreams';
 import { getTaskList, summarizeTaskList } from '@/lib/taskList';
 import { deriveWaitingFor } from '@/lib/tabWaitingFor';
+import { deriveWaitingOnClaude } from '@/lib/deriveConversationStatus';
 
 interface UsePublishTabStatusArgs {
   tabId: string;
@@ -44,7 +45,12 @@ export function usePublishTabStatus({
   projectPath,
   sessionStarted,
   isStarting,
-  isLoading,
+  // isLoading is no longer consulted here — see the mainTurnInFlight
+  // assignment below. Kept on the interface to keep the call site
+  // (ClaudeCodeSession) unchanged and to preserve a single shared
+  // vocabulary of "what defines a busy tab". Renamed to `_isLoading`
+  // in the destructure to silence the unused-param lint.
+  isLoading: _isLoading,
   hasError,
   messages,
   subagents,
@@ -63,7 +69,13 @@ export function usePublishTabStatus({
       (n, s) => (s.status === 'running' ? n + 1 : n),
       0,
     );
-    const mainTurnInFlight = isLoading;
+    // "Waiting on Claude" is derived from the transcript, not the
+    // renderer's optimistic isLoading flag — the previous isLoading-based
+    // signal stayed true after edge cases (e.g. the runtime emitted an
+    // incidental message that wasn't a real result) and stayed false in
+    // others. The transcript is the source of truth: the turn is over iff
+    // the last message is a result; anything else means we're waiting.
+    const mainTurnInFlight = deriveWaitingOnClaude(messages);
     const waitingFor = deriveWaitingFor(pendingPermission);
     // promptStatus: is the agent actually doing work right now?
     // Spec: working iff (waiting on Claude response) OR (any in-progress
@@ -116,7 +128,6 @@ export function usePublishTabStatus({
     projectPath,
     sessionStarted,
     isStarting,
-    isLoading,
     hasError,
     messages,
     subagents,

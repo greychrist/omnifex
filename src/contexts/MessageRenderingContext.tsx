@@ -50,6 +50,15 @@ export const MessageRenderingProvider: React.FC<{ children: React.ReactNode }> =
     document.documentElement.style.setProperty("--chat-content-font", stack);
   }, [config.typography.content.typeface]);
 
+  // Same pattern for the TUI terminal. TerminalView reads `--font-terminal`
+  // first, falling back to `--font-mono`, so a missing var (e.g. context
+  // not wrapped) means the user gets the global mono default instead of an
+  // empty stack.
+  useEffect(() => {
+    const stack = resolveTypeface(config.terminal.typeface).cssFamily;
+    document.documentElement.style.setProperty("--font-terminal", stack);
+  }, [config.terminal.typeface]);
+
   const setConfig = useCallback((next: MessageRenderingConfig, persist = true) => {
     setConfigState(next);
     if (persist) {

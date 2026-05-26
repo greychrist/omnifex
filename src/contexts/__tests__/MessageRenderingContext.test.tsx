@@ -36,6 +36,7 @@ describe("MessageRenderingProvider", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     document.documentElement.style.removeProperty("--chat-content-font");
+    document.documentElement.style.removeProperty("--font-terminal");
   });
 
   it("sets --chat-content-font from the loaded typography.content.typeface", async () => {
@@ -61,6 +62,60 @@ describe("MessageRenderingProvider", () => {
       { expect(
         document.documentElement.style.getPropertyValue("--chat-content-font"),
       ).toMatch(/Geist/); },
+    );
+  });
+
+  it("sets --font-terminal from the loaded terminal.typeface", async () => {
+    const stored = createDefaultConfig();
+    stored.terminal.typeface = "jetbrains-mono";
+    (api.getSetting as ReturnType<typeof vi.fn>).mockResolvedValue(serializeConfig(stored));
+
+    let captured = {
+      config: createDefaultConfig(),
+      setConfig: (_: MessageRenderingConfig) => {},
+    };
+
+    render(
+      <MessageRenderingProvider>
+        <Probe onState={(s) => (captured = s)} />
+      </MessageRenderingProvider>,
+    );
+
+    await waitFor(() => { expect(captured.config.terminal.typeface).toBe("jetbrains-mono"); });
+    await waitFor(() =>
+      { expect(
+        document.documentElement.style.getPropertyValue("--font-terminal"),
+      ).toMatch(/JetBrains Mono/); },
+    );
+  });
+
+  it("re-applies --font-terminal when setConfig changes the terminal typeface", async () => {
+    (api.getSetting as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+    (api.saveSetting as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+
+    let captured = {
+      config: createDefaultConfig(),
+      setConfig: (_: MessageRenderingConfig) => {},
+    };
+
+    render(
+      <MessageRenderingProvider>
+        <Probe onState={(s) => (captured = s)} />
+      </MessageRenderingProvider>,
+    );
+
+    await waitFor(() => { expect(api.getSetting).toHaveBeenCalled(); });
+
+    await act(async () => {
+      const next = { ...captured.config };
+      next.terminal = { typeface: "plex-mono" };
+      captured.setConfig(next);
+    });
+
+    await waitFor(() =>
+      { expect(
+        document.documentElement.style.getPropertyValue("--font-terminal"),
+      ).toMatch(/IBM Plex Mono/); },
     );
   });
 
