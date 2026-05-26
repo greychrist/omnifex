@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.64] — 2026-05-26
+
+Session-lifecycle fix. Toggling a session from rich → tui → rich left the resumed engine with no listener loop — `claude-output:<tabId>` never reached the renderer, and `conversationStatus` stuck on whatever it was at the toggle. Now `listenToMessages` always (re-)attaches when re-entering rich mode, so output keeps flowing across mode round-trips.
+
+Installers remain **unsigned**.
+
+### Fixed
+
+- **`setMode` rich → tui → rich round-trip silently broke message streaming** (`5af54c5`). The rich → tui transition closes the engine, and runtime.ts's tui-mode early-return disposes the engine's `onMessage` / `onError` / `onExit` subscriptions. Toggling back to rich rebuilt the engine when needed but never re-attached the runtime listener loop; the resumed engine's stdout emitted into the void. `lifecycle.ts:setMode("rich")` now calls `listenToMessages` outside the cold-start branch, so re-attachment happens every time. Covered by a new `electron/__tests__/sessions-setmode-roundtrip.test.ts` that exercises the round-trip and asserts both that listeners are re-attached and that a post-toggle `result` clears `conversationStatus` back to idle.
+
 ## [0.4.63] — 2026-05-26
 
 Tiny follow-up. The "you have N sessions still working" warning on the upgrade button now stays visible across the `ready` state too, so the visual cue isn't lost at the exact moment you're about to click Install.
