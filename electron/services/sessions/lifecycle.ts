@@ -608,17 +608,27 @@ export function createSessionsService(
 
       // Re-start the engine on the same session id. start() is re-entrant.
       if (!handle.engine) {
-        // Cold-start TUI sessions never had an engine. Build one now.
+        // Cold-start TUI sessions never had an engine. Build one now and
+        // wire the permission handler — it lives on the engine's
+        // permissionCallbacks for the engine's whole life and is never
+        // disposed during mode toggles, so a fresh engine needs it once.
         const binaryPath = findSystemClaudeBinary();
         if (!binaryPath) throw new Error('setMode("rich"): claude binary not found');
         handle.engine = createClaudeCliEngine({ tabId, claudeBinaryPath: binaryPath });
         handle.engine.onPermissionRequest(
           createPermissionRequestHandler(handle, tabId, sendToRenderer, notificationHooks, logging),
         );
-        listenToMessages(tabId, handle, runtimeDeps).catch((err: unknown) => {
-          console.error(`[sessions] Unhandled error in listenToMessages for tab ${tabId}:`, err);
-        });
       }
+      // Always (re-)attach the runtime listener loop. The prior loop's
+      // onMessage/onError/onExit subscriptions were disposed when the
+      // engine.onExit fired during the rich→tui transition (see
+      // runtime.ts's tui-mode early-return). Without re-attachment the
+      // resumed engine's stdout would emit into the void —
+      // claude-output:<tabId> would never reach the renderer and
+      // conversationStatus would stick on whatever it was at toggle time.
+      listenToMessages(tabId, handle, runtimeDeps).catch((err: unknown) => {
+        console.error(`[sessions] Unhandled error in listenToMessages for tab ${tabId}:`, err);
+      });
       restartQuery(tabId, handle, runtimeDeps);
     }
   }
