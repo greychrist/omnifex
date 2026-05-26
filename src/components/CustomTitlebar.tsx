@@ -342,6 +342,12 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
                       ? 'bg-primary text-primary-foreground animate-pulse hover:bg-primary/90'
                       : updateState.status === 'downloading'
                       ? 'bg-primary/80 text-primary-foreground cursor-wait'
+                      // Same warning chrome as the 'available' + active case so
+                      // the user sees "there are running sessions" BEFORE they
+                      // click Install — not only after the install gate flips
+                      // the button to 'waiting'.
+                      : updateState.status === 'ready' && activeSessions > 0
+                      ? 'bg-amber-500/20 text-amber-200 hover:bg-amber-500/30 border border-amber-500/40'
                       : updateState.status === 'ready'
                       ? 'bg-green-600 text-white hover:bg-green-700'
                       : updateState.status === 'installing'
@@ -354,7 +360,8 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
                   {updateState.status === 'available' && activeSessions > 0 && <AlertCircle size={13} />}
                   {updateState.status === 'available' && activeSessions === 0 && <Download size={13} />}
                   {updateState.status === 'downloading' && <Loader2 size={13} className="animate-spin" />}
-                  {updateState.status === 'ready' && <CheckCircle size={13} />}
+                  {updateState.status === 'ready' && activeSessions > 0 && <AlertCircle size={13} />}
+                  {updateState.status === 'ready' && activeSessions === 0 && <CheckCircle size={13} />}
                   {updateState.status === 'installing' && <Loader2 size={13} className="animate-spin" />}
                   {updateState.status === 'error' && <AlertCircle size={13} />}
                   <span>
@@ -364,7 +371,9 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
                       `${activeSessions} active — Install Anyway`}
                     {updateState.status === 'available' && activeSessions === 0 && 'Update Available!'}
                     {updateState.status === 'downloading' && `${Math.round(updateState.percent)}%`}
-                    {updateState.status === 'ready' && 'Install Update'}
+                    {updateState.status === 'ready' && activeSessions > 0 &&
+                      `${activeSessions} active — Install Anyway`}
+                    {updateState.status === 'ready' && activeSessions === 0 && 'Install Update'}
                     {updateState.status === 'installing' && 'Installing…'}
                     {updateState.status === 'error' && 'Retry'}
                   </span>
