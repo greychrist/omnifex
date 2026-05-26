@@ -6,6 +6,7 @@
 // StrictMode / TUI-handoff identity-replace guards.
 
 import path from 'node:path';
+import fs from 'node:fs';
 import type {
   SessionHandle,
   SendToRenderer,
@@ -244,7 +245,14 @@ export function listenToMessages(
 /**
  * Restart a dead engine (after stream error) so the session resumes.
  * Engine.start is re-entrant; calling it tears down any prior child and
- * spawns a fresh one with --resume against the captured sessionId.
+ * spawns a fresh one against the captured sessionId — `--resume` when the
+ * CLI has already written a JSONL for it, `--session-id` when it hasn't.
+ *
+ * The JSONL check exists because the CLI exits with "No conversation found
+ * with session ID …" if `--resume <id>` is passed against a non-existent
+ * transcript. That happens on the tui → rich return path when the user
+ * never sent a message in either mode, so no JSONL was ever written. The
+ * same protection lives at setMode('tui') around its createTuiSession call.
  */
 export function restartQuery(
   tabId: string,
@@ -256,15 +264,21 @@ export function restartQuery(
     console.error(`[sessions] restartQuery: no sessionId for tab ${tabId}`);
     return;
   }
+  const jsonlPath = path.join(
+    handle.startParams.configDir,
+    'projects',
+    encodeProjectKey(handle.startParams.projectPath),
+    `${handle.sessionId}.jsonl`,
+  );
+  const resume = fs.existsSync(jsonlPath);
   setStatus(handle, { sessionStatus: 'starting' }, tabId, deps.sendToRenderer);
   void handle.engine.start({
     projectPath: handle.startParams.projectPath,
     configDir: handle.startParams.configDir,
     model: handle.startParams.model,
     permissionMode: handle.startParams.permissionMode,
-    // Resume the same session id so the JSONL continues uninterrupted.
     sessionId: handle.sessionId,
-    resume: true,
+    resume,
   }).then(() => {
     setStatus(handle, { sessionStatus: 'started', conversationStatus: 'idle' }, tabId, deps.sendToRenderer);
   }).catch((err: unknown) => {

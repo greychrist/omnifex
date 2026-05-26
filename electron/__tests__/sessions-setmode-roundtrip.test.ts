@@ -90,6 +90,7 @@ vi.mock('node-pty', () => ({ spawn: vi.fn() }));
 import { spawn as ptySpawn } from 'node-pty';
 import { createClaudeCliEngine } from '../services/agents/claude-cli-engine';
 import { createSessionsService } from '../services/sessions';
+import { encodeProjectKey } from '../services/sessions/summary-query';
 
 function makeFakePty() {
   return {
@@ -184,5 +185,71 @@ describe('setMode: rich → tui → rich round-trip', () => {
     engine.__emitMessage({ type: 'result', subtype: 'success' });
 
     expect(sessions.listInFlightTabIds()).not.toContain(tabId);
+  });
+
+  it('passes resume:false on tui → rich when the CLI never wrote a JSONL for this sessionId', async () => {
+    // Repro: user starts a session in rich, switches to TUI before sending
+    // any message, then switches back to rich. Neither side wrote a JSONL,
+    // so passing `--resume <id>` makes the CLI exit with
+    // "No conversation found with session ID …" and boots the user out.
+    // `setMode('tui')` already guards against this around its createTuiSession
+    // call; the symmetric guard on the return path was missing.
+    const tabId = 'tab-rt-no-jsonl';
+    const engine = createInstrumentedEngine(tabId);
+    vi.mocked(createClaudeCliEngine).mockReturnValue(engine);
+
+    const sendToRenderer = vi.fn();
+    const sessions = createSessionsService(sendToRenderer);
+
+    sessions.start({
+      tabId,
+      projectPath: '/Users/test/proj',
+      configDir: tmpConfig,
+      model: '',
+      permissionMode: '',
+      mode: 'rich',
+    });
+
+    await sessions.setMode(tabId, 'tui');
+
+    vi.mocked(engine.start).mockClear();
+    await sessions.setMode(tabId, 'rich');
+
+    expect(engine.start).toHaveBeenCalledWith(expect.objectContaining({ resume: false }));
+  });
+
+  it('passes resume:true on tui → rich when a JSONL already exists for this sessionId', async () => {
+    const tabId = 'tab-rt-with-jsonl';
+    const engine = createInstrumentedEngine(tabId);
+    vi.mocked(createClaudeCliEngine).mockReturnValue(engine);
+
+    const sendToRenderer = vi.fn();
+    const sessions = createSessionsService(sendToRenderer);
+
+    sessions.start({
+      tabId,
+      projectPath: '/Users/test/proj',
+      configDir: tmpConfig,
+      model: '',
+      permissionMode: '',
+      mode: 'rich',
+    });
+
+    const sessionId = sessions.getSessionId(tabId)!;
+    const jsonlPath = path.join(
+      tmpConfig,
+      'projects',
+      encodeProjectKey('/Users/test/proj'),
+      `${sessionId}.jsonl`,
+    );
+    fs.mkdirSync(path.dirname(jsonlPath), { recursive: true });
+    fs.writeFileSync(jsonlPath, '');
+
+    await sessions.setMode(tabId, 'tui');
+
+    vi.mocked(engine.start).mockClear();
+    await sessions.setMode(tabId, 'rich');
+
+    expect(engine.start).toHaveBeenCalledWith(expect.objectContaining({ resume: true }));
   });
 });
