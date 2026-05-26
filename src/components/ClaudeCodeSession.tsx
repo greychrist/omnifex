@@ -1049,7 +1049,31 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
         ctx.appendMessage(message);
       }
     } catch (err) {
-      console.error('handleJsonlLine failed:', err, payload);
+      // Write directly to app_logs (not via console.error → LogService).
+      // LogService batches console.error every 2s; when a stream message
+      // throws here, the user needs the toast NOW so they can correlate
+      // it with what they just saw, and we don't want a swallowed payload
+      // to vanish if the renderer reloads before the batch flushes. The
+      // main-process onError observer (main.ts → log_error_toast_enabled)
+      // turns this into a user-visible toast with a "View in Log" action.
+      const errMsg =
+        err instanceof Error
+          ? `${err.name}: ${err.message}${err.stack ? `\n${err.stack}` : ''}`
+          : String(err);
+      const payloadStr = typeof payload === 'string' ? payload : JSON.stringify(payload);
+      api.logWriteBatch([{
+        timestamp: new Date().toISOString(),
+        level: 'error',
+        source: 'frontend',
+        category: `session:${tabIdRef.current}:handle-jsonl-line`,
+        message: `handleJsonlLine threw: ${errMsg}`,
+        metadata: JSON.stringify({ payloadPreview: payloadStr.slice(0, 500) }),
+      }]).catch(() => {
+        // logWriteBatch failure means IPC is gone — the renderer is
+        // already in a worse state than a missing log entry. Nothing
+        // useful to do; do NOT fall back to console.error (the user
+        // asked specifically to keep this off console).
+      });
     }
   }, [projectPath, sessionTabId, setPendingPermission]);
 

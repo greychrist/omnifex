@@ -38,6 +38,7 @@ import { createTuiJsonlListener } from './tui-jsonl';
 import { encodeProjectKey } from './summary-query';
 import { createClaudeCliEngine } from '../agents/claude-cli-engine';
 import path from 'node:path';
+import fs from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { setStatus } from './status';
 
@@ -87,6 +88,7 @@ export function createSessionsService(
     rateLimitHook,
     ownership,
     sessions,
+    logging,
   };
 
   // -------------------------------------------------------------------------
@@ -531,12 +533,27 @@ export function createSessionsService(
         try { await handle.engine.close(); } catch { /* best effort */ }
       }
 
+      // If the user toggles to TUI before any messages were sent in rich
+      // mode, the CLI hasn't written a JSONL for this sessionId yet. Passing
+      // `--resume <id>` in that case makes the CLI emit
+      // "No conversation found with session ID …" and exit, which then
+      // boots the user out of the session via the TUI exit handler below.
+      // Detect the JSONL's absence and pin the existing sessionId via
+      // `--session-id <id>` instead — same UUID, fresh transcript, no error.
+      const jsonlPathForResumeCheck = path.join(
+        handle.configDir,
+        'projects',
+        encodeProjectKey(handle.projectPath),
+        `${handle.sessionId}.jsonl`,
+      );
+      const resumeExistingTranscript = fs.existsSync(jsonlPathForResumeCheck);
+
       const tui = createTuiSession({
         tabId,
         projectPath: handle.projectPath,
         configDir: handle.configDir,
         sessionId: handle.sessionId,
-        resume: true, // mid-session toggle continues the existing session
+        resume: resumeExistingTranscript,
         claudeBinaryPath: binaryPath,
       });
 

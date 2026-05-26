@@ -12,6 +12,7 @@ import type {
   NotificationHooks,
   RateLimitHook,
   SessionOwnership,
+  LoggingService,
 } from './types';
 import type { AgentMessage } from '../agents/types';
 import { classifyRuntimeEvent } from './events';
@@ -32,6 +33,17 @@ export interface RuntimeDeps {
    * re-start), and the deletion to drop dead sessions on clean close.
    */
   sessions: Map<string, SessionHandle>;
+  /**
+   * Optional app_logs sink. Engine errors are written here at level=error
+   * so the renderer toast (wired in main.ts via the LoggingService onError
+   * observer) fires for every CLI stderr line we surface. Distinct from
+   * `sendToRenderer('claude-error:…')`, which is a console-level diagnostic
+   * stream the renderer's `LogService` already routes to app_logs as a
+   * `frontend`-source entry. Both are kept: backend-source rows attribute
+   * the error to the session runtime, frontend-source rows attribute it
+   * to the renderer code path that observed it.
+   */
+  logging?: LoggingService | null;
 }
 
 interface JsonlTailState {
@@ -94,7 +106,7 @@ export function listenToMessages(
   handle: SessionHandle,
   deps: RuntimeDeps,
 ): Promise<void> {
-  const { sendToRenderer, notificationHooks, rateLimitHook, ownership, sessions } = deps;
+  const { sendToRenderer, notificationHooks, rateLimitHook, ownership, sessions, logging } = deps;
   const engine = handle.engine;
   if (!engine) return Promise.resolve();
 
@@ -160,21 +172,44 @@ export function listenToMessages(
       }
     }),
 
+    // engine.onError fires for every non-empty stderr line from the CLI
+    // (claude-cli-engine.ts:wireStderr). That includes benign noise like
+    // MCP-auth notices and deprecation warnings — NOT a "session over"
+    // signal. The only authoritative terminal event is engine.onExit
+    // (CLI subprocess actually exited).
+    //
+    // So: surface the error so the user sees it (toast via the LoggingService
+    // onError observer wired in main.ts) and keep going. We do NOT:
+    //   - emit claude-complete (the renderer treats that as "tear down all
+    //     IPC listeners for this session" — see useSessionLifecycle.ts);
+    //   - flip sessionStatus to 'error' (next message would still arrive
+    //     under a live session, but the badge would lie);
+    //   - inject a synthetic 'Session Error' card into the message stream
+    //     (it presents as a session-ending result and confuses the user
+    //     when the session is in fact still alive).
+    //
+    // `claude-error:<tabId>` is still emitted so the renderer's LogService
+    // captures the stderr line as a frontend-source app_log entry — that's
+    // separate from the backend-source app_log we write below, and both
+    // serve different attribution lookups in the Log tab.
     engine.onError((err: Error) => {
       if (handle.mode === 'tui') return;
       if (sessions.get(tabId) !== handle) return;
-      setStatus(handle, { sessionStatus: 'error' }, tabId, sendToRenderer);
       const errMsg = err instanceof Error ? err.message : String(err);
       sendToRenderer(`claude-error:${tabId}`, errMsg);
-      sendToRenderer(`claude-output:${tabId}`, {
-        type: 'system',
-        subtype: 'notification',
-        notification_type: 'error',
-        title: 'Session Error',
-        body: `Error: ${errMsg.slice(0, 200)}`,
-      });
-      sendToRenderer(`claude-complete:${tabId}`);
-      teardownJsonlTail(jsonlState);
+      if (logging) {
+        try {
+          logging.writeBatch([{
+            timestamp: new Date().toISOString(),
+            level: 'error',
+            source: 'backend',
+            category: `session:${tabId}`,
+            message: `engine error (session continues): ${errMsg.slice(0, 500)}`,
+          }]);
+        } catch {
+          // Logging must never break the session loop.
+        }
+      }
     }),
 
     engine.onExit(() => {
