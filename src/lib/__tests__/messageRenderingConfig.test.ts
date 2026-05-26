@@ -371,5 +371,54 @@ describe("messageRenderingConfig", () => {
       const restored = parseConfig(serializeConfig(original));
       expect(restored.terminal.typeface).toBe("plex-mono");
     });
+
+    it("createDefaultConfig has a sane terminal fontSize and cursorStyle", () => {
+      const cfg = createDefaultConfig();
+      expect(typeof cfg.terminal.fontSize).toBe("number");
+      expect(cfg.terminal.fontSize).toBeGreaterThanOrEqual(8);
+      expect(cfg.terminal.fontSize).toBeLessThanOrEqual(32);
+      expect(["block", "underline", "bar"]).toContain(cfg.terminal.cursorStyle);
+    });
+
+    it("merges a saved terminal.fontSize within the allowed range", () => {
+      const cfg = mergeConfig({ terminal: { fontSize: 16 } });
+      expect(cfg.terminal.fontSize).toBe(16);
+    });
+
+    it("clamps an out-of-range terminal.fontSize", () => {
+      // Way too small → clamp up.
+      expect(mergeConfig({ terminal: { fontSize: 4 } }).terminal.fontSize)
+        .toBeGreaterThanOrEqual(8);
+      // Way too large → clamp down.
+      expect(mergeConfig({ terminal: { fontSize: 200 } }).terminal.fontSize)
+        .toBeLessThanOrEqual(32);
+    });
+
+    it("falls back to default when terminal.fontSize is not a number", () => {
+      const def = createDefaultConfig();
+      const cfg = mergeConfig({ terminal: { fontSize: "thirteen" } });
+      expect(cfg.terminal.fontSize).toBe(def.terminal.fontSize);
+    });
+
+    it("merges a saved terminal.cursorStyle", () => {
+      expect(mergeConfig({ terminal: { cursorStyle: "bar" } }).terminal.cursorStyle).toBe("bar");
+      expect(mergeConfig({ terminal: { cursorStyle: "underline" } }).terminal.cursorStyle).toBe("underline");
+      expect(mergeConfig({ terminal: { cursorStyle: "block" } }).terminal.cursorStyle).toBe("block");
+    });
+
+    it("falls back to default when terminal.cursorStyle is unknown", () => {
+      const def = createDefaultConfig();
+      const cfg = mergeConfig({ terminal: { cursorStyle: "rainbow" } });
+      expect(cfg.terminal.cursorStyle).toBe(def.terminal.cursorStyle);
+    });
+
+    it("round-trips fontSize and cursorStyle through serialize/parse", () => {
+      const original = createDefaultConfig();
+      original.terminal.fontSize = 15;
+      original.terminal.cursorStyle = "bar";
+      const restored = parseConfig(serializeConfig(original));
+      expect(restored.terminal.fontSize).toBe(15);
+      expect(restored.terminal.cursorStyle).toBe("bar");
+    });
   });
 });

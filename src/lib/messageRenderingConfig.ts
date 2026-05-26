@@ -770,13 +770,38 @@ export const DEFAULT_DEBUG: DebugOptions = {
 // import/export config blob — but the terminal lives in its own section to
 // avoid coupling to message-card structure that doesn't apply.
 
+export type TerminalCursorStyle = "block" | "underline" | "bar";
+
+/** Allowed font-size range (px). Bounds line up with xterm.js's practical
+ *  legibility floor and the largest size the picker exposes. Out-of-range
+ *  values from saved configs are clamped during merge. */
+export const TERMINAL_FONT_SIZE_MIN = 8;
+export const TERMINAL_FONT_SIZE_MAX = 32;
+
+const TERMINAL_CURSOR_STYLES: readonly TerminalCursorStyle[] = ["block", "underline", "bar"];
+
+function isTerminalCursorStyle(v: unknown): v is TerminalCursorStyle {
+  return typeof v === "string" && (TERMINAL_CURSOR_STYLES as readonly string[]).includes(v);
+}
+
+function clampFontSize(n: number): number {
+  if (!Number.isFinite(n)) return DEFAULT_TERMINAL.fontSize;
+  return Math.max(TERMINAL_FONT_SIZE_MIN, Math.min(TERMINAL_FONT_SIZE_MAX, Math.round(n)));
+}
+
 export interface Terminal {
   /** Catalog typeface ID. Mono fonts only — the picker filters to family='mono'. */
   typeface: Typeface;
+  /** Font size in CSS pixels. Clamped to [TERMINAL_FONT_SIZE_MIN, TERMINAL_FONT_SIZE_MAX] on load. */
+  fontSize: number;
+  /** xterm cursor style — block, underline, or vertical bar. */
+  cursorStyle: TerminalCursorStyle;
 }
 
 export const DEFAULT_TERMINAL: Terminal = {
   typeface: "jetbrains-mono",
+  fontSize: 13,
+  cursorStyle: "block",
 };
 
 // ─── top-level config ───────────────────────────────────────────────────────
@@ -950,12 +975,11 @@ export function mergeConfig(saved: unknown): MessageRenderingConfig {
 
   if (isRecord(saved.terminal)) {
     const t = saved.terminal;
-    if (isTypefaceId(t.typeface)) {
-      base.terminal = { typeface: t.typeface };
-    }
-    // Unknown / missing typeface → leave the default in place. No partial-shape
-    // merging here yet — Terminal is a single-key record; expand when it gains
-    // more fields.
+    if (isTypefaceId(t.typeface)) base.terminal.typeface = t.typeface;
+    if (typeof t.fontSize === "number") base.terminal.fontSize = clampFontSize(t.fontSize);
+    if (isTerminalCursorStyle(t.cursorStyle)) base.terminal.cursorStyle = t.cursorStyle;
+    // Unknown / wrong-typed fields fall through to the defaults already on
+    // `base.terminal` from createDefaultConfig() above.
   }
 
   return base;

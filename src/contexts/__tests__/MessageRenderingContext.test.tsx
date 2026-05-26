@@ -108,7 +108,7 @@ describe("MessageRenderingProvider", () => {
 
     await act(async () => {
       const next = { ...captured.config };
-      next.terminal = { typeface: "plex-mono" };
+      next.terminal = { ...next.terminal, typeface: "plex-mono" };
       captured.setConfig(next);
     });
 
