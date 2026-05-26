@@ -5,6 +5,32 @@ import { classifyStandaloneKind } from './messageKind';
 import { classifyBlockKind } from './blockKind';
 
 /**
+ * Resolve the whole-message kind ID for compact-grouping purposes.
+ *
+ * Reads `message.streamKind` first (set by the classifier in Task 1.5).
+ * Falls back to `classifyStandaloneKind` for messages that pre-date the
+ * adapter tagging (e.g. live-stream messages that haven't been through
+ * jsonlAdapter) or for the context-aware result subtype logic that the
+ * adapter cannot replicate without allMessages.
+ *
+ * Returns `null` for mixed-content messages (regular assistant / user
+ * prompt) that need per-block analysis instead of a whole-message kind.
+ */
+function resolveWholeMessageKind(
+  msg: ClaudeStreamMessage,
+  allMessages: ClaudeStreamMessage[],
+): string | null {
+  // classifyStandaloneKind returns null for mixed-content messages (regular
+  // assistant turns, plain user prompts) — the null is semantically load-
+  // bearing: it gates the per-block fallthrough below. Use it to decide
+  // *whether* a whole-message kind applies, then read streamKind as the
+  // actual ID so we don't re-derive what the adapter already computed.
+  const standaloneKind = classifyStandaloneKind(msg, allMessages);
+  if (standaloneKind === null) return null;
+  return msg.streamKind ?? standaloneKind;
+}
+
+/**
  * Compact-mode grouping: walk the timeline and decide, per message, whether
  * to render it normally (visible) or fold it into a `HiddenEventsGroup`
  * with neighboring hidden messages.
@@ -43,7 +69,7 @@ export function isMessageFullyHidden(
   allMessages: ClaudeStreamMessage[],
   config: MessageRenderingConfig,
 ): boolean {
-  const wholeKind = classifyStandaloneKind(msg, allMessages);
+  const wholeKind = resolveWholeMessageKind(msg, allMessages);
   if (wholeKind) {
     const k = config.kinds[wholeKind];
     if (!k) return false;
