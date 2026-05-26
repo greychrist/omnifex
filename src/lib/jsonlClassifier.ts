@@ -2,6 +2,7 @@ import type {
   JsonlNode,
   AssistantRaw,
   UserRaw,
+  UserKind,
   AttachmentRaw,
   QueueOpRaw,
   LastPromptRaw,
@@ -73,14 +74,39 @@ function classifyAssistant(r: Record<string, unknown>, sessionId: string, receiv
   };
 }
 
+function isToolResultOnly(content: unknown): boolean {
+  if (!Array.isArray(content)) return false;
+  if (content.length === 0) return false;
+  return content.every((c) => c && typeof c === 'object' && (c as { type?: string }).type === 'tool_result');
+}
+
+function isAttachmentMarker(content: unknown): boolean {
+  if (!Array.isArray(content) || content.length === 0) return false;
+  const first = content[0] as { type?: string; text?: string } | undefined;
+  if (!first || first.type !== 'text' || typeof first.text !== 'string') return false;
+  return first.text.startsWith('[Image: ');
+}
+
 function classifyUser(r: Record<string, unknown>, sessionId: string, receivedAt: string): JsonlNode | null {
   const message = r.message;
   if (!message || typeof message !== 'object') return null;
   const content = (message as { content?: unknown }).content;
-  // Discriminate prompt vs tool-result: tool-result user messages have
-  // exclusively `tool_result` content blocks; user prompts contain text
-  // blocks (or are bare strings, in which case they're definitely prompts).
-  const userKind = isToolResultOnly(content) ? 'tool-result' : 'prompt';
+  const isMeta = r.isMeta === true;
+  const hasSourceToolUseID = typeof r.sourceToolUseID === 'string' && r.sourceToolUseID.length > 0;
+
+  let userKind: UserKind;
+  if (isToolResultOnly(content)) {
+    userKind = 'tool-result';
+  } else if (isMeta && hasSourceToolUseID) {
+    userKind = 'meta-skill';
+  } else if (isMeta && isAttachmentMarker(content)) {
+    userKind = 'meta-attachment';
+  } else if (isMeta) {
+    userKind = 'meta-other';
+  } else {
+    userKind = 'prompt';
+  }
+
   return {
     kind: 'user',
     raw: r as unknown as UserRaw,
@@ -88,12 +114,6 @@ function classifyUser(r: Record<string, unknown>, sessionId: string, receivedAt:
     receivedAt,
     userKind,
   };
-}
-
-function isToolResultOnly(content: unknown): boolean {
-  if (!Array.isArray(content)) return false;
-  if (content.length === 0) return false;
-  return content.every((c) => c && typeof c === 'object' && (c as { type?: string }).type === 'tool_result');
 }
 
 function classifyAttachment(r: Record<string, unknown>, sessionId: string, receivedAt: string): JsonlNode | null {

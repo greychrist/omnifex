@@ -44,6 +44,10 @@ export interface UserRaw extends RawLineBase {
   cwd?: string;
   promptId?: string;
   permissionMode?: string;
+  /** True when the record was synthesized by the harness, not typed by the user. */
+  isMeta?: boolean;
+  /** Set when a meta record was emitted on behalf of a specific tool_use (e.g. Skill bodies). */
+  sourceToolUseID?: string;
 }
 
 export interface AttachmentRaw extends RawLineBase {
