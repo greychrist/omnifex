@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'/Users/gregorychristie/Repos/personal/omnifex/.codex/hooks/check-unfinished-todos.py'"
+          }
+        ]
+      }
+    ]
+  }
+}

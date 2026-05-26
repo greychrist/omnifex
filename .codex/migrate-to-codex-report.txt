@@ -1,0 +1,3 @@
+Migration report:
+  rewritten: .codex/config.toml - Migrated project Claude enabledPlugins settings into Codex plugin entries.
+  manual_fix_required: .codex/config.toml - Plugin availability is managed by Codex plugin marketplaces; verify unavailable Claude plugins before relying on them.

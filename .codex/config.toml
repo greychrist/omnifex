@@ -1,0 +1,24 @@
+[mcp_servers.context7]
+args = [
+    "-y",
+    "@upstash/context7-mcp@latest",
+]
+command = "npx"
+
+[shell_environment_policy]
+inherit = "core"
+
+[shell_environment_policy.set]
+OMNIFEX_SETTINGS_LOG_TEST = "2026-05-14"
+
+[plugins."frontend-design@claude-plugins-official"]
+enabled = true
+
+[plugins."feature-dev@claude-plugins-official"]
+enabled = true
+
+[plugins."typescript-lsp@claude-plugins-official"]
+enabled = true
+
+[plugins."rust-analyzer-lsp@claude-plugins-official"]
+enabled = false
