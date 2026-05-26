@@ -74,3 +74,29 @@ describe('classifyUser — userKind discrimination', () => {
     if (node?.kind === 'user') expect(node.userKind).toBe('tool-result');
   });
 });
+
+describe('classifyJsonlLine — unknown fallback', () => {
+  it('returns kind: unknown for an unrecognized top-level type', () => {
+    const node = classifyJsonlLine({
+      type: 'mystery',
+      timestamp: '2026-05-26T00:00:00.000Z',
+      message: { foo: 'bar' },
+    });
+    expect(node?.kind).toBe('unknown');
+  });
+
+  it('returns kind: unknown for a known type with unrecognized subtype', () => {
+    const node = classifyJsonlLine({
+      type: 'system',
+      subtype: 'never_seen_subtype',
+      timestamp: '2026-05-26T00:00:00.000Z',
+    });
+    expect(node?.kind).toBe('unknown');
+  });
+
+  it('still returns null for completely malformed input', () => {
+    expect(classifyJsonlLine(null)).toBeNull();
+    expect(classifyJsonlLine('not-an-object')).toBeNull();
+    expect(classifyJsonlLine({ /* missing type */ })).toBeNull();
+  });
+});

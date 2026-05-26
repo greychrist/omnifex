@@ -59,7 +59,12 @@ export function classifyJsonlLine(raw: unknown): JsonlNode | null {
     case 'result':
       return classifyResult(r, sessionId, receivedAt);
     default:
-      return null;
+      return {
+        kind: 'unknown',
+        raw: r,
+        sessionId,
+        receivedAt,
+      };
   }
 }
 
@@ -185,8 +190,9 @@ function classifyFileSnapshot(r: Record<string, unknown>): JsonlNode | null {
 
 function classifySystem(r: Record<string, unknown>, sessionId: string, receivedAt: string): JsonlNode | null {
   const subtype = r.subtype;
-  if (typeof subtype !== 'string') return null;
-  if (!SYSTEM_SUBTYPES.has(subtype as SystemSubtype)) return null;
+  if (typeof subtype !== 'string' || !SYSTEM_SUBTYPES.has(subtype as SystemSubtype)) {
+    return { kind: 'unknown', raw: r, sessionId, receivedAt };
+  }
   return {
     kind: 'system',
     subtype: subtype as SystemSubtype,

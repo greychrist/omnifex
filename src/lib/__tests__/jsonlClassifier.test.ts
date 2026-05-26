@@ -62,7 +62,11 @@ describe('classifyJsonlLine', () => {
     expect(classifyJsonlLine(undefined)).toBeNull();
     expect(classifyJsonlLine('not an object')).toBeNull();
     expect(classifyJsonlLine({})).toBeNull();
-    expect(classifyJsonlLine({ type: 'unknown-future-type' })).toBeNull();
+  });
+
+  it('returns kind: unknown for an unrecognized top-level type', () => {
+    const node = classifyJsonlLine({ type: 'unknown-future-type' });
+    expect(node?.kind).toBe('unknown');
   });
 
   it('uses receivedAt fallback when timestamp is missing', () => {
@@ -170,14 +174,14 @@ describe('classifyJsonlLine', () => {
     }
   });
 
-  it('returns null for system with unknown subtype', () => {
+  it('returns kind: unknown for system with unknown subtype', () => {
     const node = classifyJsonlLine({
       type: 'system',
       subtype: 'future_unknown_subtype',
       sessionId: 'sid',
       timestamp: '2026-05-24T00:00:00Z',
     });
-    expect(node).toBeNull();
+    expect(node?.kind).toBe('unknown');
   });
 
   it('classifies system/init (SDK iterator shape)', () => {
