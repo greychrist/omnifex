@@ -34,8 +34,6 @@ function isHookLifecycleMarker(msg: ClaudeStreamMessage): boolean {
  *   task_notification) — those are rendered in the SubagentBar.
  * - When `hardFilters.hideHookLifecycle` is on (default), SDK hook
  *   lifecycle events (hook_started / hook_response / user_prompt_submit).
- * - JSONL node filters: dropHookSummaries, dropClosureCarriers,
- *   dropSystemInformational when their respective toggles are on.
  */
 export function filterDisplayableMessages(
   messages: ClaudeStreamMessage[],
@@ -44,9 +42,6 @@ export function filterDisplayableMessages(
   // Backward-compat: missing config means apply legacy defaults (everything on).
   // hideHookLifecycle replaces the old dropHookLifecycle key.
   const hideHookLifecycle = hardFilters?.hideHookLifecycle ?? true;
-  const dropHookSummaries = hardFilters?.dropHookSummaries ?? false;
-  const dropClosureCarriers = hardFilters?.dropClosureCarriers ?? true;
-  const dropSystemInformational = hardFilters?.dropSystemInformational ?? false;
 
   return messages.filter((message, index) => {
     // Skill-injection user messages have isMeta:true in the persisted
@@ -73,40 +68,6 @@ export function filterDisplayableMessages(
     // Skip SDK hook lifecycle events when the user has the filter on.
     if (hideHookLifecycle && isHookLifecycleMarker(message)) {
       return false;
-    }
-
-    // JSONL node filters
-
-    // Drop stop_hook_summary system messages
-    if (dropHookSummaries) {
-      const sub = (message as { subtype?: string }).subtype;
-      if (message.type === 'system' && sub === 'stop_hook_summary') {
-        return false;
-      }
-    }
-
-    // Drop queue-operation messages and queued_command attachments
-    if (dropClosureCarriers) {
-      if ((message as { type: string }).type === 'queue-operation') {
-        return false;
-      }
-      if (
-        (message as { type: string }).type === 'attachment' &&
-        (message as { attachment?: { type?: string } }).attachment?.type === 'queued_command'
-      ) {
-        return false;
-      }
-    }
-
-    // Drop away_summary, local_command, informational system messages
-    if (dropSystemInformational) {
-      const sub = (message as { subtype?: string }).subtype;
-      if (
-        message.type === 'system' &&
-        (sub === 'away_summary' || sub === 'local_command' || sub === 'informational')
-      ) {
-        return false;
-      }
     }
 
     // Skip the synthesized subagent prompt — its content is already

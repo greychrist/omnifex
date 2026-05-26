@@ -334,12 +334,6 @@ export const DEFAULT_TYPOGRAPHY: Typography = {
 // ─── hard filters ───────────────────────────────────────────────────────────
 
 export interface HardFilters {
-  // JSONL node filters — apply to messages[] populated from JSONL
-  dropBookkeeping: boolean;          // last-prompt, permission-mode, ai-title, file-history-snapshot
-  dropHookSummaries: boolean;        // system/stop_hook_summary
-  dropEmptyUser: boolean;            // user with empty or tool_result-only content
-  dropClosureCarriers: boolean;      // queue-operation, queued_command attachments
-  dropSystemInformational: boolean;  // system/away_summary, system/local_command, system/informational
   // Live overlay filters — apply to CLI overlay channels (Chat mode only)
   hidePartialStreaming: boolean;     // stream_event (typewriter effect)
   hideSubagentLifecycle: boolean;    // task_started/updated/progress (SubagentBar)
@@ -348,11 +342,6 @@ export interface HardFilters {
 }
 
 export const DEFAULT_HARD_FILTERS: HardFilters = {
-  dropBookkeeping: true,
-  dropHookSummaries: false,
-  dropEmptyUser: true,
-  dropClosureCarriers: true,
-  dropSystemInformational: false,
   hidePartialStreaming: false,
   hideSubagentLifecycle: false,
   hideHookLifecycle: false,
@@ -535,22 +524,16 @@ export function mergeConfig(saved: unknown): MessageRenderingConfig {
     }
   }
 
-  // Hard filters — migrate legacy keys (dropMeta, dropTaskLifecycle,
-  // dropHookLifecycle) into the new JSONL-aware shape. New fields take
-  // their default unless an explicit user value exists.
+  // Hard filters — migrate legacy keys (dropTaskLifecycle → hideSubagentLifecycle,
+  // dropHookLifecycle → hideHookLifecycle). The five removed JSONL node-filter
+  // keys (dropBookkeeping, dropHookSummaries, dropEmptyUser, dropClosureCarriers,
+  // dropSystemInformational) are silently ignored on load from old saved configs.
   if (isRecord(saved.hardFilters)) {
     const hf = saved.hardFilters;
     const has = (k: string) => Object.prototype.hasOwnProperty.call(hf, k);
     const bool = (k: string, fallback: boolean): boolean =>
       typeof hf[k] === "boolean" ? (hf[k] as boolean) : fallback;
     base.hardFilters = {
-      dropBookkeeping: has("dropBookkeeping")
-        ? bool("dropBookkeeping", base.hardFilters.dropBookkeeping)
-        : bool("dropMeta", base.hardFilters.dropBookkeeping),
-      dropHookSummaries: bool("dropHookSummaries", base.hardFilters.dropHookSummaries),
-      dropEmptyUser: bool("dropEmptyUser", base.hardFilters.dropEmptyUser),
-      dropClosureCarriers: bool("dropClosureCarriers", base.hardFilters.dropClosureCarriers),
-      dropSystemInformational: bool("dropSystemInformational", base.hardFilters.dropSystemInformational),
       hidePartialStreaming: bool("hidePartialStreaming", base.hardFilters.hidePartialStreaming),
       hideSubagentLifecycle: has("hideSubagentLifecycle")
         ? bool("hideSubagentLifecycle", base.hardFilters.hideSubagentLifecycle)
