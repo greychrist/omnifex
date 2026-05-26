@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.65] — 2026-05-26
+
+Second half of the rich → tui → rich round-trip fix from 0.4.64. The listener re-attachment landed but the return path still booted users out of any session that hadn't sent a message yet.
+
+Installers remain **unsigned**.
+
+### Fixed
+
+- **`setMode` rich → tui → rich kicked users out when no message had been sent** (`35c9c02`). `restartQuery` unconditionally passed `resume: true`, so toggling rich → tui → rich before sending anything in either mode invoked the CLI with `--resume <id>` against a JSONL that didn't exist yet. The CLI exited with "No conversation found with session ID …", the runtime translated the exit into `stopped` / `claude-complete`, and the renderer dropped back to the New Session form. `restartQuery` now mirrors `setMode("tui")`'s JSONL existence check and only resumes when the transcript file is on disk — otherwise it pins via `--session-id` like a cold start. Stream-error recovery is unaffected (errors only fire after the CLI has written messages, so the JSONL exists). Covered by two new cases in `electron/__tests__/sessions-setmode-roundtrip.test.ts`.
+
 ## [0.4.64] — 2026-05-26
 
 Session-lifecycle fix. Toggling a session from rich → tui → rich left the resumed engine with no listener loop — `claude-output:<tabId>` never reached the renderer, and `conversationStatus` stuck on whatever it was at the toggle. Now `listenToMessages` always (re-)attaches when re-entering rich mode, so output keeps flowing across mode round-trips.
