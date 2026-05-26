@@ -90,14 +90,14 @@ describe("messageRenderingConfig", () => {
       }
     });
 
-    it("locks exactly the four turn-boundary kinds", () => {
-      // The compact-mode redesign shrinks the lock set to user.prompt and
-      // the three terminal result kinds. Everything else must be toggleable.
+    it("locks exactly the two turn-boundary kinds (v2 catalog)", () => {
+      // v2 catalog: only user.prompt (turn opener) and result.error_during_execution
+      // (catastrophic failure that must always be visible) are boundary-locked.
+      // The other result kinds (success, interrupt, max_tokens, etc.) are toggleable
+      // so users can hide them in compact mode if they prefer.
       const locked = DEFAULT_KINDS.filter((k) => k.compactBoundaryLocked).map((k) => k.id).sort();
       expect(locked).toEqual([
-        "result.awaiting_background",
-        "result.error",
-        "result.success",
+        "result.error_during_execution",
         "user.prompt",
       ]);
     });

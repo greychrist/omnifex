@@ -6,13 +6,16 @@ describe("kindPresentation", () => {
   it("returns the configured headerLabel for a known kind", () => {
     const cfg = createDefaultConfig();
     expect(headerLabelFor(cfg, "user.prompt")).toBe("You");
-    expect(headerLabelFor(cfg, "result.success")).toBe("Execution Complete");
-    expect(headerLabelFor(cfg, "result.error")).toBe("Execution Failed");
+    // v2 catalog: result.success has no headerLabel (null); the terminal kind
+    // with "Execution Failed" is result.error_during_execution.
+    expect(headerLabelFor(cfg, "result.success")).toBeNull();
+    expect(headerLabelFor(cfg, "result.error_during_execution")).toBe("Execution Failed");
   });
 
   it("returns null when the kind's headerLabel is null", () => {
     const cfg = createDefaultConfig();
-    expect(headerLabelFor(cfg, "assistant.text")).toBeNull();
+    // v2 catalog: assistant.tool-use has headerLabel: null (no header shown).
+    expect(headerLabelFor(cfg, "assistant.tool-use")).toBeNull();
   });
 
   it("returns a user override for headerLabel", () => {
@@ -31,7 +34,8 @@ describe("kindPresentation", () => {
     const cfg = createDefaultConfig();
     expect(iconNameFor(cfg, "user.prompt")).toBe("User");
     expect(iconNameFor(cfg, "assistant.text")).toBe("Bot");
-    expect(iconNameFor(cfg, "result.success")).toBe("CheckCircle2");
+    // v2 catalog: result.success uses "Check" (not "CheckCircle2").
+    expect(iconNameFor(cfg, "result.success")).toBe("Check");
   });
 
   it("bundles everything in presentationFor", () => {
