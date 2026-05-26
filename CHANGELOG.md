@@ -23,6 +23,13 @@ Installers remain **unsigned**.
 - **Toggle relabeled SDK→Chat** (`92b0d1d`). The mode toggle in the session header now reads "Chat / Terminal" since "SDK" no longer describes what's underneath. The internal mode literal renames `'sdk'` → `'rich'` across main + renderer.
 - **`models.ts` uses the engine for the pre-session model picker** (`2ab999d`). The renderer's model picker no longer spins up an SDK query — it instantiates a short-lived `ClaudeCliEngine`, awaits the first `system:init`, reads `getInitData().models`, and closes.
 
+### Fixed
+
+- **Session GUI stayed deaf in dev** (`ce1272c`). Under React StrictMode the lifecycle hook attached IPC listeners on first mount, then the StrictMode unmount tore every listener off, and the second mount short-circuited on `persistentSessionRef=true` so they never came back. Net effect: chat looked frozen — assistant messages never rendered, Session ID stuck on "awaiting init", badge stuck on STARTING — even though main was emitting everything correctly. Notifications still fired because they bypass the renderer entirely. Fix: re-attach listeners on mount when a live session has none, and move per-session listener disposal to `claude-complete` (main's authoritative "this session is done" signal), so listeners survive React remounts but don't leak when tabs actually close.
+- **`session-init:<tabId>` event** (`63dec0b`). Main now broadcasts the pinned session UUID the moment the CLI subprocess spawns, so `claudeSessionId` / `extractedSessionInfo` are seeded immediately on Start — no more "awaiting init" placeholder waiting for the CLI's mid-first-turn `system:init`. Mode toggle, model picker, and persistence become interactive right away.
+- **`fetchInitInfo()` polling deleted** (`63dec0b`). The renderer-side poll for `sessionAccountInfo` was an SDK-era pattern that spun forever in CLI mode (the control channel doesn't answer pre-first-message). Account / models / commands now flow through the reducer's `system:init` effects, which fire naturally on the CLI's first turn.
+- **Context-window donut chart warning** (`ce1272c`). Recharts `ResponsiveContainer` measured the Radix popover-content portal at `width=-1` on first paint and warned loudly in dev. Added `minWidth=0`/`minHeight=0` per Recharts' own escape-hatch guidance.
+
 ### Removed
 
 - **`@anthropic-ai/claude-agent-sdk` dependency** (`2ab999d`). The SDK is gone from `package.json`, `node_modules`, `forge.config.ts` `asar.unpack`, and the `copySdkPlatformBinaries` step. The "Referenced SDK" titlebar badge silently returns null now and renders blank; a follow-up will delete the badge itself.

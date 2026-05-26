@@ -26,37 +26,34 @@ function makeFakeEngine(opts?: {
   const messageCbs: Array<(m: { agent: 'claude'; tabId: string; receivedAt: string; sessionId: string | null; payload: unknown }) => void> = [];
   const exitCbs: Array<() => void> = [];
   let initData: InitData | null = null;
+  const defaultModels = [
+    { value: 'claude-sonnet-4-6', displayName: 'Sonnet 4.6', description: 'Fast' },
+    { value: 'claude-opus-4-7', displayName: 'Opus 4.7', description: 'Deep' },
+  ];
+  const modelsToReport = opts?.models ?? defaultModels;
 
   const engine: AgentEngine = {
     kind: 'claude',
     applyExtendedPermissionMode: vi.fn(async () => {}),
     start: vi.fn(async () => {
       if (opts?.startReject) throw opts.startReject;
-      if (opts?.delayMs) {
-        // Schedule the init emission asynchronously so the listSupported
-        // race against the timeout exercises both branches.
-        setTimeout(() => {
-          initData = { models: opts.models ?? [] };
-          for (const cb of messageCbs) {
-            cb({ agent: 'claude', tabId: 't', receivedAt: '', sessionId: 's', payload: { type: 'system', subtype: 'init' } });
-          }
-        }, opts.delayMs);
-      } else {
-        // Emit init synchronously (default behavior).
-        initData = { models: opts?.models ?? [
-          { value: 'claude-sonnet-4-6', displayName: 'Sonnet 4.6', description: 'Fast' },
-          { value: 'claude-opus-4-7', displayName: 'Opus 4.7', description: 'Deep' },
-        ] };
-        queueMicrotask(() => {
-          for (const cb of messageCbs) {
-            cb({ agent: 'claude', tabId: 't', receivedAt: '', sessionId: 's', payload: { type: 'system', subtype: 'init' } });
-          }
-        });
-      }
+      // models.ts now reads via sendControlRequest('initialize'), not via
+      // onMessage(system:init). Stash initData defensively for any callers
+      // that still consult getInitData(), but the live path uses the
+      // control_request below.
+      initData = { models: modelsToReport };
     }),
     send: vi.fn(async () => {}),
     sendStructured: vi.fn(async () => {}),
-    sendControlRequest: vi.fn(async () => undefined) as AgentEngine['sendControlRequest'],
+    sendControlRequest: vi.fn(async (subtype: string) => {
+      if (subtype === 'initialize') {
+        if (opts?.delayMs) {
+          await new Promise((r) => setTimeout(r, opts.delayMs));
+        }
+        return { models: modelsToReport };
+      }
+      return undefined;
+    }) as AgentEngine['sendControlRequest'],
     respondPermission: vi.fn(async () => {}),
     interrupt: vi.fn(async () => {}),
     close: vi.fn(async () => {}),
