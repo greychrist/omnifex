@@ -34,11 +34,27 @@ export const MessageFrame: React.FC<MessageFrameProps> = ({ streamKind, children
     return <div data-frame-variant="missing">{children}</div>;
   }
 
+  // When the kind opts into raw-payload display (today only `unknown`, but
+  // the field is a general escape hatch), append a collapsible <details>
+  // block with the pretty-printed message JSON. Sits after the existing
+  // children so it works for both card and side-line variants.
+  const rawPayload = kind.showRawPayload === true && message ? (
+    <details className="mt-2 text-xs">
+      <summary className="cursor-pointer text-muted-foreground font-mono select-none hover:text-foreground">
+        Raw payload
+      </summary>
+      <pre className="mt-1 p-2 rounded border bg-muted/50 text-[10px] font-mono overflow-x-auto whitespace-pre-wrap break-words leading-tight">
+        {JSON.stringify(message, null, 2)}
+      </pre>
+    </details>
+  ) : null;
+
   if (kind.presentation === 'card') {
     return (
       <div data-frame-variant="card">
         <MessageFrameCard kindId={kind.id} actionBar={actionBar} message={message}>
           {children}
+          {rawPayload}
         </MessageFrameCard>
       </div>
     );
@@ -46,12 +62,15 @@ export const MessageFrame: React.FC<MessageFrameProps> = ({ streamKind, children
 
   // 'side-line' (and any future presentation variants fall through here)
   return (
-    <MessageFrameSideLine
-      iconName={kind.icon}
-      accentColor={kind.accentColor}
-      borderStyle={kind.borderStyle}
-    >
-      {children}
-    </MessageFrameSideLine>
+    <div data-frame-variant="side-line">
+      <MessageFrameSideLine
+        iconName={kind.icon}
+        accentColor={kind.accentColor}
+        borderStyle={kind.borderStyle}
+      >
+        {children}
+      </MessageFrameSideLine>
+      {rawPayload && <div className="ml-6">{rawPayload}</div>}
+    </div>
   );
 };
