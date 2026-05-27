@@ -175,6 +175,9 @@ export const ALLOWED_ICONS = [
   "Scissors",
   "Shield",
   "ShieldOff",
+  "ImageUp",
+  "MonitorCog",
+  "Slash",
   // Unicode fallbacks
   "ℹ",
   "✗",

@@ -82,6 +82,10 @@ import {
   Flame,
   Smile,
   Hourglass,
+  // additions
+  ImageUp,
+  MonitorCog,
+  Slash,
 } from "lucide-react";
 import type { IconName } from "@/lib/messageRenderingConfig";
 
@@ -160,6 +164,9 @@ const LUCIDE_MAP: Record<string, React.ComponentType<{ className?: string }>> = 
   Flame,
   Smile,
   Hourglass,
+  ImageUp,
+  MonitorCog,
+  Slash,
 };
 
 export const IconRenderer: React.FC<{ name: IconName; className?: string }> = ({
