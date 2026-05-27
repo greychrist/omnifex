@@ -154,6 +154,14 @@ export function listenToMessages(
           break;
         case 'streamEvent':
           break;
+        case 'hook':
+          // SDK hook lifecycle (hook_started / hook_progress /
+          // hook_response / user_prompt_submit). Forward to the renderer
+          // for display, but do NOT flip conversationStatus — SessionStart
+          // hooks fire BEFORE any user turn, and no `result` will arrive
+          // to flip it back. Letting this go through 'turn' is how the
+          // FSM gets stranded "running" on a fresh idle session.
+          break;
         case 'result':
           // status flip after notification dispatch below
           break;

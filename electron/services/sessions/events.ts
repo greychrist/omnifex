@@ -23,8 +23,12 @@ export interface RateLimitInfo {
  *   conversation compaction. Status stays 'running'; UI may show a hint.
  * - `streamEvent`: SDKPartialAssistantMessage — token-level partial
  *   delta, only emitted when `includePartialMessages` is true.
+ * - `hook`: SDK hook lifecycle (hook_started / hook_progress /
+ *   hook_response / user_prompt_submit). Fires on SessionStart BEFORE
+ *   any user turn — must NOT flip conversationStatus to 'running', or
+ *   the session is stranded "working" forever (no result will arrive).
  * - `turn`: anything else mid-turn (assistant text, tool_use, tool_result,
- *   hook events, etc.). Status flips to 'running'.
+ *   non-hook system events, etc.). Status flips to 'running'.
  */
 export type RuntimeEvent =
   | { kind: 'init'; sessionId: string | null }
@@ -32,7 +36,15 @@ export type RuntimeEvent =
   | { kind: 'rateLimit'; info: RateLimitInfo }
   | { kind: 'compact'; trigger: 'manual' | 'auto' | null; preTokens: number | null }
   | { kind: 'streamEvent' }
+  | { kind: 'hook' }
   | { kind: 'turn' };
+
+const HOOK_LIFECYCLE_SUBTYPES: ReadonlySet<string> = new Set([
+  'hook_started',
+  'hook_progress',
+  'hook_response',
+  'user_prompt_submit',
+]);
 
 const BODY_MAX_LEN = 200;
 
@@ -69,6 +81,10 @@ export function classifyRuntimeEvent(raw: unknown): RuntimeEvent {
   if (m.type === 'system' && m.subtype === 'init') {
     const sid = typeof m.session_id === 'string' ? (m.session_id) : null;
     return { kind: 'init', sessionId: sid };
+  }
+
+  if (m.type === 'system' && typeof m.subtype === 'string' && HOOK_LIFECYCLE_SUBTYPES.has(m.subtype)) {
+    return { kind: 'hook' };
   }
 
   if (m.type === 'system' && m.subtype === 'compact_boundary') {

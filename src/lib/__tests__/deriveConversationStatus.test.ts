@@ -24,6 +24,17 @@ function assistant(): ClaudeStreamMessage {
     message: { role: 'assistant', content: [{ type: 'text', text: 'hi' }] },
   } as unknown as ClaudeStreamMessage;
 }
+function systemHook(
+  subtype: 'hook_started' | 'hook_progress' | 'hook_response' | 'user_prompt_submit',
+): ClaudeStreamMessage {
+  return { type: 'system', subtype } as unknown as ClaudeStreamMessage;
+}
+function systemInit(): ClaudeStreamMessage {
+  return { type: 'system', subtype: 'init' } as unknown as ClaudeStreamMessage;
+}
+function streamEvent(): ClaudeStreamMessage {
+  return { type: 'stream_event' } as unknown as ClaudeStreamMessage;
+}
 
 const allSettled = {
   hasIncompleteTasks: false,
@@ -46,6 +57,51 @@ describe('isLastMessageExecutionComplete', () => {
   it('returns false when the last message is anything but a result', () => {
     expect(isLastMessageExecutionComplete([user('hi')])).toBe(false);
     expect(isLastMessageExecutionComplete([user('hi'), assistant()])).toBe(false);
+  });
+
+  // SessionStart hooks fire system events (hook_started / hook_progress /
+  // hook_response) BEFORE any user turn. The transcript ending in a plumbing
+  // event is NOT proof Claude is waiting on us — there's nothing in flight.
+  // Same logic applies to system:init (anchors the session, doesn't open a turn)
+  // and stream_event (per-token delta; the parent assistant message carries
+  // the conversational signal).
+  it('ignores plumbing events when finding the last execution-complete marker', () => {
+    // Fresh session: only init + hook events, no real turn yet → complete.
+    expect(
+      isLastMessageExecutionComplete([
+        systemInit(),
+        systemHook('hook_started'),
+        systemHook('hook_progress'),
+        systemHook('hook_response'),
+      ]),
+    ).toBe(true);
+    // Plumbing trailing a result is still complete.
+    expect(
+      isLastMessageExecutionComplete([
+        user('hi'),
+        assistant(),
+        result(),
+        systemHook('hook_started'),
+        systemHook('hook_response'),
+      ]),
+    ).toBe(true);
+    // Stream-event deltas are plumbing too.
+    expect(
+      isLastMessageExecutionComplete([
+        user('hi'),
+        assistant(),
+        result(),
+        streamEvent(),
+      ]),
+    ).toBe(true);
+    // BUT plumbing that comes AFTER a real user turn with no result is
+    // still "waiting on Claude" — the user prompt is the last real message.
+    expect(
+      isLastMessageExecutionComplete([
+        user('hi'),
+        systemHook('hook_started'),
+      ]),
+    ).toBe(false);
   });
 });
 
@@ -125,5 +181,26 @@ describe('deriveConversationStatus', () => {
         hasIncompleteSubagents: true,
       }),
     ).toBe('running');
+  });
+
+  // Regression: opening a session with SessionStart hooks configured emits
+  // hook_started / hook_progress / hook_response system events before any
+  // user turn. The derivation must treat that as 'idle', not 'running'.
+  // Otherwise the inspector pins Prompt status to WORKING, the in-flight
+  // rollup fires, and the spinner sticks even after the user navigates
+  // away from the session.
+  it("returns 'idle' for a fresh session whose only messages are SessionStart hook events", () => {
+    expect(
+      deriveConversationStatus({
+        sessionStatus: 'started',
+        messages: [
+          systemInit(),
+          systemHook('hook_started'),
+          systemHook('hook_progress'),
+          systemHook('hook_response'),
+        ],
+        ...allSettled,
+      }),
+    ).toBe('idle');
   });
 });

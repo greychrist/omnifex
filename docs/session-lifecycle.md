@@ -83,10 +83,13 @@ Driven from `electron/services/sessions/runtime.ts` and `electron/services/sessi
 | `start()` called (pre-SDK)      | `starting`                 | `null`             |
 | `system:init`                   | `started`                  | `idle`             |
 | `turn` (assistant streaming)    | `started`                  | `running`          |
+| `system:hook_*` lifecycle       | `started`                  | unchanged          |
 | `canUseTool` invoked            | `started`                  | `waiting_permission` |
 | `result` (turn complete)        | `started`                  | `idle`             |
 | stream throws                   | `error`                    | `null`             |
 | clean close                     | `stopped`                  | `null`             |
+
+Hook lifecycle messages (`system:hook_started` / `hook_progress` / `hook_response` / `user_prompt_submit`) are forwarded to the renderer for display but never flip the FSM. They fire on `SessionStart` BEFORE any user turn — bucketing them as `turn` strands the session at `running` because no `result` is coming. The renderer's `deriveConversationStatus` applies the same filter when walking the transcript backwards to find the last execution-complete marker.
 
 The renderer's eager `setSessionStatus('starting')` before awaiting `api.startSession` is the only renderer-side write. Every other transition flows from the main process via the `session-status:<tabId>` event channel.
 

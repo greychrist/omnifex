@@ -2,17 +2,38 @@ import type { ClaudeStreamMessage } from '@/types/claudeStream';
 import type { SessionStatus, ConversationStatus } from '@/lib/api';
 
 /**
- * True when the transcript's last entry is an "execution complete" message
- * — i.e. a SDK/CLI `result` row (success or error). Both variants count
- * because both terminate the turn; "execution failed" is still execution
- * over. An empty transcript counts as complete (nothing to wait on).
+ * Top-level message types that don't represent conversational progress.
+ * Skipped when looking for the most recent "turn-bracket" message:
+ *   - `system` covers init, notifications, hook lifecycle (hook_started /
+ *     hook_progress / hook_response / user_prompt_submit), compact_boundary,
+ *     turn_duration, etc. — SessionStart hooks emit hook events BEFORE any
+ *     user turn, so treating those as "still waiting on Claude" pins the
+ *     conversation to 'running' on a fresh idle session.
+ *   - `stream_event` is the per-token partial delta; the parent `assistant`
+ *     message carries the conversational signal.
+ */
+const PLUMBING_MESSAGE_TYPES: ReadonlySet<string> = new Set(['system', 'stream_event']);
+
+/**
+ * True when the transcript's last conversational entry is an "execution
+ * complete" message — i.e. a SDK/CLI `result` row (success or error). Both
+ * variants count because both terminate the turn; "execution failed" is still
+ * execution over. Plumbing events (system, stream_event) are skipped when
+ * locating the last entry — they trail real turns and also fire on
+ * SessionStart, neither of which should mark the conversation in flight.
+ * An empty transcript (or one that's only plumbing) counts as complete:
+ * nothing to wait on.
  */
 export function isLastMessageExecutionComplete(
   messages: ClaudeStreamMessage[],
 ): boolean {
-  if (messages.length === 0) return true;
-  const last = messages[messages.length - 1] as { type?: string };
-  return last.type === 'result';
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i] as { type?: string };
+    if (typeof msg.type !== 'string') continue;
+    if (PLUMBING_MESSAGE_TYPES.has(msg.type)) continue;
+    return msg.type === 'result';
+  }
+  return true;
 }
 
 /**

@@ -203,6 +203,63 @@ describe('runtime.listenToMessages — engine.onError', () => {
   });
 });
 
+describe('runtime.listenToMessages — hook lifecycle messages', () => {
+  // SessionStart hooks emit system:hook_started / hook_progress / hook_response
+  // BEFORE the user sends any prompt. The FSM must not flip conversationStatus
+  // to 'running' on these — there's no real turn in flight, and no `result`
+  // will ever arrive to flip it back. Otherwise `listInFlightTabIds()` reports
+  // the tab as busy and the installer's wait-for-idle gate never opens.
+  it('does NOT flip conversationStatus to running on hook events', () => {
+    const engine = makeFakeEngine();
+    const handle = makeHandle(engine);
+    const sendToRenderer: SendToRenderer = vi.fn();
+    const sessions = new Map<string, SessionHandle>([['tab-1', handle]]);
+
+    void listenToMessages('tab-1', handle, {
+      sendToRenderer,
+      notificationHooks: {},
+      rateLimitHook: null,
+      ownership: null,
+      sessions,
+    });
+
+    engine._emitMessage({ type: 'system', subtype: 'hook_started', hook_event_name: 'SessionStart' });
+    engine._emitMessage({ type: 'system', subtype: 'hook_progress', hook_event_name: 'SessionStart' });
+    engine._emitMessage({ type: 'system', subtype: 'hook_response', hook_event_name: 'SessionStart' });
+
+    expect(handle.conversationStatus).toBe('idle');
+
+    const statusCalls = vi.mocked(sendToRenderer).mock.calls.filter(
+      (c) => c[0] === 'session-status:tab-1',
+    );
+    // No status flips emitted for hook plumbing.
+    expect(statusCalls.length).toBe(0);
+  });
+
+  it('still forwards hook events to the renderer via claude-output', () => {
+    const engine = makeFakeEngine();
+    const handle = makeHandle(engine);
+    const sendToRenderer: SendToRenderer = vi.fn();
+    const sessions = new Map<string, SessionHandle>([['tab-1', handle]]);
+
+    void listenToMessages('tab-1', handle, {
+      sendToRenderer,
+      notificationHooks: {},
+      rateLimitHook: null,
+      ownership: null,
+      sessions,
+    });
+
+    const hookMsg = { type: 'system', subtype: 'hook_started', hook_event_name: 'SessionStart' };
+    engine._emitMessage(hookMsg);
+
+    expect(sendToRenderer).toHaveBeenCalledWith(
+      'claude-output:tab-1',
+      expect.objectContaining({ type: 'system', subtype: 'hook_started' }),
+    );
+  });
+});
+
 describe('runtime.listenToMessages — engine.onExit', () => {
   it('emits claude-complete on clean exit (preserved)', () => {
     const engine = makeFakeEngine();

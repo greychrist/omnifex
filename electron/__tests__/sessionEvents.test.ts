@@ -152,13 +152,25 @@ describe('classifyRuntimeEvent', () => {
       .toBe('turn');
   });
 
-  it('classifies non-init / non-compact system messages (notifications, hook events) as turn', () => {
+  it('classifies non-hook, non-init/non-compact system messages as turn', () => {
+    // OmniFex toast notifications are still turn-bucketed — they're rare and
+    // typically arrive during a turn, so they don't strand a fresh session.
     expect(
       classifyRuntimeEvent({ type: 'system', subtype: 'notification' }).kind,
     ).toBe('turn');
-    expect(
-      classifyRuntimeEvent({ type: 'system', subtype: 'hook_started' }).kind,
-    ).toBe('turn');
+  });
+
+  // SessionStart hooks emit hook_started / hook_progress / hook_response
+  // BEFORE any user turn. Treating them as 'turn' flips conversationStatus
+  // to 'running' on a fresh idle session and never flips back (no result
+  // is coming). Classify them as their own 'hook' kind so the FSM can
+  // ignore them for status purposes while still forwarding the message
+  // to the renderer for display.
+  it("classifies SDK hook lifecycle subtypes as 'hook'", () => {
+    expect(classifyRuntimeEvent({ type: 'system', subtype: 'hook_started' }).kind).toBe('hook');
+    expect(classifyRuntimeEvent({ type: 'system', subtype: 'hook_progress' }).kind).toBe('hook');
+    expect(classifyRuntimeEvent({ type: 'system', subtype: 'hook_response' }).kind).toBe('hook');
+    expect(classifyRuntimeEvent({ type: 'system', subtype: 'user_prompt_submit' }).kind).toBe('hook');
   });
 
   it('classifies system:compact_boundary as its own kind with metadata', () => {
