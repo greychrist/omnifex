@@ -1,8 +1,7 @@
 import * as React from "react";
-import { Bot, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { TooltipSimple } from "@/components/ui/tooltip-modern";
-import { HeaderLabel } from "@/components/HeaderLabel";
+import { BrandIcon } from "@/components/shared/BrandIcon";
 import type { AgentKind } from "@/lib/api";
 
 export interface AgentBadgeProps {
@@ -10,42 +9,24 @@ export interface AgentBadgeProps {
   agent: AgentKind;
   /**
    * Optional click handler. When provided, the badge renders as a `<button>`
-   * with the existing border/shadow chrome and is clickable. When omitted,
-   * the badge is a non-interactive `<div>` (used for Codex tabs in Task 23 —
-   * the badge is informational only because there's no account picker to
-   * open). The wrapper component (e.g. `AgentSession`'s header) is
-   * responsible for gating the handler on `conversationStatus`.
+   * (used for Claude tabs to open the account picker). When omitted, it
+   * renders as a non-interactive `<span>` (Codex tabs — informational only).
    */
   onClick?: () => void;
-  /**
-   * Disables the click target. Wired by the caller from the same in-flight
-   * predicate that gates the account picker. Ignored when `onClick` is
-   * absent — a non-interactive badge has nothing to disable.
-   */
+  /** Disables the click target. Ignored when `onClick` is absent. */
   disabled?: boolean;
   className?: string;
 }
 
-const AGENT_META: Record<AgentKind, { label: string; icon: React.ComponentType<{ className?: string }> }> = {
-  claude: { label: 'Claude', icon: Bot },
-  codex: { label: 'Codex', icon: Sparkles },
+const AGENT_LABELS: Record<AgentKind, string> = {
+  claude: "Claude",
+  codex: "OpenAI Codex",
 };
 
 /**
- * Small "agent" chip rendered in the session header next to the account
- * card. Mirrors the visual rhythm of `AccountCard` / `GitBranchBadge`
- * (rounded-md, `bg-background/40`, the shared border-shadow stack) so the
- * header reads as a single instrument cluster.
- *
- * Two render modes:
- *   - Interactive (`onClick` provided): a `<button>` that opens whatever
- *     the caller wires up — today that's `AccountPickerDialog` for Claude
- *     tabs, since the account picker is the only way to change agents.
- *   - Static (no `onClick`): a `<div>`, used for Codex tabs where the
- *     badge is purely informational.
- *
- * The tooltip text always shows the full agent name so a user hovering
- * over the chip can confirm engine identity without parsing the icon.
+ * Minimal agent indicator in the session header — just the brand mark, no
+ * surrounding card or "agent" label. Hovering shows the engine name; click
+ * opens the account picker (Claude tabs only).
  */
 export const AgentBadge: React.FC<AgentBadgeProps> = ({
   agent,
@@ -53,23 +34,9 @@ export const AgentBadge: React.FC<AgentBadgeProps> = ({
   disabled = false,
   className,
 }) => {
-  const { label, icon: Icon } = AGENT_META[agent];
-
-  const innerBadge = (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1 rounded border border-foreground/15 bg-background/60 px-2 py-0.5 font-medium whitespace-nowrap text-[11px] text-foreground/90",
-      )}
-    >
-      <Icon className="h-[14px] w-[14px]" />
-      {label}
-    </span>
-  );
-
-  const containerClass = cn(
-    "flex flex-col items-start gap-0.5 rounded-md border-0 bg-background/40 px-2 py-1 shadow-[0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_30%,transparent),2px_2px_4px_rgb(0_0_0/0.08)]",
-    className,
-  );
+  const label = AGENT_LABELS[agent];
+  const icon = <BrandIcon agent={agent} className="h-5 w-5" ariaLabel={label} />;
+  const base = "inline-flex items-center justify-center text-foreground/80";
 
   if (onClick) {
     return (
@@ -80,13 +47,13 @@ export const AgentBadge: React.FC<AgentBadgeProps> = ({
           disabled={disabled}
           aria-label={label}
           className={cn(
-            containerClass,
-            "transition-opacity focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-            disabled ? "opacity-60 cursor-not-allowed" : "hover:opacity-80 cursor-pointer",
+            base,
+            "transition-opacity focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded",
+            disabled ? "opacity-60 cursor-not-allowed" : "hover:text-foreground cursor-pointer",
+            className,
           )}
         >
-          <HeaderLabel>agent</HeaderLabel>
-          {innerBadge}
+          {icon}
         </button>
       </TooltipSimple>
     );
@@ -94,10 +61,9 @@ export const AgentBadge: React.FC<AgentBadgeProps> = ({
 
   return (
     <TooltipSimple content={label} side="bottom">
-      <div className={containerClass} aria-label={label}>
-        <HeaderLabel>agent</HeaderLabel>
-        {innerBadge}
-      </div>
+      <span className={cn(base, className)} aria-label={label}>
+        {icon}
+      </span>
     </TooltipSimple>
   );
 };

@@ -15,20 +15,22 @@ function renderBadge(node: React.ReactElement) {
 }
 
 describe('AgentBadge', () => {
-  it('renders the "Claude" label when agent=claude', () => {
+  // The badge is now icon-only — the brand name lives in the aria-label
+  // (for screen readers) and the tooltip (on hover) rather than as
+  // visible text. Tests assert on the aria-label.
+
+  it('exposes a "Claude" brand icon (role=img) when agent=claude', () => {
     renderBadge(<AgentBadge agent="claude" />);
-    expect(screen.getByText('Claude')).toBeTruthy();
+    expect(screen.getByRole('img', { name: 'Claude' })).toBeTruthy();
   });
 
-  it('renders the "Codex" label when agent=codex', () => {
+  it('exposes an "OpenAI Codex" brand icon when agent=codex', () => {
     renderBadge(<AgentBadge agent="codex" />);
-    expect(screen.getByText('Codex')).toBeTruthy();
+    expect(screen.getByRole('img', { name: 'OpenAI Codex' })).toBeTruthy();
   });
 
   it('exposes a button with an accessible name when onClick is provided', () => {
     renderBadge(<AgentBadge agent="claude" onClick={() => {}} />);
-    // The badge is a <button> so screen readers announce it as an
-    // interactive control instead of inert text.
     const button = screen.getByRole('button', { name: /claude/i });
     expect(button).toBeTruthy();
   });
@@ -51,9 +53,9 @@ describe('AgentBadge', () => {
 
   it('renders a non-interactive element (no button role) when onClick is absent', () => {
     // Codex tabs use the badge as informational only — no click target,
-    // no button semantics. The label still has to be present.
+    // no button semantics. The brand icon is still present.
     renderBadge(<AgentBadge agent="codex" />);
     expect(screen.queryByRole('button')).toBeNull();
-    expect(screen.getByText('Codex')).toBeTruthy();
+    expect(screen.getByRole('img', { name: 'OpenAI Codex' })).toBeTruthy();
   });
 });
