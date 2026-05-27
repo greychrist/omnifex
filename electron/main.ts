@@ -62,6 +62,7 @@ import { createModelsService } from './services/models';
 import { createSlashCommandsService } from './services/slash-commands';
 import { createFilesystemService } from './services/filesystem';
 import { createOneShotTerminalService } from './services/one-shot-terminal';
+import { createCodexAuthService } from './services/auth/codex-auth';
 import {
   createSessionsSummaryService,
   DEFAULT_SUMMARY_PROMPT,
@@ -658,6 +659,24 @@ app.whenReady().then(() => {
   const limaService = createLimaService();
   const filesystemService = createFilesystemService();
   const oneShotTerminalService = createOneShotTerminalService();
+  const codexAuthService = createCodexAuthService({
+    oneShotTerminal: oneShotTerminalService,
+  });
+
+  // App-wide broadcast: any time the Codex auth file changes (fresh login,
+  // logout via deletion, etc.) every renderer needs to know so banners and
+  // the agent picker can re-render. The status payload is the same shape
+  // returned by `codex_auth_status`.
+  const codexAuthWatch = codexAuthService.watch((status) => {
+    for (const w of windows) {
+      if (!w.isDestroyed()) {
+        w.webContents.send('codex-auth-status-changed', status);
+      }
+    }
+  });
+  app.on('before-quit', () => {
+    try { codexAuthWatch.dispose(); } catch { /* best-effort */ }
+  });
 
   const notificationSoundsService = createNotificationSoundsService({
     appPath: app.getAppPath(),
@@ -908,6 +927,11 @@ app.whenReady().then(() => {
       write: (ptyHandle, data) => oneShotTerminalService.write(ptyHandle, data),
       resize: (ptyHandle, cols, rows) => oneShotTerminalService.resize(ptyHandle, cols, rows),
       kill: (ptyHandle) => oneShotTerminalService.kill(ptyHandle),
+    },
+    codexAuth: {
+      getStatus: () => codexAuthService.getStatus(),
+      startLoginFlow: (opts) => codexAuthService.startLoginFlow(opts),
+      cancelLoginFlow: (ptyHandle: string) => codexAuthService.cancelLoginFlow(ptyHandle),
     },
   });
 

@@ -202,6 +202,15 @@ export interface Services {
     resize(ptyHandle: string, cols: number, rows: number): void;
     kill(ptyHandle: string): void;
   };
+  codexAuth?: {
+    getStatus(): Promise<{
+      authenticated: boolean;
+      email?: string;
+      mode?: 'oauth' | 'apikey';
+    }>;
+    startLoginFlow(opts?: { codexBinaryPath?: string }): Promise<{ ptyHandle: string }>;
+    cancelLoginFlow(ptyHandle: string): void;
+  };
 }
 
 // The handler type used in the map — receives the IPC event plus the params
@@ -260,7 +269,7 @@ function wrapWith<P>(fn: (params: P) => unknown): HandlerFn {
  * renderer gets a defined (but empty) response rather than a blocked channel.
  */
 export function getHandlerMap(services: Services = {}): Record<string, HandlerFn> {
-  const { accounts, claude, sessions, usage, rateLimits, usageRunner, claudeBinary, mcp, slashCommands, sessionsSummary, logging, database, proxy, permissionsIO, models, gitWatcher, branchColors, gitBranches, lima, filesystem, notificationSounds, oneShotTerminal } = services;
+  const { accounts, claude, sessions, usage, rateLimits, usageRunner, claudeBinary, mcp, slashCommands, sessionsSummary, logging, database, proxy, permissionsIO, models, gitWatcher, branchColors, gitBranches, lima, filesystem, notificationSounds, oneShotTerminal, codexAuth } = services;
 
   const map: Record<string, HandlerFn> = {
     // ── Accounts ──────────────────────────────────────────────────────────────
@@ -755,6 +764,20 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
       const ptyHandle = (p?.ptyHandle ?? p?.pty_handle) as string;
       if (!ptyHandle) throw new Error('one_shot_terminal_kill: ptyHandle is required');
       oneShotTerminal?.kill(ptyHandle);
+      return null;
+    }),
+
+    // ── Codex auth ───────────────────────────────────────────────────────────
+    codex_auth_status: wrap(() => codexAuth?.getStatus() ?? { authenticated: false }),
+    codex_auth_start_login: wrapWith((p: Record<string, unknown>) => {
+      const codexBinaryPath = (p?.codexBinaryPath ?? p?.codex_binary_path) as string | undefined;
+      if (!codexAuth) throw new Error('codex_auth_start_login: codex auth service not available');
+      return codexAuth.startLoginFlow(codexBinaryPath ? { codexBinaryPath } : undefined);
+    }),
+    codex_auth_cancel_login: wrapWith((p: Record<string, unknown>) => {
+      const ptyHandle = (p?.ptyHandle ?? p?.pty_handle) as string;
+      if (!ptyHandle) throw new Error('codex_auth_cancel_login: ptyHandle is required');
+      codexAuth?.cancelLoginFlow(ptyHandle);
       return null;
     }),
   };

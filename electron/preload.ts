@@ -177,6 +177,11 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   'one_shot_terminal_resize',
   'one_shot_terminal_kill',
 
+  // Codex auth (read ~/.codex/auth.json + drive `codex login` via OneShotTerminal)
+  'codex_auth_status',
+  'codex_auth_start_login',
+  'codex_auth_cancel_login',
+
   // Updater
   'updater:check',
   'updater:download',
@@ -235,6 +240,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       !channel.startsWith('tab-status:') &&
       !channel.startsWith('one-shot-terminal-data:') &&
       !channel.startsWith('one-shot-terminal-exit:') &&
+      !channel.startsWith('codex-auth-status-changed') &&
       channel !== 'log-error'
     ) {
       throw new Error(`Blocked IPC event channel: ${channel}`);

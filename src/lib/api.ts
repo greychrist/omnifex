@@ -11,6 +11,22 @@ import type { HooksConfiguration } from '@/types/hooks';
 export type AgentKind = 'claude' | 'codex';
 
 /**
+ * Status of Codex authentication. Mirrors the backend `CodexAuthStatus` in
+ * `electron/services/auth/codex-auth.ts`.
+ *
+ * - `mode: 'oauth'` — `~/.codex/auth.json` is present; `email` may be set
+ *   when the file carries an account email (some Codex versions omit it).
+ * - `mode: 'apikey'` — no auth file, but the user has `OPENAI_API_KEY` in
+ *   their environment. No email is available in this mode.
+ * - `authenticated: false` with no `mode` — user has neither.
+ */
+export interface CodexAuthStatus {
+  authenticated: boolean;
+  email?: string;
+  mode?: 'oauth' | 'apikey';
+}
+
+/**
  * Represents a project in the ~/.claude/projects directory
  */
 export interface Project {
@@ -2420,6 +2436,54 @@ export const api = {
    */
   async fsExists(filePath: string): Promise<{ exists: boolean }> {
     return apiCall<{ exists: boolean }>('fs_exists', { path: filePath });
+  },
+
+  // ── Codex auth ──────────────────────────────────────────────────────────
+  /**
+   * Snapshot of Codex auth status. Reads `~/.codex/auth.json` and falls back
+   * to the `OPENAI_API_KEY` env var. `mode` is `'oauth'` when the file is
+   * present, `'apikey'` when only the env var is set, and `undefined` when
+   * unauthenticated.
+   */
+  async getCodexAuthStatus(): Promise<CodexAuthStatus> {
+    return apiCall<CodexAuthStatus>('codex_auth_status', {});
+  },
+  /**
+   * Spawn `codex login` in a one-shot pty. Returns the handle the renderer
+   * uses to attach an xterm modal via `oneShotTerminalSpawn`'s data/exit
+   * events (`one-shot-terminal-data:<handle>` / `one-shot-terminal-exit:<handle>`).
+   * `codexBinaryPath` is optional; when omitted, the main process resolves
+   * a system `codex` binary itself.
+   */
+  async startCodexLoginFlow(opts?: { codexBinaryPath?: string }): Promise<{ ptyHandle: string }> {
+    const params: Record<string, unknown> = {};
+    if (opts?.codexBinaryPath) params.codexBinaryPath = opts.codexBinaryPath;
+    return apiCall<{ ptyHandle: string }>('codex_auth_start_login', params);
+  },
+  /** Cancel an in-flight `codex login` pty. */
+  async cancelCodexLoginFlow(ptyHandle: string): Promise<void> {
+    return apiCall<void>('codex_auth_cancel_login', { ptyHandle });
+  },
+  /**
+   * Subscribe to Codex auth-status changes. Fires whenever
+   * `~/.codex/auth.json` is created, modified, or removed (debounced ~250ms
+   * in the main process). Returns an unsubscribe function. App-wide event —
+   * no per-tab suffix.
+   */
+  subscribeCodexAuthStatus(
+    callback: (status: CodexAuthStatus) => void,
+  ): () => void {
+    return window.electronAPI.onEvent(
+      'codex-auth-status-changed',
+      (data: any) => {
+        if (!data || typeof data !== 'object' || typeof data.authenticated !== 'boolean') return;
+        callback({
+          authenticated: data.authenticated,
+          email: typeof data.email === 'string' ? data.email : undefined,
+          mode: data.mode === 'oauth' || data.mode === 'apikey' ? data.mode : undefined,
+        });
+      },
+    );
   },
 
 };
