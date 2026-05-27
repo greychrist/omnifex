@@ -7,7 +7,7 @@ import {
   Globe2,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
-import { extractResultContent } from "@/components/tools/shared";
+import { extractResultContent } from "@/components/claude/tools/shared";
 import { fireAndLog, logAndForget } from "@/lib/fireAndLog";
 
 /**

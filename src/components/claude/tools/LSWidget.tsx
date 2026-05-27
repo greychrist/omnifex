@@ -8,7 +8,7 @@ import {
   Folder,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { extractResultContent } from "@/components/tools/shared";
+import { extractResultContent } from "@/components/claude/tools/shared";
 
 /**
  * Widget for LS (List Directory) tool

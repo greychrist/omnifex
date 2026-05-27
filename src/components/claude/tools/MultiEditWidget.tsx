@@ -10,7 +10,7 @@ import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { getClaudeSyntaxTheme } from "@/lib/claudeSyntaxTheme";
 import { useTheme } from "@/hooks";
 import * as Diff from 'diff';
-import { getLanguage } from "@/components/tools/shared";
+import { getLanguage } from "@/components/claude/tools/shared";
 
 /**
  * Widget for displaying MultiEdit tool usage

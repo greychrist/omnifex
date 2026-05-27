@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { getClaudeSyntaxTheme } from "@/lib/claudeSyntaxTheme";
 import { useTheme } from "@/hooks";
-import { extractResultContent } from "@/components/tools/shared";
+import { extractResultContent } from "@/components/claude/tools/shared";
 
 /**
  * Widget for Read tool

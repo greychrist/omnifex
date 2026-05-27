@@ -1,7 +1,7 @@
 /**
  * ToolWidgets — thin dispatcher that re-exports per-tool components.
  *
- * All rendering logic lives in src/components/tools/*.tsx.
+ * All rendering logic lives in src/components/claude/tools/*.tsx.
  * This file exists solely to preserve the public import surface
  * (`import { FooWidget } from "./ToolWidgets"`) used by
  * StreamMessage.tsx and the components barrel.
@@ -32,4 +32,4 @@ export {
   ThinkingWidget,
   WebFetchWidget,
   TodoReadWidget,
-} from "./tools";
+} from "./claude/tools";

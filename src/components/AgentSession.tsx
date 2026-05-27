@@ -65,7 +65,7 @@ import type { BranchColor } from '@/lib/api';
 import { deriveSubagents, createSubagentColorAllocator } from "@/lib/subagentStreams";
 import { getTaskList, summarizeTaskList } from "@/lib/taskList";
 import { SubagentBar } from "./SubagentBar";
-import { TaskList } from "./TaskList";
+import { TaskList } from "./claude/tools/TaskList";
 import { fireAndLog, logAndForget } from "@/lib/fireAndLog";
 import { decideAutoStart } from "@/lib/sessionAutoStart";
 import { exportAsJsonl, exportAsMarkdown } from "@/lib/sessionExporters";

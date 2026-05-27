@@ -2,7 +2,7 @@
  * Tool widget components — one file per tool type.
  *
  * This barrel re-exports every widget so the rest of the app
- * can keep importing from "@/components/tools" (or from the
+ * can keep importing from "@/components/claude/tools" (or from the
  * thin ToolWidgets.tsx dispatcher that re-exports us).
  */
 
