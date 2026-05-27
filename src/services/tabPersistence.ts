@@ -4,6 +4,7 @@
  */
 
 import type { Tab } from '@/contexts/TabContext';
+import type { AgentKind } from '@/lib/api';
 
 const STORAGE_KEY = 'greychrist_tabs_v2';
 const ACTIVE_TAB_KEY = 'greychrist_active_tab_v2';
@@ -13,6 +14,11 @@ interface SerializedTab {
   id: string;
   type: Tab['type'];
   title: string;
+  /**
+   * Optional in the serialized shape so we can deserialize tab records
+   * saved by pre-Codex builds. Missing → `'claude'` on restore.
+   */
+  agent?: AgentKind;
   sessionId?: string;
   claudeFileId?: string;
   initialProjectPath?: string;
@@ -71,6 +77,7 @@ export class TabPersistenceService {
         id: tab.id,
         type: tab.type,
         title: tab.title,
+        agent: tab.agent,
         sessionId: tab.sessionId,
         claudeFileId: tab.claudeFileId,
         initialProjectPath: tab.initialProjectPath,
@@ -119,6 +126,10 @@ export class TabPersistenceService {
       // Deserialize tabs
       const tabs: Tab[] = serializedTabs.map(serialized => ({
         ...serialized,
+        // Back-compat: tabs saved by pre-Codex builds have no `agent`
+        // field. Default to 'claude' so the Tab invariant
+        // (`agent: AgentKind`) holds for every restored tab.
+        agent: serialized.agent ?? 'claude',
         createdAt: new Date(serialized.createdAt),
         updatedAt: new Date(serialized.updatedAt),
         sessionData: undefined, // Will be loaded when tab is activated

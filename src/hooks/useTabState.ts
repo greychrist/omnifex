@@ -1,6 +1,7 @@
 import { useCallback, useMemo } from 'react';
 import { useTabContext } from '@/contexts/TabContext';
 import { Tab } from '@/contexts/TabContext';
+import type { AgentKind } from '@/lib/api';
 
 interface UseTabStateReturn {
   // State
@@ -11,7 +12,7 @@ interface UseTabStateReturn {
   chatTabCount: number;
 
   // Operations
-  createChatTab: (projectId?: string, title?: string, projectPath?: string) => string;
+  createChatTab: (projectId?: string, title?: string, projectPath?: string, agent?: AgentKind) => string;
   createProjectsTab: () => string | null;
   createUsageTab: () => string | null;
   createMCPTab: () => string | null;
@@ -54,11 +55,12 @@ export const useTabState = (): UseTabStateReturn => {
   const tabCount = tabs.length;
   const chatTabCount = useMemo(() => getTabsByType('chat').length, [getTabsByType]);
 
-  const createChatTab = useCallback((projectId?: string, title?: string, projectPath?: string): string => {
+  const createChatTab = useCallback((projectId?: string, title?: string, projectPath?: string, agent: AgentKind = 'claude'): string => {
     const tabTitle = title || `Chat ${chatTabCount + 1}`;
     return addTab({
       type: 'chat',
       title: tabTitle,
+      agent,
       sessionId: projectId,
       initialProjectPath: projectPath,
       status: 'idle',
@@ -72,6 +74,7 @@ export const useTabState = (): UseTabStateReturn => {
     return addTab({
       type: 'projects',
       title: 'Projects',
+      agent: 'claude',
       status: 'idle',
       hasUnsavedChanges: false,
       icon: 'folder'
@@ -89,6 +92,7 @@ export const useTabState = (): UseTabStateReturn => {
     return addTab({
       type: 'usage',
       title: 'Usage',
+      agent: 'claude',
       status: 'idle',
       hasUnsavedChanges: false,
       icon: 'bar-chart'
@@ -106,6 +110,7 @@ export const useTabState = (): UseTabStateReturn => {
     return addTab({
       type: 'mcp',
       title: 'MCP Servers',
+      agent: 'claude',
       status: 'idle',
       hasUnsavedChanges: false,
       icon: 'server'
@@ -123,6 +128,7 @@ export const useTabState = (): UseTabStateReturn => {
     return addTab({
       type: 'lima',
       title: 'Lima',
+      agent: 'claude',
       status: 'idle',
       hasUnsavedChanges: false,
       icon: 'hard-drive',
@@ -140,6 +146,7 @@ export const useTabState = (): UseTabStateReturn => {
     return addTab({
       type: 'settings',
       title: 'Settings',
+      agent: 'claude',
       status: 'idle',
       hasUnsavedChanges: false,
       icon: 'settings'
@@ -157,6 +164,7 @@ export const useTabState = (): UseTabStateReturn => {
     return addTab({
       type: 'claude-md',
       title: 'CLAUDE.md',
+      agent: 'claude',
       status: 'idle',
       hasUnsavedChanges: false,
       icon: 'file-text'
@@ -174,6 +182,7 @@ export const useTabState = (): UseTabStateReturn => {
     return addTab({
       type: 'claude-file',
       title: fileName,
+      agent: 'claude',
       claudeFileId: fileId,
       status: 'idle',
       hasUnsavedChanges: false,

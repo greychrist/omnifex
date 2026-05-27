@@ -16,6 +16,7 @@ afterEach(() => {
 
 function makeTab(partial: Partial<Tab> & Pick<Tab, 'id' | 'type' | 'title'>): Tab {
   return {
+    agent: 'claude',
     status: 'idle',
     hasUnsavedChanges: false,
     order: 0,
@@ -103,6 +104,43 @@ describe('TabPersistenceService — saveTabs / loadTabs roundtrip', () => {
 
   it('returns empty when no saved data exists', () => {
     expect(TabPersistenceService.loadTabs()).toEqual({ tabs: [], activeTabId: null });
+  });
+});
+
+describe('TabPersistenceService — agent field', () => {
+  it('round-trips the agent kind on chat tabs (claude and codex)', () => {
+    // Without this round-trip, restoring a Codex tab on app restart would
+    // drop the agent identity and the next `api.startSession` call would
+    // dispatch the Claude engine instead — the user's selection would
+    // silently flip back. Both literal kinds must survive the save/load
+    // cycle.
+    const tabs = [
+      makeTab({ id: 't1', type: 'chat', title: 'Claude', agent: 'claude' }),
+      makeTab({ id: 't2', type: 'chat', title: 'Codex', agent: 'codex', order: 1 }),
+    ];
+    TabPersistenceService.saveTabs(tabs, 't2');
+    const { tabs: loaded } = TabPersistenceService.loadTabs();
+    expect(loaded.find((t) => t.id === 't1')?.agent).toBe('claude');
+    expect(loaded.find((t) => t.id === 't2')?.agent).toBe('codex');
+  });
+
+  it('defaults to "claude" when loading a tab record saved by a pre-Codex build (no `agent` key)', () => {
+    // Users upgrading from a release that pre-dates Codex have
+    // serialized tabs in localStorage without an `agent` field. The
+    // Tab interface requires it, so deserialization MUST inject a
+    // default — otherwise the restored tab violates the type contract
+    // and downstream code reads `undefined` where it expects a literal.
+    const out = JSON.stringify([
+      {
+        id: 'legacy', type: 'chat', title: 'Pre-Codex Chat',
+        status: 'idle', hasUnsavedChanges: false, order: 0,
+        createdAt: new Date(0).toISOString(), updatedAt: new Date(0).toISOString(),
+      },
+    ]);
+    localStorage.setItem(STORAGE_KEY, out);
+    const { tabs } = TabPersistenceService.loadTabs();
+    expect(tabs).toHaveLength(1);
+    expect(tabs[0].agent).toBe('claude');
   });
 });
 

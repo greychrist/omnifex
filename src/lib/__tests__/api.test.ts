@@ -111,6 +111,37 @@ describe('api — channel + params mapping (table-driven)', () => {
       params: { tabId: 'tab-1' },
     },
     {
+      // Pre-Codex callers omit the agent param entirely; main process
+      // defaults to 'claude'. Verify the wrapper forwards `undefined`
+      // (not 'claude') so the default lives in exactly one place — the
+      // backend. Layering defaults on both sides drifts inevitably.
+      label: 'startSession without agent → forwards undefined',
+      call: () => api.startSession('tab-1', '/p', 'sonnet', 'default'),
+      channel: 'session_start',
+      params: {
+        tabId: 'tab-1', projectPath: '/p', model: 'sonnet', permissionMode: 'default',
+        resumeSessionId: undefined, configDir: undefined, effort: undefined,
+        thinking: undefined, mode: undefined, manualAccountOverride: undefined,
+        agent: undefined,
+      },
+    },
+    {
+      label: 'startSession with agent="codex" → forwards literal',
+      call: () =>
+        api.startSession(
+          'tab-1', '/p', 'sonnet', 'default',
+          undefined, '/cfg', 'medium',
+          { type: 'adaptive' }, 'rich', false, 'codex',
+        ),
+      channel: 'session_start',
+      params: {
+        tabId: 'tab-1', projectPath: '/p', model: 'sonnet', permissionMode: 'default',
+        resumeSessionId: undefined, configDir: '/cfg', effort: 'medium',
+        thinking: { type: 'adaptive' }, mode: 'rich', manualAccountOverride: false,
+        agent: 'codex',
+      },
+    },
+    {
       label: 'sessionGetHealth',
       call: () => api.sessionGetHealth('tab-1'),
       channel: 'session_get_health',

@@ -73,6 +73,7 @@ afterEach(() => {
 
 function makeTab(partial: Partial<Tab> & Pick<Tab, 'id' | 'type' | 'title'>): Tab {
   return {
+    agent: 'claude',
     status: 'idle',
     hasUnsavedChanges: false,
     order: 0,

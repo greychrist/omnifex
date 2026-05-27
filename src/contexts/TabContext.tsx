@@ -2,13 +2,21 @@ import React, { createContext, useState, useContext, useCallback, useEffect, use
 import { TabPersistenceService } from '@/services/tabPersistence';
 import { SessionPersistenceService } from '@/services/sessionPersistence';
 import { sessionNameRegistry } from '@/services/sessionNameRegistry';
-import { api, type SessionMode } from '@/lib/api';
+import { api, type AgentKind, type SessionMode } from '@/lib/api';
 import { logAndForget } from "@/lib/fireAndLog";
 
 export interface Tab {
   id: string;
   type: 'chat' | 'projects' | 'usage' | 'mcp' | 'settings' | 'claude-md' | 'claude-file' | 'lima';
   title: string;
+  /**
+   * Which agent engine powers this tab's session. Defaults to `'claude'`
+   * everywhere — including for non-chat tabs where it's never read — so
+   * the field stays required and Tab construction doesn't have to know
+   * about agent semantics. Persistence restores tabs missing this field
+   * (saved by pre-Codex builds) with `'claude'`.
+   */
+  agent: AgentKind;
   sessionId?: string;  // for chat tabs
   sessionData?: any; // for chat tabs - stores full session object
   claudeFileId?: string; // for claude-file tabs
@@ -159,6 +167,7 @@ export const TabProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         id: generateTabId(),
         type: defaultType,
         title: defaultTitle,
+        agent: 'claude',
         status: 'idle',
         hasUnsavedChanges: false,
         order: 0,

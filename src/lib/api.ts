@@ -2,6 +2,15 @@ import { apiCall } from './apiAdapter';
 import type { HooksConfiguration } from '@/types/hooks';
 
 /**
+ * Which agent engine drives a session. Mirrors the backend `AgentKind` in
+ * `electron/services/agents/types.ts`. The renderer can't import from
+ * `electron/` directly, so this is a parallel literal-union type kept in
+ * sync by hand. `'claude'` is the default everywhere (back-compat with
+ * pre-Codex callers and persisted tab records that pre-date the field).
+ */
+export type AgentKind = 'claude' | 'codex';
+
+/**
  * Represents a project in the ~/.claude/projects directory
  */
 export interface Project {
@@ -1028,8 +1037,8 @@ export const api = {
 
   // ─── Persistent Session API ───────────────────────────────────────
 
-  async startSession(tabId: string, projectPath: string, model: string, permissionMode: string, resumeSessionId?: string, configDir?: string, effort?: string, thinking?: Record<string, unknown>, mode?: SessionMode, manualAccountOverride?: boolean): Promise<void> {
-    return apiCall("session_start", { tabId, projectPath, model, permissionMode, resumeSessionId, configDir, effort, thinking, mode, manualAccountOverride });
+  async startSession(tabId: string, projectPath: string, model: string, permissionMode: string, resumeSessionId?: string, configDir?: string, effort?: string, thinking?: Record<string, unknown>, mode?: SessionMode, manualAccountOverride?: boolean, agent?: AgentKind): Promise<void> {
+    return apiCall("session_start", { tabId, projectPath, model, permissionMode, resumeSessionId, configDir, effort, thinking, mode, manualAccountOverride, agent });
   },
 
   /**

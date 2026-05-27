@@ -69,6 +69,44 @@ describe('TabContext — initialization', () => {
   });
 });
 
+describe('TabContext — agent field', () => {
+  it('addTab stores the agent identity on the new tab record', async () => {
+    // Codex tabs must round-trip the agent kind so the session-start API
+    // can dispatch the right engine; without it every tab would default
+    // to Claude regardless of what the user picked in the new-session
+    // form. Task 11 ships the field; this guards against future code
+    // accidentally erasing it (e.g. constructing tab objects without
+    // spreading the input).
+    const { result } = renderHook(() => useTabContext(), { wrapper });
+    await waitFor(() => { expect(result.current.tabs.length).toBe(1); });
+
+    let claudeId = '';
+    let codexId = '';
+    act(() => {
+      claudeId = result.current.addTab({
+        type: 'chat', title: 'C', agent: 'claude', status: 'idle', hasUnsavedChanges: false,
+      });
+      codexId = result.current.addTab({
+        type: 'chat', title: 'X', agent: 'codex', status: 'idle', hasUnsavedChanges: false,
+      });
+    });
+    expect(result.current.tabs.find((t) => t.id === claudeId)?.agent).toBe('claude');
+    expect(result.current.tabs.find((t) => t.id === codexId)?.agent).toBe('codex');
+  });
+
+  it('the default mount tab is constructed with agent: "claude"', async () => {
+    // The Provider's mount effect builds the initial tab itself (not via
+    // addTab) when there's no saved state. The Tab interface marks
+    // `agent` as required, so any construction site that forgets it
+    // would either fail typecheck or — worse — assign `undefined` at
+    // runtime. Pin the actual runtime value here so the default-tab
+    // construction stays honest about the contract.
+    const { result } = renderHook(() => useTabContext(), { wrapper });
+    await waitFor(() => { expect(result.current.tabs.length).toBe(1); });
+    expect(result.current.tabs[0].agent).toBe('claude');
+  });
+});
+
 describe('TabContext — addTab / removeTab', () => {
   it('adds a tab and makes it the active tab', async () => {
     const { result } = renderHook(() => useTabContext(), { wrapper });
@@ -80,6 +118,7 @@ describe('TabContext — addTab / removeTab', () => {
       newId = result.current.addTab({
         type: 'chat',
         title: 'New Chat',
+        agent: 'claude',
         status: 'idle',
         hasUnsavedChanges: false,
       });
@@ -100,6 +139,7 @@ describe('TabContext — addTab / removeTab', () => {
         result.current.addTab({
           type: 'chat',
           title: `Chat ${i}`,
+          agent: 'claude',
           status: 'idle',
           hasUnsavedChanges: false,
         });
@@ -112,6 +152,7 @@ describe('TabContext — addTab / removeTab', () => {
         result.current.addTab({
           type: 'chat',
           title: 'overflow',
+          agent: 'claude',
           status: 'idle',
           hasUnsavedChanges: false,
         });
@@ -125,9 +166,9 @@ describe('TabContext — addTab / removeTab', () => {
 
     let aId = '', bId = '', cId = '';
     act(() => {
-      aId = result.current.addTab({ type: 'chat', title: 'A', status: 'idle', hasUnsavedChanges: false });
-      bId = result.current.addTab({ type: 'chat', title: 'B', status: 'idle', hasUnsavedChanges: false });
-      cId = result.current.addTab({ type: 'chat', title: 'C', status: 'idle', hasUnsavedChanges: false });
+      aId = result.current.addTab({ type: 'chat', title: 'A', agent: 'claude', status: 'idle', hasUnsavedChanges: false });
+      bId = result.current.addTab({ type: 'chat', title: 'B', agent: 'claude', status: 'idle', hasUnsavedChanges: false });
+      cId = result.current.addTab({ type: 'chat', title: 'C', agent: 'claude', status: 'idle', hasUnsavedChanges: false });
     });
     // active = cId. Close it; active should land on the new last-tab (b).
     act(() => { result.current.removeTab(cId); });
@@ -155,7 +196,7 @@ describe('TabContext — addTab / removeTab', () => {
 
     let chatId = '';
     act(() => {
-      chatId = result.current.addTab({ type: 'chat', title: 'C', status: 'idle', hasUnsavedChanges: false });
+      chatId = result.current.addTab({ type: 'chat', title: 'C', agent: 'claude', status: 'idle', hasUnsavedChanges: false });
     });
     (api.stopSession as ReturnType<typeof vi.fn>).mockClear();
 
@@ -169,7 +210,7 @@ describe('TabContext — addTab / removeTab', () => {
 
     let settingsId = '';
     act(() => {
-      settingsId = result.current.addTab({ type: 'settings', title: 'S', status: 'idle', hasUnsavedChanges: false });
+      settingsId = result.current.addTab({ type: 'settings', title: 'S', agent: 'claude', status: 'idle', hasUnsavedChanges: false });
     });
     (api.stopSession as ReturnType<typeof vi.fn>).mockClear();
 
@@ -253,7 +294,7 @@ describe('TabContext — updateTab / setActiveTab / reorderTabs', () => {
     let unreadId = '';
     act(() => {
       unreadId = result.current.addTab({
-        type: 'chat', title: 'Unread', status: 'idle', hasUnsavedChanges: false,
+        type: 'chat', title: 'Unread', agent: 'claude', status: 'idle', hasUnsavedChanges: false,
         hasUnreadResult: true,
       });
     });
@@ -279,8 +320,8 @@ describe('TabContext — updateTab / setActiveTab / reorderTabs', () => {
     const { result } = renderHook(() => useTabContext(), { wrapper });
     await waitFor(() => { expect(result.current.tabs.length).toBe(1); });
     act(() => {
-      result.current.addTab({ type: 'chat', title: 'A', status: 'idle', hasUnsavedChanges: false });
-      result.current.addTab({ type: 'chat', title: 'B', status: 'idle', hasUnsavedChanges: false });
+      result.current.addTab({ type: 'chat', title: 'A', agent: 'claude', status: 'idle', hasUnsavedChanges: false });
+      result.current.addTab({ type: 'chat', title: 'B', agent: 'claude', status: 'idle', hasUnsavedChanges: false });
     });
     const ids = result.current.tabs.map((t) => t.id);
     // Move position 0 (the default tab) to position 2.
@@ -304,8 +345,8 @@ describe('TabContext — lookups', () => {
     const { result } = renderHook(() => useTabContext(), { wrapper });
     await waitFor(() => { expect(result.current.tabs.length).toBe(1); });
     act(() => {
-      result.current.addTab({ type: 'chat', title: 'A', status: 'idle', hasUnsavedChanges: false });
-      result.current.addTab({ type: 'chat', title: 'B', status: 'idle', hasUnsavedChanges: false });
+      result.current.addTab({ type: 'chat', title: 'A', agent: 'claude', status: 'idle', hasUnsavedChanges: false });
+      result.current.addTab({ type: 'chat', title: 'B', agent: 'claude', status: 'idle', hasUnsavedChanges: false });
     });
     expect(result.current.getTabsByType('chat')).toHaveLength(2);
   });
