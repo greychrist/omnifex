@@ -4,36 +4,37 @@ import {
   deriveWaitingOnClaude,
   isLastMessageExecutionComplete,
 } from '../deriveConversationStatus';
-import type { ClaudeStreamMessage } from '@/types/claudeStream';
+import type { JsonlNode } from '@/types/jsonl';
 
-function result(): ClaudeStreamMessage {
-  return { type: 'result', subtype: 'success' } as unknown as ClaudeStreamMessage;
+function result(): JsonlNode {
+  return { kind: 'unknown', sessionId: '', receivedAt: '', raw: { type: 'result', subtype: 'success' } } as unknown as JsonlNode;
 }
-function resultError(): ClaudeStreamMessage {
-  return { type: 'result', subtype: 'error_during_execution', is_error: true } as unknown as ClaudeStreamMessage;
+function resultError(): JsonlNode {
+  return { kind: 'unknown', sessionId: '', receivedAt: '', raw: { type: 'result', subtype: 'error_during_execution', is_error: true } } as unknown as JsonlNode;
 }
-function user(text: string): ClaudeStreamMessage {
+function user(text: string): JsonlNode {
   return {
-    type: 'user',
-    message: { role: 'user', content: [{ type: 'text', text }] },
-  } as unknown as ClaudeStreamMessage;
+    kind: 'user', userKind: 'prompt', sessionId: '', receivedAt: '',
+    raw: { type: 'user', message: { role: 'user', content: [{ type: 'text', text }] } },
+  } as unknown as JsonlNode;
 }
-function assistant(): ClaudeStreamMessage {
+function assistant(): JsonlNode {
   return {
-    type: 'assistant',
-    message: { role: 'assistant', content: [{ type: 'text', text: 'hi' }] },
-  } as unknown as ClaudeStreamMessage;
+    kind: 'assistant', sessionId: '', receivedAt: '',
+    raw: { type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'hi' }] } },
+  } as unknown as JsonlNode;
 }
 function systemHook(
   subtype: 'hook_started' | 'hook_progress' | 'hook_response' | 'user_prompt_submit',
-): ClaudeStreamMessage {
-  return { type: 'system', subtype } as unknown as ClaudeStreamMessage;
+): JsonlNode {
+  return { kind: 'system', subtype, sessionId: '', receivedAt: '', raw: { type: 'system', subtype } } as unknown as JsonlNode;
 }
-function systemInit(): ClaudeStreamMessage {
-  return { type: 'system', subtype: 'init' } as unknown as ClaudeStreamMessage;
+function systemInit(): JsonlNode {
+  return { kind: 'system', subtype: 'init', sessionId: '', receivedAt: '', raw: { type: 'system', subtype: 'init' } } as unknown as JsonlNode;
 }
-function streamEvent(): ClaudeStreamMessage {
-  return { type: 'stream_event' } as unknown as ClaudeStreamMessage;
+function streamEvent(): JsonlNode {
+  // stream-event is an overlay kind with no `raw` field
+  return { kind: 'stream-event', uuid: '', deltaText: '' } as unknown as JsonlNode;
 }
 
 const allSettled = {

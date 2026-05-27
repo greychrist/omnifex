@@ -1,4 +1,5 @@
-import type { ClaudeStreamMessage, MessageContentBlock } from '@/types/claudeStream';
+import type { JsonlNode } from '@/types/jsonl';
+import type { MessageContentBlock } from '@/types/claudeStream';
 import type { MessageRenderingConfig } from './messageRenderingConfig';
 
 /**
@@ -42,7 +43,7 @@ export function isSystemContextText(text: string): boolean {
 
 /**
  * Classify a single content block (text, tool_use, tool_result, thinking,
- * image) within its parent assistant or user message to a `MessageKindConfig`
+ * image) within its parent assistant or user node to a `MessageKindConfig`
  * id. This is the per-block analog of `classifyStandaloneKind` — the latter
  * classifies a whole message when it has a single matching shape; this one
  * classifies *each block* of a mixed-content message so the renderer can
@@ -54,10 +55,10 @@ export function isSystemContextText(text: string): boolean {
  */
 export function classifyBlockKind(
   block: MessageContentBlock | null | undefined,
-  parent: ClaudeStreamMessage,
+  parent: JsonlNode,
 ): string | null {
   if (!block || typeof block !== 'object') return null;
-  const role = parent.type;
+  const role = parent.kind;
 
   if (role === 'assistant') {
     if (block.type === 'text') {
@@ -125,7 +126,7 @@ export function classifyBlockKind(
  */
 export function isBlockHiddenInCompact(
   block: MessageContentBlock | null | undefined,
-  parent: ClaudeStreamMessage,
+  parent: JsonlNode,
   config: MessageRenderingConfig,
 ): boolean {
   const id = classifyBlockKind(block, parent);

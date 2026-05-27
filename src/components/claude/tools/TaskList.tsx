@@ -13,8 +13,8 @@ import {
   MessageSquare,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { ClaudeStreamMessage, MessageContentBlock } from '@/types/claudeStream';
-import { getMessageContent } from '@/types/claudeStream';
+import type { JsonlNode } from '@/types/jsonl';
+import type { MessageContentBlock } from '@/types/claudeStream';
 import {
   getTaskList,
   summarizeTaskList,
@@ -25,7 +25,7 @@ import {
 const COLLAPSE_STORAGE_KEY = 'greychrist.taskList.collapsed';
 
 interface TaskListProps {
-  messages: ClaudeStreamMessage[];
+  messages: JsonlNode[];
   isLive: boolean;
   className?: string;
 }
@@ -209,7 +209,7 @@ const TaskRow: React.FC<TaskRowProps> = ({ entry }) => {
 };
 
 interface AttributedMessageProps {
-  message: ClaudeStreamMessage;
+  message: JsonlNode;
 }
 
 /**
@@ -236,8 +236,9 @@ interface MessageSummary {
   label: string;
 }
 
-function summarizeMessageForTask(m: ClaudeStreamMessage): MessageSummary {
-  const content = getMessageContent(m);
+function summarizeMessageForTask(m: JsonlNode): MessageSummary {
+  const raw = (m as unknown as { raw?: { message?: { content?: unknown } } }).raw;
+  const content = raw?.message?.content;
   if (!Array.isArray(content)) {
     return { icon: MessageSquare, iconClass: 'text-muted-foreground', label: '…' };
   }

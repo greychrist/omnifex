@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import type { ClaudeStreamMessage } from '@/types/claudeStream';
+import type { JsonlNode } from '@/types/jsonl';
 import { useClaudeSessionStore, EMPTY_TAB_SESSION } from '../claudeSessionStore';
 
 const TAB = 'tab-1';
@@ -8,17 +8,23 @@ beforeEach(() => {
   useClaudeSessionStore.getState().__resetForTests();
 });
 
-const userMsg = (): ClaudeStreamMessage =>
+const userMsg = (): JsonlNode =>
   ({
-    type: 'user',
-    message: { content: [{ type: 'text', text: 'hi' }] },
-  } as unknown as ClaudeStreamMessage);
+    kind: 'user', userKind: 'prompt', sessionId: '', receivedAt: '',
+    raw: { type: 'user', message: { role: 'user', content: [{ type: 'text', text: 'hi' }] } },
+  }) as unknown as JsonlNode;
 
-const initMsg = (): ClaudeStreamMessage =>
-  ({ type: 'system', subtype: 'init', session_id: 'sess-1' } as ClaudeStreamMessage);
+const initMsg = (): JsonlNode =>
+  ({
+    kind: 'system', subtype: 'init', sessionId: '', receivedAt: '',
+    raw: { type: 'system', subtype: 'init', session_id: 'sess-1' },
+  }) as unknown as JsonlNode;
 
-const assistantMsg = (text = 'ok'): ClaudeStreamMessage =>
-  ({ type: 'assistant', message: { content: [{ type: 'text', text }] } } as unknown as ClaudeStreamMessage);
+const assistantMsg = (text = 'ok'): JsonlNode =>
+  ({
+    kind: 'assistant', sessionId: '', receivedAt: '',
+    raw: { type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text }] } },
+  }) as unknown as JsonlNode;
 
 describe('claudeSessionStore', () => {
   it('returns EMPTY_TAB_SESSION for an unknown tab via selectTab', () => {

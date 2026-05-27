@@ -1,10 +1,10 @@
-import type { ClaudeStreamMessage } from '@/types/claudeStream';
+import type { JsonlNode } from '@/types/jsonl';
 import type { PermissionRequestPayload } from './types/permissionRequest';
 
 export type { PermissionRequestPayload };
 
 /**
- * Pure reducer for SDK stream messages flowing into the renderer.
+ * Pure reducer for JSONL stream nodes flowing into the renderer.
  *
  * Extracted from ClaudeCodeSession.handleStreamMessage so the non-UI logic
  * (append decisions, session-id extraction, permission detection,
@@ -269,29 +269,35 @@ function inspectUserContent(blocks: unknown[]): {
   };
 }
 
-function computeCost(message: ClaudeStreamMessage): number {
-  // result rows carry per-turn `usage` at the top level; assistant rows carry
-  // the inner BetaMessage's usage. Other variants don't carry token usage.
-  let usage: { input_tokens?: number; output_tokens?: number } | undefined;
-  if (message.type === 'result') {
-    usage = message.usage;
-  } else if (message.type === 'assistant') {
-    usage = message.message?.usage;
+function computeCost(node: JsonlNode): number {
+  // assistant nodes carry usage in raw.message.usage
+  // unknown nodes where raw.type === 'result' carry usage in raw.usage
+  if (node.kind === 'assistant') {
+    const usage = (node.raw as { message?: { usage?: { input_tokens?: number; output_tokens?: number } } }).message?.usage;
+    if (!usage) return 0;
+    const input = (usage.input_tokens || 0) * 0.000003;
+    const output = (usage.output_tokens || 0) * 0.000015;
+    return input + output;
   }
-  if (!usage) return 0;
-  const input = (usage.input_tokens || 0) * 0.000003;
-  const output = (usage.output_tokens || 0) * 0.000015;
-  return input + output;
+  if (node.kind === 'unknown') {
+    const raw = node.raw as { type?: string; usage?: { input_tokens?: number; output_tokens?: number } };
+    if (raw.type === 'result' && raw.usage) {
+      const input = (raw.usage.input_tokens || 0) * 0.000003;
+      const output = (raw.usage.output_tokens || 0) * 0.000015;
+      return input + output;
+    }
+  }
+  return 0;
 }
 
 export function reduceSessionStreamMessage(
-  message: ClaudeStreamMessage,
+  node: JsonlNode,
   ctx: StreamReducerContext,
 ): StreamReducerResult {
-  // Defensive: stream_event messages are intercepted by the IPC subscriber
-  // before they reach the reducer. If a future code path bypasses that
-  // branch, ensure these never land in messages[] as garbage entries.
-  if ((message as { type?: string }).type === 'stream_event') {
+  // Defensive: stream-event overlay nodes are intercepted before the reducer.
+  // If a future code path bypasses that branch, ensure these never land in
+  // messages[] as garbage entries.
+  if (node.kind === 'stream-event' || node.kind === 'rate-limit' || node.kind === 'lifecycle') {
     return {
       append: 'skip',
       effects: [],
@@ -303,31 +309,28 @@ export function reduceSessionStreamMessage(
   const effects: StreamReducerEffect[] = [];
   let metrics: MetricsDelta = { ...EMPTY_METRICS_DELTA };
   let activity: ActivityUpdate | null = null;
-  const costDelta = computeCost(message);
+  const costDelta = computeCost(node);
 
-  if (message.type === 'assistant' && message.message?.content) {
-    const blocks = Array.isArray(message.message.content)
-      ? message.message.content
-      : [];
+  if (node.kind === 'assistant') {
+    const content = (node.raw as { message?: { content?: unknown } }).message?.content;
+    const blocks = Array.isArray(content) ? content : [];
     const inspected = inspectAssistantContent(blocks);
     metrics = inspected.metrics;
     activity = inspected.activity;
-  } else if (message.type === 'user' && message.message?.content) {
-    const blocks = Array.isArray(message.message.content)
-      ? message.message.content
-      : [];
+  } else if (node.kind === 'user') {
+    const content = (node.raw as { message?: { content?: unknown } }).message?.content;
+    const blocks = Array.isArray(content) ? content : [];
     const inspected = inspectUserContent(blocks);
     metrics = inspected.metrics;
     activity = inspected.activity;
   }
 
   // Errors surfaced as system messages contribute to the cumulative count.
-  if (
-    message.type === 'system' &&
-    ((message as { subtype?: string }).subtype === 'error' ||
-      (message as { error?: unknown }).error)
-  ) {
-    metrics = { ...metrics, errorsEncountered: metrics.errorsEncountered + 1 };
+  if (node.kind === 'system') {
+    const raw = node.raw as { subtype?: string; error?: unknown };
+    if (raw.subtype === 'error' || raw.error) {
+      metrics = { ...metrics, errorsEncountered: metrics.errorsEncountered + 1 };
+    }
   }
 
   const result: StreamReducerResult = {
@@ -338,39 +341,12 @@ export function reduceSessionStreamMessage(
     activityUpdate: activity ?? undefined,
   };
 
-  // Permission request from the SDK's canUseTool callback. The wire format
-  // is snake_case (it's an SDK stream message); we normalise to camelCase
-  // here so every renderer consumer uses the same shape.
-  //
-  // Codex variants ride the same channel with `kind: 'patch' | 'exec'`,
-  // `agent: 'codex'`, a one-line summary, and the raw approval params on
-  // `codex_payload`. We forward those fields through unchanged — the
-  // PermissionCard branches on `kind` to render the right preview.
-  if (message.type === 'permission_request' && message.request_id) {
-    const payload: PermissionRequestPayload = {
-      requestId: message.request_id,
-      kind: message.kind,
-      toolName: message.tool_name || 'Unknown',
-      toolInput: message.tool_input ?? {},
-      title: message.title,
-      displayName: message.display_name,
-      description: message.description,
-      decisionReason: message.decision_reason,
-      blockedPath: message.blocked_path,
-      suggestions: message.permission_suggestions ?? [],
-      agent: message.agent,
-      summary: message.summary,
-      payload: message.codex_payload,
-    };
-    result.pendingPermission = payload;
-    effects.push({ kind: 'showPermissionPrompt', payload });
-  }
-
   // system:init — extract session id, kick off live SDK info fetches,
   // skip duplicates without suppressing the fetches (they fire on every init,
   // including post-rebind / restart).
-  if (message.type === 'system' && message.subtype === 'init') {
-    const sid = (message as { session_id?: string }).session_id;
+  if (node.kind === 'system' && node.subtype === 'init') {
+    const raw = node.raw as { session_id?: string };
+    const sid = raw.session_id;
     if (sid) {
       result.sessionIdUpdate = sid;
       if (!ctx.hasExtractedSession) {
@@ -396,27 +372,32 @@ export function reduceSessionStreamMessage(
   // SDK emits compact_boundary after a manual or auto compaction; refresh the
   // header context-usage popover immediately rather than waiting for the next
   // turn's result.
-  if (message.type === 'system' && message.subtype === 'compact_boundary') {
+  if (node.kind === 'system' && node.subtype === 'compact_boundary') {
     effects.push({ kind: 'refreshContextUsage' });
   }
 
-  // Result messages mean "turn complete, awaiting next input" — not exit.
-  if (message.type === 'result') {
-    if (ctx.userInterrupted) {
-      result.clearUserInterrupted = true;
-      const isError = (message as { is_error?: boolean }).is_error === true;
-      if (isError) {
-        // Deliberate cancel — swallow the SDK's post-interrupt error result so
-        // "Execution Failed" doesn't flash. Drop it from messages too.
-        result.clearLoading = true;
-        result.append = 'skip';
-        return result;
+  // Result nodes arrive as 'unknown' kind (the classifier passes them through
+  // because 'result' is not a JSONL kind). They mean "turn complete, awaiting
+  // next input" — not exit. Task 2's conversationStatus derivation owns the
+  // spinner signal; the reducer handles queue drain and context refresh.
+  if (node.kind === 'unknown') {
+    const raw = node.raw as { type?: string; is_error?: boolean };
+    if (raw.type === 'result') {
+      if (ctx.userInterrupted) {
+        result.clearUserInterrupted = true;
+        if (raw.is_error === true) {
+          // Deliberate cancel — swallow the SDK's post-interrupt error result so
+          // "Execution Failed" doesn't flash. Drop it from messages too.
+          result.clearLoading = true;
+          result.append = 'skip';
+          return result;
+        }
       }
-    }
 
-    result.clearLoading = true;
-    effects.push({ kind: 'refreshContextUsage' });
-    effects.push({ kind: 'processQueuedPrompt' });
+      result.clearLoading = true;
+      effects.push({ kind: 'refreshContextUsage' });
+      effects.push({ kind: 'processQueuedPrompt' });
+    }
   }
 
   return result;

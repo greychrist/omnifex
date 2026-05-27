@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
-import type { ClaudeStreamMessage } from '@/types/claudeStream';
+import type { JsonlNode } from '@/types/jsonl';
 import {
   deriveSubagents,
   clearCompleted,
@@ -20,72 +20,85 @@ function agentToolUse(
   description = 'Explore repo',
   subagentType = 'Explore',
   runInBackground = false,
-): ClaudeStreamMessage {
+): JsonlNode {
   return {
-    type: 'assistant',
-    message: {
-      content: [
-        {
-          type: 'tool_use',
-          id,
-          name: 'Agent',
-          input: {
-            description,
-            subagent_type: subagentType,
-            prompt: 'go',
-            ...(runInBackground ? { run_in_background: true } : {}),
+    kind: 'assistant', sessionId: '', receivedAt: '',
+    raw: {
+      type: 'assistant',
+      message: {
+        role: 'assistant',
+        content: [
+          {
+            type: 'tool_use',
+            id,
+            name: 'Agent',
+            input: {
+              description,
+              subagent_type: subagentType,
+              prompt: 'go',
+              ...(runInBackground ? { run_in_background: true } : {}),
+            },
           },
-        },
-      ],
+        ],
+      },
     },
-  } as unknown as ClaudeStreamMessage;
+  } as unknown as JsonlNode;
 }
 
-function taskStarted(toolUseId: string, taskId = 'task_1', description = 'Explore repo'): ClaudeStreamMessage {
+function taskStarted(toolUseId: string, taskId = 'task_1', description = 'Explore repo'): JsonlNode {
   return {
-    type: 'system',
-    subtype: 'task_started',
-    task_id: taskId,
-    tool_use_id: toolUseId,
-    description,
-    task_type: 'local_agent',
-  } as unknown as ClaudeStreamMessage;
+    kind: 'unknown', sessionId: '', receivedAt: '',
+    raw: {
+      type: 'system',
+      subtype: 'task_started',
+      task_id: taskId,
+      tool_use_id: toolUseId,
+      description,
+      task_type: 'local_agent',
+    },
+  } as unknown as JsonlNode;
 }
 
 function taskProgress(
   toolUseId: string,
   description: string,
   extras: Partial<{ last_tool_name: string; total_tokens: number; tool_uses: number; duration_ms: number }> = {},
-): ClaudeStreamMessage {
+): JsonlNode {
   return {
-    type: 'system',
-    subtype: 'task_progress',
-    task_id: 'task_1',
-    tool_use_id: toolUseId,
-    description,
-    last_tool_name: extras.last_tool_name,
-    usage: {
-      total_tokens: extras.total_tokens ?? 0,
-      tool_uses: extras.tool_uses ?? 0,
-      duration_ms: extras.duration_ms ?? 0,
+    kind: 'unknown', sessionId: '', receivedAt: '',
+    raw: {
+      type: 'system',
+      subtype: 'task_progress',
+      task_id: 'task_1',
+      tool_use_id: toolUseId,
+      description,
+      last_tool_name: extras.last_tool_name,
+      usage: {
+        total_tokens: extras.total_tokens ?? 0,
+        tool_uses: extras.tool_uses ?? 0,
+        duration_ms: extras.duration_ms ?? 0,
+      },
     },
-  } as unknown as ClaudeStreamMessage;
+  } as unknown as JsonlNode;
 }
 
 function taskNotification(
   toolUseId: string,
   status: 'completed' | 'failed' = 'completed',
   summary = 'done',
-): ClaudeStreamMessage {
+): JsonlNode {
   return {
-    type: 'system',
-    subtype: 'task_notification',
-    task_id: 'task_1',
-    tool_use_id: toolUseId,
-    status,
-    summary,
-    usage: { total_tokens: 42060, tool_uses: 29, duration_ms: 37747 },
-  } as unknown as ClaudeStreamMessage;
+    kind: 'unknown', sessionId: '', receivedAt: '',
+    raw: {
+      type: 'system',
+      subtype: 'task_notification',
+      task_id: 'task_1',
+      tool_use_id: toolUseId,
+      status,
+      summary,
+      usage: { total_tokens: 42060, tool_uses: 29, duration_ms: 37747 },
+    },
+  } as unknown as JsonlNode;
 }
 
 // Patch shape mirrors the SDK's SDKTaskUpdatedMessage at sdk.d.ts:3619.
@@ -101,33 +114,40 @@ function taskUpdated(
     error?: string;
     is_backgrounded?: boolean;
   },
-): ClaudeStreamMessage {
+): JsonlNode {
   return {
-    type: 'system',
-    subtype: 'task_updated',
-    task_id: taskId,
-    patch,
-  } as unknown as ClaudeStreamMessage;
+    kind: 'unknown', sessionId: '', receivedAt: '',
+    raw: {
+      type: 'system',
+      subtype: 'task_updated',
+      task_id: taskId,
+      patch,
+    },
+  } as unknown as JsonlNode;
 }
 
 function toolResult(
   toolUseId: string,
   isError = false,
   text = 'result text',
-): ClaudeStreamMessage {
+): JsonlNode {
   return {
-    type: 'user',
-    message: {
-      content: [
-        {
-          type: 'tool_result',
-          tool_use_id: toolUseId,
-          is_error: isError,
-          content: text,
-        },
-      ],
+    kind: 'user', userKind: 'tool-result', sessionId: '', receivedAt: '',
+    raw: {
+      type: 'user',
+      message: {
+        role: 'user',
+        content: [
+          {
+            type: 'tool_result',
+            tool_use_id: toolUseId,
+            is_error: isError,
+            content: text,
+          },
+        ],
+      },
     },
-  } as unknown as ClaudeStreamMessage;
+  } as unknown as JsonlNode;
 }
 
 describe('isTaskLifecycleMarker', () => {
@@ -210,9 +230,9 @@ describe('createSubagentColorAllocator', () => {
 
 describe('deriveSubagents', () => {
   it('returns empty for transcripts with no subagents', () => {
-    const msgs: ClaudeStreamMessage[] = [
-      { type: 'user', message: { content: [{ type: 'text', text: 'hi' }] } } as any,
-      { type: 'assistant', message: { content: [{ type: 'text', text: 'hello' }] } } as any,
+    const msgs: JsonlNode[] = [
+      { kind: 'user', userKind: 'prompt', sessionId: '', receivedAt: '', raw: { type: 'user', message: { content: [{ type: 'text', text: 'hi' }] } } } as any,
+      { kind: 'assistant', sessionId: '', receivedAt: '', raw: { type: 'assistant', message: { content: [{ type: 'text', text: 'hello' }] } } } as any,
     ];
     expect(deriveSubagents(msgs)).toEqual([]);
   });
@@ -317,40 +337,48 @@ describe('deriveSubagents', () => {
   });
 
   describe('Bash run_in_background (generalized background detection)', () => {
-    function bashBackground(id: string, description = 'Build something'): ClaudeStreamMessage {
+    function bashBackground(id: string, description = 'Build something'): JsonlNode {
       return {
-        type: 'assistant',
-        message: {
-          content: [
-            {
-              type: 'tool_use',
-              id,
-              name: 'Bash',
-              input: {
-                command: 'docker build ...',
-                description,
-                run_in_background: true,
+        kind: 'assistant', sessionId: '', receivedAt: '',
+        raw: {
+          type: 'assistant',
+          message: {
+            role: 'assistant',
+            content: [
+              {
+                type: 'tool_use',
+                id,
+                name: 'Bash',
+                input: {
+                  command: 'docker build ...',
+                  description,
+                  run_in_background: true,
+                },
               },
-            },
-          ],
+            ],
+          },
         },
-      } as unknown as ClaudeStreamMessage;
+      } as unknown as JsonlNode;
     }
 
-    function bashForeground(id: string): ClaudeStreamMessage {
+    function bashForeground(id: string): JsonlNode {
       return {
-        type: 'assistant',
-        message: {
-          content: [
-            {
-              type: 'tool_use',
-              id,
-              name: 'Bash',
-              input: { command: 'ls', description: 'list files' },
-            },
-          ],
+        kind: 'assistant', sessionId: '', receivedAt: '',
+        raw: {
+          type: 'assistant',
+          message: {
+            role: 'assistant',
+            content: [
+              {
+                type: 'tool_use',
+                id,
+                name: 'Bash',
+                input: { command: 'ls', description: 'list files' },
+              },
+            ],
+          },
         },
-      } as unknown as ClaudeStreamMessage;
+      } as unknown as JsonlNode;
     }
 
     it('registers a running subagent from a Bash run_in_background tool_use alone (before task_started fires)', () => {
@@ -393,11 +421,20 @@ describe('deriveSubagents', () => {
       const subs = deriveSubagents([
         bashBackground(TOOL_USE_ID, 'Build DMG'),
         toolResult(TOOL_USE_ID, false, 'Async agent launched'),
-        { type: 'result', subtype: 'success', result: 'awaiting' } as any,
-        { type: 'user', message: { content: [{ type: 'text', text: 'next' }] } } as any,
+        { kind: 'unknown', sessionId: '', receivedAt: '', raw: { type: 'result', subtype: 'success', result: 'awaiting' } } as any,
+        { kind: 'user', userKind: 'prompt', sessionId: '', receivedAt: '', raw: { type: 'user', message: { content: [{ type: 'text', text: 'next' }] } } } as any,
       ]);
       expect(subs[0].status).toBe('completed_inferred');
       expect(subs[0].closureSource).toBe('parent_result');
+    });
+
+    it('Bash run_in_background stays running while the result event is the latest (live awaiting)', () => {
+      const subs = deriveSubagents([
+        bashBackground(TOOL_USE_ID, 'Build DMG'),
+        toolResult(TOOL_USE_ID, false, 'Async agent launched'),
+        { kind: 'unknown', sessionId: '', receivedAt: '', raw: { type: 'result', subtype: 'success', result: 'awaiting' } } as any,
+      ]);
+      expect(subs[0].status).toBe('running');
     });
 
     it('Bash run_in_background with is_error=true on the ACK still flips to failed', () => {
@@ -427,8 +464,8 @@ describe('deriveSubagents', () => {
     const subs = deriveSubagents([
       agentToolUse(TOOL_USE_ID, 'Verify', 'general-purpose', true),
       toolResult(TOOL_USE_ID, false, 'Async agent launched successfully'),
-      { type: 'result', subtype: 'success', result: 'awaiting' } as any,
-      { type: 'user', message: { content: [{ type: 'text', text: 'next prompt' }] } } as any,
+      { kind: 'unknown', sessionId: '', receivedAt: '', raw: { type: 'result', subtype: 'success', result: 'awaiting' } } as any,
+      { kind: 'user', userKind: 'prompt', sessionId: '', receivedAt: '', raw: { type: 'user', message: { content: [{ type: 'text', text: 'next prompt' }] } } } as any,
     ]);
     expect(subs[0].status).toBe('completed_inferred');
     expect(subs[0].closureSource).toBe('parent_result');
@@ -440,7 +477,7 @@ describe('deriveSubagents', () => {
     const subs = deriveSubagents([
       agentToolUse(TOOL_USE_ID, 'Verify', 'general-purpose', true),
       toolResult(TOOL_USE_ID, false, 'Async agent launched successfully'),
-      { type: 'result', subtype: 'success', result: 'awaiting' } as any,
+      { kind: 'unknown', sessionId: '', receivedAt: '', raw: { type: 'result', subtype: 'success', result: 'awaiting' } } as any,
     ]);
     expect(subs[0].status).toBe('running');
   });
@@ -455,8 +492,8 @@ describe('deriveSubagents', () => {
     const subs = deriveSubagents([
       agentToolUse(TOOL_USE_ID, 'Verify', 'Explore', false),
       // No tool_result, no notification, but trailing user message
-      { type: 'result', subtype: 'success', result: 'huh' } as any,
-      { type: 'user', message: { content: [{ type: 'text', text: 'next' }] } } as any,
+      { kind: 'unknown', sessionId: '', receivedAt: '', raw: { type: 'result', subtype: 'success', result: 'huh' } } as any,
+      { kind: 'user', userKind: 'prompt', sessionId: '', receivedAt: '', raw: { type: 'user', message: { content: [{ type: 'text', text: 'next' }] } } } as any,
     ]);
     expect(subs[0].status).toBe('completed_inferred');
     expect(subs[0].closureSource).toBe('parent_result');
@@ -467,8 +504,8 @@ describe('deriveSubagents', () => {
       agentToolUse(TOOL_USE_ID, 'Verify', 'general-purpose', true),
       toolResult(TOOL_USE_ID, false, 'Async agent launched'),
       taskNotification(TOOL_USE_ID, 'completed'),
-      { type: 'result', subtype: 'success', result: 'done' } as any,
-      { type: 'user', message: { content: [{ type: 'text', text: 'next' }] } } as any,
+      { kind: 'unknown', sessionId: '', receivedAt: '', raw: { type: 'result', subtype: 'success', result: 'done' } } as any,
+      { kind: 'user', userKind: 'prompt', sessionId: '', receivedAt: '', raw: { type: 'user', message: { content: [{ type: 'text', text: 'next' }] } } } as any,
     ]);
     expect(subs[0].status).toBe('completed');
   });
@@ -483,7 +520,7 @@ describe('deriveSubagents', () => {
   });
 
   it('handles two parallel subagents as distinct entries', () => {
-    const msgs: ClaudeStreamMessage[] = [
+    const msgs: JsonlNode[] = [
       agentToolUse(TOOL_USE_ID, 'First', 'Explore'),
       agentToolUse(TOOL_USE_ID_2, 'Second', 'Plan'),
       taskStarted(TOOL_USE_ID),
@@ -525,27 +562,31 @@ describe('XML task-notification (queue-operation / attachment)', () => {
   // <status> / <summary> and route through the same close path that
   // structured task_notification uses.
 
-  function bashBg(id: string, description = 'verify gate'): ClaudeStreamMessage {
+  function bashBg(id: string, description = 'verify gate'): JsonlNode {
     return {
-      type: 'assistant',
-      message: {
-        content: [
-          {
-            type: 'tool_use',
-            id,
-            name: 'Bash',
-            input: {
-              command: 'node scripts/claude/verify.mjs',
-              description,
-              run_in_background: true,
+      kind: 'assistant', sessionId: '', receivedAt: '',
+      raw: {
+        type: 'assistant',
+        message: {
+          role: 'assistant',
+          content: [
+            {
+              type: 'tool_use',
+              id,
+              name: 'Bash',
+              input: {
+                command: 'node scripts/claude/verify.mjs',
+                description,
+                run_in_background: true,
+              },
             },
-          },
-        ],
+          ],
+        },
       },
-    } as unknown as ClaudeStreamMessage;
+    } as unknown as JsonlNode;
   }
 
-  function bgAck(toolUseId: string): ClaudeStreamMessage {
+  function bgAck(toolUseId: string): JsonlNode {
     return toolResult(toolUseId, false, `Command running in background with ID: bg_${toolUseId}`);
   }
 
@@ -565,22 +606,28 @@ describe('XML task-notification (queue-operation / attachment)', () => {
     ].join('\n');
   }
 
-  function queueOp(toolUseId: string, status: 'completed' | 'failed' = 'completed', summary = 'verify gate done'): ClaudeStreamMessage {
+  function queueOp(toolUseId: string, status: 'completed' | 'failed' = 'completed', summary = 'verify gate done'): JsonlNode {
     return {
-      type: 'queue-operation',
-      operation: 'enqueue',
-      content: xmlBody(toolUseId, status, summary),
-    } as unknown as ClaudeStreamMessage;
+      kind: 'unknown', sessionId: '', receivedAt: '',
+      raw: {
+        type: 'queue-operation',
+        operation: 'enqueue',
+        content: xmlBody(toolUseId, status, summary),
+      },
+    } as unknown as JsonlNode;
   }
 
-  function attachmentQueued(toolUseId: string, status: 'completed' | 'failed' = 'completed', summary = 'verify gate done'): ClaudeStreamMessage {
+  function attachmentQueued(toolUseId: string, status: 'completed' | 'failed' = 'completed', summary = 'verify gate done'): JsonlNode {
     return {
-      type: 'attachment',
-      attachment: {
-        type: 'queued_command',
-        prompt: xmlBody(toolUseId, status, summary),
+      kind: 'unknown', sessionId: '', receivedAt: '',
+      raw: {
+        type: 'attachment',
+        attachment: {
+          type: 'queued_command',
+          prompt: xmlBody(toolUseId, status, summary),
+        },
       },
-    } as unknown as ClaudeStreamMessage;
+    } as unknown as JsonlNode;
   }
 
   it('queue-operation enqueue with <task-notification> closes out the matching bg dispatch', () => {
@@ -796,7 +843,7 @@ const FIXTURE = path.resolve(process.cwd(), 'session_json/test_session.json');
 describe.skipIf(!fs.existsSync(FIXTURE))('deriveSubagents with real transcript', () => {
   it('extracts exactly one completed Explore subagent from test_session.json', () => {
     const raw = fs.readFileSync(FIXTURE, 'utf-8');
-    const transcript = JSON.parse(raw) as { output: ClaudeStreamMessage[] };
+    const transcript = JSON.parse(raw) as { output: JsonlNode[] };
     const subs = deriveSubagents(transcript.output);
     expect(subs).toHaveLength(1);
     const s = subs[0];

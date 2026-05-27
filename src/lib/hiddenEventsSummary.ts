@@ -1,5 +1,5 @@
-import type { ClaudeStreamMessage, MessageContentBlock } from '@/types/claudeStream';
-import { getMessageContent } from '@/types/claudeStream';
+import type { JsonlNode } from '@/types/jsonl';
+import type { MessageContentBlock } from '@/types/claudeStream';
 
 interface Counts {
   read: number;
@@ -48,14 +48,20 @@ function bucketTool(name: string): keyof Counts {
   return 'otherTool';
 }
 
-function tally(messages: ClaudeStreamMessage[]): Counts {
+function getContent(m: JsonlNode): unknown[] | null {
+  const raw = (m as unknown as { raw?: { message?: { content?: unknown } } }).raw;
+  const content = raw?.message?.content;
+  return Array.isArray(content) ? content : null;
+}
+
+function tally(messages: JsonlNode[]): Counts {
   const c = emptyCounts();
   for (const m of messages) {
-    if (m.type === 'system') {
+    if (m.kind === 'system') {
       c.systemEvents += 1;
       continue;
     }
-    const content = getMessageContent(m);
+    const content = getContent(m);
     if (!Array.isArray(content)) continue;
     for (const b of content as MessageContentBlock[]) {
       if (!b || typeof b !== 'object') continue;
@@ -86,7 +92,7 @@ function plural(n: number, one: string, many: string): string {
  * blocks and other render-empty noise, returns an empty string. Callers
  * should treat empty as "nothing worth summarizing — drop the expander."
  */
-export function summarizeHiddenEvents(messages: ClaudeStreamMessage[]): string {
+export function summarizeHiddenEvents(messages: JsonlNode[]): string {
   if (messages.length === 0) return '';
   const c = tally(messages);
   const parts: string[] = [];
@@ -124,14 +130,14 @@ export function summarizeHiddenEvents(messages: ClaudeStreamMessage[]): string {
  * One event per renderable content block, plus one per system message.
  * Empty thinking and empty text do not count.
  */
-export function countHiddenEvents(messages: ClaudeStreamMessage[]): number {
+export function countHiddenEvents(messages: JsonlNode[]): number {
   let n = 0;
   for (const m of messages) {
-    if (m.type === 'system') {
+    if (m.kind === 'system') {
       n += 1;
       continue;
     }
-    const content = getMessageContent(m);
+    const content = getContent(m);
     if (!Array.isArray(content)) continue;
     for (const b of content as MessageContentBlock[]) {
       if (!b || typeof b !== 'object') continue;

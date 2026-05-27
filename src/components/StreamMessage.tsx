@@ -26,7 +26,8 @@ import remarkGfm from "remark-gfm";
 import { getClaudeSyntaxTheme } from "@/lib/claudeSyntaxTheme";
 import { buildMarkdownComponents } from "@/lib/markdownComponents";
 import { useTheme } from "@/hooks";
-import type { ClaudeStreamMessage, MessageContentBlock } from "@/types/claudeStream";
+import type { JsonlNode } from "@/types/jsonl";
+import type { MessageContentBlock } from "@/types/claudeStream";
 import {
   asToolInput,
   asToolInputOneOf,
@@ -62,6 +63,7 @@ import {
   SystemInitializedWidget,
   SystemContextWidget
 } from "./ToolWidgets";
+import { turnDuration } from "@/lib/sessionDerivedState";
 
 // Stable module-level reference: ReactMarkdown re-renders if `remarkPlugins`
 // is a new array each call, which rebuilds nested Prism syntax-highlighted
@@ -232,9 +234,63 @@ const ResendExtra: React.FC<{
 };
 
 
+// ─── Completion band ────────────────────────────────────────────────────────
+
+const TERMINAL_STOP_REASONS = new Set([
+  'end_turn',
+  'stop_sequence',
+  'max_tokens',
+  'refusal',
+  'model_context_window_exceeded',
+]);
+
+const INPUT_RATE = 0.000003;
+const OUTPUT_RATE = 0.000015;
+
+function AssistantCompletionBand({
+  node,
+  allMessages,
+  index,
+  accountType,
+}: {
+  node: Extract<JsonlNode, { kind: 'assistant' }>;
+  allMessages: JsonlNode[];
+  index: number;
+  accountType?: string;
+}) {
+  const stopReason = (node.raw as { message?: { stop_reason?: string | null } }).message?.stop_reason;
+  if (!stopReason || !TERMINAL_STOP_REASONS.has(stopReason)) return null;
+
+  const duration = turnDuration(allMessages, index);
+  const usage = (node.raw as { message?: { usage?: Record<string, unknown> } }).message?.usage ?? {};
+  const inputTokens = typeof usage.input_tokens === 'number' ? usage.input_tokens : 0;
+  const outputTokens = typeof usage.output_tokens === 'number' ? usage.output_tokens : 0;
+  const cacheRead = typeof usage.cache_read_input_tokens === 'number' ? usage.cache_read_input_tokens : 0;
+  const cost = inputTokens * INPUT_RATE + outputTokens * OUTPUT_RATE;
+
+  const parts: string[] = [];
+  if (duration !== null) parts.push(formatDurationMs(duration));
+  parts.push(`${inputTokens} in / ${outputTokens} out`);
+  if (cacheRead > 0) parts.push(`${cacheRead} cached`);
+  if (accountType !== 'max') parts.push(`$${cost.toFixed(4)}`);
+
+  return (
+    <div className="text-xs text-muted-foreground/70 mt-1 px-1 flex items-center gap-2">
+      {parts.map((p, i) => (
+        <React.Fragment key={i}>
+          {i > 0 && <span aria-hidden="true">·</span>}
+          <span>{p}</span>
+        </React.Fragment>
+      ))}
+    </div>
+  );
+}
+
+// ─── Props ───────────────────────────────────────────────────────────────────
+
 interface StreamMessageProps {
-  message: ClaudeStreamMessage;
-  streamMessages: ClaudeStreamMessage[];
+  message: JsonlNode;
+  streamMessages: JsonlNode[];
   onLinkDetected?: (url: string) => void;
   /** When set, cost is hidden for subscription account types (e.g. "max"). */
   accountType?: string;
@@ -258,7 +314,7 @@ interface StreamMessageProps {
 const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamMessages, onLinkDetected, accountType, inExpandedGroup, compact, onResend }) => {
   // State to track tool results mapped by tool call ID
   const [toolResults, setToolResults] = useState<Map<string, MessageContentBlock>>(new Map());
-  
+
   // Get current theme. Memoize the derived theme + components map so
   // ReactMarkdown sees stable prop references across renders — without
   // this, every render rebuilds the Prism-highlighted code DOM and the
@@ -269,15 +325,17 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
 
   // Per-kind accent colors, live-reload from Appearance settings
   const { config: renderConfig } = useMessageRenderingConfig();
-  
+
   // Extract all tool results from stream messages
   useEffect(() => {
     const results = new Map<string, MessageContentBlock>();
 
     // Iterate through all messages to find tool results
-    streamMessages.forEach(msg => {
-      if (msg.type === "user" && msg.message.content && Array.isArray(msg.message.content)) {
-        (msg.message.content as MessageContentBlock[]).forEach((content) => {
+    streamMessages.forEach(node => {
+      if (node.kind !== 'user') return;
+      const w = node.raw;
+      if (w.message && w.message.content && Array.isArray(w.message.content)) {
+        (w.message.content as MessageContentBlock[]).forEach((content) => {
           if (content.type === "tool_result" && content.tool_use_id) {
             results.set(content.tool_use_id, content);
           }
@@ -295,23 +353,165 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
   };
   
   try {
-    // Skip rendering for meta messages that don't have meaningful content.
-    // Exempt skill-injection user messages — they arrive with isMeta:true from
-    // JSONL (the live SDK variant uses isSynthetic instead) but carry the
-    // SKILL.md body we want to render. Mirrors the same exemption in
-    // src/lib/messageFilters.ts.
+    // ── Top-level dispatch on message.kind ──────────────────────────────────
+    // Inner field access may still read `wire` (= message.raw as ClaudeStreamMessage)
+    // for convenience, but every routing decision is on message.kind.
+
+    // Bookkeeping kinds: never render in the message feed.
     if (
-      message.isMeta &&
-      message.type !== 'summary' &&
-      !detectSkillInjection(message, streamMessages)
+      message.kind === 'last-prompt' ||
+      message.kind === 'permission-mode' ||
+      message.kind === 'ai-title' ||
+      message.kind === 'file-history-snapshot' ||
+      message.kind === 'stream-event' ||
+      message.kind === 'rate-limit' ||
+      message.kind === 'lifecycle'
     ) {
       return null;
     }
 
-    // Handle summary messages (synthesized for compaction summaries — they
-    // carry { leafUuid, summary } and are the only variant with these fields).
-    if (message.type === "summary" && message.leafUuid && message.summary) {
-      return <SummaryWidget summary={message.summary} leafUuid={message.leafUuid} />;
+    if (message.kind === 'system') {
+      const sysRaw = message.raw;
+      // System initialization message - use the original rich widget
+      if (message.subtype === "init") {
+        return (
+          <SystemInitializedWidget
+            sessionId={(sysRaw as unknown as { session_id?: string }).session_id}
+            model={(sysRaw as unknown as { model?: string }).model}
+            cwd={sysRaw.cwd}
+            tools={(sysRaw as unknown as { tools?: string[] }).tools}
+          />
+        );
+      }
+
+      // SDK notification — route through MessageFrame.
+      if (message.subtype === "notification") {
+        const streamKind = classifyStandaloneKind(message, streamMessages) ?? "system.notification";
+        return (
+          <MessageFrame streamKind={streamKind} message={message}>
+            <span className="text-xs font-mono">
+              {sysRaw.title ? `${sysRaw.title}: ` : ''}
+              {(sysRaw as unknown as { body?: string }).body ?? ''}
+            </span>
+          </MessageFrame>
+        );
+      }
+
+      // Fallback for any other system subtype (compact_boundary, future SDK
+      // subtypes, etc.). Route through MessageFrame so Appearance config takes
+      // effect.
+      const subtype = String(message.subtype);
+      // System variants don't share a common text field; pick whichever
+      // narrative-style field the specific subtype carries.
+      const text =
+        (sysRaw as unknown as { message?: unknown }).message
+          ?? sysRaw.title
+          ?? '';
+      const streamKind = classifyStandaloneKind(message, streamMessages) ?? "system.informational";
+      return (
+        <MessageFrame streamKind={streamKind} message={message}>
+          <span className="text-xs font-mono opacity-70">system.{subtype}</span>
+          {/* eslint-disable-next-line @typescript-eslint/no-base-to-string -- caller controls input; falls back to JSON.stringify upstream. */}
+          {text && <span className="text-xs font-mono truncate">{String(text)}</span>}
+        </MessageFrame>
+      );
+    }
+
+    if (message.kind === 'unknown') {
+      // unknown nodes carry an untyped raw bag — use explicit type assertions below.
+      const unknownRaw = message.raw;
+
+      // Skip rendering for meta messages that don't have meaningful content.
+      if (
+        unknownRaw.isMeta &&
+        unknownRaw.type !== 'summary' &&
+        !detectSkillInjection(message, streamMessages)
+      ) {
+        return null;
+      }
+
+      // Handle summary messages (synthesized for compaction summaries — they
+      // carry { leafUuid, summary } and are the only variant with these fields).
+      if (unknownRaw.type === "summary" && unknownRaw.leafUuid && unknownRaw.summary) {
+        return <SummaryWidget summary={unknownRaw.summary as string} leafUuid={unknownRaw.leafUuid as string} />;
+      }
+
+      // Result message — route through MessageFrame so presentation config drives chrome.
+      if (unknownRaw.type === "result") {
+        const classifiedKind = classifyStandaloneKind(message, streamMessages);
+        const resultKindId =
+          classifiedKind === "result.error_during_execution"
+            || classifiedKind === "result.awaiting_background"
+            || classifiedKind === "result.success"
+            ? classifiedKind
+            : (unknownRaw.is_error === true ? "result.error_during_execution" : "result.success");
+        const isError = resultKindId === "result.error_during_execution";
+        const isAwaiting = resultKindId === "result.awaiting_background";
+        const resultFallbackLabel = isError
+          ? "Execution Failed"
+          : isAwaiting
+            ? "Awaiting Background Work"
+            : "Execution Complete";
+        const resultText = unknownRaw.result as string | undefined;
+        const resultSubtype = unknownRaw.subtype as string | undefined;
+        const resultErrors = (unknownRaw as { errors?: string[] }).errors;
+        const totalCostUsd = unknownRaw.total_cost_usd as number | undefined;
+        const durationMs = unknownRaw.duration_ms as number | undefined;
+        const numTurns = unknownRaw.num_turns as number | undefined;
+        const resultUsage = unknownRaw.usage as { input_tokens?: number; output_tokens?: number } | undefined;
+
+        return (
+          <MessageFrame
+            streamKind={resultKindId}
+            message={message}
+            actionBar={<CardActionBar message={unknownRaw} />}
+          >
+            {resultSubtype === 'success' && resultText && (
+              <div className="prose prose-sm dark:prose-invert max-w-none">
+                <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={mdComponents}>
+                  {resultText}
+                </ReactMarkdown>
+              </div>
+            )}
+
+            {/* SDKResultErrorMessage carries `errors: string[]` (plural). */}
+            {resultSubtype !== 'success' && resultErrors?.length
+              ? <div className="text-sm text-destructive">{resultErrors.join('\n')}</div>
+              : null}
+
+            {(totalCostUsd !== undefined || durationMs !== undefined || numTurns !== undefined || resultUsage) && (
+              <>
+                <hr className="border-t border-border/50 my-2" />
+                <div className="text-xs text-muted-foreground space-y-1">
+                  {accountType !== "max" && totalCostUsd !== undefined && (
+                    <div>Cost: ${totalCostUsd.toFixed(4)} USD</div>
+                  )}
+                  {durationMs !== undefined && (
+                    <div>Duration: {formatDurationMs(durationMs)}</div>
+                  )}
+                  {numTurns !== undefined && (
+                    <div>Turns: {numTurns}</div>
+                  )}
+                  {resultUsage && (resultUsage.input_tokens !== undefined || resultUsage.output_tokens !== undefined) && (
+                    <div>
+                      Total tokens: {(resultUsage.input_tokens ?? 0) + (resultUsage.output_tokens ?? 0)}
+                      {' '}({resultUsage.input_tokens ?? 0} in, {resultUsage.output_tokens ?? 0} out)
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+
+            {/* Fallback label when no other content rendered — keeps the frame visible */}
+            {!resultText && resultSubtype === 'success' && (
+              <span className="text-sm text-muted-foreground">{resultFallbackLabel}</span>
+            )}
+          </MessageFrame>
+        );
+      }
+
+      // All other unknown kinds — nothing to render.
+      return null;
     }
 
     // AskUserQuestion pair — elevate the answered card to a top-level
@@ -322,7 +522,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
     // or thinking alongside the tool_use fall through to the in-bubble
     // rendering below (renderToolWidget still has its own AskUserQuestion
     // branch for that path).
-    {
+    if (message.kind === 'assistant' || message.kind === 'user') {
       const upstandingKind = classifyStandaloneKind(message, streamMessages);
       if (upstandingKind === "tool.askUserQuestion.answered.result") {
         // The data is folded into the assistant-side answered card a few
@@ -332,13 +532,13 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
       }
       if (
         upstandingKind === "tool.askUserQuestion.answered"
-        && message.type === "assistant"
-        && message.message
-        && Array.isArray(message.message.content)
+        && message.kind === "assistant"
+        && message.raw.message
+        && Array.isArray(message.raw.message.content)
       ) {
-        const tu = message.message.content.find(
-          (b): b is Extract<typeof b, { type: "tool_use" }> =>
-            b?.type === "tool_use"
+        const tu = (message.raw.message.content as unknown[]).find(
+          (b): b is { type: "tool_use"; name: string; id?: string; input?: unknown } =>
+            (b as { type?: string }).type === "tool_use"
             && typeof (b as { name?: string }).name === "string"
             // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- name guaranteed string by typeof check on prior line.
             && (b as { name?: string }).name!.toLowerCase() === "askuserquestion",
@@ -351,12 +551,12 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
           // card would flash "(no answer recorded)" for one frame.
           // Classification already guarantees the result is in
           // streamMessages by the time we reach here.
-          const tuId = (tu as { id?: string }).id;
+          const tuId = tu.id;
           let resultContent: string | undefined;
           if (tuId) {
-            outer: for (const m of streamMessages) {
-              if (m.type !== "user") continue;
-              const blocks = (m as { message?: { content?: unknown } }).message?.content;
+            outer: for (const node of streamMessages) {
+              if (node.kind !== 'user') continue;
+              const blocks = node.raw.message?.content;
               if (!Array.isArray(blocks)) continue;
               for (const b of blocks) {
                 const block = b as { type?: string; tool_use_id?: string; content?: unknown };
@@ -378,7 +578,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
           // in the same shape every other first-order card uses.
           return (
             <AnsweredAskUserQuestionCard
-              input={(tu as { input?: unknown }).input}
+              input={tu.input}
               resultContent={resultContent}
               message={message}
             />
@@ -387,57 +587,16 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
       }
     }
 
-    // System initialization message - use the original rich widget
-    if (message.type === "system" && message.subtype === "init") {
-      return (
-        <SystemInitializedWidget
-          sessionId={message.session_id}
-          model={message.model}
-          cwd={message.cwd}
-          tools={message.tools}
-        />
-      );
-    }
-
-    // Fallback for any other system subtype (compact_boundary, future SDK
-    // subtypes, etc.). Route through MessageFrame so Appearance config takes
-    // effect. The 'init' subtype is handled above.
-    // The explicit `!== 'notification'` guard keeps the notification branch below reachable.
-    if (message.type === "system" && message.subtype !== "notification") {
-      const subtype = String(message.subtype);
-      // System variants don't share a common text field; pick whichever
-      // narrative-style field the specific subtype carries.
-      const text =
-        (message as { message?: unknown }).message
-          ?? (message as { title?: unknown }).title
-          ?? '';
-      const streamKind = message.streamKind ?? classifyStandaloneKind(message, streamMessages) ?? "system.informational";
-      return (
-        <MessageFrame streamKind={streamKind} message={message}>
-          <span className="text-xs font-mono opacity-70">system.{subtype}</span>
-          {/* eslint-disable-next-line @typescript-eslint/no-base-to-string -- caller controls input; falls back to JSON.stringify upstream. */}
-          {text && <span className="text-xs font-mono truncate">{String(text)}</span>}
-        </MessageFrame>
-      );
-    }
-
-    // SDK notification — route through MessageFrame.
-    if (message.type === "system" && message.subtype === "notification") {
-      const streamKind = message.streamKind ?? "system.notification";
-      return (
-        <MessageFrame streamKind={streamKind} message={message}>
-          <span className="text-xs font-mono">
-            {message.title ? `${message.title}: ` : ''}
-            {message.body ?? ''}
-          </span>
-        </MessageFrame>
-      );
-    }
-
     // Assistant message — no outer wrapper. Each content block gets its own
     // MessageFrame so the block's kind controls its own chrome.
-    if (message.type === "assistant" && message.message) {
-      const msg = message.message;
+    if (message.kind === "assistant" && message.raw.message) {
+      // Find our index in streamMessages for the completion band.
+      const assistantIndex = (() => {
+        const idx = streamMessages.indexOf(message);
+        if (idx !== -1) return idx;
+        return streamMessages.findIndex((m) => m === message);
+      })();
+      const msg = message.raw.message;
 
       // If a following result message duplicates this assistant's text content,
       // suppress the duplicated text so only the Execution Complete card shows
@@ -449,27 +608,21 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
           .filter((c): c is import('@/types/claudeStream').MessageTextBlock => c.type === 'text')
           .map((c) => c.text)
           .join('');
-        if (assistantText) {
-          let msgIndex = streamMessages.indexOf(message);
-          if (msgIndex === -1) {
-            msgIndex = streamMessages.findIndex(
-              (m) => m === message || (m.type === message.type && m.message === message.message)
-            );
-          }
-          if (msgIndex !== -1) {
-            for (let i = msgIndex + 1; i < Math.min(streamMessages.length, msgIndex + 5); i++) {
-              const next = streamMessages[i];
-              // `result` is only present on SDKResultSuccess; the error
-              // variant carries `errors` instead and doesn't trigger this
-              // de-dup path.
-              if (
-                next.type === 'result' &&
-                next.subtype === 'success' &&
-                next.result?.trim() === assistantText.trim()
-              ) {
-                suppressTextBlocks = true;
-                break;
-              }
+        if (assistantText && assistantIndex !== -1) {
+          for (let i = assistantIndex + 1; i < Math.min(streamMessages.length, assistantIndex + 5); i++) {
+            const next = streamMessages[i];
+            const nextRaw = (next as unknown as { raw: Record<string, unknown> }).raw;
+            // `result` is only present on SDKResultSuccess; the error
+            // variant carries `errors` instead and doesn't trigger this
+            // de-dup path.
+            if (
+              nextRaw?.type === 'result' &&
+              nextRaw.subtype === 'success' &&
+              typeof nextRaw.result === 'string' &&
+              nextRaw.result.trim() === assistantText.trim()
+            ) {
+              suppressTextBlocks = true;
+              break;
             }
           }
           if (suppressTextBlocks) {
@@ -730,11 +883,18 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
           if (pendingHidden.length === 0) return;
           const items = pendingHidden;
           pendingHidden = [];
-          const syntheticMessage = {
-            type: 'assistant',
-            message: { content: items.map((i) => i.block) },
-          } as unknown as ClaudeStreamMessage;
-          const summary = summarizeHiddenEvents([syntheticMessage]);
+          // Build a synthetic JsonlNode wrapping just the hidden blocks
+          // so summarizeHiddenEvents (which now accepts JsonlNode[]) can tally them.
+          const syntheticNode: JsonlNode = {
+            kind: 'assistant',
+            sessionId: '',
+            receivedAt: '',
+            raw: {
+              type: 'assistant',
+              message: { role: 'assistant', content: items.map((i) => i.block) },
+            },
+          };
+          const summary = summarizeHiddenEvents([syntheticNode]);
           out.push(
             <HiddenBlocksExpander
               key={`hb-${items[0].origIdx}`}
@@ -770,9 +930,10 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
         output = out;
       }
 
-      const usageNode = msg.usage ? (
+      const typedUsage = msg.usage as { input_tokens?: number; output_tokens?: number } | undefined;
+      const usageNode = typedUsage ? (
         <div className="text-xs text-muted-foreground mt-2 px-1">
-          Tokens: {msg.usage.input_tokens} in, {msg.usage.output_tokens} out
+          Tokens: {typedUsage.input_tokens} in, {typedUsage.output_tokens} out
         </div>
       ) : null;
 
@@ -782,23 +943,30 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
         <>
           {output}
           {usageNode}
+          <AssistantCompletionBand
+            node={message}
+            allMessages={streamMessages}
+            index={assistantIndex}
+            accountType={accountType}
+          />
         </>
       );
     }
 
     // User message - handle both nested and direct content structures
-    if (message.type === "user") {
+    if (message.kind === "user") {
+      const userRaw = message.raw;
       // Don't render meta messages — except skill-injected bodies, which
       // arrive with isMeta:true from JSONL but carry the SKILL.md content
       // we want to render. messageFilters has the same exemption upstream;
       // mirror it here so the renderer is correct on its own (defense-in-
       // depth in case filtering is bypassed).
-      if (message.isMeta && !detectSkillInjection(message, streamMessages)) {
+      if (userRaw.isMeta && !detectSkillInjection(message, streamMessages)) {
         return null;
       }
 
       // Handle different message structures
-      const msg = message.message || message;
+      const msg = userRaw.message || userRaw;
 
       // Check if this is a tool-result-only message first — must happen before
       // bracket-detection to avoid tool results with nested content arrays
@@ -864,7 +1032,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
       // these with an amber/yellow tint + Bot icon so they're visually
       // distinct from the user's own purple messages AND from tool results.
       const isSubagentPrompt = !isToolResultOnly
-        && message.parent_tool_use_id != null;
+        && (userRaw as unknown as { parent_tool_use_id?: unknown }).parent_tool_use_id != null;
 
       const skillInjection = !isToolResultOnly && !isSubagentPrompt
         ? detectSkillInjection(message, streamMessages)
@@ -905,7 +1073,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
 
       // MessageFrame reads alignment, icon, accent, and header from config.
       // We only need to pass the body content as children.
-      const streamKind = message.streamKind ?? userKindId;
+      const streamKind = userKindId;
       const renderedCard = (
         <MessageFrame streamKind={streamKind} message={message} actionBar={userActionBar}>
           {/* Skill injection label */}
@@ -1014,24 +1182,26 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
                     let taskDescription: string | undefined;
                     if (content.tool_use_id && streamMessages) {
                       for (let i = streamMessages.length - 1; i >= 0; i--) {
-                        const prevMsg = streamMessages[i];
-                        if (prevMsg.type === 'assistant' && prevMsg.message?.content && Array.isArray(prevMsg.message.content)) {
-                          // Narrow each block via shape so BetaToolUseBlock's
-                          // `name` / `input` are reachable without `as any`.
-                          const toolUse = prevMsg.message.content.find(
-                            (c): c is Extract<typeof c, { type: 'tool_use' }> =>
-                              c?.type === 'tool_use' && (c as { id?: string }).id === content.tool_use_id,
-                          );
-                          if (toolUse) {
-                            const toolNameLower = toolUse.name?.toLowerCase() ?? '';
-                            if (isSubagentDispatch(toolUse.name)) {
-                              isTaskReturn = true;
-                              taskDescription = (toolUse.input as { description?: string } | undefined)?.description;
-                            } else if (TOOLS_WITH_WIDGETS_LOWER.has(toolNameLower) || toolUse.name?.startsWith('mcp__')) {
-                              hasCorrespondingWidget = true;
-                            }
-                            break;
+                        const prevNode = streamMessages[i];
+                        if (prevNode.kind !== 'assistant') continue;
+                        const prevContent = prevNode.raw.message?.content;
+                        if (!Array.isArray(prevContent)) continue;
+                        // Narrow each block via shape so BetaToolUseBlock's
+                        // `name` / `input` are reachable without `as any`.
+                        const toolUse = (prevContent as unknown[]).find(
+                          (c): c is { type: 'tool_use'; id?: string; name: string; input?: unknown } =>
+                            (c as { type?: string }).type === 'tool_use' &&
+                            (c as { id?: string }).id === content.tool_use_id,
+                        );
+                        if (toolUse) {
+                          const toolNameLower = toolUse.name?.toLowerCase() ?? '';
+                          if (isSubagentDispatch(toolUse.name)) {
+                            isTaskReturn = true;
+                            taskDescription = (toolUse.input as { description?: string } | undefined)?.description;
+                          } else if (TOOLS_WITH_WIDGETS_LOWER.has(toolNameLower) || toolUse.name?.startsWith('mcp__')) {
+                            hasCorrespondingWidget = true;
                           }
+                          break;
                         }
                       }
                     }
@@ -1144,18 +1314,18 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
                       // Search in previous assistant messages for the matching tool_use
                       if (streamMessages) {
                         for (let i = streamMessages.length - 1; i >= 0; i--) {
-                          const prevMsg = streamMessages[i];
-                          // Only check assistant messages
-                          if (prevMsg.type === 'assistant' && prevMsg.message.content && Array.isArray(prevMsg.message.content)) {
-                            const toolUse = (prevMsg.message.content as MessageContentBlock[]).find((c) =>
-                              c.type === 'tool_use' &&
-                              c.id === content.tool_use_id &&
-                              c.name.toLowerCase() === 'ls'
-                            );
-                            if (toolUse) {
-                              isFromLSTool = true;
-                              break;
-                            }
+                          const prevNode = streamMessages[i];
+                          if (prevNode.kind !== 'assistant') continue;
+                          const prevContent = prevNode.raw.message?.content;
+                          if (!Array.isArray(prevContent)) continue;
+                          const toolUse = (prevContent as MessageContentBlock[]).find((c) =>
+                            c.type === 'tool_use' &&
+                            c.id === content.tool_use_id &&
+                            c.name.toLowerCase() === 'ls'
+                          );
+                          if (toolUse) {
+                            isFromLSTool = true;
+                            break;
                           }
                         }
                       }
@@ -1192,20 +1362,20 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
                       // Search in previous assistant messages for the matching tool_use
                       if (streamMessages) {
                         for (let i = streamMessages.length - 1; i >= 0; i--) {
-                          const prevMsg = streamMessages[i];
-                          // Only check assistant messages
-                          if (prevMsg.type === 'assistant' && prevMsg.message?.content && Array.isArray(prevMsg.message.content)) {
-                            const toolUse = prevMsg.message.content.find(
-                              (c): c is Extract<typeof c, { type: 'tool_use' }> =>
-                                c?.type === 'tool_use' &&
-                                (c as { id?: string }).id === content.tool_use_id &&
-                                (c as { name?: string }).name?.toLowerCase() === 'read',
-                            );
-                            const fp = (toolUse?.input as { file_path?: string } | undefined)?.file_path;
-                            if (fp) {
-                              filePath = fp;
-                              break;
-                            }
+                          const prevNode = streamMessages[i];
+                          if (prevNode.kind !== 'assistant') continue;
+                          const prevContent = prevNode.raw.message?.content;
+                          if (!Array.isArray(prevContent)) continue;
+                          const toolUse = (prevContent as unknown[]).find(
+                            (c): c is { type: 'tool_use'; id?: string; name?: string; input?: unknown } =>
+                              (c as { type?: string }).type === 'tool_use' &&
+                              (c as { id?: string }).id === content.tool_use_id &&
+                              (c as { name?: string }).name?.toLowerCase() === 'read',
+                          );
+                          const fp = (toolUse?.input as { file_path?: string } | undefined)?.file_path;
+                          if (fp) {
+                            filePath = fp;
+                            break;
                           }
                         }
                       }
@@ -1255,78 +1425,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
       return renderedCard;
     }
 
-    // Result message — route through MessageFrame so presentation config drives chrome.
-    if (message.type === "result") {
-      const classifiedKind = classifyStandaloneKind(message, streamMessages);
-      const resultKindId =
-        classifiedKind === "result.error_during_execution"
-          || classifiedKind === "result.awaiting_background"
-          || classifiedKind === "result.success"
-          ? classifiedKind
-          : (message.is_error === true ? "result.error_during_execution" : "result.success");
-      const isError = resultKindId === "result.error_during_execution";
-      const isAwaiting = resultKindId === "result.awaiting_background";
-      const resultFallbackLabel = isError
-        ? "Execution Failed"
-        : isAwaiting
-          ? "Awaiting Background Work"
-          : "Execution Complete";
-      const streamKind = message.streamKind ?? resultKindId;
-
-      return (
-        <MessageFrame
-          streamKind={streamKind}
-          message={message}
-          actionBar={<CardActionBar message={message} />}
-        >
-          {message.subtype === 'success' && message.result && (
-            <div className="prose prose-sm dark:prose-invert max-w-none">
-              <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={mdComponents}>
-                {message.result}
-              </ReactMarkdown>
-            </div>
-          )}
-
-          {/* SDKResultErrorMessage carries `errors: string[]` (plural). */}
-          {message.subtype !== 'success' && (() => {
-            const err = message as import('@/types/claudeStream').SDKResultErrorMessage;
-            return err.errors?.length
-              ? <div className="text-sm text-destructive">{err.errors.join('\n')}</div>
-              : null;
-          })()}
-
-          {(message.total_cost_usd !== undefined || message.duration_ms !== undefined || message.num_turns !== undefined || message.usage) && (
-            <>
-              <hr className="border-t border-border/50 my-2" />
-              <div className="text-xs text-muted-foreground space-y-1">
-                {accountType !== "max" && message.total_cost_usd !== undefined && (
-                  <div>Cost: ${message.total_cost_usd.toFixed(4)} USD</div>
-                )}
-                {message.duration_ms !== undefined && (
-                  <div>Duration: {formatDurationMs(message.duration_ms)}</div>
-                )}
-                {message.num_turns !== undefined && (
-                  <div>Turns: {message.num_turns}</div>
-                )}
-                {message.usage && (message.usage.input_tokens !== undefined || message.usage.output_tokens !== undefined) && (
-                  <div>
-                    Total tokens: {(message.usage.input_tokens ?? 0) + (message.usage.output_tokens ?? 0)}
-                    {' '}({message.usage.input_tokens ?? 0} in, {message.usage.output_tokens ?? 0} out)
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-
-          {/* Fallback label when no other content rendered — keeps the frame visible */}
-          {!message.result && message.subtype === 'success' && (
-            <span className="text-sm text-muted-foreground">{resultFallbackLabel}</span>
-          )}
-        </MessageFrame>
-      );
-    }
-
-    // Skip rendering if no meaningful content
+    // All other kinds (attachment, queue-operation, etc.) — nothing to render.
     return null;
   } catch (error) {
     // If any error occurs during rendering, show a safe error message

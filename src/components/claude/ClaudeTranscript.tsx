@@ -11,12 +11,12 @@ import { useFindInChat } from "@/hooks/useFindInChat";
 import { buildCompactItems } from "@/lib/compactGrouping";
 import { filterDisplayableMessages } from "@/lib/messageFilters";
 import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
-import type { ClaudeStreamMessage } from "@/types/claudeStream";
+import type { JsonlNode } from "@/types/jsonl";
 import type { ViewMode } from "@/components/SessionViewToggle";
 
 export interface ClaudeTranscriptProps {
   /** All stream messages for this tab — passed to StreamMessage as the streamMessages context. */
-  messages: ClaudeStreamMessage[];
+  messages: JsonlNode[];
   /** Verbose vs. compact rendering mode. */
   viewMode: ViewMode;
   /** Resolved account type, used by StreamMessage for account-specific UI. */

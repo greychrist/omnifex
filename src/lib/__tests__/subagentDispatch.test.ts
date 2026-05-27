@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import type { ClaudeStreamMessage } from "@/types/claudeStream";
+import type { JsonlNode } from "@/types/jsonl";
 import { isSubagentDispatch, isSubagentPrompt } from "../subagentDispatch";
 
 describe("isSubagentDispatch", () => {
@@ -44,19 +44,25 @@ const TOOL_ID = "toolu_TEST_PARENT";
 function assistantWithToolUse(
   id: string,
   name: string,
-): ClaudeStreamMessage {
+): JsonlNode {
   return {
-    type: "assistant",
-    message: { content: [{ type: "tool_use", id, name, input: {} }] },
-  } as unknown as ClaudeStreamMessage;
+    kind: "assistant", sessionId: "", receivedAt: "",
+    raw: {
+      type: "assistant",
+      message: { role: "assistant", content: [{ type: "tool_use", id, name, input: {} }] },
+    },
+  } as unknown as JsonlNode;
 }
 
-function userMessage(parentToolUseId: string | null | undefined): ClaudeStreamMessage {
+function userMessage(parentToolUseId: string | null | undefined): JsonlNode {
   return {
-    type: "user",
-    parent_tool_use_id: parentToolUseId,
-    message: { content: [{ type: "text", text: "hello" }] },
-  } as unknown as ClaudeStreamMessage;
+    kind: "user", userKind: "prompt", sessionId: "", receivedAt: "",
+    raw: {
+      type: "user",
+      parent_tool_use_id: parentToolUseId,
+      message: { role: "user", content: [{ type: "text", text: "hello" }] },
+    },
+  } as unknown as JsonlNode;
 }
 
 describe("isSubagentPrompt", () => {
@@ -106,15 +112,18 @@ describe("isSubagentPrompt", () => {
 
   it("ignores assistant messages without array content", () => {
     const weird = {
-      type: "assistant",
-      message: { content: "not-an-array" },
-    } as unknown as ClaudeStreamMessage;
+      kind: "assistant", sessionId: "", receivedAt: "",
+      raw: { type: "assistant", message: { role: "assistant", content: "not-an-array" } },
+    } as unknown as JsonlNode;
     const msg = userMessage(TOOL_ID);
     expect(isSubagentPrompt(msg, [weird, msg])).toBe(false);
   });
 
   it("ignores assistant messages without a message object", () => {
-    const weird = { type: "assistant" } as unknown as ClaudeStreamMessage;
+    const weird = {
+      kind: "assistant", sessionId: "", receivedAt: "",
+      raw: { type: "assistant" },
+    } as unknown as JsonlNode;
     const msg = userMessage(TOOL_ID);
     expect(isSubagentPrompt(msg, [weird, msg])).toBe(false);
   });

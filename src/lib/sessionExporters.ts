@@ -1,3 +1,4 @@
+import type { JsonlNode } from "@/types/jsonl";
 import type { ClaudeStreamMessage } from "@/types/claudeStream";
 
 /**
@@ -12,7 +13,7 @@ export async function exportAsJsonl(rawJsonlOutput: string[]): Promise<void> {
  * Formats session messages as Markdown and copies to the clipboard.
  */
 export async function exportAsMarkdown(
-  messages: ClaudeStreamMessage[],
+  messages: JsonlNode[],
   projectPath: string,
 ): Promise<void> {
   let markdown = `# Claude Code Session\n\n`;
@@ -20,7 +21,9 @@ export async function exportAsMarkdown(
   markdown += `**Date:** ${new Date().toISOString()}\n\n`;
   markdown += `---\n\n`;
 
-  for (const msg of messages) {
+  for (const node of messages) {
+    // Use the raw wire shape for markdown rendering — raw IS the ClaudeStreamMessage wire shape.
+    const msg = (node as unknown as { raw: ClaudeStreamMessage }).raw;
     if (msg.type === "system" && msg.subtype === "init") {
       // Cast to escape the type-system limitation: TS doesn't narrow the
       // discriminated union past `type+subtype` cleanly when the union has

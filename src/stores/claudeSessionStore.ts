@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
 import { useShallow } from 'zustand/react/shallow';
-import type { ClaudeStreamMessage } from '@/types/claudeStream';
+import type { JsonlNode } from '@/types/jsonl';
 import type {
   SessionAccountInfo,
   SessionContextUsage,
@@ -18,7 +18,7 @@ import type {
  * subagents) stays in the component as `useMemo`s over `messages`.
  */
 export interface TabSessionState {
-  messages: ClaudeStreamMessage[];
+  messages: JsonlNode[];
   claudeSessionId: string | null;
   extractedSessionInfo: { sessionId: string; projectId: string } | null;
   sdkAccountInfo: SessionAccountInfo | null;
@@ -47,8 +47,8 @@ export const EMPTY_TAB_SESSION: TabSessionState = {
 };
 
 type MessagesUpdater =
-  | ClaudeStreamMessage[]
-  | ((prev: ClaudeStreamMessage[]) => ClaudeStreamMessage[]);
+  | JsonlNode[]
+  | ((prev: JsonlNode[]) => JsonlNode[]);
 
 interface ClaudeSessionStoreState {
   tabs: Record<string, TabSessionState>;
@@ -62,10 +62,10 @@ interface ClaudeSessionStoreState {
   // Actions ---------------------------------------------------------------
   patchTab(tabId: string, patch: Partial<TabSessionState>): void;
   setMessages(tabId: string, next: MessagesUpdater): void;
-  appendMessage(tabId: string, msg: ClaudeStreamMessage): void;
+  appendMessage(tabId: string, msg: JsonlNode): void;
   /** Splice a system:init message in before the first user message,
    *  fall back to push when there is no user yet. */
-  insertMessageBeforeFirstUser(tabId: string, msg: ClaudeStreamMessage): void;
+  insertMessageBeforeFirstUser(tabId: string, msg: JsonlNode): void;
   resetTab(tabId: string): void;
   setInflightAssistantText(
     tabId: string,
@@ -159,7 +159,7 @@ export const useClaudeSessionStore = create<ClaudeSessionStoreState>()(
     insertMessageBeforeFirstUser: (tabId, msg) =>
       { set((state) => {
         const slice = ensureTab(state.tabs, tabId);
-        const idx = slice.messages.findIndex((m) => m.type === 'user');
+        const idx = slice.messages.findIndex((m) => m.kind === 'user');
         const messages =
           idx >= 0
             ? [...slice.messages.slice(0, idx), msg, ...slice.messages.slice(idx)]
@@ -185,15 +185,15 @@ export const useClaudeSessionStore = create<ClaudeSessionStoreState>()(
 type Setter<T> = (next: T | ((prev: T) => T)) => void;
 
 export interface UseTabSessionResult extends TabSessionState {
-  setMessages: Setter<ClaudeStreamMessage[]>;
+  setMessages: Setter<JsonlNode[]>;
   setClaudeSessionId: Setter<string | null>;
   setExtractedSessionInfo: Setter<TabSessionState['extractedSessionInfo']>;
   setSdkAccountInfo: Setter<SessionAccountInfo | null>;
   setContextUsage: Setter<SessionContextUsage | null>;
   setSupportedModels: Setter<SessionModelInfo[]>;
   setIsLoading: Setter<boolean>;
-  appendMessage: (msg: ClaudeStreamMessage) => void;
-  insertMessageBeforeFirstUser: (msg: ClaudeStreamMessage) => void;
+  appendMessage: (msg: JsonlNode) => void;
+  insertMessageBeforeFirstUser: (msg: JsonlNode) => void;
   resetTab: () => void;
 }
 

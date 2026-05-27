@@ -1,15 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import { summarizeHiddenEvents, countHiddenEvents } from '../hiddenEventsSummary';
-import type { ClaudeStreamMessage } from '@/types/claudeStream';
+import type { JsonlNode } from '@/types/jsonl';
 
-const assistant = (content: any[]): ClaudeStreamMessage =>
-  ({ type: 'assistant', message: { content } }) as any;
+const assistant = (content: any[]): JsonlNode =>
+  ({ kind: 'assistant', sessionId: '', receivedAt: '', raw: { type: 'assistant', message: { role: 'assistant', content } } }) as unknown as JsonlNode;
 
-const user = (content: any[]): ClaudeStreamMessage =>
-  ({ type: 'user', message: { content } }) as any;
+const user = (content: any[]): JsonlNode =>
+  ({ kind: 'user', userKind: 'prompt', sessionId: '', receivedAt: '', raw: { type: 'user', message: { role: 'user', content } } }) as unknown as JsonlNode;
 
-const system = (subtype: string, extra: Record<string, any> = {}): ClaudeStreamMessage =>
-  ({ type: 'system', subtype, ...extra }) as any;
+const system = (subtype: string, extra: Record<string, any> = {}): JsonlNode =>
+  ({ kind: 'system', subtype, sessionId: '', receivedAt: '', raw: { type: 'system', subtype, ...extra } }) as unknown as JsonlNode;
 
 describe('summarizeHiddenEvents', () => {
   it('returns empty string for empty list', () => {

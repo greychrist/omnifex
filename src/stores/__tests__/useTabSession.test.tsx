@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { render, act, cleanup } from '@testing-library/react';
-import type { ClaudeStreamMessage } from '@/types/claudeStream';
+import type { JsonlNode } from '@/types/jsonl';
 import {
   useClaudeSessionStore,
   useTabSession,
@@ -16,14 +16,23 @@ beforeEach(() => {
 
 afterEach(() => { cleanup(); });
 
-const assistantMsg = (text = 'ok'): ClaudeStreamMessage =>
-  ({ type: 'assistant', message: { content: [{ type: 'text', text }] } } as unknown as ClaudeStreamMessage);
+const assistantMsg = (text = 'ok'): JsonlNode =>
+  ({
+    kind: 'assistant', sessionId: '', receivedAt: '',
+    raw: { type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text }] } },
+  }) as unknown as JsonlNode;
 
-const userMsg = (): ClaudeStreamMessage =>
-  ({ type: 'user', message: { content: [{ type: 'text', text: 'u' }] } } as unknown as ClaudeStreamMessage);
+const userMsg = (): JsonlNode =>
+  ({
+    kind: 'user', userKind: 'prompt', sessionId: '', receivedAt: '',
+    raw: { type: 'user', message: { role: 'user', content: [{ type: 'text', text: 'u' }] } },
+  }) as unknown as JsonlNode;
 
-const initMsg = (): ClaudeStreamMessage =>
-  ({ type: 'system', subtype: 'init', session_id: 'sess-1' } as ClaudeStreamMessage);
+const initMsg = (): JsonlNode =>
+  ({
+    kind: 'system', subtype: 'init', sessionId: '', receivedAt: '',
+    raw: { type: 'system', subtype: 'init', session_id: 'sess-1' },
+  }) as unknown as JsonlNode;
 
 function HookHarness({ tabId, capture }: { tabId: string; capture: (s: ReturnType<typeof useTabSession>) => void }) {
   const slice = useTabSession(tabId);
@@ -108,7 +117,7 @@ describe('useTabSession', () => {
     act(() => { captured!.insertMessageBeforeFirstUser(initMsg()); });
     const msgs = useClaudeSessionStore.getState().selectTab(TAB).messages;
     expect(msgs.length).toBe(3);
-    expect(msgs[1].type).toBe('system');
+    expect(msgs[1].kind).toBe('system');
   });
 
   it('resetTab clears the slice', () => {

@@ -119,6 +119,10 @@ export interface SystemRaw extends RawLineBase {
   parentUuid?: string;
   cwd?: string;
   level?: string;
+  /** Present when subtype === 'notification'. */
+  notification_type?: string;
+  title?: string;
+  body?: string;
 }
 
 export type LifecycleKind =

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { api } from "@/lib/api";
 import { fireAndLog } from "@/lib/fireAndLog";
-import type { ClaudeStreamMessage } from "@/types/claudeStream";
+import type { JsonlNode } from "@/types/jsonl";
 
 /** How long to wait for a first response before checking health. */
 export const RESPONSE_TIMEOUT_MS = 30_000;
@@ -11,12 +11,12 @@ export const INACTIVITY_TIMEOUT_MS = 15_000;
 
 interface UseSessionTimeoutsArgs {
   isLoading: boolean;
-  messages: ClaudeStreamMessage[];
+  messages: JsonlNode[];
   tabId: string;
   waitingForPermission: boolean;
   persistentSessionRef: React.MutableRefObject<boolean>;
   setIsLoading: React.Dispatch<React.SetStateAction<boolean>>;
-  setMessages: React.Dispatch<React.SetStateAction<ClaudeStreamMessage[]>>;
+  setMessages: React.Dispatch<React.SetStateAction<JsonlNode[]>>;
   setError: React.Dispatch<React.SetStateAction<string | null>>;
 }
 
@@ -64,16 +64,22 @@ export function useSessionTimeouts({
           const health = await api.sessionGetHealth(tabId);
           if (health.alive && health.sessionStatus !== "error") {
             // Session is alive — show warning but don't kill it
+            const now = new Date().toISOString();
             setMessages((prev) => [
               ...prev,
               {
-                type: "system" as const,
-                subtype: "notification",
-                notification_type: "warn",
-                title: "Slow Response",
-                body:
-                  "Session is still active but no response yet. Waiting...",
-              } as any,
+                kind: 'system',
+                subtype: 'notification',
+                sessionId: '',
+                receivedAt: now,
+                raw: {
+                  type: 'system',
+                  subtype: 'notification',
+                  notification_type: 'warn',
+                  title: 'Slow Response',
+                  body: 'Session is still active but no response yet. Waiting...',
+                },
+              } satisfies JsonlNode,
             ]);
             return;
           }
@@ -87,7 +93,7 @@ export function useSessionTimeouts({
         const currentMessages = messagesRef.current;
         const lastUserIdx = [...currentMessages]
           .reverse()
-          .findIndex((m) => m.type === "user" && !m.isMeta);
+          .findIndex((m) => m.kind === "user" && !(m.raw as { isMeta?: boolean }).isMeta);
         if (lastUserIdx !== -1) {
           setTimedOutMessageIndex(currentMessages.length - 1 - lastUserIdx);
         }
@@ -118,25 +124,29 @@ export function useSessionTimeouts({
           if (health.alive && health.sessionStatus !== "error") {
             // Session is alive — show warning but keep waiting
             setMessages((prev) => {
-              // Don't spam warnings. Only system+notification messages carry
-              // a `title` field on the typed union; everything else returns
-              // undefined here and falls through to the spam-prevention path.
+              // Don't spam warnings. Check the last message's title via raw shape.
               const lastMsg = prev[prev.length - 1];
               const lastTitle =
-                lastMsg?.type === 'system' && lastMsg.subtype === 'notification'
-                  ? lastMsg.title
+                lastMsg?.kind === 'system' && lastMsg.subtype === 'notification'
+                  ? (lastMsg.raw as { title?: string }).title
                   : undefined;
               if (lastTitle === "Session May Be Unresponsive") return prev;
+              const now = new Date().toISOString();
               return [
                 ...prev,
                 {
-                  type: "system" as const,
-                  subtype: "notification",
-                  notification_type: "warn",
-                  title: "Session May Be Unresponsive",
-                  body:
-                    "No messages received recently, but session is still alive.",
-                } as any,
+                  kind: 'system',
+                  subtype: 'notification',
+                  sessionId: '',
+                  receivedAt: now,
+                  raw: {
+                    type: 'system',
+                    subtype: 'notification',
+                    notification_type: 'warn',
+                    title: 'Session May Be Unresponsive',
+                    body: 'No messages received recently, but session is still alive.',
+                  },
+                } satisfies JsonlNode,
               ];
             });
             return;
@@ -148,15 +158,22 @@ export function useSessionTimeouts({
         // Session is dead — reset
         setIsLoading(false);
         persistentSessionRef.current = false;
+        const nowLost = new Date().toISOString();
         setMessages((prev) => [
           ...prev,
           {
-            type: "system" as const,
-            subtype: "notification",
-            notification_type: "warn",
-            title: "Session Lost",
-            body: "Session is no longer active. Send a message to restart.",
-          } as any,
+            kind: 'system',
+            subtype: 'notification',
+            sessionId: '',
+            receivedAt: nowLost,
+            raw: {
+              type: 'system',
+              subtype: 'notification',
+              notification_type: 'warn',
+              title: 'Session Lost',
+              body: 'Session is no longer active. Send a message to restart.',
+            },
+          } satisfies JsonlNode,
         ]);
       }
     }), 3000);

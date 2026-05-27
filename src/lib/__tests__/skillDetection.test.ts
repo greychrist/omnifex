@@ -1,36 +1,47 @@
 import { describe, it, expect } from 'vitest';
-import type { ClaudeStreamMessage } from '@/types/claudeStream';
+import type { JsonlNode } from '@/types/jsonl';
 import { detectSkillInjection } from '../skillDetection';
 
-function userText(text: string): ClaudeStreamMessage {
-  return { type: 'user', message: { content: [{ type: 'text', text }] } } as ClaudeStreamMessage;
+function userText(text: string): JsonlNode {
+  return { kind: 'user', userKind: 'prompt', sessionId: '', receivedAt: '', raw: { type: 'user', message: { role: 'user', content: [{ type: 'text', text }] } } } as unknown as JsonlNode;
 }
 
-function skillToolUse(id: string, skill: string): ClaudeStreamMessage {
+function skillToolUse(id: string, skill: string): JsonlNode {
   return {
-    type: 'assistant',
-    message: {
-      content: [{ type: 'tool_use', id, name: 'Skill', input: { skill } }],
-      stop_reason: 'tool_use',
+    kind: 'assistant', sessionId: '', receivedAt: '',
+    raw: {
+      type: 'assistant',
+      message: {
+        role: 'assistant',
+        content: [{ type: 'tool_use', id, name: 'Skill', input: { skill } }],
+        stop_reason: 'tool_use',
+      },
     },
-  } as unknown as ClaudeStreamMessage;
+  } as unknown as JsonlNode;
 }
 
-function readToolUse(id: string): ClaudeStreamMessage {
+function readToolUse(id: string): JsonlNode {
   return {
-    type: 'assistant',
-    message: {
-      content: [{ type: 'tool_use', id, name: 'Read', input: { file_path: '/a' } }],
-      stop_reason: 'tool_use',
+    kind: 'assistant', sessionId: '', receivedAt: '',
+    raw: {
+      type: 'assistant',
+      message: {
+        role: 'assistant',
+        content: [{ type: 'tool_use', id, name: 'Read', input: { file_path: '/a' } }],
+        stop_reason: 'tool_use',
+      },
     },
-  } as unknown as ClaudeStreamMessage;
+  } as unknown as JsonlNode;
 }
 
-function toolResult(toolUseId: string, content: string): ClaudeStreamMessage {
+function toolResult(toolUseId: string, content: string): JsonlNode {
   return {
-    type: 'user',
-    message: { content: [{ type: 'tool_result', tool_use_id: toolUseId, content }] },
-  } as unknown as ClaudeStreamMessage;
+    kind: 'user', userKind: 'tool-result', sessionId: '', receivedAt: '',
+    raw: {
+      type: 'user',
+      message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: toolUseId, content }] },
+    },
+  } as unknown as JsonlNode;
 }
 
 describe('detectSkillInjection', () => {
@@ -70,12 +81,16 @@ describe('detectSkillInjection', () => {
 
   it('falls back to "unknown" when the Skill tool_use lacks input.skill', () => {
     const tu = {
-      type: 'assistant',
-      message: {
-        content: [{ type: 'tool_use', id: 'tu_1', name: 'Skill', input: {} }],
-        stop_reason: 'tool_use',
+      kind: 'assistant', sessionId: '', receivedAt: '',
+      raw: {
+        type: 'assistant',
+        message: {
+          role: 'assistant',
+          content: [{ type: 'tool_use', id: 'tu_1', name: 'Skill', input: {} }],
+          stop_reason: 'tool_use',
+        },
       },
-    } as unknown as ClaudeStreamMessage;
+    } as unknown as JsonlNode;
     const tr = toolResult('tu_1', 'Launching skill: ?');
     const skillBody = userText('# Something');
     expect(detectSkillInjection(skillBody, [tu, tr, skillBody])).toEqual({ skillName: 'unknown' });

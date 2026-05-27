@@ -1,4 +1,4 @@
-import type { ClaudeStreamMessage } from '@/types/claudeStream';
+import type { JsonlNode } from '@/types/jsonl';
 import { deriveSubagents } from './subagentStreams';
 import { isSubagentPrompt } from './subagentDispatch';
 import { detectSkillInjection } from './skillDetection';
@@ -26,10 +26,10 @@ function isRenderableBlockLocal(b: unknown): boolean {
   return false;
 }
 
-function hasMatchingToolResult(toolUseId: string, allMessages: ClaudeStreamMessage[]): boolean {
+function hasMatchingToolResult(toolUseId: string, allMessages: JsonlNode[]): boolean {
   for (const m of allMessages) {
-    if (m.type !== 'user') continue;
-    const content = (m as { message?: { content?: unknown } }).message?.content;
+    if (m.kind !== 'user') continue;
+    const content = (m.raw as { message?: { content?: unknown } }).message?.content;
     if (!Array.isArray(content)) continue;
     for (const b of content) {
       const block = b as { type?: string; tool_use_id?: string };
@@ -41,11 +41,11 @@ function hasMatchingToolResult(toolUseId: string, allMessages: ClaudeStreamMessa
 
 function findMatchingToolUseName(
   toolUseId: string,
-  allMessages: ClaudeStreamMessage[],
+  allMessages: JsonlNode[],
 ): string | undefined {
   for (const m of allMessages) {
-    if (m.type !== 'assistant') continue;
-    const content = (m as { message?: { content?: unknown } }).message?.content;
+    if (m.kind !== 'assistant') continue;
+    const content = (m.raw as { message?: { content?: unknown } }).message?.content;
     if (!Array.isArray(content)) continue;
     for (const b of content) {
       const block = b as { type?: string; id?: string; name?: string };
@@ -56,7 +56,7 @@ function findMatchingToolUseName(
 }
 
 /**
- * Classify a stream message as a single "standalone" rendering kind — i.e. a
+ * Classify a stream node as a single "standalone" rendering kind — i.e. a
  * message whose rendered output is exactly one kind card and can be filtered
  * as a unit in compact mode.
  *
@@ -68,43 +68,31 @@ function findMatchingToolUseName(
  * The kind IDs returned here must match entries in DEFAULT_KINDS.
  */
 export function classifyStandaloneKind(
-  msg: ClaudeStreamMessage,
-  allMessages: ClaudeStreamMessage[],
+  msg: JsonlNode,
+  allMessages: JsonlNode[],
 ): string | null {
-  if (msg.type === 'permission_request') {
-    // The built-in AskUserQuestion tool gets its own kind so it can carry a
-    // distinct accent color from generic Bash/Read permission prompts. Both
-    // travel on the same `permission_request` channel; the SDK puts the
-    // tool name on `tool_name` (snake_case wire) which the reducer also
-    // normalises onto the camelCase payload.
-    const toolName = (msg as unknown as { tool_name?: string; toolName?: string }).tool_name
-      ?? (msg as unknown as { toolName?: string }).toolName;
-    if (toolName === 'AskUserQuestion') return 'permission.askUserQuestion';
-    return 'permission.request';
-  }
-
-  if (msg.type === 'result') {
-    // Canonical SDK signal: is_error: true is set for both error_max_turns
-    // and error_during_execution. The substring match on subtype was too
-    // loose and flagged benign events whose subtype merely contained the
-    // word "error".
-    if ((msg as { is_error?: boolean }).is_error === true) return 'result.error_during_execution';
-    // Sibling of result.success: when this turn ends with a still-running
-    // subagent dispatch, the parent is genuinely "idle, awaiting wake-up"
-    // rather than fully complete. The SDK does not distinguish these in the
-    // result blob, so we look at message history before this result for any
-    // subagent that has not yet returned.
-    const idx = allMessages.indexOf(msg);
-    const prior = idx >= 0 ? allMessages.slice(0, idx) : allMessages;
-    if (deriveSubagents(prior).some((s) => s.status === 'running')) {
-      return 'result.awaiting_background';
+  // permission_request comes through as 'unknown' kind with raw.type === 'permission_request'
+  if (msg.kind === 'unknown') {
+    const raw = msg.raw as { type?: string; tool_name?: string; is_error?: boolean; subtype?: string };
+    if (raw.type === 'permission_request') {
+      const toolName = (raw as { tool_name?: string }).tool_name;
+      if (toolName === 'AskUserQuestion') return 'permission.askUserQuestion';
+      return 'permission.request';
     }
-    return 'result.success';
-  }
-
-  // Compaction summaries arrive as a synthetic "summary" type with a leafUuid.
-  if (msg.type === 'summary' && msg.summary && msg.leafUuid) {
-    return 'summary.compaction';
+    if (raw.type === 'result') {
+      if (raw.is_error === true) return 'result.error_during_execution';
+      const idx = allMessages.indexOf(msg);
+      const prior = idx >= 0 ? allMessages.slice(0, idx) : allMessages;
+      if (deriveSubagents(prior).some((s) => s.status === 'running')) {
+        return 'result.awaiting_background';
+      }
+      return 'result.success';
+    }
+    if (raw.type === 'summary') {
+      const s = raw as { summary?: string; leafUuid?: string };
+      if (s.summary && s.leafUuid) return 'summary.compaction';
+    }
+    return null;
   }
 
   // AskUserQuestion: elevate the answered Q+A card to a first-order
@@ -120,8 +108,8 @@ export function classifyStandaloneKind(
   // they intentionally do NOT have entries in the v2 catalog because
   // the matching branch returns AnsweredAskUserQuestionCard / null before
   // the MessageFrame chrome lookup runs.
-  if (msg.type === 'assistant') {
-    const content = (msg as { message?: { content?: unknown } }).message?.content;
+  if (msg.kind === 'assistant') {
+    const content = (msg.raw as { message?: { content?: unknown } }).message?.content;
     if (Array.isArray(content)) {
       const renderable = content.filter(isRenderableBlockLocal);
       if (renderable.length === 1) {
@@ -139,8 +127,8 @@ export function classifyStandaloneKind(
     }
   }
 
-  if (msg.type === 'user') {
-    const content = (msg as { message?: { content?: unknown } }).message?.content;
+  if (msg.kind === 'user') {
+    const content = (msg.raw as { message?: { content?: unknown } }).message?.content;
     if (Array.isArray(content)) {
       const renderable = content.filter(isRenderableBlockLocal);
       if (renderable.length === 1) {
@@ -155,44 +143,31 @@ export function classifyStandaloneKind(
     }
   }
 
-  if (msg.type === 'system') {
-    if (msg.subtype === 'init') return 'system.init';
-    if (msg.subtype === 'notification') {
-      const t = msg.notification_type ?? 'info';
+  if (msg.kind === 'system') {
+    const subtype = msg.subtype as string;
+    if (subtype === 'init') return 'system.init';
+    if (subtype === 'notification') {
+      const raw = msg.raw as { notification_type?: string };
+      const t = raw.notification_type ?? 'info';
       if (/error/i.test(t)) return 'system.notification.error';
       if (t === 'stop') return 'system.notification.stop';
       if (/warn/i.test(t)) return 'system.notification.warn';
       return 'system.notification.info';
     }
-    if (msg.subtype === 'hook_started') return 'system.hook.started';
-    if (msg.subtype === 'hook_response') return 'system.hook.response';
-    // SDKPermissionDeniedMessage (auto-deny short-circuit) and the OmniFex
-    // PermissionDenied hook synthetic both ride this subtype. Classify
-    // both as one user-facing kind so the renderer can give them a
-    // distinct accent instead of the generic gray system.unknown strip.
-    if (msg.subtype === 'permission_denied') return 'system.permission_denied';
-    // Legacy `user_prompt_submit` subtype check: this is a hook *event* name,
-    // not an SDK message subtype (the SDK never emits a system message with
-    // this subtype). Historical OmniFex JSONL may carry it; tolerate via a
-    // permissive cast so the dedicated kind classification still wins.
-    if ((msg as { subtype?: string }).subtype === 'user_prompt_submit')
-      return 'system.userPromptSubmit';
-    // Fallback: any other system subtype renders as the unknown gray inline
-    // strip in StreamMessage and is now configurable as `system.unknown`.
+    if (subtype === 'hook_started') return 'system.hook.started';
+    if (subtype === 'hook_response') return 'system.hook.response';
+    if (subtype === 'permission_denied') return 'system.permission_denied';
+    if (subtype === 'user_prompt_submit') return 'system.userPromptSubmit';
+    // Fallback: any other system subtype renders as the unknown gray inline strip.
     return 'system.unknown';
   }
 
-  // Subagent prompts: user-role messages synthesized by the Task/Agent
-  // tool. The strict check (parent_tool_use_id resolves to a Task/Agent
-  // tool_use) avoids false positives on real user prompts whose
-  // parent_tool_use_id is set by the CLI for conversation-tree chaining.
+  // Subagent prompts: user-role messages synthesized by the Task/Agent tool.
   if (isSubagentPrompt(msg, allMessages)) {
     return 'user.subagentPrompt';
   }
 
-  // Skill-injected user messages: the SDK injects the SKILL.md body as a
-  // user-role text message after the Skill tool runs. Detection looks at
-  // the previous tool_result + the corresponding tool_use's name.
+  // Skill-injected user messages.
   if (detectSkillInjection(msg, allMessages)) {
     return 'user.skillInjection';
   }
@@ -200,10 +175,8 @@ export function classifyStandaloneKind(
   // Slash-command echoes / local-command stdout — the CLI wraps these in
   // <command-name>/<local-command-stdout> tags inside a user-role text
   // block, so detection is a content match on the whole message.
-  // Boundary normalization (lib/normalizeMessage) means content is always
-  // an array here.
-  if (msg.type === 'user') {
-    const content = msg.message?.content;
+  if (msg.kind === 'user') {
+    const content = (msg.raw as { message?: { content?: unknown } }).message?.content;
     if (!Array.isArray(content)) return null;
 
     let text = '';
@@ -215,15 +188,7 @@ export function classifyStandaloneKind(
     if (text.includes('<command-name>')) return 'user.command';
     if (text.includes('<local-command-stdout>')) return 'user.commandOutput';
 
-    // System-context user messages: the Agent SDK delivers hook output,
-    // <system-reminder> injections, and skill-load preambles as synthetic
-    // user-role text messages. Without this branch they fall through to
-    // the StreamMessage `user.prompt` card and look like the user typed
-    // them — including the stop-hook "You have N unfinished todo items"
-    // feedback that prompted this classification. Only treat the whole
-    // message as system context when *every* text block looks like a
-    // system injection; mixed user-typed + appended-reminder messages
-    // stay null and are handled by the per-block renderer.
+    // System-context user messages.
     if (content.length > 0) {
       let sawText = false;
       let allSystemContext = true;
@@ -235,7 +200,6 @@ export function classifyStandaloneKind(
             break;
           }
         } else if (block?.type === 'image') {
-          // Images imply a real user message.
           allSystemContext = false;
           break;
         }
@@ -246,4 +210,3 @@ export function classifyStandaloneKind(
 
   return null;
 }
-

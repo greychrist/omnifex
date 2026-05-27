@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from 'react';
 import { api, type SessionContextUsage, type TabStatusSummary } from '@/lib/api';
-import type { ClaudeStreamMessage } from '@/types/claudeStream';
+import type { JsonlNode } from '@/types/jsonl';
 import type { Subagent } from '@/lib/subagentStreams';
 import { getTaskList, summarizeTaskList } from '@/lib/taskList';
 import { deriveWaitingFor } from '@/lib/tabWaitingFor';
@@ -15,7 +15,7 @@ interface UsePublishTabStatusArgs {
   /** True while a main-turn is in flight (parent-turn isLoading). */
   isLoading: boolean;
   hasError: boolean;
-  messages: ClaudeStreamMessage[];
+  messages: JsonlNode[];
   /** Subagents already filtered through dismissals — same set the spinner sees. */
   subagents: Subagent[];
   contextUsage: SessionContextUsage | null;

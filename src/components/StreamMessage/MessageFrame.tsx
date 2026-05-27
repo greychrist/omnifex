@@ -14,7 +14,7 @@ export interface MessageFrameProps {
   actionBar?: React.ReactNode;
   /** Optional message to forward to `MessageFrameCard` for the timestamp
    *  footer and debug raw-JSON copy button. */
-  message?: import('@/types/claudeStream').ClaudeStreamMessage;
+  message?: import('@/types/jsonl').JsonlNode;
 }
 
 /**
@@ -44,7 +44,7 @@ export const MessageFrame: React.FC<MessageFrameProps> = ({ streamKind, children
         Raw payload
       </summary>
       <pre className="mt-1 p-2 rounded border bg-muted/50 text-[10px] font-mono overflow-x-auto whitespace-pre-wrap break-words leading-tight">
-        {JSON.stringify(message, null, 2)}
+        {JSON.stringify((message as unknown as { raw?: unknown }).raw, null, 2)}
       </pre>
     </details>
   ) : null;

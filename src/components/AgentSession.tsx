@@ -43,10 +43,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { TooltipProvider, TooltipSimple } from "@/components/ui/tooltip-modern";
 import { SplitPane } from "@/components/ui/split-pane";
 import { WebviewPreview } from "./WebviewPreview";
-import type { ClaudeStreamMessage } from "@/types/claudeStream";
-import { normalizeMessageContent } from "@/lib/normalizeMessage";
+import type { JsonlNode } from "@/types/jsonl";
+import { normalizeJsonlNode } from "@/lib/normalizeMessage";
 import { classifyJsonlLine } from '@/lib/jsonlClassifier';
-import { jsonlNodeToStreamMessage } from '@/lib/jsonlAdapter';
 import { reduceSessionStreamMessage } from '@/lib/sessionStreamReducer';
 import { runStreamEffect } from '@/lib/sessionStreamEffects';
 import { appendInflightDelta } from '@/lib/inflightCoalescer';
@@ -733,11 +732,17 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     const tokens = messages.reduce((total, msg) => {
       // Assistant rows carry usage on the wrapped BetaMessage; result rows
       // carry per-turn usage at the top level. Other variants have no tokens.
-      if (msg.type === 'assistant' && msg.message?.usage) {
-        return total + (msg.message.usage.input_tokens || 0) + (msg.message.usage.output_tokens || 0);
+      if (msg.kind === 'assistant') {
+        const usage = msg.raw.message?.usage as { input_tokens?: number; output_tokens?: number } | undefined;
+        if (usage) {
+          return total + (usage.input_tokens || 0) + (usage.output_tokens || 0);
+        }
       }
-      if (msg.type === 'result' && msg.usage) {
-        return total + (msg.usage.input_tokens || 0) + (msg.usage.output_tokens || 0);
+      if (msg.kind === 'unknown') {
+        const raw = msg.raw as { type?: string; usage?: { input_tokens?: number; output_tokens?: number } };
+        if (raw.type === 'result' && raw.usage) {
+          return total + (raw.usage.input_tokens || 0) + (raw.usage.output_tokens || 0);
+        }
       }
       return total;
     }, 0);
@@ -768,21 +773,16 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
         );
       }
 
-      // Route through the JSONL classifier → adapter pipeline.
-      // The classifier normalizes timestamp→receivedAt and discriminates
-      // every line into a typed JsonlNode; the adapter translates each node
-      // to ClaudeStreamMessage. normalizeMessageContent handles string→array
-      // content for downstream consumers expecting array form.
-      const nodes = history
+      // Route through the JSONL classifier. The classifier normalizes
+      // timestamp→receivedAt and discriminates every line into a typed
+      // JsonlNode. normalizeJsonlNode handles string→array content for
+      // assistant/user nodes so downstream consumers can assume array form.
+      const nodes: JsonlNode[] = history
         .map((entry) => classifyJsonlLine(entry))
-        .filter((n): n is NonNullable<typeof n> => n !== null);
+        .filter((n): n is NonNullable<typeof n> => n !== null)
+        .map((n) => normalizeJsonlNode(n));
 
-      const messagesWithResults: ClaudeStreamMessage[] = nodes
-        .map((n) => jsonlNodeToStreamMessage(n))
-        .filter((m): m is NonNullable<typeof m> => m !== null)
-        .map((m) => normalizeMessageContent(m));
-
-      streamCtxRef.current.setMessages(messagesWithResults);
+      streamCtxRef.current.setMessages(nodes);
       setRawJsonlOutput(history.map(h => JSON.stringify(h)));
 
       // Scroll to bottom after loading history
@@ -861,30 +861,30 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
         return;
       }
 
-      // Classify + adapt. The classifier normalizes the raw JSONL line into a
-      // typed JsonlNode; the adapter translates it to ClaudeStreamMessage
-      // shape so the reducer can process it.
+      // Classify. The classifier normalizes the raw JSONL line into a
+      // typed JsonlNode. normalizeJsonlNode handles string→array content
+      // for assistant/user nodes. Overlay kinds (stream-event, rate-limit,
+      // lifecycle) return null from the classifier and are skipped.
       const node = classifyJsonlLine(raw);
       if (!node) return;
-      const adapted = jsonlNodeToStreamMessage(node);
-      if (!adapted) return;
-      const streamMessages = [normalizeMessageContent(adapted)];
-      if (streamMessages.length === 0) return;
+      // Overlay kinds never enter messages[]; skip them here too.
+      if (node.kind === 'stream-event' || node.kind === 'rate-limit' || node.kind === 'lifecycle') return;
+      const normalizedNode = normalizeJsonlNode(node);
 
-      // Store raw line (only the original input, not the synthesized rows).
+      // Store raw line.
       setRawJsonlOutput((prev) => [...prev, rawString]);
 
       const ctx = streamCtxRef.current;
 
-      // Each stream message goes through the reducer for its side effects:
-      // activity labels, metrics, cost, session-id extraction, permission
-      // dispatch, userInterrupted suppression, post-event refresh effects,
-      // and the append/skip/insert decision. The reducer is pure — same
-      // contract as the old SDK-iterator path.
-      for (const message of streamMessages) {
+      // The node goes through the reducer for its side effects:
+      // activity labels, metrics, cost, session-id extraction,
+      // userInterrupted suppression, post-event refresh effects,
+      // and the append/skip/insert decision. The reducer is pure.
+      {
+        const message = normalizedNode;
         const liveSlice = useClaudeSessionStore.getState().selectTab(sessionTabId);
         const hasExistingInit = liveSlice.messages.some(
-          (m) => m.type === 'system' && m.subtype === 'init',
+          (m) => m.kind === 'system' && (m as { subtype?: string }).subtype === 'init',
         );
         const reduced = reduceSessionStreamMessage(message, {
           projectPath,
@@ -975,23 +975,23 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
         // Reconcile inflight assistant: clear streaming bubble when canonical
         // message arrives or an error notification lands.
         const store = useClaudeSessionStore.getState();
-        if (reduced.append === 'append' && message.type === 'assistant') {
+        if (reduced.append === 'append' && message.kind === 'assistant') {
           store.clearInflightAssistant(tabIdRef.current);
           clearInflightBuffer(tabIdRef.current);
         }
         if (
-          message.type === 'system' &&
-          message.subtype === 'notification' &&
-          /error/i.test(String((message as any).notification_type ?? ''))
+          message.kind === 'system' &&
+          (message as { subtype?: string }).subtype === 'notification' &&
+          /error/i.test(String((message.raw as { notification_type?: string }).notification_type ?? ''))
         ) {
           store.clearInflightAssistant(tabIdRef.current);
           clearInflightBuffer(tabIdRef.current);
         }
 
-        if (reduced.append === 'skip') continue;
+        if (reduced.append === 'skip') return;
         if (reduced.append === 'insertBeforeFirstUser') {
           ctx.insertMessageBeforeFirstUser(message);
-          continue;
+          return;
         }
         ctx.appendMessage(message);
       }
@@ -1064,8 +1064,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
       streamCtxRef.current.setExtractedSessionInfo({ sessionId, projectId });
       SessionPersistenceService.saveSession(sessionId, projectId, projectPath, 0);
     }, [projectPath]),
-    // Inputs for conversationStatus derivation. The hook converts ClaudeStreamMessage[]
-    // → JsonlNode-shaped objects via an internal shim (disappears in Task 6).
+    // Inputs for conversationStatus derivation. Messages are JsonlNode[] end-to-end; no adapter layer.
     messages,
     tasks: taskEntries,
     subagents,
@@ -1301,14 +1300,11 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
       )
         .then((history) => {
           if (!history || history.length === 0) return;
-          // Mirror loadSessionHistory(): route through classify→adapt.
-          const nodes = history
+          // Mirror loadSessionHistory(): classify → normalize.
+          const loaded: JsonlNode[] = history
             .map((entry: unknown) => classifyJsonlLine(entry))
-            .filter((n): n is NonNullable<typeof n> => n !== null);
-          const loaded: ClaudeStreamMessage[] = nodes
-            .map((n) => jsonlNodeToStreamMessage(n))
-            .filter((m): m is NonNullable<typeof m> => m !== null)
-            .map((m) => normalizeMessageContent(m));
+            .filter((n): n is NonNullable<typeof n> => n !== null)
+            .map((n) => normalizeJsonlNode(n));
           setMessages(loaded);
         })
         .catch((err: unknown) => {
@@ -1388,13 +1384,20 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
       setError(null);
       setQueuedPrompts([]);
 
-      const interruptMessage: ClaudeStreamMessage = {
-        type: "system",
-        subtype: "notification",
-        body: "Response interrupted — session still active",
-        notification_type: "stop",
-        timestamp: new Date().toISOString(),
-      } as any;
+      const interruptMessage: JsonlNode = {
+        kind: 'system',
+        subtype: 'notification',
+        raw: {
+          type: 'system',
+          subtype: 'notification',
+          notification_type: 'stop',
+          body: 'Response interrupted — session still active',
+          timestamp: new Date().toISOString(),
+          sessionId: '',
+        } as never,
+        sessionId: '',
+        receivedAt: new Date().toISOString(),
+      };
       setMessages((prev) => [...prev, interruptMessage]);
     } catch (err) {
       // Interrupt failed. Fall back to the hard stopSession path so the UI
@@ -1417,13 +1420,20 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
       setError(null);
       setQueuedPrompts([]);
 
-      const errorMessage: ClaudeStreamMessage = {
-        type: "system",
-        subtype: "notification",
-        body: "Session cancelled by user",
-        notification_type: "stop",
-        timestamp: new Date().toISOString(),
-      } as any;
+      const errorMessage: JsonlNode = {
+        kind: 'system',
+        subtype: 'notification',
+        raw: {
+          type: 'system',
+          subtype: 'notification',
+          notification_type: 'stop',
+          body: 'Session cancelled by user',
+          timestamp: new Date().toISOString(),
+          sessionId: '',
+        } as never,
+        sessionId: '',
+        receivedAt: new Date().toISOString(),
+      };
       setMessages((prev) => [...prev, errorMessage]);
     }
   };

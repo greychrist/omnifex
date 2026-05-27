@@ -1,36 +1,44 @@
 import { describe, it, expect } from 'vitest';
-import type { ClaudeStreamMessage } from '@/types/claudeStream';
+import type { JsonlNode } from '@/types/jsonl';
 import { filterDisplayableMessages } from '../messageFilters';
 
-const userImage = (): ClaudeStreamMessage =>
+const userImage = (): JsonlNode =>
   ({
-    type: 'user',
-    message: {
-      content: [
-        {
-          type: 'image',
-          source: { type: 'base64', media_type: 'image/png', data: 'AAAA' },
-        },
-      ],
+    kind: 'user', userKind: 'prompt', sessionId: '', receivedAt: '',
+    raw: {
+      type: 'user',
+      message: {
+        role: 'user',
+        content: [
+          {
+            type: 'image',
+            source: { type: 'base64', media_type: 'image/png', data: 'AAAA' },
+          },
+        ],
+      },
     },
-  } as unknown as ClaudeStreamMessage);
+  }) as unknown as JsonlNode;
 
-const userTextAndImage = (): ClaudeStreamMessage =>
+const userTextAndImage = (): JsonlNode =>
   ({
-    type: 'user',
-    message: {
-      content: [
-        { type: 'text', text: 'look at this' },
-        {
-          type: 'image',
-          source: { type: 'base64', media_type: 'image/png', data: 'AAAA' },
-        },
-      ],
+    kind: 'user', userKind: 'prompt', sessionId: '', receivedAt: '',
+    raw: {
+      type: 'user',
+      message: {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'look at this' },
+          {
+            type: 'image',
+            source: { type: 'base64', media_type: 'image/png', data: 'AAAA' },
+          },
+        ],
+      },
     },
-  } as unknown as ClaudeStreamMessage);
+  }) as unknown as JsonlNode;
 
-const userText = (text: string): ClaudeStreamMessage =>
-  ({ type: 'user', message: { content: [{ type: 'text', text }] } } as unknown as ClaudeStreamMessage);
+const userText = (text: string): JsonlNode =>
+  ({ kind: 'user', userKind: 'prompt', sessionId: '', receivedAt: '', raw: { type: 'user', message: { role: 'user', content: [{ type: 'text', text }] } } }) as unknown as JsonlNode;
 
 describe('filterDisplayableMessages', () => {
   it('keeps user messages with text only', () => {
@@ -55,8 +63,8 @@ describe('filterDisplayableMessages', () => {
     // chat timeline by default. The set guarding `dropHookLifecycle`
     // historically only listed `hook_started` and `hook_response`,
     // letting `hook_progress` leak in as `system.unknown` gray strips.
-    const sysHook = (subtype: string): ClaudeStreamMessage =>
-      ({ type: 'system', subtype } as unknown as ClaudeStreamMessage);
+    const sysHook = (subtype: string): JsonlNode =>
+      ({ kind: 'system', subtype, sessionId: '', receivedAt: '', raw: { type: 'system', subtype } }) as unknown as JsonlNode;
 
     it('drops hook_started when dropHookLifecycle is on (default)', () => {
       const out = filterDisplayableMessages([sysHook('hook_started')]);
@@ -94,24 +102,33 @@ describe('filterDisplayableMessages', () => {
     // otherwise the `Skill: <name>` card disappears after the renderer
     // reloads the session from JSONL.
 
-    const skillToolUse = (id: string, skillName: string): ClaudeStreamMessage =>
+    const skillToolUse = (id: string, skillName: string): JsonlNode =>
       ({
-        type: 'assistant',
-        message: { content: [{ type: 'tool_use', id, name: 'Skill', input: { skill: skillName } }] },
-      } as unknown as ClaudeStreamMessage);
+        kind: 'assistant', sessionId: '', receivedAt: '',
+        raw: {
+          type: 'assistant',
+          message: { role: 'assistant', content: [{ type: 'tool_use', id, name: 'Skill', input: { skill: skillName } }] },
+        },
+      }) as unknown as JsonlNode;
 
-    const skillToolResult = (toolUseId: string, body = 'Launching skill: x'): ClaudeStreamMessage =>
+    const skillToolResult = (toolUseId: string, body = 'Launching skill: x'): JsonlNode =>
       ({
-        type: 'user',
-        message: { content: [{ type: 'tool_result', tool_use_id: toolUseId, content: body }] },
-      } as unknown as ClaudeStreamMessage);
+        kind: 'user', userKind: 'tool-result', sessionId: '', receivedAt: '',
+        raw: {
+          type: 'user',
+          message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: toolUseId, content: body }] },
+        },
+      }) as unknown as JsonlNode;
 
-    const skillBody = (text: string, isMeta = true): ClaudeStreamMessage =>
+    const skillBody = (text: string, isMeta = true): JsonlNode =>
       ({
-        type: 'user',
-        isMeta,
-        message: { content: [{ type: 'text', text }] },
-      } as unknown as ClaudeStreamMessage);
+        kind: 'user', userKind: 'meta-other', sessionId: '', receivedAt: '',
+        raw: {
+          type: 'user',
+          isMeta,
+          message: { role: 'user', content: [{ type: 'text', text }] },
+        },
+      }) as unknown as JsonlNode;
 
     it('keeps an isMeta user message that is a skill injection', () => {
       const messages = [
@@ -122,9 +139,9 @@ describe('filterDisplayableMessages', () => {
       const out = filterDisplayableMessages(messages);
       expect(out).toHaveLength(3);
       // The skill body must be the last one
-      const last = out[out.length - 1] as any;
-      expect(last.isMeta).toBe(true);
-      expect(last.message.content[0].text).toContain('# Merge to Main');
+      const last = out[out.length - 1] as unknown as { raw: { isMeta: boolean; message: { content: { text: string }[] } } };
+      expect(last.raw.isMeta).toBe(true);
+      expect(last.raw.message.content[0].text).toContain('# Merge to Main');
     });
 
     it('still drops an isMeta user message that is NOT a skill injection (e.g. plain meta noise)', () => {

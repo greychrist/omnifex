@@ -12,7 +12,7 @@ import {
 } from "@/lib/typographyClasses";
 import { IconRenderer } from "@/components/settings-panels/appearance/iconMap";
 import { KindHeader } from "@/components/KindHeader";
-import type { ClaudeStreamMessage } from "@/types/claudeStream";
+import type { JsonlNode } from "@/types/jsonl";
 import type { BorderStyle, IconName } from "@/lib/messageRenderingConfig";
 import { fireAndLog } from "@/lib/fireAndLog";
 
@@ -20,9 +20,9 @@ interface MessageFrameCardProps {
   /** Drives icon, accent, and (via KindHeader) the configured header label.
    *  Must match an entry in DEFAULT_KINDS. */
   kindId: string;
-  /** The underlying SDK message — used to read `receivedAt` for the
+  /** The underlying stream node — used to read `receivedAt` for the
    *  timestamp footer and to feed the debug-mode raw-JSON copy button. */
-  message?: ClaudeStreamMessage;
+  message?: JsonlNode;
   /** Card body — the only thing that varies between kinds. Wrap whatever
    *  type-specific rendering belongs in this card. */
   children: React.ReactNode;
@@ -138,7 +138,7 @@ export const MessageFrameCard: React.FC<MessageFrameCardProps> = ({
             </div>
           </div>
         </CardContent>
-        <CardFooter receivedAt={message?.receivedAt} message={message} copyText={copyText} />
+        <CardFooter receivedAt={(message as { receivedAt?: string } | undefined)?.receivedAt} message={message} copyText={copyText} />
       </Card>
     </div>
   );
@@ -162,7 +162,7 @@ function formatLocalTimestamp(isoOrNumeric: string): string {
 
 const CardFooter: React.FC<{
   receivedAt?: string;
-  message?: ClaudeStreamMessage;
+  message?: JsonlNode;
   copyText?: string;
 }> = ({ receivedAt, message, copyText }) => {
   const [copied, setCopied] = useState(false);
@@ -175,19 +175,17 @@ const CardFooter: React.FC<{
   // compatibility but no longer affects this rendering.
   let kindLabel: string | null = null;
   if (message) {
-    const t = message.type;
-    // Only system / result variants carry a subtype on the typed union; the
-    // rest fall through with a bare type label.
-    const sub =
-      'subtype' in message && typeof message.subtype === 'string'
-        ? message.subtype
-        : null;
+    // Read type and subtype from the raw wire payload for the debug label.
+    const raw = (message as unknown as { raw?: { type?: string; subtype?: string } }).raw ?? {};
+    const t = raw.type;
+    const sub = typeof raw.subtype === 'string' ? raw.subtype : null;
     if (t) kindLabel = sub ? `${t} · ${sub}` : String(t);
   }
 
   const handleCopy = async () => {
     try {
-      const text = copyText ?? (message ? JSON.stringify(message, null, 2) : "");
+      // Serialize the raw wire payload for the copy button.
+      const text = copyText ?? (message ? JSON.stringify((message as unknown as { raw?: unknown }).raw, null, 2) : "");
       if (!text) return;
       await navigator.clipboard.writeText(text);
       setCopied(true);

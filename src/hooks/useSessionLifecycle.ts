@@ -1,6 +1,5 @@
 import { useRef, useEffect, useState, useMemo } from "react";
 import { api, type AgentKind, type SessionMode, type SessionStatus } from "@/lib/api";
-import type { ClaudeStreamMessage } from "@/types/claudeStream";
 import type { JsonlNode } from "@/types/jsonl";
 import type { EffortLevel, ThinkingConfig } from "@/components/FloatingPromptInput";
 import { conversationStatus as deriveConversationStatus, type ConversationStatus } from "@/lib/sessionDerivedState";
@@ -12,91 +11,6 @@ function isIgnorableStderr(msg: string): boolean {
     msg.includes("no stdin data received in") ||
     msg.includes("proceeding without it")
   );
-}
-
-// Live stream-json's `parent_tool_use_id` is set both on subagent replies
-// AND on conversation-tree chaining (see subagentDispatch.ts: "bare presence
-// of parent_tool_use_id is NOT enough"). Using it as a sidechain proxy was
-// wrong — it would suppress the spinner mid-turn whenever the field was set
-// on a main-chain message after a session resume.
-//
-// Safe shim semantics until Task 6 deletes this layer:
-//  - assistants: always isSidechain=false. Sidechain in-flight work is
-//    covered by hasOpenSubagents reading the subagent store.
-//  - users: use the same content-shape check as classifyUser does in
-//    jsonlClassifier.ts (an array of tool_result blocks).
-
-/**
- * Transitional shim: convert a `ClaudeStreamMessage[]` into the
- * `JsonlNode[]`-shaped array that `sessionDerivedState.conversationStatus`
- * reads. Only the fields the derivation touches are produced:
- *   - `kind` — mapped from `type`
- *   - `userKind` — `'tool-result'` only when content is entirely tool_result
- *     blocks; `'prompt'` otherwise (mirrors classifyUser in jsonlClassifier.ts)
- *   - `raw.message.stop_reason` — for assistant messages
- *   - `raw.isSidechain` — always false for assistants; sidechain in-flight
- *     work is covered by hasOpenSubagents via the subagent store
- *
- * Every other field on `JsonlNode` is left absent (cast satisfies the
- * derivation's runtime reads, which are all optional-chained). This shim
- * disappears entirely in Task 6 when the adapter and `ClaudeStreamMessage`
- * are deleted.
- */
-function toJsonlNodes(messages: ClaudeStreamMessage[]): JsonlNode[] {
-  return messages.map((msg): JsonlNode => {
-    if (msg.type === 'assistant') {
-      return {
-        kind: 'assistant',
-        raw: {
-          type: 'assistant',
-          message: {
-            role: 'assistant',
-            content: [],
-            stop_reason: (msg as { message?: { stop_reason?: string | null } }).message?.stop_reason ?? null,
-          },
-          // Always false — hasOpenSubagents already drives the in-flight signal
-          // for sidechain work via the subagent store, so missing the filter on
-          // assistants is safe. Mis-labeling a main-chain assistant as sidechain
-          // is NOT safe — it would suppress the spinner mid-turn.
-          isSidechain: false,
-        } as any, // AssistantRaw + isSidechain flag
-        sessionId: '',
-        receivedAt: '',
-      } as unknown as JsonlNode;
-    }
-    if (msg.type === 'user') {
-      const content = (msg as { message?: { content?: unknown } }).message?.content;
-      // Mirror isToolResultOnly from jsonlClassifier.ts: only classify as
-      // 'tool-result' when the content array is non-empty and every block has
-      // type === 'tool_result'. A plain-text prompt on a resumed session may
-      // carry parent_tool_use_id for conversation-tree chaining — that must
-      // NOT be mistaken for a tool-result reply.
-      const isToolResultOnly =
-        Array.isArray(content) &&
-        content.length > 0 &&
-        content.every(
-          (c) => c && typeof c === 'object' && (c as { type?: string }).type === 'tool_result',
-        );
-      return {
-        kind: 'user',
-        userKind: isToolResultOnly ? 'tool-result' : 'prompt',
-        raw: {
-          type: 'user',
-          message: { role: 'user', content: [] },
-        } as any,
-        sessionId: '',
-        receivedAt: '',
-      } as unknown as JsonlNode;
-    }
-    // All other types (system, result, stream_event, etc.) map to 'unknown' —
-    // the derivation only looks at 'assistant' and 'user' nodes.
-    return {
-      kind: 'unknown',
-      raw: msg as unknown as Record<string, unknown>,
-      sessionId: '',
-      receivedAt: '',
-    } as unknown as JsonlNode;
-  });
 }
 
 /** Loose structural type — only `.status` is read by the derivation. */
@@ -131,7 +45,7 @@ interface UseSessionLifecycleArgs {
   hasPendingStart?: boolean;
   handleJsonlLine: (payload: string | object) => void;
   setIsLoading: React.Dispatch<React.SetStateAction<boolean>>;
-  setMessages: React.Dispatch<React.SetStateAction<ClaudeStreamMessage[]>>;
+  setMessages: React.Dispatch<React.SetStateAction<JsonlNode[]>>;
   /**
    * Called when the main process emits `session-init:<tabId>` — i.e. the
    * CLI subprocess has been spawned and a pinned sessionId is known. Fires
@@ -141,12 +55,11 @@ interface UseSessionLifecycleArgs {
    */
   onSessionInit: (sessionId: string) => void;
   /**
-   * Current renderer messages array. Used to derive `conversationStatus`
-   * locally instead of reading from the IPC payload. Converted to a
-   * `JsonlNode[]`-compatible shape via the `toJsonlNodes` shim (removed
-   * in Task 6 when the adapter is deleted and messages become JsonlNode[]).
+   * Current renderer messages array. `JsonlNode[]` as of Task 6 (adapter
+   * deleted, messages are now real JSONL nodes). The derivation reads
+   * `kind`, `userKind`, and `raw.message.stop_reason` directly.
    */
-  messages: ClaudeStreamMessage[];
+  messages: JsonlNode[];
   /**
    * Active task list. Only `.status` is read — pass `TaskListEntry[]` or
    * any `{ status: string }[]` compatible slice. Used by
@@ -446,12 +359,19 @@ export function useSessionLifecycle({
       setMessages((prev) => [
         ...prev,
         {
-          type: "system",
-          subtype: "notification",
-          notification_type: "error",
-          title: "Session Failed to Start",
-          body: `Could not start session: ${errMsg.slice(0, 300)}`,
-        },
+          kind: 'system',
+          subtype: 'notification',
+          raw: {
+            type: 'system',
+            subtype: 'notification',
+            notification_type: 'error',
+            title: 'Session Failed to Start',
+            body: `Could not start session: ${errMsg.slice(0, 300)}`,
+            sessionId: '',
+          } as never,
+          sessionId: '',
+          receivedAt: new Date().toISOString(),
+        } satisfies JsonlNode,
       ]);
       throw err; // Bubble so the caller's .catch logger still fires.
     }
@@ -493,18 +413,17 @@ export function useSessionLifecycle({
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps -- mount-only effect; tabId is stable per hook instance
 
-  // Memoize the shim output so toJsonlNodes only reruns when messages changes,
-  // not on every render triggered by unrelated state (e.g. sessionStatus flips).
-  const jsonlNodesForDerivation = useMemo(() => toJsonlNodes(messages), [messages]);
-
   // Derive conversationStatus from the current messages/tasks/subagents.
   // Null whenever sessionStatus !== 'started' — the turn axis is meaningless
   // without an active connection. The IPC payload's `conversationStatus` field
   // is intentionally discarded in the `session-status:` listener above.
-  const derivedConversationStatus: ConversationStatus | null =
-    sessionStatus === 'started'
-      ? deriveConversationStatus(jsonlNodesForDerivation, tasks, subagents)
-      : null;
+  // messages is now JsonlNode[] directly — no shim needed (Task 6).
+  const derivedConversationStatus: ConversationStatus | null = useMemo(
+    () => sessionStatus === 'started'
+      ? deriveConversationStatus(messages, tasks, subagents)
+      : null,
+    [sessionStatus, messages, tasks, subagents],
+  );
 
   return {
     unlistenRefs,

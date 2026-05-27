@@ -8,7 +8,7 @@
  * if any row is still in flight) plus the `colorIndexFor` palette hash.
  */
 
-import type { ClaudeStreamMessage } from '@/types/claudeStream';
+import type { JsonlNode } from '@/types/jsonl';
 import {
   applyEvents,
   dispatchIndicesFromEvents,
@@ -128,7 +128,7 @@ export const isTaskLifecycleMarker = _isTaskLifecycleMarker;
  *      (preserving terminal-lock semantics)
  */
 export function deriveSubagents(
-  messages: ClaudeStreamMessage[],
+  messages: JsonlNode[],
   allocator?: SubagentColorAllocator,
 ): Subagent[] {
   const baseEvents = messagesToEvents(messages);

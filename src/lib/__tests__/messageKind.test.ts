@@ -1,59 +1,67 @@
 import { describe, it, expect } from 'vitest';
-import type { ClaudeStreamMessage } from '@/types/claudeStream';
+import type { JsonlNode } from '@/types/jsonl';
 import { classifyStandaloneKind } from '../messageKind';
 
-const sysInit = (): ClaudeStreamMessage =>
-  ({ type: 'system', subtype: 'init', session_id: 'abc', model: 'claude', cwd: '/x', tools: [] } as unknown as ClaudeStreamMessage);
+const sysInit = (): JsonlNode =>
+  ({ kind: 'system', subtype: 'init', sessionId: '', receivedAt: '', raw: { type: 'system', subtype: 'init', session_id: 'abc', model: 'claude', cwd: '/x' } }) as unknown as JsonlNode;
 
-const notif = (kind: string): ClaudeStreamMessage =>
-  ({ type: 'system', subtype: 'notification', notification_type: kind, body: 'm' } as unknown as ClaudeStreamMessage);
+const notif = (kind: string): JsonlNode =>
+  ({ kind: 'system', subtype: 'notification', sessionId: '', receivedAt: '', raw: { type: 'system', subtype: 'notification', notification_type: kind, body: 'm' } }) as unknown as JsonlNode;
 
-const userText = (text: string): ClaudeStreamMessage =>
-  ({ type: 'user', message: { content: [{ type: 'text', text }] } } as unknown as ClaudeStreamMessage);
+const userText = (text: string): JsonlNode =>
+  ({ kind: 'user', userKind: 'prompt', sessionId: '', receivedAt: '', raw: { type: 'user', message: { role: 'user', content: [{ type: 'text', text }] } } }) as unknown as JsonlNode;
 
-const permReq = (toolName?: string): ClaudeStreamMessage =>
-  ({ type: 'permission_request', tool_name: toolName } as unknown as ClaudeStreamMessage);
+const permReq = (toolName?: string): JsonlNode =>
+  ({ kind: 'unknown', sessionId: '', receivedAt: '', raw: { type: 'permission_request', tool_name: toolName } }) as unknown as JsonlNode;
 
-const resultOk = (): ClaudeStreamMessage =>
-  ({ type: 'result', subtype: 'success', result: 'hi' } as unknown as ClaudeStreamMessage);
+const resultOk = (): JsonlNode =>
+  ({ kind: 'unknown', sessionId: '', receivedAt: '', raw: { type: 'result', subtype: 'success', result: 'hi' } }) as unknown as JsonlNode;
 
-const resultErr = (): ClaudeStreamMessage =>
-  ({ type: 'result', subtype: 'error', result: 'boom', is_error: true } as unknown as ClaudeStreamMessage);
+const resultErr = (): JsonlNode =>
+  ({ kind: 'unknown', sessionId: '', receivedAt: '', raw: { type: 'result', subtype: 'error', result: 'boom', is_error: true } }) as unknown as JsonlNode;
 
-const summary = (): ClaudeStreamMessage =>
-  ({ type: 'summary', leafUuid: 'leaf-1', summary: 'sum' } as unknown as ClaudeStreamMessage);
+const summary = (): JsonlNode =>
+  ({ kind: 'unknown', sessionId: '', receivedAt: '', raw: { type: 'summary', leafUuid: 'leaf-1', summary: 'sum' } }) as unknown as JsonlNode;
 
 const agentToolUse = (
   id: string,
   name: 'Agent' | 'Task' = 'Agent',
   runInBackground = false,
-): ClaudeStreamMessage =>
+): JsonlNode =>
   ({
-    type: 'assistant',
-    message: {
-      content: [
-        {
-          type: 'tool_use',
-          id,
-          name,
-          input: {
-            description: 'verify',
-            ...(runInBackground ? { run_in_background: true } : {}),
+    kind: 'assistant', sessionId: '', receivedAt: '',
+    raw: {
+      type: 'assistant',
+      message: {
+        role: 'assistant',
+        content: [
+          {
+            type: 'tool_use',
+            id,
+            name,
+            input: {
+              description: 'verify',
+              ...(runInBackground ? { run_in_background: true } : {}),
+            },
           },
-        },
-      ],
+        ],
+      },
     },
-  } as unknown as ClaudeStreamMessage);
+  }) as unknown as JsonlNode;
 
-const toolResult = (toolUseId: string, isError = false): ClaudeStreamMessage =>
+const toolResult = (toolUseId: string, isError = false): JsonlNode =>
   ({
-    type: 'user',
-    message: {
-      content: [
-        { type: 'tool_result', tool_use_id: toolUseId, is_error: isError, content: 'ok' },
-      ],
+    kind: 'user', userKind: 'tool-result', sessionId: '', receivedAt: '',
+    raw: {
+      type: 'user',
+      message: {
+        role: 'user',
+        content: [
+          { type: 'tool_result', tool_use_id: toolUseId, is_error: isError, content: 'ok' },
+        ],
+      },
     },
-  } as unknown as ClaudeStreamMessage);
+  }) as unknown as JsonlNode;
 
 describe('classifyStandaloneKind', () => {
   it('tags system init', () => {
@@ -87,22 +95,22 @@ describe('classifyStandaloneKind', () => {
     // that exclusively. Both real error subtypes (error_max_turns and
     // error_during_execution) carry is_error: true, so this loses no signal.
     it('does NOT classify error_max_turns without is_error as result.error_during_execution', () => {
-      const r = { type: 'result', subtype: 'error_max_turns', result: '' } as unknown as ClaudeStreamMessage;
+      const r = { kind: 'unknown', sessionId: '', receivedAt: '', raw: { type: 'result', subtype: 'error_max_turns', result: '' } } as unknown as JsonlNode;
       expect(classifyStandaloneKind(r, [r])).not.toBe('result.error_during_execution');
     });
 
     it('does NOT classify error_during_execution without is_error as result.error_during_execution', () => {
-      const r = { type: 'result', subtype: 'error_during_execution', result: '' } as unknown as ClaudeStreamMessage;
+      const r = { kind: 'unknown', sessionId: '', receivedAt: '', raw: { type: 'result', subtype: 'error_during_execution', result: '' } } as unknown as JsonlNode;
       expect(classifyStandaloneKind(r, [r])).not.toBe('result.error_during_execution');
     });
 
     it('DOES classify a result with is_error: true as result.error_during_execution regardless of subtype', () => {
-      const r = { type: 'result', subtype: 'success', is_error: true, result: 'boom' } as unknown as ClaudeStreamMessage;
+      const r = { kind: 'unknown', sessionId: '', receivedAt: '', raw: { type: 'result', subtype: 'success', is_error: true, result: 'boom' } } as unknown as JsonlNode;
       expect(classifyStandaloneKind(r, [r])).toBe('result.error_during_execution');
     });
 
     it('DOES classify error_max_turns WITH is_error: true as result.error_during_execution', () => {
-      const r = { type: 'result', subtype: 'error_max_turns', is_error: true, result: '' } as unknown as ClaudeStreamMessage;
+      const r = { kind: 'unknown', sessionId: '', receivedAt: '', raw: { type: 'result', subtype: 'error_max_turns', is_error: true, result: '' } } as unknown as JsonlNode;
       expect(classifyStandaloneKind(r, [r])).toBe('result.error_during_execution');
     });
   });
@@ -123,34 +131,42 @@ describe('classifyStandaloneKind', () => {
     // so the renderer can dispatch — assistant side renders the card,
     // user side returns null.
 
-    const askUserQuestion = (id: string): ClaudeStreamMessage =>
+    const askUserQuestion = (id: string): JsonlNode =>
       ({
-        type: 'assistant',
-        message: {
-          content: [
-            {
-              type: 'tool_use',
-              id,
-              name: 'AskUserQuestion',
-              input: { questions: [{ question: 'Pick', options: [{ label: 'A' }] }] },
-            },
-          ],
+        kind: 'assistant', sessionId: '', receivedAt: '',
+        raw: {
+          type: 'assistant',
+          message: {
+            role: 'assistant',
+            content: [
+              {
+                type: 'tool_use',
+                id,
+                name: 'AskUserQuestion',
+                input: { questions: [{ question: 'Pick', options: [{ label: 'A' }] }] },
+              },
+            ],
+          },
         },
-      } as unknown as ClaudeStreamMessage);
+      }) as unknown as JsonlNode;
 
-    const askUserQuestionResult = (toolUseId: string): ClaudeStreamMessage =>
+    const askUserQuestionResult = (toolUseId: string): JsonlNode =>
       ({
-        type: 'user',
-        message: {
-          content: [
-            {
-              type: 'tool_result',
-              tool_use_id: toolUseId,
-              content: 'User has answered your questions: "Pick"="A". You can now continue with the user\'s answers in mind.',
-            },
-          ],
+        kind: 'user', userKind: 'tool-result', sessionId: '', receivedAt: '',
+        raw: {
+          type: 'user',
+          message: {
+            role: 'user',
+            content: [
+              {
+                type: 'tool_result',
+                tool_use_id: toolUseId,
+                content: 'User has answered your questions: "Pick"="A". You can now continue with the user\'s answers in mind.',
+              },
+            ],
+          },
         },
-      } as unknown as ClaudeStreamMessage);
+      }) as unknown as JsonlNode;
 
     it('classifies the assistant message as tool.askUserQuestion.answered once the tool_result has landed', () => {
       const tu = askUserQuestion('toolu_AUQ');
@@ -177,30 +193,35 @@ describe('classifyStandaloneKind', () => {
       // Mixed content — text or thinking blocks — should keep the
       // in-bubble rendering so the prose isn't lost.
       const mixed = {
-        type: 'assistant',
-        message: {
-          content: [
-            { type: 'text', text: 'Let me ask you something.' },
-            {
-              type: 'tool_use',
-              id: 'toolu_AUQ',
-              name: 'AskUserQuestion',
-              input: { questions: [{ question: 'q', options: [{ label: 'a' }] }] },
-            },
-          ],
+        kind: 'assistant', sessionId: '', receivedAt: '',
+        raw: {
+          type: 'assistant',
+          message: {
+            role: 'assistant',
+            content: [
+              { type: 'text', text: 'Let me ask you something.' },
+              {
+                type: 'tool_use',
+                id: 'toolu_AUQ',
+                name: 'AskUserQuestion',
+                input: { questions: [{ question: 'q', options: [{ label: 'a' }] }] },
+              },
+            ],
+          },
         },
-      } as unknown as ClaudeStreamMessage;
+      } as unknown as JsonlNode;
       const tr = askUserQuestionResult('toolu_AUQ');
       expect(classifyStandaloneKind(mixed, [mixed, tr])).toBeNull();
     });
 
     it('does NOT classify a user tool_result whose matching tool_use was not AskUserQuestion', () => {
       const readToolUse = {
-        type: 'assistant',
-        message: {
-          content: [{ type: 'tool_use', id: 'toolu_R', name: 'Read', input: {} }],
+        kind: 'assistant', sessionId: '', receivedAt: '',
+        raw: {
+          type: 'assistant',
+          message: { role: 'assistant', content: [{ type: 'tool_use', id: 'toolu_R', name: 'Read', input: {} }] },
         },
-      } as unknown as ClaudeStreamMessage;
+      } as unknown as JsonlNode;
       const tr = askUserQuestionResult('toolu_R');
       expect(classifyStandaloneKind(tr, [readToolUse, tr])).toBeNull();
     });
@@ -209,19 +230,23 @@ describe('classifyStandaloneKind', () => {
       // The SDK sometimes precedes a tool_use with an empty text block.
       // It shouldn't disqualify the assistant message from elevation.
       const withEmptyText = {
-        type: 'assistant',
-        message: {
-          content: [
-            { type: 'text', text: '' },
-            {
-              type: 'tool_use',
-              id: 'toolu_AUQ',
-              name: 'AskUserQuestion',
-              input: { questions: [{ question: 'q', options: [{ label: 'a' }] }] },
-            },
-          ],
+        kind: 'assistant', sessionId: '', receivedAt: '',
+        raw: {
+          type: 'assistant',
+          message: {
+            role: 'assistant',
+            content: [
+              { type: 'text', text: '' },
+              {
+                type: 'tool_use',
+                id: 'toolu_AUQ',
+                name: 'AskUserQuestion',
+                input: { questions: [{ question: 'q', options: [{ label: 'a' }] }] },
+              },
+            ],
+          },
         },
-      } as unknown as ClaudeStreamMessage;
+      } as unknown as JsonlNode;
       const tr = askUserQuestionResult('toolu_AUQ');
       expect(classifyStandaloneKind(withEmptyText, [withEmptyText, tr])).toBe(
         'tool.askUserQuestion.answered',
@@ -271,23 +296,27 @@ describe('classifyStandaloneKind', () => {
       // classify as awaiting_background even though the tool name is Bash,
       // not Agent/Task — Greg's "I always see one when running release" memory.
       const r = resultOk();
-      const bashBg: ClaudeStreamMessage = {
-        type: 'assistant',
-        message: {
-          content: [
-            {
-              type: 'tool_use',
-              id: 'toolu_bash_bg',
-              name: 'Bash',
-              input: {
-                command: 'npm run make',
-                description: 'Build DMG + ZIP',
-                run_in_background: true,
+      const bashBg: JsonlNode = {
+        kind: 'assistant', sessionId: '', receivedAt: '',
+        raw: {
+          type: 'assistant',
+          message: {
+            role: 'assistant',
+            content: [
+              {
+                type: 'tool_use',
+                id: 'toolu_bash_bg',
+                name: 'Bash',
+                input: {
+                  command: 'npm run make',
+                  description: 'Build DMG + ZIP',
+                  run_in_background: true,
+                },
               },
-            },
-          ],
+            ],
+          },
         },
-      } as unknown as ClaudeStreamMessage;
+      } as unknown as JsonlNode;
       const msgs = [bashBg, toolResult('toolu_bash_bg', false), r];
       expect(classifyStandaloneKind(r, msgs)).toBe('result.awaiting_background');
     });
@@ -322,17 +351,20 @@ describe('classifyStandaloneKind', () => {
   it('returns null for messages whose rendering is per-content-block', () => {
     // Assistant / user messages can contain mixed blocks; filtering them as a
     // whole would hide text along with tool_use. Leave to existing renderer.
-    const asst: ClaudeStreamMessage = {
-      type: 'assistant',
-      message: { content: [{ type: 'text', text: 'hi' }, { type: 'tool_use', name: 'Read', input: {} }] },
-    } as unknown as ClaudeStreamMessage;
+    const asst: JsonlNode = {
+      kind: 'assistant', sessionId: '', receivedAt: '',
+      raw: {
+        type: 'assistant',
+        message: { role: 'assistant', content: [{ type: 'text', text: 'hi' }, { type: 'tool_use', name: 'Read', input: {} }] },
+      },
+    } as unknown as JsonlNode;
     expect(classifyStandaloneKind(asst, [])).toBeNull();
     expect(classifyStandaloneKind(userText('hello'), [])).toBeNull();
   });
 
   describe('system.unknown', () => {
-    const sys = (subtype: string): ClaudeStreamMessage =>
-      ({ type: 'system', subtype } as unknown as ClaudeStreamMessage);
+    const sys = (subtype: string): JsonlNode =>
+      ({ kind: 'system', subtype, sessionId: '', receivedAt: '', raw: { type: 'system', subtype } }) as unknown as JsonlNode;
 
     it('returns system.unknown for an unrecognized system subtype', () => {
       expect(classifyStandaloneKind(sys('compact_boundary'), [])).toBe('system.unknown');
@@ -355,12 +387,11 @@ describe('classifyStandaloneKind', () => {
     // fell through to `system.unknown` and rendered as a small gray inline
     // strip — same treatment as a no-op telemetry event. Auto-deny is a
     // user-facing action that needs distinct visual weight.
-    const sys = (extras: Record<string, unknown>): ClaudeStreamMessage =>
+    const sys = (extras: Record<string, unknown>): JsonlNode =>
       ({
-        type: 'system',
-        subtype: 'permission_denied',
-        ...extras,
-      } as unknown as ClaudeStreamMessage);
+        kind: 'system', subtype: 'permission_denied', sessionId: '', receivedAt: '',
+        raw: { type: 'system', subtype: 'permission_denied', ...extras },
+      }) as unknown as JsonlNode;
 
     it('classifies the SDK auto-deny shape as system.permission_denied', () => {
       expect(
@@ -386,17 +417,23 @@ describe('classifyStandaloneKind', () => {
   });
 
   describe('user.skillInjection / user.command / user.commandOutput', () => {
-    const skillToolUse = (id: string, skill: string): ClaudeStreamMessage =>
+    const skillToolUse = (id: string, skill: string): JsonlNode =>
       ({
-        type: 'assistant',
-        message: { content: [{ type: 'tool_use', id, name: 'Skill', input: { skill } }] },
-      } as unknown as ClaudeStreamMessage);
+        kind: 'assistant', sessionId: '', receivedAt: '',
+        raw: {
+          type: 'assistant',
+          message: { role: 'assistant', content: [{ type: 'tool_use', id, name: 'Skill', input: { skill } }] },
+        },
+      }) as unknown as JsonlNode;
 
-    const skillToolResult = (toolUseId: string): ClaudeStreamMessage =>
+    const skillToolResult = (toolUseId: string): JsonlNode =>
       ({
-        type: 'user',
-        message: { content: [{ type: 'tool_result', tool_use_id: toolUseId, content: 'skill body' }] },
-      } as unknown as ClaudeStreamMessage);
+        kind: 'user', userKind: 'tool-result', sessionId: '', receivedAt: '',
+        raw: {
+          type: 'user',
+          message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: toolUseId, content: 'skill body' }] },
+        },
+      }) as unknown as JsonlNode;
 
     it('classifies a user message that follows a Skill tool_result as user.skillInjection', () => {
       const tu = skillToolUse('tu_skill', 'merge-to-main');
@@ -407,10 +444,13 @@ describe('classifyStandaloneKind', () => {
     });
 
     it('does not classify as skillInjection when the preceding tool_use was not Skill', () => {
-      const tu: ClaudeStreamMessage = {
-        type: 'assistant',
-        message: { content: [{ type: 'tool_use', id: 'tu_read', name: 'Read', input: {} }] },
-      } as unknown as ClaudeStreamMessage;
+      const tu: JsonlNode = {
+        kind: 'assistant', sessionId: '', receivedAt: '',
+        raw: {
+          type: 'assistant',
+          message: { role: 'assistant', content: [{ type: 'tool_use', id: 'tu_read', name: 'Read', input: {} }] },
+        },
+      } as unknown as JsonlNode;
       const tr = skillToolResult('tu_read');
       const userMsg = userText('plain user message');
       const msgs = [tu, tr, userMsg];

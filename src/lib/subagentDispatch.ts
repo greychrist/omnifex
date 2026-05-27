@@ -1,4 +1,4 @@
-import type { ClaudeStreamMessage } from '@/types/claudeStream';
+import type { JsonlNode } from '@/types/jsonl';
 
 /**
  * The Claude Agent SDK and Claude Code CLI emit subagent-dispatch tool_use
@@ -24,19 +24,19 @@ export function isSubagentDispatch(name: unknown): boolean {
  * real user prompts on reload.
  */
 export function isSubagentPrompt(
-  msg: ClaudeStreamMessage,
-  allMessages: readonly ClaudeStreamMessage[],
+  msg: JsonlNode,
+  allMessages: readonly JsonlNode[],
 ): boolean {
-  if (msg.type !== 'user') return false;
-  const parentId = (msg as { parent_tool_use_id?: string | null }).parent_tool_use_id;
+  if (msg.kind !== 'user') return false;
+  const parentId = (msg.raw as { parent_tool_use_id?: string | null }).parent_tool_use_id;
   if (typeof parentId !== 'string' || parentId.length === 0) return false;
 
   for (const m of allMessages) {
-    if (m.type !== 'assistant') continue;
-    const content = m.message?.content;
+    if (m.kind !== 'assistant') continue;
+    const content = (m.raw as { message?: { content?: unknown } }).message?.content;
     if (!Array.isArray(content)) continue;
     for (const b of content) {
-      if (b?.type === 'tool_use' && b.id === parentId && isSubagentDispatch(b.name)) {
+      if ((b as any)?.type === 'tool_use' && (b as any).id === parentId && isSubagentDispatch((b as any).name)) {
         return true;
       }
     }

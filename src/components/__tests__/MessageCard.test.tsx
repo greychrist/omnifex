@@ -3,7 +3,7 @@ import React from 'react';
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, act } from '@testing-library/react';
 import { MessageFrameCard as MessageCard } from '../StreamMessage/MessageFrameCard';
-import type { ClaudeStreamMessage } from '@/types/claudeStream';
+import type { JsonlNode } from '@/types/jsonl';
 
 // useMessageRenderingConfig falls back to defaults when no provider is
 // present, so MessageCard renders standalone. We still mock IconRenderer
@@ -96,13 +96,13 @@ describe('MessageCard — alignment', () => {
 });
 
 describe('MessageCard — footer (timestamp + copy)', () => {
-  function makeMessage(receivedAt: string | undefined): ClaudeStreamMessage {
+  function makeMessage(receivedAt: string | undefined): JsonlNode {
     return {
-      type: 'result',
-      subtype: 'success',
-      session_id: 's',
-      receivedAt,
-    } as unknown as ClaudeStreamMessage;
+      kind: 'unknown',
+      sessionId: 's',
+      receivedAt: receivedAt ?? '',
+      raw: { type: 'result', subtype: 'success' },
+    } as unknown as JsonlNode;
   }
 
   it('renders a formatted timestamp footer when message.receivedAt is set', () => {
@@ -159,11 +159,12 @@ describe('MessageCard — debug mode footer (kind label + copy)', () => {
     });
 
     const message = {
-      type: 'system',
+      kind: 'system',
       subtype: 'notification',
-      session_id: 's',
+      sessionId: 's',
       receivedAt: '2026-06-15T12:00:00Z',
-    } as unknown as ClaudeStreamMessage;
+      raw: { type: 'system', subtype: 'notification' },
+    } as unknown as JsonlNode;
 
     render(
       <FlipDebugProvider>
@@ -194,8 +195,9 @@ describe('MessageCard — debug mode footer (kind label + copy)', () => {
     });
 
     const message = {
-      type: 'system', subtype: 'notification', session_id: 's',
-    } as unknown as ClaudeStreamMessage;
+      kind: 'system', subtype: 'notification', sessionId: 's', receivedAt: '',
+      raw: { type: 'system', subtype: 'notification' },
+    } as unknown as JsonlNode;
     render(<MessageCard kindId="x" message={message} copyText="custom text">body</MessageCard>);
     const btn = document.querySelector('button[aria-label="Copy"]')!;
     await act(async () => { fireEvent.click(btn); await Promise.resolve(); });
@@ -215,8 +217,9 @@ describe('MessageCard — debug mode footer (kind label + copy)', () => {
     });
 
     const message = {
-      type: 'system', subtype: 'notification', session_id: 's',
-    } as unknown as ClaudeStreamMessage;
+      kind: 'system', subtype: 'notification', sessionId: 's', receivedAt: '',
+      raw: { type: 'system', subtype: 'notification' },
+    } as unknown as JsonlNode;
     render(<MessageCard kindId="x" message={message}>body</MessageCard>);
     const btn = document.querySelector('button[aria-label="Copy"]')!;
     await act(async () => { fireEvent.click(btn); await Promise.resolve(); });

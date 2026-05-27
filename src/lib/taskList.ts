@@ -1,5 +1,5 @@
-import type { ClaudeStreamMessage, MessageContentBlock } from '@/types/claudeStream';
-import { getMessageContent } from '@/types/claudeStream';
+import type { JsonlNode } from '@/types/jsonl';
+import type { MessageContentBlock } from '@/types/claudeStream';
 
 /**
  * Reduce the live message stream into a per-task TaskList under SDK 0.3.x.
@@ -38,7 +38,7 @@ export interface TaskListEntry {
   status: TaskStatus;
   activeForm?: string;
   /** Messages emitted while this task was in_progress, in arrival order. */
-  messages: ClaudeStreamMessage[];
+  messages: JsonlNode[];
   /** Parallel array of indices into the original `messages` argument so
    *  callers that want to scroll the chat to the originating row can. */
   messageIndices: number[];
@@ -60,7 +60,7 @@ interface InternalTask {
   status: TaskStatus;
   activeForm?: string;
   order: number;
-  messages: ClaudeStreamMessage[];
+  messages: JsonlNode[];
   messageIndices: number[];
 }
 
@@ -142,9 +142,15 @@ function pickAttributionTarget(
  * tool_uses, TaskCreate tool_results, system messages, ...) so the panel
  * never renders meta-rows about itself.
  */
-function isAttributable(m: ClaudeStreamMessage): boolean {
-  if (m.type !== 'assistant' && m.type !== 'user') return false;
-  const content = getMessageContent(m);
+function getContent(m: JsonlNode): unknown[] | null {
+  const raw = (m as unknown as { raw?: { message?: { content?: unknown } } }).raw;
+  const content = raw?.message?.content;
+  return Array.isArray(content) ? content : null;
+}
+
+function isAttributable(m: JsonlNode): boolean {
+  if (m.kind !== 'assistant' && m.kind !== 'user') return false;
+  const content = getContent(m);
   if (!Array.isArray(content)) return false;
   const blocks = content as MessageContentBlock[];
   if (blocks.length === 0) return false;
@@ -191,7 +197,7 @@ function isAttributable(m: ClaudeStreamMessage): boolean {
   return structural < renderable;
 }
 
-export function getTaskList(messages: ClaudeStreamMessage[]): TaskListEntry[] | null {
+export function getTaskList(messages: JsonlNode[]): TaskListEntry[] | null {
   const byToolUseId = new Map<string, InternalTask>();
   const byTaskId = new Map<string, InternalTask>();
   let order = 0;
@@ -207,12 +213,12 @@ export function getTaskList(messages: ClaudeStreamMessage[]): TaskListEntry[] | 
     // not once per session, so subagents that span multiple turns
     // need their pending tasks to stay pending. The renderer's
     // task-list summarizer treats real-state pending tasks correctly.
-    if ((m as { type?: string }).type === 'result') {
+    if (m.kind === 'unknown' && (m.raw as { type?: string }).type === 'result') {
       currentTaskId = null;
       continue;
     }
 
-    const content = getMessageContent(m);
+    const content = getContent(m);
     if (!Array.isArray(content)) continue;
     const blocks = content as MessageContentBlock[];
 
@@ -292,7 +298,7 @@ export function getTaskList(messages: ClaudeStreamMessage[]): TaskListEntry[] | 
         if (!task || task.taskId) continue;
         const taskId =
           extractTaskIdFromContent(block.content) ??
-          extractTaskIdFromEnvelope(m);
+          extractTaskIdFromEnvelope((m as unknown as { raw?: Record<string, unknown> }).raw);
         if (taskId) {
           task.taskId = taskId;
           byTaskId.set(taskId, task);

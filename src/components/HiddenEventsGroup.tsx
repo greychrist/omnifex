@@ -5,11 +5,11 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collap
 import { StreamMessage } from './StreamMessage';
 import { summarizeHiddenEvents, countHiddenEvents } from '@/lib/hiddenEventsSummary';
 import { useScrollAnchor } from '@/lib/useScrollAnchor';
-import type { ClaudeStreamMessage } from '@/types/claudeStream';
+import type { JsonlNode } from '@/types/jsonl';
 
 interface Props {
-  messages: ClaudeStreamMessage[];
-  streamMessages: ClaudeStreamMessage[];
+  messages: JsonlNode[];
+  streamMessages: JsonlNode[];
   accountType?: string;
   onLinkDetected?: (url: string) => void;
   onResend?: (text: string, images?: string[]) => void;

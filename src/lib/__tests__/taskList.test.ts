@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import type { ClaudeStreamMessage } from '@/types/claudeStream';
+import type { JsonlNode } from '@/types/jsonl';
 import {
   getTaskList,
   summarizeTaskList,
@@ -16,65 +16,85 @@ import {
 function taskCreateMsg(
   blockId: string,
   input: { subject?: string; description?: string; activeForm?: string },
-): ClaudeStreamMessage {
+): JsonlNode {
   return {
-    type: 'assistant',
-    message: {
-      content: [{ type: 'tool_use', id: blockId, name: 'TaskCreate', input }],
-      stop_reason: 'tool_use',
+    kind: 'assistant', sessionId: '', receivedAt: '',
+    raw: {
+      type: 'assistant',
+      message: {
+        role: 'assistant',
+        content: [{ type: 'tool_use', id: blockId, name: 'TaskCreate', input }],
+        stop_reason: 'tool_use',
+      },
     },
-  } as unknown as ClaudeStreamMessage;
+  } as unknown as JsonlNode;
 }
 
-function taskCreateResultMsg(blockId: string, taskId: string): ClaudeStreamMessage {
+function taskCreateResultMsg(blockId: string, taskId: string): JsonlNode {
   return {
-    type: 'user',
-    message: {
-      content: [{
-        type: 'tool_result',
-        tool_use_id: blockId,
-        content: `Task #${taskId} created successfully: unused`,
-      }],
+    kind: 'user', userKind: 'tool-result', sessionId: '', receivedAt: '',
+    raw: {
+      type: 'user',
+      message: {
+        role: 'user',
+        content: [{
+          type: 'tool_result',
+          tool_use_id: blockId,
+          content: `Task #${taskId} created successfully: unused`,
+        }],
+      },
     },
-  } as unknown as ClaudeStreamMessage;
+  } as unknown as JsonlNode;
 }
 
 function taskUpdateMsg(
   blockId: string,
   input: { taskId: string; status?: string; subject?: string; activeForm?: string },
-): ClaudeStreamMessage {
+): JsonlNode {
   return {
-    type: 'assistant',
-    message: {
-      content: [{ type: 'tool_use', id: blockId, name: 'TaskUpdate', input }],
-      stop_reason: 'tool_use',
+    kind: 'assistant', sessionId: '', receivedAt: '',
+    raw: {
+      type: 'assistant',
+      message: {
+        role: 'assistant',
+        content: [{ type: 'tool_use', id: blockId, name: 'TaskUpdate', input }],
+        stop_reason: 'tool_use',
+      },
     },
-  } as unknown as ClaudeStreamMessage;
+  } as unknown as JsonlNode;
 }
 
 /** A plain assistant text block — the kind of message that should get
  *  attributed to the task that is currently in_progress at the time it
  *  was emitted. */
-function assistantText(text: string): ClaudeStreamMessage {
+function assistantText(text: string): JsonlNode {
   return {
-    type: 'assistant',
-    message: {
-      content: [{ type: 'text', text }],
-      stop_reason: 'end_turn',
+    kind: 'assistant', sessionId: '', receivedAt: '',
+    raw: {
+      type: 'assistant',
+      message: {
+        role: 'assistant',
+        content: [{ type: 'text', text }],
+        stop_reason: 'end_turn',
+      },
     },
-  } as unknown as ClaudeStreamMessage;
+  } as unknown as JsonlNode;
 }
 
 /** An unrelated tool_use (e.g. Read) that should get attributed to the
  *  currently-in_progress task. */
-function readToolUse(blockId: string, file: string): ClaudeStreamMessage {
+function readToolUse(blockId: string, file: string): JsonlNode {
   return {
-    type: 'assistant',
-    message: {
-      content: [{ type: 'tool_use', id: blockId, name: 'Read', input: { file_path: file } }],
-      stop_reason: 'tool_use',
+    kind: 'assistant', sessionId: '', receivedAt: '',
+    raw: {
+      type: 'assistant',
+      message: {
+        role: 'assistant',
+        content: [{ type: 'tool_use', id: blockId, name: 'Read', input: { file_path: file } }],
+        stop_reason: 'tool_use',
+      },
     },
-  } as unknown as ClaudeStreamMessage;
+  } as unknown as JsonlNode;
 }
 
 describe('getTaskList', () => {
@@ -208,10 +228,9 @@ describe('getTaskList', () => {
     // and the UI reflects the actual agent state rather than a synthetic guess.
     const work = assistantText('working on it');
     const resultMsg = {
-      type: 'result',
-      subtype: 'success',
-      result: 'all done',
-    } as unknown as ClaudeStreamMessage;
+      kind: 'unknown', sessionId: '', receivedAt: '',
+      raw: { type: 'result', subtype: 'success', result: 'all done' },
+    } as unknown as JsonlNode;
     const result = getTaskList([
       taskCreateMsg('tu1', { subject: 'finish this' }),
       taskCreateResultMsg('tu1', '1'),
@@ -229,7 +248,7 @@ describe('getTaskList', () => {
     // multi-turn subagents. Now task B correctly stays pending — it reflects
     // actual agent state rather than a synthetic guess.
     const work = assistantText('did the work for the last one');
-    const resultMsg = { type: 'result', subtype: 'success', result: '' } as unknown as ClaudeStreamMessage;
+    const resultMsg = { kind: 'unknown', sessionId: '', receivedAt: '', raw: { type: 'result', subtype: 'success', result: '' } } as unknown as JsonlNode;
     const result = getTaskList([
       taskCreateMsg('tu1', { subject: 'A' }),
       taskCreateResultMsg('tu1', '1'),
@@ -249,7 +268,7 @@ describe('getTaskList', () => {
     // that broke multi-turn subagents. A pending task stays pending — the
     // summarizer's `running: true` correctly keeps the indicator lit, and
     // subsequent turns' TaskUpdate(completed) are the canonical signal.
-    const resultMsg = { type: 'result', subtype: 'success', result: '' } as unknown as ClaudeStreamMessage;
+    const resultMsg = { kind: 'unknown', sessionId: '', receivedAt: '', raw: { type: 'result', subtype: 'success', result: '' } } as unknown as JsonlNode;
     const result = getTaskList([
       taskCreateMsg('tu1', { subject: 'never touched' }),
       taskCreateResultMsg('tu1', '1'),
@@ -264,7 +283,7 @@ describe('getTaskList', () => {
     // task. The new task hasn't been worked on yet — it should appear
     // pending on its own, with the old batch cleared from the visible
     // list (matches the "new list empties the old" epoch-boundary UX).
-    const oldResult = { type: 'result', subtype: 'success', result: '' } as unknown as ClaudeStreamMessage;
+    const oldResult = { kind: 'unknown', sessionId: '', receivedAt: '', raw: { type: 'result', subtype: 'success', result: '' } } as unknown as JsonlNode;
     const result = getTaskList([
       taskCreateMsg('tu1', { subject: 'finished long ago' }),
       taskCreateResultMsg('tu1', '1'),
@@ -284,7 +303,7 @@ describe('getTaskList', () => {
     // is additive (not a reset) — both tasks appear in the final list.
     // This is the CORRECT behavior: the pending task from the previous turn
     // is still unfinished and should remain visible.
-    const oldResult = { type: 'result', subtype: 'success', result: '' } as unknown as ClaudeStreamMessage;
+    const oldResult = { kind: 'unknown', sessionId: '', receivedAt: '', raw: { type: 'result', subtype: 'success', result: '' } } as unknown as JsonlNode;
     const result = getTaskList([
       taskCreateMsg('tu1', { subject: 'untouched' }),
       taskCreateResultMsg('tu1', '1'),
@@ -456,7 +475,7 @@ describe('getTaskList', () => {
       taskCreateResultMsg('tu3', 'task-3'),
       taskUpdateMsg('tu4', { taskId: 'task-1', status: 'completed' }),
       // Turn-level result lands (per-turn synthesized in TUI mode, real in SDK mode)
-      { type: 'result', subtype: 'success', result: 'ok', is_error: false } as unknown as ClaudeStreamMessage,
+      { kind: 'unknown', sessionId: '', receivedAt: '', raw: { type: 'result', subtype: 'success', result: 'ok', is_error: false } } as unknown as JsonlNode,
     ];
 
     const tasks = getTaskList(messages);

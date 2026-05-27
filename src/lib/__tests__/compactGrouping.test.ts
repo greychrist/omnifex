@@ -1,37 +1,40 @@
 import { describe, it, expect } from 'vitest';
-import type { ClaudeStreamMessage } from '@/types/claudeStream';
+import type { JsonlNode } from '@/types/jsonl';
 import { buildCompactItems, isMessageFullyHidden, type CompactItem } from '../compactGrouping';
 import { createDefaultConfig } from '../messageRenderingConfig';
 
-function userText(text: string): ClaudeStreamMessage {
-  return { type: 'user', message: { content: [{ type: 'text', text }] } } as ClaudeStreamMessage;
+function userText(text: string): JsonlNode {
+  return { kind: 'user', userKind: 'prompt', sessionId: '', receivedAt: '', raw: { type: 'user', message: { role: 'user', content: [{ type: 'text', text }] } } } as unknown as JsonlNode;
 }
 
-function toolUseMsg(name: string, input: any = {}): ClaudeStreamMessage {
+function toolUseMsg(name: string, input: any = {}): JsonlNode {
   return {
-    type: 'assistant',
-    message: {
-      content: [{ type: 'tool_use', name, input }],
-      stop_reason: 'tool_use',
+    kind: 'assistant', sessionId: '', receivedAt: '',
+    raw: {
+      type: 'assistant',
+      message: { role: 'assistant', content: [{ type: 'tool_use', name, input }], stop_reason: 'tool_use' },
     },
-  } as unknown as ClaudeStreamMessage;
+  } as unknown as JsonlNode;
 }
 
-function assistantWithBlocks(blocks: any[], stop_reason = 'end_turn'): ClaudeStreamMessage {
+function assistantWithBlocks(blocks: any[], stop_reason = 'end_turn'): JsonlNode {
   return {
-    type: 'assistant',
-    message: { content: blocks, stop_reason },
-  } as unknown as ClaudeStreamMessage;
+    kind: 'assistant', sessionId: '', receivedAt: '',
+    raw: { type: 'assistant', message: { role: 'assistant', content: blocks, stop_reason } },
+  } as unknown as JsonlNode;
 }
 
-function toolResultMsg(toolUseId = 'tu_x'): ClaudeStreamMessage {
+function toolResultMsg(toolUseId = 'tu_x'): JsonlNode {
   return {
-    type: 'user',
-    message: { content: [{ type: 'tool_result', tool_use_id: toolUseId, content: 'ok' }] },
-  } as unknown as ClaudeStreamMessage;
+    kind: 'user', userKind: 'tool-result', sessionId: '', receivedAt: '',
+    raw: {
+      type: 'user',
+      message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: toolUseId, content: 'ok' }] },
+    },
+  } as unknown as JsonlNode;
 }
 
-function assistantEndTurn(text: string): ClaudeStreamMessage {
+function assistantEndTurn(text: string): JsonlNode {
   return assistantWithBlocks([{ type: 'text', text }]);
 }
 
@@ -86,13 +89,13 @@ describe('isMessageFullyHidden', () => {
   it('returns false for system.init when user unhides it', () => {
     const cfg = createDefaultConfig();
     cfg.kinds['system.init'].hiddenInCompact = false;
-    const msg = { type: 'system', subtype: 'init' } as ClaudeStreamMessage;
+    const msg = { kind: 'system', subtype: 'init', sessionId: '', receivedAt: '', raw: { type: 'system', subtype: 'init' } } as unknown as JsonlNode;
     expect(isMessageFullyHidden(msg, [msg], cfg)).toBe(false);
   });
 
   it('returns true for hidden system.init by default', () => {
     const cfg = createDefaultConfig();
-    const msg = { type: 'system', subtype: 'init' } as ClaudeStreamMessage;
+    const msg = { kind: 'system', subtype: 'init', sessionId: '', receivedAt: '', raw: { type: 'system', subtype: 'init' } } as unknown as JsonlNode;
     expect(isMessageFullyHidden(msg, [msg], cfg)).toBe(true);
   });
 
@@ -153,7 +156,7 @@ describe('buildCompactItems', () => {
   it('promotes a kind to single when user unhides it', () => {
     const cfg = createDefaultConfig();
     cfg.kinds['system.init'].hiddenInCompact = false;
-    const sysInit = { type: 'system', subtype: 'init' } as ClaudeStreamMessage;
+    const sysInit = { kind: 'system', subtype: 'init', sessionId: '', receivedAt: '', raw: { type: 'system', subtype: 'init' } } as unknown as JsonlNode;
     const msgs = [
       userText('hi'),
       sysInit,
@@ -213,9 +216,9 @@ describe('buildCompactItems', () => {
     // prompt, now arriving normalized" — the case that previously needed a
     // dedicated string-content branch in isMessageFullyHidden.
     const reloadedPrompt = {
-      type: 'user',
-      message: { content: [{ type: 'text', text: 'hello from a reloaded session' }] },
-    } as unknown as ClaudeStreamMessage;
+      kind: 'user', userKind: 'prompt', sessionId: '', receivedAt: '',
+      raw: { type: 'user', message: { role: 'user', content: [{ type: 'text', text: 'hello from a reloaded session' }] } },
+    } as unknown as JsonlNode;
     const msgs = [
       reloadedPrompt,
       toolUseMsg('Read', { file_path: '/a' }),
@@ -256,7 +259,7 @@ describe('buildCompactItems', () => {
 
   it('treats messages with no content array as run-mergeable', () => {
     const cfg = createDefaultConfig();
-    const empty = { type: 'assistant', message: { content: [] } } as unknown as ClaudeStreamMessage;
+    const empty = { kind: 'assistant', sessionId: '', receivedAt: '', raw: { type: 'assistant', message: { role: 'assistant', content: [] } } } as unknown as JsonlNode;
     const msgs = [
       userText('hi'),
       toolUseMsg('Read', { file_path: '/a' }),
@@ -275,20 +278,28 @@ describe('buildCompactItems', () => {
     // hidden run instead of being special-cased visible.
     const cfg = createDefaultConfig();
     const taskDispatch = {
-      type: 'assistant',
-      message: {
-        content: [
-          { type: 'tool_use', id: 'tu_task', name: 'Task', input: { description: 'Investigate' } },
-        ],
-        stop_reason: 'tool_use',
+      kind: 'assistant', sessionId: '', receivedAt: '',
+      raw: {
+        type: 'assistant',
+        message: {
+          role: 'assistant',
+          content: [
+            { type: 'tool_use', id: 'tu_task', name: 'Task', input: { description: 'Investigate' } },
+          ],
+          stop_reason: 'tool_use',
+        },
       },
-    } as unknown as ClaudeStreamMessage;
+    } as unknown as JsonlNode;
     const taskReturn = {
-      type: 'user',
-      message: {
-        content: [{ type: 'tool_result', tool_use_id: 'tu_task', content: 'done' }],
+      kind: 'user', userKind: 'tool-result', sessionId: '', receivedAt: '',
+      raw: {
+        type: 'user',
+        message: {
+          role: 'user',
+          content: [{ type: 'tool_result', tool_use_id: 'tu_task', content: 'done' }],
+        },
       },
-    } as unknown as ClaudeStreamMessage;
+    } as unknown as JsonlNode;
     const msgs = [
       userText('investigate'),
       toolUseMsg('Bash', { command: 'ls' }),

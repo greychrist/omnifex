@@ -1,19 +1,21 @@
-import type { ClaudeStreamMessage } from '@/types/claudeStream';
+import type { JsonlNode } from '@/types/jsonl';
 import type { SessionStatus } from '@/lib/api';
 import type { ConversationStatus } from '@/lib/sessionDerivedState';
 
 /**
- * Top-level message types that don't represent conversational progress.
+ * Node kinds that don't represent conversational progress.
  * Skipped when looking for the most recent "turn-bracket" message:
  *   - `system` covers init, notifications, hook lifecycle (hook_started /
  *     hook_progress / hook_response / user_prompt_submit), compact_boundary,
  *     turn_duration, etc. — SessionStart hooks emit hook events BEFORE any
  *     user turn, so treating those as "still waiting on Claude" pins the
  *     conversation to 'running' on a fresh idle session.
- *   - `stream_event` is the per-token partial delta; the parent `assistant`
+ *   - `stream-event` is the per-token partial delta; the parent `assistant`
  *     message carries the conversational signal.
+ *   - overlay kinds (`stream-event`, `rate-limit`, `lifecycle`) never enter
+ *     messages[] but are listed for completeness.
  */
-const PLUMBING_MESSAGE_TYPES: ReadonlySet<string> = new Set(['system', 'stream_event']);
+const PLUMBING_KINDS: ReadonlySet<string> = new Set(['system', 'stream-event', 'rate-limit', 'lifecycle']);
 
 /**
  * True when the transcript's last conversational entry is an "execution
@@ -26,13 +28,16 @@ const PLUMBING_MESSAGE_TYPES: ReadonlySet<string> = new Set(['system', 'stream_e
  * nothing to wait on.
  */
 export function isLastMessageExecutionComplete(
-  messages: ClaudeStreamMessage[],
+  messages: JsonlNode[],
 ): boolean {
   for (let i = messages.length - 1; i >= 0; i--) {
-    const msg = messages[i] as { type?: string };
-    if (typeof msg.type !== 'string') continue;
-    if (PLUMBING_MESSAGE_TYPES.has(msg.type)) continue;
-    return msg.type === 'result';
+    const msg = messages[i];
+    if (PLUMBING_KINDS.has(msg.kind)) continue;
+    // result messages arrive as kind:'unknown' with raw.type==='result'
+    if (msg.kind === 'unknown') {
+      return (msg.raw as { type?: string }).type === 'result';
+    }
+    return false;
   }
   return true;
 }
@@ -44,14 +49,14 @@ export function isLastMessageExecutionComplete(
  * to `deriveConversationStatus`.
  */
 export function deriveWaitingOnClaude(
-  messages: ClaudeStreamMessage[],
+  messages: JsonlNode[],
 ): boolean {
   return !isLastMessageExecutionComplete(messages);
 }
 
 export interface DeriveConversationStatusArgs {
   sessionStatus: SessionStatus;
-  messages: ClaudeStreamMessage[];
+  messages: JsonlNode[];
   /** True if any task is not yet `complete`. */
   hasIncompleteTasks: boolean;
   /** True if any subagent is not yet `complete`. */

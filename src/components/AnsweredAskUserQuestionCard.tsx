@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { cn } from '@/lib/utils';
 import { MessageFrameCard as MessageCard } from '@/components/StreamMessage/MessageFrameCard';
-import type { ClaudeStreamMessage } from '@/types/claudeStream';
+import type { JsonlNode } from '@/types/jsonl';
 
 /**
  * Historical view of an answered `AskUserQuestion` interaction. Renders the
@@ -44,11 +44,11 @@ interface AnsweredAskUserQuestionCardProps {
    *  result hasn't landed yet — in that case the card renders just the
    *  questions with the picks blank, matching the "live awaiting" state. */
   resultContent?: string;
-  /** The originating assistant `ClaudeStreamMessage`. Passed through to
+  /** The originating assistant `JsonlNode`. Passed through to
    *  `MessageCard` so its footer can show the receivedAt timestamp and
    *  expose the debug raw-JSON copy button in the same shape every other
    *  first-order card uses. */
-  message?: ClaudeStreamMessage;
+  message?: JsonlNode;
 }
 
 interface ParsedAnswerPayload {

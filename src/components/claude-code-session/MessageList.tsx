@@ -4,10 +4,10 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { StreamMessage } from '../StreamMessage';
 import { Terminal } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { ClaudeStreamMessage } from '@/types/claudeStream';
+import type { JsonlNode } from '@/types/jsonl';
 
 interface MessageListProps {
-  messages: ClaudeStreamMessage[];
+  messages: JsonlNode[];
   projectPath: string;
   isStreaming: boolean;
   onLinkDetected?: (url: string) => void;
@@ -114,7 +114,7 @@ export const MessageList: React.FC<MessageListProps> = React.memo(({
         <AnimatePresence mode="popLayout">
           {virtualizer.getVirtualItems().map((virtualItem) => {
             const message = messages[virtualItem.index];
-            const key = `msg-${virtualItem.index}-${message.type}`;
+            const key = `msg-${virtualItem.index}-${message.kind}`;
             
             return (
               <motion.div

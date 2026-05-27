@@ -2,26 +2,35 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import React, { useRef, StrictMode } from 'react';
-import type { ClaudeStreamMessage } from '@/types/claudeStream';
+import type { JsonlNode } from '@/types/jsonl';
 
-// ── helpers for constructing minimal ClaudeStreamMessage shapes ──────────────
+// ── helpers for constructing minimal JsonlNode shapes ────────────────────────
 
-function makeUserPrompt(overrides: Record<string, unknown> = {}): ClaudeStreamMessage {
+function makeUserPrompt(overrides: Record<string, unknown> = {}): JsonlNode {
   return {
-    type: 'user',
-    message: { role: 'user', content: 'hello' },
-    parent_tool_use_id: null,
-    ...overrides,
-  } as unknown as ClaudeStreamMessage;
+    kind: 'user',
+    userKind: 'prompt',
+    sessionId: '',
+    receivedAt: '',
+    raw: {
+      type: 'user',
+      message: { role: 'user', content: 'hello' },
+      ...overrides,
+    },
+  } as unknown as JsonlNode;
 }
 
-function makeAssistantMsg(stop_reason: string | null = null, overrides: Record<string, unknown> = {}): ClaudeStreamMessage {
+function makeAssistantMsg(stop_reason: string | null = null, overrides: Record<string, unknown> = {}): JsonlNode {
   return {
-    type: 'assistant',
-    message: { role: 'assistant', content: [], stop_reason },
-    parent_tool_use_id: null,
-    ...overrides,
-  } as unknown as ClaudeStreamMessage;
+    kind: 'assistant',
+    sessionId: '',
+    receivedAt: '',
+    raw: {
+      type: 'assistant',
+      message: { role: 'assistant', content: [], stop_reason },
+      ...overrides,
+    },
+  } as unknown as JsonlNode;
 }
 
 vi.mock('@/lib/api', () => ({
@@ -67,7 +76,7 @@ import { api } from '@/lib/api';
 import { useSessionLifecycle } from '../useSessionLifecycle';
 
 interface HarnessOverrides {
-  messages?: ClaudeStreamMessage[];
+  messages?: JsonlNode[];
   tasks?: { status: string }[];
   subagents?: { status: string }[];
   initialPersistent?: boolean;
@@ -79,7 +88,7 @@ interface HarnessOverrides {
 function harness(overrides: HarnessOverrides = {}) {
   return () => {
     const persistentSessionRef = useRef(overrides.initialPersistent ?? false);
-    const messagesRef = useRef<ClaudeStreamMessage[]>(overrides.messages ?? []);
+    const messagesRef = useRef<JsonlNode[]>(overrides.messages ?? []);
 
     return {
       lifecycle: useSessionLifecycle({
@@ -194,7 +203,7 @@ describe('useSessionLifecycle — startPersistentSession happy path', () => {
     // Custom harness with empty accountResolution.
     const useLocalHarness = () => {
       const persistentSessionRef = useRef(false);
-      const messagesRef = useRef<ClaudeStreamMessage[]>([]);
+      const messagesRef = useRef<JsonlNode[]>([]);
       return {
         lifecycle: useSessionLifecycle({
           tabId: 'tab-fb',
@@ -230,7 +239,7 @@ describe('useSessionLifecycle — startPersistentSession happy path', () => {
     (api.startSession as any).mockResolvedValueOnce(undefined);
     const useLocal = () => {
       const persistentSessionRef = useRef(false);
-      const messagesRef = useRef<ClaudeStreamMessage[]>([]);
+      const messagesRef = useRef<JsonlNode[]>([]);
       return useSessionLifecycle({
         tabId: 't1', projectPath: '/r', selectedModel: 'sonnet',
         permissionMode: 'default', effort: 'medium', thinkingConfig: 'disabled',
@@ -270,10 +279,10 @@ describe('useSessionLifecycle — startPersistentSession error surface', () => {
 
     const msgs = result.current.messagesRef.current as any[];
     const errMsg = msgs[msgs.length - 1];
-    expect(errMsg.type).toBe('system');
+    expect(errMsg.kind).toBe('system');
     expect(errMsg.subtype).toBe('notification');
-    expect(errMsg.notification_type).toBe('error');
-    expect(String(errMsg.body)).toMatch(/No Claude account/i);
+    expect(errMsg.raw.notification_type).toBe('error');
+    expect(String(errMsg.raw.body)).toMatch(/No Claude account/i);
   });
 
   it('re-throws so the caller catch can still log', async () => {

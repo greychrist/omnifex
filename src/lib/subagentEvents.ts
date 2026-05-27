@@ -21,7 +21,8 @@
  * post-pass inference rule to produce the legacy `Subagent[]` shape.
  */
 
-import type { ClaudeStreamMessage, MessageContentBlock } from '@/types/claudeStream';
+import type { JsonlNode } from '@/types/jsonl';
+import type { MessageContentBlock } from '@/types/claudeStream';
 
 /**
  * Per-variant shapes formerly imported from the SDK. The wire payloads
@@ -228,67 +229,76 @@ export function isTaskLifecycleMarker(m: unknown): m is TaskLifecycleMessage {
  * applied here — it needs to inspect the final state map and the message
  * array together, so it runs after this function.
  */
-export function messagesToEvents(messages: ClaudeStreamMessage[]): SubagentEvent[] {
+export function messagesToEvents(messages: JsonlNode[]): SubagentEvent[] {
   const events: SubagentEvent[] = [];
 
   for (let i = 0; i < messages.length; i++) {
     const m = messages[i];
+    const raw = (m as unknown as { raw?: Record<string, unknown> }).raw ?? {};
 
     // 1. Dispatch — assistant tool_use blocks where the tool either is
     //    Agent/Task explicitly OR rides run_in_background:true (background
     //    Bash etc.). Without the background branch, long-running shell
     //    dispatches wouldn't surface until task_started fires.
-    if (m.type === 'assistant' && Array.isArray(m.message.content)) {
-      for (const block of m.message.content as MessageContentBlock[]) {
-        if (block.type !== 'tool_use' || !block.id) continue;
-        const isAgentTool = block.name === 'Agent' || block.name === 'Task';
-        const input = block.input;
-        const isBackgroundDispatch = input.run_in_background === true;
-        if (!isAgentTool && !isBackgroundDispatch) continue;
-        events.push({
-          kind: 'Dispatched',
-          toolUseId: block.id,
-          messageIdx: i,
-          description: typeof input.description === 'string' ? input.description : '',
-          agentType: isAgentTool && typeof input.subagent_type === 'string' ? input.subagent_type : undefined,
-          isBackground: isBackgroundDispatch,
-        });
+    if (m.kind === 'assistant') {
+      const content = (raw as { message?: { content?: unknown } }).message?.content;
+      if (Array.isArray(content)) {
+        for (const block of content as MessageContentBlock[]) {
+          if (block.type !== 'tool_use' || !block.id) continue;
+          const isAgentTool = block.name === 'Agent' || block.name === 'Task';
+          const input = block.input;
+          const isBackgroundDispatch = input.run_in_background === true;
+          if (!isAgentTool && !isBackgroundDispatch) continue;
+          events.push({
+            kind: 'Dispatched',
+            toolUseId: block.id,
+            messageIdx: i,
+            description: typeof input.description === 'string' ? input.description : '',
+            agentType: isAgentTool && typeof input.subagent_type === 'string' ? input.subagent_type : undefined,
+            isBackground: isBackgroundDispatch,
+          });
+        }
+        continue;
       }
-      continue;
     }
 
     // 2. Tool result blocks — surface as `ToolResult`. The reducer decides
     //    whether to interpret them as completion or as a background ACK
     //    based on the dispatch's `isBackground` flag, which was captured at
     //    Dispatched-event time.
-    if (m.type === 'user' && m.message && Array.isArray(m.message.content)) {
-      for (const block of m.message.content as MessageContentBlock[]) {
-        if (block.type !== 'tool_result') continue;
-        const id = block.tool_use_id;
-        if (!id) continue;
-        events.push({
-          kind: 'ToolResult',
-          toolUseId: id,
-          isError: block.is_error === true,
-          content: typeof block.content === 'string' ? block.content : undefined,
-        });
+    if (m.kind === 'user') {
+      const content = (raw as { message?: { content?: unknown } }).message?.content;
+      if (Array.isArray(content)) {
+        for (const block of content as MessageContentBlock[]) {
+          if (block.type !== 'tool_result') continue;
+          const id = block.tool_use_id;
+          if (!id) continue;
+          events.push({
+            kind: 'ToolResult',
+            toolUseId: id,
+            isError: block.is_error === true,
+            content: typeof block.content === 'string' ? block.content : undefined,
+          });
+        }
+        continue;
       }
-      continue;
     }
 
     // 3. Structured SDK task_* SystemMessages.
-    if (isTaskLifecycleMarker(m)) {
+    if (isTaskLifecycleMarker(raw)) {
+      // `raw` is narrowed to TaskLifecycleMessage here. Access all fields via raw.
+      const tlm = raw as TaskLifecycleMessage;
       // task_updated rides a different shape from task_started /
       // task_progress / task_notification: keyed by `task_id` only
       // (no tool_use_id) and carries a `patch` object. Handle it as
-      // its own branch so TS can narrow `m` for the tool_use_id-bearing
+      // its own branch so TS can narrow `raw` for the tool_use_id-bearing
       // siblings below.
-      if (m.subtype === 'task_updated') {
-        if (typeof m.task_id === 'string' && m.patch && typeof m.patch === 'object') {
-          const p = m.patch as Record<string, unknown>;
+      if (tlm.subtype === 'task_updated') {
+        if (typeof tlm.task_id === 'string' && tlm.patch && typeof tlm.patch === 'object') {
+          const p = tlm.patch as Record<string, unknown>;
           events.push({
             kind: 'TaskUpdated',
-            taskId: m.task_id,
+            taskId: tlm.task_id,
             patch: {
               status: typeof p.status === 'string' ? (p.status as 'pending' | 'running' | 'completed' | 'failed' | 'killed') : undefined,
               description: typeof p.description === 'string' ? p.description : undefined,
@@ -304,32 +314,34 @@ export function messagesToEvents(messages: ClaudeStreamMessage[]): SubagentEvent
 
       // Remaining variants (task_started, task_progress, task_notification) all
       // share the optional `tool_use_id` field. Skip if absent.
-      const id = m.tool_use_id;
+      const id = tlm.tool_use_id;
       if (!id) continue;
-      if (m.subtype === 'task_started') {
-        events.push({ kind: 'Started', toolUseId: id, taskId: m.task_id ?? '', description: m.description ?? '' });
-      } else if (m.subtype === 'task_progress') {
+      if (tlm.subtype === 'task_started') {
+        events.push({ kind: 'Started', toolUseId: id, taskId: tlm.task_id ?? '', description: tlm.description ?? '' });
+      } else if (tlm.subtype === 'task_progress') {
+        const tlmProg = tlm as SDKTaskProgressMessage;
         events.push({
           kind: 'Progress',
           toolUseId: id,
-          description: m.description ?? '',
-          lastToolName: m.last_tool_name,
-          totalTokens: m.usage.total_tokens,
-          toolUses: m.usage.tool_uses,
-          durationMs: m.usage.duration_ms,
-          taskId: m.task_id,
+          description: tlmProg.description ?? '',
+          lastToolName: tlmProg.last_tool_name,
+          totalTokens: tlmProg.usage.total_tokens,
+          toolUses: tlmProg.usage.tool_uses,
+          durationMs: tlmProg.usage.duration_ms,
+          taskId: tlmProg.task_id,
         });
       } else {
         // task_notification
+        const tlmNotif = tlm as SDKTaskNotificationMessage;
         events.push({
           kind: 'TaskNotification',
           toolUseId: id,
-          status: m.status === 'completed' ? 'completed' : m.status === 'stopped' ? 'stopped' : 'failed',
-          summary: m.summary,
-          taskId: m.task_id,
-          totalTokens: m.usage?.total_tokens,
-          toolUses: m.usage?.tool_uses,
-          durationMs: m.usage?.duration_ms,
+          status: tlmNotif.status === 'completed' ? 'completed' : tlmNotif.status === 'stopped' ? 'stopped' : 'failed',
+          summary: tlmNotif.summary,
+          taskId: tlmNotif.task_id,
+          totalTokens: tlmNotif.usage?.total_tokens,
+          toolUses: tlmNotif.usage?.tool_uses,
+          durationMs: tlmNotif.usage?.duration_ms,
         });
       }
       continue;
@@ -337,7 +349,7 @@ export function messagesToEvents(messages: ClaudeStreamMessage[]): SubagentEvent
 
     // 4. XML <task-notification> carriers — only present on JSONL replay or
     //    via the live JSONL tail.
-    const xml = extractTaskNotificationXml(m);
+    const xml = extractTaskNotificationXml(raw);
     if (xml) {
       const parsed = parseTaskNotificationXml(xml);
       if (parsed) {
@@ -579,7 +591,7 @@ export function applyEvents(events: SubagentEvent[]): Map<string, SubagentState>
  * The caller already has them from translation.
  */
 export function inferredClosureEvents(
-  messages: ClaudeStreamMessage[],
+  messages: JsonlNode[],
   states: Map<string, SubagentState>,
   dispatchIndices: Map<string, number>,
 ): SubagentEvent[] {
@@ -591,7 +603,9 @@ export function inferredClosureEvents(
     if (dispatchedAt === undefined) continue;
     let resultIdx = -1;
     for (let i = dispatchedAt + 1; i < messages.length; i++) {
-      if (messages[i].type === 'result') {
+      // result messages arrive as kind:'unknown' with raw.type==='result'
+      const node = messages[i];
+      if (node.kind === 'unknown' && (node.raw as { type?: string }).type === 'result') {
         resultIdx = i;
         break;
       }

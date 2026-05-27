@@ -1,6 +1,6 @@
 import { useState, useRef } from "react";
 import { api, type Session } from "@/lib/api";
-import type { ClaudeStreamMessage } from "@/types/claudeStream";
+import type { JsonlNode } from "@/types/jsonl";
 
 export interface QueuedPromptItem {
   id: string;
@@ -39,7 +39,7 @@ interface UseSendPromptArgs {
   setError: React.Dispatch<React.SetStateAction<string | null>>;
   setCurrentActivity: React.Dispatch<React.SetStateAction<string>>;
   setSelectedModel: React.Dispatch<React.SetStateAction<string>>;
-  setMessages: React.Dispatch<React.SetStateAction<ClaudeStreamMessage[]>>;
+  setMessages: React.Dispatch<React.SetStateAction<JsonlNode[]>>;
 }
 
 interface UseSendPromptReturn {
@@ -148,19 +148,20 @@ export function useSendPrompt({
         }
       }
 
-      // Add user message immediately for UI display.
+      // Add user message immediately for UI display as a JsonlNode.
       // Stamp with receivedAt so StreamMessage renders a card timestamp the
-      // same way it does for SDK-forwarded messages (main-process stamps
-      // those in lifecycle.ts#listenToMessages). The cast widens through
-      // `unknown` because we synthesize this user message locally with the
-      // renderer's loose block-array shape; ClaudeStreamMessage's
-      // SDKUserMessage variant expects the SDK's strict ContentBlockParam[]
-      // (which differs in image-source nullability and other narrow fields).
+      // same way it does for SDK-forwarded messages.
+      const receivedAt = new Date().toISOString();
       const userMessage = {
-        type: "user" as const,
-        message: { content: contentBlocks },
-        receivedAt: new Date().toISOString(),
-      } as unknown as ClaudeStreamMessage;
+        kind: 'user',
+        userKind: 'prompt',
+        sessionId: '',
+        receivedAt,
+        raw: {
+          type: 'user',
+          message: { role: 'user', content: contentBlocks },
+        },
+      } satisfies JsonlNode;
       setMessages((prev) => [...prev, userMessage]);
 
       // Update session metrics
