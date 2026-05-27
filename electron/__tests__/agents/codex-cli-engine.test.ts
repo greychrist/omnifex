@@ -3,7 +3,11 @@ import { EventEmitter } from 'node:events';
 import { Readable, Writable } from 'node:stream';
 import { spawn } from 'node:child_process';
 import { createCodexCliEngine } from '../../services/agents/codex-cli-engine';
-import type { AgentMessage, AgentPermissionRequest } from '../../services/agents/types';
+import type {
+  AgentEngineExit,
+  AgentMessage,
+  AgentPermissionRequest,
+} from '../../services/agents/types';
 
 vi.mock('node:child_process', () => ({
   spawn: vi.fn(),
@@ -665,6 +669,104 @@ describe('CodexCliEngine', () => {
       // start() never called — conversationId stays null. interrupt() should
       // resolve without writing anything (no rpc client, nothing to interrupt).
       await expect(engine.interrupt()).resolves.toBeUndefined();
+    });
+  });
+
+  describe('lifecycle (close/kill/onExit/onError)', () => {
+    async function bootEngineWithConversation(): Promise<{
+      engine: ReturnType<typeof createCodexCliEngine>;
+      fake: FakeChild;
+    }> {
+      const fake = makeFakeChild();
+      mockedSpawn.mockReturnValue(fake as never);
+
+      const engine = createCodexCliEngine({
+        tabId: 'tab-lifecycle',
+        codexBinaryPath: '/usr/local/bin/codex',
+      });
+
+      const startPromise = engine.start({
+        projectPath: '/p',
+        configDir: '/c',
+        model: 'gpt-5',
+        sessionId: 'session-uuid',
+        resume: false,
+      });
+      startPromise.catch(() => {});
+
+      await flushMicrotasks();
+
+      const startSent = JSON.parse(fake.stdin._writes[0]!.trim());
+      fake.stdout.push(
+        JSON.stringify({
+          jsonrpc: '2.0',
+          id: startSent.id,
+          result: { conversationId: 'conv-1' },
+        }) + '\n',
+      );
+
+      await startPromise;
+      return { engine, fake };
+    }
+
+    it('onExit fires when the subprocess exits', async () => {
+      const { engine, fake } = await bootEngineWithConversation();
+
+      const exits: AgentEngineExit[] = [];
+      engine.onExit((info) => exits.push(info));
+
+      fake.emit('exit', 42, 'SIGTERM');
+      await flushMicrotasks();
+
+      expect(exits.length).toBe(1);
+      expect(exits[0]!.code).toBe(42);
+      expect(exits[0]!.signal).toBe('SIGTERM');
+    });
+
+    it('onError fires for each stderr line (NDJSON-style line buffering)', async () => {
+      const { engine, fake } = await bootEngineWithConversation();
+
+      const errs: Error[] = [];
+      engine.onError((e) => errs.push(e));
+
+      fake.stderr.push('boom: missing arg\n');
+      await flushMicrotasks();
+
+      expect(errs.length).toBe(1);
+      expect(errs[0]!.message).toBe('boom: missing arg');
+
+      fake.stderr.push('first line\nsecond line\n');
+      await flushMicrotasks();
+
+      expect(errs.length).toBe(3);
+      expect(errs[1]!.message).toBe('first line');
+      expect(errs[2]!.message).toBe('second line');
+
+      fake.stderr.push('partial');
+      await flushMicrotasks();
+      // Partial line — no newline yet, so nothing should have been emitted.
+      expect(errs.length).toBe(3);
+
+      fake.stderr.push('-finish\n');
+      await flushMicrotasks();
+
+      expect(errs.length).toBe(4);
+      expect(errs[3]!.message).toBe('partial-finish');
+    });
+
+    it('close() and kill() are idempotent', async () => {
+      const { engine, fake } = await bootEngineWithConversation();
+
+      await expect(engine.close()).resolves.toBeUndefined();
+      expect(fake.kill).toHaveBeenCalledTimes(1);
+
+      // Second close — should be a no-op (no additional kill call).
+      await expect(engine.close()).resolves.toBeUndefined();
+      expect(fake.kill).toHaveBeenCalledTimes(1);
+
+      // kill() after close — also a no-op.
+      expect(() => engine.kill()).not.toThrow();
+      expect(fake.kill).toHaveBeenCalledTimes(1);
     });
   });
 });

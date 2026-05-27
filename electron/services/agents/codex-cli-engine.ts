@@ -36,10 +36,33 @@ export function createCodexCliEngine(
   let child: ChildProcessWithoutNullStreams | null = null;
   let rpc: JsonRpcClient | null = null;
   let conversationId: string | null = null;
+  let stderrBuf = '';
   const exitCallbacks: Array<(info: AgentEngineExit) => void> = [];
   const errorCallbacks: Array<(err: Error) => void> = [];
   const permissionCallbacks: Array<(r: AgentPermissionRequest) => void> = [];
   const messageCallbacks: Array<(m: AgentMessage) => void> = [];
+
+  function wireStderr(stderr: NodeJS.ReadableStream): void {
+    stderr.on('data', (chunk: Buffer | string) => {
+      stderrBuf += typeof chunk === 'string' ? chunk : chunk.toString('utf8');
+      let nl = stderrBuf.indexOf('\n');
+      while (nl !== -1) {
+        const line = stderrBuf.slice(0, nl).trim();
+        stderrBuf = stderrBuf.slice(nl + 1);
+        if (line) {
+          const err = new Error(line);
+          for (const cb of errorCallbacks) {
+            try {
+              cb(err);
+            } catch {
+              /* subscriber threw — swallow so one bad listener can't poison the rest */
+            }
+          }
+        }
+        nl = stderrBuf.indexOf('\n');
+      }
+    });
+  }
 
   function emitPermission(r: AgentPermissionRequest): void {
     for (const cb of permissionCallbacks) {
@@ -105,6 +128,10 @@ export function createCodexCliEngine(
       child = null;
     }
 
+    // Reset the stderr line buffer in case the engine is being restarted —
+    // any leftover partial line from the prior child belongs to that child.
+    stderrBuf = '';
+
     // Strip CLAUDE_CONFIG_DIR from inherited env — the Electron main process
     // sets it to the current Claude account's config dir, and letting Codex
     // see it is a silent coupling we don't want. Keep everything else (PATH,
@@ -129,6 +156,12 @@ export function createCodexCliEngine(
         try { cb(err); } catch { /* swallow */ }
       }
     });
+
+    // Surface each stderr line as an Error to onError subscribers. Mirrors
+    // the Claude engine's wireStderr — diagnostics from the Codex binary
+    // (config errors, panics, version skew) end up on stderr and need to
+    // reach the UI rather than being swallowed.
+    wireStderr(child.stderr);
 
     await new Promise<void>((resolve, reject) => {
       const childRef = child!;
@@ -221,6 +254,10 @@ export function createCodexCliEngine(
   }
 
   async function close(): Promise<void> {
+    // Idempotent: a second close() (or kill() after close()) must be a no-op.
+    // Without the early-return the bodies happen to be safe today because rpc
+    // and child are nulled below, but locking it in makes the contract explicit.
+    if (rpc === null && child === null) return;
     if (rpc) {
       rpc.close();
       rpc = null;
@@ -232,6 +269,7 @@ export function createCodexCliEngine(
   }
 
   function kill(): void {
+    if (rpc === null && child === null) return;
     if (rpc) {
       rpc.close();
       rpc = null;
