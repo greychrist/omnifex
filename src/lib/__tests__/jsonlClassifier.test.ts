@@ -69,9 +69,35 @@ describe('classifyJsonlLine', () => {
     expect(node?.kind).toBe('unknown');
   });
 
-  it('returns null for a JSONL line missing timestamp on a kind that requires it', () => {
+  it('returns null only when BOTH timestamp and receivedAt are absent on a kind that requires receivedAt', () => {
     const raw = { type: 'assistant', sessionId: 's1', message: { role: 'assistant', content: [] } };
     expect(classifyJsonlLine(raw)).toBeNull();
+  });
+
+  it('accepts a live envelope that has receivedAt but no timestamp (main-process IPC stamping)', () => {
+    // OmnifexEnvelope: live messages are stamped with receivedAt by main process.
+    // The CLI stream-json output does not include a `timestamp` field.
+    const raw = {
+      type: 'assistant',
+      sessionId: 's1',
+      message: { role: 'assistant', content: [] },
+      receivedAt: '2026-05-27T21:10:01.775Z',
+    };
+    const node = classifyJsonlLine(raw);
+    expect(node?.kind).toBe('assistant');
+    expect((node as { receivedAt?: string }).receivedAt).toBe('2026-05-27T21:10:01.775Z');
+  });
+
+  it('prefers timestamp over receivedAt when both are present (JSONL canonical wins)', () => {
+    const raw = {
+      type: 'assistant',
+      sessionId: 's1',
+      message: { role: 'assistant', content: [] },
+      timestamp: '2026-05-27T21:10:01.775Z',
+      receivedAt: '2026-05-27T21:10:02.999Z',
+    };
+    const node = classifyJsonlLine(raw);
+    expect((node as { receivedAt?: string }).receivedAt).toBe('2026-05-27T21:10:01.775Z');
   });
 
   it('classifies last-prompt lines', () => {

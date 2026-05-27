@@ -36,7 +36,17 @@ export function classifyJsonlLine(raw: unknown): JsonlNode | null {
       : typeof r.session_id === 'string'
         ? r.session_id
         : '';
-  const receivedAt = typeof r.timestamp === 'string' ? r.timestamp : null;
+  // Two valid wall-clock sources, depending on the ingress path:
+  //   - `timestamp`  → JSONL on disk (the CLI stamps it at persist time)
+  //   - `receivedAt` → live IPC stream (main process stamps it at IPC arrival;
+  //                    see OmnifexEnvelope in src/types/claudeStream.ts)
+  // Both are legitimate. Returning null only when BOTH are absent preserves
+  // Task 4's intent (no synthetic wall-clock fallback that masks data bugs)
+  // while accepting live envelopes that lack `timestamp` by design.
+  const receivedAt =
+    typeof r.timestamp === 'string' ? r.timestamp
+    : typeof r.receivedAt === 'string' ? r.receivedAt
+    : null;
 
   switch (type) {
     case 'assistant':
