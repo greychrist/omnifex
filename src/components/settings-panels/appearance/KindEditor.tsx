@@ -152,7 +152,7 @@ const IconPicker: React.FC<{ value: IconName; onChange: (v: IconName) => void }>
                 )}
                 <span
                   className="block w-full truncate text-center leading-tight text-muted-foreground"
-                  style={{ fontSize: "8px" }}
+                  style={{ fontSize: "9px" }}
                 >
                   {name}
                 </span>
