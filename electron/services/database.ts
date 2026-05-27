@@ -201,9 +201,15 @@ const migrations: Migration[] = [
       // notnull===0 means the column is already nullable; nothing to do.
       if (!accountIdCol || accountIdCol.notnull === 0) return;
 
+      // NB: plain INTEGER PRIMARY KEY (no AUTOINCREMENT). The DROP TABLE below
+      // would remove the table's row from sqlite_sequence, breaking the
+      // monotonic-id contract AUTOINCREMENT promises. We don't need it here —
+      // nothing FKs against account_path_rules.id, and lookups are by path —
+      // so we drop AUTOINCREMENT entirely (SQLite docs explicitly recommend
+      // this when not strictly needed).
       db.exec(`
         CREATE TABLE account_path_rules_new (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          id INTEGER PRIMARY KEY,
           account_id INTEGER,
           path_prefix TEXT NOT NULL,
           priority INTEGER NOT NULL DEFAULT 0,
@@ -378,11 +384,17 @@ function initSchema(db: BetterSqlite3.Database): void {
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
 
+    -- Canonical shape matches the post-migration-v10 schema so fresh installs
+    -- skip the v9/v10 rebuilds (both migrations are idempotent and will detect
+    -- the already-correct shape). account_id is nullable to allow Codex-only
+    -- rules; agent defaults to 'claude'. Plain INTEGER PRIMARY KEY (no
+    -- AUTOINCREMENT) — see migration v10's comment for why.
     CREATE TABLE IF NOT EXISTS account_path_rules (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      account_id INTEGER NOT NULL,
+      id INTEGER PRIMARY KEY,
+      account_id INTEGER,
       path_prefix TEXT NOT NULL,
       priority INTEGER NOT NULL DEFAULT 0,
+      agent TEXT NOT NULL DEFAULT 'claude',
       FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
     );
 
