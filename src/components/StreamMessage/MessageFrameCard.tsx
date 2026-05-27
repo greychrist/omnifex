@@ -138,7 +138,7 @@ export const MessageFrameCard: React.FC<MessageFrameCardProps> = ({
             </div>
           </div>
         </CardContent>
-        <CardFooter receivedAt={(message as { receivedAt?: string } | undefined)?.receivedAt} message={message} copyText={copyText} />
+        <CardFooter receivedAt={(message as { receivedAt?: string } | undefined)?.receivedAt} message={message} copyText={copyText} kindId={kindId} />
       </Card>
     </div>
   );
@@ -164,18 +164,21 @@ const CardFooter: React.FC<{
   receivedAt?: string;
   message?: JsonlNode;
   copyText?: string;
-}> = ({ receivedAt, message, copyText }) => {
+  kindId?: string;
+}> = ({ receivedAt, message, copyText, kindId }) => {
   const [copied, setCopied] = useState(false);
   const formatted = receivedAt ? formatLocalTimestamp(receivedAt) : null;
 
-  // Kind label + copy button used to be gated on config.debug.showCardKindLabel
-  // (default false), but the copy-raw-JSON button is generally useful and the
-  // type · subtype label is small enough that we always render both when a
-  // message is present. The setting is preserved in config for backward
-  // compatibility but no longer affects this rendering.
+  // Kind label shows the resolved catalog kind ID broken on its dots so the
+  // full taxonomy is visible — e.g. `assistant.text.endTurn` reads as
+  // "assistant · text · endTurn" (origin · subtype · modifier). For
+  // non-dotted kinds (e.g. `cli-stream-init`, `unknown`) the single segment
+  // renders as-is. Falls back to the raw envelope's type/subtype only when
+  // no kindId is provided (defensive — every caller should pass one).
   let kindLabel: string | null = null;
-  if (message) {
-    // Read type and subtype from the raw wire payload for the debug label.
+  if (typeof kindId === 'string' && kindId.length > 0) {
+    kindLabel = kindId.split('.').join(' · ');
+  } else if (message) {
     const raw = (message as unknown as { raw?: { type?: string; subtype?: string } }).raw ?? {};
     const t = raw.type;
     const sub = typeof raw.subtype === 'string' ? raw.subtype : null;

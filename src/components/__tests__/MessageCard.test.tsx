@@ -117,11 +117,19 @@ describe('MessageCard — footer (timestamp + copy)', () => {
     expect(footer!.textContent).toMatch(/\d{2}\/\d{2}\/\d{2}\s+\d{1,2}:\d{2}:\d{2}\s+(AM|PM)/);
   });
 
-  it('returns null when neither receivedAt nor a debug kind label is available', () => {
-    const { container } = render(<MessageCard kindId="a">body</MessageCard>);
-    // No footer divs rendered when there's nothing to show.
+  it('returns null when neither receivedAt nor a kind label is available', () => {
+    // Empty kindId AND no message AND no receivedAt → nothing to render.
+    const { container } = render(<MessageCard kindId="">body</MessageCard>);
     expect(container.querySelector('.bottom-1.right-2')).toBeNull();
     expect(container.querySelector('.bottom-1.left-2')).toBeNull();
+  });
+
+  it('renders the kind label split on dots when kindId has a value', () => {
+    // Even without a message, kindId alone renders the bottom-left label.
+    const { container } = render(<MessageCard kindId="assistant.text.endTurn">body</MessageCard>);
+    const label = container.querySelector('.bottom-1.left-2');
+    expect(label).not.toBeNull();
+    expect(label!.textContent).toMatch(/assistant\s*·\s*text\s*·\s*endTurn/);
   });
 
   it('renders the unformatted ISO string when the date is invalid', () => {
@@ -146,7 +154,7 @@ describe('MessageCard — debug mode footer (kind label + copy)', () => {
     return <>{children}</>;
   };
 
-  it('renders the type · subtype kind label + copy button when debug flag is on', async () => {
+  it('renders the kindId broken on dots + copy button', async () => {
     // Override the hook directly to flip debug.showCardKindLabel.
     const mod = await import('@/contexts/MessageRenderingContext');
     const { createDefaultConfig } = await import('@/lib/messageRenderingConfig');
@@ -172,10 +180,12 @@ describe('MessageCard — debug mode footer (kind label + copy)', () => {
       </FlipDebugProvider>,
     );
 
-    // Kind label is rendered with `type · subtype`.
+    // Kind label is rendered from kindId, split on dots. With kindId="x.y"
+    // we get "x · y" — the raw envelope's type/subtype is no longer the
+    // source of the label.
     const labelEl = document.querySelector('.bottom-1.left-2');
     expect(labelEl).not.toBeNull();
-    expect(labelEl!.textContent).toMatch(/system\s*·\s*notification/);
+    expect(labelEl!.textContent).toMatch(/x\s*·\s*y/);
 
     // Copy button is present.
     const copyBtn = labelEl!.querySelector('button[aria-label="Copy"]');
