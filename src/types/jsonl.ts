@@ -112,6 +112,8 @@ export type SystemSubtype =
   | 'init'
   | 'notification'
   | 'stop_hook_summary'
+  | 'hook_started'
+  | 'hook_response'
   | 'local_command'
   | 'api_error'
   | 'turn_duration'
