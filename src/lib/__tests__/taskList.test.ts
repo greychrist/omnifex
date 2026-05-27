@@ -464,7 +464,7 @@ describe('getTaskList', () => {
     // Constructed sequence mirroring real agent behavior:
     //  - TaskCreate creates 3 tasks (T1, T2, T3) → pending
     //  - TaskUpdate marks T1 completed
-    //  - A `result` message arrives (per-turn synthesized in the new pipeline)
+    //  - A `result` message arrives (as cli-stream-result after Task 7 refactor)
     //  - T2 and T3 should REMAIN pending (the agent hasn't done them yet)
     const messages = [
       taskCreateMsg('tu1', { subject: 'T1' }),
@@ -474,8 +474,8 @@ describe('getTaskList', () => {
       taskCreateMsg('tu3', { subject: 'T3' }),
       taskCreateResultMsg('tu3', 'task-3'),
       taskUpdateMsg('tu4', { taskId: 'task-1', status: 'completed' }),
-      // Turn-level result lands (per-turn synthesized in TUI mode, real in SDK mode)
-      { kind: 'unknown', sessionId: '', receivedAt: '', raw: { type: 'result', subtype: 'success', result: 'ok', is_error: false } } as unknown as JsonlNode,
+      // Turn-level result lands as cli-stream-result (engine-mode pipeline)
+      { kind: 'cli-stream-result', sessionId: '', receivedAt: '', raw: { type: 'result', subtype: 'success', result: 'ok', is_error: false } } as unknown as JsonlNode,
     ];
 
     const tasks = getTaskList(messages);

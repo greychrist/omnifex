@@ -710,9 +710,9 @@ describe('clearCompleted', () => {
 
 describe('hasRunningSubagent', () => {
   // Single source of truth for "is there an outstanding response we're waiting
-  // on?" — must match the predicate in classifyStandaloneKind that decides
-  // whether a `result` event renders as `result.awaiting_background`. Drift
-  // here was the bug behind "spinner gone but Awaiting Background card showing".
+  // on?" — must match the predicate used by session-derived-state to determine
+  // whether background subagents are still running. Drift here was the bug
+  // behind "spinner gone but Awaiting Background card showing".
   it('returns true for any running subagent regardless of isBackground flag', () => {
     expect(hasRunningSubagent([{ status: 'running' } as any])).toBe(true);
     expect(hasRunningSubagent([{ status: 'running', isBackground: true } as any])).toBe(true);

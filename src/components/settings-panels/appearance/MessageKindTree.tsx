@@ -20,7 +20,7 @@ type GroupId =
   | "assistant"
   | "user"
   | "system"
-  | "result"
+  | "cli"
   | "bookkeeping"
   | "fallback";
 
@@ -28,7 +28,7 @@ const GROUP_ORDER: GroupId[] = [
   "assistant",
   "user",
   "system",
-  "result",
+  "cli",
   "bookkeeping",
   "fallback",
 ];
@@ -37,7 +37,7 @@ const GROUP_LABELS: Record<GroupId, string> = {
   assistant: "Assistant message",
   user: "User message",
   system: "System",
-  result: "Turn result",
+  cli: "CLI stream",
   bookkeeping: "Bookkeeping",
   fallback: "Fallback",
 };
@@ -47,7 +47,7 @@ function groupOf(kind: MessageKindConfig): GroupId {
     case "assistant": return "assistant";
     case "user":      return "user";
     case "system":    return "system";
-    case "result":    return "result";
+    case "cli":       return "cli";
     case "bookkeeping": return "bookkeeping";
     case "fallback":  return "fallback";
   }
@@ -70,7 +70,7 @@ export const MessageKindTree: React.FC<MessageKindTreeProps> = ({
     assistant: [],
     user: [],
     system: [],
-    result: [],
+    cli: [],
     bookkeeping: [],
     fallback: [],
   };

@@ -189,7 +189,7 @@ export type IconName = (typeof ALLOWED_ICONS)[number];
 
 // ─── message kinds ──────────────────────────────────────────────────────────
 
-export type Origin = "user" | "assistant" | "system" | "result" | "bookkeeping" | "fallback";
+export type Origin = "user" | "assistant" | "system" | "cli" | "bookkeeping" | "fallback";
 export type Alignment = "left" | "right" | "full";
 export type Presentation = 'card' | 'side-line';
 export type BorderStyle = 'solid' | 'dashed';
@@ -268,14 +268,9 @@ export const DEFAULT_KINDS: MessageKindConfig[] = [
   { id: "system.status", label: "Request status", description: "Transient CLI status indicator (e.g. requesting, processing).", origin: "system", icon: "Hourglass", headerLabel: null, accentColor: "muted", alignment: "left", hiddenInCompact: true, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
   { id: "system.permission_denied", label: "Permission denied", description: "Tool call denied by permission check.", origin: "system", icon: "ShieldOff", headerLabel: null, accentColor: "red", alignment: "left", hiddenInCompact: false, compactBoundaryLocked: false, presentation: "card", borderStyle: "solid" },
 
-  // ───── RESULT ─────
-  { id: "result.success", label: "Result · success", description: "Successful turn end.", origin: "result", icon: "Check", headerLabel: null, accentColor: "green", alignment: "left", hiddenInCompact: true, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
-  { id: "result.error_during_execution", label: "Result · error during execution", description: "Turn ended with an error.", origin: "result", icon: "AlertOctagon", headerLabel: "Execution Failed", accentColor: "red", alignment: "left", hiddenInCompact: false, compactBoundaryLocked: true, presentation: "card", borderStyle: "solid" },
-  { id: "result.user_interrupt", label: "Result · user interrupt", description: "User interrupted the assistant.", origin: "result", icon: "CircleStop", headerLabel: null, accentColor: "amber", alignment: "left", hiddenInCompact: false, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
-  { id: "result.max_tokens", label: "Result · max tokens", description: "Turn ended because max_tokens was reached.", origin: "result", icon: "AlertTriangle", headerLabel: "Max tokens", accentColor: "amber", alignment: "left", hiddenInCompact: false, compactBoundaryLocked: false, presentation: "card", borderStyle: "solid" },
-  { id: "result.refusal", label: "Result · refusal", description: "Assistant declined to respond.", origin: "result", icon: "ShieldOff", headerLabel: "Refused", accentColor: "amber", alignment: "left", hiddenInCompact: false, compactBoundaryLocked: false, presentation: "card", borderStyle: "solid" },
-  { id: "result.context_window_exceeded", label: "Result · context window exceeded", description: "Conversation exceeded the model's context window.", origin: "result", icon: "AlertTriangle", headerLabel: "Context window exceeded", accentColor: "red", alignment: "left", hiddenInCompact: false, compactBoundaryLocked: false, presentation: "card", borderStyle: "solid" },
-  { id: "result.awaiting_background", label: "Awaiting background tasks", description: "Turn paused waiting for background tools.", origin: "result", icon: "Clock", headerLabel: null, accentColor: "amber", alignment: "left", hiddenInCompact: false, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
+  // ───── CLI STREAM (engine/--output-format stream-json envelopes) ─────
+  { id: "cli-stream-init", label: "CLI session init", description: "Engine-mode session initialisation envelope (system:init).", origin: "cli", icon: "Power", headerLabel: null, accentColor: "sysInit", alignment: "left", hiddenInCompact: true, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
+  { id: "cli-stream-result", label: "CLI session result", description: "Engine-mode turn result envelope (type:result).", origin: "cli", icon: "Check", headerLabel: null, accentColor: "muted", alignment: "left", hiddenInCompact: true, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
 
   // ───── PERMISSION ─────
   { id: "permission.request", label: "Permission request", description: "Permission prompt for a tool call.", origin: "system", icon: "Shield", headerLabel: "Permission", accentColor: "amber", alignment: "left", hiddenInCompact: false, compactBoundaryLocked: false, presentation: "card", borderStyle: "solid" },

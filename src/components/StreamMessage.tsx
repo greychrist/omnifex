@@ -1330,7 +1330,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
                     return (
                       <div key={idx} className="space-y-2">
                         {content.is_error
-                          ? <KindHeader kindId="result.error_during_execution" fallbackLabel="Tool Error" fallbackIcon="AlertCircle" showIcon />
+                          ? <KindHeader kindId="system.api_error" fallbackLabel="Tool Error" fallbackIcon="AlertCircle" showIcon />
                           : <KindHeader kindId="tool.result.generic" fallbackLabel="Tool Result" />}
                         <div className="ml-6 p-2 bg-background rounded-md border">
                           <pre className="text-xs font-mono overflow-x-auto whitespace-pre-wrap">
@@ -1355,7 +1355,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
     // If any error occurs during rendering, show a safe error message
     console.error("Error rendering stream message:", error, message);
     return (
-      <MessageFrame streamKind="result.error_during_execution">
+      <MessageFrame streamKind="unknown">
         <div className="flex items-start gap-3">
           <div className="flex-1">
             <p className="text-sm font-medium">Error rendering message</p>

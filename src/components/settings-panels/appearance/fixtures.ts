@@ -30,15 +30,11 @@ export const KIND_FIXTURES: Record<string, string> = {
   "system.compact_boundary": "Conversation was compacted here.",
   "system.informational": "Context window is 72% full.",
 
-  // ── result ──
-  "result.success":
-    "Auth middleware updated. Tokens refreshed cleanly for all three sample sessions.",
-  "result.error_during_execution":
-    "Edit failed: file was modified since read. Please re-read and retry.",
-  "result.user_interrupt": "Execution stopped by user.",
-  "result.max_tokens": "Turn ended: max token budget reached.",
-  "result.refusal": "I can't help with that request.",
-  "result.context_window_exceeded": "Context window exceeded — please start a new session.",
+  // ── cli stream ──
+  "cli-stream-init":
+    "Engine-mode init · claude-opus-4-7 · /Users/greg/Repos/omnifex",
+  "cli-stream-result":
+    "Turn result · success · 4.3 s · $0.0012",
 
   // ── bookkeeping ──
   "attachment": "attachment · queued_command (task launch)",
@@ -80,13 +76,9 @@ export const KIND_DEBUG_LABELS: Record<string, string> = {
   "system.away_summary": "system · away_summary",
   "system.compact_boundary": "system · compact_boundary",
   "system.informational": "system · informational",
-  // result
-  "result.success": "result · success",
-  "result.error_during_execution": "result · error_during_execution",
-  "result.user_interrupt": "result · user_interrupt",
-  "result.max_tokens": "result · max_tokens",
-  "result.refusal": "result · refusal",
-  "result.context_window_exceeded": "result · context_window_exceeded",
+  // cli stream
+  "cli-stream-init": "system · init (engine-mode)",
+  "cli-stream-result": "result (engine-mode)",
   // bookkeeping
   "attachment": "attachment",
   "queue-operation": "queue-operation",
@@ -139,9 +131,8 @@ export const FAKE_TURN_KIND_IDS: string[] = [
   // ── bookkeeping (side-line, hidden) ──
   "attachment",           // side-line · hidden in compact
 
-  // ── results ──
-  "result.success",               // side-line · hidden in compact
-  "result.error_during_execution", // card · compactBoundaryLocked
+  // ── cli stream (side-line, hidden) ──
+  "cli-stream-result",    // side-line · hidden in compact
 
   // ── unknown fallback (dashed border) ──
   "unknown",              // side-line · dashed · visible in compact

@@ -224,16 +224,13 @@ export type SDKMessage =
 /**
  * Fields the main process attaches to every message as it crosses the IPC
  * boundary. Live messages receive `receivedAt`; JSONL-reloaded messages
- * carry `timestamp`. `synthesized` marks result rows reconstructed by
- * the JSONL synthesizer rather than emitted by the SDK.
+ * carry `timestamp`.
  */
 export interface OmnifexEnvelope {
   /** ISO timestamp stamped when the main process received the message from the SDK stream. */
   receivedAt?: string;
   /** Wall-clock timestamp from JSONL history. Distinct from `receivedAt`. */
   timestamp?: string;
-  /** True on messages reconstructed by the JSONL synthesizer rather than emitted live. */
-  synthesized?: boolean;
   /**
    * Annotation applied by OmniFex's JSONL loader to messages the SDK marked
    * `meta`. The renderer skips meta rows unless an exemption applies (skill
@@ -242,7 +239,7 @@ export interface OmnifexEnvelope {
   isMeta?: boolean;
   /**
    * Dotted kind ID set by the classifier (e.g. "user.prompt",
-   * "assistant.thinking", "result.success", "unknown"). Downstream
+   * "assistant.thinking", "cli-stream-result", "unknown"). Downstream
    * consumers — filters, blockKind, renderer, compactGrouping —
    * read this instead of re-deriving from type/subtype.
    */
@@ -352,7 +349,7 @@ export function isUserMessage(
   return msg.type === 'user';
 }
 
-/** True when `msg` is a terminal turn result — success or error subtype, real or synthesized. */
+/** True when `msg` is a terminal turn result — success or error subtype. */
 export function isResultMessage(
   msg: ClaudeStreamMessage,
 ): msg is SDKResultMessage & OmnifexEnvelope {

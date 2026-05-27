@@ -1,5 +1,25 @@
+/**
+ * Authoritative JsonlNode['kind'] catalog post-refactor (Phase 4 + 5).
+ * These are the only kinds reachable by classifyJsonlLine:
+ *
+ *   ai-title
+ *   assistant
+ *   attachment
+ *   cli-stream-init
+ *   cli-stream-result
+ *   file-history-snapshot
+ *   last-prompt
+ *   lifecycle
+ *   permission-mode
+ *   queue-operation
+ *   rate-limit
+ *   stream-event
+ *   system
+ *   unknown
+ *   user
+ */
+
 import type { JsonlNode } from '@/types/jsonl';
-import { deriveSubagents } from './subagentStreams';
 import { isSubagentPrompt } from './subagentDispatch';
 import { detectSkillInjection } from './skillDetection';
 import { isSystemContextText } from './blockKind';
@@ -73,20 +93,11 @@ export function classifyStandaloneKind(
 ): string | null {
   // permission_request comes through as 'unknown' kind with raw.type === 'permission_request'
   if (msg.kind === 'unknown') {
-    const raw = msg.raw as { type?: string; tool_name?: string; is_error?: boolean; subtype?: string };
+    const raw = msg.raw as { type?: string; tool_name?: string; subtype?: string };
     if (raw.type === 'permission_request') {
       const toolName = (raw as { tool_name?: string }).tool_name;
       if (toolName === 'AskUserQuestion') return 'permission.askUserQuestion';
       return 'permission.request';
-    }
-    if (raw.type === 'result') {
-      if (raw.is_error === true) return 'result.error_during_execution';
-      const idx = allMessages.indexOf(msg);
-      const prior = idx >= 0 ? allMessages.slice(0, idx) : allMessages;
-      if (deriveSubagents(prior).some((s) => s.status === 'running')) {
-        return 'result.awaiting_background';
-      }
-      return 'result.success';
     }
     if (raw.type === 'summary') {
       const s = raw as { summary?: string; leafUuid?: string };

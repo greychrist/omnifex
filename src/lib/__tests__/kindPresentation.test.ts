@@ -6,10 +6,9 @@ describe("kindPresentation", () => {
   it("returns the configured headerLabel for a known kind", () => {
     const cfg = createDefaultConfig();
     expect(headerLabelFor(cfg, "user.prompt")).toBe("You");
-    // v2 catalog: result.success has no headerLabel (null); the terminal kind
-    // with "Execution Failed" is result.error_during_execution.
-    expect(headerLabelFor(cfg, "result.success")).toBeNull();
-    expect(headerLabelFor(cfg, "result.error_during_execution")).toBe("Execution Failed");
+    // v2 catalog: assistant.tool-use and cli-stream-result have no headerLabel (null).
+    expect(headerLabelFor(cfg, "cli-stream-result")).toBeNull();
+    expect(headerLabelFor(cfg, "cli-stream-init")).toBeNull();
   });
 
   it("returns null when the kind's headerLabel is null", () => {
@@ -34,8 +33,8 @@ describe("kindPresentation", () => {
     const cfg = createDefaultConfig();
     expect(iconNameFor(cfg, "user.prompt")).toBe("User");
     expect(iconNameFor(cfg, "assistant.text")).toBe("Bot");
-    // v2 catalog: result.success uses "Check" (not "CheckCircle2").
-    expect(iconNameFor(cfg, "result.success")).toBe("Check");
+    // v2 catalog: cli-stream-result uses "Check".
+    expect(iconNameFor(cfg, "cli-stream-result")).toBe("Check");
   });
 
   it("bundles everything in presentationFor", () => {
