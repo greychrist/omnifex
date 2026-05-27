@@ -28,6 +28,8 @@ type InboundFrame = {
   error?: unknown;
 };
 
+const MAX_LINE_BYTES = 10 * 1024 * 1024;
+
 export function createJsonRpcClient(opts: JsonRpcClientOptions): JsonRpcClient {
   const { readable, writable, onNotification, onServerRequest } = opts;
 
@@ -90,7 +92,24 @@ export function createJsonRpcClient(opts: JsonRpcClientOptions): JsonRpcClient {
   }
 
   readable.on('data', (chunk: Buffer | string) => {
+    if (closed) return;
     lineBuf += typeof chunk === 'string' ? chunk : chunk.toString('utf8');
+    if (lineBuf.length > MAX_LINE_BYTES) {
+      const overflowErr = new Error(
+        'JSON-RPC: line buffer overflow — subprocess sent an oversized line',
+      );
+      closed = true;
+      lineBuf = '';
+      for (const pending of pendingByClientId.values()) {
+        try {
+          pending.reject(overflowErr);
+        } catch {
+          /* swallow */
+        }
+      }
+      pendingByClientId.clear();
+      return;
+    }
     let nl = lineBuf.indexOf('\n');
     while (nl !== -1) {
       const line = lineBuf.slice(0, nl);
@@ -124,6 +143,7 @@ export function createJsonRpcClient(opts: JsonRpcClientOptions): JsonRpcClient {
     id: string | number,
     payload: { result: unknown } | { error: { code: number; message: string } },
   ): void {
+    if (closed) return;
     writeFrame({ jsonrpc: '2.0', id, ...payload });
   }
 

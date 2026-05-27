@@ -154,4 +154,58 @@ describe('json-rpc-client', () => {
 
     await expect(pending).resolves.toEqual({ ok: true });
   });
+
+  it('close() rejects pending requests', async () => {
+    const { readable, writable } = makeStreams();
+    const client = createJsonRpcClient({ readable, writable });
+
+    const pending = client.request('foo');
+    // Avoid unhandled rejection while we set up.
+    pending.catch(() => {});
+
+    await new Promise((r) => setImmediate(r));
+
+    client.close();
+
+    await expect(pending).rejects.toThrow(/closed/);
+  });
+
+  it('request() after close() rejects immediately', async () => {
+    const { readable, writable } = makeStreams();
+    const client = createJsonRpcClient({ readable, writable });
+
+    client.close();
+
+    await expect(client.request('foo')).rejects.toThrow(/closed/);
+  });
+
+  it('respondToServer() after close() is a no-op', async () => {
+    const { readable, writable, writes } = makeStreams();
+    const client = createJsonRpcClient({ readable, writable, onServerRequest: () => {} });
+
+    // First, get a real server request through so we know writes work before close.
+    readable.write(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: 'srv-1',
+        method: 'applyPatchApproval',
+        params: {},
+      }) + '\n',
+    );
+    await new Promise((r) => setImmediate(r));
+
+    client.respondToServer('srv-1', { result: { ok: true } });
+    await new Promise((r) => setImmediate(r));
+
+    const writesBeforeClose = writes.length;
+    expect(writesBeforeClose).toBe(1);
+
+    client.close();
+
+    client.respondToServer('srv-x', { result: { ok: true } });
+    await new Promise((r) => setImmediate(r));
+
+    // No new write should have happened after close().
+    expect(writes.length).toBe(writesBeforeClose);
+  });
 });
