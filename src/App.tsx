@@ -490,8 +490,8 @@ function AppContent() {
                 if (entry.is_directory) {
                   try {
                     // Check if account can be resolved for this path
-                    const account = await api.resolveAccountForProject(entry.path);
-                    if (account === null) {
+                    const resolved = await api.resolveAccountForProject(entry.path);
+                    if (resolved === null || resolved.account === null) {
                       // No matching rule — prompt user to pick account
                       setPendingProjectPath(entry.path);
                       setShowProjectPicker(false);

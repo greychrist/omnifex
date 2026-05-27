@@ -2214,8 +2214,31 @@ export const api = {
     return apiCall<void>('remove_path_rule', { ruleId });
   },
 
-  async resolveAccountForProject(projectPath: string): Promise<Account | null> {
-    return apiCall<Account | null>('resolve_account_for_project', { projectPath });
+  /**
+   * Resolve which agent + account a project path routes to. Returns `null`
+   * when neither an explicit project override nor any path rule matches the
+   * path — callers MUST treat that as an error condition, not a default-
+   * account fallback.
+   *
+   * The returned shape mirrors `ResolveResult` in
+   * `electron/services/accounts.ts`:
+   * - `agent` — `'claude'` or `'codex'`; tells the renderer which engine to
+   *   launch and (in v1) whether the Claude account selector is even
+   *   applicable.
+   * - `account` — the Claude account row for `'claude'` rules. `null` for
+   *   `'codex'` rules, which don't carry a Claude account.
+   *
+   * Pre-Task-12 callers consumed `Account | null` directly. The wider shape
+   * carries the engine identity so `NewSessionForm` can prefill its agent
+   * picker from the same path-rule decision that selects the account.
+   */
+  async resolveAccountForProject(
+    projectPath: string,
+  ): Promise<{ agent: AgentKind; account: Account | null } | null> {
+    return apiCall<{ agent: AgentKind; account: Account | null } | null>(
+      'resolve_account_for_project',
+      { projectPath },
+    );
   },
 
   async setProjectAccountOverride(projectPath: string, accountId: number): Promise<void> {

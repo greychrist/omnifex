@@ -709,11 +709,15 @@ app.whenReady().then(() => {
       addPathRule: (rule: any) =>
         accountsService.addPathRule(rule.accountId ?? rule.account_id, rule.pathPrefix ?? rule.path_prefix, rule.priority),
       removePathRule: (id: any) => accountsService.removePathRule(id),
-      // IPC contract still returns the Claude account row (or null) — the
-      // `{ agent, account }` shape isn't surfaced to the renderer in this
-      // task. Later tasks (TabContext / NewSessionForm) will widen this.
+      // Returns the full `{ agent, account }` resolution so the renderer can
+      // prefill the agent picker from the same path-rule decision that
+      // picks the Claude account. Pre-Task-12 callers consumed
+      // `Account | null` directly; they now read `.account`.
+      // `null` at the top level means "no override and no matching path
+      // rule" — callers MUST surface that as an error rather than falling
+      // back to a silent default account.
       resolveForProject: (projectPath: string) =>
-        accountsService.resolve(projectPath)?.account ?? null,
+        accountsService.resolve(projectPath),
       setProjectOverride: (projectPath: string, accountId: any) =>
         accountsService.setProjectOverride(projectPath, accountId),
       listProjectOverrides: () => accountsService.listProjectOverrides(),

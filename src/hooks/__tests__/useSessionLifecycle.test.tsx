@@ -108,6 +108,7 @@ describe('useSessionLifecycle — startPersistentSession happy path', () => {
       { type: 'adaptive' },
       undefined,
       false,
+      undefined, // agent — harness doesn't pass one; lifecycle forwards undefined
     );
     expect(result.current.persistentSessionRef.current).toBe(true);
     // Listeners attached on the four claude-* channels plus session-status
@@ -156,8 +157,12 @@ describe('useSessionLifecycle — startPersistentSession happy path', () => {
 
   it('falls back to api.resolveAccountForProject when accountResolution lacks a config_dir', async () => {
     (api.startSession as any).mockResolvedValueOnce(undefined);
+    // Mirror the widened IPC shape: `{ agent, account }` with the Claude
+    // account row nested under `.account`. Pre-Task-12 the resolver
+    // returned `Account | null` directly; the hook now reads `.account`.
     (api.resolveAccountForProject as any).mockResolvedValueOnce({
-      config_dir: '/fallback-cfg',
+      agent: 'claude',
+      account: { config_dir: '/fallback-cfg' },
     });
 
     // Custom harness with empty accountResolution.

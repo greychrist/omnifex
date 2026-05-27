@@ -4,7 +4,7 @@ import { useTabState } from '@/hooks/useTabState';
 import { Tab } from '@/contexts/TabContext';
 import { Plus, ArrowLeft } from 'lucide-react';
 import { Spinner } from '@/components/ui/spinner';
-import { api, type Project, type Session, type SessionMode } from '@/lib/api';
+import { api, type AgentKind, type Project, type Session, type SessionMode } from '@/lib/api';
 import { ProjectList } from '@/components/ProjectList';
 import { SessionList } from '@/components/SessionList';
 import { AccountPickerDialog } from '@/components/AccountPickerDialog';
@@ -56,6 +56,12 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
   const [formThinkingConfig, setFormThinkingConfig] = React.useState<ThinkingConfig>('adaptive');
   const [formPermissionMode, setFormPermissionMode] = React.useState<string>('acceptEdits');
   const [formSessionStartMode, setFormSessionStartMode] = React.useState<SessionMode>('rich');
+  // Form-level agent selection. Seeded from the path-rule resolver in
+  // handleProjectClick — codex path rules pre-pick Codex so the user doesn't
+  // have to flip it manually for projects that already route there.
+  // Defaults to 'claude' for projects without a rule yet (greenfield) so
+  // the picker is never empty.
+  const [formAgent, setFormAgent] = React.useState<AgentKind>('claude');
   const [projectAccountResolution, setProjectAccountResolution] = React.useState<NewSessionFormAccountResolution | null>(null);
 
   const [projectBranches, setProjectBranches] = React.useState<string[]>([]);
@@ -137,7 +143,11 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
       // Resolve full account info (name + color + icon) for the tab badge.
       // project.account_name is a fast hint but lacks color/icon, so always
       // resolve the full Account object so the chip renders correctly.
-      api.resolveAccountForProject(project.path).then((account) => {
+      // Also seed the form's agent picker from the resolution — a codex
+      // path rule pre-picks Codex so the user doesn't have to flip it.
+      api.resolveAccountForProject(project.path).then((resolved) => {
+        const account = resolved?.account ?? null;
+        if (resolved?.agent) setFormAgent(resolved.agent);
         setProjectAccountName(account?.name ?? project.account_name ?? null);
         if (account) updateTab(tab.id, { accountName: account.name, accountColor: account.color, accountIcon: account.icon });
         else if (project.account_name) setProjectAccountName(project.account_name);
@@ -204,8 +214,8 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
 
       if (selected) {
         // Check if account can be resolved for this path
-        const account = await api.resolveAccountForProject(selected);
-        if (account === null) {
+        const resolved = await api.resolveAccountForProject(selected);
+        if (resolved === null || resolved.account === null) {
           // No matching rule — prompt user to pick account
           setPendingProjectPath(selected);
           setShowAccountPicker(true);
@@ -244,7 +254,8 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
       // default MessageSquare wins for this tab going forward.
       icon: undefined,
     });
-    api.resolveAccountForProject(session.project_path).then((account) => {
+    api.resolveAccountForProject(session.project_path).then((resolved) => {
+      const account = resolved?.account;
       if (account) updateTab(tab.id, { accountName: account.name, accountColor: account.color, accountIcon: account.icon });
     }).catch(() => {});
   };
@@ -261,6 +272,10 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
     updateTab(tab.id, {
       type: 'chat',
       title: projectName,
+      // Carry the form's agent selection onto the tab record so the rest
+      // of the system (api.startSession dispatch, session-list partition,
+      // header indicator) routes to the right engine.
+      agent: formAgent,
       sessionId: undefined,
       sessionData: undefined,
       initialProjectPath: selectedProject.path,
@@ -283,7 +298,8 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
         accountName: projectAccountResolution.account.name,
       });
     } else {
-      api.resolveAccountForProject(selectedProject.path).then((account) => {
+      api.resolveAccountForProject(selectedProject.path).then((resolved) => {
+        const account = resolved?.account;
         if (account) updateTab(tab.id, { accountName: account.name, accountColor: account.color, accountIcon: account.icon });
       }).catch(() => {});
     }
@@ -292,7 +308,8 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
   // Resolve account badge for chat tabs on mount
   useEffect(() => {
     if (tab.type === 'chat' && !tab.accountName && tab.initialProjectPath) {
-      api.resolveAccountForProject(tab.initialProjectPath).then((account) => {
+      api.resolveAccountForProject(tab.initialProjectPath).then((resolved) => {
+        const account = resolved?.account ?? null;
         updateTab(tab.id, {
           accountName: account ? account.name : 'no account',
           accountColor: account?.color,
@@ -377,6 +394,9 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                             setPermissionMode={setFormPermissionMode}
                             sessionStartMode={formSessionStartMode}
                             setSessionStartMode={setFormSessionStartMode}
+                            agent={formAgent}
+                            setAgent={setFormAgent}
+                            agentPickerDisabled={loading}
                             onStart={handleStartNewSession}
                             onChangeAccount={() => { setShowChangeAccountDialog(true); }}
                           />
@@ -535,7 +555,8 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                 const dirName = path.split('/').pop() || path.split('\\').pop() || 'Session';
                 updateTab(tab.id, { title: dirName, initialProjectPath: path });
                 // Resolve account for tab badge
-                api.resolveAccountForProject(path).then((account) => {
+                api.resolveAccountForProject(path).then((resolved) => {
+                  const account = resolved?.account;
                   if (account) updateTab(tab.id, { accountName: account.name, accountColor: account.color, accountIcon: account.icon });
                 }).catch(() => {});
               }}
@@ -646,7 +667,8 @@ export const TabContent: React.FC = () => {
           initialProjectPath: session.project_path
         });
         // Resolve account name for the tab badge
-        api.resolveAccountForProject(session.project_path).then((account) => {
+        api.resolveAccountForProject(session.project_path).then((resolved) => {
+          const account = resolved?.account;
           if (account) {
             updateTab(newTabId, { accountName: account.name, accountColor: account.color, accountIcon: account.icon });
           }
@@ -682,7 +704,8 @@ export const TabContent: React.FC = () => {
             sessionData: session,
             initialProjectPath: session.project_path
           });
-          api.resolveAccountForProject(session.project_path).then((account) => {
+          api.resolveAccountForProject(session.project_path).then((resolved) => {
+            const account = resolved?.account;
             if (account) updateTab(currentTab.id, { accountName: account.name, accountColor: account.color, accountIcon: account.icon });
           }).catch(() => {});
         } else {

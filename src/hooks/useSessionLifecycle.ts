@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState } from "react";
-import { api, type SessionMode, type SessionStatus, type ConversationStatus } from "@/lib/api";
+import { api, type AgentKind, type SessionMode, type SessionStatus, type ConversationStatus } from "@/lib/api";
 import type { ClaudeStreamMessage } from "@/types/claudeStream";
 import type { EffortLevel, ThinkingConfig } from "@/components/FloatingPromptInput";
 
@@ -20,6 +20,12 @@ interface UseSessionLifecycleArgs {
   effort: EffortLevel;
   thinkingConfig: ThinkingConfig;
   sessionStartMode?: SessionMode;
+  /**
+   * Which engine to launch. Optional for back-compat with older callers
+   * that haven't been threaded yet; main process treats missing values as
+   * `'claude'` (see engine-factory dispatch in `electron/services/sessions/`).
+   */
+  agent?: AgentKind;
   accountResolution: {
     account: { name: string; account_type: string; config_dir: string };
     match_type: string;
@@ -86,6 +92,7 @@ export function useSessionLifecycle({
   effort,
   thinkingConfig,
   sessionStartMode,
+  agent,
   accountResolution,
   persistentSessionRef,
   hasPendingStart,
@@ -270,8 +277,8 @@ export function useSessionLifecycle({
     if (!configDir && projectPath) {
       try {
         const resolved = await api.resolveAccountForProject(projectPath);
-        if (resolved) {
-          configDir = resolved.config_dir;
+        if (resolved?.account) {
+          configDir = resolved.account.config_dir;
         }
       } catch (e) {
         console.error("[startPersistentSession] resolve error:", e);
@@ -306,6 +313,7 @@ export function useSessionLifecycle({
         sdkThinking,
         sessionStartMode,
         manualAccountOverride,
+        agent,
       );
       // No state flips here. Main process owns lifecycle status and emits
       // `session-status:<tabId>` events; ClaudeCodeSession subscribes.

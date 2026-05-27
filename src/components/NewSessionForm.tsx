@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Popover } from "@/components/ui/popover";
 import { AccountBadge } from "@/components/AccountBadge";
+import { AgentPicker } from "@/components/shared/AgentPicker";
 import { cn } from "@/lib/utils";
 import {
   EFFORT_LEVELS,
@@ -14,7 +15,7 @@ import {
   type ThinkingConfig,
 } from "./ControlBar";
 import { MODELS } from "./ModelPicker";
-import type { SessionDefaults, SessionMode } from "@/lib/api";
+import type { AgentKind, SessionDefaults, SessionMode } from "@/lib/api";
 
 export interface NewSessionFormAccountResolution {
   account: { name: string; account_type: string; config_dir: string; session_defaults?: SessionDefaults };
@@ -34,6 +35,20 @@ interface NewSessionFormProps {
   setPermissionMode: (mode: string) => void;
   sessionStartMode: SessionMode;
   setSessionStartMode: (mode: SessionMode) => void;
+  /**
+   * Which engine drives the session. Lifted to the parent so the form's
+   * caller can seed it from the path-rule resolver (`api.resolveAccountForProject`
+   * returns `{ agent, account }`) and so the value survives flipping the
+   * form into a chat tab via `initialSessionConfig`.
+   */
+  agent: AgentKind;
+  setAgent: (agent: AgentKind) => void;
+  /**
+   * When true, disable the agent picker (e.g. while the form is loading or
+   * an in-flight session start is racing). The picker still renders so the
+   * current value stays visible.
+   */
+  agentPickerDisabled?: boolean;
   onStart: () => void;
   onChangeAccount?: () => void;
   className?: string;
@@ -110,10 +125,19 @@ export const NewSessionForm: React.FC<NewSessionFormProps> = ({
   setPermissionMode,
   sessionStartMode,
   setSessionStartMode,
+  agent,
+  setAgent,
+  agentPickerDisabled = false,
   onStart,
   onChangeAccount,
   className,
 }) => {
+  // Codex doesn't carry a Claude account, so the Account selector is
+  // hidden when Codex is picked — replaced with a quiet "Codex" badge
+  // so the user still gets a clear indicator of which engine will run.
+  // Task 14/15 plug in Codex sign-in state; for now the badge is text.
+  const showAccountCell = agent === 'claude' && accountResolution !== null;
+  const showCodexCell = agent === 'codex';
   const [modelOpen, setModelOpen] = useState(false);
   const [effortOpen, setEffortOpen] = useState(false);
   const [thinkingOpen, setThinkingOpen] = useState(false);
@@ -132,23 +156,29 @@ export const NewSessionForm: React.FC<NewSessionFormProps> = ({
         className,
       )}
     >
-      <h3 className="text-base font-medium">New Session</h3>
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-base font-medium">New Session</h3>
+        <AgentPicker
+          value={agent}
+          onChange={setAgent}
+          disabled={agentPickerDisabled}
+        />
+      </div>
 
-      {/* Account + 4 dropdowns on a single row, labels on top. The Account
-          cell shows the current AccountBadge in a dropdown-shaped trigger
-          that fires onChangeAccount on click — same visual rhythm as the
-          other four selectors. */}
+      {/* Account (or Codex indicator) + 4 dropdowns on a single row, labels
+          on top. The leftmost cell auto-sizes to fit whichever variant is
+          showing — full AccountBadge + edit pencil for Claude, a compact
+          "Codex" pill for Codex. The four dropdown columns split the
+          remaining space equally. */}
       <div
         className={cn(
           "grid gap-2",
-          // Account column auto-sizes to fit the badge (no clipping); the
-          // four dropdown columns split the remaining space equally.
-          accountResolution
+          showAccountCell || showCodexCell
             ? "grid-cols-[auto_1fr_1fr_1fr_1fr]"
             : "grid-cols-4",
         )}
       >
-        {accountResolution && (
+        {showAccountCell && (
           <div className="flex flex-col gap-1">
             <Label className="text-[10px] uppercase tracking-wider text-foreground/50">
               Account
@@ -162,10 +192,23 @@ export const NewSessionForm: React.FC<NewSessionFormProps> = ({
               title="Use a different account for this session"
             >
               <span className="flex items-center gap-1">
-                <AccountBadge name={accountResolution.account.name} />
+                <AccountBadge name={accountResolution!.account.name} />
               </span>
               <Pencil className="h-3 w-3 opacity-50 shrink-0" />
             </Button>
+          </div>
+        )}
+        {showCodexCell && (
+          <div className="flex flex-col gap-1">
+            <Label className="text-[10px] uppercase tracking-wider text-foreground/50">
+              Agent
+            </Label>
+            <div
+              className="inline-flex items-center justify-center h-9 px-3 rounded-md border border-input bg-muted/40 text-[11px] font-medium whitespace-nowrap"
+              title="Codex doesn't use Claude accounts. Sign-in is per-machine."
+            >
+              Codex
+            </div>
           </div>
         )}
 

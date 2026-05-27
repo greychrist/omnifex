@@ -315,6 +315,20 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   const [sessionStartMode, setSessionStartMode] = useState<SessionMode>(
     initialSessionConfig?.sessionStartMode ?? 'rich',
   );
+  // Agent picker — early `useTabContext` call (the main one further down
+  // is for tabTitle / updateTab; both consume the same context, so no
+  // ordering hazard). The form-level state seeds from `tab.agent` so a
+  // resumed-or-restored chat tab keeps its engine identity. The setter
+  // updates the tab record on each change so other readers (session
+  // start dispatch, session-list partition, header indicator) see it.
+  const tabContextForAgent = useTabContext();
+  const initialAgentFromTab: import('@/lib/api').AgentKind =
+    tabContextForAgent.getTabById(tabId || 'default')?.agent ?? 'claude';
+  const [agent, setAgentLocal] = useState<import('@/lib/api').AgentKind>(initialAgentFromTab);
+  const setAgent = useCallback((next: import('@/lib/api').AgentKind) => {
+    setAgentLocal(next);
+    tabContextForAgent.updateTab(tabId || 'default', { agent: next });
+  }, [tabContextForAgent, tabId]);
   // Unified per-tab git snapshot — project + all sibling worktrees streamed
   // from a single main-process watcher. Null until `startSessionGitWatch`
   // resolves; stays null when the project isn't a git repo.
@@ -1100,6 +1114,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     effort,
     thinkingConfig,
     sessionStartMode,
+    agent,
     accountResolution,
     persistentSessionRef,
     // Seed sessionStatus to 'starting' (instead of 'stopped') when this
@@ -1963,6 +1978,9 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
               setPermissionMode={setPermissionMode}
               sessionStartMode={sessionStartMode}
               setSessionStartMode={setSessionStartMode}
+              agent={agent}
+              setAgent={setAgent}
+              agentPickerDisabled={isSessionStarting}
               onStart={() => {
                 // sessionStarted is derived from sessionStatus — startPersistentSession
                 // sets it to 'starting' synchronously, which flips sessionStarted true.

@@ -125,17 +125,22 @@ beforeEach(() => {
   // Default: account has a summary model picked + global auto-on-close
   // is on (mocked above) → refresh icon renders. Individual tests can
   // override either by re-mocking before render.
+  // Task 12 widened resolveAccountForProject to `{ agent, account }`;
+  // the Claude account row now nests under `.account`.
   vi.mocked(api.resolveAccountForProject).mockResolvedValue({
-    id: 1,
-    name: 'Test',
-    config_dir: '/x/.claude',
-    account_type: 'pro',
-    color: null,
-    icon: null,
-    cli_path: null,
-    created_at: '',
-    updated_at: '',
-    summaryModel: 'haiku',
+    agent: 'claude',
+    account: {
+      id: 1,
+      name: 'Test',
+      config_dir: '/x/.claude',
+      account_type: 'pro',
+      color: null,
+      icon: null,
+      cli_path: null,
+      created_at: '',
+      updated_at: '',
+      summaryModel: 'haiku',
+    },
   });
 
   // Reset the keyed getSetting stub on every test so individual cases
@@ -309,17 +314,20 @@ describe('SessionList summary rendering', () => {
 
   it('hides the summary and refresh icon when the resolved account has no model selected', async () => {
     vi.mocked(api.resolveAccountForProject).mockResolvedValueOnce({
-      id: 1,
-      name: 'Test',
-      config_dir: '/x/.claude',
-      account_type: 'pro',
-      color: null,
-      icon: null,
-      cli_path: null,
-      created_at: '',
-      updated_at: '',
-      summarizeOnClose: true,
-      summaryModel: null, // no model
+      agent: 'claude',
+      account: {
+        id: 1,
+        name: 'Test',
+        config_dir: '/x/.claude',
+        account_type: 'pro',
+        color: null,
+        icon: null,
+        cli_path: null,
+        created_at: '',
+        updated_at: '',
+        summarizeOnClose: true,
+        summaryModel: null, // no model
+      },
     });
     render(<SessionList sessions={[sessionFixture]} projectPath="/x" />);
     await waitFor(() => {
