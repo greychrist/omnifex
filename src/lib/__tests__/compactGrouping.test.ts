@@ -76,9 +76,9 @@ describe('isMessageFullyHidden', () => {
     expect(isMessageFullyHidden(msg, [msg], cfg)).toBe(true);
   });
 
-  it('respects user toggle that unhides assistant.toolUse', () => {
+  it('respects user toggle that unhides assistant.tool-use', () => {
     const cfg = createDefaultConfig();
-    cfg.kinds['assistant.toolUse'].hiddenInCompact = false;
+    cfg.kinds['assistant.tool-use'].hiddenInCompact = false;
     const msg = toolUseMsg('Read', { file_path: '/a' });
     expect(isMessageFullyHidden(msg, [msg], cfg)).toBe(false);
   });
@@ -96,10 +96,13 @@ describe('isMessageFullyHidden', () => {
     expect(isMessageFullyHidden(msg, [msg], cfg)).toBe(true);
   });
 
-  it('never hides locked kinds (result.success, etc.)', () => {
+  it('never hides compactBoundaryLocked kinds even if hiddenInCompact is forced true', () => {
+    // user.prompt is compactBoundaryLocked in the v2 catalog; forcing
+    // hiddenInCompact=true on a locked kind must still return visible=false
+    // (defense in depth — mergeConfig already prevents this combination).
     const cfg = createDefaultConfig();
-    cfg.kinds['result.success'].hiddenInCompact = true; // can't actually be set, but defense in depth
-    const msg = { type: 'result', subtype: 'success' } as ClaudeStreamMessage;
+    cfg.kinds['user.prompt'].hiddenInCompact = true; // forced bypass attempt
+    const msg = userText('hi');
     expect(isMessageFullyHidden(msg, [msg], cfg)).toBe(false);
   });
 });
@@ -267,7 +270,7 @@ describe('buildCompactItems', () => {
 
   it('groups Task dispatch / return alongside other hidden tool calls when their kinds are hidden', () => {
     // Subagent dispatch / return follow the kind toggles like every other
-    // tool — assistant.toolUse and tool.result.generic are hidden by
+    // tool — assistant.tool-use and user.tool-result are hidden by
     // default, so Task tool_use + tool_result fold into the surrounding
     // hidden run instead of being special-cased visible.
     const cfg = createDefaultConfig();

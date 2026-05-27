@@ -75,31 +75,35 @@ describe('classifyStandaloneKind', () => {
     expect(classifyStandaloneKind(summary(), [])).toBe('summary.compaction');
   });
 
-  describe('result.error gating: only on is_error===true', () => {
+  it('classifies an error result as result.error_during_execution', () => {
+    expect(classifyStandaloneKind(resultErr(), [resultErr()])).toBe('result.error_during_execution');
+  });
+
+  describe('result.error_during_execution gating: only on is_error===true', () => {
     // Regression: the previous predicate was `subtype.includes('error')`, which
     // false-positived on benign SDK subtypes (e.g. a transient result event
     // whose subtype string contained "error" but whose is_error was false /
     // absent). The SDK canonical signal is is_error: true; we should rely on
     // that exclusively. Both real error subtypes (error_max_turns and
     // error_during_execution) carry is_error: true, so this loses no signal.
-    it('does NOT classify error_max_turns without is_error as result.error', () => {
+    it('does NOT classify error_max_turns without is_error as result.error_during_execution', () => {
       const r = { type: 'result', subtype: 'error_max_turns', result: '' } as unknown as ClaudeStreamMessage;
-      expect(classifyStandaloneKind(r, [r])).not.toBe('result.error');
+      expect(classifyStandaloneKind(r, [r])).not.toBe('result.error_during_execution');
     });
 
-    it('does NOT classify error_during_execution without is_error as result.error', () => {
+    it('does NOT classify error_during_execution without is_error as result.error_during_execution', () => {
       const r = { type: 'result', subtype: 'error_during_execution', result: '' } as unknown as ClaudeStreamMessage;
-      expect(classifyStandaloneKind(r, [r])).not.toBe('result.error');
+      expect(classifyStandaloneKind(r, [r])).not.toBe('result.error_during_execution');
     });
 
-    it('DOES classify a result with is_error: true as result.error regardless of subtype', () => {
+    it('DOES classify a result with is_error: true as result.error_during_execution regardless of subtype', () => {
       const r = { type: 'result', subtype: 'success', is_error: true, result: 'boom' } as unknown as ClaudeStreamMessage;
-      expect(classifyStandaloneKind(r, [r])).toBe('result.error');
+      expect(classifyStandaloneKind(r, [r])).toBe('result.error_during_execution');
     });
 
-    it('DOES classify error_max_turns WITH is_error: true as result.error', () => {
+    it('DOES classify error_max_turns WITH is_error: true as result.error_during_execution', () => {
       const r = { type: 'result', subtype: 'error_max_turns', is_error: true, result: '' } as unknown as ClaudeStreamMessage;
-      expect(classifyStandaloneKind(r, [r])).toBe('result.error');
+      expect(classifyStandaloneKind(r, [r])).toBe('result.error_during_execution');
     });
   });
 
@@ -248,10 +252,10 @@ describe('classifyStandaloneKind', () => {
       expect(classifyStandaloneKind(r, msgs)).toBe('result.success');
     });
 
-    it('still returns result.error when the turn errored, even with running subagent', () => {
+    it('still returns result.error_during_execution when the turn errored, even with running subagent', () => {
       const r = resultErr();
       const msgs = [agentToolUse('toolu_4', 'Agent'), r];
-      expect(classifyStandaloneKind(r, msgs)).toBe('result.error');
+      expect(classifyStandaloneKind(r, msgs)).toBe('result.error_during_execution');
     });
 
     it('returns plain result.success when no Agent/Task dispatch happened in the turn', () => {

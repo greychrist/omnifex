@@ -5,6 +5,8 @@ import type {
   Palette,
   IconName,
   IconSize,
+  Presentation,
+  BorderStyle,
   Typography,
 } from "@/lib/messageRenderingConfig";
 import { ALLOWED_ICONS, isHexColor } from "@/lib/messageRenderingConfig";
@@ -18,8 +20,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Popover } from "@/components/ui/popover";
+import { ChevronDown } from "lucide-react";
 import { IconRenderer } from "./iconMap";
 import { cn } from "@/lib/utils";
+
+// Sort once at module load. "none" pinned at the top; the rest alphabetical
+// (case-insensitive) so the picker grid is browseable.
+const SORTED_ICONS: readonly IconName[] = (() => {
+  const rest = (ALLOWED_ICONS as readonly IconName[]).filter((n) => n !== "none");
+  rest.sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+  return ((ALLOWED_ICONS as readonly IconName[]).includes("none" as IconName)
+    ? (["none" as IconName, ...rest])
+    : rest);
+})();
 
 interface KindEditorProps {
   kind: MessageKindConfig;
@@ -44,6 +58,16 @@ const ICON_SIZE_OPTIONS: { value: IconSize; label: string }[] = [
 
 const SENTINEL_DEFAULT = "__default__";
 
+const PRESENTATION_OPTIONS: { value: Presentation; label: string }[] = [
+  { value: "card", label: "Card" },
+  { value: "side-line", label: "Side line" },
+];
+
+const BORDER_OPTIONS: { value: BorderStyle; label: string }[] = [
+  { value: "solid", label: "Solid" },
+  { value: "dashed", label: "Dashed" },
+];
+
 /**
  * Resolve `kind.accentColor` (palette name OR hex) to a `#rrggbb` for the
  * native `<input type="color">`, which only accepts that exact form.
@@ -65,6 +89,74 @@ function resolveAccentHex(accentColor: string, palette: Palette): string {
   const entry = palette[accentColor as keyof typeof palette];
   return entry?.swatch ?? "#888888";
 }
+
+/**
+ * Popover-based icon picker with a 6-column grid. Sorted alphabetically with
+ * "none" pinned at the top.
+ */
+const IconPicker: React.FC<{ value: IconName; onChange: (v: IconName) => void }> = ({
+  value,
+  onChange,
+}) => {
+  const [open, setOpen] = React.useState(false);
+
+  return (
+    <Popover
+      open={open}
+      onOpenChange={setOpen}
+      align="start"
+      className="p-2 w-72"
+      trigger={
+        <button
+          type="button"
+          className="flex h-9 w-full items-center justify-between gap-2 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm hover:bg-accent focus:outline-none focus:ring-1 focus:ring-ring"
+          aria-label="Icon"
+        >
+          <span className="flex items-center gap-2">
+            {value === "none" ? (
+              <span className="text-muted-foreground text-xs">—</span>
+            ) : (
+              <IconRenderer name={value} className="h-4 w-4" />
+            )}
+            <span>{value}</span>
+          </span>
+          <ChevronDown className="h-4 w-4 opacity-50" />
+        </button>
+      }
+      content={
+        <div
+          className="grid grid-cols-6 gap-1 max-h-72 overflow-y-auto"
+          role="listbox"
+          aria-label="Icon"
+        >
+          {SORTED_ICONS.map((name) => {
+            const selected = name === value;
+            return (
+              <button
+                key={name}
+                type="button"
+                role="option"
+                aria-selected={selected}
+                title={name}
+                onClick={() => { onChange(name); setOpen(false); }}
+                className={cn(
+                  "flex h-10 w-10 items-center justify-center rounded-md border border-transparent hover:bg-accent focus:outline-none focus:ring-1 focus:ring-ring",
+                  selected && "border-primary bg-accent",
+                )}
+              >
+                {name === "none" ? (
+                  <span className="text-muted-foreground text-xs">—</span>
+                ) : (
+                  <IconRenderer name={name} className="h-4 w-4" />
+                )}
+              </button>
+            );
+          })}
+        </div>
+      }
+    />
+  );
+};
 
 export const KindEditor: React.FC<KindEditorProps> = ({
   kind,
@@ -115,17 +207,59 @@ export const KindEditor: React.FC<KindEditorProps> = ({
         />
       </div>
 
-      {/* 2. Header label + accent colour — side-by-side. The label is the
-            user-facing title that lands in the card's KindHeader; the
-            colour picker is a native <input type="color"> backed by a
-            hex text field so users can type values too. */}
-      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3">
+      {/* 2. Presentation + Border dropdowns */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-2">
+          <label htmlFor={`${kind.id}-presentation`} className="text-sm font-medium leading-none">
+            Presentation
+          </label>
+          <select
+            id={`${kind.id}-presentation`}
+            aria-label="Presentation"
+            value={kind.presentation}
+            onChange={(e) => { onChange({ presentation: e.target.value as Presentation }); }}
+            className={cn(
+              "flex h-9 w-full rounded-md border border-input bg-background px-3 py-1",
+              "text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring",
+            )}
+          >
+            {PRESENTATION_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+        </div>
+
+        <div className="space-y-2">
+          <label htmlFor={`${kind.id}-border`} className="text-sm font-medium leading-none">
+            Border
+          </label>
+          <select
+            id={`${kind.id}-border`}
+            aria-label="Border"
+            value={kind.borderStyle}
+            onChange={(e) => { onChange({ borderStyle: e.target.value as BorderStyle }); }}
+            className={cn(
+              "flex h-9 w-full rounded-md border border-input bg-background px-3 py-1",
+              "text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring",
+            )}
+          >
+            {BORDER_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {/* 3. Header label — only shown in card presentation.
+            Side-line messages don't have a visible header bar. */}
+      {kind.presentation === 'card' && (
         <div className="space-y-2">
           <Label htmlFor="header-label">Header label</Label>
           <Input
             id="header-label"
             value={kind.headerLabel ?? ""}
             placeholder="(no header)"
+            aria-label="Header label"
             onChange={(e) =>
               { onChange({
                 headerLabel: e.target.value === "" ? null : e.target.value,
@@ -136,83 +270,55 @@ export const KindEditor: React.FC<KindEditorProps> = ({
             Leave blank to hide the header bar.
           </p>
         </div>
-        <div className="space-y-2">
-          <Label htmlFor="accent-color">Accent colour</Label>
-          <div className="flex items-center gap-2">
-            {/* Native colour picker — clicking opens the OS picker. The
-                hex value is what gets written; alpha/border tinting is
-                derived from it by `accentStyleFromEntry`. */}
-            <input
-              id="accent-color"
-              type="color"
-              value={accentHex}
-              onChange={(e) => { onChange({ accentColor: e.target.value }); }}
-              className={cn(
-                "h-9 w-12 cursor-pointer rounded-md border border-border",
-                "bg-background p-1",
-                "focus:outline-none focus:ring-1 focus:ring-ring",
-              )}
-              aria-label="Accent colour picker"
-            />
-            <Input
-              value={accentHex}
-              onChange={(e) => {
-                const v = e.target.value.trim();
-                // Accept partial typing without bouncing the user — only
-                // commit when the value looks like a valid hex. Anything
-                // else is held in the controlled input via the picker's
-                // value above.
-                if (isHexColor(v)) {
-                  onChange({ accentColor: v.toLowerCase() });
-                }
-              }}
-              className="font-mono text-xs h-9 w-24"
-              aria-label="Accent colour hex"
-            />
-          </div>
-          <p className="text-caption text-muted-foreground">
-            Drives the card border and a subtle bg tint.
-          </p>
+      )}
+
+      {/* 4. Accent colour — applies to all presentations. */}
+      <div className="space-y-2">
+        <Label htmlFor="accent-color">Accent colour</Label>
+        <div className="flex items-center gap-2">
+          {/* Native colour picker — clicking opens the OS picker. The
+              hex value is what gets written; alpha/border tinting is
+              derived from it by `accentStyleFromEntry`. */}
+          <input
+            id="accent-color"
+            type="color"
+            value={accentHex}
+            onChange={(e) => { onChange({ accentColor: e.target.value }); }}
+            className={cn(
+              "h-9 w-12 cursor-pointer rounded-md border border-border",
+              "bg-background p-1",
+              "focus:outline-none focus:ring-1 focus:ring-ring",
+            )}
+            aria-label="Accent colour picker"
+          />
+          <Input
+            value={accentHex}
+            onChange={(e) => {
+              const v = e.target.value.trim();
+              // Accept partial typing without bouncing the user — only
+              // commit when the value looks like a valid hex. Anything
+              // else is held in the controlled input via the picker's
+              // value above.
+              if (isHexColor(v)) {
+                onChange({ accentColor: v.toLowerCase() });
+              }
+            }}
+            className="font-mono text-xs h-9 w-24"
+            aria-label="Accent colour hex"
+          />
         </div>
+        <p className="text-caption text-muted-foreground">
+          Drives the card border and a subtle bg tint.
+        </p>
       </div>
 
-      {/* 3. Icon — dropdown with previews */}
+      {/* 6. Icon — grid picker in a popover */}
       <div className="space-y-2">
         <Label>Icon</Label>
-        <Select
-          value={kind.icon}
-          onValueChange={(v) => { onChange({ icon: v as IconName }); }}
-        >
-          <SelectTrigger>
-            <SelectValue>
-              <div className="flex items-center gap-2">
-                {kind.icon === "none" ? (
-                  <span className="text-muted-foreground text-xs">—</span>
-                ) : (
-                  <IconRenderer name={kind.icon} className="h-4 w-4" />
-                )}
-                <span>{kind.icon}</span>
-              </div>
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent className="max-h-80">
-            {(ALLOWED_ICONS as readonly IconName[]).map((name) => (
-              <SelectItem key={name} value={name}>
-                <div className="flex items-center gap-2">
-                  {name === "none" ? (
-                    <span className="text-muted-foreground text-xs">—</span>
-                  ) : (
-                    <IconRenderer name={name} className="h-4 w-4" />
-                  )}
-                  <span>{name}</span>
-                </div>
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <IconPicker value={kind.icon} onChange={(v) => { onChange({ icon: v }); }} />
       </div>
 
-      {/* 4. Icon chrome — per-kind overrides for the icon's size, border,
+      {/* 7. Icon chrome — per-kind overrides for the icon's size, border,
             and background opacity. Inherits from the global Typography →
             Card icon defaults when unset. */}
       <div className="space-y-3 pt-3 border-t border-border">
@@ -313,9 +419,23 @@ export const KindEditor: React.FC<KindEditorProps> = ({
         </div>
       </div>
 
+      {/* 8. Show raw payload — diagnostic toggle, only for the unknown catch-all. */}
+      {kind.id === 'unknown' && (
+        <label className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            aria-label="Show raw payload"
+            checked={kind.showRawPayload ?? true}
+            onChange={(e) => { onChange({ showRawPayload: e.target.checked }); }}
+            className="h-4 w-4 rounded border border-input accent-foreground cursor-pointer"
+          />
+          <span className="text-xs">Show raw payload</span>
+        </label>
+      )}
+
       <div className="pt-2 border-t border-border flex items-center justify-between">
         <p className="text-caption text-muted-foreground">
-          Alignment and widget are not editable in v1.
+          Widget type is informational only.
         </p>
         <button
           type="button"

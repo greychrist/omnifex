@@ -44,6 +44,10 @@ export interface UserRaw extends RawLineBase {
   cwd?: string;
   promptId?: string;
   permissionMode?: string;
+  /** True when the record was synthesized by the harness, not typed by the user. */
+  isMeta?: boolean;
+  /** Set when a meta record was emitted on behalf of a specific tool_use (e.g. Skill bodies). */
+  sourceToolUseID?: string;
 }
 
 export interface AttachmentRaw extends RawLineBase {
@@ -97,6 +101,13 @@ export interface RealResultRaw extends RawLineBase {
   stop_reason?: string | null;
 }
 
+export type UserKind =
+  | 'prompt'
+  | 'tool-result'
+  | 'meta-skill'
+  | 'meta-attachment'
+  | 'meta-other';
+
 export type SystemSubtype =
   | 'init'
   | 'notification'
@@ -146,8 +157,9 @@ export interface UsageShape {
 export type JsonlNode =
   // Conversation content (persisted to JSONL)
   | { kind: 'assistant'; raw: AssistantRaw; sessionId: string; receivedAt: string }
-  | { kind: 'user'; raw: UserRaw; sessionId: string; receivedAt: string; userKind: 'prompt' | 'tool-result' }
+  | { kind: 'user'; raw: UserRaw; sessionId: string; receivedAt: string; userKind: UserKind }
   | { kind: 'attachment'; raw: AttachmentRaw; sessionId: string; receivedAt: string }
+  | { kind: 'unknown'; raw: Record<string, unknown>; sessionId: string; receivedAt: string }
   // Closure carriers (background-bash plumbing)
   | { kind: 'queue-operation'; raw: QueueOpRaw; sessionId: string; receivedAt: string }
   // CLI bookkeeping (TUI-only in practice)

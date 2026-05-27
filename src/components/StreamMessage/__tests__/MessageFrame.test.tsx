@@ -1,0 +1,111 @@
+// @vitest-environment jsdom
+import { describe, it, expect, vi } from 'vitest';
+import '@testing-library/jest-dom/vitest';
+import { render } from '@testing-library/react';
+import { MessageFrame } from '@/components/StreamMessage/MessageFrame';
+import { MessageRenderingProvider } from '@/contexts/MessageRenderingContext';
+
+// Mock api — MessageRenderingProvider calls getSetting on mount, then saveSetting +
+// logWriteBatch when it resets a pre-v2 config. All three must be present.
+vi.mock('@/lib/api', () => ({
+  api: {
+    getSetting: vi.fn(async () =>
+      JSON.stringify({
+        version: 2,
+        defaultViewMode: 'verbose',
+        kinds: {
+          'user.prompt': {
+            id: 'user.prompt',
+            label: 'User prompt',
+            description: '',
+            origin: 'user',
+            icon: 'User',
+            headerLabel: 'You',
+            accentColor: 'blue',
+            alignment: 'right',
+            hiddenInCompact: false,
+            compactBoundaryLocked: true,
+            presentation: 'card',
+            borderStyle: 'solid',
+          },
+          'system.informational': {
+            id: 'system.informational',
+            label: 'Informational',
+            description: '',
+            origin: 'system',
+            icon: 'Info',
+            headerLabel: null,
+            accentColor: 'muted',
+            alignment: 'left',
+            hiddenInCompact: true,
+            compactBoundaryLocked: false,
+            presentation: 'side-line',
+            borderStyle: 'solid',
+          },
+          unknown: {
+            id: 'unknown',
+            label: 'Unknown',
+            description: '',
+            origin: 'fallback',
+            icon: 'HelpCircle',
+            headerLabel: 'Unknown',
+            accentColor: 'orange',
+            alignment: 'left',
+            hiddenInCompact: false,
+            compactBoundaryLocked: false,
+            presentation: 'side-line',
+            borderStyle: 'dashed',
+            showRawPayload: true,
+          },
+        },
+        hardFilters: {},
+        palette: {},
+        typography: {
+          header: { typeface: 'inter', size: 'sm', weight: 'semibold', italic: false },
+          content: { typeface: 'inter', size: 'sm', weight: 'normal', italic: false },
+          icon: { size: 'base', bordered: true, bgOpacity: 100 },
+        },
+        terminal: { typeface: 'jetbrains-mono', fontSize: 13, cursorStyle: 'block' },
+        debug: { showCardKindLabel: false },
+      })
+    ),
+    saveSetting: vi.fn(),
+    logWriteBatch: vi.fn(),
+  },
+}));
+
+describe('MessageFrame', () => {
+  it('renders MessageFrameCard wrapper when the kind presentation is card', async () => {
+    const { container, findByText } = render(
+      <MessageRenderingProvider>
+        <MessageFrame streamKind="user.prompt">hi</MessageFrame>
+      </MessageRenderingProvider>
+    );
+    // Wait for the provider's async config load to settle
+    await findByText('hi');
+    expect(container.querySelector('[data-frame-variant="card"]')).not.toBeNull();
+  });
+
+  it('renders MessageFrameSideLine when the kind presentation is side-line', async () => {
+    const { container, findByText } = render(
+      <MessageRenderingProvider>
+        <MessageFrame streamKind="system.informational">noise</MessageFrame>
+      </MessageRenderingProvider>
+    );
+    await findByText('noise');
+    expect(container.querySelector('[data-testid="side-line-bar"]')).not.toBeNull();
+  });
+
+  it('falls back to the unknown kind when streamKind is not in config', async () => {
+    const { container, findByText } = render(
+      <MessageRenderingProvider>
+        <MessageFrame streamKind="not.in.catalog">???</MessageFrame>
+      </MessageRenderingProvider>
+    );
+    await findByText('???');
+    // unknown defaults to side-line presentation with dashed borderStyle
+    const bar = container.querySelector('[data-testid="side-line-bar"]');
+    expect(bar).not.toBeNull();
+    expect(bar?.getAttribute('style')).toMatch(/dashed/);
+  });
+});

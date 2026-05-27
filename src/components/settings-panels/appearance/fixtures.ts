@@ -4,39 +4,52 @@
 import type { MessageKindConfig } from "@/lib/messageRenderingConfig";
 
 export const KIND_FIXTURES: Record<string, string> = {
+  // ── user ──
   "user.prompt": "Can you refactor the auth middleware to use the new token format?",
-  "user.image": "(pasted screenshot — 1024×768)",
-  "user.subagentPrompt":
-    "You are a code-review subagent. Review the diff in src/auth/*.ts for security issues.",
-  "user.sdkSystemBracket": "[Request interrupted by user]",
-  "user.systemContext":
-    "CLAUDE.md loaded. Project conventions: TDD required, services in electron/services/, IPC via preload allow-list.",
+  "user.tool-result": "The file src/auth/middleware.ts has been updated successfully.",
+  "user.meta.skill": "You are a code-review subagent. Check src/auth/*.ts for security issues.",
+  "user.meta.attachment": "(pasted screenshot — 1024×768 PNG)",
+  "user.meta.other": "[harness injection — meta record]",
+
+  // ── assistant ──
   "assistant.text":
     "I'll update `auth.ts` to read the new token format and add a migration helper. Starting with the tests now.",
   "assistant.thinking":
-    "The user wants me to change the auth flow. Let me think about backwards compatibility with existing sessions before I touch anything.",
-  "assistant.toolUse": "Running: Edit src/auth/middleware.ts",
-  "tool.result.generic": "The file src/auth/middleware.ts has been updated.",
-  "tool.result.systemReminder":
-    "Remember: integration tests must hit a real database, not mocks.",
-  "result.success":
-    "Successfully updated auth middleware and migration helper.\n\nTokens refreshed cleanly for the three sample sessions.",
-  "result.error":
-    "Failed to apply edit: file was modified since read. Please re-read and retry.",
-  "result.awaiting_background":
-    "Will be notified when verify completes.",
+    "Let me think about backwards compatibility before touching the auth flow. Existing sessions must not break.",
+  "assistant.tool-use": "Edit · src/auth/middleware.ts",
+
+  // ── system ──
   "system.init":
-    "Session ready. Model: claude-opus-4-7. Working dir: /Users/greg/Repos/omnifex. 14 tools loaded (6 MCP).",
-  "system.notification.error": "API rate limit reached — retrying in 30s",
-  "system.notification.stop": "User interrupted execution",
-  "system.notification.warn": "Tool call exceeded 10s — continuing",
-  "system.notification.info": "Session resumed from transcript",
-  "permission.request":
-    "Claude wants to run: npm install @anthropic-ai/sdk. Allow this time?",
-  "permission.askUserQuestion":
-    "Which library should we use for date formatting? (Choose: date-fns, dayjs, luxon, Other)",
-  "summary.compaction":
-    "Turn summary: user asked to refactor auth middleware; agent edited three files and ran the test suite.",
+    "Session ready. Model: claude-opus-4-7. Dir: /Users/greg/Repos/omnifex. 14 tools (6 MCP).",
+  "system.notification": "API rate limit reached — retrying in 30 s.",
+  "system.api_error": "503 Service Unavailable from api.anthropic.com — retrying.",
+  "system.stop_hook_summary": "Stop hook ran: verify passed (2.1 s).",
+  "system.local_command": "/verify",
+  "system.turn_duration": "Turn completed in 4.3 s.",
+  "system.away_summary": "While you were away: agent edited 3 files and ran the test suite.",
+  "system.compact_boundary": "Conversation was compacted here.",
+  "system.informational": "Context window is 72% full.",
+
+  // ── result ──
+  "result.success":
+    "Auth middleware updated. Tokens refreshed cleanly for all three sample sessions.",
+  "result.error_during_execution":
+    "Edit failed: file was modified since read. Please re-read and retry.",
+  "result.user_interrupt": "Execution stopped by user.",
+  "result.max_tokens": "Turn ended: max token budget reached.",
+  "result.refusal": "I can't help with that request.",
+  "result.context_window_exceeded": "Context window exceeded — please start a new session.",
+
+  // ── bookkeeping ──
+  "attachment": "attachment · queued_command (task launch)",
+  "queue-operation": "queue-operation · enqueue",
+  "permission-mode": "Permission mode changed to: acceptEdits",
+  "last-prompt": "(last prompt bookmark)",
+  "ai-title": "Refactor auth middleware",
+  "file-history-snapshot": "file-history-snapshot · src/auth/middleware.ts",
+
+  // ── unknown fallback ──
+  "unknown": "(unrecognized message type — raw payload shown above)",
 };
 
 export function previewTextForKind(kind: MessageKindConfig): string {
@@ -47,27 +60,42 @@ export function previewTextForKind(kind: MessageKindConfig): string {
 // shows on each kind. Used in SamplePreview when the debug toggle is on so
 // the preview's bottom-left label matches what the live cards print.
 export const KIND_DEBUG_LABELS: Record<string, string> = {
+  // user
   "user.prompt": "user",
-  "user.image": "user",
-  "user.subagentPrompt": "user",
-  "user.sdkSystemBracket": "user",
-  "user.systemContext": "user",
+  "user.tool-result": "user · tool_result",
+  "user.meta.skill": "user · meta · skill",
+  "user.meta.attachment": "user · meta · attachment",
+  "user.meta.other": "user · meta · other",
+  // assistant
   "assistant.text": "assistant",
-  "assistant.thinking": "assistant",
-  "assistant.toolUse": "assistant",
-  "tool.result.generic": "user",
-  "tool.result.systemReminder": "user",
-  "result.success": "result · success",
-  "result.error": "result · error",
-  "result.awaiting_background": "result · success (bg)",
+  "assistant.thinking": "assistant · thinking",
+  "assistant.tool-use": "assistant · tool_use",
+  // system
   "system.init": "system · init",
-  "system.notification.error": "system · notification",
-  "system.notification.stop": "system · notification",
-  "system.notification.warn": "system · notification",
-  "system.notification.info": "system · notification",
-  "permission.request": "permission_request",
-  "permission.askUserQuestion": "permission_request · AskUserQuestion",
-  "summary.compaction": "summary",
+  "system.notification": "system · notification",
+  "system.api_error": "system · api_error",
+  "system.stop_hook_summary": "system · stop_hook_summary",
+  "system.local_command": "system · local_command",
+  "system.turn_duration": "system · turn_duration",
+  "system.away_summary": "system · away_summary",
+  "system.compact_boundary": "system · compact_boundary",
+  "system.informational": "system · informational",
+  // result
+  "result.success": "result · success",
+  "result.error_during_execution": "result · error_during_execution",
+  "result.user_interrupt": "result · user_interrupt",
+  "result.max_tokens": "result · max_tokens",
+  "result.refusal": "result · refusal",
+  "result.context_window_exceeded": "result · context_window_exceeded",
+  // bookkeeping
+  "attachment": "attachment",
+  "queue-operation": "queue-operation",
+  "permission-mode": "permission-mode",
+  "last-prompt": "last-prompt",
+  "ai-title": "ai-title",
+  "file-history-snapshot": "file-history-snapshot",
+  // fallback
+  "unknown": "unknown",
 };
 
 export function debugLabelForKind(kind: MessageKindConfig): string {
@@ -79,17 +107,42 @@ export function debugLabelForKind(kind: MessageKindConfig): string {
 export const SAMPLE_TIMESTAMP = "4/29/26 12:34:56 PM";
 
 // ─── fake turn ──────────────────────────────────────────────────────────────
-// A short realistic sequence used in the compact/verbose turn preview. Kind
-// ids reference the same defaults.
+// A representative sequence used in the compact/verbose turn preview. One
+// entry per major kind in the v2 catalog, ordered to mirror a realistic turn:
+// user sends → skill is injected → assistant thinks + acts → result lands.
+// Hidden-in-compact kinds collapse into a "Hidden Events" group in compact
+// mode, so both visual variants are exercised.
+//
+// IDs must match the keys in DEFAULT_KINDS (see messageRenderingConfig.ts).
 
 export const FAKE_TURN_KIND_IDS: string[] = [
-  "user.prompt",
-  "user.systemContext",
-  "assistant.thinking",
-  "assistant.toolUse",
-  "tool.result.generic",
-  "assistant.toolUse",
-  "tool.result.generic",
-  "assistant.text",
-  "result.success",
+  // ── boundary-locked: always visible ──
+  "user.prompt",          // card · right-aligned · compactBoundaryLocked
+
+  // ── harness injections (side-line) ──
+  "user.meta.skill",      // side-line · visible in compact
+  "user.meta.attachment", // side-line · hidden in compact
+
+  // ── assistant turn (cards + side-lines) ──
+  "assistant.thinking",   // card · hidden in compact
+  "assistant.tool-use",   // card · hidden in compact
+  "user.tool-result",     // side-line · hidden in compact
+  "assistant.tool-use",   // card · hidden in compact (second tool call)
+  "user.tool-result",     // side-line · hidden in compact
+  "assistant.text",       // card · visible in compact
+
+  // ── system ──
+  "system.notification",      // card · visible in compact
+  "system.api_error",         // card · visible in compact
+  "system.stop_hook_summary", // side-line · hidden in compact
+
+  // ── bookkeeping (side-line, hidden) ──
+  "attachment",           // side-line · hidden in compact
+
+  // ── results ──
+  "result.success",               // side-line · hidden in compact
+  "result.error_during_execution", // card · compactBoundaryLocked
+
+  // ── unknown fallback (dashed border) ──
+  "unknown",              // side-line · dashed · visible in compact
 ];

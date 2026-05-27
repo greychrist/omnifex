@@ -6,9 +6,9 @@ The shipping app is OmniFex. Internal identifiers like `greychrist.db`, the `gre
 
 The repo migrated from Tauri 2 (Rust) to Electron (Node.js/TypeScript) in April 2026 because the Claude Agent SDK requires a Node runtime. Any reference to `src-tauri/`, `cargo`, `just`, `nix-shell`, or an Axum web server is legacy noise.
 
-## Worktrees
+## No worktrees
 
-Worktrees for this repo live in `~/Repos/personal/worktrees/omnifex/<branch-name>`. Do not use `.worktrees/` inside the repo.
+Do not create git worktrees for this repo. Work directly on branches inside the main checkout at `~/Repos/personal/omnifex`. If a skill (`using-git-worktrees`, `subagent-driven-development`) wants to create an isolated workspace, skip that step and use `git checkout -b <branch>` in the main checkout instead.
 
 ## Working Style
 

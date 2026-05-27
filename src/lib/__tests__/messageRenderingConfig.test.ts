@@ -90,14 +90,14 @@ describe("messageRenderingConfig", () => {
       }
     });
 
-    it("locks exactly the four turn-boundary kinds", () => {
-      // The compact-mode redesign shrinks the lock set to user.prompt and
-      // the three terminal result kinds. Everything else must be toggleable.
+    it("locks exactly the two turn-boundary kinds (v2 catalog)", () => {
+      // v2 catalog: only user.prompt (turn opener) and result.error_during_execution
+      // (catastrophic failure that must always be visible) are boundary-locked.
+      // The other result kinds (success, interrupt, max_tokens, etc.) are toggleable
+      // so users can hide them in compact mode if they prefer.
       const locked = DEFAULT_KINDS.filter((k) => k.compactBoundaryLocked).map((k) => k.id).sort();
       expect(locked).toEqual([
-        "result.awaiting_background",
-        "result.error",
-        "result.success",
+        "result.error_during_execution",
         "user.prompt",
       ]);
     });
@@ -118,6 +118,31 @@ describe("messageRenderingConfig", () => {
       expect(cfg.kinds["assistant.thinking"].hiddenInCompact).toBe(false);
     });
 
+    it("persists presentation, borderStyle, and showRawPayload through merge", () => {
+      const persisted = {
+        version: 2,
+        kinds: {
+          "user.prompt": { presentation: "side-line", borderStyle: "dashed" },
+          "unknown": { showRawPayload: false },
+        },
+      };
+      const merged = mergeConfig(persisted);
+      expect(merged.kinds["user.prompt"].presentation).toBe("side-line");
+      expect(merged.kinds["user.prompt"].borderStyle).toBe("dashed");
+      expect(merged.kinds["unknown"].showRawPayload).toBe(false);
+    });
+
+    it("rejects invalid presentation and borderStyle values", () => {
+      const cfg = mergeConfig({
+        kinds: {
+          "user.prompt": { presentation: "balloon", borderStyle: "dotted" },
+        },
+      });
+      // Falls back to defaults
+      expect(cfg.kinds["user.prompt"].presentation).toBe("card");
+      expect(cfg.kinds["user.prompt"].borderStyle).toBe("solid");
+    });
+
     it("merges palette entries by name", () => {
       const cfg = mergeConfig({
         palette: {
@@ -130,28 +155,26 @@ describe("messageRenderingConfig", () => {
       expect(cfg.palette.primary.border).toBe("primary/20");
     });
 
-    it("merges hard-filter toggles", () => {
-      const cfg = mergeConfig({ hardFilters: { dropBookkeeping: false } });
-      expect(cfg.hardFilters.dropBookkeeping).toBe(false);
-      // Other new fields keep their defaults
-      expect(cfg.hardFilters.dropEmptyUser).toBe(true);
+    it("merges live-overlay hard-filter toggles", () => {
+      const cfg = mergeConfig({ hardFilters: { hidePartialStreaming: true } });
+      expect(cfg.hardFilters.hidePartialStreaming).toBe(true);
+      // Other fields keep their defaults
       expect(cfg.hardFilters.hideSubagentLifecycle).toBe(false);
+      expect(cfg.hardFilters.hideHookLifecycle).toBe(false);
+      expect(cfg.hardFilters.hideRateLimitNotices).toBe(false);
     });
 
-    it("migrates legacy hardFilter keys (dropMeta → dropBookkeeping, dropTaskLifecycle → hideSubagentLifecycle, dropHookLifecycle → hideHookLifecycle)", () => {
+    it("migrates legacy hardFilter keys (dropTaskLifecycle → hideSubagentLifecycle, dropHookLifecycle → hideHookLifecycle)", () => {
       const legacyConfig = {
-        version: 1,
+        version: 2,
         hardFilters: {
           dropMeta: false,
           dropTaskLifecycle: false,
-          dropEmptyUser: false,
           dropHookLifecycle: false,
         },
       };
       const merged = mergeConfig(legacyConfig as any);
-      expect(merged.hardFilters.dropBookkeeping).toBe(false);
       expect(merged.hardFilters.hideSubagentLifecycle).toBe(false);
-      expect(merged.hardFilters.dropEmptyUser).toBe(false);
       expect(merged.hardFilters.hideHookLifecycle).toBe(false);
     });
 

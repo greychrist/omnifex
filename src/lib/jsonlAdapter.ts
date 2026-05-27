@@ -11,6 +11,47 @@ import type { ClaudeStreamMessage } from '@/types/claudeStream';
  * Returns null for overlay kinds (stream-event / rate-limit / lifecycle) —
  * those never enter messages[].
  */
+
+function deriveStreamKind(node: JsonlNode): string {
+  switch (node.kind) {
+    case 'user':
+      switch (node.userKind) {
+        case 'prompt': return 'user.prompt';
+        case 'tool-result': return 'user.tool-result';
+        case 'meta-skill': return 'user.meta.skill';
+        case 'meta-attachment': return 'user.meta.attachment';
+        case 'meta-other': return 'user.meta.other';
+      }
+      return 'user.prompt';
+    case 'assistant':
+      // assistant message-level streamKind defaults to the message's dominant
+      // block kind; per-block kind lookups happen separately via blockKind.ts.
+      return 'assistant.text';
+    case 'system':
+      return `system.${(node.raw as { subtype?: string }).subtype ?? 'informational'}`;
+    case 'attachment':       return 'attachment';
+    case 'queue-operation':  return 'queue-operation';
+    case 'last-prompt':      return 'last-prompt';
+    case 'permission-mode':  return 'permission-mode';
+    case 'ai-title':         return 'ai-title';
+    case 'file-history-snapshot': return 'file-history-snapshot';
+    case 'real-result':
+      return `result.${(node.raw as { subtype?: string }).subtype ?? 'success'}`;
+    case 'synthesized-init':
+      return 'system.init';
+    case 'synthesized-result':
+      return `result.${node.subtype}`;
+    case 'unknown':
+      return 'unknown';
+    case 'stream-event':
+    case 'rate-limit':
+    case 'lifecycle':
+      // These are overlay kinds and will return null from the adapter,
+      // so streamKind is irrelevant — but exhaustiveness requires a branch.
+      return 'overlay';
+  }
+}
+
 export function jsonlNodeToStreamMessage(node: JsonlNode): ClaudeStreamMessage | null {
   switch (node.kind) {
     case 'assistant':
@@ -26,10 +67,11 @@ export function jsonlNodeToStreamMessage(node: JsonlNode): ClaudeStreamMessage |
       if ('receivedAt' in node && node.receivedAt) {
         (raw as { receivedAt?: string }).receivedAt = node.receivedAt;
       }
+      raw.streamKind = deriveStreamKind(node);
       return raw;
     }
     case 'synthesized-init': {
-      return {
+      const msg = {
         type: 'system',
         subtype: 'init',
         session_id: node.sessionId,
@@ -37,16 +79,19 @@ export function jsonlNodeToStreamMessage(node: JsonlNode): ClaudeStreamMessage |
         receivedAt: node.receivedAt,
         synthesized: true,
       } as unknown as ClaudeStreamMessage;
+      msg.streamKind = deriveStreamKind(node);
+      return msg;
     }
     case 'real-result': {
       const raw = (node as { raw: unknown }).raw as ClaudeStreamMessage;
       if ('receivedAt' in node && node.receivedAt) {
         (raw as { receivedAt?: string }).receivedAt = node.receivedAt;
       }
+      raw.streamKind = deriveStreamKind(node);
       return raw;
     }
     case 'synthesized-result': {
-      return {
+      const msg = {
         type: 'result',
         subtype: node.subtype,
         is_error: node.isError,
@@ -63,6 +108,19 @@ export function jsonlNodeToStreamMessage(node: JsonlNode): ClaudeStreamMessage |
         receivedAt: node.receivedAt,
         synthesized: true,
       } as unknown as ClaudeStreamMessage;
+      msg.streamKind = deriveStreamKind(node);
+      return msg;
+    }
+    case 'unknown': {
+      // Pass the raw object through as a ClaudeStreamMessage so downstream
+      // consumers can still inspect the original fields. Tag it with
+      // streamKind = 'unknown' so filters and renderers can handle it.
+      const raw = node.raw as unknown as ClaudeStreamMessage;
+      raw.streamKind = 'unknown';
+      if (node.receivedAt) {
+        (raw as { receivedAt?: string }).receivedAt = node.receivedAt;
+      }
+      return raw;
     }
     case 'stream-event':
     case 'rate-limit':

@@ -232,11 +232,6 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
 
   const hardFiltersChecked = useMemo(
     () => ({
-      dropBookkeeping: config.hardFilters.dropBookkeeping,
-      dropHookSummaries: config.hardFilters.dropHookSummaries,
-      dropEmptyUser: config.hardFilters.dropEmptyUser,
-      dropClosureCarriers: config.hardFilters.dropClosureCarriers,
-      dropSystemInformational: config.hardFilters.dropSystemInformational,
       hidePartialStreaming: config.hardFilters.hidePartialStreaming,
       hideSubagentLifecycle: config.hardFilters.hideSubagentLifecycle,
       hideHookLifecycle: config.hardFilters.hideHookLifecycle,
@@ -394,46 +389,6 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
                   </button>
                 ))}
               </div>
-            </div>
-
-            {/* JSONL node filters */}
-            <div className="space-y-3 pt-4 border-t border-border">
-              <div>
-                <Label>JSONL node filters</Label>
-                <p className="text-caption text-muted-foreground mt-1">
-                  Filter messages by their source node type. Apply to every session.
-                </p>
-              </div>
-              <FilterRow
-                label="Drop bookkeeping"
-                description="last-prompt, permission-mode, ai-title, file-history-snapshot — CLI internal state with no user-facing value."
-                checked={hardFiltersChecked.dropBookkeeping}
-                onChange={(v) => { setHardFilter("dropBookkeeping", v); }}
-              />
-              <FilterRow
-                label="Drop hook summaries"
-                description="system/stop_hook_summary — post-hook execution rollups."
-                checked={hardFiltersChecked.dropHookSummaries}
-                onChange={(v) => { setHardFilter("dropHookSummaries", v); }}
-              />
-              <FilterRow
-                label="Drop empty/tool-only user messages"
-                description="User messages with no text content (typically tool_result replies)."
-                checked={hardFiltersChecked.dropEmptyUser}
-                onChange={(v) => { setHardFilter("dropEmptyUser", v); }}
-              />
-              <FilterRow
-                label="Drop closure carriers"
-                description="queue-operation and queued_command attachments — background-bash plumbing."
-                checked={hardFiltersChecked.dropClosureCarriers}
-                onChange={(v) => { setHardFilter("dropClosureCarriers", v); }}
-              />
-              <FilterRow
-                label="Drop system informational"
-                description="system/away_summary, system/local_command, system/informational — diagnostic and slash-command echoes."
-                checked={hardFiltersChecked.dropSystemInformational}
-                onChange={(v) => { setHardFilter("dropSystemInformational", v); }}
-              />
             </div>
 
             {/* Live-stream overlay filters */}

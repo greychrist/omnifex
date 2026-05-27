@@ -1,36 +1,5 @@
 import type { ClaudeStreamMessage, MessageContentBlock } from '@/types/claudeStream';
 import type { MessageRenderingConfig } from './messageRenderingConfig';
-import { isSubagentDispatch } from './subagentDispatch';
-import { KNOWN_TOOL_NAMES } from './types/toolInput';
-
-/**
- * Tool names with a specialized widget in `StreamMessage.tsx`. Matched
- * case-insensitively (the renderer lowercases the incoming name before
- * picking a widget). Subagent dispatch (Task / Agent) and any tool whose
- * name starts with `mcp__` are also "known" but handled separately.
- *
- * Derived from `KNOWN_TOOL_NAMES` (the typed bridge's tuple) so it can
- * never desync from the typed widget switch. Two adjustments to that
- * tuple's lowercased form:
- *   - `task` and `agent` are removed because subagent dispatch is
- *     handled by the separate `isSubagentDispatch(name)` branch in
- *     `isKnownToolName` below.
- *   - `askuserquestion` is added because while it doesn't render via
- *     the tool-use widget switch (it's elevated to a first-order
- *     standalone kind), per-block classification still recognizes
- *     it as a known tool to avoid falling through to
- *     `assistant.toolUse.unknown`.
- *
- * Anything not covered here OR by `isSubagentDispatch` OR by the
- * `mcp__` prefix lands in the unknown `Terminal` + JSON dump fallback
- * and classifies as `assistant.toolUse.unknown`.
- */
-const KNOWN_TOOL_NAMES_LOWER: ReadonlySet<string> = new Set([
-  ...KNOWN_TOOL_NAMES
-    .map((n) => n.toLowerCase())
-    .filter((n) => n !== 'task' && n !== 'agent'),
-  'askuserquestion',
-]);
 
 /**
  * Matches the literal prefix Claude Code prepends when surfacing hook
@@ -71,15 +40,6 @@ export function isSystemContextText(text: string): boolean {
   return false;
 }
 
-function isKnownToolName(name: unknown): boolean {
-  if (typeof name !== 'string') return false;
-  const lower = name.toLowerCase();
-  if (KNOWN_TOOL_NAMES_LOWER.has(lower)) return true;
-  if (isSubagentDispatch(name)) return true;
-  if (lower.startsWith('mcp__')) return true;
-  return false;
-}
-
 /**
  * Classify a single content block (text, tool_use, tool_result, thinking,
  * image) within its parent assistant or user message to a `MessageKindConfig`
@@ -113,11 +73,11 @@ export function classifyBlockKind(
       // tool_use with the matching tool_result as a single Q+A card, so
       // route it to its own kind for independent Appearance theming and
       // compact-mode hiding rather than blending into the generic
-      // `assistant.toolUse` accent.
+      // `assistant.tool-use` accent.
       if (block.name.toLowerCase() === 'askuserquestion') {
         return 'tool.askUserQuestion.answered';
       }
-      return isKnownToolName(block.name) ? 'assistant.toolUse' : 'assistant.toolUse.unknown';
+      return 'assistant.tool-use';
     }
     // Anthropic-hosted server-side tools (code_execution, web_search,
     // web_fetch) emit `server_tool_use` blocks rather than `tool_use`.
@@ -133,14 +93,11 @@ export function classifyBlockKind(
   if (role === 'user') {
     if (block.type === 'image') return 'user.image';
     if (block.type === 'tool_result') {
-      const inner = block.content;
-      const innerText = typeof inner === 'string'
-        ? inner
-        : Array.isArray(inner)
-          ? inner.map((p) => (typeof (p as { text?: unknown }).text === 'string' ? (p as { text: string }).text : '')).join('\n')
-          : '';
-      if (innerText.includes('<system-reminder>')) return 'tool.result.systemReminder';
-      return 'tool.result.generic';
+      // All tool_result blocks map to the single v2 catalog row `user.tool-result`.
+      // The previous per-variant split (generic vs. systemReminder) has been
+      // collapsed because the v2 catalog has a single row and per-variant
+      // sub-IDs caused the renderer's `config.kinds[id]` lookup to miss.
+      return 'user.tool-result';
     }
     // Server-side code-execution result blocks — paired with server_tool_use
     // above. Same defensive registration; the CLI surface doesn't emit

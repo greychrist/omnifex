@@ -2,7 +2,7 @@
 import React from 'react';
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, act } from '@testing-library/react';
-import { MessageCard } from '../MessageCard';
+import { MessageFrameCard as MessageCard } from '../StreamMessage/MessageFrameCard';
 import type { ClaudeStreamMessage } from '@/types/claudeStream';
 
 // useMessageRenderingConfig falls back to defaults when no provider is

@@ -1,8 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   Terminal,
-  AlertCircle,
-  CircleStop,
   Copy,
   Check,
   Download,
@@ -10,21 +8,18 @@ import {
 } from "lucide-react";
 import { detectSkillInjection } from "@/lib/skillDetection";
 import { classifyStandaloneKind } from "@/lib/messageKind";
-import { isBlockHiddenInCompact, isSystemContextText } from "@/lib/blockKind";
+import { classifyBlockKind, isBlockHiddenInCompact, isSystemContextText } from "@/lib/blockKind";
 import { summarizeHiddenEvents } from "@/lib/hiddenEventsSummary";
 import { HiddenBlocksExpander } from "@/components/HiddenBlocksExpander";
 import { SubagentReturnedMarker } from "@/components/SubagentReturnedMarker";
 import { isSubagentDispatch } from "@/lib/subagentDispatch";
 import { extractResendPayload } from "@/lib/extractResendPayload";
 import { formatDurationMs } from "@/lib/duration";
-import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
-import { accentStyleFor, swatchFor } from "@/lib/accentStyle";
-import { headerLabelFor, iconNameFor } from "@/lib/kindPresentation";
-import { contentClassNames, iconSizeClassName, iconWrapperClassName, iconWrapperStyle, typographyFontFamily } from "@/lib/typographyClasses";
-import { IconRenderer } from "@/components/settings-panels/appearance/iconMap";
+import { swatchFor } from "@/lib/accentStyle";
+import { contentClassNames, typographyFontFamily } from "@/lib/typographyClasses";
 import { KindHeader } from "@/components/KindHeader";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -40,7 +35,7 @@ import {
 } from "@/lib/types/toolInput";
 import { AnsweredAskUserQuestionCard } from "@/components/AnsweredAskUserQuestionCard";
 import { CardActionBar, CardActionButton, CardActionDivider } from "@/components/CardActionBar";
-import { fireAndLog } from "@/lib/fireAndLog";
+import { MessageFrame } from "@/components/StreamMessage/MessageFrame";
 import {
   TodoReadWidget,
   LSWidget,
@@ -236,102 +231,9 @@ const ResendExtra: React.FC<{
   );
 };
 
-/** M/D/YY H:MM:SS AM/PM in the user's local timezone. */
-function formatLocalTimestamp(iso: string): string | null {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return null;
-  const m = d.getMonth() + 1;
-  const day = d.getDate();
-  const yy = String(d.getFullYear() % 100).padStart(2, '0');
-  let h = d.getHours();
-  const ampm = h >= 12 ? 'PM' : 'AM';
-  h = h % 12 || 12;
-  const mins = String(d.getMinutes()).padStart(2, '0');
-  const secs = String(d.getSeconds()).padStart(2, '0');
-  return `${m}/${day}/${yy} ${h}:${mins}:${secs} ${ampm}`;
-}
-
-/** Bottom row for a message card: timestamp on the right, optional debug
- *  kind label + copy button on the left. The kind label renders the raw
- *  SDK type (and subtype if present) — gated by the
- *  `debug.showCardKindLabel` flag in Appearance settings. The copy button
- *  writes the full message JSON to the clipboard so the user can inspect
- *  the underlying SDK payload when a card looks mis-classified. Each half
- *  is absent when the underlying message has no data to show. */
-const CardTimestamp: React.FC<{
-  receivedAt?: string;
-  message?: ClaudeStreamMessage;
-}> = ({ receivedAt, message }) => {
-  const { config } = useMessageRenderingConfig();
-  const [copied, setCopied] = useState(false);
-  const formatted = receivedAt ? formatLocalTimestamp(receivedAt) : null;
-
-  const showKind = config.debug.showCardKindLabel && message;
-  let kindLabel: string | null = null;
-  if (showKind && message) {
-    const t = message.type;
-    // Only system / result variants carry a typed `subtype`; for everything
-    // else the label is just the bare type name.
-    const sub =
-      'subtype' in message && typeof message.subtype === 'string'
-        ? message.subtype
-        : null;
-    if (t) kindLabel = sub ? `${t} · ${sub}` : String(t);
-  }
-
-  const handleCopy = async () => {
-    if (!message) return;
-    try {
-      await navigator.clipboard.writeText(JSON.stringify(message, null, 2));
-      setCopied(true);
-      setTimeout(() => { setCopied(false); }, 1200);
-    } catch (err) {
-      console.error("Failed to copy message:", err);
-    }
-  };
-
-  if (!formatted && !kindLabel) return null;
-
-  return (
-    <>
-      {kindLabel && (
-        <div
-          className="absolute bottom-1 left-2 flex items-center gap-1.5 px-1.5 py-0.5 rounded-md border bg-background text-[10px] text-foreground/80 font-mono select-none"
-          title="message type · subtype"
-        >
-          <span className="pointer-events-none">{kindLabel}</span>
-          {message && (
-            <button
-              type="button"
-              onClick={fireAndLog('stream-message:click', handleCopy)}
-              className="p-0.5 rounded hover:bg-muted/60 hover:text-foreground transition-colors"
-              title={copied ? "Copied!" : "Copy raw message JSON"}
-              aria-label="Copy raw message JSON"
-            >
-              {copied ? (
-                <Check className="w-3 h-3 text-green-500" />
-              ) : (
-                <Copy className="w-3 h-3" />
-              )}
-            </button>
-          )}
-        </div>
-      )}
-      {formatted && (
-        <div
-          className="absolute bottom-1 right-2 px-1.5 py-0.5 rounded-md border bg-background text-[10px] text-foreground/80 font-mono pointer-events-none select-none"
-          title={receivedAt}
-        >
-          {formatted}
-        </div>
-      )}
-    </>
-  );
-};
 
 interface StreamMessageProps {
   message: ClaudeStreamMessage;
-  className?: string;
   streamMessages: ClaudeStreamMessage[];
   onLinkDetected?: (url: string) => void;
   /** When set, cost is hidden for subscription account types (e.g. "max"). */
@@ -353,7 +255,7 @@ interface StreamMessageProps {
 /**
  * Component to render a single Claude Code stream message
  */
-const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, className, streamMessages, onLinkDetected, accountType, inExpandedGroup, compact, onResend }) => {
+const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamMessages, onLinkDetected, accountType, inExpandedGroup, compact, onResend }) => {
   // State to track tool results mapped by tool call ID
   const [toolResults, setToolResults] = useState<Map<string, MessageContentBlock>>(new Map());
   
@@ -498,10 +400,9 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
     }
 
     // Fallback for any other system subtype (compact_boundary, future SDK
-    // subtypes, etc.). Without this branch the message renders to null and
-    // expanders summarized as "1 system event" reveal nothing when opened.
-    // The 'init' subtype is handled above; the explicit `!== 'notification'`
-    // guard keeps the dedicated notification renderer below reachable.
+    // subtypes, etc.). Route through MessageFrame so Appearance config takes
+    // effect. The 'init' subtype is handled above.
+    // The explicit `!== 'notification'` guard keeps the notification branch below reachable.
     if (message.type === "system" && message.subtype !== "notification") {
       const subtype = String(message.subtype);
       // System variants don't share a common text field; pick whichever
@@ -510,71 +411,31 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
         (message as { message?: unknown }).message
           ?? (message as { title?: unknown }).title
           ?? '';
-      // The whole-message classifier maps every non-init/non-notification
-      // system subtype to one of system.hook.started / system.hook.response /
-      // system.userPromptSubmit / system.unknown. Use the resolved kind's
-      // swatch for the left-rail color so Appearance customizations take
-      // effect; default values match today's gray strip.
-      const kindId = classifyStandaloneKind(message, streamMessages) ?? "system.unknown";
-      const swatch = swatchFor(renderConfig, kindId);
-      const borderStyle: React.CSSProperties = swatch ? { borderColor: swatch } : {};
-      const textStyle: React.CSSProperties = swatch ? { color: swatch } : {};
+      const streamKind = message.streamKind ?? classifyStandaloneKind(message, streamMessages) ?? "system.informational";
       return (
-        <div
-          className={cn("flex items-start gap-2 text-xs font-mono py-1.5 px-3 border-l-2", !swatch && "border-muted-foreground/40 text-muted-foreground", className)}
-          style={borderStyle}
-        >
-          <span className="opacity-70" style={textStyle}>system.{subtype}</span>
+        <MessageFrame streamKind={streamKind} message={message}>
+          <span className="text-xs font-mono opacity-70">system.{subtype}</span>
           {/* eslint-disable-next-line @typescript-eslint/no-base-to-string -- caller controls input; falls back to JSON.stringify upstream. */}
-          {text && <span className="truncate" style={textStyle}>{String(text)}</span>}
-        </div>
+          {text && <span className="text-xs font-mono truncate">{String(text)}</span>}
+        </MessageFrame>
       );
     }
 
-    // SDK notification — compact inline text styled like the "Pondering..."
-    // activity indicator. Color-coded by notification_type:
-    //   error → red     ✗
-    //   warn  → yellow  ⚠
-    //   stop  → red     ⏹ (user-initiated interrupt/cancel)
-    //   info  → muted   💬
+    // SDK notification — route through MessageFrame.
     if (message.type === "system" && message.subtype === "notification") {
-      const notifType = message.notification_type ?? 'info';
-      const isError = /error/i.test(notifType);
-      const isWarn = /warn/i.test(notifType);
-      const isStop = notifType === 'stop';
-
-      const kindId = isError
-        ? "system.notification.error"
-        : isStop
-        ? "system.notification.stop"
-        : isWarn
-        ? "system.notification.warn"
-        : "system.notification.info";
-      const swatch = swatchFor(renderConfig, kindId);
-      const textStyle: React.CSSProperties = swatch ? { color: swatch } : {};
-      const borderStyle: React.CSSProperties = swatch ? { borderColor: swatch } : {};
-
-      const icon = isStop
-        ? <CircleStop className="h-3.5 w-3.5 shrink-0" />
-        : null;
-      const symbol = isError ? '✗' : isWarn ? '⚠' : !isStop ? '💬' : null;
-
+      const streamKind = message.streamKind ?? "system.notification";
       return (
-        <div
-          className={cn("flex items-center gap-2 text-xs font-mono py-1.5 px-3 border-l-2", className)}
-          style={borderStyle}
-        >
-          {icon}
-          {symbol && <span style={textStyle}>{symbol}</span>}
-          <span style={textStyle}>
+        <MessageFrame streamKind={streamKind} message={message}>
+          <span className="text-xs font-mono">
             {message.title ? `${message.title}: ` : ''}
             {message.body ?? ''}
           </span>
-        </div>
+        </MessageFrame>
       );
     }
 
-    // Assistant message
+    // Assistant message — no outer wrapper. Each content block gets its own
+    // MessageFrame so the block's kind controls its own chrome.
     if (message.type === "assistant" && message.message) {
       const msg = message.message;
 
@@ -620,314 +481,309 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
         }
       }
 
-      let renderedSomething = false;
+      const blocks: MessageContentBlock[] = Array.isArray(msg.content) ? (msg.content as MessageContentBlock[]) : [];
 
-      const assistantStyle = accentStyleFor(renderConfig, "assistant.text");
-      const assistantSwatch = swatchFor(renderConfig, "assistant.text");
-      const assistantIconName = iconNameFor(renderConfig, "assistant.text");
-      const renderedCard = (
-        <div className="flex justify-start">
-        <Card
-          className={cn("border w-[95%] relative group/card", className)}
-          style={assistantStyle}
-        >
-          <CardActionBar message={msg} />
-          <CardContent className="p-4 pb-9">
-            <div className="flex items-start gap-3">
-              <div
-                className={iconWrapperClassName(renderConfig, "assistant.text")}
-                style={iconWrapperStyle(renderConfig, assistantSwatch, "assistant.text")}
-              >
-                <IconRenderer
-                  name={assistantIconName ?? "Bot"}
-                  className={iconSizeClassName(renderConfig, "assistant.text")}
-                />
-              </div>
-              <div className="flex-1 space-y-2 min-w-0 overflow-x-auto">
-                <KindHeader kindId="assistant.text" />
-                {(() => {
-                  const blocks: MessageContentBlock[] = Array.isArray(msg.content) ? (msg.content as MessageContentBlock[]) : [];
-                  const renderBlock = (content: MessageContentBlock, idx: number) => {
-                    // Text content - render as markdown
-                    if (content.type === "text") {
-                    if (suppressTextBlocks) return null;
-                    // MessageTextBlock.text is typed string; the previous
-                    // defensive `content.text?.text || JSON.stringify(...)`
-                    // branch was unreachable per types. If a malformed
-                    // payload sneaks in at runtime we'll see an exception
-                    // here rather than silently stringifying the whole block.
-                    const textContent = content.text;
-
-                    renderedSomething = true;
-                    return (
-                      <div key={idx} className="prose prose-sm dark:prose-invert max-w-none">
-                        <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={mdComponents}>
-                          {textContent}
-                        </ReactMarkdown>
-                      </div>
-                    );
-                  }
-
-                  // Thinking content - render with ThinkingWidget.
-                  // Skip signature-only blocks (SDK returns { thinking: "", signature: "..." }
-                  // when showThinkingSummaries is off — there's nothing to display).
-                  if (content.type === "thinking") {
-                    const thinkingText = content.thinking.trim();
-                    if (!thinkingText) return null;
-                    renderedSomething = true;
-                    return (
-                      <ThinkingWidget
-                        key={idx}
-                        thinking={content.thinking}
-                        signature={content.signature}
-                        defaultExpanded={inExpandedGroup}
-                      />
-                    );
-                  }
-                  
-                  // Tool use - render custom widgets based on tool name.
-                  // Tool inputs are narrowed from `unknown` to the SDK's
-                  // per-tool input types via `asToolInput` (see
-                  // src/lib/types/toolInput.ts). Tool names are PascalCase
-                  // per SDK convention; the older `.toLowerCase()` defense
-                  // was removed once the canonical wire shape was confirmed.
-                  if (content.type === "tool_use") {
-                    const toolName = content.name;
-                    const rawInput: unknown = content.input;
-                    const toolId = content.id;
-
-                    // Get the tool result if available
-                    const toolResult = getToolResult(toolId);
-
-                    // Function to render the appropriate tool widget
-                    const renderToolWidget = () => {
-                      // AskUserQuestion is now always elevated to its own
-                      // first-order card via the `tool.askUserQuestion.answered`
-                      // standalone-kind branch above; rendering it again
-                      // here (in-bubble for mixed-content assistant
-                      // messages) would create card-in-card. Mixed-content
-                      // cases — where the agent emits text or thinking
-                      // alongside the AskUserQuestion tool_use in the same
-                      // message — are rare and fall through to the generic
-                      // tool_use display below. If they become a problem,
-                      // the fix is to add a thin embedded variant on
-                      // AnsweredAskUserQuestionCard, not to special-case
-                      // this widget path again.
-
-                      // Task / Agent tool — subagent dispatch. Both
-                      // `isSubagentDispatch` and `asToolInputOneOf` are
-                      // now case-sensitive against the SDK's PascalCase
-                      // wire contract, so we pass `toolName` straight
-                      // through without normalization.
-                      const subagent = isSubagentDispatch(toolName)
-                        ? asToolInputOneOf(toolName, ['Task', 'Agent'], rawInput)
-                        : null;
-                      if (subagent) {
-                        renderedSomething = true;
-                        return (
-                          <TaskWidget
-                            description={subagent.input.description}
-                            prompt={subagent.input.prompt}
-                            subagentType={subagent.input.subagent_type}
-                            result={toolResult}
-                          />
-                        );
-                      }
-
-                      // Edit
-                      const editInput = asToolInput(toolName, 'Edit', rawInput);
-                      if (editInput?.file_path) {
-                        renderedSomething = true;
-                        return <EditWidget {...editInput} result={toolResult} />;
-                      }
-
-                      // MultiEdit
-                      const multiEditInput = asToolInput(toolName, 'MultiEdit', rawInput);
-                      if (multiEditInput?.file_path && multiEditInput.edits) {
-                        renderedSomething = true;
-                        return <MultiEditWidget {...multiEditInput} result={toolResult} />;
-                      }
-
-                      // MCP tools (anything starting with `mcp__`). The SDK
-                      // models these as `McpInput` (open-shaped); we pass
-                      // the raw input through to the generic MCP widget,
-                      // which already treats it as a JSON blob to display.
-                      if (toolName?.startsWith('mcp__')) {
-                        renderedSomething = true;
-                        return <MCPWidget toolName={toolName} input={rawInput as Record<string, unknown> | undefined} result={toolResult} />;
-                      }
-
-                      // TodoRead — input is empty by contract; widget reads
-                      // todos from the tool result, not the input.
-                      if (asToolInput(toolName, 'TodoRead', rawInput)) {
-                        renderedSomething = true;
-                        return <TodoReadWidget result={toolResult} />;
-                      }
-
-                      // LS
-                      const lsInput = asToolInput(toolName, 'LS', rawInput);
-                      if (lsInput?.path) {
-                        renderedSomething = true;
-                        return <LSWidget path={lsInput.path} result={toolResult} />;
-                      }
-
-                      // Read
-                      const readInput = asToolInput(toolName, 'Read', rawInput);
-                      if (readInput?.file_path) {
-                        renderedSomething = true;
-                        return <ReadWidget filePath={readInput.file_path} result={toolResult} />;
-                      }
-
-                      // Glob
-                      const globInput = asToolInput(toolName, 'Glob', rawInput);
-                      if (globInput?.pattern) {
-                        renderedSomething = true;
-                        return <GlobWidget pattern={globInput.pattern} result={toolResult} />;
-                      }
-
-                      // Bash
-                      const bashInput = asToolInput(toolName, 'Bash', rawInput);
-                      if (bashInput?.command) {
-                        renderedSomething = true;
-                        return <BashWidget command={bashInput.command} description={bashInput.description} result={toolResult} />;
-                      }
-
-                      // Write. Gate on `content !== undefined` not
-                      // truthiness — empty content is a legitimate
-                      // empty-file write (the SDK schema permits it
-                      // and Claude Code emits it for `touch`-style
-                      // operations). A truthiness check would silently
-                      // drop empty-file writes through to the generic
-                      // JSON display.
-                      const writeInput = asToolInput(toolName, 'Write', rawInput);
-                      if (writeInput?.file_path && writeInput.content !== undefined) {
-                        renderedSomething = true;
-                        return <WriteWidget filePath={writeInput.file_path} content={writeInput.content} result={toolResult} />;
-                      }
-
-                      // Grep. The `include` / `exclude` fields are carried
-                      // by `GrepInputExtended` for back-compat with older
-                      // session payloads; SDK's canonical fields are
-                      // `glob` / `type` and live on `GrepInput` proper.
-                      const grepInput = asToolInput(toolName, 'Grep', rawInput);
-                      if (grepInput?.pattern) {
-                        renderedSomething = true;
-                        return <GrepWidget pattern={grepInput.pattern} include={grepInput.include} path={grepInput.path} exclude={grepInput.exclude} result={toolResult} />;
-                      }
-
-                      // WebSearch
-                      const webSearchInput = asToolInput(toolName, 'WebSearch', rawInput);
-                      if (webSearchInput?.query) {
-                        renderedSomething = true;
-                        return <WebSearchWidget query={webSearchInput.query} result={toolResult} />;
-                      }
-
-                      // WebFetch
-                      const webFetchInput = asToolInput(toolName, 'WebFetch', rawInput);
-                      if (webFetchInput?.url) {
-                        renderedSomething = true;
-                        return <WebFetchWidget url={webFetchInput.url} prompt={webFetchInput.prompt} result={toolResult} />;
-                      }
-
-                      // No branch matched. Dev-mode diagnostic: if the
-                      // tool name was one we DO model in
-                      // `KNOWN_TOOL_NAMES` (i.e. a widget should have
-                      // matched), warn so the malformed-input case the
-                      // SDK type adoption was meant to surface doesn't
-                      // become a silent fall-through to JSON.
-                      warnUnhandledKnownTool(toolName, rawInput);
-                      return null;
-                    };
-                    
-                    // Render the tool widget
-                    const widget = renderToolWidget();
-                    if (widget) {
-                      renderedSomething = true;
-                      return <React.Fragment key={idx}>{widget}</React.Fragment>;
-                    }
-                    
-                    // Fallback to basic tool display
-                    renderedSomething = true;
-                    return (
-                      <div key={idx} className="space-y-2">
-                        <div className="flex items-center gap-2">
-                          <Terminal className="h-4 w-4 text-muted-foreground" />
-                          <span className="text-sm font-medium">
-                            Using tool: <code className="font-mono">{content.name}</code>
-                          </span>
-                        </div>
-                        {content.input && (
-                          <div className="ml-6 p-2 bg-background rounded-md border">
-                            <pre className="text-xs font-mono overflow-x-auto">
-                              {JSON.stringify(content.input, null, 2)}
-                            </pre>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  }
-                  
-                  return null;
-                  };
-
-                  const hidingActive = compact === true && inExpandedGroup !== true;
-                  if (!hidingActive) {
-                    return blocks.map((b, i) => renderBlock(b, i));
-                  }
-
-                  const out: React.ReactNode[] = [];
-                  let pendingHidden: { block: MessageContentBlock; idx: number }[] = [];
-                  const flush = () => {
-                    if (pendingHidden.length === 0) return;
-                    const items = pendingHidden;
-                    pendingHidden = [];
-                    // Synthetic message wrapper for summarizeHiddenEvents — the
-                    // helper only reads `type` + `message.content`, so the
-                    // partial shape is sufficient.
-                    const syntheticMessage = {
-                      type: 'assistant',
-                      message: { content: items.map((i) => i.block) },
-                    } as unknown as ClaudeStreamMessage;
-                    const summary = summarizeHiddenEvents([syntheticMessage]);
-                    out.push(
-                      <HiddenBlocksExpander
-                        key={`hb-${items[0].idx}`}
-                        count={items.length}
-                        summary={summary}
-                      >
-                        {items.map(({ block, idx }) => renderBlock(block, idx))}
-                      </HiddenBlocksExpander>
-                    );
-                  };
-                  for (let i = 0; i < blocks.length; i++) {
-                    const b = blocks[i];
-                    const hidden = isBlockHiddenInCompact(b, message, renderConfig);
-                    if (hidden) {
-                      pendingHidden.push({ block: b, idx: i });
-                    } else {
-                      flush();
-                      out.push(renderBlock(b, i));
-                    }
-                  }
-                  flush();
-                  return out;
-                })()}
-
-                {msg.usage && (
-                  <div className="text-xs text-muted-foreground mt-2">
-                    Tokens: {msg.usage.input_tokens} in, {msg.usage.output_tokens} out
-                  </div>
-                )}
-              </div>
+      // Render the body of a single content block (no frame wrapper — the
+      // frame is added outside this function by the caller).
+      const renderBlockBody = (content: MessageContentBlock, idx: number): React.ReactNode => {
+        // Text content - render as markdown
+        if (content.type === "text") {
+          if (suppressTextBlocks) return null;
+          const textContent = content.text;
+          return (
+            <div key={idx} className="prose prose-sm dark:prose-invert max-w-none">
+              <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={mdComponents}>
+                {textContent}
+              </ReactMarkdown>
             </div>
-          </CardContent>
-          <CardTimestamp receivedAt={message.receivedAt} message={message} />
-        </Card>
-        </div>
-      );
+          );
+        }
 
-      if (!renderedSomething) return null;
-      return renderedCard;
+        // Thinking content - render with ThinkingWidget.
+        // Skip signature-only blocks (SDK returns { thinking: "", signature: "..." }
+        // when showThinkingSummaries is off — there's nothing to display).
+        if (content.type === "thinking") {
+          const thinkingText = content.thinking.trim();
+          if (!thinkingText) return null;
+          return (
+            <ThinkingWidget
+              key={idx}
+              thinking={content.thinking}
+              signature={content.signature}
+              defaultExpanded={inExpandedGroup}
+            />
+          );
+        }
+
+        // Tool use - render custom widgets based on tool name.
+        if (content.type === "tool_use") {
+          const toolName = content.name;
+          const rawInput: unknown = content.input;
+          const toolId = content.id;
+
+          // Get the tool result if available
+          const toolResult = getToolResult(toolId);
+
+          // Function to render the appropriate tool widget
+          const renderToolWidget = () => {
+            // Task / Agent tool — subagent dispatch.
+            const subagent = isSubagentDispatch(toolName)
+              ? asToolInputOneOf(toolName, ['Task', 'Agent'], rawInput)
+              : null;
+            if (subagent) {
+              return (
+                <TaskWidget
+                  description={subagent.input.description}
+                  prompt={subagent.input.prompt}
+                  subagentType={subagent.input.subagent_type}
+                  result={toolResult}
+                />
+              );
+            }
+
+            // Edit
+            const editInput = asToolInput(toolName, 'Edit', rawInput);
+            if (editInput?.file_path) {
+              return <EditWidget {...editInput} result={toolResult} />;
+            }
+
+            // MultiEdit
+            const multiEditInput = asToolInput(toolName, 'MultiEdit', rawInput);
+            if (multiEditInput?.file_path && multiEditInput.edits) {
+              return <MultiEditWidget {...multiEditInput} result={toolResult} />;
+            }
+
+            // MCP tools (anything starting with `mcp__`).
+            if (toolName?.startsWith('mcp__')) {
+              return <MCPWidget toolName={toolName} input={rawInput as Record<string, unknown> | undefined} result={toolResult} />;
+            }
+
+            // TodoRead
+            if (asToolInput(toolName, 'TodoRead', rawInput)) {
+              return <TodoReadWidget result={toolResult} />;
+            }
+
+            // LS
+            const lsInput = asToolInput(toolName, 'LS', rawInput);
+            if (lsInput?.path) {
+              return <LSWidget path={lsInput.path} result={toolResult} />;
+            }
+
+            // Read
+            const readInput = asToolInput(toolName, 'Read', rawInput);
+            if (readInput?.file_path) {
+              return <ReadWidget filePath={readInput.file_path} result={toolResult} />;
+            }
+
+            // Glob
+            const globInput = asToolInput(toolName, 'Glob', rawInput);
+            if (globInput?.pattern) {
+              return <GlobWidget pattern={globInput.pattern} result={toolResult} />;
+            }
+
+            // Bash
+            const bashInput = asToolInput(toolName, 'Bash', rawInput);
+            if (bashInput?.command) {
+              return <BashWidget command={bashInput.command} description={bashInput.description} result={toolResult} />;
+            }
+
+            // Write
+            const writeInput = asToolInput(toolName, 'Write', rawInput);
+            if (writeInput?.file_path && writeInput.content !== undefined) {
+              return <WriteWidget filePath={writeInput.file_path} content={writeInput.content} result={toolResult} />;
+            }
+
+            // Grep
+            const grepInput = asToolInput(toolName, 'Grep', rawInput);
+            if (grepInput?.pattern) {
+              return <GrepWidget pattern={grepInput.pattern} include={grepInput.include} path={grepInput.path} exclude={grepInput.exclude} result={toolResult} />;
+            }
+
+            // WebSearch
+            const webSearchInput = asToolInput(toolName, 'WebSearch', rawInput);
+            if (webSearchInput?.query) {
+              return <WebSearchWidget query={webSearchInput.query} result={toolResult} />;
+            }
+
+            // WebFetch
+            const webFetchInput = asToolInput(toolName, 'WebFetch', rawInput);
+            if (webFetchInput?.url) {
+              return <WebFetchWidget url={webFetchInput.url} prompt={webFetchInput.prompt} result={toolResult} />;
+            }
+
+            warnUnhandledKnownTool(toolName, rawInput);
+            return null;
+          };
+
+          const widget = renderToolWidget();
+          if (widget) {
+            return <React.Fragment key={idx}>{widget}</React.Fragment>;
+          }
+
+          // Fallback to basic tool display
+          return (
+            <div key={idx} className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Terminal className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm font-medium">
+                  Using tool: <code className="font-mono">{content.name}</code>
+                </span>
+              </div>
+              {content.input && (
+                <div className="ml-6 p-2 bg-background rounded-md border">
+                  <pre className="text-xs font-mono overflow-x-auto">
+                    {JSON.stringify(content.input, null, 2)}
+                  </pre>
+                </div>
+              )}
+            </div>
+          );
+        }
+
+        return null;
+      };
+
+      // Determine which blocks are visible after suppress logic.
+      // A block is "visible" if renderBlockBody would return non-null.
+      // We need to know which blocks produce output so we can find the
+      // last card-presentation block for toolbar attachment.
+      const visibleBlocks = blocks.filter((b) => {
+        if (b.type === 'text' && suppressTextBlocks) return false;
+        if (b.type === 'thinking' && !b.thinking.trim()) return false;
+        return true;
+      });
+
+      if (visibleBlocks.length === 0) return null;
+
+      // Hoist hidingActive here so lastCardIdx can consult it.
+      const hidingActive = compact === true && inExpandedGroup !== true;
+
+      // Find the index (in visibleBlocks) of the last block whose kind has
+      // presentation:'card' AND (in compact mode) will actually be visible —
+      // not tucked inside HiddenBlocksExpander. Attaching the toolbar to a
+      // collapsed block makes it invisible to the user.
+      // Falls back to "last block of any kind" only when no card+visible block
+      // exists.
+      const lastCardIdx = (() => {
+        let last = visibleBlocks.length - 1; // fallback: last block
+        for (let i = visibleBlocks.length - 1; i >= 0; i--) {
+          const blockKind = classifyBlockKind(visibleBlocks[i], message);
+          const presentation = blockKind ? (renderConfig.kinds[blockKind]?.presentation ?? 'card') : 'card';
+          if (presentation !== 'card') continue;
+          // In compact mode, prefer a block that will actually be visible —
+          // otherwise the toolbar would end up inside HiddenBlocksExpander
+          // (collapsed by default).
+          if (hidingActive) {
+            const willBeHidden = isBlockHiddenInCompact(visibleBlocks[i], message, renderConfig);
+            if (willBeHidden) continue;
+          }
+          last = i;
+          break;
+        }
+        return last;
+      })();
+
+      // Wrap each visible block in its own MessageFrame. The toolbar is
+      // attached to the frame at `lastCardIdx`.
+      const renderWrappedBlock = (block: MessageContentBlock, visibleIdx: number, originalIdx: number): React.ReactNode => {
+        const blockKind = classifyBlockKind(block, message) ?? 'unknown';
+        const isToolbarBlock = visibleIdx === lastCardIdx;
+        const toolbar = isToolbarBlock
+          ? <CardActionBar message={msg} />
+          : undefined;
+        const body = renderBlockBody(block, originalIdx);
+        if (body === null) return null;
+        return (
+          <MessageFrame
+            key={originalIdx}
+            streamKind={blockKind}
+            message={message}
+            actionBar={toolbar}
+          >
+            {body}
+          </MessageFrame>
+        );
+      };
+
+      let renderedSomething = false;
+      let output: React.ReactNode[];
+
+      if (!hidingActive) {
+        // Map blocks back through original index for stable keys
+        let vIdx = 0;
+        output = blocks.map((b, origIdx) => {
+          if (b.type === 'text' && suppressTextBlocks) return null;
+          if (b.type === 'thinking' && !b.thinking.trim()) return null;
+          const node = renderWrappedBlock(b, vIdx, origIdx);
+          if (node !== null) { renderedSomething = true; vIdx++; }
+          return node;
+        });
+      } else {
+        // Compact mode: group hidden blocks into HiddenBlocksExpander.
+        // We need to map over all original blocks but track visible index
+        // separately.
+        const out: React.ReactNode[] = [];
+        let pendingHidden: { block: MessageContentBlock; origIdx: number; vIdx: number }[] = [];
+        let vIdx = 0;
+
+        const flush = () => {
+          if (pendingHidden.length === 0) return;
+          const items = pendingHidden;
+          pendingHidden = [];
+          const syntheticMessage = {
+            type: 'assistant',
+            message: { content: items.map((i) => i.block) },
+          } as unknown as ClaudeStreamMessage;
+          const summary = summarizeHiddenEvents([syntheticMessage]);
+          out.push(
+            <HiddenBlocksExpander
+              key={`hb-${items[0].origIdx}`}
+              count={items.length}
+              summary={summary}
+            >
+              {items.map(({ block, origIdx, vIdx: vi }) => renderWrappedBlock(block, vi, origIdx))}
+            </HiddenBlocksExpander>
+          );
+        };
+
+        for (let i = 0; i < blocks.length; i++) {
+          const b = blocks[i];
+          // Skip suppressed or empty blocks (they don't count as visible)
+          if (b.type === 'text' && suppressTextBlocks) continue;
+          if (b.type === 'thinking' && !b.thinking.trim()) continue;
+
+          const hidden = isBlockHiddenInCompact(b, message, renderConfig);
+          if (hidden) {
+            pendingHidden.push({ block: b, origIdx: i, vIdx });
+            vIdx++;
+          } else {
+            flush();
+            const node = renderWrappedBlock(b, vIdx, i);
+            vIdx++;
+            if (node !== null) {
+              renderedSomething = true;
+              out.push(node);
+            }
+          }
+        }
+        flush();
+        output = out;
+      }
+
+      const usageNode = msg.usage ? (
+        <div className="text-xs text-muted-foreground mt-2 px-1">
+          Tokens: {msg.usage.input_tokens} in, {msg.usage.output_tokens} out
+        </div>
+      ) : null;
+
+      if (!renderedSomething && !usageNode) return null;
+
+      return (
+        <>
+          {output}
+          {usageNode}
+        </>
+      );
     }
 
     // User message - handle both nested and direct content structures
@@ -991,38 +847,13 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
         const trimmed = contentStr.trim();
         const isSdkSystemMessage = trimmed.startsWith('[') && trimmed.endsWith(']') && trimmed.length < 200;
         if (isSdkSystemMessage) {
-          // Strip the brackets and render as an info-level notification
+          // Strip the brackets and route through MessageFrame so Appearance
+          // config controls the chrome (icon, accent, presentation).
           const inner = trimmed.slice(1, -1);
-          const sdkSwatch = swatchFor(renderConfig, "user.sdkSystemBracket");
-          const sdkIconName = iconNameFor(renderConfig, "user.sdkSystemBracket") ?? "ℹ";
-          const sdkHeader = headerLabelFor(renderConfig, "user.sdkSystemBracket");
-          const sdkStyle: React.CSSProperties = sdkSwatch
-            ? { borderColor: sdkSwatch, color: sdkSwatch }
-            : {};
           return (
-            <div
-              className={cn(
-                "flex items-center gap-2 text-xs font-mono py-1.5 px-3 border-l-2",
-                !sdkSwatch && "border-muted-foreground/30",
-                className,
-              )}
-              style={sdkStyle}
-            >
-              {sdkIconName !== "none" && (
-                <span
-                  className={sdkSwatch ? "" : "text-muted-foreground"}
-                  style={sdkSwatch ? { color: sdkSwatch } : undefined}
-                >
-                  <IconRenderer name={sdkIconName} className="inline h-3.5 w-3.5" />
-                </span>
-              )}
-              <span
-                className={sdkSwatch ? "" : "text-muted-foreground"}
-                style={sdkSwatch ? { color: sdkSwatch } : undefined}
-              >
-                {sdkHeader ? `${sdkHeader}: ${inner}` : inner}
-              </span>
-            </div>
+            <MessageFrame streamKind="user.sdkSystemBracket" message={message}>
+              <span className="text-xs font-mono">{inner}</span>
+            </MessageFrame>
           );
         }
       }
@@ -1042,9 +873,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
       let renderedSomething = false;
 
       // Pick card style from the configurable palette. Every variant now has
-      // a dedicated kind id so Appearance customizations apply uniformly —
-      // including the previously-hardcoded skill-injection / command /
-      // command-output cases.
+      // a dedicated kind id so Appearance customizations apply uniformly.
       const isCommand = !isToolResultOnly && !isSubagentPrompt && !skillInjection
         && contentStr.includes('<command-name>');
       const isCommandOutput = !isToolResultOnly && !isSubagentPrompt && !skillInjection
@@ -1062,70 +891,32 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
         ? "user.commandOutput"
         : "user.prompt";
 
-      const userStyle: React.CSSProperties | undefined = accentStyleFor(renderConfig, userKindId);
       const userSwatch = swatchFor(renderConfig, userKindId);
-
-      const cardStyle = {
-        className: cn("border", className),
-        style: userStyle,
-      };
-
-      const userIconName = userKindId ? iconNameFor(renderConfig, userKindId) : null;
-      // Show the configured kind header on every user-side card, including
-      // tool_result-only ones. Previously this excluded isToolResultOnly,
-      // which silently swallowed the user's customized "Tool Result" label
-      // for subagent return markers and other tool result cards.
-      const showUserHeader = !!userKindId;
-
-      const userKindIdForIcon = userKindId ?? undefined;
-      const iconSize = iconSizeClassName(renderConfig, userKindIdForIcon);
-      const fallbackIconName = isToolResultOnly
-        ? "Terminal"
-        : skillInjection
-        ? "Sparkles"
-        : isSubagentPrompt
-        ? "Bot"
-        : "User";
-      const cardIcon = (
-        <div
-          className={iconWrapperClassName(renderConfig, userKindIdForIcon)}
-          style={iconWrapperStyle(renderConfig, userSwatch, userKindIdForIcon)}
-        >
-          <IconRenderer name={userIconName ?? fallbackIconName} className={iconSize} />
-        </div>
+      const showResend = !!onResend && !isToolResultOnly && !isSubagentPrompt && !skillInjection;
+      const userActionBar = !isToolResultOnly ? (
+        <CardActionBar
+          message={msg}
+          ariaLabel="User message actions"
+          extras={showResend && onResend ? <ResendExtra msg={msg} onResend={onResend} /> : undefined}
+        />
+      ) : (
+        <CardActionBar message={msg} />
       );
 
-      const showResend = !!onResend && !isToolResultOnly && !isSubagentPrompt && !skillInjection;
-
+      // MessageFrame reads alignment, icon, accent, and header from config.
+      // We only need to pass the body content as children.
+      const streamKind = message.streamKind ?? userKindId;
       const renderedCard = (
-        <div className={isToolResultOnly ? "" : "flex justify-end"}>
-        <Card className={cn(cardStyle.className, !isToolResultOnly && "w-[95%]", "group/card relative")} style={cardStyle.style}>
-          {!isToolResultOnly ? (
-            <CardActionBar
-              message={msg}
-              ariaLabel="User message actions"
-              extras={showResend && onResend ? <ResendExtra msg={msg} onResend={onResend} /> : undefined}
-            />
-          ) : (
-            <CardActionBar message={msg} />
+        <MessageFrame streamKind={streamKind} message={message} actionBar={userActionBar}>
+          {/* Skill injection label */}
+          {skillInjection && (
+            <div
+              className="text-xs font-medium font-mono"
+              style={userSwatch ? { color: userSwatch } : undefined}
+            >
+              Skill: {skillInjection.skillName}
+            </div>
           )}
-          <CardContent className="p-4 pb-9">
-            <div className="flex items-start gap-3">
-              {cardIcon}
-              <div className="flex-1 space-y-2 min-w-0 overflow-x-auto">
-                {/* Configured KindHeader for the card. Renders once at the top
-                    of the body so per-block branches (string, image, tool_result)
-                    no longer have to repeat the header inline — and tool_result-
-                    only cards (subagent returns, etc.) don't lose the header. */}
-                {showUserHeader && userKindId && <KindHeader kindId={userKindId} />}
-                {skillInjection && (
-                  <div
-                    className="text-xs font-medium font-mono"
-                    style={userSwatch ? { color: userSwatch } : undefined}
-                  >
-                    Skill: {skillInjection.skillName}
-                  </div>
-                )}
                 {/* Render every block of the user message's content array.
                     Boundary normalization (lib/normalizeMessage) guarantees
                     `msg.content` is always an array here — JSONL strings get
@@ -1445,7 +1236,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                     return (
                       <div key={idx} className="space-y-2">
                         {content.is_error
-                          ? <KindHeader kindId="result.error" fallbackLabel="Tool Error" fallbackIcon="AlertCircle" showIcon />
+                          ? <KindHeader kindId="result.error_during_execution" fallbackLabel="Tool Error" fallbackIcon="AlertCircle" showIcon />
                           : <KindHeader kindId="tool.result.generic" fallbackLabel="Tool Result" />}
                         <div className="ml-6 p-2 bg-background rounded-md border">
                           <pre className="text-xs font-mono overflow-x-auto whitespace-pre-wrap">
@@ -1458,91 +1249,80 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
 
                   return null;
                 })}
-              </div>
-            </div>
-          </CardContent>
-          <CardTimestamp receivedAt={message.receivedAt} message={message} />
-        </Card>
-        </div>
+        </MessageFrame>
       );
       if (!renderedSomething) return null;
       return renderedCard;
     }
 
-    // Result message - render with markdown
+    // Result message — route through MessageFrame so presentation config drives chrome.
     if (message.type === "result") {
       const classifiedKind = classifyStandaloneKind(message, streamMessages);
       const resultKindId =
-        classifiedKind === "result.error"
+        classifiedKind === "result.error_during_execution"
           || classifiedKind === "result.awaiting_background"
           || classifiedKind === "result.success"
           ? classifiedKind
-          : (message.is_error === true ? "result.error" : "result.success");
-      const isError = resultKindId === "result.error";
+          : (message.is_error === true ? "result.error_during_execution" : "result.success");
+      const isError = resultKindId === "result.error_during_execution";
       const isAwaiting = resultKindId === "result.awaiting_background";
-      const resultStyle = accentStyleFor(renderConfig, resultKindId);
-      const resultSwatch = swatchFor(renderConfig, resultKindId);
-      const resultIconName = iconNameFor(renderConfig, resultKindId)
-        ?? (isError ? "AlertCircle" : isAwaiting ? "Hourglass" : "CheckCircle2");
       const resultFallbackLabel = isError
         ? "Execution Failed"
         : isAwaiting
           ? "Awaiting Background Work"
           : "Execution Complete";
+      const streamKind = message.streamKind ?? resultKindId;
 
       return (
-        <Card className={cn("border relative group/card", className)} style={resultStyle}>
-          <CardActionBar message={message} />
-          <CardContent className="p-4 pb-9">
-            <div className="flex items-start gap-3">
-              <div
-                className={iconWrapperClassName(renderConfig, resultKindId)}
-                style={iconWrapperStyle(renderConfig, resultSwatch, resultKindId)}
-              >
-                <IconRenderer name={resultIconName} className={iconSizeClassName(renderConfig, resultKindId)} />
-              </div>
-              <div className="flex-1 space-y-2 min-w-0 overflow-x-auto">
-                <KindHeader kindId={resultKindId} fallbackLabel={resultFallbackLabel} />
+        <MessageFrame
+          streamKind={streamKind}
+          message={message}
+          actionBar={<CardActionBar message={message} />}
+        >
+          {message.subtype === 'success' && message.result && (
+            <div className="prose prose-sm dark:prose-invert max-w-none">
+              <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={mdComponents}>
+                {message.result}
+              </ReactMarkdown>
+            </div>
+          )}
 
-                {message.subtype === 'success' && message.result && (
-                  <div className="prose prose-sm dark:prose-invert max-w-none">
-                    <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={mdComponents}>
-                      {message.result}
-                    </ReactMarkdown>
+          {/* SDKResultErrorMessage carries `errors: string[]` (plural). */}
+          {message.subtype !== 'success' && (() => {
+            const err = message as import('@/types/claudeStream').SDKResultErrorMessage;
+            return err.errors?.length
+              ? <div className="text-sm text-destructive">{err.errors.join('\n')}</div>
+              : null;
+          })()}
+
+          {(message.total_cost_usd !== undefined || message.duration_ms !== undefined || message.num_turns !== undefined || message.usage) && (
+            <>
+              <hr className="border-t border-border/50 my-2" />
+              <div className="text-xs text-muted-foreground space-y-1">
+                {accountType !== "max" && message.total_cost_usd !== undefined && (
+                  <div>Cost: ${message.total_cost_usd.toFixed(4)} USD</div>
+                )}
+                {message.duration_ms !== undefined && (
+                  <div>Duration: {formatDurationMs(message.duration_ms)}</div>
+                )}
+                {message.num_turns !== undefined && (
+                  <div>Turns: {message.num_turns}</div>
+                )}
+                {message.usage && (message.usage.input_tokens !== undefined || message.usage.output_tokens !== undefined) && (
+                  <div>
+                    Total tokens: {(message.usage.input_tokens ?? 0) + (message.usage.output_tokens ?? 0)}
+                    {' '}({message.usage.input_tokens ?? 0} in, {message.usage.output_tokens ?? 0} out)
                   </div>
                 )}
-
-                {/* SDKResultErrorMessage carries `errors: string[]` (plural). */}
-                {message.subtype !== 'success' && (() => {
-                  const err = message as import('@/types/claudeStream').SDKResultErrorMessage;
-                  return err.errors?.length
-                    ? <div className="text-sm text-destructive">{err.errors.join('\n')}</div>
-                    : null;
-                })()}
-
-                <hr className="border-t border-border/50 my-2" />
-                <div className="text-xs text-muted-foreground space-y-1">
-                  {accountType !== "max" && message.total_cost_usd !== undefined && (
-                    <div>Cost: ${message.total_cost_usd.toFixed(4)} USD</div>
-                  )}
-                  {message.duration_ms !== undefined && (
-                    <div>Duration: {formatDurationMs(message.duration_ms)}</div>
-                  )}
-                  {message.num_turns !== undefined && (
-                    <div>Turns: {message.num_turns}</div>
-                  )}
-                  {message.usage && (message.usage.input_tokens !== undefined || message.usage.output_tokens !== undefined) && (
-                    <div>
-                      Total tokens: {(message.usage.input_tokens ?? 0) + (message.usage.output_tokens ?? 0)}
-                      {' '}({message.usage.input_tokens ?? 0} in, {message.usage.output_tokens ?? 0} out)
-                    </div>
-                  )}
-                </div>
               </div>
-            </div>
-          </CardContent>
-          <CardTimestamp receivedAt={message.receivedAt} message={message} />
-        </Card>
+            </>
+          )}
+
+          {/* Fallback label when no other content rendered — keeps the frame visible */}
+          {!message.result && message.subtype === 'success' && (
+            <span className="text-sm text-muted-foreground">{resultFallbackLabel}</span>
+          )}
+        </MessageFrame>
       );
     }
 
@@ -1551,28 +1331,17 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
   } catch (error) {
     // If any error occurs during rendering, show a safe error message
     console.error("Error rendering stream message:", error, message);
-    const errorStyle = accentStyleFor(renderConfig, "result.error");
-    const errorSwatch = swatchFor(renderConfig, "result.error");
     return (
-      <Card className={cn("border relative", className)} style={errorStyle}>
-        <CardContent className="p-4 pb-9">
-          <div className="flex items-start gap-3">
-            <div
-              className={iconWrapperClassName(renderConfig, "result.error")}
-              style={iconWrapperStyle(renderConfig, errorSwatch, "result.error")}
-            >
-              <AlertCircle className={iconSizeClassName(renderConfig, "result.error")} />
-            </div>
-            <div className="flex-1">
-              <p className="text-sm font-medium">Error rendering message</p>
-              <p className="text-xs text-muted-foreground mt-1">
-                {error instanceof Error ? error.message : 'Unknown error'}
-              </p>
-            </div>
+      <MessageFrame streamKind="result.error_during_execution">
+        <div className="flex items-start gap-3">
+          <div className="flex-1">
+            <p className="text-sm font-medium">Error rendering message</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {error instanceof Error ? error.message : 'Unknown error'}
+            </p>
           </div>
-        </CardContent>
-        <CardTimestamp receivedAt={message.receivedAt} message={message} />
-      </Card>
+        </div>
+      </MessageFrame>
     );
   }
 };

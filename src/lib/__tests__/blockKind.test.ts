@@ -37,49 +37,45 @@ describe('classifyBlockKind', () => {
     expect(classifyBlockKind(parent.message.content[0], parent)).toBeNull();
   });
 
-  it('classifies assistant tool_use blocks for known tool names', () => {
+  it('classifies assistant tool_use blocks as assistant.tool-use', () => {
     const parent = assistant([{ type: 'tool_use', name: 'Read', input: { file_path: 'a.ts' } }]);
-    expect(classifyBlockKind(parent.message.content[0], parent)).toBe('assistant.toolUse');
+    expect(classifyBlockKind(parent.message.content[0], parent)).toBe('assistant.tool-use');
   });
 
-  it('classifies assistant tool_use blocks for an unknown tool name as assistant.toolUse.unknown', () => {
+  it('classifies assistant tool_use blocks for an unknown tool name as assistant.tool-use (collapsed)', () => {
+    // v2 catalog has a single assistant.tool-use row — no per-tool sub-IDs.
+    // Unknown tool names collapse to the same row so the renderer lookup
+    // always hits the catalog rather than falling to the unknown catch-all.
     const parent = assistant([{ type: 'tool_use', name: 'SomeRandomTool', input: {} }]);
-    expect(classifyBlockKind(parent.message.content[0], parent)).toBe('assistant.toolUse.unknown');
+    expect(classifyBlockKind(parent.message.content[0], parent)).toBe('assistant.tool-use');
   });
 
-  it('classifies tool_use as known when the name is case-mismatched with the registry', () => {
-    // The renderer matches case-insensitively (e.g. "BASH" still maps to BashWidget),
-    // so the classifier should agree.
+  it('classifies tool_use as assistant.tool-use regardless of name casing', () => {
     const parent = assistant([{ type: 'tool_use', name: 'BASH', input: { command: 'ls' } }]);
-    expect(classifyBlockKind(parent.message.content[0], parent)).toBe('assistant.toolUse');
+    expect(classifyBlockKind(parent.message.content[0], parent)).toBe('assistant.tool-use');
   });
 
-  it('classifies subagent dispatch tool_use (Task / Agent) as known', () => {
+  it('classifies subagent dispatch tool_use (Task / Agent) as assistant.tool-use', () => {
     const parent1 = assistant([{ type: 'tool_use', name: 'Task', input: { description: 'x' } }]);
-    expect(classifyBlockKind(parent1.message.content[0], parent1)).toBe('assistant.toolUse');
+    expect(classifyBlockKind(parent1.message.content[0], parent1)).toBe('assistant.tool-use');
     const parent2 = assistant([{ type: 'tool_use', name: 'Agent', input: { description: 'x' } }]);
-    expect(classifyBlockKind(parent2.message.content[0], parent2)).toBe('assistant.toolUse');
+    expect(classifyBlockKind(parent2.message.content[0], parent2)).toBe('assistant.tool-use');
   });
 
-  // Single-source-of-truth invariant: every PascalCase name in
-  // `KNOWN_TOOL_NAMES` (the typed bridge's tuple) must classify as a known
-  // assistant.toolUse here — never `assistant.toolUse.unknown`. Previously
-  // blockKind kept its own hand-maintained lowercase set (`KNOWN_TOOL_NAMES_LOWER`)
-  // that had to stay in sync with the typed bridge by convention; the set
-  // is now derived from `KNOWN_TOOL_NAMES` so this invariant is enforced
-  // by construction. The test pins it so any future regression to manual
-  // maintenance breaks loudly.
-  it('classifies every name in KNOWN_TOOL_NAMES as a known assistant.toolUse', () => {
+  // All tool_use blocks — known or unknown — return the single v2 catalog ID
+  // `assistant.tool-use`. This test pins the invariant so any regression to
+  // per-tool sub-IDs or a known/unknown split breaks loudly.
+  it('classifies every name in KNOWN_TOOL_NAMES as assistant.tool-use', () => {
     for (const name of KNOWN_TOOL_NAMES) {
       const parent = assistant([{ type: 'tool_use', name, input: {} }]);
       const got = classifyBlockKind(parent.message.content[0], parent);
-      expect(got, `tool name "${name}" should not classify as unknown`).toBe('assistant.toolUse');
+      expect(got, `tool name "${name}" should classify as assistant.tool-use`).toBe('assistant.tool-use');
     }
   });
 
-  it('classifies any mcp__* tool_use as known', () => {
+  it('classifies any mcp__* tool_use as assistant.tool-use', () => {
     const parent = assistant([{ type: 'tool_use', name: 'mcp__foo__bar', input: {} }]);
-    expect(classifyBlockKind(parent.message.content[0], parent)).toBe('assistant.toolUse');
+    expect(classifyBlockKind(parent.message.content[0], parent)).toBe('assistant.tool-use');
   });
 
   it('classifies AskUserQuestion tool_use as its own answered-pair kind', () => {
@@ -103,16 +99,18 @@ describe('classifyBlockKind', () => {
     expect(classifyBlockKind(parent.message.content[0], parent)).toBe('user.image');
   });
 
-  it('classifies user tool_result with system-reminder as systemReminder', () => {
+  it('classifies user tool_result with system-reminder as user.tool-result (collapsed)', () => {
+    // v2 catalog has a single user.tool-result row; sub-variants (systemReminder,
+    // generic) were collapsed so the renderer lookup always hits the catalog.
     const parent = user([
       { type: 'tool_result', content: 'output\n<system-reminder>note</system-reminder>' },
     ]);
-    expect(classifyBlockKind(parent.message.content[0], parent)).toBe('tool.result.systemReminder');
+    expect(classifyBlockKind(parent.message.content[0], parent)).toBe('user.tool-result');
   });
 
-  it('classifies plain user tool_result as generic', () => {
+  it('classifies plain user tool_result as user.tool-result', () => {
     const parent = user([{ type: 'tool_result', content: 'plain output' }]);
-    expect(classifyBlockKind(parent.message.content[0], parent)).toBe('tool.result.generic');
+    expect(classifyBlockKind(parent.message.content[0], parent)).toBe('user.tool-result');
   });
 
   // The Agent SDK doesn't currently surface server-side tool blocks through
@@ -204,7 +202,7 @@ describe('classifyBlockKind', () => {
 });
 
 describe('isBlockHiddenInCompact', () => {
-  it('hides assistant.toolUse by default', () => {
+  it('hides assistant.tool-use by default', () => {
     const config = createDefaultConfig();
     const parent = assistant([{ type: 'tool_use', name: 'Bash', input: { command: 'ls' } }]);
     expect(isBlockHiddenInCompact(parent.message.content[0], parent, config)).toBe(true);
@@ -216,7 +214,7 @@ describe('isBlockHiddenInCompact', () => {
     expect(isBlockHiddenInCompact(parent.message.content[0], parent, config)).toBe(false);
   });
 
-  it('hides tool_result.generic by default', () => {
+  it('hides user.tool-result by default', () => {
     const config = createDefaultConfig();
     const parent = user([{ type: 'tool_result', content: 'output' }]);
     expect(isBlockHiddenInCompact(parent.message.content[0], parent, config)).toBe(true);
@@ -233,5 +231,90 @@ describe('isBlockHiddenInCompact', () => {
     const config = createDefaultConfig();
     const parent = user([{ type: 'text', text: 'plain typed prompt' }]);
     expect(isBlockHiddenInCompact(parent.message.content[0], parent, config)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// lastCardIdx regression — mirrors the algorithm in StreamMessage.tsx so
+// we can verify that compact mode correctly skips hiddenInCompact blocks when
+// selecting the toolbar anchor.
+// ---------------------------------------------------------------------------
+describe('lastCardIdx algorithm (compact toolbar anchor)', () => {
+  /**
+   * Re-implements the StreamMessage lastCardIdx IIFE so we can unit-test the
+   * logic without mounting the full component. This must stay in sync with the
+   * implementation in StreamMessage.tsx.
+   */
+  function computeLastCardIdx(
+    visibleBlocks: any[],
+    message: ClaudeStreamMessage,
+    renderConfig: ReturnType<typeof createDefaultConfig>,
+    hidingActive: boolean,
+  ): number {
+    let last = visibleBlocks.length - 1;
+    for (let i = visibleBlocks.length - 1; i >= 0; i--) {
+      const blockKind = classifyBlockKind(visibleBlocks[i], message);
+      const presentation = blockKind
+        ? ((renderConfig.kinds[blockKind]?.presentation ?? 'card') as string)
+        : 'card';
+      if (presentation !== 'card') continue;
+      if (hidingActive) {
+        const willBeHidden = isBlockHiddenInCompact(visibleBlocks[i], message, renderConfig);
+        if (willBeHidden) continue;
+      }
+      last = i;
+      break;
+    }
+    return last;
+  }
+
+  it('[text, tool_use, tool_use] compact=true → lastCardIdx=0 (text block, not last tool_use)', () => {
+    // This is the critical regression case from the bug report.
+    // Before the fix, lastCardIdx was 2 (last tool_use), which is hiddenInCompact.
+    // The toolbar would render inside HiddenBlocksExpander (collapsed) — invisible.
+    // After the fix, lastCardIdx is 0 (the text block), which is always visible.
+    const config = createDefaultConfig();
+    const blocks = [
+      { type: 'text', text: 'Here is the result.' },
+      { type: 'tool_use', name: 'Read', input: { file_path: 'a.ts' } },
+      { type: 'tool_use', name: 'Bash', input: { command: 'ls' } },
+    ];
+    const message = assistant(blocks);
+    const visibleBlocks = blocks; // none suppressed
+    expect(computeLastCardIdx(visibleBlocks, message, config, true)).toBe(0);
+  });
+
+  it('[text, tool_use, tool_use] compact=false → lastCardIdx=2 (last block wins without compact filter)', () => {
+    // Without compact mode, the old behaviour is preserved: last card block wins.
+    const config = createDefaultConfig();
+    const blocks = [
+      { type: 'text', text: 'Here is the result.' },
+      { type: 'tool_use', name: 'Read', input: { file_path: 'a.ts' } },
+      { type: 'tool_use', name: 'Bash', input: { command: 'ls' } },
+    ];
+    const message = assistant(blocks);
+    const visibleBlocks = blocks;
+    expect(computeLastCardIdx(visibleBlocks, message, config, false)).toBe(2);
+  });
+
+  it('[tool_use, tool_use] compact=true, all blocks hidden → falls back to last block (index 1)', () => {
+    // When every visible block is hiddenInCompact the fallback is the last
+    // block (index length-1). This matches the "last block of any kind"
+    // fallback in the implementation.
+    const config = createDefaultConfig();
+    const blocks = [
+      { type: 'tool_use', name: 'Read', input: { file_path: 'a.ts' } },
+      { type: 'tool_use', name: 'Bash', input: { command: 'ls' } },
+    ];
+    const message = assistant(blocks);
+    const visibleBlocks = blocks;
+    expect(computeLastCardIdx(visibleBlocks, message, config, true)).toBe(1);
+  });
+
+  it('[text] compact=true → lastCardIdx=0 (single visible card block)', () => {
+    const config = createDefaultConfig();
+    const blocks = [{ type: 'text', text: 'Single reply.' }];
+    const message = assistant(blocks);
+    expect(computeLastCardIdx(blocks, message, config, true)).toBe(0);
   });
 });

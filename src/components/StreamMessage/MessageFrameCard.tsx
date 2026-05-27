@@ -13,10 +13,10 @@ import {
 import { IconRenderer } from "@/components/settings-panels/appearance/iconMap";
 import { KindHeader } from "@/components/KindHeader";
 import type { ClaudeStreamMessage } from "@/types/claudeStream";
-import type { IconName } from "@/lib/messageRenderingConfig";
+import type { BorderStyle, IconName } from "@/lib/messageRenderingConfig";
 import { fireAndLog } from "@/lib/fireAndLog";
 
-interface MessageCardProps {
+interface MessageFrameCardProps {
   /** Drives icon, accent, and (via KindHeader) the configured header label.
    *  Must match an entry in DEFAULT_KINDS. */
   kindId: string;
@@ -47,6 +47,15 @@ interface MessageCardProps {
    *  card's top-right (writes this text). When omitted and `message` is
    *  set, the debug footer's raw-JSON copy button is used instead. */
   copyText?: string;
+  /** Override the border-style on the card chrome. Defaults to the value
+   *  in the kind config (usually `solid`). Pass explicitly when the caller
+   *  needs to diverge from config (e.g. `dashed` for the unknown fallback). */
+  borderStyle?: BorderStyle;
+  /** Optional toolbar node rendered absolutely inside the card (top-right).
+   *  Use this to attach a `CardActionBar` to the card. The card applies
+   *  `group/card relative` so the bar can position itself with
+   *  `absolute top-1 right-1`. */
+  actionBar?: React.ReactNode;
 }
 
 /**
@@ -55,13 +64,13 @@ interface MessageCardProps {
  * label from Appearance settings), bottom timestamp, and debug raw-JSON
  * label/copy. Body content is the children.
  *
- * Migrating a kind to MessageCard means: pick a kindId, pass `message`,
+ * Migrating a kind to MessageFrameCard means: pick a kindId, pass `message`,
  * and put whatever was previously inside the inline `<Card><CardContent>...`
  * tree into `children`. Per-kind overrides (icon, accent, header label,
  * compact-mode visibility) all flow through the existing config without
  * any per-call wiring.
  */
-export const MessageCard: React.FC<MessageCardProps> = ({
+export const MessageFrameCard: React.FC<MessageFrameCardProps> = ({
   kindId,
   message,
   children,
@@ -72,11 +81,16 @@ export const MessageCard: React.FC<MessageCardProps> = ({
   widthClassName,
   className,
   copyText,
+  borderStyle,
+  actionBar,
 }) => {
   const { config } = useMessageRenderingConfig();
   const accentStyle = accentStyleFor(config, kindId);
   const swatch = swatchFor(config, kindId);
   const iconName = iconOverride ?? iconNameFor(config, kindId) ?? "none";
+  // Resolve borderStyle: explicit prop > kind config > 'solid'
+  const resolvedBorderStyle =
+    borderStyle ?? config.kinds[kindId]?.borderStyle ?? 'solid';
 
   const justify =
     alignment === "right"
@@ -90,9 +104,10 @@ export const MessageCard: React.FC<MessageCardProps> = ({
   return (
     <div className={cn("flex", justify)}>
       <Card
-        className={cn("border relative", width, className)}
-        style={accentStyle}
+        className={cn("border relative group/card", width, className)}
+        style={{ ...accentStyle, borderStyle: resolvedBorderStyle }}
       >
+        {actionBar}
         <CardContent className="p-4 pb-9">
           <div className="flex items-start gap-3">
             {iconName !== "none" && (
@@ -206,3 +221,8 @@ const CardFooter: React.FC<{
     </>
   );
 };
+
+// ─── back-compat aliases ───────────────────────────────────────────────────
+
+export const MessageCard = MessageFrameCard;
+export type MessageCardProps = MessageFrameCardProps;
