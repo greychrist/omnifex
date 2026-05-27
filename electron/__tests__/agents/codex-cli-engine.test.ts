@@ -145,5 +145,79 @@ describe('CodexCliEngine', () => {
       await expect(startPromise).resolves.toBeUndefined();
       expect(engine.getResumeId()).toBe('conv-existing');
     });
+
+    it('resume falls back to p.sessionId when server omits conversationId', async () => {
+      const fake = makeFakeChild();
+      mockedSpawn.mockReturnValue(fake as never);
+
+      const engine = createCodexCliEngine({
+        tabId: 'tab-z',
+        codexBinaryPath: '/usr/local/bin/codex',
+      });
+
+      const startPromise = engine.start({
+        projectPath: '/p',
+        configDir: '/c',
+        model: 'gpt-5',
+        sessionId: 'conv-existing',
+        resume: true,
+        codex: { sandboxPolicy: 'read-only' },
+      });
+      startPromise.catch(() => {});
+
+      await flushMicrotasks();
+
+      const sent = JSON.parse(fake.stdin._writes[0]!.trim());
+      expect(sent.method).toBe('resumeConversation');
+
+      // Server replies with an empty result — no conversationId in the
+      // response. Engine should fall back to the originally-supplied
+      // sessionId so resume identity isn't lost.
+      fake.stdout.push(
+        JSON.stringify({
+          jsonrpc: '2.0',
+          id: sent.id,
+          result: {},
+        }) + '\n',
+      );
+
+      await expect(startPromise).resolves.toBeUndefined();
+      expect(engine.getResumeId()).toBe('conv-existing');
+    });
+
+    it('cold start returns null conversationId when server omits it', async () => {
+      const fake = makeFakeChild();
+      mockedSpawn.mockReturnValue(fake as never);
+
+      const engine = createCodexCliEngine({
+        tabId: 'tab-w',
+        codexBinaryPath: '/usr/local/bin/codex',
+      });
+
+      const startPromise = engine.start({
+        projectPath: '/p',
+        configDir: '/c',
+        model: 'gpt-5',
+        sessionId: 'session-uuid',
+        resume: false,
+      });
+      startPromise.catch(() => {});
+
+      await flushMicrotasks();
+
+      const sent = JSON.parse(fake.stdin._writes[0]!.trim());
+      expect(sent.method).toBe('newConversation');
+
+      fake.stdout.push(
+        JSON.stringify({
+          jsonrpc: '2.0',
+          id: sent.id,
+          result: {},
+        }) + '\n',
+      );
+
+      await expect(startPromise).resolves.toBeUndefined();
+      expect(engine.getResumeId()).toBeNull();
+    });
   });
 });

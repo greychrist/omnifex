@@ -25,8 +25,10 @@ export interface CreateCodexCliEngineParams {
  * loudly instead of silently no-op'ing.
  *
  * v1 does NOT set `CODEX_HOME` — the plan's Non-Goals explicitly excludes
- * multi-account routing for Codex. The spawn inherits the parent env so
- * Codex reads the user's single `~/.codex/` directory.
+ * multi-account routing for Codex. The spawn inherits the parent env
+ * MINUS `CLAUDE_CONFIG_DIR` (Claude-specific noise that shouldn't leak
+ * into Codex's environment) so Codex reads the user's single `~/.codex/`
+ * directory without picking up Claude account state.
  */
 export function createCodexCliEngine(
   factory: CreateCodexCliEngineParams,
@@ -39,18 +41,27 @@ export function createCodexCliEngine(
 
   async function start(p: AgentStartParams): Promise<void> {
     if (child !== null) {
+      // Drain any pending requests on the prior rpc client with a clean
+      // rejection before killing the child — otherwise their promises leak.
+      if (rpc) {
+        rpc.close();
+        rpc = null;
+      }
       try { child.kill('SIGTERM'); } catch { /* already gone */ }
       child = null;
-      rpc = null;
     }
 
-    try {
-      child = spawn(factory.codexBinaryPath, ['mcp'], {
-        cwd: p.projectPath,
-      }) as ChildProcessWithoutNullStreams;
-    } catch (err) {
-      throw err;
-    }
+    // Strip CLAUDE_CONFIG_DIR from inherited env — the Electron main process
+    // sets it to the current Claude account's config dir, and letting Codex
+    // see it is a silent coupling we don't want. Keep everything else (PATH,
+    // HOME, etc.) intact.
+    const env = { ...process.env };
+    delete env.CLAUDE_CONFIG_DIR;
+
+    child = spawn(factory.codexBinaryPath, ['mcp'], {
+      cwd: p.projectPath,
+      env,
+    }) as ChildProcessWithoutNullStreams;
 
     child.on('exit', (code, signal) => {
       const info: AgentEngineExit = { code: code ?? -1, signal };
@@ -79,28 +90,35 @@ export function createCodexCliEngine(
       childRef.once('error', onErr);
     });
 
-    rpc = createJsonRpcClient({
-      readable: child.stdout,
-      writable: child.stdin,
-      // Tasks 6 (approvals) and 7 (notifications) fill these in. For Task 4
-      // they're no-ops — the handshake only needs the response side of the
-      // client, which is always handled internally.
-      onNotification: () => {},
-      onServerRequest: () => {},
-    });
+    try {
+      rpc = createJsonRpcClient({
+        readable: child.stdout,
+        writable: child.stdin,
+        // Tasks 6 (approvals) and 7 (notifications) fill these in. For Task 4
+        // they're no-ops — the handshake only needs the response side of the
+        // client, which is always handled internally.
+        onNotification: () => {},
+        onServerRequest: () => {},
+      });
 
-    if (p.resume) {
-      const result = await rpc.request<{ conversationId?: string }>(
-        'resumeConversation',
-        { conversationId: p.sessionId, ...(p.codex ?? {}) },
-      );
-      conversationId = result?.conversationId ?? p.sessionId;
-    } else {
-      const result = await rpc.request<{ conversationId?: string }>(
-        'newConversation',
-        { model: p.model, ...(p.codex ?? {}) },
-      );
-      conversationId = result?.conversationId ?? null;
+      if (p.resume) {
+        const result = await rpc.request<{ conversationId?: string }>(
+          'resumeConversation',
+          { conversationId: p.sessionId, ...(p.codex ?? {}) },
+        );
+        conversationId = result?.conversationId ?? p.sessionId;
+      } else {
+        const result = await rpc.request<{ conversationId?: string }>(
+          'newConversation',
+          { model: p.model, ...(p.codex ?? {}) },
+        );
+        conversationId = result?.conversationId ?? null;
+      }
+    } catch (err) {
+      // Handshake failed — tear down rpc + child so the caller doesn't have
+      // to (and so we don't leak a child process with no handle to it).
+      await close();
+      throw err;
     }
   }
 
