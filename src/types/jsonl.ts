@@ -121,7 +121,8 @@ export type SystemSubtype =
   | 'away_summary'
   | 'compact_boundary'
   | 'informational'
-  | 'status';
+  | 'status'
+  | 'permission_denied';
 
 export interface SystemRaw extends RawLineBase {
   type: 'system';

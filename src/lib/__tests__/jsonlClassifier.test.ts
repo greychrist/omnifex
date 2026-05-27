@@ -190,6 +190,25 @@ describe('classifyJsonlLine', () => {
     }
   });
 
+  it('classifies system/permission_denied (auto-mode classifier deny)', () => {
+    const sample = {
+      type: 'system',
+      subtype: 'permission_denied',
+      tool_name: 'Bash',
+      tool_use_id: 'toolu_0189V4WbvqBVYSBYgmySYFnc',
+      decision_reason_type: 'classifier',
+      decision_reason: 'glob reads across forbidden paths',
+      message: 'Permission for this action was denied...',
+      uuid: '7b31eb5e-1f79-4a4b-a09e-7efaab00104c',
+      session_id: '3169eca7-891a-4881-a02f-bb09d6880cfb',
+    };
+    const node = classifyJsonlLine(sample);
+    expect(node?.kind).toBe('system');
+    if (node?.kind === 'system') {
+      expect(node.subtype).toBe('permission_denied');
+    }
+  });
+
   it('returns kind: unknown for system with unknown subtype', () => {
     const node = classifyJsonlLine({
       type: 'system',
