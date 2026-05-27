@@ -97,6 +97,14 @@ export const MessageFrameCard: React.FC<MessageFrameCardProps> = ({
   // Resolve borderStyle: explicit prop > kind config > 'solid'
   const resolvedBorderStyle =
     borderStyle ?? config.kinds[kindId]?.borderStyle ?? 'solid';
+  // Determine whether the header has any visible label so we can skip
+  // rendering the entire CardHeader chrome when neither icon nor label
+  // is present. Mirrors KindHeader's own resolution logic.
+  const configHeaderLabel = config.kinds[kindId]?.headerLabel ?? null;
+  const resolvedHeaderLabel = headerLabel !== undefined
+    ? headerLabel
+    : (configHeaderLabel ?? headerFallbackLabel);
+  const hasHeaderLabel = resolvedHeaderLabel != null && resolvedHeaderLabel !== "";
 
   const justify =
     alignment === "right"
@@ -123,38 +131,37 @@ export const MessageFrameCard: React.FC<MessageFrameCardProps> = ({
         style={{ ...accentStyle, borderStyle: resolvedBorderStyle }}
       >
         {actionBar}
-        {/* Outer flex: leading icon chip on the left, header + content
-            stacked on the right. CardHeader and CardContent give the right
-            column proper structural separation (their own padding boxes +
-            the explicit pb-9 on the content's last child for the absolute
-            footer). The shadcn defaults of `p-6` are overridden here so the
-            card stays compact in the chat timeline. */}
-        <div className="flex items-start gap-3 px-4 pt-4">
-          {iconName !== "none" && (
-            <div
-              className={iconWrapperClassName(config, kindId)}
-              style={iconWrapperStyle(config, swatch, kindId)}
-            >
-              <IconRenderer
-                name={iconName}
-                className={iconSizeClassName(config, kindId)}
-              />
-            </div>
-          )}
-          <div className="flex-1 min-w-0 overflow-x-auto">
-            <CardHeader className="p-0 pb-2 mb-3 space-y-0">
-              <KindHeader
-                kindId={kindId}
-                label={headerLabel}
-                fallbackLabel={headerFallbackLabel}
-                showIcon={showHeaderIcon}
-              />
-            </CardHeader>
-            <CardContent className="p-0 pb-9">
-              {children}
-            </CardContent>
-          </div>
-        </div>
+        {/* CardHeader spans the full card width, containing (in order):
+            the leading icon chip (if any), the KindHeader title (if any),
+            and — overlaid via the absolute `actionBar` above — any top-right
+            buttons. CardContent sits below with its own padding and a
+            pb-9 reserve for the absolute footer.
+            Padding overrides keep the card compact (shadcn defaults of
+            p-6 would balloon every chat row). */}
+        {(iconName !== "none" || hasHeaderLabel) && (
+          <CardHeader className="px-4 py-3 flex flex-row items-center gap-3 space-y-0">
+            {iconName !== "none" && (
+              <div
+                className={iconWrapperClassName(config, kindId)}
+                style={iconWrapperStyle(config, swatch, kindId)}
+              >
+                <IconRenderer
+                  name={iconName}
+                  className={iconSizeClassName(config, kindId)}
+                />
+              </div>
+            )}
+            <KindHeader
+              kindId={kindId}
+              label={headerLabel}
+              fallbackLabel={headerFallbackLabel}
+              showIcon={showHeaderIcon}
+            />
+          </CardHeader>
+        )}
+        <CardContent className="px-4 pt-3 pb-9 min-w-0 overflow-x-auto">
+          {children}
+        </CardContent>
         <CardFooter receivedAt={(message as { receivedAt?: string } | undefined)?.receivedAt} message={message} copyText={copyText} kindId={kindId} />
       </Card>
     </div>
