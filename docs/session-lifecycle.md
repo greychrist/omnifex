@@ -9,48 +9,80 @@ There are three independent things being tracked. Confusing them is how we end u
 ```
 ┌─────────────────┐    ┌──────────────────────┐    ┌─────────────────┐
 │  sessionStatus  │    │  conversationStatus  │    │  tasks / agents │
-│  (the phone)    │    │  (the back-and-forth)│    │  (per-item)     │
+│  (the phone)    │    │  (derived, renderer) │    │  (per-item)     │
 └─────────────────┘    └──────────────────────┘    └─────────────────┘
 ```
 
 ### 1. `sessionStatus` — the phone call
 
-Is the SDK connection up? Mirrors the lifecycle of the main-process session handle.
+Is the CLI process up? Mirrors the lifecycle of the main-process session handle.
 
-| Value      | Phone analogy             | What it means                                                                 |
-| ---------- | ------------------------- | ----------------------------------------------------------------------------- |
-| `starting` | dialing / ringing         | `query()` fired, awaiting the SDK's first `system:init` message               |
-| `started`  | connected, on the call    | SDK has emitted `system:init`; session has a GUID; ready for conversation     |
-| `error`    | lost connection           | Stream errored; session kept alive for retry via `restartQuery`               |
-| `stopped`  | hung up                   | Clean close — `query.close()`, tab closed, or main-process teardown           |
+| Value      | Phone analogy          | What it means                                                             |
+| ---------- | ---------------------- | ------------------------------------------------------------------------- |
+| `starting` | dialing / ringing      | `startSession()` fired, awaiting the CLI engine's first output            |
+| `started`  | connected, on the call | CLI process is alive; session has a GUID; ready for conversation          |
+| `error`    | lost connection        | Stream errored; session kept alive for retry via `restartQuery`           |
+| `stopped`  | hung up                | Clean close — tab closed or main-process teardown                         |
 
 There is no `idle` or `running` here. Those belong to `conversationStatus`. The connection being up does not say anything about whether a turn is in flight.
 
-### 2. `conversationStatus` — the back-and-forth
+### 2. `conversationStatus` — the back-and-forth (derived in the renderer)
 
-What's happening in the user ↔ Claude exchange. **Only meaningful when `sessionStatus === 'started'`. Must be `null` otherwise.** A conversation with nothing on the other end makes no sense.
+What's happening in the user ↔ Claude exchange. **Derived by the renderer** from `messages: JsonlNode[]` plus the task and subagent stores. The main process does not produce or track this value — it never appears in any IPC payload.
 
-| Value                | Meaning                                                                |
-| -------------------- | ---------------------------------------------------------------------- |
-| `idle`               | No turn in flight. Either side could send the next message.            |
-| `running`            | User sent a message, or Claude is generating / using tools             |
-| `waiting_permission` | Claude requested a tool via `canUseTool`; awaiting user approval       |
+| Value     | Meaning                                                                         |
+| --------- | ------------------------------------------------------------------------------- |
+| `idle`    | No turn in flight. Either side could send the next message.                     |
+| `running` | User sent a message, Claude is generating, tools are active, or a permission    |
+|           | request is open (the corresponding task entry keeps `hasOpenTasks` true).       |
 
-`waiting_permission` is conversationally in-flight even though no token is streaming — the conversation cannot progress until the user responds.
+`'waiting_permission'` from the old FSM is gone. A pending permission card keeps the relevant task/subagent entry open, which keeps `conversationStatus` at `'running'` through normal derivation. No separate state is needed.
+
+See **Derivation rules** below for the exact predicates.
+
+> **Type locations:** `ConversationStatus` (`'idle' | 'running'`) is defined in and exported from `src/lib/sessionDerivedState.ts`. It is also re-exported via `src/lib/api.ts` but marked `@deprecated` there — import it from `sessionDerivedState.ts` directly in new code.
 
 ### 3. Tasks and subagents — per-item
 
-Each task and each subagent has its own status (`pending | running | complete`). These do **not** modify `conversationStatus`. The user and Claude can keep conversing while a subagent runs in the background. But they do feed into the **overall in-flight rollup** below, because anyone watching the call from the outside cares whether work is still pending.
+Each task and each subagent has its own status (`pending | running | complete`). These feed into `conversationStatus` (via `hasOpenTasks` / `hasOpenSubagents`) and into the overall in-flight rollup below.
 
 ## State invariants
 
 These must hold at all times. If you find code that violates them, that code is wrong.
 
-1. `conversationStatus !== null` ⟺ `sessionStatus === 'started'`. Setting `conversationStatus` while the session isn't `started`, or leaving it set after the session leaves `started`, is a bug.
-2. `sessionStatus` transitions are owned by the main process. The renderer reflects them; it does not invent them. (Exceptions: optimistic `'starting'` on user-initiated start, synchronous `'stopped'` set by stop/clear handlers that tear down their own listeners — these compensate for the IPC event being lost or arriving late.)
-3. `conversationStatus` transitions are also owned by the main process (driven by the SDK iterator's `init` / `turn` / `result` events and the `canUseTool` callback).
+1. `conversationStatus !== 'idle'` only makes sense when `sessionStatus === 'started'`. Computing it against a dead or starting session is legal but the result is always `'idle'` because `messages[]` will be empty.
+2. `sessionStatus` transitions are owned by the main process. The renderer reflects them; it does not invent them. (Exception: optimistic `'starting'` on user-initiated start, and synchronous `'stopped'` in stop/clear handlers that tear down their own listeners.)
+3. `conversationStatus` is computed by `src/lib/sessionDerivedState.ts` and never appears in any IPC payload.
 4. Task and subagent statuses are owned by the JSONL pipeline (`tui-jsonl`, `jsonl-tail`, and the renderer's message reducer).
 5. There is **never** a `useState` in a renderer component that mirrors any of the above. The hook owns the source of truth; components consume derived predicates.
+
+## Derivation rules
+
+`conversationStatus` is the union of three pure predicates in `src/lib/sessionDerivedState.ts`:
+
+```ts
+// True iff the conversation is "expecting more from Claude":
+//   - no main-chain assistant has appeared since the most recent user prompt, OR
+//   - the last main-chain assistant has a null / non-terminal stop_reason.
+// isSidechain=true assistant nodes are ignored so a streaming subagent
+// doesn't keep the main conversation at 'running'.
+waitingOnClaude(messages: JsonlNode[]): boolean
+
+// True iff any task row has status !== 'completed'.
+hasOpenTasks(tasks: WithStatus[]): boolean
+
+// True iff any subagent row has status !== 'completed'.
+hasOpenSubagents(subagents: WithStatus[]): boolean
+
+// The composed status:
+conversationStatus(messages, tasks, subagents): 'running' | 'idle'
+// → 'running' if any of the three predicates is true; 'idle' otherwise.
+```
+
+Terminal `stop_reason` values that close `waitingOnClaude`:
+`end_turn`, `stop_sequence`, `max_tokens`, `refusal`, `model_context_window_exceeded`.
+
+Note: CLI engine-mode `cli-stream-init` and `cli-stream-result` envelopes appear in `messages[]` with placeholder badges but do **not** participate in derivation. They are displayed because the CLI actually emitted them; they carry no `stop_reason`.
 
 ## The in-flight rollup
 
@@ -59,54 +91,37 @@ This is the canonical predicate for "is anything pending in this session?" It dr
 - The prompt-input spinner / send-button gating
 - The TabManager per-tab spinner
 - The status popover's per-tab indicator and aggregate badge count
-- The installer's wait-for-idle gate (so updates don't interrupt active work)
 - The upgrade-button warning ("you have N sessions still working")
 
 ```ts
 const inFlight =
-  conversationStatus !== null && conversationStatus !== 'idle'
+  conversationStatus(messages, tasks, subagents) === 'running'
   || subagents.some(s => s.status !== 'complete')
   || tasks.some(t => t.status !== 'complete');
 ```
+
+Compute this in the renderer via the selectors from `src/lib/sessionDerivedState.ts`. Do not call `listInFlightTabIds` for this — it returns `[]` now that the main process no longer tracks conversation state.
 
 Notes:
 - `sessionStatus === 'starting'` does **not** count as in-flight by itself. The header badge shows "Starting…" but no spinner — the user hasn't asked for anything yet, there's nothing to wait on.
 - `sessionStatus === 'error'` is not in-flight. The badge shows the error state; spinner is off.
 - `sessionStatus === 'stopped'` is not in-flight. Session is over.
 
-## Mapping main-process SDK events to the model
-
-Driven from `electron/services/sessions/runtime.ts` and `electron/services/sessions/lifecycle.ts`:
-
-| SDK iterator event              | sessionStatus              | conversationStatus |
-| ------------------------------- | -------------------------- | ------------------ |
-| `start()` called (pre-SDK)      | `starting`                 | `null`             |
-| `system:init`                   | `started`                  | `idle`             |
-| `turn` (assistant streaming)    | `started`                  | `running`          |
-| `system:hook_*` lifecycle       | `started`                  | unchanged          |
-| `canUseTool` invoked            | `started`                  | `waiting_permission` |
-| `result` (turn complete)        | `started`                  | `idle`             |
-| stream throws                   | `error`                    | `null`             |
-| clean close                     | `stopped`                  | `null`             |
-
-Hook lifecycle messages (`system:hook_started` / `hook_progress` / `hook_response` / `user_prompt_submit`) are forwarded to the renderer for display but never flip the FSM. They fire on `SessionStart` BEFORE any user turn — bucketing them as `turn` strands the session at `running` because no `result` is coming. The renderer's `deriveConversationStatus` applies the same filter when walking the transcript backwards to find the last execution-complete marker.
-
-The renderer's eager `setSessionStatus('starting')` before awaiting `api.startSession` is the only renderer-side write. Every other transition flows from the main process via the `session-status:<tabId>` event channel.
-
 ## IPC contract
 
-- **Event:** `session-status:<tabId>` — payload: `{ sessionStatus: SessionStatus, conversationStatus: ConversationStatus | null }`. Fired on every transition of either field. The renderer must not destructure looking for the legacy `{ status }` shape.
-- **Invoke:** `session_get_health` — returns `{ alive: boolean, sessionId: string | null, sessionStatus: SessionStatus, conversationStatus: ConversationStatus | null }`. Used to seed the renderer after a rebind or reload.
+- **Event:** `session-status:<tabId>` — payload: `{ sessionStatus: SessionStatus }`. Fired on every `sessionStatus` transition. `conversationStatus` is **not** in the payload; the renderer derives it.
+- **Invoke:** `session_get_health` — returns `{ alive: boolean, sessionId: string | null, sessionStatus: SessionStatus }`. Used to seed the renderer after a rebind or reload. `conversationStatus` is not included.
 
 ## Anti-patterns (do not do these)
 
 - Maintaining two booleans (`isSessionStarting` + `isSessionActive`) in a component. There is one enum, exposed by the hook.
 - Reading `sessionStatus === 'idle'` or `sessionStatus === 'running'` anywhere. Those are not values of `sessionStatus`. They're values of `conversationStatus`.
-- Pinning `options.sessionId` on cold start when invoking the SDK. The CLI in stream-json mode suppresses `system:init` when pinned, which leaves `sessionStatus` permanently at `starting`. See `electron/services/sessions/factory.ts:222-225`.
+- Maintaining `conversationStatus` as renderer-side React state (`useState`). It is a pure derived value; store `messages[]`, `tasks`, and `subagents` and recompute.
+- Subscribing to `session-status:<tabId>` expecting a `conversationStatus` field. That field is not in the payload.
+- Computing in-flight via `listInFlightTabIds`. It returns `[]` — the main process no longer tracks conversation state. Use the renderer-side selector instead.
 - Renderer components subscribing to `session-status:<tabId>` directly. The hook owns that subscription; consumers read the derived state.
-- Synchronously setting `conversationStatus` to anything other than `null` while `sessionStatus !== 'started'`.
 
 ## Where the canonical types live
 
-- `electron/services/sessions/types.ts` — `SessionStatus`, `ConversationStatus` enums, plus the `SessionHandle` shape.
-- `src/lib/api.ts` — re-exports both enums for the renderer. Keep the two definitions in sync. (A drift test is welcome if this becomes a maintenance burden.)
+- `electron/services/sessions/types.ts` — `SessionStatus` enum plus the `SessionHandle` shape. Re-exported via `src/lib/api.ts` for the renderer.
+- `src/lib/sessionDerivedState.ts` — `ConversationStatus` type and all derivation functions. Also re-exported (as `@deprecated`) via `src/lib/api.ts` for backward compatibility — prefer the direct import.
