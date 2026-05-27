@@ -271,7 +271,7 @@ describe('classifyJsonlLine', () => {
     }
   });
 
-  it('classifies result events as real-result', () => {
+  it('classifies result events as unknown (result is no longer a named kind)', () => {
     const sample = {
       type: 'result',
       subtype: 'success',
@@ -285,27 +285,6 @@ describe('classifyJsonlLine', () => {
       usage: { input_tokens: 200, output_tokens: 80 },
     };
     const node = classifyJsonlLine(sample);
-    expect(node?.kind).toBe('real-result');
-    if (node?.kind === 'real-result') {
-      expect(node.sessionId).toBe('sdk-sid-3');
-      expect(node.raw.type).toBe('result');
-      expect(node.raw.subtype).toBe('success');
-      expect(node.raw.is_error).toBe(false);
-    }
-  });
-
-  it('classifies result event with error subtype', () => {
-    const sample = {
-      type: 'result',
-      subtype: 'error_during_execution',
-      session_id: 'sdk-sid-4',
-      timestamp: '2026-05-27T00:00:00Z',
-      is_error: true,
-    };
-    const node = classifyJsonlLine(sample);
-    expect(node?.kind).toBe('real-result');
-    if (node?.kind === 'real-result') {
-      expect(node.raw.is_error).toBe(true);
-    }
+    expect(node?.kind).toBe('unknown');
   });
 });

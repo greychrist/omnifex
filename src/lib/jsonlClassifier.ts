@@ -11,7 +11,6 @@ import type {
   FileSnapshotRaw,
   SystemRaw,
   SystemSubtype,
-  RealResultRaw,
 } from '@/types/jsonl';
 
 /**
@@ -56,8 +55,6 @@ export function classifyJsonlLine(raw: unknown): JsonlNode | null {
       return classifyFileSnapshot(r);
     case 'system':
       return classifySystem(r, sessionId, receivedAt);
-    case 'result':
-      return classifyResult(r, sessionId, receivedAt);
     default:
       if (receivedAt === null) return null;
       return {
@@ -214,15 +211,3 @@ function classifySystem(r: Record<string, unknown>, sessionId: string, receivedA
   };
 }
 
-function classifyResult(r: Record<string, unknown>, sessionId: string, receivedAt: string | null): JsonlNode | null {
-  if (receivedAt === null) return null;
-  // type:'result' from the SDK iterator carries the per-turn summary.
-  // We pass it through so the reducer's result handler fires (clearLoading +
-  // refresh effects + cost) and the Execution Complete card renders.
-  return {
-    kind: 'real-result',
-    raw: r as unknown as RealResultRaw,
-    sessionId,
-    receivedAt,
-  };
-}

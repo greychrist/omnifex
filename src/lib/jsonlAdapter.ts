@@ -35,12 +35,6 @@ function deriveStreamKind(node: JsonlNode): string {
     case 'permission-mode':  return 'permission-mode';
     case 'ai-title':         return 'ai-title';
     case 'file-history-snapshot': return 'file-history-snapshot';
-    case 'real-result':
-      return `result.${(node.raw as { subtype?: string }).subtype ?? 'success'}`;
-    case 'synthesized-init':
-      return 'system.init';
-    case 'synthesized-result':
-      return `result.${node.subtype}`;
     case 'unknown':
       return 'unknown';
     case 'stream-event':
@@ -69,47 +63,6 @@ export function jsonlNodeToStreamMessage(node: JsonlNode): ClaudeStreamMessage |
       }
       raw.streamKind = deriveStreamKind(node);
       return raw;
-    }
-    case 'synthesized-init': {
-      const msg = {
-        type: 'system',
-        subtype: 'init',
-        session_id: node.sessionId,
-        cwd: node.cwd,
-        receivedAt: node.receivedAt,
-        synthesized: true,
-      } as unknown as ClaudeStreamMessage;
-      msg.streamKind = deriveStreamKind(node);
-      return msg;
-    }
-    case 'real-result': {
-      const raw = (node as { raw: unknown }).raw as ClaudeStreamMessage;
-      if ('receivedAt' in node && node.receivedAt) {
-        (raw as { receivedAt?: string }).receivedAt = node.receivedAt;
-      }
-      raw.streamKind = deriveStreamKind(node);
-      return raw;
-    }
-    case 'synthesized-result': {
-      const msg = {
-        type: 'result',
-        subtype: node.subtype,
-        is_error: node.isError,
-        result: node.body,
-        duration_ms: node.durationMs,
-        duration_api_ms: 0,
-        num_turns: 0,
-        stop_reason: node.stopReason,
-        total_cost_usd: node.totalCostUsd,
-        usage: node.usage,
-        modelUsage: {},
-        permission_denials: [],
-        session_id: node.sessionId,
-        receivedAt: node.receivedAt,
-        synthesized: true,
-      } as unknown as ClaudeStreamMessage;
-      msg.streamKind = deriveStreamKind(node);
-      return msg;
     }
     case 'unknown': {
       // Pass the raw object through as a ClaudeStreamMessage so downstream

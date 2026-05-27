@@ -1,12 +1,11 @@
 /**
  * Source-of-truth taxonomy for messages flowing through the renderer's
  * message pipeline. Every JSONL line the CLI writes maps to exactly one
- * variant (or is dropped by the classifier). Synthesized variants are
- * manufactured by the synthesizer for state JSONL doesn't persist
- * (session init, turn-complete result cards). Overlay variants come from
- * the SDK iterator in SDK mode and never touch the renderer's messages[]
- * — they drive separate UI surfaces (partials buffer, rate-limit service,
- * SubagentBar / hook progress / status badges).
+ * variant (or is dropped by the classifier): every real CLI emission, one
+ * variant per visually meaningful category, no synthesis. Overlay variants
+ * come from the SDK iterator in SDK mode and never touch the renderer's
+ * messages[] — they drive separate UI surfaces (partials buffer,
+ * rate-limit service, SubagentBar / hook progress / status badges).
  *
  * Inventory drawn from 126 real session JSONL files. See the design spec
  * for the per-kind line counts.
@@ -90,17 +89,6 @@ export interface FileSnapshotRaw extends RawLineBase {
   isSnapshotUpdate?: boolean;
 }
 
-export interface RealResultRaw extends RawLineBase {
-  type: 'result';
-  subtype?: string;
-  result?: string;
-  is_error?: boolean;
-  duration_ms?: number;
-  total_cost_usd?: number;
-  usage?: Record<string, unknown>;
-  stop_reason?: string | null;
-}
-
 export type UserKind =
   | 'prompt'
   | 'tool-result'
@@ -174,11 +162,6 @@ export type JsonlNode =
   | { kind: 'file-history-snapshot'; raw: FileSnapshotRaw }
   // System sub-variants
   | { kind: 'system'; subtype: SystemSubtype; raw: SystemRaw; sessionId: string; receivedAt: string }
-  // Real result from SDK iterator (per-turn summary emitted after assistant terminal stop)
-  | { kind: 'real-result'; raw: RealResultRaw; sessionId: string; receivedAt: string }
-  // Synthesized (not on disk; manufactured by the synthesizer)
-  | { kind: 'synthesized-init'; sessionId: string; cwd: string; receivedAt: string }
-  | { kind: 'synthesized-result'; sessionId: string; isError: boolean; subtype: string; body: string; durationMs: number; usage: UsageShape; totalCostUsd: number; stopReason: string | null; receivedAt: string }
   // Overlay (SDK iterator only — never enters messages[])
   | { kind: 'stream-event'; uuid: string; deltaText: string }
   | { kind: 'rate-limit'; info: RateLimitInfo }

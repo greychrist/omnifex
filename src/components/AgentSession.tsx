@@ -46,7 +46,6 @@ import { WebviewPreview } from "./WebviewPreview";
 import type { ClaudeStreamMessage } from "@/types/claudeStream";
 import { normalizeMessageContent } from "@/lib/normalizeMessage";
 import { classifyJsonlLine } from '@/lib/jsonlClassifier';
-import { createSynthesizer, synthesizeBatch } from '@/lib/jsonlSynthesizer';
 import { jsonlNodeToStreamMessage } from '@/lib/jsonlAdapter';
 import { reduceSessionStreamMessage } from '@/lib/sessionStreamReducer';
 import { runStreamEffect } from '@/lib/sessionStreamEffects';
@@ -769,20 +768,16 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
         );
       }
 
-      // Route through the JSONL classifier → synthesizer → adapter pipeline.
+      // Route through the JSONL classifier → adapter pipeline.
       // The classifier normalizes timestamp→receivedAt and discriminates
-      // every line into a typed JsonlNode; synthesizeBatch injects the
-      // synthesized-init and synthesized-result nodes that produce the
-      // "Execution Complete" card; the adapter translates back to
-      // ClaudeStreamMessage. normalizeMessageContent handles string→array
+      // every line into a typed JsonlNode; the adapter translates each node
+      // to ClaudeStreamMessage. normalizeMessageContent handles string→array
       // content for downstream consumers expecting array form.
       const nodes = history
         .map((entry) => classifyJsonlLine(entry))
         .filter((n): n is NonNullable<typeof n> => n !== null);
 
-      const synthesized = synthesizeBatch(nodes);
-
-      const messagesWithResults: ClaudeStreamMessage[] = synthesized
+      const messagesWithResults: ClaudeStreamMessage[] = nodes
         .map((n) => jsonlNodeToStreamMessage(n))
         .filter((m): m is NonNullable<typeof m> => m !== null)
         .map((m) => normalizeMessageContent(m));
@@ -811,10 +806,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
       logAndForget('claude-code-session:load-session-history', loadSessionHistory());
     }
   }, [session, loadSessionHistory]);
-
-  // One synthesizer instance per session lifetime. State persists across
-  // messages so init-once and turn-tracking work correctly.
-  const synthesizerRef = useRef(createSynthesizer());
 
   const handleJsonlLine = useCallback((payload: string | object) => {
     try {
@@ -870,17 +861,14 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
         return;
       }
 
-      // Classify + synthesize. Synthesizer injects synth-init on first
-      // sessioned node and synth-result after assistant with terminal
-      // stop_reason. Adapter converts both to ClaudeStreamMessage shape so
-      // the reducer can process them identically to SDK iterator events.
+      // Classify + adapt. The classifier normalizes the raw JSONL line into a
+      // typed JsonlNode; the adapter translates it to ClaudeStreamMessage
+      // shape so the reducer can process it.
       const node = classifyJsonlLine(raw);
       if (!node) return;
-      const produced = synthesizerRef.current.push(node);
-      const streamMessages = produced
-        .map((n) => jsonlNodeToStreamMessage(n))
-        .filter((m): m is NonNullable<ReturnType<typeof jsonlNodeToStreamMessage>> => m !== null)
-        .map((m) => normalizeMessageContent(m));
+      const adapted = jsonlNodeToStreamMessage(node);
+      if (!adapted) return;
+      const streamMessages = [normalizeMessageContent(adapted)];
       if (streamMessages.length === 0) return;
 
       // Store raw line (only the original input, not the synthesized rows).
@@ -1313,12 +1301,11 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
       )
         .then((history) => {
           if (!history || history.length === 0) return;
-          // Mirror loadSessionHistory(): route through classify→synthesize→adapt.
+          // Mirror loadSessionHistory(): route through classify→adapt.
           const nodes = history
             .map((entry: unknown) => classifyJsonlLine(entry))
             .filter((n): n is NonNullable<typeof n> => n !== null);
-          const synthesized = synthesizeBatch(nodes);
-          const loaded: ClaudeStreamMessage[] = synthesized
+          const loaded: ClaudeStreamMessage[] = nodes
             .map((n) => jsonlNodeToStreamMessage(n))
             .filter((m): m is NonNullable<typeof m> => m !== null)
             .map((m) => normalizeMessageContent(m));
