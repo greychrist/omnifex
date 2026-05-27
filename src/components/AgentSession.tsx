@@ -1705,6 +1705,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
             <AccountCard
               accountName={accountResolution.account.name}
               accountType={accountResolution.account.account_type}
+              agent={agent}
               configDir={accountResolution.account.config_dir}
               matchType={accountResolution.match_type}
               matchDetail={accountResolution.match_detail}

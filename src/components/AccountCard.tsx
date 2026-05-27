@@ -2,6 +2,7 @@ import * as React from "react";
 import { ShieldCheck, ShieldAlert, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type {
+  AgentKind,
   SessionAccountInfo,
   RateLimitSnapshot,
 } from "@/lib/api";
@@ -19,6 +20,9 @@ interface AccountCardProps {
    *  hide the rate-limit widgets + refresh button since those numbers have
    *  no meaning under an enterprise plan. */
   accountType?: string;
+  /** Engine driving this session. When set, the account badge appends the
+   *  brand mark after the account type (e.g. "Personal : max [Claude]"). */
+  agent?: AgentKind | null;
   configDir: string;
   matchType: string;
   matchDetail: string;
@@ -38,6 +42,7 @@ interface AccountCardProps {
 export function AccountCard({
   accountName,
   accountType,
+  agent,
   configDir,
   matchType,
   matchDetail,
@@ -89,7 +94,7 @@ export function AccountCard({
               className="rounded hover:opacity-80 transition-opacity focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               title="Click for account details"
             >
-              <AccountBadge name={accountName} />
+              <AccountBadge name={accountName} agent={agent} />
             </button>
           }
           content={

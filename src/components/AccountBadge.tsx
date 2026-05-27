@@ -4,6 +4,8 @@ import { useAccounts } from "@/contexts/AccountsContext";
 import { useTheme } from "@/hooks";
 import { ICON_MAP } from "./IconPicker";
 import { User } from "lucide-react";
+import { BrandIcon } from "./shared/BrandIcon";
+import type { AgentKind } from "@/lib/api";
 
 const FALLBACK_COLORS = [
   "bg-blue-500/20 text-blue-400 border-blue-500/30 dark:text-blue-400",
@@ -66,6 +68,11 @@ interface AccountBadgeProps {
   color?: string | null;
   icon?: string | null;
   accountType?: string | null;
+  /** When set, render the brand mark for the engine after the account type
+   *  (e.g. "Personal : max [Claude logo]"). Used in the session header so
+   *  the badge carries engine identity alongside account identity. Ignored
+   *  by the `compact` variant. */
+  agent?: AgentKind | null;
   variant?: "full" | "compact";
   /**
    * Text size of the "full" badge. Defaults to `xs` (11px text + 14px icon)
@@ -84,6 +91,7 @@ export const AccountBadge: React.FC<AccountBadgeProps> = ({
   color: colorProp,
   icon,
   accountType: accountTypeProp,
+  agent,
   variant = "full",
   size = "xs",
   className,
@@ -103,6 +111,12 @@ export const AccountBadge: React.FC<AccountBadgeProps> = ({
   // The fallback (no-color) path uses an icon that's slightly smaller than
   // its text height for visual balance with the muted color stack.
   const fallbackIconSizeClass = size === "sm" ? "h-[12px] w-[12px]" : "h-[11px] w-[11px]";
+  // Brand icon (Claude / OpenAI mark) sits after the account type. Scales
+  // with the badge text so it stays balanced visually.
+  const brandIconSizeClass = size === "sm" ? "h-[13px] w-[13px]" : "h-[12px] w-[12px]";
+  const brandIcon = agent ? (
+    <BrandIcon agent={agent} className={cn(brandIconSizeClass, "opacity-80")} />
+  ) : null;
 
   if (variant === "compact") {
     if (color) {
@@ -159,6 +173,7 @@ export const AccountBadge: React.FC<AccountBadgeProps> = ({
         {resolvedType && (
           <span className="opacity-70">: {resolvedType}</span>
         )}
+        {brandIcon}
       </span>
     );
   }
@@ -175,6 +190,7 @@ export const AccountBadge: React.FC<AccountBadgeProps> = ({
     >
       <IconComponent className={fallbackIconSizeClass} strokeWidth={2.2} />
       {name}
+      {brandIcon}
     </span>
   );
 };
