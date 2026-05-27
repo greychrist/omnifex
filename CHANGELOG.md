@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.67] — 2026-05-27
+
+Phase 3 of the Codex engine + agent-aware routing migration: OmniFex can now drive either Claude or Codex as the live agent for a session. Codex runs as a peer through its own `CodexCliEngine` against `codex mcp` over JSON-RPC, with full approval round-trip, session resume, in-app sign-in, and native transcript rendering. Behind the `OMNIFEX_ENABLE_CODEX=1` flag pending manual verification.
+
+Installers remain **unsigned**.
+
+### Added
+
+- **OpenAI Codex CLI as a peer agent.** Sessions can now be started against either Claude or Codex; pick at session start. Codex runs via `codex mcp` JSON-RPC over stdio, with full approval round-trip (patch + exec), session resume, and rich item rendering (`agent_message`, `agent_reasoning`, `exec_command`, `apply_patch`, `web_search`, `mcp_tool_call`). Codex sessions appear in the session list filtered by agent. Single-account in v1 (uses `~/.codex/`). Backend: `electron/services/agents/codex-cli-engine.ts`, `electron/services/agents/json-rpc-client.ts`, `electron/services/agents/codex-binary.ts`. Engine factory dispatch at session start: `electron/services/sessions/lifecycle.ts`.
+- **In-app Codex sign-in.** Click "Sign in to Codex" in AccountSettings to drop into a modal that runs `codex login` inside an embedded xterm (`src/components/codex/CodexSignInModal.tsx`); auto-closes when the OAuth dance lands `~/.codex/auth.json`. API-key mode (via `OPENAI_API_KEY`) is detected and displayed without a sign-in flow. New `CodexAuthService` (`electron/services/auth/codex-auth.ts`) owns status detection + watcher + login pty spawn.
+- **Agent identity per tab.** Path rules now resolve to `{ agent, account }`; the new-session dialog includes an agent picker; the agent is immutable per tab once started. The SessionHeader shows a small "Claude" / "Codex" badge next to the existing account chip.
+- **`OneShotTerminal` shared pty+xterm primitive.** Reusable component for short-lived CLI flows (Codex login is the first consumer); spawns subprocess via main-process IPC, hosts xterm.js, optionally polls a watch path. `electron/services/one-shot-terminal.ts` + `src/components/shared/OneShotTerminal.tsx`.
+- **Codex session-list partition.** `~/.codex/sessions/*.jsonl` rollouts surface in the session list with a per-agent badge column and an `All / Claude / Codex` filter dropdown. Click a Codex row to open a tab routed at the Codex engine. Walker at `electron/services/codex-session-walker.ts`.
+- **Codex feature flag (`OMNIFEX_ENABLE_CODEX=1`).** Hides all Codex UI surfaces (agent picker, Codex section in AccountSettings, Codex session-list partition) unless the env var is set. Flip to default-on in a future release once manual verification is stable.
+
+### Changed
+
+- **`ClaudeCodeSession.tsx` → `AgentSession.tsx`.** The session view is now agent-aware: shared chrome (header, composer, status bar, permission dialog) wraps agent-specific transcripts (`ClaudeTranscript` for Claude, `CodexTranscript` for Codex). Behavior for existing Claude sessions is preserved byte-for-byte.
+- **Claude tool widgets relocated** to `src/components/claude/tools/`. The two pre-existing widget directories (`src/components/tools/` and `src/components/widgets/`) collapsed into one; the latter was confirmed dead code. The reusable diff viewer is lifted to `src/components/shared/DiffViewer.tsx` and now serves Codex `apply_patch` items in addition to Claude `Edit`.
+- **Permission dialog handles Codex shapes.** `PermissionCard` now branches on `kind: 'tool' | 'patch' | 'exec'`. Claude tool requests render as before; Codex `applyPatchApproval` shows a per-file diff preview, and `execCommandApproval` shows a pre-execution command preview. Allow / Deny on both routes back through the engine's `respondPermission` to the JSON-RPC `respondToServer` envelope.
+- **Event channels renamed** `claude-output: / claude-error: / claude-complete:` → `agent-output: / agent-error: / agent-complete:`. The preload allow-list keeps the legacy names with a transparent shim (a renderer subscribing to the old name auto-subscribes to the new name and gets a one-time deprecation warning); the shim is scheduled for removal next release.
+- **`accounts.resolve()` returns `{ agent, account }`.** Path-rule routing now carries which agent a project should use; `account` can be `null` for Codex-only rules. Schema migration v10 makes `account_path_rules.account_id` nullable (rebuild-table) and drops `AUTOINCREMENT` to keep sequence semantics safe through the rebuild.
+
+### Notes
+
+- Phase 3 of the SDK→CLI engine + Codex support roadmap. Spec: `docs/superpowers/specs/2026-05-25-cli-engine-and-codex-design.md`. Plan: `docs/superpowers/plans/2026-05-25-codex-engine-and-routing.md`.
+- TUI mode (Chat ↔ Terminal toggle) is unchanged and remains Claude-only in v1; Codex TUI is a v2 consideration.
+- Phase 4 (Claude re-auth recovery) follows in a separate release.
+
 ## [0.4.66] — 2026-05-26
 
 Follow-up to the v2 catalog and hook-telemetry work that landed in 0.4.65. SessionStart hooks now classify correctly (no more "Prompt status: WORKING" stuck forever on a fresh session that ran hooks), three previously-unknown system subtypes get real catalog rows, and two card-footer affordances that were sitting behind dead config flags now actually render.
