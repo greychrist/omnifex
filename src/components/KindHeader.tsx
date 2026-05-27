@@ -45,9 +45,15 @@ export const KindHeader: React.FC<KindHeaderProps> = ({
   const iconName = iconNameFor(config, kindId) ?? fallbackIcon ?? null;
   const swatch = swatchFor(config, kindId);
   const swatchStyle = swatch ? { color: swatch } : undefined;
+  // Match the card's outer border color (accentStyleFromEntry uses `${swatch}55`).
+  // Falls back to a neutral tint when no swatch is available.
+  const borderColor = swatch ? `${swatch}55` : undefined;
 
   return (
-    <div className={cn("flex items-center gap-2 mb-3", className)}>
+    <div
+      className={cn("flex items-center gap-2 pb-2 mb-3 border-b", className)}
+      style={borderColor ? { borderBottomColor: borderColor } : undefined}
+    >
       {showIcon && iconName && iconName !== "none" && (
         <span style={swatchStyle}>
           <IconRenderer name={iconName} className="h-4 w-4" />
