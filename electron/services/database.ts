@@ -177,6 +177,48 @@ const migrations: Migration[] = [
       }
     },
   },
+  {
+    version: 10,
+    description:
+      'Make account_path_rules.account_id nullable so Codex-only rules (which ' +
+      'carry no Claude account) can be stored. SQLite cannot drop NOT NULL ' +
+      'in-place, so this is a rebuild-table migration: new table, copy data, ' +
+      'drop old, rename. Idempotent — re-runs detect the already-nullable ' +
+      'schema and bail.',
+    up: (db) => {
+      const tableExists = db
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name='account_path_rules'"
+        )
+        .get();
+      if (!tableExists) return;
+
+      const cols = db.pragma('table_info(account_path_rules)') as {
+        name: string;
+        notnull: number;
+      }[];
+      const accountIdCol = cols.find((c) => c.name === 'account_id');
+      // notnull===0 means the column is already nullable; nothing to do.
+      if (!accountIdCol || accountIdCol.notnull === 0) return;
+
+      db.exec(`
+        CREATE TABLE account_path_rules_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          account_id INTEGER,
+          path_prefix TEXT NOT NULL,
+          priority INTEGER NOT NULL DEFAULT 0,
+          agent TEXT NOT NULL DEFAULT 'claude',
+          FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+        );
+
+        INSERT INTO account_path_rules_new (id, account_id, path_prefix, priority, agent)
+          SELECT id, account_id, path_prefix, priority, agent FROM account_path_rules;
+
+        DROP TABLE account_path_rules;
+        ALTER TABLE account_path_rules_new RENAME TO account_path_rules;
+      `);
+    },
+  },
 ];
 
 /**

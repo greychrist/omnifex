@@ -228,7 +228,11 @@ describe('accounts service', () => {
 
       const resolved = accounts.resolve('/home/user/projects/myapp');
       expect(resolved).not.toBeNull();
-      expect(resolved!.id).toBe(work.id);
+      // Project overrides are Claude-only today — the override table carries
+      // no agent column, so resolution pins agent='claude'.
+      expect(resolved!.agent).toBe('claude');
+      expect(resolved!.account).not.toBeNull();
+      expect(resolved!.account!.id).toBe(work.id);
     });
 
     it('resolves via longest matching path rule', () => {
@@ -241,7 +245,9 @@ describe('accounts service', () => {
 
       const resolved = accounts.resolve('/home/user/work/oss/myrepo');
       expect(resolved).not.toBeNull();
-      expect(resolved!.id).toBe(oss.id);
+      expect(resolved!.agent).toBe('claude');
+      expect(resolved!.account).not.toBeNull();
+      expect(resolved!.account!.id).toBe(oss.id);
     });
 
     it('returns null when no override or path rule matches (no default fallback)', () => {
@@ -269,7 +275,9 @@ describe('accounts service', () => {
 
       const resolved = accounts.resolve('/home/user/work/myrepo');
       expect(resolved).not.toBeNull();
-      expect(resolved!.id).toBe(work.id);
+      expect(resolved!.agent).toBe('claude');
+      expect(resolved!.account).not.toBeNull();
+      expect(resolved!.account!.id).toBe(work.id);
     });
 
     it('explicit override beats path rule', () => {
@@ -282,7 +290,49 @@ describe('accounts service', () => {
 
       const resolved = accounts.resolve('/home/user/work/myapp');
       expect(resolved).not.toBeNull();
-      expect(resolved!.id).toBe(special.id);
+      expect(resolved!.agent).toBe('claude');
+      expect(resolved!.account).not.toBeNull();
+      expect(resolved!.account!.id).toBe(special.id);
+    });
+
+    // -----------------------------------------------------------------------
+    // Agent-aware routing (Phase 3 entry point)
+    // -----------------------------------------------------------------------
+
+    it('a claude path rule resolves to { agent: "claude", account: <the claude account> }', () => {
+      accounts.createAccount('Work', '/home/user/.claude-work', 'team');
+      const [work] = accounts.listAccounts();
+
+      accounts.addPathRule(work.id, '/home/user/work', 0);
+
+      const resolved = accounts.resolve('/home/user/work/myrepo');
+      expect(resolved).not.toBeNull();
+      expect(resolved!.agent).toBe('claude');
+      expect(resolved!.account).not.toBeNull();
+      expect(resolved!.account!.id).toBe(work.id);
+    });
+
+    it('a codex path rule (no associated claude account) resolves to { agent: "codex", account: null }', () => {
+      // Codex rules carry no Claude account. addPathRule() is still
+      // Claude-only this task; insert the row directly to exercise the
+      // resolver's agent branch.
+      db.raw
+        .prepare(
+          "INSERT INTO account_path_rules (account_id, path_prefix, priority, agent) VALUES (NULL, ?, ?, 'codex')"
+        )
+        .run('/home/user/codex-work', 0);
+
+      const resolved = accounts.resolve('/home/user/codex-work/myrepo');
+      expect(resolved).not.toBeNull();
+      expect(resolved!.agent).toBe('codex');
+      expect(resolved!.account).toBeNull();
+    });
+
+    it('no rule match returns null at the top level (NOT { agent: null })', () => {
+      accounts.createAccount('Work', '/home/user/.claude-work', 'team');
+
+      const resolved = accounts.resolve('/totally/unrelated/path');
+      expect(resolved).toBeNull();
     });
   });
 

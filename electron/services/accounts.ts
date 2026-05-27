@@ -3,6 +3,7 @@ import path from 'node:path';
 import os from 'node:os';
 import type { Database } from './database';
 import { nameFromConfigDir } from './first-run-discovery';
+import type { AgentKind } from './agents/types';
 
 // ---------------------------------------------------------------------------
 // Public interfaces
@@ -56,6 +57,21 @@ export interface ResolutionExplanation {
   match_detail: string | null;
 }
 
+/**
+ * Result of resolving a project path to a routing target. `agent` says which
+ * engine (Claude / Codex) the project should use. `account` is the Claude
+ * account row when `agent === 'claude'`; it's `null` for Codex rules, which
+ * don't carry a Claude account.
+ *
+ * `null` at the top level (i.e. `resolve()` returning `null`) means "no match"
+ * — neither an override nor any path rule covered the project path. Callers
+ * MUST treat that as an error condition, not a default-account fallback.
+ */
+export interface ResolveResult {
+  agent: AgentKind;
+  account: Account | null;
+}
+
 export interface AccountsService {
   listAccounts(): Account[];
   /**
@@ -96,7 +112,7 @@ export interface AccountsService {
   addPathRule(accountId: number, pathPrefix: string, priority?: number): PathRule;
   removePathRule(ruleId: number): void;
 
-  resolve(projectPath: string): Account | null;
+  resolve(projectPath: string): ResolveResult | null;
   setProjectOverride(projectPath: string, accountId: number): void;
   listProjectOverrides(): ProjectOverride[];
   explainResolution(projectPath: string): ResolutionExplanation | null;
@@ -386,10 +402,11 @@ export function createAccountsService(db: Database): AccountsService {
   // Resolution
   // -------------------------------------------------------------------------
 
-  function resolve(projectPath: string): Account | null {
+  function resolve(projectPath: string): ResolveResult | null {
     const normalizedProject = normalizePath(projectPath);
 
-    // 1. Explicit project override
+    // 1. Explicit project override. Overrides are Claude-only — the override
+    //    table carries no agent column — so a hit always pins agent='claude'.
     const overrideRow = raw
       .prepare(
         `SELECT a.* FROM project_account_overrides o
@@ -399,23 +416,31 @@ export function createAccountsService(db: Database): AccountsService {
       .get(normalizedProject) as AccountRow | undefined;
 
     if (overrideRow) {
-      return rowToAccount(overrideRow);
+      return { agent: 'claude', account: rowToAccount(overrideRow) };
     }
 
-    // 2. Longest matching path rule (LENGTH(path_prefix) DESC, then priority DESC)
+    // 2. Longest matching path rule (LENGTH(path_prefix) DESC, then priority
+    //    DESC). LEFT JOIN because Codex rules carry no Claude account
+    //    (account_id is NULL); the join would otherwise drop them.
     const rules = raw
       .prepare(
-        `SELECT r.path_prefix, a.* FROM account_path_rules r
-         JOIN accounts a ON a.id = r.account_id
+        `SELECT r.path_prefix, r.agent AS rule_agent, a.* FROM account_path_rules r
+         LEFT JOIN accounts a ON a.id = r.account_id
          ORDER BY LENGTH(r.path_prefix) DESC, r.priority DESC`,
       )
-      .all() as (AccountRow & { path_prefix: string })[];
+      .all() as (Partial<AccountRow> & {
+        path_prefix: string;
+        rule_agent: string;
+        id: number | null;
+      })[];
 
     for (const rule of rules) {
       const normalizedPrefix = normalizePath(rule.path_prefix);
-      if (isPathInside(normalizedProject, normalizedPrefix)) {
-        return rowToAccount(rule);
-      }
+      if (!isPathInside(normalizedProject, normalizedPrefix)) continue;
+
+      const agent: AgentKind = rule.rule_agent === 'codex' ? 'codex' : 'claude';
+      const account = rule.id != null ? rowToAccount(rule as AccountRow) : null;
+      return { agent, account };
     }
 
     // 3. No match

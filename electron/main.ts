@@ -541,7 +541,7 @@ app.whenReady().then(() => {
     // resumes (they're anchored to the configDir that owns the JSONL) and
     // when manualAccountOverride is set (user explicitly picked an account
     // on the form). Returns null when the project doesn't resolve.
-    (projectPath: string) => accountsService.resolve(projectPath)?.config_dir ?? null,
+    (projectPath: string) => accountsService.resolve(projectPath)?.account?.config_dir ?? null,
   );
   const claudeService = createClaudeService(db, accountsService);
   const usageService = createUsageService(accountsService, loggingService);
@@ -605,12 +605,12 @@ app.whenReady().then(() => {
       // exists, otherwise null so the caller's skipped:no-account branch
       // fires. There is no synthetic ~/.claude fallback — see CLAUDE.md
       // "Multi-Account Rules" and NoAccountError in claude.ts.
-      const resolvedRoot = configDir ?? accountsService.resolve(projectPath)?.config_dir;
+      const resolvedRoot = configDir ?? accountsService.resolve(projectPath)?.account?.config_dir;
       if (!resolvedRoot) return null;
       return path.join(resolvedRoot, 'projects', projectId, `${sessionUuid}.jsonl`);
     },
     resolveAccount: (projectPath) => {
-      const acct = accountsService.resolve(projectPath);
+      const acct = accountsService.resolve(projectPath)?.account ?? null;
       if (!acct) return null;
       return {
         name: acct.name,
@@ -709,7 +709,11 @@ app.whenReady().then(() => {
       addPathRule: (rule: any) =>
         accountsService.addPathRule(rule.accountId ?? rule.account_id, rule.pathPrefix ?? rule.path_prefix, rule.priority),
       removePathRule: (id: any) => accountsService.removePathRule(id),
-      resolveForProject: (projectPath: string) => accountsService.resolve(projectPath),
+      // IPC contract still returns the Claude account row (or null) — the
+      // `{ agent, account }` shape isn't surfaced to the renderer in this
+      // task. Later tasks (TabContext / NewSessionForm) will widen this.
+      resolveForProject: (projectPath: string) =>
+        accountsService.resolve(projectPath)?.account ?? null,
       setProjectOverride: (projectPath: string, accountId: any) =>
         accountsService.setProjectOverride(projectPath, accountId),
       listProjectOverrides: () => accountsService.listProjectOverrides(),

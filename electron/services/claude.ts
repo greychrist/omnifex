@@ -241,7 +241,7 @@ function findProjectConfigDir(
   if (!projectPath) return null;
   try {
     const resolved = accounts.resolve(projectPath);
-    return resolved?.config_dir ?? null;
+    return resolved?.account?.config_dir ?? null;
   } catch {
     return null;
   }
@@ -451,7 +451,8 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
     const projectId = encodeProjectId(projectPath);
 
     // Resolve which account's config dir to use
-    const account = accounts.resolve(projectPath);
+    const resolved = accounts.resolve(projectPath);
+    const account = resolved?.account ?? null;
     if (!account) {
       throw new Error(`No account resolved for project ${projectPath}. Configure an account or path rule first.`);
     }
