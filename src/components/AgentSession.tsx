@@ -57,7 +57,6 @@ import { createTuiPromptHandler } from '@/lib/tuiPromptHandler';
 // deriveConversationStatus import removed — derivation moved into useSessionLifecycle (Task 2).
 import { HeaderLabel } from "./HeaderLabel";
 import { AccountCard } from "./AccountCard";
-import { AgentBadge } from "./shared/AgentBadge";
 import { SessionCard } from "./SessionCard";
 import { GitBranchBadge } from "./claude-code-session/GitBranchBadge";
 import { GitWatchStatusIcon } from "./claude-code-session/GitWatchStatusIcon";
@@ -1686,21 +1685,10 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
             </Button>
           </TooltipSimple>
           <span aria-hidden="true" className="self-stretch w-px bg-foreground/30 shrink-0 mx-1" />
-          {/* Agent indicator — small chip showing which engine (Claude /
-              Codex) drives this tab. For Claude, clicking opens the same
-              account picker the AccountCard would, gated to idle so we
-              don't yank the account out from under an in-flight turn.
-              For Codex, the badge is informational only (no per-tab
-              account picker yet — see Task 23 spec). */}
-          <AgentBadge
-            agent={agent}
-            onClick={
-              agent === 'claude' && projectPath
-                ? () => { setShowAccountPicker(true); }
-                : undefined
-            }
-            disabled={conversationStatus !== null && conversationStatus !== 'idle'}
-          />
+          {/* The agent (Claude / Codex) is now rendered inside the
+              AccountBadge as the trailing brand mark. Standalone
+              AgentBadge removed; access to the account picker moves
+              to the AccountCard's existing details popover (future work). */}
           {accountResolution && (
             <AccountCard
               accountName={accountResolution.account.name}

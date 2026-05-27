@@ -112,10 +112,17 @@ export const AccountBadge: React.FC<AccountBadgeProps> = ({
   // its text height for visual balance with the muted color stack.
   const fallbackIconSizeClass = size === "sm" ? "h-[12px] w-[12px]" : "h-[11px] w-[11px]";
   // Brand icon (Claude / OpenAI mark) sits after the account type. Scales
-  // with the badge text so it stays balanced visually.
+  // with the badge text so it stays balanced visually. Color is forced
+  // per theme — white-on-dark / dark-on-light — so the mark stays
+  // legible against any account-color background tint instead of
+  // inheriting the themed color and washing out.
   const brandIconSizeClass = size === "sm" ? "h-[13px] w-[13px]" : "h-[12px] w-[12px]";
+  const brandIconColorClass = theme === "light" ? "text-neutral-900" : "text-white";
   const brandIcon = agent ? (
-    <BrandIcon agent={agent} className={cn(brandIconSizeClass, "opacity-80")} />
+    <BrandIcon
+      agent={agent}
+      className={cn(brandIconSizeClass, brandIconColorClass, "opacity-90")}
+    />
   ) : null;
 
   if (variant === "compact") {
