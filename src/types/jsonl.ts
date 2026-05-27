@@ -120,7 +120,8 @@ export type SystemSubtype =
   | 'turn_duration'
   | 'away_summary'
   | 'compact_boundary'
-  | 'informational';
+  | 'informational'
+  | 'status';
 
 export interface SystemRaw extends RawLineBase {
   type: 'system';

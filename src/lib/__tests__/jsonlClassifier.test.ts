@@ -174,6 +174,22 @@ describe('classifyJsonlLine', () => {
     }
   });
 
+  it('classifies system/status (CLI request-state indicator)', () => {
+    const sample = {
+      type: 'system',
+      subtype: 'status',
+      status: 'requesting',
+      uuid: '49edbb8a-1e0e-4640-91d0-7193843b7178',
+      session_id: '3169eca7-891a-4881-a02f-bb09d6880cfb',
+      timestamp: '2026-05-27T03:31:46.254Z',
+    };
+    const node = classifyJsonlLine(sample);
+    expect(node?.kind).toBe('system');
+    if (node?.kind === 'system') {
+      expect(node.subtype).toBe('status');
+    }
+  });
+
   it('returns kind: unknown for system with unknown subtype', () => {
     const node = classifyJsonlLine({
       type: 'system',
