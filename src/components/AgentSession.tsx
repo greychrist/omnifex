@@ -21,6 +21,8 @@ import { AccountPickerDialog } from "./AccountPickerDialog";
 import { CodexSignInModal } from "@/components/codex/CodexSignInModal";
 import { useCodexAuthStatus } from "@/hooks/useCodexAuthStatus";
 import { ClaudeTranscript } from "@/components/claude/ClaudeTranscript";
+import { CodexTranscript } from "@/components/codex/CodexTranscript";
+import type { AgentMessage } from "@/lib/api";
 import {
   FloatingPromptInput,
   type FloatingPromptInputRef,
@@ -255,6 +257,16 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   const [currentActivity, setCurrentActivity] = useState<string>("Honking");
   const [error, setError] = useState<string | null>(null);
   const [rawJsonlOutput, setRawJsonlOutput] = useState<string[]>([]);
+  // Parallel transcript buffer for Codex tabs. The shared `claude-output:`
+  // channel carries both Claude stream-json (handled by `handleJsonlLine`
+  // via the JSONL classifier) and Codex notifications (shape `{ method,
+  // params }`). The classifier returns null for the Codex shape — fine for
+  // Claude tabs — but Codex tabs need a transcript, so we collect a
+  // separate `codexMessages` array off the same channel. Task 24 will
+  // rename the channel to `agent-output:` and may consolidate the two
+  // accumulators behind a single reducer; for now the parallel buffer
+  // keeps Task 19 a zero-touch change to the Claude reducer.
+  const [codexMessages, setCodexMessages] = useState<AgentMessage[]>([]);
   const [copyPopoverOpen, setCopyPopoverOpen] = useState(false);
   const [totalTokens, setTotalTokens] = useState(0);
   // Pre-fetched built-in slash commands from the SDK, loaded alongside models
@@ -1211,6 +1223,42 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     return () => { unlisten(); };
   }, []);
 
+  // Parallel Codex notification accumulator. Subscribes to the same
+  // `claude-output:` channel as the Claude path but only keeps payloads
+  // shaped like Codex notifications (`{ method, params }`). For Claude
+  // tabs this listener still runs but collects nothing (Claude payloads
+  // carry `type` instead of `method`), so the cost is one empty array
+  // per tab — negligible. Engaged only when `agent === 'codex'`; the
+  // listener is torn down on agent change to keep the state honest.
+  useEffect(() => {
+    if (agent !== 'codex') {
+      setCodexMessages([]);
+      return;
+    }
+    const unlisten = window.electronAPI.onEvent(
+      `claude-output:${tabIdRef.current}`,
+      (...args: unknown[]) => {
+        const payload = args[0];
+        if (!payload || typeof payload !== 'object') return;
+        const method = (payload as { method?: unknown }).method;
+        if (typeof method !== 'string') return;
+        const receivedAt =
+          typeof (payload as { receivedAt?: unknown }).receivedAt === 'string'
+            ? (payload as { receivedAt: string }).receivedAt
+            : new Date().toISOString();
+        const next: AgentMessage = {
+          agent: 'codex',
+          tabId: tabIdRef.current,
+          receivedAt,
+          sessionId: claudeSessionId,
+          payload,
+        };
+        setCodexMessages((prev) => [...prev, next]);
+      },
+    );
+    return () => { unlisten(); };
+  }, [agent, claudeSessionId]);
+
   // Rate-limit snapshots for the active account: fetch initial state on
   // resolution, then live-update from the main process's
   // `rate-limits:updated` event whenever an SDK rate-limit event lands.
@@ -1504,7 +1552,12 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     }
   };
 
-  const messagesList = (
+  const messagesList = agent === 'codex' ? (
+    <CodexTranscript
+      messages={codexMessages}
+      tabId={tabIdRef.current}
+    />
+  ) : (
     <ClaudeTranscript
       messages={messages}
       viewMode={viewMode}

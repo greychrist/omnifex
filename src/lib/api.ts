@@ -11,6 +11,25 @@ import type { HooksConfiguration } from '@/types/hooks';
 export type AgentKind = 'claude' | 'codex';
 
 /**
+ * Per-agent message envelope sent from main to renderer. Mirrors the
+ * backend `AgentMessage` in `electron/services/agents/types.ts`. Only the
+ * Codex side currently consumes this type renderer-side — Claude tabs
+ * still flow through `ClaudeStreamMessage` because `payload.method`
+ * dispatching doesn't apply there.
+ *
+ * `payload` is the engine-native body: `{ method, params }` for Codex
+ * notifications. Kept as `unknown` so callers narrow at the dispatch site
+ * the same way the main process does.
+ */
+export interface AgentMessage {
+  agent: AgentKind;
+  tabId: string;
+  receivedAt: string;
+  sessionId: string | null;
+  payload: unknown;
+}
+
+/**
  * Status of Codex authentication. Mirrors the backend `CodexAuthStatus` in
  * `electron/services/auth/codex-auth.ts`.
  *
