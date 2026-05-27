@@ -97,9 +97,6 @@ export const MessageFrameCard: React.FC<MessageFrameCardProps> = ({
   // Resolve borderStyle: explicit prop > kind config > 'solid'
   const resolvedBorderStyle =
     borderStyle ?? config.kinds[kindId]?.borderStyle ?? 'solid';
-  // CardHeader's bottom divider uses the same accent-tinted swatch as the
-  // outer card border (`accentStyleFromEntry` uses `${swatch}55`).
-  const headerBorderColor = swatch ? `${swatch}55` : undefined;
 
   const justify =
     alignment === "right"
@@ -145,10 +142,7 @@ export const MessageFrameCard: React.FC<MessageFrameCardProps> = ({
             </div>
           )}
           <div className="flex-1 min-w-0 overflow-x-auto">
-            <CardHeader
-              className="p-0 pb-2 mb-3 space-y-0 border-b"
-              style={headerBorderColor ? { borderBottomColor: headerBorderColor } : undefined}
-            >
+            <CardHeader className="p-0 pb-2 mb-3 space-y-0">
               <KindHeader
                 kindId={kindId}
                 label={headerLabel}

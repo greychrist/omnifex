@@ -40,7 +40,12 @@ const Card = React.forwardRef<
 Card.displayName = "Card";
 
 /**
- * CardHeader component - Top section of a card
+ * CardHeader component - Top section of a card.
+ *
+ * Carries a bottom divider matching the parent Card's border color via
+ * `border-inherit` — so whatever accent the parent Card sets on its own
+ * border (default theme border, or an inline override) flows down to the
+ * header divider without per-call-site styling.
  */
 const CardHeader = React.forwardRef<
   HTMLDivElement,
@@ -48,7 +53,7 @@ const CardHeader = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <div
     ref={ref}
-    className={cn("flex flex-col space-y-1.5 p-6", className)}
+    className={cn("flex flex-col space-y-1.5 p-6 border-b border-inherit", className)}
     {...props}
   />
 ));
