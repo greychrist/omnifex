@@ -590,4 +590,81 @@ describe('CodexCliEngine', () => {
       expect(received.length).toBe(0);
     });
   });
+
+  describe('interrupt()', () => {
+    async function bootEngineWithConversation(): Promise<{
+      engine: ReturnType<typeof createCodexCliEngine>;
+      fake: FakeChild;
+    }> {
+      const fake = makeFakeChild();
+      mockedSpawn.mockReturnValue(fake as never);
+
+      const engine = createCodexCliEngine({
+        tabId: 'tab-interrupt',
+        codexBinaryPath: '/usr/local/bin/codex',
+      });
+
+      const startPromise = engine.start({
+        projectPath: '/p',
+        configDir: '/c',
+        model: 'gpt-5',
+        sessionId: 'session-uuid',
+        resume: false,
+      });
+      startPromise.catch(() => {});
+
+      await flushMicrotasks();
+
+      const startSent = JSON.parse(fake.stdin._writes[0]!.trim());
+      fake.stdout.push(
+        JSON.stringify({
+          jsonrpc: '2.0',
+          id: startSent.id,
+          result: { conversationId: 'conv-1' },
+        }) + '\n',
+      );
+
+      await startPromise;
+      return { engine, fake };
+    }
+
+    it('writes interruptConversation JSON-RPC with the active conversationId and resolves on success', async () => {
+      const { engine, fake } = await bootEngineWithConversation();
+
+      const writesBefore = fake.stdin._writes.length;
+
+      const p = engine.interrupt();
+      p.catch(() => {});
+
+      await flushMicrotasks();
+
+      expect(fake.stdin._writes.length).toBe(writesBefore + 1);
+      const sent = JSON.parse(fake.stdin._writes[writesBefore]!.trim());
+      expect(sent.jsonrpc).toBe('2.0');
+      expect(typeof sent.id).toBe('number');
+      expect(sent.method).toBe('interruptConversation');
+      expect(sent.params).toEqual({ conversationId: 'conv-1' });
+
+      fake.stdout.push(
+        JSON.stringify({
+          jsonrpc: '2.0',
+          id: sent.id,
+          result: {},
+        }) + '\n',
+      );
+
+      await expect(p).resolves.toBeUndefined();
+    });
+
+    it('is a no-op when there is no active conversationId', async () => {
+      const engine = createCodexCliEngine({
+        tabId: 'tab-no-conv',
+        codexBinaryPath: '/usr/local/bin/codex',
+      });
+
+      // start() never called — conversationId stays null. interrupt() should
+      // resolve without writing anything (no rpc client, nothing to interrupt).
+      await expect(engine.interrupt()).resolves.toBeUndefined();
+    });
+  });
 });

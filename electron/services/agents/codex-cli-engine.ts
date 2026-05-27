@@ -215,7 +215,9 @@ export function createCodexCliEngine(
     rpc.respondToServer(requestId, { result: { ...extra, decision } });
   }
   async function interrupt(): Promise<void> {
-    throw new Error('CodexCliEngine.interrupt: not yet wired');
+    if (conversationId === null) return;
+    if (rpc === null) return;
+    await rpc.request('interruptConversation', { conversationId });
   }
 
   async function close(): Promise<void> {
