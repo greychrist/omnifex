@@ -26,7 +26,7 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
         )}
         style={{
           borderColor: "var(--color-input)",
-          backgroundColor: "transparent",
+          backgroundColor: "var(--color-background)",
           color: "var(--color-foreground)"
         }}
         ref={ref}
