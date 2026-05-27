@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Copy, Check, RefreshCw, Hash, Trash2, ChevronDown, ChevronUp, ExternalLink } from "lucide-react";
+import { Copy, Check, RefreshCw, Hash, Trash2, ChevronDown, ChevronUp, ExternalLink, Bot } from "lucide-react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,6 +20,8 @@ import {
   type Session,
   type SessionSummary,
   type SummaryGenerateResult,
+  type CodexSessionEntry,
+  type AgentKind,
 } from "@/lib/api";
 import { useAccounts } from "@/contexts/AccountsContext";
 import { logAndForget } from "@/lib/fireAndLog";
@@ -206,6 +208,65 @@ export const SessionList: React.FC<SessionListProps> = ({
       onSessionClick?.(session);
     },
     [projectPath, onSessionClick],
+  );
+
+  // ── Codex sessions (Task 16) ───────────────────────────────────────
+  // Codex stores rollouts under `~/.codex/sessions/` outside the per-account
+  // Claude config; the walker enumerates them globally. We filter to the
+  // current project here so the unified list stays project-scoped, matching
+  // what the Claude column already shows. The agent filter below lets the
+  // user toggle Codex rows in/out of the table entirely.
+  const [codexSessions, setCodexSessions] = useState<CodexSessionEntry[]>([]);
+  const [agentFilter, setAgentFilter] = useState<'all' | AgentKind>('all');
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .listCodexSessions()
+      .then((entries) => {
+        if (cancelled) return;
+        setCodexSessions(entries);
+      })
+      .catch(() => {
+        if (!cancelled) setCodexSessions([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Codex rollouts whose recorded `cwd` matches the current project. When
+  // the rollout didn't log a cwd (projectPath === null) we drop it from the
+  // project view — there's no way to associate it with this project. The
+  // "All Codex sessions across projects" view will be a different mount
+  // point once we land it; for now the project-scoped view is the only
+  // consumer.
+  const projectCodexSessions = useMemo(
+    () => codexSessions.filter((e) => e.projectPath === projectPath),
+    [codexSessions, projectPath],
+  );
+
+  // Codex row click → mint a synthetic Session-shaped detail and dispatch a
+  // `codex-session-selected` event so TabContent can branch on `agent`
+  // without each row hand-rolling addTab. Mirrors the Claude launch path
+  // above for symmetry; TabContent handles the actual tab creation.
+  const handleLaunchCodex = useCallback(
+    (entry: CodexSessionEntry) => {
+      // Codex rollouts may not have recorded a projectPath; fall back to
+      // the page-level projectPath so the new tab still has a working
+      // directory to open under.
+      const resolvedProjectPath = entry.projectPath ?? projectPath;
+      const event = new CustomEvent('codex-session-selected', {
+        detail: {
+          conversationId: entry.conversationId,
+          projectPath: resolvedProjectPath,
+          jsonlPath: entry.jsonlPath,
+          lastActivity: entry.lastActivity,
+        },
+      });
+      window.dispatchEvent(event);
+    },
+    [projectPath],
   );
 
   // ── Per-session summaries ────────────────────────────────────────────
@@ -507,14 +568,48 @@ export const SessionList: React.FC<SessionListProps> = ({
   return (
     <TooltipProvider>
       <div className={cn("flex flex-col gap-4 h-full min-h-0", className)}>
-      {/* Header row: session count + Open-by-ID + refresh. Renders only
-          when at least one of those affordances is present so empty
-          states stay clean. */}
-      {(onRefresh || onOpenById || sessions.length > 0) && (
+      {/* Header row: session count + agent filter + Open-by-ID + refresh.
+          Renders only when at least one of those affordances is present so
+          empty states stay clean. The agent filter is always rendered when
+          any rows exist on either side — gives the user a way to hide
+          Codex rows when they only care about Claude (and vice-versa). */}
+      {(onRefresh || onOpenById || sessions.length > 0 || projectCodexSessions.length > 0) && (
         <div className="flex items-center gap-3">
           <span className="text-sm text-muted-foreground">
-            {sessions.length} session{sessions.length !== 1 ? 's' : ''}
+            {(() => {
+              const claudeCount = agentFilter === 'codex' ? 0 : sessions.length;
+              const codexCount = agentFilter === 'claude' ? 0 : projectCodexSessions.length;
+              const total = claudeCount + codexCount;
+              return `${total} session${total !== 1 ? 's' : ''}`;
+            })()}
           </span>
+          {/* Agent filter — only render when both engines have rows under
+              this project. Single-agent projects don't need the toggle and
+              the empty space reads as a visual distraction. */}
+          {(projectCodexSessions.length > 0 && sessions.length > 0) && (
+            <div
+              role="group"
+              aria-label="Filter by agent"
+              className="inline-flex items-center rounded-md border border-border/60 overflow-hidden text-xs"
+            >
+              {(['all', 'claude', 'codex'] as const).map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => { setAgentFilter(value); }}
+                  className={cn(
+                    "px-2 h-7 capitalize transition-colors",
+                    agentFilter === value
+                      ? "bg-accent text-foreground"
+                      : "text-muted-foreground hover:text-foreground hover:bg-accent/60",
+                  )}
+                  aria-pressed={agentFilter === value}
+                >
+                  {value}
+                </button>
+              ))}
+            </div>
+          )}
           {onOpenById && (
             <button
               type="button"
@@ -577,6 +672,11 @@ export const SessionList: React.FC<SessionListProps> = ({
                 corners as a faint shadow. */}
             <thead className="sticky top-0 z-10 bg-muted text-[11px] uppercase tracking-wider text-muted-foreground">
               <tr>
+                {/* Agent badge column — narrow, just enough for the
+                    Lucide Bot icon + a 1-letter glyph. Identifies which
+                    engine owns each row so the unified list stays
+                    legible without grouping headers. */}
+                <th className="text-left font-medium py-2 px-3 w-12" aria-label="Agent" />
                 <th className="text-left font-medium py-2 px-3 w-36">Date</th>
                 <th className="text-left font-medium py-2 px-3">Summary</th>
                 <th className="text-left font-medium py-2 px-3 w-28">Session ID</th>
@@ -589,7 +689,7 @@ export const SessionList: React.FC<SessionListProps> = ({
               </tr>
             </thead>
             <tbody>
-              {sessions.map((session, index) => {
+              {(agentFilter === 'codex' ? [] : sessions).map((session, index) => {
                 const fmt = (d: Date) =>
                   `${d.toLocaleDateString('en-US', {
                     month: 'numeric',
@@ -654,6 +754,15 @@ export const SessionList: React.FC<SessionListProps> = ({
                       session.todo_data && "bg-primary/5",
                     )}
                   >
+                    <td className="py-2 px-3 align-top" aria-label="Claude session">
+                      <span
+                        className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wide font-semibold text-muted-foreground"
+                        title="Claude session"
+                      >
+                        <Bot className="h-3.5 w-3.5" aria-hidden="true" />
+                        Claude
+                      </span>
+                    </td>
                     <td className="py-2 px-3 text-[11px] text-muted-foreground whitespace-nowrap leading-tight align-top">
                       {/* Dates wrapped in a launch button — same
                           contract as ProjectList's name cell.
@@ -810,6 +919,126 @@ export const SessionList: React.FC<SessionListProps> = ({
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>
+                      </div>
+                    </td>
+                  </motion.tr>
+                );
+              })}
+              {/* Codex rows — separate data source (~/.codex/sessions
+                  walker) than the Claude `sessions` prop, but rendered into
+                  the same table so the agent-filter dropdown and badge
+                  column do the partition work. Hidden entirely when the
+                  filter is set to "claude". Codex doesn't have JSONL
+                  summaries yet (Task 19+); the Summary column shows a
+                  fallback project-path label so rows stay scannable. */}
+              {(agentFilter === 'claude' ? [] : projectCodexSessions).map((entry, index) => {
+                const fmt = (d: Date) =>
+                  `${d.toLocaleDateString('en-US', {
+                    month: 'numeric',
+                    day: 'numeric',
+                    year: 'numeric',
+                  })} ${d.toLocaleTimeString('en-US', {
+                    hour: 'numeric',
+                    minute: '2-digit',
+                  })}`;
+                const lastDate = new Date(entry.lastActivity);
+                return (
+                  <motion.tr
+                    key={`codex-${entry.conversationId}`}
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -8 }}
+                    transition={{
+                      duration: 0.2,
+                      // Stagger continues from the Claude rows' delay
+                      // sequence so the two groups feel like one list.
+                      delay: (sessions.length + index) * 0.02,
+                      ease: [0.4, 0, 0.2, 1],
+                    }}
+                    className="border-t border-border/30 transition-colors hover:bg-accent/40"
+                  >
+                    <td className="py-2 px-3 align-top" aria-label="Codex session">
+                      <span
+                        className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wide font-semibold text-emerald-600 dark:text-emerald-400"
+                        title="Codex session"
+                      >
+                        <Bot className="h-3.5 w-3.5" aria-hidden="true" />
+                        Codex
+                      </span>
+                    </td>
+                    <td className="py-2 px-3 text-[11px] text-muted-foreground whitespace-nowrap leading-tight align-top">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleLaunchCodex(entry);
+                        }}
+                        className="inline-flex items-start gap-1 text-left text-muted-foreground hover:text-foreground hover:underline focus-visible:underline focus:outline-none"
+                        aria-label="Launch Codex session"
+                        title="Launch Codex session"
+                      >
+                        <span>
+                          <div>{fmt(lastDate)}</div>
+                        </span>
+                        <ExternalLink
+                          className="h-3 w-3 opacity-60 mt-[1px]"
+                          aria-hidden="true"
+                        />
+                      </button>
+                    </td>
+                    <td className="py-2 px-3 text-xs text-foreground/90 max-w-0 align-top">
+                      {entry.projectPath ? (
+                        <span className="block truncate text-muted-foreground">
+                          {entry.projectPath}
+                        </span>
+                      ) : (
+                        <span className="italic text-muted-foreground/60">
+                          No project path recorded
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-2 px-3 align-top">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleCopySessionId(entry.conversationId);
+                        }}
+                        className="inline-flex items-center gap-1.5 font-mono text-xs text-muted-foreground hover:text-foreground transition-colors"
+                        title={`Copy full conversation ID: ${entry.conversationId}`}
+                      >
+                        <span>{entry.conversationId.slice(0, 8)}</span>
+                        {copiedId === entry.conversationId ? (
+                          <Check className="h-3 w-3 text-green-500" />
+                        ) : (
+                          <Copy className="h-3 w-3" />
+                        )}
+                      </button>
+                    </td>
+                    <td className="py-2 px-3 text-right text-[11px] font-mono tabular-nums text-muted-foreground align-top whitespace-nowrap">
+                      {/* Size requires a stat() round-trip we don't yet do
+                          for Codex rollouts — leave the column populated
+                          with an em-dash so the row visually aligns with
+                          the Claude rows above. */}
+                      —
+                    </td>
+                    <td className="py-2 px-3 align-top">
+                      <div className="flex items-center justify-end gap-1">
+                        <button
+                          type="button"
+                          aria-label="Launch Codex session"
+                          title="Launch Codex session"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleLaunchCodex(entry);
+                          }}
+                          className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                        >
+                          <ExternalLink className="h-4 w-4" />
+                        </button>
+                        {/* Codex sessions have no sidecar summary yet and
+                            no delete endpoint; surface neither button so
+                            the row reads as "view-only" until Task 19+. */}
                       </div>
                     </td>
                   </motion.tr>

@@ -213,6 +213,9 @@ export interface Services {
     getBinaryPath(): string | null;
     logout(): Promise<void>;
   };
+  codexSessionWalker?: {
+    listSessions(): Promise<import('../services/codex-session-walker').CodexSessionEntry[]>;
+  };
 }
 
 // The handler type used in the map — receives the IPC event plus the params
@@ -271,7 +274,7 @@ function wrapWith<P>(fn: (params: P) => unknown): HandlerFn {
  * renderer gets a defined (but empty) response rather than a blocked channel.
  */
 export function getHandlerMap(services: Services = {}): Record<string, HandlerFn> {
-  const { accounts, claude, sessions, usage, rateLimits, usageRunner, claudeBinary, mcp, slashCommands, sessionsSummary, logging, database, proxy, permissionsIO, models, gitWatcher, branchColors, gitBranches, lima, filesystem, notificationSounds, oneShotTerminal, codexAuth } = services;
+  const { accounts, claude, sessions, usage, rateLimits, usageRunner, claudeBinary, mcp, slashCommands, sessionsSummary, logging, database, proxy, permissionsIO, models, gitWatcher, branchColors, gitBranches, lima, filesystem, notificationSounds, oneShotTerminal, codexAuth, codexSessionWalker } = services;
 
   const map: Record<string, HandlerFn> = {
     // ── Accounts ──────────────────────────────────────────────────────────────
@@ -788,6 +791,9 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
       await codexAuth.logout();
       return null;
     }),
+
+    // ── Codex sessions (on-disk rollout discovery) ────────────────────────
+    codex_session_list: wrap(() => codexSessionWalker?.listSessions() ?? []),
   };
 
   return map;

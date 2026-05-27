@@ -733,6 +733,48 @@ export const TabContent: React.FC = () => {
       }
     };
 
+    // Mirror of handleClaudeSessionSelected for Codex rows. The event
+    // payload is `{ conversationId, projectPath, jsonlPath, lastActivity }`;
+    // we mint a Codex-flavored chat tab carrying `agent: 'codex'` and the
+    // conversationId as the resumable sessionId. Transcript rendering for
+    // Codex lands in Task 19+ — for now we just create the tab so the
+    // click is wired end-to-end.
+    const handleCodexSessionSelected = (event: CustomEvent) => {
+      const detail = event.detail as {
+        conversationId: string;
+        projectPath: string | null;
+        jsonlPath?: string;
+        lastActivity?: string;
+      };
+      const codexProjectPath = detail.projectPath ?? '';
+      const existingTab = findTabBySessionId(detail.conversationId);
+      if (existingTab) {
+        window.dispatchEvent(new CustomEvent('switch-to-tab', { detail: { tabId: existingTab.id } }));
+        return;
+      }
+      const projectName = codexProjectPath.split('/').pop() || 'Codex Session';
+      const currentTab = tabs.find((t) => t.id === activeTabId);
+      if (currentTab?.type === 'projects') {
+        updateTab(currentTab.id, {
+          type: 'chat',
+          title: projectName,
+          agent: 'codex',
+          sessionId: detail.conversationId,
+          initialProjectPath: codexProjectPath || undefined,
+        });
+      } else {
+        const newTabId = createChatTab(
+          detail.conversationId,
+          projectName,
+          codexProjectPath || undefined,
+          'codex',
+        );
+        updateTab(newTabId, {
+          initialProjectPath: codexProjectPath || undefined,
+        });
+      }
+    };
+
     // When ClaudeCodeSession fires back-to-project, revert the current
     // chat tab to a projects tab. Mirrors the mutation that happens in
     // handleClaudeSessionSelected — except in reverse. The user ends up
@@ -756,11 +798,13 @@ export const TabContent: React.FC = () => {
     window.addEventListener('open-session-in-tab', handleOpenSessionInTab as EventListener);
     window.addEventListener('close-tab', handleCloseTab as EventListener);
     window.addEventListener('claude-session-selected', handleClaudeSessionSelected as EventListener);
+    window.addEventListener('codex-session-selected', handleCodexSessionSelected as EventListener);
     window.addEventListener('back-to-project', handleBackToProject);
     return () => {
       window.removeEventListener('open-session-in-tab', handleOpenSessionInTab as EventListener);
       window.removeEventListener('close-tab', handleCloseTab as EventListener);
       window.removeEventListener('claude-session-selected', handleClaudeSessionSelected as EventListener);
+      window.removeEventListener('codex-session-selected', handleCodexSessionSelected as EventListener);
       window.removeEventListener('back-to-project', handleBackToProject);
     };
   }, [createChatTab, findTabBySessionId, closeTab, updateTab, activeTabId, tabs]);

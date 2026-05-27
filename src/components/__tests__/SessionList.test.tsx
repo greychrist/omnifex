@@ -77,6 +77,14 @@ vi.mock('@/lib/api', async () => {
         if (key === 'sessionsSummary.enabled') return 'true';
         return null;
       }),
+      // Task 16 — Codex session walker. Default: no Codex rows. Codex-aware
+      // tests below override this with mockResolvedValueOnce.
+      listCodexSessions: vi.fn(async () => [] as Array<{
+        conversationId: string;
+        projectPath: string | null;
+        lastActivity: string;
+        jsonlPath: string;
+      }>),
     },
     // Mirror the setting key constants the component imports.
     PROMPT_TEMPLATE_SETTING_KEY: 'sessionsSummary.promptTemplate',
@@ -581,6 +589,103 @@ describe('SessionList — click semantics', () => {
         configurable: true,
         value: originalClipboard,
       });
+    }
+  });
+});
+
+describe('SessionList — Codex partition (Task 16)', () => {
+  // Codex rollouts whose recorded `cwd` matches the test's projectPath.
+  // Filtering to the active project happens client-side in SessionList.
+  const codexEntry = {
+    conversationId: '019cb5ad-0c36-7d80-b43f-559e40646c80',
+    projectPath: '/x',
+    lastActivity: '2026-05-10T12:00:00Z',
+    jsonlPath:
+      '/Users/test/.codex/sessions/2026/05/10/rollout-2026-05-10T12-00-00-019cb5ad-0c36-7d80-b43f-559e40646c80.jsonl',
+  };
+  const codexEntryOtherProject = {
+    conversationId: '019d1c78-c93c-7e10-807d-43a194215440',
+    projectPath: '/other/project',
+    lastActivity: '2026-05-09T12:00:00Z',
+    jsonlPath:
+      '/Users/test/.codex/sessions/2026/05/09/rollout-019d1c78-c93c-7e10-807d-43a194215440.jsonl',
+  };
+
+  it('renders a Codex row with badge when api.listCodexSessions returns an entry under this project', async () => {
+    vi.mocked(api.listCodexSessions).mockResolvedValueOnce([codexEntry]);
+    vi.mocked(api.summaryGet).mockResolvedValue(null);
+    render(<SessionList sessions={[]} projectPath="/x" />);
+    // Codex badge → uppercase label in the row's first cell.
+    expect(await screen.findByText(/codex/i)).toBeTruthy();
+    // Conversation id is rendered (first 8 chars are surfaced as the copy-id label).
+    expect(screen.getByText(codexEntry.conversationId.slice(0, 8))).toBeTruthy();
+  });
+
+  it('filters Codex entries whose projectPath does NOT match the current project', async () => {
+    vi.mocked(api.listCodexSessions).mockResolvedValueOnce([
+      codexEntry,
+      codexEntryOtherProject,
+    ]);
+    vi.mocked(api.summaryGet).mockResolvedValue(null);
+    render(<SessionList sessions={[]} projectPath="/x" />);
+    // Only the /x row should be in the table.
+    await screen.findByText(codexEntry.conversationId.slice(0, 8));
+    expect(
+      screen.queryByText(codexEntryOtherProject.conversationId.slice(0, 8)),
+    ).toBeNull();
+  });
+
+  it('hides Codex rows when the agent filter is set to "claude"', async () => {
+    vi.mocked(api.listCodexSessions).mockResolvedValueOnce([codexEntry]);
+    vi.mocked(api.summaryGet).mockResolvedValue(null);
+    render(
+      <SessionList sessions={[sessionFixture]} projectPath="/x" />,
+    );
+    // Wait for both rows to mount — Claude (from `sessions` prop) + Codex
+    // (from the walker mock). Both must be visible BEFORE we flip the
+    // filter, otherwise we're asserting on an async-mount race.
+    await screen.findByText(codexEntry.conversationId.slice(0, 8));
+    expect(screen.getByText(/sess-1/)).toBeTruthy();
+
+    // The filter renders only when both engines have rows. Click "Claude".
+    const claudeFilter = screen
+      .getAllByRole('button', { pressed: false })
+      .find((b) => /^claude$/i.test(b.textContent ?? ''));
+    expect(claudeFilter).toBeDefined();
+    fireEvent.click(claudeFilter!);
+
+    // Codex row is now gone; Claude row is still there.
+    expect(
+      screen.queryByText(codexEntry.conversationId.slice(0, 8)),
+    ).toBeNull();
+    expect(screen.getByText(/sess-1/)).toBeTruthy();
+  });
+
+  it('dispatches codex-session-selected CustomEvent on Codex row click', async () => {
+    vi.mocked(api.listCodexSessions).mockResolvedValueOnce([codexEntry]);
+    vi.mocked(api.summaryGet).mockResolvedValue(null);
+    const listener = vi.fn();
+    window.addEventListener('codex-session-selected', listener as EventListener);
+    try {
+      render(<SessionList sessions={[]} projectPath="/x" />);
+      await screen.findByText(codexEntry.conversationId.slice(0, 8));
+
+      // The Codex row has TWO "Launch Codex session" buttons (date launcher
+      // + rightmost icon). Either is a valid click; both must dispatch.
+      const launchBtns = screen.getAllByRole('button', {
+        name: /launch codex session/i,
+      });
+      expect(launchBtns.length).toBeGreaterThanOrEqual(1);
+      fireEvent.click(launchBtns[0]);
+      expect(listener).toHaveBeenCalledTimes(1);
+      const evt = listener.mock.calls[0][0] as CustomEvent;
+      expect((evt.detail).conversationId).toBe(codexEntry.conversationId);
+      expect((evt.detail).projectPath).toBe('/x');
+    } finally {
+      window.removeEventListener(
+        'codex-session-selected',
+        listener as EventListener,
+      );
     }
   });
 });

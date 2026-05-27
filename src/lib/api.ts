@@ -2504,4 +2504,27 @@ export const api = {
     );
   },
 
+  /**
+   * Enumerate Codex CLI session rollouts found under `~/.codex/sessions/`.
+   * Each entry carries the conversation uuid (for resume), the recorded
+   * project path if any, the rollout file path, and an ISO `lastActivity`
+   * mtime. Sorted most-recent first. Returns `[]` when Codex has never run
+   * on this machine (sessionsDir missing).
+   */
+  async listCodexSessions(): Promise<CodexSessionEntry[]> {
+    return apiCall<CodexSessionEntry[]>('codex_session_list', {});
+  },
+
 };
+
+/**
+ * Renderer-side mirror of the backend `CodexSessionEntry`. Keep the field
+ * names in sync with `electron/services/codex-session-walker.ts` — both
+ * sides ship the same shape over IPC, no adapter in between.
+ */
+export interface CodexSessionEntry {
+  conversationId: string;
+  projectPath: string | null;
+  lastActivity: string;
+  jsonlPath: string;
+}

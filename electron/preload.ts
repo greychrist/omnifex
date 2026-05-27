@@ -184,6 +184,9 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   'codex_binary_path',
   'codex_logout',
 
+  // Codex sessions (rollout discovery under ~/.codex/sessions)
+  'codex_session_list',
+
   // Updater
   'updater:check',
   'updater:download',

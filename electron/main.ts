@@ -63,6 +63,7 @@ import { createSlashCommandsService } from './services/slash-commands';
 import { createFilesystemService } from './services/filesystem';
 import { createOneShotTerminalService } from './services/one-shot-terminal';
 import { createCodexAuthService } from './services/auth/codex-auth';
+import { createCodexSessionWalker } from './services/codex-session-walker';
 import {
   createSessionsSummaryService,
   DEFAULT_SUMMARY_PROMPT,
@@ -662,6 +663,7 @@ app.whenReady().then(() => {
   const codexAuthService = createCodexAuthService({
     oneShotTerminal: oneShotTerminalService,
   });
+  const codexSessionWalkerService = createCodexSessionWalker();
 
   // App-wide broadcast: any time the Codex auth file changes (fresh login,
   // logout via deletion, etc.) every renderer needs to know so banners and
@@ -934,6 +936,9 @@ app.whenReady().then(() => {
       cancelLoginFlow: (ptyHandle: string) => codexAuthService.cancelLoginFlow(ptyHandle),
       getBinaryPath: () => codexAuthService.getBinaryPath(),
       logout: () => codexAuthService.logout(),
+    },
+    codexSessionWalker: {
+      listSessions: () => codexSessionWalkerService.listSessions(),
     },
   });
 
