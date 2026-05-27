@@ -11,6 +11,8 @@ import type {
   FileSnapshotRaw,
   SystemRaw,
   SystemSubtype,
+  CliInitRaw,
+  CliResultRaw,
 } from '@/types/jsonl';
 
 /**
@@ -54,7 +56,10 @@ export function classifyJsonlLine(raw: unknown): JsonlNode | null {
     case 'file-history-snapshot':
       return classifyFileSnapshot(r);
     case 'system':
+      if (r.subtype === 'init') return classifyCliInit(r, sessionId, receivedAt);
       return classifySystem(r, sessionId, receivedAt);
+    case 'result':
+      return classifyCliResult(r, sessionId, receivedAt);
     default:
       if (receivedAt === null) return null;
       return {
@@ -144,7 +149,7 @@ function classifyQueueOp(r: Record<string, unknown>, sessionId: string, received
 }
 
 const SYSTEM_SUBTYPES: ReadonlySet<SystemSubtype> = new Set<SystemSubtype>([
-  'init',
+  // 'init' intentionally absent: system:init is routed to classifyCliInit before classifySystem.
   'notification',
   'stop_hook_summary',
   'hook_started',
@@ -209,5 +214,15 @@ function classifySystem(r: Record<string, unknown>, sessionId: string, receivedA
     sessionId,
     receivedAt,
   };
+}
+
+function classifyCliInit(r: Record<string, unknown>, sessionId: string, receivedAt: string | null): JsonlNode | null {
+  if (receivedAt === null) return null;
+  return { kind: 'cli-stream-init', raw: r as unknown as CliInitRaw, sessionId, receivedAt };
+}
+
+function classifyCliResult(r: Record<string, unknown>, sessionId: string, receivedAt: string | null): JsonlNode | null {
+  if (receivedAt === null) return null;
+  return { kind: 'cli-stream-result', raw: r as unknown as CliResultRaw, sessionId, receivedAt };
 }
 

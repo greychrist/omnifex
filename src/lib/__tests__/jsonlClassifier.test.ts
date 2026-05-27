@@ -210,7 +210,7 @@ describe('classifyJsonlLine', () => {
     expect(node?.kind).toBe('unknown');
   });
 
-  it('classifies system/init (SDK iterator shape)', () => {
+  it('classifies system/init as cli-stream-init (engine-mode init envelope)', () => {
     const sample = {
       type: 'system',
       subtype: 'init',
@@ -219,9 +219,8 @@ describe('classifyJsonlLine', () => {
       timestamp: '2026-05-27T00:00:00Z',
     };
     const node = classifyJsonlLine(sample);
-    expect(node?.kind).toBe('system');
-    if (node?.kind === 'system') {
-      expect(node.subtype).toBe('init');
+    expect(node?.kind).toBe('cli-stream-init');
+    if (node?.kind === 'cli-stream-init') {
       expect(node.sessionId).toBe('sdk-sid-1');
     }
   });
@@ -271,7 +270,7 @@ describe('classifyJsonlLine', () => {
     }
   });
 
-  it('classifies result events as unknown (result is no longer a named kind)', () => {
+  it('classifies result events as cli-stream-result', () => {
     const sample = {
       type: 'result',
       subtype: 'success',
@@ -285,6 +284,89 @@ describe('classifyJsonlLine', () => {
       usage: { input_tokens: 200, output_tokens: 80 },
     };
     const node = classifyJsonlLine(sample);
-    expect(node?.kind).toBe('unknown');
+    expect(node?.kind).toBe('cli-stream-result');
+  });
+});
+
+describe('CLI stream-json envelopes (engine mode)', () => {
+  it('classifies a system:init envelope as cli-stream-init', () => {
+    const raw = {
+      type: 'system',
+      subtype: 'init',
+      session_id: 'abc',
+      cwd: '/work',
+      timestamp: '2026-05-27T00:00:00Z',
+    };
+    const node = classifyJsonlLine(raw);
+    expect(node?.kind).toBe('cli-stream-init');
+  });
+
+  it('classifies a result envelope as cli-stream-result', () => {
+    const raw = {
+      type: 'result',
+      subtype: 'success',
+      is_error: false,
+      duration_ms: 1234,
+      session_id: 'abc',
+      timestamp: '2026-05-27T00:00:00Z',
+    };
+    const node = classifyJsonlLine(raw);
+    expect(node?.kind).toBe('cli-stream-result');
+  });
+
+  it('classifies a result error_during_execution envelope as cli-stream-result', () => {
+    const raw = {
+      type: 'result',
+      subtype: 'error_during_execution',
+      is_error: true,
+      result: '',
+      duration_ms: 4679375,
+      duration_api_ms: 0,
+      num_turns: 0,
+      stop_reason: null,
+      total_cost_usd: 0.000138,
+      session_id: 'c0e34556-8703-4a95-9ee2-999180bc7cf1',
+      timestamp: '2026-05-27T00:00:00Z',
+    };
+    const node = classifyJsonlLine(raw);
+    expect(node?.kind).toBe('cli-stream-result');
+  });
+
+  it('cli-stream-init preserves sessionId from session_id field', () => {
+    const raw = {
+      type: 'system',
+      subtype: 'init',
+      session_id: 'my-session',
+      timestamp: '2026-05-27T00:00:00Z',
+    };
+    const node = classifyJsonlLine(raw);
+    expect(node?.kind).toBe('cli-stream-init');
+    if (node?.kind === 'cli-stream-init') {
+      expect(node.sessionId).toBe('my-session');
+    }
+  });
+
+  it('cli-stream-init returns null when timestamp is missing', () => {
+    const raw = {
+      type: 'system',
+      subtype: 'init',
+      session_id: 'abc',
+    };
+    const node = classifyJsonlLine(raw);
+    expect(node).toBeNull();
+  });
+
+  it('non-init system subtypes still classify as system (not cli-stream-init)', () => {
+    const raw = {
+      type: 'system',
+      subtype: 'notification',
+      session_id: 'abc',
+      timestamp: '2026-05-27T00:00:00Z',
+      notification_type: 'info',
+      title: 'test',
+      body: 'hello',
+    };
+    const node = classifyJsonlLine(raw);
+    expect(node?.kind).toBe('system');
   });
 });

@@ -125,6 +125,34 @@ export interface SystemRaw extends RawLineBase {
   body?: string;
 }
 
+export interface CliInitRaw {
+  type: 'system';
+  subtype: 'init';
+  session_id?: string;
+  cwd?: string;
+  model?: string;
+  tools?: string[];
+  mcp_servers?: unknown[];
+  [k: string]: unknown;
+}
+
+export interface CliResultRaw {
+  type: 'result';
+  subtype?: string;
+  is_error?: boolean;
+  result?: string;
+  duration_ms?: number;
+  duration_api_ms?: number;
+  num_turns?: number;
+  stop_reason?: string | null;
+  total_cost_usd?: number;
+  usage?: Record<string, unknown>;
+  modelUsage?: Record<string, unknown>;
+  permission_denials?: unknown[];
+  session_id?: string;
+  [k: string]: unknown;
+}
+
 export type LifecycleKind =
   | 'task_started' | 'task_updated' | 'task_progress' | 'task_notification'
   | 'hook_started' | 'hook_progress' | 'hook_response'
@@ -166,6 +194,9 @@ export type JsonlNode =
   | { kind: 'file-history-snapshot'; raw: FileSnapshotRaw }
   // System sub-variants
   | { kind: 'system'; subtype: SystemSubtype; raw: SystemRaw; sessionId: string; receivedAt: string }
+  // CLI engine-mode stream envelopes (engine/--output-format stream-json)
+  | { kind: 'cli-stream-init'; raw: CliInitRaw; sessionId: string; receivedAt: string }
+  | { kind: 'cli-stream-result'; raw: CliResultRaw; sessionId: string; receivedAt: string }
   // Overlay (SDK iterator only — never enters messages[])
   | { kind: 'stream-event'; uuid: string; deltaText: string }
   | { kind: 'rate-limit'; info: RateLimitInfo }

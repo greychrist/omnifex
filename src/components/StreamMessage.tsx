@@ -37,6 +37,8 @@ import {
 import { AnsweredAskUserQuestionCard } from "@/components/AnsweredAskUserQuestionCard";
 import { CardActionBar, CardActionButton, CardActionDivider } from "@/components/CardActionBar";
 import { MessageFrame } from "@/components/StreamMessage/MessageFrame";
+import { CliInitBadge } from "@/components/StreamMessage/CliInitBadge";
+import { CliResultBadge } from "@/components/StreamMessage/CliResultBadge";
 import {
   TodoReadWidget,
   LSWidget,
@@ -60,7 +62,6 @@ import {
   ThinkingWidget,
   WebSearchWidget,
   WebFetchWidget,
-  SystemInitializedWidget,
   SystemContextWidget
 } from "./ToolWidgets";
 import { turnDuration } from "@/lib/sessionDerivedState";
@@ -372,17 +373,6 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
 
     if (message.kind === 'system') {
       const sysRaw = message.raw;
-      // System initialization message - use the original rich widget
-      if (message.subtype === "init") {
-        return (
-          <SystemInitializedWidget
-            sessionId={(sysRaw as unknown as { session_id?: string }).session_id}
-            model={(sysRaw as unknown as { model?: string }).model}
-            cwd={sysRaw.cwd}
-            tools={(sysRaw as unknown as { tools?: string[] }).tools}
-          />
-        );
-      }
 
       // SDK notification — route through MessageFrame.
       if (message.subtype === "notification") {
@@ -417,6 +407,14 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
       );
     }
 
+    if (message.kind === 'cli-stream-init') {
+      return <CliInitBadge node={message} />;
+    }
+
+    if (message.kind === 'cli-stream-result') {
+      return <CliResultBadge node={message} />;
+    }
+
     if (message.kind === 'unknown') {
       // unknown nodes carry an untyped raw bag — use explicit type assertions below.
       const unknownRaw = message.raw;
@@ -434,80 +432,6 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
       // carry { leafUuid, summary } and are the only variant with these fields).
       if (unknownRaw.type === "summary" && unknownRaw.leafUuid && unknownRaw.summary) {
         return <SummaryWidget summary={unknownRaw.summary as string} leafUuid={unknownRaw.leafUuid as string} />;
-      }
-
-      // Result message — route through MessageFrame so presentation config drives chrome.
-      if (unknownRaw.type === "result") {
-        const classifiedKind = classifyStandaloneKind(message, streamMessages);
-        const resultKindId =
-          classifiedKind === "result.error_during_execution"
-            || classifiedKind === "result.awaiting_background"
-            || classifiedKind === "result.success"
-            ? classifiedKind
-            : (unknownRaw.is_error === true ? "result.error_during_execution" : "result.success");
-        const isError = resultKindId === "result.error_during_execution";
-        const isAwaiting = resultKindId === "result.awaiting_background";
-        const resultFallbackLabel = isError
-          ? "Execution Failed"
-          : isAwaiting
-            ? "Awaiting Background Work"
-            : "Execution Complete";
-        const resultText = unknownRaw.result as string | undefined;
-        const resultSubtype = unknownRaw.subtype as string | undefined;
-        const resultErrors = (unknownRaw as { errors?: string[] }).errors;
-        const totalCostUsd = unknownRaw.total_cost_usd as number | undefined;
-        const durationMs = unknownRaw.duration_ms as number | undefined;
-        const numTurns = unknownRaw.num_turns as number | undefined;
-        const resultUsage = unknownRaw.usage as { input_tokens?: number; output_tokens?: number } | undefined;
-
-        return (
-          <MessageFrame
-            streamKind={resultKindId}
-            message={message}
-            actionBar={<CardActionBar message={unknownRaw} />}
-          >
-            {resultSubtype === 'success' && resultText && (
-              <div className="prose prose-sm dark:prose-invert max-w-none">
-                <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={mdComponents}>
-                  {resultText}
-                </ReactMarkdown>
-              </div>
-            )}
-
-            {/* SDKResultErrorMessage carries `errors: string[]` (plural). */}
-            {resultSubtype !== 'success' && resultErrors?.length
-              ? <div className="text-sm text-destructive">{resultErrors.join('\n')}</div>
-              : null}
-
-            {(totalCostUsd !== undefined || durationMs !== undefined || numTurns !== undefined || resultUsage) && (
-              <>
-                <hr className="border-t border-border/50 my-2" />
-                <div className="text-xs text-muted-foreground space-y-1">
-                  {accountType !== "max" && totalCostUsd !== undefined && (
-                    <div>Cost: ${totalCostUsd.toFixed(4)} USD</div>
-                  )}
-                  {durationMs !== undefined && (
-                    <div>Duration: {formatDurationMs(durationMs)}</div>
-                  )}
-                  {numTurns !== undefined && (
-                    <div>Turns: {numTurns}</div>
-                  )}
-                  {resultUsage && (resultUsage.input_tokens !== undefined || resultUsage.output_tokens !== undefined) && (
-                    <div>
-                      Total tokens: {(resultUsage.input_tokens ?? 0) + (resultUsage.output_tokens ?? 0)}
-                      {' '}({resultUsage.input_tokens ?? 0} in, {resultUsage.output_tokens ?? 0} out)
-                    </div>
-                  )}
-                </div>
-              </>
-            )}
-
-            {/* Fallback label when no other content rendered — keeps the frame visible */}
-            {!resultText && resultSubtype === 'success' && (
-              <span className="text-sm text-muted-foreground">{resultFallbackLabel}</span>
-            )}
-          </MessageFrame>
-        );
       }
 
       // All other unknown kinds — nothing to render.

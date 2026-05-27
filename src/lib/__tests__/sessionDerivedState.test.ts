@@ -211,6 +211,33 @@ describe('turnDuration', () => {
   });
 });
 
+describe('cli-stream kinds do not affect derivation', () => {
+  it('does not treat cli-stream-result as a turn ender', () => {
+    const msgs: JsonlNode[] = [
+      userPrompt('2026-05-27T00:00:00Z'),
+      {
+        kind: 'cli-stream-result',
+        sessionId: 's1',
+        receivedAt: '2026-05-27T00:00:01Z',
+        raw: { type: 'result', subtype: 'success' } as never,
+      },
+    ];
+    expect(waitingOnClaude(msgs)).toBe(true); // still waiting — no real assistant arrived
+  });
+
+  it('does not treat cli-stream-init as a turn start', () => {
+    const msgs: JsonlNode[] = [
+      {
+        kind: 'cli-stream-init',
+        sessionId: 's1',
+        receivedAt: '2026-05-27T00:00:00Z',
+        raw: { type: 'system', subtype: 'init' } as never,
+      },
+    ];
+    expect(waitingOnClaude(msgs)).toBe(false); // no user prompt — not waiting
+  });
+});
+
 describe('sessionStartedAt', () => {
   it('returns null for empty messages', () => {
     expect(sessionStartedAt([])).toBeNull();
