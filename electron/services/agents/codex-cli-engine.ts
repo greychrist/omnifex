@@ -39,11 +39,28 @@ export function createCodexCliEngine(
   const exitCallbacks: Array<(info: AgentEngineExit) => void> = [];
   const errorCallbacks: Array<(err: Error) => void> = [];
   const permissionCallbacks: Array<(r: AgentPermissionRequest) => void> = [];
+  const messageCallbacks: Array<(m: AgentMessage) => void> = [];
 
   function emitPermission(r: AgentPermissionRequest): void {
     for (const cb of permissionCallbacks) {
       try { cb(r); } catch { /* one bad handler shouldn't poison the rest */ }
     }
+  }
+
+  function emitMessage(m: AgentMessage): void {
+    for (const cb of messageCallbacks) {
+      try { cb(m); } catch { /* one bad handler shouldn't poison the rest */ }
+    }
+  }
+
+  function onNotification(method: string, params: unknown): void {
+    emitMessage({
+      agent: 'codex',
+      tabId: factory.tabId,
+      receivedAt: new Date().toISOString(),
+      sessionId: conversationId,
+      payload: { method, params },
+    });
   }
 
   function handleServerRequest(method: string, params: unknown, id: string | number): void {
@@ -131,9 +148,7 @@ export function createCodexCliEngine(
       rpc = createJsonRpcClient({
         readable: child.stdout,
         writable: child.stdin,
-        // Task 7 wires onNotification. Task 6 wires onServerRequest for
-        // applyPatchApproval / execCommandApproval round-trips.
-        onNotification: () => {},
+        onNotification,
         onServerRequest: handleServerRequest,
       });
 
@@ -236,10 +251,14 @@ export function createCodexCliEngine(
     return null;
   }
 
-  function onMessage(_cb: (m: AgentMessage) => void): Disposable {
-    // Task 7 wires this. Returning a disposable that no-ops keeps callers
-    // (sessions service) from crashing during Task 4 integration.
-    return { dispose() { /* no-op */ } };
+  function onMessage(cb: (m: AgentMessage) => void): Disposable {
+    messageCallbacks.push(cb);
+    return {
+      dispose() {
+        const i = messageCallbacks.indexOf(cb);
+        if (i !== -1) messageCallbacks.splice(i, 1);
+      },
+    };
   }
   function onPermissionRequest(cb: (r: AgentPermissionRequest) => void): Disposable {
     permissionCallbacks.push(cb);

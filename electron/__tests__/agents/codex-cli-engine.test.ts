@@ -3,7 +3,7 @@ import { EventEmitter } from 'node:events';
 import { Readable, Writable } from 'node:stream';
 import { spawn } from 'node:child_process';
 import { createCodexCliEngine } from '../../services/agents/codex-cli-engine';
-import type { AgentPermissionRequest } from '../../services/agents/types';
+import type { AgentMessage, AgentPermissionRequest } from '../../services/agents/types';
 
 vi.mock('node:child_process', () => ({
   spawn: vi.fn(),
@@ -484,6 +484,110 @@ describe('CodexCliEngine', () => {
       expect(sent.id).toBe('srv-x');
       expect(sent.error?.code).toBe(-32601);
       expect(String(sent.error?.message).toLowerCase()).toMatch(/not handled|unknown/);
+    });
+  });
+
+  describe('notifications (Codex server-emitted)', () => {
+    async function bootEngineWithConversation(tabId = 'tab-x'): Promise<{
+      engine: ReturnType<typeof createCodexCliEngine>;
+      fake: FakeChild;
+    }> {
+      const fake = makeFakeChild();
+      mockedSpawn.mockReturnValue(fake as never);
+
+      const engine = createCodexCliEngine({
+        tabId,
+        codexBinaryPath: '/usr/local/bin/codex',
+      });
+
+      const startPromise = engine.start({
+        projectPath: '/p',
+        configDir: '/c',
+        model: 'gpt-5',
+        sessionId: 'session-uuid',
+        resume: false,
+      });
+      startPromise.catch(() => {});
+
+      await flushMicrotasks();
+
+      const startSent = JSON.parse(fake.stdin._writes[0]!.trim());
+      fake.stdout.push(
+        JSON.stringify({
+          jsonrpc: '2.0',
+          id: startSent.id,
+          result: { conversationId: 'conv-1' },
+        }) + '\n',
+      );
+
+      await startPromise;
+      return { engine, fake };
+    }
+
+    it('surfaces all server-emitted notifications as AgentMessage envelopes', async () => {
+      const { engine, fake } = await bootEngineWithConversation('tab-x');
+
+      const received: AgentMessage[] = [];
+      engine.onMessage((m) => received.push(m));
+
+      const notifications: Array<{ method: string; params: unknown }> = [
+        { method: 'task_started', params: { conversationId: 'conv-1' } },
+        { method: 'agent_message', params: { content: 'hi' } },
+        { method: 'agent_reasoning', params: { summary: 'thinking…' } },
+        {
+          method: 'item.exec_command',
+          params: { command: 'ls', stdout: 'foo\n' },
+        },
+        { method: 'task_complete', params: { conversationId: 'conv-1' } },
+      ];
+
+      for (const n of notifications) {
+        fake.stdout.push(
+          JSON.stringify({ jsonrpc: '2.0', method: n.method, params: n.params }) +
+            '\n',
+        );
+      }
+
+      await flushMicrotasks();
+
+      expect(received.length).toBe(5);
+
+      const isoRe = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})$/;
+
+      received.forEach((msg, i) => {
+        const expected = notifications[i]!;
+        expect(msg.agent).toBe('codex');
+        expect(msg.tabId).toBe('tab-x');
+        expect(typeof msg.receivedAt).toBe('string');
+        expect(msg.receivedAt.length).toBeGreaterThan(0);
+        expect(msg.receivedAt).toMatch(isoRe);
+        expect(msg.sessionId).toBe('conv-1');
+        expect(msg.payload).toEqual({
+          method: expected.method,
+          params: expected.params,
+        });
+      });
+    });
+
+    it('onMessage disposal stops the callback from being invoked', async () => {
+      const { engine, fake } = await bootEngineWithConversation('tab-dispose');
+
+      const received: AgentMessage[] = [];
+      const sub = engine.onMessage((m) => received.push(m));
+
+      sub.dispose();
+
+      fake.stdout.push(
+        JSON.stringify({
+          jsonrpc: '2.0',
+          method: 'agent_message',
+          params: { content: 'after-dispose' },
+        }) + '\n',
+      );
+
+      await flushMicrotasks();
+
+      expect(received.length).toBe(0);
     });
   });
 });
