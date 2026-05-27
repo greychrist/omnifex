@@ -35,7 +35,7 @@ export function classifyJsonlLine(raw: unknown): JsonlNode | null {
       : typeof r.session_id === 'string'
         ? r.session_id
         : '';
-  const receivedAt = typeof r.timestamp === 'string' ? r.timestamp : new Date().toISOString();
+  const receivedAt = typeof r.timestamp === 'string' ? r.timestamp : null;
 
   switch (type) {
     case 'assistant':
@@ -59,6 +59,7 @@ export function classifyJsonlLine(raw: unknown): JsonlNode | null {
     case 'result':
       return classifyResult(r, sessionId, receivedAt);
     default:
+      if (receivedAt === null) return null;
       return {
         kind: 'unknown',
         raw: r,
@@ -68,7 +69,8 @@ export function classifyJsonlLine(raw: unknown): JsonlNode | null {
   }
 }
 
-function classifyAssistant(r: Record<string, unknown>, sessionId: string, receivedAt: string): JsonlNode | null {
+function classifyAssistant(r: Record<string, unknown>, sessionId: string, receivedAt: string | null): JsonlNode | null {
+  if (receivedAt === null) return null;
   const message = r.message;
   if (!message || typeof message !== 'object') return null;
   return {
@@ -92,7 +94,8 @@ function isAttachmentMarker(content: unknown): boolean {
   return first.text.startsWith('[Image: ');
 }
 
-function classifyUser(r: Record<string, unknown>, sessionId: string, receivedAt: string): JsonlNode | null {
+function classifyUser(r: Record<string, unknown>, sessionId: string, receivedAt: string | null): JsonlNode | null {
+  if (receivedAt === null) return null;
   const message = r.message;
   if (!message || typeof message !== 'object') return null;
   const content = (message as { content?: unknown }).content;
@@ -121,7 +124,8 @@ function classifyUser(r: Record<string, unknown>, sessionId: string, receivedAt:
   };
 }
 
-function classifyAttachment(r: Record<string, unknown>, sessionId: string, receivedAt: string): JsonlNode | null {
+function classifyAttachment(r: Record<string, unknown>, sessionId: string, receivedAt: string | null): JsonlNode | null {
+  if (receivedAt === null) return null;
   if (!r.attachment || typeof r.attachment !== 'object') return null;
   return {
     kind: 'attachment',
@@ -131,7 +135,8 @@ function classifyAttachment(r: Record<string, unknown>, sessionId: string, recei
   };
 }
 
-function classifyQueueOp(r: Record<string, unknown>, sessionId: string, receivedAt: string): JsonlNode | null {
+function classifyQueueOp(r: Record<string, unknown>, sessionId: string, receivedAt: string | null): JsonlNode | null {
+  if (receivedAt === null) return null;
   if (typeof r.operation !== 'string') return null;
   return {
     kind: 'queue-operation',
@@ -193,11 +198,13 @@ function classifyFileSnapshot(r: Record<string, unknown>): JsonlNode | null {
   };
 }
 
-function classifySystem(r: Record<string, unknown>, sessionId: string, receivedAt: string): JsonlNode | null {
+function classifySystem(r: Record<string, unknown>, sessionId: string, receivedAt: string | null): JsonlNode | null {
   const subtype = r.subtype;
   if (typeof subtype !== 'string' || !SYSTEM_SUBTYPES.has(subtype as SystemSubtype)) {
+    if (receivedAt === null) return null;
     return { kind: 'unknown', raw: r, sessionId, receivedAt };
   }
+  if (receivedAt === null) return null;
   return {
     kind: 'system',
     subtype: subtype as SystemSubtype,
@@ -207,7 +214,8 @@ function classifySystem(r: Record<string, unknown>, sessionId: string, receivedA
   };
 }
 
-function classifyResult(r: Record<string, unknown>, sessionId: string, receivedAt: string): JsonlNode | null {
+function classifyResult(r: Record<string, unknown>, sessionId: string, receivedAt: string | null): JsonlNode | null {
+  if (receivedAt === null) return null;
   // type:'result' from the SDK iterator carries the per-turn summary.
   // We pass it through so the reducer's result handler fires (clearLoading +
   // refresh effects + cost) and the Execution Complete card renders.

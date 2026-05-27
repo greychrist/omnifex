@@ -65,23 +65,13 @@ describe('classifyJsonlLine', () => {
   });
 
   it('returns kind: unknown for an unrecognized top-level type', () => {
-    const node = classifyJsonlLine({ type: 'unknown-future-type' });
+    const node = classifyJsonlLine({ type: 'unknown-future-type', timestamp: '2026-05-27T00:00:00Z' });
     expect(node?.kind).toBe('unknown');
   });
 
-  it('uses receivedAt fallback when timestamp is missing', () => {
-    const sample = {
-      type: 'assistant',
-      sessionId: 'sid-2',
-      message: { role: 'assistant', content: [] },
-    };
-    const before = Date.now();
-    const node = classifyJsonlLine(sample);
-    expect(node?.kind).toBe('assistant');
-    if (node?.kind === 'assistant') {
-      const stamp = Date.parse(node.receivedAt);
-      expect(stamp).toBeGreaterThanOrEqual(before);
-    }
+  it('returns null for a JSONL line missing timestamp on a kind that requires it', () => {
+    const raw = { type: 'assistant', sessionId: 's1', message: { role: 'assistant', content: [] } };
+    expect(classifyJsonlLine(raw)).toBeNull();
   });
 
   it('classifies last-prompt lines', () => {
@@ -201,6 +191,7 @@ describe('classifyJsonlLine', () => {
       message: 'Permission for this action was denied...',
       uuid: '7b31eb5e-1f79-4a4b-a09e-7efaab00104c',
       session_id: '3169eca7-891a-4881-a02f-bb09d6880cfb',
+      timestamp: '2026-05-27T00:00:00Z',
     };
     const node = classifyJsonlLine(sample);
     expect(node?.kind).toBe('system');
@@ -225,6 +216,7 @@ describe('classifyJsonlLine', () => {
       subtype: 'init',
       session_id: 'sdk-sid-1',
       cwd: '/p',
+      timestamp: '2026-05-27T00:00:00Z',
     };
     const node = classifyJsonlLine(sample);
     expect(node?.kind).toBe('system');
@@ -242,6 +234,7 @@ describe('classifyJsonlLine', () => {
       notification_type: 'error',
       title: 'oops',
       body: 'something broke',
+      timestamp: '2026-05-27T00:00:00Z',
     };
     const node = classifyJsonlLine(sample);
     expect(node?.kind).toBe('system');
@@ -254,6 +247,7 @@ describe('classifyJsonlLine', () => {
     const sample = {
       type: 'assistant',
       session_id: 'sdk-snake',
+      timestamp: '2026-05-27T00:00:00Z',
       message: { role: 'assistant', content: [] },
     };
     const node = classifyJsonlLine(sample);
@@ -268,6 +262,7 @@ describe('classifyJsonlLine', () => {
       type: 'assistant',
       sessionId: 'cs-camel',
       session_id: 'should-not-win',
+      timestamp: '2026-05-27T00:00:00Z',
       message: { role: 'assistant', content: [] },
     };
     const node = classifyJsonlLine(sample);
@@ -281,6 +276,7 @@ describe('classifyJsonlLine', () => {
       type: 'result',
       subtype: 'success',
       session_id: 'sdk-sid-3',
+      timestamp: '2026-05-27T00:00:00Z',
       result: 'All done.',
       is_error: false,
       duration_ms: 3000,
@@ -303,6 +299,7 @@ describe('classifyJsonlLine', () => {
       type: 'result',
       subtype: 'error_during_execution',
       session_id: 'sdk-sid-4',
+      timestamp: '2026-05-27T00:00:00Z',
       is_error: true,
     };
     const node = classifyJsonlLine(sample);
