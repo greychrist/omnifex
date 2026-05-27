@@ -187,9 +187,6 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   // Codex sessions (rollout discovery under ~/.codex/sessions)
   'codex_session_list',
 
-  // App capabilities (feature-flag gate, resolved once at startup)
-  'app_capabilities',
-
   // Updater
   'updater:check',
   'updater:download',

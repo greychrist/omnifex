@@ -78,20 +78,16 @@ describe('classifyBlockKind', () => {
     expect(classifyBlockKind(parent.message.content[0], parent)).toBe('assistant.tool-use');
   });
 
-  it('classifies AskUserQuestion tool_use as its own answered-pair kind', () => {
-    // Pairs with the tool_result via the StreamMessage widget so scrollback
-    // shows a single Q+A card rather than blending into generic toolUse.
+  it('classifies AskUserQuestion tool_use as the generic assistant.tool-use kind', () => {
+    // The answered Q+A card is dispatched by the whole-message classifier
+    // via the AnsweredAskUserQuestionCard short-circuit in StreamMessage;
+    // the per-block classification falls through to assistant.tool-use so
+    // the live (mid-answer) tool_use renders with normal tool-call chrome
+    // instead of falling into the v2-catalog "unknown" fallback.
     const parent = assistant([
       { type: 'tool_use', name: 'AskUserQuestion', input: { questions: [{ question: 'pick', options: [] }] } },
     ]);
-    expect(classifyBlockKind(parent.message.content[0], parent)).toBe('tool.askUserQuestion.answered');
-  });
-
-  it('AskUserQuestion classification is case-insensitive on the tool name', () => {
-    const parent = assistant([
-      { type: 'tool_use', name: 'askuserquestion', input: { questions: [] } },
-    ]);
-    expect(classifyBlockKind(parent.message.content[0], parent)).toBe('tool.askUserQuestion.answered');
+    expect(classifyBlockKind(parent.message.content[0], parent)).toBe('assistant.tool-use');
   });
 
   it('classifies user image blocks', () => {

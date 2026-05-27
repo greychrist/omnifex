@@ -6,7 +6,6 @@ import { NewSessionForm, type NewSessionFormAccountResolution } from '../NewSess
 import type { AgentKind, CodexAuthStatus } from '@/lib/api';
 import type { EffortLevel, ThinkingConfig } from '../ControlBar';
 import type { SessionMode } from '@/lib/api';
-import { AppCapabilitiesContext } from '@/contexts/AppCapabilitiesContext';
 
 // AccountBadge consumes useAccounts() + useTheme(). Stub both so the
 // form renders without a real provider tree.
@@ -41,10 +40,6 @@ const RESOLUTION: NewSessionFormAccountResolution = {
  * tests can flip the picker and observe the form rerender. Other props
  * are stubbed to constants since the tests below only assert on the
  * agent/account interaction.
- *
- * `codexEnabled` defaults to true so the AgentPicker and Codex banner
- * surfaces render — the feature-flag-off path has its own dedicated
- * describe block below.
  */
 function Harness({
   initialAgent = 'claude' as AgentKind,
@@ -52,14 +47,12 @@ function Harness({
   codexAuthStatus,
   onCodexSignIn,
   onStart,
-  codexEnabled = true,
 }: {
   initialAgent?: AgentKind;
   resolution?: NewSessionFormAccountResolution | null;
   codexAuthStatus?: CodexAuthStatus | null;
   onCodexSignIn?: () => void;
   onStart?: () => void;
-  codexEnabled?: boolean;
 } = {}) {
   const [agent, setAgent] = useState<AgentKind>(initialAgent);
   const [model, setModel] = useState('opus[1m]');
@@ -68,27 +61,25 @@ function Harness({
   const [perm, setPerm] = useState('acceptEdits');
   const [mode, setMode] = useState<SessionMode>('rich');
   return (
-    <AppCapabilitiesContext.Provider value={{ codexEnabled }}>
-      <NewSessionForm
-        accountResolution={resolution}
-        selectedModel={model}
-        setSelectedModel={setModel}
-        effort={effort}
-        setEffort={setEffort}
-        thinkingConfig={thinking}
-        setThinkingConfig={setThinking}
-        permissionMode={perm}
-        setPermissionMode={setPerm}
-        sessionStartMode={mode}
-        setSessionStartMode={setMode}
-        agent={agent}
-        setAgent={setAgent}
-        onStart={onStart ?? (() => {})}
-        onChangeAccount={() => {}}
-        codexAuthStatus={codexAuthStatus}
-        onCodexSignIn={onCodexSignIn}
-      />
-    </AppCapabilitiesContext.Provider>
+    <NewSessionForm
+      accountResolution={resolution}
+      selectedModel={model}
+      setSelectedModel={setModel}
+      effort={effort}
+      setEffort={setEffort}
+      thinkingConfig={thinking}
+      setThinkingConfig={setThinking}
+      permissionMode={perm}
+      setPermissionMode={setPerm}
+      sessionStartMode={mode}
+      setSessionStartMode={setMode}
+      agent={agent}
+      setAgent={setAgent}
+      onStart={onStart ?? (() => {})}
+      onChangeAccount={() => {}}
+      codexAuthStatus={codexAuthStatus}
+      onCodexSignIn={onCodexSignIn}
+    />
   );
 }
 
@@ -225,49 +216,3 @@ describe('NewSessionForm — Codex auth banner', () => {
   });
 });
 
-describe('NewSessionForm — Codex feature flag (Task 25)', () => {
-  it('hides the AgentPicker entirely when codexEnabled is false', () => {
-    render(<Harness codexEnabled={false} />);
-    // AgentPicker renders both radios when visible — neither should be in the DOM.
-    expect(screen.queryByRole('radio', { name: 'Claude' })).toBeNull();
-    expect(screen.queryByRole('radio', { name: 'Codex' })).toBeNull();
-  });
-
-  it('renders the AgentPicker when codexEnabled is true', () => {
-    render(<Harness codexEnabled={true} />);
-    expect(screen.getByRole('radio', { name: 'Claude' })).toBeTruthy();
-    expect(screen.getByRole('radio', { name: 'Codex' })).toBeTruthy();
-  });
-
-  it('clamps the agent prop to "claude" when codexEnabled is false even if parent passes "codex"', async () => {
-    // If a tab was created while Codex was enabled and the user then
-    // unset the env var, the persisted `agent='codex'` value would
-    // otherwise leak into the form. The effect-based clamp calls
-    // setAgent('claude') on mount.
-    const setAgent = vi.fn();
-    render(
-      <AppCapabilitiesContext.Provider value={{ codexEnabled: false }}>
-        <NewSessionForm
-          accountResolution={RESOLUTION}
-          selectedModel="opus[1m]"
-          setSelectedModel={() => {}}
-          effort="high"
-          setEffort={() => {}}
-          thinkingConfig="adaptive"
-          setThinkingConfig={() => {}}
-          permissionMode="acceptEdits"
-          setPermissionMode={() => {}}
-          sessionStartMode="rich"
-          setSessionStartMode={() => {}}
-          agent={'codex' as AgentKind}
-          setAgent={setAgent}
-          onStart={() => {}}
-          onChangeAccount={() => {}}
-        />
-      </AppCapabilitiesContext.Provider>,
-    );
-    // Effect fires after mount.
-    await Promise.resolve();
-    expect(setAgent).toHaveBeenCalledWith('claude');
-  });
-});

@@ -24,7 +24,6 @@ import {
   type AgentKind,
 } from "@/lib/api";
 import { useAccounts } from "@/contexts/AccountsContext";
-import { useAppCapabilities } from "@/contexts/AppCapabilitiesContext";
 import { logAndForget } from "@/lib/fireAndLog";
 
 /**
@@ -173,10 +172,6 @@ export const SessionList: React.FC<SessionListProps> = ({
   // for an open SessionList wouldn't update until the user navigated
   // away and back.
   const { accounts } = useAccounts();
-  // Feature-flag gate (Task 25). When `OMNIFEX_ENABLE_CODEX=1` is unset
-  // we skip the Codex walker IPC entirely and hide the agent filter +
-  // Codex rows from the partition. The Claude rows render unchanged.
-  const { codexEnabled } = useAppCapabilities();
   const [refreshing, setRefreshing] = useState(false);
 
   const handleRefreshClick = async () => {
@@ -225,14 +220,6 @@ export const SessionList: React.FC<SessionListProps> = ({
   const [agentFilter, setAgentFilter] = useState<'all' | AgentKind>('all');
 
   useEffect(() => {
-    // Skip the Codex walker entirely when the feature flag is off — the
-    // UI partition is hidden anyway, so the IPC round-trip is pure
-    // noise (and runs against backend services that the user may not
-    // have authorized).
-    if (!codexEnabled) {
-      setCodexSessions([]);
-      return;
-    }
     let cancelled = false;
     api
       .listCodexSessions()
@@ -246,7 +233,7 @@ export const SessionList: React.FC<SessionListProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [codexEnabled]);
+  }, []);
 
   // Codex rollouts whose recorded `cwd` matches the current project. When
   // the rollout didn't log a cwd (projectPath === null) we drop it from the
@@ -596,12 +583,10 @@ export const SessionList: React.FC<SessionListProps> = ({
               return `${total} session${total !== 1 ? 's' : ''}`;
             })()}
           </span>
-          {/* Agent filter — only render when Codex is enabled AND both
-              engines have rows under this project. Single-agent projects
-              don't need the toggle and the empty space reads as a visual
-              distraction. The codexEnabled clause keeps the filter
-              hidden in the gated-off state (Task 25). */}
-          {codexEnabled && projectCodexSessions.length > 0 && sessions.length > 0 && (
+          {/* Agent filter — only render when both engines have rows
+              under this project. Single-agent projects don't need the
+              toggle and the empty space reads as a visual distraction. */}
+          {projectCodexSessions.length > 0 && sessions.length > 0 && (
             <div
               role="group"
               aria-label="Filter by agent"

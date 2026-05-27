@@ -30,6 +30,11 @@ interface MessageFrameCardProps {
    *  suppress the header row entirely (e.g. a card whose body is the
    *  header, like a permission prompt). */
   headerFallbackLabel?: string | null;
+  /** Overrides the kind's configured `headerLabel`. Use for variants that
+   *  borrow another kind's chrome but carry a specific fixed label (e.g.
+   *  AnsweredAskUserQuestionCard reuses `permission.askUserQuestion`
+   *  chrome but renders "Question answered" / "N questions answered"). */
+  headerLabel?: string | null;
   /** Override the kind's icon when the variant needs a tighter signal
    *  (e.g. error states). */
   iconOverride?: IconName;
@@ -75,6 +80,7 @@ export const MessageFrameCard: React.FC<MessageFrameCardProps> = ({
   message,
   children,
   headerFallbackLabel = null,
+  headerLabel,
   iconOverride,
   showHeaderIcon = false,
   alignment = "left",
@@ -124,6 +130,7 @@ export const MessageFrameCard: React.FC<MessageFrameCardProps> = ({
             <div className="flex-1 space-y-2 min-w-0 overflow-x-auto">
               <KindHeader
                 kindId={kindId}
+                label={headerLabel}
                 fallbackLabel={headerFallbackLabel}
                 showIcon={showHeaderIcon}
               />

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Codex enabled by default; `OMNIFEX_ENABLE_CODEX` feature flag removed.** The agent picker, Codex section in AccountSettings, Codex session-list partition, and per-agent filter now render unconditionally. Removed: `app_capabilities` IPC channel, `AppCapabilitiesContext` / `useAppCapabilities`, the env-var read in `electron/main.ts`, and the per-call gating in `NewSessionForm`, `SessionList`, and `AccountSettings` (including the `setAgent('claude')` clamp). Codex backend services were always wired regardless; this just exposes the UI.
+
 ## [0.4.67] — 2026-05-27
 
 Phase 3 of the Codex engine + agent-aware routing migration: OmniFex can now drive either Claude or Codex as the live agent for a session. Codex runs as a peer through its own `CodexCliEngine` against `codex mcp` over JSON-RPC, with full approval round-trip, session resume, in-app sign-in, and native transcript rendering. Behind the `OMNIFEX_ENABLE_CODEX=1` flag pending manual verification.

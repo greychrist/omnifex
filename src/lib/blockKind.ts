@@ -69,14 +69,6 @@ export function classifyBlockKind(
       return text.length > 0 ? 'assistant.thinking' : null;
     }
     if (block.type === 'tool_use') {
-      // AskUserQuestion is special: the historical render pairs the
-      // tool_use with the matching tool_result as a single Q+A card, so
-      // route it to its own kind for independent Appearance theming and
-      // compact-mode hiding rather than blending into the generic
-      // `assistant.tool-use` accent.
-      if (block.name.toLowerCase() === 'askuserquestion') {
-        return 'tool.askUserQuestion.answered';
-      }
       return 'assistant.tool-use';
     }
     // Anthropic-hosted server-side tools (code_execution, web_search,

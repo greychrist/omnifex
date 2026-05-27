@@ -2534,18 +2534,6 @@ export const api = {
     return apiCall<CodexSessionEntry[]>('codex_session_list', {});
   },
 
-  // ── App capabilities ──────────────────────────────────────────────────
-  /**
-   * Static feature flags resolved once at app startup. The Codex flag
-   * gates every Codex UI surface (agent picker, account row, session
-   * list partition) behind `OMNIFEX_ENABLE_CODEX=1` until manual
-   * verification clears. Backend services stay wired regardless — only
-   * renderer surfaces are gated. Restart the app to flip the flag.
-   */
-  async getAppCapabilities(): Promise<AppCapabilities> {
-    return apiCall<AppCapabilities>('app_capabilities', {});
-  },
-
 };
 
 /**
@@ -2558,17 +2546,4 @@ export interface CodexSessionEntry {
   projectPath: string | null;
   lastActivity: string;
   jsonlPath: string;
-}
-
-/**
- * Static app-capability flags reported by the main process. Currently
- * carries only the Codex gate; future flags will land on this shape.
- *
- * `codexEnabled` is true when `OMNIFEX_ENABLE_CODEX=1` was set in the
- * main process's environment at startup. The renderer reads this once
- * via `AppCapabilitiesContext` and threads it through every Codex-aware
- * surface; the flag is NOT hot-reloadable — restart the app to flip it.
- */
-export interface AppCapabilities {
-  codexEnabled: boolean;
 }

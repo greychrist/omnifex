@@ -1247,31 +1247,3 @@ describe('lima handlers', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// app_capabilities — feature-flag gate for Codex UI (Task 25)
-// ---------------------------------------------------------------------------
-
-describe('app_capabilities handler', () => {
-  it('returns the capability snapshot from the service', async () => {
-    const get = vi.fn().mockReturnValue({ codexEnabled: true });
-    const handlers = getHandlerMap({ appCapabilities: { get } });
-    const result = await invoke(handlers, 'app_capabilities');
-    expect(get).toHaveBeenCalledTimes(1);
-    expect(result).toEqual({ codexEnabled: true });
-  });
-
-  it('falls back to codexEnabled=false when the service is missing', async () => {
-    const handlers = getHandlerMap({});
-    await expect(invoke(handlers, 'app_capabilities')).resolves.toEqual({
-      codexEnabled: false,
-    });
-  });
-
-  it('returns codexEnabled=false when the env var was unset at startup', async () => {
-    const get = vi.fn().mockReturnValue({ codexEnabled: false });
-    const handlers = getHandlerMap({ appCapabilities: { get } });
-    await expect(invoke(handlers, 'app_capabilities')).resolves.toEqual({
-      codexEnabled: false,
-    });
-  });
-});

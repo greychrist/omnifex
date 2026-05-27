@@ -114,6 +114,12 @@ export function classifyStandaloneKind(
   // the tool_result has actually landed — while the user is mid-answer
   // the live `permission.askUserQuestion` prompt is the visible card and
   // the in-bubble fallback handles the assistant message normally.
+  //
+  // The two returned IDs (`tool.askUserQuestion.answered` and `.result`)
+  // are internal dispatch sentinels for StreamMessage's short-circuit —
+  // they intentionally do NOT have entries in the v2 catalog because
+  // the matching branch returns AnsweredAskUserQuestionCard / null before
+  // the MessageFrame chrome lookup runs.
   if (msg.type === 'assistant') {
     const content = (msg as { message?: { content?: unknown } }).message?.content;
     if (Array.isArray(content)) {

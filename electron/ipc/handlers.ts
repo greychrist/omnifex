@@ -216,14 +216,6 @@ export interface Services {
   codexSessionWalker?: {
     listSessions(): Promise<import('../services/codex-session-walker').CodexSessionEntry[]>;
   };
-  /**
-   * Static app-capability flags, read once at startup. Drives the Codex
-   * UI gate behind the `OMNIFEX_ENABLE_CODEX=1` env var. Backend services
-   * stay wired regardless — only renderer surfaces are gated.
-   */
-  appCapabilities?: {
-    get(): { codexEnabled: boolean };
-  };
 }
 
 // The handler type used in the map — receives the IPC event plus the params
@@ -282,7 +274,7 @@ function wrapWith<P>(fn: (params: P) => unknown): HandlerFn {
  * renderer gets a defined (but empty) response rather than a blocked channel.
  */
 export function getHandlerMap(services: Services = {}): Record<string, HandlerFn> {
-  const { accounts, claude, sessions, usage, rateLimits, usageRunner, claudeBinary, mcp, slashCommands, sessionsSummary, logging, database, proxy, permissionsIO, models, gitWatcher, branchColors, gitBranches, lima, filesystem, notificationSounds, oneShotTerminal, codexAuth, codexSessionWalker, appCapabilities } = services;
+  const { accounts, claude, sessions, usage, rateLimits, usageRunner, claudeBinary, mcp, slashCommands, sessionsSummary, logging, database, proxy, permissionsIO, models, gitWatcher, branchColors, gitBranches, lima, filesystem, notificationSounds, oneShotTerminal, codexAuth, codexSessionWalker } = services;
 
   const map: Record<string, HandlerFn> = {
     // ── Accounts ──────────────────────────────────────────────────────────────
@@ -802,13 +794,6 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
 
     // ── Codex sessions (on-disk rollout discovery) ────────────────────────
     codex_session_list: wrap(() => codexSessionWalker?.listSessions() ?? []),
-
-    // ── App capabilities ─────────────────────────────────────────────────
-    // Static feature flags resolved at app startup. The Codex flag gates
-    // every Codex UI surface (agent picker, account row, session list
-    // partition) behind `OMNIFEX_ENABLE_CODEX=1` until manual verification
-    // clears. Backend services stay wired; only the UI is gated.
-    app_capabilities: wrap(() => appCapabilities?.get() ?? { codexEnabled: false }),
   };
 
   return map;
