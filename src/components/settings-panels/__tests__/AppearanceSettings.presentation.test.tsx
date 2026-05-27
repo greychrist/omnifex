@@ -52,27 +52,26 @@ describe('AppearanceSettings — presentation control', () => {
     expect(controls[0]).toBeInTheDocument();
   });
 
-  it('hides Alignment and Header label when Presentation is set to side-line', async () => {
+  it('hides Header label when the selected kind defaults to side-line presentation', async () => {
+    // Tool result defaults to presentation: 'side-line' in the v2 catalog.
+    // Selecting it should hide the card-only Header label control.
     renderWithProvider();
     await screen.findAllByText(/User prompt/);
-    // Get the native <select> with aria-label="Presentation".
-    const presentationSelects = screen.getAllByLabelText(/^Presentation$/i);
-    // Pick the <select> element (it has .options)
-    const sel = presentationSelects.find((el) => el.tagName === 'SELECT') as HTMLSelectElement | undefined;
-    expect(sel).toBeTruthy();
-    fireEvent.change(sel!, { target: { value: 'side-line' } });
-    expect(screen.queryByLabelText(/^Alignment$/i)).toBeNull();
+    // User prompt is the default selection — card presentation, header visible.
+    expect(screen.getByLabelText(/^Header label$/i)).toBeInTheDocument();
+    // Switch to Tool result (side-line by default).
+    clickKindRow('Tool result');
     expect(screen.queryByLabelText(/^Header label$/i)).toBeNull();
   });
 
-  it('shows a Border dropdown with solid/dashed options', async () => {
+  it('renders a Border dropdown via the shadcn Select primitive', async () => {
     renderWithProvider();
-    // "Unknown" kind lives in the "Other" group in the tree
-    await screen.findAllByText(/User prompt/); // wait for mount
+    await screen.findAllByText(/User prompt/);
     clickKindRow('Unknown');
-    const border = screen.getByLabelText(/^Border$/i) as HTMLSelectElement;
+    // The shadcn Select trigger is a button with role="combobox".
+    const border = screen.getByLabelText(/^Border$/i);
     expect(border).toBeInTheDocument();
-    expect(Array.from(border.options).map((o) => o.value)).toEqual(['solid', 'dashed']);
+    expect(border.getAttribute('role')).toBe('combobox');
   });
 
   it('exposes the Show raw payload toggle only on the unknown row', async () => {

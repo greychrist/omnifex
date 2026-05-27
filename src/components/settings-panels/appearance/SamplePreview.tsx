@@ -55,7 +55,7 @@ export const SamplePreview: React.FC<SamplePreviewProps> = ({
         alignClass,
         wouldHide && "opacity-40",
       )}
-      style={accentStyleFromEntry(entry)}
+      style={{ ...accentStyleFromEntry(entry), borderStyle: kind.borderStyle }}
     >
       <CardContent className="p-4 pb-9">
         <div className="flex items-start gap-3">
