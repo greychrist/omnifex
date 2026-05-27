@@ -139,7 +139,10 @@ export const MessageFrameCard: React.FC<MessageFrameCardProps> = ({
             Padding overrides keep the card compact (shadcn defaults of
             p-6 would balloon every chat row). */}
         {(iconName !== "none" || hasHeaderLabel) && (
-          <CardHeader className="px-4 py-3 flex flex-row items-center gap-3 space-y-0">
+          <CardHeader
+            className="px-4 py-3 flex flex-row items-center gap-3 space-y-0"
+            style={accentStyle?.borderColor ? { borderBottomColor: accentStyle.borderColor as string } : undefined}
+          >
             {iconName !== "none" && (
               <div
                 className={iconWrapperClassName(config, kindId)}
