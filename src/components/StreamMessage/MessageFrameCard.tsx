@@ -158,13 +158,16 @@ const CardFooter: React.FC<{
   message?: ClaudeStreamMessage;
   copyText?: string;
 }> = ({ receivedAt, message, copyText }) => {
-  const { config } = useMessageRenderingConfig();
   const [copied, setCopied] = useState(false);
   const formatted = receivedAt ? formatLocalTimestamp(receivedAt) : null;
 
-  const showKind = config.debug.showCardKindLabel && message;
+  // Kind label + copy button used to be gated on config.debug.showCardKindLabel
+  // (default false), but the copy-raw-JSON button is generally useful and the
+  // type · subtype label is small enough that we always render both when a
+  // message is present. The setting is preserved in config for backward
+  // compatibility but no longer affects this rendering.
   let kindLabel: string | null = null;
-  if (showKind && message) {
+  if (message) {
     const t = message.type;
     // Only system / result variants carry a subtype on the typed union; the
     // rest fall through with a bare type label.
