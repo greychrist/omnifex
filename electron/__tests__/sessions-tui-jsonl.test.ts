@@ -34,7 +34,7 @@ describe('createTuiJsonlListener', () => {
     try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* ignore */ }
   });
 
-  it('forwards every parsed line on claude-output:<tabId>', async () => {
+  it('forwards every parsed line on agent-output:<tabId>', async () => {
     const sendToRenderer = vi.fn();
     fs.writeFileSync(jsonlPath, '');
     handle = createTuiJsonlListener({
@@ -49,8 +49,8 @@ describe('createTuiJsonlListener', () => {
       jsonlPath,
       JSON.stringify({ type: 'user', message: { role: 'user', content: 'hi' } }) + '\n',
     );
-    await waitUntil(() => sendToRenderer.mock.calls.some(c => c[0] === 'claude-output:tab-1'));
-    expect(sendToRenderer).toHaveBeenCalledWith('claude-output:tab-1', expect.objectContaining({ type: 'user' }));
+    await waitUntil(() => sendToRenderer.mock.calls.some(c => c[0] === 'agent-output:tab-1'));
+    expect(sendToRenderer).toHaveBeenCalledWith('agent-output:tab-1', expect.objectContaining({ type: 'user' }));
   });
 
   it('routes closure carriers to claude-output-extra:<tabId>', async () => {
@@ -77,7 +77,7 @@ describe('createTuiJsonlListener', () => {
     );
     // Closure carrier must NOT go on the main channel.
     const mainCalls = sendToRenderer.mock.calls.filter(
-      (c) => (c[0] as string) === 'claude-output:tab-cc'
+      (c) => (c[0] as string) === 'agent-output:tab-cc'
     );
     expect(mainCalls).toHaveLength(0);
   });

@@ -43,7 +43,7 @@ export function createQueryPassthroughs(
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error(`[sessions] interrupt failed for tab ${tabId}:`, err);
-      sendToRenderer?.(`claude-output:${tabId}`, {
+      sendToRenderer?.(`agent-output:${tabId}`, {
         type: 'system',
         subtype: 'notification',
         notification_type: 'error',
@@ -111,7 +111,7 @@ export function createQueryPassthroughs(
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error(`[sessions] applyPermissions failed for tab ${tabId}:`, err);
-      sendToRenderer?.(`claude-output:${tabId}`, {
+      sendToRenderer?.(`agent-output:${tabId}`, {
         type: 'system',
         subtype: 'notification',
         notification_type: 'warn',

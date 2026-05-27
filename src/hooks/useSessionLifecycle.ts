@@ -45,7 +45,7 @@ interface UseSessionLifecycleArgs {
   /**
    * Called when the main process emits `session-init:<tabId>` — i.e. the
    * CLI subprocess has been spawned and a pinned sessionId is known. Fires
-   * before any `claude-output:` message arrives, so the renderer can seed
+   * before any `agent-output:` message arrives, so the renderer can seed
    * claudeSessionId / extractedSessionInfo (and unlock UI gated on them)
    * without waiting for the CLI's eventual `system:init` stream message.
    */
@@ -123,7 +123,7 @@ export function useSessionLifecycle({
     unlistenRefs.current = [];
 
     const outputUnlisten = window.electronAPI.onEvent(
-      `claude-output:${tabId}`,
+      `agent-output:${tabId}`,
       (...args: unknown[]) => { handleJsonlLine(args[0] as string | object); },
     );
 
@@ -139,14 +139,14 @@ export function useSessionLifecycle({
     );
 
     const errorUnlisten = window.electronAPI.onEvent(
-      `claude-error:${tabId}`,
+      `agent-error:${tabId}`,
       (payload: any) => {
         if (isIgnorableStderr(payload)) return;
         console.error("[ClaudeCodeSession] stderr:", payload);
       },
     );
 
-    // `claude-complete:<tabId>` is main's authoritative "this session is
+    // `agent-complete:<tabId>` is main's authoritative "this session is
     // done" signal — fires on user stop, session error, AND on tab close
     // (TabContext.removeTab → api.stopSession → main emits complete). It's
     // the right place to tear listeners down: no more events are coming on
@@ -156,7 +156,7 @@ export function useSessionLifecycle({
     // listener teardown runs unconditionally because ipcRenderer.removeListener
     // is safe regardless of React state.
     const completeUnlisten = window.electronAPI.onEvent(
-      `claude-complete:${tabId}`,
+      `agent-complete:${tabId}`,
       () => {
         if (isMountedRef.current) {
           setIsLoading(false);

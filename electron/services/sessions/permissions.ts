@@ -304,7 +304,7 @@ export function createPermissionRequestHandler(
 
     if (handle.permissionQueue.length === 1) {
       setStatus(handle, { conversationStatus: 'waiting_permission' }, tabId, sendToRenderer);
-      sendToRenderer(`claude-output:${tabId}`, payload);
+      sendToRenderer(`agent-output:${tabId}`, payload);
 
       const projectName = path.basename(handle.projectPath) || 'OmniFex';
       const title = `OmniFex — ${projectName}`;
@@ -443,7 +443,7 @@ export function createPermissionRequestHandler(
     // If this is the only item in the queue, show it immediately.
     if (handle.permissionQueue.length === 1) {
       setStatus(handle, { conversationStatus: 'waiting_permission' }, tabId, sendToRenderer);
-      sendToRenderer(`claude-output:${tabId}`, payload);
+      sendToRenderer(`agent-output:${tabId}`, payload);
 
       const projectName = path.basename(handle.projectPath) || 'OmniFex';
       const title = `OmniFex — ${projectName}`;
@@ -557,7 +557,7 @@ export function respondPermission(
   if (handle.permissionQueue.length > 0) {
     const next = handle.permissionQueue[0];
     const nextPayload = (next as any).payload;
-    sendToRenderer(`claude-output:${tabId}`, nextPayload);
+    sendToRenderer(`agent-output:${tabId}`, nextPayload);
 
     // Notify the user about the next permission in the queue
     const projectName = path.basename(handle.projectPath) || 'OmniFex';

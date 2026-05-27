@@ -1,6 +1,6 @@
 /**
  * Shape of one message off the Claude Agent SDK stream, as the renderer
- * receives it on `claude-output:<tabId>` events.
+ * receives it on `agent-output:<tabId>` events.
  *
  * Anchored on `SDKMessage` (the SDK's 29-variant discriminated union)
  * intersected with `OmnifexEnvelope` (the main process timestamps each
@@ -261,7 +261,7 @@ type AnchoredSDKMessage = Exclude<SDKMessage, SDKNotificationMessage>;
 
 /**
  * `permission_request` is OmniFex-synthetic — it travels on the same
- * `claude-output:<tabId>` channel as SDK messages and is normalised
+ * `agent-output:<tabId>` channel as SDK messages and is normalised
  * onto `PermissionRequestPayload` by the JSONL classifier. Snake_case
  * field names match the wire format emitted by `permissions.ts`.
  *

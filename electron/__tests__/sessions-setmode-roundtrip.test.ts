@@ -4,7 +4,7 @@
 // (rich → tui) disposes the engine's onMessage/onError/onExit subscriptions
 // via runtime.ts's exit handler. Toggling back must re-attach them — without
 // re-attachment, the new child's stdout emits into the void and
-// claude-output:<tabId> never reaches the renderer.
+// agent-output:<tabId> never reaches the renderer.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -151,7 +151,7 @@ describe('setMode: rich → tui → rich round-trip', () => {
     engine.__emitMessage({ type: 'result', subtype: 'success' });
 
     expect(sendToRenderer).toHaveBeenCalledWith(
-      `claude-output:${tabId}`,
+      `agent-output:${tabId}`,
       expect.objectContaining({ type: 'result' }),
     );
   });

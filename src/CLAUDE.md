@@ -23,7 +23,7 @@ See the root `CLAUDE.md` for the full architecture, build commands, and account-
 - `src/App.tsx`
   Project picker, account picker handoff, high-level navigation, tab system integration
 - `src/components/ClaudeCodeSession.tsx`
-  Streaming session UX — subscribes to `session-*` / `claude-stream` / `claude-output:*` event channels exposed via the preload prefix allow-list
+  Streaming session UX — subscribes to `session-*` / `claude-stream` / `agent-output:*` event channels exposed via the preload prefix allow-list
 - `src/components/AccountSettings.tsx`
   Accounts + path rule management UI
 - `src/components/Settings.tsx`

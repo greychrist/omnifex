@@ -105,7 +105,7 @@ function makeLoggingStub(): { service: LoggingService; entries: LogEntry[] } {
 }
 
 describe('runtime.listenToMessages — engine.onError', () => {
-  it('does NOT emit claude-complete on stderr-driven error', () => {
+  it('does NOT emit agent-complete on stderr-driven error', () => {
     const engine = makeFakeEngine();
     const handle = makeHandle(engine);
     const sendToRenderer: SendToRenderer = vi.fn();
@@ -123,7 +123,7 @@ describe('runtime.listenToMessages — engine.onError', () => {
 
     const sendMock = vi.mocked(sendToRenderer);
     const channels = sendMock.mock.calls.map((c) => c[0] as string);
-    expect(channels).not.toContain('claude-complete:tab-1');
+    expect(channels).not.toContain('agent-complete:tab-1');
   });
 
   it('does NOT transition sessionStatus to error', () => {
@@ -181,7 +181,7 @@ describe('runtime.listenToMessages — engine.onError', () => {
     expect(errorEntries[0].message).toContain('MCP auth required');
   });
 
-  it('still emits claude-error to the renderer so the LogService toast/log path runs', () => {
+  it('still emits agent-error to the renderer so the LogService toast/log path runs', () => {
     const engine = makeFakeEngine();
     const handle = makeHandle(engine);
     const sendToRenderer: SendToRenderer = vi.fn();
@@ -198,7 +198,7 @@ describe('runtime.listenToMessages — engine.onError', () => {
     engine._emitError(new Error('something happened'));
 
     expect(sendToRenderer).toHaveBeenCalledWith(
-      'claude-error:tab-1',
+      'agent-error:tab-1',
       expect.stringContaining('something happened'),
     );
   });
@@ -237,7 +237,7 @@ describe('runtime.listenToMessages — hook lifecycle messages', () => {
     expect(statusCalls.length).toBe(0);
   });
 
-  it('still forwards hook events to the renderer via claude-output', () => {
+  it('still forwards hook events to the renderer via agent-output', () => {
     const engine = makeFakeEngine();
     const handle = makeHandle(engine);
     const sendToRenderer: SendToRenderer = vi.fn();
@@ -255,14 +255,14 @@ describe('runtime.listenToMessages — hook lifecycle messages', () => {
     engine._emitMessage(hookMsg);
 
     expect(sendToRenderer).toHaveBeenCalledWith(
-      'claude-output:tab-1',
+      'agent-output:tab-1',
       expect.objectContaining({ type: 'system', subtype: 'hook_started' }),
     );
   });
 });
 
 describe('runtime.listenToMessages — engine.onExit', () => {
-  it('emits claude-complete on clean exit (preserved)', () => {
+  it('emits agent-complete on clean exit (preserved)', () => {
     const engine = makeFakeEngine();
     const handle = makeHandle(engine);
     const sendToRenderer: SendToRenderer = vi.fn();
@@ -278,11 +278,11 @@ describe('runtime.listenToMessages — engine.onExit', () => {
 
     engine._emitExit({ code: 0 });
 
-    expect(sendToRenderer).toHaveBeenCalledWith('claude-complete:tab-1');
+    expect(sendToRenderer).toHaveBeenCalledWith('agent-complete:tab-1');
     expect(handle.sessionStatus).toBe('stopped');
   });
 
-  it('does NOT emit claude-complete when the handle has been replaced (StrictMode / restart)', () => {
+  it('does NOT emit agent-complete when the handle has been replaced (StrictMode / restart)', () => {
     const engine = makeFakeEngine();
     const handle = makeHandle(engine);
     const sendToRenderer: SendToRenderer = vi.fn();
@@ -302,6 +302,6 @@ describe('runtime.listenToMessages — engine.onExit', () => {
 
     const sendMock = vi.mocked(sendToRenderer);
     const channels = sendMock.mock.calls.map((c) => c[0] as string);
-    expect(channels).not.toContain('claude-complete:tab-1');
+    expect(channels).not.toContain('agent-complete:tab-1');
   });
 });

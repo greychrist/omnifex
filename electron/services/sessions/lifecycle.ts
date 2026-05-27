@@ -158,8 +158,8 @@ export function createSessionsService(
           sessionStatus: 'error',
           conversationStatus: null,
         });
-        sendToRenderer(`claude-error:${tabId}`, 'codex binary not found');
-        sendToRenderer(`claude-complete:${tabId}`);
+        sendToRenderer(`agent-error:${tabId}`, 'codex binary not found');
+        sendToRenderer(`agent-complete:${tabId}`);
         return;
       }
       engine = createCodexCliEngine({ tabId, codexBinaryPath: codexPath });
@@ -170,8 +170,8 @@ export function createSessionsService(
           sessionStatus: 'error',
           conversationStatus: null,
         });
-        sendToRenderer(`claude-error:${tabId}`, 'claude binary not found');
-        sendToRenderer(`claude-complete:${tabId}`);
+        sendToRenderer(`agent-error:${tabId}`, 'claude binary not found');
+        sendToRenderer(`agent-complete:${tabId}`);
         return;
       }
       engine = createClaudeCliEngine({ tabId, claudeBinaryPath: binaryPath });
@@ -188,7 +188,7 @@ export function createSessionsService(
     // construct the handle in the 'started' state from the start; any
     // spawn failure flips us to 'error' via engine.onError / onExit
     // (wired by listenToMessages). This is honest about the CLI's actual
-    // model and unblocks the renderer immediately so `claude-output:`
+    // model and unblocks the renderer immediately so `agent-output:`
     // events have a place to land.
     const handle: SessionHandle = {
       agent,
@@ -217,7 +217,7 @@ export function createSessionsService(
 
     sessions.set(tabId, handle);
     // Register tab ownership BEFORE any message can route through
-    // `claude-output:<tabId>` — without this the routing table drops
+    // `agent-output:<tabId>` — without this the routing table drops
     // tab-scoped events on the floor.
     if (params.ownerWebContentsId !== undefined) {
       ownership?.register(tabId, params.ownerWebContentsId);
@@ -234,7 +234,7 @@ export function createSessionsService(
 
     // Tell the renderer we're live. This must broadcast BEFORE the engine
     // can produce messages so the renderer's session state is in
-    // 'started' when claude-output:<tabId> events arrive.
+    // 'started' when agent-output:<tabId> events arrive.
     sendToRenderer(`session-status:${tabId}`, {
       sessionStatus: 'started',
       conversationStatus: 'idle',
@@ -270,15 +270,15 @@ export function createSessionsService(
       if (sessions.get(tabId) !== handle) return;
       setStatus(handle, { sessionStatus: 'error' }, tabId, sendToRenderer);
       const errMsg = err instanceof Error ? err.message : String(err);
-      sendToRenderer(`claude-error:${tabId}`, errMsg);
-      sendToRenderer(`claude-output:${tabId}`, {
+      sendToRenderer(`agent-error:${tabId}`, errMsg);
+      sendToRenderer(`agent-output:${tabId}`, {
         type: 'system',
         subtype: 'notification',
         notification_type: 'error',
         title: 'Session Error',
         body: `Error: ${errMsg.slice(0, 200)}`,
       });
-      sendToRenderer(`claude-complete:${tabId}`);
+      sendToRenderer(`agent-complete:${tabId}`);
     });
   }
 
@@ -651,7 +651,7 @@ export function createSessionsService(
       // engine.onExit fired during the rich→tui transition (see
       // runtime.ts's tui-mode early-return). Without re-attachment the
       // resumed engine's stdout would emit into the void —
-      // claude-output:<tabId> would never reach the renderer and
+      // agent-output:<tabId> would never reach the renderer and
       // conversationStatus would stick on whatever it was at toggle time.
       listenToMessages(tabId, handle, runtimeDeps).catch((err: unknown) => {
         console.error(`[sessions] Unhandled error in listenToMessages for tab ${tabId}:`, err);
@@ -760,7 +760,7 @@ export function createSessionsService(
       handle.tuiJsonl?.stop();
       handle.tuiJsonl = null;
       setStatus(handle, { sessionStatus: 'stopped' }, tabId, sendToRenderer);
-      sendToRenderer(`claude-complete:${tabId}`);
+      sendToRenderer(`agent-complete:${tabId}`);
       // Only mutate the shared map if we are still the current session for this tab.
       // A `stop()` followed by a new `start()` on the same tabId will have already
       // registered a different handle; deleting here would orphan it.

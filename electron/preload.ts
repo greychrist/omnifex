@@ -216,6 +216,42 @@ export function addAllowedEventChannels(...channels: string[]): void {
   for (const ch of channels) ALLOWED_EVENT_CHANNELS.add(ch);
 }
 
+// -----------------------------------------------------------------------------
+// Task 24 compat shim: legacy `claude-{output,error,complete}:<suffix>` event
+// channels were renamed to `agent-{output,error,complete}:<suffix>` so the
+// runtime can serve both Claude and Codex engines. The preload keeps the
+// legacy names allow-listed for one release; this helper maps a subscription
+// on a legacy channel to its renamed twin so existing renderer subscribers
+// keep working while we migrate them. Drop in the next release.
+const LEGACY_AGENT_CHANNEL_MAP: ReadonlyArray<{ legacy: string; modern: string }> = [
+  { legacy: 'claude-output:', modern: 'agent-output:' },
+  { legacy: 'claude-error:', modern: 'agent-error:' },
+  { legacy: 'claude-complete:', modern: 'agent-complete:' },
+];
+
+function mapLegacyToNewChannel(channel: string): string | null {
+  for (const { legacy, modern } of LEGACY_AGENT_CHANNEL_MAP) {
+    if (channel.startsWith(legacy)) {
+      return modern + channel.slice(legacy.length);
+    }
+  }
+  return null;
+}
+
+const warnedDeprecatedChannels = new Set<string>();
+function warnDeprecatedChannelOnce(legacy: string, modern: string): void {
+  // Dedupe by the channel's prefix family so we warn once per kind, not
+  // once per tabId (renderer subscribes per-tab; the warning is about the
+  // API, not the suffix).
+  const prefix = LEGACY_AGENT_CHANNEL_MAP.find((m) => legacy.startsWith(m.legacy))?.legacy ?? legacy;
+  if (warnedDeprecatedChannels.has(prefix)) return;
+  warnedDeprecatedChannels.add(prefix);
+  console.warn(
+    `[OmniFex] Subscribing to deprecated event channel "${legacy}". ` +
+    `Use "${modern}" instead. The legacy name will be removed in the next release.`,
+  );
+}
+
 contextBridge.exposeInMainWorld('electronAPI', {
   invoke: (channel: string, params?: Record<string, unknown>): Promise<unknown> => {
     if (!ALLOWED_INVOKE_CHANNELS.has(channel)) {
@@ -228,6 +264,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     if (
       !ALLOWED_EVENT_CHANNELS.has(channel) &&
       !channel.startsWith('session-') &&
+      // New (Task 24 rename) — main process emits on these.
+      !channel.startsWith('agent-output:') &&
+      !channel.startsWith('agent-error:') &&
+      !channel.startsWith('agent-complete:') &&
+      // Legacy — kept on the allow-list for one release. The shim below
+      // routes legacy subscribers onto the renamed channels automatically.
       !channel.startsWith('claude-output:') &&
       !channel.startsWith('claude-output-extra:') &&
       !channel.startsWith('claude-error:') &&
@@ -251,6 +293,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
       throw new Error(`Blocked IPC event channel: ${channel}`);
     }
     const listener = (_event: IpcRendererEvent, ...args: unknown[]) => callback(...args);
+
+    // Compat shim: legacy claude-{output,error,complete}:<tabId> subscribers
+    // also listen on the renamed agent-* channels of the same suffix. Logs
+    // a one-time deprecation warning per channel. Drop with the rename's
+    // next-release cleanup.
+    const newName = mapLegacyToNewChannel(channel);
+    if (newName) {
+      warnDeprecatedChannelOnce(channel, newName);
+      ipcRenderer.on(channel, listener);
+      ipcRenderer.on(newName, listener);
+      return () => {
+        ipcRenderer.removeListener(channel, listener);
+        ipcRenderer.removeListener(newName, listener);
+      };
+    }
+
     ipcRenderer.on(channel, listener);
     return () => ipcRenderer.removeListener(channel, listener);
   },

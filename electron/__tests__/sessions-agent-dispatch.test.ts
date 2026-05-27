@@ -113,7 +113,7 @@ describe('sessions.start — engine factory dispatch on params.agent', () => {
       expect.objectContaining({ sessionStatus: 'error' }),
     );
     expect(send).toHaveBeenCalledWith(
-      'claude-error:tab-dispatch',
+      'agent-error:tab-dispatch',
       expect.stringContaining('codex'),
     );
   });

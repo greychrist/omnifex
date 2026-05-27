@@ -6,7 +6,7 @@
 // a `<task-notification>` XML body, and `attachment.queued_command` with
 // the same XML in `prompt`. Neither type is a member of the SDK's
 // `SDKMessage` discriminated union, so the renderer's normal subscription
-// to `claude-output:<tabId>` never sees them in live mode. Without those
+// to `agent-output:<tabId>` never sees them in live mode. Without those
 // carriers, background dispatches stay in `running` forever (the user-
 // visible bug we're fixing — see the design spec under
 // `docs/superpowers/specs/2026-05-11-subagent-tracking-refactor-design.md`).

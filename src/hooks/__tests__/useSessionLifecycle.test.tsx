@@ -111,18 +111,19 @@ describe('useSessionLifecycle — startPersistentSession happy path', () => {
       undefined, // agent — harness doesn't pass one; lifecycle forwards undefined
     );
     expect(result.current.persistentSessionRef.current).toBe(true);
-    // Listeners attached on the four claude-* channels plus session-status
-    // and session-init (sessionId pinned at spawn).
+    // Listeners attached on the three agent-* tab-scoped channels plus
+    // claude-output-extra (closure carriers) and session-status /
+    // session-init (sessionId pinned at spawn).
     expect(Object.keys(eventListeners).sort()).toEqual([
-      'claude-complete:tab-life',
-      'claude-error:tab-life',
+      'agent-complete:tab-life',
+      'agent-error:tab-life',
+      'agent-output:tab-life',
       'claude-output-extra:tab-life',
-      'claude-output:tab-life',
       'session-init:tab-life',
       'session-status:tab-life',
     ]);
     // No placeholder init is rendered — the chat stays empty until the
-    // SDK iterator yields its real system:init via claude-output.
+    // SDK iterator yields its real system:init via agent-output.
     expect(result.current.messagesRef.current).toHaveLength(0);
   });
 
@@ -291,7 +292,7 @@ describe('useSessionLifecycle — rebindPersistentSession', () => {
     expect(result.current.persistentSessionRef.current).toBe(true);
     expect(result.current.lifecycle.sessionStatus).toBe('started');
     expect(result.current.lifecycle.conversationStatus).toBe('idle');
-    expect(Object.keys(eventListeners)).toContain('claude-output:tab-life');
+    expect(Object.keys(eventListeners)).toContain('agent-output:tab-life');
     expect(Object.keys(eventListeners)).toContain('session-status:tab-life');
   });
 
@@ -308,13 +309,13 @@ describe('useSessionLifecycle — rebindPersistentSession', () => {
 });
 
 describe('useSessionLifecycle — event listener behavior', () => {
-  it('forwards claude-output payloads to handleJsonlLine (JSONL pipeline enabled by default)', async () => {
+  it('forwards agent-output payloads to handleJsonlLine (JSONL pipeline enabled by default)', async () => {
     (api.startSession as any).mockResolvedValueOnce(undefined);
     const handleJsonlLine = vi.fn();
     const { result } = renderHook(harness({ handleJsonlLine }));
     await act(async () => { await result.current.lifecycle.startPersistentSession(); });
 
-    act(() => { eventListeners['claude-output:tab-life']('{"type":"user"}'); });
+    act(() => { eventListeners['agent-output:tab-life']('{"type":"user"}'); });
     expect(handleJsonlLine).toHaveBeenCalledWith('{"type":"user"}');
   });
 
@@ -335,21 +336,21 @@ describe('useSessionLifecycle — event listener behavior', () => {
     const { result } = renderHook(harness());
     await act(async () => { await result.current.lifecycle.startPersistentSession(); });
 
-    act(() => { eventListeners['claude-error:tab-life']('no stdin data received in 5s'); });
-    act(() => { eventListeners['claude-error:tab-life']('proceeding without it'); });
+    act(() => { eventListeners['agent-error:tab-life']('no stdin data received in 5s'); });
+    act(() => { eventListeners['agent-error:tab-life']('proceeding without it'); });
     expect(errorSpy).not.toHaveBeenCalled();
 
     // Genuinely unexpected stderr DOES log.
-    act(() => { eventListeners['claude-error:tab-life']('SIGSEGV'); });
+    act(() => { eventListeners['agent-error:tab-life']('SIGSEGV'); });
     expect(errorSpy).toHaveBeenCalledWith('[ClaudeCodeSession] stderr:', 'SIGSEGV');
     errorSpy.mockRestore();
   });
 
-  it('claude-complete clears loading + persistent flag AND disposes all session listeners', async () => {
-    // claude-complete is main's authoritative "this session is over" signal.
+  it('agent-complete clears loading + persistent flag AND disposes all session listeners', async () => {
+    // agent-complete is main's authoritative "this session is over" signal.
     // We use it to dispose the per-session IPC listeners so closed tabs don't
     // leak preload-world ipcRenderer subscriptions. In production, main emits
-    // session-status:stopped *before* claude-complete (see runtime.ts onExit
+    // session-status:stopped *before* agent-complete (see runtime.ts onExit
     // ordering), so the renderer has already reflected the stopped state by
     // the time the disposal runs.
     (api.startSession as any).mockResolvedValueOnce(undefined);
@@ -365,12 +366,12 @@ describe('useSessionLifecycle — event listener behavior', () => {
 
     // Then main emits claude-complete; renderer clears state AND disposes
     // its listeners.
-    act(() => { eventListeners['claude-complete:tab-life'](undefined); });
+    act(() => { eventListeners['agent-complete:tab-life'](undefined); });
     expect(setIsLoading).toHaveBeenCalledWith(false);
     expect(result.current.persistentSessionRef.current).toBe(false);
     // The unsubscribe functions registered with electronAPI.onEvent removed
     // their channel entries from the test's eventListeners map.
-    expect(eventListeners['claude-output:tab-life']).toBeUndefined();
+    expect(eventListeners['agent-output:tab-life']).toBeUndefined();
     expect(eventListeners['session-status:tab-life']).toBeUndefined();
     expect(eventListeners['session-init:tab-life']).toBeUndefined();
   });

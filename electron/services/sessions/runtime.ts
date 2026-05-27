@@ -38,7 +38,7 @@ export interface RuntimeDeps {
    * Optional app_logs sink. Engine errors are written here at level=error
    * so the renderer toast (wired in main.ts via the LoggingService onError
    * observer) fires for every CLI stderr line we surface. Distinct from
-   * `sendToRenderer('claude-error:…')`, which is a console-level diagnostic
+   * `sendToRenderer('agent-error:…')`, which is a console-level diagnostic
    * stream the renderer's `LogService` already routes to app_logs as a
    * `frontend`-source entry. Both are kept: backend-source rows attribute
    * the error to the session runtime, frontend-source rows attribute it
@@ -70,7 +70,7 @@ function ensureJsonlTail(
     jsonlPath,
     onMessage: (msg) => {
       // Surface on a separate channel so the renderer's normal
-      // claude-output:* subscription stays 1:1 with engine output.
+      // agent-output:* subscription stays 1:1 with engine output.
       sendToRenderer(`claude-output-extra:${tabId}`, msg);
     },
     onError: (err) => {
@@ -167,7 +167,7 @@ export function listenToMessages(
           break;
       }
 
-      sendToRenderer(`claude-output:${tabId}`, message);
+      sendToRenderer(`agent-output:${tabId}`, message);
 
       if (event.kind === 'result') {
         dispatchResultNotification({
@@ -197,7 +197,7 @@ export function listenToMessages(
     //     (it presents as a session-ending result and confuses the user
     //     when the session is in fact still alive).
     //
-    // `claude-error:<tabId>` is still emitted so the renderer's LogService
+    // `agent-error:<tabId>` is still emitted so the renderer's LogService
     // captures the stderr line as a frontend-source app_log entry — that's
     // separate from the backend-source app_log we write below, and both
     // serve different attribution lookups in the Log tab.
@@ -205,7 +205,7 @@ export function listenToMessages(
       if (handle.mode === 'tui') return;
       if (sessions.get(tabId) !== handle) return;
       const errMsg = err instanceof Error ? err.message : String(err);
-      sendToRenderer(`claude-error:${tabId}`, errMsg);
+      sendToRenderer(`agent-error:${tabId}`, errMsg);
       if (logging) {
         try {
           logging.writeBatch([{
@@ -238,7 +238,7 @@ export function listenToMessages(
         return;
       }
       setStatus(handle, { sessionStatus: 'stopped' }, tabId, sendToRenderer);
-      sendToRenderer(`claude-complete:${tabId}`);
+      sendToRenderer(`agent-complete:${tabId}`);
       sessions.delete(tabId);
       ownership?.unregister(tabId);
       teardownJsonlTail(jsonlState);

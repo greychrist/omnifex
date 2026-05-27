@@ -4,7 +4,7 @@
 // running in this mode, so JSONL is the only event source. The listener:
 //   1. Splits each parsed line on the same two channels the SDK path uses:
 //      `claude-output-extra:<tabId>` for closure carriers (queue-operation,
-//      attachment with task-notification XML), and `claude-output:<tabId>`
+//      attachment with task-notification XML), and `agent-output:<tabId>`
 //      for everything else. This lets the renderer consume the TUI stream
 //      through its existing handleStreamMessage pipeline — same normalization,
 //      same MessageList rendering, no parallel render path.
@@ -100,7 +100,7 @@ export function createTuiJsonlListener(args: CreateTuiJsonlListenerArgs): TuiJso
         sendToRenderer(`claude-output-extra:${tabId}`, msg);
         return;
       }
-      sendToRenderer(`claude-output:${tabId}`, msg);
+      sendToRenderer(`agent-output:${tabId}`, msg);
 
       const event = classifyRuntimeEvent(msg);
       switch (event.kind) {

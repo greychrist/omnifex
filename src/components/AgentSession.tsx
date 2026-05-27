@@ -258,15 +258,14 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   const [currentActivity, setCurrentActivity] = useState<string>("Honking");
   const [error, setError] = useState<string | null>(null);
   const [rawJsonlOutput, setRawJsonlOutput] = useState<string[]>([]);
-  // Parallel transcript buffer for Codex tabs. The shared `claude-output:`
+  // Parallel transcript buffer for Codex tabs. The shared `agent-output:`
   // channel carries both Claude stream-json (handled by `handleJsonlLine`
   // via the JSONL classifier) and Codex notifications (shape `{ method,
   // params }`). The classifier returns null for the Codex shape — fine for
   // Claude tabs — but Codex tabs need a transcript, so we collect a
-  // separate `codexMessages` array off the same channel. Task 24 will
-  // rename the channel to `agent-output:` and may consolidate the two
-  // accumulators behind a single reducer; for now the parallel buffer
-  // keeps Task 19 a zero-touch change to the Claude reducer.
+  // separate `codexMessages` array off the same channel. A future pass may
+  // consolidate the two accumulators behind a single reducer; for now the
+  // parallel buffer keeps Task 19 a zero-touch change to the Claude reducer.
   const [codexMessages, setCodexMessages] = useState<AgentMessage[]>([]);
   const [copyPopoverOpen, setCopyPopoverOpen] = useState(false);
   const [totalTokens, setTotalTokens] = useState(0);
@@ -1231,7 +1230,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   }, []);
 
   // Parallel Codex notification accumulator. Subscribes to the same
-  // `claude-output:` channel as the Claude path but only keeps payloads
+  // `agent-output:` channel as the Claude path but only keeps payloads
   // shaped like Codex notifications (`{ method, params }`). For Claude
   // tabs this listener still runs but collects nothing (Claude payloads
   // carry `type` instead of `method`), so the cost is one empty array
@@ -1243,7 +1242,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
       return;
     }
     const unlisten = window.electronAPI.onEvent(
-      `claude-output:${tabIdRef.current}`,
+      `agent-output:${tabIdRef.current}`,
       (...args: unknown[]) => {
         const payload = args[0];
         if (!payload || typeof payload !== 'object') return;

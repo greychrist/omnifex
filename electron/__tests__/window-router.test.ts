@@ -3,18 +3,19 @@ import { createWindowRouter } from '../window-router';
 
 describe('window-router', () => {
   describe('tab-scoped channels', () => {
-    it('routes claude-output:<tabId> to the tab owner when registered', () => {
+    it('routes agent-output:<tabId> to the tab owner when registered', () => {
       const r = createWindowRouter();
       r.registerTabOwner('tab-1', 42);
-      expect(r.resolveTarget('claude-output:tab-1')).toEqual({ kind: 'owner', ownerId: 42 });
+      expect(r.resolveTarget('agent-output:tab-1')).toEqual({ kind: 'owner', ownerId: 42 });
     });
 
-    it('routes the full set of tab-scoped channels (error/complete/subagent/compact/elicitation) to the owner', () => {
+    it('routes the full set of tab-scoped channels (output/error/complete/subagent/compact/elicitation) to the owner', () => {
       const r = createWindowRouter();
       r.registerTabOwner('tab-1', 7);
       for (const ch of [
-        'claude-error:tab-1',
-        'claude-complete:tab-1',
+        'agent-output:tab-1',
+        'agent-error:tab-1',
+        'agent-complete:tab-1',
         'claude-subagent:tab-1',
         'claude-compact:tab-1',
         'elicitation-request:tab-1',
@@ -23,10 +24,22 @@ describe('window-router', () => {
       }
     });
 
+    it('still routes legacy claude-output/error/complete channels to the tab owner during the compat-shim release', () => {
+      const r = createWindowRouter();
+      r.registerTabOwner('tab-1', 7);
+      for (const ch of [
+        'claude-output:tab-1',
+        'claude-error:tab-1',
+        'claude-complete:tab-1',
+      ]) {
+        expect(r.resolveTarget(ch)).toEqual({ kind: 'owner', ownerId: 7 });
+      }
+    });
+
     it('supports tab IDs that contain colons', () => {
       const r = createWindowRouter();
       r.registerTabOwner('project:foo:bar', 5);
-      expect(r.resolveTarget('claude-output:project:foo:bar')).toEqual({
+      expect(r.resolveTarget('agent-output:project:foo:bar')).toEqual({
         kind: 'owner',
         ownerId: 5,
       });
@@ -34,14 +47,14 @@ describe('window-router', () => {
 
     it('broadcasts tab-scoped channels when the tab is unknown', () => {
       const r = createWindowRouter();
-      expect(r.resolveTarget('claude-output:unknown-tab')).toEqual({ kind: 'broadcast' });
+      expect(r.resolveTarget('agent-output:unknown-tab')).toEqual({ kind: 'broadcast' });
     });
 
     it('unregisterTabOwner removes the mapping', () => {
       const r = createWindowRouter();
       r.registerTabOwner('tab-1', 3);
       r.unregisterTabOwner('tab-1');
-      expect(r.resolveTarget('claude-output:tab-1')).toEqual({ kind: 'broadcast' });
+      expect(r.resolveTarget('agent-output:tab-1')).toEqual({ kind: 'broadcast' });
     });
   });
 
