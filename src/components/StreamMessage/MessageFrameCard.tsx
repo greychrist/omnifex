@@ -105,7 +105,16 @@ export const MessageFrameCard: React.FC<MessageFrameCardProps> = ({
         ? "justify-center"
         : "justify-start";
 
-  const width = widthClassName ?? (alignment === "full" ? "w-full" : "w-[95%]");
+  // Right-aligned cards (e.g. user.prompt) shrink so the right-alignment is
+  // visually meaningful — at 95% the card would still span almost the full
+  // surface and right vs. left would be indistinguishable. Left and full
+  // keep the existing widths.
+  const width =
+    widthClassName ?? (
+      alignment === "full" ? "w-full"
+      : alignment === "right" ? "max-w-[75%] w-fit"
+      : "w-[95%]"
+    );
 
   return (
     <div className={cn("flex", justify)}>

@@ -52,7 +52,7 @@ export const MessageFrame: React.FC<MessageFrameProps> = ({ streamKind, children
   if (kind.presentation === 'card') {
     return (
       <div data-frame-variant="card">
-        <MessageFrameCard kindId={kind.id} actionBar={actionBar} message={message}>
+        <MessageFrameCard kindId={kind.id} alignment={kind.alignment} actionBar={actionBar} message={message}>
           {children}
           {rawPayload}
         </MessageFrameCard>
