@@ -22,6 +22,8 @@ import {
 } from "@/lib/permissionCardLogic";
 import type { PermissionRequestPayload } from "@/lib/types/permissionRequest";
 import { asToolInput } from "@/lib/types/toolInput";
+import { CodexPatchPreview } from "@/components/codex/CodexPatchPreview";
+import { CodexExecPreview } from "@/components/codex/CodexExecPreview";
 
 interface PermissionCardProps {
   request: PermissionRequestPayload;
@@ -74,6 +76,20 @@ function formatToolInput(toolName: string | undefined, input: Record<string, unk
 }
 
 export function PermissionCard({ request, onAllow, onDeny }: PermissionCardProps) {
+  // Codex `patch` / `exec` approvals have a fundamentally different shape
+  // than Claude's `canUseTool` payload — no tool name to format, no rules
+  // to edit, no scope persistence (Codex's protocol has no per-rule store).
+  // Render a kind-specific preview card with a simple Allow / Deny pair.
+  if (request.kind === 'patch' || request.kind === 'exec') {
+    return (
+      <CodexPermissionCard
+        request={request}
+        onAllow={onAllow}
+        onDeny={onDeny}
+      />
+    );
+  }
+
   const {
     toolName,
     toolInput,
@@ -239,6 +255,83 @@ export function PermissionCard({ request, onAllow, onDeny }: PermissionCardProps
               Save Permission
             </Button>
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Codex approval card. Renders the kind-specific preview (patch diff or
+ * shell-command) and a plain Allow / Deny pair. Codex's protocol has no
+ * per-rule persistence — there's no "Allow for Session" vs "Save
+ * Permission" distinction here. The session-suggestion shape passed to
+ * `onAllow` is empty so the response routes through the engine's plain
+ * `decision: 'allow'` path.
+ *
+ * Lives inside PermissionCard.tsx (not its own file) because the dialog
+ * shell — accent style, header, Allow / Deny button row — is shared with
+ * Claude's tool prompt; only the middle preview swaps out.
+ */
+function CodexPermissionCard({
+  request,
+  onAllow,
+  onDeny,
+}: PermissionCardProps): JSX.Element {
+  const { config } = useMessageRenderingConfig();
+  const accentStyle = accentStyleFor(config, "permission.request");
+  const accentSwatch = swatchFor(config, "permission.request");
+
+  const isPatch = request.kind === 'patch';
+  const headerTitle = isPatch ? 'Codex patch approval' : 'Codex command approval';
+  const headerDescription =
+    request.summary ||
+    (isPatch ? 'Codex wants to apply a patch' : 'Codex wants to run a command');
+
+  return (
+    <div
+      className="mx-2 my-2 rounded-lg border shadow-sm"
+      style={accentStyle}
+      data-codex-permission-card={request.kind}
+    >
+      <div className="p-3 space-y-3">
+        {/* Header */}
+        <div className="flex items-start gap-2">
+          <Shield className="h-4 w-4 mt-0.5 shrink-0" style={{ color: accentSwatch }} />
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-medium">{headerTitle}</div>
+            <div className="text-xs text-muted-foreground">
+              {headerDescription}
+            </div>
+          </div>
+        </div>
+
+        {/* Kind-specific preview */}
+        {isPatch ? (
+          <CodexPatchPreview payload={request.payload} />
+        ) : (
+          <CodexExecPreview payload={request.payload} />
+        )}
+
+        {/* Allow / Deny */}
+        <div className="flex items-center justify-between gap-2 pt-1">
+          <Button
+            size="sm"
+            variant="destructive"
+            className="text-xs"
+            onClick={onDeny}
+          >
+            <ShieldX className="h-3.5 w-3.5 mr-1" />
+            Deny
+          </Button>
+          <Button
+            size="sm"
+            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs"
+            onClick={() => { onAllow([]); }}
+          >
+            <ShieldCheck className="h-3.5 w-3.5 mr-1" />
+            Allow
+          </Button>
         </div>
       </div>
     </div>

@@ -828,10 +828,13 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
 
       // permission_request — OmniFex-synthetic envelope from the main-process
       // permissions service. Not a JSONL record; classifier doesn't know it.
+      // Codex variants ride the same channel with `kind: 'patch' | 'exec'`,
+      // `agent: 'codex'`, and the raw approval params on `codex_payload`.
       if (raw && typeof raw === 'object' && (raw as any).type === 'permission_request') {
         const msg = raw as any;
         setPendingPermission({
           requestId: msg.request_id,
+          kind: msg.kind,
           toolName: msg.tool_name,
           toolInput: msg.tool_input ?? {},
           title: msg.title,
@@ -840,6 +843,9 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
           decisionReason: msg.decision_reason,
           blockedPath: msg.blocked_path,
           suggestions: msg.permission_suggestions ?? [],
+          agent: msg.agent,
+          summary: msg.summary,
+          payload: msg.codex_payload,
         });
         return;
       }

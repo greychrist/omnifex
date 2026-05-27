@@ -264,10 +264,23 @@ type AnchoredSDKMessage = Exclude<SDKMessage, SDKNotificationMessage>;
  * `claude-output:<tabId>` channel as SDK messages and is normalised
  * onto `PermissionRequestPayload` by the JSONL classifier. Snake_case
  * field names match the wire format emitted by `permissions.ts`.
+ *
+ * `kind` defaults to `'tool'` (Claude's `canUseTool` payload). When the
+ * Codex engine surfaces an approval, the main process forwards
+ * `kind: 'patch' | 'exec'`, `agent: 'codex'`, a human summary, and the
+ * raw approval params on `codex_payload` (snake_case to match the wire's
+ * existing field-naming convention).
  */
 export interface PermissionRequestMessage extends OmnifexEnvelope {
   type: 'permission_request';
   request_id: string;
+  /** Permission kind. Defaults to `'tool'` when omitted. */
+  kind?: 'tool' | 'patch' | 'exec';
+  agent?: 'claude' | 'codex';
+  /** Engine-supplied one-line summary. Mirrors `AgentPermissionRequest.summary`. */
+  summary?: string;
+  /** Raw Codex approval params (applyPatchApproval / execCommandApproval). */
+  codex_payload?: unknown;
   tool_name: string;
   tool_input?: Record<string, unknown>;
   title?: string;

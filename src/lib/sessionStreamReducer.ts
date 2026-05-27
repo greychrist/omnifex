@@ -341,9 +341,15 @@ export function reduceSessionStreamMessage(
   // Permission request from the SDK's canUseTool callback. The wire format
   // is snake_case (it's an SDK stream message); we normalise to camelCase
   // here so every renderer consumer uses the same shape.
+  //
+  // Codex variants ride the same channel with `kind: 'patch' | 'exec'`,
+  // `agent: 'codex'`, a one-line summary, and the raw approval params on
+  // `codex_payload`. We forward those fields through unchanged — the
+  // PermissionCard branches on `kind` to render the right preview.
   if (message.type === 'permission_request' && message.request_id) {
     const payload: PermissionRequestPayload = {
       requestId: message.request_id,
+      kind: message.kind,
       toolName: message.tool_name || 'Unknown',
       toolInput: message.tool_input ?? {},
       title: message.title,
@@ -352,6 +358,9 @@ export function reduceSessionStreamMessage(
       decisionReason: message.decision_reason,
       blockedPath: message.blocked_path,
       suggestions: message.permission_suggestions ?? [],
+      agent: message.agent,
+      summary: message.summary,
+      payload: message.codex_payload,
     };
     result.pendingPermission = payload;
     effects.push({ kind: 'showPermissionPrompt', payload });

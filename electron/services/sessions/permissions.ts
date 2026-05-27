@@ -225,7 +225,114 @@ export function createPermissionRequestHandler(
     return { toolName };
   }
 
+  /**
+   * Forward a Codex approval (patch / exec) to the renderer. Codex requests
+   * carry a structured `payload` that the renderer renders via the dedicated
+   * Codex preview components — the dialog does not surface a Claude-style
+   * rule editor here because Codex's protocol has no per-rule persistence.
+   *
+   * Allow / Deny still routes through `respondPermission` below; the dispatch
+   * just emits `behavior: 'allow' | 'deny'` and the Codex engine maps that
+   * to `decision: 'allow' | 'deny'` on the JSON-RPC respondToServer envelope.
+   */
+  function handleCodexApprovalRequest(req: AgentPermissionRequest): void {
+    const requestId = req.requestId;
+    const permissionMode = currentPermissionMode(handle);
+
+    if (permissionMode === 'bypassPermissions') {
+      logEntry({
+        level: 'info',
+        message: `permission decision: allow codex.${req.kind} (${permissionMode})`,
+        metadata: {
+          event: 'permission.decision',
+          agent: 'codex',
+          kind: req.kind,
+          behavior: 'allow',
+          persisted: false,
+          permission_mode: permissionMode,
+          auto_allowed: true,
+        },
+      });
+      handle.engine?.respondPermission(requestId, 'allow')
+        .catch((e: unknown) => console.error('[sessions] engine.respondPermission failed:', e));
+      return;
+    }
+
+    const summary = req.summary || (req.kind === 'patch' ? 'Apply patch' : 'Run command');
+
+    // Wire envelope: keep snake_case for the existing `permission_request`
+    // channel. Renderer sees `kind`, `agent`, `summary`, `codex_payload`
+    // alongside Claude's `tool_name`/`tool_input` (left blank — the
+    // PermissionCard branches on `kind` before reading them).
+    const payload = {
+      type: 'permission_request',
+      request_id: requestId,
+      kind: req.kind,
+      agent: 'codex',
+      summary,
+      codex_payload: req.payload,
+      // Stub Claude fields so the renderer's existing normalizer doesn't
+      // crash on `undefined`. These are intentionally not used by the
+      // Codex branches in PermissionCard.
+      tool_name: req.kind === 'patch' ? 'apply_patch' : 'exec_command',
+      tool_input: {},
+      permission_suggestions: [],
+    };
+
+    logEntry({
+      level: 'info',
+      message: `permission request: codex.${req.kind}`,
+      metadata: {
+        event: 'permission.request',
+        agent: 'codex',
+        kind: req.kind,
+        request_id: requestId,
+        summary,
+      },
+    });
+
+    const entry: PendingPermission & {
+      payload: any;
+      toolInput: Record<string, unknown>;
+    } = {
+      requestId,
+      resolve: () => { /* engine flow uses engine.respondPermission directly */ },
+      payload,
+      toolInput: {},
+    };
+    handle.permissionQueue.push(entry);
+
+    if (handle.permissionQueue.length === 1) {
+      setStatus(handle, { conversationStatus: 'waiting_permission' }, tabId, sendToRenderer);
+      sendToRenderer(`claude-output:${tabId}`, payload);
+
+      const projectName = path.basename(handle.projectPath) || 'OmniFex';
+      const title = `OmniFex — ${projectName}`;
+      const body = truncate(summary);
+      sendToRenderer('claude-notification', { tab_id: tabId, title, body, is_error: false });
+      try {
+        notificationHooks.showNotification?.(title, body, false, { tabId }, {
+          subtitle: 'Permission Request:',
+        });
+        notificationHooks.incrementUnread?.();
+      } catch (e) {
+        console.error('[sessions] permission notification hook failed:', e);
+      }
+    }
+  }
+
   return (req: AgentPermissionRequest): void => {
+    // Codex emits patch / exec approval kinds with a fundamentally different
+    // payload shape than Claude's canUseTool body (no tool_name, no rules to
+    // edit — the approval is JSON-RPC respondToServer with a `decision`).
+    // Branch here so the renderer wire payload carries enough context for the
+    // PermissionCard to render a meaningful preview without re-parsing the
+    // Claude vs Codex wire schema.
+    if (req.kind === 'patch' || req.kind === 'exec') {
+      handleCodexApprovalRequest(req);
+      return;
+    }
+
     // req.payload was the raw CLI control_request.request body — has
     // tool_name, input, tool_use_id, permission_suggestions, title, etc.
     const rawPayload = req.payload as {
@@ -384,25 +491,39 @@ export function respondPermission(
   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- permissionQueue.shift() guarded by length > 0 (prior check).
   const current = handle.permissionQueue.shift()! as PendingPermission & {
     toolInput?: Record<string, unknown>;
+    payload?: { kind?: 'tool' | 'patch' | 'exec' };
   };
 
+  // Codex approval entries carry kind='patch'/'exec' on the queued payload.
+  // Their engine.respondPermission accepts just `decision` — passing the
+  // Claude-shaped { behavior, updatedInput, updatedPermissions } body would
+  // spread garbage into Codex's JSON-RPC result envelope. Send no body for
+  // Codex; the engine maps the `decision` arg onto the wire shape itself.
+  const isCodexApproval =
+    current.payload?.kind === 'patch' || current.payload?.kind === 'exec';
+
   if (handle.engine) {
-    // PermissionResult body: behavior, updatedInput, optionally
-    // updatedPermissions. The engine attaches the matching toolUseID
-    // automatically from its pending-permission map.
-    const permissionResultBody: Record<string, unknown> = { behavior };
-    if (behavior === 'allow') {
-      // updatedInput is required for allow. Fall back to the captured
-      // original input (mirrors the SDK's "passing {} breaks it" rule).
-      permissionResultBody.updatedInput = updatedInput ?? current.toolInput ?? {};
-      if (augmented && augmented.length > 0) {
-        permissionResultBody.updatedPermissions = augmented;
-      }
+    if (isCodexApproval) {
+      handle.engine.respondPermission(current.requestId, behavior)
+        .catch((e: unknown) => console.error('[sessions] engine.respondPermission failed:', e));
     } else {
-      permissionResultBody.message = 'User denied permission';
+      // PermissionResult body: behavior, updatedInput, optionally
+      // updatedPermissions. The engine attaches the matching toolUseID
+      // automatically from its pending-permission map.
+      const permissionResultBody: Record<string, unknown> = { behavior };
+      if (behavior === 'allow') {
+        // updatedInput is required for allow. Fall back to the captured
+        // original input (mirrors the SDK's "passing {} breaks it" rule).
+        permissionResultBody.updatedInput = updatedInput ?? current.toolInput ?? {};
+        if (augmented && augmented.length > 0) {
+          permissionResultBody.updatedPermissions = augmented;
+        }
+      } else {
+        permissionResultBody.message = 'User denied permission';
+      }
+      handle.engine.respondPermission(current.requestId, behavior, permissionResultBody)
+        .catch((e: unknown) => console.error('[sessions] engine.respondPermission failed:', e));
     }
-    handle.engine.respondPermission(current.requestId, behavior, permissionResultBody)
-      .catch((e: unknown) => console.error('[sessions] engine.respondPermission failed:', e));
   }
 
   // Persist any rules whose destination isn't "session" — the SDK may also
@@ -441,11 +562,21 @@ export function respondPermission(
     // Notify the user about the next permission in the queue
     const projectName = path.basename(handle.projectPath) || 'OmniFex';
     const title = `OmniFex — ${projectName}`;
-    const { body, subtitle } = permissionNotificationContent(
-      nextPayload.tool_name,
-      nextPayload.tool_input,
-      { title: nextPayload.title, displayName: nextPayload.display_name },
-    );
+    let body: string;
+    let subtitle: string;
+    if (nextPayload.kind === 'patch' || nextPayload.kind === 'exec') {
+      // Codex approval — use the engine-supplied summary directly.
+      body = typeof nextPayload.summary === 'string' && nextPayload.summary
+        ? truncate(nextPayload.summary)
+        : nextPayload.kind === 'patch' ? 'Apply patch' : 'Run command';
+      subtitle = 'Permission Request:';
+    } else {
+      ({ body, subtitle } = permissionNotificationContent(
+        nextPayload.tool_name,
+        nextPayload.tool_input,
+        { title: nextPayload.title, displayName: nextPayload.display_name },
+      ));
+    }
     sendToRenderer('claude-notification', { tab_id: tabId, title, body, is_error: false });
     try {
       notificationHooks.showNotification?.(title, body, false, { tabId }, { subtitle });
