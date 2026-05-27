@@ -20,8 +20,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Popover } from "@/components/ui/popover";
+import { ChevronDown } from "lucide-react";
 import { IconRenderer } from "./iconMap";
 import { cn } from "@/lib/utils";
+
+// Sort once at module load. "none" pinned at the top; the rest alphabetical
+// (case-insensitive) so the picker grid is browseable.
+const SORTED_ICONS: readonly IconName[] = (() => {
+  const rest = (ALLOWED_ICONS as readonly IconName[]).filter((n) => n !== "none");
+  rest.sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+  return ((ALLOWED_ICONS as readonly IconName[]).includes("none" as IconName)
+    ? (["none" as IconName, ...rest])
+    : rest);
+})();
 
 interface KindEditorProps {
   kind: MessageKindConfig;
@@ -77,6 +89,74 @@ function resolveAccentHex(accentColor: string, palette: Palette): string {
   const entry = palette[accentColor as keyof typeof palette];
   return entry?.swatch ?? "#888888";
 }
+
+/**
+ * Popover-based icon picker with a 6-column grid. Sorted alphabetically with
+ * "none" pinned at the top.
+ */
+const IconPicker: React.FC<{ value: IconName; onChange: (v: IconName) => void }> = ({
+  value,
+  onChange,
+}) => {
+  const [open, setOpen] = React.useState(false);
+
+  return (
+    <Popover
+      open={open}
+      onOpenChange={setOpen}
+      align="start"
+      className="p-2 w-72"
+      trigger={
+        <button
+          type="button"
+          className="flex h-9 w-full items-center justify-between gap-2 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm hover:bg-accent focus:outline-none focus:ring-1 focus:ring-ring"
+          aria-label="Icon"
+        >
+          <span className="flex items-center gap-2">
+            {value === "none" ? (
+              <span className="text-muted-foreground text-xs">—</span>
+            ) : (
+              <IconRenderer name={value} className="h-4 w-4" />
+            )}
+            <span>{value}</span>
+          </span>
+          <ChevronDown className="h-4 w-4 opacity-50" />
+        </button>
+      }
+      content={
+        <div
+          className="grid grid-cols-6 gap-1 max-h-72 overflow-y-auto"
+          role="listbox"
+          aria-label="Icon"
+        >
+          {SORTED_ICONS.map((name) => {
+            const selected = name === value;
+            return (
+              <button
+                key={name}
+                type="button"
+                role="option"
+                aria-selected={selected}
+                title={name}
+                onClick={() => { onChange(name); setOpen(false); }}
+                className={cn(
+                  "flex h-10 w-10 items-center justify-center rounded-md border border-transparent hover:bg-accent focus:outline-none focus:ring-1 focus:ring-ring",
+                  selected && "border-primary bg-accent",
+                )}
+              >
+                {name === "none" ? (
+                  <span className="text-muted-foreground text-xs">—</span>
+                ) : (
+                  <IconRenderer name={name} className="h-4 w-4" />
+                )}
+              </button>
+            );
+          })}
+        </div>
+      }
+    />
+  );
+};
 
 export const KindEditor: React.FC<KindEditorProps> = ({
   kind,
@@ -232,40 +312,10 @@ export const KindEditor: React.FC<KindEditorProps> = ({
         </p>
       </div>
 
-      {/* 6. Icon — dropdown with previews */}
+      {/* 6. Icon — grid picker in a popover */}
       <div className="space-y-2">
         <Label>Icon</Label>
-        <Select
-          value={kind.icon}
-          onValueChange={(v) => { onChange({ icon: v as IconName }); }}
-        >
-          <SelectTrigger>
-            <SelectValue>
-              <div className="flex items-center gap-2">
-                {kind.icon === "none" ? (
-                  <span className="text-muted-foreground text-xs">—</span>
-                ) : (
-                  <IconRenderer name={kind.icon} className="h-4 w-4" />
-                )}
-                <span>{kind.icon}</span>
-              </div>
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent className="max-h-80">
-            {(ALLOWED_ICONS as readonly IconName[]).map((name) => (
-              <SelectItem key={name} value={name}>
-                <div className="flex items-center gap-2">
-                  {name === "none" ? (
-                    <span className="text-muted-foreground text-xs">—</span>
-                  ) : (
-                    <IconRenderer name={name} className="h-4 w-4" />
-                  )}
-                  <span>{name}</span>
-                </div>
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <IconPicker value={kind.icon} onChange={(v) => { onChange({ icon: v }); }} />
       </div>
 
       {/* 7. Icon chrome — per-kind overrides for the icon's size, border,
