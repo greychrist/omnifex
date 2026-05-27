@@ -46,6 +46,10 @@ Card.displayName = "Card";
  * `border-inherit` — so whatever accent the parent Card sets on its own
  * border (default theme border, or an inline override) flows down to the
  * header divider without per-call-site styling.
+ *
+ * Adds a subtle foreground tint to the background so the header reads as
+ * slightly more solid than CardContent, giving a quiet visual separation
+ * beyond the divider line.
  */
 const CardHeader = React.forwardRef<
   HTMLDivElement,
@@ -53,7 +57,7 @@ const CardHeader = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <div
     ref={ref}
-    className={cn("flex flex-col space-y-1.5 p-6 border-b border-inherit", className)}
+    className={cn("flex flex-col space-y-1.5 p-6 border-b border-inherit bg-foreground/5", className)}
     {...props}
   />
 ));
