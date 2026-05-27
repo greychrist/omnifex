@@ -4,7 +4,7 @@ OmniFex (by GreyChrist) is an **Electron** desktop app for Claude Code. The curr
 
 The shipping app is OmniFex. Internal identifiers like `greychrist.db`, the `greychrist-file://` protocol, and localStorage keys retain the legacy name to avoid migration churn — only the user-facing brand and the repo/folder name changed.
 
-The repo migrated from Tauri 2 (Rust) to Electron (Node.js/TypeScript) in April 2026 because the Claude Agent SDK requires a Node runtime. Any reference to `src-tauri/`, `cargo`, `just`, `nix-shell`, or an Axum web server is legacy noise.
+The repo migrated from Tauri 2 (Rust) to Electron (Node.js/TypeScript) in April 2026. The original driver was the Claude Agent SDK (which needed a Node runtime); since then the app has dropped the SDK entirely and now drives the Claude CLI binary directly via `node-pty` and `child_process` — Node is still required for that. Any reference to `src-tauri/`, `cargo`, `just`, `nix-shell`, an Axum web server, or `@anthropic-ai/claude-agent-sdk` in source code is legacy noise.
 
 ## No worktrees
 
@@ -38,7 +38,7 @@ Any change that touches session status, conversation status, the spinner / in-fl
 - Start from evidence, not memory.
 - For repo-specific behavior, read the relevant local code path before making claims about architecture or implementation.
 - For external behavior, use **Context7 first** before relying on model memory for APIs, config formats, CLI flags, plugin manifests, migration details, or framework behavior.
-- For Claude Code, Agent SDK, MCP, hooks, plugins, or settings behavior, prefer **official Anthropic docs** over memory or third-party guides.
+- For Claude Code, Claude CLI, MCP, hooks, plugins, or settings behavior, prefer **official Anthropic docs** over memory or third-party guides.
 - For TypeScript and TSX work, prefer Anthropic's official **`typescript-lsp`** plugin when it is available. Use it for symbol lookup, references, semantic rename/refactor, and diagnostics after edits.
 - Do not assume plugin or MCP availability. If `typescript-lsp` is not installed, fall back to targeted `rg`, focused file reads, `npm run check`, and tests.
 - Use **Serena** only when semantic navigation is still needed and it is already configured or the user explicitly wants it. Treat Serena as optional, not a default dependency.
@@ -65,7 +65,7 @@ Any change that touches session status, conversation status, the spinner / in-fl
 ### Process Model
 
 - **Main process**: `electron/**`
-  Owns SQLite, filesystem access, Claude CLI spawning, Agent SDK sessions, account resolution, and all privileged work.
+  Owns SQLite, filesystem access, Claude CLI spawning (interactive sessions, agents, usage), account resolution, and all privileged work.
 - **Preload**: `electron/preload.ts`
   Exposes `window.electronAPI.invoke(channel, params)` through a strict allow-list. Missing channels fail here first.
 - **Renderer**: `src/**`
@@ -85,8 +85,8 @@ Any change that touches session status, conversation status, the spinner / in-fl
   Multi-account CRUD, path rules, project overrides, resolution, discovery.
 - `electron/services/claude.ts`
   Project listing, Claude settings, CLAUDE.md file ops, hooks config, version checks.
-- `electron/services/sessions.ts`
-  Interactive sessions through `@anthropic-ai/claude-agent-sdk` `query()`.
+- `electron/services/sessions/` (split across `tui.ts`, `lifecycle.ts`, etc.)
+  Interactive sessions through the Claude CLI binary, spawned via `node-pty` for TUI mode and `child_process` for non-interactive queries. The binary is located at runtime via `electron/services/claude-binary.ts`.
 - `electron/services/agents.ts`
   Agent CRUD and execution through the Claude CLI.
 - `electron/services/usage.ts`
@@ -124,7 +124,7 @@ Other account rules:
 - Handler adapters should accept both camelCase and snake_case params, for example `data.configDir ?? data.config_dir`.
 - Preserve the end-to-end account-aware path whenever a change touches projects, sessions, agents, usage, hooks, MCP, or Claude settings.
 - There is no web or REST mode.
-- If the SDK already provides the needed behavior, use the SDK API instead of reimplementing it.
+- If the Claude CLI already provides the needed behavior via a flag or output mode, drive it through that interface instead of reimplementing it in the wrapper.
 
 ## High-Value Paths
 
