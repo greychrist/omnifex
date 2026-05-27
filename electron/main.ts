@@ -665,6 +665,18 @@ app.whenReady().then(() => {
   });
   const codexSessionWalkerService = createCodexSessionWalker();
 
+  // Static app capabilities — resolved once at startup, served to the
+  // renderer via the `app_capabilities` IPC channel. The Codex flag
+  // gates every Codex UI surface (agent picker, account row, session
+  // list partition) behind `OMNIFEX_ENABLE_CODEX=1` until manual
+  // verification clears. Backend services stay wired regardless; only
+  // renderer surfaces are gated, so an env-var flip + app restart is
+  // all it takes to expose the UI.
+  const codexEnabled = process.env.OMNIFEX_ENABLE_CODEX === '1';
+  const appCapabilitiesService = {
+    get: () => ({ codexEnabled }),
+  };
+
   // App-wide broadcast: any time the Codex auth file changes (fresh login,
   // logout via deletion, etc.) every renderer needs to know so banners and
   // the agent picker can re-render. The status payload is the same shape
@@ -940,6 +952,7 @@ app.whenReady().then(() => {
     codexSessionWalker: {
       listSessions: () => codexSessionWalkerService.listSessions(),
     },
+    appCapabilities: appCapabilitiesService,
   });
 
   ipcMain.handle('get_app_version', () => app.getVersion());

@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import type React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
 import type { Session, SessionSummary } from '@/lib/api';
@@ -44,6 +45,18 @@ vi.mock('@/contexts/AccountsContext', () => ({
     getIcon: () => null,
     getAccountType: () => null,
   }),
+}));
+
+// AppCapabilitiesContext gates the Codex partition (Task 25). Tests in
+// this file pre-date the gate and assert on Codex-aware behavior; the
+// helper below overrides the value per-render so the dedicated
+// feature-flag-off describe block opts out explicitly. Default: ON.
+let testCodexEnabled = true;
+vi.mock('@/contexts/AppCapabilitiesContext', () => ({
+  useAppCapabilities: () => ({ codexEnabled: testCodexEnabled }),
+  AppCapabilitiesContext: {
+    Provider: ({ children }: { children: React.ReactNode }) => children,
+  },
 }));
 
 // Tests can grab the registered `onSessionSummaryGenerating` callback
@@ -121,6 +134,10 @@ const summaryFixture: SessionSummary = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Reset Codex feature flag — default to ON so existing tests assert on
+  // partition behavior. The "feature flag OFF" describe block below
+  // flips it explicitly.
+  testCodexEnabled = true;
   vi.mocked(api.summaryGet).mockResolvedValue(summaryFixture);
   vi.mocked(api.summaryGenerate).mockResolvedValue({
     status: 'generated',
@@ -687,5 +704,50 @@ describe('SessionList — Codex partition (Task 16)', () => {
         listener as EventListener,
       );
     }
+  });
+});
+
+describe('SessionList — Codex feature flag (Task 25)', () => {
+  const codexEntry = {
+    conversationId: '019cb5ad-0c36-7d80-b43f-559e40646c80',
+    projectPath: '/x',
+    lastActivity: '2026-05-10T12:00:00Z',
+    jsonlPath:
+      '/Users/test/.codex/sessions/2026/05/10/rollout-019cb5ad-0c36-7d80-b43f-559e40646c80.jsonl',
+  };
+
+  it('skips the listCodexSessions IPC entirely when codexEnabled is false', async () => {
+    testCodexEnabled = false;
+    vi.mocked(api.summaryGet).mockResolvedValue(null);
+    render(<SessionList sessions={[sessionFixture]} projectPath="/x" />);
+    await screen.findByText(/old first message preview/);
+    // The Codex walker IPC must never have been called.
+    expect(api.listCodexSessions).not.toHaveBeenCalled();
+  });
+
+  it('hides the Codex partition and agent filter when codexEnabled is false', async () => {
+    testCodexEnabled = false;
+    // Even if the walker IPC returns rows, the partition must stay hidden.
+    vi.mocked(api.listCodexSessions).mockResolvedValueOnce([codexEntry]);
+    vi.mocked(api.summaryGet).mockResolvedValue(null);
+    render(<SessionList sessions={[sessionFixture]} projectPath="/x" />);
+    await screen.findByText(/old first message preview/);
+    // No Codex conversation id in the DOM.
+    expect(
+      screen.queryByText(codexEntry.conversationId.slice(0, 8)),
+    ).toBeNull();
+    // No agent filter buttons.
+    expect(screen.queryByRole('group', { name: /filter by agent/i })).toBeNull();
+  });
+
+  it('renders the Codex partition normally when codexEnabled is true', async () => {
+    testCodexEnabled = true;
+    vi.mocked(api.listCodexSessions).mockResolvedValueOnce([codexEntry]);
+    vi.mocked(api.summaryGet).mockResolvedValue(null);
+    render(<SessionList sessions={[]} projectPath="/x" />);
+    expect(
+      await screen.findByText(codexEntry.conversationId.slice(0, 8)),
+    ).toBeTruthy();
+    expect(api.listCodexSessions).toHaveBeenCalled();
   });
 });

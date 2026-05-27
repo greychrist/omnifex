@@ -4,6 +4,7 @@ import { Bot, FolderCode } from "lucide-react";
 import { api, type Project, type Session } from "@/lib/api";
 import { TabProvider, useTabContext } from "@/contexts/TabContext";
 import { AccountsProvider } from "@/contexts/AccountsContext";
+import { AppCapabilitiesProvider } from "@/contexts/AppCapabilitiesContext";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { AppFontProvider } from "@/contexts/AppFontContext";
 import { MessageRenderingProvider } from "@/contexts/MessageRenderingContext";
@@ -591,12 +592,14 @@ function App() {
     <AppFontProvider>
       <ThemeProvider>
         <MessageRenderingProvider>
-          <AccountsProvider>
-            <TabProvider>
-              <AppContent />
-              <StartupIntro visible={showIntro} />
-            </TabProvider>
-          </AccountsProvider>
+          <AppCapabilitiesProvider>
+            <AccountsProvider>
+              <TabProvider>
+                <AppContent />
+                <StartupIntro visible={showIntro} />
+              </TabProvider>
+            </AccountsProvider>
+          </AppCapabilitiesProvider>
         </MessageRenderingProvider>
       </ThemeProvider>
     </AppFontProvider>

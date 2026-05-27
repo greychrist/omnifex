@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils";
 import { fireAndLog, logAndForget } from "@/lib/fireAndLog";
 import { CodexSignInModal } from "@/components/codex/CodexSignInModal";
 import { useCodexAuthStatus } from "@/hooks/useCodexAuthStatus";
+import { useAppCapabilities } from "@/contexts/AppCapabilitiesContext";
 import {
   Dialog,
   DialogContent,
@@ -520,6 +521,10 @@ const CodexAccountRow: React.FC = () => {
 
 export const AccountSettings: React.FC = () => {
   const { refresh: refreshAccountsContext } = useAccounts();
+  // Feature-flag gate (Task 25): the Codex sign-in row is hidden until
+  // the user has opted in via `OMNIFEX_ENABLE_CODEX=1`. Path-rule + Claude
+  // account management stays visible regardless.
+  const { codexEnabled } = useAppCapabilities();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [pathRules, setPathRules] = useState<PathRule[]>([]);
   const [overrides, setOverrides] = useState<{project_path: string; account_id: number; account_name: string}[]>([]);
@@ -1010,15 +1015,18 @@ export const AccountSettings: React.FC = () => {
 
       {/* Codex — separate from Claude accounts because Codex has no
           per-project account model; sign-in is per-machine. Keep the row
-          minimal: status + action, no path-rule plumbing. */}
-      <div>
-        <h3 className="text-sm font-semibold mb-3">Codex</h3>
-        <p className="text-xs text-muted-foreground mb-3">
-          Codex sessions use a single per-machine sign-in. Path rules and project
-          overrides only apply to Claude accounts.
-        </p>
-        <CodexAccountRow />
-      </div>
+          minimal: status + action, no path-rule plumbing. Hidden behind
+          OMNIFEX_ENABLE_CODEX=1 (Task 25). */}
+      {codexEnabled && (
+        <div>
+          <h3 className="text-sm font-semibold mb-3">Codex</h3>
+          <p className="text-xs text-muted-foreground mb-3">
+            Codex sessions use a single per-machine sign-in. Path rules and project
+            overrides only apply to Claude accounts.
+          </p>
+          <CodexAccountRow />
+        </div>
+      )}
 
       {/* Path Rules */}
       <div>

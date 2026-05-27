@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Pencil, ChevronDown, LogIn } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Popover } from "@/components/ui/popover";
 import { AccountBadge } from "@/components/AccountBadge";
 import { AgentPicker } from "@/components/shared/AgentPicker";
+import { useAppCapabilities } from "@/contexts/AppCapabilitiesContext";
 import { cn } from "@/lib/utils";
 import {
   EFFORT_LEVELS,
@@ -151,6 +152,18 @@ export const NewSessionForm: React.FC<NewSessionFormProps> = ({
   onCodexSignIn,
   className,
 }) => {
+  // Feature-flag gate (Task 25). When `OMNIFEX_ENABLE_CODEX=1` is unset
+  // we hide the AgentPicker entirely and clamp the agent to 'claude' so
+  // a stale persisted `'codex'` value (e.g. from a tab created before
+  // the user disabled the flag) can't slip past into a Codex-only code
+  // path. The clamp happens in an effect so we don't fight the parent's
+  // state during render.
+  const { codexEnabled } = useAppCapabilities();
+  useEffect(() => {
+    if (!codexEnabled && agent !== 'claude') {
+      setAgent('claude');
+    }
+  }, [codexEnabled, agent, setAgent]);
   // Codex auth gating — only consulted on the codex agent path. We treat
   // `null` (status not yet loaded) the same as unauthenticated so submit
   // stays disabled until we definitively know we can start the session.
@@ -184,11 +197,13 @@ export const NewSessionForm: React.FC<NewSessionFormProps> = ({
     >
       <div className="flex items-center justify-between gap-3">
         <h3 className="text-base font-medium">New Session</h3>
-        <AgentPicker
-          value={agent}
-          onChange={setAgent}
-          disabled={agentPickerDisabled}
-        />
+        {codexEnabled && (
+          <AgentPicker
+            value={agent}
+            onChange={setAgent}
+            disabled={agentPickerDisabled}
+          />
+        )}
       </div>
 
       {/* Account (or Codex indicator) + 4 dropdowns on a single row, labels
