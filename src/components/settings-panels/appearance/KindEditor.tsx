@@ -105,7 +105,7 @@ const IconPicker: React.FC<{ value: IconName; onChange: (v: IconName) => void }>
       open={open}
       onOpenChange={setOpen}
       align="start"
-      className="p-2 w-72"
+      className="p-2 w-[28rem]"
       triggerClassName="relative block w-full"
       trigger={
         <button
@@ -126,7 +126,7 @@ const IconPicker: React.FC<{ value: IconName; onChange: (v: IconName) => void }>
       }
       content={
         <div
-          className="grid grid-cols-6 gap-1 max-h-72 overflow-y-auto"
+          className="grid grid-cols-6 gap-1 max-h-96 overflow-y-auto"
           role="listbox"
           aria-label="Icon"
         >
@@ -141,15 +141,21 @@ const IconPicker: React.FC<{ value: IconName; onChange: (v: IconName) => void }>
                 title={name}
                 onClick={() => { onChange(name); setOpen(false); }}
                 className={cn(
-                  "flex h-10 w-10 items-center justify-center rounded-md border border-transparent hover:bg-accent focus:outline-none focus:ring-1 focus:ring-ring",
+                  "flex h-16 w-16 flex-col items-center justify-center gap-1 rounded-md border border-transparent px-1 hover:bg-accent focus:outline-none focus:ring-1 focus:ring-ring",
                   selected && "border-primary bg-accent",
                 )}
               >
                 {name === "none" ? (
-                  <span className="text-muted-foreground text-xs">—</span>
+                  <span className="text-muted-foreground text-sm">—</span>
                 ) : (
-                  <IconRenderer name={name} className="h-4 w-4" />
+                  <IconRenderer name={name} className="h-5 w-5" />
                 )}
+                <span
+                  className="block w-full truncate text-center leading-tight text-muted-foreground"
+                  style={{ fontSize: "8px" }}
+                >
+                  {name}
+                </span>
               </button>
             );
           })}
