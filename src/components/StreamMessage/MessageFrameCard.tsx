@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Check, Copy } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
 import { accentStyleFor, swatchFor } from "@/lib/accentStyle";
@@ -123,30 +123,38 @@ export const MessageFrameCard: React.FC<MessageFrameCardProps> = ({
         style={{ ...accentStyle, borderStyle: resolvedBorderStyle }}
       >
         {actionBar}
-        <CardContent className="p-4 pb-9">
-          <div className="flex items-start gap-3">
-            {iconName !== "none" && (
-              <div
-                className={iconWrapperClassName(config, kindId)}
-                style={iconWrapperStyle(config, swatch, kindId)}
-              >
-                <IconRenderer
-                  name={iconName}
-                  className={iconSizeClassName(config, kindId)}
-                />
-              </div>
-            )}
-            <div className="flex-1 space-y-2 min-w-0 overflow-x-auto">
+        {/* Outer flex: leading icon chip on the left, header + content
+            stacked on the right. CardHeader and CardContent give the right
+            column proper structural separation (their own padding boxes +
+            the explicit pb-9 on the content's last child for the absolute
+            footer). The shadcn defaults of `p-6` are overridden here so the
+            card stays compact in the chat timeline. */}
+        <div className="flex items-start gap-3 px-4 pt-4">
+          {iconName !== "none" && (
+            <div
+              className={iconWrapperClassName(config, kindId)}
+              style={iconWrapperStyle(config, swatch, kindId)}
+            >
+              <IconRenderer
+                name={iconName}
+                className={iconSizeClassName(config, kindId)}
+              />
+            </div>
+          )}
+          <div className="flex-1 min-w-0 overflow-x-auto">
+            <CardHeader className="p-0 space-y-0">
               <KindHeader
                 kindId={kindId}
                 label={headerLabel}
                 fallbackLabel={headerFallbackLabel}
                 showIcon={showHeaderIcon}
               />
+            </CardHeader>
+            <CardContent className="p-0 pb-9">
               {children}
-            </div>
+            </CardContent>
           </div>
-        </CardContent>
+        </div>
         <CardFooter receivedAt={(message as { receivedAt?: string } | undefined)?.receivedAt} message={message} copyText={copyText} kindId={kindId} />
       </Card>
     </div>
