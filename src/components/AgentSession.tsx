@@ -56,7 +56,7 @@ import { SessionModeToggle } from "./SessionModeToggle";
 import { SessionViewToggle, type ViewMode } from "./SessionViewToggle";
 import { TuiSessionLayout } from './TuiSessionLayout';
 import { createTuiPromptHandler } from '@/lib/tuiPromptHandler';
-import { deriveConversationStatus } from '@/lib/deriveConversationStatus';
+// deriveConversationStatus import removed — derivation moved into useSessionLifecycle (Task 2).
 import { HeaderLabel } from "./HeaderLabel";
 import { AccountCard } from "./AccountCard";
 import { AgentBadge } from "./shared/AgentBadge";
@@ -654,19 +654,22 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   // SubagentBar's per-row spinner remains the scoped indicator that a
   // particular dispatch is in flight. See design spec
   // docs/superpowers/specs/2026-05-11-subagent-tracking-refactor-design.md.
-  // True iff the latest task list still has pending or in_progress items.
-  // Folded into the spinner gate so the in-tab indicator matches the
-  // popover's "busy" definition (turn || agents || tasks).
-  const tasksInFlight = useMemo(() => {
-    const tasks = getTaskList(messages);
-    if (!tasks) return false;
-    return summarizeTaskList(tasks).running;
-  }, [messages]);
   // True when the streaming bubble is currently rendered. Used to
   // suppress the typing-dots spinner so the spinner and bubble
   // don't co-exist on screen.
   const hasInflightAssistant = useClaudeSessionStore(
     (s) => s.tabs[tabIdRef.current]?.inflightAssistant != null,
+  );
+  // Raw task list entries — null (no task-list tool used yet) normalised to [].
+  // Defined here so tasksInFlight can derive from it without a second getTaskList call.
+  // The same reference is passed to useSessionLifecycle further down.
+  const taskEntries = useMemo(() => getTaskList(messages) ?? [], [messages]);
+  // True iff the latest task list still has pending or in_progress items.
+  // Folded into the spinner gate so the in-tab indicator matches the
+  // popover's "busy" definition (turn || agents || tasks).
+  const tasksInFlight = useMemo(
+    () => taskEntries.length > 0 && summarizeTaskList(taskEntries).running,
+    [taskEntries],
   );
   const outstandingWork = isLoading || tasksInFlight;
   const dismissSubagent = useCallback((toolUseId: string) => {
@@ -705,12 +708,12 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     (n, s) => (s.status === 'running' ? n + 1 : n),
     0,
   );
+  // taskEntries is defined above (alongside tasksInFlight) so both can share a single getTaskList call.
   const taskListSummary = useMemo(() => {
-    const tasks = getTaskList(messages);
-    return tasks
-      ? summarizeTaskList(tasks)
+    return taskEntries.length > 0
+      ? summarizeTaskList(taskEntries)
       : { total: 0, done: 0, inProgress: 0, pending: 0, running: false };
-  }, [messages]);
+  }, [taskEntries]);
 
   const [viewMode, setViewMode] = useState<ViewMode>('compact');
 
@@ -1040,11 +1043,10 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     startPersistentSession,
     rebindPersistentSession,
     sessionStatus,
-    // conversationStatus from the hook is no longer trusted — it was
-    // event-driven (`turn` events from the runtime), which flipped
-    // `running` on incidental messages. The renderer derives it locally
-    // below from the same three signals the inspector already shows.
-    conversationStatus: _hookConversationStatus,
+    // conversationStatus is now derived inside the hook from messages/tasks/subagents
+    // via sessionDerivedState.conversationStatus (Task 2). The old FSM-driven approach
+    // (reading the IPC payload's conversationStatus field) has been removed.
+    conversationStatus,
     resetStatus,
   } = useSessionLifecycle({
     tabId: tabIdRef.current,
@@ -1074,6 +1076,11 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
       streamCtxRef.current.setExtractedSessionInfo({ sessionId, projectId });
       SessionPersistenceService.saveSession(sessionId, projectId, projectPath, 0);
     }, [projectPath]),
+    // Inputs for conversationStatus derivation. The hook converts ClaudeStreamMessage[]
+    // → JsonlNode-shaped objects via an internal shim (disappears in Task 6).
+    messages,
+    tasks: taskEntries,
+    subagents,
   });
   // Derived predicates over the two canonical axes. See
   // docs/session-lifecycle.md for the model:
@@ -1088,18 +1095,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   // resume or a preconfigured fresh start (see hasPendingStart above),
   // so this single check covers all cases without a one-frame flash.
   const sessionStarted = sessionStatus !== 'stopped';
-
-  // conversationStatus is derived, not stored. Three inputs, AND'd to
-  // idle: (1) the transcript ends in an execution-complete row, (2) no
-  // tasks are in progress, (3) no subagents are running. Anything else
-  // is 'running'. See `src/lib/deriveConversationStatus.ts` and
-  // `docs/session-lifecycle.md`.
-  const conversationStatus = deriveConversationStatus({
-    sessionStatus,
-    messages,
-    hasIncompleteTasks: taskListSummary.running,
-    hasIncompleteSubagents: activeSubagentCount > 0,
-  });
   const isConversationInFlight =
     conversationStatus !== null && conversationStatus !== 'idle';
   const promptStatus: 'working' | 'ready' =

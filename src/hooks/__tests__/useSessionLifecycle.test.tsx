@@ -4,6 +4,26 @@ import { renderHook, act } from '@testing-library/react';
 import React, { useRef, StrictMode } from 'react';
 import type { ClaudeStreamMessage } from '@/types/claudeStream';
 
+// ── helpers for constructing minimal ClaudeStreamMessage shapes ──────────────
+
+function makeUserPrompt(overrides: Record<string, unknown> = {}): ClaudeStreamMessage {
+  return {
+    type: 'user',
+    message: { role: 'user', content: 'hello' },
+    parent_tool_use_id: null,
+    ...overrides,
+  } as unknown as ClaudeStreamMessage;
+}
+
+function makeAssistantMsg(stop_reason: string | null = null, overrides: Record<string, unknown> = {}): ClaudeStreamMessage {
+  return {
+    type: 'assistant',
+    message: { role: 'assistant', content: [], stop_reason },
+    parent_tool_use_id: null,
+    ...overrides,
+  } as unknown as ClaudeStreamMessage;
+}
+
 vi.mock('@/lib/api', () => ({
   api: {
     startSession: vi.fn(),
@@ -48,6 +68,8 @@ import { useSessionLifecycle } from '../useSessionLifecycle';
 
 interface HarnessOverrides {
   messages?: ClaudeStreamMessage[];
+  tasks?: { status: string }[];
+  subagents?: { status: string }[];
   initialPersistent?: boolean;
   setIsLoading?: ReturnType<typeof vi.fn>;
   handleJsonlLine?: ReturnType<typeof vi.fn>;
@@ -81,6 +103,9 @@ function harness(overrides: HarnessOverrides = {}) {
             : updater;
         }) as any,
         onSessionInit: (overrides.onSessionInit ?? vi.fn()) as any,
+        messages: overrides.messages ?? [],
+        tasks: overrides.tasks ?? [],
+        subagents: overrides.subagents ?? [],
       }),
       persistentSessionRef,
       messagesRef,
@@ -186,6 +211,9 @@ describe('useSessionLifecycle — startPersistentSession happy path', () => {
             messagesRef.current = typeof updater === 'function' ? updater(messagesRef.current) : updater;
           }) as any,
           onSessionInit: vi.fn(),
+          messages: [],
+          tasks: [],
+          subagents: [],
         }),
       };
     };
@@ -211,6 +239,9 @@ describe('useSessionLifecycle — startPersistentSession happy path', () => {
         handleJsonlLine: vi.fn(), setIsLoading: vi.fn(),
         setMessages: ((u: any) => { messagesRef.current = typeof u === 'function' ? u(messagesRef.current) : u; }) as any,
         onSessionInit: vi.fn(),
+        messages: [],
+        tasks: [],
+        subagents: [],
       });
     };
     const { result } = renderHook(useLocal);
@@ -278,11 +309,12 @@ describe('useSessionLifecycle — rebindPersistentSession', () => {
     expect(result.current.persistentSessionRef.current).toBe(false);
   });
 
-  it('returns true, attaches listeners, sets persistent flag, and seeds both axes from sessionGetHealth when rebind succeeds', async () => {
+  it('returns true, attaches listeners, sets persistent flag, and seeds sessionStatus from sessionGetHealth when rebind succeeds', async () => {
     (api.sessionRebind as any).mockResolvedValueOnce(true);
     (api.sessionGetHealth as any).mockResolvedValueOnce({
       alive: true, sessionId: 'uuid-warm', sessionStatus: 'started', conversationStatus: 'idle',
     });
+    // No messages → waitingOnClaude([]) = false, no tasks/subagents → derived 'idle'.
     const { result } = renderHook(harness());
     let rebound = false;
     await act(async () => { rebound = await result.current.lifecycle.rebindPersistentSession(); });
@@ -291,6 +323,9 @@ describe('useSessionLifecycle — rebindPersistentSession', () => {
     expect(rebound).toBe(true);
     expect(result.current.persistentSessionRef.current).toBe(true);
     expect(result.current.lifecycle.sessionStatus).toBe('started');
+    // conversationStatus is now derived from messages (empty) → 'idle'.
+    // Note: the payload's `conversationStatus: 'idle'` is coincidentally the same,
+    // but derivation is the source — not the IPC payload.
     expect(result.current.lifecycle.conversationStatus).toBe('idle');
     expect(Object.keys(eventListeners)).toContain('agent-output:tab-life');
     expect(Object.keys(eventListeners)).toContain('session-status:tab-life');
@@ -437,6 +472,7 @@ describe('useSessionLifecycle — sessionStatus + conversationStatus', () => {
   it('defaults to sessionStatus=stopped, conversationStatus=null before any activity', () => {
     const { result } = renderHook(harness());
     expect(result.current.lifecycle.sessionStatus).toBe('stopped');
+    // null when sessionStatus !== 'started' regardless of messages.
     expect(result.current.lifecycle.conversationStatus).toBeNull();
   });
 
@@ -450,50 +486,99 @@ describe('useSessionLifecycle — sessionStatus + conversationStatus', () => {
     let p: Promise<void>;
     act(() => { p = result.current.lifecycle.startPersistentSession(); });
     expect(result.current.lifecycle.sessionStatus).toBe('starting');
+    // Still null — derivation gates on sessionStatus === 'started'.
     expect(result.current.lifecycle.conversationStatus).toBeNull();
 
     await act(async () => { resolveStart(); await p!; });
   });
 
-  it('reflects sessionStatus=started + conversationStatus transitions from main-process events', async () => {
+  it('derives conversationStatus="idle" when session is started and messages are empty', async () => {
     (api.startSession as any).mockResolvedValueOnce(undefined);
-    const { result } = renderHook(harness());
+    // No messages, tasks, or subagents → idle.
+    const { result } = renderHook(harness({ messages: [], tasks: [], subagents: [] }));
     await act(async () => { await result.current.lifecycle.startPersistentSession(); });
 
-    // system:init → started + idle
     act(() => {
-      eventListeners['session-status:tab-life']({ sessionStatus: 'started', conversationStatus: 'idle' });
+      // Only sessionStatus in the payload — conversationStatus field is discarded.
+      eventListeners['session-status:tab-life']({ sessionStatus: 'started' });
     });
     expect(result.current.lifecycle.sessionStatus).toBe('started');
     expect(result.current.lifecycle.conversationStatus).toBe('idle');
+  });
 
-    // turn → running
+  it('derives conversationStatus="running" from messages — user prompt with no assistant reply yet', async () => {
+    // Hook starts with a user prompt but no assistant response → waitingOnClaude → running.
+    const messages = [makeUserPrompt()];
+    const { result } = renderHook(harness({ messages, tasks: [], subagents: [] }));
+    // Drive sessionStatus to 'started' via IPC after starting the session.
+    (api.startSession as any).mockResolvedValueOnce(undefined);
+    await act(async () => { await result.current.lifecycle.startPersistentSession(); });
     act(() => {
-      eventListeners['session-status:tab-life']({ sessionStatus: 'started', conversationStatus: 'running' });
+      eventListeners['session-status:tab-life']({ sessionStatus: 'started' });
     });
     expect(result.current.lifecycle.conversationStatus).toBe('running');
+  });
 
-    // canUseTool → waiting_permission
+  it('derives conversationStatus="idle" when last assistant message has a terminal stop_reason', async () => {
+    // user prompt + assistant with stop_reason='end_turn' → not waiting → idle.
+    const messages = [makeUserPrompt(), makeAssistantMsg('end_turn')];
+    const { result } = renderHook(harness({ messages, tasks: [], subagents: [] }));
+    (api.startSession as any).mockResolvedValueOnce(undefined);
+    await act(async () => { await result.current.lifecycle.startPersistentSession(); });
     act(() => {
-      eventListeners['session-status:tab-life']({ sessionStatus: 'started', conversationStatus: 'waiting_permission' });
+      eventListeners['session-status:tab-life']({ sessionStatus: 'started' });
     });
-    expect(result.current.lifecycle.conversationStatus).toBe('waiting_permission');
+    expect(result.current.lifecycle.conversationStatus).toBe('idle');
+  });
+
+  it('derives conversationStatus="running" when an open task exists', async () => {
+    const messages = [makeUserPrompt(), makeAssistantMsg('end_turn')];
+    const tasks = [{ status: 'in_progress' }];
+    const { result } = renderHook(harness({ messages, tasks, subagents: [] }));
+    (api.startSession as any).mockResolvedValueOnce(undefined);
+    await act(async () => { await result.current.lifecycle.startPersistentSession(); });
+    act(() => {
+      eventListeners['session-status:tab-life']({ sessionStatus: 'started' });
+    });
+    // hasOpenTasks returns true for status !== 'completed' → running.
+    expect(result.current.lifecycle.conversationStatus).toBe('running');
+  });
+
+  it('derives conversationStatus="running" when a subagent is running', async () => {
+    const messages = [makeUserPrompt(), makeAssistantMsg('end_turn')];
+    const subagents = [{ status: 'running' }];
+    const { result } = renderHook(harness({ messages, tasks: [], subagents }));
+    (api.startSession as any).mockResolvedValueOnce(undefined);
+    await act(async () => { await result.current.lifecycle.startPersistentSession(); });
+    act(() => {
+      eventListeners['session-status:tab-life']({ sessionStatus: 'started' });
+    });
+    // hasOpenSubagents: status !== 'completed' → running.
+    expect(result.current.lifecycle.conversationStatus).toBe('running');
+  });
+
+  it('conversationStatus is null when sessionStatus is not "started", regardless of messages', async () => {
+    const messages = [makeUserPrompt()];
+    const { result } = renderHook(harness({ messages }));
+    // Still stopped — derivation must gate on sessionStatus.
+    expect(result.current.lifecycle.conversationStatus).toBeNull();
   });
 
   it('forces conversationStatus to null when sessionStatus leaves "started" (invariant)', async () => {
     (api.startSession as any).mockResolvedValueOnce(undefined);
-    const { result } = renderHook(harness());
+    const messages = [makeUserPrompt()];
+    const { result } = renderHook(harness({ messages }));
     await act(async () => { await result.current.lifecycle.startPersistentSession(); });
 
     act(() => {
-      eventListeners['session-status:tab-life']({ sessionStatus: 'started', conversationStatus: 'running' });
+      eventListeners['session-status:tab-life']({ sessionStatus: 'started' });
     });
+    // Prompt with no reply → running.
     expect(result.current.lifecycle.conversationStatus).toBe('running');
 
-    // Even if main accidentally sent a conversationStatus alongside a
-    // non-started sessionStatus, the hook clears it per the invariant.
+    // Session transitions to error — derivation must gate and return null.
     act(() => {
-      eventListeners['session-status:tab-life']({ sessionStatus: 'error', conversationStatus: 'running' });
+      eventListeners['session-status:tab-life']({ sessionStatus: 'error' });
     });
     expect(result.current.lifecycle.sessionStatus).toBe('error');
     expect(result.current.lifecycle.conversationStatus).toBeNull();
@@ -505,13 +590,77 @@ describe('useSessionLifecycle — sessionStatus + conversationStatus', () => {
     await act(async () => { await result.current.lifecycle.startPersistentSession(); });
 
     act(() => {
-      eventListeners['session-status:tab-life']({ sessionStatus: 'started', conversationStatus: 'idle' });
+      eventListeners['session-status:tab-life']({ sessionStatus: 'started' });
     });
     expect(result.current.lifecycle.sessionStatus).toBe('started');
+    // With no messages, derivation yields 'idle'.
+    expect(result.current.lifecycle.conversationStatus).toBe('idle');
 
+    // Malformed payloads are ignored — sessionStatus stays 'started' and
+    // derivation continues to read from messages (still empty → idle).
     act(() => { eventListeners['session-status:tab-life'](undefined); });
     act(() => { eventListeners['session-status:tab-life']({}); });
     expect(result.current.lifecycle.sessionStatus).toBe('started');
+    expect(result.current.lifecycle.conversationStatus).toBe('idle');
+  });
+
+  it('conversationStatus payload in session-status event is discarded (derivation takes over)', async () => {
+    // This is the key Task 2 assertion: even if main still sends a
+    // conversationStatus in the IPC payload, the hook ignores it and
+    // returns the locally-derived value.
+    (api.startSession as any).mockResolvedValueOnce(undefined);
+    const messages = [makeUserPrompt()]; // → waitingOnClaude → 'running'
+    const { result } = renderHook(harness({ messages }));
+    await act(async () => { await result.current.lifecycle.startPersistentSession(); });
+
+    act(() => {
+      // Emit sessionStatus='started' with conversationStatus='idle' in the payload.
+      // The hook should discard the payload's conversationStatus and return
+      // 'running' (derived from the user-prompt-with-no-reply messages).
+      eventListeners['session-status:tab-life']({ sessionStatus: 'started', conversationStatus: 'idle' });
+    });
+    expect(result.current.lifecycle.sessionStatus).toBe('started');
+    // Derived from messages (user prompt, no assistant) → 'running', NOT 'idle' from payload.
+    expect(result.current.lifecycle.conversationStatus).toBe('running');
+  });
+
+  it('user message with parent_tool_use_id but plain-text content is classified as prompt, not tool-result', async () => {
+    // Regression guard for the old heuristic: a resumed session may carry
+    // parent_tool_use_id on a plain user prompt (conversation-tree chaining).
+    // That must NOT be mistaken for a tool-result reply or the derivation will
+    // skip it and report 'idle' when the session is actually waiting on Claude.
+    (api.startSession as any).mockResolvedValueOnce(undefined);
+    // Plain-text content — not a tool_result block array.
+    const messages = [
+      makeUserPrompt({ parent_tool_use_id: 'toolu_abc123', message: { role: 'user', content: 'hello' } }),
+    ];
+    const { result } = renderHook(harness({ messages, tasks: [], subagents: [] }));
+    await act(async () => { await result.current.lifecycle.startPersistentSession(); });
+    act(() => {
+      eventListeners['session-status:tab-life']({ sessionStatus: 'started' });
+    });
+    // The user message must be seen as a prompt → waitingOnClaude → 'running'.
+    // If mis-classified as 'tool-result' the derivation would return 'idle'.
+    expect(result.current.lifecycle.conversationStatus).toBe('running');
+  });
+
+  it('assistant message with parent_tool_use_id and terminal stop_reason is not skipped by waitingOnClaude', async () => {
+    // Regression guard for the old isSidechain heuristic: setting isSidechain=true
+    // on a main-chain assistant (because parent_tool_use_id was set) would cause
+    // waitingOnClaude to skip it and falsely report 'running' when the turn is done.
+    (api.startSession as any).mockResolvedValueOnce(undefined);
+    const messages = [
+      makeUserPrompt(),
+      // parent_tool_use_id set but this is a main-chain reply — stop_reason ends the turn.
+      makeAssistantMsg('end_turn', { parent_tool_use_id: 'toolu_xyz789' }),
+    ];
+    const { result } = renderHook(harness({ messages, tasks: [], subagents: [] }));
+    await act(async () => { await result.current.lifecycle.startPersistentSession(); });
+    act(() => {
+      eventListeners['session-status:tab-life']({ sessionStatus: 'started' });
+    });
+    // The assistant's stop_reason must end the turn. If isSidechain=true were set
+    // the derivation would skip the assistant and see only the unanswered prompt → 'running'.
     expect(result.current.lifecycle.conversationStatus).toBe('idle');
   });
 });
