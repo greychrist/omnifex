@@ -106,10 +106,11 @@ const IconPicker: React.FC<{ value: IconName; onChange: (v: IconName) => void }>
       onOpenChange={setOpen}
       align="start"
       className="p-2 w-72"
+      triggerClassName="relative block w-full"
       trigger={
         <button
           type="button"
-          className="flex h-9 w-full items-center justify-between gap-2 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm hover:bg-accent focus:outline-none focus:ring-1 focus:ring-ring"
+          className="flex h-9 w-full items-center justify-between gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm ring-offset-background hover:bg-accent focus:outline-none focus:ring-1 focus:ring-ring"
           aria-label="Icon"
         >
           <span className="flex items-center gap-2">

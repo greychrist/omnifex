@@ -32,6 +32,13 @@ interface PopoverProps {
    * Side of the trigger to display the popover
    */
   side?: "top" | "bottom";
+  /**
+   * Optional override for the outer wrapper around the trigger. Defaults to
+   * "relative inline-block" — pass "relative block w-full" to make the
+   * trigger occupy a full row (e.g. so a form-field trigger sits below its
+   * label instead of beside it).
+   */
+  triggerClassName?: string;
 }
 
 /**
@@ -60,6 +67,7 @@ export const Popover: React.FC<PopoverProps> = ({
   className,
   align = "center",
   side = "bottom",
+  triggerClassName = "relative inline-block",
 }) => {
   const [internalOpen, setInternalOpen] = React.useState(false);
   const open = controlledOpen !== undefined ? controlledOpen : internalOpen;
@@ -170,7 +178,7 @@ export const Popover: React.FC<PopoverProps> = ({
   );
 
   return (
-    <div className="relative inline-block">
+    <div className={triggerClassName}>
       <div ref={triggerRef} onClick={() => { setOpen(!open); }}>
         {trigger}
       </div>
