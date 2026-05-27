@@ -61,6 +61,7 @@ import { createMCPService } from './services/mcp';
 import { createModelsService } from './services/models';
 import { createSlashCommandsService } from './services/slash-commands';
 import { createFilesystemService } from './services/filesystem';
+import { createOneShotTerminalService } from './services/one-shot-terminal';
 import {
   createSessionsSummaryService,
   DEFAULT_SUMMARY_PROMPT,
@@ -656,6 +657,7 @@ app.whenReady().then(() => {
   const gitBranchesService = { list: listGitBranches };
   const limaService = createLimaService();
   const filesystemService = createFilesystemService();
+  const oneShotTerminalService = createOneShotTerminalService();
 
   const notificationSoundsService = createNotificationSoundsService({
     appPath: app.getAppPath(),
@@ -887,6 +889,26 @@ app.whenReady().then(() => {
     },
     filesystem: filesystemService,
     notificationSounds: notificationSoundsService,
+    // One-shot terminal adapter. spawn() also wires data/exit forwarding so
+    // the renderer's `one-shot-terminal-data:<handle>` /
+    // `one-shot-terminal-exit:<handle>` subscriptions receive the pty's
+    // stream. Subscriptions persist until the pty exits or the renderer
+    // calls kill(); the service tears down its own subscribers on exit.
+    oneShotTerminal: {
+      spawn: (opts) => {
+        const handle = oneShotTerminalService.spawn(opts);
+        oneShotTerminalService.onData(handle.ptyHandle, (data) => {
+          sendToRenderer(`one-shot-terminal-data:${handle.ptyHandle}`, data);
+        });
+        oneShotTerminalService.onExit(handle.ptyHandle, (info) => {
+          sendToRenderer(`one-shot-terminal-exit:${handle.ptyHandle}`, info);
+        });
+        return handle;
+      },
+      write: (ptyHandle, data) => oneShotTerminalService.write(ptyHandle, data),
+      resize: (ptyHandle, cols, rows) => oneShotTerminalService.resize(ptyHandle, cols, rows),
+      kill: (ptyHandle) => oneShotTerminalService.kill(ptyHandle),
+    },
   });
 
   ipcMain.handle('get_app_version', () => app.getVersion());

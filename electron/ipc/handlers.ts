@@ -189,6 +189,19 @@ export interface Services {
   notificationSounds?: {
     preview(id: string): { played: boolean; path: string | null };
   };
+  oneShotTerminal?: {
+    spawn(opts: {
+      binary: string;
+      args: string[];
+      env?: Record<string, string | undefined>;
+      cwd?: string;
+      cols?: number;
+      rows?: number;
+    }): { ptyHandle: string };
+    write(ptyHandle: string, data: string): void;
+    resize(ptyHandle: string, cols: number, rows: number): void;
+    kill(ptyHandle: string): void;
+  };
 }
 
 // The handler type used in the map — receives the IPC event plus the params
@@ -247,7 +260,7 @@ function wrapWith<P>(fn: (params: P) => unknown): HandlerFn {
  * renderer gets a defined (but empty) response rather than a blocked channel.
  */
 export function getHandlerMap(services: Services = {}): Record<string, HandlerFn> {
-  const { accounts, claude, sessions, usage, rateLimits, usageRunner, claudeBinary, mcp, slashCommands, sessionsSummary, logging, database, proxy, permissionsIO, models, gitWatcher, branchColors, gitBranches, lima, filesystem, notificationSounds } = services;
+  const { accounts, claude, sessions, usage, rateLimits, usageRunner, claudeBinary, mcp, slashCommands, sessionsSummary, logging, database, proxy, permissionsIO, models, gitWatcher, branchColors, gitBranches, lima, filesystem, notificationSounds, oneShotTerminal } = services;
 
   const map: Record<string, HandlerFn> = {
     // ── Accounts ──────────────────────────────────────────────────────────────
@@ -699,6 +712,50 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
       const query = (p?.query as string) ?? '';
       if (!basePath) throw new Error('basePath is required');
       return filesystem?.searchFiles(basePath, query) ?? [];
+    }),
+    fs_exists: wrapWith((p: Record<string, unknown>) => {
+      const filePath = (p?.path ?? p?.filePath ?? p?.file_path) as string;
+      if (!filePath) return { exists: false };
+      // eslint-disable-next-line @typescript-eslint/no-require-imports -- lazy load; only used by the OneShotTerminal watcher poll.
+      const fs = require('node:fs') as typeof import('node:fs');
+      try {
+        return { exists: fs.existsSync(filePath) };
+      } catch {
+        return { exists: false };
+      }
+    }),
+
+    // ── One-shot terminal (shared pty+xterm modal) ────────────────────────────
+    one_shot_terminal_spawn: wrapWith((p: Record<string, unknown>) => {
+      const binary = p?.binary as string;
+      const args = (p?.args as string[]) ?? [];
+      const env = p?.env as Record<string, string | undefined> | undefined;
+      const cwd = p?.cwd as string | undefined;
+      const cols = p?.cols as number | undefined;
+      const rows = p?.rows as number | undefined;
+      if (!binary) throw new Error('one_shot_terminal_spawn: binary is required');
+      return oneShotTerminal?.spawn({ binary, args, env, cwd, cols, rows }) ?? null;
+    }),
+    one_shot_terminal_write: wrapWith((p: Record<string, unknown>) => {
+      const ptyHandle = (p?.ptyHandle ?? p?.pty_handle) as string;
+      const data = p?.data as string;
+      if (!ptyHandle) throw new Error('one_shot_terminal_write: ptyHandle is required');
+      oneShotTerminal?.write(ptyHandle, data ?? '');
+      return null;
+    }),
+    one_shot_terminal_resize: wrapWith((p: Record<string, unknown>) => {
+      const ptyHandle = (p?.ptyHandle ?? p?.pty_handle) as string;
+      const cols = p?.cols as number;
+      const rows = p?.rows as number;
+      if (!ptyHandle) throw new Error('one_shot_terminal_resize: ptyHandle is required');
+      oneShotTerminal?.resize(ptyHandle, cols, rows);
+      return null;
+    }),
+    one_shot_terminal_kill: wrapWith((p: Record<string, unknown>) => {
+      const ptyHandle = (p?.ptyHandle ?? p?.pty_handle) as string;
+      if (!ptyHandle) throw new Error('one_shot_terminal_kill: ptyHandle is required');
+      oneShotTerminal?.kill(ptyHandle);
+      return null;
     }),
   };
 

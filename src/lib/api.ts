@@ -2383,4 +2383,43 @@ export const api = {
     return apiCall<string[]>('git_list_branches', { projectPath });
   },
 
+  // ── One-shot terminal (shared pty+xterm modal) ─────────────────
+  /**
+   * Spawn a short-lived subprocess in a pty for an xterm modal. The
+   * returned handle is used to address data/write/resize/kill calls and to
+   * subscribe to data/exit events via the `one-shot-terminal-data:<handle>`
+   * and `one-shot-terminal-exit:<handle>` event channels.
+   *
+   * Used by interactive auth flows (e.g. `codex login`) where the user has
+   * to type through an OAuth prompt and the modal should tear down on exit.
+   */
+  async oneShotTerminalSpawn(opts: {
+    binary: string;
+    args: string[];
+    env?: Record<string, string | undefined>;
+    cwd?: string;
+    cols?: number;
+    rows?: number;
+  }): Promise<{ ptyHandle: string }> {
+    return apiCall<{ ptyHandle: string }>('one_shot_terminal_spawn', opts as unknown as Record<string, unknown>);
+  },
+  async oneShotTerminalWrite(ptyHandle: string, data: string): Promise<void> {
+    return apiCall('one_shot_terminal_write', { ptyHandle, data });
+  },
+  async oneShotTerminalResize(ptyHandle: string, cols: number, rows: number): Promise<void> {
+    return apiCall('one_shot_terminal_resize', { ptyHandle, cols, rows });
+  },
+  async oneShotTerminalKill(ptyHandle: string): Promise<void> {
+    return apiCall('one_shot_terminal_kill', { ptyHandle });
+  },
+
+  /**
+   * Cheap existence check, used by the OneShotTerminal watcher to fire
+   * `onWatchFire` on the false→true transition. Returns `{ exists: false }`
+   * for unreadable / missing paths, never throws.
+   */
+  async fsExists(filePath: string): Promise<{ exists: boolean }> {
+    return apiCall<{ exists: boolean }>('fs_exists', { path: filePath });
+  },
+
 };

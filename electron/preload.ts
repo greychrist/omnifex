@@ -160,6 +160,7 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   // Filesystem (FilePicker @-mention browser)
   'list_directory_contents',
   'search_files',
+  'fs_exists',
 
   // Proxy
   'get_proxy_settings',
@@ -169,6 +170,12 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   'tab_status_publish',
   'tab_status_remove',
   'tab_status_list',
+
+  // One-shot terminal (shared pty+xterm modal — Codex login, etc.)
+  'one_shot_terminal_spawn',
+  'one_shot_terminal_write',
+  'one_shot_terminal_resize',
+  'one_shot_terminal_kill',
 
   // Updater
   'updater:check',
@@ -226,6 +233,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       !channel.startsWith('session-git-changed:') &&
       !channel.startsWith('rate-limits:') &&
       !channel.startsWith('tab-status:') &&
+      !channel.startsWith('one-shot-terminal-data:') &&
+      !channel.startsWith('one-shot-terminal-exit:') &&
       channel !== 'log-error'
     ) {
       throw new Error(`Blocked IPC event channel: ${channel}`);
