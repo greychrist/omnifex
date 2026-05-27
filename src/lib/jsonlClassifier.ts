@@ -146,6 +146,7 @@ const SYSTEM_SUBTYPES: ReadonlySet<SystemSubtype> = new Set<SystemSubtype>([
   'notification',
   'stop_hook_summary',
   'hook_started',
+  'hook_progress',
   'hook_response',
   'local_command',
   'api_error',
