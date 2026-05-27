@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.66] — 2026-05-26
+
+Follow-up to the v2 catalog and hook-telemetry work that landed in 0.4.65. SessionStart hooks now classify correctly (no more "Prompt status: WORKING" stuck forever on a fresh session that ran hooks), three previously-unknown system subtypes get real catalog rows, and two card-footer affordances that were sitting behind dead config flags now actually render.
+
+Installers remain **unsigned**.
+
+### Added
+
+- **`system.hook_started` and `system.hook_response` catalog rows** (`c161da7`). Both subtypes fire on every session with hooks configured but were missing from `SystemSubtype` / `SYSTEM_SUBTYPES`, so the classifier returned them as `unknown` — two dashed-orange "UNKNOWN MESSAGE TYPE" cards per turn for anyone running hooks. Added both to the type union, the allow-list, and `DEFAULT_KINDS` (muted side-line strips, hidden in compact), mirroring `system.stop_hook_summary`. `mergeConfig` iterates over base defaults, so saved configs pick up the rows on next load with no migration.
+- **`system.hook_progress` catalog row** (`c39f5a1`). Mid-run telemetry from long-running hooks; previously classified as unknown alongside `hook_started` / `hook_response`.
+
+### Fixed
+
+- **SessionStart hooks no longer strand `conversationStatus` on 'running'** (`508a198`). `SessionStart` emits `system:hook_started` / `hook_progress` / `hook_response` on every new session. The renderer's `deriveConversationStatus` treated the trailing system event as "last message is not result" → conversation `running` → Prompt status WORKING forever (no result was coming). Main process had the same bug — `classifyRuntimeEvent` bucketed hook lifecycle as `'turn'`, flipping `handle.conversationStatus` to `running` and stranding `listInFlightTabIds()` so the installer's wait-for-idle gate never opened. Both layers now skip hook plumbing: `isLastMessageExecutionComplete` walks backwards past `system` / `stream_event` entries, and a new `'hook'` `RuntimeEvent` kind is a no-op for status (message still forwarded to the renderer for display).
+- **`showRawPayload` toggle now actually displays raw JSON** (`7175251`). The flag was declared in `MessageKindConfig`, set on the unknown catalog row, persisted through `mergeConfig`, and exposed as a toggle in `KindEditor` since Phase 2 — but nothing read it. `MessageFrame` now appends a collapsible `<details>` block whenever the resolved kind has `showRawPayload=true` and a message was passed. The block renders inside the card body for card-presentation kinds, and below the strip for side-line. Unknown still defaults on; any kind can opt in via Settings.
+
+### Changed
+
+- **Card footer's kind label and copy-JSON button are always visible** (`a5c26a8`). Both were gated on `config.debug.showCardKindLabel` (default false), so the footer's left half was empty for anyone running with the default config — the small `result · success` badge and the adjacent copy button just weren't there. Both are now unconditional: the label is a tiny diagnostic anchor, and copy-raw-JSON is the only way to grab the underlying stream payload when a card looks mis-classified. The setting is preserved in the schema for back-compat but no longer affects this rendering; the Appearance toggle can be cleaned up in a follow-up.
+
 ## [0.4.65] — 2026-05-26
 
 Second half of the rich → tui → rich round-trip fix from 0.4.64. The listener re-attachment landed but the return path still booted users out of any session that hadn't sent a message yet.
