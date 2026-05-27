@@ -105,7 +105,7 @@ const IconPicker: React.FC<{ value: IconName; onChange: (v: IconName) => void }>
       open={open}
       onOpenChange={setOpen}
       align="start"
-      className="p-2 w-[28rem]"
+      className="p-2 w-[28rem] bg-background"
       triggerClassName="relative block w-full"
       trigger={
         <button
@@ -141,7 +141,7 @@ const IconPicker: React.FC<{ value: IconName; onChange: (v: IconName) => void }>
                 title={name}
                 onClick={() => { onChange(name); setOpen(false); }}
                 className={cn(
-                  "flex h-16 w-16 flex-col items-center justify-center gap-1 rounded-md border border-transparent px-1 hover:bg-accent focus:outline-none focus:ring-1 focus:ring-ring",
+                  "flex h-16 w-16 flex-col items-center justify-center gap-1 rounded-md border border-transparent bg-popover px-1 hover:bg-accent focus:outline-none focus:ring-1 focus:ring-ring",
                   selected && "border-primary bg-accent",
                 )}
               >
