@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest';
 import type { JsonlNode } from '@/types/jsonl';
 import { classifyStandaloneKind } from '../messageKind';
 
-const sysInit = (): JsonlNode =>
-  ({ kind: 'system', subtype: 'init', sessionId: '', receivedAt: '', raw: { type: 'system', subtype: 'init', session_id: 'abc', model: 'claude', cwd: '/x' } }) as unknown as JsonlNode;
+const attachment = (subtype?: string): JsonlNode =>
+  ({ kind: 'attachment', sessionId: '', receivedAt: '', raw: { type: 'attachment', attachment: subtype ? { type: subtype } : {} } }) as unknown as JsonlNode;
 
 const notif = (kind: string): JsonlNode =>
   ({ kind: 'system', subtype: 'notification', sessionId: '', receivedAt: '', raw: { type: 'system', subtype: 'notification', notification_type: kind, body: 'm' } }) as unknown as JsonlNode;
@@ -18,10 +18,6 @@ const summary = (): JsonlNode =>
   ({ kind: 'unknown', sessionId: '', receivedAt: '', raw: { type: 'summary', leafUuid: 'leaf-1', summary: 'sum' } }) as unknown as JsonlNode;
 
 describe('classifyStandaloneKind', () => {
-  it('tags system init', () => {
-    expect(classifyStandaloneKind(sysInit(), [])).toBe('system.init');
-  });
-
   it('tags notification subtypes by notification_type', () => {
     expect(classifyStandaloneKind(notif('error'), [])).toBe('system.notification.error');
     expect(classifyStandaloneKind(notif('stop'), [])).toBe('system.notification.stop');
@@ -202,11 +198,18 @@ describe('classifyStandaloneKind', () => {
       expect(classifyStandaloneKind(sys('whatever'), [])).toBe('system.unknown');
     });
 
-    it('does not classify init / notification / known hook subtypes as unknown', () => {
-      expect(classifyStandaloneKind(sys('init'), [])).toBe('system.init');
-      expect(classifyStandaloneKind(sys('hook_started'), [])).toBe('system.hook.started');
-      expect(classifyStandaloneKind(sys('hook_response'), [])).toBe('system.hook.response');
+    it('does not classify notification / known hook subtypes as unknown', () => {
+      expect(classifyStandaloneKind(sys('hook_started'), [])).toBe('system.hook_started');
+      expect(classifyStandaloneKind(sys('hook_response'), [])).toBe('system.hook_response');
       expect(classifyStandaloneKind(sys('user_prompt_submit'), [])).toBe('system.userPromptSubmit');
+    });
+
+    it('routes system.init to system.unknown (cli-stream-init intercepts init before this branch)', () => {
+      // The cli-stream-init classifier handles the `system:init` envelope at
+      // classifyJsonlLine time. If a system node with subtype 'init' somehow
+      // reaches classifyStandaloneKind, it falls through to system.unknown —
+      // the dedicated system.init catalog row was deleted.
+      expect(classifyStandaloneKind(sys('init'), [])).toBe('system.unknown');
     });
   });
 
@@ -300,6 +303,30 @@ describe('classifyStandaloneKind', () => {
 
     it('returns null for a plain user prompt that does not match any pattern', () => {
       expect(classifyStandaloneKind(userText('regular prompt'), [])).toBeNull();
+    });
+  });
+
+  describe('attachment subtype routing', () => {
+    it('routes attachment with todo_reminder subtype', () => {
+      expect(classifyStandaloneKind(attachment('todo_reminder'), [])).toBe('attachment.todo_reminder');
+    });
+
+    it('routes attachment with hook_blocking_error subtype', () => {
+      expect(classifyStandaloneKind(attachment('hook_blocking_error'), [])).toBe('attachment.hook_blocking_error');
+    });
+
+    it('routes attachment with any string subtype to attachment.<subtype> (open-ended)', () => {
+      // The classifier always produces attachment.<subtype> for any non-empty string.
+      // Catalog lookup for unknown subtypes falls through to the attachment.unknown row.
+      expect(classifyStandaloneKind(attachment('something_new'), [])).toBe('attachment.something_new');
+    });
+
+    it('routes attachment with no subtype to attachment.unknown', () => {
+      expect(classifyStandaloneKind(attachment(undefined), [])).toBe('attachment.unknown');
+    });
+
+    it('routes attachment with file subtype', () => {
+      expect(classifyStandaloneKind(attachment('file'), [])).toBe('attachment.file');
     });
   });
 

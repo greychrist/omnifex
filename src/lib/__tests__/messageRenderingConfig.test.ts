@@ -8,6 +8,8 @@ import {
   DEFAULT_PALETTE,
   DEFAULT_TYPOGRAPHY,
 } from "../messageRenderingConfig";
+import { classifyStandaloneKind } from "../messageKind";
+import type { JsonlNode } from "@/types/jsonl";
 
 describe("messageRenderingConfig", () => {
   describe("createDefaultConfig", () => {
@@ -350,6 +352,85 @@ describe("messageRenderingConfig", () => {
       expect(parseConfig(null).defaultViewMode).toBe("verbose");
       expect(parseConfig("").defaultViewMode).toBe("verbose");
       expect(parseConfig("{not json").defaultViewMode).toBe("verbose");
+    });
+  });
+
+  describe("catalog coverage — every classifyStandaloneKind output has a DEFAULT_KINDS entry", () => {
+    const kindIds = new Set(DEFAULT_KINDS.map((k) => k.id));
+
+    // Helper factories to exercise classifyStandaloneKind paths
+    const sys = (subtype: string): JsonlNode =>
+      ({ kind: 'system', subtype, sessionId: '', receivedAt: '', raw: { type: 'system', subtype } }) as unknown as JsonlNode;
+    const att = (subtype?: string): JsonlNode =>
+      ({ kind: 'attachment', sessionId: '', receivedAt: '', raw: { type: 'attachment', attachment: subtype ? { type: subtype } : {} } }) as unknown as JsonlNode;
+    const notif = (notification_type: string): JsonlNode =>
+      ({ kind: 'system', subtype: 'notification', sessionId: '', receivedAt: '', raw: { type: 'system', subtype: 'notification', notification_type, body: 'm' } }) as unknown as JsonlNode;
+    const permReq = (toolName?: string): JsonlNode =>
+      ({ kind: 'unknown', sessionId: '', receivedAt: '', raw: { type: 'permission_request', tool_name: toolName } }) as unknown as JsonlNode;
+    const summaryNode = (): JsonlNode =>
+      ({ kind: 'unknown', sessionId: '', receivedAt: '', raw: { type: 'summary', leafUuid: 'leaf-1', summary: 'sum' } }) as unknown as JsonlNode;
+
+    // Collect all kind IDs the classifier can actually emit
+    const produced: string[] = [
+      // system subtypes
+      classifyStandaloneKind(sys('hook_started'), [])!,
+      classifyStandaloneKind(sys('hook_response'), [])!,
+      classifyStandaloneKind(sys('permission_denied'), [])!,
+      classifyStandaloneKind(sys('user_prompt_submit'), [])!,
+      classifyStandaloneKind(sys('anything_else'), [])!, // system.unknown
+      // notification subtypes
+      classifyStandaloneKind(notif('error'), [])!,
+      classifyStandaloneKind(notif('stop'), [])!,
+      classifyStandaloneKind(notif('warn'), [])!,
+      classifyStandaloneKind(notif('info'), [])!,
+      // attachment subtypes
+      classifyStandaloneKind(att('todo_reminder'), [])!,
+      classifyStandaloneKind(att('task_reminder'), [])!,
+      classifyStandaloneKind(att('diagnostics'), [])!,
+      classifyStandaloneKind(att('command_permissions'), [])!,
+      classifyStandaloneKind(att('skill_listing'), [])!,
+      classifyStandaloneKind(att('deferred_tools_delta'), [])!,
+      classifyStandaloneKind(att('mcp_instructions_delta'), [])!,
+      classifyStandaloneKind(att('hook_success'), [])!,
+      classifyStandaloneKind(att('hook_additional_context'), [])!,
+      classifyStandaloneKind(att('edited_text_file'), [])!,
+      classifyStandaloneKind(att('nested_memory'), [])!,
+      classifyStandaloneKind(att('queued_command'), [])!,
+      classifyStandaloneKind(att('auto_mode'), [])!,
+      classifyStandaloneKind(att('hook_blocking_error'), [])!,
+      classifyStandaloneKind(att('date_change'), [])!,
+      classifyStandaloneKind(att('ultrathink_effort'), [])!,
+      classifyStandaloneKind(att('plan_mode_exit'), [])!,
+      classifyStandaloneKind(att('file'), [])!,
+      classifyStandaloneKind(att('compact_file_reference'), [])!,
+      classifyStandaloneKind(att('invoked_skills'), [])!,
+      classifyStandaloneKind(att(undefined), [])!, // attachment.unknown
+      // permission + summary
+      classifyStandaloneKind(permReq('Bash'), [])!,
+      classifyStandaloneKind(permReq('AskUserQuestion'), [])!,
+      classifyStandaloneKind(summaryNode(), [])!,
+    ].filter(Boolean);
+
+    it('every kind ID produced by classifyStandaloneKind exists in DEFAULT_KINDS', () => {
+      for (const id of produced) {
+        expect(kindIds, `Missing catalog entry for kind: "${id}"`).toContain(id);
+      }
+    });
+
+    it('summary.compaction is in the catalog', () => {
+      expect(kindIds).toContain('summary.compaction');
+    });
+
+    it('system.userPromptSubmit is in the catalog', () => {
+      expect(kindIds).toContain('system.userPromptSubmit');
+    });
+
+    it('system.unknown is in the catalog', () => {
+      expect(kindIds).toContain('system.unknown');
+    });
+
+    it('user.systemContext is in the catalog', () => {
+      expect(kindIds).toContain('user.systemContext');
     });
   });
 

@@ -86,14 +86,14 @@ describe('isMessageFullyHidden', () => {
     expect(isMessageFullyHidden(msg, [msg], cfg)).toBe(false);
   });
 
-  it('returns false for system.init when user unhides it', () => {
+  it('returns false for system.unknown when user unhides it', () => {
     const cfg = createDefaultConfig();
-    cfg.kinds['system.init'].hiddenInCompact = false;
+    cfg.kinds['system.unknown'].hiddenInCompact = false;
     const msg = { kind: 'system', subtype: 'init', sessionId: '', receivedAt: '', raw: { type: 'system', subtype: 'init' } } as unknown as JsonlNode;
     expect(isMessageFullyHidden(msg, [msg], cfg)).toBe(false);
   });
 
-  it('returns true for hidden system.init by default', () => {
+  it('returns true for hidden system.unknown (e.g. system:init) by default', () => {
     const cfg = createDefaultConfig();
     const msg = { kind: 'system', subtype: 'init', sessionId: '', receivedAt: '', raw: { type: 'system', subtype: 'init' } } as unknown as JsonlNode;
     expect(isMessageFullyHidden(msg, [msg], cfg)).toBe(true);
@@ -155,7 +155,7 @@ describe('buildCompactItems', () => {
 
   it('promotes a kind to single when user unhides it', () => {
     const cfg = createDefaultConfig();
-    cfg.kinds['system.init'].hiddenInCompact = false;
+    cfg.kinds['system.unknown'].hiddenInCompact = false;
     const sysInit = { kind: 'system', subtype: 'init', sessionId: '', receivedAt: '', raw: { type: 'system', subtype: 'init' } } as unknown as JsonlNode;
     const msgs = [
       userText('hi'),

@@ -178,6 +178,10 @@ export interface UsageShape {
   [key: string]: unknown;
 }
 
+// Real-but-unhandled envelope types (fall through to 'unknown'):
+//   - 'mode' (2 occurrences in 137 sessions as of 2026-05-27; promote to a kind
+//     if usage grows enough to need filtering)
+
 /** Discriminated union — exactly one `kind` per node. */
 export type JsonlNode =
   // Conversation content (persisted to JSONL)

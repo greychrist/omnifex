@@ -154,9 +154,17 @@ export function classifyStandaloneKind(
     }
   }
 
+  if (msg.kind === 'attachment') {
+    const att = (msg.raw as { attachment?: { type?: string } }).attachment;
+    const subtype = att?.type;
+    if (typeof subtype === 'string' && subtype.length > 0) {
+      return `attachment.${subtype}`;
+    }
+    return 'attachment.unknown';
+  }
+
   if (msg.kind === 'system') {
     const subtype = msg.subtype as string;
-    if (subtype === 'init') return 'system.init';
     if (subtype === 'notification') {
       const raw = msg.raw as { notification_type?: string };
       const t = raw.notification_type ?? 'info';
@@ -165,8 +173,8 @@ export function classifyStandaloneKind(
       if (/warn/i.test(t)) return 'system.notification.warn';
       return 'system.notification.info';
     }
-    if (subtype === 'hook_started') return 'system.hook.started';
-    if (subtype === 'hook_response') return 'system.hook.response';
+    if (subtype === 'hook_started') return 'system.hook_started';
+    if (subtype === 'hook_response') return 'system.hook_response';
     if (subtype === 'permission_denied') return 'system.permission_denied';
     if (subtype === 'user_prompt_submit') return 'system.userPromptSubmit';
     // Fallback: any other system subtype renders as the unknown gray inline strip.
