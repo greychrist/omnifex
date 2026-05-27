@@ -86,6 +86,26 @@ import {
   ImageUp,
   MonitorCog,
   Slash,
+  // v2 catalog additions (previously declared in ALLOWED_ICONS but never
+  // wired into LUCIDE_MAP — every kind using one of these was rendering as
+  // a blank square)
+  AlertOctagon,
+  AlertTriangle,
+  Bell,
+  Camera,
+  Check,
+  CheckCheck,
+  ChevronRight,
+  Clock,
+  HelpCircle,
+  Webhook,
+  Image,
+  ListOrdered,
+  Paperclip,
+  Power,
+  Scissors,
+  Shield,
+  ShieldOff,
 } from "lucide-react";
 import type { IconName } from "@/lib/messageRenderingConfig";
 
@@ -167,6 +187,24 @@ const LUCIDE_MAP: Record<string, React.ComponentType<{ className?: string }>> = 
   ImageUp,
   MonitorCog,
   Slash,
+  AlertOctagon,
+  AlertTriangle,
+  Bell,
+  Camera,
+  Check,
+  CheckCheck,
+  ChevronRight,
+  Clock,
+  HelpCircle,
+  // ALLOWED_ICONS uses "Hook" as the alias for the lucide Webhook glyph.
+  Hook: Webhook,
+  Image,
+  ListOrdered,
+  Paperclip,
+  Power,
+  Scissors,
+  Shield,
+  ShieldOff,
 };
 
 export const IconRenderer: React.FC<{ name: IconName; className?: string }> = ({
