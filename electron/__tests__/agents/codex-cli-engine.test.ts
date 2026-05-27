@@ -220,4 +220,82 @@ describe('CodexCliEngine', () => {
       expect(engine.getResumeId()).toBeNull();
     });
   });
+
+  describe('send()', () => {
+    it('send() writes sendUserTurn JSON-RPC with conversationId + input and resolves on success', async () => {
+      const fake = makeFakeChild();
+      mockedSpawn.mockReturnValue(fake as never);
+
+      const engine = createCodexCliEngine({
+        tabId: 'tab-send',
+        codexBinaryPath: '/usr/local/bin/codex',
+      });
+
+      const startPromise = engine.start({
+        projectPath: '/p',
+        configDir: '/c',
+        model: 'gpt-5',
+        sessionId: 'session-uuid',
+        resume: false,
+      });
+      startPromise.catch(() => {});
+
+      await flushMicrotasks();
+
+      const startSent = JSON.parse(fake.stdin._writes[0]!.trim());
+      expect(startSent.method).toBe('newConversation');
+
+      fake.stdout.push(
+        JSON.stringify({
+          jsonrpc: '2.0',
+          id: startSent.id,
+          result: { conversationId: 'conv-1' },
+        }) + '\n',
+      );
+
+      await expect(startPromise).resolves.toBeUndefined();
+      expect(engine.getResumeId()).toBe('conv-1');
+
+      const writesBefore = fake.stdin._writes.length;
+
+      const sendPromise = engine.send('hello');
+      sendPromise.catch(() => {});
+
+      await flushMicrotasks();
+
+      expect(fake.stdin._writes.length).toBe(writesBefore + 1);
+      const sent = JSON.parse(fake.stdin._writes[writesBefore]!.trim());
+      expect(sent.jsonrpc).toBe('2.0');
+      expect(typeof sent.id).toBe('number');
+      expect(sent.method).toBe('sendUserTurn');
+      expect(sent.params).toMatchObject({
+        conversationId: 'conv-1',
+        input: 'hello',
+      });
+
+      fake.stdout.push(
+        JSON.stringify({
+          jsonrpc: '2.0',
+          id: sent.id,
+          result: {},
+        }) + '\n',
+      );
+
+      await expect(sendPromise).resolves.toBeUndefined();
+    });
+
+    it('send() throws when conversationId is null (start() not yet called or cold-start returned no conversationId)', async () => {
+      const fake = makeFakeChild();
+      mockedSpawn.mockReturnValue(fake as never);
+
+      const engine = createCodexCliEngine({
+        tabId: 'tab-no-conv',
+        codexBinaryPath: '/usr/local/bin/codex',
+      });
+
+      // start() never called — conversationId stays null. send() should
+      // reject loudly rather than silently no-op or write a bogus request.
+      await expect(engine.send('hello')).rejects.toThrow(/no active conversation/i);
+    });
+  });
 });

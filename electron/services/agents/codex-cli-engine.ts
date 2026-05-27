@@ -127,8 +127,16 @@ export function createCodexCliEngine(
   async function applyExtendedPermissionMode(_mode: string): Promise<void> {
     throw new Error('CodexCliEngine.applyExtendedPermissionMode: not yet wired');
   }
-  async function send(_text: string): Promise<void> {
-    throw new Error('CodexCliEngine.send: not yet wired');
+  async function send(text: string): Promise<void> {
+    if (conversationId === null) {
+      throw new Error(
+        'CodexCliEngine.send: no active conversation (start() not called or no conversationId)',
+      );
+    }
+    if (rpc === null) {
+      throw new Error('CodexCliEngine.send: RPC client not initialized');
+    }
+    await rpc.request('sendUserTurn', { conversationId, input: text });
   }
   async function sendStructured(_content: unknown[]): Promise<void> {
     throw new Error('CodexCliEngine.sendStructured: not yet wired');
