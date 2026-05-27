@@ -30,6 +30,11 @@ Installers remain **unsigned**.
 - **Event channels renamed** `claude-output: / claude-error: / claude-complete:` → `agent-output: / agent-error: / agent-complete:`. The preload allow-list keeps the legacy names with a transparent shim (a renderer subscribing to the old name auto-subscribes to the new name and gets a one-time deprecation warning); the shim is scheduled for removal next release.
 - **`accounts.resolve()` returns `{ agent, account }`.** Path-rule routing now carries which agent a project should use; `account` can be `null` for Codex-only rules. Schema migration v10 makes `account_path_rules.account_id` nullable (rebuild-table) and drops `AUTOINCREMENT` to keep sequence semantics safe through the rebuild.
 
+### Fixed
+
+- **`system.status` catalog row** (`8b27a35`). The CLI's transient request-state indicator (`requesting` / `processing` heartbeats fired during long-running operations) was classifying as `unknown` — an orange dashed "UNKNOWN MESSAGE TYPE" card on every prompt with tool calls. Added to `SystemSubtype`, the classifier allow-list, and `DEFAULT_KINDS` (muted side-line strip, hidden in compact).
+- **`system.permission_denied` recognised by classifier** (`539d9b2`). The catalog row, messageKind router, and red ShieldOff card chrome were all wired for `system.permission_denied` since Phase 2, but `SYSTEM_SUBTYPES` and the `SystemSubtype` union both omitted it — so the classifier rejected the line as unknown and the renderer fell back to the orange dashed card on every auto-mode classifier deny. Added to both.
+
 ### Notes
 
 - Phase 3 of the SDK→CLI engine + Codex support roadmap. Spec: `docs/superpowers/specs/2026-05-25-cli-engine-and-codex-design.md`. Plan: `docs/superpowers/plans/2026-05-25-codex-engine-and-routing.md`.
