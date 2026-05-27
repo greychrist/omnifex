@@ -46,6 +46,24 @@ export interface CodexAuthService {
   startLoginFlow(opts?: { codexBinaryPath?: string }): Promise<{ ptyHandle: string }>;
   /** Cancel an in-flight login (kills the pty). */
   cancelLoginFlow(ptyHandle: string): void;
+  /**
+   * Resolve the system-installed `codex` binary path. Returns `null` when
+   * the binary isn't on the user's machine. Surface this from the renderer
+   * via the `codex_binary_path` IPC channel so the sign-in modal can wire
+   * up OneShotTerminal without re-resolving the binary itself.
+   */
+  getBinaryPath(): string | null;
+  /**
+   * Sign the user out by removing `~/.codex/auth.json`. Idempotent — a
+   * missing file is treated as success. The file watcher (see `watch()`)
+   * picks up the deletion and broadcasts the new unauthenticated status,
+   * so the renderer just needs to await and refresh its UI.
+   *
+   * Note: this does NOT touch `OPENAI_API_KEY`. If the user is in apikey
+   * mode (no auth file, env var set) there's nothing for us to delete —
+   * they need to clear the env var in their shell themselves.
+   */
+  logout(): Promise<void>;
 }
 
 export interface CreateCodexAuthServiceDeps {
@@ -256,10 +274,32 @@ export function createCodexAuthService(deps: CreateCodexAuthServiceDeps): CodexA
     deps.oneShotTerminal.kill(ptyHandle);
   }
 
+  function getBinaryPath(): string | null {
+    return resolveCodexBinary();
+  }
+
+  async function logout(): Promise<void> {
+    // Delete the OAuth auth file. Missing file is fine — no work to do.
+    // We don't shell out to `codex logout` because (a) the CLI version that
+    // ships with the user's install isn't guaranteed to have that subcommand
+    // and (b) the operation is just "rm the file": doing it in-process is
+    // faster and avoids the pty round-trip + dependency on OneShotTerminal
+    // for a destructive-but-trivial change.
+    try {
+      fs.unlinkSync(authFilePath);
+    } catch (err) {
+      const e = err as NodeJS.ErrnoException;
+      if (e.code === 'ENOENT') return; // already signed out
+      throw err;
+    }
+  }
+
   return {
     getStatus,
     watch,
     startLoginFlow,
     cancelLoginFlow,
+    getBinaryPath,
+    logout,
   };
 }

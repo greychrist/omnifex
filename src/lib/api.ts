@@ -2465,6 +2465,24 @@ export const api = {
     return apiCall<void>('codex_auth_cancel_login', { ptyHandle });
   },
   /**
+   * Resolve the system-installed `codex` binary path (e.g.
+   * `/opt/homebrew/bin/codex`). Returns `null` when the binary isn't on the
+   * user's machine — the renderer should surface a "Codex CLI not found"
+   * message instead of trying to spawn it.
+   */
+  async getCodexBinaryPath(): Promise<string | null> {
+    return apiCall<string | null>('codex_binary_path', {});
+  },
+  /**
+   * Sign out by removing `~/.codex/auth.json`. Idempotent. After this resolves
+   * the auth-status watcher fires and `subscribeCodexAuthStatus` consumers
+   * see the unauthenticated state. Does not touch `OPENAI_API_KEY` — if the
+   * user is in apikey mode they need to clear the env var themselves.
+   */
+  async codexLogout(): Promise<void> {
+    return apiCall<void>('codex_logout', {});
+  },
+  /**
    * Subscribe to Codex auth-status changes. Fires whenever
    * `~/.codex/auth.json` is created, modified, or removed (debounced ~250ms
    * in the main process). Returns an unsubscribe function. App-wide event —

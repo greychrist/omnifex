@@ -18,6 +18,8 @@ import { api, type Session, type RateLimitSnapshot, type Account, type SessionMo
 import { cn } from "@/lib/utils";
 import { NewSessionForm } from "./NewSessionForm";
 import { AccountPickerDialog } from "./AccountPickerDialog";
+import { CodexSignInModal } from "@/components/codex/CodexSignInModal";
+import { useCodexAuthStatus } from "@/hooks/useCodexAuthStatus";
 import { StreamMessage } from "./StreamMessage";
 import {
   FloatingPromptInput,
@@ -273,6 +275,11 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     match_detail: string;
   } | null>(initialSessionConfig?.accountResolution ?? null);
   const [showAccountPicker, setShowAccountPicker] = useState(false);
+  // Codex sign-in modal toggle, driven by the inline banner on the
+  // new-session form. The auth status itself comes from useCodexAuthStatus
+  // so the banner re-renders the moment `~/.codex/auth.json` lands.
+  const [showCodexSignIn, setShowCodexSignIn] = useState(false);
+  const codexAuthStatus = useCodexAuthStatus();
 
   /**
    * Latest rate-limit snapshots for the resolved account, keyed by
@@ -1987,6 +1994,12 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                 logAndForget('claude-code-session:start-persistent-session', startPersistentSession());
               }}
               onChangeAccount={() => { setShowAccountPicker(true); }}
+              codexAuthStatus={codexAuthStatus}
+              onCodexSignIn={() => { setShowCodexSignIn(true); }}
+            />
+            <CodexSignInModal
+              open={showCodexSignIn}
+              onClose={() => { setShowCodexSignIn(false); }}
             />
           </div>
         )}

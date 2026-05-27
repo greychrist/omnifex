@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Pencil, ChevronDown } from "lucide-react";
+import { Pencil, ChevronDown, LogIn } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -15,7 +15,7 @@ import {
   type ThinkingConfig,
 } from "./ControlBar";
 import { MODELS } from "./ModelPicker";
-import type { AgentKind, SessionDefaults, SessionMode } from "@/lib/api";
+import type { AgentKind, CodexAuthStatus, SessionDefaults, SessionMode } from "@/lib/api";
 
 export interface NewSessionFormAccountResolution {
   account: { name: string; account_type: string; config_dir: string; session_defaults?: SessionDefaults };
@@ -51,6 +51,23 @@ interface NewSessionFormProps {
   agentPickerDisabled?: boolean;
   onStart: () => void;
   onChangeAccount?: () => void;
+  /**
+   * Current Codex auth status. Threaded in from the parent (typically the
+   * `App` shell, which subscribes once at app startup) so the form stays a
+   * pure presentation component. `null` means "auth status hasn't loaded
+   * yet" — treated the same as unauthenticated for gating: we keep submit
+   * disabled rather than letting the user start a Codex session against
+   * potentially-unauthenticated state. Only consulted when `agent === 'codex'`.
+   */
+  codexAuthStatus?: CodexAuthStatus | null;
+  /**
+   * Called when the user clicks the inline "Sign in" button in the
+   * Codex-unauthenticated banner. Parent should open the
+   * `CodexSignInModal`. Required when `agent === 'codex'` is reachable
+   * in the form; if omitted the banner renders without a sign-in
+   * affordance (only useful for snapshot tests).
+   */
+  onCodexSignIn?: () => void;
   className?: string;
 }
 
@@ -130,8 +147,17 @@ export const NewSessionForm: React.FC<NewSessionFormProps> = ({
   agentPickerDisabled = false,
   onStart,
   onChangeAccount,
+  codexAuthStatus,
+  onCodexSignIn,
   className,
 }) => {
+  // Codex auth gating — only consulted on the codex agent path. We treat
+  // `null` (status not yet loaded) the same as unauthenticated so submit
+  // stays disabled until we definitively know we can start the session.
+  const codexAuthenticated = agent === 'codex'
+    ? codexAuthStatus?.authenticated === true
+    : true;
+  const showCodexAuthBanner = agent === 'codex' && !codexAuthenticated;
   // Codex doesn't carry a Claude account, so the Account selector is
   // hidden when Codex is picked — replaced with a quiet "Codex" badge
   // so the user still gets a clear indicator of which engine will run.
@@ -388,7 +414,34 @@ export const NewSessionForm: React.FC<NewSessionFormProps> = ({
         </label>
       </div>
 
-      <Button className="w-full" onClick={onStart}>
+      {showCodexAuthBanner && (
+        <div
+          className="flex items-center gap-3 px-3 py-2 rounded-md border border-amber-500/30 bg-amber-500/10 text-xs"
+          role="alert"
+          data-testid="codex-auth-banner"
+        >
+          <span className="flex-1 text-foreground/80">
+            You need to sign in to Codex first.
+          </span>
+          {onCodexSignIn && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={onCodexSignIn}
+            >
+              <LogIn className="w-3 h-3 mr-1" />
+              Sign in
+            </Button>
+          )}
+        </div>
+      )}
+
+      <Button
+        className="w-full"
+        onClick={onStart}
+        disabled={agent === 'codex' && !codexAuthenticated}
+      >
         Start Session
       </Button>
     </Card>

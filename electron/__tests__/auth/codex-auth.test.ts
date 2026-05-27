@@ -280,3 +280,62 @@ describe('CodexAuthService.cancelLoginFlow', () => {
     expect(oneShot.__kill).toHaveBeenCalledWith('fake-handle-1');
   });
 });
+
+describe('CodexAuthService.getBinaryPath', () => {
+  it('returns the path from the injected resolver', () => {
+    const service = createCodexAuthService({
+      oneShotTerminal: makeMockOneShot(),
+      authFilePath: '/nope/auth.json',
+      readEnv: () => ({}),
+      resolveCodexBinary: () => '/fake/codex',
+    });
+    expect(service.getBinaryPath()).toBe('/fake/codex');
+  });
+
+  it('returns null when the resolver returns null', () => {
+    const service = createCodexAuthService({
+      oneShotTerminal: makeMockOneShot(),
+      authFilePath: '/nope/auth.json',
+      readEnv: () => ({}),
+      resolveCodexBinary: () => null,
+    });
+    expect(service.getBinaryPath()).toBeNull();
+  });
+});
+
+describe('CodexAuthService.logout', () => {
+  let tmp: ReturnType<typeof makeTmpCodexDir>;
+
+  beforeEach(() => {
+    tmp = makeTmpCodexDir();
+  });
+
+  afterEach(() => {
+    tmp.cleanup();
+  });
+
+  it('removes the auth file when it exists', async () => {
+    fs.writeFileSync(tmp.authFile, JSON.stringify({ email: 'x@y.com' }));
+    expect(fs.existsSync(tmp.authFile)).toBe(true);
+
+    const service = createCodexAuthService({
+      oneShotTerminal: makeMockOneShot(),
+      authFilePath: tmp.authFile,
+      readEnv: () => ({}),
+    });
+
+    await service.logout();
+    expect(fs.existsSync(tmp.authFile)).toBe(false);
+  });
+
+  it('is idempotent when the auth file is already missing', async () => {
+    const service = createCodexAuthService({
+      oneShotTerminal: makeMockOneShot(),
+      authFilePath: path.join(tmp.dir, 'does-not-exist.json'),
+      readEnv: () => ({}),
+    });
+
+    // Should not throw — already signed out is a valid no-op.
+    await expect(service.logout()).resolves.toBeUndefined();
+  });
+});

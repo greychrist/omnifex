@@ -932,6 +932,8 @@ app.whenReady().then(() => {
       getStatus: () => codexAuthService.getStatus(),
       startLoginFlow: (opts) => codexAuthService.startLoginFlow(opts),
       cancelLoginFlow: (ptyHandle: string) => codexAuthService.cancelLoginFlow(ptyHandle),
+      getBinaryPath: () => codexAuthService.getBinaryPath(),
+      logout: () => codexAuthService.logout(),
     },
   });
 

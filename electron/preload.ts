@@ -181,6 +181,8 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   'codex_auth_status',
   'codex_auth_start_login',
   'codex_auth_cancel_login',
+  'codex_binary_path',
+  'codex_logout',
 
   // Updater
   'updater:check',

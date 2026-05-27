@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { NewSessionForm, type NewSessionFormAccountResolution } from '../NewSessionForm';
-import type { AgentKind } from '@/lib/api';
+import type { AgentKind, CodexAuthStatus } from '@/lib/api';
 import type { EffortLevel, ThinkingConfig } from '../ControlBar';
 import type { SessionMode } from '@/lib/api';
 
@@ -41,7 +41,19 @@ const RESOLUTION: NewSessionFormAccountResolution = {
  * are stubbed to constants since the tests below only assert on the
  * agent/account interaction.
  */
-function Harness({ initialAgent = 'claude' as AgentKind, resolution = RESOLUTION as NewSessionFormAccountResolution | null }) {
+function Harness({
+  initialAgent = 'claude' as AgentKind,
+  resolution = RESOLUTION as NewSessionFormAccountResolution | null,
+  codexAuthStatus,
+  onCodexSignIn,
+  onStart,
+}: {
+  initialAgent?: AgentKind;
+  resolution?: NewSessionFormAccountResolution | null;
+  codexAuthStatus?: CodexAuthStatus | null;
+  onCodexSignIn?: () => void;
+  onStart?: () => void;
+} = {}) {
   const [agent, setAgent] = useState<AgentKind>(initialAgent);
   const [model, setModel] = useState('opus[1m]');
   const [effort, setEffort] = useState<EffortLevel>('high');
@@ -63,8 +75,10 @@ function Harness({ initialAgent = 'claude' as AgentKind, resolution = RESOLUTION
       setSessionStartMode={setMode}
       agent={agent}
       setAgent={setAgent}
-      onStart={() => {}}
+      onStart={onStart ?? (() => {})}
       onChangeAccount={() => {}}
+      codexAuthStatus={codexAuthStatus}
+      onCodexSignIn={onCodexSignIn}
     />
   );
 }
@@ -114,5 +128,90 @@ describe('NewSessionForm — agent picker', () => {
     render(<Harness initialAgent="codex" resolution={null} />);
     expect(screen.queryByText('Account')).toBeNull();
     expect(screen.getByText('Agent')).toBeTruthy();
+  });
+});
+
+describe('NewSessionForm — Codex auth banner', () => {
+  it('renders banner + disables submit when codex agent is unauthenticated', () => {
+    const onStart = vi.fn();
+    render(
+      <Harness
+        initialAgent="codex"
+        codexAuthStatus={{ authenticated: false }}
+        onCodexSignIn={() => {}}
+        onStart={onStart}
+      />,
+    );
+    // Banner present.
+    const banner = screen.getByTestId('codex-auth-banner');
+    expect(banner).toBeTruthy();
+    expect(banner.textContent).toContain('You need to sign in to Codex');
+    // Submit button disabled.
+    const submit = screen.getByRole('button', { name: /Start Session/ }) as HTMLButtonElement;
+    expect(submit.disabled).toBe(true);
+    // Clicking the disabled submit does nothing.
+    fireEvent.click(submit);
+    expect(onStart).not.toHaveBeenCalled();
+  });
+
+  it('hides banner + enables submit when codex agent is authenticated', () => {
+    const onStart = vi.fn();
+    render(
+      <Harness
+        initialAgent="codex"
+        codexAuthStatus={{ authenticated: true, mode: 'oauth', email: 'x@y.com' }}
+        onCodexSignIn={() => {}}
+        onStart={onStart}
+      />,
+    );
+    expect(screen.queryByTestId('codex-auth-banner')).toBeNull();
+    const submit = screen.getByRole('button', { name: /Start Session/ }) as HTMLButtonElement;
+    expect(submit.disabled).toBe(false);
+    fireEvent.click(submit);
+    expect(onStart).toHaveBeenCalledTimes(1);
+  });
+
+  it('treats null auth status as unauthenticated (loading state)', () => {
+    // While useCodexAuthStatus is still resolving the initial snapshot we
+    // pass null. Submit should stay disabled until we know.
+    render(
+      <Harness
+        initialAgent="codex"
+        codexAuthStatus={null}
+        onCodexSignIn={() => {}}
+      />,
+    );
+    const submit = screen.getByRole('button', { name: /Start Session/ }) as HTMLButtonElement;
+    expect(submit.disabled).toBe(true);
+    expect(screen.queryByTestId('codex-auth-banner')).toBeTruthy();
+  });
+
+  it('clicking the inline Sign in button calls onCodexSignIn', () => {
+    const onCodexSignIn = vi.fn();
+    render(
+      <Harness
+        initialAgent="codex"
+        codexAuthStatus={{ authenticated: false }}
+        onCodexSignIn={onCodexSignIn}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Sign in/ }));
+    expect(onCodexSignIn).toHaveBeenCalledTimes(1);
+  });
+
+  it('does NOT gate the submit button on the Claude agent path even with no codex auth status', () => {
+    const onStart = vi.fn();
+    render(
+      <Harness
+        initialAgent="claude"
+        codexAuthStatus={null}
+        onStart={onStart}
+      />,
+    );
+    const submit = screen.getByRole('button', { name: /Start Session/ }) as HTMLButtonElement;
+    expect(submit.disabled).toBe(false);
+    fireEvent.click(submit);
+    expect(onStart).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId('codex-auth-banner')).toBeNull();
   });
 });

@@ -6,7 +6,7 @@ import { Popover } from "@/components/ui/popover";
 import { api, type Account, type PathRule, type SessionDefaults } from "@/lib/api";
 import { AccountBadge } from "@/components/AccountBadge";
 import { useAccounts } from "@/contexts/AccountsContext";
-import { Trash2, Plus, Pencil, FolderOpen, Check, ChevronDown } from "lucide-react";
+import { Trash2, Plus, Pencil, FolderOpen, Check, ChevronDown, LogIn, LogOut } from "lucide-react";
 import { IconPicker, ICON_MAP } from "./IconPicker";
 import { MODELS } from "./ModelPicker";
 import { THINKING_CONFIGS, PERMISSION_MODES, EFFORT_LEVELS } from "./ControlBar";
@@ -14,6 +14,8 @@ import { ColorSwatchGrid } from "@/components/ui/ColorSwatchGrid";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { fireAndLog, logAndForget } from "@/lib/fireAndLog";
+import { CodexSignInModal } from "@/components/codex/CodexSignInModal";
+import { useCodexAuthStatus } from "@/hooks/useCodexAuthStatus";
 import {
   Dialog,
   DialogContent,
@@ -423,6 +425,95 @@ const SessionDefaultsEditor: React.FC<{
           />
         </div>
       </div>
+    </div>
+  );
+};
+
+/**
+ * Codex auth row for the AccountSettings panel. Renders one of three
+ * states based on the auth-status subscription:
+ *
+ *  - loading (status === null): nothing yet — quiet placeholder.
+ *  - signed-in: identity row with mode badge + Sign out button.
+ *  - signed-out: "Not authenticated" + Sign in button.
+ *
+ * Sign-in opens the shared CodexSignInModal. Sign-out calls the
+ * `codex_logout` IPC (which just `rm`s `~/.codex/auth.json`) and lets the
+ * status subscription pick up the change to re-render this row.
+ */
+const CodexAccountRow: React.FC = () => {
+  const status = useCodexAuthStatus();
+  const [showSignIn, setShowSignIn] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+
+  const handleSignOut = async (): Promise<void> => {
+    setSigningOut(true);
+    try {
+      await api.codexLogout();
+      // No manual refresh needed — the auth-status watcher fires when the
+      // file is removed and useCodexAuthStatus picks up the new state.
+    } catch (err) {
+      console.error('Failed to sign out of Codex:', err);
+    } finally {
+      setSigningOut(false);
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg border border-border bg-muted/30">
+      <div className="flex-1 min-w-0">
+        {status === null ? (
+          <span className="text-xs text-muted-foreground">Checking Codex sign-in…</span>
+        ) : status.authenticated ? (
+          <div className="flex items-center gap-3 min-w-0">
+            <span className="text-sm font-medium truncate">
+              {status.email ?? (status.mode === 'apikey' ? 'OPENAI_API_KEY' : 'Signed in')}
+            </span>
+            <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              {status.mode === 'apikey' ? 'API key' : 'OAuth'}
+            </span>
+          </div>
+        ) : (
+          <span className="text-sm text-muted-foreground">Not authenticated</span>
+        )}
+      </div>
+
+      {status?.authenticated ? (
+        // Sign-out only makes sense for the OAuth path. For env-key mode
+        // there's nothing on disk to delete — the user has to clear the
+        // variable in their shell themselves. We surface a disabled button
+        // with a tooltip so the path is discoverable.
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-7 px-2 text-xs"
+          onClick={fireAndLog('account-settings:codex-sign-out', handleSignOut)}
+          disabled={signingOut || status.mode === 'apikey'}
+          title={
+            status.mode === 'apikey'
+              ? 'API-key mode uses $OPENAI_API_KEY. Clear it in your shell to sign out.'
+              : 'Sign out of Codex (removes ~/.codex/auth.json)'
+          }
+        >
+          <LogOut className="w-3 h-3 mr-1" />
+          {signingOut ? 'Signing out…' : 'Sign out'}
+        </Button>
+      ) : (
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-7 px-2 text-xs"
+          onClick={() => { setShowSignIn(true); }}
+        >
+          <LogIn className="w-3 h-3 mr-1" />
+          Sign in
+        </Button>
+      )}
+
+      <CodexSignInModal
+        open={showSignIn}
+        onClose={() => { setShowSignIn(false); }}
+      />
     </div>
   );
 };
@@ -915,6 +1006,18 @@ export const AccountSettings: React.FC = () => {
             {scanStatus.message}
           </p>
         )}
+      </div>
+
+      {/* Codex — separate from Claude accounts because Codex has no
+          per-project account model; sign-in is per-machine. Keep the row
+          minimal: status + action, no path-rule plumbing. */}
+      <div>
+        <h3 className="text-sm font-semibold mb-3">Codex</h3>
+        <p className="text-xs text-muted-foreground mb-3">
+          Codex sessions use a single per-machine sign-in. Path rules and project
+          overrides only apply to Claude accounts.
+        </p>
+        <CodexAccountRow />
       </div>
 
       {/* Path Rules */}

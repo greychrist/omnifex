@@ -16,6 +16,8 @@ import type { EffortLevel, ThinkingConfig } from '@/components/FloatingPromptInp
 import { normalizeThinkingConfig } from '@/lib/thinkingConfig';
 import { useClaudeSessionStore } from '@/stores/claudeSessionStore';
 import { BranchColorsCard } from '@/components/BranchColorsCard';
+import { CodexSignInModal } from '@/components/codex/CodexSignInModal';
+import { useCodexAuthStatus } from '@/hooks/useCodexAuthStatus';
 import { fireAndLog, logAndForget } from "@/lib/fireAndLog";
 
 // Lazy load heavy components
@@ -66,6 +68,12 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
 
   const [projectBranches, setProjectBranches] = React.useState<string[]>([]);
   const [projectMainBranch, setProjectMainBranch] = React.useState<string | null>(null);
+
+  // Codex auth state — drives the banner + submit-button gate on the
+  // Codex agent path. Subscription is cheap (one event listener) so each
+  // tab can subscribe independently rather than threading from App.
+  const codexAuthStatus = useCodexAuthStatus();
+  const [showCodexSignIn, setShowCodexSignIn] = React.useState(false);
 
   React.useEffect(() => {
     if (!selectedProject?.path) {
@@ -399,6 +407,8 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                             agentPickerDisabled={loading}
                             onStart={handleStartNewSession}
                             onChangeAccount={() => { setShowChangeAccountDialog(true); }}
+                            codexAuthStatus={codexAuthStatus}
+                            onCodexSignIn={() => { setShowCodexSignIn(true); }}
                           />
                         </div>
                         {selectedProject && (
@@ -530,9 +540,13 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                   }}
                 />
               )}
+              <CodexSignInModal
+                open={showCodexSignIn}
+                onClose={() => { setShowCodexSignIn(false); }}
+              />
           </div>
         );
-      
+
       case 'chat':
         return (
           <div className="h-full">

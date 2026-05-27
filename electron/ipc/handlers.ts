@@ -210,6 +210,8 @@ export interface Services {
     }>;
     startLoginFlow(opts?: { codexBinaryPath?: string }): Promise<{ ptyHandle: string }>;
     cancelLoginFlow(ptyHandle: string): void;
+    getBinaryPath(): string | null;
+    logout(): Promise<void>;
   };
 }
 
@@ -778,6 +780,12 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
       const ptyHandle = (p?.ptyHandle ?? p?.pty_handle) as string;
       if (!ptyHandle) throw new Error('codex_auth_cancel_login: ptyHandle is required');
       codexAuth?.cancelLoginFlow(ptyHandle);
+      return null;
+    }),
+    codex_binary_path: wrap(() => codexAuth?.getBinaryPath() ?? null),
+    codex_logout: wrap(async () => {
+      if (!codexAuth) return null;
+      await codexAuth.logout();
       return null;
     }),
   };
