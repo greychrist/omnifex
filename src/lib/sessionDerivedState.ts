@@ -62,12 +62,18 @@ export function waitingOnClaude(messages: JsonlNode[]): boolean {
   return !TERMINAL_STOP_REASONS.has(stop);
 }
 
+// "Open" means actively in flight, not merely "not done." Pending tasks
+// (planned but never started) and failed / abandoned / completed_inferred
+// subagents do NOT count — otherwise a closed session that ended with
+// unstarted todos or a killed subagent renders as 'running' forever on
+// reload. Matches the pre-refactor FSM's "inProgress > 0" / "any running
+// subagent" semantics.
 export function hasOpenTasks(tasks: WithStatus[]): boolean {
-  return tasks.some((t) => t.status !== 'completed');
+  return tasks.some((t) => t.status === 'in_progress');
 }
 
 export function hasOpenSubagents(subagents: WithStatus[]): boolean {
-  return subagents.some((s) => s.status !== 'completed');
+  return subagents.some((s) => s.status === 'running');
 }
 
 // 'waiting_permission' from the old FSM collapses into 'running':

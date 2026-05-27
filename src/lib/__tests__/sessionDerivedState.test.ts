@@ -130,13 +130,17 @@ describe('hasOpenTasks / hasOpenSubagents', () => {
     expect(hasOpenSubagents([])).toBe(false);
   });
 
-  it('returns true when any task has status !== "completed"', () => {
-    expect(hasOpenTasks([{ status: 'completed' }, { status: 'running' }] as never)).toBe(true);
+  it('returns true only when a task is in_progress (pending does NOT count)', () => {
+    expect(hasOpenTasks([{ status: 'completed' }, { status: 'in_progress' }] as never)).toBe(true);
+    expect(hasOpenTasks([{ status: 'completed' }, { status: 'pending' }] as never)).toBe(false);
     expect(hasOpenTasks([{ status: 'completed' }, { status: 'completed' }] as never)).toBe(false);
   });
 
-  it('returns true when any subagent has status !== "completed"', () => {
-    expect(hasOpenSubagents([{ status: 'completed' }, { status: 'pending' }] as never)).toBe(true);
+  it('returns true only when a subagent is running (failed/abandoned do NOT count)', () => {
+    expect(hasOpenSubagents([{ status: 'completed' }, { status: 'running' }] as never)).toBe(true);
+    expect(hasOpenSubagents([{ status: 'completed' }, { status: 'failed' }] as never)).toBe(false);
+    expect(hasOpenSubagents([{ status: 'completed' }, { status: 'abandoned' }] as never)).toBe(false);
+    expect(hasOpenSubagents([{ status: 'completed' }, { status: 'completed_inferred' }] as never)).toBe(false);
     expect(hasOpenSubagents([{ status: 'completed' }] as never)).toBe(false);
   });
 });
@@ -163,12 +167,20 @@ describe('conversationStatus', () => {
     expect(conversationStatus(msgs, [], [{ status: 'running' }] as never)).toBe('running');
   });
 
-  it('running when an open task exists even if assistant terminated', () => {
+  it('running when an in_progress task exists even if assistant terminated', () => {
     const msgs = [
       userPrompt('2026-05-27T00:00:00Z'),
       assistantWithStop('2026-05-27T00:00:01Z', 'end_turn'),
     ];
-    expect(conversationStatus(msgs, [{ status: 'pending' }] as never, [])).toBe('running');
+    expect(conversationStatus(msgs, [{ status: 'in_progress' }] as never, [])).toBe('running');
+  });
+
+  it('idle when only pending tasks exist (a closed session with planned-but-unstarted todos)', () => {
+    const msgs = [
+      userPrompt('2026-05-27T00:00:00Z'),
+      assistantWithStop('2026-05-27T00:00:01Z', 'end_turn'),
+    ];
+    expect(conversationStatus(msgs, [{ status: 'pending' }, { status: 'completed' }] as never, [])).toBe('idle');
   });
 });
 
