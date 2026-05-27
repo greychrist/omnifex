@@ -41,6 +41,24 @@ function clientPromptHash(template: string): string {
 }
 
 /**
+ * Human-readable byte size for the session list. Mirrors the formatter in
+ * `LimaViewer.tsx`; kept local since the two consumers are otherwise
+ * unrelated. `undefined` / `0` / negative renders as an em-dash so missing
+ * sizes don't read as zero-byte files.
+ */
+function formatBytes(bytes: number | undefined | null): string {
+  if (typeof bytes !== 'number' || bytes <= 0) return '—';
+  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
+  let i = 0;
+  let n = bytes;
+  while (n >= 1024 && i < units.length - 1) {
+    n /= 1024;
+    i++;
+  }
+  return `${n.toFixed(n >= 10 || i === 0 ? 0 : 1)} ${units[i]}`;
+}
+
+/**
  * Render the body of a session summary. The current default prompt asks
  * the model to produce markdown-style "- " bullet lines inside the
  * `<paragraph>` tag; older cached summaries are still plain prose. When
@@ -561,6 +579,7 @@ export const SessionList: React.FC<SessionListProps> = ({
                 <th className="text-left font-medium py-2 px-3 w-36">Date</th>
                 <th className="text-left font-medium py-2 px-3">Summary</th>
                 <th className="text-left font-medium py-2 px-3 w-28">Session ID</th>
+                <th className="text-right font-medium py-2 px-3 w-20">Size</th>
                 {/* Consolidated actions column — launch + summary refresh
                     + trash. Width fits all three icons with gap-1 padding;
                     aria-label is on each button so the column header can
@@ -725,6 +744,16 @@ export const SessionList: React.FC<SessionListProps> = ({
                           <Copy className="h-3 w-3" />
                         )}
                       </button>
+                    </td>
+                    <td
+                      className="py-2 px-3 text-right text-[11px] font-mono tabular-nums text-muted-foreground align-top whitespace-nowrap"
+                      title={
+                        typeof session.file_size_bytes === 'number'
+                          ? `${session.file_size_bytes.toLocaleString()} bytes`
+                          : 'Unknown size'
+                      }
+                    >
+                      {formatBytes(session.file_size_bytes)}
                     </td>
                     <td className="py-2 px-3 align-top">
                       <div className="flex items-center justify-end gap-1">
