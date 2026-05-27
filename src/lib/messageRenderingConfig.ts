@@ -286,7 +286,7 @@ export const DEFAULT_KINDS: MessageKindConfig[] = [
   { id: "file-history-snapshot", label: "File history snapshot", description: "Snapshot of file state.", origin: "bookkeeping", icon: "Camera", headerLabel: null, accentColor: "muted", alignment: "left", hiddenInCompact: true, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
 
   // ───── FALLBACK ─────
-  { id: "unknown", label: "Unknown", description: "Diagnostic catch-all for unrecognized types or subtypes.", origin: "fallback", icon: "HelpCircle", headerLabel: "Unknown", accentColor: "orange", alignment: "left", hiddenInCompact: false, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "dashed", showRawPayload: true },
+  { id: "unknown", label: "Unknown", description: "Diagnostic catch-all for unrecognized types or subtypes.", origin: "fallback", icon: "HelpCircle", headerLabel: "Unknown", accentColor: "orange", alignment: "left", hiddenInCompact: false, compactBoundaryLocked: true, presentation: "side-line", borderStyle: "dashed", showRawPayload: true },
 ];
 
 // ─── typography ─────────────────────────────────────────────────────────────

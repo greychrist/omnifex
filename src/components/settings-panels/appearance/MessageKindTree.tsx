@@ -9,34 +9,48 @@ import { IconRenderer } from "./iconMap";
 import { cn } from "@/lib/utils";
 
 /**
- * Groups in the tree mirror the SDK's message hierarchy: assistant /
- * user are content-block parents (their child kinds are blocks within
- * one message); the rest are leaf message types.
+ * Tree groups mirror the catalog's `origin` field exactly. The catalog
+ * is the source of truth — don't infer from the kind ID. Originally we
+ * had a catch-all "other" group that conflated bookkeeping records
+ * (attachments, queue ops, etc.) with the fallback `unknown` row;
+ * splitting them gives `unknown` its own dedicated section so a stray
+ * "what is this thing?" entry is easy to find.
  */
 type GroupId =
   | "assistant"
   | "user"
   | "system"
   | "result"
-  | "other";
+  | "bookkeeping"
+  | "fallback";
 
-const GROUP_ORDER: GroupId[] = ["assistant", "user", "system", "result", "other"];
+const GROUP_ORDER: GroupId[] = [
+  "assistant",
+  "user",
+  "system",
+  "result",
+  "bookkeeping",
+  "fallback",
+];
 
 const GROUP_LABELS: Record<GroupId, string> = {
   assistant: "Assistant message",
   user: "User message",
   system: "System",
   result: "Turn result",
-  other: "Other",
+  bookkeeping: "Bookkeeping",
+  fallback: "Fallback",
 };
 
-function groupOf(kindId: string): GroupId {
-  if (kindId.startsWith("assistant.")) return "assistant";
-  if (kindId.startsWith("user.")) return "user";
-  if (kindId.startsWith("tool.result.")) return "user"; // tool_result blocks live inside user messages
-  if (kindId.startsWith("system.")) return "system";
-  if (kindId.startsWith("result.")) return "result";
-  return "other";
+function groupOf(kind: MessageKindConfig): GroupId {
+  switch (kind.origin) {
+    case "assistant": return "assistant";
+    case "user":      return "user";
+    case "system":    return "system";
+    case "result":    return "result";
+    case "bookkeeping": return "bookkeeping";
+    case "fallback":  return "fallback";
+  }
 }
 
 interface MessageKindTreeProps {
@@ -57,11 +71,12 @@ export const MessageKindTree: React.FC<MessageKindTreeProps> = ({
     user: [],
     system: [],
     result: [],
-    other: [],
+    bookkeeping: [],
+    fallback: [],
   };
   for (const id of Object.keys(config.kinds)) {
     const k = config.kinds[id];
-    groups[groupOf(id)].push(k);
+    groups[groupOf(k)].push(k);
   }
 
   return (

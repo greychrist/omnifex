@@ -9,6 +9,7 @@ import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
 import { accentStyleFromEntry } from "@/lib/accentStyle";
 import { contentClassNames, iconSizeClassName, iconWrapperClassName, iconWrapperStyle, typographyFontFamily } from "@/lib/typographyClasses";
 import { KindHeader } from "@/components/KindHeader";
+import { MessageFrameSideLine } from "@/components/StreamMessage/MessageFrameSideLine";
 import { IconRenderer } from "./iconMap";
 import { previewTextForKind, debugLabelForKind, SAMPLE_TIMESTAMP } from "./fixtures";
 import { cn } from "@/lib/utils";
@@ -47,6 +48,50 @@ export const SamplePreview: React.FC<SamplePreviewProps> = ({
         : "mr-auto max-w-[80%]";
 
   const wouldHide = compact && kind.hiddenInCompact;
+
+  // Side-line presentation — render the same MessageFrameSideLine the chat
+  // uses, plus the alignment + opacity + timestamp/debug overlays the rest
+  // of the preview expects so the editor matches the live experience.
+  if (kind.presentation === "side-line") {
+    return (
+      <div
+        className={cn(
+          "relative transition-opacity rounded-md px-2 py-1",
+          alignClass,
+          wouldHide && "opacity-40",
+        )}
+      >
+        <MessageFrameSideLine
+          iconName={kind.icon}
+          accentColor={kind.accentColor}
+          borderStyle={kind.borderStyle}
+        >
+          {previewTextForKind(kind)}
+        </MessageFrameSideLine>
+        {wouldHide && (
+          <div className="text-caption text-muted-foreground italic mt-1 ml-6">
+            (hidden in compact mode)
+          </div>
+        )}
+        <div className="flex items-center gap-2 mt-1 ml-6">
+          {config.debug.showCardKindLabel && (
+            <div
+              className="px-1.5 py-0.5 rounded-md border bg-background text-[10px] text-foreground/80 font-mono pointer-events-none select-none"
+              title="message type · subtype (debug overlay)"
+            >
+              {debugLabelForKind(kind)}
+            </div>
+          )}
+          <div
+            className="ml-auto px-1.5 py-0.5 rounded-md border bg-background text-[10px] text-foreground/80 font-mono pointer-events-none select-none"
+            title="Sample timestamp"
+          >
+            {SAMPLE_TIMESTAMP}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <Card

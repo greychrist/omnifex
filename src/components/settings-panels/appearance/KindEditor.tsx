@@ -203,7 +203,9 @@ export const KindEditor: React.FC<KindEditorProps> = ({
           </Label>
           <p className="text-caption text-muted-foreground">
             {kind.compactBoundaryLocked
-              ? "Always visible — turn boundary."
+              ? kind.id === "unknown"
+                ? "Always visible — diagnostic catch-all."
+                : "Always visible — turn boundary."
               : "When hidden, collapses into the nearest expander in compact mode."}
           </p>
         </div>

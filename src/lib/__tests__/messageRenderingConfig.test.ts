@@ -90,14 +90,17 @@ describe("messageRenderingConfig", () => {
       }
     });
 
-    it("locks exactly the two turn-boundary kinds (v2 catalog)", () => {
-      // v2 catalog: only user.prompt (turn opener) and result.error_during_execution
-      // (catastrophic failure that must always be visible) are boundary-locked.
-      // The other result kinds (success, interrupt, max_tokens, etc.) are toggleable
-      // so users can hide them in compact mode if they prefer.
+    it("locks exactly the three always-visible kinds (v2 catalog)", () => {
+      // v2 catalog: user.prompt (turn opener), result.error_during_execution
+      // (catastrophic failure that must always be visible), and unknown
+      // (diagnostic catch-all — if it shows up, we must not hide it) are
+      // boundary-locked. The other result kinds (success, interrupt,
+      // max_tokens, etc.) are toggleable so users can hide them in compact
+      // mode if they prefer.
       const locked = DEFAULT_KINDS.filter((k) => k.compactBoundaryLocked).map((k) => k.id).sort();
       expect(locked).toEqual([
         "result.error_during_execution",
+        "unknown",
         "user.prompt",
       ]);
     });
