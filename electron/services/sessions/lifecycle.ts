@@ -10,7 +10,6 @@ import type {
   SessionHandle,
   SessionStartParams,
   SessionStatus,
-  ConversationStatus,
   SessionMode,
   SessionsService,
   SendToRenderer,
@@ -156,7 +155,6 @@ export function createSessionsService(
       if (!codexPath) {
         sendToRenderer(`session-status:${tabId}`, {
           sessionStatus: 'error',
-          conversationStatus: null,
         });
         sendToRenderer(`agent-error:${tabId}`, 'codex binary not found');
         sendToRenderer(`agent-complete:${tabId}`);
@@ -168,7 +166,6 @@ export function createSessionsService(
       if (!binaryPath) {
         sendToRenderer(`session-status:${tabId}`, {
           sessionStatus: 'error',
-          conversationStatus: null,
         });
         sendToRenderer(`agent-error:${tabId}`, 'claude binary not found');
         sendToRenderer(`agent-complete:${tabId}`);
@@ -203,7 +200,6 @@ export function createSessionsService(
       },
       sessionId,
       sessionStatus: 'started',
-      conversationStatus: 'idle',
       mode: 'rich',
       tui: null,
       tuiDetach: null,
@@ -237,7 +233,6 @@ export function createSessionsService(
     // 'started' when agent-output:<tabId> events arrive.
     sendToRenderer(`session-status:${tabId}`, {
       sessionStatus: 'started',
-      conversationStatus: 'idle',
     });
     // Push the pinned sessionId immediately so the renderer can seed
     // claudeSessionId without waiting for the CLI's `system:init` (which
@@ -301,10 +296,6 @@ export function createSessionsService(
 
     ensureLiveEngine(tabId, handle);
 
-    // Mark the conversation as in-flight before the engine echoes anything
-    // back, so the in-flight gate reacts to the user's submit immediately.
-    setStatus(handle, { conversationStatus: 'running' }, tabId, sendToRenderer);
-
     void handle.engine.send(prompt).catch((err: unknown) => {
       console.error(`[sessions] engine.send failed for tab ${tabId}:`, err);
     });
@@ -320,8 +311,6 @@ export function createSessionsService(
     if (handle.mode === 'tui') return;
 
     ensureLiveEngine(tabId, handle);
-
-    setStatus(handle, { conversationStatus: 'running' }, tabId, sendToRenderer);
 
     void handle.engine.sendStructured(content).catch((err: unknown) => {
       console.error(`[sessions] engine.sendStructured failed for tab ${tabId}:`, err);
@@ -432,23 +421,21 @@ export function createSessionsService(
     return sessions.get(tabId)?.configDir ?? null;
   }
 
-  function getStatus(tabId: string): { sessionStatus: SessionStatus; conversationStatus: ConversationStatus | null } {
+  function getStatus(tabId: string): { sessionStatus: SessionStatus } {
     const handle = sessions.get(tabId);
-    if (!handle) return { sessionStatus: 'stopped', conversationStatus: null };
-    return { sessionStatus: handle.sessionStatus, conversationStatus: handle.conversationStatus };
+    if (!handle) return { sessionStatus: 'stopped' };
+    return { sessionStatus: handle.sessionStatus };
   }
 
   function getInfo(tabId: string): {
     sessionId: string | null;
     sessionStatus: SessionStatus;
-    conversationStatus: ConversationStatus | null;
   } | null {
     const handle = sessions.get(tabId);
     if (!handle) return null;
     return {
       sessionId: handle.sessionId,
       sessionStatus: handle.sessionStatus,
-      conversationStatus: handle.conversationStatus,
     };
   }
 
@@ -460,38 +447,26 @@ export function createSessionsService(
     return Array.from(sessions.keys());
   }
 
-  // In-flight = conversationStatus is non-null and non-idle. See
-  // docs/session-lifecycle.md — sessionStatus='starting'/'error'/'stopped'
-  // do NOT count; only a conversation that's actually mid-turn or paused
-  // on a permission prompt blocks the installer's wait-for-idle gate.
+  // TODO(jsonl-as-rendered): main no longer tracks conversationStatus — the
+  // wait-for-idle gate has moved to the renderer. This always returns [] since
+  // Task 3 of the jsonl-as-rendered refactor. See TODO.md for the follow-up
+  // that wires the renderer's derived in-flight count into the installer gate.
   function listInFlightTabIds(): string[] {
-    const ids: string[] = [];
-    for (const [tabId, handle] of sessions) {
-      if (
-        handle.conversationStatus !== null &&
-        handle.conversationStatus !== 'idle'
-      ) {
-        ids.push(tabId);
-      }
-    }
-    return ids;
+    return [];
   }
 
   function listSessionStatuses(): {
     tabId: string;
     sessionStatus: SessionStatus;
-    conversationStatus: ConversationStatus | null;
   }[] {
     const out: {
       tabId: string;
       sessionStatus: SessionStatus;
-      conversationStatus: ConversationStatus | null;
     }[] = [];
     for (const [tabId, handle] of sessions) {
       out.push({
         tabId,
         sessionStatus: handle.sessionStatus,
-        conversationStatus: handle.conversationStatus,
       });
     }
     return out;
@@ -501,17 +476,15 @@ export function createSessionsService(
     alive: boolean;
     sessionId: string | null;
     sessionStatus: SessionStatus;
-    conversationStatus: ConversationStatus | null;
   } {
     const handle = sessions.get(tabId);
     if (!handle) {
-      return { alive: false, sessionId: null, sessionStatus: 'stopped', conversationStatus: null };
+      return { alive: false, sessionId: null, sessionStatus: 'stopped' };
     }
     return {
       alive: true,
       sessionId: handle.sessionId,
       sessionStatus: handle.sessionStatus,
-      conversationStatus: handle.conversationStatus,
     };
   }
 
@@ -520,19 +493,28 @@ export function createSessionsService(
     if (!handle) throw new Error(`setMode: unknown tab ${tabId}`);
     if (handle.mode === mode) return;
 
-    // Gate: allow switching while the SDK is mid-turn or idle on a
-    // started session, or in the transient 'starting' state (post-
-    // restart, before the first message arrives). Block when paused on
-    // a permission prompt or the session is dead.
+    // Gate: allow switching on a live or initializing session.
+    // Block when the session is dead (stopped/error).
     const conn = handle.sessionStatus;
-    const conv = handle.conversationStatus;
-    const allowed =
-      conn === 'starting' ||
-      (conn === 'started' && (conv === 'idle' || conv === 'running'));
+    const allowed = conn === 'starting' || conn === 'started';
     if (!allowed) {
       throw new Error(
-        `setMode: not allowed while sessionStatus="${conn}" conversationStatus="${conv ?? 'null'}"`,
+        `setMode: not allowed while sessionStatus="${conn}"`,
       );
+    }
+
+    if (handle.permissionQueue.length > 0) {
+      // Drain any in-flight permission requests with 'deny' so resolvers don't dangle.
+      // The renderer's modeToggleDisabled gate normally prevents reaching this path while
+      // waitingForPermission is true, but a programmatic / IPC caller could still hit it.
+      for (const pending of handle.permissionQueue) {
+        pending.resolve({ behavior: 'deny' });
+      }
+      handle.permissionQueue.length = 0;
+      if (handle.permissionResolver) {
+        handle.permissionResolver({ behavior: 'deny' });
+        handle.permissionResolver = null;
+      }
     }
 
     if (mode === 'tui') {
@@ -608,11 +590,10 @@ export function createSessionsService(
         onInit: () => {
           // sessionId is already known (precondition for the toggle); ignore.
         },
-        onStatusChange: (status) => {
-          // TUI JSONL reports turn-level idle/running. Connection is
-          // already 'started' for a mid-session toggle, so we just need
-          // to update conversationStatus.
-          setStatus(handle, { sessionStatus: 'started', conversationStatus: status }, tabId, sendToRenderer);
+        onStatusChange: (_status) => {
+          // TUI JSONL reports turn-level idle/running. Connection axis
+          // is already 'started' for a mid-session toggle; conversationStatus
+          // is now derived by the renderer, so no update needed.
         },
       });
     } else {
@@ -651,8 +632,7 @@ export function createSessionsService(
       // engine.onExit fired during the rich→tui transition (see
       // runtime.ts's tui-mode early-return). Without re-attachment the
       // resumed engine's stdout would emit into the void —
-      // agent-output:<tabId> would never reach the renderer and
-      // conversationStatus would stick on whatever it was at toggle time.
+      // agent-output:<tabId> would never reach the renderer.
       listenToMessages(tabId, handle, runtimeDeps).catch((err: unknown) => {
         console.error(`[sessions] Unhandled error in listenToMessages for tab ${tabId}:`, err);
       });
@@ -726,7 +706,6 @@ export function createSessionsService(
       },
       sessionId,
       sessionStatus: 'starting',
-      conversationStatus: null,
       mode: 'tui',
       tui: null,
       tuiDetach: null,
@@ -785,21 +764,19 @@ export function createSessionsService(
       onInit: () => {
         // sessionId is already set on the handle; ignore CLI re-inits.
       },
-      onStatusChange: (status) => {
+      onStatusChange: (_status) => {
         // First JSONL line means the CLI has spun up — sessionStatus
-        // flips to 'started' here; subsequent calls just update the
-        // conversation axis.
-        setStatus(handle, { sessionStatus: 'started', conversationStatus: status }, tabId, sendToRenderer);
+        // flips to 'started' here. conversationStatus is now derived
+        // by the renderer from JSONL content.
+        setStatus(handle, { sessionStatus: 'started' }, tabId, sendToRenderer);
       },
     });
 
     // TUI cold-start: handle is up, CLI is being spawned, JSONL listener
     // attached. Once the CLI writes its first JSONL line, the listener's
-    // onStatusChange will flip us to started+idle/running. For now we're
-    // still 'starting' with no conversation.
+    // onStatusChange will flip us to started. For now we're 'starting'.
     sendToRenderer(`session-status:${tabId}`, {
       sessionStatus: 'starting',
-      conversationStatus: null,
     });
     sendToRenderer(`session-mode:${tabId}`, { mode: 'tui' });
   }

@@ -82,23 +82,15 @@ export interface SDKUserMessage {
  *  - error:    stream errored, kept alive for retry
  *  - stopped:  cleanly closed
  *
- * ConversationStatus is the turn axis ("the back-and-forth"). It must be
- * `null` whenever sessionStatus !== 'started' — a conversation with nothing
- * on the other end makes no sense.
- *  - idle:               no turn in flight; either side may speak next
- *  - running:            user message in flight or Claude generating
- *  - waiting_permission: Claude requested a tool; awaiting user approval
+ * ConversationStatus is now derived by the renderer from JSONL content +
+ * task/subagent stores (see src/lib/sessionDerivedState.ts). Main process
+ * owns sessionStatus only — the "is the CLI process up?" axis.
  */
 export type SessionStatus =
   | 'starting'
   | 'started'
   | 'error'
   | 'stopped';
-
-export type ConversationStatus =
-  | 'idle'
-  | 'running'
-  | 'waiting_permission';
 
 /**
  * Session backend toggle. `'rich'` is the structured engine-driven chat
@@ -184,34 +176,33 @@ export interface SessionsService {
    *  account main resolved (which may differ from the renderer's cached
    *  account-resolution snapshot). */
   getConfigDir(tabId: string): string | null;
-  getStatus(tabId: string): { sessionStatus: SessionStatus; conversationStatus: ConversationStatus | null };
+  getStatus(tabId: string): { sessionStatus: SessionStatus };
   getInfo(tabId: string): {
     sessionId: string | null;
     sessionStatus: SessionStatus;
-    conversationStatus: ConversationStatus | null;
   } | null;
   getHealth(tabId: string): {
     alive: boolean;
     sessionId: string | null;
     sessionStatus: SessionStatus;
-    conversationStatus: ConversationStatus | null;
   };
   isActive(tabId: string): boolean;
   /** Return all tab IDs that currently have a registered session handle. */
   listActiveTabIds(): string[];
-  /** Return tab IDs whose conversation is in-flight — conversationStatus
-   *  not idle (running or waiting_permission). Used by the installer to
-   *  gate auto-update so the user isn't interrupted mid-turn. Tabs whose
-   *  sessionStatus is 'starting'/'stopped'/'error' do NOT count.
-   *  See `docs/session-lifecycle.md`. */
+  /**
+   * Return tab IDs whose conversation is in-flight.
+   *
+   * TODO(jsonl-as-rendered): main no longer tracks conversationStatus — this
+   * always returns [] since Task 3 of the jsonl-as-rendered refactor. The
+   * wait-for-idle gate has moved to the renderer (see TODO.md for the
+   * follow-up). The function is kept for the installer's hot path until that
+   * follow-up lands.
+   */
   listInFlightTabIds(): string[];
-  /** Diagnostic: every registered session paired with both status axes.
-   *  The installer logs this on every gate poll so we can tell why the
-   *  gate cleared when the renderer thinks sessions are active. */
+  /** Diagnostic: every registered session. Installer logs this on gate polls. */
   listSessionStatuses(): {
     tabId: string;
     sessionStatus: SessionStatus;
-    conversationStatus: ConversationStatus | null;
   }[];
 
   // --- Wave 2: Query-method passthroughs ----------------------------------
@@ -358,11 +349,6 @@ export interface SessionHandle {
   sessionId: string | null;
   /** Connection axis. See docs/session-lifecycle.md. */
   sessionStatus: SessionStatus;
-  /**
-   * Turn axis. Must be `null` whenever sessionStatus !== 'started'.
-   * Enforced by `setStatus` in `./status.ts`.
-   */
-  conversationStatus: ConversationStatus | null;
   mode: SessionMode;
   tui: import('./tui').TuiSession | null;
   /** Cleanup hook that detaches the current tui's data/exit forwarders. */

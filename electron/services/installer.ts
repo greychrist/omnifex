@@ -22,7 +22,7 @@ export interface InstallStatus {
    * Surfaced on `phase: 'waiting'` events so the renderer / DevTools can
    * see exactly what the gate sees when the wait ends or skips.
    */
-  tabs?: { tabId: string; sessionStatus: string; conversationStatus: string | null }[];
+  tabs?: { tabId: string; sessionStatus: string }[];
 }
 
 export interface InstallerService {
@@ -40,19 +40,16 @@ export interface InstallerService {
 
 export interface InstallerDeps {
   sessionsService: {
-    /** Tabs whose conversation is in flight — `conversationStatus` is
-     *  non-null and non-idle (running / waiting_permission). Idle and
-     *  starting sessions are excluded so the installer doesn't block on
-     *  tabs that aren't mid-turn. See docs/session-lifecycle.md. */
+    /** Tab IDs whose conversation is in-flight. Since Task 3 of the
+     *  jsonl-as-rendered refactor, main always returns []; the renderer's
+     *  derived count (via tabStatusService) is authoritative. See TODO.md. */
     listInFlightTabIds: () => string[];
-    /** Diagnostic: every session main knows about, with both status axes,
-     *  whether or not it counts as "in-flight". Used by the gate to log a
+    /** Diagnostic: every session main knows about. Used by the gate to log a
      *  full snapshot when it polls / clears. Optional so existing callers
      *  (and tests) keep working. */
     listSessionStatuses?: () => {
       tabId: string;
       sessionStatus: string;
-      conversationStatus: string | null;
     }[];
     stopAll: () => void;
   };

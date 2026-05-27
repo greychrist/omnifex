@@ -135,3 +135,21 @@ Findings from a follow-up architecture audit run after v0.3.63. Verified in-repo
 
 ### Overall
 Top-level architecture is still healthy — main owns privileged work, preload is the IPC boundary, renderer stays in UI land. The drift is concentrated in three places: (1) config-scope correctness (6.1), (2) MCP contract consistency (6.2), (3) "which Claude binary are we actually using?" across features (6.3). 6.1 and 6.2 are real user-visible bugs, not future-debt — start there. 6.3 is a half-landed refactor (the dedicated service exists but isn't called) that gets worse the longer it sits.
+
+---
+
+## jsonl-as-rendered follow-ups (2026-05-27)
+
+### Task 3: installer wait-for-idle gate (option B — always empty)
+
+After Task 3 of the jsonl-as-rendered refactor (`refactor(ipc): drop conversationStatus from session-status payload`), `SessionsService.listInFlightTabIds()` always returns `[]` because main no longer tracks `conversationStatus`.
+
+The installer's `waitForIdle` gate in `electron/services/installer.ts` calls `listInFlightTabIds()`, which is now permanently empty — meaning auto-update will no longer block on an in-flight conversation.
+
+`electron/main.ts` partially addresses this by first checking `tabStatusService.busyTabIds()` (renderer-reported busy count from `tab_status_publish` IPC). If any tab has reported to the renderer, that count is authoritative. The gap is on cold start before any tab has reported — but in that scenario there are no in-flight conversations yet.
+
+**Option A (correct):** wire the gate to ask the renderer for its derived in-flight count via a new `installer_query_in_flight` IPC roundtrip. The renderer answers from its derived `conversationStatus` state.
+
+**Option B (chosen for now):** accept that auto-updates may fire mid-turn. Since OmniFex auto-updates are always user-initiated from the Settings panel, the user understands the consequence. Document this limitation.
+
+If Option A is later implemented, re-add a `listInFlightTabIds` implementation that delegates to the renderer via IPC and remove this TODO.

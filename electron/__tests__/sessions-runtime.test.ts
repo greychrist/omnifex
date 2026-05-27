@@ -80,7 +80,6 @@ function makeHandle(engine: AgentEngine): SessionHandle {
     },
     sessionId: 'sess-1',
     sessionStatus: 'started',
-    conversationStatus: 'idle',
     mode: 'rich',
     tui: null,
     tuiDetach: null,
@@ -143,7 +142,6 @@ describe('runtime.listenToMessages — engine.onError', () => {
     engine._emitError(new Error('any error'));
 
     expect(handle.sessionStatus).toBe('started');
-    expect(handle.conversationStatus).toBe('idle');
 
     const sendMock = vi.mocked(sendToRenderer);
     const statusCalls = sendMock.mock.calls.filter(
@@ -206,11 +204,10 @@ describe('runtime.listenToMessages — engine.onError', () => {
 
 describe('runtime.listenToMessages — hook lifecycle messages', () => {
   // SessionStart hooks emit system:hook_started / hook_progress / hook_response
-  // BEFORE the user sends any prompt. The FSM must not flip conversationStatus
-  // to 'running' on these — there's no real turn in flight, and no `result`
-  // will ever arrive to flip it back. Otherwise `listInFlightTabIds()` reports
-  // the tab as busy and the installer's wait-for-idle gate never opens.
-  it('does NOT flip conversationStatus to running on hook events', () => {
+  // BEFORE the user sends any prompt. The main process must not emit any
+  // session-status events on these — conversationStatus is now derived by
+  // the renderer from JSONL content, not by main from FSM transitions.
+  it('does NOT emit session-status events on hook events', () => {
     const engine = makeFakeEngine();
     const handle = makeHandle(engine);
     const sendToRenderer: SendToRenderer = vi.fn();
@@ -227,8 +224,6 @@ describe('runtime.listenToMessages — hook lifecycle messages', () => {
     engine._emitMessage({ type: 'system', subtype: 'hook_started', hook_event_name: 'SessionStart' });
     engine._emitMessage({ type: 'system', subtype: 'hook_progress', hook_event_name: 'SessionStart' });
     engine._emitMessage({ type: 'system', subtype: 'hook_response', hook_event_name: 'SessionStart' });
-
-    expect(handle.conversationStatus).toBe('idle');
 
     const statusCalls = vi.mocked(sendToRenderer).mock.calls.filter(
       (c) => c[0] === 'session-status:tab-1',

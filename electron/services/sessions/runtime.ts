@@ -95,10 +95,8 @@ function teardownJsonlTail(state: JsonlTailState): void {
  * and forgets — the promise just lets the listener loop be awaited if
  * needed.
  *
- * Status transitions are identical to the prior SDK-driven loop:
- *  - system:init    → sessionStatus='started', conversationStatus='idle'
- *  - turn / rate    → conversationStatus='running'
- *  - result         → conversationStatus='idle'  (after notification dispatch)
+ * Status transitions (sessionStatus axis only — conversationStatus is now
+ * derived by the renderer from JSONL content):
  *  - engine error   → sessionStatus='error'    (next send triggers restart)
  *  - engine exit    → sessionStatus='stopped'  (clean close)
  */
@@ -131,11 +129,8 @@ export function listenToMessages(
         case 'init':
           // The CLI emits `system:init` mid-turn AFTER the first user
           // message, NOT on spawn. By the time this fires, lifecycle has
-          // already flipped sessionStatus to 'started' from engine.start()
-          // resolution. We do NOT setStatus here — doing so would stomp
-          // conversationStatus from 'running' back to 'idle' mid-turn and
-          // flicker the loading indicator. Only capture catalog data
-          // (commands/models/agents/account) that arrives in this payload:
+          // already flipped sessionStatus to 'started'. Only capture catalog
+          // data (commands/models/agents/account) that arrives in this payload:
           if (!handle.initData) handle.initData = engine.getInitData();
           break;
         case 'rateLimit':
@@ -146,21 +141,18 @@ export function listenToMessages(
               console.error('[sessions] rate-limit hook failed:', err);
             }
           }
-          setStatus(handle, { conversationStatus: 'running' }, tabId, sendToRenderer);
           break;
         case 'compact':
         case 'turn':
-          setStatus(handle, { conversationStatus: 'running' }, tabId, sendToRenderer);
           break;
         case 'streamEvent':
           break;
         case 'hook':
           // SDK hook lifecycle (hook_started / hook_progress /
           // hook_response / user_prompt_submit). Forward to the renderer
-          // for display, but do NOT flip conversationStatus — SessionStart
-          // hooks fire BEFORE any user turn, and no `result` will arrive
-          // to flip it back. Letting this go through 'turn' is how the
-          // FSM gets stranded "running" on a fresh idle session.
+          // for display. No session-status event is emitted — conversationStatus
+          // is now derived by the renderer from JSONL content, not from FSM
+          // transitions in main.
           break;
         case 'result':
           // status flip after notification dispatch below
@@ -177,7 +169,7 @@ export function listenToMessages(
           sendToRenderer,
           notificationHooks,
         });
-        setStatus(handle, { conversationStatus: 'idle' }, tabId, sendToRenderer);
+        // conversationStatus is now derived by the renderer; no status flip needed.
       }
     }),
 
@@ -288,7 +280,7 @@ export function restartQuery(
     sessionId: handle.sessionId,
     resume,
   }).then(() => {
-    setStatus(handle, { sessionStatus: 'started', conversationStatus: 'idle' }, tabId, deps.sendToRenderer);
+    setStatus(handle, { sessionStatus: 'started' }, tabId, deps.sendToRenderer);
   }).catch((err: unknown) => {
     console.error(`[sessions] engine.start (restart) failed for tab ${tabId}:`, err);
     setStatus(handle, { sessionStatus: 'error' }, tabId, deps.sendToRenderer);

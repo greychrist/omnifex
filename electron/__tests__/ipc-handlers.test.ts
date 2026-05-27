@@ -1247,3 +1247,50 @@ describe('lima handlers', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Task 3 (jsonl-as-rendered): conversationStatus removed from IPC contract
+// ---------------------------------------------------------------------------
+
+describe('ipc handlers — conversationStatus removed from IPC contract (Task 3)', () => {
+  let services: ReturnType<typeof buildMockServices>;
+  let handlers: Record<string, any>;
+
+  beforeEach(() => {
+    services = buildMockServices();
+    // Override getHealth to return the new shape (no conversationStatus)
+    services.sessions.getHealth = vi.fn().mockReturnValue({
+      alive: true,
+      sessionId: 'sess-1',
+      sessionStatus: 'started',
+    });
+    handlers = getHandlerMap(services as any);
+  });
+
+  it('session_get_health does not include conversationStatus in the response', async () => {
+    const result = await invoke(handlers, 'session_get_health', { tabId: 'tab-1' }) as any;
+    expect(result).toHaveProperty('alive');
+    expect(result).toHaveProperty('sessionId');
+    expect(result).toHaveProperty('sessionStatus');
+    expect(result).not.toHaveProperty('conversationStatus');
+  });
+
+  it('session_get_health fallback (no service) does not include conversationStatus', async () => {
+    const noServiceHandlers = getHandlerMap();
+    const result = await invoke(noServiceHandlers, 'session_get_health', { tabId: 'tab-x' }) as any;
+    expect(result).toHaveProperty('alive', false);
+    expect(result).toHaveProperty('sessionStatus', 'stopped');
+    expect(result).not.toHaveProperty('conversationStatus');
+  });
+
+  it('session_get_info does not include conversationStatus when service returns it without the field', async () => {
+    services.sessions.getInfo = vi.fn().mockReturnValue({
+      sessionId: 'sess-2',
+      sessionStatus: 'started',
+    });
+    const result = await invoke(handlers, 'session_get_info', { tabId: 'tab-1' }) as any;
+    expect(result).toHaveProperty('sessionId', 'sess-2');
+    expect(result).toHaveProperty('sessionStatus', 'started');
+    expect(result).not.toHaveProperty('conversationStatus');
+  });
+});
+

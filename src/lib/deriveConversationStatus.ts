@@ -1,5 +1,6 @@
 import type { ClaudeStreamMessage } from '@/types/claudeStream';
-import type { SessionStatus, ConversationStatus } from '@/lib/api';
+import type { SessionStatus } from '@/lib/api';
+import type { ConversationStatus } from '@/lib/sessionDerivedState';
 
 /**
  * Top-level message types that don't represent conversational progress.

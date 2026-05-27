@@ -19,6 +19,7 @@ import type {
 
 interface InstrumentedEngine extends AgentEngine {
   __emitMessage(payload: unknown): void;
+  __emitPermission(req: AgentPermissionRequest): void;
   __messageSubscriberCount(): number;
 }
 
@@ -70,6 +71,9 @@ function createInstrumentedEngine(tabId: string): InstrumentedEngine {
         payload,
       };
       for (const cb of [...messageCbs]) cb(msg);
+    },
+    __emitPermission(req: AgentPermissionRequest) {
+      for (const cb of [...permissionCbs]) cb(req);
     },
     __messageSubscriberCount() {
       return messageCbs.length;
@@ -156,7 +160,9 @@ describe('setMode: rich → tui → rich round-trip', () => {
     );
   });
 
-  it('clears conversationStatus back to idle when a result arrives after rich → tui → rich', async () => {
+  it('re-attaches the engine listener after rich → tui → rich so result events reach the renderer', async () => {
+    // Regression: without listener re-attachment after tui→rich, the engine's
+    // stdout emits into the void — agent-output events never reach the renderer.
     const tabId = 'tab-roundtrip-status';
     const engine = createInstrumentedEngine(tabId);
     vi.mocked(createClaudeCliEngine).mockReturnValue(engine);
@@ -176,15 +182,18 @@ describe('setMode: rich → tui → rich round-trip', () => {
     await sessions.setMode(tabId, 'tui');
     await sessions.setMode(tabId, 'rich');
 
-    // User sends a message — optimistically flips conversationStatus to
-    // 'running'. Without re-attached listeners, the result event never
-    // fires the idle flip, leaving the session stuck "in flight" forever.
-    sessions.sendMessage(tabId, 'hello');
-    expect(sessions.listInFlightTabIds()).toContain(tabId);
+    // listInFlightTabIds always returns [] after Task 3 (conversationStatus
+    // tracking moved to the renderer). Verify the engine listeners ARE
+    // re-attached by checking that result messages reach the renderer.
+    expect(sessions.listInFlightTabIds()).toEqual([]);
 
+    sessions.sendMessage(tabId, 'hello');
     engine.__emitMessage({ type: 'result', subtype: 'success' });
 
-    expect(sessions.listInFlightTabIds()).not.toContain(tabId);
+    expect(sendToRenderer).toHaveBeenCalledWith(
+      `agent-output:${tabId}`,
+      expect.objectContaining({ type: 'result' }),
+    );
   });
 
   it('passes resume:false on tui → rich when the CLI never wrote a JSONL for this sessionId', async () => {
@@ -251,5 +260,55 @@ describe('setMode: rich → tui → rich round-trip', () => {
     await sessions.setMode(tabId, 'rich');
 
     expect(engine.start).toHaveBeenCalledWith(expect.objectContaining({ resume: true }));
+  });
+});
+
+describe('setMode: permission queue drain guard', () => {
+  it('drains a pending permission with deny so the resolver does not dangle', async () => {
+    // Regression guard: if the renderer's modeToggleDisabled gate is bypassed
+    // (e.g. via a programmatic IPC call) while a permission is queued, setMode
+    // must drain the queue instead of leaving resolvers dangling.
+    const tabId = 'tab-perm-drain';
+    const engine = createInstrumentedEngine(tabId);
+    vi.mocked(createClaudeCliEngine).mockReturnValue(engine);
+
+    const sendToRenderer = vi.fn();
+    const sessions = createSessionsService(sendToRenderer);
+
+    sessions.start({
+      tabId,
+      projectPath: '/Users/test/proj',
+      configDir: tmpConfig,
+      model: '',
+      permissionMode: '', // → 'default' → queues the permission
+      mode: 'rich',
+    });
+
+    // Fire a permission request through the engine. Under 'default' mode this
+    // pushes an entry onto the permissionQueue and emits agent-output to the
+    // renderer. The PendingPermission.resolve is a no-op in the real engine
+    // flow — what we care about is that the queue is emptied and setMode
+    // completes without throwing.
+    engine.__emitPermission({
+      agent: 'claude',
+      requestId: 'req-drain-1',
+      kind: 'tool',
+      summary: 'Bash',
+      payload: { tool_name: 'Bash', input: { command: 'ls' } },
+    });
+
+    // Queue has one entry — confirm via the IPC emission.
+    expect(sendToRenderer).toHaveBeenCalledWith(
+      `agent-output:${tabId}`,
+      expect.objectContaining({ type: 'permission_request', request_id: 'req-drain-1' }),
+    );
+
+    // setMode should drain the queue and succeed without throwing.
+    await expect(sessions.setMode(tabId, 'tui')).resolves.toBeUndefined();
+
+    // After the drain, respondPermission is a no-op (queue is empty).
+    // Verify by calling it and checking engine.respondPermission was NOT called.
+    sessions.respondPermission(tabId, 'allow');
+    expect(engine.respondPermission).not.toHaveBeenCalled();
   });
 });

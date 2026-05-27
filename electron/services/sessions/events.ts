@@ -25,10 +25,10 @@ export interface RateLimitInfo {
  *   delta, only emitted when `includePartialMessages` is true.
  * - `hook`: SDK hook lifecycle (hook_started / hook_progress /
  *   hook_response / user_prompt_submit). Fires on SessionStart BEFORE
- *   any user turn — must NOT flip conversationStatus to 'running', or
- *   the session is stranded "working" forever (no result will arrive).
+ *   any user turn — forwarded to the renderer but no session-status
+ *   event is emitted (conversationStatus derivation is the renderer's job).
  * - `turn`: anything else mid-turn (assistant text, tool_use, tool_result,
- *   non-hook system events, etc.). Status flips to 'running'.
+ *   non-hook system events, etc.).
  */
 export type RuntimeEvent =
   | { kind: 'init'; sessionId: string | null }

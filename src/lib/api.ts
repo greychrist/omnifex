@@ -575,14 +575,15 @@ export type SessionStatus =
   | 'stopped';
 
 /**
- * Turn axis of the session. Must be `null` whenever sessionStatus !==
- * 'started'. Mirrors `ConversationStatus` in
- * `electron/services/sessions/types.ts`.
+ * Turn axis of the session. Derived by the renderer from JSONL content +
+ * task/subagent stores (see src/lib/sessionDerivedState.ts). Defined here
+ * for renderer components that still need the type; the main process no longer
+ * produces or tracks this value.
+ *
+ * @deprecated Import from `src/lib/sessionDerivedState.ts` instead. This
+ *   re-export will be removed once all renderer imports are migrated.
  */
-export type ConversationStatus =
-  | 'idle'
-  | 'running'
-  | 'waiting_permission';
+export type ConversationStatus = import('./sessionDerivedState').ConversationStatus;
 
 export interface LogQueryFilters {
   /** Any of these log levels (OR-joined). Omit to match all levels. */
@@ -1115,13 +1116,11 @@ export const api = {
     alive: boolean;
     sessionId: string | null;
     sessionStatus: SessionStatus;
-    conversationStatus: ConversationStatus | null;
   }> {
     return apiCall("session_get_health", { tabId }) as Promise<{
       alive: boolean;
       sessionId: string | null;
       sessionStatus: SessionStatus;
-      conversationStatus: ConversationStatus | null;
     }>;
   },
 
@@ -2349,7 +2348,8 @@ export const api = {
 
   /**
    * Subscribe to live changes in the count of sessions whose SDK turn is
-   * currently in flight (`'starting' | 'running' | 'waiting_permission'`).
+   * currently in flight — derived as `sessionStatus === 'starting'` or
+   * `conversationStatus === 'running'`.
    * Used by the titlebar to surface a warning on the upgrade button before
    * the user clicks install.
    */

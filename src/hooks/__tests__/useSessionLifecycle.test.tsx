@@ -29,7 +29,7 @@ vi.mock('@/lib/api', () => ({
     startSession: vi.fn(),
     stopSession: vi.fn().mockResolvedValue(undefined),
     sessionRebind: vi.fn().mockResolvedValue(false),
-    sessionGetHealth: vi.fn().mockResolvedValue({ alive: false, sessionId: null, sessionStatus: 'stopped', conversationStatus: null }),
+    sessionGetHealth: vi.fn().mockResolvedValue({ alive: false, sessionId: null, sessionStatus: 'stopped' }),
     sessionAccountInfo: vi.fn().mockResolvedValue(null),
     sessionSupportedModels: vi.fn().mockResolvedValue([]),
     sessionSupportedCommands: vi.fn().mockResolvedValue([]),
@@ -312,7 +312,7 @@ describe('useSessionLifecycle — rebindPersistentSession', () => {
   it('returns true, attaches listeners, sets persistent flag, and seeds sessionStatus from sessionGetHealth when rebind succeeds', async () => {
     (api.sessionRebind as any).mockResolvedValueOnce(true);
     (api.sessionGetHealth as any).mockResolvedValueOnce({
-      alive: true, sessionId: 'uuid-warm', sessionStatus: 'started', conversationStatus: 'idle',
+      alive: true, sessionId: 'uuid-warm', sessionStatus: 'started',
     });
     // No messages → waitingOnClaude([]) = false, no tasks/subagents → derived 'idle'.
     const { result } = renderHook(harness());
@@ -395,7 +395,7 @@ describe('useSessionLifecycle — event listener behavior', () => {
     expect(result.current.persistentSessionRef.current).toBe(true);
 
     // Main emits stopped status first; renderer reflects it.
-    act(() => { eventListeners['session-status:tab-life']({ sessionStatus: 'stopped', conversationStatus: null }); });
+    act(() => { eventListeners['session-status:tab-life']({ sessionStatus: 'stopped' }); });
     expect(result.current.lifecycle.sessionStatus).toBe('stopped');
     expect(result.current.lifecycle.conversationStatus).toBeNull();
 
@@ -458,7 +458,6 @@ describe('useSessionLifecycle — session-init event', () => {
       alive: true,
       sessionId: 'uuid-warm',
       sessionStatus: 'started',
-      conversationStatus: 'idle',
     });
     const onSessionInit = vi.fn();
     const { result } = renderHook(harness({ onSessionInit }));
@@ -614,10 +613,11 @@ describe('useSessionLifecycle — sessionStatus + conversationStatus', () => {
     await act(async () => { await result.current.lifecycle.startPersistentSession(); });
 
     act(() => {
-      // Emit sessionStatus='started' with conversationStatus='idle' in the payload.
-      // The hook should discard the payload's conversationStatus and return
-      // 'running' (derived from the user-prompt-with-no-reply messages).
-      eventListeners['session-status:tab-life']({ sessionStatus: 'started', conversationStatus: 'idle' });
+      // Emit sessionStatus='started'. The wire format no longer carries
+      // conversationStatus — the hook derives it locally from messages.
+      // Expect 'running' (derived from the user-prompt-with-no-reply messages),
+      // NOT any stale value that an older main-process payload might have sent.
+      eventListeners['session-status:tab-life']({ sessionStatus: 'started' });
     });
     expect(result.current.lifecycle.sessionStatus).toBe('started');
     // Derived from messages (user prompt, no assistant) → 'running', NOT 'idle' from payload.

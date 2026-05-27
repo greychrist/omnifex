@@ -1,9 +1,9 @@
 import { useRef, useEffect, useState, useMemo } from "react";
-import { api, type AgentKind, type SessionMode, type SessionStatus, type ConversationStatus } from "@/lib/api";
+import { api, type AgentKind, type SessionMode, type SessionStatus } from "@/lib/api";
 import type { ClaudeStreamMessage } from "@/types/claudeStream";
 import type { JsonlNode } from "@/types/jsonl";
 import type { EffortLevel, ThinkingConfig } from "@/components/FloatingPromptInput";
-import { conversationStatus as deriveConversationStatus } from "@/lib/sessionDerivedState";
+import { conversationStatus as deriveConversationStatus, type ConversationStatus } from "@/lib/sessionDerivedState";
 
 /** Filter out noisy stderr messages that aren't real errors. */
 function isIgnorableStderr(msg: string): boolean {
@@ -182,8 +182,8 @@ interface UseSessionLifecycleReturn {
    * Turn axis. Null whenever `sessionStatus !== 'started'`. Derived from
    * `messages`, `tasks`, and `subagents` via `sessionDerivedState.conversationStatus`
    * rather than read from the IPC payload. The `conversationStatus` field on
-   * `session-status:<tabId>` events is discarded (Task 3 will remove it from
-   * the IPC contract entirely).
+   * `session-status:<tabId>` events is discarded — main no longer emits it
+   * (Task 3 removed it from the IPC contract).
    */
   conversationStatus: ConversationStatus | null;
   /**
@@ -225,8 +225,8 @@ export function useSessionLifecycle({
   );
 
   // `conversationStatus` is now derived, not stored. The `conversationStatus`
-  // field on `session-status:<tabId>` IPC events is discarded — this is the
-  // renderer-side half of the Task 2 split. The IPC contract is removed in Task 3.
+  // field on `session-status:<tabId>` IPC events was removed from the IPC
+  // contract in Task 3 (jsonl-as-rendered refactor).
   const resetStatus = (next: { sessionStatus: SessionStatus; conversationStatus: ConversationStatus | null }) => {
     // `next.conversationStatus` is accepted for back-compat but ignored —
     // the turn axis is now computed from messages/tasks/subagents.

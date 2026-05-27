@@ -1,5 +1,16 @@
 import type { JsonlNode } from '@/types/jsonl';
 
+/**
+ * Turn axis of the session — derived by the renderer from JSONL content +
+ * task/subagent stores. 'waiting_permission' from the old FSM is collapsed
+ * into 'running' (the permission card is still present in JSONL as an open
+ * task entry while it is pending).
+ *
+ * This type lives in sessionDerivedState.ts (not api.ts) because the main
+ * process no longer produces or tracks it — it is renderer-only state.
+ */
+export type ConversationStatus = 'idle' | 'running';
+
 const TERMINAL_STOP_REASONS = new Set([
   'end_turn',
   'stop_sequence',

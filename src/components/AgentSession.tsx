@@ -1643,9 +1643,9 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
 
   // Three-state display badge (legacy) derived from the canonical
   // SessionStatus enum + `sessionStarted` (has-the-user-ever-engaged).
-  // 6→3 collapse: starting → 'starting'; idle/running/waiting_permission →
-  // 'active'; stopped/error → 'ended'. Renamed from `sessionStatus` to
-  // avoid colliding with the hook's canonical name.
+  // 5→3 collapse: 'starting' | 'started' (session) + 'idle' | 'running'
+  // (conversation) + null → 'starting' | 'active' | 'ended'. Renamed from
+  // `sessionStatus` to avoid colliding with the hook's canonical name.
   const displayStatus: 'starting' | 'active' | 'ended' | undefined =
     !sessionStarted
       ? undefined

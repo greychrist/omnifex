@@ -243,8 +243,8 @@ describe('InstallerService.waitForIdle diagnostic snapshot', () => {
       sessionsService: {
         listInFlightTabIds: () => active > 0 ? ['t-1'] : [],
         listSessionStatuses: () => [
-          { tabId: 't-1', sessionStatus: 'started', conversationStatus: 'running' },
-          { tabId: 't-2', sessionStatus: 'started', conversationStatus: 'idle' },
+          { tabId: 't-1', sessionStatus: 'started' },
+          { tabId: 't-2', sessionStatus: 'started' },
         ],
         stopAll: () => {},
       },
@@ -255,8 +255,8 @@ describe('InstallerService.waitForIdle diagnostic snapshot', () => {
     const waitingCalls = sendToRenderer.mock.calls.filter((c) => c[1].phase === 'waiting');
     expect(waitingCalls.length).toBeGreaterThan(0);
     expect(waitingCalls[0][1].tabs).toEqual([
-      { tabId: 't-1', sessionStatus: 'started', conversationStatus: 'running' },
-      { tabId: 't-2', sessionStatus: 'started', conversationStatus: 'idle' },
+      { tabId: 't-1', sessionStatus: 'started' },
+      { tabId: 't-2', sessionStatus: 'started' },
     ]);
   });
 });

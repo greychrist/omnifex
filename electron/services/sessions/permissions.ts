@@ -13,7 +13,6 @@ import type {
   PersistPermissionRuleFn,
 } from './types';
 import type { AgentPermissionRequest } from '../agents/types';
-import { setStatus } from './status';
 
 function currentPermissionMode(handle: SessionHandle): string {
   return handle.permissionMode || 'default';
@@ -303,7 +302,7 @@ export function createPermissionRequestHandler(
     handle.permissionQueue.push(entry);
 
     if (handle.permissionQueue.length === 1) {
-      setStatus(handle, { conversationStatus: 'waiting_permission' }, tabId, sendToRenderer);
+      // conversationStatus is now derived by the renderer; no setStatus call needed.
       sendToRenderer(`agent-output:${tabId}`, payload);
 
       const projectName = path.basename(handle.projectPath) || 'OmniFex';
@@ -442,7 +441,7 @@ export function createPermissionRequestHandler(
 
     // If this is the only item in the queue, show it immediately.
     if (handle.permissionQueue.length === 1) {
-      setStatus(handle, { conversationStatus: 'waiting_permission' }, tabId, sendToRenderer);
+      // conversationStatus is now derived by the renderer; no setStatus call needed.
       sendToRenderer(`agent-output:${tabId}`, payload);
 
       const projectName = path.basename(handle.projectPath) || 'OmniFex';
@@ -584,10 +583,7 @@ export function respondPermission(
     } catch (e) {
       console.error('[sessions] permission notification hook failed:', e);
     }
-  } else {
-    // Queue drained — back to running until the SDK emits its 'result'
-    // for this turn, at which point runtime.ts flips to 'idle'.
-    setStatus(handle, { conversationStatus: 'running' }, tabId, sendToRenderer);
   }
+  // Queue drained — conversationStatus is now derived by the renderer.
 }
 
