@@ -197,7 +197,7 @@ export function createCodexCliEngine(
         : {};
     // respondToServer is synchronous in the JSON-RPC client; the `async`
     // here is just to match the AgentEngine interface signature.
-    rpc.respondToServer(requestId, { result: { decision, ...extra } });
+    rpc.respondToServer(requestId, { result: { ...extra, decision } });
   }
   async function interrupt(): Promise<void> {
     throw new Error('CodexCliEngine.interrupt: not yet wired');
