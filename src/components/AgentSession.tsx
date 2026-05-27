@@ -20,7 +20,7 @@ import { NewSessionForm } from "./NewSessionForm";
 import { AccountPickerDialog } from "./AccountPickerDialog";
 import { CodexSignInModal } from "@/components/codex/CodexSignInModal";
 import { useCodexAuthStatus } from "@/hooks/useCodexAuthStatus";
-import { StreamMessage } from "./StreamMessage";
+import { ClaudeTranscript } from "@/components/claude/ClaudeTranscript";
 import {
   FloatingPromptInput,
   type FloatingPromptInputRef,
@@ -55,9 +55,6 @@ import { SessionViewToggle, type ViewMode } from "./SessionViewToggle";
 import { TuiSessionLayout } from './TuiSessionLayout';
 import { createTuiPromptHandler } from '@/lib/tuiPromptHandler';
 import { deriveConversationStatus } from '@/lib/deriveConversationStatus';
-import { HiddenEventsGroup } from "./HiddenEventsGroup";
-import { buildCompactItems } from "@/lib/compactGrouping";
-import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
 import { HeaderLabel } from "./HeaderLabel";
 import { AccountCard } from "./AccountCard";
 import { SessionCard } from "./SessionCard";
@@ -65,15 +62,12 @@ import { GitBranchBadge } from "./claude-code-session/GitBranchBadge";
 import { GitWatchStatusIcon } from "./claude-code-session/GitWatchStatusIcon";
 import { resolveBranchColors } from '@/lib/branchColors';
 import type { BranchColor } from '@/lib/api';
-import { filterDisplayableMessages } from "@/lib/messageFilters";
 import { deriveSubagents, createSubagentColorAllocator } from "@/lib/subagentStreams";
 import { getTaskList, summarizeTaskList } from "@/lib/taskList";
 import { SubagentBar } from "./SubagentBar";
 import { TaskList } from "./TaskList";
 import { fireAndLog, logAndForget } from "@/lib/fireAndLog";
 import { decideAutoStart } from "@/lib/sessionAutoStart";
-import { FindBar } from "./FindBar";
-import { useFindInChat } from "@/hooks/useFindInChat";
 import { exportAsJsonl, exportAsMarkdown } from "@/lib/sessionExporters";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useSessionLifecycle } from "@/hooks/useSessionLifecycle";
@@ -83,7 +77,6 @@ import { useTabContext } from "@/contexts/TabContext";
 // Virtualizer removed — flat list for reliable scrolling
 import { SessionPersistenceService } from "@/services/sessionPersistence";
 import { clearInflightBuffer } from "@/lib/inflightCoalescer";
-import { InflightAssistantBubble } from "./InflightAssistantBubble";
 import { useTabSession, useClaudeSessionStore } from "@/stores/claudeSessionStore";
 import type { PermissionSuggestion } from "@/lib/types/permissionRequest";
 
@@ -107,7 +100,7 @@ const HEADER_HEIGHT_KEY = 'omnifex.session-header-height';
 const MIN_HEADER_HEIGHT = 60;
 const MAX_HEADER_HEIGHT = 600;
 
-interface ClaudeCodeSessionProps {
+interface AgentSessionProps {
   /**
    * Optional session to resume (when clicking from SessionList)
    */
@@ -165,9 +158,12 @@ interface ClaudeCodeSessionProps {
 }
 
 /**
- * ClaudeCodeSession component for interactive Claude Code sessions.
+ * AgentSession — the chrome around a live agent session (Claude today, Codex
+ * in the future). Owns project/session lifecycle, account resolution, prompt
+ * input, status bar, and the side panels. The per-agent transcript body is
+ * delegated to a transcript component (currently `ClaudeTranscript`).
  */
-export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
+export const AgentSession: React.FC<AgentSessionProps> = ({
   session,
   initialProjectPath = "",
   tabId,
@@ -539,14 +535,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     url?: string;
   } | null>(null);
 
-  const parentRef = useRef<HTMLDivElement>(null);
-  // Find-in-chat state. Cmd/Ctrl+F opens the floating FindBar; `useFindInChat`
-  // walks `contentRef` (the messages list, not the scroll wrapper) and wraps
-  // matches in <mark data-find>. transcriptVersion bumps on each new message
-  // so highlights stay fresh while streaming. See FindBar.tsx +
-  // useFindInChat.ts + docs/superpowers/specs/2026-05-11-find-in-chat-design.md.
-  const [findOpen, setFindOpen] = useState(false);
-  const [findQuery, setFindQuery] = useState('');
   const persistentSessionRef = useRef(false);
   // Live mirror of `isLoading` for call-time reads inside useSendPrompt's
   // queue gate. The drain path holds onto a captured handleSendPrompt
@@ -634,18 +622,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     }
     return null;
   }, [session, extractedSessionInfo, projectPath]);
-
-  // Compact mode honors per-kind `hiddenInCompact` natively in the grouper —
-  // hidden messages flow into HiddenEventsGroup expanders rather than being
-  // pre-filtered, so opening any expander reveals everything that was hidden.
-  const { config: renderConfig } = useMessageRenderingConfig();
-
-  // Filter out messages that shouldn't be displayed (honors the user's
-  // hard-filter toggles in Appearance settings).
-  const displayableMessages = useMemo(
-    () => filterDisplayableMessages(messages, renderConfig.hardFilters),
-    [messages, renderConfig.hardFilters],
-  );
 
   // Subagent (background task) state, derived from the raw stream.
   // Rendered above the prompt input so parallel Agent/Task dispatches are visible.
@@ -737,67 +713,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   useEffect(() => {
     onStreamingChangeRef.current?.(isLoading, claudeSessionId);
   }, [isLoading, claudeSessionId]);
-
-  // Auto-scroll to bottom when new messages arrive, but only if already near the bottom.
-  // Always scroll when waiting for permission so the user sees the latest context.
-  // Uses `behavior: 'auto'` (instant) during streaming — smooth scroll lags behind
-  // rapid SDK message bursts and gets visually "stuck" mid-scroll.
-  useEffect(() => {
-    if (displayableMessages.length > 0 && (isNearBottomRef.current || waitingForPermission)) {
-      requestAnimationFrame(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' });
-      });
-    }
-  }, [displayableMessages.length, waitingForPermission]);
-
-  // Second-order auto-scroll: watch the message-list container for height changes
-  // that don't coincide with a new message arriving. Without this, rendering a
-  // large code block, a syntax-highlighted diff, or a lazy-loading image pushes
-  // content below the viewport AFTER the length-change effect already fired, and
-  // the chat looks "stuck" a few hundred pixels above the real bottom.
-  const contentRef = useRef<HTMLDivElement>(null);
-
-  // Cmd/Ctrl+F → open the find bar. Esc inside the bar closes it (handled by
-  // FindBar itself). Listener is scoped to window because focus may be on
-  // the FloatingPromptInput when the user wants to find — we want the
-  // shortcut to work regardless. Bound only while the session is mounted.
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'f') {
-        e.preventDefault();
-        setFindOpen(true);
-      }
-    };
-    window.addEventListener('keydown', handler);
-    return () => { window.removeEventListener('keydown', handler); };
-  }, []);
-
-  const findResults = useFindInChat({
-    containerRef: contentRef,
-    query: findQuery,
-    isOpen: findOpen,
-    // Messages array grows on every stream tick; using `.length` as the
-    // version keeps the highlight count fresh without needing a separate
-    // counter. A wholesale-reload would also bump it.
-    transcriptVersion: messages.length,
-  });
-
-  useEffect(() => {
-    const contentEl = contentRef.current;
-    const scrollEl = parentRef.current;
-    if (!contentEl || !scrollEl || typeof ResizeObserver === 'undefined') return;
-
-    const observer = new ResizeObserver(() => {
-      if (isNearBottomRef.current || waitingForPermission) {
-        // Direct scrollTop assignment — cheaper than scrollIntoView and doesn't
-        // fight the smooth-scroll animation the length-change effect may have
-        // just kicked off in the same frame.
-        scrollEl.scrollTop = scrollEl.scrollHeight;
-      }
-    });
-    observer.observe(contentEl);
-    return () => { observer.disconnect(); };
-  }, [waitingForPermission]);
 
   // Calculate total tokens from messages — guard against undefined fields to avoid NaN
   useEffect(() => {
@@ -1589,168 +1504,23 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     }
   };
 
-  const scrollToTop = useCallback(() => {
-    parentRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
-  }, []);
-
-  const scrollToBottom = useCallback(() => {
-    const el = parentRef.current;
-    if (!el) return;
-    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
-  }, []);
-
-  const handleScroll = useCallback(() => {
-    const el = parentRef.current;
-    if (!el) return;
-    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    // Two-threshold hysteresis to prevent false "user scrolled up" detection.
-    // Wider-than-you'd-expect thresholds so content-height jitter (code blocks
-    // finishing layout, images loading) doesn't disengage stickiness, and the
-    // user has real room to scroll back without the view yanking to the bottom:
-    // - Within 400px: near bottom, keep auto-scrolling
-    // - Beyond 800px: user is reading history, stop auto-scrolling
-    // - 400–800px: dead zone (no state change)
-    if (distanceFromBottom < 400) {
-      isNearBottomRef.current = true;
-    } else if (distanceFromBottom > 800) {
-      isNearBottomRef.current = false;
-    }
-  }, []);
-
   const messagesList = (
-    <div className="flex-1 min-h-0 px-10 py-2 bg-muted/30 relative">
-    {findOpen && (
-      <FindBar
-        query={findQuery}
-        onQueryChange={setFindQuery}
-        count={findResults.count}
-        activeIndex={findResults.activeIndex}
-        onNext={findResults.next}
-        onPrev={findResults.prev}
-        onClose={() => { setFindOpen(false); setFindQuery(''); }}
-      />
-    )}
-    <div className="absolute right-1 bottom-6 z-10 flex flex-col gap-1">
-      <TooltipSimple content="Scroll to top" side="left">
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={scrollToTop}
-          className="h-8 w-8 hover:bg-accent/50 transition-colors bg-background/80 backdrop-blur-sm border border-border/50"
-        >
-          <ChevronUp className="h-3.5 w-3.5" />
-        </Button>
-      </TooltipSimple>
-      <TooltipSimple content="Scroll to bottom" side="left">
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={scrollToBottom}
-          className="h-8 w-8 hover:bg-accent/50 transition-colors bg-background/80 backdrop-blur-sm border border-border/50"
-        >
-          <ChevronDown className="h-3.5 w-3.5" />
-        </Button>
-      </TooltipSimple>
-    </div>
-    <div
-      ref={parentRef}
-      className="h-full overflow-y-auto relative border border-border/50 rounded-lg bg-background"
-      onScroll={handleScroll}
-      style={{
-        contain: 'paint',
-      }}
-    >
-      <div ref={contentRef} className="w-full px-4 pt-8 pb-4 space-y-4">
-          {viewMode === 'verbose'
-            ? displayableMessages.map((message, idx) => (
-                <div key={idx}>
-                  <StreamMessage
-                    message={message}
-                    streamMessages={messages}
-                    onLinkDetected={handleLinkDetected}
-                    accountType={accountResolution?.account.account_type}
-                    onResend={onResendStable}
-                  />
-                </div>
-              ))
-            : (() => {
-                const items = buildCompactItems(displayableMessages, renderConfig);
-                return items.map((item) =>
-                  item.kind === 'single' ? (
-                    <div key={item.key}>
-                      <StreamMessage
-                        message={item.message}
-                        streamMessages={messages}
-                        onLinkDetected={handleLinkDetected}
-                        accountType={accountResolution?.account.account_type}
-                        compact
-                        onResend={onResendStable}
-                      />
-                    </div>
-                  ) : (
-                    <HiddenEventsGroup
-                      key={item.key}
-                      messages={item.messages}
-                      streamMessages={messages}
-                      accountType={accountResolution?.account.account_type}
-                      onLinkDetected={handleLinkDetected}
-                      onResend={onResendStable}
-                    />
-                  ),
-                );
-              })()}
-
-          {/* Streaming bubble — renders null when no in-flight slot is set. */}
-          <InflightAssistantBubble tabId={tabIdRef.current} />
-
-          {/* Loading indicator under the latest message — iMessage-style typing bubble.
-              Rendered inside contentRef (and before messagesEndRef) so the ResizeObserver
-              on contentRef catches its appearance/height changes, and scrollIntoView on
-              messagesEndRef scrolls past it instead of leaving it below the viewport.
-              Also kept visible during awaiting_background so the visual "in-flight"
-              cue bridges the parent's turn-end result to the eventual completion. */}
-          {outstandingWork && !hasInflightAssistant && (
-            <motion.div
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.15 }}
-              className="flex justify-start mb-20"
-            >
-              <div className="max-w-[95%] space-y-2">
-                <div className="flex items-center gap-3">
-                  <div className="inline-flex items-center gap-1 rounded-2xl rounded-bl-sm bg-primary/10 border border-primary/20 px-4 py-3">
-                    <span className="typing-dot" />
-                    <span className="typing-dot" style={{ animationDelay: '0.15s' }} />
-                    <span className="typing-dot" style={{ animationDelay: '0.3s' }} />
-                  </div>
-                  <div className="flex items-baseline gap-2 text-xs font-mono">
-                    <span className="text-primary">✶</span>
-                    <span className="text-muted-foreground">{currentActivity}...</span>
-                    <span className="text-muted-foreground/60">
-                      (↓ {totalTokens.toLocaleString()} tokens)
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </motion.div>
-          )}
-
-          {/* Error indicator */}
-          {error && (
-            <motion.div
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.15 }}
-              className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive mb-20 w-full max-w-6xl mx-auto"
-            >
-              {error}
-            </motion.div>
-          )}
-
-          <div ref={messagesEndRef} />
-      </div>
-    </div>
-    </div>
+    <ClaudeTranscript
+      messages={messages}
+      viewMode={viewMode}
+      accountType={accountResolution?.account.account_type}
+      onResend={onResendStable}
+      onLinkDetected={handleLinkDetected}
+      waitingForPermission={waitingForPermission}
+      outstandingWork={outstandingWork}
+      hasInflightAssistant={hasInflightAssistant}
+      currentActivity={currentActivity}
+      totalTokens={totalTokens}
+      error={error}
+      tabId={tabIdRef.current}
+      messagesEndRef={messagesEndRef}
+      isNearBottomRef={isNearBottomRef}
+    />
   );
 
 

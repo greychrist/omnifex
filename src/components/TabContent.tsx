@@ -21,7 +21,7 @@ import { useCodexAuthStatus } from '@/hooks/useCodexAuthStatus';
 import { fireAndLog, logAndForget } from "@/lib/fireAndLog";
 
 // Lazy load heavy components
-const ClaudeCodeSession = lazy(() => import('@/components/ClaudeCodeSession').then(m => ({ default: m.ClaudeCodeSession })));
+const AgentSession = lazy(() => import('@/components/AgentSession').then(m => ({ default: m.AgentSession })));
 const UsageDashboard = lazy(() => import('@/components/UsageDashboard').then(m => ({ default: m.UsageDashboard })));
 const MCPManager = lazy(() => import('@/components/MCPManager').then(m => ({ default: m.MCPManager })));
 const Settings = lazy(() => import('@/components/Settings').then(m => ({ default: m.Settings })));
@@ -550,7 +550,7 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
       case 'chat':
         return (
           <div className="h-full">
-            <ClaudeCodeSession
+            <AgentSession
               session={tab.sessionData} // Pass the full session object if available
               initialProjectPath={tab.initialProjectPath || ''}
               tabId={tab.id}
