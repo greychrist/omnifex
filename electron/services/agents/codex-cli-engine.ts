@@ -38,6 +38,43 @@ export function createCodexCliEngine(
   let conversationId: string | null = null;
   const exitCallbacks: Array<(info: AgentEngineExit) => void> = [];
   const errorCallbacks: Array<(err: Error) => void> = [];
+  const permissionCallbacks: Array<(r: AgentPermissionRequest) => void> = [];
+
+  function emitPermission(r: AgentPermissionRequest): void {
+    for (const cb of permissionCallbacks) {
+      try { cb(r); } catch { /* one bad handler shouldn't poison the rest */ }
+    }
+  }
+
+  function handleServerRequest(method: string, params: unknown, id: string | number): void {
+    if (method === 'applyPatchApproval') {
+      emitPermission({
+        agent: 'codex',
+        requestId: String(id),
+        kind: 'patch',
+        summary: 'Apply patch',
+        payload: params,
+      });
+    } else if (method === 'execCommandApproval') {
+      const p = (params ?? {}) as { command?: unknown };
+      const cmd = typeof p.command === 'string' ? p.command : '<unknown>';
+      emitPermission({
+        agent: 'codex',
+        requestId: String(id),
+        kind: 'exec',
+        summary: `Run: ${cmd}`,
+        payload: params,
+      });
+    } else {
+      // Unknown server-initiated method — respond with method-not-handled so
+      // the server doesn't hang waiting for a response.
+      if (rpc !== null) {
+        rpc.respondToServer(id, {
+          error: { code: -32601, message: `Method not handled: ${method}` },
+        });
+      }
+    }
+  }
 
   async function start(p: AgentStartParams): Promise<void> {
     if (child !== null) {
@@ -94,11 +131,10 @@ export function createCodexCliEngine(
       rpc = createJsonRpcClient({
         readable: child.stdout,
         writable: child.stdin,
-        // Tasks 6 (approvals) and 7 (notifications) fill these in. For Task 4
-        // they're no-ops — the handshake only needs the response side of the
-        // client, which is always handled internally.
+        // Task 7 wires onNotification. Task 6 wires onServerRequest for
+        // applyPatchApproval / execCommandApproval round-trips.
         onNotification: () => {},
-        onServerRequest: () => {},
+        onServerRequest: handleServerRequest,
       });
 
       if (p.resume) {
@@ -148,11 +184,20 @@ export function createCodexCliEngine(
     throw new Error('CodexCliEngine.sendControlRequest: not yet wired');
   }
   async function respondPermission(
-    _requestId: string,
-    _decision: 'allow' | 'deny',
-    _payload?: unknown,
+    requestId: string,
+    decision: 'allow' | 'deny',
+    payload?: unknown,
   ): Promise<void> {
-    throw new Error('CodexCliEngine.respondPermission: not yet wired');
+    if (rpc === null) {
+      throw new Error('CodexCliEngine.respondPermission: RPC client not initialized');
+    }
+    const extra =
+      payload && typeof payload === 'object'
+        ? (payload as Record<string, unknown>)
+        : {};
+    // respondToServer is synchronous in the JSON-RPC client; the `async`
+    // here is just to match the AgentEngine interface signature.
+    rpc.respondToServer(requestId, { result: { decision, ...extra } });
   }
   async function interrupt(): Promise<void> {
     throw new Error('CodexCliEngine.interrupt: not yet wired');
@@ -196,8 +241,14 @@ export function createCodexCliEngine(
     // (sessions service) from crashing during Task 4 integration.
     return { dispose() { /* no-op */ } };
   }
-  function onPermissionRequest(_cb: (r: AgentPermissionRequest) => void): Disposable {
-    return { dispose() { /* no-op */ } };
+  function onPermissionRequest(cb: (r: AgentPermissionRequest) => void): Disposable {
+    permissionCallbacks.push(cb);
+    return {
+      dispose() {
+        const i = permissionCallbacks.indexOf(cb);
+        if (i !== -1) permissionCallbacks.splice(i, 1);
+      },
+    };
   }
   function onError(cb: (err: Error) => void): Disposable {
     errorCallbacks.push(cb);

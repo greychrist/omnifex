@@ -3,6 +3,7 @@ import { EventEmitter } from 'node:events';
 import { Readable, Writable } from 'node:stream';
 import { spawn } from 'node:child_process';
 import { createCodexCliEngine } from '../../services/agents/codex-cli-engine';
+import type { AgentPermissionRequest } from '../../services/agents/types';
 
 vi.mock('node:child_process', () => ({
   spawn: vi.fn(),
@@ -296,6 +297,193 @@ describe('CodexCliEngine', () => {
       // start() never called — conversationId stays null. send() should
       // reject loudly rather than silently no-op or write a bogus request.
       await expect(engine.send('hello')).rejects.toThrow(/no active conversation/i);
+    });
+  });
+
+  describe('approvals (Codex server-initiated)', () => {
+    async function bootEngineWithConversation(): Promise<{
+      engine: ReturnType<typeof createCodexCliEngine>;
+      fake: FakeChild;
+    }> {
+      const fake = makeFakeChild();
+      mockedSpawn.mockReturnValue(fake as never);
+
+      const engine = createCodexCliEngine({
+        tabId: 'tab-approve',
+        codexBinaryPath: '/usr/local/bin/codex',
+      });
+
+      const startPromise = engine.start({
+        projectPath: '/p',
+        configDir: '/c',
+        model: 'gpt-5',
+        sessionId: 'session-uuid',
+        resume: false,
+      });
+      startPromise.catch(() => {});
+
+      await flushMicrotasks();
+
+      const startSent = JSON.parse(fake.stdin._writes[0]!.trim());
+      fake.stdout.push(
+        JSON.stringify({
+          jsonrpc: '2.0',
+          id: startSent.id,
+          result: { conversationId: 'conv-1' },
+        }) + '\n',
+      );
+
+      await startPromise;
+      return { engine, fake };
+    }
+
+    it('applyPatchApproval is surfaced as onPermissionRequest with kind=patch', async () => {
+      const { engine, fake } = await bootEngineWithConversation();
+
+      const received: AgentPermissionRequest[] = [];
+      engine.onPermissionRequest((r) => received.push(r));
+
+      const params = {
+        conversationId: 'conv-1',
+        callId: 'c1',
+        fileChanges: { 'src/foo.ts': { add: ['bar'] } },
+        reason: 'edit',
+      };
+      fake.stdout.push(
+        JSON.stringify({
+          jsonrpc: '2.0',
+          id: 'srv-p1',
+          method: 'applyPatchApproval',
+          params,
+        }) + '\n',
+      );
+
+      await flushMicrotasks();
+
+      expect(received.length).toBe(1);
+      const r = received[0]!;
+      expect(r.agent).toBe('codex');
+      expect(r.requestId).toBe('srv-p1');
+      expect(r.kind).toBe('patch');
+      expect(r.summary.toLowerCase()).toContain('patch');
+      expect(r.payload).toEqual(params);
+    });
+
+    it('execCommandApproval is surfaced as onPermissionRequest with kind=exec', async () => {
+      const { engine, fake } = await bootEngineWithConversation();
+
+      const received: AgentPermissionRequest[] = [];
+      engine.onPermissionRequest((r) => received.push(r));
+
+      const params = {
+        conversationId: 'conv-1',
+        callId: 'c2',
+        command: 'ls -la',
+        cwd: '/tmp',
+        reason: 'shell',
+      };
+      fake.stdout.push(
+        JSON.stringify({
+          jsonrpc: '2.0',
+          id: 'srv-e1',
+          method: 'execCommandApproval',
+          params,
+        }) + '\n',
+      );
+
+      await flushMicrotasks();
+
+      expect(received.length).toBe(1);
+      const r = received[0]!;
+      expect(r.agent).toBe('codex');
+      expect(r.requestId).toBe('srv-e1');
+      expect(r.kind).toBe('exec');
+      expect(r.summary).toContain('ls -la');
+      expect(r.payload).toEqual(params);
+    });
+
+    it('respondPermission writes a JSON-RPC response with allow decision on the matching id', async () => {
+      const { engine, fake } = await bootEngineWithConversation();
+
+      engine.onPermissionRequest(() => {});
+
+      fake.stdout.push(
+        JSON.stringify({
+          jsonrpc: '2.0',
+          id: 'srv-p1',
+          method: 'applyPatchApproval',
+          params: {
+            conversationId: 'conv-1',
+            callId: 'c1',
+            fileChanges: {},
+          },
+        }) + '\n',
+      );
+
+      await flushMicrotasks();
+
+      const writesBefore = fake.stdin._writes.length;
+      await engine.respondPermission('srv-p1', 'allow');
+
+      expect(fake.stdin._writes.length).toBe(writesBefore + 1);
+      const sent = JSON.parse(fake.stdin._writes[writesBefore]!.trim());
+      expect(sent).toEqual({
+        jsonrpc: '2.0',
+        id: 'srv-p1',
+        result: { decision: 'allow' },
+      });
+    });
+
+    it('respondPermission writes a JSON-RPC response with deny decision', async () => {
+      const { engine, fake } = await bootEngineWithConversation();
+
+      engine.onPermissionRequest(() => {});
+
+      fake.stdout.push(
+        JSON.stringify({
+          jsonrpc: '2.0',
+          id: 'srv-p1',
+          method: 'applyPatchApproval',
+          params: { conversationId: 'conv-1', callId: 'c1', fileChanges: {} },
+        }) + '\n',
+      );
+
+      await flushMicrotasks();
+
+      const writesBefore = fake.stdin._writes.length;
+      await engine.respondPermission('srv-p1', 'deny');
+
+      expect(fake.stdin._writes.length).toBe(writesBefore + 1);
+      const sent = JSON.parse(fake.stdin._writes[writesBefore]!.trim());
+      expect(sent).toEqual({
+        jsonrpc: '2.0',
+        id: 'srv-p1',
+        result: { decision: 'deny' },
+      });
+    });
+
+    it('unknown server-initiated methods respond with method-not-handled error', async () => {
+      const { fake } = await bootEngineWithConversation();
+
+      const writesBefore = fake.stdin._writes.length;
+
+      fake.stdout.push(
+        JSON.stringify({
+          jsonrpc: '2.0',
+          id: 'srv-x',
+          method: 'futureFeature',
+          params: {},
+        }) + '\n',
+      );
+
+      await flushMicrotasks();
+
+      expect(fake.stdin._writes.length).toBe(writesBefore + 1);
+      const sent = JSON.parse(fake.stdin._writes[writesBefore]!.trim());
+      expect(sent.jsonrpc).toBe('2.0');
+      expect(sent.id).toBe('srv-x');
+      expect(sent.error?.code).toBe(-32601);
+      expect(String(sent.error?.message).toLowerCase()).toMatch(/not handled|unknown/);
     });
   });
 });
