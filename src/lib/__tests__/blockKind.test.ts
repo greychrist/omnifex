@@ -9,12 +9,15 @@ import type { JsonlNode } from '@/types/jsonl';
 // `parent.raw.message.content` in production, but in tests we pass blocks
 // directly as the first argument so only `parent.kind` matters for the stub.
 
-const assistant = (content: any[]): JsonlNode & { raw: { message: { content: any[] } } } =>
+const assistant = (
+  content: any[],
+  stop_reason: string | null = null,
+): JsonlNode & { raw: { message: { content: any[] } } } =>
   ({
     kind: 'assistant',
     sessionId: '',
     receivedAt: '',
-    raw: { type: 'assistant', message: { role: 'assistant', content } },
+    raw: { type: 'assistant', message: { role: 'assistant', content, stop_reason } },
   }) as any;
 
 const user = (content: any[]): JsonlNode & { raw: { message: { content: any[] } } } =>
@@ -35,6 +38,23 @@ describe('classifyBlockKind', () => {
   it('returns null for empty assistant text', () => {
     const parent = assistant([{ type: 'text', text: '   ' }]);
     expect(classifyBlockKind(parent.raw.message.content[0], parent)).toBeNull();
+  });
+
+  it('classifies text blocks of an end_turn assistant as assistant.text.endTurn', () => {
+    const parent = assistant([{ type: 'text', text: 'done' }], 'end_turn');
+    expect(classifyBlockKind(parent.raw.message.content[0], parent)).toBe('assistant.text.endTurn');
+  });
+
+  it('keeps plain assistant.text for other terminal stop_reasons (max_tokens, refusal, etc.)', () => {
+    for (const stop of ['max_tokens', 'stop_sequence', 'refusal', 'model_context_window_exceeded']) {
+      const parent = assistant([{ type: 'text', text: 'partial' }], stop);
+      expect(classifyBlockKind(parent.raw.message.content[0], parent), `stop=${stop}`).toBe('assistant.text');
+    }
+  });
+
+  it('keeps plain assistant.text for mid-turn messages (stop_reason: null)', () => {
+    const parent = assistant([{ type: 'text', text: 'mid-turn' }], null);
+    expect(classifyBlockKind(parent.raw.message.content[0], parent)).toBe('assistant.text');
   });
 
   it('classifies assistant thinking blocks with content', () => {

@@ -63,7 +63,14 @@ export function classifyBlockKind(
   if (role === 'assistant') {
     if (block.type === 'text') {
       const text = block.text.trim();
-      return text.length > 0 ? 'assistant.text' : null;
+      if (text.length === 0) return null;
+      // A text block whose parent assistant message ended the turn cleanly
+      // (end_turn) is the "execution completed" visual. Gets its own kind so
+      // the catalog can give it distinct chrome (e.g. green accent, check
+      // icon) without affecting mid-turn assistant text.
+      const stop = (parent.raw as { message?: { stop_reason?: string | null } }).message?.stop_reason;
+      if (stop === 'end_turn') return 'assistant.text.endTurn';
+      return 'assistant.text';
     }
     if (block.type === 'thinking') {
       const text = block.thinking.trim();

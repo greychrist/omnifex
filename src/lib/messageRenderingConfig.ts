@@ -236,7 +236,8 @@ export type MessageKindsById = Record<string, MessageKindConfig>;
 
 export const DEFAULT_KINDS: MessageKindConfig[] = [
   // ───── ASSISTANT (block-level) ─────
-  { id: "assistant.text", label: "Assistant text", description: "Assistant's prose response.", origin: "assistant", icon: "Bot", headerLabel: "Claude", accentColor: "primary", alignment: "left", hiddenInCompact: false, compactBoundaryLocked: false, presentation: "card", borderStyle: "solid" },
+  { id: "assistant.text", label: "Assistant text", description: "Assistant's prose response (mid-turn).", origin: "assistant", icon: "Bot", headerLabel: "Claude", accentColor: "primary", alignment: "left", hiddenInCompact: false, compactBoundaryLocked: false, presentation: "card", borderStyle: "solid" },
+  { id: "assistant.text.endTurn", label: "Assistant text (execution complete)", description: "Assistant's final response in a cleanly-completed turn (stop_reason: end_turn).", origin: "assistant", icon: "CheckCircle2", headerLabel: "Claude", accentColor: "green", alignment: "left", hiddenInCompact: false, compactBoundaryLocked: true, presentation: "card", borderStyle: "solid" },
   { id: "assistant.thinking", label: "Assistant thinking", description: "Extended thinking block before a tool call.", origin: "assistant", icon: "Brain", headerLabel: "Thinking", accentColor: "muted", alignment: "left", hiddenInCompact: true, compactBoundaryLocked: false, presentation: "card", borderStyle: "solid", widget: "ThinkingWidget" },
   { id: "assistant.tool-use", label: "Tool call", description: "Assistant invoking a tool.", origin: "assistant", icon: "Terminal", headerLabel: null, accentColor: "info", alignment: "left", hiddenInCompact: true, compactBoundaryLocked: false, presentation: "card", borderStyle: "solid" },
 

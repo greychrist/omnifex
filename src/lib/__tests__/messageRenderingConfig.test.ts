@@ -92,12 +92,14 @@ describe("messageRenderingConfig", () => {
       }
     });
 
-    it("locks exactly the two always-visible kinds (v2 catalog)", () => {
-      // v2 catalog: user.prompt (turn opener) and unknown (diagnostic catch-all —
-      // if it shows up, we must not hide it) are boundary-locked. The result.*
+    it("locks exactly the always-visible kinds (v2 catalog)", () => {
+      // v2 catalog: user.prompt (turn opener), assistant.text.endTurn (turn
+      // closer / execution complete), and unknown (diagnostic catch-all — if
+      // it shows up, we must not hide it) are boundary-locked. The result.*
       // kinds have been removed from the catalog; cli-stream-result is not locked.
       const locked = DEFAULT_KINDS.filter((k) => k.compactBoundaryLocked).map((k) => k.id).sort();
       expect(locked).toEqual([
+        "assistant.text.endTurn",
         "unknown",
         "user.prompt",
       ]);
