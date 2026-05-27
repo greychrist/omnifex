@@ -77,7 +77,11 @@ describe('CodexTranscript', () => {
     expect(document.querySelectorAll('[data-codex-item="agent_message"]')).toHaveLength(1);
     expect(document.querySelectorAll('[data-codex-item="fallback"]')).toHaveLength(1);
     // The fallback prints the method name so unfamiliar items are visible.
-    expect(screen.getByText(/codex: item\.future_widget/)).toBeTruthy();
+    // Task 21 swapped the stub text "codex: <method>" for a proper "Unknown
+    // Codex item: <method>" header; the method name remains the load-bearing
+    // assertion.
+    expect(screen.getByText('item.future_widget')).toBeTruthy();
+    expect(screen.getByText(/Unknown Codex item:/)).toBeTruthy();
   });
 
   it('ignores messages whose payload is not a Codex notification envelope', () => {
