@@ -31,6 +31,8 @@ export interface AgentStartParams {
   allowedTools?: string[];
   /** Engine-specific extras. Claude reads its own keys; others ignore. */
   claude?: Record<string, unknown>;
+  /** Engine-specific extras. Codex reads its own keys; others ignore. */
+  codex?: Record<string, unknown>;
 }
 
 export interface AgentMessage {
