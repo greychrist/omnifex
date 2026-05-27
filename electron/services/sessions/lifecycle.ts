@@ -28,7 +28,7 @@ import {
 } from './permissions';
 import { createQueryPassthroughs } from './queries';
 import { createTuiSession } from './tui';
-import { findSystemClaudeBinary } from './binary';
+import { findSystemClaudeBinary, findSystemCodexBinary } from './binary';
 import {
   listenToMessages,
   restartQuery,
@@ -37,6 +37,8 @@ import {
 import { createTuiJsonlListener } from './tui-jsonl';
 import { encodeProjectKey } from './summary-query';
 import { createClaudeCliEngine } from '../agents/claude-cli-engine';
+import { createCodexCliEngine } from '../agents/codex-cli-engine';
+import type { AgentEngine, AgentKind } from '../agents/types';
 import path from 'node:path';
 import fs from 'node:fs';
 import { randomUUID } from 'node:crypto';
@@ -146,18 +148,34 @@ export function createSessionsService(
       throw new Error(`configDir is required to start session for tab ${tabId}`);
     }
 
-    const binaryPath = findSystemClaudeBinary();
-    if (!binaryPath) {
-      sendToRenderer(`session-status:${tabId}`, {
-        sessionStatus: 'error',
-        conversationStatus: null,
-      });
-      sendToRenderer(`claude-error:${tabId}`, 'claude binary not found');
-      sendToRenderer(`claude-complete:${tabId}`);
-      return;
-    }
+    const agent: AgentKind = params.agent ?? 'claude';
 
-    const engine = createClaudeCliEngine({ tabId, claudeBinaryPath: binaryPath });
+    let engine: AgentEngine;
+    if (agent === 'codex') {
+      const codexPath = findSystemCodexBinary();
+      if (!codexPath) {
+        sendToRenderer(`session-status:${tabId}`, {
+          sessionStatus: 'error',
+          conversationStatus: null,
+        });
+        sendToRenderer(`claude-error:${tabId}`, 'codex binary not found');
+        sendToRenderer(`claude-complete:${tabId}`);
+        return;
+      }
+      engine = createCodexCliEngine({ tabId, codexBinaryPath: codexPath });
+    } else {
+      const binaryPath = findSystemClaudeBinary();
+      if (!binaryPath) {
+        sendToRenderer(`session-status:${tabId}`, {
+          sessionStatus: 'error',
+          conversationStatus: null,
+        });
+        sendToRenderer(`claude-error:${tabId}`, 'claude binary not found');
+        sendToRenderer(`claude-complete:${tabId}`);
+        return;
+      }
+      engine = createClaudeCliEngine({ tabId, claudeBinaryPath: binaryPath });
+    }
 
     // CLI sessions are identified by a UUID pinned at spawn. For cold-start
     // we mint a fresh one; for resume we reuse the caller's id. JSONL path
@@ -173,6 +191,7 @@ export function createSessionsService(
     // model and unblocks the renderer immediately so `claude-output:`
     // events have a place to land.
     const handle: SessionHandle = {
+      agent,
       engine,
       initData: null,
       permissionMode: params.permissionMode,
@@ -612,9 +631,17 @@ export function createSessionsService(
         // wire the permission handler — it lives on the engine's
         // permissionCallbacks for the engine's whole life and is never
         // disposed during mode toggles, so a fresh engine needs it once.
-        const binaryPath = findSystemClaudeBinary();
-        if (!binaryPath) throw new Error('setMode("rich"): claude binary not found');
-        handle.engine = createClaudeCliEngine({ tabId, claudeBinaryPath: binaryPath });
+        // TUI cold-start is Claude-only in v1, so we don't need to branch
+        // on handle.agent here — but use it anyway for forward-compat.
+        if (handle.agent === 'codex') {
+          const codexPath = findSystemCodexBinary();
+          if (!codexPath) throw new Error('setMode("rich"): codex binary not found');
+          handle.engine = createCodexCliEngine({ tabId, codexBinaryPath: codexPath });
+        } else {
+          const binaryPath = findSystemClaudeBinary();
+          if (!binaryPath) throw new Error('setMode("rich"): claude binary not found');
+          handle.engine = createClaudeCliEngine({ tabId, claudeBinaryPath: binaryPath });
+        }
         handle.engine.onPermissionRequest(
           createPermissionRequestHandler(handle, tabId, sendToRenderer, notificationHooks, logging),
         );
@@ -686,6 +713,8 @@ export function createSessionsService(
     );
 
     const handle: SessionHandle = {
+      // Codex has no TUI surface in v1 — TUI cold-start is always Claude.
+      agent: 'claude',
       engine: null,
       initData: null,
       permissionMode: params.permissionMode,

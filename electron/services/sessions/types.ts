@@ -2,7 +2,7 @@
 // Extracted from electron/services/sessions.ts (pure refactor)
 
 import type { LoggingService } from '../logging';
-import type { AgentEngine, InitData } from '../agents/types';
+import type { AgentEngine, AgentKind, InitData } from '../agents/types';
 
 // ---------------------------------------------------------------------------
 // SDK type re-exports (now defined locally — SDK dep removed)
@@ -138,6 +138,14 @@ export interface SessionStartParams {
    * set (resumes always anchor to the configDir that owns the JSONL).
    */
   manualAccountOverride?: boolean;
+  /**
+   * Which agent engine to drive this session. Defaults to `'claude'` for
+   * back-compat — callers that pre-date Codex support omit this and get
+   * the Claude CLI engine. Set to `'codex'` to dispatch
+   * `createCodexCliEngine` instead. The session handle remembers the
+   * resolved value so engine restarts pick the same factory.
+   */
+  agent?: AgentKind;
 }
 
 /** Lets the service tell the main process which window owns each tab, so tab-scoped events are routed per-window. */
@@ -313,6 +321,13 @@ export interface ElicitationDecision {
 }
 
 export interface SessionHandle {
+  /**
+   * Which agent powers this session. Pinned at handle construction so
+   * the restart path knows which factory to call without re-resolving
+   * from start-params. TUI cold-start sessions are always `'claude'`
+   * in v1 (Codex doesn't have a TUI surface).
+   */
+  agent: AgentKind;
   /**
    * Drives the live session. Null only in TUI cold-start sessions, where
    * the CLI is spoken to via PTY (TuiSession), not via stream-json.

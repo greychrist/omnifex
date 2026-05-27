@@ -68,6 +68,7 @@ function makeFakeEngine(): FakeEngine {
 
 function makeHandle(engine: AgentEngine): SessionHandle {
   return {
+    agent: 'claude',
     engine,
     initData: null,
     permissionMode: 'default',

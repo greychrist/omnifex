@@ -29,3 +29,22 @@ export function findSystemClaudeBinary(): string | null {
   }
   return findBundledSdkBinaryAuto();
 }
+
+/**
+ * Resolve a codex binary on the user's system. Codex has no SDK-bundled
+ * fallback (we don't ship it inside the app) so this returns `null` when
+ * the user hasn't installed `codex` — the caller must surface that as a
+ * clean error at session start rather than letting the engine try to
+ * spawn a missing binary.
+ */
+export function findSystemCodexBinary(): string | null {
+  const candidates = [
+    `${os.homedir()}/.local/bin/codex`,
+    '/usr/local/bin/codex',
+    '/opt/homebrew/bin/codex',
+  ];
+  for (const p of candidates) {
+    if (fs.existsSync(p)) return p;
+  }
+  return null;
+}
