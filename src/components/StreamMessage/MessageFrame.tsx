@@ -60,13 +60,19 @@ export const MessageFrame: React.FC<MessageFrameProps> = ({ streamKind, children
     );
   }
 
-  // 'side-line' (and any future presentation variants fall through here)
+  // 'side-line' (and any future presentation variants fall through here).
+  // Resolve the icon-chip config (per-kind override → global default) so
+  // the side-line icon honors the same bordered/bg-opacity knobs as cards.
+  const iconBordered = kind.iconBordered ?? config.typography.icon.bordered;
+  const iconBgOpacity = kind.iconBgOpacity ?? config.typography.icon.bgOpacity;
   return (
     <div data-frame-variant="side-line">
       <MessageFrameSideLine
         iconName={kind.icon}
         accentColor={kind.accentColor}
         borderStyle={kind.borderStyle}
+        iconBordered={iconBordered}
+        iconBgOpacity={iconBgOpacity}
       >
         {children}
       </MessageFrameSideLine>

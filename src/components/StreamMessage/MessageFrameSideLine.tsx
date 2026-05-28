@@ -7,6 +7,13 @@ export interface MessageFrameSideLineProps {
   iconName: IconName;
   accentColor: string;
   borderStyle: BorderStyle;
+  /** When true, the inline icon renders inside an accent-tinted chip
+   *  (border + background fill) instead of as a bare glyph. Mirrors the
+   *  card icon's `iconBordered` knob. Defaults to false. */
+  iconBordered?: boolean;
+  /** Chip background fill opacity (0–100) of the chat background, when
+   *  `iconBordered` is true. Ignored otherwise. Defaults to 100. */
+  iconBgOpacity?: number;
   children: React.ReactNode;
 }
 
@@ -30,9 +37,28 @@ export const MessageFrameSideLine: React.FC<MessageFrameSideLineProps> = ({
   iconName,
   accentColor,
   borderStyle,
+  iconBordered = false,
+  iconBgOpacity = 100,
   children,
 }) => {
   const swatch = resolveAccentSwatch(accentColor);
+
+  const icon = <IconRenderer name={iconName} className="h-3.5 w-3.5" />;
+  const op = Math.max(0, Math.min(100, iconBgOpacity));
+  const iconEl = iconBordered ? (
+    <span
+      className="flex items-center justify-center shrink-0 border rounded p-0.5"
+      style={{
+        color: swatch,
+        borderColor: `${swatch}55`,
+        backgroundColor: `color-mix(in oklch, var(--color-background) ${op}%, transparent)`,
+      }}
+    >
+      {icon}
+    </span>
+  ) : (
+    <span style={{ color: swatch }}>{icon}</span>
+  );
 
   return (
     <div
@@ -47,9 +73,7 @@ export const MessageFrameSideLine: React.FC<MessageFrameSideLineProps> = ({
           marginRight: '0.5rem',
         }}
       />
-      <span style={{ color: swatch }}>
-        <IconRenderer name={iconName} className="h-3.5 w-3.5" />
-      </span>
+      {iconEl}
       <span className="text-sm text-foreground/80">{children}</span>
     </div>
   );
