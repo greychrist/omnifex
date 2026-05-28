@@ -46,6 +46,7 @@ import { WebviewPreview } from "./WebviewPreview";
 import type { JsonlNode } from "@/types/jsonl";
 import { normalizeJsonlNode } from "@/lib/normalizeMessage";
 import { classifyJsonlLine } from '@/lib/jsonlClassifier';
+import { lastPermissionMode } from '@/lib/sessionDerivedState';
 import { reduceSessionStreamMessage } from '@/lib/sessionStreamReducer';
 import { runStreamEffect } from '@/lib/sessionStreamEffects';
 import { appendInflightDelta } from '@/lib/inflightCoalescer';
@@ -279,6 +280,11 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     match_type: string;
     match_detail: string;
   } | null>(initialSessionConfig?.accountResolution ?? null);
+  // Mirror accountResolution into a ref so loadSessionHistory can read the
+  // account's default permission mode without taking accountResolution as a
+  // dependency (which would re-trigger a history reload when it resolves).
+  const accountResolutionRef = useRef(accountResolution);
+  accountResolutionRef.current = accountResolution;
   const [showAccountPicker, setShowAccountPicker] = useState(false);
   // Codex sign-in modal toggle, driven by the inline banner on the
   // new-session form. The auth status itself comes from useCodexAuthStatus
@@ -787,6 +793,15 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
 
       streamCtxRef.current.setMessages(nodes);
       setRawJsonlOutput(history.map(h => JSON.stringify(h)));
+
+      // Restore the permission mode the session was last in (resume fidelity).
+      // Priority: last mode recorded in the JSONL → account default → leave the
+      // hardcoded initial fallback (acceptEdits). setPermissionMode is a stable
+      // setter so it's safe to call here without a dependency.
+      const resumedMode =
+        lastPermissionMode(nodes)
+        ?? accountResolutionRef.current?.account.session_defaults?.permissionMode;
+      if (resumedMode) setPermissionMode(resumedMode);
 
       // Scroll to bottom after loading history
       setTimeout(() => {

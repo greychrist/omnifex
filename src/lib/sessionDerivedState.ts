@@ -115,3 +115,20 @@ export function sessionStartedAt(messages: JsonlNode[]): string | null {
     ?? (first as { raw?: { timestamp?: string } }).raw?.timestamp;
   return typeof ts === 'string' ? ts : null;
 }
+
+// The permission mode in effect at the end of the session, for restoring a
+// resumed tab to where it left off. Walks messages[] from the end and returns
+// the first `permissionMode` it finds on either a dedicated `permission-mode`
+// record or a `user` envelope (both carry the field). Returns null when the
+// session never recorded one — the caller then falls back to the account
+// default and finally the hardcoded mode.
+export function lastPermissionMode(messages: JsonlNode[]): string | null {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const node = messages[i];
+    if (node.kind === 'permission-mode' || node.kind === 'user') {
+      const mode = (node.raw as { permissionMode?: unknown }).permissionMode;
+      if (typeof mode === 'string' && mode.length > 0) return mode;
+    }
+  }
+  return null;
+}

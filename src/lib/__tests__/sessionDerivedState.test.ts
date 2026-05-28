@@ -7,6 +7,7 @@ import {
   conversationStatus,
   turnDuration,
   sessionStartedAt,
+  lastPermissionMode,
 } from '../sessionDerivedState';
 
 // Minimal helpers — these build JsonlNodes with the fields the derivation reads.
@@ -247,6 +248,43 @@ describe('cli-stream kinds do not affect derivation', () => {
       },
     ];
     expect(waitingOnClaude(msgs)).toBe(false); // no user prompt — not waiting
+  });
+});
+
+describe('lastPermissionMode', () => {
+  function permModeNode(mode: string): JsonlNode {
+    return { kind: 'permission-mode', sessionId: 's1', raw: { type: 'permission-mode', permissionMode: mode } as never };
+  }
+  function userPromptWithMode(timestamp: string, mode: string): JsonlNode {
+    return {
+      kind: 'user',
+      userKind: 'prompt',
+      sessionId: 's1',
+      receivedAt: timestamp,
+      raw: { type: 'user', message: { role: 'user', content: 'hi' }, permissionMode: mode, timestamp } as never,
+    };
+  }
+
+  it('returns null when no message carries a permission mode', () => {
+    expect(lastPermissionMode([userPrompt('2026-05-28T00:00:00Z')])).toBeNull();
+    expect(lastPermissionMode([])).toBeNull();
+  });
+
+  it('returns the mode from a permission-mode record', () => {
+    expect(lastPermissionMode([permModeNode('auto')])).toBe('auto');
+  });
+
+  it('returns the mode from a user envelope', () => {
+    expect(lastPermissionMode([userPromptWithMode('2026-05-28T00:00:00Z', 'plan')])).toBe('plan');
+  });
+
+  it('returns the LAST mode when several appear (walks from the end)', () => {
+    const msgs = [
+      permModeNode('acceptEdits'),
+      userPromptWithMode('2026-05-28T00:00:01Z', 'plan'),
+      permModeNode('auto'),
+    ];
+    expect(lastPermissionMode(msgs)).toBe('auto');
   });
 });
 
