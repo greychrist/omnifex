@@ -5,6 +5,22 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.70] — 2026-05-28
+
+Session-controls cleanup: a simpler Claude model list, no Thinking picker (always adaptive), and an account editor whose permission dropdown is accurate and styled to match the new-session page.
+
+Installers remain **unsigned**.
+
+### Changed
+
+- **Claude model list flattened to Opus 4.8 / Sonnet / Haiku** — dropped the 1M/200K context variants from both the new-session picker and the account session-defaults. Defaults that pointed at the removed `opus[1m]` now use `opus`.
+- **Account editor reuses the new-session page's stylized pickers** for Claude accounts (model / effort / permissions), replacing plain `<select>`s. The permissions dropdown now lists all six SDK modes (`default`, `acceptEdits`, `plan`, `dontAsk`, `auto`, `bypassPermissions`) with icons and colors; it previously showed only four plain-text options. Codex accounts keep their plain selects.
+- **Permission-mode colors aligned with Claude Code** (shared `PERMISSION_MODES`, so the new-session page updates too): `acceptEdits` → purple, `plan` → blue-green (teal), `auto` → yellow; `bypassPermissions` stays red, `dontAsk` stays gray. The `default` mode is renamed "Ask" → "Default" (short name `ASK` → `DEF`).
+
+### Removed
+
+- **Thinking picker removed from every surface** (new-session form, account defaults, and the live in-session bottom bar). Extended thinking now always stays adaptive; the value still flows to session-start params and persisted defaults, so the backend keeps receiving adaptive (the CLI default).
+
 ## [0.4.69] — 2026-05-28
 
 Codex accounts become first-class alongside Claude: multi-account Codex, a unified Add/Edit dialog, engine-aware path-rule resolution (`ResolvePair`), and a session walker that spans every Codex account. Also fixes a session-loading regression where a stale binary's resolution error was disguised as "no account configured."
