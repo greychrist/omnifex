@@ -696,6 +696,27 @@ describe('claude service', () => {
         service.getProjectSessions(projectId),
       ).rejects.toThrow(/no claude account/i);
     });
+
+    // Regression: a real resolve() failure (e.g. a stale binary querying a
+    // column a newer migration dropped — "no such column: r.agent") must
+    // surface as the actual error. Previously findProjectConfigDir swallowed
+    // EVERY exception and reported NO_ACCOUNT_FOR_PROJECT, disguising a
+    // version-skew SQL error as "no account configured" and sending users to
+    // Account Settings to add a path rule that already existed.
+    it('propagates an unexpected resolve() error instead of masking it as NoAccountError', async () => {
+      const boom = new Error('SqliteError: no such column: r.agent');
+      const brokenAccounts = {
+        resolve: () => {
+          throw boom;
+        },
+        listAccounts: () => [],
+      } as unknown as AccountsService;
+      const brokenService = createClaudeService(db, brokenAccounts);
+
+      await expect(
+        brokenService.getProjectSessions('-some-proj', '/some/proj'),
+      ).rejects.toThrow(/no such column: r\.agent/);
+    });
   });
 
   // -------------------------------------------------------------------------

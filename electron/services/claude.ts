@@ -239,12 +239,14 @@ function findProjectConfigDir(
   projectPath: string | undefined,
 ): string | null {
   if (!projectPath) return null;
-  try {
-    const resolved = accounts.resolve(projectPath);
-    return resolved.claude?.account.config_dir ?? null;
-  } catch {
-    return null;
-  }
+  // A legitimate "no account for this path" is signalled by resolve() returning
+  // a null Claude slot — it never throws for that case. So we do NOT catch here:
+  // an exception means a real failure (e.g. a SQL/schema error from a stale
+  // binary querying a column a migration dropped) and must surface as itself,
+  // not be silently flattened into NO_ACCOUNT_FOR_PROJECT. Masking it once cost
+  // hours of "add a path rule that already exists" debugging.
+  const resolved = accounts.resolve(projectPath);
+  return resolved.claude?.account.config_dir ?? null;
 }
 
 /**
