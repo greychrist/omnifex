@@ -9,29 +9,43 @@
 //   - Runs once and only once per OmniFex install. Stored as the
 //     `discovery_completed` app_setting. If the user later deletes every
 //     account in Settings, we don't silently re-create them — let them be
-//     deliberate. (Manual escape hatch lives in the "Scan for Claude config
-//     directories" button in Settings → Accounts.)
+//     deliberate. (Manual escape hatch lives in the "Scan for accounts"
+//     button in Settings → Accounts.)
+//
+// Discovery is engine-aware: it scans for both Claude (`~/.claude*`) and Codex
+// (`~/.codex*`) config dirs and tags each with its engine so the created
+// account row routes to the right CLI.
 //
 // The caller (electron/main.ts) supplies the `discover` function, which in
 // production is `accountsService.discoverAccounts`. Injectable for tests.
 
-import type { AccountsService } from './accounts';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import type { AccountsService, AccountEngine } from './accounts';
 import type { Database } from './database';
 
 const DISCOVERY_FLAG_KEY = 'discovery_completed';
 
+export interface DiscoveredConfigDir {
+  /** The bare directory name, e.g. `.claude-work` or `.codex`. */
+  dirName: string;
+  /** Absolute path to the config dir. */
+  configDir: string;
+  engine: AccountEngine;
+}
+
 export interface FirstTimeDiscoveryDeps {
   accounts: Pick<AccountsService, 'listAccounts' | 'createAccount'>;
   db: Pick<Database, 'getSetting' | 'saveSetting'>;
-  /** Returns [dirName, absolutePath] tuples for every `~/.claude*` dir. */
-  discover: () => Promise<Array<[string, string]>>;
+  /** Returns the engine-tagged config dirs to seed accounts from. */
+  discover: () => Promise<DiscoveredConfigDir[]>;
 }
 
 export interface FirstTimeDiscoveryResult {
   /** True if discovery actually ran this call (vs. skipped due to existing
    *  accounts or the completed flag). */
   ran: boolean;
-  created: Array<{ name: string; configDir: string }>;
+  created: Array<{ name: string; configDir: string; engine: AccountEngine }>;
 }
 
 export async function runFirstTimeDiscovery(
@@ -50,30 +64,77 @@ export async function runFirstTimeDiscovery(
   }
 
   const found = await deps.discover();
-  const created: Array<{ name: string; configDir: string }> = [];
-  for (const [dirName, configDir] of found) {
-    const name = nameFromConfigDir(dirName);
-    deps.accounts.createAccount(name, configDir);
-    created.push({ name, configDir });
+  const created: Array<{ name: string; configDir: string; engine: AccountEngine }> = [];
+  for (const { dirName, configDir, engine } of found) {
+    const name = nameFromConfigDir(dirName, engine);
+    deps.accounts.createAccount({ name, configDir, engine });
+    created.push({ name, configDir, engine });
   }
 
   deps.db.saveSetting(DISCOVERY_FLAG_KEY, 'true');
   return { ran: true, created };
 }
 
+const ENGINE_PREFIXES: ReadonlyArray<readonly [string, AccountEngine]> = [
+  ['.claude', 'claude'],
+  ['.codex', 'codex'],
+];
+
 /**
- * Derive a human-readable account name from a `.claude*` directory name.
+ * Classify a home-directory entry name as a Claude/Codex config dir, or null
+ * if it isn't one. The post-prefix character must be the end of the string or
+ * a `-`/`_` separator, so false positives like `.claudette` / `.codexample`
+ * are excluded.
+ */
+export function engineFromDirName(name: string): AccountEngine | null {
+  for (const [prefix, engine] of ENGINE_PREFIXES) {
+    if (name === prefix) return engine;
+    if (name.startsWith(`${prefix}-`) || name.startsWith(`${prefix}_`)) return engine;
+  }
+  return null;
+}
+
+/**
+ * Scan a home directory for Claude and Codex config dirs, tagging each with its
+ * engine. Returns [] if the directory can't be read.
+ */
+export async function discoverConfigDirs(homeDir: string): Promise<DiscoveredConfigDir[]> {
+  let entries: import('fs').Dirent[];
+  try {
+    entries = await fs.readdir(homeDir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+
+  const found: DiscoveredConfigDir[] = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const engine = engineFromDirName(entry.name);
+    if (!engine) continue;
+    found.push({
+      dirName: entry.name,
+      configDir: path.join(homeDir, entry.name),
+      engine,
+    });
+  }
+  return found;
+}
+
+/**
+ * Derive a human-readable account name from a config directory name, given its
+ * engine.
  *
- *   .claude              → "Claude"
- *   .claude-work         → "Work"
- *   .claude-personal     → "Personal"
- *   .claude-work-prod    → "Work Prod"
- *   .claude-side_project → "Side Project"
+ *   (.claude, claude)        → "Claude"
+ *   (.claude-work, claude)   → "Work"
+ *   (.codex, codex)          → "Codex"
+ *   (.codex-work, codex)     → "Work"
+ *   (.codex-side_project, …) → "Side Project"
  *
  * Users can rename in Settings → Accounts; this is only the starting label.
  */
-export function nameFromConfigDir(dirName: string): string {
-  const suffix = dirName === '.claude' ? 'claude' : dirName.slice('.claude-'.length);
+export function nameFromConfigDir(dirName: string, engine: AccountEngine): string {
+  const prefix = engine === 'claude' ? '.claude' : '.codex';
+  const suffix = dirName === prefix ? engine : dirName.slice(prefix.length + 1);
   return suffix
     .split(/[-_]/)
     .filter((part) => part.length > 0)

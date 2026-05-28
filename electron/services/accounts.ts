@@ -1,13 +1,13 @@
-import fs from 'node:fs';
-import path from 'node:path';
 import os from 'node:os';
+import path from 'node:path';
 import type { Database } from './database';
-import { nameFromConfigDir } from './first-run-discovery';
-import type { AgentKind } from './agents/types';
+import { discoverConfigDirs, nameFromConfigDir } from './first-run-discovery';
 
 // ---------------------------------------------------------------------------
 // Public interfaces
 // ---------------------------------------------------------------------------
+
+export type AccountEngine = 'claude' | 'codex';
 
 export interface SessionDefaults {
   model?: string;
@@ -20,10 +20,17 @@ export interface Account {
   id: number;
   name: string;
   config_dir: string;
+  // Which CLI engine this account drives. Immutable post-create (see spec §3).
+  engine: AccountEngine;
   // No is_default field. There is no "default" account — resolution is
   // strictly via path rules and explicit project overrides. See migration
   // v8 in database.ts and CLAUDE.md "Multi-Account Rules".
-  account_type: string;
+  //
+  // Free-text subscription tier label (e.g. 'Max', 'Pro', 'Plus'). Replaces
+  // the old enum-ish `account_type`. `has_cost` decouples billing from the
+  // label since 'Max' used to implicitly mean "free".
+  subscription_label: string;
+  has_cost: boolean;
   color: string | null;
   icon: string | null;
   session_defaults?: SessionDefaults;
@@ -37,16 +44,42 @@ export interface Account {
   summaryModel?: string | null;
 }
 
+export interface CreateAccountOptions {
+  name: string;
+  configDir: string;
+  engine?: AccountEngine; // default 'claude'
+  subscriptionLabel?: string; // default ''
+  hasCost?: boolean; // default true
+  color?: string;
+  icon?: string;
+  sessionDefaults?: SessionDefaults;
+  cliPath?: string | null;
+}
+
+export interface UpdateAccountOptions {
+  name: string;
+  configDir: string;
+  // engine intentionally omitted — immutable post-create (see spec §3).
+  subscriptionLabel?: string;
+  hasCost?: boolean;
+  color?: string;
+  icon?: string;
+  sessionDefaults?: SessionDefaults | null;
+  cliPath?: string | null;
+}
+
 export interface PathRule {
   id: number;
   account_id: number;
   account_name: string;
+  account_engine: AccountEngine;
   path_prefix: string;
   priority: number;
 }
 
 export interface ProjectOverride {
   project_path: string;
+  engine: AccountEngine;
   account_id: number;
   account_name: string;
 }
@@ -58,46 +91,31 @@ export interface ResolutionExplanation {
 }
 
 /**
- * Result of resolving a project path to a routing target. `agent` says which
- * engine (Claude / Codex) the project should use. `account` is the Claude
- * account row when `agent === 'claude'`; it's `null` for Codex rules, which
- * don't carry a Claude account.
- *
- * `null` at the top level (i.e. `resolve()` returning `null`) means "no match"
- * — neither an override nor any path rule covered the project path. Callers
- * MUST treat that as an error condition, not a default-account fallback.
+ * A single resolved routing target for one engine. `matchType` distinguishes
+ * an explicit project override from a path-rule match; `matchDetail` is the
+ * project path (override) or the matched prefix (path rule).
  */
-export interface ResolveResult {
-  agent: AgentKind;
-  account: Account | null;
+export interface ResolveSlot {
+  account: Account;
+  matchType: 'override' | 'path_rule';
+  matchDetail: string;
+}
+
+/**
+ * Result of resolving a project path. Each engine resolves independently:
+ * explicit override → longest-prefix path rule → null. A `null` slot means
+ * "no override and no matching path rule for that engine" — callers MUST treat
+ * an all-null pair as an error condition, not a default-account fallback.
+ */
+export interface ResolvePair {
+  claude: ResolveSlot | null;
+  codex: ResolveSlot | null;
 }
 
 export interface AccountsService {
   listAccounts(): Account[];
-  /**
-   * Create an account row. There is no isDefault parameter — accounts have no
-   * default-account flag. Callers that previously passed `true`/`false` as the
-   * third positional arg must drop it (migration v8 also drops the column).
-   */
-  createAccount(
-    name: string,
-    configDir: string,
-    accountType?: string,
-    color?: string,
-    icon?: string,
-    sessionDefaults?: SessionDefaults,
-    cliPath?: string | null,
-  ): Account;
-  updateAccount(
-    id: number,
-    name: string,
-    configDir: string,
-    accountType?: string,
-    color?: string,
-    icon?: string,
-    sessionDefaults?: SessionDefaults | null,
-    cliPath?: string | null,
-  ): void;
+  createAccount(opts: CreateAccountOptions): Account;
+  updateAccount(id: number, opts: UpdateAccountOptions): void;
   /** Update the per-session summarization opt-in for an account. Pass
    *  `summaryModel: null` to clear the model (which also disables the
    *  toggle, since both fields are required for generation). */
@@ -112,23 +130,29 @@ export interface AccountsService {
   addPathRule(accountId: number, pathPrefix: string, priority?: number): PathRule;
   removePathRule(ruleId: number): void;
 
-  resolve(projectPath: string): ResolveResult | null;
+  resolve(projectPath: string): ResolvePair;
   setProjectOverride(projectPath: string, accountId: number): void;
   listProjectOverrides(): ProjectOverride[];
   explainResolution(projectPath: string): ResolutionExplanation | null;
 
-  discoverAccounts(): Promise<[string, string][]>;
+  discoverAccounts(): Promise<DiscoveredConfigDirTuple[]>;
   /**
-   * Scans `$HOME` for `.claude*` config dirs and creates an Account row for
-   * each one that isn't already represented by an existing account's
-   * `configDir`. Returns the newly-created accounts. Names are derived via
-   * `nameFromConfigDir` in `first-run-discovery.ts` (e.g. `.claude` → "Claude",
-   * `.claude-work` → "Work"). Resolution semantics are unchanged — no path
-   * rules are created. Intended for the Settings escape hatch when a user
-   * adds a new `.claude-*` dir after first launch.
+   * Scans `$HOME` for `.claude*`/`.codex*` config dirs and creates an Account
+   * row for each one not already represented by an existing account's
+   * `configDir`. Returns the newly-created accounts. Engine + name are derived
+   * from the directory. Resolution semantics are unchanged — no path rules are
+   * created. Intended for the Settings escape hatch when a user adds a new
+   * config dir after first launch.
    */
   scanForNewAccounts(): Promise<Account[]>;
 }
+
+/** Engine-tagged discovery result re-exported for handler/renderer typing. */
+export type DiscoveredConfigDirTuple = {
+  dirName: string;
+  configDir: string;
+  engine: AccountEngine;
+};
 
 // ---------------------------------------------------------------------------
 // Row types returned from SQLite
@@ -138,7 +162,9 @@ interface AccountRow {
   id: number;
   name: string;
   config_dir: string;
-  account_type: string;
+  engine: AccountEngine;
+  subscription_label: string;
+  has_cost: number; // SQLite stores 0/1
   color: string | null;
   icon: string | null;
   session_defaults: string | null;
@@ -153,6 +179,7 @@ interface PathRuleRow {
   id: number;
   account_id: number;
   account_name: string;
+  account_engine: AccountEngine;
   path_prefix: string;
   priority: number;
 }
@@ -184,7 +211,9 @@ function rowToAccount(row: AccountRow): Account {
     id: row.id,
     name: row.name,
     config_dir: row.config_dir,
-    account_type: row.account_type,
+    engine: row.engine === 'codex' ? 'codex' : 'claude',
+    subscription_label: row.subscription_label,
+    has_cost: row.has_cost !== 0,
     color: row.color,
     icon: row.icon,
     session_defaults: row.session_defaults
@@ -224,10 +253,6 @@ function isPathInside(child: string, parent: string): boolean {
 export function createAccountsService(db: Database): AccountsService {
   const raw = db.raw;
 
-  // -------------------------------------------------------------------------
-  // Prepared statements (lazy init pattern — prepare once, reuse)
-  // -------------------------------------------------------------------------
-
   function listAccounts(): Account[] {
     const rows = raw
       .prepare('SELECT * FROM accounts ORDER BY name')
@@ -235,28 +260,23 @@ export function createAccountsService(db: Database): AccountsService {
     return rows.map(rowToAccount);
   }
 
-  function createAccount(
-    name: string,
-    configDir: string,
-    accountType = 'pro',
-    color?: string,
-    icon?: string,
-    sessionDefaults?: SessionDefaults,
-    cliPath?: string | null,
-  ): Account {
+  function createAccount(opts: CreateAccountOptions): Account {
     const info = raw
       .prepare(
-        `INSERT INTO accounts (name, config_dir, account_type, color, icon, session_defaults, cli_path)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO accounts
+           (name, config_dir, engine, subscription_label, has_cost, color, icon, session_defaults, cli_path)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
-        name,
-        configDir,
-        accountType,
-        color ?? null,
-        icon ?? null,
-        sessionDefaults ? JSON.stringify(sessionDefaults) : null,
-        cliPath ?? null,
+        opts.name,
+        opts.configDir,
+        opts.engine ?? 'claude',
+        opts.subscriptionLabel ?? '',
+        (opts.hasCost ?? true) ? 1 : 0,
+        opts.color ?? null,
+        opts.icon ?? null,
+        opts.sessionDefaults ? JSON.stringify(opts.sessionDefaults) : null,
+        opts.cliPath ?? null,
       );
 
     const row = raw
@@ -266,49 +286,53 @@ export function createAccountsService(db: Database): AccountsService {
     return rowToAccount(row);
   }
 
-  function updateAccount(
-    id: number,
-    name: string,
-    configDir: string,
-    accountType?: string,
-    color?: string,
-    icon?: string,
-    sessionDefaults?: SessionDefaults | null,
-    cliPath?: string | null,
-  ): void {
-    if (sessionDefaults !== undefined) {
+  function updateAccount(id: number, opts: UpdateAccountOptions): void {
+    // subscription_label / has_cost are preserved when omitted (COALESCE),
+    // matching the prior account_type behavior. session_defaults: undefined
+    // preserves, null clears, object sets.
+    const hasCostValue =
+      opts.hasCost === undefined ? null : opts.hasCost ? 1 : 0;
+
+    if (opts.sessionDefaults !== undefined) {
       raw
         .prepare(
           `UPDATE accounts
-           SET name = ?, config_dir = ?, account_type = COALESCE(?, account_type),
-               color = ?, icon = ?, session_defaults = ?, cli_path = ?, updated_at = CURRENT_TIMESTAMP
+           SET name = ?, config_dir = ?,
+               subscription_label = COALESCE(?, subscription_label),
+               has_cost = COALESCE(?, has_cost),
+               color = ?, icon = ?, session_defaults = ?, cli_path = ?,
+               updated_at = CURRENT_TIMESTAMP
            WHERE id = ?`,
         )
         .run(
-          name,
-          configDir,
-          accountType ?? null,
-          color ?? null,
-          icon ?? null,
-          sessionDefaults !== null ? JSON.stringify(sessionDefaults) : null,
-          cliPath ?? null,
+          opts.name,
+          opts.configDir,
+          opts.subscriptionLabel ?? null,
+          hasCostValue,
+          opts.color ?? null,
+          opts.icon ?? null,
+          opts.sessionDefaults !== null ? JSON.stringify(opts.sessionDefaults) : null,
+          opts.cliPath ?? null,
           id,
         );
     } else {
       raw
         .prepare(
           `UPDATE accounts
-           SET name = ?, config_dir = ?, account_type = COALESCE(?, account_type),
+           SET name = ?, config_dir = ?,
+               subscription_label = COALESCE(?, subscription_label),
+               has_cost = COALESCE(?, has_cost),
                color = ?, icon = ?, cli_path = ?, updated_at = CURRENT_TIMESTAMP
            WHERE id = ?`,
         )
         .run(
-          name,
-          configDir,
-          accountType ?? null,
-          color ?? null,
-          icon ?? null,
-          cliPath ?? null,
+          opts.name,
+          opts.configDir,
+          opts.subscriptionLabel ?? null,
+          hasCostValue,
+          opts.color ?? null,
+          opts.icon ?? null,
+          opts.cliPath ?? null,
           id,
         );
     }
@@ -339,7 +363,8 @@ export function createAccountsService(db: Database): AccountsService {
   function listPathRules(): PathRule[] {
     return raw
       .prepare(
-        `SELECT r.id, r.account_id, a.name AS account_name, r.path_prefix, r.priority
+        `SELECT r.id, r.account_id, a.name AS account_name, a.engine AS account_engine,
+                r.path_prefix, r.priority
          FROM account_path_rules r
          JOIN accounts a ON a.id = r.account_id
          ORDER BY r.priority DESC, LENGTH(r.path_prefix) DESC`,
@@ -360,7 +385,8 @@ export function createAccountsService(db: Database): AccountsService {
 
     const row = raw
       .prepare(
-        `SELECT r.id, r.account_id, a.name AS account_name, r.path_prefix, r.priority
+        `SELECT r.id, r.account_id, a.name AS account_name, a.engine AS account_engine,
+                r.path_prefix, r.priority
          FROM account_path_rules r
          JOIN accounts a ON a.id = r.account_id
          WHERE r.id = ?`,
@@ -379,18 +405,22 @@ export function createAccountsService(db: Database): AccountsService {
   // -------------------------------------------------------------------------
 
   function setProjectOverride(projectPath: string, accountId: number): void {
+    const acct = raw
+      .prepare('SELECT engine FROM accounts WHERE id = ?')
+      .get(accountId) as { engine: AccountEngine } | undefined;
+    if (!acct) throw new Error(`Account ${accountId} not found`);
     raw
       .prepare(
-        `INSERT INTO project_account_overrides (project_path, account_id) VALUES (?, ?)
-         ON CONFLICT(project_path) DO UPDATE SET account_id = excluded.account_id`,
+        `INSERT INTO project_account_overrides (project_path, engine, account_id) VALUES (?, ?, ?)
+         ON CONFLICT(project_path, engine) DO UPDATE SET account_id = excluded.account_id`,
       )
-      .run(projectPath, accountId);
+      .run(projectPath, acct.engine, accountId);
   }
 
   function listProjectOverrides(): ProjectOverride[] {
     return raw
       .prepare(
-        `SELECT o.project_path, o.account_id, a.name AS account_name
+        `SELECT o.project_path, o.engine, o.account_id, a.name AS account_name
          FROM project_account_overrides o
          JOIN accounts a ON a.id = o.account_id
          ORDER BY o.project_path`,
@@ -402,64 +432,75 @@ export function createAccountsService(db: Database): AccountsService {
   // Resolution
   // -------------------------------------------------------------------------
 
-  function resolve(projectPath: string): ResolveResult | null {
+  function resolve(projectPath: string): ResolvePair {
     const normalizedProject = normalizePath(projectPath);
+    const result: ResolvePair = { claude: null, codex: null };
 
-    // 1. Explicit project override. Overrides are Claude-only — the override
-    //    table carries no agent column — so a hit always pins agent='claude'.
-    const overrideRow = raw
+    // 1. Explicit overrides, per engine.
+    const overrides = raw
       .prepare(
-        `SELECT a.* FROM project_account_overrides o
+        `SELECT o.engine AS o_engine, a.* FROM project_account_overrides o
          JOIN accounts a ON a.id = o.account_id
          WHERE o.project_path = ?`,
       )
-      .get(normalizedProject) as AccountRow | undefined;
-
-    if (overrideRow) {
-      return { agent: 'claude', account: rowToAccount(overrideRow) };
+      .all(normalizedProject) as (AccountRow & { o_engine: AccountEngine })[];
+    for (const row of overrides) {
+      const slot: ResolveSlot = {
+        account: rowToAccount(row),
+        matchType: 'override',
+        matchDetail: projectPath,
+      };
+      if (row.o_engine === 'codex') result.codex = slot;
+      else result.claude = slot;
     }
 
-    // 2. Longest matching path rule (LENGTH(path_prefix) DESC, then priority
-    //    DESC). LEFT JOIN because Codex rules carry no Claude account
-    //    (account_id is NULL); the join would otherwise drop them.
-    const rules = raw
-      .prepare(
-        `SELECT r.path_prefix, r.agent AS rule_agent, a.* FROM account_path_rules r
-         LEFT JOIN accounts a ON a.id = r.account_id
-         ORDER BY LENGTH(r.path_prefix) DESC, r.priority DESC`,
-      )
-      .all() as (Partial<AccountRow> & {
-        path_prefix: string;
-        rule_agent: string;
-        id: number | null;
-      })[];
+    // 2. Path rules per engine — only for slots not already filled by override.
+    if (!result.claude || !result.codex) {
+      const rules = raw
+        .prepare(
+          `SELECT r.path_prefix, r.priority, a.* FROM account_path_rules r
+           JOIN accounts a ON a.id = r.account_id`,
+        )
+        .all() as (AccountRow & { path_prefix: string; priority: number })[];
 
-    for (const rule of rules) {
-      const normalizedPrefix = normalizePath(rule.path_prefix);
-      if (!isPathInside(normalizedProject, normalizedPrefix)) continue;
-
-      const agent: AgentKind = rule.rule_agent === 'codex' ? 'codex' : 'claude';
-      const account = rule.id != null ? rowToAccount(rule as AccountRow) : null;
-      return { agent, account };
+      for (const engine of ['claude', 'codex'] as const) {
+        if (result[engine]) continue;
+        const match = rules
+          .filter((r) => (r.engine === 'codex' ? 'codex' : 'claude') === engine)
+          .map((r) => ({ rule: r, prefix: normalizePath(r.path_prefix) }))
+          .filter(({ prefix }) => isPathInside(normalizedProject, prefix))
+          .sort(
+            (a, b) =>
+              b.prefix.length - a.prefix.length || b.rule.priority - a.rule.priority,
+          )[0];
+        if (match) {
+          result[engine] = {
+            account: rowToAccount(match.rule),
+            matchType: 'path_rule',
+            matchDetail: match.rule.path_prefix,
+          };
+        }
+      }
     }
 
-    // 3. No match
-    return null;
+    return result;
   }
 
   // -------------------------------------------------------------------------
-  // Explain resolution
+  // Explain resolution (Claude-centric UI helper; returns the longest-prefix
+  // match across engines, preferring an explicit override).
   // -------------------------------------------------------------------------
 
   function explainResolution(projectPath: string): ResolutionExplanation | null {
     const normalizedProject = normalizePath(projectPath);
 
-    // 1. Explicit override
     const overrideRow = raw
       .prepare(
         `SELECT a.* FROM project_account_overrides o
          JOIN accounts a ON a.id = o.account_id
-         WHERE o.project_path = ?`,
+         WHERE o.project_path = ?
+         ORDER BY o.engine
+         LIMIT 1`,
       )
       .get(normalizedProject) as AccountRow | undefined;
 
@@ -471,7 +512,6 @@ export function createAccountsService(db: Database): AccountsService {
       };
     }
 
-    // 2. Longest matching path rule
     const rules = raw
       .prepare(
         `SELECT r.path_prefix, r.priority, a.* FROM account_path_rules r
@@ -481,8 +521,7 @@ export function createAccountsService(db: Database): AccountsService {
       .all() as (AccountRow & { path_prefix: string; priority: number })[];
 
     for (const rule of rules) {
-      const normalizedPrefix = normalizePath(rule.path_prefix);
-      if (isPathInside(normalizedProject, normalizedPrefix)) {
+      if (isPathInside(normalizedProject, normalizePath(rule.path_prefix))) {
         return {
           account: rowToAccount(rule),
           match_type: 'path_rule',
@@ -498,28 +537,8 @@ export function createAccountsService(db: Database): AccountsService {
   // Discovery
   // -------------------------------------------------------------------------
 
-  async function discoverAccounts(): Promise<[string, string][]> {
-    const home = os.homedir();
-    const results: [string, string][] = [];
-
-    let entries: fs.Dirent[];
-    try {
-      entries = fs.readdirSync(home, { withFileTypes: true });
-    } catch {
-      return results;
-    }
-
-    for (const entry of entries) {
-      if (!entry.isDirectory()) continue;
-
-      const name = entry.name;
-      if (name !== '.claude' && !name.startsWith('.claude-')) continue;
-
-      const fullPath = path.join(home, name);
-      results.push([name, fullPath]);
-    }
-
-    return results;
+  async function discoverAccounts(): Promise<DiscoveredConfigDirTuple[]> {
+    return discoverConfigDirs(os.homedir());
   }
 
   async function scanForNewAccounts(): Promise<Account[]> {
@@ -528,9 +547,9 @@ export function createAccountsService(db: Database): AccountsService {
 
     const existing = new Set(listAccounts().map((a) => a.config_dir));
     const created: Account[] = [];
-    for (const [dirName, configDir] of found) {
+    for (const { dirName, configDir, engine } of found) {
       if (existing.has(configDir)) continue;
-      const acct = createAccount(nameFromConfigDir(dirName), configDir);
+      const acct = createAccount({ name: nameFromConfigDir(dirName, engine), configDir, engine });
       created.push(acct);
     }
     return created;

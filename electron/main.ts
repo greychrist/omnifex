@@ -544,7 +544,7 @@ app.whenReady().then(() => {
     // resumes (they're anchored to the configDir that owns the JSONL) and
     // when manualAccountOverride is set (user explicitly picked an account
     // on the form). Returns null when the project doesn't resolve.
-    (projectPath: string) => accountsService.resolve(projectPath)?.account?.config_dir ?? null,
+    (projectPath: string) => accountsService.resolve(projectPath).claude?.account.config_dir ?? null,
   );
   const claudeService = createClaudeService(db, accountsService);
   const usageService = createUsageService(accountsService, loggingService);
@@ -608,12 +608,12 @@ app.whenReady().then(() => {
       // exists, otherwise null so the caller's skipped:no-account branch
       // fires. There is no synthetic ~/.claude fallback — see CLAUDE.md
       // "Multi-Account Rules" and NoAccountError in claude.ts.
-      const resolvedRoot = configDir ?? accountsService.resolve(projectPath)?.account?.config_dir;
+      const resolvedRoot = configDir ?? accountsService.resolve(projectPath).claude?.account.config_dir;
       if (!resolvedRoot) return null;
       return path.join(resolvedRoot, 'projects', projectId, `${sessionUuid}.jsonl`);
     },
     resolveAccount: (projectPath) => {
-      const acct = accountsService.resolve(projectPath)?.account ?? null;
+      const acct = accountsService.resolve(projectPath).claude?.account ?? null;
       if (!acct) return null;
       return {
         name: acct.name,
@@ -699,28 +699,31 @@ app.whenReady().then(() => {
     accounts: {
       list: () => accountsService.listAccounts(),
       create: (data: any) =>
-        accountsService.createAccount(
-          data.name,
-          data.configDir ?? data.config_dir,
-          data.accountType ?? data.account_type,
-          data.color,
-          data.icon,
-          data.sessionDefaults ?? data.session_defaults,
-          data.cliPath ?? data.cli_path ?? null,
-        ),
+        accountsService.createAccount({
+          name: data.name,
+          configDir: data.configDir ?? data.config_dir,
+          engine: data.engine,
+          subscriptionLabel: data.subscriptionLabel ?? data.subscription_label,
+          hasCost: data.hasCost ?? data.has_cost,
+          color: data.color,
+          icon: data.icon,
+          sessionDefaults: data.sessionDefaults ?? data.session_defaults,
+          cliPath: data.cliPath ?? data.cli_path ?? null,
+        }),
       update: (_id: any, data: any) =>
-        accountsService.updateAccount(
-          data.id,
-          data.name,
-          data.configDir ?? data.config_dir,
-          data.accountType ?? data.account_type,
-          data.color,
-          data.icon,
-          'sessionDefaults' in data || 'session_defaults' in data
-            ? (data.sessionDefaults ?? data.session_defaults)
-            : undefined,
-          data.cliPath ?? data.cli_path ?? null,
-        ),
+        accountsService.updateAccount(data.id, {
+          name: data.name,
+          configDir: data.configDir ?? data.config_dir,
+          subscriptionLabel: data.subscriptionLabel ?? data.subscription_label,
+          hasCost: data.hasCost ?? data.has_cost,
+          color: data.color,
+          icon: data.icon,
+          sessionDefaults:
+            'sessionDefaults' in data || 'session_defaults' in data
+              ? (data.sessionDefaults ?? data.session_defaults)
+              : undefined,
+          cliPath: data.cliPath ?? data.cli_path ?? null,
+        }),
       updateSummarySettings: (data: any) =>
         accountsService.updateSummarySettings(
           data.id,
@@ -732,13 +735,10 @@ app.whenReady().then(() => {
       addPathRule: (rule: any) =>
         accountsService.addPathRule(rule.accountId ?? rule.account_id, rule.pathPrefix ?? rule.path_prefix, rule.priority),
       removePathRule: (id: any) => accountsService.removePathRule(id),
-      // Returns the full `{ agent, account }` resolution so the renderer can
-      // prefill the agent picker from the same path-rule decision that
-      // picks the Claude account. Pre-Task-12 callers consumed
-      // `Account | null` directly; they now read `.account`.
-      // `null` at the top level means "no override and no matching path
-      // rule" — callers MUST surface that as an error rather than falling
-      // back to a silent default account.
+      // Returns the full `ResolvePair = { claude, codex }` so the renderer can
+      // prefill the agent picker per engine. A null slot means "no override and
+      // no matching path rule for that engine" — callers MUST surface an
+      // all-null pair as an error rather than falling back to a default.
       resolveForProject: (projectPath: string) =>
         accountsService.resolve(projectPath),
       setProjectOverride: (projectPath: string, accountId: any) =>

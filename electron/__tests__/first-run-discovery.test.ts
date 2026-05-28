@@ -1,13 +1,22 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { createDatabase, type Database } from '../services/database';
 import { createAccountsService, type AccountsService } from '../services/accounts';
-import { runFirstTimeDiscovery, nameFromConfigDir } from '../services/first-run-discovery';
+import {
+  runFirstTimeDiscovery,
+  nameFromConfigDir,
+  discoverConfigDirs,
+  engineFromDirName,
+  type DiscoveredConfigDir,
+} from '../services/first-run-discovery';
 
 // ---------------------------------------------------------------------------
 // First-time account discovery — runs once on Electron main boot when both
 // `listAccounts()` is empty AND the `discovery_completed` flag is unset.
-// Creates one Account row per `~/.claude*` dir found, with no path rules and
-// no default-account flag (resolution still goes override → rule → null).
+// Creates one engine-tagged Account row per `~/.claude*`/`~/.codex*` dir found,
+// with no path rules (resolution still goes override → rule → null).
 //
 // Discovery is one-and-done by design: if the user later deletes all accounts
 // in the UI, we don't silently re-create them on next launch.
@@ -26,13 +35,13 @@ describe('runFirstTimeDiscovery', () => {
     db.close();
   });
 
-  const fakeDiscoverEmpty = async (): Promise<Array<[string, string]>> => [];
-  const fakeDiscoverTwo = async (): Promise<Array<[string, string]>> => [
-    ['.claude', '/home/user/.claude'],
-    ['.claude-work', '/home/user/.claude-work'],
+  const fakeDiscoverEmpty = async (): Promise<DiscoveredConfigDir[]> => [];
+  const fakeDiscoverTwo = async (): Promise<DiscoveredConfigDir[]> => [
+    { dirName: '.claude', configDir: '/home/user/.claude', engine: 'claude' },
+    { dirName: '.codex-work', configDir: '/home/user/.codex-work', engine: 'codex' },
   ];
 
-  it('creates one account per discovered config dir when nothing exists yet', async () => {
+  it('creates one engine-tagged account per discovered config dir when nothing exists yet', async () => {
     const result = await runFirstTimeDiscovery({ accounts, db, discover: fakeDiscoverTwo });
 
     expect(result.ran).toBe(true);
@@ -40,10 +49,10 @@ describe('runFirstTimeDiscovery', () => {
 
     const list = accounts.listAccounts();
     expect(list).toHaveLength(2);
-    const names = list.map((a) => a.name).sort();
-    expect(names).toEqual(['Claude', 'Work']);
-    const dirs = list.map((a) => a.config_dir).sort();
-    expect(dirs).toEqual(['/home/user/.claude', '/home/user/.claude-work']);
+    const byName = Object.fromEntries(list.map((a) => [a.name, a]));
+    expect(byName['Claude'].engine).toBe('claude');
+    expect(byName['Work'].engine).toBe('codex');
+    expect(byName['Work'].config_dir).toBe('/home/user/.codex-work');
   });
 
   it('sets discovery_completed=true after a run', async () => {
@@ -55,7 +64,6 @@ describe('runFirstTimeDiscovery', () => {
   });
 
   it('also sets discovery_completed when zero dirs are found', async () => {
-    // No `~/.claude*` on the box — still a completed run; don't keep retrying.
     const result = await runFirstTimeDiscovery({ accounts, db, discover: fakeDiscoverEmpty });
 
     expect(result.ran).toBe(true);
@@ -64,7 +72,7 @@ describe('runFirstTimeDiscovery', () => {
   });
 
   it('does NOT run when accounts already exist', async () => {
-    accounts.createAccount('Existing', '/some/dir', 'pro');
+    accounts.createAccount({ name: 'Existing', configDir: '/some/dir' });
 
     let discoverCalled = false;
     const result = await runFirstTimeDiscovery({
@@ -72,14 +80,13 @@ describe('runFirstTimeDiscovery', () => {
       db,
       discover: async () => {
         discoverCalled = true;
-        return [['.claude', '/home/user/.claude']];
+        return [{ dirName: '.claude', configDir: '/home/user/.claude', engine: 'claude' as const }];
       },
     });
 
     expect(result.ran).toBe(false);
     expect(discoverCalled).toBe(false);
     expect(accounts.listAccounts()).toHaveLength(1);
-    // Should not set the flag — leaves room for the next migration scenario.
     expect(db.getSetting('discovery_completed')).toBeNull();
   });
 
@@ -92,7 +99,7 @@ describe('runFirstTimeDiscovery', () => {
       db,
       discover: async () => {
         discoverCalled = true;
-        return [['.claude', '/home/user/.claude']];
+        return [{ dirName: '.claude', configDir: '/home/user/.claude', engine: 'claude' as const }];
       },
     });
 
@@ -101,44 +108,78 @@ describe('runFirstTimeDiscovery', () => {
     expect(accounts.listAccounts()).toHaveLength(0);
   });
 
-  it('does not create a default-account flag or path rules', async () => {
+  it('does not create path rules', async () => {
     await runFirstTimeDiscovery({ accounts, db, discover: fakeDiscoverTwo });
 
-    // No path rules — resolution still returns null for any project until
-    // the user manually configures rules or per-project overrides.
     expect(accounts.listPathRules()).toEqual([]);
-    expect(accounts.resolve('/home/user/Repos/anything')).toBeNull();
+    expect(accounts.resolve('/home/user/Repos/anything')).toEqual({ claude: null, codex: null });
   });
 
   it('handles a single .claude dir cleanly', async () => {
     const result = await runFirstTimeDiscovery({
       accounts,
       db,
-      discover: async () => [['.claude', '/home/user/.claude']],
+      discover: async () => [{ dirName: '.claude', configDir: '/home/user/.claude', engine: 'claude' as const }],
     });
 
-    expect(result.created).toEqual([{ name: 'Claude', configDir: '/home/user/.claude' }]);
+    expect(result.created).toEqual([{ name: 'Claude', configDir: '/home/user/.claude', engine: 'claude' }]);
     const list = accounts.listAccounts();
     expect(list).toHaveLength(1);
     expect(list[0].name).toBe('Claude');
   });
 });
 
+describe('discoverConfigDirs', () => {
+  it('finds both ~/.claude* and ~/.codex* and tags each with the right engine', async () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'omnifex-disc-'));
+    fs.mkdirSync(path.join(home, '.claude'));
+    fs.mkdirSync(path.join(home, '.claude-work'));
+    fs.mkdirSync(path.join(home, '.codex'));
+    fs.mkdirSync(path.join(home, '.codex-side_project'));
+    fs.mkdirSync(path.join(home, '.claudette')); // false-positive guard
+    fs.mkdirSync(path.join(home, '.codexample')); // false-positive guard
+    fs.writeFileSync(path.join(home, '.codex-not-a-dir'), 'x'); // file, not dir
+
+    const found = await discoverConfigDirs(home);
+    const byDir = Object.fromEntries(found.map((f) => [f.dirName, f]));
+
+    expect(byDir['.claude']).toMatchObject({ engine: 'claude' });
+    expect(byDir['.claude-work']).toMatchObject({ engine: 'claude' });
+    expect(byDir['.codex']).toMatchObject({ engine: 'codex' });
+    expect(byDir['.codex-side_project']).toMatchObject({ engine: 'codex' });
+    expect(byDir['.claudette']).toBeUndefined();
+    expect(byDir['.codexample']).toBeUndefined();
+    expect(byDir['.codex-not-a-dir']).toBeUndefined();
+
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it('returns [] for a non-existent home dir', async () => {
+    expect(await discoverConfigDirs('/no/such/dir/omnifex-test')).toEqual([]);
+  });
+});
+
+describe('engineFromDirName', () => {
+  it('classifies exact and separated prefixes; rejects false positives', () => {
+    expect(engineFromDirName('.claude')).toBe('claude');
+    expect(engineFromDirName('.claude-work')).toBe('claude');
+    expect(engineFromDirName('.claude_work')).toBe('claude');
+    expect(engineFromDirName('.codex')).toBe('codex');
+    expect(engineFromDirName('.codex-a')).toBe('codex');
+    expect(engineFromDirName('.claudette')).toBeNull();
+    expect(engineFromDirName('.codexample')).toBeNull();
+    expect(engineFromDirName('.zshrc')).toBeNull();
+  });
+});
+
 describe('nameFromConfigDir', () => {
-  it('renders .claude as "Claude"', () => {
-    expect(nameFromConfigDir('.claude')).toBe('Claude');
-  });
-
-  it('renders .claude-work as "Work"', () => {
-    expect(nameFromConfigDir('.claude-work')).toBe('Work');
-  });
-
-  it('renders .claude-personal as "Personal"', () => {
-    expect(nameFromConfigDir('.claude-personal')).toBe('Personal');
-  });
-
-  it('renders multi-word suffixes title-cased and space-separated', () => {
-    expect(nameFromConfigDir('.claude-work-prod')).toBe('Work Prod');
-    expect(nameFromConfigDir('.claude-side_project')).toBe('Side Project');
+  it('derives engine-aware names', () => {
+    expect(nameFromConfigDir('.claude', 'claude')).toBe('Claude');
+    expect(nameFromConfigDir('.claude-work', 'claude')).toBe('Work');
+    expect(nameFromConfigDir('.claude-personal', 'claude')).toBe('Personal');
+    expect(nameFromConfigDir('.claude-work-prod', 'claude')).toBe('Work Prod');
+    expect(nameFromConfigDir('.codex', 'codex')).toBe('Codex');
+    expect(nameFromConfigDir('.codex-work', 'codex')).toBe('Work');
+    expect(nameFromConfigDir('.codex-side_project', 'codex')).toBe('Side Project');
   });
 });

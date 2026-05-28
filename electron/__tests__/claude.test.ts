@@ -53,7 +53,7 @@ describe('claude service', () => {
     it('returns an array when accounts exist but config dirs are empty', async () => {
       const configDir = path.join(tmpDir, '.claude-test');
       fs.mkdirSync(configDir, { recursive: true });
-      accounts.createAccount('Test', configDir, 'pro');
+      accounts.createAccount({ name: 'Test', configDir });
 
       const projects = await service.listProjects();
       expect(Array.isArray(projects)).toBe(true);
@@ -69,7 +69,7 @@ describe('claude service', () => {
       const sessionFile = path.join(projectDir, 'abc123.jsonl');
       fs.writeFileSync(sessionFile, JSON.stringify({ type: 'system', content: 'init' }) + '\n');
 
-      accounts.createAccount('Test', configDir, 'pro');
+      accounts.createAccount({ name: 'Test', configDir });
 
       const projects = await service.listProjects();
       expect(projects.length).toBeGreaterThanOrEqual(1);
@@ -96,7 +96,7 @@ describe('claude service', () => {
         JSON.stringify({ type: 'user', cwd: realPath, message: { role: 'user', content: 'hi' } }) + '\n',
       );
 
-      accounts.createAccount('Test', configDir, 'pro');
+      accounts.createAccount({ name: 'Test', configDir });
 
       const projects = await service.listProjects();
       const found = projects.find((p) => p.id === projectId);
@@ -137,7 +137,7 @@ describe('claude service', () => {
       const newerTime = new Date('2026-05-01T00:00:00Z');
       fs.utimesSync(newerFile, newerTime, newerTime);
 
-      accounts.createAccount('Test', configDir, 'pro');
+      accounts.createAccount({ name: 'Test', configDir });
 
       const projects = await service.listProjects();
       const found = projects.find((p) => p.id === projectId);
@@ -151,7 +151,7 @@ describe('claude service', () => {
       const projectDir = path.join(configDir, 'projects', projectId);
       fs.mkdirSync(projectDir, { recursive: true });
 
-      accounts.createAccount('Test', configDir, 'pro');
+      accounts.createAccount({ name: 'Test', configDir });
 
       const projects = await service.listProjects();
       const found = projects.find((p) => p.id === projectId);
@@ -170,7 +170,7 @@ describe('claude service', () => {
         JSON.stringify({ type: 'system', subtype: 'init' }) + '\n',
       );
 
-      accounts.createAccount('Test', configDir, 'pro');
+      accounts.createAccount({ name: 'Test', configDir });
 
       const projects = await service.listProjects();
       const found = projects.find((p) => p.id === projectId);
@@ -187,7 +187,7 @@ describe('claude service', () => {
         'not valid json at all\n',
       );
 
-      accounts.createAccount('Test', configDir, 'pro');
+      accounts.createAccount({ name: 'Test', configDir });
 
       const projects = await service.listProjects();
       const found = projects.find((p) => p.id === projectId);
@@ -210,7 +210,7 @@ describe('claude service', () => {
       const configDir = path.join(tmpDir, '.claude-no-jsonl');
       const projectPath = path.join(tmpDir, 'no-jsonl-proj');
       const projectId = projectPath.replace(/\//g, '-');
-      const account = accounts.createAccount('Test', configDir, 'pro');
+      const account = accounts.createAccount({ name: 'Test', configDir });
       accounts.addPathRule(account.id, tmpDir);
 
       const result = await service.loadSessionHistory('ghost', projectId, projectPath);
@@ -234,7 +234,7 @@ describe('claude service', () => {
       ].join('\n');
       fs.writeFileSync(sessionFile, lines);
 
-      const account = accounts.createAccount('Test', configDir, 'pro');
+      const account = accounts.createAccount({ name: 'Test', configDir });
       accounts.addPathRule(account.id, tmpDir);
 
       const result = await service.loadSessionHistory(sessionId, projectId, projectPath);
@@ -474,7 +474,7 @@ describe('claude service', () => {
     it('creates the project directory inside the resolved account config dir', () => {
       const configDir = path.join(tmpDir, '.claude-create');
       fs.mkdirSync(configDir, { recursive: true });
-      const account = accounts.createAccount('Test', configDir, 'pro');
+      const account = accounts.createAccount({ name: 'Test', configDir });
       accounts.addPathRule(account.id, tmpDir);
 
       const projectPath = path.join(tmpDir, 'brand-new');
@@ -510,7 +510,7 @@ describe('claude service', () => {
       const configDir = path.join(tmpDir, '.claude-empty');
       const projectPath = path.join(tmpDir, 'empty-project');
       const projectId = projectPath.replace(/\//g, '-');
-      const account = accounts.createAccount('Empty', configDir, 'pro');
+      const account = accounts.createAccount({ name: 'Empty', configDir });
       accounts.addPathRule(account.id, tmpDir);
 
       const result = await service.getProjectSessions(projectId, projectPath);
@@ -523,7 +523,7 @@ describe('claude service', () => {
       const projectId = projectPath.replace(/\//g, '-');
       const projectDir = path.join(configDir, 'projects', projectId);
       fs.mkdirSync(projectDir, { recursive: true });
-      const account = accounts.createAccount('SessionsTest', configDir, 'pro');
+      const account = accounts.createAccount({ name: 'SessionsTest', configDir });
       accounts.addPathRule(account.id, tmpDir);
 
       // Session A: has a plain text user message
@@ -615,7 +615,7 @@ describe('claude service', () => {
         JSON.stringify({ type: 'user', message: { content: 'hi' } }),
       );
 
-      const account = accounts.createAccount('Hint', configDir, 'pro');
+      const account = accounts.createAccount({ name: 'Hint', configDir });
       accounts.addPathRule(account.id, tmpDir);
 
       const sessions = await service.getProjectSessions(projectId, projectPath);
@@ -659,8 +659,8 @@ describe('claude service', () => {
 
       // Both accounts exist. Path rule binds ~/Repos/personal → Personal.
       // Note: 'Local' sorts before 'Personal' in listAccounts() ORDER BY name.
-      const personal = accounts.createAccount('Personal', personalDir, 'pro');
-      accounts.createAccount('Local', localDir, 'pro');
+      const personal = accounts.createAccount({ name: 'Personal', configDir: personalDir });
+      accounts.createAccount({ name: 'Local', configDir: localDir });
       accounts.addPathRule(personal.id, path.join(tmpDir, 'Repos', 'personal'));
 
       const sessions = await service.getProjectSessions(projectId, projectPath);
@@ -670,7 +670,7 @@ describe('claude service', () => {
 
     it('throws NoAccountError when no path rule resolves the project path', async () => {
       const personalDir = path.join(tmpDir, '.claude-personal');
-      accounts.createAccount('Personal', personalDir, 'pro');
+      accounts.createAccount({ name: 'Personal', configDir: personalDir });
       // No path rule covering /Some/Other/Path.
 
       const orphanPath = path.join(tmpDir, 'orphan');
@@ -690,7 +690,7 @@ describe('claude service', () => {
         path.join(projectDir, 'sess.jsonl'),
         JSON.stringify({ type: 'user', message: { content: 'hi' } }),
       );
-      accounts.createAccount('Test', configDir, 'pro');
+      accounts.createAccount({ name: 'Test', configDir });
 
       await expect(
         service.getProjectSessions(projectId),
@@ -711,7 +711,7 @@ describe('claude service', () => {
     // to the test's tmpDir via a path rule so any projectPath under tmpDir
     // resolves to this account.
     function bindAccount(name: string, configDir: string) {
-      const account = accounts.createAccount(name, configDir, 'pro');
+      const account = accounts.createAccount({ name, configDir });
       accounts.addPathRule(account.id, tmpDir);
     }
 
@@ -839,7 +839,7 @@ describe('claude service', () => {
       fs.writeFileSync(path.join(projectDir, 'b.jsonl'), '{}\n');
       fs.writeFileSync(path.join(projectDir, 'a.summary.json'), '{}');
 
-      const account = accounts.createAccount('DelTest', configDir, 'pro');
+      const account = accounts.createAccount({ name: 'DelTest', configDir });
 
       await service.deleteProject({ accountId: account.id, projectId });
 
@@ -851,7 +851,7 @@ describe('claude service', () => {
     it('is idempotent when the project directory is already gone', async () => {
       const configDir = path.join(tmpDir, '.claude-delete-missing-proj');
       fs.mkdirSync(path.join(configDir, 'projects'), { recursive: true });
-      const account = accounts.createAccount('DelTest', configDir, 'pro');
+      const account = accounts.createAccount({ name: 'DelTest', configDir });
 
       await expect(
         service.deleteProject({ accountId: account.id, projectId: '-already-gone' }),
@@ -861,7 +861,7 @@ describe('claude service', () => {
     it('rejects projectIds containing path separators or traversal', async () => {
       const configDir = path.join(tmpDir, '.claude-delete-traversal');
       fs.mkdirSync(configDir, { recursive: true });
-      const account = accounts.createAccount('DelTest', configDir, 'pro');
+      const account = accounts.createAccount({ name: 'DelTest', configDir });
 
       const bad = ['', '..', '../escape', 'has/slash', '.', '   '];
       for (const projectId of bad) {
@@ -885,7 +885,7 @@ describe('claude service', () => {
       fs.writeFileSync(path.join(projectsDir, '-keep', 's.jsonl'), '{}\n');
       fs.writeFileSync(path.join(projectsDir, '-go', 's.jsonl'), '{}\n');
 
-      const account = accounts.createAccount('DelTest', configDir, 'pro');
+      const account = accounts.createAccount({ name: 'DelTest', configDir });
 
       await service.deleteProject({ accountId: account.id, projectId: '-go' });
 
@@ -914,7 +914,7 @@ describe('claude service', () => {
         ].join('\n'),
       );
 
-      accounts.createAccount('AgentHistory', configDir, 'pro');
+      accounts.createAccount({ name: 'AgentHistory', configDir });
 
       const history = await service.loadAgentSessionHistory(sessionId);
       expect(history).toHaveLength(2);

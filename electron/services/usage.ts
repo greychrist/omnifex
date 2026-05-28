@@ -490,7 +490,7 @@ export function createUsageService(
       const entries = scanConfigDir(
         account.config_dir,
         account.name,
-        account.account_type,
+        account.subscription_label,
         filter,
         logging,
       );
