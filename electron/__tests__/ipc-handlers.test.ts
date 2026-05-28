@@ -98,6 +98,13 @@ function buildMockServices() {
       'delete',
     ] as const),
     logging: mockService(['writeBatch', 'query'] as const),
+    codexAuth: mockService([
+      'getStatus',
+      'startLoginFlow',
+      'cancelLoginFlow',
+      'getBinaryPath',
+      'logout',
+    ] as const),
     proxy: mockService(['getSettings', 'saveSettings'] as const),
     permissionsIO: createPermissionsIOService(),
     gitWatcher: mockService(['startSession', 'stopSession', 'reconnectSession', 'listWorktrees'] as const),
@@ -303,6 +310,37 @@ describe('ipc handlers — dispatch to services', () => {
     await invoke(handlers, 'list_project_overrides');
     expect(services.accounts.discoverAccounts).toHaveBeenCalledTimes(1);
     expect(services.accounts.listProjectOverrides).toHaveBeenCalledTimes(1);
+  });
+
+  it('create_account forwards engine + has_cost along with the rest of the payload', async () => {
+    const params = {
+      name: 'CodexWork',
+      configDir: '/x',
+      engine: 'codex',
+      subscriptionLabel: 'Plus',
+      hasCost: true,
+    };
+    await invoke(handlers, 'create_account', params);
+    expect(services.accounts.create).toHaveBeenCalledWith(params);
+  });
+
+  // ── Codex auth (per-configDir) ────────────────────────────────────────────
+
+  it('codex_auth_status forwards configDir (both case styles) to the service', async () => {
+    await invoke(handlers, 'codex_auth_status', { configDir: '/tmp/.codex-a' });
+    await invoke(handlers, 'codex_auth_status', { config_dir: '/tmp/.codex-b' });
+    expect(services.codexAuth.getStatus).toHaveBeenNthCalledWith(1, '/tmp/.codex-a');
+    expect(services.codexAuth.getStatus).toHaveBeenNthCalledWith(2, '/tmp/.codex-b');
+  });
+
+  it('codex_logout forwards configDir to the service', async () => {
+    await invoke(handlers, 'codex_logout', { configDir: '/tmp/.codex-a' });
+    expect(services.codexAuth.logout).toHaveBeenCalledWith('/tmp/.codex-a');
+  });
+
+  it('codex_auth_start_login forwards configDir (+ optional binary path)', async () => {
+    await invoke(handlers, 'codex_auth_start_login', { configDir: '/tmp/.codex-a' });
+    expect(services.codexAuth.startLoginFlow).toHaveBeenCalledWith({ configDir: '/tmp/.codex-a' });
   });
 
   // ── Claude ──────────────────────────────────────────────────────────────
