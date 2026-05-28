@@ -1,25 +1,25 @@
 /**
  * CodexAuthService — backend for Codex authentication.
  *
- * Codex stores its auth in `~/.codex/auth.json`. There are two ways the user
- * can authenticate:
+ * Codex stores its auth in `<CODEX_HOME>/auth.json`. With multi-account Codex
+ * support every method is keyed by the account's `configDir` (its CODEX_HOME),
+ * so two Codex accounts authenticate independently. There are two ways the
+ * user can authenticate:
  *
  *  - OAuth: the user ran `codex login` and the resulting JSON holds an id
  *    token plus (sometimes) the account email. We surface that file as
  *    mode='oauth'.
  *  - API key: the user exported `OPENAI_API_KEY` in their shell. Codex picks
  *    it up at spawn time, no on-disk state. We surface that as mode='apikey'
- *    when the file is absent (or unreadable).
+ *    when the file is absent. NB: OPENAI_API_KEY is machine-wide, so every
+ *    Codex account reads as authenticated in apikey mode when it's set.
  *
- * `getStatus()` answers "is the user signed in right now and how?". The
- * watcher fires when `~/.codex/auth.json` changes so the UI can re-render
- * without polling. `startLoginFlow()` spawns `codex login` via the
- * OneShotTerminal so the renderer can display it in an xterm modal — same
- * pattern Task 13 set up. `cancelLoginFlow()` just kills that pty.
- *
- * Anything touching the user's real auth file is hidden behind injected
- * dependencies (`authFilePath`, `readEnv`, `resolveCodexBinary`) so tests can
- * run against a tmpdir without poking the real config.
+ * `getStatus(configDir)` answers "is this account signed in right now and
+ * how?". `watch(configDir, cb)` fires when that account's `auth.json` changes
+ * so the UI can re-render without polling; watchers are refcounted per
+ * configDir. `startLoginFlow({ configDir })` spawns `codex login` with
+ * `CODEX_HOME=configDir` so the resulting auth file lands in the right account
+ * dir.
  */
 
 import fs from 'node:fs';
@@ -39,37 +39,31 @@ export interface CodexAuthStatus {
 }
 
 export interface CodexAuthService {
-  getStatus(): Promise<CodexAuthStatus>;
-  /** Subscribe to auth-file changes. Debounced ~250ms. */
-  watch(cb: (status: CodexAuthStatus) => void): { dispose(): void };
-  /** Spawn `codex login` via OneShotTerminal. Returns the handle for the renderer to attach. */
-  startLoginFlow(opts?: { codexBinaryPath?: string }): Promise<{ ptyHandle: string }>;
+  getStatus(configDir: string): Promise<CodexAuthStatus>;
+  /** Subscribe to a single account's auth-file changes. Debounced ~250ms.
+   *  Watchers are shared + refcounted per configDir. */
+  watch(configDir: string, cb: (status: CodexAuthStatus) => void): { dispose(): void };
+  /** Spawn `codex login` via OneShotTerminal with CODEX_HOME=configDir. */
+  startLoginFlow(opts: { configDir: string; codexBinaryPath?: string }): Promise<{ ptyHandle: string }>;
   /** Cancel an in-flight login (kills the pty). */
   cancelLoginFlow(ptyHandle: string): void;
   /**
    * Resolve the system-installed `codex` binary path. Returns `null` when
-   * the binary isn't on the user's machine. Surface this from the renderer
-   * via the `codex_binary_path` IPC channel so the sign-in modal can wire
-   * up OneShotTerminal without re-resolving the binary itself.
+   * the binary isn't on the user's machine.
    */
   getBinaryPath(): string | null;
   /**
-   * Sign the user out by removing `~/.codex/auth.json`. Idempotent — a
-   * missing file is treated as success. The file watcher (see `watch()`)
-   * picks up the deletion and broadcasts the new unauthenticated status,
-   * so the renderer just needs to await and refresh its UI.
+   * Sign the account out by removing `<configDir>/auth.json`. Idempotent — a
+   * missing file is treated as success. The file watcher picks up the deletion
+   * and broadcasts the new unauthenticated status.
    *
-   * Note: this does NOT touch `OPENAI_API_KEY`. If the user is in apikey
-   * mode (no auth file, env var set) there's nothing for us to delete —
-   * they need to clear the env var in their shell themselves.
+   * Note: this does NOT touch `OPENAI_API_KEY`.
    */
-  logout(): Promise<void>;
+  logout(configDir: string): Promise<void>;
 }
 
 export interface CreateCodexAuthServiceDeps {
   oneShotTerminal: OneShotTerminalService;
-  /** Override for tests; defaults to ~/.codex/auth.json */
-  authFilePath?: string;
   /** Override for tests; defaults to process.env */
   readEnv?: () => NodeJS.ProcessEnv;
   /** Override for tests; defaults to findSystemCodexBinary */
@@ -93,20 +87,17 @@ function extractEmail(parsed: unknown): string | undefined {
   if (!parsed || typeof parsed !== 'object') return undefined;
   const obj = parsed as Record<string, unknown>;
 
-  // Flat candidates.
   for (const key of ['email', 'account_email', 'user_email']) {
     const v = obj[key];
     if (typeof v === 'string' && v.includes('@')) return v;
   }
 
-  // Nested account.email — Codex's most recent shape at time of writing.
   const account = obj['account'];
   if (account && typeof account === 'object') {
     const email = (account as Record<string, unknown>).email;
     if (typeof email === 'string' && email.includes('@')) return email;
   }
 
-  // Some versions stash account info under `tokens` claims. Best-effort.
   const tokens = obj['tokens'];
   if (tokens && typeof tokens === 'object') {
     const email = (tokens as Record<string, unknown>).email;
@@ -116,33 +107,35 @@ function extractEmail(parsed: unknown): string | undefined {
   return undefined;
 }
 
-function defaultAuthFilePath(): string {
-  return path.join(os.homedir(), '.codex', 'auth.json');
-}
-
 // ---------------------------------------------------------------------------
 // Factory
 // ---------------------------------------------------------------------------
 
+interface WatcherSlot {
+  fsWatcher: fs.FSWatcher | null;
+  subscribers: Set<(s: CodexAuthStatus) => void>;
+  debounceTimer: NodeJS.Timeout | null;
+}
+
 export function createCodexAuthService(deps: CreateCodexAuthServiceDeps): CodexAuthService {
-  const authFilePath = deps.authFilePath ?? defaultAuthFilePath();
   const readEnv = deps.readEnv ?? (() => process.env);
   const resolveCodexBinary = deps.resolveCodexBinary ?? findSystemCodexBinary;
 
-  async function getStatus(): Promise<CodexAuthStatus> {
-    // Try the on-disk OAuth file first. Anything goes wrong (missing, perms,
-    // bad JSON) → null, then we check the env-key fallback.
+  const watchers = new Map<string, WatcherSlot>();
+
+  function authFilePath(configDir: string): string {
+    return path.join(configDir, 'auth.json');
+  }
+
+  async function getStatus(configDir: string): Promise<CodexAuthStatus> {
     let parsed: unknown = null;
     let fileExists = false;
     try {
-      const raw = fs.readFileSync(authFilePath, 'utf8');
+      const raw = fs.readFileSync(authFilePath(configDir), 'utf8');
       fileExists = true;
       try {
         parsed = JSON.parse(raw);
       } catch {
-        // File present but unreadable — treat the same as "no file" for
-        // status purposes. The user can recover by running `codex login`
-        // again or exporting OPENAI_API_KEY.
         parsed = null;
         fileExists = false;
       }
@@ -156,7 +149,6 @@ export function createCodexAuthService(deps: CreateCodexAuthServiceDeps): CodexA
       return { authenticated: true, mode: 'oauth' };
     }
 
-    // Fall back to env-key mode.
     const env = readEnv();
     const key = env.OPENAI_API_KEY;
     if (typeof key === 'string' && key.length > 0) {
@@ -166,93 +158,89 @@ export function createCodexAuthService(deps: CreateCodexAuthServiceDeps): CodexA
     return { authenticated: false };
   }
 
-  function watch(cb: (status: CodexAuthStatus) => void): { dispose(): void } {
-    // We watch the parent directory rather than the file directly: Codex
-    // rewrites auth.json atomically (write tmp + rename), which detaches
-    // a file-targeted watcher. Watching the directory and filtering by
-    // filename survives that.
-    const watchDir = path.dirname(authFilePath);
-    const watchName = path.basename(authFilePath);
-
-    let debounceTimer: NodeJS.Timeout | null = null;
-    let disposed = false;
-    let watcher: fs.FSWatcher | null = null;
+  function attachWatcher(configDir: string, slot: WatcherSlot): void {
+    // Watch the parent directory rather than the file: Codex rewrites
+    // auth.json atomically (write tmp + rename), which detaches a
+    // file-targeted watcher. Watching the dir and filtering by name survives.
+    const watchName = 'auth.json';
 
     const fire = (): void => {
-      if (disposed) return;
-      getStatus()
+      getStatus(configDir)
         .then((status) => {
-          if (disposed) return;
-          try {
-            cb(status);
-          } catch {
-            // A bad subscriber must not kill the watcher.
+          for (const cb of [...slot.subscribers]) {
+            try {
+              cb(status);
+            } catch {
+              // A bad subscriber must not kill the watcher.
+            }
           }
         })
         .catch(() => {
-          // getStatus swallows fs errors internally; we double-guard here.
+          // getStatus swallows fs errors internally; double-guard here.
         });
     };
 
     const scheduleFire = (): void => {
-      if (disposed) return;
-      if (debounceTimer) clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => {
-        debounceTimer = null;
+      if (slot.debounceTimer) clearTimeout(slot.debounceTimer);
+      slot.debounceTimer = setTimeout(() => {
+        slot.debounceTimer = null;
         fire();
       }, WATCH_DEBOUNCE_MS);
     };
 
     try {
-      // Ensure the directory exists so fs.watch has something to attach to.
-      // Missing-on-startup is normal — the user may not have run `codex login`
-      // yet — so we mkdir -p and proceed. If we can't even create the dir
-      // (perms / readonly fs), we silently noop the watcher; the dispose()
-      // contract is still honoured.
       try {
-        fs.mkdirSync(watchDir, { recursive: true });
+        fs.mkdirSync(configDir, { recursive: true });
       } catch {
         // best-effort; fs.watch below will throw and we'll exit cleanly.
       }
-      watcher = fs.watch(watchDir, (_eventType, filename) => {
-        if (disposed) return;
-        // Some platforms report `filename = null`. Be permissive — any change
-        // to the directory triggers a re-check; the debounce makes that
-        // affordable.
+      const watcher = fs.watch(configDir, (_eventType, filename) => {
         if (filename && filename.toString() !== watchName) return;
         scheduleFire();
       });
       watcher.on('error', () => {
-        // Same idea — never throw out of the watcher; just drop it.
-        if (watcher) {
-          try { watcher.close(); } catch { /* best-effort */ }
-        }
-        watcher = null;
+        try { watcher.close(); } catch { /* best-effort */ }
+        slot.fsWatcher = null;
       });
+      slot.fsWatcher = watcher;
     } catch {
-      // fs.watch failed (directory missing on some platforms even after
-      // mkdir, fs limits, etc.). Return a noop disposable.
-      watcher = null;
+      slot.fsWatcher = null;
     }
+  }
 
+  function watch(configDir: string, cb: (s: CodexAuthStatus) => void): { dispose(): void } {
+    let slot = watchers.get(configDir);
+    if (!slot) {
+      slot = { fsWatcher: null, subscribers: new Set(), debounceTimer: null };
+      watchers.set(configDir, slot);
+      attachWatcher(configDir, slot);
+    }
+    slot.subscribers.add(cb);
+
+    let disposed = false;
     return {
       dispose(): void {
         if (disposed) return;
         disposed = true;
-        if (debounceTimer) {
-          clearTimeout(debounceTimer);
-          debounceTimer = null;
-        }
-        if (watcher) {
-          try { watcher.close(); } catch { /* best-effort */ }
-          watcher = null;
+        const cur = watchers.get(configDir);
+        if (!cur) return;
+        cur.subscribers.delete(cb);
+        if (cur.subscribers.size === 0) {
+          if (cur.fsWatcher) {
+            try { cur.fsWatcher.close(); } catch { /* best-effort */ }
+          }
+          if (cur.debounceTimer) clearTimeout(cur.debounceTimer);
+          watchers.delete(configDir);
         }
       },
     };
   }
 
-  async function startLoginFlow(opts?: { codexBinaryPath?: string }): Promise<{ ptyHandle: string }> {
-    const binary = opts?.codexBinaryPath ?? resolveCodexBinary();
+  async function startLoginFlow(opts: {
+    configDir: string;
+    codexBinaryPath?: string;
+  }): Promise<{ ptyHandle: string }> {
+    const binary = opts.codexBinaryPath ?? resolveCodexBinary();
     if (!binary) {
       throw new Error(
         'codex binary not found. Install codex (https://github.com/openai/codex) or set a custom path in OmniFex settings.',
@@ -262,9 +250,10 @@ export function createCodexAuthService(deps: CreateCodexAuthServiceDeps): CodexA
     const handle = deps.oneShotTerminal.spawn({
       binary,
       args: ['login'],
-      // Codex stores `~/.codex/auth.json` based on $HOME, so we don't need
-      // to override cwd; let the user's home dir be the cwd.
       cwd: os.homedir(),
+      // CODEX_HOME directs `codex login` to write auth.json into this
+      // account's config dir rather than the default ~/.codex.
+      env: { ...readEnv(), CODEX_HOME: opts.configDir },
     });
 
     return { ptyHandle: handle.ptyHandle };
@@ -278,15 +267,9 @@ export function createCodexAuthService(deps: CreateCodexAuthServiceDeps): CodexA
     return resolveCodexBinary();
   }
 
-  async function logout(): Promise<void> {
-    // Delete the OAuth auth file. Missing file is fine — no work to do.
-    // We don't shell out to `codex logout` because (a) the CLI version that
-    // ships with the user's install isn't guaranteed to have that subcommand
-    // and (b) the operation is just "rm the file": doing it in-process is
-    // faster and avoids the pty round-trip + dependency on OneShotTerminal
-    // for a destructive-but-trivial change.
+  async function logout(configDir: string): Promise<void> {
     try {
-      fs.unlinkSync(authFilePath);
+      fs.unlinkSync(authFilePath(configDir));
     } catch (err) {
       const e = err as NodeJS.ErrnoException;
       if (e.code === 'ENOENT') return; // already signed out

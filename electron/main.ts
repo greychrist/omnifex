@@ -665,19 +665,43 @@ app.whenReady().then(() => {
   });
   const codexSessionWalkerService = createCodexSessionWalker();
 
-  // App-wide broadcast: any time the Codex auth file changes (fresh login,
-  // logout via deletion, etc.) every renderer needs to know so banners and
-  // the agent picker can re-render. The status payload is the same shape
-  // returned by `codex_auth_status`.
-  const codexAuthWatch = codexAuthService.watch((status) => {
-    for (const w of windows) {
-      if (!w.isDestroyed()) {
-        w.webContents.send('codex-auth-status-changed', status);
+  // App-wide broadcast: any time a Codex account's auth file changes (fresh
+  // login, logout via deletion, etc.) every renderer needs to know so banners
+  // and the agent picker can re-render. One watcher per Codex account's
+  // configDir; the broadcast payload carries which configDir changed so the
+  // renderer hook can filter to the account it cares about.
+  const codexAuthWatchers = new Map<string, { dispose(): void }>();
+  function syncCodexAuthWatchers(): void {
+    const codexDirs = new Set(
+      accountsService
+        .listAccounts()
+        .filter((a) => a.engine === 'codex')
+        .map((a) => a.config_dir),
+    );
+    for (const [dir, sub] of codexAuthWatchers) {
+      if (!codexDirs.has(dir)) {
+        try { sub.dispose(); } catch { /* best-effort */ }
+        codexAuthWatchers.delete(dir);
       }
     }
-  });
+    for (const dir of codexDirs) {
+      if (codexAuthWatchers.has(dir)) continue;
+      const sub = codexAuthService.watch(dir, (status) => {
+        for (const w of windows) {
+          if (!w.isDestroyed()) {
+            w.webContents.send('codex-auth-status-changed', { configDir: dir, status });
+          }
+        }
+      });
+      codexAuthWatchers.set(dir, sub);
+    }
+  }
+  syncCodexAuthWatchers();
   app.on('before-quit', () => {
-    try { codexAuthWatch.dispose(); } catch { /* best-effort */ }
+    for (const sub of codexAuthWatchers.values()) {
+      try { sub.dispose(); } catch { /* best-effort */ }
+    }
+    codexAuthWatchers.clear();
   });
 
   const notificationSoundsService = createNotificationSoundsService({
@@ -698,8 +722,8 @@ app.whenReady().then(() => {
     // Accounts adapter — maps handler interface to service methods
     accounts: {
       list: () => accountsService.listAccounts(),
-      create: (data: any) =>
-        accountsService.createAccount({
+      create: (data: any) => {
+        const acct = accountsService.createAccount({
           name: data.name,
           configDir: data.configDir ?? data.config_dir,
           engine: data.engine,
@@ -709,8 +733,11 @@ app.whenReady().then(() => {
           icon: data.icon,
           sessionDefaults: data.sessionDefaults ?? data.session_defaults,
           cliPath: data.cliPath ?? data.cli_path ?? null,
-        }),
-      update: (_id: any, data: any) =>
+        });
+        syncCodexAuthWatchers();
+        return acct;
+      },
+      update: (_id: any, data: any) => {
         accountsService.updateAccount(data.id, {
           name: data.name,
           configDir: data.configDir ?? data.config_dir,
@@ -723,14 +750,19 @@ app.whenReady().then(() => {
               ? (data.sessionDefaults ?? data.session_defaults)
               : undefined,
           cliPath: data.cliPath ?? data.cli_path ?? null,
-        }),
+        });
+        syncCodexAuthWatchers();
+      },
       updateSummarySettings: (data: any) =>
         accountsService.updateSummarySettings(
           data.id,
           !!(data.summarizeOnClose ?? data.summarize_on_close),
           (data.summaryModel ?? data.summary_model ?? null) as string | null,
         ),
-      delete: (id: any) => accountsService.deleteAccount(id),
+      delete: (id: any) => {
+        accountsService.deleteAccount(id);
+        syncCodexAuthWatchers();
+      },
       listPathRules: () => accountsService.listPathRules(),
       addPathRule: (rule: any) =>
         accountsService.addPathRule(rule.accountId ?? rule.account_id, rule.pathPrefix ?? rule.path_prefix, rule.priority),
@@ -745,7 +777,11 @@ app.whenReady().then(() => {
         accountsService.setProjectOverride(projectPath, accountId),
       listProjectOverrides: () => accountsService.listProjectOverrides(),
       discoverAccounts: () => accountsService.discoverAccounts(),
-      scanForNewAccounts: () => accountsService.scanForNewAccounts(),
+      scanForNewAccounts: async () => {
+        const created = await accountsService.scanForNewAccounts();
+        syncCodexAuthWatchers();
+        return created;
+      },
       explainResolution: (projectPath: string) =>
         accountsService.explainResolution(projectPath),
     },
@@ -931,11 +967,12 @@ app.whenReady().then(() => {
       kill: (ptyHandle) => oneShotTerminalService.kill(ptyHandle),
     },
     codexAuth: {
-      getStatus: () => codexAuthService.getStatus(),
-      startLoginFlow: (opts) => codexAuthService.startLoginFlow(opts),
+      getStatus: (configDir: string) => codexAuthService.getStatus(configDir),
+      startLoginFlow: (opts: { configDir: string; codexBinaryPath?: string }) =>
+        codexAuthService.startLoginFlow(opts),
       cancelLoginFlow: (ptyHandle: string) => codexAuthService.cancelLoginFlow(ptyHandle),
       getBinaryPath: () => codexAuthService.getBinaryPath(),
-      logout: () => codexAuthService.logout(),
+      logout: (configDir: string) => codexAuthService.logout(configDir),
     },
     codexSessionWalker: {
       listSessions: () => codexSessionWalkerService.listSessions(),

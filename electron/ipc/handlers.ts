@@ -202,15 +202,15 @@ export interface Services {
     kill(ptyHandle: string): void;
   };
   codexAuth?: {
-    getStatus(): Promise<{
+    getStatus(configDir: string): Promise<{
       authenticated: boolean;
       email?: string;
       mode?: 'oauth' | 'apikey';
     }>;
-    startLoginFlow(opts?: { codexBinaryPath?: string }): Promise<{ ptyHandle: string }>;
+    startLoginFlow(opts: { configDir: string; codexBinaryPath?: string }): Promise<{ ptyHandle: string }>;
     cancelLoginFlow(ptyHandle: string): void;
     getBinaryPath(): string | null;
-    logout(): Promise<void>;
+    logout(configDir: string): Promise<void>;
   };
   codexSessionWalker?: {
     listSessions(): Promise<import('../services/codex-session-walker').CodexSessionEntry[]>;
@@ -772,11 +772,17 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     }),
 
     // ── Codex auth ───────────────────────────────────────────────────────────
-    codex_auth_status: wrap(() => codexAuth?.getStatus() ?? { authenticated: false }),
+    codex_auth_status: wrapWith((p: Record<string, unknown>) => {
+      const configDir = (p?.configDir ?? p?.config_dir) as string | undefined;
+      if (!codexAuth || !configDir) return { authenticated: false };
+      return codexAuth.getStatus(configDir);
+    }),
     codex_auth_start_login: wrapWith((p: Record<string, unknown>) => {
+      const configDir = (p?.configDir ?? p?.config_dir) as string | undefined;
       const codexBinaryPath = (p?.codexBinaryPath ?? p?.codex_binary_path) as string | undefined;
       if (!codexAuth) throw new Error('codex_auth_start_login: codex auth service not available');
-      return codexAuth.startLoginFlow(codexBinaryPath ? { codexBinaryPath } : undefined);
+      if (!configDir) throw new Error('codex_auth_start_login: configDir is required');
+      return codexAuth.startLoginFlow(codexBinaryPath ? { configDir, codexBinaryPath } : { configDir });
     }),
     codex_auth_cancel_login: wrapWith((p: Record<string, unknown>) => {
       const ptyHandle = (p?.ptyHandle ?? p?.pty_handle) as string;
@@ -785,9 +791,10 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
       return null;
     }),
     codex_binary_path: wrap(() => codexAuth?.getBinaryPath() ?? null),
-    codex_logout: wrap(async () => {
-      if (!codexAuth) return null;
-      await codexAuth.logout();
+    codex_logout: wrapWith(async (p: Record<string, unknown>) => {
+      const configDir = (p?.configDir ?? p?.config_dir) as string | undefined;
+      if (!codexAuth || !configDir) return null;
+      await codexAuth.logout(configDir);
       return null;
     }),
 
