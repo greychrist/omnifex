@@ -8,7 +8,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { api, type Account } from "@/lib/api";
+import { api, type Account, type AccountEngine } from "@/lib/api";
 import { AccountBadge } from "@/components/AccountBadge";
 import { cn } from "@/lib/utils";
 import { fireAndLog } from "@/lib/fireAndLog";
@@ -19,6 +19,11 @@ interface AccountPickerDialogProps {
   projectPath: string;
   onAccountSelected: (account: Account) => void;
   title?: string;
+  /**
+   * When set, only show accounts whose `engine` matches. When unset, all
+   * accounts are shown (the historical behavior).
+   */
+  engineFilter?: AccountEngine;
 }
 
 export const AccountPickerDialog: React.FC<AccountPickerDialogProps> = ({
@@ -27,6 +32,7 @@ export const AccountPickerDialog: React.FC<AccountPickerDialogProps> = ({
   projectPath,
   onAccountSelected,
   title,
+  engineFilter,
 }) => {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -72,7 +78,9 @@ export const AccountPickerDialog: React.FC<AccountPickerDialogProps> = ({
         </DialogHeader>
 
         <div className="flex flex-col gap-2 my-2">
-          {accounts.map((account) => (
+          {accounts
+            .filter((account) => engineFilter === undefined || account.engine === engineFilter)
+            .map((account) => (
             <button
               key={account.id}
               onClick={() => { setSelectedId(account.id); }}

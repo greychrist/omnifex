@@ -12,7 +12,6 @@ const { apiMock } = vi.hoisted(() => {
   return {
     apiMock: {
       getCodexBinaryPath: vi.fn(),
-      getHomeDirectory: vi.fn(),
       subscribeCodexAuthStatus: vi.fn(),
       oneShotTerminalSpawn: vi.fn(),
       oneShotTerminalKill: vi.fn(),
@@ -44,22 +43,25 @@ vi.mock('@/components/shared/OneShotTerminal', () => ({
 // "auth flipped to authenticated" event without going through IPC.
 const authSubscribers: ((status: CodexAuthStatus) => void)[] = [];
 
+// Codex account config dir threaded into the modal under test.
+const CONFIG_DIR = '/home/test/.codex';
+
 beforeEach(() => {
   authSubscribers.length = 0;
   apiMock.getCodexBinaryPath.mockReset();
-  apiMock.getHomeDirectory.mockReset();
   apiMock.subscribeCodexAuthStatus.mockReset();
 
-  // Default: binary resolves; home dir is /home/test; subscribe captures cb.
+  // Default: binary resolves; subscribe captures the per-configDir callback.
   apiMock.getCodexBinaryPath.mockResolvedValue('/opt/homebrew/bin/codex');
-  apiMock.getHomeDirectory.mockResolvedValue('/home/test');
-  apiMock.subscribeCodexAuthStatus.mockImplementation((cb: (s: CodexAuthStatus) => void) => {
-    authSubscribers.push(cb);
-    return () => {
-      const idx = authSubscribers.indexOf(cb);
-      if (idx >= 0) authSubscribers.splice(idx, 1);
-    };
-  });
+  apiMock.subscribeCodexAuthStatus.mockImplementation(
+    (_configDir: string, cb: (s: CodexAuthStatus) => void) => {
+      authSubscribers.push(cb);
+      return () => {
+        const idx = authSubscribers.indexOf(cb);
+        if (idx >= 0) authSubscribers.splice(idx, 1);
+      };
+    },
+  );
 });
 
 afterEach(() => {
@@ -71,17 +73,21 @@ import { CodexSignInModal } from '../codex/CodexSignInModal';
 
 describe('CodexSignInModal', () => {
   it('does not render the dialog contents when open=false', () => {
-    render(<CodexSignInModal open={false} onClose={() => {}} />);
+    render(<CodexSignInModal open={false} onClose={() => {}} configDir={CONFIG_DIR} />);
     expect(screen.queryByText('Sign in to Codex')).toBeNull();
     // Subscription is only set up when open=true.
     expect(apiMock.subscribeCodexAuthStatus).not.toHaveBeenCalled();
     expect(apiMock.getCodexBinaryPath).not.toHaveBeenCalled();
   });
 
-  it('subscribes to auth status and resolves the codex binary on open', async () => {
-    render(<CodexSignInModal open={true} onClose={() => {}} />);
+  it('subscribes to auth status for the configDir and resolves the codex binary on open', async () => {
+    render(<CodexSignInModal open={true} onClose={() => {}} configDir={CONFIG_DIR} />);
     expect(screen.getByText('Sign in to Codex')).toBeTruthy();
     expect(apiMock.subscribeCodexAuthStatus).toHaveBeenCalledTimes(1);
+    expect(apiMock.subscribeCodexAuthStatus).toHaveBeenCalledWith(
+      CONFIG_DIR,
+      expect.any(Function),
+    );
     expect(apiMock.getCodexBinaryPath).toHaveBeenCalledTimes(1);
 
     // Once the binary resolver responds, OneShotTerminal is mounted with
@@ -98,7 +104,7 @@ describe('CodexSignInModal', () => {
 
   it('renders the "Codex CLI not found" fallback when binary resolves to null', async () => {
     apiMock.getCodexBinaryPath.mockResolvedValue(null);
-    render(<CodexSignInModal open={true} onClose={() => {}} />);
+    render(<CodexSignInModal open={true} onClose={() => {}} configDir={CONFIG_DIR} />);
     await waitFor(() => {
       expect(screen.getByText(/Codex CLI not found/i)).toBeTruthy();
     });
@@ -113,6 +119,7 @@ describe('CodexSignInModal', () => {
       <CodexSignInModal
         open={true}
         onClose={onClose}
+        configDir={CONFIG_DIR}
         onAuthenticated={onAuthenticated}
       />,
     );
@@ -133,7 +140,7 @@ describe('CodexSignInModal', () => {
 
   it('does NOT auto-close when an unauthenticated status flips through (e.g. logout race)', async () => {
     const onClose = vi.fn();
-    render(<CodexSignInModal open={true} onClose={onClose} />);
+    render(<CodexSignInModal open={true} onClose={onClose} configDir={CONFIG_DIR} />);
 
     await waitFor(() => {
       expect(authSubscribers.length).toBe(1);

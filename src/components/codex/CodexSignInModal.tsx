@@ -30,6 +30,13 @@ interface CodexSignInModalProps {
   open: boolean;
   onClose: () => void;
   /**
+   * The Codex account's config dir. Scopes the auth-status subscription so
+   * the modal only auto-closes when *this* account finishes signing in, and
+   * is threaded into the login flow so the pty authenticates the right
+   * account.
+   */
+  configDir: string;
+  /**
    * Optional callback fired when the auth subscription flips to
    * `authenticated: true`. The modal already auto-closes via `onClose`;
    * this is for parents that want a separate side-effect (e.g. resume
@@ -41,17 +48,13 @@ interface CodexSignInModalProps {
 export function CodexSignInModal({
   open,
   onClose,
+  configDir,
   onAuthenticated,
 }: CodexSignInModalProps): JSX.Element {
   // Binary path is loaded lazily on open. `null` after a load means "no
   // codex binary"; we render a different body in that case. `undefined`
   // means "haven't loaded yet" — render a loading state.
   const [binary, setBinary] = useState<string | null | undefined>(undefined);
-  // Home dir is used to derive `~/.codex/auth.json` as a fallback watch
-  // path for OneShotTerminal. Loaded alongside the binary; absence just
-  // means the watcher fallback is disabled and we rely on the auth
-  // subscription instead.
-  const [homeDir, setHomeDir] = useState<string | null>(null);
   // ptyHandle is captured by OneShotTerminal's onSpawn-equivalent (we don't
   // expose one — kept here for the cancel call). We capture it via the
   // imperative kill path: OneShotTerminal already kills on unmount, so we
@@ -70,7 +73,6 @@ export function CodexSignInModal({
   useEffect(() => {
     if (!open) {
       setBinary(undefined);
-      setHomeDir(null);
       return;
     }
     let cancelled = false;
@@ -83,14 +85,6 @@ export function CodexSignInModal({
         if (cancelled) return;
         setBinary(null);
       });
-    api.getHomeDirectory()
-      .then((dir) => {
-        if (cancelled) return;
-        setHomeDir(dir);
-      })
-      .catch(() => {
-        // Best-effort — the auth subscription handles the close on its own.
-      });
     return () => { cancelled = true; };
   }, [open]);
 
@@ -100,14 +94,14 @@ export function CodexSignInModal({
   // somehow dropped on a slow box.
   useEffect(() => {
     if (!open) return;
-    const unsub = api.subscribeCodexAuthStatus((status: CodexAuthStatus) => {
+    const unsub = api.subscribeCodexAuthStatus(configDir, (status: CodexAuthStatus) => {
       if (status.authenticated) {
         try { onAuthenticatedRef.current?.(); } catch (err) { console.error(err); }
         onCloseRef.current();
       }
     });
     return unsub;
-  }, [open]);
+  }, [open, configDir]);
 
   // Radix Dialog's `onOpenChange` fires for X-button, Esc, overlay
   // click — all of which should count as "user cancelled the login".
@@ -156,7 +150,8 @@ export function CodexSignInModal({
               <OneShotTerminal
                 binary={binary}
                 args={['login']}
-                watchPath={homeDir ? `${homeDir}/.codex/auth.json` : undefined}
+                env={{ CODEX_HOME: configDir }}
+                watchPath={`${configDir}/auth.json`}
                 className="h-full w-full"
               />
             </div>
