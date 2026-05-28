@@ -4,7 +4,6 @@ import type {
   MessageKindConfig,
   Palette,
   IconName,
-  IconSize,
   Presentation,
   BorderStyle,
   Typography,
@@ -47,15 +46,6 @@ interface KindEditorProps {
   onChange: (patch: Partial<MessageKindConfig>) => void;
   onResetKind: () => void;
 }
-
-const ICON_SIZE_OPTIONS: { value: IconSize; label: string }[] = [
-  { value: "xxs", label: "Extra extra small" },
-  { value: "xs", label: "Extra small" },
-  { value: "sm", label: "Small" },
-  { value: "base", label: "Base" },
-  { value: "lg", label: "Large" },
-  { value: "xl", label: "Extra large" },
-];
 
 const SENTINEL_DEFAULT = "__default__";
 
@@ -178,9 +168,6 @@ export const KindEditor: React.FC<KindEditorProps> = ({
   const overrideBgOpacity = kind.iconBgOpacity !== undefined;
 
   const accentHex = resolveAccentHex(kind.accentColor, palette);
-
-  const sizeLabel = (id: IconSize) =>
-    ICON_SIZE_OPTIONS.find((o) => o.value === id)?.label ?? id;
 
   return (
     <div className="space-y-6">
@@ -328,27 +315,6 @@ export const KindEditor: React.FC<KindEditorProps> = ({
             Defaults come from <em>Typography → Card icon</em>. Override here to
             tweak just this kind.
           </p>
-        </div>
-
-        {/* Size override */}
-        <div className="grid grid-cols-[10rem_minmax(0,1fr)] items-center gap-3">
-          <Label className="text-caption">Size</Label>
-          <Select
-            value={kind.iconSize ?? SENTINEL_DEFAULT}
-            onValueChange={(v) =>
-              { onChange({ iconSize: v === SENTINEL_DEFAULT ? undefined : (v as IconSize) }); }
-            }
-          >
-            <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value={SENTINEL_DEFAULT}>
-                Use default ({sizeLabel(typography.icon.size)})
-              </SelectItem>
-              {ICON_SIZE_OPTIONS.map((o) => (
-                <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
         </div>
 
         {/* Bordered override */}

@@ -2,7 +2,6 @@ import type React from "react";
 import type {
   FontSize,
   FontWeight,
-  IconSize,
   MessageRenderingConfig,
   TypographyStyle,
 } from "./messageRenderingConfig";
@@ -53,25 +52,6 @@ export function contentClassNames(config: MessageRenderingConfig): string {
   return typographyClassNames(config.typography.content);
 }
 
-const ICON_SIZE_CLASS: Record<IconSize, string> = {
-  xxs: "h-3 w-3",
-  xs: "h-3.5 w-3.5",
-  sm: "h-4 w-4",
-  base: "h-5 w-5",
-  lg: "h-6 w-6",
-  xl: "h-8 w-8",
-};
-
-/**
- * Resolve effective icon size for a kind: per-kind override if set, otherwise
- * the global `typography.icon.size`. Pass `kindId` to honor overrides; omit
- * when there is no kind context (e.g. global preview chrome).
- */
-function resolveIconSize(config: MessageRenderingConfig, kindId?: string): IconSize {
-  const kind = kindId ? config.kinds[kindId] : undefined;
-  return kind?.iconSize ?? config.typography.icon.size;
-}
-
 function resolveIconBordered(config: MessageRenderingConfig, kindId?: string): boolean {
   const kind = kindId ? config.kinds[kindId] : undefined;
   return kind?.iconBordered ?? config.typography.icon.bordered;
@@ -80,10 +60,6 @@ function resolveIconBordered(config: MessageRenderingConfig, kindId?: string): b
 function resolveIconBgOpacity(config: MessageRenderingConfig, kindId?: string): number {
   const kind = kindId ? config.kinds[kindId] : undefined;
   return kind?.iconBgOpacity ?? config.typography.icon.bgOpacity;
-}
-
-export function iconSizeClassName(config: MessageRenderingConfig, kindId?: string): string {
-  return ICON_SIZE_CLASS[resolveIconSize(config, kindId)];
 }
 
 /**

@@ -6,7 +6,6 @@ import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
 import { accentStyleFor, swatchFor } from "@/lib/accentStyle";
 import { iconNameFor } from "@/lib/kindPresentation";
 import {
-  iconSizeClassName,
   iconWrapperClassName,
   iconWrapperStyle,
 } from "@/lib/typographyClasses";
@@ -150,7 +149,7 @@ export const MessageFrameCard: React.FC<MessageFrameCardProps> = ({
               >
                 <IconRenderer
                   name={iconName}
-                  className={iconSizeClassName(config, kindId)}
+                  className="h-3.5 w-3.5"
                 />
               </div>
             )}

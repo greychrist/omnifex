@@ -221,7 +221,6 @@ export interface MessageKindConfig {
   // Per-kind icon overrides — when set, override the corresponding global
   // `typography.icon.*` value for this kind only. When undefined, the kind
   // inherits the global default.
-  iconSize?: IconSize;
   iconBordered?: boolean;
   iconBgOpacity?: number; // 0–100
 
@@ -334,11 +333,6 @@ export type FontWeight =
   | "extrabold"
   | "black";
 
-/** Card-level icon size (the colored icon on the left of a message card).
- *  Independent from `FontSize` so the user can scale icons without changing
- *  text, and vice versa. */
-export type IconSize = "xxs" | "xs" | "sm" | "base" | "lg" | "xl";
-
 export interface TypographyStyle {
   /** Catalog typeface ID. See src/lib/typefaceCatalog.ts. */
   typeface: Typeface;
@@ -348,7 +342,6 @@ export interface TypographyStyle {
 }
 
 export interface IconStyle {
-  size: IconSize;
   /** When true, the card icon renders inside a bordered chip with the
    *  chat background — the icon "punches out" of the card's tinted accent.
    *  When false, the icon sits flat against the card background. */
@@ -368,7 +361,7 @@ export interface Typography {
 export const DEFAULT_TYPOGRAPHY: Typography = {
   header: { typeface: "inter", size: "sm", weight: "semibold", italic: false },
   content: { typeface: "inter", size: "sm", weight: "normal", italic: false },
-  icon: { size: "xs", bordered: true, bgOpacity: 100 },
+  icon: { bordered: true, bgOpacity: 100 },
 };
 
 // ─── hard filters ───────────────────────────────────────────────────────────
@@ -545,11 +538,6 @@ export function mergeConfig(saved: unknown): MessageRenderingConfig {
           // "inherit the global default from typography.icon". When the
           // saved value is missing or invalid, we drop back to undefined
           // (inherit) rather than falling through to a stale override.
-          iconSize:
-            typeof override.iconSize === "string" &&
-            (ICON_SIZE_VALUES as readonly string[]).includes(override.iconSize)
-              ? (override.iconSize as IconSize)
-              : undefined,
           iconBordered:
             typeof override.iconBordered === "boolean"
               ? override.iconBordered
@@ -640,8 +628,6 @@ const WEIGHT_VALUES: readonly FontWeight[] = [
   "extrabold",
   "black",
 ];
-const ICON_SIZE_VALUES: readonly IconSize[] = ["xxs", "xs", "sm", "base", "lg", "xl"];
-
 function mergeTypographyStyle(
   saved: unknown,
   base: TypographyStyle,
@@ -682,7 +668,6 @@ function mergeIconStyle(saved: unknown, base: IconStyle): IconStyle {
       ? Math.max(0, Math.min(100, Math.round(s.bgOpacity)))
       : base.bgOpacity;
   return {
-    size: ICON_SIZE_VALUES.includes(s.size as IconSize) ? (s.size as IconSize) : base.size,
     bordered: typeof s.bordered === "boolean" ? s.bordered : base.bordered,
     bgOpacity: opacity,
   };

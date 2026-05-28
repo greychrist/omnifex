@@ -12,7 +12,6 @@ import {
 import type {
   FontSize,
   FontWeight,
-  IconSize,
   Typography,
   TypographyStyle,
 } from "@/lib/messageRenderingConfig";
@@ -46,15 +45,6 @@ const WEIGHTS: { value: FontWeight; label: string }[] = [
   { value: "bold", label: "Bold" },
   { value: "extrabold", label: "Extra bold" },
   { value: "black", label: "Black" },
-];
-
-const ICON_SIZES: { value: IconSize; label: string }[] = [
-  { value: "xxs", label: "Extra extra small" },
-  { value: "xs", label: "Extra small" },
-  { value: "sm", label: "Small" },
-  { value: "base", label: "Base" },
-  { value: "lg", label: "Large" },
-  { value: "xl", label: "Extra large" },
 ];
 
 interface TextColumnProps {
@@ -140,26 +130,8 @@ const IconColumn: React.FC<IconColumnProps> = ({ icon, onChange }) => (
     <div>
       <Label>Card icon</Label>
       <p className="text-caption text-muted-foreground mt-1">
-        Size and chrome of the colored icon on the left of each card. Independent from text.
+        Chrome of the colored icon on the left of each card. Independent from text.
       </p>
-    </div>
-    <div>
-      <Label className="mb-1 block text-caption">Size</Label>
-      <Select
-        value={icon.size}
-        onValueChange={(v) => { onChange({ ...icon, size: v as IconSize }); }}
-      >
-        <SelectTrigger>
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {ICON_SIZES.map((o) => (
-            <SelectItem key={o.value} value={o.value}>
-              {o.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
     </div>
     <div className="flex items-center gap-2">
       <Switch

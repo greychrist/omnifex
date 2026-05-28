@@ -3,7 +3,6 @@ import { createDefaultConfig } from "../messageRenderingConfig";
 import {
   contentClassNames,
   headerClassNames,
-  iconSizeClassName,
   iconWrapperClassName,
   iconWrapperStyle,
   typographyClassNames,
@@ -87,42 +86,6 @@ describe("headerClassNames / contentClassNames", () => {
 });
 
 describe("typographyClasses (icon helpers)", () => {
-  describe("iconSizeClassName", () => {
-    it("returns the global icon size class when no kindId is given", () => {
-      const cfg = createDefaultConfig();
-      // default icon.size is "xs"
-      expect(iconSizeClassName(cfg)).toBe("h-3.5 w-3.5");
-    });
-
-    it("returns the kind override when iconSize is set on the kind", () => {
-      const cfg = createDefaultConfig();
-      const firstKindId = Object.keys(cfg.kinds)[0];
-      cfg.kinds[firstKindId].iconSize = "xl";
-      expect(iconSizeClassName(cfg, firstKindId)).toBe("h-8 w-8");
-    });
-
-    it("falls back to global when kindId is unknown", () => {
-      const cfg = createDefaultConfig();
-      cfg.typography.icon.size = "lg";
-      expect(iconSizeClassName(cfg, "totally.unknown.kind")).toBe("h-6 w-6");
-    });
-
-    it("maps every icon size correctly", () => {
-      const cfg = createDefaultConfig();
-      const cases = [
-        ["xs", "h-3.5 w-3.5"],
-        ["sm", "h-4 w-4"],
-        ["base", "h-5 w-5"],
-        ["lg", "h-6 w-6"],
-        ["xl", "h-8 w-8"],
-      ] as const;
-      for (const [size, expected] of cases) {
-        cfg.typography.icon.size = size;
-        expect(iconSizeClassName(cfg)).toBe(expected);
-      }
-    });
-  });
-
   describe("iconWrapperClassName", () => {
     it("includes chip classes when bordered is true (default)", () => {
       const cfg = createDefaultConfig();

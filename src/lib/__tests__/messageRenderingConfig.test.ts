@@ -231,7 +231,7 @@ describe("messageRenderingConfig", () => {
         typography: {
           header: { family: "sans", size: "sm", weight: "semibold", italic: false },
           content: { family: "sans", size: "sm", weight: "normal", italic: false },
-          icon: { size: "base", bordered: true, bgOpacity: 100 },
+          icon: { bordered: true, bgOpacity: 100 },
         },
       };
       const cfg = parseConfig(JSON.stringify(legacy));
@@ -247,7 +247,7 @@ describe("messageRenderingConfig", () => {
         typography: {
           header: { family: "serif", size: "sm", weight: "semibold", italic: false },
           content: { family: "serif", size: "sm", weight: "normal", italic: false },
-          icon: { size: "base", bordered: true, bgOpacity: 100 },
+          icon: { bordered: true, bgOpacity: 100 },
         },
       };
       const cfg = parseConfig(JSON.stringify(legacy));
@@ -261,7 +261,7 @@ describe("messageRenderingConfig", () => {
         typography: {
           header: { family: "mono", size: "sm", weight: "semibold", italic: false },
           content: { family: "mono", size: "sm", weight: "normal", italic: false },
-          icon: { size: "base", bordered: true, bgOpacity: 100 },
+          icon: { bordered: true, bgOpacity: 100 },
         },
       };
       const cfg = parseConfig(JSON.stringify(legacy));
@@ -275,7 +275,7 @@ describe("messageRenderingConfig", () => {
         typography: {
           header: { typeface: "not-a-real-font", size: "sm", weight: "semibold", italic: false },
           content: { typeface: "geist", size: "sm", weight: "normal", italic: false },
-          icon: { size: "base", bordered: true, bgOpacity: 100 },
+          icon: { bordered: true, bgOpacity: 100 },
         },
       };
       const cfg = parseConfig(JSON.stringify(bad));
@@ -307,7 +307,7 @@ describe("messageRenderingConfig", () => {
             weight: "normal",
             italic: false,
           },
-          icon: { size: "base", bordered: true, bgOpacity: 100 },
+          icon: { bordered: true, bgOpacity: 100 },
         },
       };
       const cfg = parseConfig(JSON.stringify(mixed));
@@ -329,7 +329,7 @@ describe("messageRenderingConfig", () => {
           typography: {
             header: { family: garbage, size: "sm", weight: "semibold", italic: false },
             content: { family: garbage, size: "sm", weight: "normal", italic: false },
-            icon: { size: "base", bordered: true, bgOpacity: 100 },
+            icon: { bordered: true, bgOpacity: 100 },
           },
         };
         const cfg = parseConfig(JSON.stringify(legacy));

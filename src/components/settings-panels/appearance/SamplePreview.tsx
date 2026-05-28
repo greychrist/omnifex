@@ -7,7 +7,7 @@ import { isHexColor } from "@/lib/messageRenderingConfig";
 import { Card, CardContent } from "@/components/ui/card";
 import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
 import { accentStyleFromEntry } from "@/lib/accentStyle";
-import { contentClassNames, iconSizeClassName, iconWrapperClassName, iconWrapperStyle, typographyFontFamily } from "@/lib/typographyClasses";
+import { contentClassNames, iconWrapperClassName, iconWrapperStyle, typographyFontFamily } from "@/lib/typographyClasses";
 import { KindHeader } from "@/components/KindHeader";
 import { MessageFrameSideLine } from "@/components/StreamMessage/MessageFrameSideLine";
 import { IconRenderer } from "./iconMap";
@@ -109,7 +109,7 @@ export const SamplePreview: React.FC<SamplePreviewProps> = ({
               className={iconWrapperClassName(config, kind.id)}
               style={iconWrapperStyle(config, entry.swatch, kind.id)}
             >
-              <IconRenderer name={kind.icon} className={iconSizeClassName(config, kind.id)} />
+              <IconRenderer name={kind.icon} className="h-3.5 w-3.5" />
             </div>
           )}
           <div className="flex-1 space-y-2 min-w-0">
