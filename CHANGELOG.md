@@ -5,7 +5,11 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.4.69] — 2026-05-28
+
+Codex accounts become first-class alongside Claude: multi-account Codex, a unified Add/Edit dialog, engine-aware path-rule resolution (`ResolvePair`), and a session walker that spans every Codex account. Also fixes a session-loading regression where a stale binary's resolution error was disguised as "no account configured."
+
+Installers remain **unsigned**.
 
 ### Added
 
@@ -21,6 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`AccountsService.resolve()` returns `ResolvePair = { claude, codex }`.** Per-engine resolution: explicit override → longest-prefix path rule → null. The new-session form consumes the pair; flipping the agent picker swaps the account (and session defaults) to the matching slot, and an unrouted engine shows a "Choose account" affordance.
 - **`CodexAuthService` is per-configDir.** All methods take a `configDir`; watchers are refcounted per dir; `startLoginFlow` injects `CODEX_HOME` so the resulting auth file lands in the account's dir. The auth-changed broadcast carries `{ configDir, status }`.
 - **`CodexSessionWalker` aggregates across all Codex accounts**, tagging each rollout with its source account id.
+
+### Fixed
+
+- **Session loading no longer masks real resolution errors as `NO_ACCOUNT_FOR_PROJECT`.** `findProjectConfigDir` wrapped account resolution in a catch-all that turned any exception into "no account configured," sending users to add a path rule that already existed. A legitimate no-match is signalled by `resolve()` returning a null Claude slot (it never throws for that case), so the catch only ever hid genuine failures — e.g. a stale build querying the `agent` column that migration v11 dropped. Real errors now surface as themselves.
 
 ### Notes
 
