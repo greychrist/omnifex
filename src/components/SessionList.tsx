@@ -415,7 +415,7 @@ export const SessionList: React.FC<SessionListProps> = ({
     ])
       .then(([resolved, enabledSetting]) => {
         if (cancelled) return;
-        const acct = resolved?.account ?? null;
+        const acct = resolved.claude?.account ?? resolved.codex?.account ?? null;
         // Master "Enable session summaries" toggle in Settings → Session
         // Summaries. Off → cached sidecars hide and the refresh button
         // disappears (rows fall back to first-message previews). On

@@ -133,22 +133,28 @@ beforeEach(() => {
   // Default: account has a summary model picked + global auto-on-close
   // is on (mocked above) → refresh icon renders. Individual tests can
   // override either by re-mocking before render.
-  // Task 12 widened resolveAccountForProject to `{ agent, account }`;
-  // the Claude account row now nests under `.account`.
+  // resolveAccountForProject returns a ResolvePair; the Claude account
+  // resolves into the `claude` slot.
   vi.mocked(api.resolveAccountForProject).mockResolvedValue({
-    agent: 'claude',
-    account: {
-      id: 1,
-      name: 'Test',
-      config_dir: '/x/.claude',
-      account_type: 'pro',
-      color: null,
-      icon: null,
-      cli_path: null,
-      created_at: '',
-      updated_at: '',
-      summaryModel: 'haiku',
+    claude: {
+      account: {
+        id: 1,
+        name: 'Test',
+        config_dir: '/x/.claude',
+        engine: 'claude',
+        subscription_label: 'pro',
+        has_cost: true,
+        color: null,
+        icon: null,
+        cli_path: null,
+        created_at: '',
+        updated_at: '',
+        summaryModel: 'haiku',
+      },
+      matchType: 'path_rule',
+      matchDetail: '/x',
     },
+    codex: null,
   });
 
   // Reset the keyed getSetting stub on every test so individual cases
@@ -322,20 +328,26 @@ describe('SessionList summary rendering', () => {
 
   it('hides the summary and refresh icon when the resolved account has no model selected', async () => {
     vi.mocked(api.resolveAccountForProject).mockResolvedValueOnce({
-      agent: 'claude',
-      account: {
-        id: 1,
-        name: 'Test',
-        config_dir: '/x/.claude',
-        account_type: 'pro',
-        color: null,
-        icon: null,
-        cli_path: null,
-        created_at: '',
-        updated_at: '',
-        summarizeOnClose: true,
-        summaryModel: null, // no model
+      claude: {
+        account: {
+          id: 1,
+          name: 'Test',
+          config_dir: '/x/.claude',
+          engine: 'claude',
+          subscription_label: 'pro',
+          has_cost: true,
+          color: null,
+          icon: null,
+          cli_path: null,
+          created_at: '',
+          updated_at: '',
+          summarizeOnClose: true,
+          summaryModel: null, // no model
+        },
+        matchType: 'path_rule',
+        matchDetail: '/x',
       },
+      codex: null,
     });
     render(<SessionList sessions={[sessionFixture]} projectPath="/x" />);
     await waitFor(() => {

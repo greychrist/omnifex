@@ -1,36 +1,22 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Popover } from "@/components/ui/popover";
-import { api, type Account, type PathRule, type SessionDefaults } from "@/lib/api";
+import {
+  api,
+  type Account,
+  type AccountEngine,
+  type PathRule,
+} from "@/lib/api";
 import { AccountBadge } from "@/components/AccountBadge";
 import { useAccounts } from "@/contexts/AccountsContext";
-import { Trash2, Plus, Pencil, FolderOpen, Check, ChevronDown, LogIn, LogOut } from "lucide-react";
-import { IconPicker, ICON_MAP } from "./IconPicker";
-import { MODELS } from "./ModelPicker";
-import { THINKING_CONFIGS, PERMISSION_MODES, EFFORT_LEVELS } from "./ControlBar";
-import { ColorSwatchGrid } from "@/components/ui/ColorSwatchGrid";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Trash2, Plus, Pencil, FolderOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { fireAndLog, logAndForget } from "@/lib/fireAndLog";
-import { CodexSignInModal } from "@/components/codex/CodexSignInModal";
-import { useCodexAuthStatus } from "@/hooks/useCodexAuthStatus";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from "@/components/ui/dialog";
-
-const ACCOUNT_TYPES = [
-  { value: "max", label: "Max", desc: "No cost, usage limits only" },
-  { value: "enterprise", label: "Enterprise", desc: "Has cost" },
-  { value: "pro", label: "Pro", desc: "Has cost" },
-  { value: "free", label: "Free", desc: "Has cost" },
-];
+  AccountDialog,
+  type AccountDialogSavePayload,
+} from "@/components/AccountDialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 async function pickFolder(defaultPath?: string): Promise<string | null> {
   try {
@@ -49,27 +35,21 @@ interface DirInputProps {
   value: string;
   onChange: (v: string) => void;
   placeholder: string;
-  /** When true, render at the same compact size as the session-defaults
-   *  pickers (h-7 text-xs). Default is the larger h-8 text-sm used in
-   *  the add-rule form etc. */
-  compact?: boolean;
 }
 
-const DirInput: React.FC<DirInputProps> = ({ value, onChange, placeholder, compact }) => {
-  const h = compact ? "h-7" : "h-8";
-  const ts = compact ? "text-xs" : "text-sm";
+const DirInput: React.FC<DirInputProps> = ({ value, onChange, placeholder }) => {
   return (
     <div className="flex gap-1">
       <Input
         placeholder={placeholder}
         value={value}
         onChange={(e) => { onChange(e.target.value); }}
-        className={cn(h, ts, "flex-1")}
+        className="h-8 text-sm flex-1"
       />
       <Button
         variant="outline"
         size="sm"
-        className={cn(h, "px-2")}
+        className="h-8 px-2"
         onClick={fireAndLog('account-settings:click', async () => {
           const folder = await pickFolder(value || undefined);
           if (folder) onChange(folder);
@@ -82,441 +62,24 @@ const DirInput: React.FC<DirInputProps> = ({ value, onChange, placeholder, compa
   );
 };
 
-const TypeSelect: React.FC<{ value: string; onChange: (v: string) => void; compact?: boolean }> = ({
-  value,
-  onChange,
-  compact,
-}) => (
-  <Select value={value} onValueChange={onChange}>
-    <SelectTrigger className={cn("w-full", compact ? "h-7 text-xs" : "h-8 text-sm")}>
-      <SelectValue />
-    </SelectTrigger>
-    <SelectContent>
-      {ACCOUNT_TYPES.map((t) => (
-        <SelectItem key={t.value} value={t.value}>
-          {t.label} ({t.desc})
-        </SelectItem>
-      ))}
-    </SelectContent>
-  </Select>
+/**
+ * Tiny engine label chip used in the account list and the path-rule
+ * account dropdown so Claude vs Codex accounts are distinguishable at a
+ * glance. Color-coded but intentionally low-key — it sits next to the
+ * account badge, not in place of it.
+ */
+const EnginePill: React.FC<{ engine: AccountEngine }> = ({ engine }) => (
+  <span
+    className={cn(
+      "inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide",
+      engine === "codex"
+        ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+        : "bg-blue-500/15 text-blue-600 dark:text-blue-400",
+    )}
+  >
+    {engine === "codex" ? "Codex" : "Claude"}
+  </span>
 );
-
-/**
- * Per-call cost estimate shown under the summary-model dropdown. The
- * range reflects the spread between short (~5K tok in) and long (~50K
- * tok in) sessions. Output is ~80 tokens regardless — negligible.
- * Pricing: Haiku 4.5 $1/$5, Sonnet 4.6 $3/$15, Opus 4.7 $15/$75 per MTok.
- */
-function summaryCostEstimate(model: string): string {
-  const m = model.toLowerCase();
-  if (m.includes('haiku')) return '~$0.005–$0.05 per session.';
-  if (m.includes('sonnet')) return '~$0.015–$0.15 per session.';
-  if (m.includes('opus')) return '~$0.075–$0.75 per session.';
-  return 'Cost depends on the chosen model.';
-}
-
-// ── Session-defaults pickers ────────────────────────────────────────────
-//
-// Visual style mirrors NewSessionForm (the form on the project-open
-// screen): outlined trigger button per field, full-width within its grid
-// column, small uppercase label above. Every dropdown has an "App
-// default" entry that maps to `undefined` in the stored value — that's
-// how we say "fall through to the global app default for this field"
-// rather than pinning a specific value.
-
-function DropdownTrigger({
-  open,
-  onClick,
-  title,
-  children,
-}: {
-  open: boolean;
-  onClick: () => void;
-  title?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <Button
-      variant="outline"
-      size="sm"
-      onClick={onClick}
-      className="w-full justify-between h-9 px-2 font-normal gap-1"
-      aria-expanded={open}
-      title={title}
-    >
-      <span className="flex items-center gap-1 min-w-0 overflow-hidden">{children}</span>
-      <ChevronDown className="h-3 w-3 opacity-50 shrink-0" />
-    </Button>
-  );
-}
-
-function DropdownRow({
-  selected,
-  onClick,
-  children,
-}: {
-  selected: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors",
-        "hover:bg-accent",
-        selected && "bg-accent",
-      )}
-    >
-      {children}
-    </button>
-  );
-}
-
-const APP_DEFAULT_LABEL = "App default";
-
-const SessionDefaultsEditor: React.FC<{
-  value: SessionDefaults;
-  onChange: (v: SessionDefaults) => void;
-}> = ({ value, onChange }) => {
-  const [modelOpen, setModelOpen] = useState(false);
-  const [effortOpen, setEffortOpen] = useState(false);
-  const [thinkingOpen, setThinkingOpen] = useState(false);
-  const [permsOpen, setPermsOpen] = useState(false);
-
-  const selectedModel = value.model ? MODELS.find((m) => m.id === value.model) : null;
-  const selectedEffort = value.effort ? EFFORT_LEVELS.find((e) => e.id === value.effort) : null;
-  const selectedThinking = value.thinkingConfig
-    ? THINKING_CONFIGS.find((c) => c.id === value.thinkingConfig)
-    : null;
-  const selectedPerm = value.permissionMode
-    ? PERMISSION_MODES.find((m) => m.id === value.permissionMode)
-    : null;
-
-  return (
-    <div className="space-y-2 pt-5">
-      <h4 className="text-sm font-medium">Session Defaults</h4>
-      <div className="grid grid-cols-4 gap-2">
-        {/* Model */}
-        <div className="flex flex-col gap-1 min-w-0">
-          <Label className="text-[10px] uppercase tracking-wider text-foreground/50">Model</Label>
-          <Popover
-            open={modelOpen}
-            onOpenChange={setModelOpen}
-            align="start"
-            side="bottom"
-            trigger={
-              <DropdownTrigger
-                open={modelOpen}
-                onClick={() => { setModelOpen(!modelOpen); }}
-                title={selectedModel?.name ?? APP_DEFAULT_LABEL}
-              >
-                <span
-                  className={cn(
-                    "text-[11px] truncate",
-                    selectedModel ? "" : "text-muted-foreground italic",
-                  )}
-                >
-                  {selectedModel?.name ?? APP_DEFAULT_LABEL}
-                </span>
-              </DropdownTrigger>
-            }
-            content={
-              <div className="w-[260px] p-1">
-                <DropdownRow
-                  selected={!selectedModel}
-                  onClick={() => {
-                    onChange({ ...value, model: undefined });
-                    setModelOpen(false);
-                  }}
-                >
-                  <span className="text-xs italic text-muted-foreground">{APP_DEFAULT_LABEL}</span>
-                </DropdownRow>
-                {MODELS.map((model) => (
-                  <DropdownRow
-                    key={model.id}
-                    selected={selectedModel?.id === model.id}
-                    onClick={() => {
-                      onChange({ ...value, model: model.id });
-                      setModelOpen(false);
-                    }}
-                  >
-                    <span className="text-xs">{model.name}</span>
-                  </DropdownRow>
-                ))}
-              </div>
-            }
-          />
-        </div>
-
-        {/* Effort */}
-        <div className="flex flex-col gap-1 min-w-0">
-          <Label className="text-[10px] uppercase tracking-wider text-foreground/50">Effort</Label>
-          <Popover
-            open={effortOpen}
-            onOpenChange={setEffortOpen}
-            align="start"
-            side="bottom"
-            trigger={
-              <DropdownTrigger
-                open={effortOpen}
-                onClick={() => { setEffortOpen(!effortOpen); }}
-                title={selectedEffort?.description ?? APP_DEFAULT_LABEL}
-              >
-                {selectedEffort ? (
-                  <>
-                    <span className={cn("text-[11px] font-bold shrink-0", selectedEffort.color)}>
-                      {selectedEffort.shortName}
-                    </span>
-                    <span className="text-[10px] leading-tight truncate">{selectedEffort.name}</span>
-                  </>
-                ) : (
-                  <span className="text-[11px] truncate text-muted-foreground italic">
-                    {APP_DEFAULT_LABEL}
-                  </span>
-                )}
-              </DropdownTrigger>
-            }
-            content={
-              <div className="w-[240px] p-1">
-                <DropdownRow
-                  selected={!selectedEffort}
-                  onClick={() => {
-                    onChange({ ...value, effort: undefined });
-                    setEffortOpen(false);
-                  }}
-                >
-                  <span className="text-xs italic text-muted-foreground">{APP_DEFAULT_LABEL}</span>
-                </DropdownRow>
-                {EFFORT_LEVELS.map((level) => (
-                  <DropdownRow
-                    key={level.id}
-                    selected={selectedEffort?.id === level.id}
-                    onClick={() => {
-                      onChange({ ...value, effort: level.id });
-                      setEffortOpen(false);
-                    }}
-                  >
-                    <span className={cn("text-xs font-bold w-10 shrink-0", level.color)}>
-                      {level.shortName}
-                    </span>
-                    <span className="text-[10px] leading-tight">{level.name}</span>
-                  </DropdownRow>
-                ))}
-              </div>
-            }
-          />
-        </div>
-
-        {/* Thinking */}
-        <div className="flex flex-col gap-1 min-w-0">
-          <Label className="text-[10px] uppercase tracking-wider text-foreground/50">Thinking</Label>
-          <Popover
-            open={thinkingOpen}
-            onOpenChange={setThinkingOpen}
-            align="start"
-            side="bottom"
-            trigger={
-              <DropdownTrigger
-                open={thinkingOpen}
-                onClick={() => { setThinkingOpen(!thinkingOpen); }}
-                title={selectedThinking?.description ?? APP_DEFAULT_LABEL}
-              >
-                {selectedThinking ? (
-                  <>
-                    <span className={cn("text-[11px] font-bold shrink-0", selectedThinking.color)}>
-                      {selectedThinking.shortName}
-                    </span>
-                    <span className="text-[10px] leading-tight truncate">{selectedThinking.name}</span>
-                  </>
-                ) : (
-                  <span className="text-[11px] truncate text-muted-foreground italic">
-                    {APP_DEFAULT_LABEL}
-                  </span>
-                )}
-              </DropdownTrigger>
-            }
-            content={
-              <div className="w-[240px] p-1">
-                <DropdownRow
-                  selected={!selectedThinking}
-                  onClick={() => {
-                    onChange({ ...value, thinkingConfig: undefined });
-                    setThinkingOpen(false);
-                  }}
-                >
-                  <span className="text-xs italic text-muted-foreground">{APP_DEFAULT_LABEL}</span>
-                </DropdownRow>
-                {THINKING_CONFIGS.map((cfg) => (
-                  <DropdownRow
-                    key={cfg.id}
-                    selected={selectedThinking?.id === cfg.id}
-                    onClick={() => {
-                      onChange({ ...value, thinkingConfig: cfg.id });
-                      setThinkingOpen(false);
-                    }}
-                  >
-                    <span className={cn("text-xs font-bold w-10 shrink-0", cfg.color)}>
-                      {cfg.shortName}
-                    </span>
-                    <span className="text-[10px] leading-tight">{cfg.name}</span>
-                  </DropdownRow>
-                ))}
-              </div>
-            }
-          />
-        </div>
-
-        {/* Permissions */}
-        <div className="flex flex-col gap-1 min-w-0">
-          <Label className="text-[10px] uppercase tracking-wider text-foreground/50">Permissions</Label>
-          <Popover
-            open={permsOpen}
-            onOpenChange={setPermsOpen}
-            align="start"
-            side="bottom"
-            trigger={
-              <DropdownTrigger
-                open={permsOpen}
-                onClick={() => { setPermsOpen(!permsOpen); }}
-                title={selectedPerm?.description ?? APP_DEFAULT_LABEL}
-              >
-                {selectedPerm ? (
-                  <>
-                    <span className={cn("shrink-0", selectedPerm.color)}>{selectedPerm.icon}</span>
-                    <span className={cn("text-[11px] truncate", selectedPerm.color)}>
-                      {selectedPerm.name}
-                    </span>
-                  </>
-                ) : (
-                  <span className="text-[11px] truncate text-muted-foreground italic">
-                    {APP_DEFAULT_LABEL}
-                  </span>
-                )}
-              </DropdownTrigger>
-            }
-            content={
-              <div className="w-[260px] p-1">
-                <DropdownRow
-                  selected={!selectedPerm}
-                  onClick={() => {
-                    onChange({ ...value, permissionMode: undefined });
-                    setPermsOpen(false);
-                  }}
-                >
-                  <span className="text-xs italic text-muted-foreground">{APP_DEFAULT_LABEL}</span>
-                </DropdownRow>
-                {PERMISSION_MODES.map((mode) => (
-                  <DropdownRow
-                    key={mode.id}
-                    selected={selectedPerm?.id === mode.id}
-                    onClick={() => {
-                      onChange({ ...value, permissionMode: mode.id });
-                      setPermsOpen(false);
-                    }}
-                  >
-                    <span className={cn("shrink-0", mode.color)}>{mode.icon}</span>
-                    <span className={cn("text-xs", mode.color)}>{mode.name}</span>
-                  </DropdownRow>
-                ))}
-              </div>
-            }
-          />
-        </div>
-      </div>
-    </div>
-  );
-};
-
-/**
- * Codex auth row for the AccountSettings panel. Renders one of three
- * states based on the auth-status subscription:
- *
- *  - loading (status === null): nothing yet — quiet placeholder.
- *  - signed-in: identity row with mode badge + Sign out button.
- *  - signed-out: "Not authenticated" + Sign in button.
- *
- * Sign-in opens the shared CodexSignInModal. Sign-out calls the
- * `codex_logout` IPC (which just `rm`s `~/.codex/auth.json`) and lets the
- * status subscription pick up the change to re-render this row.
- */
-const CodexAccountRow: React.FC = () => {
-  const status = useCodexAuthStatus();
-  const [showSignIn, setShowSignIn] = useState(false);
-  const [signingOut, setSigningOut] = useState(false);
-
-  const handleSignOut = async (): Promise<void> => {
-    setSigningOut(true);
-    try {
-      await api.codexLogout();
-      // No manual refresh needed — the auth-status watcher fires when the
-      // file is removed and useCodexAuthStatus picks up the new state.
-    } catch (err) {
-      console.error('Failed to sign out of Codex:', err);
-    } finally {
-      setSigningOut(false);
-    }
-  };
-
-  return (
-    <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg border border-border bg-muted/30">
-      <div className="flex-1 min-w-0">
-        {status === null ? (
-          <span className="text-xs text-muted-foreground">Checking Codex sign-in…</span>
-        ) : status.authenticated ? (
-          <div className="flex items-center gap-3 min-w-0">
-            <span className="text-sm font-medium truncate">
-              {status.email ?? (status.mode === 'apikey' ? 'OPENAI_API_KEY' : 'Signed in')}
-            </span>
-            <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-              {status.mode === 'apikey' ? 'API key' : 'OAuth'}
-            </span>
-          </div>
-        ) : (
-          <span className="text-sm text-muted-foreground">Not authenticated</span>
-        )}
-      </div>
-
-      {status?.authenticated ? (
-        // Sign-out only makes sense for the OAuth path. For env-key mode
-        // there's nothing on disk to delete — the user has to clear the
-        // variable in their shell themselves. We surface a disabled button
-        // with a tooltip so the path is discoverable.
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-7 px-2 text-xs"
-          onClick={fireAndLog('account-settings:codex-sign-out', handleSignOut)}
-          disabled={signingOut || status.mode === 'apikey'}
-          title={
-            status.mode === 'apikey'
-              ? 'API-key mode uses $OPENAI_API_KEY. Clear it in your shell to sign out.'
-              : 'Sign out of Codex (removes ~/.codex/auth.json)'
-          }
-        >
-          <LogOut className="w-3 h-3 mr-1" />
-          {signingOut ? 'Signing out…' : 'Sign out'}
-        </Button>
-      ) : (
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-7 px-2 text-xs"
-          onClick={() => { setShowSignIn(true); }}
-        >
-          <LogIn className="w-3 h-3 mr-1" />
-          Sign in
-        </Button>
-      )}
-
-      <CodexSignInModal
-        open={showSignIn}
-        onClose={() => { setShowSignIn(false); }}
-      />
-    </div>
-  );
-};
 
 export const AccountSettings: React.FC = () => {
   const { refresh: refreshAccountsContext } = useAccounts();
@@ -527,40 +90,18 @@ export const AccountSettings: React.FC = () => {
   // Test resolution state
   const [testPath, setTestPath] = useState("");
   const [testResult, setTestResult] = useState<{
-    account: { name: string; account_type: string; config_dir: string; color?: string | null };
+    account: { name: string; subscription_label: string; config_dir: string; color?: string | null };
     match_type: string;
     match_detail: string;
   } | null>(null);
   const [testError, setTestError] = useState<string | null>(null);
-  // Inline status for the "Scan for ~/.claude*" escape-hatch button. Cleared
+  // Inline status for the "Scan for accounts" escape-hatch button. Cleared
   // automatically the next time the button is clicked.
   const [scanStatus, setScanStatus] = useState<{ kind: 'info' | 'success' | 'error'; message: string } | null>(null);
 
-  // Add account form
-  const [showAddAccount, setShowAddAccount] = useState(false);
-  const [newName, setNewName] = useState("");
-  const [newDir, setNewDir] = useState("");
-  const [newType, setNewType] = useState("pro");
-  const [newColor, setNewColor] = useState("#3b82f6");
-  const [newIcon, setNewIcon] = useState<string>("user");
-  const [newSessionDefaults, setNewSessionDefaults] = useState<SessionDefaults>({});
-  const [showNewIconPicker, setShowNewIconPicker] = useState(false);
-
-  // Edit account state
-  const [editingId, setEditingId] = useState<number | null>(null);
-  const [editName, setEditName] = useState("");
-  const [editDir, setEditDir] = useState("");
-  const [editType, setEditType] = useState("");
-  const [editColor, setEditColor] = useState("#3b82f6");
-  const [editIcon, setEditIcon] = useState<string>("user");
-  const [editSessionDefaults, setEditSessionDefaults] = useState<SessionDefaults>({});
-  const [editCliPath, setEditCliPath] = useState<string>("");
-  const [showEditIconPicker, setShowEditIconPicker] = useState(false);
-  // Per-account model picker stays — different accounts may want different
-  // models for cost/preference. The auto-on-close TOGGLE moved to a single
-  // global control in Settings → Session Summaries (replacing the old
-  // per-account `summarizeOnClose` flag).
-  const [editSummaryModel, setEditSummaryModel] = useState<string | null>('haiku');
+  // Add/Edit account dialog state. `null` mode = dialog closed.
+  const [dialogMode, setDialogMode] = useState<'add' | 'edit' | null>(null);
+  const [dialogAccount, setDialogAccount] = useState<Account | undefined>(undefined);
 
   // Add rule form
   const [showAddRule, setShowAddRule] = useState(false);
@@ -593,7 +134,16 @@ export const AccountSettings: React.FC = () => {
     try {
       const result = await api.explainAccountResolution(testPath.trim());
       if (result) {
-        setTestResult(result);
+        setTestResult({
+          account: {
+            name: result.account.name,
+            subscription_label: result.account.subscription_label,
+            config_dir: result.account.config_dir,
+            color: result.account.color,
+          },
+          match_type: result.match_type,
+          match_detail: result.match_detail,
+        });
       } else {
         setTestError("No account would be resolved for this path");
       }
@@ -602,69 +152,49 @@ export const AccountSettings: React.FC = () => {
     }
   };
 
-  const startEdit = (account: Account) => {
-    setEditingId(account.id);
-    setEditName(account.name);
-    setEditDir(account.config_dir);
-    setEditType(account.account_type);
-    setEditColor(account.color || "#3b82f6");
-    setEditIcon(account.icon || "user");
-    setEditSessionDefaults(account.session_defaults ?? {});
-    setEditCliPath(account.cli_path ?? "");
-    setEditSummaryModel(account.summaryModel ?? 'haiku');
+  const openAdd = () => {
+    setDialogAccount(undefined);
+    setDialogMode('add');
   };
 
-  const cancelEdit = () => {
-    setEditingId(null);
+  const openEdit = (account: Account) => {
+    setDialogAccount(account);
+    setDialogMode('edit');
   };
 
-  const saveEdit = async () => {
-    if (editingId === null || !editName.trim() || !editDir.trim()) return;
-    // CLI path UI was retired — preserve whatever value was already on
-    // the account rather than wiping it. No validation needed here since
-    // the user can no longer change it from this dialog.
-    const trimmedCliPath = editCliPath.trim();
+  const closeDialog = () => {
+    setDialogMode(null);
+    setDialogAccount(undefined);
+  };
+
+  const handleDialogSave = async (payload: AccountDialogSavePayload) => {
     try {
-      const defaults = Object.keys(editSessionDefaults).length > 0 ? editSessionDefaults : null;
-      const cliPath = trimmedCliPath || null;
-      await api.updateAccount(editingId, editName.trim(), editDir.trim(), editType, editColor, editIcon, defaults, cliPath);
-      // Persist the per-account summary model via the dedicated channel.
-      // The first argument is the legacy per-account `summarizeOnClose`
-      // flag — retired in favour of the global toggle in Settings →
-      // Session Summaries, but the IPC signature stays stable. Pass
-      // `!!editSummaryModel` so the dead column at least tracks "this
-      // account has a model picked", which avoids surprises if anything
-      // else still reads it.
-      await api.accountUpdateSummary(
-        editingId,
-        !!editSummaryModel,
-        editSummaryModel ?? null,
-      );
-      setEditingId(null);
+      if (dialogMode === 'edit' && dialogAccount) {
+        await api.updateAccount(dialogAccount.id, {
+          name: payload.name,
+          configDir: payload.configDir,
+          subscriptionLabel: payload.subscriptionLabel,
+          hasCost: payload.hasCost,
+          color: payload.color,
+          icon: payload.icon,
+          sessionDefaults: payload.sessionDefaults ?? null,
+        });
+      } else {
+        await api.createAccount({
+          name: payload.name,
+          configDir: payload.configDir,
+          engine: payload.engine,
+          subscriptionLabel: payload.subscriptionLabel,
+          hasCost: payload.hasCost,
+          color: payload.color,
+          icon: payload.icon,
+          sessionDefaults: payload.sessionDefaults,
+        });
+      }
+      closeDialog();
       await loadData();
     } catch (error) {
-      console.error("Failed to update account:", error);
-    }
-  };
-
-  const handleCreate = async () => {
-    if (!newName.trim() || !newDir.trim()) return;
-    try {
-      const defaults = Object.keys(newSessionDefaults).length > 0 ? newSessionDefaults : undefined;
-      // CLI path UI retired — new accounts always start with no override.
-      const cliPath: string | null = null;
-      // No isDefault parameter — there is no notion of a default account.
-      await api.createAccount(newName.trim(), newDir.trim(), newType, newColor, newIcon, defaults, cliPath);
-      setNewName("");
-      setNewDir("");
-      setNewType("pro");
-      setNewColor("#3b82f6");
-      setNewIcon("user");
-      setNewSessionDefaults({});
-      setShowAddAccount(false);
-      await loadData();
-    } catch (error) {
-      console.error("Failed to create account:", error);
+      console.error("Failed to save account:", error);
     }
   };
 
@@ -701,7 +231,7 @@ export const AccountSettings: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* Accounts */}
+      {/* Accounts — Claude and Codex unified into one list. */}
       <div>
         <h3 className="text-sm font-semibold mb-3">Accounts</h3>
         <div className="space-y-2">
@@ -711,9 +241,15 @@ export const AccountSettings: React.FC = () => {
               className="flex items-center gap-3 px-3 py-2.5 rounded-lg border border-border bg-muted/30"
             >
               <AccountBadge name={account.name} color={account.color} />
+              <EnginePill engine={account.engine} />
               <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
-                {account.account_type}
+                {account.subscription_label}
               </span>
+              {!account.has_cost && (
+                <span className="text-[10px] font-medium text-muted-foreground/70 uppercase tracking-wide">
+                  no cost
+                </span>
+              )}
               <span className="text-xs text-muted-foreground flex-1 truncate">
                 {account.config_dir}
               </span>
@@ -721,8 +257,9 @@ export const AccountSettings: React.FC = () => {
                 variant="ghost"
                 size="sm"
                 className="h-6 px-2 text-xs text-muted-foreground"
-                onClick={() => { startEdit(account); }}
+                onClick={() => { openEdit(account); }}
                 title="Edit"
+                aria-label={`Edit ${account.name}`}
               >
                 <Pencil className="w-3 h-3" />
               </Button>
@@ -732,6 +269,7 @@ export const AccountSettings: React.FC = () => {
                 className="h-6 px-2 text-xs text-muted-foreground hover:text-destructive"
                 onClick={fireAndLog('account-settings:click', () => handleDelete(account.id))}
                 title="Delete"
+                aria-label={`Delete ${account.name}`}
               >
                 <Trash2 className="w-3 h-3" />
               </Button>
@@ -739,261 +277,46 @@ export const AccountSettings: React.FC = () => {
           ))}
         </div>
 
-        {/* Edit-account dialog. Mounted once at panel level; opens when
-            startEdit() sets editingId. Cancel closes via cancelEdit;
-            save closes via saveEdit on success. */}
-        <Dialog
-          open={editingId !== null}
-          onOpenChange={(open) => {
-            if (!open) cancelEdit();
-          }}
-        >
-          <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>Edit account</DialogTitle>
-              <DialogDescription>
-                Change name, config directory, account type, appearance,
-                session defaults, and per-session summarization options.
-              </DialogDescription>
-            </DialogHeader>
-
-            <div className="space-y-3 py-2">
-              {/* Name + Type on a single row to use the dialog width and
-                  keep the top of the form compact. */}
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground">Account name</label>
-                  <Input
-                    placeholder="Account name"
-                    value={editName}
-                    onChange={(e) => { setEditName(e.target.value); }}
-                    className="h-7 text-xs"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground">Account type</label>
-                  <TypeSelect value={editType} onChange={setEditType} compact />
-                </div>
-              </div>
-              <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">Config directory</label>
-                <DirInput
-                  value={editDir}
-                  onChange={setEditDir}
-                  placeholder="Config directory"
-                  compact
-                />
-              </div>
-              {/* Color (single native picker swatch) + icon button on one
-                  row. Labels kept so the controls aren't ambiguous. */}
-              <div className="flex items-center gap-3 pt-1">
-                <label className="text-xs text-muted-foreground">Color</label>
-                <input
-                  type="color"
-                  value={editColor}
-                  onChange={(e) => { setEditColor(e.target.value); }}
-                  className="w-7 h-7 rounded cursor-pointer border border-border bg-transparent"
-                  title="Pick color"
-                  aria-label="Account color"
-                />
-                <label className="text-xs text-muted-foreground ml-2">Icon</label>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => { setShowEditIconPicker(true); }}
-                  className="h-7 px-2 shrink-0"
-                  title="Pick icon"
-                >
-                  {(() => {
-                    const IconComponent = ICON_MAP[editIcon] || ICON_MAP.user;
-                    return IconComponent ? <IconComponent className="w-4 h-4" /> : null;
-                  })()}
-                  <span className="ml-2 text-xs">{editIcon}</span>
-                </Button>
-              </div>
-              {/* Preview both badge variants the user will see at runtime:
-                  the compact icon-only square (tabs) and the full pill with
-                  account-type suffix (session header). Pass color/icon/type
-                  explicitly so the preview reflects the in-flight edits, not
-                  whatever the AccountsContext has cached. */}
-              <div className="flex items-center gap-3">
-                <label className="text-xs text-muted-foreground w-14">Preview</label>
-                <div className="flex items-center gap-2">
-                  <AccountBadge
-                    name={editName || "Account"}
-                    color={editColor}
-                    icon={editIcon}
-                    variant="compact"
-                  />
-                  <AccountBadge
-                    name={editName || "Account"}
-                    color={editColor}
-                    icon={editIcon}
-                    accountType={editType}
-                    variant="full"
-                  />
-                </div>
-              </div>
-              <SessionDefaultsEditor value={editSessionDefaults} onChange={setEditSessionDefaults} />
-              {/* Session Summaries — model picker only. The auto-on-close
-                  toggle moved to Settings → Session Summaries (global,
-                  applies to every account). The prompt template also lives
-                  there. */}
-              <div className="space-y-2 pt-5">
-                <h4 className="text-sm font-medium">Session Summaries</h4>
-                <div className="flex items-center justify-between gap-3">
-                  <label className="text-xs text-muted-foreground">
-                    Summary model
-                  </label>
-                  <Select
-                    value={editSummaryModel ?? '__none__'}
-                    onValueChange={(v) =>
-                      { setEditSummaryModel(v === '__none__' ? null : v); }
-                    }
-                  >
-                    <SelectTrigger className="h-7 w-44 text-xs">
-                      <SelectValue placeholder="Pick a model" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__">(no model)</SelectItem>
-                      {MODELS.map((m) => (
-                        <SelectItem key={m.id} value={m.id}>
-                          {m.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="text-[11px] text-muted-foreground">
-                  {editSummaryModel
-                    ? summaryCostEstimate(editSummaryModel)
-                    : 'Pick a model to enable summarization for this account.'}
-                  {' '}Costs come out of this account's plan allotment for
-                  Pro/Max plans, or are billed per token for API keys. The
-                  on/off switch is in Settings → Session Summaries; the
-                  prompt template is there too.
-                </div>
-              </div>
-            </div>
-
-            <DialogFooter>
-              <Button variant="outline" onClick={cancelEdit}>
-                Cancel
-              </Button>
-              <Button onClick={fireAndLog('account-settings:click', saveEdit)}>
-                <Check className="mr-2 h-4 w-4" />
-                Save
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        {showAddAccount ? (
-          <div className="mt-3 space-y-2 p-3 rounded-lg border border-dashed border-border">
-            <Input
-              placeholder="Account name (e.g., personal)"
-              value={newName}
-              onChange={(e) => { setNewName(e.target.value); }}
-              className="h-8 text-sm"
-            />
-            <DirInput
-              value={newDir}
-              onChange={setNewDir}
-              placeholder="Config directory (e.g., ~/.claude-personal)"
-            />
-            <TypeSelect value={newType} onChange={setNewType} />
-            <div className="space-y-2">
-              <div className="flex items-start gap-3">
-                <label className="text-xs text-muted-foreground w-14 mt-1">Color</label>
-                <ColorSwatchGrid value={newColor} onChange={setNewColor} />
-              </div>
-              <div className="flex items-center gap-3">
-                <label className="text-xs text-muted-foreground w-14">Icon</label>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => { setShowNewIconPicker(true); }}
-                  className="h-8 px-2"
-                >
-                  {(() => {
-                    const IconComponent = ICON_MAP[newIcon] || ICON_MAP.user;
-                    return IconComponent ? <IconComponent className="w-4 h-4" /> : null;
-                  })()}
-                  <span className="ml-2 text-xs">{newIcon}</span>
-                </Button>
-              </div>
-              <div className="flex items-center gap-3">
-                <label className="text-xs text-muted-foreground w-14">Preview</label>
-                <div className="flex items-center gap-2">
-                  <AccountBadge
-                    name={newName || "Account"}
-                    color={newColor}
-                    icon={newIcon}
-                    variant="compact"
-                  />
-                  <span className="text-xs text-foreground">{newName || "Account"}</span>
-                </div>
-              </div>
-            </div>
-            <SessionDefaultsEditor value={newSessionDefaults} onChange={setNewSessionDefaults} />
-            <div className="flex gap-2">
-              <Button size="sm" onClick={fireAndLog('account-settings:click', handleCreate)} className="h-7 text-xs">
-                Add
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => { setShowAddAccount(false); }}
-                className="h-7 text-xs"
-              >
-                Cancel
-              </Button>
-            </div>
-          </div>
-        ) : (
-          <div className="mt-2 flex items-center gap-3">
-            <Button
-              variant="link"
-              size="sm"
-              className="h-6 px-0 text-xs"
-              onClick={() => { setShowAddAccount(true); }}
-            >
-              <Plus className="w-3 h-3 mr-1" />
-              Add account
-            </Button>
-            <Button
-              variant="link"
-              size="sm"
-              className="h-6 px-0 text-xs"
-              onClick={fireAndLog('account-settings:click', async () => {
-                setScanStatus(null);
-                try {
-                  const created = await api.scanForNewAccounts();
-                  if (created.length === 0) {
-                    setScanStatus({
-                      kind: 'info',
-                      message: 'No new ~/.claude* directories found.',
-                    });
-                  } else {
-                    const names = created.map((a) => a.name).join(', ');
-                    setScanStatus({
-                      kind: 'success',
-                      message: `Added ${created.length} account${created.length === 1 ? '' : 's'}: ${names}`,
-                    });
-                    await loadData();
-                  }
-                } catch (err) {
-                  console.error('scanForNewAccounts failed:', err);
-                  setScanStatus({ kind: 'error', message: 'Scan failed. See console for details.' });
+        <div className="mt-2 flex items-center gap-3">
+          <Button
+            variant="link"
+            size="sm"
+            className="h-6 px-0 text-xs"
+            onClick={openAdd}
+          >
+            <Plus className="w-3 h-3 mr-1" />
+            Add account
+          </Button>
+          <Button
+            variant="link"
+            size="sm"
+            className="h-6 px-0 text-xs"
+            onClick={fireAndLog('account-settings:click', async () => {
+              setScanStatus(null);
+              try {
+                const created = await api.scanForNewAccounts();
+                if (created.length === 0) {
+                  setScanStatus({
+                    kind: 'info',
+                    message: 'No new config directories found.',
+                  });
+                } else {
+                  const names = created.map((a) => a.name).join(', ');
+                  setScanStatus({
+                    kind: 'success',
+                    message: `Added ${created.length} account${created.length === 1 ? '' : 's'}: ${names}`,
+                  });
+                  await loadData();
                 }
-              })}
-            >
-              Scan for ~/.claude* dirs
-            </Button>
-          </div>
-        )}
+              } catch (err) {
+                console.error('scanForNewAccounts failed:', err);
+                setScanStatus({ kind: 'error', message: 'Scan failed. See console for details.' });
+              }
+            })}
+          >
+            Scan for accounts
+          </Button>
+        </div>
         {scanStatus && (
           <p
             className={cn(
@@ -1008,17 +331,18 @@ export const AccountSettings: React.FC = () => {
         )}
       </div>
 
-      {/* Codex — separate from Claude accounts because Codex has no
-          per-project account model; sign-in is per-machine. Keep the row
-          minimal: status + action, no path-rule plumbing. */}
-      <div>
-        <h3 className="text-sm font-semibold mb-3">Codex</h3>
-        <p className="text-xs text-muted-foreground mb-3">
-          Codex sessions use a single per-machine sign-in. Path rules and project
-          overrides only apply to Claude accounts.
-        </p>
-        <CodexAccountRow />
-      </div>
+      {/* Add / Edit account dialog. Mounted once at panel level; opens when
+          openAdd()/openEdit() set dialogMode. Engine selection + Codex
+          sign-in now live inside AccountDialog. */}
+      {dialogMode !== null && (
+        <AccountDialog
+          mode={dialogMode}
+          account={dialogMode === 'edit' ? dialogAccount : undefined}
+          open={true}
+          onClose={closeDialog}
+          onSave={fireAndLog('account-settings:account-save', handleDialogSave)}
+        />
+      )}
 
       {/* Path Rules */}
       <div>
@@ -1034,6 +358,7 @@ export const AccountSettings: React.FC = () => {
             >
               <code className="text-xs flex-1 text-foreground">{rule.path_prefix}</code>
               <span className="text-muted-foreground text-xs">&rarr;</span>
+              <EnginePill engine={rule.account_engine} />
               <AccountBadge name={rule.account_name} color={accounts.find(a => a.id === rule.account_id)?.color} />
               <Button
                 variant="ghost"
@@ -1064,7 +389,10 @@ export const AccountSettings: React.FC = () => {
               <SelectContent>
                 {accounts.map((a) => (
                   <SelectItem key={a.id} value={String(a.id)}>
-                    {a.name}
+                    <span className="flex items-center gap-2">
+                      <EnginePill engine={a.engine} />
+                      {a.name}
+                    </span>
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -1138,7 +466,7 @@ export const AccountSettings: React.FC = () => {
           <div className="mt-2 p-3 rounded border border-green-500/30 bg-green-500/5 text-sm">
             <div className="flex items-center gap-2">
               <AccountBadge name={testResult.account.name} color={testResult.account.color} />
-              <span className="text-foreground/50">({testResult.account.account_type})</span>
+              <span className="text-foreground/50">({testResult.account.subscription_label})</span>
             </div>
             <div className="text-xs text-foreground/50 mt-1">
               Matched by: <strong>{testResult.match_type}</strong> — {testResult.match_detail}
@@ -1154,18 +482,6 @@ export const AccountSettings: React.FC = () => {
           </div>
         )}
       </div>
-      <IconPicker
-        value={editIcon}
-        onSelect={setEditIcon}
-        isOpen={showEditIconPicker}
-        onClose={() => { setShowEditIconPicker(false); }}
-      />
-      <IconPicker
-        value={newIcon}
-        onSelect={setNewIcon}
-        isOpen={showNewIconPicker}
-        onClose={() => { setShowNewIconPicker(false); }}
-      />
     </div>
   );
 };

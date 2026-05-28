@@ -43,7 +43,7 @@ export interface Tab {
     accountResolution?: {
       account: {
         name: string;
-        account_type: string;
+        subscription_label: string;
         config_dir: string;
         session_defaults?: import('@/lib/api').SessionDefaults;
       };

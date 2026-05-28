@@ -37,7 +37,7 @@ export const AccountsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   }, [accounts]);
 
   const getAccountType = useCallback((name: string): string | null => {
-    return accounts.find(a => a.name === name)?.account_type ?? null;
+    return accounts.find(a => a.name === name)?.subscription_label ?? null;
   }, [accounts]);
 
   return (

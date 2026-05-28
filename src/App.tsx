@@ -489,9 +489,13 @@ function AppContent() {
               onSelect={fireAndLog('app:select', async (entry) => {
                 if (entry.is_directory) {
                   try {
-                    // Check if account can be resolved for this path
-                    const resolved = await api.resolveAccountForProject(entry.path);
-                    if (resolved === null || resolved.account === null) {
+                    // Resolve per-engine routing. An all-null pair means
+                    // neither Claude nor Codex has an override or path rule
+                    // for this folder — prompt the user to pick an account.
+                    // A non-null pair lets us open directly; no silent
+                    // default-account fallback.
+                    const pair = await api.resolveAccountForProject(entry.path);
+                    if (pair.claude === null && pair.codex === null) {
                       // No matching rule — prompt user to pick account
                       setPendingProjectPath(entry.path);
                       setShowProjectPicker(false);

@@ -31,7 +31,7 @@ interface UseSessionLifecycleArgs {
    */
   agent?: AgentKind;
   accountResolution: {
-    account: { name: string; account_type: string; config_dir: string };
+    account: { name: string; subscription_label: string; config_dir: string };
     match_type: string;
     match_detail: string;
   } | null;
@@ -300,9 +300,17 @@ export function useSessionLifecycle({
     let configDir = accountResolution?.account.config_dir;
     if (!configDir && projectPath) {
       try {
-        const resolved = await api.resolveAccountForProject(projectPath);
-        if (resolved?.account) {
-          configDir = resolved.account.config_dir;
+        const pair = await api.resolveAccountForProject(projectPath);
+        // Prefer the slot for this session's engine; fall back to the other
+        // engine's slot so a session still resolves a configDir when only one
+        // side routes here. No default-account fallback — an all-null pair
+        // leaves configDir undefined and main raises NoAccountError.
+        const account =
+          (agent ? pair[agent]?.account : undefined)
+          ?? pair.claude?.account
+          ?? pair.codex?.account;
+        if (account) {
+          configDir = account.config_dir;
         }
       } catch (e) {
         console.error("[startPersistentSession] resolve error:", e);

@@ -317,7 +317,7 @@ export const UsageDashboard: React.FC<UsageDashboardProps> = ({}) => {
                 >
                   {acct.name}
                   <span className="opacity-60 uppercase text-[10px]">
-                    {acct.account_type}
+                    {acct.subscription_label}
                   </span>
                 </button>
               ))}

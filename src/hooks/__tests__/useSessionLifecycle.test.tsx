@@ -44,7 +44,7 @@ vi.mock('@/lib/api', () => ({
     sessionSupportedCommands: vi.fn().mockResolvedValue([]),
     sessionMcpServerStatus: vi.fn().mockResolvedValue([]),
     sessionContextUsage: vi.fn().mockResolvedValue(null),
-    resolveAccountForProject: vi.fn().mockResolvedValue(null),
+    resolveAccountForProject: vi.fn().mockResolvedValue({ claude: null, codex: null }),
   },
 }));
 
@@ -99,7 +99,7 @@ function harness(overrides: HarnessOverrides = {}) {
         effort: 'medium',
         thinkingConfig: 'adaptive',
         accountResolution: {
-          account: { name: 'A', account_type: 'pro', config_dir: '/cfg' },
+          account: { name: 'A', subscription_label: 'pro', config_dir: '/cfg' },
           match_type: 'override',
           match_detail: '',
         },
@@ -192,12 +192,11 @@ describe('useSessionLifecycle — startPersistentSession happy path', () => {
 
   it('falls back to api.resolveAccountForProject when accountResolution lacks a config_dir', async () => {
     (api.startSession as any).mockResolvedValueOnce(undefined);
-    // Mirror the widened IPC shape: `{ agent, account }` with the Claude
-    // account row nested under `.account`. Pre-Task-12 the resolver
-    // returned `Account | null` directly; the hook now reads `.account`.
+    // Resolver now returns a per-engine ResolvePair. With no explicit agent on
+    // the hook, the fallback prefers the Claude slot's account.config_dir.
     (api.resolveAccountForProject as any).mockResolvedValueOnce({
-      agent: 'claude',
-      account: { config_dir: '/fallback-cfg' },
+      claude: { account: { config_dir: '/fallback-cfg' }, matchType: 'path_rule', matchDetail: '/repo' },
+      codex: null,
     });
 
     // Custom harness with empty accountResolution.
@@ -243,7 +242,7 @@ describe('useSessionLifecycle — startPersistentSession happy path', () => {
       return useSessionLifecycle({
         tabId: 't1', projectPath: '/r', selectedModel: 'sonnet',
         permissionMode: 'default', effort: 'medium', thinkingConfig: 'disabled',
-        accountResolution: { account: { name: 'a', account_type: 'pro', config_dir: '/c' }, match_type: 'rule', match_detail: '' },
+        accountResolution: { account: { name: 'a', subscription_label: 'pro', config_dir: '/c' }, match_type: 'rule', match_detail: '' },
         persistentSessionRef,
         handleJsonlLine: vi.fn(), setIsLoading: vi.fn(),
         setMessages: ((u: any) => { messagesRef.current = typeof u === 'function' ? u(messagesRef.current) : u; }) as any,

@@ -14,7 +14,7 @@ import {
 import { SessionInspectorPanel } from "@/components/SessionInspectorPanel";
 import { Button } from "@/components/ui/button";
 import { Popover } from "@/components/ui/popover";
-import { api, type Session, type RateLimitSnapshot, type Account, type SessionMode } from "@/lib/api";
+import { api, type Session, type RateLimitSnapshot, type Account, type ResolvePair, type SessionMode } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { NewSessionForm } from "./NewSessionForm";
 import { AccountPickerDialog } from "./AccountPickerDialog";
@@ -129,7 +129,7 @@ interface AgentSessionProps {
     accountResolution?: {
       account: {
         name: string;
-        account_type: string;
+        subscription_label: string;
         config_dir: string;
         session_defaults?: import('@/lib/api').SessionDefaults;
       };
@@ -276,7 +276,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
 
   const [showSlashCommandsSettings, setShowSlashCommandsSettings] = useState(false);
   const [accountResolution, setAccountResolution] = useState<{
-    account: { name: string; account_type: string; config_dir: string; session_defaults?: import('@/lib/api').SessionDefaults };
+    account: { name: string; subscription_label: string; config_dir: string; session_defaults?: import('@/lib/api').SessionDefaults };
     match_type: string;
     match_detail: string;
   } | null>(initialSessionConfig?.accountResolution ?? null);
@@ -290,7 +290,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   // new-session form. The auth status itself comes from useCodexAuthStatus
   // so the banner re-renders the moment `~/.codex/auth.json` lands.
   const [showCodexSignIn, setShowCodexSignIn] = useState(false);
-  const codexAuthStatus = useCodexAuthStatus();
 
   /**
    * Latest rate-limit snapshots for the resolved account, keyed by
@@ -347,6 +346,43 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     setAgentLocal(next);
     tabContextForAgent.updateTab(tabId || 'default', { agent: next });
   }, [tabContextForAgent, tabId]);
+  // Codex auth status, scoped to the resolved account's configDir on the
+  // Codex path only. The status itself comes from useCodexAuthStatus so the
+  // new-session banner re-renders the moment `~/.codex/auth.json` lands. Pass
+  // null on the Claude path to disable the watcher entirely.
+  const codexAuthStatus = useCodexAuthStatus(
+    agent === 'codex' ? (accountResolution?.account.config_dir ?? null) : null,
+  );
+  // Adapt this tab's single resolved account into the per-engine ResolvePair
+  // shape NewSessionForm now consumes. AgentSession only tracks one resolved
+  // account (the active tab's), so it lands in the slot for the current
+  // engine; the other slot is null. The form only reads `account.name`, so the
+  // synthesized Account fields beyond name/config_dir/subscription_label are
+  // placeholders, never displayed.
+  const resolvePair = useMemo<ResolvePair>(() => {
+    if (!accountResolution) return { claude: null, codex: null };
+    const a = accountResolution.account;
+    const account: Account = {
+      id: -1,
+      name: a.name,
+      config_dir: a.config_dir,
+      engine: agent,
+      subscription_label: a.subscription_label,
+      has_cost: false,
+      color: null,
+      icon: null,
+      session_defaults: a.session_defaults,
+      cli_path: null,
+      created_at: '',
+      updated_at: '',
+    };
+    const slot = {
+      account,
+      matchType: accountResolution.match_type === 'override' ? 'override' as const : 'path_rule' as const,
+      matchDetail: accountResolution.match_detail,
+    };
+    return agent === 'codex' ? { claude: null, codex: slot } : { claude: slot, codex: null };
+  }, [accountResolution, agent]);
   // Unified per-tab git snapshot — project + all sibling worktrees streamed
   // from a single main-process watcher. Null until `startSessionGitWatch`
   // resolves; stays null when the project isn't a git repo.
@@ -1577,7 +1613,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     <ClaudeTranscript
       messages={messages}
       viewMode={viewMode}
-      accountType={accountResolution?.account.account_type}
+      accountType={accountResolution?.account.subscription_label}
       onResend={onResendStable}
       onLinkDetected={handleLinkDetected}
       waitingForPermission={waitingForPermission}
@@ -1711,7 +1747,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
           {accountResolution && (
             <AccountCard
               accountName={accountResolution.account.name}
-              accountType={accountResolution.account.account_type}
+              accountType={accountResolution.account.subscription_label}
               agent={agent}
               configDir={accountResolution.account.config_dir}
               matchType={accountResolution.match_type}
@@ -1818,7 +1854,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
         {!sessionStarted && (
           <div className="flex-1 flex items-center justify-center p-8">
             <NewSessionForm
-              accountResolution={accountResolution}
+              resolvePair={resolvePair}
               selectedModel={selectedModel}
               setSelectedModel={setSelectedModel}
               effort={effort}
@@ -1838,11 +1874,13 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
                 logAndForget('claude-code-session:start-persistent-session', startPersistentSession());
               }}
               onChangeAccount={() => { setShowAccountPicker(true); }}
+              onChooseAccount={() => { setShowAccountPicker(true); }}
               codexAuthStatus={codexAuthStatus}
               onCodexSignIn={() => { setShowCodexSignIn(true); }}
             />
             <CodexSignInModal
               open={showCodexSignIn}
+              configDir={accountResolution?.account.config_dir ?? ''}
               onClose={() => { setShowCodexSignIn(false); }}
             />
           </div>
@@ -1857,7 +1895,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
               setAccountResolution({
                 account: {
                   name: account.name,
-                  account_type: account.account_type,
+                  subscription_label: account.subscription_label,
                   config_dir: account.config_dir,
                   session_defaults: account.session_defaults,
                 },

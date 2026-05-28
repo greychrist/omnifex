@@ -15,16 +15,17 @@ import {
   type ThinkingConfig,
 } from "./ControlBar";
 import { MODELS } from "./ModelPicker";
-import type { AgentKind, CodexAuthStatus, SessionDefaults, SessionMode } from "@/lib/api";
-
-export interface NewSessionFormAccountResolution {
-  account: { name: string; account_type: string; config_dir: string; session_defaults?: SessionDefaults };
-  match_type: string;
-  match_detail: string;
-}
+import type { AgentKind, CodexAuthStatus, ResolvePair, SessionMode } from "@/lib/api";
 
 interface NewSessionFormProps {
-  accountResolution: NewSessionFormAccountResolution | null;
+  /**
+   * Per-engine routing for the current project. The form reads the slot for
+   * the currently-selected `agent` (`resolvePair[agent]`) so flipping the
+   * AgentPicker swaps the displayed account between the Claude and Codex
+   * routing targets. A null slot for the active engine renders a "Choose
+   * account" affordance instead of an AccountBadge.
+   */
+  resolvePair: ResolvePair;
   selectedModel: string;
   setSelectedModel: (model: string) => void;
   effort: EffortLevel;
@@ -50,7 +51,18 @@ interface NewSessionFormProps {
    */
   agentPickerDisabled?: boolean;
   onStart: () => void;
+  /**
+   * Open the account picker to change the resolved account for the active
+   * engine. Surfaced as the Pencil affordance next to a present account.
+   */
   onChangeAccount?: () => void;
+  /**
+   * Open the account picker when the active engine has NO resolved account
+   * (the slot is null). Surfaced as the "Choose account" button that replaces
+   * the AccountBadge. Distinct from `onChangeAccount` so callers can scope the
+   * picker (e.g. engineFilter) and re-fetch the pair after a pick.
+   */
+  onChooseAccount?: () => void;
   /**
    * Current Codex auth status. Threaded in from the parent (typically the
    * `App` shell, which subscribes once at app startup) so the form stays a
@@ -131,7 +143,7 @@ function DropdownRow({
 }
 
 export const NewSessionForm: React.FC<NewSessionFormProps> = ({
-  accountResolution,
+  resolvePair,
   selectedModel,
   setSelectedModel,
   effort,
@@ -147,6 +159,7 @@ export const NewSessionForm: React.FC<NewSessionFormProps> = ({
   agentPickerDisabled = false,
   onStart,
   onChangeAccount,
+  onChooseAccount,
   codexAuthStatus,
   onCodexSignIn,
   className,
@@ -158,12 +171,12 @@ export const NewSessionForm: React.FC<NewSessionFormProps> = ({
     ? codexAuthStatus?.authenticated === true
     : true;
   const showCodexAuthBanner = agent === 'codex' && !codexAuthenticated;
-  // Codex doesn't carry a Claude account, so the Account selector is
-  // hidden when Codex is picked — replaced with a quiet "Codex" badge
-  // so the user still gets a clear indicator of which engine will run.
-  // Task 14/15 plug in Codex sign-in state; for now the badge is text.
-  const showAccountCell = agent === 'claude' && accountResolution !== null;
-  const showCodexCell = agent === 'codex';
+  // Per-engine routing target for the currently-selected agent. Codex
+  // accounts are real accounts now, so both engines render a full
+  // AccountBadge when their slot resolves. A null slot for the active
+  // engine means no override/path rule routes here yet — render a
+  // "Choose account" affordance instead.
+  const activeSlot = resolvePair[agent];
   const [modelOpen, setModelOpen] = useState(false);
   const [effortOpen, setEffortOpen] = useState(false);
   const [thinkingOpen, setThinkingOpen] = useState(false);
@@ -191,24 +204,17 @@ export const NewSessionForm: React.FC<NewSessionFormProps> = ({
         />
       </div>
 
-      {/* Account (or Codex indicator) + 4 dropdowns on a single row, labels
-          on top. The leftmost cell auto-sizes to fit whichever variant is
-          showing — full AccountBadge + edit pencil for Claude, a compact
-          "Codex" pill for Codex. The four dropdown columns split the
-          remaining space equally. */}
-      <div
-        className={cn(
-          "grid gap-2",
-          showAccountCell || showCodexCell
-            ? "grid-cols-[auto_1fr_1fr_1fr_1fr]"
-            : "grid-cols-4",
-        )}
-      >
-        {showAccountCell && (
-          <div className="flex flex-col gap-1">
-            <Label className="text-[10px] uppercase tracking-wider text-foreground/50">
-              Account
-            </Label>
+      {/* Account cell + 4 dropdowns on a single row, labels on top. The
+          leftmost cell auto-sizes — it shows the resolved AccountBadge (for
+          either engine) with an edit pencil, or a "Choose account" button
+          when the active engine has no routing target yet. The four dropdown
+          columns split the remaining space equally. */}
+      <div className="grid gap-2 grid-cols-[auto_1fr_1fr_1fr_1fr]">
+        <div className="flex flex-col gap-1">
+          <Label className="text-[10px] uppercase tracking-wider text-foreground/50">
+            Account
+          </Label>
+          {activeSlot ? (
             <Button
               variant="outline"
               size="sm"
@@ -218,25 +224,23 @@ export const NewSessionForm: React.FC<NewSessionFormProps> = ({
               title="Use a different account for this session"
             >
               <span className="flex items-center gap-1">
-                <AccountBadge name={accountResolution!.account.name} />
+                <AccountBadge name={activeSlot.account.name} />
               </span>
               <Pencil className="h-3 w-3 opacity-50 shrink-0" />
             </Button>
-          </div>
-        )}
-        {showCodexCell && (
-          <div className="flex flex-col gap-1">
-            <Label className="text-[10px] uppercase tracking-wider text-foreground/50">
-              Agent
-            </Label>
-            <div
-              className="inline-flex items-center justify-center h-9 px-3 rounded-md border border-input bg-muted/40 text-[11px] font-medium whitespace-nowrap"
-              title="Codex doesn't use Claude accounts. Sign-in is per-machine."
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onChooseAccount}
+              disabled={!onChooseAccount}
+              className="justify-center h-9 px-3 font-normal whitespace-nowrap"
+              title="No account routes here yet — choose one for this engine"
             >
-              Codex
-            </div>
-          </div>
-        )}
+              Choose account
+            </Button>
+          )}
+        </div>
 
         {/* Model */}
         <div className="flex flex-col gap-1 min-w-0">
