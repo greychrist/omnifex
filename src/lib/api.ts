@@ -79,6 +79,9 @@ export interface SessionDefaults {
   effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 }
 
+/** Which CLI engine an account drives. Mirrors backend AccountEngine. */
+export type AccountEngine = AgentKind;
+
 export interface Account {
   id: number;
   name: string;
@@ -86,8 +89,12 @@ export interface Account {
   // No is_default field — there is no default account. See migration v8 in
   // electron/services/database.ts. Resolution is path rule / project override
   // only; failure raises NoAccountError.
-  /** Account type: "max" (no cost), "enterprise", "pro", "free" */
-  account_type: string;
+  /** Which CLI engine this account drives. Immutable post-create. */
+  engine: AccountEngine;
+  /** Free-text subscription tier label (e.g. 'Max', 'Pro', 'Plus'). */
+  subscription_label: string;
+  /** Whether usage on this account costs money (false for e.g. Max). */
+  has_cost: boolean;
   color: string | null;
   icon: string | null;
   session_defaults?: SessionDefaults;
@@ -163,6 +170,7 @@ export interface PathRule {
   id: number;
   account_id: number;
   account_name: string;
+  account_engine: AccountEngine;
   path_prefix: string;
   priority: number;
 }
@@ -172,8 +180,33 @@ export interface PathRule {
  */
 export interface ProjectOverride {
   project_path: string;
+  engine: AccountEngine;
   account_id: number;
   account_name: string;
+}
+
+/** One resolved routing target for a single engine. */
+export interface ResolveSlot {
+  account: Account;
+  matchType: 'override' | 'path_rule';
+  matchDetail: string;
+}
+
+/**
+ * Per-engine resolution result. A null slot means no override and no matching
+ * path rule for that engine; an all-null pair MUST be surfaced as an error,
+ * not a default-account fallback.
+ */
+export interface ResolvePair {
+  claude: ResolveSlot | null;
+  codex: ResolveSlot | null;
+}
+
+/** Engine-tagged config dir from discovery/scan. */
+export interface DiscoveredConfigDir {
+  dirName: string;
+  configDir: string;
+  engine: AccountEngine;
 }
 
 /**
@@ -2192,43 +2225,51 @@ export const api = {
     return apiCall<Account[]>('list_accounts');
   },
 
-  async createAccount(
-    name: string,
-    configDir: string,
-    accountType?: string,
-    color?: string,
-    icon?: string,
-    sessionDefaults?: SessionDefaults,
-    cliPath?: string | null,
-  ): Promise<Account> {
+  async createAccount(opts: {
+    name: string;
+    configDir: string;
+    engine: AccountEngine;
+    subscriptionLabel?: string;
+    hasCost?: boolean;
+    color?: string;
+    icon?: string;
+    sessionDefaults?: SessionDefaults;
+    cliPath?: string | null;
+  }): Promise<Account> {
     // No isDefault parameter — there is no notion of a default account.
     // Account binding is via path rules / project overrides; failure to
     // resolve surfaces as a NoAccountError. See electron/services/accounts.ts.
-    const params: Record<string, any> = { name, configDir };
-    if (accountType) params.accountType = accountType;
-    if (color) params.color = color;
-    if (icon !== undefined) params.icon = icon;
-    if (sessionDefaults !== undefined) params.sessionDefaults = sessionDefaults;
-    if (cliPath !== undefined) params.cliPath = cliPath;
+    const params: Record<string, any> = { name: opts.name, configDir: opts.configDir, engine: opts.engine };
+    if (opts.subscriptionLabel !== undefined) params.subscriptionLabel = opts.subscriptionLabel;
+    if (opts.hasCost !== undefined) params.hasCost = opts.hasCost;
+    if (opts.color !== undefined) params.color = opts.color;
+    if (opts.icon !== undefined) params.icon = opts.icon;
+    if (opts.sessionDefaults !== undefined) params.sessionDefaults = opts.sessionDefaults;
+    if (opts.cliPath !== undefined) params.cliPath = opts.cliPath;
     return apiCall<Account>('create_account', params);
   },
 
   async updateAccount(
     id: number,
-    name: string,
-    configDir: string,
-    accountType?: string,
-    color?: string,
-    icon?: string,
-    sessionDefaults?: SessionDefaults | null,
-    cliPath?: string | null,
+    opts: {
+      name: string;
+      configDir: string;
+      // engine intentionally omitted — immutable post-create.
+      subscriptionLabel?: string;
+      hasCost?: boolean;
+      color?: string;
+      icon?: string;
+      sessionDefaults?: SessionDefaults | null;
+      cliPath?: string | null;
+    },
   ): Promise<void> {
-    const params: Record<string, any> = { id, name, configDir };
-    if (accountType) params.accountType = accountType;
-    if (color !== undefined) params.color = color;
-    if (icon !== undefined) params.icon = icon;
-    if (sessionDefaults !== undefined) params.sessionDefaults = sessionDefaults;
-    if (cliPath !== undefined) params.cliPath = cliPath;
+    const params: Record<string, any> = { id, name: opts.name, configDir: opts.configDir };
+    if (opts.subscriptionLabel !== undefined) params.subscriptionLabel = opts.subscriptionLabel;
+    if (opts.hasCost !== undefined) params.hasCost = opts.hasCost;
+    if (opts.color !== undefined) params.color = opts.color;
+    if (opts.icon !== undefined) params.icon = opts.icon;
+    if (opts.sessionDefaults !== undefined) params.sessionDefaults = opts.sessionDefaults;
+    if (opts.cliPath !== undefined) params.cliPath = opts.cliPath;
     return apiCall<void>('update_account', params);
   },
 
@@ -2249,30 +2290,13 @@ export const api = {
   },
 
   /**
-   * Resolve which agent + account a project path routes to. Returns `null`
-   * when neither an explicit project override nor any path rule matches the
-   * path — callers MUST treat that as an error condition, not a default-
-   * account fallback.
-   *
-   * The returned shape mirrors `ResolveResult` in
-   * `electron/services/accounts.ts`:
-   * - `agent` — `'claude'` or `'codex'`; tells the renderer which engine to
-   *   launch and (in v1) whether the Claude account selector is even
-   *   applicable.
-   * - `account` — the Claude account row for `'claude'` rules. `null` for
-   *   `'codex'` rules, which don't carry a Claude account.
-   *
-   * Pre-Task-12 callers consumed `Account | null` directly. The wider shape
-   * carries the engine identity so `NewSessionForm` can prefill its agent
-   * picker from the same path-rule decision that selects the account.
+   * Resolve which account each engine routes to for a project path. Returns a
+   * `ResolvePair` whose `claude`/`codex` slots are independently filled by an
+   * explicit override → longest-prefix path rule → null. An all-null pair MUST
+   * be surfaced as an error, not a default-account fallback.
    */
-  async resolveAccountForProject(
-    projectPath: string,
-  ): Promise<{ agent: AgentKind; account: Account | null } | null> {
-    return apiCall<{ agent: AgentKind; account: Account | null } | null>(
-      'resolve_account_for_project',
-      { projectPath },
-    );
+  async resolveAccountForProject(projectPath: string): Promise<ResolvePair> {
+    return apiCall<ResolvePair>('resolve_account_for_project', { projectPath });
   },
 
   async setProjectAccountOverride(projectPath: string, accountId: number): Promise<void> {
@@ -2283,8 +2307,8 @@ export const api = {
     return apiCall<ProjectOverride[]>('list_project_overrides');
   },
 
-  async discoverAccounts(): Promise<[string, string][]> {
-    return apiCall<[string, string][]>('discover_accounts');
+  async discoverAccounts(): Promise<DiscoveredConfigDir[]> {
+    return apiCall<DiscoveredConfigDir[]>('discover_accounts');
   },
 
   /**
@@ -2464,8 +2488,8 @@ export const api = {
    * present, `'apikey'` when only the env var is set, and `undefined` when
    * unauthenticated.
    */
-  async getCodexAuthStatus(): Promise<CodexAuthStatus> {
-    return apiCall<CodexAuthStatus>('codex_auth_status', {});
+  async getCodexAuthStatus(configDir: string): Promise<CodexAuthStatus> {
+    return apiCall<CodexAuthStatus>('codex_auth_status', { configDir });
   },
   /**
    * Spawn `codex login` in a one-shot pty. Returns the handle the renderer
@@ -2474,9 +2498,9 @@ export const api = {
    * `codexBinaryPath` is optional; when omitted, the main process resolves
    * a system `codex` binary itself.
    */
-  async startCodexLoginFlow(opts?: { codexBinaryPath?: string }): Promise<{ ptyHandle: string }> {
-    const params: Record<string, unknown> = {};
-    if (opts?.codexBinaryPath) params.codexBinaryPath = opts.codexBinaryPath;
+  async startCodexLoginFlow(opts: { configDir: string; codexBinaryPath?: string }): Promise<{ ptyHandle: string }> {
+    const params: Record<string, unknown> = { configDir: opts.configDir };
+    if (opts.codexBinaryPath) params.codexBinaryPath = opts.codexBinaryPath;
     return apiCall<{ ptyHandle: string }>('codex_auth_start_login', params);
   },
   /** Cancel an in-flight `codex login` pty. */
@@ -2498,26 +2522,30 @@ export const api = {
    * see the unauthenticated state. Does not touch `OPENAI_API_KEY` — if the
    * user is in apikey mode they need to clear the env var themselves.
    */
-  async codexLogout(): Promise<void> {
-    return apiCall<void>('codex_logout', {});
+  async codexLogout(configDir: string): Promise<void> {
+    return apiCall<void>('codex_logout', { configDir });
   },
   /**
-   * Subscribe to Codex auth-status changes. Fires whenever
-   * `~/.codex/auth.json` is created, modified, or removed (debounced ~250ms
-   * in the main process). Returns an unsubscribe function. App-wide event —
-   * no per-tab suffix.
+   * Subscribe to Codex auth-status changes for a single account's configDir.
+   * The main process broadcasts `{ configDir, status }` whenever any Codex
+   * account's `auth.json` is created, modified, or removed (debounced ~250ms);
+   * this filters to the requested configDir. Returns an unsubscribe function.
    */
   subscribeCodexAuthStatus(
+    configDir: string,
     callback: (status: CodexAuthStatus) => void,
   ): () => void {
     return window.electronAPI.onEvent(
       'codex-auth-status-changed',
       (data: any) => {
-        if (!data || typeof data !== 'object' || typeof data.authenticated !== 'boolean') return;
+        if (!data || typeof data !== 'object') return;
+        if (data.configDir !== configDir) return;
+        const status = data.status;
+        if (!status || typeof status.authenticated !== 'boolean') return;
         callback({
-          authenticated: data.authenticated,
-          email: typeof data.email === 'string' ? data.email : undefined,
-          mode: data.mode === 'oauth' || data.mode === 'apikey' ? data.mode : undefined,
+          authenticated: status.authenticated,
+          email: typeof status.email === 'string' ? status.email : undefined,
+          mode: status.mode === 'oauth' || status.mode === 'apikey' ? status.mode : undefined,
         });
       },
     );
