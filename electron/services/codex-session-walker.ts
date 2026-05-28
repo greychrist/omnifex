@@ -21,8 +21,8 @@
  */
 
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
+import type { Account } from './accounts';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -37,6 +37,8 @@ export interface CodexSessionEntry {
   lastActivity: string;
   /** Absolute path to the rollout `.jsonl` on disk. */
   jsonlPath: string;
+  /** Codex account (its config dir owns this rollout) this session belongs to. */
+  accountId: number;
 }
 
 export interface CodexSessionWalker {
@@ -44,18 +46,13 @@ export interface CodexSessionWalker {
 }
 
 export interface CreateCodexSessionWalkerDeps {
-  /** Override for tests; defaults to ~/.codex/sessions */
-  sessionsDir?: string;
+  /** Returns the Codex accounts whose `<config_dir>/sessions` dirs to scan. */
+  listCodexAccounts: () => Account[];
 }
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-/** Default location for Codex CLI session rollouts. */
-function defaultSessionsDir(): string {
-  return path.join(os.homedir(), '.codex', 'sessions');
-}
 
 /**
  * Walk `rootDir` recursively and yield absolute paths of every `*.jsonl`
@@ -171,51 +168,63 @@ function readFirstRecordMeta(
 // Factory
 // ---------------------------------------------------------------------------
 
-export function createCodexSessionWalker(
-  deps: CreateCodexSessionWalkerDeps = {},
-): CodexSessionWalker {
-  const sessionsDir = deps.sessionsDir ?? defaultSessionsDir();
+/**
+ * Scan a single Codex `sessions` directory and return its rollouts (untagged).
+ * Missing dir → [] (Codex hasn't run for that account, or it was cleaned up).
+ */
+function scanCodexSessionsDir(sessionsDir: string): Omit<CodexSessionEntry, 'accountId'>[] {
+  if (!fs.existsSync(sessionsDir)) return [];
 
+  const files = collectJsonlFiles(sessionsDir);
+  const entries: Omit<CodexSessionEntry, 'accountId'>[] = [];
+
+  for (const file of files) {
+    let stat: fs.Stats;
+    try {
+      stat = fs.statSync(file);
+    } catch {
+      // File vanished between readdir and stat — race with deletion
+      // (logout, user housekeeping). Skip silently.
+      continue;
+    }
+
+    const fromFile = readFirstRecordMeta(file);
+    const conversationId =
+      fromFile.conversationId ?? conversationIdFromFilename(file);
+
+    entries.push({
+      conversationId,
+      projectPath: fromFile.projectPath,
+      lastActivity: stat.mtime.toISOString(),
+      jsonlPath: file,
+    });
+  }
+
+  return entries;
+}
+
+export function createCodexSessionWalker(
+  deps: CreateCodexSessionWalkerDeps,
+): CodexSessionWalker {
   return {
     async listSessions(): Promise<CodexSessionEntry[]> {
-      // Missing dir → no sessions yet, not an error. Codex hasn't been
-      // run on this machine, or the user signed out and we cleaned up.
-      if (!fs.existsSync(sessionsDir)) return [];
-
-      const files = collectJsonlFiles(sessionsDir);
-      const entries: CodexSessionEntry[] = [];
-
-      for (const file of files) {
-        let stat: fs.Stats;
-        try {
-          stat = fs.statSync(file);
-        } catch {
-          // File vanished between readdir and stat — race with deletion
-          // (logout, user housekeeping). Skip silently.
-          continue;
+      const all: CodexSessionEntry[] = [];
+      for (const acct of deps.listCodexAccounts()) {
+        const sessionsDir = path.join(acct.config_dir, 'sessions');
+        for (const entry of scanCodexSessionsDir(sessionsDir)) {
+          all.push({ ...entry, accountId: acct.id });
         }
-
-        const fromFile = readFirstRecordMeta(file);
-        const conversationId =
-          fromFile.conversationId ?? conversationIdFromFilename(file);
-
-        entries.push({
-          conversationId,
-          projectPath: fromFile.projectPath,
-          lastActivity: stat.mtime.toISOString(),
-          jsonlPath: file,
-        });
       }
 
-      // Most-recent first — matches the Claude session-list ordering so
-      // the unified UI doesn't have one half ordered the other way.
-      entries.sort(
+      // Most-recent first across all accounts — matches the Claude
+      // session-list ordering so the unified UI is consistent.
+      all.sort(
         (a, b) =>
           new Date(b.lastActivity).getTime() -
           new Date(a.lastActivity).getTime(),
       );
 
-      return entries;
+      return all;
     },
   };
 }

@@ -663,7 +663,9 @@ app.whenReady().then(() => {
   const codexAuthService = createCodexAuthService({
     oneShotTerminal: oneShotTerminalService,
   });
-  const codexSessionWalkerService = createCodexSessionWalker();
+  const codexSessionWalkerService = createCodexSessionWalker({
+    listCodexAccounts: () => accountsService.listAccounts().filter((a) => a.engine === 'codex'),
+  });
 
   // App-wide broadcast: any time a Codex account's auth file changes (fresh
   // login, logout via deletion, etc.) every renderer needs to know so banners
