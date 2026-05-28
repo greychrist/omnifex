@@ -308,7 +308,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   // derivation over `sessionStatus` (from useSessionLifecycle) and the
   // mount-time session props. The actual derived constant is defined
   // below, after the hook call.
-  const [selectedModel, setSelectedModel] = useState<string>(initialSessionConfig?.model ?? "opus[1m]");
+  const [selectedModel, setSelectedModel] = useState<string>(initialSessionConfig?.model ?? "opus");
   // Permission mode — the full SDK set ("default" | "acceptEdits" | "plan"
   // | "bypassPermissions"). Pre-session and in-session pickers both use
   // the same PERMISSION_MODES constant from FloatingPromptInput.
@@ -1859,8 +1859,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
               setSelectedModel={setSelectedModel}
               effort={effort}
               setEffort={setEffort}
-              thinkingConfig={thinkingConfig}
-              setThinkingConfig={setThinkingConfig}
               permissionMode={permissionMode}
               setPermissionMode={setPermissionMode}
               sessionStartMode={sessionStartMode}
@@ -2257,21 +2255,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
                   const tid = tabIdRef.current;
                   api.sessionSetEffort(tid, level).catch((err: unknown) => {
                     console.error('[sessions] sessionSetEffort failed:', err);
-                  });
-                }
-              }}
-              thinkingConfig={thinkingConfig}
-              onThinkingConfigChange={(config) => {
-                setThinkingConfig(config);
-                if (persistentSessionRef.current) {
-                  const tid = tabIdRef.current;
-                  const sdkConfig = config === 'adaptive'
-                    ? { type: 'adaptive' as const }
-                    : config === 'disabled'
-                    ? { type: 'disabled' as const }
-                    : { type: 'enabled' as const, budgetTokens: 10000 };
-                  api.sessionSetThinking(tid, sdkConfig).catch((err: unknown) => {
-                    console.error('[sessions] sessionSetThinking failed:', err);
                   });
                 }
               }}

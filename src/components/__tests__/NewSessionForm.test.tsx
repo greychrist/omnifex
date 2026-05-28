@@ -4,7 +4,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { NewSessionForm } from '../NewSessionForm';
 import type { Account, AgentKind, CodexAuthStatus, ResolvePair, ResolveSlot } from '@/lib/api';
-import type { EffortLevel, ThinkingConfig } from '../ControlBar';
+import type { EffortLevel } from '../ControlBar';
 import type { SessionMode } from '@/lib/api';
 
 // AccountBadge consumes useAccounts() + useTheme(). Stub both so the
@@ -78,9 +78,8 @@ function Harness({
   onStart?: () => void;
 } = {}) {
   const [agent, setAgent] = useState<AgentKind>(initialAgent);
-  const [model, setModel] = useState('opus[1m]');
+  const [model, setModel] = useState('opus');
   const [effort, setEffort] = useState<EffortLevel>('high');
-  const [thinking, setThinking] = useState<ThinkingConfig>('adaptive');
   const [perm, setPerm] = useState('acceptEdits');
   const [mode, setMode] = useState<SessionMode>('rich');
   return (
@@ -90,8 +89,6 @@ function Harness({
       setSelectedModel={setModel}
       effort={effort}
       setEffort={setEffort}
-      thinkingConfig={thinking}
-      setThinkingConfig={setThinking}
       permissionMode={perm}
       setPermissionMode={setPerm}
       sessionStartMode={mode}

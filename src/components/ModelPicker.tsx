@@ -17,24 +17,16 @@ export interface Model {
 
 export const MODELS: Model[] = [
   {
-    id: "opus[1m]",
-    name: "Opus 4.7 (1M)",
-    description: "Most capable, 1M context window",
-    icon: <Zap className="h-3.5 w-3.5" />,
-    shortName: "O",
-    color: "text-primary"
-  },
-  {
     id: "opus",
-    name: "Opus 4.7 (200K)",
-    description: "Most capable, standard context",
+    name: "Opus 4.8",
+    description: "Most capable, best for complex work",
     icon: <Zap className="h-3.5 w-3.5" />,
     shortName: "O",
     color: "text-primary"
   },
   {
     id: "sonnet",
-    name: "Sonnet 4.6",
+    name: "Sonnet",
     description: "Faster, efficient for most tasks",
     icon: <Zap className="h-3.5 w-3.5" />,
     shortName: "S",
@@ -42,7 +34,7 @@ export const MODELS: Model[] = [
   },
   {
     id: "haiku",
-    name: "Haiku 4.5",
+    name: "Haiku",
     description: "Fastest and cheapest, good for simple tasks",
     icon: <Zap className="h-3.5 w-3.5" />,
     shortName: "H",

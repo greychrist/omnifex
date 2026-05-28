@@ -25,11 +25,9 @@ import {
   type EffortLevel,
   type ThinkingConfig,
   EFFORT_LEVELS,
-  THINKING_CONFIGS,
   PERMISSION_MODES,
   EffortPicker,
   PermissionPicker,
-  ThinkingPicker,
 } from "./ControlBar";
 import type { PermissionMode } from "./ControlBar";
 import {
@@ -42,7 +40,7 @@ import { useSlashCommandAutocomplete } from "@/hooks/useSlashCommandAutocomplete
 
 // Re-export types and constants so existing consumers don't break
 export type { EffortLevel, ThinkingConfig, PermissionMode };
-export { EFFORT_LEVELS, THINKING_CONFIGS, PERMISSION_MODES };
+export { EFFORT_LEVELS, PERMISSION_MODES };
 
 interface FloatingPromptInputProps {
   onSend: (prompt: string, model: string, images?: string[]) => void;
@@ -55,7 +53,7 @@ interface FloatingPromptInputProps {
   extraMenuItems?: React.ReactNode;
   /**
    * Optional content rendered as its own row immediately above the left-side
-   * control pickers (model / effort / thinking / permission). Used by the
+   * control pickers (model / effort / permission). Used by the
    * session view to surface the SDK ↔ Terminal mode toggle here, freeing
    * vertical space in the top header above. Renders nothing when omitted.
    */
@@ -73,8 +71,6 @@ interface FloatingPromptInputProps {
   onLiveModelChange?: (model: string) => void;
   effort?: EffortLevel;
   onEffortChange?: (level: EffortLevel) => void;
-  thinkingConfig?: ThinkingConfig;
-  onThinkingConfigChange?: (config: ThinkingConfig) => void;
   configDir?: string;
   tabId?: string;
   /** Pre-fetched built-in SDK slash commands (loaded during session init). */
@@ -102,8 +98,6 @@ const FloatingPromptInputInner = (
     onLiveModelChange,
     effort = 'high',
     onEffortChange,
-    thinkingConfig = 'adaptive',
-    onThinkingConfigChange,
     configDir,
     tabId,
     supportedCommands,
@@ -120,7 +114,6 @@ const FloatingPromptInputInner = (
   const [isExpanded, setIsExpanded] = useState(false);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [effortPickerOpen, setEffortPickerOpen] = useState(false);
-  const [thinkingPickerOpen, setThinkingPickerOpen] = useState(false);
   const [showFilePicker, setShowFilePicker] = useState(false);
   const [filePickerQuery, setFilePickerQuery] = useState("");
   const [cursorPosition, setCursorPosition] = useState(0);
@@ -562,14 +555,6 @@ const FloatingPromptInputInner = (
                     onEffortChange={onEffortChange}
                     open={effortPickerOpen}
                     onOpenChange={setEffortPickerOpen}
-                    disabled={disabled}
-                  />
-
-                  <ThinkingPicker
-                    thinkingConfig={thinkingConfig}
-                    onThinkingConfigChange={onThinkingConfigChange}
-                    open={thinkingPickerOpen}
-                    onOpenChange={setThinkingPickerOpen}
                     disabled={disabled}
                   />
 

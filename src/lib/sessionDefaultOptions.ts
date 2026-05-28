@@ -8,9 +8,7 @@ export interface DropdownOption {
 
 export const MODEL_OPTIONS: Record<AccountEngine, DropdownOption[]> = {
   claude: [
-    { id: 'opus[1m]', label: 'Opus (1M)' },
-    { id: 'opus', label: 'Opus' },
-    { id: 'sonnet[1m]', label: 'Sonnet (1M)' },
+    { id: 'opus', label: 'Opus 4.8' },
     { id: 'sonnet', label: 'Sonnet' },
     { id: 'haiku', label: 'Haiku' },
   ],
@@ -49,8 +47,3 @@ export const PERMISSION_OPTIONS: Record<AccountEngine, DropdownOption[]> = {
     { id: 'full-access', label: 'Full-access', description: 'No sandbox; danger mode' },
   ],
 };
-
-export const THINKING_OPTIONS: DropdownOption[] = [
-  { id: 'adaptive', label: 'Adaptive' },
-  { id: 'disabled', label: 'Disabled' },
-];

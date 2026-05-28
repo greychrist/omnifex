@@ -53,7 +53,7 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
   // ClaudeCodeSession) so the user can pick model/effort/permissions before
   // a chat tab even exists. On Start, these get baked into initialSessionConfig
   // and ClaudeCodeSession seeds its state from them.
-  const [formModel, setFormModel] = React.useState<string>('opus[1m]');
+  const [formModel, setFormModel] = React.useState<string>('opus');
   const [formEffort, setFormEffort] = React.useState<EffortLevel>('high');
   const [formThinkingConfig, setFormThinkingConfig] = React.useState<ThinkingConfig>('adaptive');
   const [formPermissionMode, setFormPermissionMode] = React.useState<string>('acceptEdits');
@@ -416,8 +416,6 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                             setSelectedModel={setFormModel}
                             effort={formEffort}
                             setEffort={setFormEffort}
-                            thinkingConfig={formThinkingConfig}
-                            setThinkingConfig={setFormThinkingConfig}
                             permissionMode={formPermissionMode}
                             setPermissionMode={setFormPermissionMode}
                             sessionStartMode={formSessionStartMode}

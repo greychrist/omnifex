@@ -8,7 +8,6 @@ import {
   FilePen,
   ClipboardList,
   Sparkles,
-  Brain,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -45,14 +44,12 @@ export const EFFORT_LEVELS: { id: EffortLevel; name: string; description: string
  * from the renderer-shared `lib/thinkingConfig` module so every UI
  * touch-point stays on the same canonical type. The legacy `'budget'`
  * variant was removed in v0.4.21; see lib/thinkingConfig.ts for why.
+ *
+ * The user-facing Thinking picker was removed in v0.4.70 — thinking now
+ * always stays adaptive. The type is retained because session start params
+ * and persisted session defaults still carry the (pinned-adaptive) value.
  */
 export type { ThinkingConfig } from '@/lib/thinkingConfig';
-import type { ThinkingConfig } from '@/lib/thinkingConfig';
-
-export const THINKING_CONFIGS: { id: ThinkingConfig; name: string; description: string; shortName: string; color: string }[] = [
-  { id: 'adaptive', name: 'Adaptive', description: 'Claude decides when and how much to think', shortName: 'On', color: 'text-sky-600' },
-  { id: 'disabled', name: 'Off', description: 'No extended thinking', shortName: 'Off', color: 'text-foreground/70' },
-];
 
 // ── Permission ──────────────────────────────────────────────────────────
 
@@ -273,133 +270,6 @@ export function EffortPicker({ effort, onEffortChange, open, onOpenChange, disab
         </Tooltip>
       }
       content={<EffortPickerDropdown effort={effort} onSelect={handleSelect} />}
-      open={open}
-      onOpenChange={onOpenChange}
-      align="start"
-      side="top"
-    />
-  );
-}
-
-// ── Thinking Picker ─────────────────────────────────────────────────────
-
-interface ThinkingPickerProps {
-  thinkingConfig: ThinkingConfig;
-  onThinkingConfigChange?: (config: ThinkingConfig) => void;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  disabled?: boolean;
-  /** "compact" (bottom bar) or "form" (full-name trigger that fills its
-   *  container — used in NewSessionForm). Defaults to "compact". */
-  variant?: "compact" | "form";
-}
-
-function ThinkingPickerDropdown({
-  thinkingConfig,
-  onSelect,
-}: {
-  thinkingConfig: ThinkingConfig;
-  onSelect: (config: ThinkingConfig) => void;
-}) {
-  return (
-    <div className="w-[280px] p-1">
-      <div className="text-[10px] uppercase tracking-wider text-muted-foreground px-3 pt-2 pb-1.5 border-b border-border/50 mb-1">
-        Thinking
-      </div>
-      {THINKING_CONFIGS.map((cfg) => (
-        <button
-          key={cfg.id}
-          onClick={() => { onSelect(cfg.id); }}
-          className={cn(
-            "w-full flex items-start gap-3 p-3 rounded-md transition-colors text-left",
-            "hover:bg-accent",
-            thinkingConfig === cfg.id && "bg-accent",
-          )}
-        >
-          <span className={cn("text-sm font-bold mt-0.5", cfg.color)}>
-            {cfg.shortName}
-          </span>
-          <div className="flex-1 space-y-1">
-            <div className="font-medium text-sm">{cfg.name}</div>
-            <div className="text-xs text-muted-foreground">{cfg.description}</div>
-          </div>
-        </button>
-      ))}
-    </div>
-  );
-}
-
-export function ThinkingPicker({
-  thinkingConfig,
-  onThinkingConfigChange,
-  open,
-  onOpenChange,
-  disabled,
-  variant = "compact",
-}: ThinkingPickerProps) {
-  const current = THINKING_CONFIGS.find((c) => c.id === thinkingConfig);
-
-  const handleSelect = (config: ThinkingConfig) => {
-    onThinkingConfigChange?.(config);
-    onOpenChange(false);
-  };
-
-  if (variant === "form") {
-    return (
-      <Popover
-        trigger={
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={disabled}
-            onClick={() => { onOpenChange(!open); }}
-            className="w-full justify-between h-9 px-3 font-normal gap-2"
-          >
-            <span className="flex items-center gap-2 min-w-0">
-              <Brain className="h-3.5 w-3.5 opacity-70 shrink-0" />
-              <span className={cn("text-xs font-semibold truncate", current?.color)}>
-                {current?.name}
-              </span>
-            </span>
-            <ChevronDown className="h-3 w-3 opacity-50 shrink-0" />
-          </Button>
-        }
-        content={<ThinkingPickerDropdown thinkingConfig={thinkingConfig} onSelect={handleSelect} />}
-        open={open}
-        onOpenChange={onOpenChange}
-        align="start"
-        side="bottom"
-      />
-    );
-  }
-
-  return (
-    <Popover
-      trigger={
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <motion.div whileTap={{ scale: 0.97 }} transition={{ duration: 0.15 }}>
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={disabled}
-                className="h-9 px-2 bg-background hover:bg-accent/50 gap-1 shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_30%,transparent)]"
-              >
-                <Brain className="h-3.5 w-3.5 opacity-70" />
-                <span className={cn("text-[10px] font-bold", current?.color)}>
-                  {current?.shortName}
-                </span>
-                <ChevronUp className="h-3 w-3 ml-0.5 opacity-70" />
-              </Button>
-            </motion.div>
-          </TooltipTrigger>
-          <TooltipContent side="top">
-            <p className="text-xs font-medium">Thinking: {current?.name}</p>
-            <p className="text-xs text-muted-foreground">{current?.description}</p>
-          </TooltipContent>
-        </Tooltip>
-      }
-      content={<ThinkingPickerDropdown thinkingConfig={thinkingConfig} onSelect={handleSelect} />}
       open={open}
       onOpenChange={onOpenChange}
       align="start"

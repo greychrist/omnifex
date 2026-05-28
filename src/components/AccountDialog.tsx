@@ -325,8 +325,6 @@ export const AccountDialog: React.FC<AccountDialogProps> = ({
             setModel={setModel}
             effort={effort}
             setEffort={setEffort}
-            thinkingConfig={engine === "claude" ? thinking : undefined}
-            setThinkingConfig={engine === "claude" ? setThinking : undefined}
             permissionMode={permission}
             setPermissionMode={setPermission}
           />

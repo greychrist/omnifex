@@ -67,7 +67,7 @@ function makeAccount(overrides: Partial<Account> = {}): Account {
 }
 
 describe('AccountDialog', () => {
-  it('add mode: engine radios enabled; Claude default shows Thinking; clicking Codex hides it', () => {
+  it('add mode: engine radios enabled, Claude default; no Thinking dropdown on either engine', () => {
     render(
       <AccountDialog mode="add" open={true} onClose={() => {}} onSave={() => {}} />,
     );
@@ -79,10 +79,10 @@ describe('AccountDialog', () => {
     expect((codexRadio as HTMLInputElement).disabled).toBe(false);
     expect((claudeRadio as HTMLInputElement).checked).toBe(true);
 
-    // Claude default → Thinking dropdown visible.
-    expect(screen.queryByLabelText(/thinking/i)).not.toBeNull();
+    // Thinking picker was removed (always adaptive) — absent for Claude...
+    expect(screen.queryByLabelText(/thinking/i)).toBeNull();
 
-    // Flip to Codex → Thinking hidden.
+    // ...and remains absent on Codex.
     fireEvent.click(codexRadio);
     expect((codexRadio as HTMLInputElement).checked).toBe(true);
     expect(screen.queryByLabelText(/thinking/i)).toBeNull();

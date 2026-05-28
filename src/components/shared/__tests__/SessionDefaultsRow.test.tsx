@@ -16,7 +16,6 @@ function Harness({
 }) {
   const [model, setModel] = useState(engine === 'claude' ? 'opus' : 'gpt-5-codex');
   const [effort, setEffort] = useState('medium');
-  const [thinkingConfig, setThinkingConfig] = useState('adaptive');
   const [permissionMode, setPermissionMode] = useState(
     engine === 'claude' ? 'default' : 'read-only',
   );
@@ -28,8 +27,6 @@ function Harness({
       setModel={(v) => { setModel(v); onModel?.(v); }}
       effort={effort}
       setEffort={setEffort}
-      thinkingConfig={thinkingConfig}
-      setThinkingConfig={setThinkingConfig}
       permissionMode={permissionMode}
       setPermissionMode={setPermissionMode}
     />
@@ -37,12 +34,12 @@ function Harness({
 }
 
 describe('SessionDefaultsRow', () => {
-  it("engine='claude' renders Model, Effort, Thinking, Permissions", () => {
+  it("engine='claude' renders Model, Effort, Permissions but no Thinking", () => {
     render(<Harness engine="claude" />);
     expect(screen.getByLabelText(/model/i)).toBeTruthy();
     expect(screen.getByLabelText(/effort/i)).toBeTruthy();
-    expect(screen.getByLabelText(/thinking/i)).toBeTruthy();
     expect(screen.getByLabelText(/permissions/i)).toBeTruthy();
+    expect(screen.queryByLabelText(/thinking/i)).toBeNull();
   });
 
   it("engine='codex' renders Model, Effort, Permissions but no Thinking", () => {

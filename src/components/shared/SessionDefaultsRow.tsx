@@ -3,7 +3,6 @@ import {
   MODEL_OPTIONS,
   EFFORT_OPTIONS,
   PERMISSION_OPTIONS,
-  THINKING_OPTIONS,
   type DropdownOption,
 } from '@/lib/sessionDefaultOptions';
 
@@ -13,8 +12,6 @@ export interface SessionDefaultsRowProps {
   setModel: (v: string) => void;
   effort: string;
   setEffort: (v: string) => void;
-  thinkingConfig?: string;
-  setThinkingConfig?: (v: string) => void;
   permissionMode: string;
   setPermissionMode: (v: string) => void;
   className?: string;
@@ -56,14 +53,10 @@ export function SessionDefaultsRow({
   setModel,
   effort,
   setEffort,
-  thinkingConfig,
-  setThinkingConfig,
   permissionMode,
   setPermissionMode,
   className,
 }: SessionDefaultsRowProps) {
-  const showThinking = engine === 'claude';
-
   return (
     <div className={`flex items-end gap-2 ${className ?? ''}`}>
       <Dropdown
@@ -80,15 +73,6 @@ export function SessionDefaultsRow({
         onChange={setEffort}
         options={EFFORT_OPTIONS[engine]}
       />
-      {showThinking && (
-        <Dropdown
-          id="session-defaults-thinking"
-          label="Thinking"
-          value={thinkingConfig ?? ''}
-          onChange={setThinkingConfig ?? (() => {})}
-          options={THINKING_OPTIONS}
-        />
-      )}
       <Dropdown
         id="session-defaults-permissions"
         label="Permissions"

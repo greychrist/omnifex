@@ -3,10 +3,8 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import {
   EFFORT_LEVELS,
-  THINKING_CONFIGS,
   PERMISSION_MODES,
   EffortPicker,
-  ThinkingPicker,
   PermissionPicker,
   normalizePermissionMode,
 } from "../ControlBar";
@@ -33,10 +31,6 @@ describe("normalizePermissionMode", () => {
 describe("static option lists", () => {
   it("EFFORT_LEVELS exposes the five SDK effort levels", () => {
     expect(EFFORT_LEVELS.map((e) => e.id)).toEqual(["low", "medium", "high", "xhigh", "max"]);
-  });
-
-  it("THINKING_CONFIGS exposes only adaptive + disabled (Budget removed in v0.4.21)", () => {
-    expect(THINKING_CONFIGS.map((t) => t.id)).toEqual(["adaptive", "disabled"]);
   });
 
   it("PERMISSION_MODES exposes all six permission modes", () => {
@@ -166,119 +160,6 @@ describe("EffortPicker (form)", () => {
       />,
     );
     expect(screen.getAllByText("Max").length).toBeGreaterThan(0);
-  });
-});
-
-// ─── ThinkingPicker ──────────────────────────────────────────────────────
-
-describe("ThinkingPicker (compact)", () => {
-  it("renders the current thinking short name", () => {
-    renderInProvider(
-      <ThinkingPicker
-        thinkingConfig="adaptive"
-        open={false}
-        onOpenChange={vi.fn()}
-      />,
-    );
-    expect(screen.getAllByText("On").length).toBeGreaterThan(0);
-  });
-
-  it("calls onOpenChange when trigger is clicked", () => {
-    const onOpenChange = vi.fn();
-    renderInProvider(
-      <ThinkingPicker
-        thinkingConfig="adaptive"
-        open={false}
-        onOpenChange={onOpenChange}
-      />,
-    );
-    fireEvent.click(screen.getAllByRole("button")[0]);
-    expect(onOpenChange).toHaveBeenCalled();
-  });
-
-  it("lists all thinking configs when open", () => {
-    renderInProvider(
-      <ThinkingPicker
-        thinkingConfig="adaptive"
-        open={true}
-        onOpenChange={vi.fn()}
-      />,
-    );
-    for (const cfg of THINKING_CONFIGS) {
-      // "Off" appears as both shortName and name for the disabled config
-      expect(screen.getAllByText(cfg.name).length).toBeGreaterThan(0);
-    }
-  });
-
-  it("calls onThinkingConfigChange and closes when option picked", () => {
-    const onChange = vi.fn();
-    const onOpenChange = vi.fn();
-    renderInProvider(
-      <ThinkingPicker
-        thinkingConfig="adaptive"
-        open={true}
-        onThinkingConfigChange={onChange}
-        onOpenChange={onOpenChange}
-      />,
-    );
-    // "Off" is both shortName and full name; click the option's button by walking up
-    const matches = screen.getAllByText("Off");
-    const target = matches[matches.length - 1];
-    fireEvent.click(target);
-    expect(onChange).toHaveBeenCalledWith("disabled");
-    expect(onOpenChange).toHaveBeenCalledWith(false);
-  });
-
-  it("does not throw without onThinkingConfigChange", () => {
-    renderInProvider(
-      <ThinkingPicker
-        thinkingConfig="adaptive"
-        open={true}
-        onOpenChange={vi.fn()}
-      />,
-    );
-    expect(() => fireEvent.click(screen.getByText("Adaptive"))).not.toThrow();
-  });
-
-  it("respects disabled prop", () => {
-    renderInProvider(
-      <ThinkingPicker
-        thinkingConfig="adaptive"
-        open={false}
-        onOpenChange={vi.fn()}
-        disabled
-      />,
-    );
-    expect((screen.getAllByRole("button")[0] as HTMLButtonElement).disabled).toBe(true);
-  });
-});
-
-describe("ThinkingPicker (form)", () => {
-  it("renders the full thinking name for the disabled state", () => {
-    renderInProvider(
-      <ThinkingPicker
-        thinkingConfig="disabled"
-        open={false}
-        onOpenChange={vi.fn()}
-        variant="form"
-      />,
-    );
-    // Off is the human-facing name for `'disabled'`.
-    expect(screen.getAllByText("Off").length).toBeGreaterThan(0);
-  });
-
-  it("toggles open via trigger click", () => {
-    const onOpenChange = vi.fn();
-    renderInProvider(
-      <ThinkingPicker
-        thinkingConfig="disabled"
-        open={false}
-        onOpenChange={onOpenChange}
-        variant="form"
-      />,
-    );
-    fireEvent.click(screen.getAllByRole("button")[0]);
-    expect(onOpenChange).toHaveBeenCalledWith(true);
   });
 });
 

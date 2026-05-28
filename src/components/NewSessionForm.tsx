@@ -10,9 +10,7 @@ import { cn } from "@/lib/utils";
 import {
   EFFORT_LEVELS,
   PERMISSION_MODES,
-  THINKING_CONFIGS,
   type EffortLevel,
-  type ThinkingConfig,
 } from "./ControlBar";
 import { MODELS } from "./ModelPicker";
 import type { AgentKind, CodexAuthStatus, ResolvePair, SessionMode } from "@/lib/api";
@@ -30,8 +28,6 @@ interface NewSessionFormProps {
   setSelectedModel: (model: string) => void;
   effort: EffortLevel;
   setEffort: (effort: EffortLevel) => void;
-  thinkingConfig: ThinkingConfig;
-  setThinkingConfig: (config: ThinkingConfig) => void;
   permissionMode: string;
   setPermissionMode: (mode: string) => void;
   sessionStartMode: SessionMode;
@@ -148,8 +144,6 @@ export const NewSessionForm: React.FC<NewSessionFormProps> = ({
   setSelectedModel,
   effort,
   setEffort,
-  thinkingConfig,
-  setThinkingConfig,
   permissionMode,
   setPermissionMode,
   sessionStartMode,
@@ -179,12 +173,10 @@ export const NewSessionForm: React.FC<NewSessionFormProps> = ({
   const activeSlot = resolvePair[agent];
   const [modelOpen, setModelOpen] = useState(false);
   const [effortOpen, setEffortOpen] = useState(false);
-  const [thinkingOpen, setThinkingOpen] = useState(false);
   const [permissionsOpen, setPermissionsOpen] = useState(false);
 
   const selectedModelData = MODELS.find((m) => m.id === selectedModel) ?? MODELS[0];
   const selectedEffort = EFFORT_LEVELS.find((e) => e.id === effort);
-  const selectedThinking = THINKING_CONFIGS.find((c) => c.id === thinkingConfig);
   const selectedPermission =
     PERMISSION_MODES.find((m) => m.id === permissionMode) ?? PERMISSION_MODES[0];
 
@@ -313,48 +305,6 @@ export const NewSessionForm: React.FC<NewSessionFormProps> = ({
                       {level.shortName}
                     </span>
                     <span className="text-[10px] leading-tight">{level.name}</span>
-                  </DropdownRow>
-                ))}
-              </div>
-            }
-          />
-        </div>
-
-        {/* Thinking */}
-        <div className="flex flex-col gap-1 min-w-0">
-          <Label className="text-[10px] uppercase tracking-wider text-foreground/50">Thinking</Label>
-          <Popover
-            open={thinkingOpen}
-            onOpenChange={setThinkingOpen}
-            align="start"
-            side="bottom"
-            trigger={
-              <DropdownTrigger
-                open={thinkingOpen}
-                onClick={() => { setThinkingOpen(!thinkingOpen); }}
-                title={selectedThinking?.description}
-              >
-                <span className={cn("text-[11px] font-bold shrink-0", selectedThinking?.color)}>
-                  {selectedThinking?.shortName}
-                </span>
-                <span className="text-[10px] leading-tight truncate">{selectedThinking?.name}</span>
-              </DropdownTrigger>
-            }
-            content={
-              <div className="w-[240px] p-1">
-                {THINKING_CONFIGS.map((cfg) => (
-                  <DropdownRow
-                    key={cfg.id}
-                    selected={cfg.id === thinkingConfig}
-                    onClick={() => {
-                      setThinkingConfig(cfg.id);
-                      setThinkingOpen(false);
-                    }}
-                  >
-                    <span className={cn("text-xs font-bold w-10 shrink-0", cfg.color)}>
-                      {cfg.shortName}
-                    </span>
-                    <span className="text-[10px] leading-tight">{cfg.name}</span>
                   </DropdownRow>
                 ))}
               </div>
