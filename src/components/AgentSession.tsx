@@ -661,11 +661,12 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   // Defined here so tasksInFlight can derive from it without a second getTaskList call.
   // The same reference is passed to useSessionLifecycle further down.
   const taskEntries = useMemo(() => getTaskList(messages) ?? [], [messages]);
-  // True iff the latest task list still has pending or in_progress items.
-  // Folded into the spinner gate so the in-tab indicator matches the
-  // popover's "busy" definition (turn || agents || tasks).
+  // True iff the latest task list has an actively in_progress item. Pending
+  // (planned-but-unstarted) tasks do NOT count — otherwise a resumed session
+  // that ended with unstarted todos shows a spinner forever. Matches
+  // hasOpenTasks in sessionDerivedState.ts (the conversationStatus path).
   const tasksInFlight = useMemo(
-    () => taskEntries.length > 0 && summarizeTaskList(taskEntries).running,
+    () => summarizeTaskList(taskEntries).inProgress > 0,
     [taskEntries],
   );
   const outstandingWork = isLoading || tasksInFlight;
@@ -726,25 +727,28 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     onStreamingChangeRef.current?.(isLoading, claudeSessionId);
   }, [isLoading, claudeSessionId]);
 
-  // Calculate total tokens from messages — guard against undefined fields to avoid NaN
+  // Approximate current context-window occupancy from the LAST assistant turn.
+  // This is the fallback the SessionCard uses when the CLI's live
+  // query.getContextUsage() isn't available yet (notably right after a resume).
+  // Summing input+output across every turn would be cumulative tokens
+  // generated over the whole session — far larger than the live context — so
+  // we read only the most recent assistant message's usage:
+  //   input + cache_read + cache_creation + output ≈ what was in context.
   useEffect(() => {
-    const tokens = messages.reduce((total, msg) => {
-      // Assistant rows carry usage on the wrapped BetaMessage; result rows
-      // carry per-turn usage at the top level. Other variants have no tokens.
+    let last: { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number } | undefined;
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      const msg = messages[i];
       if (msg.kind === 'assistant') {
-        const usage = msg.raw.message?.usage as { input_tokens?: number; output_tokens?: number } | undefined;
-        if (usage) {
-          return total + (usage.input_tokens || 0) + (usage.output_tokens || 0);
-        }
+        const usage = msg.raw.message?.usage as typeof last;
+        if (usage) { last = usage; break; }
       }
-      if (msg.kind === 'unknown') {
-        const raw = msg.raw as { type?: string; usage?: { input_tokens?: number; output_tokens?: number } };
-        if (raw.type === 'result' && raw.usage) {
-          return total + (raw.usage.input_tokens || 0) + (raw.usage.output_tokens || 0);
-        }
-      }
-      return total;
-    }, 0);
+    }
+    const tokens = last
+      ? (last.input_tokens || 0)
+        + (last.cache_read_input_tokens || 0)
+        + (last.cache_creation_input_tokens || 0)
+        + (last.output_tokens || 0)
+      : 0;
     setTotalTokens(tokens);
   }, [messages]);
 
