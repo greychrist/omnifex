@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Codex accounts are first-class.** Multi-account Codex via `CODEX_HOME`; sign-in is per-account. The accounts list, Add/Edit dialog, path rules, project overrides, and the on-disk session walker all support both engines.
+- **Unified Add/Edit dialog (`AccountDialog`).** One form for Claude and Codex accounts. Engine radio (locked on Edit — delete + recreate to switch). Subscription label is free text. A new `has_cost` checkbox replaces the implicit "max = free" inference. The session-defaults row branches on engine (Claude: Model/Effort/Thinking/Permissions; Codex: Model/Effort/Permissions).
+- **Combined account discovery.** First-run scan and the renamed "Scan for accounts" button now find both `~/.claude*` and `~/.codex*` config dirs and create engine-tagged account rows.
+
+### Changed
+
+- **`account_type` → `subscription_label` + `has_cost`** (migration v11). Existing rows are backfilled (`'max'` → `subscription_label='Max'`, `has_cost=false`; `pro`/`enterprise`/`free` capitalized with `has_cost=true`).
+- **Path rules drop the `agent` column** (migration v11); engine is derived from `account.engine`, and `account_id` is now NOT NULL. Multiple rules per path are supported — one Claude rule and one Codex rule on the same path is the new normal. Orphan Codex rules from Phase 3 are backfilled to a discovered `~/.codex` account at migration time (only when such orphans exist), or dropped when there's nothing to bind to.
+- **`project_account_overrides` is composite-keyed by `(project_path, engine)`** so a project can override both engines independently.
+- **`AccountsService.resolve()` returns `ResolvePair = { claude, codex }`.** Per-engine resolution: explicit override → longest-prefix path rule → null. The new-session form consumes the pair; flipping the agent picker swaps the account (and session defaults) to the matching slot, and an unrouted engine shows a "Choose account" affordance.
+- **`CodexAuthService` is per-configDir.** All methods take a `configDir`; watchers are refcounted per dir; `startLoginFlow` injects `CODEX_HOME` so the resulting auth file lands in the account's dir. The auth-changed broadcast carries `{ configDir, status }`.
+- **`CodexSessionWalker` aggregates across all Codex accounts**, tagging each rollout with its source account id.
+
+### Notes
+
+- `OPENAI_API_KEY` remains machine-wide — if set, every Codex account reads as authenticated in API-key mode. Disclosed in the AccountDialog hint text.
+- Engine is immutable post-create. Switching engines = delete + recreate the account.
+- Per-project "last used engine" memory is not in v1: when both slots are filled, Claude is the default.
+
 ## [0.4.68] — 2026-05-28
 
 Renders session transcripts straight from the JSONL the CLI writes — no synthesized cards, no in-memory mutation of CLI data. "Is this session running?" is now computed in the renderer from real message content plus the task/subagent stores, instead of a main-process state machine. Includes a broad pass over message-card and side-line chrome.
