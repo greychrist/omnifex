@@ -7,9 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.68] — 2026-05-28
+
+Renders session transcripts straight from the JSONL the CLI writes — no synthesized cards, no in-memory mutation of CLI data. "Is this session running?" is now computed in the renderer from real message content plus the task/subagent stores, instead of a main-process state machine. Includes a broad pass over message-card and side-line chrome.
+
+Installers remain **unsigned**.
+
+### Added
+
+- **Renderer-side session-state derivation** (`src/lib/sessionDerivedState.ts`): `conversationStatus` (`running`/`idle`), `waitingOnClaude`, turn duration, and session-start time are derived from `JsonlNode[]` + the task/subagent stores. The main process owns only `sessionStatus` now.
+- **`cli-stream-init` / `cli-stream-result` kinds** for the engine-mode stream-json `init`/`result` envelopes the CLI doesn't persist to JSONL — surfaced as real (non-synthesized) entries with placeholder badges.
+- **`assistant.text.endTurn` kind** — the closing assistant message of a cleanly-completed turn (stop_reason `end_turn`) renders as a distinct "execution complete" card with an inline completion band (duration / tokens / cost).
+- **Brand icons** for the agent (Anthropic / OpenAI marks) via an inline-SVG `BrandIcon`, shown trailing the account level in the account badge.
+
 ### Changed
 
-- **Codex enabled by default; `OMNIFEX_ENABLE_CODEX` feature flag removed.** The agent picker, Codex section in AccountSettings, Codex session-list partition, and per-agent filter now render unconditionally. Removed: `app_capabilities` IPC channel, `AppCapabilitiesContext` / `useAppCapabilities`, the env-var read in `electron/main.ts`, and the per-call gating in `NewSessionForm`, `SessionList`, and `AccountSettings` (including the `setAgent('claude')` clamp). Codex backend services were always wired regardless; this just exposes the UI.
+- **JSONL is rendered as written.** The renderer's `messages[]` contains only envelopes the CLI actually emitted; `streamKind`/`receivedAt` are no longer stamped onto raw line objects.
+- **`conversationStatus` moved from a main-process FSM to renderer derivation** and dropped from the `session-status:<tabId>` IPC payload and the sessions service surface.
+- **Message cards** restructured onto shadcn `CardHeader` + `CardContent`: full-width header band with an accent-matched bottom divider and subtle tint, the kind icon inside the header, footer badge showing the full dotted kind ID, and user prompts right-aligned.
+- **Side-line items** now carry an accent border, a 20%-tinted fill, an accent-colored icon, and respect the `iconBordered`/`iconBgOpacity` knobs.
+- **Settings → Chats message-types menu**: scrollable, wider, alphabetized within each group, with a card/side-line presentation glyph in place of the color dot. Message icons are fixed at extra-small.
+- **Codex enabled by default; `OMNIFEX_ENABLE_CODEX` feature flag removed.** The agent picker, Codex section in AccountSettings, Codex session-list partition, and per-agent filter render unconditionally. Removed `app_capabilities` IPC, `AppCapabilitiesContext`/`useAppCapabilities`, the env-var read, and the per-call gating.
+
+### Removed
+
+- **`jsonlSynthesizer`** (the fabricated "Execution Complete" / "Execution Failed" / session-init cards) and **`jsonlAdapter`** (the raw-line mutation layer).
+- The **icon-size control** in Appearance settings and its underlying config (`IconSize`, `typography.icon.size`, per-kind `iconSize`); message icons are now fixed extra-small.
+
+### Fixed
+
+- **Live assistant messages not rendering / spinner stuck on "running":** the classifier now accepts engine-stream envelopes stamped with `receivedAt` (no `timestamp`), which had been silently dropped.
+- **Sessions stuck "running" on reload** when they ended with planned-but-unstarted todos — only actively in-progress tasks / running subagents count now.
+- **`[Request interrupted by user]`** (and other bracketed system messages) rendering as `unknown` — restored the `user.sdkSystemBracket` catalog entry.
+- Catalog drift between the classifier's emitted kinds and the settings catalog.
 
 ## [0.4.67] — 2026-05-27
 
