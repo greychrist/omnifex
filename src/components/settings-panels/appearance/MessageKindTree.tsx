@@ -1,5 +1,5 @@
 import React from "react";
-import { ChevronDown, ChevronRight, EyeOff, Lock } from "lucide-react";
+import { ChevronDown, ChevronRight, EyeOff, Lock, MessageSquare, Rows3 } from "lucide-react";
 import { isHexColor } from "@/lib/messageRenderingConfig";
 import type {
   MessageRenderingConfig,
@@ -146,19 +146,24 @@ const TreeRow: React.FC<TreeRowProps> = ({ kind, palette, selected, onSelect }) 
       type="button"
       onClick={() => { onSelect(kind.id); }}
       className={cn(
-        "w-full flex items-center gap-2 px-2 py-1.5 rounded text-left transition-colors",
+        "w-full flex items-center gap-2 px-2 py-1 rounded text-left transition-colors",
         selected ? "bg-primary/10 text-foreground" : "hover:bg-muted/40 text-foreground/80",
       )}
       title={kind.description}
     >
-      <span
-        className="h-2.5 w-2.5 rounded-full flex-shrink-0"
-        style={{ backgroundColor: swatch }}
-      />
+      {/* Presentation indicator, tinted with the accent swatch: a card
+          glyph for `card` kinds, stacked rows for `side-line` kinds. */}
+      <span className="flex-shrink-0" style={{ color: swatch }} aria-hidden="true">
+        {kind.presentation === "card" ? (
+          <MessageSquare className="h-3.5 w-3.5" />
+        ) : (
+          <Rows3 className="h-3.5 w-3.5" />
+        )}
+      </span>
       <span className="text-muted-foreground flex-shrink-0">
         <IconRenderer name={kind.icon} className="h-3.5 w-3.5" />
       </span>
-      <span className="flex-1 truncate text-xs">{kind.label}</span>
+      <span className="flex-1 text-[11px] leading-tight">{kind.label}</span>
       {kind.compactBoundaryLocked && (
         <Lock
           className="h-3 w-3 text-muted-foreground/60 flex-shrink-0"

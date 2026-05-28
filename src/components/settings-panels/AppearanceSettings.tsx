@@ -278,8 +278,8 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
               </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-[220px_minmax(0,1fr)] gap-6">
-              <div className="lg:border-r lg:pr-4 lg:border-border">
+            <div className="grid grid-cols-1 lg:grid-cols-[300px_minmax(0,1fr)] gap-6">
+              <div className="lg:border-r lg:pr-4 lg:border-border lg:max-h-[70vh] lg:overflow-y-auto">
                 <MessageKindTree
                   config={config}
                   selectedId={selectedId}
