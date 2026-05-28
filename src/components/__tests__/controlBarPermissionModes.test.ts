@@ -16,8 +16,8 @@ describe('ControlBar PERMISSION_MODES', () => {
   it('uses spec-aligned labels and short names', () => {
     const byId = Object.fromEntries(PERMISSION_MODES.map((m) => [m.id, m]));
 
-    expect(byId.default.name).toBe('Ask');
-    expect(byId.default.shortName).toBe('ASK');
+    expect(byId.default.name).toBe('Default');
+    expect(byId.default.shortName).toBe('DEF');
 
     expect(byId.acceptEdits.name).toBe('Accept Edits');
     expect(byId.acceptEdits.shortName).toBe('EDIT');
@@ -33,6 +33,16 @@ describe('ControlBar PERMISSION_MODES', () => {
 
     expect(byId.bypassPermissions.name).toBe('Bypass');
     expect(byId.bypassPermissions.shortName).toBe('ALL');
+  });
+
+  it('maps colors to match Claude Code (auto=yellow, plan=blue-green, acceptEdits=purple, bypass=red)', () => {
+    const byId = Object.fromEntries(PERMISSION_MODES.map((m) => [m.id, m]));
+    expect(byId.default.color).toBe('text-green-600');
+    expect(byId.acceptEdits.color).toBe('text-purple-600');
+    expect(byId.plan.color).toBe('text-teal-600');
+    expect(byId.dontAsk.color).toBe('text-slate-600');
+    expect(byId.auto.color).toBe('text-yellow-600');
+    expect(byId.bypassPermissions.color).toBe('text-red-600');
   });
 
   it('does NOT call bypassPermissions "Auto Approve"', () => {

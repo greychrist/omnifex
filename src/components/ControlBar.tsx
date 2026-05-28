@@ -70,10 +70,10 @@ export interface PermissionMode {
 export const PERMISSION_MODES: PermissionMode[] = [
   {
     id: "default",
-    name: "Ask",
+    name: "Default",
     description:
       "Prompt when hooks/settings rules do not already allow or deny.",
-    shortName: "ASK",
+    shortName: "DEF",
     icon: <Shield className="h-3.5 w-3.5" />,
     color: "text-green-600",
   },
@@ -84,7 +84,8 @@ export const PERMISSION_MODES: PermissionMode[] = [
       "Auto-approve file edits and common filesystem operations; prompt for other unmatched tools.",
     shortName: "EDIT",
     icon: <FilePen className="h-3.5 w-3.5" />,
-    color: "text-yellow-600",
+    // Matches Claude Code's accept-edits indicator (purple).
+    color: "text-purple-600",
   },
   {
     id: "plan",
@@ -92,7 +93,8 @@ export const PERMISSION_MODES: PermissionMode[] = [
     description: "Plan only; no tool execution.",
     shortName: "PLAN",
     icon: <ClipboardList className="h-3.5 w-3.5" />,
-    color: "text-blue-600",
+    // Matches Claude Code's plan-mode indicator (blue-green / teal).
+    color: "text-teal-600",
   },
   {
     id: "dontAsk",
@@ -109,7 +111,8 @@ export const PERMISSION_MODES: PermissionMode[] = [
       "Use Claude Code's safety check to approve or deny unmatched tool requests.",
     shortName: "AUTO",
     icon: <Sparkles className="h-3.5 w-3.5" />,
-    color: "text-purple-600",
+    // Matches Claude Code's auto/safety-review indicator (yellow).
+    color: "text-yellow-600",
   },
   {
     id: "bypassPermissions",

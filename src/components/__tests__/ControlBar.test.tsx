@@ -174,7 +174,7 @@ describe("PermissionPicker (compact)", () => {
         onOpenChange={vi.fn()}
       />,
     );
-    expect(screen.getAllByText("ASK").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("DEF").length).toBeGreaterThan(0);
   });
 
   it("normalizes 'skip' to bypassPermissions in the trigger label", () => {
@@ -196,8 +196,8 @@ describe("PermissionPicker (compact)", () => {
         onOpenChange={vi.fn()}
       />,
     );
-    // first mode is "default" → "ASK"
-    expect(screen.getAllByText("ASK").length).toBeGreaterThan(0);
+    // first mode is "default" → "DEF"
+    expect(screen.getAllByText("DEF").length).toBeGreaterThan(0);
   });
 
   it("calls onOpenChange when trigger is clicked", () => {

@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { SessionDefaultsRow } from '../SessionDefaultsRow';
+import { TooltipProvider } from '../../ui/tooltip-modern';
 import type { AccountEngine } from '@/lib/api';
 
 afterEach(() => { cleanup(); });
@@ -21,28 +22,49 @@ function Harness({
   );
 
   return (
-    <SessionDefaultsRow
-      engine={engine}
-      model={model}
-      setModel={(v) => { setModel(v); onModel?.(v); }}
-      effort={effort}
-      setEffort={setEffort}
-      permissionMode={permissionMode}
-      setPermissionMode={setPermissionMode}
-    />
+    <TooltipProvider>
+      <SessionDefaultsRow
+        engine={engine}
+        model={model}
+        setModel={(v) => { setModel(v); onModel?.(v); }}
+        effort={effort}
+        setEffort={setEffort}
+        permissionMode={permissionMode}
+        setPermissionMode={setPermissionMode}
+      />
+    </TooltipProvider>
   );
 }
 
 describe('SessionDefaultsRow', () => {
-  it("engine='claude' renders Model, Effort, Permissions but no Thinking", () => {
+  it("engine='claude' renders Model, Effort, Permissions fields, no Thinking", () => {
     render(<Harness engine="claude" />);
-    expect(screen.getByLabelText(/model/i)).toBeTruthy();
-    expect(screen.getByLabelText(/effort/i)).toBeTruthy();
-    expect(screen.getByLabelText(/permissions/i)).toBeTruthy();
-    expect(screen.queryByLabelText(/thinking/i)).toBeNull();
+    expect(screen.getByText('Model')).toBeTruthy();
+    expect(screen.getByText('Effort')).toBeTruthy();
+    expect(screen.getByText('Permissions')).toBeTruthy();
+    expect(screen.queryByText(/thinking/i)).toBeNull();
   });
 
-  it("engine='codex' renders Model, Effort, Permissions but no Thinking", () => {
+  it("engine='claude' uses the stylized pickers (no plain labeled selects)", () => {
+    render(<Harness engine="claude" />);
+    // The stylized pickers are buttons, not <select> with htmlFor labels.
+    expect(screen.queryByLabelText(/model/i)).toBeNull();
+    // Trigger reflects the current model + permission mode via the shared
+    // ModelPicker / PermissionPicker components.
+    expect(screen.getByText('Opus 4.8')).toBeTruthy();
+    expect(screen.getByText('Default')).toBeTruthy();
+  });
+
+  it("engine='claude' permission picker lists all six SDK modes when opened", () => {
+    render(<Harness engine="claude" />);
+    // Open the permissions picker (its trigger shows the current mode "Default").
+    fireEvent.click(screen.getByText('Default'));
+    for (const name of ['Accept Edits', 'Plan', 'No Prompts', 'Auto Review', 'Bypass']) {
+      expect(screen.getAllByText(name).length).toBeGreaterThan(0);
+    }
+  });
+
+  it("engine='codex' renders plain labeled selects, no Thinking", () => {
     render(<Harness engine="codex" />);
     expect(screen.getByLabelText(/model/i)).toBeTruthy();
     expect(screen.getByLabelText(/effort/i)).toBeTruthy();
@@ -57,11 +79,11 @@ describe('SessionDefaultsRow', () => {
     expect(screen.getByText('Full-access')).toBeTruthy();
   });
 
-  it('changing the model select calls setModel', () => {
+  it('changing the codex model select calls setModel', () => {
     const onModel = vi.fn();
-    render(<Harness engine="claude" onModel={onModel} />);
+    render(<Harness engine="codex" onModel={onModel} />);
     const select = screen.getByLabelText(/model/i);
-    fireEvent.change(select, { target: { value: 'haiku' } });
-    expect(onModel).toHaveBeenCalledWith('haiku');
+    fireEvent.change(select, { target: { value: 'gpt-5' } });
+    expect(onModel).toHaveBeenCalledWith('gpt-5');
   });
 });
