@@ -37,7 +37,7 @@ export const MessageFrameSideLine: React.FC<MessageFrameSideLineProps> = ({
   return (
     <div
       className="flex items-center gap-2 py-1 px-2 rounded-md border"
-      style={{ borderColor: `${swatch}55`, borderStyle }}
+      style={{ borderColor: `${swatch}55`, borderStyle, backgroundColor: `${swatch}40` }}
     >
       <div
         data-testid="side-line-bar"
