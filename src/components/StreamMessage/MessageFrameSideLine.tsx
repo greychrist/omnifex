@@ -44,7 +44,9 @@ export const MessageFrameSideLine: React.FC<MessageFrameSideLineProps> = ({
           marginRight: '0.5rem',
         }}
       />
-      <IconRenderer name={iconName} className="h-3.5 w-3.5" />
+      <span style={{ color: swatch }}>
+        <IconRenderer name={iconName} className="h-3.5 w-3.5" />
+      </span>
       <span className="text-sm text-foreground/80">{children}</span>
     </div>
   );
