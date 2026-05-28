@@ -35,7 +35,10 @@ export const MessageFrameSideLine: React.FC<MessageFrameSideLineProps> = ({
   const swatch = resolveAccentSwatch(accentColor);
 
   return (
-    <div className="flex items-center gap-2 py-1">
+    <div
+      className="flex items-center gap-2 py-1 px-2 rounded-md border"
+      style={{ borderColor: `${swatch}55`, borderStyle }}
+    >
       <div
         data-testid="side-line-bar"
         style={{
