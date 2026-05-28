@@ -90,8 +90,8 @@ describe("typographyClasses (icon helpers)", () => {
   describe("iconSizeClassName", () => {
     it("returns the global icon size class when no kindId is given", () => {
       const cfg = createDefaultConfig();
-      // default icon.size is "base"
-      expect(iconSizeClassName(cfg)).toBe("h-5 w-5");
+      // default icon.size is "xs"
+      expect(iconSizeClassName(cfg)).toBe("h-3.5 w-3.5");
     });
 
     it("returns the kind override when iconSize is set on the kind", () => {

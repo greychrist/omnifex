@@ -337,7 +337,7 @@ export type FontWeight =
 /** Card-level icon size (the colored icon on the left of a message card).
  *  Independent from `FontSize` so the user can scale icons without changing
  *  text, and vice versa. */
-export type IconSize = "xs" | "sm" | "base" | "lg" | "xl";
+export type IconSize = "xxs" | "xs" | "sm" | "base" | "lg" | "xl";
 
 export interface TypographyStyle {
   /** Catalog typeface ID. See src/lib/typefaceCatalog.ts. */
@@ -368,7 +368,7 @@ export interface Typography {
 export const DEFAULT_TYPOGRAPHY: Typography = {
   header: { typeface: "inter", size: "sm", weight: "semibold", italic: false },
   content: { typeface: "inter", size: "sm", weight: "normal", italic: false },
-  icon: { size: "base", bordered: true, bgOpacity: 100 },
+  icon: { size: "xs", bordered: true, bgOpacity: 100 },
 };
 
 // ─── hard filters ───────────────────────────────────────────────────────────
@@ -640,7 +640,7 @@ const WEIGHT_VALUES: readonly FontWeight[] = [
   "extrabold",
   "black",
 ];
-const ICON_SIZE_VALUES: readonly IconSize[] = ["xs", "sm", "base", "lg", "xl"];
+const ICON_SIZE_VALUES: readonly IconSize[] = ["xxs", "xs", "sm", "base", "lg", "xl"];
 
 function mergeTypographyStyle(
   saved: unknown,

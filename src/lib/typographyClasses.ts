@@ -54,6 +54,7 @@ export function contentClassNames(config: MessageRenderingConfig): string {
 }
 
 const ICON_SIZE_CLASS: Record<IconSize, string> = {
+  xxs: "h-3 w-3",
   xs: "h-3.5 w-3.5",
   sm: "h-4 w-4",
   base: "h-5 w-5",

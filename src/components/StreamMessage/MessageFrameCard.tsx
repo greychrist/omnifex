@@ -6,6 +6,7 @@ import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
 import { accentStyleFor, swatchFor } from "@/lib/accentStyle";
 import { iconNameFor } from "@/lib/kindPresentation";
 import {
+  iconSizeClassName,
   iconWrapperClassName,
   iconWrapperStyle,
 } from "@/lib/typographyClasses";
@@ -147,19 +148,9 @@ export const MessageFrameCard: React.FC<MessageFrameCardProps> = ({
                 className={iconWrapperClassName(config, kindId)}
                 style={iconWrapperStyle(config, swatch, kindId)}
               >
-                {/* Card icons default to extra-small (h-3.5 w-3.5). A
-                    per-kind `iconSize` override in Appearance settings
-                    still wins; we just skip the global typography default
-                    so cards stay compact regardless of that setting. */}
                 <IconRenderer
                   name={iconName}
-                  className={
-                    config.kinds[kindId]?.iconSize === "sm" ? "h-4 w-4"
-                    : config.kinds[kindId]?.iconSize === "base" ? "h-5 w-5"
-                    : config.kinds[kindId]?.iconSize === "lg" ? "h-6 w-6"
-                    : config.kinds[kindId]?.iconSize === "xl" ? "h-7 w-7"
-                    : "h-3.5 w-3.5"
-                  }
+                  className={iconSizeClassName(config, kindId)}
                 />
               </div>
             )}

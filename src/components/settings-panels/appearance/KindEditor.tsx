@@ -49,6 +49,7 @@ interface KindEditorProps {
 }
 
 const ICON_SIZE_OPTIONS: { value: IconSize; label: string }[] = [
+  { value: "xxs", label: "Extra extra small" },
   { value: "xs", label: "Extra small" },
   { value: "sm", label: "Small" },
   { value: "base", label: "Base" },
