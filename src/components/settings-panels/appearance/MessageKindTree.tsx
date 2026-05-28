@@ -78,11 +78,11 @@ export const MessageKindTree: React.FC<MessageKindTreeProps> = ({
     const k = config.kinds[id];
     groups[groupOf(k)].push(k);
   }
-  // Sort each group by kind ID so related sub-kinds cluster together
-  // (e.g. system.notification.* / attachment.* sort adjacent) and the
-  // list is stable regardless of DEFAULT_KINDS insertion order.
+  // Sort each group by the visible label (A→Z) so the list reads in
+  // alphabetical order. Related kinds that share a label prefix
+  // (e.g. "Notification (…)", "Hook …") naturally cluster anyway.
   for (const group of GROUP_ORDER) {
-    groups[group].sort((a, b) => a.id.localeCompare(b.id));
+    groups[group].sort((a, b) => a.label.localeCompare(b.label));
   }
 
   return (
