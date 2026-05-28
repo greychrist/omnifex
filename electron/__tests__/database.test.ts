@@ -58,32 +58,14 @@ describe('database', () => {
     expect(cols).toContain('claude_binary');
   });
 
-  it('account_path_rules has agent column defaulting to "claude"', () => {
+  it('account_path_rules has no agent column post-v11 (engine lives on accounts)', () => {
     const info = db.raw
       .prepare('PRAGMA table_info(account_path_rules)')
-      .all() as { name: string }[];
+      .all() as { name: string; notnull: number }[];
     const cols = info.map((c) => c.name);
-    expect(cols).toContain('agent');
-
-    db.raw
-      .prepare(
-        "INSERT INTO accounts (name, config_dir) VALUES ('a1', '/tmp/a1')"
-      )
-      .run();
-    const accountId = (
-      db.raw.prepare("SELECT id FROM accounts WHERE name = 'a1'").get() as {
-        id: number;
-      }
-    ).id;
-    db.raw
-      .prepare(
-        'INSERT INTO account_path_rules (account_id, path_prefix, priority) VALUES (?, ?, ?)'
-      )
-      .run(accountId, '/proj', 0);
-    const row = db.raw
-      .prepare('SELECT agent FROM account_path_rules WHERE account_id = ?')
-      .get(accountId) as { agent: string };
-    expect(row.agent).toBe('claude');
+    expect(cols).not.toContain('agent');
+    // account_id is NOT NULL after v11.
+    expect(info.find((c) => c.name === 'account_id')?.notnull).toBe(1);
   });
 
   it('getSetting and saveSetting work', () => {
@@ -208,7 +190,7 @@ describe('runMigrations', () => {
       },
     ];
 
-    runMigrations(raw, synthetic);
+    runMigrations(raw, { migrationsOverride: synthetic });
 
     expect(upCalls).toBe(1);
 
@@ -220,7 +202,7 @@ describe('runMigrations', () => {
     expect(row!.applied_at).toBeTruthy();
 
     // Second run is a no-op — version already applied.
-    runMigrations(raw, synthetic);
+    runMigrations(raw, { migrationsOverride: synthetic });
     expect(upCalls).toBe(1);
 
     // Sanity: the `up` actually ran against the real DB.
@@ -243,7 +225,7 @@ describe('runMigrations', () => {
       },
     ];
 
-    expect(() => runMigrations(raw, bad)).toThrow(/migration boom/);
+    expect(() => runMigrations(raw, { migrationsOverride: bad })).toThrow(/migration boom/);
 
     // No schema_version row for the failed migration.
     const row = raw
@@ -266,7 +248,7 @@ describe('runMigrations', () => {
       { version: 2, description: 'second', up: () => { callOrder.push(2); } },
     ];
 
-    runMigrations(raw, synthetic);
+    runMigrations(raw, { migrationsOverride: synthetic });
 
     expect(callOrder).toEqual([1, 2, 3]);
   });
