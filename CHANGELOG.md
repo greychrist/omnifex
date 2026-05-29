@@ -5,6 +5,23 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.71] — 2026-05-28
+
+Fixes two streaming-session regressions introduced by partial-message mode (`--include-partial-messages`): turns no longer stick on "working" after they finish, and the final assistant message no longer vanishes when it completes. Also scopes account resolution to the launching engine and restores user-message bubble width.
+
+Installers remain **unsigned**.
+
+### Fixed
+
+- **Conversation status no longer sticks on "running" / "working".** Under `--include-partial-messages` the committed assistant message carries `stop_reason: null` (the terminal reason rides the `message_delta` stream event, which never enters the transcript), so the turn never read as complete — even after Stop. `waitingOnClaude` now treats a trailing `result` row as the turn-complete signal and skips plumbing/bookkeeping nodes, while the assistant's `stop_reason` still settles resumed history.
+- **The final assistant message no longer disappears on completion.** A text de-dup hid the assistant's reply when it matched the `result` row's text, assuming an "execution complete" card would show it — but that node renders nothing, so the message vanished outright. The de-dup is removed.
+- **Session headers show the account for the engine actually launching.** A Claude session on a path that also matched a longer Codex prefix rule surfaced the Codex account; resolution is now scoped per engine end to end (and the new-session form re-points when the engine picker flips).
+
+### Changed
+
+- **The two "waiting on Claude" derivations converged into one source of truth**, so the in-session spinner and the tab-status popover can't disagree — this also stops the popover sticking "busy" on resumed sessions with no `result` row.
+- **User-message bubbles restored to the standard card width** (right-aligned via `justify-end`, no shrink-to-fit) so short prompts are no longer uncomfortably narrow.
+
 ## [0.4.70] — 2026-05-28
 
 Session-controls cleanup: a simpler Claude model list, no Thinking picker (always adaptive), and an account editor whose permission dropdown is accurate and styled to match the new-session page.
