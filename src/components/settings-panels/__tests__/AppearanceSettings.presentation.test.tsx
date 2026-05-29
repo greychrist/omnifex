@@ -95,6 +95,61 @@ describe('AppearanceSettings — add override', () => {
   });
 });
 
+describe('AppearanceSettings — single-field override write', () => {
+  it('persists only the changed field into the override, not inherited category values', async () => {
+    // Regression guard: changing one field on an override must write only that
+    // field (plus any already-set fields) into config.overrides[id]. It must
+    // NOT copy inherited-from-category values (alignment, presentation,
+    // borderStyle, etc.) into the sparse patch.
+    //
+    // "Tool call" (assistant.tool-use) is a good fixture: it explicitly sets
+    // accentColor, icon, headerLabel, and hiddenInCompact in its override —
+    // but NOT alignment, presentation, or borderStyle, which are inherited
+    // from the agent category. Toggling hiddenInCompact exercises the
+    // setOverrideField → mutate → pruneRedundantOverrides write path.
+    renderWithProvider();
+    await screen.findAllByText('User');
+    saved.config = null;
+
+    // Select the "Tool call" override in the tree so the KindEditor shows it.
+    clickRow('Tool call');
+
+    // The KindEditor for "Tool call" renders a "Hide in compact mode" switch.
+    // "Tool call" has hiddenInCompact: true in its override, so aria-checked is true.
+    // Clicking toggles it to false → calls setOverrideField('assistant.tool-use', { hiddenInCompact: false }).
+    const editor = screen.getByTestId('kind-editor');
+    const switches = within(editor).getAllByRole('switch');
+    // The first switch in the editor is always "Hide in compact mode".
+    const hiddenSwitch = switches[0];
+    expect(hiddenSwitch).toHaveAttribute('aria-checked', 'true');
+    fireEvent.click(hiddenSwitch);
+
+    // saveSetting should have been called with the updated config.
+    expect(saved.config).not.toBeNull();
+    const cfg = saved.config as { overrides: Record<string, Record<string, unknown>> };
+    const override = cfg.overrides['assistant.tool-use'];
+
+    // The override still exists (it still has accentColor, icon, headerLabel set).
+    expect(override).toBeDefined();
+
+    // hiddenInCompact: false matches the agent category default (false), so
+    // pruneRedundantOverrides removes it from the sparse patch.
+    expect(Object.prototype.hasOwnProperty.call(override, 'hiddenInCompact')).toBe(false);
+
+    // Fields never set on this override must not have been copied from the category.
+    // These are the core regression assertions — they guard against the bug where
+    // editing one field causes inherited values to bleed into the sparse override.
+    expect(Object.prototype.hasOwnProperty.call(override, 'alignment')).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(override, 'presentation')).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(override, 'borderStyle')).toBe(false);
+
+    // The fields that WERE already in the override are still there.
+    expect(override.accentColor).toBe('info');
+    expect(override.icon).toBe('Terminal');
+    expect(Object.prototype.hasOwnProperty.call(override, 'headerLabel')).toBe(true);
+  });
+});
+
 describe('pruneRedundantOverrides (prune-on-save)', () => {
   it('removes an override once every field matches its category', () => {
     const cfg = createDefaultConfig();

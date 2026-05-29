@@ -240,6 +240,10 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
       );
       scheduleSavedToast();
     },
+    // `selected` is intentionally omitted: addOverride computes its own exempt
+    // set from the incoming `id` argument and does not read `selected` at all.
+    // Including `selected` would cause every row-click to recreate this callback,
+    // which ripples into MessageKindTree and triggers avoidable re-renders.
     [config, commitConfig, scheduleSavedToast],
   );
 
