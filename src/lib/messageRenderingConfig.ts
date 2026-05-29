@@ -193,49 +193,9 @@ export type IconName = (typeof ALLOWED_ICONS)[number];
 
 // ─── message kinds ──────────────────────────────────────────────────────────
 
-export type Origin = "user" | "assistant" | "system" | "cli" | "bookkeeping" | "fallback";
 export type Alignment = "left" | "right" | "full";
 export type Presentation = 'card' | 'side-line' | 'collapsible';
 export type BorderStyle = 'solid' | 'dashed';
-
-export interface MessageKindConfig {
-  id: string;
-  label: string; // display name in the settings UI
-  description: string; // one-line help text
-  origin: Origin;
-  icon: IconName;
-  headerLabel: string | null; // null => no header text
-  /**
-   * Either a palette name (legacy / cross-kind retinting) or a hex colour
-   * (`#rrggbb` / `#rgb`). The accent helpers in `accentStyle.ts` resolve
-   * palette names through `config.palette` and treat hex strings as a
-   * one-off swatch with derived border/bg alphas. Picker-driven configs
-   * write hex; the palette is kept for backwards compatibility and the
-   * (rarely used) "retint every kind that shares a name" workflow.
-   */
-  accentColor: string;
-  alignment: Alignment;
-  hiddenInCompact: boolean;
-  // True if this kind is forced visible in compact mode by grouping logic
-  // (e.g. user prompts, results). UI disables the hidden toggle for these.
-  compactBoundaryLocked: boolean;
-  // Optional widget name (e.g. ThinkingWidget, SystemWidget). Informational
-  // only for v1; not editable.
-  widget?: string;
-  // Per-kind icon overrides — when set, override the corresponding global
-  // `typography.icon.*` value for this kind only. When undefined, the kind
-  // inherits the global default.
-  iconBordered?: boolean;
-  iconBgOpacity?: number; // 0–100
-
-  // New in v2:
-  presentation: Presentation;
-  borderStyle: BorderStyle;
-  /** Only meaningful on the `unknown` row. */
-  showRawPayload?: boolean;
-}
-
-export type MessageKindsById = Record<string, MessageKindConfig>;
 
 // ─── v3 category + override model ───────────────────────────────────────────
 //
@@ -515,52 +475,18 @@ export function createDefaultConfig(): MessageRenderingConfig {
 }
 
 /**
- * Build a flat `MessageKindsById` view by resolving every known kind id
- * through `resolveKind`. This is a compatibility shim for the Appearance
- * settings UI, which still reads a flat catalog. Phase B replaces the UI with
- * category + override editors and this helper goes away.
- */
-export function deriveKinds(config: MessageRenderingConfig): MessageKindsById {
-  const out: MessageKindsById = {};
-  const originToCatalogOrigin: Record<Category, Origin> = {
-    user: "user",
-    agent: "assistant",
-    system: "system",
-    attachment: "bookkeeping",
-    bookkeeping: "bookkeeping",
-  };
-  for (const id of KNOWN_KIND_IDS) {
-    const cat = originOf(id);
-    const style = resolveKind(config, id);
-    const override = config.overrides[id];
-    const catStyle = config.categories[cat];
-    out[id] = {
-      id,
-      label: override?.label ?? catStyle.label,
-      description: catStyle.description,
-      origin: id === "unknown" ? "fallback" : (id.startsWith("cli-") ? "cli" : originToCatalogOrigin[cat]),
-      icon: style.icon,
-      headerLabel: style.headerLabel,
-      accentColor: style.accentColor,
-      alignment: style.alignment,
-      hiddenInCompact: style.hiddenInCompact,
-      compactBoundaryLocked: style.compactBoundaryLocked ?? false,
-      widget: style.widget,
-      iconBordered: style.iconBordered,
-      iconBgOpacity: style.iconBgOpacity,
-      presentation: style.presentation,
-      borderStyle: style.borderStyle,
-      showRawPayload: style.showRawPayload,
-    };
-  }
-  return out;
-}
-
-/**
  * Drop override fields that equal their category default; remove an override
  * entirely when nothing diverges. Keeps the persisted override map sparse.
+ *
+ * `exempt` lists override ids that must survive even when fully redundant —
+ * used by the settings UI so a freshly added (still-empty) override the user
+ * is actively editing isn't pruned out from under them before they diverge a
+ * field. Exempt overrides still have redundant *fields* trimmed.
  */
-export function pruneRedundantOverrides(config: MessageRenderingConfig): MessageRenderingConfig {
+export function pruneRedundantOverrides(
+  config: MessageRenderingConfig,
+  exempt: ReadonlySet<string> = new Set(),
+): MessageRenderingConfig {
   const overrides: MessageRenderingConfig["overrides"] = {};
   for (const [id, patch] of Object.entries(config.overrides)) {
     const base = config.categories[originOf(id)] as unknown as Record<string, unknown>;
@@ -572,7 +498,7 @@ export function pruneRedundantOverrides(config: MessageRenderingConfig): Message
     if (patch.label !== undefined) kept.label = patch.label;
     // An override that only carries a label (no diverging style) is redundant.
     const styleFieldCount = Object.keys(kept).filter((k) => k !== "label").length;
-    if (styleFieldCount > 0) {
+    if (styleFieldCount > 0 || exempt.has(id)) {
       overrides[id] = kept as Partial<KindStyle> & { label?: string };
     }
   }
