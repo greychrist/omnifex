@@ -73,3 +73,114 @@ export function applyAssistantMeta(payload: unknown, meta: AssistantMeta): unkno
   }
   return payload;
 }
+
+/**
+ * Order-correct reconstitution of committed assistant frames.
+ *
+ * The real `--include-partial-messages` stream emits each message as
+ * `message_start` → (content) → committed `{type:'assistant'}` (stop_reason
+ * null, stub usage) → `content_block_stop` → `message_delta` (resolved
+ * stop_reason + final usage) → `message_stop`. The committed frame therefore
+ * arrives BEFORE the delta that resolves it.
+ *
+ * This resolver buffers each committed assistant (keyed by its parent chain),
+ * merges the `message_delta` that arrives within the same message bracket, and
+ * forwards the resolved frame at `message_stop`. It is robust to the reversed
+ * order too (delta first → stashed, applied when the committed frame lands),
+ * isolates subagent chains from the main chain via `parent_tool_use_id`, and
+ * never drops a frame — a delta-less message is forwarded unchanged, and a
+ * `result` flushes anything still buffered.
+ *
+ * `resolve(payload)` returns the frames to forward, in order (0, 1, or 2):
+ * buffering the committed assistant yields `[]`; `message_stop`/`result`/any
+ * out-of-band frame flushes the buffered assistant ahead of itself.
+ */
+export function createAssistantResolver(): { resolve(payload: unknown): unknown[] } {
+  const buffered = new Map<string, { messageId: string | null; payload: Record<string, unknown> }>();
+  const pendingDelta = new Map<string, { messageId: string | null; meta: AssistantMeta }>();
+  const openMessageId = new Map<string, string | null>();
+
+  function flush(key: string, out: unknown[]): void {
+    const b = buffered.get(key);
+    if (b) {
+      out.push(b.payload);
+      buffered.delete(key);
+    }
+  }
+
+  return {
+    resolve(payload: unknown): unknown[] {
+      if (!isRecord(payload)) return [payload];
+      const key = deltaStashKey(payload as { parent_tool_use_id?: unknown });
+      const type = payload.type;
+
+      if (type === 'stream_event') {
+        const event = isRecord(payload.event) ? payload.event : undefined;
+        const eventType = event?.type;
+
+        if (eventType === 'message_start') {
+          const m = isRecord(event?.message) ? event.message : undefined;
+          openMessageId.set(key, typeof m?.id === 'string' ? m.id : null);
+          return [payload];
+        }
+
+        if (eventType === 'message_delta') {
+          const meta = readMessageDeltaMeta(payload);
+          if (meta) {
+            const b = buffered.get(key);
+            const openId = openMessageId.get(key) ?? null;
+            if (b && (b.messageId === openId || openId === null)) {
+              applyAssistantMeta(b.payload, meta);
+            } else if (!b) {
+              // Reversed order: delta before the committed frame — stash it.
+              pendingDelta.set(key, { messageId: openId, meta });
+            }
+          }
+          return [payload];
+        }
+
+        if (eventType === 'message_stop') {
+          const out: unknown[] = [];
+          flush(key, out);
+          openMessageId.set(key, null);
+          out.push(payload);
+          return out;
+        }
+
+        // content_block_* and any other stream_event: pass through untouched.
+        return [payload];
+      }
+
+      if (type === 'assistant') {
+        const out: unknown[] = [];
+        // Safety: a still-buffered assistant from the prior bracket flushes first.
+        flush(key, out);
+        const message = isRecord(payload.message) ? payload.message : undefined;
+        const messageId = typeof message?.id === 'string' ? message.id : null;
+        const pd = pendingDelta.get(key);
+        if (pd && (pd.messageId === messageId || pd.messageId === null)) {
+          applyAssistantMeta(payload, pd.meta);
+          pendingDelta.delete(key);
+        }
+        buffered.set(key, { messageId, payload: payload as Record<string, unknown> });
+        return out;
+      }
+
+      if (type === 'result') {
+        const out: unknown[] = [];
+        for (const k of [...buffered.keys()]) flush(k, out);
+        pendingDelta.clear();
+        openMessageId.clear();
+        out.push(payload);
+        return out;
+      }
+
+      // Any other frame (user/tool_result, system, rate_limit_event, …):
+      // flush this chain's buffered assistant ahead of it to preserve order.
+      const out: unknown[] = [];
+      flush(key, out);
+      out.push(payload);
+      return out;
+    },
+  };
+}
