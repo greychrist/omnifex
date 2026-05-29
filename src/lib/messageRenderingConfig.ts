@@ -241,8 +241,8 @@ export type MessageKindsById = Record<string, MessageKindConfig>;
 //
 // Two-tier model: top-level CATEGORIES carry default styling for all kinds
 // that belong to them; sparse OVERRIDES carry per-kind style patches on top.
-// The flat DEFAULT_KINDS catalog remains for backwards compatibility and is
-// not removed here — that is a follow-on task.
+// `resolveKind(config, id)` merges category ⊕ override and is the single
+// source of truth for every kind's style; there is no flat catalog anymore.
 
 export const CATEGORIES = ["user", "agent", "system", "attachment", "bookkeeping"] as const;
 export type Category = (typeof CATEGORIES)[number];
@@ -295,8 +295,9 @@ export function originOf(kindId: string): Category {
 }
 
 export const DEFAULT_OVERRIDES: Record<string, Partial<KindStyle> & { label?: string }> = {
+  "user.prompt":                 { label: "User prompt",             compactBoundaryLocked: true },
   "assistant.text.endTurn":      { label: "Execution complete",      accentColor: "green",   icon: "CheckCircle2",        compactBoundaryLocked: true },
-  "assistant.thinking":          { label: "Thinking",                presentation: "collapsible", headerLabel: "Thinking", icon: "Brain",               widget: "ThinkingWidget" },
+  "assistant.thinking":          { label: "Thinking",                presentation: "collapsible", headerLabel: "Thinking", icon: "Brain",               widget: "ThinkingWidget", hiddenInCompact: true },
   "assistant.tool-use":          { label: "Tool call",               accentColor: "info",    icon: "Terminal",            headerLabel: null,           hiddenInCompact: true },
   "user.systemContext":          { label: "System context",          presentation: "collapsible", icon: "Sparkles",        accentColor: "purple",       showRawPayload: true, alignment: "left", hiddenInCompact: false },
   "user.tool-result":            { label: "Tool result",             presentation: "side-line",   headerLabel: null,       alignment: "left",           hiddenInCompact: true },
@@ -310,87 +311,55 @@ export const DEFAULT_OVERRIDES: Record<string, Partial<KindStyle> & { label?: st
   "pr-link":                     { label: "Pull request",           presentation: "side-line",   icon: "GitPullRequest",  accentColor: "info",         hiddenInCompact: false },
   "permission.request":          { label: "Permission request",     presentation: "card",    icon: "ShieldQuestion",     accentColor: "amber",        hiddenInCompact: false },
   "permission.askUserQuestion":  { label: "Question",               presentation: "card",    icon: "MessageCircleQuestion", accentColor: "primary",   hiddenInCompact: false },
+  "unknown":                     { label: "Unknown",                presentation: "side-line", icon: "HelpCircle",        accentColor: "orange",       borderStyle: "dashed", headerLabel: "Unknown", hiddenInCompact: false, compactBoundaryLocked: true, showRawPayload: true },
 };
 
-export const DEFAULT_KINDS: MessageKindConfig[] = [
-  // ───── ASSISTANT (block-level) ─────
-  { id: "assistant.text", label: "Assistant text", description: "Assistant's prose response (mid-turn).", origin: "assistant", icon: "Bot", headerLabel: "Claude", accentColor: "primary", alignment: "left", hiddenInCompact: false, compactBoundaryLocked: false, presentation: "card", borderStyle: "solid" },
-  { id: "assistant.text.endTurn", label: "Assistant text (execution complete)", description: "Assistant's final response in a cleanly-completed turn (stop_reason: end_turn).", origin: "assistant", icon: "CheckCircle2", headerLabel: "Claude", accentColor: "green", alignment: "left", hiddenInCompact: false, compactBoundaryLocked: true, presentation: "card", borderStyle: "solid" },
-  { id: "assistant.thinking", label: "Assistant thinking", description: "Extended thinking block before a tool call.", origin: "assistant", icon: "Brain", headerLabel: "Thinking", accentColor: "muted", alignment: "left", hiddenInCompact: true, compactBoundaryLocked: false, presentation: "card", borderStyle: "solid", widget: "ThinkingWidget" },
-  { id: "assistant.tool-use", label: "Tool call", description: "Assistant invoking a tool.", origin: "assistant", icon: "Terminal", headerLabel: null, accentColor: "info", alignment: "left", hiddenInCompact: true, compactBoundaryLocked: false, presentation: "card", borderStyle: "solid" },
+// All kind ids the classifier can emit plus the curated overrides. Used by the
+// settings UI to enumerate known kinds and by the coverage test. New CLI kinds
+// not listed here still resolve via `originOf` + category defaults.
+export const KNOWN_KIND_IDS: readonly string[] = [
+  "assistant.text", "assistant.text.endTurn", "assistant.thinking", "assistant.tool-use",
+  "user.prompt", "user.tool-result", "user.meta.skill", "user.meta.attachment",
+  "user.meta.other", "user.subagentPrompt", "user.command", "user.commandOutput",
+  "user.skillInjection", "user.systemContext", "user.sdkSystemBracket",
+  "system.notification.info", "system.notification.warn", "system.notification.error",
+  "system.notification.stop", "system.api_error", "system.stop_hook_summary",
+  "system.hook_started", "system.hook_progress", "system.hook_response",
+  "system.local_command", "system.turn_duration", "system.away_summary",
+  "system.compact_boundary", "system.informational", "system.permission_denied",
+  "system.userPromptSubmit", "system.unknown", "summary.compaction",
+  "cli-stream-init", "cli-stream-result",
+  "permission.request", "permission.askUserQuestion",
+  "attachment.unknown", "attachment.todo_reminder", "attachment.task_reminder",
+  "attachment.diagnostics", "attachment.command_permissions", "attachment.skill_listing",
+  "attachment.deferred_tools_delta", "attachment.mcp_instructions_delta",
+  "attachment.hook_success", "attachment.hook_additional_context",
+  "attachment.edited_text_file", "attachment.nested_memory", "attachment.queued_command",
+  "attachment.auto_mode", "attachment.hook_blocking_error", "attachment.date_change",
+  "attachment.ultrathink_effort", "attachment.plan_mode_exit", "attachment.file",
+  "attachment.compact_file_reference", "attachment.invoked_skills",
+  "queue-operation", "permission-mode", "last-prompt", "ai-title",
+  "file-history-snapshot", "unknown",
+] as const;
 
-  // ───── USER ─────
-  { id: "user.prompt", label: "User prompt", description: "Your typed message.", origin: "user", icon: "User", headerLabel: "You", accentColor: "blue", alignment: "right", hiddenInCompact: false, compactBoundaryLocked: true, presentation: "card", borderStyle: "solid" },
-  { id: "user.tool-result", label: "Tool result", description: "Result returned by a tool.", origin: "user", icon: "CheckCheck", headerLabel: null, accentColor: "muted", alignment: "left", hiddenInCompact: true, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
-  { id: "user.meta.skill", label: "Skill body", description: "Skill content injected by the harness.", origin: "user", icon: "Sparkles", headerLabel: "Skill", accentColor: "purple", alignment: "left", hiddenInCompact: false, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
-  { id: "user.meta.attachment", label: "Image attachment marker", description: "Inline marker that travels with a user prompt containing an image.", origin: "user", icon: "Image", headerLabel: null, accentColor: "muted", alignment: "left", hiddenInCompact: true, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
-  { id: "user.meta.other", label: "Harness injection (other)", description: "Other isMeta=true user records we don't have a more specific kind for.", origin: "user", icon: "Info", headerLabel: null, accentColor: "muted", alignment: "left", hiddenInCompact: false, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
-  { id: "user.subagentPrompt", label: "Subagent prompt", description: "Prompt forwarded to a subagent.", origin: "user", icon: "User", headerLabel: "Subagent", accentColor: "purple", alignment: "left", hiddenInCompact: false, compactBoundaryLocked: false, presentation: "card", borderStyle: "solid" },
-  { id: "user.command", label: "Slash command", description: "A /slash command the user invoked.", origin: "user", icon: "ChevronRight", headerLabel: null, accentColor: "muted", alignment: "left", hiddenInCompact: false, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
-  { id: "user.commandOutput", label: "Command output", description: "Output of a slash command.", origin: "user", icon: "Terminal", headerLabel: null, accentColor: "muted", alignment: "left", hiddenInCompact: false, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
-  { id: "user.skillInjection", label: "Skill injection (legacy)", description: "Live-stream variant of skill-body injection.", origin: "user", icon: "Sparkles", headerLabel: "Skill", accentColor: "purple", alignment: "left", hiddenInCompact: false, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
-  { id: "user.systemContext", label: "System context (user)", description: "User-role message containing system-context text only (skill body, CLAUDE.md, system reminder). Collapsible card with a content-derived header.", origin: "user", icon: "Info", headerLabel: null, accentColor: "muted", alignment: "left", hiddenInCompact: true, compactBoundaryLocked: false, presentation: "collapsible", borderStyle: "solid", showRawPayload: true },
-  { id: "user.sdkSystemBracket", label: "Bracketed system message", description: "CLI-emitted bracketed message arriving as a user envelope (e.g. \"[Request interrupted by user]\", \"[Session resumed]\"). Not the user's own words.", origin: "user", icon: "Info", headerLabel: null, accentColor: "amber", alignment: "left", hiddenInCompact: false, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
-
-  // ───── SYSTEM ─────
-  { id: "system.notification.info", label: "Notification (info)", description: "Informational user-facing notification.", origin: "system", icon: "Bell", headerLabel: null, accentColor: "info", alignment: "left", hiddenInCompact: false, compactBoundaryLocked: false, presentation: "card", borderStyle: "solid" },
-  { id: "system.notification.warn", label: "Notification (warn)", description: "Warning user-facing notification.", origin: "system", icon: "Bell", headerLabel: null, accentColor: "amber", alignment: "left", hiddenInCompact: false, compactBoundaryLocked: false, presentation: "card", borderStyle: "solid" },
-  { id: "system.notification.error", label: "Notification (error)", description: "Error user-facing notification.", origin: "system", icon: "Bell", headerLabel: null, accentColor: "red", alignment: "left", hiddenInCompact: false, compactBoundaryLocked: false, presentation: "card", borderStyle: "solid" },
-  { id: "system.notification.stop", label: "Notification (stop)", description: "Stop-event notification (turn ended unexpectedly).", origin: "system", icon: "Bell", headerLabel: null, accentColor: "red", alignment: "left", hiddenInCompact: false, compactBoundaryLocked: false, presentation: "card", borderStyle: "solid" },
-  { id: "system.api_error", label: "API error", description: "Error returned by the Anthropic API.", origin: "system", icon: "AlertTriangle", headerLabel: null, accentColor: "red", alignment: "left", hiddenInCompact: false, compactBoundaryLocked: false, presentation: "card", borderStyle: "solid" },
-  { id: "system.stop_hook_summary", label: "Stop hook summary", description: "Summary of stop hooks that ran when the turn ended.", origin: "system", icon: "Hook", headerLabel: null, accentColor: "muted", alignment: "left", hiddenInCompact: true, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
-  { id: "system.hook_started", label: "Hook started", description: "A configured hook began running.", origin: "system", icon: "Hook", headerLabel: null, accentColor: "muted", alignment: "left", hiddenInCompact: true, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
-  { id: "system.hook_progress", label: "Hook progress", description: "Telemetry line emitted by a hook mid-run (stdout chunks).", origin: "system", icon: "Hook", headerLabel: null, accentColor: "muted", alignment: "left", hiddenInCompact: true, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
-  { id: "system.hook_response", label: "Hook response", description: "A configured hook returned a response.", origin: "system", icon: "Hook", headerLabel: null, accentColor: "muted", alignment: "left", hiddenInCompact: true, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
-  { id: "system.local_command", label: "Local command", description: "Echo of a /slash command the user ran.", origin: "system", icon: "ChevronRight", headerLabel: null, accentColor: "muted", alignment: "left", hiddenInCompact: false, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
-  { id: "system.turn_duration", label: "Turn duration", description: "Diagnostic timing record.", origin: "system", icon: "Clock", headerLabel: null, accentColor: "muted", alignment: "left", hiddenInCompact: true, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
-  { id: "system.away_summary", label: "Away summary", description: "Summary of what happened while user was away.", origin: "system", icon: "FileText", headerLabel: "Away summary", accentColor: "info", alignment: "left", hiddenInCompact: false, compactBoundaryLocked: false, presentation: "card", borderStyle: "solid" },
-  { id: "system.compact_boundary", label: "Compact boundary", description: "Marks where the conversation was compacted.", origin: "system", icon: "Scissors", headerLabel: "Compacted", accentColor: "muted", alignment: "left", hiddenInCompact: false, compactBoundaryLocked: false, presentation: "card", borderStyle: "solid", widget: "CompactBoundaryWidget" },
-  { id: "system.informational", label: "Informational", description: "Generic informational system message.", origin: "system", icon: "Info", headerLabel: null, accentColor: "muted", alignment: "left", hiddenInCompact: true, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
-  { id: "system.permission_denied", label: "Permission denied", description: "Tool call denied by permission check.", origin: "system", icon: "ShieldOff", headerLabel: null, accentColor: "red", alignment: "left", hiddenInCompact: false, compactBoundaryLocked: false, presentation: "card", borderStyle: "solid" },
-  { id: "system.userPromptSubmit", label: "User prompt submit", description: "Internal marker emitted when the user submits a prompt.", origin: "system", icon: "Send", headerLabel: null, accentColor: "muted", alignment: "left", hiddenInCompact: true, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
-  { id: "system.unknown", label: "System (unknown subtype)", description: "System message with an unrecognized subtype.", origin: "system", icon: "HelpCircle", headerLabel: null, accentColor: "muted", alignment: "left", hiddenInCompact: true, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "dashed" },
-  { id: "summary.compaction", label: "Compaction summary", description: "Summary of a compaction event.", origin: "system", icon: "Scissors", headerLabel: "Compaction summary", accentColor: "muted", alignment: "left", hiddenInCompact: false, compactBoundaryLocked: false, presentation: "card", borderStyle: "solid" },
-
-  // ───── CLI STREAM (engine/--output-format stream-json envelopes) ─────
-  { id: "cli-stream-init", label: "CLI session init", description: "Engine-mode session initialisation envelope (system:init).", origin: "cli", icon: "Power", headerLabel: null, accentColor: "sysInit", alignment: "left", hiddenInCompact: true, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
-  { id: "cli-stream-result", label: "CLI session result", description: "Engine-mode turn result envelope (type:result).", origin: "cli", icon: "Check", headerLabel: null, accentColor: "muted", alignment: "left", hiddenInCompact: true, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
-
-  // ───── PERMISSION ─────
-  { id: "permission.request", label: "Permission request", description: "Permission prompt for a tool call.", origin: "system", icon: "Shield", headerLabel: "Permission", accentColor: "amber", alignment: "left", hiddenInCompact: false, compactBoundaryLocked: false, presentation: "card", borderStyle: "solid" },
-  { id: "permission.askUserQuestion", label: "User question", description: "AskUserQuestion tool prompt.", origin: "system", icon: "HelpCircle", headerLabel: "Question", accentColor: "blue", alignment: "left", hiddenInCompact: false, compactBoundaryLocked: false, presentation: "card", borderStyle: "solid" },
-
-  // ───── BOOKKEEPING (surfaced per Greg's "full control" preference) ─────
-  { id: "attachment.unknown", label: "Attachment (unknown)", description: "Attachment metadata record with an unrecognized subtype.", origin: "bookkeeping", icon: "Paperclip", headerLabel: null, accentColor: "muted", alignment: "left", hiddenInCompact: true, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
-  { id: "attachment.todo_reminder", label: "Todo reminder", description: "Periodic reminder of the current todo list.", origin: "bookkeeping", icon: "Paperclip", headerLabel: null, accentColor: "muted", alignment: "left", hiddenInCompact: true, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
-  { id: "attachment.task_reminder", label: "Task reminder", description: "Reminder of in-flight subagent tasks.", origin: "bookkeeping", icon: "Paperclip", headerLabel: null, accentColor: "muted", alignment: "left", hiddenInCompact: true, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
-  { id: "attachment.diagnostics", label: "Diagnostics", description: "IDE diagnostics attached to a turn.", origin: "bookkeeping", icon: "AlertCircle", headerLabel: null, accentColor: "muted", alignment: "left", hiddenInCompact: true, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
-  { id: "attachment.command_permissions", label: "Command permissions", description: "Permission-rule list attached to a turn.", origin: "bookkeeping", icon: "Paperclip", headerLabel: null, accentColor: "muted", alignment: "left", hiddenInCompact: true, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
-  { id: "attachment.skill_listing", label: "Skill listing", description: "Available skills enumerated for the model.", origin: "bookkeeping", icon: "Paperclip", headerLabel: null, accentColor: "muted", alignment: "left", hiddenInCompact: true, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
-  { id: "attachment.deferred_tools_delta", label: "Deferred tools delta", description: "Update to the set of deferred MCP tools.", origin: "bookkeeping", icon: "Paperclip", headerLabel: null, accentColor: "muted", alignment: "left", hiddenInCompact: true, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
-  { id: "attachment.mcp_instructions_delta", label: "MCP instructions delta", description: "Update to MCP server instructions.", origin: "bookkeeping", icon: "Paperclip", headerLabel: null, accentColor: "muted", alignment: "left", hiddenInCompact: true, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
-  { id: "attachment.hook_success", label: "Hook success", description: "Successful hook execution context attached to a turn.", origin: "bookkeeping", icon: "Paperclip", headerLabel: null, accentColor: "muted", alignment: "left", hiddenInCompact: true, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
-  { id: "attachment.hook_additional_context", label: "Hook additional context", description: "Extra context injected by a hook.", origin: "bookkeeping", icon: "Paperclip", headerLabel: null, accentColor: "muted", alignment: "left", hiddenInCompact: true, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
-  { id: "attachment.edited_text_file", label: "Edited file", description: "Snippet of a file recently edited by the user.", origin: "bookkeeping", icon: "Paperclip", headerLabel: null, accentColor: "muted", alignment: "left", hiddenInCompact: true, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
-  { id: "attachment.nested_memory", label: "Nested memory", description: "Sub-CLAUDE.md content loaded into the turn.", origin: "bookkeeping", icon: "Paperclip", headerLabel: null, accentColor: "muted", alignment: "left", hiddenInCompact: true, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
-  { id: "attachment.queued_command", label: "Queued command", description: "Background command queued for the next turn.", origin: "bookkeeping", icon: "Terminal", headerLabel: null, accentColor: "muted", alignment: "left", hiddenInCompact: true, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
-  { id: "attachment.auto_mode", label: "Auto mode marker", description: "Indicates a turn ran under auto mode.", origin: "bookkeeping", icon: "Paperclip", headerLabel: null, accentColor: "muted", alignment: "left", hiddenInCompact: true, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
-  { id: "attachment.hook_blocking_error", label: "Hook blocking error", description: "A hook errored and blocked the turn from continuing.", origin: "bookkeeping", icon: "AlertOctagon", headerLabel: null, accentColor: "red", alignment: "left", hiddenInCompact: false, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
-  { id: "attachment.date_change", label: "Date change", description: "Marker that the system date rolled over during the session.", origin: "bookkeeping", icon: "Paperclip", headerLabel: null, accentColor: "muted", alignment: "left", hiddenInCompact: true, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
-  { id: "attachment.ultrathink_effort", label: "Ultrathink effort marker", description: "Indicates the turn ran with elevated thinking budget.", origin: "bookkeeping", icon: "Paperclip", headerLabel: null, accentColor: "muted", alignment: "left", hiddenInCompact: true, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
-  { id: "attachment.plan_mode_exit", label: "Plan mode exit", description: "Plan mode was exited and execution authorized.", origin: "bookkeeping", icon: "Paperclip", headerLabel: null, accentColor: "muted", alignment: "left", hiddenInCompact: true, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
-  { id: "attachment.file", label: "File attachment", description: "A file attached to the turn.", origin: "bookkeeping", icon: "Paperclip", headerLabel: null, accentColor: "muted", alignment: "left", hiddenInCompact: true, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
-  { id: "attachment.compact_file_reference", label: "Compact file reference", description: "Reference to a file dropped by the compactor.", origin: "bookkeeping", icon: "Paperclip", headerLabel: null, accentColor: "muted", alignment: "left", hiddenInCompact: true, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
-  { id: "attachment.invoked_skills", label: "Invoked skills", description: "Skills the model invoked this turn.", origin: "bookkeeping", icon: "Paperclip", headerLabel: null, accentColor: "muted", alignment: "left", hiddenInCompact: true, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
-  { id: "queue-operation", label: "Queue operation", description: "Background queue operation record.", origin: "bookkeeping", icon: "ListOrdered", headerLabel: null, accentColor: "muted", alignment: "left", hiddenInCompact: true, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
-  { id: "permission-mode", label: "Permission mode change", description: "Permission mode was changed mid-session.", origin: "bookkeeping", icon: "Shield", headerLabel: null, accentColor: "muted", alignment: "left", hiddenInCompact: true, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
-  { id: "last-prompt", label: "Last prompt marker", description: "Bookmark of the last user prompt for resume.", origin: "bookkeeping", icon: "Bookmark", headerLabel: null, accentColor: "muted", alignment: "left", hiddenInCompact: true, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
-  { id: "ai-title", label: "AI session title", description: "Generated session title.", origin: "bookkeeping", icon: "Tag", headerLabel: null, accentColor: "muted", alignment: "left", hiddenInCompact: true, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
-  { id: "file-history-snapshot", label: "File history snapshot", description: "Snapshot of file state.", origin: "bookkeeping", icon: "Camera", headerLabel: null, accentColor: "muted", alignment: "left", hiddenInCompact: true, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
-
-  // ───── FALLBACK ─────
-  { id: "unknown", label: "Unknown", description: "Diagnostic catch-all for unrecognized types or subtypes.", origin: "fallback", icon: "HelpCircle", headerLabel: "Unknown", accentColor: "orange", alignment: "left", hiddenInCompact: false, compactBoundaryLocked: true, presentation: "side-line", borderStyle: "dashed", showRawPayload: true },
+// The styling fields shared by categories and overrides — everything that
+// drives a card's look. Identity fields (id/label/description) are excluded.
+export const STYLE_FIELDS: (keyof KindStyle)[] = [
+  "presentation", "accentColor", "icon", "headerLabel", "borderStyle", "alignment",
+  "hiddenInCompact", "compactBoundaryLocked", "widget", "showRawPayload",
+  "iconBordered", "iconBgOpacity",
 ];
+
+/**
+ * Resolve a kind id to its full style: the category default for its origin,
+ * shallow-merged with any per-kind override (override wins per field). Always
+ * returns a complete style — there is no "missing kind" branch.
+ */
+export function resolveKind(config: MessageRenderingConfig, kindId: string): KindStyle {
+  const base = config.categories[originOf(kindId)];
+  const patch = config.overrides[kindId];
+  return patch ? { ...base, ...patch } : { ...base };
+}
 
 // ─── typography ─────────────────────────────────────────────────────────────
 //
@@ -515,10 +484,11 @@ export const DEFAULT_TERMINAL: Terminal = {
 // ─── top-level config ───────────────────────────────────────────────────────
 
 export interface MessageRenderingConfig {
-  version: 2;
+  version: 3;
   defaultViewMode: "compact" | "verbose";
+  categories: Record<Category, CategoryStyle>;
+  overrides: Record<string, Partial<KindStyle> & { label?: string }>;
   palette: Palette;
-  kinds: MessageKindsById;
   hardFilters: HardFilters;
   typography: Typography;
   terminal: Terminal;
@@ -526,18 +496,82 @@ export interface MessageRenderingConfig {
 }
 
 export function createDefaultConfig(): MessageRenderingConfig {
-  const kinds: MessageKindsById = {};
-  for (const k of DEFAULT_KINDS) kinds[k.id] = { ...k };
   return {
-    version: 2,
+    version: 3,
     defaultViewMode: "verbose",
+    categories: structuredClone(DEFAULT_CATEGORIES),
+    overrides: structuredClone(DEFAULT_OVERRIDES),
     palette: structuredClone(DEFAULT_PALETTE),
-    kinds,
     hardFilters: { ...DEFAULT_HARD_FILTERS },
     typography: structuredClone(DEFAULT_TYPOGRAPHY),
     terminal: { ...DEFAULT_TERMINAL },
     debug: { ...DEFAULT_DEBUG },
   };
+}
+
+/**
+ * Build a flat `MessageKindsById` view by resolving every known kind id
+ * through `resolveKind`. This is a compatibility shim for the Appearance
+ * settings UI, which still reads a flat catalog. Phase B replaces the UI with
+ * category + override editors and this helper goes away.
+ */
+export function deriveKinds(config: MessageRenderingConfig): MessageKindsById {
+  const out: MessageKindsById = {};
+  const originToCatalogOrigin: Record<Category, Origin> = {
+    user: "user",
+    agent: "assistant",
+    system: "system",
+    attachment: "bookkeeping",
+    bookkeeping: "bookkeeping",
+  };
+  for (const id of KNOWN_KIND_IDS) {
+    const cat = originOf(id);
+    const style = resolveKind(config, id);
+    const override = config.overrides[id];
+    const catStyle = config.categories[cat];
+    out[id] = {
+      id,
+      label: override?.label ?? catStyle.label,
+      description: catStyle.description,
+      origin: id === "unknown" ? "fallback" : (id.startsWith("cli-") ? "cli" : originToCatalogOrigin[cat]),
+      icon: style.icon,
+      headerLabel: style.headerLabel,
+      accentColor: style.accentColor,
+      alignment: style.alignment,
+      hiddenInCompact: style.hiddenInCompact,
+      compactBoundaryLocked: style.compactBoundaryLocked ?? false,
+      widget: style.widget,
+      iconBordered: style.iconBordered,
+      iconBgOpacity: style.iconBgOpacity,
+      presentation: style.presentation,
+      borderStyle: style.borderStyle,
+      showRawPayload: style.showRawPayload,
+    };
+  }
+  return out;
+}
+
+/**
+ * Drop override fields that equal their category default; remove an override
+ * entirely when nothing diverges. Keeps the persisted override map sparse.
+ */
+export function pruneRedundantOverrides(config: MessageRenderingConfig): MessageRenderingConfig {
+  const overrides: MessageRenderingConfig["overrides"] = {};
+  for (const [id, patch] of Object.entries(config.overrides)) {
+    const base = config.categories[originOf(id)] as unknown as Record<string, unknown>;
+    const kept: Record<string, unknown> = {};
+    for (const [field, value] of Object.entries(patch)) {
+      if (field === "label") continue; // label is identity, not style — always keep if present
+      if (value !== (base as Record<string, unknown>)[field]) kept[field] = value;
+    }
+    if (patch.label !== undefined) kept.label = patch.label;
+    // An override that only carries a label (no diverging style) is redundant.
+    const styleFieldCount = Object.keys(kept).filter((k) => k !== "label").length;
+    if (styleFieldCount > 0) {
+      overrides[id] = kept as Partial<KindStyle> & { label?: string };
+    }
+  }
+  return { ...config, overrides };
 }
 
 // ─── merge / load / validate ────────────────────────────────────────────────
@@ -562,10 +596,113 @@ export function isHexColor(v: unknown): v is string {
   return typeof v === "string" && /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(v);
 }
 
+/**
+ * Validate and coerce a single style field off a raw record. Returns the
+ * accepted value, or `undefined` when the raw value is missing/invalid so the
+ * caller can fall back to the inherited default.
+ */
+function validateStyleField(
+  field: keyof KindStyle,
+  raw: Record<string, unknown>,
+  palette: Palette,
+): unknown {
+  if (!(field in raw)) return undefined;
+  const v = raw[field];
+  switch (field) {
+    case "icon":
+      return typeof v === "string" && (ALLOWED_ICONS as readonly string[]).includes(v) ? v : undefined;
+    case "headerLabel":
+      return v === null || typeof v === "string" ? v : undefined;
+    case "accentColor":
+      return typeof v === "string" && (v in palette || isHexColor(v)) ? v : undefined;
+    case "alignment":
+      return v === "left" || v === "right" || v === "full" ? v : undefined;
+    case "presentation":
+      return v === "card" || v === "side-line" || v === "collapsible" ? v : undefined;
+    case "borderStyle":
+      return v === "solid" || v === "dashed" ? v : undefined;
+    case "hiddenInCompact":
+    case "compactBoundaryLocked":
+    case "showRawPayload":
+    case "iconBordered":
+      return typeof v === "boolean" ? v : undefined;
+    case "iconBgOpacity":
+      return typeof v === "number" && Number.isFinite(v)
+        ? Math.max(0, Math.min(100, Math.round(v)))
+        : undefined;
+    case "widget":
+      return typeof v === "string" ? v : undefined;
+    default:
+      return undefined;
+  }
+}
+
 export function mergeConfig(saved: unknown): MessageRenderingConfig {
   const base = createDefaultConfig();
   if (!isRecord(saved)) return base;
 
+  // v3: shallow-merge categories + overrides over the defaults.
+  if (saved.version === 3) {
+    if (isRecord(saved.categories)) {
+      for (const c of CATEGORIES) {
+        const sc = (saved.categories as Record<string, unknown>)[c];
+        if (isRecord(sc)) {
+          const patch: Record<string, unknown> = {};
+          for (const f of STYLE_FIELDS) {
+            const val = validateStyleField(f, sc, base.palette);
+            if (val !== undefined) patch[f] = val;
+          }
+          if (typeof sc.label === "string") patch.label = sc.label;
+          if (typeof sc.description === "string") patch.description = sc.description;
+          base.categories[c] = { ...base.categories[c], ...patch } as CategoryStyle;
+        }
+      }
+    }
+    if (isRecord(saved.overrides)) {
+      for (const [id, entry] of Object.entries(saved.overrides as Record<string, unknown>)) {
+        if (!isRecord(entry)) continue;
+        const patch: Partial<KindStyle> & { label?: string } = {};
+        for (const f of STYLE_FIELDS) {
+          const val = validateStyleField(f, entry, base.palette);
+          if (val !== undefined) (patch as Record<string, unknown>)[f] = val;
+        }
+        if (typeof entry.label === "string") patch.label = entry.label;
+        base.overrides[id] = { ...base.overrides[id], ...patch };
+      }
+    }
+    return mergeShared(base, saved);
+  }
+
+  // v2 (or pre-v2): convert each customized flat kind into a sparse override
+  // by diffing its style fields against the resolved category default. Fields
+  // that already match the default produce no override entry.
+  if (isRecord(saved.kinds)) {
+    for (const [id, entry] of Object.entries(saved.kinds as Record<string, unknown>)) {
+      if (!isRecord(entry)) continue;
+      const resolved = resolveKind(base, id) as unknown as Record<string, unknown>;
+      const diff: Record<string, unknown> = {};
+      for (const f of STYLE_FIELDS) {
+        const val = validateStyleField(f, entry, base.palette);
+        if (val !== undefined && val !== resolved[f]) diff[f] = val;
+      }
+      if (Object.keys(diff).length > 0) {
+        base.overrides[id] = { ...base.overrides[id], ...diff } as Partial<KindStyle> & { label?: string };
+      }
+    }
+  }
+
+  return mergeShared(base, saved);
+}
+
+/**
+ * Merge the shared (non-kind) config blocks — view mode, palette, hard
+ * filters, typography, debug, terminal — from a saved record onto `base`.
+ * Used by both the v3 pass-through and the v2→v3 migration branches.
+ */
+function mergeShared(
+  base: MessageRenderingConfig,
+  saved: Record<string, unknown>,
+): MessageRenderingConfig {
   if (saved.defaultViewMode === "compact" || saved.defaultViewMode === "verbose") {
     base.defaultViewMode = saved.defaultViewMode;
   }
@@ -579,66 +716,6 @@ export function mergeConfig(saved: unknown): MessageRenderingConfig {
           border: typeof entry.border === "string" ? entry.border : current.border,
           bg: typeof entry.bg === "string" || entry.bg === null ? (entry.bg) : current.bg,
           swatch: typeof entry.swatch === "string" ? entry.swatch : current.swatch,
-        };
-      }
-    }
-  }
-
-  if (isRecord(saved.kinds)) {
-    for (const id of Object.keys(base.kinds)) {
-      const override = (saved.kinds)[id];
-      if (isRecord(override)) {
-        const current = base.kinds[id];
-        base.kinds[id] = {
-          ...current,
-          icon: typeof override.icon === "string" && (ALLOWED_ICONS as readonly string[]).includes(override.icon)
-            ? (override.icon as IconName)
-            : current.icon,
-          headerLabel:
-            override.headerLabel === null || typeof override.headerLabel === "string"
-              ? (override.headerLabel)
-              : current.headerLabel,
-          accentColor:
-            typeof override.accentColor === "string" &&
-            (override.accentColor in base.palette || isHexColor(override.accentColor))
-              ? override.accentColor
-              : current.accentColor,
-          alignment:
-            override.alignment === "left" || override.alignment === "right" || override.alignment === "full"
-              ? override.alignment
-              : current.alignment,
-          hiddenInCompact: current.compactBoundaryLocked
-            ? false
-            : typeof override.hiddenInCompact === "boolean"
-              ? override.hiddenInCompact
-              : current.hiddenInCompact,
-          // Per-kind icon overrides. Each is optional — undefined means
-          // "inherit the global default from typography.icon". When the
-          // saved value is missing or invalid, we drop back to undefined
-          // (inherit) rather than falling through to a stale override.
-          iconBordered:
-            typeof override.iconBordered === "boolean"
-              ? override.iconBordered
-              : undefined,
-          iconBgOpacity:
-            typeof override.iconBgOpacity === "number" &&
-            Number.isFinite(override.iconBgOpacity)
-              ? Math.max(0, Math.min(100, Math.round(override.iconBgOpacity)))
-              : undefined,
-          presentation:
-            override.presentation === "card" ||
-            override.presentation === "side-line" ||
-            override.presentation === "collapsible"
-              ? override.presentation
-              : current.presentation,
-          borderStyle:
-            override.borderStyle === "solid" || override.borderStyle === "dashed"
-              ? override.borderStyle
-              : current.borderStyle,
-          showRawPayload:
-            typeof override.showRawPayload === "boolean"
-              ? override.showRawPayload
-              : current.showRawPayload,
         };
       }
     }

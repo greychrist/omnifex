@@ -4,38 +4,93 @@ import {
   mergeConfig,
   parseConfig,
   serializeConfig,
-  DEFAULT_KINDS,
+  resolveKind,
   DEFAULT_PALETTE,
   DEFAULT_TYPOGRAPHY,
   DEFAULT_CATEGORIES,
   DEFAULT_OVERRIDES,
   CATEGORIES,
+  KNOWN_KIND_IDS,
   originOf,
 } from "../messageRenderingConfig";
 import { classifyStandaloneKind } from "../messageKind";
 import type { JsonlNode } from "@/types/jsonl";
 
 describe("messageRenderingConfig", () => {
-  describe("createDefaultConfig", () => {
-    it("includes every default kind keyed by id", () => {
+  describe("createDefaultConfig (v3)", () => {
+    it("is version 3 with categories + sparse overrides", () => {
       const cfg = createDefaultConfig();
-      for (const k of DEFAULT_KINDS) {
-        expect(cfg.kinds[k.id]).toBeDefined();
-        expect(cfg.kinds[k.id].id).toBe(k.id);
+      expect(cfg.version).toBe(3);
+      expect(Object.keys(cfg.categories).sort())
+        .toEqual(["agent", "attachment", "bookkeeping", "system", "user"]);
+      expect(cfg.overrides["assistant.text.endTurn"]).toBeDefined();
+      // The flat catalog is gone.
+      expect((cfg as unknown as { kinds?: unknown }).kinds).toBeUndefined();
+    });
+
+    it("includes every category and keeps overrides sparse", () => {
+      const cfg = createDefaultConfig();
+      for (const c of CATEGORIES) {
+        expect(cfg.categories[c].presentation).toBeDefined();
       }
+      expect(Object.keys(cfg.overrides).length).toBeLessThan(20);
     });
 
     it("defaults user.systemContext to the collapsible presentation with raw-payload metadata", () => {
       const cfg = createDefaultConfig();
-      expect(cfg.kinds["user.systemContext"].presentation).toBe("collapsible");
-      expect(cfg.kinds["user.systemContext"].showRawPayload).toBe(true);
+      const s = resolveKind(cfg, "user.systemContext");
+      expect(s.presentation).toBe("collapsible");
+      expect(s.showRawPayload).toBe(true);
     });
 
     it("returns independent copies on each call", () => {
       const a = createDefaultConfig();
       const b = createDefaultConfig();
-      a.kinds["user.prompt"].headerLabel = "MUTATED";
-      expect(b.kinds["user.prompt"].headerLabel).toBe("You");
+      a.categories.user.headerLabel = "MUTATED";
+      expect(b.categories.user.headerLabel).toBe("You");
+    });
+  });
+
+  describe("resolveKind", () => {
+    const cfg = createDefaultConfig();
+    it("returns the category default when no override exists", () => {
+      const s = resolveKind(cfg, "user.prompt");
+      expect(s.alignment).toBe("right");
+      expect(s.headerLabel).toBe("You");
+      expect(s.presentation).toBe("card");
+    });
+    it("merges an override over its category, per-field", () => {
+      const s = resolveKind(cfg, "assistant.text.endTurn");
+      expect(s.headerLabel).toBe("Claude");   // inherited from agent
+      expect(s.accentColor).toBe("green");     // from override
+      expect(s.icon).toBe("CheckCircle2");     // from override
+    });
+    it("resolves an unseen kind to its category (no unknown)", () => {
+      const s = resolveKind(cfg, "attachment.workflow_keyword_request");
+      expect(s.presentation).toBe("collapsible"); // attachment default
+    });
+  });
+
+  describe("mergeConfig v2->v3 migration", () => {
+    it("carries a user-customized v2 kind into a v3 override", () => {
+      const v2 = { version: 2, kinds: {
+        "user.prompt": { id: "user.prompt", presentation: "side-line", accentColor: "pink" },
+      } };
+      const cfg = mergeConfig(v2);
+      expect(cfg.version).toBe(3);
+      expect(cfg.overrides["user.prompt"]).toMatchObject({ presentation: "side-line", accentColor: "pink" });
+    });
+    it("does not create an override for a v2 kind left at its defaults", () => {
+      // user.prompt's category default is a card; an explicit card matches and
+      // is dropped. (The seeded compactBoundaryLocked override remains.)
+      const v2 = { version: 2, kinds: { "assistant.text": { id: "assistant.text" } } };
+      const cfg = mergeConfig(v2);
+      expect(cfg.overrides["assistant.text"]).toBeUndefined();
+    });
+    it("accepts a v3 config unchanged", () => {
+      const v3 = createDefaultConfig();
+      v3.overrides["pr-link"] = { accentColor: "teal" };
+      expect(mergeConfig(v3).overrides["pr-link"]).toMatchObject({ accentColor: "teal" });
     });
   });
 
@@ -54,106 +109,95 @@ describe("messageRenderingConfig", () => {
       expect(mergeConfig({ defaultViewMode: "weird" }).defaultViewMode).toBe("verbose");
     });
 
-    it("merges partial kind overrides onto defaults", () => {
+    it("merges a partial v2 kind override into a v3 override (resolves correctly)", () => {
       const cfg = mergeConfig({
+        version: 2,
         kinds: {
           "user.prompt": { headerLabel: "Me", accentColor: "amber" },
         },
       });
-      expect(cfg.kinds["user.prompt"].headerLabel).toBe("Me");
-      expect(cfg.kinds["user.prompt"].accentColor).toBe("amber");
-      // untouched fields keep defaults
-      expect(cfg.kinds["user.prompt"].icon).toBe("User");
-      expect(cfg.kinds["user.prompt"].alignment).toBe("right");
+      const s = resolveKind(cfg, "user.prompt");
+      expect(s.headerLabel).toBe("Me");
+      expect(s.accentColor).toBe("amber");
+      // untouched fields keep category defaults
+      expect(s.icon).toBe("User");
+      expect(s.alignment).toBe("right");
     });
 
-    it("silently drops unknown kind ids (schema drift)", () => {
+    it("rejects icon values not in the allow-list (v2 migration)", () => {
       const cfg = mergeConfig({
-        kinds: { "nonexistent.kind": { icon: "Bot" } },
-      });
-      expect(cfg.kinds["nonexistent.kind"]).toBeUndefined();
-    });
-
-    it("rejects icon values not in the allow-list", () => {
-      const cfg = mergeConfig({
+        version: 2,
         kinds: { "user.prompt": { icon: "NotARealIcon" } },
       });
-      expect(cfg.kinds["user.prompt"].icon).toBe("User");
+      expect(resolveKind(cfg, "user.prompt").icon).toBe("User");
     });
 
     it("rejects accentColor strings that are neither palette names nor hex", () => {
-      // "neon" isn't in the palette and doesn't look like a hex colour →
-      // falls back to the kind's default.
       const cfg = mergeConfig({
+        version: 2,
         kinds: { "user.prompt": { accentColor: "neon" } },
       });
-      expect(cfg.kinds["user.prompt"].accentColor).toBe("blue");
+      expect(resolveKind(cfg, "user.prompt").accentColor).toBe("blue");
     });
 
     it("accepts hex accentColor strings (picker-driven configs)", () => {
-      // The KindEditor's <input type="color"> emits 7-char `#rrggbb`; the
-      // hex text field also accepts `#rgb` and `#rrggbbaa`. mergeConfig
-      // must let these through so saved configs round-trip cleanly.
       for (const hex of ["#a855f7", "#abc", "#aabbccdd"]) {
         const cfg = mergeConfig({
+          version: 2,
           kinds: { "user.prompt": { accentColor: hex } },
         });
-        expect(cfg.kinds["user.prompt"].accentColor).toBe(hex);
+        expect(resolveKind(cfg, "user.prompt").accentColor).toBe(hex);
       }
     });
 
-    it("locks exactly the always-visible kinds (v2 catalog)", () => {
-      // v2 catalog: user.prompt (turn opener), assistant.text.endTurn (turn
-      // closer / execution complete), and unknown (diagnostic catch-all — if
-      // it shows up, we must not hide it) are boundary-locked. The result.*
-      // kinds have been removed from the catalog; cli-stream-result is not locked.
-      const locked = DEFAULT_KINDS.filter((k) => k.compactBoundaryLocked).map((k) => k.id).sort();
+    it("seeds the always-visible boundary-locked kinds by default", () => {
+      // user.prompt (turn opener), assistant.text.endTurn (turn closer), and
+      // unknown (diagnostic catch-all) resolve to compactBoundaryLocked via
+      // their seeded overrides.
+      const cfg = createDefaultConfig();
+      const locked = KNOWN_KIND_IDS
+        .filter((id) => resolveKind(cfg, id).compactBoundaryLocked)
+        .sort();
       expect(locked).toEqual([
         "assistant.text.endTurn",
+        "summary.compaction",
         "unknown",
         "user.prompt",
       ]);
     });
 
-    it("forces hiddenInCompact=false for compact-boundary-locked kinds", () => {
-      // user.prompt is compactBoundaryLocked; even if saved config says hidden,
-      // merge must override back to visible.
+    it("honors hiddenInCompact toggles on non-boundary kinds (v2 migration)", () => {
       const cfg = mergeConfig({
-        kinds: { "user.prompt": { hiddenInCompact: true } },
-      });
-      expect(cfg.kinds["user.prompt"].hiddenInCompact).toBe(false);
-    });
-
-    it("honors hiddenInCompact toggles on non-boundary kinds", () => {
-      const cfg = mergeConfig({
+        version: 2,
         kinds: { "assistant.thinking": { hiddenInCompact: false } },
       });
-      expect(cfg.kinds["assistant.thinking"].hiddenInCompact).toBe(false);
+      expect(resolveKind(cfg, "assistant.thinking").hiddenInCompact).toBe(false);
     });
 
-    it("persists presentation, borderStyle, and showRawPayload through merge", () => {
+    it("persists presentation, borderStyle, and showRawPayload through v2 migration", () => {
       const persisted = {
         version: 2,
         kinds: {
           "user.prompt": { presentation: "side-line", borderStyle: "dashed" },
-          "unknown": { showRawPayload: false },
+          "system.away_summary": { showRawPayload: true },
         },
       };
       const merged = mergeConfig(persisted);
-      expect(merged.kinds["user.prompt"].presentation).toBe("side-line");
-      expect(merged.kinds["user.prompt"].borderStyle).toBe("dashed");
-      expect(merged.kinds["unknown"].showRawPayload).toBe(false);
+      expect(resolveKind(merged, "user.prompt").presentation).toBe("side-line");
+      expect(resolveKind(merged, "user.prompt").borderStyle).toBe("dashed");
+      expect(resolveKind(merged, "system.away_summary").showRawPayload).toBe(true);
     });
 
-    it("rejects invalid presentation and borderStyle values", () => {
+    it("rejects invalid presentation and borderStyle values (v2 migration)", () => {
       const cfg = mergeConfig({
+        version: 2,
         kinds: {
           "user.prompt": { presentation: "balloon", borderStyle: "dotted" },
         },
       });
-      // Falls back to defaults
-      expect(cfg.kinds["user.prompt"].presentation).toBe("card");
-      expect(cfg.kinds["user.prompt"].borderStyle).toBe("solid");
+      // Invalid values are dropped; resolves to category defaults.
+      expect(resolveKind(cfg, "user.prompt").presentation).toBe("card");
+      expect(resolveKind(cfg, "user.prompt").borderStyle).toBe("solid");
     });
 
     it("merges palette entries by name", () => {
@@ -353,11 +397,11 @@ describe("messageRenderingConfig", () => {
     it("round-trips a config through JSON", () => {
       const original = createDefaultConfig();
       original.defaultViewMode = "compact";
-      original.kinds["user.prompt"].headerLabel = "Greg";
+      original.overrides["user.prompt"] = { ...original.overrides["user.prompt"], headerLabel: "Greg" };
       const raw = serializeConfig(original);
       const restored = parseConfig(raw);
       expect(restored.defaultViewMode).toBe("compact");
-      expect(restored.kinds["user.prompt"].headerLabel).toBe("Greg");
+      expect(resolveKind(restored, "user.prompt").headerLabel).toBe("Greg");
     });
 
     it("returns defaults for null/empty/invalid JSON", () => {
@@ -367,9 +411,7 @@ describe("messageRenderingConfig", () => {
     });
   });
 
-  describe("catalog coverage — every classifyStandaloneKind output has a DEFAULT_KINDS entry", () => {
-    const kindIds = new Set(DEFAULT_KINDS.map((k) => k.id));
-
+  describe("catalog coverage — every classifyStandaloneKind output resolves to a category style", () => {
     // Helper factories to exercise classifyStandaloneKind paths
     const sys = (subtype: string): JsonlNode =>
       ({ kind: 'system', subtype, sessionId: '', receivedAt: '', raw: { type: 'system', subtype } }) as unknown as JsonlNode;
@@ -423,26 +465,20 @@ describe("messageRenderingConfig", () => {
       classifyStandaloneKind(summaryNode(), [])!,
     ].filter(Boolean);
 
-    it('every kind ID produced by classifyStandaloneKind exists in DEFAULT_KINDS', () => {
+    it('every classifier kind id resolves to a category style', () => {
+      const cfg = createDefaultConfig();
       for (const id of produced) {
-        expect(kindIds, `Missing catalog entry for kind: "${id}"`).toContain(id);
+        const s = resolveKind(cfg, id);
+        expect(s.presentation, `no presentation for "${id}"`).toBeDefined();
+        expect(originOf(id), `no origin for "${id}"`).toBeDefined();
       }
     });
 
-    it('summary.compaction is in the catalog', () => {
-      expect(kindIds).toContain('summary.compaction');
-    });
-
-    it('system.userPromptSubmit is in the catalog', () => {
-      expect(kindIds).toContain('system.userPromptSubmit');
-    });
-
-    it('system.unknown is in the catalog', () => {
-      expect(kindIds).toContain('system.unknown');
-    });
-
-    it('user.systemContext is in the catalog', () => {
-      expect(kindIds).toContain('user.systemContext');
+    it('resolves summary.compaction, system.unknown, user.systemContext to styles', () => {
+      const cfg = createDefaultConfig();
+      for (const id of ['summary.compaction', 'system.userPromptSubmit', 'system.unknown', 'user.systemContext']) {
+        expect(resolveKind(cfg, id).presentation).toBeDefined();
+      }
     });
   });
 
