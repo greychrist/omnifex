@@ -311,6 +311,11 @@ export const DEFAULT_OVERRIDES: Record<string, Partial<KindStyle> & { label?: st
   "pr-link":                     { label: "Pull request",           presentation: "side-line",   icon: "GitPullRequest",  accentColor: "info",         hiddenInCompact: false },
   "permission.request":          { label: "Permission request",     presentation: "card",    icon: "ShieldQuestion",     accentColor: "amber",        hiddenInCompact: false },
   "permission.askUserQuestion":  { label: "Question",               presentation: "card",    icon: "MessageCircleQuestion", accentColor: "primary",   hiddenInCompact: false },
+  // Answered-AskUserQuestion sentinels. `originOf` routes these through the
+  // "system" category (head "tool" → default), which is hiddenInCompact:true.
+  // Override both to visible + locked so compact grouping never folds them.
+  "tool.askUserQuestion.answered":        { label: "Question (answered)",        hiddenInCompact: false, compactBoundaryLocked: true },
+  "tool.askUserQuestion.answered.result": { label: "Question (answered result)", hiddenInCompact: false, compactBoundaryLocked: true },
   "unknown":                     { label: "Unknown",                presentation: "side-line", icon: "HelpCircle",        accentColor: "orange",       borderStyle: "dashed", headerLabel: "Unknown", hiddenInCompact: false, compactBoundaryLocked: true, showRawPayload: true },
 };
 

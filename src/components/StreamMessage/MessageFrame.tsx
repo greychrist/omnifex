@@ -7,7 +7,9 @@ import { MessageFrameCollapsible } from './MessageFrameCollapsible';
 
 export interface MessageFrameProps {
   /** The dotted kind ID (e.g. `'user.prompt'`, `'system.informational'`).
-   *  If not found in config, falls back to the `unknown` kind. */
+   *  Resolved via `resolveKind`: merges the category default for the kind's
+   *  origin with any per-kind override. Always returns a complete style —
+   *  there is no missing-kind / unknown fallback. */
   streamKind: string;
   children: React.ReactNode;
   /** Optional toolbar node for card-presentation frames. Forwarded to

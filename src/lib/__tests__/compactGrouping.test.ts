@@ -38,6 +38,35 @@ function assistantEndTurn(text: string): JsonlNode {
   return assistantWithBlocks([{ type: 'text', text }]);
 }
 
+/**
+ * Build the pair of messages that represents an answered AskUserQuestion:
+ * - the assistant message with only AskUserQuestion tool_use (classifies to
+ *   `tool.askUserQuestion.answered`)
+ * - the user message with the matching tool_result (classifies to
+ *   `tool.askUserQuestion.answered.result`)
+ */
+function answeredAskUserQuestionPair(toolUseId = 'tu_auq'): { assistant: JsonlNode; result: JsonlNode } {
+  const assistant: JsonlNode = {
+    kind: 'assistant', sessionId: '', receivedAt: '',
+    raw: {
+      type: 'assistant',
+      message: {
+        role: 'assistant',
+        content: [{ type: 'tool_use', id: toolUseId, name: 'AskUserQuestion', input: { question: 'What do you need?' } }],
+        stop_reason: 'tool_use',
+      },
+    },
+  } as unknown as JsonlNode;
+  const result: JsonlNode = {
+    kind: 'user', userKind: 'tool-result', sessionId: '', receivedAt: '',
+    raw: {
+      type: 'user',
+      message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: toolUseId, content: 'My answer' }] },
+    },
+  } as unknown as JsonlNode;
+  return { assistant, result };
+}
+
 describe('isMessageFullyHidden', () => {
   it('returns false for a user prompt (locked visible)', () => {
     const cfg = createDefaultConfig();
@@ -97,6 +126,22 @@ describe('isMessageFullyHidden', () => {
     const cfg = createDefaultConfig();
     const msg = { kind: 'system', subtype: 'init', sessionId: '', receivedAt: '', raw: { type: 'system', subtype: 'init' } } as unknown as JsonlNode;
     expect(isMessageFullyHidden(msg, [msg], cfg)).toBe(true);
+  });
+
+  it('never hides an answered AskUserQuestion assistant message (tool.askUserQuestion.answered)', () => {
+    // Regression: sentinel id head is "tool" → originOf returns "system" →
+    // system category has hiddenInCompact:true → card vanishes in compact mode.
+    const cfg = createDefaultConfig();
+    const { assistant, result } = answeredAskUserQuestionPair();
+    const allMsgs = [assistant, result];
+    expect(isMessageFullyHidden(assistant, allMsgs, cfg)).toBe(false);
+  });
+
+  it('never hides an answered AskUserQuestion result message (tool.askUserQuestion.answered.result)', () => {
+    const cfg = createDefaultConfig();
+    const { assistant, result } = answeredAskUserQuestionPair();
+    const allMsgs = [assistant, result];
+    expect(isMessageFullyHidden(result, allMsgs, cfg)).toBe(false);
   });
 
   it('never hides compactBoundaryLocked kinds even if hiddenInCompact is forced true', () => {
@@ -205,6 +250,22 @@ describe('buildCompactItems', () => {
 
   it('handles empty input', () => {
     expect(buildCompactItems([], createDefaultConfig())).toEqual([]);
+  });
+
+  it('keeps answered AskUserQuestion pair visible (not grouped) in compact mode', () => {
+    // Regression guard: tool.askUserQuestion.answered / .result must never be
+    // folded into a HiddenEventsGroup — the Q+A card is user-facing content.
+    const cfg = createDefaultConfig();
+    const { assistant, result } = answeredAskUserQuestionPair();
+    const msgs = [
+      userText('please ask me something'),
+      assistant,
+      result,
+      assistantEndTurn('Thanks for your answer.'),
+    ];
+    const items = buildCompactItems(msgs, cfg);
+    // All four messages should be visible singles — none collapsed into a group.
+    expect(items.map((i: CompactItem) => i.kind)).toEqual(['single', 'single', 'single', 'single']);
   });
 
   it('treats reloaded user prompts (originally bare strings in JSONL) as visible', () => {
