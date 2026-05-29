@@ -178,6 +178,10 @@ export const ALLOWED_ICONS = [
   "ImageUp",
   "MonitorCog",
   "Slash",
+  // v3 catalog additions
+  "GitPullRequest",
+  "ShieldQuestion",
+  "MessageCircleQuestion",
   // Unicode fallbacks
   "ℹ",
   "✗",
@@ -232,6 +236,64 @@ export interface MessageKindConfig {
 }
 
 export type MessageKindsById = Record<string, MessageKindConfig>;
+
+// ─── v3 category + override model ───────────────────────────────────────────
+//
+// Two-tier model: top-level CATEGORIES carry default styling for all kinds
+// that belong to them; sparse OVERRIDES carry per-kind style patches on top.
+// The flat DEFAULT_KINDS catalog remains for backwards compatibility and is
+// not removed here — that is a follow-on task.
+
+export const CATEGORIES = ["user", "agent", "system", "attachment", "bookkeeping"] as const;
+export type Category = (typeof CATEGORIES)[number];
+
+/** Styling fields shared by categories and overrides. Identity fields
+ *  (id/label/description/origin) are NOT here. */
+export interface KindStyle {
+  presentation: Presentation;
+  accentColor: string;
+  icon: IconName;
+  headerLabel: string | null;
+  borderStyle: BorderStyle;
+  alignment: Alignment;
+  hiddenInCompact: boolean;
+  compactBoundaryLocked?: boolean;
+  widget?: string;
+  showRawPayload?: boolean;
+  iconBordered?: boolean;
+  iconBgOpacity?: number;
+}
+
+export interface CategoryStyle extends KindStyle {
+  label: string;
+  description: string;
+}
+
+export const DEFAULT_CATEGORIES: Record<Category, CategoryStyle> = {
+  user:        { label: "User",        description: "Your prompts, tool results, commands, injected context.",       presentation: "card",        accentColor: "blue",    icon: "User",     headerLabel: "You",    borderStyle: "solid",  alignment: "right", hiddenInCompact: false },
+  agent:       { label: "Agent",       description: "Claude's text, thinking, tool calls, completions.",            presentation: "card",        accentColor: "primary", icon: "Bot",      headerLabel: "Claude", borderStyle: "solid",  alignment: "left",  hiddenInCompact: false },
+  system:      { label: "System",      description: "Notifications, hooks, errors, lifecycle envelopes.",           presentation: "card",        accentColor: "muted",   icon: "Info",     headerLabel: null,     borderStyle: "solid",  alignment: "left",  hiddenInCompact: true },
+  attachment:  { label: "Attachment",  description: "Harness-injected context (reminders, diagnostics, skills).",   presentation: "collapsible", accentColor: "muted",   icon: "Paperclip",headerLabel: null,     borderStyle: "solid",  alignment: "left",  hiddenInCompact: true, showRawPayload: true },
+  bookkeeping: { label: "Bookkeeping", description: "Internal transcript records (hidden by default).",             presentation: "side-line",   accentColor: "muted",   icon: "FileText", headerLabel: null,     borderStyle: "dashed", alignment: "left",  hiddenInCompact: true },
+};
+
+export const DEFAULT_OVERRIDES: Record<string, Partial<KindStyle> & { label?: string }> = {
+  "assistant.text.endTurn":      { label: "Execution complete",      accentColor: "green",   icon: "CheckCircle2",        compactBoundaryLocked: true },
+  "assistant.thinking":          { label: "Thinking",                presentation: "collapsible", headerLabel: "Thinking", icon: "Brain",               widget: "ThinkingWidget" },
+  "assistant.tool-use":          { label: "Tool call",               accentColor: "info",    icon: "Terminal",            headerLabel: null,           hiddenInCompact: true },
+  "user.systemContext":          { label: "System context",          presentation: "collapsible", icon: "Sparkles",        accentColor: "purple",       showRawPayload: true, alignment: "left", hiddenInCompact: false },
+  "user.tool-result":            { label: "Tool result",             presentation: "side-line",   headerLabel: null,       alignment: "left",           hiddenInCompact: true },
+  "user.command":                { label: "Slash command",           presentation: "side-line",   icon: "ChevronRight",    alignment: "left" },
+  "system.notification.error":   { label: "Notification (error)",   accentColor: "red",     icon: "Bell",                presentation: "card",        hiddenInCompact: false },
+  "system.notification.warn":    { label: "Notification (warn)",    accentColor: "amber",   icon: "Bell",                presentation: "card",        hiddenInCompact: false },
+  "system.notification.stop":    { label: "Notification (stop)",    accentColor: "red",     icon: "Bell",                presentation: "card",        hiddenInCompact: false },
+  "system.api_error":            { label: "API error",              accentColor: "red",     icon: "AlertTriangle",       presentation: "card",        hiddenInCompact: false },
+  "system.compact_boundary":     { label: "Compacted",              icon: "Scissors",        presentation: "card",       widget: "CompactBoundaryWidget", hiddenInCompact: false },
+  "summary.compaction":          { label: "Conversation summary",   icon: "FileText",        presentation: "card",       widget: "SummaryWidget",     hiddenInCompact: false, compactBoundaryLocked: true },
+  "pr-link":                     { label: "Pull request",           presentation: "side-line",   icon: "GitPullRequest",  accentColor: "info",         hiddenInCompact: false },
+  "permission.request":          { label: "Permission request",     presentation: "card",    icon: "ShieldQuestion",     accentColor: "amber",        hiddenInCompact: false },
+  "permission.askUserQuestion":  { label: "Question",               presentation: "card",    icon: "MessageCircleQuestion", accentColor: "primary",   hiddenInCompact: false },
+};
 
 export const DEFAULT_KINDS: MessageKindConfig[] = [
   // ───── ASSISTANT (block-level) ─────

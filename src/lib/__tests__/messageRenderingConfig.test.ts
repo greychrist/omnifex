@@ -7,6 +7,9 @@ import {
   DEFAULT_KINDS,
   DEFAULT_PALETTE,
   DEFAULT_TYPOGRAPHY,
+  DEFAULT_CATEGORIES,
+  DEFAULT_OVERRIDES,
+  CATEGORIES,
 } from "../messageRenderingConfig";
 import { classifyStandaloneKind } from "../messageKind";
 import type { JsonlNode } from "@/types/jsonl";
@@ -439,6 +442,28 @@ describe("messageRenderingConfig", () => {
 
     it('user.systemContext is in the catalog', () => {
       expect(kindIds).toContain('user.systemContext');
+    });
+  });
+
+  describe("v3 category catalog", () => {
+    it("defines exactly the five categories, each a complete style", () => {
+      expect([...CATEGORIES].sort()).toEqual(
+        ["agent", "attachment", "bookkeeping", "system", "user"]);
+      for (const c of CATEGORIES) {
+        const s = DEFAULT_CATEGORIES[c];
+        expect(typeof s.presentation).toBe("string");
+        expect(typeof s.accentColor).toBe("string");
+        expect(typeof s.icon).toBe("string");
+        expect(typeof s.borderStyle).toBe("string");
+      }
+    });
+
+    it("keeps overrides sparse (partial styles, ~a dozen, not 60+)", () => {
+      const ids = Object.keys(DEFAULT_OVERRIDES);
+      expect(ids).toContain("assistant.text.endTurn");
+      expect(ids).toContain("user.systemContext");
+      expect(ids).toContain("permission.askUserQuestion");
+      expect(ids.length).toBeLessThan(20);
     });
   });
 

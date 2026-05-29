@@ -106,6 +106,10 @@ import {
   Scissors,
   Shield,
   ShieldOff,
+  // v3 catalog additions
+  GitPullRequest,
+  ShieldQuestion,
+  MessageCircleQuestion,
 } from "lucide-react";
 import type { IconName } from "@/lib/messageRenderingConfig";
 
@@ -205,6 +209,9 @@ const LUCIDE_MAP: Record<string, React.ComponentType<{ className?: string }>> = 
   Scissors,
   Shield,
   ShieldOff,
+  GitPullRequest,
+  ShieldQuestion,
+  MessageCircleQuestion,
 };
 
 export const IconRenderer: React.FC<{ name: IconName; className?: string }> = ({
