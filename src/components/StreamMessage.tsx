@@ -522,41 +522,13 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
       })();
       const msg = message.raw.message;
 
-      // If a following result message duplicates this assistant's text content,
-      // suppress the duplicated text so only the Execution Complete card shows
-      // it. Keep thinking/tool_use blocks visible — otherwise collapsing the
-      // whole message hides the reasoning the user explicitly asked to see.
-      let suppressTextBlocks = false;
-      if (msg.content && Array.isArray(msg.content)) {
-        const assistantText = (msg.content as MessageContentBlock[])
-          .filter((c): c is import('@/types/claudeStream').MessageTextBlock => c.type === 'text')
-          .map((c) => c.text)
-          .join('');
-        if (assistantText && assistantIndex !== -1) {
-          for (let i = assistantIndex + 1; i < Math.min(streamMessages.length, assistantIndex + 5); i++) {
-            const next = streamMessages[i];
-            const nextRaw = (next as unknown as { raw: Record<string, unknown> }).raw;
-            // `result` is only present on SDKResultSuccess; the error
-            // variant carries `errors` instead and doesn't trigger this
-            // de-dup path.
-            if (
-              nextRaw?.type === 'result' &&
-              nextRaw.subtype === 'success' &&
-              typeof nextRaw.result === 'string' &&
-              nextRaw.result.trim() === assistantText.trim()
-            ) {
-              suppressTextBlocks = true;
-              break;
-            }
-          }
-          if (suppressTextBlocks) {
-            const hasOtherContent = (msg.content as MessageContentBlock[]).some(
-              (c) => c.type !== 'text',
-            );
-            if (!hasOtherContent) return null;
-          }
-        }
-      }
+      // NOTE: the assistant's text is rendered as-is. We do NOT suppress it
+      // when it matches the following CLI `result` row — that row renders
+      // nothing (the `unknown` branch returns null), so suppressing here
+      // erased the final message outright. Under --include-partial-messages
+      // the committed assistant carries stop_reason: null, so it isn't even
+      // the green "execution complete" card; it's just the normal reply, and
+      // it must always show.
 
       const blocks: MessageContentBlock[] = Array.isArray(msg.content) ? (msg.content as MessageContentBlock[]) : [];
 
@@ -565,7 +537,6 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
       const renderBlockBody = (content: MessageContentBlock, idx: number): React.ReactNode => {
         // Text content - render as markdown
         if (content.type === "text") {
-          if (suppressTextBlocks) return null;
           const textContent = content.text;
           return (
             <div key={idx} className="prose prose-sm dark:prose-invert max-w-none">
@@ -720,12 +691,11 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
         return null;
       };
 
-      // Determine which blocks are visible after suppress logic.
-      // A block is "visible" if renderBlockBody would return non-null.
-      // We need to know which blocks produce output so we can find the
-      // last card-presentation block for toolbar attachment.
+      // Determine which blocks are visible. A block is "visible" if
+      // renderBlockBody would return non-null. We need to know which blocks
+      // produce output so we can find the last card-presentation block for
+      // toolbar attachment.
       const visibleBlocks = blocks.filter((b) => {
-        if (b.type === 'text' && suppressTextBlocks) return false;
         if (b.type === 'thinking' && !b.thinking.trim()) return false;
         return true;
       });
@@ -789,7 +759,6 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
         // Map blocks back through original index for stable keys
         let vIdx = 0;
         output = blocks.map((b, origIdx) => {
-          if (b.type === 'text' && suppressTextBlocks) return null;
           if (b.type === 'thinking' && !b.thinking.trim()) return null;
           const node = renderWrappedBlock(b, vIdx, origIdx);
           if (node !== null) { renderedSomething = true; vIdx++; }
@@ -832,8 +801,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
 
         for (let i = 0; i < blocks.length; i++) {
           const b = blocks[i];
-          // Skip suppressed or empty blocks (they don't count as visible)
-          if (b.type === 'text' && suppressTextBlocks) continue;
+          // Skip empty blocks (they don't count as visible)
           if (b.type === 'thinking' && !b.thinking.trim()) continue;
 
           const hidden = isBlockHiddenInCompact(b, message, renderConfig);

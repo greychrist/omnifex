@@ -4,7 +4,7 @@ import type { JsonlNode } from '@/types/jsonl';
 import type { Subagent } from '@/lib/subagentStreams';
 import { getTaskList, summarizeTaskList } from '@/lib/taskList';
 import { deriveWaitingFor } from '@/lib/tabWaitingFor';
-import { deriveWaitingOnClaude } from '@/lib/deriveConversationStatus';
+import { waitingOnClaude } from '@/lib/sessionDerivedState';
 
 interface UsePublishTabStatusArgs {
   tabId: string;
@@ -69,13 +69,14 @@ export function usePublishTabStatus({
       (n, s) => (s.status === 'running' ? n + 1 : n),
       0,
     );
-    // "Waiting on Claude" is derived from the transcript, not the
-    // renderer's optimistic isLoading flag — the previous isLoading-based
-    // signal stayed true after edge cases (e.g. the runtime emitted an
-    // incidental message that wasn't a real result) and stayed false in
-    // others. The transcript is the source of truth: the turn is over iff
-    // the last message is a result; anything else means we're waiting.
-    const mainTurnInFlight = deriveWaitingOnClaude(messages);
+    // "Waiting on Claude" is derived from the transcript, not the renderer's
+    // optimistic isLoading flag. This is the SAME `waitingOnClaude` that
+    // useSessionLifecycle uses for the prompt-input spinner — one source of
+    // truth, so the tab popover and the in-session spinner can't disagree.
+    // It closes the turn on a result row OR a terminal assistant stop_reason
+    // (so resumed history without result rows also settles), and skips
+    // trailing plumbing so a closed turn never reads as busy.
+    const mainTurnInFlight = waitingOnClaude(messages);
     const waitingFor = deriveWaitingFor(pendingPermission);
     // promptStatus: is the agent actually doing work right now?
     // Spec: working iff (waiting on Claude response) OR (any in-progress

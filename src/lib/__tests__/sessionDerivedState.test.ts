@@ -50,6 +50,38 @@ function assistantWithStop(
   };
 }
 
+// The CLI `result` envelope classifies to kind:'unknown' with raw.type:'result'
+// (see sessionStreamReducer's result handling). It's the turn-complete marker.
+function resultNode(timestamp: string): JsonlNode {
+  return {
+    kind: 'unknown',
+    receivedAt: timestamp,
+    raw: { type: 'result', subtype: 'success', is_error: false, timestamp } as never,
+  } as unknown as JsonlNode;
+}
+
+// system.status — plumbing that often trails a completed turn.
+function systemStatus(timestamp: string): JsonlNode {
+  return {
+    kind: 'system',
+    subtype: 'status',
+    receivedAt: timestamp,
+    raw: { type: 'system', subtype: 'status', timestamp } as never,
+  } as unknown as JsonlNode;
+}
+
+// SessionStart hook / init plumbing that fires before (and around) any turn.
+function systemNode(
+  subtype: 'init' | 'hook_started' | 'hook_progress' | 'hook_response',
+): JsonlNode {
+  return {
+    kind: 'system',
+    subtype,
+    receivedAt: '2026-05-27T00:00:00Z',
+    raw: { type: 'system', subtype } as never,
+  } as unknown as JsonlNode;
+}
+
 describe('waitingOnClaude', () => {
   it('returns false for an empty message list', () => {
     expect(waitingOnClaude([])).toBe(false);
@@ -122,6 +154,88 @@ describe('waitingOnClaude', () => {
       },
     ];
     expect(waitingOnClaude(msgs)).toBe(false);
+  });
+
+  // --- result-row terminal signal (--include-partial-messages) -------------
+  // Under --include-partial-messages the committed `assistant` message carries
+  // stop_reason: null — the terminal reason rides the message_delta
+  // stream_event, which never enters messages[]. The CLI's `result` row
+  // (kind:'unknown', raw.type:'result') is therefore the authoritative
+  // "turn complete" marker for a live-streamed turn.
+  it('returns false when a result row follows a null-stop_reason assistant', () => {
+    const msgs = [
+      userPrompt('2026-05-27T00:00:00Z'),
+      assistantWithStop('2026-05-27T00:00:01Z', null),
+      resultNode('2026-05-27T00:00:02Z'),
+    ];
+    expect(waitingOnClaude(msgs)).toBe(false);
+  });
+
+  it('ignores trailing system.status after a result row', () => {
+    // system.status frequently lands AFTER the result row but does not mean
+    // the conversation resumed — plumbing must not reopen a closed turn.
+    const msgs = [
+      userPrompt('2026-05-27T00:00:00Z'),
+      assistantWithStop('2026-05-27T00:00:01Z', null),
+      resultNode('2026-05-27T00:00:02Z'),
+      systemStatus('2026-05-27T00:00:03Z'),
+    ];
+    expect(waitingOnClaude(msgs)).toBe(false);
+  });
+
+  it('ignores trailing rate-limit / lifecycle overlays after a result row', () => {
+    const msgs: JsonlNode[] = [
+      userPrompt('2026-05-27T00:00:00Z'),
+      assistantWithStop('2026-05-27T00:00:01Z', null),
+      resultNode('2026-05-27T00:00:02Z'),
+      { kind: 'rate-limit' } as unknown as JsonlNode,
+    ];
+    expect(waitingOnClaude(msgs)).toBe(false);
+  });
+
+  it('still waits on a null-stop_reason assistant when no result row has landed', () => {
+    // Mid-stream (deltas flowing, no result yet) AND resumed-history rely on
+    // this: without a result row the assistant's stop_reason is the only
+    // signal, so a non-terminal one keeps the turn open.
+    const msgs = [
+      userPrompt('2026-05-27T00:00:00Z'),
+      assistantWithStop('2026-05-27T00:00:01Z', null),
+    ];
+    expect(waitingOnClaude(msgs)).toBe(true);
+  });
+
+  it('settles resumed history via terminal stop_reason when no result row exists', () => {
+    // Persisted JSONL records the real end_turn on the assistant (it has no
+    // result row), so loaded transcripts must read as not-waiting.
+    const msgs = [
+      userPrompt('2026-05-27T00:00:00Z'),
+      assistantWithStop('2026-05-27T00:00:01Z', 'end_turn'),
+      systemStatus('2026-05-27T00:00:02Z'),
+    ];
+    expect(waitingOnClaude(msgs)).toBe(false);
+  });
+
+  // Ported from the retired deriveConversationStatus module (now that this is
+  // the single source of truth for both useSessionLifecycle and
+  // usePublishTabStatus). SessionStart hooks emit init + hook events BEFORE any
+  // user turn — a transcript of only plumbing must NOT read as waiting, or the
+  // spinner/prompt status sticks on a fresh idle session.
+  it('does not wait on a fresh session whose only messages are SessionStart hook events', () => {
+    const msgs = [
+      systemNode('init'),
+      systemNode('hook_started'),
+      systemNode('hook_progress'),
+      systemNode('hook_response'),
+    ];
+    expect(waitingOnClaude(msgs)).toBe(false);
+  });
+
+  it('still waits when a hook event trails an unanswered user prompt', () => {
+    const msgs = [
+      userPrompt('2026-05-27T00:00:00Z'),
+      systemNode('hook_started'),
+    ];
+    expect(waitingOnClaude(msgs)).toBe(true);
   });
 });
 

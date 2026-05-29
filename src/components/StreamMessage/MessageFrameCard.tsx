@@ -112,15 +112,13 @@ export const MessageFrameCard: React.FC<MessageFrameCardProps> = ({
         ? "justify-center"
         : "justify-start";
 
-  // Right-aligned cards (e.g. user.prompt) shrink so the right-alignment is
-  // visually meaningful — at 95% the card would still span almost the full
-  // surface and right vs. left would be indistinguishable. Left and full
-  // keep the existing widths.
+  // Right-aligned cards (e.g. user.prompt) get the SAME width as left-aligned
+  // cards — they just hug the right edge via `justify-end`. (A prior shrink-to-
+  // fit `w-fit` made short prompts uncomfortably narrow; matching the standard
+  // card width restores a sensible minimum.) Full spans the whole surface.
   const width =
     widthClassName ?? (
-      alignment === "full" ? "w-full"
-      : alignment === "right" ? "max-w-[75%] w-fit"
-      : "w-[95%]"
+      alignment === "full" ? "w-full" : "w-[95%]"
     );
 
   return (

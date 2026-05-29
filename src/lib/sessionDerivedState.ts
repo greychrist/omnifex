@@ -29,12 +29,8 @@ function isMainAssistant(node: JsonlNode): boolean {
   return !isSidechain;
 }
 
-function lastMainAssistant(messages: JsonlNode[]): Extract<JsonlNode, { kind: 'assistant' }> | null {
-  for (let i = messages.length - 1; i >= 0; i -= 1) {
-    const n = messages[i];
-    if (isMainAssistant(n)) return n as Extract<JsonlNode, { kind: 'assistant' }>;
-  }
-  return null;
+function isResultNode(node: JsonlNode): boolean {
+  return node.kind === 'unknown' && (node.raw as { type?: string }).type === 'result';
 }
 
 function lastMainPromptIndex(messages: JsonlNode[]): number {
@@ -45,21 +41,47 @@ function lastMainPromptIndex(messages: JsonlNode[]): number {
   return -1;
 }
 
-// True iff the conversation is "expecting more from Claude":
-//   - no assistant has appeared since the most recent user prompt, OR
-//   - the last assistant in the array has a null/missing stop_reason.
-// Walks messages[] from the end; filters out isSidechain=true entries
-// so a streaming subagent doesn't keep the main conversation 'running'.
+// True iff the conversation is "expecting more from Claude". Walks messages[]
+// from the end; only THREE kinds of node have the power to decide the turn
+// axis, and the first one encountered wins. Everything else is skipped — that
+// deliberately includes bookkeeping/overlay nodes that routinely TRAIL a
+// completed turn (system status/init/hooks, stream-event / rate-limit /
+// lifecycle overlays, last-prompt / queue-operation / ai-title /
+// file-history-snapshot / permission-mode entries, non-result `unknown`
+// nodes, and sidechain subagent assistants). Skipping by default — rather than
+// matching a hardcoded plumbing list — means a new bookkeeping kind can't
+// silently reopen a closed turn.
+//
+//   - a `result` row (kind:'unknown', raw.type:'result') CLOSES the turn.
+//     Under --include-partial-messages the committed assistant carries
+//     stop_reason: null (the terminal reason rides the message_delta
+//     stream_event, which never enters messages[]), so the result row — not
+//     the assistant — is what ends a live-streamed turn.
+//   - a main-chain assistant settles by stop_reason: terminal => done,
+//     null/non-terminal => still going. Resumed/persisted transcripts carry
+//     the real stop_reason here (and no result row), so loaded history settles
+//     through this branch.
+//   - a user message (prompt or tool-result) means no assistant/result has
+//     spoken since: defer to the prompt-awaiting check below.
 export function waitingOnClaude(messages: JsonlNode[]): boolean {
   if (messages.length === 0) return false;
-  const lastAssistant = lastMainAssistant(messages);
-  if (!lastAssistant) {
-    // No main-chain assistant has spoken; we're waiting only if a prompt is awaiting reply.
-    return lastMainPromptIndex(messages) >= 0;
+
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const n = messages[i];
+    if (isResultNode(n)) return false;
+    if (n.kind === 'assistant') {
+      if (!isMainAssistant(n)) continue; // sidechain subagent — doesn't bracket the main turn
+      const stop = (n.raw as { message?: { stop_reason?: string | null } }).message?.stop_reason ?? null;
+      if (stop === null) return true;
+      return !TERMINAL_STOP_REASONS.has(stop);
+    }
+    if (n.kind === 'user') break; // defer to the prompt-awaiting check
+    // anything else is not turn-significant — keep scanning backward.
   }
-  const stop = (lastAssistant.raw as { message?: { stop_reason?: string | null } }).message?.stop_reason ?? null;
-  if (stop === null) return true;
-  return !TERMINAL_STOP_REASONS.has(stop);
+
+  // No assistant or result has spoken since the most recent prompt — waiting
+  // only if a prompt is actually awaiting a reply (a lone tool-result is not).
+  return lastMainPromptIndex(messages) >= 0;
 }
 
 // "Open" means actively in flight, not merely "not done." Pending tasks

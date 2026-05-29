@@ -61,11 +61,25 @@ These must hold at all times. If you find code that violates them, that code is 
 `conversationStatus` is the union of three pure predicates in `src/lib/sessionDerivedState.ts`:
 
 ```ts
-// True iff the conversation is "expecting more from Claude":
-//   - no main-chain assistant has appeared since the most recent user prompt, OR
-//   - the last main-chain assistant has a null / non-terminal stop_reason.
-// isSidechain=true assistant nodes are ignored so a streaming subagent
-// doesn't keep the main conversation at 'running'.
+// True iff the conversation is "expecting more from Claude". Walks messages[]
+// from the end; only three kinds of node have the power to decide the turn
+// axis (first one wins), and everything else is skipped BY DEFAULT:
+//   - a `result` row (kind:'unknown', raw.type:'result') CLOSES the turn.
+//     Under --include-partial-messages the committed assistant carries
+//     stop_reason: null (the terminal reason rides the message_delta
+//     stream_event, which never enters messages[]), so the result row is the
+//     authoritative "turn complete" signal for a live-streamed turn.
+//   - a main-chain assistant settles by stop_reason: terminal => done,
+//     null/non-terminal => still going. Persisted/resumed transcripts record
+//     the real stop_reason here (no result row), so loaded history settles
+//     through this branch.
+//   - a user message => defer to "is a prompt awaiting a reply?".
+// Skip-by-default (rather than matching a hardcoded plumbing list) means
+// trailing bookkeeping/overlay nodes — system status/init/hooks, stream-event/
+// rate-limit/lifecycle overlays, last-prompt / queue-operation / ai-title /
+// file-history-snapshot / permission-mode entries, non-result `unknown` nodes,
+// sidechain subagents — never reopen a closed turn, and a new bookkeeping kind
+// can't silently regress this.
 waitingOnClaude(messages: JsonlNode[]): boolean
 
 // True iff any task row has status !== 'completed'.
@@ -79,10 +93,12 @@ conversationStatus(messages, tasks, subagents): 'running' | 'idle'
 // → 'running' if any of the three predicates is true; 'idle' otherwise.
 ```
 
-Terminal `stop_reason` values that close `waitingOnClaude`:
+Terminal `stop_reason` values that close `waitingOnClaude` on a main-chain assistant:
 `end_turn`, `stop_sequence`, `max_tokens`, `refusal`, `model_context_window_exceeded`.
 
-Note: CLI engine-mode `cli-stream-init` and `cli-stream-result` envelopes appear in `messages[]` with placeholder badges but do **not** participate in derivation. They are displayed because the CLI actually emitted them; they carry no `stop_reason`.
+A trailing `result` row (kind `unknown`, `raw.type === 'result'`) **also** closes `waitingOnClaude`, independent of `stop_reason`. This is load-bearing under `--include-partial-messages`: the committed `assistant` message then carries `stop_reason: null` (the real `end_turn` arrives only on the `message_delta` stream_event, which is an overlay and never enters `messages[]`), so without honoring the result row the turn would never read as complete.
+
+Note: CLI engine-mode `cli-stream-init` / `cli-stream-result` badge envelopes are a separate representation from the `unknown`+`result` row above; they appear in `messages[]` with placeholder badges but do **not** participate in derivation.
 
 ## The in-flight rollup
 

@@ -162,3 +162,26 @@ describe('AssistantCompletionBand', () => {
     expect(screen.queryByText(/cached/)).toBeNull();
   });
 });
+
+// The CLI `result` row (kind:'unknown', raw.type:'result') renders nothing
+// (StreamMessage's unknown branch returns null), so the renderer must NOT
+// suppress the assistant's own text just because it duplicates the result
+// string — doing so erased the final message entirely.
+function makeResultNode(resultText: string): JsonlNode {
+  return {
+    kind: 'unknown',
+    receivedAt: '2026-05-27T10:00:01Z',
+    raw: { type: 'result', subtype: 'success', is_error: false, result: resultText },
+  } as unknown as JsonlNode;
+}
+
+describe('final assistant text vs. result-row de-dup', () => {
+  it('renders the assistant text even when it equals a following result row', () => {
+    const assistant = makeAssistantNode({ stop_reason: null, text: 'Final answer for the user.' });
+    const result = makeResultNode('Final answer for the user.');
+    render(
+      <StreamMessage message={assistant} streamMessages={[assistant, result]} />,
+    );
+    expect(screen.getByText(/Final answer for the user\./)).toBeTruthy();
+  });
+});

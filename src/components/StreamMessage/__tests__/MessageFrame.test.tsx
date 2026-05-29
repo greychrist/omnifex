@@ -86,6 +86,20 @@ describe('MessageFrame', () => {
     expect(container.querySelector('[data-frame-variant="card"]')).not.toBeNull();
   });
 
+  it('gives right-aligned cards the same width as other cards (no shrink-to-fit)', async () => {
+    const { container, findByText } = render(
+      <MessageRenderingProvider>
+        <MessageFrame streamKind="user.prompt">right-card-width-probe</MessageFrame>
+      </MessageRenderingProvider>
+    );
+    await findByText('right-card-width-probe');
+    // Right alignment is preserved (card chrome hugs the right edge)…
+    expect(container.querySelector('[class*="justify-end"]')).not.toBeNull();
+    // …but the card is as wide as left-aligned cards, not shrunk to content.
+    expect(container.querySelector('[class*="w-[95%]"]')).not.toBeNull();
+    expect(container.querySelector('[class*="w-fit"]')).toBeNull();
+  });
+
   it('renders MessageFrameSideLine when the kind presentation is side-line', async () => {
     const { container, findByText } = render(
       <MessageRenderingProvider>
