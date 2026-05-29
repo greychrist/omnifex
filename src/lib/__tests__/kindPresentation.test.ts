@@ -19,22 +19,24 @@ describe("kindPresentation", () => {
 
   it("returns a user override for headerLabel", () => {
     const cfg = createDefaultConfig();
-    cfg.kinds["assistant.text"].headerLabel = "Claude Code";
+    cfg.overrides["assistant.text"] = { ...cfg.overrides["assistant.text"], headerLabel: "Claude Code" };
     expect(headerLabelFor(cfg, "assistant.text")).toBe("Claude Code");
   });
 
-  it("returns null for unknown kind ids", () => {
+  it("resolves unseen kind ids to their category style (no null)", () => {
     const cfg = createDefaultConfig();
+    // An unrecognized id maps to the system category: headerLabel null, icon Info.
     expect(headerLabelFor(cfg, "nonexistent.kind")).toBeNull();
-    expect(iconNameFor(cfg, "nonexistent.kind")).toBeNull();
+    expect(iconNameFor(cfg, "nonexistent.kind")).toBe("Info");
   });
 
   it("returns the configured icon name", () => {
     const cfg = createDefaultConfig();
     expect(iconNameFor(cfg, "user.prompt")).toBe("User");
+    // assistant.text has no override -> agent category icon "Bot".
     expect(iconNameFor(cfg, "assistant.text")).toBe("Bot");
-    // v2 catalog: cli-stream-result uses "Check".
-    expect(iconNameFor(cfg, "cli-stream-result")).toBe("Check");
+    // cli-stream-result has no override -> system category icon "Info".
+    expect(iconNameFor(cfg, "cli-stream-result")).toBe("Info");
   });
 
   it("bundles everything in presentationFor", () => {

@@ -13,6 +13,7 @@ import { IconRenderer } from "@/components/settings-panels/appearance/iconMap";
 import { KindHeader } from "@/components/KindHeader";
 import type { JsonlNode } from "@/types/jsonl";
 import type { BorderStyle, IconName } from "@/lib/messageRenderingConfig";
+import { resolveKind } from "@/lib/messageRenderingConfig";
 import { fireAndLog } from "@/lib/fireAndLog";
 
 interface MessageFrameCardProps {
@@ -95,11 +96,11 @@ export const MessageFrameCard: React.FC<MessageFrameCardProps> = ({
   const iconName = iconOverride ?? iconNameFor(config, kindId) ?? "none";
   // Resolve borderStyle: explicit prop > kind config > 'solid'
   const resolvedBorderStyle =
-    borderStyle ?? config.kinds[kindId]?.borderStyle ?? 'solid';
+    borderStyle ?? resolveKind(config, kindId).borderStyle ?? 'solid';
   // Determine whether the header has any visible label so we can skip
   // rendering the entire CardHeader chrome when neither icon nor label
   // is present. Mirrors KindHeader's own resolution logic.
-  const configHeaderLabel = config.kinds[kindId]?.headerLabel ?? null;
+  const configHeaderLabel = resolveKind(config, kindId).headerLabel ?? null;
   const resolvedHeaderLabel = headerLabel !== undefined
     ? headerLabel
     : (configHeaderLabel ?? headerFallbackLabel);

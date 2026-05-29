@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
 import { accentStyleFor, swatchFor } from "@/lib/accentStyle";
 import { iconNameFor } from "@/lib/kindPresentation";
+import { resolveKind } from "@/lib/messageRenderingConfig";
 import { IconRenderer } from "@/components/settings-panels/appearance/iconMap";
 
 interface MessageFrameCollapsibleProps {
@@ -43,7 +44,7 @@ export const MessageFrameCollapsible: React.FC<MessageFrameCollapsibleProps> = (
   const swatch = swatchFor(config, kindId);
   const swatchStyle = swatch ? { color: swatch } : undefined;
   const iconName = iconNameFor(config, kindId);
-  const label = headerLabel ?? config.kinds[kindId]?.headerLabel ?? "Context";
+  const label = headerLabel ?? resolveKind(config, kindId).headerLabel ?? "Context";
 
   return (
     <div className="relative group/card rounded-lg border overflow-hidden" style={style}>

@@ -108,9 +108,8 @@ describe("typographyClasses (icon helpers)", () => {
     it("respects per-kind iconBordered override", () => {
       const cfg = createDefaultConfig();
       cfg.typography.icon.bordered = true;
-      const firstKindId = Object.keys(cfg.kinds)[0];
-      cfg.kinds[firstKindId].iconBordered = false;
-      expect(iconWrapperClassName(cfg, firstKindId)).toContain("mt-0.5");
+      cfg.overrides["user.prompt"] = { ...cfg.overrides["user.prompt"], iconBordered: false };
+      expect(iconWrapperClassName(cfg, "user.prompt")).toContain("mt-0.5");
     });
   });
 
@@ -160,9 +159,8 @@ describe("typographyClasses (icon helpers)", () => {
       const cfg = createDefaultConfig();
       cfg.typography.icon.bordered = true;
       cfg.typography.icon.bgOpacity = 100;
-      const firstKindId = Object.keys(cfg.kinds)[0];
-      cfg.kinds[firstKindId].iconBgOpacity = 25;
-      const style = iconWrapperStyle(cfg, "#000", firstKindId);
+      cfg.overrides["user.prompt"] = { ...cfg.overrides["user.prompt"], iconBgOpacity: 25 };
+      const style = iconWrapperStyle(cfg, "#000", "user.prompt");
       expect(style?.backgroundColor).toContain("25%");
     });
 

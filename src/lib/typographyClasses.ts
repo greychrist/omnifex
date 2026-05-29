@@ -6,6 +6,7 @@ import type {
   TypographyStyle,
 } from "./messageRenderingConfig";
 import { resolveTypeface } from "./typefaceCatalog";
+import { resolveKind } from "./messageRenderingConfig";
 
 const SIZE_CLASS: Record<FontSize, string> = {
   xs: "text-xs",
@@ -53,12 +54,12 @@ export function contentClassNames(config: MessageRenderingConfig): string {
 }
 
 function resolveIconBordered(config: MessageRenderingConfig, kindId?: string): boolean {
-  const kind = kindId ? config.kinds[kindId] : undefined;
+  const kind = kindId ? resolveKind(config, kindId) : undefined;
   return kind?.iconBordered ?? config.typography.icon.bordered;
 }
 
 function resolveIconBgOpacity(config: MessageRenderingConfig, kindId?: string): number {
-  const kind = kindId ? config.kinds[kindId] : undefined;
+  const kind = kindId ? resolveKind(config, kindId) : undefined;
   return kind?.iconBgOpacity ?? config.typography.icon.bgOpacity;
 }
 

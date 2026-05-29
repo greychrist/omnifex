@@ -9,6 +9,7 @@ import {
 import { detectSkillInjection } from "@/lib/skillDetection";
 import { classifyStandaloneKind } from "@/lib/messageKind";
 import { classifyBlockKind, isBlockHiddenInCompact, isSystemContextText, deriveSystemContextLabel } from "@/lib/blockKind";
+import { resolveKind } from "@/lib/messageRenderingConfig";
 import { summarizeHiddenEvents } from "@/lib/hiddenEventsSummary";
 import { HiddenBlocksExpander } from "@/components/HiddenBlocksExpander";
 import { SubagentReturnedMarker } from "@/components/SubagentReturnedMarker";
@@ -714,7 +715,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
         let last = visibleBlocks.length - 1; // fallback: last block
         for (let i = visibleBlocks.length - 1; i >= 0; i--) {
           const blockKind = classifyBlockKind(visibleBlocks[i], message);
-          const presentation = blockKind ? (renderConfig.kinds[blockKind]?.presentation ?? 'card') : 'card';
+          const presentation = blockKind ? resolveKind(renderConfig, blockKind).presentation : 'card';
           if (presentation !== 'card') continue;
           // In compact mode, prefer a block that will actually be visible —
           // otherwise the toolbar would end up inside HiddenBlocksExpander
@@ -894,7 +895,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
       // header is content-derived ("Skill: …", "CLAUDE.md Context") unless the
       // user has customized it in Appearance, in which case their label wins.
       if (isSystemContextText(contentStr)) {
-        const cfgHeader = renderConfig.kinds["user.systemContext"]?.headerLabel ?? null;
+        const cfgHeader = resolveKind(renderConfig, "user.systemContext").headerLabel ?? null;
         const headerOverride =
           cfgHeader === null || cfgHeader === "System Context"
             ? deriveSystemContextLabel(contentStr)

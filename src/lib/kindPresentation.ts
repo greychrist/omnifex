@@ -1,23 +1,20 @@
 import type React from "react";
 import type { IconName, MessageRenderingConfig } from "./messageRenderingConfig";
+import { resolveKind } from "./messageRenderingConfig";
 import { accentStyleFor, swatchFor } from "./accentStyle";
 
 export function headerLabelFor(
   config: MessageRenderingConfig,
   kindId: string,
 ): string | null {
-  const kind = config.kinds[kindId];
-  if (!kind) return null;
-  return kind.headerLabel;
+  return resolveKind(config, kindId).headerLabel;
 }
 
 export function iconNameFor(
   config: MessageRenderingConfig,
   kindId: string,
 ): IconName | null {
-  const kind = config.kinds[kindId];
-  if (!kind) return null;
-  return kind.icon;
+  return resolveKind(config, kindId).icon;
 }
 
 export interface KindPresentation {

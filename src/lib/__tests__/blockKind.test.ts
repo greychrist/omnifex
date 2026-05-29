@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { classifyBlockKind, isBlockHiddenInCompact, deriveSystemContextLabel } from '../blockKind';
-import { createDefaultConfig } from '../messageRenderingConfig';
+import { createDefaultConfig, resolveKind } from '../messageRenderingConfig';
 import { KNOWN_TOOL_NAMES } from '../types/toolInput';
 import type { JsonlNode } from '@/types/jsonl';
 
@@ -271,7 +271,7 @@ describe('isBlockHiddenInCompact', () => {
 
   it('respects user override that unhides assistant.thinking', () => {
     const config = createDefaultConfig();
-    config.kinds['assistant.thinking'].hiddenInCompact = false;
+    config.overrides['assistant.thinking'] = { ...config.overrides['assistant.thinking'], hiddenInCompact: false };
     const parent = assistant([{ type: 'thinking', thinking: 'deep' }]);
     expect(isBlockHiddenInCompact(parent.raw.message.content[0], parent, config)).toBe(false);
   });
@@ -304,7 +304,7 @@ describe('lastCardIdx algorithm (compact toolbar anchor)', () => {
     for (let i = visibleBlocks.length - 1; i >= 0; i--) {
       const blockKind = classifyBlockKind(visibleBlocks[i], message);
       const presentation = blockKind
-        ? ((renderConfig.kinds[blockKind]?.presentation ?? 'card') as string)
+        ? (resolveKind(renderConfig, blockKind).presentation as string)
         : 'card';
       if (presentation !== 'card') continue;
       if (hidingActive) {

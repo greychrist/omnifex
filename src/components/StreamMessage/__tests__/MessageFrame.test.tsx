@@ -4,75 +4,19 @@ import '@testing-library/jest-dom/vitest';
 import { render, cleanup, fireEvent } from '@testing-library/react';
 import { MessageFrame } from '@/components/StreamMessage/MessageFrame';
 import { MessageRenderingProvider } from '@/contexts/MessageRenderingContext';
+import { DEFAULT_CATEGORIES, DEFAULT_OVERRIDES } from '@/lib/messageRenderingConfig';
 
-// Mock api — MessageRenderingProvider calls getSetting on mount, then saveSetting +
-// logWriteBatch when it resets a pre-v2 config. All three must be present.
+// Mock api — MessageRenderingProvider calls getSetting on mount. We return a
+// v3 config (categories + overrides) so MessageFrame resolves styles through
+// resolveKind exactly as it does in production.
 vi.mock('@/lib/api', () => ({
   api: {
     getSetting: vi.fn(async () =>
       JSON.stringify({
-        version: 2,
+        version: 3,
         defaultViewMode: 'verbose',
-        kinds: {
-          'user.prompt': {
-            id: 'user.prompt',
-            label: 'User prompt',
-            description: '',
-            origin: 'user',
-            icon: 'User',
-            headerLabel: 'You',
-            accentColor: 'blue',
-            alignment: 'right',
-            hiddenInCompact: false,
-            compactBoundaryLocked: true,
-            presentation: 'card',
-            borderStyle: 'solid',
-          },
-          'system.informational': {
-            id: 'system.informational',
-            label: 'Informational',
-            description: '',
-            origin: 'system',
-            icon: 'Info',
-            headerLabel: null,
-            accentColor: 'muted',
-            alignment: 'left',
-            hiddenInCompact: true,
-            compactBoundaryLocked: false,
-            presentation: 'side-line',
-            borderStyle: 'solid',
-          },
-          'user.systemContext': {
-            id: 'user.systemContext',
-            label: 'System context',
-            description: '',
-            origin: 'user',
-            icon: 'Sparkles',
-            headerLabel: 'System Context',
-            accentColor: 'purple',
-            alignment: 'left',
-            hiddenInCompact: false,
-            compactBoundaryLocked: false,
-            presentation: 'collapsible',
-            borderStyle: 'solid',
-            showRawPayload: true,
-          },
-          unknown: {
-            id: 'unknown',
-            label: 'Unknown',
-            description: '',
-            origin: 'fallback',
-            icon: 'HelpCircle',
-            headerLabel: 'Unknown',
-            accentColor: 'orange',
-            alignment: 'left',
-            hiddenInCompact: false,
-            compactBoundaryLocked: false,
-            presentation: 'side-line',
-            borderStyle: 'dashed',
-            showRawPayload: true,
-          },
-        },
+        categories: DEFAULT_CATEGORIES,
+        overrides: DEFAULT_OVERRIDES,
         hardFilters: {},
         palette: {},
         typography: {
@@ -118,9 +62,10 @@ describe('MessageFrame', () => {
   });
 
   it('renders MessageFrameSideLine when the kind presentation is side-line', async () => {
+    // user.tool-result resolves to a side-line override.
     const { container, findByText } = render(
       <MessageRenderingProvider>
-        <MessageFrame streamKind="system.informational">noise</MessageFrame>
+        <MessageFrame streamKind="user.tool-result">noise</MessageFrame>
       </MessageRenderingProvider>
     );
     await findByText('noise');
@@ -192,16 +137,15 @@ describe('MessageFrame', () => {
     expect(getByText('Raw payload')).toBeInTheDocument();
   });
 
-  it('falls back to the unknown kind when streamKind is not in config', async () => {
+  it('resolves an unseen streamKind to its category style (no unknown fallback)', async () => {
+    // An unrecognized dotted id maps to the system category, which renders as
+    // a card (not the old dashed side-line "unknown" fallback).
     const { container, findByText } = render(
       <MessageRenderingProvider>
         <MessageFrame streamKind="not.in.catalog">???</MessageFrame>
       </MessageRenderingProvider>
     );
     await findByText('???');
-    // unknown defaults to side-line presentation with dashed borderStyle
-    const bar = container.querySelector('[data-testid="side-line-bar"]');
-    expect(bar).not.toBeNull();
-    expect(bar?.getAttribute('style')).toMatch(/dashed/);
+    expect(container.querySelector('[data-frame-variant="card"]')).not.toBeNull();
   });
 });

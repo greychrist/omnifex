@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { JsonlNode } from '@/types/jsonl';
 import { buildCompactItems, isMessageFullyHidden, type CompactItem } from '../compactGrouping';
-import { createDefaultConfig } from '../messageRenderingConfig';
+import { createDefaultConfig, resolveKind, KNOWN_KIND_IDS } from '../messageRenderingConfig';
 
 function userText(text: string): JsonlNode {
   return { kind: 'user', userKind: 'prompt', sessionId: '', receivedAt: '', raw: { type: 'user', message: { role: 'user', content: [{ type: 'text', text }] } } } as unknown as JsonlNode;
@@ -81,14 +81,14 @@ describe('isMessageFullyHidden', () => {
 
   it('respects user toggle that unhides assistant.tool-use', () => {
     const cfg = createDefaultConfig();
-    cfg.kinds['assistant.tool-use'].hiddenInCompact = false;
+    cfg.overrides['assistant.tool-use'] = { ...cfg.overrides['assistant.tool-use'], hiddenInCompact: false };
     const msg = toolUseMsg('Read', { file_path: '/a' });
     expect(isMessageFullyHidden(msg, [msg], cfg)).toBe(false);
   });
 
   it('returns false for system.unknown when user unhides it', () => {
     const cfg = createDefaultConfig();
-    cfg.kinds['system.unknown'].hiddenInCompact = false;
+    cfg.overrides['system.unknown'] = { ...cfg.overrides['system.unknown'], hiddenInCompact: false };
     const msg = { kind: 'system', subtype: 'init', sessionId: '', receivedAt: '', raw: { type: 'system', subtype: 'init' } } as unknown as JsonlNode;
     expect(isMessageFullyHidden(msg, [msg], cfg)).toBe(false);
   });
@@ -104,7 +104,7 @@ describe('isMessageFullyHidden', () => {
     // hiddenInCompact=true on a locked kind must still return visible=false
     // (defense in depth — mergeConfig already prevents this combination).
     const cfg = createDefaultConfig();
-    cfg.kinds['user.prompt'].hiddenInCompact = true; // forced bypass attempt
+    cfg.overrides['user.prompt'] = { ...cfg.overrides['user.prompt'], hiddenInCompact: true }; // forced bypass attempt
     const msg = userText('hi');
     expect(isMessageFullyHidden(msg, [msg], cfg)).toBe(false);
   });
@@ -155,7 +155,7 @@ describe('buildCompactItems', () => {
 
   it('promotes a kind to single when user unhides it', () => {
     const cfg = createDefaultConfig();
-    cfg.kinds['system.unknown'].hiddenInCompact = false;
+    cfg.overrides['system.unknown'] = { ...cfg.overrides['system.unknown'], hiddenInCompact: false };
     const sysInit = { kind: 'system', subtype: 'init', sessionId: '', receivedAt: '', raw: { type: 'system', subtype: 'init' } } as unknown as JsonlNode;
     const msgs = [
       userText('hi'),
@@ -175,9 +175,9 @@ describe('buildCompactItems', () => {
 
   it('falls back to all-singles when user unhides everything', () => {
     const cfg = createDefaultConfig();
-    for (const id of Object.keys(cfg.kinds)) {
-      if (!cfg.kinds[id].compactBoundaryLocked) {
-        cfg.kinds[id].hiddenInCompact = false;
+    for (const id of KNOWN_KIND_IDS) {
+      if (!resolveKind(cfg, id).compactBoundaryLocked) {
+        cfg.overrides[id] = { ...cfg.overrides[id], hiddenInCompact: false };
       }
     }
     const msgs = [

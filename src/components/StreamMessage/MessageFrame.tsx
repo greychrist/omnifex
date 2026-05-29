@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { useMessageRenderingConfig } from '@/contexts/MessageRenderingContext';
+import { resolveKind } from '@/lib/messageRenderingConfig';
 import { MessageFrameCard } from './MessageFrameCard';
 import { MessageFrameSideLine } from './MessageFrameSideLine';
 import { MessageFrameCollapsible } from './MessageFrameCollapsible';
@@ -32,12 +33,7 @@ export interface MessageFrameProps {
  */
 export const MessageFrame: React.FC<MessageFrameProps> = ({ streamKind, children, actionBar, message, headerOverride }) => {
   const { config } = useMessageRenderingConfig();
-  const kind = config.kinds[streamKind] ?? config.kinds['unknown'];
-
-  if (!kind) {
-    // Safety net: config has no 'unknown' entry (shouldn't happen with defaults).
-    return <div data-frame-variant="missing">{children}</div>;
-  }
+  const kind = resolveKind(config, streamKind);
 
   // When the kind opts into raw-payload display (today only `unknown`, but
   // the field is a general escape hatch), append a collapsible <details>
@@ -57,7 +53,7 @@ export const MessageFrame: React.FC<MessageFrameProps> = ({ streamKind, children
   if (kind.presentation === 'card') {
     return (
       <div data-frame-variant="card">
-        <MessageFrameCard kindId={kind.id} alignment={kind.alignment} actionBar={actionBar} message={message}>
+        <MessageFrameCard kindId={streamKind} alignment={kind.alignment} actionBar={actionBar} message={message}>
           {children}
           {rawPayload}
         </MessageFrameCard>
@@ -69,7 +65,7 @@ export const MessageFrame: React.FC<MessageFrameProps> = ({ streamKind, children
     return (
       <div data-frame-variant="collapsible">
         <MessageFrameCollapsible
-          kindId={kind.id}
+          kindId={streamKind}
           headerLabel={headerOverride ?? kind.headerLabel}
           actionBar={actionBar}
         >

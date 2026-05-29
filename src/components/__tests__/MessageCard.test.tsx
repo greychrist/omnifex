@@ -59,9 +59,10 @@ describe('MessageCard — body + structure', () => {
   });
 
   it('omits the icon wrapper when the resolved icon is "none"', () => {
-    // Without iconOverride, the default config returns 'none' for an
-    // unknown kindId — the icon node should NOT render.
-    render(<MessageCard kindId="totally-unknown-kind">body</MessageCard>);
+    // When the resolved icon is "none" the icon node should NOT render.
+    // (Unseen kinds now resolve to their category icon, so force "none" via
+    // iconOverride to exercise the omit-wrapper path.)
+    render(<MessageCard kindId="user.prompt" iconOverride="none">body</MessageCard>);
     expect(document.querySelector('[data-icon]')).toBeNull();
   });
 });

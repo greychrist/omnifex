@@ -1,6 +1,7 @@
 import type React from "react";
 import {
   isHexColor,
+  resolveKind,
   type MessageRenderingConfig,
   type PaletteEntry,
 } from "./messageRenderingConfig";
@@ -36,9 +37,7 @@ export function accentFor(
   config: MessageRenderingConfig,
   kindId: string,
 ): PaletteEntry | null {
-  const kind = config.kinds[kindId];
-  if (!kind) return null;
-  const ac = kind.accentColor;
+  const ac = resolveKind(config, kindId).accentColor;
   if (isHexColor(ac)) {
     return { border: "", bg: "auto", swatch: ac };
   }
