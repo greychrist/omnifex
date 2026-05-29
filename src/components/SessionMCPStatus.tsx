@@ -54,7 +54,7 @@ export const SessionMCPStatus: React.FC<SessionMCPStatusProps> = ({ tabId }) => 
   }, [tabId]);
 
   // Poll for MCP status while the panel is open and no servers have been
-  // reported yet. The SDK's control channel doesn't reply until the CLI has
+  // reported yet. The CLI's control channel doesn't reply until the CLI has
   // processed its first stdin message, so opening this panel right after a
   // Start click would otherwise land on an empty list and stay there even
   // after the user sends their first prompt. Polling ends as soon as we get

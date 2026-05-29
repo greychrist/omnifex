@@ -13,8 +13,8 @@ import {
  *     leaving a session")
  * are stored as the literal string `'true'`. This helper applies the same
  * gate to other "user is leaving the session" entry points the renderer
- * fires before the SDK session is actually torn down — currently the
- * back-button in `ClaudeCodeSession`, which keeps the SDK session alive
+ * fires before the CLI session is actually torn down — currently the
+ * back-button in `ClaudeCodeSession`, which keeps the CLI session alive
  * but should still be considered "leaving" from the user's perspective.
  *
  * The manual refresh button in `SessionList` deliberately bypasses this

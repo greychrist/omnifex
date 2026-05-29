@@ -327,7 +327,7 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
     // Same reset rationale as openSessionInTab — without this, a
     // previous chat's `extractedSessionInfo` leaks into ClaudeCodeSession's
     // `effectiveSession` memo and the user lands back in the session
-    // they just backed out of, even though the SDK side has spawned a
+    // they just backed out of, even though the CLI side has spawned a
     // fresh subprocess.
     useClaudeSessionStore.getState().resetTab(tab.id);
     const projectName = selectedProject.path.split('/').pop() || 'Session';
@@ -626,7 +626,7 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
               initialSessionConfig={tab.initialSessionConfig}
               isActive={isActive}
               onStreamingChange={(isStreaming, sessionId) => {
-                // Persist the SDK session ID to the tab so it survives app restart
+                // Persist the CLI session ID to the tab so it survives app restart
                 if (sessionId) {
                   updateTab(tab.id, { sessionId, status: isStreaming ? 'running' : 'idle' });
                 } else {

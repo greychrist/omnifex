@@ -98,7 +98,7 @@ export function ClaudeTranscript({
   // Auto-scroll to bottom when new messages arrive, but only if already near the bottom.
   // Always scroll when waiting for permission so the user sees the latest context.
   // Uses `behavior: 'auto'` (instant) during streaming — smooth scroll lags behind
-  // rapid SDK message bursts and gets visually "stuck" mid-scroll.
+  // rapid CLI message bursts and gets visually "stuck" mid-scroll.
   useEffect(() => {
     if (displayableMessages.length > 0 && (isNearBottomRef.current || waitingForPermission)) {
       requestAnimationFrame(() => {

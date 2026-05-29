@@ -1,13 +1,13 @@
 import type { JsonlNode } from '@/types/jsonl';
 
 /**
- * The Claude Agent SDK and Claude Code CLI emit subagent-dispatch tool_use
- * blocks under PascalCase 'Task' or 'Agent'. Earlier defense-in-depth
- * accepted lowercase / uppercase variants too, but no production code path
+ * The Claude Code CLI emits subagent-dispatch tool_use blocks under
+ * PascalCase 'Task' or 'Agent'. Earlier defense-in-depth accepted
+ * lowercase / uppercase variants too, but no production code path
  * actually emits those (verified via the session reducer + JSONL replay)
  * and the case-insensitive contract diverged from the case-sensitive
  * narrowing in `asToolInputOneOf`, forcing a normalization shim at every
- * call site. This helper is now case-sensitive against the SDK's wire
+ * call site. This helper is now case-sensitive against the CLI's wire
  * contract — both layers agree, no shim needed.
  */
 export function isSubagentDispatch(name: unknown): boolean {

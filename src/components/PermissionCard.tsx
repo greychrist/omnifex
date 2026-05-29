@@ -34,7 +34,7 @@ interface PermissionCardProps {
 /**
  * Pick a one-line "headline" string from a tool's input for the
  * permission-prompt preview. When the tool name is one we model in
- * `ToolInputByName`, the field selection is driven by the SDK's
+ * `ToolInputByName`, the field selection is driven by the CLI's
  * typed schema (no field-name guessing). For MCP and other tools
  * outside the map, a generic field-probe fallback preserves the
  * pre-typed behavior so unknown tools still surface a useful label.

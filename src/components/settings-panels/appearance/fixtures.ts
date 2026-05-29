@@ -52,7 +52,7 @@ export function previewTextForKind(kind: MessageKindConfig): string {
   return KIND_FIXTURES[kind.id] ?? "(no preview available)";
 }
 
-// Raw SDK type/subtype labels matching what the renderer's debug overlay
+// Raw CLI type/subtype labels matching what the renderer's debug overlay
 // shows on each kind. Used in SamplePreview when the debug toggle is on so
 // the preview's bottom-left label matches what the live cards print.
 export const KIND_DEBUG_LABELS: Record<string, string> = {

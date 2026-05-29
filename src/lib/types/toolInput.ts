@@ -1,9 +1,8 @@
 /**
  * Tool-input typing bridge.
  *
- * Claude Agent SDK ships per-tool input schemas via the `sdk-tools`
- * subpath export (`BashInput`, `FileReadInput`, `GrepInput`, …) but
- * does NOT model the link between a tool's `name` string and its
+ * The CLI's per-tool input schemas (`BashInput`, `FileReadInput`,
+ * `GrepInput`, …) do NOT model the link between a tool's `name` string and its
  * input shape. The widget switch in `StreamMessage.tsx` and the
  * permission preview in `PermissionCard.tsx` both discriminate on
  * tool name and then read fields off `content.input` (typed as
@@ -19,15 +18,13 @@
  * entry in `ToolInputByName` (which the compiler enforces via the
  * `<K extends KnownToolName>` constraint on `asToolInput`).
  *
- * Tools NOT shipped under `sdk-tools` as of 0.2.141 — `LS`, `TodoRead`,
+ * Tools NOT modeled under `sdk-tools` as of 0.2.141 — `LS`, `TodoRead`,
  * `MultiEdit` — get local interfaces that mirror exactly what our
- * widgets read. Swap to the SDK type if a future release adds them.
+ * widgets read. Swap to the CLI type if a future release adds them.
  */
 
-// Tool input shapes formerly imported from
-// `@anthropic-ai/claude-agent-sdk/sdk-tools`. After the SDK was removed
-// (Phase A) they live here as plain interfaces. Field sets match what
-// the widgets in `StreamMessage.tsx` and `PermissionCard.tsx` read.
+// Tool input shapes declared here as plain interfaces. Field sets match
+// what the widgets in `StreamMessage.tsx` and `PermissionCard.tsx` read.
 
 export interface AgentInput {
   description: string;
@@ -95,7 +92,7 @@ export interface WebSearchInput {
 }
 
 /**
- * Grep's SDK shape no longer models `include` / `exclude` — those were
+ * Grep's CLI shape no longer models `include` / `exclude` — those were
  * superseded upstream by `glob` / `type`. Our `GrepWidget` still
  * renders them when present, so we carry them as locally-extended
  * fields. Pre-existing condition; replacing the widget contract belongs
@@ -200,7 +197,7 @@ export function isKnownToolName(name: unknown): name is KnownToolName {
  * matches `expected`. Returns `null` on mismatch so the caller can
  * fall through to the next branch with a simple `if (!x) {}` chain.
  *
- * The SDK ships compile-time types but no runtime guarantee — Claude
+ * The CLI ships compile-time types but no runtime guarantee — Claude
  * can emit malformed input and MCP servers return whatever — so the
  * shape is asserted, not validated field-by-field. Each widget still
  * reads with optional access so a missing field renders gracefully.
@@ -219,7 +216,7 @@ export function asToolInput<K extends KnownToolName>(
  * Variant for branches that fold multiple tool names onto one widget
  * (e.g. Task / Agent both dispatch a subagent). Returns the matched
  * name alongside the narrowed input so the caller can still branch
- * on which one fired if needed. Case-sensitive against the SDK's
+ * on which one fired if needed. Case-sensitive against the CLI's
  * PascalCase contract — see `isSubagentDispatch` for the matching
  * tightening.
  */
@@ -238,7 +235,7 @@ export function asToolInputOneOf<K extends KnownToolName>(
  * Dev-mode diagnostic: fires when a tool_use block arrives carrying a
  * known PascalCase tool name (i.e. one we have a widget branch for)
  * but `renderToolWidget` reached the end without matching any branch.
- * That's the exact failure mode the SDK type adoption was meant to
+ * That's the exact failure mode the CLI type adoption was meant to
  * surface — a known name with malformed / unexpected input falls
  * through to the generic JSON display silently.
  *

@@ -5,7 +5,7 @@
  * shells out to `claude --output-format stream-json --input-format stream-json`.
  * Phase 3 will add a Codex implementation behind the same interface.
  *
- * The renderer continues to consume Claude's native SDKMessage shape; the
+ * The renderer continues to consume Claude's native CliMessage shape; the
  * envelope here only normalizes routing metadata so the sessions service can
  * stay agent-agnostic.
  */
@@ -41,7 +41,7 @@ export interface AgentMessage {
   receivedAt: string;
   sessionId: string | null;
   /**
-   * Engine-native payload. For Claude this is the existing SDKMessage shape
+   * Engine-native payload. For Claude this is the existing CliMessage shape
    * (passed through unchanged); for Codex it's the codex/event body.
    */
   payload: unknown;
@@ -66,13 +66,13 @@ export interface AgentEngineExit {
 
 /**
  * Engine-cached payload from the session's first system:init message.
- * `accountInfo` / `supportedCommands` / `supportedModels` / `supportedAgents`
- * were SDK Query methods that read from this same cached payload; pulling them
- * off the engine avoids a round-trip to the CLI for data we already have.
+ * The account / commands / models / agents catalogs are read from this same
+ * cached payload; pulling them off the engine avoids a round-trip to the CLI
+ * for data we already have.
  *
  * Fields are intentionally `unknown` at the engine layer — the sessions
- * service casts to the proper SDK shape at the call site. Keeping the engine
- * agent-agnostic means it shouldn't import SDK types.
+ * service casts to the proper shape at the call site. Keeping the engine
+ * agent-agnostic means it shouldn't import engine-specific types.
  */
 export interface InitData {
   account?: unknown;
@@ -98,12 +98,12 @@ export interface AgentEngine {
    * Send a structured user message with explicit content blocks (text +
    * image attachments, etc.). The renderer's compose box uses this when
    * the user attaches images alongside text. `content` is the same array
-   * the SDK accepted in SDKUserMessage.message.content.
+   * the CLI accepts in CliUserMessage.message.content.
    */
   sendStructured(content: unknown[]): Promise<void>;
   /**
    * Write a control_request to the CLI's stdin and await its matching
-   * control_response. Used for the imperative SDK Query surface (set_model,
+   * control_response. Used for the imperative CLI query surface (set_model,
    * mcp_status, get_context_usage, …). Rejects when the CLI returns
    * `control_response.subtype: 'error'` or when the engine is torn down
    * with the request still pending.

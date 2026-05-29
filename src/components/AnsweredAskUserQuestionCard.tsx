@@ -57,7 +57,7 @@ interface ParsedAnswerPayload {
 }
 
 /**
- * Pull `{ answers, annotations }` out of a tool_result body. The SDK/CLI
+ * Pull `{ answers, annotations }` out of a tool_result body. The CLI
  * does NOT pass our structured `{ questions, answers, annotations }` payload
  * through to the model as JSON — it synthesises a human-readable string:
  *
@@ -70,7 +70,7 @@ interface ParsedAnswerPayload {
  * OTHER_VALUE sentinel for the typed text before sending), that question
  * gets the corresponding annotation back.
  *
- * Two non-wire shapes are still tolerated for tests and any future SDK
+ * Two non-wire shapes are still tolerated for tests and any future CLI
  * change that pipes the structured payload through:
  *   - JSON-stringified object (`{ answers, annotations }`)
  *   - Already-parsed object with that shape
@@ -113,7 +113,7 @@ function parseAnswerPayload(
   if (typeof raw !== 'string') return null;
   const text = raw;
 
-  // First try JSON — covers the structured-payload path if a future SDK
+  // First try JSON — covers the structured-payload path if a future CLI
   // change starts shipping the raw `updatedInput` through.
   try {
     const parsed = JSON.parse(text);
@@ -156,7 +156,7 @@ function parseAnswerPayload(
 
   // Annotations: scan the notes section for `User selected Other: "<text>"`
   // mentions and pair them with whichever question's answer matches. The
-  // wire format doesn't include a per-question key in the notes (the SDK
+  // wire format doesn't include a per-question key in the notes (the CLI
   // aggregates them into one trailing sentence), so matching by answer
   // text is the only honest mapping back.
   const annotations: Record<string, { notes?: string }> = {};

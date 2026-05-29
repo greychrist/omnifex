@@ -1,11 +1,11 @@
-// Sessions module — live JSONL tail for closure carriers that the SDK
-// `query()` async iterator does not yield.
+// Sessions module — live JSONL tail for closure carriers that the CLI
+// stream-json output does not yield.
 //
 // Background: Claude Code's CLI emits two envelope types that complete a
 // `run_in_background:true` Bash dispatch — `queue-operation` enqueue with
 // a `<task-notification>` XML body, and `attachment.queued_command` with
-// the same XML in `prompt`. Neither type is a member of the SDK's
-// `SDKMessage` discriminated union, so the renderer's normal subscription
+// the same XML in `prompt`. Neither type is a member of the CLI's
+// `CliMessage` discriminated union, so the renderer's normal subscription
 // to `agent-output:<tabId>` never sees them in live mode. Without those
 // carriers, background dispatches stay in `running` forever (the user-
 // visible bug we're fixing — see the design spec under
@@ -14,7 +14,7 @@
 // The CLI does persist these envelopes to the session JSONL on disk, so we
 // tail that file and forward only the qualifying carriers on a separate
 // IPC channel (`claude-output-extra:<tabId>`). All other line types are
-// ignored — the SDK stream remains the source of truth for them.
+// ignored — the CLI stream remains the source of truth for them.
 //
 // This module is renderer-process-agnostic. It exposes a small handle that
 // the runtime starts when a session's `sessionId` is known and stops on
@@ -36,7 +36,7 @@ export interface CreateJsonlTailArgs {
   onError?: (err: unknown) => void;
   /**
    * Which parsed lines to forward. Defaults to `'closure-carriers'` so
-   * existing SDK-mode call sites keep their narrow surface.
+   * existing stream-json call sites keep their narrow surface.
    * - `'closure-carriers'`: only `queue-operation`/`attachment` lines that
    *   carry `<task-notification>` XML (today's behavior).
    * - `'all'`: every parsed line, regardless of type. Used by TUI mode to

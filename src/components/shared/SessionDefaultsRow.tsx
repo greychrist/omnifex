@@ -81,7 +81,7 @@ export function SessionDefaultsRow({
 
   // Claude reuses the same stylized, icon-bearing pickers as the new-session
   // page (ControlBar + ModelPicker). Reusing them means the permission option
-  // set (all six SDK modes) and the per-mode colors stay in one place and any
+  // set (all six CLI modes) and the per-mode colors stay in one place and any
   // fix propagates to both surfaces.
   if (engine === 'claude') {
     const selectedModelData = MODELS.find((m) => m.id === model) ?? MODELS[0];

@@ -14,7 +14,7 @@ import type {
   AgentInfo,
   ModelInfo,
   SlashCommand,
-  SDKControlGetContextUsageResponse,
+  CliControlGetContextUsageResponse,
   McpServerStatus,
   SendToRenderer,
 } from './types';
@@ -29,7 +29,7 @@ export function createQueryPassthroughs(
     if (!handle) return null;
     // TUI mode: the live conversation is the PTY, not the engine. Treat
     // control_requests as no-ops while in TUI; the renderer's queries.ts
-    // calls already silently fall through when no SDK was available.
+    // calls already silently fall through when no engine was available.
     if (handle.mode === 'tui') return null;
     if (!handle.engine) return null;
     return handle;
@@ -149,11 +149,11 @@ export function createQueryPassthroughs(
 
   async function getContextUsage(
     tabId: string,
-  ): Promise<SDKControlGetContextUsageResponse | null> {
+  ): Promise<CliControlGetContextUsageResponse | null> {
     const handle = liveEngine(tabId);
     if (!handle) return null;
     try {
-      return await handle.engine!.sendControlRequest<SDKControlGetContextUsageResponse>(
+      return await handle.engine!.sendControlRequest<CliControlGetContextUsageResponse>(
         'get_context_usage',
       );
     } catch (err) {

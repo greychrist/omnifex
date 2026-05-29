@@ -55,7 +55,7 @@ describe('SessionDefaultsRow', () => {
     expect(screen.getByText('Default')).toBeTruthy();
   });
 
-  it("engine='claude' permission picker lists all six SDK modes when opened", () => {
+  it("engine='claude' permission picker lists all six CLI modes when opened", () => {
     render(<Harness engine="claude" />);
     // Open the permissions picker (its trigger shows the current mode "Default").
     fireEvent.click(screen.getByText('Default'));

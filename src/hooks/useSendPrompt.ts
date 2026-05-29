@@ -102,7 +102,7 @@ export function useSendPrompt({
       setCurrentActivity(pickGerund());
       lastPromptRef.current = { prompt, model };
 
-      // Mid-session model change: use the SDK's Query.setModel() rather than
+      // Mid-session model change: use the CLI's Query.setModel() rather than
       // tearing down and restarting the session.
       if (persistentSessionRef.current && model !== selectedModel) {
         try {
@@ -150,7 +150,7 @@ export function useSendPrompt({
 
       // Add user message immediately for UI display as a JsonlNode.
       // Stamp with receivedAt so StreamMessage renders a card timestamp the
-      // same way it does for SDK-forwarded messages.
+      // same way it does for CLI-forwarded messages.
       const receivedAt = new Date().toISOString();
       const userMessage = {
         kind: 'user',

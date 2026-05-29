@@ -1,5 +1,6 @@
 import type { JsonlNode } from '@/types/jsonl';
 import type { PermissionRequestPayload } from './types/permissionRequest';
+import { phaseLabel } from './phaseLabel';
 
 export type { PermissionRequestPayload };
 
@@ -22,7 +23,7 @@ export interface StreamReducerContext {
   hasExistingInit: boolean;
   /** Whether extractedSessionInfo state has been set this session. */
   hasExtractedSession: boolean;
-  /** Latest value of userInterruptedRef — used to suppress the SDK's post-cancel error result. */
+  /** Latest value of userInterruptedRef — used to suppress the CLI's post-cancel error result. */
   userInterrupted: boolean;
   /** Current messages.length, snapshotted before this message is folded in. */
   messagesLength: number;
@@ -326,10 +327,18 @@ export function reduceSessionStreamMessage(
   }
 
   // Errors surfaced as system messages contribute to the cumulative count.
+  // A `system:status` message is a transient per-turn phase ping (e.g.
+  // `requesting`, `compacting`) — surface it as the live activity label so
+  // the "Running…" row says something during the silent pre-response gap.
+  // The next assistant tool/text block overwrites it, so it never lingers.
   if (node.kind === 'system') {
-    const raw = node.raw as { subtype?: string; error?: unknown };
+    const raw = node.raw as { subtype?: string; error?: unknown; status?: string | null };
     if (raw.subtype === 'error' || raw.error) {
       metrics = { ...metrics, errorsEncountered: metrics.errorsEncountered + 1 };
+    }
+    if (raw.subtype === 'status') {
+      const label = phaseLabel(raw.status);
+      if (label) activity = { kind: 'literal', label };
     }
   }
 
@@ -341,7 +350,7 @@ export function reduceSessionStreamMessage(
     activityUpdate: activity ?? undefined,
   };
 
-  // system:init — extract session id, kick off live SDK info fetches,
+  // system:init — extract session id, kick off live CLI info fetches,
   // skip duplicates without suppressing the fetches (they fire on every init,
   // including post-rebind / restart). The classifier routes every system:init
   // to kind:'cli-stream-init'; the raw payload keeps its original shape, so
@@ -371,7 +380,7 @@ export function reduceSessionStreamMessage(
     return result;
   }
 
-  // SDK emits compact_boundary after a manual or auto compaction; refresh the
+  // CLI emits compact_boundary after a manual or auto compaction; refresh the
   // header context-usage popover immediately rather than waiting for the next
   // turn's result.
   if (node.kind === 'system' && node.subtype === 'compact_boundary') {

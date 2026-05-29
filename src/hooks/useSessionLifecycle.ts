@@ -79,7 +79,7 @@ interface UseSessionLifecycleReturn {
   isMountedRef: React.MutableRefObject<boolean>;
   startPersistentSession: (resumeId?: string) => Promise<void>;
   /**
-   * Re-attach to an in-flight session in the main process (no SDK restart).
+   * Re-attach to an in-flight session in the main process (no CLI restart).
    * Returns true if a live session existed and was reclaimed, false otherwise.
    * Used after a renderer reload (Cmd+R) so prompts keep flowing.
    */
@@ -280,7 +280,7 @@ export function useSessionLifecycle({
     // Claim the slot synchronously — `api.startSession` awaits IPC and
     // account resolution, so a second concurrent call that hits the guard
     // above before this one's promise resolves would otherwise also fire
-    // `startSession`, spawning a duplicate SDK query with a fresh UUID
+    // `startSession`, spawning a duplicate CLI query with a fresh UUID
     // and leaking the first one. React StrictMode double-mount and rapid
     // re-renders both trigger this. The error branch below resets the
     // ref so a failed start doesn't permanently lock out the tab.
@@ -316,7 +316,7 @@ export function useSessionLifecycle({
         console.error("[startPersistentSession] resolve error:", e);
       }
     }
-    // Effort is always an SDK-supported level now (low/medium/high/xhigh/max) —
+    // Effort is always a CLI-supported level now (low/medium/high/xhigh/max) —
     // no more 'auto' sentinel that needed stripping.
     const sdkEffort = effort;
     const sdkThinking =

@@ -157,7 +157,7 @@ describe('useSessionLifecycle — startPersistentSession happy path', () => {
       'session-status:tab-life',
     ]);
     // No placeholder init is rendered — the chat stays empty until the
-    // SDK iterator yields its real system:init via agent-output.
+    // CLI iterator yields its real system:init via agent-output.
     expect(result.current.messagesRef.current).toHaveLength(0);
   });
 
@@ -678,7 +678,7 @@ describe('useSessionLifecycle — StrictMode-safe', () => {
   // explicit via TabContext.removeTab on tab close. This test pins that
   // contract: even under StrictMode's setup → cleanup → setup double-invoke,
   // a session that was running stays running. Without that invariant the
-  // SDK query gets torn down between the two setups and the new session
+  // CLI query gets torn down between the two setups and the new session
   // sits stuck at sessionStatus='starting'.
   it('does not stop the session under StrictMode\'s simulated unmount/remount', async () => {
     renderHook(harness({ initialPersistent: true }), {

@@ -50,7 +50,7 @@ describe('inflightCoalescer', () => {
   });
 
   it('keeps accumulating text even when each delta arrives with a fresh uuid', () => {
-    // The SDK emits a unique uuid per stream_event message (one per delta) —
+    // The CLI emits a unique uuid per stream_event message (one per delta) —
     // not a single uuid shared across the whole assistant turn. So the
     // coalescer must NOT reset its buffer on uuid change; the only way to
     // end a turn is an explicit clearInflightBuffer() call from the IPC
@@ -120,7 +120,7 @@ describe('inflightCoalescer', () => {
   });
 
   it('preserves the parentToolUseId from the first delta across the turn', () => {
-    // Each stream_event has a fresh uuid (per SDK), so accumulation crosses
+    // Each stream_event has a fresh uuid (per CLI), so accumulation crosses
     // uuids. parentToolUseId is stable within a turn: first value wins.
     appendInflightDelta('t1', 'evt-1', 'first', 'parent-tu-id');
     appendInflightDelta('t1', 'evt-2', '-second', 'parent-tu-id');

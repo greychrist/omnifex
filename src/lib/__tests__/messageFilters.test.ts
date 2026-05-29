@@ -57,7 +57,7 @@ describe('filterDisplayableMessages', () => {
   });
 
   describe('hook lifecycle filtering', () => {
-    // The SDK's `system+hook_*` family is plumbing noise — `hook_started`,
+    // The CLI's `system+hook_*` family is plumbing noise — `hook_started`,
     // `hook_response`, and `hook_progress` (mid-hook stdout/stderr) all
     // describe internal hook execution and should never appear in the
     // chat timeline by default. The set guarding `dropHookLifecycle`
@@ -95,9 +95,22 @@ describe('filterDisplayableMessages', () => {
     });
   });
 
+  describe('system:status transient pings', () => {
+    const sysStatus = (status: string): JsonlNode =>
+      ({ kind: 'system', subtype: 'status', sessionId: '', receivedAt: '', raw: { type: 'system', subtype: 'status', status } }) as unknown as JsonlNode;
+
+    it('drops system:status — it is surfaced as the live activity label, never a transcript row', () => {
+      // These are transient per-turn phase pings (requesting / compacting).
+      // The reducer turns them into the live "Running…" activity label; they
+      // must never render as an empty side-line in the conversation history.
+      const out = filterDisplayableMessages([sysStatus('requesting')]);
+      expect(out).toHaveLength(0);
+    });
+  });
+
   describe('skill-injection isMeta exemption', () => {
     // The Claude Code CLI persists skill-body injections with isMeta:true,
-    // which the SDK live-stream version emits as isSynthetic:true (no isMeta).
+    // which the CLI live-stream version emits as isSynthetic:true (no isMeta).
     // The filter must keep skill bodies visible even when isMeta is set —
     // otherwise the `Skill: <name>` card disappears after the renderer
     // reloads the session from JSONL.

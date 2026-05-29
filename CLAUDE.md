@@ -4,7 +4,7 @@ OmniFex (by GreyChrist) is an **Electron** desktop app for Claude Code. The curr
 
 The shipping app is OmniFex. Internal identifiers like `greychrist.db`, the `greychrist-file://` protocol, and localStorage keys retain the legacy name to avoid migration churn — only the user-facing brand and the repo/folder name changed.
 
-The repo migrated from Tauri 2 (Rust) to Electron (Node.js/TypeScript) in April 2026. The original driver was the Claude Agent SDK (which needed a Node runtime); since then the app has dropped the SDK entirely and now drives the Claude CLI binary directly via `node-pty` and `child_process` — Node is still required for that. Any reference to `src-tauri/`, `cargo`, `just`, `nix-shell`, an Axum web server, or `@anthropic-ai/claude-agent-sdk` in source code is legacy noise.
+The repo migrated from Tauri 2 (Rust) to Electron (Node.js/TypeScript) in April 2026. The app drives the Claude CLI binary directly via `node-pty` (TUI mode) and `child_process` (non-interactive), which is why a Node runtime is required. Any reference to `src-tauri/`, `cargo`, `just`, `nix-shell`, or an Axum web server in source code is legacy noise. (The `@anthropic-ai/claude-agent-sdk-*` package names that remain in `electron/services/claude-binary.ts` are intentional — they name the npm packages the binary resolver searches for, not a live dependency.)
 
 ## No worktrees
 

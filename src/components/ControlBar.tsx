@@ -18,11 +18,11 @@ import { motion } from "framer-motion";
 // ── Effort ──────────────────────────────────────────────────────────────
 
 /**
- * Effort level — maps to the SDK's reasoning_effort parameter.
+ * Effort level — maps to the CLI's reasoning_effort parameter.
  *
- * Mirrors the SDK's `EffortLevel` type exactly (`low | medium | high | xhigh | max`).
- * No `auto` — the SDK has no `'auto'` value, so it was a renderer-only sentinel
- * that meant "don't set effort, let the SDK default (high) apply." Removed
+ * Mirrors the CLI's `EffortLevel` type exactly (`low | medium | high | xhigh | max`).
+ * No `auto` — the CLI has no `'auto'` value, so it was a renderer-only sentinel
+ * that meant "don't set effort, let the CLI default (high) apply." Removed
  * 2026-04-16 in favor of an explicit default of `high`.
  *
  * @see https://docs.anthropic.com/en/docs/build-with-claude/effort
@@ -64,9 +64,9 @@ export interface PermissionMode {
   color: string;
 }
 
-// Mirrors the SDK's PermissionMode union exactly:
+// Mirrors the CLI's PermissionMode union exactly:
 //   'default' | 'acceptEdits' | 'bypassPermissions' | 'plan' | 'dontAsk' | 'auto'
-// Order is UI ordering (least to most permissive-ish), not SDK enum order.
+// Order is UI ordering (least to most permissive-ish), not CLI enum order.
 export const PERMISSION_MODES: PermissionMode[] = [
   {
     id: "default",
@@ -127,7 +127,7 @@ export const PERMISSION_MODES: PermissionMode[] = [
 
 // Back-compat: the pre-session panel and some older callers use "skip" as
 // a binary alias for bypassPermissions. Map it on read so we don't break
-// anything while the rest of the app migrates to full SDK modes.
+// anything while the rest of the app migrates to full CLI modes.
 export function normalizePermissionMode(mode: string): string {
   if (mode === "skip") return "bypassPermissions";
   return mode;

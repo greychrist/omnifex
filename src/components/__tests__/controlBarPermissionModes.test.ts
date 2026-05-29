@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { PERMISSION_MODES } from '../ControlBar';
 
 describe('ControlBar PERMISSION_MODES', () => {
-  it('exposes exactly the SDK permission mode set', () => {
+  it('exposes exactly the CLI permission mode set', () => {
     expect(PERMISSION_MODES.map((m) => m.id)).toEqual([
       'default',
       'acceptEdits',

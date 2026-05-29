@@ -30,7 +30,7 @@ function summarizeRequest(
   toolInput: Record<string, unknown> | undefined,
   hints?: { title?: string; displayName?: string },
 ): string {
-  // Prefer the SDK-provided title/displayName when present — those already
+  // Prefer the CLI-provided title/displayName when present — those already
   // read like a one-liner summary (e.g. "Run rm -rf /").
   const hint = (hints?.title || hints?.displayName || '').trim();
   if (hint) return truncate(hint);
@@ -63,7 +63,7 @@ function summarizeRequest(
 
 /**
  * Notification subtitle + body for a permission prompt. AskUserQuestion is
- * the SDK's built-in question tool — it rides the permission channel but the
+ * the CLI's built-in question tool — it rides the permission channel but the
  * agent is *asking the user* something, not requesting a tool. We surface
  * that distinction via the subtitle ("Answer Needed:" vs "Permission
  * Request:") and put a summary of the actual request in the body.
@@ -89,7 +89,7 @@ export function permissionNotificationContent(
   };
 }
 
-/** Map the SDK's destination string to our settings-file scope. */
+/** Map the CLI's destination string to our settings-file scope. */
 function scopeForDestination(
   dest: string | undefined,
 ): 'user' | 'project' | 'local' | null {
@@ -118,11 +118,11 @@ function formatRule(r: { toolName: string; ruleContent?: string }): string {
  * the running query's in-memory rule set is updated *immediately* alongside
  * the on-disk write.
  *
- * Why: the SDK's PermissionUpdate destinations (`userSettings`,
+ * Why: the CLI's PermissionUpdate destinations (`userSettings`,
  * `projectSettings`, `localSettings`, `session`) are *persistence targets*,
  * not "apply now" flags — only `'session'` says "fold this into the live
  * query's rule cache." If we send only `localSettings`, the rule lands on
- * disk but the same SDK process never re-reads it, and the very next
+ * disk but the same CLI process never re-reads it, and the very next
  * matching tool_use re-prompts. Sending both gives us live semantics
  * (matching tool_uses short-circuit `canUseTool` for the rest of the
  * session) AND on-disk persistence (next session boot loads it again).
@@ -146,15 +146,11 @@ export function augmentPermissionsWithSession(
 // ---------------------------------------------------------------------------
 // handleEnginePermissionRequest — engine.onPermissionRequest subscriber
 //
-// The SDK era had createCanUseTool: an async callback the SDK awaited for
-// each tool use. We resolved a promise via respondPermission, the callback
-// returned a PermissionResult, the SDK shipped it back to the CLI.
-//
-// In the CLI-engine era the flow inverts: the CLI sends a
-// control_request:can_use_tool, the engine surfaces it via
-// onPermissionRequest, and we (1) enqueue + render exactly the same UI
-// payload as before so the renderer is unchanged, then (2) on user click,
-// call engine.respondPermission directly with the decision body.
+// The CLI sends a control_request:can_use_tool for each tool use; the
+// engine surfaces it via onPermissionRequest. We (1) enqueue + render the
+// UI payload the renderer expects, then (2) on user click, call
+// engine.respondPermission directly with the decision body, which the
+// engine ships back to the CLI as the PermissionResult.
 // ---------------------------------------------------------------------------
 
 export function createPermissionRequestHandler(
@@ -512,7 +508,7 @@ export function respondPermission(
       const permissionResultBody: Record<string, unknown> = { behavior };
       if (behavior === 'allow') {
         // updatedInput is required for allow. Fall back to the captured
-        // original input (mirrors the SDK's "passing {} breaks it" rule).
+        // original input (mirrors the CLI's "passing {} breaks it" rule).
         permissionResultBody.updatedInput = updatedInput ?? current.toolInput ?? {};
         if (augmented && augmented.length > 0) {
           permissionResultBody.updatedPermissions = augmented;
@@ -525,9 +521,9 @@ export function respondPermission(
     }
   }
 
-  // Persist any rules whose destination isn't "session" — the SDK may also
+  // Persist any rules whose destination isn't "session" — the CLI may also
   // write these internally, but we persist ourselves so rules always land on
-  // disk regardless of SDK behavior. We iterate the *original* updates here
+  // disk regardless of CLI behavior. We iterate the *original* updates here
   // (not the augmented array) so we don't double-write the session twin.
   if (behavior === 'allow' && persistPermissionRule && updatedPermissions) {
     for (const suggestion of updatedPermissions) {

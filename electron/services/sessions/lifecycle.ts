@@ -46,7 +46,7 @@ import { setStatus } from './status';
 
 /**
  * Single source of truth for "what sessionId will this session use?" —
- * shared by SDK cold-start, SDK resume, and TUI cold-start so all three
+ * shared by CLI cold-start, CLI resume, and TUI cold-start so all three
  * paths agree on the resolution rule. Resume keeps the caller's id;
  * cold-start mints a fresh UUID synchronously so handle.sessionId is
  * never null after start() returns.
@@ -70,7 +70,7 @@ export function createSessionsService(
   onSessionClosed: ((sessionId: string, projectPath: string, configDir: string) => void) | null = null,
   /**
    * Optional account resolver. When provided, main re-resolves the configDir
-   * for cold-start SDK sessions at the moment of `start()` so a path-rule
+   * for cold-start CLI sessions at the moment of `start()` so a path-rule
    * change between form-mount and Start-click doesn't spawn under a stale
    * account. Skipped for resumes (the resume id is tied to the owning
    * account's JSONL) and when `manualAccountOverride: true` is passed
@@ -679,7 +679,7 @@ export function createSessionsService(
     // TUI pre-mints the UUID and passes it to the CLI via `--session-id`
     // so the JSONL file path is known up front (no discovery race, no
     // resume-picker dialog). The CLI in pty mode handles `--session-id`
-    // cleanly — unlike the SDK's stream-json mode, where pinning makes
+    // cleanly — unlike the CLI's stream-json mode, where pinning makes
     // the CLI suppress init and the control channel. When the caller
     // passes resumeSessionId, reuse it and switch the CLI to `--resume`
     // so the prior conversation continues instead of starting fresh.

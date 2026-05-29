@@ -9,7 +9,7 @@ import type {
 } from '@/lib/api';
 
 /**
- * Per-tab slice of session state derived from the SDK stream.
+ * Per-tab slice of session state derived from the CLI stream.
  *
  * Owned by `claudeSessionStore` (one entry per tabId). Stores the small
  * set of stream-derived fields that ClaudeCodeSession needs to share

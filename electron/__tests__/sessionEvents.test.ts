@@ -62,8 +62,8 @@ describe('classifyRuntimeEvent', () => {
     }
   });
 
-  it('surfaces SDK result error subtypes in the body for diagnostic clarity', () => {
-    // The SDK distinguishes error_max_turns / error_during_execution /
+  it('surfaces CLI result error subtypes in the body for diagnostic clarity', () => {
+    // The CLI distinguishes error_max_turns / error_during_execution /
     // error_max_budget_usd / error_max_structured_output_retries. Notifications
     // should reflect the specific cause rather than collapsing them all to a
     // generic "Task failed" — `error_during_execution` in particular often
@@ -174,7 +174,7 @@ describe('classifyRuntimeEvent', () => {
   });
 
   it('classifies system:compact_boundary as its own kind with metadata', () => {
-    // Per the SDK contract, SDKCompactBoundaryMessage carries
+    // Per the CLI contract, CliCompactBoundaryMessage carries
     // { compact_metadata: { trigger: 'manual'|'auto', pre_tokens: number } }.
     // Surfacing this as a distinct kind lets the FSM / status badge
     // distinguish "model is responding" from "stream paused for compaction"
@@ -193,7 +193,7 @@ describe('classifyRuntimeEvent', () => {
   });
 
   it('classifies stream_event (partial assistant message) as its own kind', () => {
-    // SDKPartialAssistantMessage type === 'stream_event'. Opt-in via
+    // CliPartialAssistantMessage type === 'stream_event'. Opt-in via
     // includePartialMessages; treating it as 'turn' would double-flip
     // status on every token. Distinguishing it lets future code suppress
     // status churn while a turn is mid-flight.

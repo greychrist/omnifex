@@ -2,15 +2,15 @@ import type { JsonlNode } from '@/types/jsonl';
 import type { MessageContentBlock } from '@/types/claudeStream';
 
 /**
- * Reduce the live message stream into a per-task TaskList under SDK 0.3.x.
+ * Reduce the live message stream into a per-task TaskList.
  *
- * The new SDK exposes a Task primitive via four tools:
+ * The CLI exposes a Task primitive via four tools:
  *   - `TaskCreate(subject, description, activeForm?)` mints a row.
  *   - `TaskUpdate(taskId, status?, subject?, activeForm?)` mutates it.
  *   - `TaskGet` / `TaskList` are read-only and don't drive state.
  *
  * Replaces the old snapshot-shaped `TodoWrite` flow. Each task row gets:
- *   - the SDK-assigned id (parsed off the tool_result content string —
+ *   - the CLI-assigned id (parsed off the tool_result content string —
  *     the live stream's only carrier; see the comment on
  *     `extractTaskIdFromContent`)
  *   - subject / activeForm (initial + renames via TaskUpdate)
@@ -27,7 +27,7 @@ import type { MessageContentBlock } from '@/types/claudeStream';
  *
  * The pattern mirrors `src/lib/subagentEvents.ts`'s reducer style:
  * walk-once, state map keyed by id, terminal status overrides only via
- * the SDK's canonical TaskUpdate carrier.
+ * the CLI's canonical TaskUpdate carrier.
  */
 
 export type TaskStatus = 'pending' | 'in_progress' | 'completed';

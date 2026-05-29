@@ -7,16 +7,16 @@ import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
 import type { PermissionRequestPayload } from "@/lib/types/permissionRequest";
 
 /**
- * Custom-renderer card for the SDK's `AskUserQuestion` built-in tool.
+ * Custom-renderer card for the CLI's `AskUserQuestion` built-in tool.
  *
- * The Claude Agent SDK gates this tool through the same `canUseTool`
+ * The Claude CLI gates this tool through the same `canUseTool`
  * (permission_request) channel as Bash / Read / Write — but the right UX
  * is NOT "Allow / Deny". The agent is asking the *user* a multiple-choice
  * question and the runtime needs the user's selection back as the tool's
  * output. This card renders the questions + options exactly as authored
  * by the agent, collects answers, and on Submit responds with
  * `behavior: 'allow'` plus an `updatedInput` carrying the answers in the
- * shape the SDK's `AskUserQuestionOutput` documents:
+ * shape the CLI's `AskUserQuestionOutput` documents:
  *
  *   {
  *     questions: <unchanged input>,
@@ -24,7 +24,7 @@ import type { PermissionRequestPayload } from "@/lib/types/permissionRequest";
  *     annotations?: { [question]: { notes?: string } }
  *   }
  *
- * Per the SDK tool description, the host appends an "Other" option to
+ * Per the CLI tool description, the host appends an "Other" option to
  * every question so the user can type a free-text answer (the agent
  * MUST NOT include "Other" itself). Selecting "Other" reveals a small
  * text field whose value becomes the answer.
@@ -85,7 +85,7 @@ export function AskUserQuestionCard({ request, onSubmit, onCancel }: AskUserQues
     () => questions.map((q) => (q.multiSelect ? [] : null)),
   );
   const [otherTexts, setOtherTexts] = useState<string[]>(() => questions.map(() => ''));
-  // When the SDK sends 3-4 questions with previews the card can occupy
+  // When the CLI sends 3-4 questions with previews the card can occupy
   // ~60vh, hiding the chat context the user wants to consult before
   // answering. Collapsing drops everything below the header so that
   // context is visible again; submit stays gated on re-expanding so the
@@ -127,7 +127,7 @@ export function AskUserQuestionCard({ request, onSubmit, onCancel }: AskUserQues
 
   const handleSubmit = () => {
     // Resolve each question's final answer string. Multi-select joins picks
-    // with ', ' per the SDK's documented `answers` value format.
+    // with ', ' per the CLI's documented `answers` value format.
     const answers: Record<string, string> = {};
     const annotations: Record<string, { notes?: string }> = {};
     questions.forEach((q, i) => {
@@ -146,7 +146,7 @@ export function AskUserQuestionCard({ request, onSubmit, onCancel }: AskUserQues
     });
 
     const updatedInput: Record<string, unknown> = {
-      // Echo the original questions back unchanged — the SDK's output
+      // Echo the original questions back unchanged — the CLI's output
       // schema requires both `questions` and `answers`.
       questions: request.toolInput.questions,
       answers,
@@ -158,7 +158,7 @@ export function AskUserQuestionCard({ request, onSubmit, onCancel }: AskUserQues
   };
 
   // Render inline at the bottom of the chat, alongside PermissionCard. The
-  // SDK gates AskUserQuestion through the same canUseTool channel as Bash
+  // CLI gates AskUserQuestion through the same canUseTool channel as Bash
   // / Read / etc., but the right UX is "show the question with selectable
   // options" — and showing it inline (rather than as a modal Dialog) keeps
   // the surrounding chat context visible and means whichever tab raised
@@ -224,7 +224,7 @@ export function AskUserQuestionCard({ request, onSubmit, onCancel }: AskUserQues
 
         {!collapsed && (
         <>
-        {/* Questions — scrollable so the SDK's max-4 questions, each with
+        {/* Questions — scrollable so the CLI's max-4 questions, each with
             up to 4 options + an optional preview block + the auto "Other"
             field, never blow past the chat layout. Cap at ~60% viewport
             height; pr-1 leaves room for the scrollbar. The Send / Cancel
@@ -296,7 +296,7 @@ export function AskUserQuestionCard({ request, onSubmit, onCancel }: AskUserQues
                     </button>
                   );
                 })}
-                {/* Auto-added "Other" — per SDK tool description, the host
+                {/* Auto-added "Other" — per CLI tool description, the host
                     appends this; the agent must not include it itself. */}
                 <button
                   type="button"

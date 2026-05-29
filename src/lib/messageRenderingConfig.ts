@@ -191,7 +191,7 @@ export type IconName = (typeof ALLOWED_ICONS)[number];
 
 export type Origin = "user" | "assistant" | "system" | "cli" | "bookkeeping" | "fallback";
 export type Alignment = "left" | "right" | "full";
-export type Presentation = 'card' | 'side-line';
+export type Presentation = 'card' | 'side-line' | 'collapsible';
 export type BorderStyle = 'solid' | 'dashed';
 
 export interface MessageKindConfig {
@@ -250,7 +250,7 @@ export const DEFAULT_KINDS: MessageKindConfig[] = [
   { id: "user.command", label: "Slash command", description: "A /slash command the user invoked.", origin: "user", icon: "ChevronRight", headerLabel: null, accentColor: "muted", alignment: "left", hiddenInCompact: false, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
   { id: "user.commandOutput", label: "Command output", description: "Output of a slash command.", origin: "user", icon: "Terminal", headerLabel: null, accentColor: "muted", alignment: "left", hiddenInCompact: false, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
   { id: "user.skillInjection", label: "Skill injection (legacy)", description: "Live-stream variant of skill-body injection.", origin: "user", icon: "Sparkles", headerLabel: "Skill", accentColor: "purple", alignment: "left", hiddenInCompact: false, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
-  { id: "user.systemContext", label: "System context (user)", description: "User-role message containing system-context text only.", origin: "user", icon: "Info", headerLabel: null, accentColor: "muted", alignment: "left", hiddenInCompact: true, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
+  { id: "user.systemContext", label: "System context (user)", description: "User-role message containing system-context text only (skill body, CLAUDE.md, system reminder). Collapsible card with a content-derived header.", origin: "user", icon: "Info", headerLabel: null, accentColor: "muted", alignment: "left", hiddenInCompact: true, compactBoundaryLocked: false, presentation: "collapsible", borderStyle: "solid", showRawPayload: true },
   { id: "user.sdkSystemBracket", label: "Bracketed system message", description: "CLI-emitted bracketed message arriving as a user envelope (e.g. \"[Request interrupted by user]\", \"[Session resumed]\"). Not the user's own words.", origin: "user", icon: "Info", headerLabel: null, accentColor: "amber", alignment: "left", hiddenInCompact: false, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
 
   // ───── SYSTEM ─────
@@ -268,7 +268,6 @@ export const DEFAULT_KINDS: MessageKindConfig[] = [
   { id: "system.away_summary", label: "Away summary", description: "Summary of what happened while user was away.", origin: "system", icon: "FileText", headerLabel: "Away summary", accentColor: "info", alignment: "left", hiddenInCompact: false, compactBoundaryLocked: false, presentation: "card", borderStyle: "solid" },
   { id: "system.compact_boundary", label: "Compact boundary", description: "Marks where the conversation was compacted.", origin: "system", icon: "Scissors", headerLabel: "Compacted", accentColor: "muted", alignment: "left", hiddenInCompact: false, compactBoundaryLocked: false, presentation: "card", borderStyle: "solid", widget: "CompactBoundaryWidget" },
   { id: "system.informational", label: "Informational", description: "Generic informational system message.", origin: "system", icon: "Info", headerLabel: null, accentColor: "muted", alignment: "left", hiddenInCompact: true, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
-  { id: "system.status", label: "Request status", description: "Transient CLI status indicator (e.g. requesting, processing).", origin: "system", icon: "Hourglass", headerLabel: null, accentColor: "muted", alignment: "left", hiddenInCompact: true, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
   { id: "system.permission_denied", label: "Permission denied", description: "Tool call denied by permission check.", origin: "system", icon: "ShieldOff", headerLabel: null, accentColor: "red", alignment: "left", hiddenInCompact: false, compactBoundaryLocked: false, presentation: "card", borderStyle: "solid" },
   { id: "system.userPromptSubmit", label: "User prompt submit", description: "Internal marker emitted when the user submits a prompt.", origin: "system", icon: "Send", headerLabel: null, accentColor: "muted", alignment: "left", hiddenInCompact: true, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "solid" },
   { id: "system.unknown", label: "System (unknown subtype)", description: "System message with an unrecognized subtype.", origin: "system", icon: "HelpCircle", headerLabel: null, accentColor: "muted", alignment: "left", hiddenInCompact: true, compactBoundaryLocked: false, presentation: "side-line", borderStyle: "dashed" },
@@ -548,7 +547,9 @@ export function mergeConfig(saved: unknown): MessageRenderingConfig {
               ? Math.max(0, Math.min(100, Math.round(override.iconBgOpacity)))
               : undefined,
           presentation:
-            override.presentation === "card" || override.presentation === "side-line"
+            override.presentation === "card" ||
+            override.presentation === "side-line" ||
+            override.presentation === "collapsible"
               ? override.presentation
               : current.presentation,
           borderStyle:

@@ -26,7 +26,7 @@ import { logAndForget } from "@/lib/fireAndLog";
  *   `CardActionButton` primitives so every action reads as one family.
  */
 interface CardActionBarProps {
-  /** Underlying SDK message; used by `extractCopyText` when `text` is omitted. */
+  /** Underlying CLI message; used by `extractCopyText` when `text` is omitted. */
   message?: unknown;
   /** Explicit text to copy. Takes precedence over message-based extraction. */
   text?: string;

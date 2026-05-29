@@ -420,8 +420,8 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
         rule: p?.rule as string,
       });
 
-      // Mirror the on-disk change into the live SDK session so the user
-      // doesn't get re-prompted for a rule they just allowed. The SDK
+      // Mirror the on-disk change into the live CLI session so the user
+      // doesn't get re-prompted for a rule they just allowed. The CLI
       // loads settings files only at session start and never re-reads
       // them, so this push is the only way to keep an active query in
       // sync with rule edits made via the UI.

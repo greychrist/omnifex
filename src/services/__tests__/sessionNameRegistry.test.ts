@@ -36,7 +36,7 @@ describe('sessionNameRegistry', () => {
   });
 
   it('merges partial updates instead of overwriting', () => {
-    // Common lifecycle: tab opens with title + projectName, then the SDK
+    // Common lifecycle: tab opens with title + projectName, then the CLI
     // assigns a claudeSessionId a moment later. The second write must not
     // erase what the first one stored.
     sessionNameRegistry.set('tab-1', {

@@ -3,7 +3,6 @@ import {
   FolderOpen,
   FileText,
   Search,
-  ChevronRight,
   Info,
   AlertCircle,
   Settings,
@@ -33,7 +32,7 @@ import { cn } from "@/lib/utils";
 import { Card, CardContent } from "@/components/ui/card";
 import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
 import { accentStyleFor, swatchFor } from "@/lib/accentStyle";
-import { headerLabelFor, iconNameFor } from "@/lib/kindPresentation";
+import { iconNameFor } from "@/lib/kindPresentation";
 import { IconRenderer } from "@/components/settings-panels/appearance/iconMap";
 import { KindHeader } from "@/components/KindHeader";
 
@@ -66,74 +65,6 @@ export const SystemReminderWidget: React.FC<{ message: string }> = ({ message })
     >
       <div className="mt-0.5" style={swatch ? { color: swatch } : undefined}>{icon}</div>
       <div className="flex-1 text-sm" style={swatch ? { color: swatch } : undefined}>{message}</div>
-    </div>
-  );
-};
-
-/**
- * Collapsible widget for system-injected context (skills, CLAUDE.md, system-reminders)
- * Styled like ThinkingWidget — collapsed by default
- */
-export const SystemContextWidget: React.FC<{ content: string }> = ({ content }) => {
-  const [isExpanded, setIsExpanded] = useState(false);
-  const { config } = useMessageRenderingConfig();
-
-  const configuredHeader = headerLabelFor(config, "user.systemContext");
-  // Fall back to a content-derived label when the config header is the default
-  // "System Context" — so skill loads and CLAUDE.md injections stay legible
-  // rather than all showing the same generic name. If the user has customized
-  // the header to something else, honor their choice verbatim.
-  let label = configuredHeader ?? "System Context";
-  if (configuredHeader === null || configuredHeader === "System Context") {
-    if (content.includes("Base directory for this skill:")) {
-      const skillMatch = /# (.+)/.exec(content);
-      label = skillMatch ? `Skill: ${skillMatch[1]}` : "Skill Loaded";
-    } else if (content.includes("CLAUDE.md")) {
-      label = "CLAUDE.md Context";
-    } else if (content.includes("<system-reminder>")) {
-      label = "System Reminder";
-    }
-  }
-
-  const iconName = iconNameFor(config, "user.systemContext");
-  const style = accentStyleFor(config, "user.systemContext");
-  const swatch = swatchFor(config, "user.systemContext");
-  const swatchStyle = swatch ? { color: swatch } : undefined;
-
-  return (
-    <div className="rounded-lg border overflow-hidden" style={style}>
-      <button
-        onClick={() => { setIsExpanded(!isExpanded); }}
-        className="w-full px-4 py-2 flex items-center justify-between transition-colors"
-      >
-        <div className="flex items-center gap-2">
-          <div style={swatchStyle}>
-            {iconName && iconName !== "none" ? (
-              <IconRenderer name={iconName} className="h-4 w-4" />
-            ) : (
-              <Info className="h-4 w-4" />
-            )}
-          </div>
-          <span className="text-xs font-medium" style={swatchStyle}>
-            {label}
-          </span>
-        </div>
-        <ChevronRight
-          className={cn("h-3 w-3 transition-transform", isExpanded && "rotate-90")}
-          style={swatchStyle}
-        />
-      </button>
-
-      {isExpanded && (
-        <div className="px-4 pb-3 pt-1 border-t" style={style}>
-          <pre
-            className="text-xs font-mono whitespace-pre-wrap p-3 rounded-lg max-h-60 overflow-y-auto"
-            style={{ ...style, ...swatchStyle }}
-          >
-            {content.trim()}
-          </pre>
-        </div>
-      )}
     </div>
   );
 };

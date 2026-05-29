@@ -1,7 +1,7 @@
 /**
  * Persistent tabId → session-identity map.
  *
- * The Log tab shows the SDK-side category for every entry, which is
+ * The Log tab shows the CLI-side category for every entry, which is
  * `session:<tabId>` (tabIds look like `tab-1778624839066-n893j4wui`). Tab
  * state is in-memory and disappears when a tab is closed, while log rows
  * live forever in SQLite. This registry bridges the gap: whenever a tab
@@ -25,7 +25,7 @@ const MAX_ENTRIES = 500;
  * One stored entry. All identity fields are optional because they get
  * populated at different points in a chat tab's lifecycle:
  *   - `title` and `projectName` are known as soon as a chat tab opens.
- *   - `claudeSessionId` is assigned by the SDK after the first `init`
+ *   - `claudeSessionId` is assigned by the CLI after the first `init`
  *     message lands, so it shows up a moment later.
  * Each write merges with what's already stored — partial updates don't
  * overwrite fields that were set by an earlier call.

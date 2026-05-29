@@ -97,6 +97,28 @@ function systemErrorNode(): JsonlNode {
   };
 }
 
+function sysStatus(status: string | null): JsonlNode {
+  return {
+    kind: 'system',
+    subtype: 'status',
+    raw: { type: 'system', subtype: 'status', status, sessionId: '' } as never,
+    sessionId: '',
+    receivedAt: '2026-05-27T00:00:00Z',
+  };
+}
+
+describe('reduceSessionStreamMessage — system:status phase label', () => {
+  it('turns a "requesting" status into a Requesting activity label', () => {
+    const r = reduceSessionStreamMessage(sysStatus('requesting'), baseCtx);
+    expect(r.activityUpdate).toEqual({ kind: 'literal', label: 'Requesting' });
+  });
+
+  it('emits no activity update when the status is null', () => {
+    const r = reduceSessionStreamMessage(sysStatus(null), baseCtx);
+    expect(r.activityUpdate).toBeUndefined();
+  });
+});
+
 describe('reduceSessionStreamMessage', () => {
   it('system:init with new session id produces sessionIdUpdate, extractedSessionInfo, and fetch effects', () => {
     const r = reduceSessionStreamMessage(sysInit('new-sess'), {

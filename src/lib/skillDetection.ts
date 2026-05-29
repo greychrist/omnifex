@@ -12,7 +12,7 @@ function getContent(m: JsonlNode): unknown[] | null {
 
 /**
  * A user-role message is "skill-injected" when it immediately follows a
- * tool_result whose matching tool_use was the `Skill` tool. The SDK injects
+ * tool_result whose matching tool_use was the `Skill` tool. The CLI injects
  * the skill's SKILL.md body as a user-role text message after the tool runs,
  * and we want to render it distinctly from a real user-typed prompt.
  */

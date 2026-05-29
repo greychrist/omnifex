@@ -86,7 +86,7 @@ export function buildPersistedSuggestion(
   };
 }
 
-/** Build the `updatedPermissions` entry for the current SDK session only. */
+/** Build the `updatedPermissions` entry for the current CLI session only. */
 export function buildSessionSuggestion(ruleString: string): SessionSuggestion {
   assertNonEmptyRule(ruleString);
   const parsed = parseRuleString(ruleString);
@@ -99,8 +99,8 @@ export function buildSessionSuggestion(ruleString: string): SessionSuggestion {
 }
 
 /**
- * Pull the initial editable rule string out of the first SDK suggestion, or
- * fall back to the bare tool name if the SDK didn't provide one.
+ * Pull the initial editable rule string out of the first CLI suggestion, or
+ * fall back to the bare tool name if the CLI didn't provide one.
  */
 export function getInitialRuleString(
   suggestion: IncomingSuggestion | undefined,

@@ -17,7 +17,7 @@ export { MCPWidget } from "./MCPWidget";
 export { CommandWidget, CommandOutputWidget } from "./CommandWidget";
 export { SummaryWidget } from "./SummaryWidget";
 export { MultiEditWidget, MultiEditResultWidget } from "./MultiEditWidget";
-export { SystemReminderWidget, SystemContextWidget, SystemInitializedWidget } from "./SystemWidget";
+export { SystemReminderWidget, SystemInitializedWidget } from "./SystemWidget";
 export { TaskWidget } from "./TaskWidget";
 export { WebSearchWidget } from "./WebSearchWidget";
 export { ThinkingWidget } from "./ThinkingWidget";

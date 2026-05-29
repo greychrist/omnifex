@@ -51,7 +51,7 @@ describe("AskUserQuestionCard", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("submits the SDK's AskUserQuestionOutput shape with the picked answer", () => {
+  it("submits the CLI's AskUserQuestionOutput shape with the picked answer", () => {
     const onSubmit = vi.fn();
     render(
       <AskUserQuestionCard

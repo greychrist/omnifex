@@ -29,7 +29,7 @@ describe("normalizePermissionMode", () => {
 });
 
 describe("static option lists", () => {
-  it("EFFORT_LEVELS exposes the five SDK effort levels", () => {
+  it("EFFORT_LEVELS exposes the five CLI effort levels", () => {
     expect(EFFORT_LEVELS.map((e) => e.id)).toEqual(["low", "medium", "high", "xhigh", "max"]);
   });
 

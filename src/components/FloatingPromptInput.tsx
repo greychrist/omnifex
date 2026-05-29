@@ -54,7 +54,7 @@ interface FloatingPromptInputProps {
   /**
    * Optional content rendered as its own row immediately above the left-side
    * control pickers (model / effort / permission). Used by the
-   * session view to surface the SDK ↔ Terminal mode toggle here, freeing
+   * session view to surface the CLI ↔ Terminal mode toggle here, freeing
    * vertical space in the top header above. Renders nothing when omitted.
    */
   modeToggle?: React.ReactNode;
@@ -73,7 +73,7 @@ interface FloatingPromptInputProps {
   onEffortChange?: (level: EffortLevel) => void;
   configDir?: string;
   tabId?: string;
-  /** Pre-fetched built-in SDK slash commands (loaded during session init). */
+  /** Pre-fetched built-in CLI slash commands (loaded during session init). */
   supportedCommands?: import("@/lib/api").SessionSlashCommand[];
 }
 

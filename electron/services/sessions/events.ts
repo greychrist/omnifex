@@ -1,6 +1,6 @@
-// Sessions module — SDK event normalisation
+// Sessions module — CLI event normalisation
 //
-// Maps a raw SDK message into a small tagged union the runtime can switch
+// Maps a raw CLI message into a small tagged union the runtime can switch
 // on. Keeps `(message as any)` casts contained here instead of scattered
 // across the FSM.
 
@@ -15,15 +15,15 @@ export interface RateLimitInfo {
 /**
  * Categorisation the session runtime cares about.
  *
- * - `init`: SDK announced a session id; status flips to 'idle'.
+ * - `init`: CLI announced a session id; status flips to 'idle'.
  * - `result`: turn complete; status flips to 'idle' and a notification
  *   should fire.
  * - `rateLimit`: rate-limits service should be told.
- * - `compact`: SDKCompactBoundaryMessage — the stream is pausing for
+ * - `compact`: CliCompactBoundaryMessage — the stream is pausing for
  *   conversation compaction. Status stays 'running'; UI may show a hint.
- * - `streamEvent`: SDKPartialAssistantMessage — token-level partial
+ * - `streamEvent`: CliPartialAssistantMessage — token-level partial
  *   delta, only emitted when `includePartialMessages` is true.
- * - `hook`: SDK hook lifecycle (hook_started / hook_progress /
+ * - `hook`: CLI hook lifecycle (hook_started / hook_progress /
  *   hook_response / user_prompt_submit). Fires on SessionStart BEFORE
  *   any user turn — forwarded to the renderer but no session-status
  *   event is emitted (conversationStatus derivation is the renderer's job).
@@ -53,8 +53,8 @@ function clip(s: string): string {
 }
 
 /**
- * Notification body when the SDK provides no `result`/`error`/`errors[0]`
- * string. The SDK distinguishes four error variants — surface that
+ * Notification body when the CLI provides no `result`/`error`/`errors[0]`
+ * string. The CLI distinguishes four error variants — surface that
  * distinction so the user knows whether they hit a turn cap, a budget cap,
  * a runtime explosion, or a structured-output retry exhaustion.
  */
@@ -88,8 +88,8 @@ export function classifyRuntimeEvent(raw: unknown): RuntimeEvent {
   }
 
   if (m.type === 'system' && m.subtype === 'compact_boundary') {
-    // SDKCompactBoundaryMessage's `compact_metadata` shape — typed inline
-    // because the SDK types aren't pulled in here (electron main process).
+    // CliCompactBoundaryMessage's `compact_metadata` shape — typed inline
+    // because the CLI types aren't pulled in here (electron main process).
     const meta = m.compact_metadata as
       | { trigger?: 'manual' | 'auto'; pre_tokens?: number }
       | undefined;
@@ -113,7 +113,7 @@ export function classifyRuntimeEvent(raw: unknown): RuntimeEvent {
       subtype.startsWith('error_');
     const result = typeof m.result === 'string' ? (m.result) : null;
     const error = typeof m.error === 'string' ? (m.error) : null;
-    // The SDK error variants carry an `errors: string[]` with actionable
+    // The CLI error variants carry an `errors: string[]` with actionable
     // text (e.g. "Context window exceeded"). Prefer the first entry over a
     // generic "Task failed" so the notification body actually tells the
     // user what went wrong.

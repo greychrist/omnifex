@@ -191,7 +191,7 @@ interface PathRuleRow {
 // The thinking-config schema tightened in v0.4.21 — the legacy
 // `'budget'` value is no longer reachable from the picker. Stored
 // account rows from before that release may still carry it; coerce to
-// `'adaptive'` (which is what the SDK collapsed every non-zero budget
+// `'adaptive'` (which is what the CLI collapses every non-zero budget
 // to anyway) at the deserialize boundary so the renderer never sees an
 // out-of-schema value.
 function normalizeSessionDefaults(raw: unknown): SessionDefaults | undefined {

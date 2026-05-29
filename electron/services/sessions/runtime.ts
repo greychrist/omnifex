@@ -148,7 +148,7 @@ export function listenToMessages(
         case 'streamEvent':
           break;
         case 'hook':
-          // SDK hook lifecycle (hook_started / hook_progress /
+          // CLI hook lifecycle (hook_started / hook_progress /
           // hook_response / user_prompt_submit). Forward to the renderer
           // for display. No session-status event is emitted — conversationStatus
           // is now derived by the renderer from JSONL content, not from FSM

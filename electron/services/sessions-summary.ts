@@ -135,7 +135,7 @@ export interface ExtractedTranscript {
  *   - tool_result entries (they ride on user-type rows; the user-row text
  *     check below skips them since their content is structured tool
  *     output, not a string).
- *   - type === 'summary' (SDK auto-compaction summary entries).
+ *   - type === 'summary' (CLI auto-compaction summary entries).
  *   - any line that fails to parse as JSON.
  */
 export function extractTranscript(jsonlContent: string): ExtractedTranscript {
@@ -294,9 +294,9 @@ function buildSummaryPrompt(transcript: string, preamble: string): string {
 export interface ResolvedAccount {
   /** User-defined account label, stored in the sidecar's `accountName`. */
   name: string;
-  /** Path passed as CLAUDE_CONFIG_DIR when calling the SDK. */
+  /** Path passed as CLAUDE_CONFIG_DIR when calling the CLI. */
   configDir: string;
-  /** SDK model id, e.g. 'claude-haiku-4-5'. Null when no model is picked. */
+  /** Model id, e.g. 'claude-haiku-4-5'. Null when no model is picked. */
   summaryModel: string | null;
 }
 
@@ -321,7 +321,7 @@ export interface SessionsSummaryDeps {
   /** Resolve the account responsible for this project, or null. */
   resolveAccount(projectPath: string): ResolvedAccount | null;
   /**
-   * Send a single user prompt to the SDK and return the assistant text.
+   * Send a single user prompt to the CLI and return the assistant text.
    *
    * The service deliberately does NOT pass a `cwd` — the runner picks a
    * throwaway scratch directory so the subprocess JSONL the binary always

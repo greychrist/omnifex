@@ -10,11 +10,11 @@ import { findBundledSdkBinaryAuto } from '../claude-binary';
 
 /**
  * Resolve a claude binary: prefer a system install, fall back to the
- * per-platform binary bundled with the SDK so packaged builds still work
+ * per-platform binary bundled with the app so packaged builds still work
  * for users without Claude Code installed system-wide.
  *
  * Returns `null` when nothing is found. Callers should treat null as
- * fatal at session start — letting the SDK try its own resolution and
+ * fatal at session start — letting the CLI try its own resolution and
  * fail with an opaque spawn error mid-stream is worse UX than a clean
  * "binary not found" message up front.
  */
@@ -31,7 +31,7 @@ export function findSystemClaudeBinary(): string | null {
 }
 
 /**
- * Resolve a codex binary on the user's system. Codex has no SDK-bundled
+ * Resolve a codex binary on the user's system. Codex has no app-bundled
  * fallback (we don't ship it inside the app) so this returns `null` when
  * the user hasn't installed `codex` — the caller must surface that as a
  * clean error at session start rather than letting the engine try to

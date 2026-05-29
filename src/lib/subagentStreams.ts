@@ -1,5 +1,5 @@
 /**
- * Derive subagent state from the Claude Agent SDK stream.
+ * Derive subagent state from the Claude CLI stream.
  *
  * Thin facade over `subagentEvents.ts`. Translation, reduction, and the
  * inferred-closure post-pass live there; this file is the renderer-facing
@@ -35,13 +35,13 @@ export interface Subagent {
   events: SubagentProgressEvent[];
   summary?: string;
   colorIndex: number;
-  // True when dispatched with run_in_background:true. The SDK fires an
+  // True when dispatched with run_in_background:true. The CLI fires an
   // immediate ACK tool_result for these (a dispatch confirmation, not the
   // actual return value), so the reducer must not flip these to "completed"
   // on the ACK — only TaskNotification(Xml) or the inferred-closure rule
   // do that.
   isBackground?: boolean;
-  /** Set from `SDKTaskUpdatedMessage.patch.error` when the SDK reports a
+  /** Set from `CliTaskUpdatedMessage.patch.error` when the CLI reports a
    *  subagent failure. Undefined for successful subagents and for failures
    *  that closed via tool_result / TaskNotification (which carry summaries
    *  but not a structured error string). */
@@ -118,7 +118,7 @@ export const isTaskLifecycleMarker = _isTaskLifecycleMarker;
  * Build the subagent list from the message stream.
  *
  * Pipeline:
- *   1. `messagesToEvents` — pure SDK→event translation
+ *   1. `messagesToEvents` — pure CLI→event translation
  *   2. `applyEvents` — fold events into per-`tool_use_id` state with an
  *      intrinsic terminal lock
  *   3. `inferredClosureEvents` — generate `ClosedByParentResult` events

@@ -1,5 +1,5 @@
 // Plugin enrichment — read .claude-plugin/plugin.json manifests and infer
-// scope from path, so the renderer can show richer info than what the SDK's
+// scope from path, so the renderer can show richer info than what the CLI's
 // reloadPlugins response carries.
 
 import fs from 'node:fs';

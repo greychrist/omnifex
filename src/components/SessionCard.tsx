@@ -9,9 +9,9 @@ import { HeaderLabel } from "./HeaderLabel";
 import { fireAndLog } from "@/lib/fireAndLog";
 
 // Palette for context-usage categories. Each category comes with its own
-// `color` from the SDK, but those default colors sometimes clash with our
+// `color` from the CLI, but those default colors sometimes clash with our
 // dark palette, so we override with our own sequence and fall back to the
-// SDK color if we run out of slots.
+// CLI color if we run out of slots.
 const CATEGORY_COLORS = [
   "#60a5fa", // blue-400
   "#a78bfa", // violet-400

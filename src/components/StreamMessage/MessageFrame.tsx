@@ -2,6 +2,7 @@ import * as React from 'react';
 import { useMessageRenderingConfig } from '@/contexts/MessageRenderingContext';
 import { MessageFrameCard } from './MessageFrameCard';
 import { MessageFrameSideLine } from './MessageFrameSideLine';
+import { MessageFrameCollapsible } from './MessageFrameCollapsible';
 
 export interface MessageFrameProps {
   /** The dotted kind ID (e.g. `'user.prompt'`, `'system.informational'`).
@@ -15,6 +16,10 @@ export interface MessageFrameProps {
   /** Optional message to forward to `MessageFrameCard` for the timestamp
    *  footer and debug raw-JSON copy button. */
   message?: import('@/types/jsonl').JsonlNode;
+  /** Overrides the kind's configured `headerLabel` — used by the collapsible
+   *  variant for content-derived titles (e.g. "Skill: …"). Caller decides
+   *  precedence (e.g. a user-customized config header should win). */
+  headerOverride?: string;
 }
 
 /**
@@ -25,7 +30,7 @@ export interface MessageFrameProps {
  * kind's `presentation` field. This is the single choke-point that drives
  * every presentation variant; callers only need to know `streamKind`.
  */
-export const MessageFrame: React.FC<MessageFrameProps> = ({ streamKind, children, actionBar, message }) => {
+export const MessageFrame: React.FC<MessageFrameProps> = ({ streamKind, children, actionBar, message, headerOverride }) => {
   const { config } = useMessageRenderingConfig();
   const kind = config.kinds[streamKind] ?? config.kinds['unknown'];
 
@@ -56,6 +61,21 @@ export const MessageFrame: React.FC<MessageFrameProps> = ({ streamKind, children
           {children}
           {rawPayload}
         </MessageFrameCard>
+      </div>
+    );
+  }
+
+  if (kind.presentation === 'collapsible') {
+    return (
+      <div data-frame-variant="collapsible">
+        <MessageFrameCollapsible
+          kindId={kind.id}
+          headerLabel={headerOverride ?? kind.headerLabel}
+          actionBar={actionBar}
+        >
+          {children}
+          {rawPayload}
+        </MessageFrameCollapsible>
       </div>
     );
   }

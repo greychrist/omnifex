@@ -5,14 +5,13 @@ import type { LoggingService } from '../logging';
 import type { AgentEngine, AgentKind, InitData } from '../agents/types';
 
 // ---------------------------------------------------------------------------
-// SDK type re-exports (now defined locally — SDK dep removed)
+// CLI payload shapes (defined locally)
 // ---------------------------------------------------------------------------
 //
-// The SDK formerly owned these shapes; the CLI emits the same payloads
-// over stream-json, so we keep the type names + structures for callers
-// that already use them. Marked `unknown` where the SDK type was deep —
-// the runtime behavior doesn't depend on shape, only on field presence
-// at the call site.
+// The CLI emits these payloads over stream-json. We define the type names +
+// structures here for callers that already use them. Marked `unknown` where
+// the shape was deep — the runtime behavior doesn't depend on shape, only on
+// field presence at the call site.
 
 export type PermissionMode =
   | 'default'
@@ -51,19 +50,19 @@ export interface McpServerStatus {
   [k: string]: unknown;
 }
 
-export interface SDKControlGetContextUsageResponse {
+export interface CliControlGetContextUsageResponse {
   total_tokens?: number;
   remaining_tokens?: number;
   [k: string]: unknown;
 }
 
 /**
- * SDKUserMessage was an SDK input type. The CLI engine accepts text via
+ * CliUserMessage is a user-input payload shape. The CLI engine accepts text via
  * `engine.send(text)` and structured content via `engine.sendStructured(content)`,
  * so we no longer need this shape inside the sessions module — kept as
  * an opaque alias for the brief window where callers haven't migrated.
  */
-export interface SDKUserMessage {
+export interface CliUserMessage {
   type: 'user';
   message: { role: 'user'; content: unknown };
   parent_tool_use_id: string | null;
@@ -77,8 +76,8 @@ export interface SDKUserMessage {
  * Lifecycle states. See `docs/session-lifecycle.md` for the full model.
  *
  * SessionStatus is the connection axis ("the phone call"):
- *  - starting: SDK startup/query fired, awaiting SDK system:init
- *  - started:  SDK answered; session has a GUID; ready for conversation
+ *  - starting: CLI spawned, awaiting the CLI's system:init
+ *  - started:  CLI answered; session has a GUID; ready for conversation
  *  - error:    stream errored, kept alive for retry
  *  - stopped:  cleanly closed
  *
@@ -95,8 +94,6 @@ export type SessionStatus =
 /**
  * Session backend toggle. `'rich'` is the structured engine-driven chat
  * UX (Claude CLI in stream-json mode); `'tui'` spawns the CLI in a PTY.
- * The literal was previously `'sdk' | 'tui'` — renamed when the SDK
- * runtime was replaced.
  */
 export type SessionMode = 'rich' | 'tui';
 
@@ -150,7 +147,7 @@ export interface SessionsService {
   start(params: SessionStartParams): void | Promise<void>;
   /**
    * Re-attach an existing session to a (new) owner webContents without tearing
-   * down the SDK query. Returns true if a session was found and re-bound,
+   * down the CLI session. Returns true if a session was found and re-bound,
    * false if no session exists for that tabId. Used when the renderer reloads
    * (Cmd+R) and needs to re-claim its in-flight sessions.
    */
@@ -212,10 +209,10 @@ export interface SessionsService {
   setModel(tabId: string, model?: string): Promise<void>;
   /** Switch the permission mode mid-session. */
   setPermissionMode(tabId: string, mode: PermissionMode): Promise<void>;
-  /** Change effort level mid-session. null clears the override and reverts to the SDK default. */
+  /** Change effort level mid-session. null clears the override and reverts to the CLI default. */
   setEffort(tabId: string, level: 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null): Promise<void>;
   /**
-   * Push permission rule lists into the live SDK session. Send the full
+   * Push permission rule lists into the live CLI session. Send the full
    * effective allow/deny list — applyFlagSettings shallow-replaces the
    * `permissions` key, so deltas would lose previously-pushed rules.
    */
@@ -225,15 +222,15 @@ export interface SessionsService {
   ): Promise<void>;
   /** Change thinking mode mid-session. */
   setThinking(tabId: string, config: SessionStartParams['thinking']): Promise<void>;
-  /** Get the SDK-reported authenticated account for an active tab. Null if the tab isn't running. */
+  /** Get the CLI-reported authenticated account for an active tab. Null if the tab isn't running. */
   getAccountInfo(tabId: string): Promise<AccountInfo | null>;
   /** Get the current context-window usage breakdown. Null if the tab isn't running. */
-  getContextUsage(tabId: string): Promise<SDKControlGetContextUsageResponse | null>;
-  /** Get the list of slash commands the SDK knows about for this session. Empty if no tab. */
+  getContextUsage(tabId: string): Promise<CliControlGetContextUsageResponse | null>;
+  /** Get the list of slash commands the CLI knows about for this session. Empty if no tab. */
   getSupportedCommands(tabId: string): Promise<SlashCommand[]>;
-  /** Get the list of models the SDK knows about for this session. Empty if no tab. */
+  /** Get the list of models the CLI knows about for this session. Empty if no tab. */
   getSupportedModels(tabId: string): Promise<ModelInfo[]>;
-  /** Get the list of subagents the SDK knows about for this session. Empty if no tab. */
+  /** Get the list of subagents the CLI knows about for this session. Empty if no tab. */
   getSupportedAgents(tabId: string): Promise<AgentInfo[]>;
   /** Get live MCP server status for an active session. Empty if no tab. */
   getMcpServerStatus(tabId: string): Promise<McpServerStatus[]>;
@@ -266,7 +263,7 @@ export interface NotificationHooks {
 
 /**
  * Forwarded to the rate-limits service on every `rate_limit_event` message
- * the SDK streams. Wired in main.ts; tests typically leave it undefined.
+ * the CLI streams. Wired in main.ts; tests typically leave it undefined.
  */
 export type RateLimitHook = (
   configDir: string,
@@ -293,10 +290,10 @@ export interface PermissionDecision {
     behavior: 'allow';
     destination: 'session' | 'projectSettings' | 'userSettings' | 'localSettings';
   }[];
-  /** Set when the SDK's `AbortSignal` fired while the request was queued —
+  /** Set when the CLI's `AbortSignal` fired while the request was queued —
    *  i.e. the tool use was cancelled before the user responded. Treated as a
-   *  deny on the way back to the SDK, but distinguished from a user-driven
-   *  deny so logging and any future SDK contract that wants a richer signal
+   *  deny on the way back to the CLI, but distinguished from a user-driven
+   *  deny so logging and any future CLI contract that wants a richer signal
    *  has a hook. */
   aborted?: boolean;
 }
@@ -368,7 +365,7 @@ export interface SessionHandle {
  * Optional callback the sessions service calls to persist an accepted
  * permission rule to disk. Main.ts wires this to permissions-io's
  * updatePermission; tests pass a vi.fn(). Omitted / null → rules are only
- * handed to the SDK (in-memory for the session).
+ * handed to the CLI (in-memory for the session).
  */
 export type PersistPermissionRuleFn = (params: {
   scope: 'user' | 'project' | 'local';

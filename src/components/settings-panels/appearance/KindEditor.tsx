@@ -52,6 +52,7 @@ const SENTINEL_DEFAULT = "__default__";
 const PRESENTATION_OPTIONS: { value: Presentation; label: string }[] = [
   { value: "card", label: "Card" },
   { value: "side-line", label: "Side line" },
+  { value: "collapsible", label: "Collapsible" },
 ];
 
 const BORDER_OPTIONS: { value: BorderStyle; label: string }[] = [

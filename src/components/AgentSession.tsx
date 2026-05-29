@@ -267,7 +267,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   const [codexMessages, setCodexMessages] = useState<AgentMessage[]>([]);
   const [copyPopoverOpen, setCopyPopoverOpen] = useState(false);
   const [totalTokens, setTotalTokens] = useState(0);
-  // Pre-fetched built-in slash commands from the SDK, loaded alongside models
+  // Pre-fetched built-in slash commands from the CLI, loaded alongside models
   // during session init so the picker has them immediately.
   const [supportedCommands, setSupportedCommands] = useState<import('@/lib/api').SessionSlashCommand[]>([]);
   const [showMCPPanel, setShowMCPPanel] = useState(false);
@@ -309,15 +309,15 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   // mount-time session props. The actual derived constant is defined
   // below, after the hook call.
   const [selectedModel, setSelectedModel] = useState<string>(initialSessionConfig?.model ?? "opus");
-  // Permission mode — the full SDK set ("default" | "acceptEdits" | "plan"
+  // Permission mode — the full CLI set ("default" | "acceptEdits" | "plan"
   // | "bypassPermissions"). Pre-session and in-session pickers both use
   // the same PERMISSION_MODES constant from FloatingPromptInput.
   // Default is acceptEdits per user preference — safer than bypass,
   // smoother than ask-every-time.
   const [permissionMode, setPermissionMode] = useState<string>(initialSessionConfig?.permissionMode ?? "acceptEdits");
-  // Effort level — maps to the SDK's reasoning_effort parameter.
-  // Default 'high' matches the SDK's own default (sdk.d.ts EffortLevel docs).
-  // There is no 'auto' — the SDK's EffortLevel is strictly low/medium/high/xhigh/max.
+  // Effort level — maps to the CLI's reasoning_effort parameter.
+  // Default 'high' matches the CLI's own default (EffortLevel docs).
+  // There is no 'auto' — the CLI's EffortLevel is strictly low/medium/high/xhigh/max.
   const [effort, setEffort] = useState<EffortLevel>(initialSessionConfig?.effort ?? 'high');
   // Thinking config — controls extended thinking behavior.
   const [thinkingConfig, setThinkingConfig] = useState<ThinkingConfig>(
@@ -621,7 +621,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   const floatingPromptRef = useRef<FloatingPromptInputRef>(null);
   // Tracks whether the user just hit the cancel/interrupt button. When true,
   // the stream listener suppresses the next error-typed result message (which
-  // the SDK emits after interrupt) so "Execution Failed" doesn't flash after
+  // the CLI emits after interrupt) so "Execution Failed" doesn't flash after
   // a deliberate cancel. Reset after the first result message is consumed.
   const userInterruptedRef = useRef(false);
   const isNearBottomRef = useRef(true);
@@ -689,7 +689,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   // false. That coupled visual session activity to outstanding-subagent
   // state and faked a live turn whenever the subagent-tracking pipeline
   // missed a closure carrier. Decoupled now — the bubble follows
-  // `isLoading` (driven by SDK turn state) and `tasksInFlight`. The
+  // `isLoading` (driven by CLI turn state) and `tasksInFlight`. The
   // SubagentBar's per-row spinner remains the scoped indicator that a
   // particular dispatch is in flight. See design spec
   // docs/superpowers/specs/2026-05-11-subagent-tracking-refactor-design.md.
@@ -898,7 +898,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
         return;
       }
 
-      // stream_event — SDK iterator overlay channel (token partials).
+      // stream_event — CLI iterator overlay channel (token partials).
       // Not in JSONL; route partials to the inflight coalescer for the
       // typewriter effect. Subagent partials and non-text deltas drop.
       if (raw && typeof raw === 'object' && (raw as any).type === 'stream_event') {
@@ -1223,7 +1223,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
 
   // Auto-resume / auto-start. Three distinct cases:
   //   1. Renderer reload (Cmd+R) while a session is running in the main
-  //      process — rebind to it so the in-flight SDK query keeps streaming
+  //      process — rebind to it so the in-flight CLI query keeps streaming
   //      and prompts still reach the open subprocess. Tearing down a
   //      healthy session here used to leave the new query unable to
   //      receive input (spinner stuck, no output).
@@ -1303,7 +1303,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
 
   // Rate-limit snapshots for the active account: fetch initial state on
   // resolution, then live-update from the main process's
-  // `rate-limits:updated` event whenever an SDK rate-limit event lands.
+  // `rate-limits:updated` event whenever a CLI rate-limit event lands.
   const activeAccountName = accountResolution?.account.name ?? null;
   useEffect(() => {
     if (!activeAccountName) {
@@ -1378,9 +1378,9 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
           // A mode switch means the main process has a live session handle
           // on the other side of the toggle. Keep the header badge active
           // rather than dropping back to 'Starting…' while the restarted
-          // SDK query waits for its first message.
+          // CLI query waits for its first message.
           resetStatus({ sessionStatus: 'started', conversationStatus: 'idle' });
-          // On return to SDK mode, reload history from the JSONL file.
+          // On return to CLI mode, reload history from the JSONL file.
           // TUI-mode turns wrote to the session file but never flowed
           // through our claude-output events, so they're missing from
           // messages[]. The ref indirection keeps this stable across
@@ -1412,11 +1412,11 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   };
 
   // Wave 2.3 — "cancel" is now a soft interrupt. The old behavior called
-  // api.stopSession() which fully tore down the SDK session, killing the
+  // api.stopSession() which fully tore down the CLI session, killing the
   // Claude subprocess, losing conversation history, and forcing a restart
   // on the next prompt. Now we call api.sessionInterrupt() which halts the
   // current assistant turn but keeps the session alive so the user can
-  // continue typing. If interrupt fails (old SDK, bad state, subprocess
+  // continue typing. If interrupt fails (old CLI, bad state, subprocess
   // crash), we fall back to the hard stop path to guarantee the UI unsticks.
   const handleCancelExecution = async () => {
     if (!isLoading) return;
@@ -1424,15 +1424,15 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     const tid = tabIdRef.current;
 
     try {
-      // Flag so the stream listener suppresses the next SDK error-result
-      // message (the SDK emits is_error after interrupt and we don't want
+      // Flag so the stream listener suppresses the next CLI error-result
+      // message (the CLI emits is_error after interrupt and we don't want
       // an "Execution Failed" card for a deliberate user cancel).
       userInterruptedRef.current = true;
 
       await api.sessionInterrupt(tid);
 
       // Session stays alive — don't clean up listeners, don't unset
-      // persistentSessionRef. The SDK will emit a result message with
+      // persistentSessionRef. The CLI will emit a result message with
       // stop_reason "interrupted" which the normal message loop handles.
       setIsLoading(false);
       setError(null);
@@ -1492,7 +1492,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     }
   };
 
-  // Clear the conversation: stop the current SDK session, reset all
+  // Clear the conversation: stop the current CLI session, reset all
   // renderer-side state, then start a fresh session in the same tab. The
   // old JSONL transcript stays on disk; this just begins a new session
   // ID with no resume, mirroring what `/clear` does in the Claude Code
@@ -1513,7 +1513,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
 
     // Try the cheap rebind first — if main still has a healthy handle for
     // this tab (e.g. after a renderer hot-reload), we reattach without
-    // spawning a new SDK process. Previously this code stopped the session
+    // spawning a new CLI process. Previously this code stopped the session
     // first, which guaranteed rebind would fail and the cold-resume path
     // always ran — defeating the comment's "cheap rebind first" intent.
     const rebound = await rebindPersistentSession().catch(() => false);
@@ -1659,8 +1659,8 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   // mutation from within the chat view. This button is that way back.
   //
   // Also kicks off a fire-and-forget summary regen for the session
-  // we're navigating away from. Auto-on-close only fires when the SDK
-  // session is torn down (tab close); back-button keeps the SDK
+  // we're navigating away from. Auto-on-close only fires when the CLI
+  // session is torn down (tab close); back-button keeps the CLI
   // session alive but we still want the summary to reflect the work
   // that just happened. Gated on the same `enabled && autoOnClose`
   // pair the lifecycle hook in main.ts checks — the back-button is
@@ -2189,7 +2189,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
             (showMCPPanel || showPluginsPanel || showPermissionsPanel || inspectorOpen) && "sm:mr-96",
           )}>
             {pendingPermission && (
-              // The SDK gates the built-in `AskUserQuestion` tool through the
+              // The CLI gates the built-in `AskUserQuestion` tool through the
               // same canUseTool / permission_request channel as Bash / Read /
               // etc. — but its right UX is "show the question with selectable
               // options", not "Allow / Deny". Render the dedicated card and
@@ -2263,7 +2263,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
               onLiveModelChange={(newModel) => {
                 // Wave 2.5 — clicking a model in the bottom picker updates
                 // selectedModel AND, if a session is running, pushes the
-                // switch to the SDK immediately via sessionSetModel() so
+                // switch to the CLI immediately via sessionSetModel() so
                 // the user doesn't have to wait until the next send.
                 setSelectedModel(newModel);
                 if (persistentSessionRef.current) {
@@ -2276,7 +2276,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
               permissionMode={permissionMode}
               onPermissionModeChange={(mode) => {
                 // Wave 2.4b — update local state AND, if a session is
-                // running, push the change to the SDK via
+                // running, push the change to the CLI via
                 // sessionSetPermissionMode(). Swallow errors so a bad
                 // mode doesn't revert the UI — the user can pick another.
                 setPermissionMode(mode);

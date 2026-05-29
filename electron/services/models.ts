@@ -38,9 +38,9 @@ function findSystemClaudeBinary(): string | null {
   for (const p of candidates) {
     if (fs.existsSync(p)) return p;
   }
-  // Legacy fallback — was the per-platform binary bundled with the SDK
-  // package. After the SDK was removed in v0.5.x this returns null on
-  // most installs; kept for back-compat with old install layouts.
+  // Legacy fallback — the per-platform binary bundled in the
+  // @anthropic-ai/claude-agent-sdk npm package. Returns null on most
+  // installs; kept for back-compat with old install layouts.
   return findBundledSdkBinaryAuto();
 }
 
@@ -70,7 +70,7 @@ export function createModelsService(opts: ModelsServiceOptions = {}): ModelsServ
         resume: false,
       });
 
-      // Drive the SDK-equivalent `initialize` control_request to get the
+      // Drive the CLI's `initialize` control_request to get the
       // model catalog back. The CLI returns model/command/agent catalogs
       // in the control_response — no need to send a user message and wait
       // for system:init.

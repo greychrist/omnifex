@@ -3,7 +3,7 @@
  * message pipeline. Every JSONL line the CLI writes maps to exactly one
  * variant (or is dropped by the classifier): every real CLI emission, one
  * variant per visually meaningful category, no synthesis. Overlay variants
- * come from the SDK iterator in SDK mode and never touch the renderer's
+ * come from the CLI stream in CLI mode and never touch the renderer's
  * messages[] — they drive separate UI surfaces (partials buffer,
  * rate-limit service, SubagentBar / hook progress / status badges).
  *
@@ -123,6 +123,13 @@ export interface SystemRaw extends RawLineBase {
   notification_type?: string;
   title?: string;
   body?: string;
+  /**
+   * Present when subtype === 'status' — a transient per-turn phase ping
+   * (e.g. 'requesting', 'compacting'). Open string on the wire; the docs
+   * only list 'compacting' | null but the CLI emits others. Surfaced as the
+   * live activity label via `phaseLabel`, never rendered in the transcript.
+   */
+  status?: string | null;
 }
 
 export interface CliInitRaw {
@@ -201,7 +208,7 @@ export type JsonlNode =
   // CLI engine-mode stream envelopes (engine/--output-format stream-json)
   | { kind: 'cli-stream-init'; raw: CliInitRaw; sessionId: string; receivedAt: string }
   | { kind: 'cli-stream-result'; raw: CliResultRaw; sessionId: string; receivedAt: string }
-  // Overlay (SDK iterator only — never enters messages[])
+  // Overlay (CLI stream only — never enters messages[])
   | { kind: 'stream-event'; uuid: string; deltaText: string }
   | { kind: 'rate-limit'; info: RateLimitInfo }
   | { kind: 'lifecycle'; eventType: LifecycleKind; raw: unknown };

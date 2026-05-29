@@ -2,7 +2,7 @@
  * Canonical shape of a pending permission request inside the renderer.
  *
  * The main process sends the wire payload as snake_case (it lives on the
- * SDK stream as a `permission_request` message). The renderer normalises
+ * CLI stream as a `permission_request` message). The renderer normalises
  * it to this camelCase shape at the boundary (the session stream
  * reducer) and every downstream consumer — `usePermissions` hook,
  * `PermissionCard`, `ClaudeCodeSession` — uses the same type.
@@ -10,7 +10,7 @@
  * The payload covers three permission kinds:
  *
  * - `'tool'` (default; Claude): `toolName` / `toolInput` / `suggestions`
- *   carry the SDK's `canUseTool` payload. The PermissionCard renders the
+ *   carry the CLI's `canUseTool` payload. The PermissionCard renders the
  *   tool-name preview + suggestion rule editor.
  * - `'patch'` (Codex): the `payload` field carries the raw
  *   `applyPatchApproval` params (fileChanges, reason, callId,
@@ -51,7 +51,7 @@ export interface PermissionRequestPayload {
 /**
  * One suggestion entry inside `PermissionRequestPayload.suggestions`.
  *
- * Mirrors the SDK's PermissionUpdate shape. `destination: 'session'` is
+ * Mirrors the CLI's PermissionUpdate shape. `destination: 'session'` is
  * the in-memory variant (rule applies to the running query only); the
  * three settings destinations also persist the rule to disk.
  */

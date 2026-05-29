@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import '@testing-library/jest-dom/vitest';
-import { render } from '@testing-library/react';
+import { render, cleanup, fireEvent } from '@testing-library/react';
 import { MessageFrame } from '@/components/StreamMessage/MessageFrame';
 import { MessageRenderingProvider } from '@/contexts/MessageRenderingContext';
 
@@ -42,6 +42,21 @@ vi.mock('@/lib/api', () => ({
             presentation: 'side-line',
             borderStyle: 'solid',
           },
+          'user.systemContext': {
+            id: 'user.systemContext',
+            label: 'System context',
+            description: '',
+            origin: 'user',
+            icon: 'Sparkles',
+            headerLabel: 'System Context',
+            accentColor: 'purple',
+            alignment: 'left',
+            hiddenInCompact: false,
+            compactBoundaryLocked: false,
+            presentation: 'collapsible',
+            borderStyle: 'solid',
+            showRawPayload: true,
+          },
           unknown: {
             id: 'unknown',
             label: 'Unknown',
@@ -75,6 +90,8 @@ vi.mock('@/lib/api', () => ({
 }));
 
 describe('MessageFrame', () => {
+  afterEach(() => { cleanup(); });
+
   it('renders MessageFrameCard wrapper when the kind presentation is card', async () => {
     const { container, findByText } = render(
       <MessageRenderingProvider>
@@ -108,6 +125,71 @@ describe('MessageFrame', () => {
     );
     await findByText('noise');
     expect(container.querySelector('[data-testid="side-line-bar"]')).not.toBeNull();
+  });
+
+  const sysCtxMsg = { kind: 'user', raw: { type: 'user', message: { content: 'x' } } } as never;
+
+  it('renders the collapsible variant when the kind presentation is collapsible', async () => {
+    const { container, findByText } = render(
+      <MessageRenderingProvider>
+        <MessageFrame streamKind="user.systemContext" headerOverride="Skill: Foo" message={sysCtxMsg}>
+          BODYTEXT
+        </MessageFrame>
+      </MessageRenderingProvider>
+    );
+    // The header label is always visible; use it as the settled signal.
+    await findByText('Skill: Foo');
+    expect(container.querySelector('[data-frame-variant="collapsible"]')).not.toBeNull();
+  });
+
+  it('is collapsed by default — body is hidden until expanded', async () => {
+    const { queryByText, findByText } = render(
+      <MessageRenderingProvider>
+        <MessageFrame streamKind="user.systemContext" headerOverride="Skill: Foo" message={sysCtxMsg}>
+          BODYTEXT
+        </MessageFrame>
+      </MessageRenderingProvider>
+    );
+    await findByText('Skill: Foo');
+    expect(queryByText('BODYTEXT')).toBeNull();
+  });
+
+  it('expands the body when the header is clicked', async () => {
+    const { findByText, getByText } = render(
+      <MessageRenderingProvider>
+        <MessageFrame streamKind="user.systemContext" headerOverride="Skill: Foo" message={sysCtxMsg}>
+          BODYTEXT
+        </MessageFrame>
+      </MessageRenderingProvider>
+    );
+    const header = await findByText('Skill: Foo');
+    fireEvent.click(header);
+    expect(getByText('BODYTEXT')).toBeInTheDocument();
+  });
+
+  it('renders the forwarded actionBar (copy) in the collapsible header', async () => {
+    const { findByText, getByText } = render(
+      <MessageRenderingProvider>
+        <MessageFrame streamKind="user.systemContext" headerOverride="Skill: Foo" message={sysCtxMsg} actionBar={<span>COPYSLOT</span>}>
+          BODYTEXT
+        </MessageFrame>
+      </MessageRenderingProvider>
+    );
+    await findByText('Skill: Foo');
+    expect(getByText('COPYSLOT')).toBeInTheDocument();
+  });
+
+  it('shows the raw-payload metadata when expanded (showRawPayload kind)', async () => {
+    const { findByText, getByText } = render(
+      <MessageRenderingProvider>
+        <MessageFrame streamKind="user.systemContext" headerOverride="Skill: Foo" message={sysCtxMsg}>
+          BODYTEXT
+        </MessageFrame>
+      </MessageRenderingProvider>
+    );
+    const header = await findByText('Skill: Foo');
+    fireEvent.click(header);
+    expect(getByText('Raw payload')).toBeInTheDocument();
   });
 
   it('falls back to the unknown kind when streamKind is not in config', async () => {

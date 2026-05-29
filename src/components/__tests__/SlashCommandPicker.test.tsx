@@ -92,7 +92,7 @@ const notNull = (v: unknown) => { expect(v).not.toBeNull(); };
 const isNull = (v: unknown) => { expect(v).toBeNull(); };
 
 describe('SlashCommandPicker filter tabs', () => {
-  it('labels the SDK-sourced filter as "Claude" (not "Default")', async () => {
+  it('labels the CLI-sourced filter as "Claude" (not "Default")', async () => {
     renderPicker();
     await waitFor(() => { expect(slashCommandsListMock).toHaveBeenCalled(); });
     isNull(screen.queryByRole('button', { name: 'Default' }));
@@ -110,7 +110,7 @@ describe('SlashCommandPicker filter tabs', () => {
   it('selects the Project tab on open', async () => {
     renderPicker();
     await waitFor(() => { isNull(screen.queryByText(/Loading commands/)); });
-    // Only the project-scoped command should be visible; user + SDK are filtered out.
+    // Only the project-scoped command should be visible; user + CLI are filtered out.
     notNull(screen.queryByText('/projonly'));
     isNull(screen.queryByText('/useronly'));
     isNull(screen.queryByText('/help'));
@@ -125,7 +125,7 @@ describe('SlashCommandPicker filter tabs', () => {
     isNull(screen.queryByText('/help'));
   });
 
-  it('Claude tab shows only SDK (default-scope) commands', async () => {
+  it('Claude tab shows only CLI (default-scope) commands', async () => {
     renderPicker();
     await waitFor(() => { isNull(screen.queryByText(/Loading commands/)); });
     fireEvent.click(getFilterButton('Claude'));

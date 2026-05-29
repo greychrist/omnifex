@@ -8,7 +8,7 @@ import {
 } from '../claudeStream';
 
 // Test factories. The cast widens through `unknown` because the real
-// SDKAssistantMessage / SDKUserMessage / SDKResultMessage / SDKSystemMessage
+// CliAssistantMessage / CliUserMessage / CliResultMessage / CliSystemMessage
 // types require `uuid`, `session_id`, etc., which the runtime guards never
 // depend on — these helpers only branch on `type` / `subtype`.
 // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-parameters -- API surface stability — generic param documents intent.
@@ -34,7 +34,7 @@ describe('ClaudeStreamMessage guards', () => {
 
   describe('isUserMessage', () => {
     it('narrows live user messages and JSONL-replay user messages identically', () => {
-      // Both SDKUserMessage and SDKUserMessageReplay carry type: 'user'.
+      // Both CliUserMessage and CliUserMessageReplay carry type: 'user'.
       const live = make({ type: 'user', message: { content: 'hi' } });
       const replay = make({ type: 'user', message: { content: 'hi' }, isReplay: true });
       expect(isUserMessage(live)).toBe(true);

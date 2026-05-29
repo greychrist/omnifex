@@ -1,8 +1,31 @@
 import { describe, it, expect } from 'vitest';
-import { classifyBlockKind, isBlockHiddenInCompact } from '../blockKind';
+import { classifyBlockKind, isBlockHiddenInCompact, deriveSystemContextLabel } from '../blockKind';
 import { createDefaultConfig } from '../messageRenderingConfig';
 import { KNOWN_TOOL_NAMES } from '../types/toolInput';
 import type { JsonlNode } from '@/types/jsonl';
+
+describe('deriveSystemContextLabel', () => {
+  it('labels a skill load with its markdown heading', () => {
+    const content = 'Base directory for this skill: /x/y\n\n# Brainstorming Ideas Into Designs\n\nHelp turn ideas...';
+    expect(deriveSystemContextLabel(content)).toBe('Skill: Brainstorming Ideas Into Designs');
+  });
+
+  it('falls back to "Skill Loaded" for a skill load with no heading', () => {
+    expect(deriveSystemContextLabel('Base directory for this skill: /x/y\n\nno heading here')).toBe('Skill Loaded');
+  });
+
+  it('labels CLAUDE.md context', () => {
+    expect(deriveSystemContextLabel('Contents of CLAUDE.md (project instructions):')).toBe('CLAUDE.md Context');
+  });
+
+  it('labels a system reminder', () => {
+    expect(deriveSystemContextLabel('<system-reminder>do the thing</system-reminder>')).toBe('System Reminder');
+  });
+
+  it('falls back to "System Context" for anything else', () => {
+    expect(deriveSystemContextLabel('some other injected context')).toBe('System Context');
+  });
+});
 
 // Test factories build minimal JsonlNode stubs.
 // `classifyBlockKind` only reads `parent.kind`; callers access blocks via
@@ -139,8 +162,8 @@ describe('classifyBlockKind', () => {
     expect(classifyBlockKind(parent.raw.message.content[0], parent)).toBe('user.tool-result');
   });
 
-  // The Agent SDK doesn't currently surface server-side tool blocks through
-  // the CLI, but if Anthropic ever exposes the code-execution tool surface
+  // The CLI doesn't currently surface server-side tool blocks, but if
+  // Anthropic ever exposes the code-execution tool surface
   // (server_tool_use + bash_code_execution_tool_result +
   // text_editor_code_execution_tool_result blocks per the Messages API),
   // the renderer needs to recognize them rather than fall through to the

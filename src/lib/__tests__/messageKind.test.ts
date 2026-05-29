@@ -144,7 +144,7 @@ describe('classifyStandaloneKind', () => {
     });
 
     it('ignores empty text blocks when checking single-block elevation', () => {
-      // The SDK sometimes precedes a tool_use with an empty text block.
+      // The CLI sometimes precedes a tool_use with an empty text block.
       // It shouldn't disqualify the assistant message from elevation.
       const withEmptyText = {
         kind: 'assistant', sessionId: '', receivedAt: '',
@@ -214,7 +214,7 @@ describe('classifyStandaloneKind', () => {
   });
 
   describe('system.permission_denied', () => {
-    // SDKPermissionDeniedMessage (`type: 'system', subtype: 'permission_denied'`)
+    // CliPermissionDeniedMessage (`type: 'system', subtype: 'permission_denied'`)
     // is emitted when a tool call is auto-denied without an interactive
     // permission prompt (auto-mode classifier, dontAsk mode, headless-agent
     // auto-deny, or a deny rule). Until this kind was first-classed it
@@ -227,7 +227,7 @@ describe('classifyStandaloneKind', () => {
         raw: { type: 'system', subtype: 'permission_denied', ...extras },
       }) as unknown as JsonlNode;
 
-    it('classifies the SDK auto-deny shape as system.permission_denied', () => {
+    it('classifies the CLI auto-deny shape as system.permission_denied', () => {
       expect(
         classifyStandaloneKind(
           sys({ tool_name: 'Bash', tool_use_id: 'tu_1', message: 'denied by deny rule' }),
@@ -331,7 +331,7 @@ describe('classifyStandaloneKind', () => {
   });
 
   describe('user.systemContext (whole-message)', () => {
-    // The Agent SDK delivers hook output and other system injections as
+    // The CLI delivers hook output and other system injections as
     // synthetic user-role messages. Without whole-message classification
     // these fall through to user.prompt and render as if the user typed
     // them — which is what the OmniFex chat was doing for Stop-hook

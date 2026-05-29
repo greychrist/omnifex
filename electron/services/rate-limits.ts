@@ -17,10 +17,10 @@ export type RateLimitType =
 export type RateLimitStatus = 'allowed' | 'allowed_warning' | 'rejected';
 
 /**
- * Shape that mirrors `SDKRateLimitInfo` from `@anthropic-ai/claude-agent-sdk`.
- * We accept the SDK value directly via `recordEvent`; this re-declared type
- * keeps the service free of an SDK dependency for testing. `rateLimitType`
- * is widened to `string` so future SDK values pass through unchanged.
+ * Shape that mirrors the CLI's `CliRateLimitInfo`. We accept the CLI value
+ * directly via `recordEvent`; this re-declared type keeps the service free of
+ * any external dependency for testing. `rateLimitType` is widened to `string`
+ * so future CLI values pass through unchanged.
  */
 export interface RateLimitInfo {
   status: RateLimitStatus;
@@ -51,7 +51,7 @@ export interface RateLimitsService {
   recordEvent(configDir: string, info: RateLimitInfo): void;
   /**
    * Update utilization (and reset time) for a window without overwriting the
-   * SDK-derived `status`. Called by the usage-runner when fresh /usage data
+   * CLI-derived `status`. Called by the usage-runner when fresh /usage data
    * arrives. If no snapshot exists yet, creates one with `status: 'allowed'`.
    */
   recordUtilization(
@@ -221,7 +221,7 @@ export function createRateLimitsService(deps: RateLimitsDeps): RateLimitsService
     rateLimitType: string,
     observedAt: number,
   ): void {
-    // The SDK does not always include `utilization` (or `resetsAt`) on every
+    // The CLI does not always include `utilization` (or `resetsAt`) on every
     // rate_limit_event — observed in practice on max-plan accounts where many
     // events arrive with `status: 'allowed'` and only the reset time. Use
     // COALESCE so an incoming null leaves the previous good value intact;
@@ -305,8 +305,8 @@ export function createRateLimitsService(deps: RateLimitsDeps): RateLimitsService
         JSON.stringify({ source: 'usage_cli', utilization, resetsAt }),
         observedAt,
       );
-    // Emit the persisted row (status preserved from any prior SDK event)
-    // on the same channel + shape the SDK-event path uses, so the renderer's
+    // Emit the persisted row (status preserved from any prior CLI event)
+    // on the same channel + shape the CLI-event path uses, so the renderer's
     // single `rate-limits:updated` listener picks up CLI-runner refreshes.
     const merged = db.raw
       .prepare(
@@ -390,7 +390,7 @@ export function createRateLimitsService(deps: RateLimitsDeps): RateLimitsService
     const human = humanType(rateLimitType);
     const tail = info.resetsAt ? ` — resets in ${formatResetTime(info.resetsAt, observedAt)}` : '';
 
-    // 1. SDK-rejected: highest urgency, distinct copy
+    // 1. CLI-rejected: highest urgency, distinct copy
     if (info.status === 'rejected') {
       const key = 'sdk_rejected';
       if (!hasFired(accountName, rateLimitType, window, key)) {
@@ -401,7 +401,7 @@ export function createRateLimitsService(deps: RateLimitsDeps): RateLimitsService
       return;
     }
 
-    // 2. SDK-warning signal: fire once per window regardless of percent
+    // 2. CLI-warning signal: fire once per window regardless of percent
     if (info.status === 'allowed_warning') {
       const key = 'sdk_warning';
       if (!hasFired(accountName, rateLimitType, window, key)) {

@@ -251,7 +251,7 @@ describe('classifyJsonlLine', () => {
     }
   });
 
-  it('classifies system/notification (SDK iterator shape)', () => {
+  it('classifies system/notification (CLI iterator shape)', () => {
     const sample = {
       type: 'system',
       subtype: 'notification',
@@ -268,7 +268,7 @@ describe('classifyJsonlLine', () => {
     }
   });
 
-  it('reads snake_case session_id for SDK iterator messages', () => {
+  it('reads snake_case session_id for CLI iterator messages', () => {
     const sample = {
       type: 'assistant',
       session_id: 'sdk-snake',

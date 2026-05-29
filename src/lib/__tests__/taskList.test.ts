@@ -6,7 +6,7 @@ import {
   type TaskListEntry,
 } from '../taskList';
 
-// Build the live-stream shapes the renderer sees under SDK 0.3.x. The
+// Build the live-stream shapes the renderer sees from the CLI. The
 // `taskCreateResultMsg` helper uses the LIVE wire format (content string
 // only, no envelope) so attribution + parsing are exercised against the
 // real shape end to end. Verified against
@@ -161,7 +161,7 @@ describe('getTaskList', () => {
   it('falls back to earliest non-terminal task when no task is in_progress', () => {
     // Common real-world case: the agent skips the in_progress step and
     // goes TaskCreate → do work → TaskUpdate(completed). Without a
-    // fallback every message would be unattributed; the SDK doesn't ship
+    // fallback every message would be unattributed; the CLI doesn't ship
     // a "this work belongs to that task" signal, so we use the queue
     // ordering: until task #1 completes, work belongs to #1; then to #2;
     // and so on.

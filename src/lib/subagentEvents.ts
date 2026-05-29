@@ -1,10 +1,10 @@
 /**
- * Event-sourced derivation of subagent state from the Claude Agent SDK
+ * Event-sourced derivation of subagent state from the Claude CLI
  * stream. Two layers:
  *
- *   1. `messagesToEvents(messages)` — pure translation from SDK / JSONL
+ *   1. `messagesToEvents(messages)` — pure translation from CLI / JSONL
  *      messages into a typed `SubagentEvent` log. This is the only place
- *      that knows about SDK message shapes; the rest of the derivation
+ *      that knows about CLI message shapes; the rest of the derivation
  *      operates on events.
  *   2. `applyEvents(events)` — pure reducer that builds per-`tool_use_id`
  *      `SubagentState` from the event log. Terminal status is intrinsic:
@@ -13,8 +13,8 @@
  *
  * Closure signals carry a `source` so consumers can render differently
  * for "real" completions vs `completed_inferred` (parent emitted `result`
- * but we never saw a direct closure carrier — usually because the SDK
- * iterator doesn't yield the `queue-operation` / `attachment` envelopes
+ * but we never saw a direct closure carrier — usually because the CLI
+ * stream doesn't yield the `queue-operation` / `attachment` envelopes
  * that the CLI uses for background-Bash completion).
  *
  * The renderer's `subagentStreams.ts` wraps these two functions plus the
@@ -25,11 +25,11 @@ import type { JsonlNode } from '@/types/jsonl';
 import type { MessageContentBlock } from '@/types/claudeStream';
 
 /**
- * Per-variant shapes formerly imported from the SDK. The wire payloads
- * come from the CLI directly now (via `system+task_*` messages on the
- * claude-output channel); the field sets here mirror what the CLI emits.
+ * Per-variant shapes for CLI task messages. The wire payloads come from
+ * the CLI directly (via `system+task_*` messages on the claude-output
+ * channel); the field sets here mirror what the CLI emits.
  */
-interface SDKTaskStartedMessage {
+interface CliTaskStartedMessage {
   type: 'system';
   subtype: 'task_started';
   task_id?: string;
@@ -37,7 +37,7 @@ interface SDKTaskStartedMessage {
   description?: string;
   [k: string]: unknown;
 }
-interface SDKTaskProgressMessage {
+interface CliTaskProgressMessage {
   type: 'system';
   subtype: 'task_progress';
   task_id?: string;
@@ -47,7 +47,7 @@ interface SDKTaskProgressMessage {
   usage: { total_tokens?: number; tool_uses?: number; duration_ms?: number };
   [k: string]: unknown;
 }
-interface SDKTaskNotificationMessage {
+interface CliTaskNotificationMessage {
   type: 'system';
   subtype: 'task_notification';
   task_id?: string;
@@ -57,7 +57,7 @@ interface SDKTaskNotificationMessage {
   usage?: { total_tokens?: number; tool_uses?: number; duration_ms?: number };
   [k: string]: unknown;
 }
-interface SDKTaskUpdatedMessage {
+interface CliTaskUpdatedMessage {
   type: 'system';
   subtype: 'task_updated';
   task_id?: string;
@@ -67,10 +67,10 @@ interface SDKTaskUpdatedMessage {
 
 /** Type predicate covering every task_* lifecycle subtype the renderer cares about. */
 type TaskLifecycleMessage =
-  | SDKTaskStartedMessage
-  | SDKTaskProgressMessage
-  | SDKTaskNotificationMessage
-  | SDKTaskUpdatedMessage;
+  | CliTaskStartedMessage
+  | CliTaskProgressMessage
+  | CliTaskNotificationMessage
+  | CliTaskUpdatedMessage;
 
 // ---------------------------------------------------------------------------
 // Public state types
@@ -106,7 +106,7 @@ export interface SubagentState {
    *  an immediate ACK `tool_result` that is not a completion signal; the
    *  reducer suppresses it. */
   isBackground?: boolean;
-  /** Set from `SDKTaskUpdatedMessage.patch.error` when the SDK reports a
+  /** Set from `CliTaskUpdatedMessage.patch.error` when the CLI reports a
    *  subagent failure. `task_notification` summaries don't carry an
    *  error string per se; this is the only carrier for it. */
   error?: string;
@@ -138,9 +138,9 @@ export type SubagentEvent =
   | { kind: 'TaskNotification'; toolUseId: string; status: 'completed' | 'failed' | 'stopped'; summary?: string; taskId?: string; totalTokens?: number; toolUses?: number; durationMs?: number }
   | { kind: 'TaskNotificationXml'; toolUseId: string; status: 'completed' | 'failed'; summary?: string; taskId?: string }
   | {
-      // SDKTaskUpdatedMessage patch — wire-safe TaskState changes
+      // CliTaskUpdatedMessage patch — wire-safe TaskState changes
       // (status, description, end_time, error, is_backgrounded, …).
-      // Keyed by `taskId` (NOT `toolUseId`) because the SDK message
+      // Keyed by `taskId` (NOT `toolUseId`) because the CLI message
       // only carries `task_id`; the reducer maps it back to a
       // dispatched row via `SubagentState.taskId` set by Started /
       // Progress / Notification.
@@ -165,8 +165,8 @@ export type SubagentEvent =
 //   - { type: 'queue-operation', operation: 'enqueue', content: '<task-notification>...' }
 //   - { type: 'attachment', attachment: { type: 'queued_command', prompt: '<task-notification>...' } }
 // Both surface the completion of a run_in_background dispatch in lieu of a
-// structured SDKTaskNotificationMessage. The live SDK iterator does NOT yield
-// these envelopes (they're not in the SDKMessage union); they only land in the
+// structured CliTaskNotificationMessage. The live CLI stream does NOT yield
+// these envelopes (they're not in the CliMessage union); they only land in the
 // renderer via JSONL replay or the new `claude-output-extra:<tabId>` IPC
 // channel surfaced by the main-process JSONL tail.
 function extractTaskNotificationXml(m: unknown): string | null {
@@ -284,7 +284,7 @@ export function messagesToEvents(messages: JsonlNode[]): SubagentEvent[] {
       }
     }
 
-    // 3. Structured SDK task_* SystemMessages.
+    // 3. Structured CLI task_* SystemMessages.
     if (isTaskLifecycleMarker(raw)) {
       // `raw` is narrowed to TaskLifecycleMessage here. Access all fields via raw.
       const tlm = raw as TaskLifecycleMessage;
@@ -319,7 +319,7 @@ export function messagesToEvents(messages: JsonlNode[]): SubagentEvent[] {
       if (tlm.subtype === 'task_started') {
         events.push({ kind: 'Started', toolUseId: id, taskId: tlm.task_id ?? '', description: tlm.description ?? '' });
       } else if (tlm.subtype === 'task_progress') {
-        const tlmProg = tlm as SDKTaskProgressMessage;
+        const tlmProg = tlm as CliTaskProgressMessage;
         events.push({
           kind: 'Progress',
           toolUseId: id,
@@ -332,7 +332,7 @@ export function messagesToEvents(messages: JsonlNode[]): SubagentEvent[] {
         });
       } else {
         // task_notification
-        const tlmNotif = tlm as SDKTaskNotificationMessage;
+        const tlmNotif = tlm as CliTaskNotificationMessage;
         events.push({
           kind: 'TaskNotification',
           toolUseId: id,
@@ -409,7 +409,7 @@ function ensureState(map: Map<string, SubagentState>, id: string, init?: Partial
  * once a state reaches a terminal kind, subsequent events for that id are
  * mostly ignored — with two pragmatic exceptions:
  *
- *   - A later `TaskNotification` (structured SDK message) overwrites status
+ *   - A later `TaskNotification` (structured CLI message) overwrites status
  *     and summary. This preserves the legacy precedence ("structured wins")
  *     so a richer carrier — which usually arrives slightly after a bare
  *     `tool_result` — can correct an earlier interpretation. The XML

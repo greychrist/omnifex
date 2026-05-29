@@ -8,7 +8,7 @@ import { useClaudeSessionStore } from '@/stores/claudeSessionStore';
 
 interface Buffer {
   /** uuid of the most-recent stream_event message — informational only.
-   *  The SDK emits a fresh uuid per stream_event (each delta gets its own),
+   *  The CLI emits a fresh uuid per stream_event (each delta gets its own),
    *  so this is NOT a stable assistant-turn key and must not be used to
    *  decide whether to reset the buffer. */
   uuid: string;
@@ -25,7 +25,7 @@ let rafHandle: number | null = null;
  * clearInflightBuffer() on assistant-complete / error / unmount — that's the
  * only thing that ends a turn from the coalescer's perspective.
  *
- * (Earlier versions keyed by `uuid` and reset on uuid mismatch, but the SDK
+ * (Earlier versions keyed by `uuid` and reset on uuid mismatch, but the CLI
  * assigns a fresh uuid to every stream_event — see assistant.mjs's
  * stream_event constructor — so that key was effectively "always reset",
  * which left the bubble showing only the most recent delta.)

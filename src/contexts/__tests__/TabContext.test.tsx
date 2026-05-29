@@ -190,7 +190,7 @@ describe('TabContext — addTab / removeTab', () => {
     expect(result.current.activeTabId).toBeNull();
   });
 
-  it('removeTab on a chat tab fires api.stopSession so the main-process SDK handle is torn down', async () => {
+  it('removeTab on a chat tab fires api.stopSession so the main-process CLI handle is torn down', async () => {
     const { result } = renderHook(() => useTabContext(), { wrapper });
     await waitFor(() => { expect(result.current.tabs.length).toBe(1); });
 

@@ -32,7 +32,7 @@ describe('asToolInput', () => {
   });
 
   it('does NOT validate field-level shape — passes through any object payload', () => {
-    // Documented behavior: SDK types are compile-time only; runtime asserts
+    // Documented behavior: CLI types are compile-time only; runtime asserts
     // the discriminator name and object-ness, no more. Each widget reads
     // with optional access so a missing field renders gracefully.
     const result = asToolInput('Bash', 'Bash', { unrelated: true });
@@ -42,7 +42,7 @@ describe('asToolInput', () => {
 
 describe('asToolInput — Write empty-content predicate', () => {
   // Regression for the empty-file write bug. `content === ''` is a
-  // legitimate empty-file write — the SDK schema permits it and Claude
+  // legitimate empty-file write — the CLI schema permits it and Claude
   // Code emits it for `touch`-style operations. The StreamMessage gate
   // historically used `writeInput?.file_path && writeInput.content`
   // which evaluates to `''` (falsy) for empty content and silently
@@ -71,7 +71,7 @@ describe('asToolInput — Write empty-content predicate', () => {
 
 describe('GrepInputExtended', () => {
   // Regression: GrepInputExtended adds optional `include` / `exclude`
-  // fields the SDK no longer models (replaced upstream by glob / type).
+  // fields the CLI no longer models (replaced upstream by glob / type).
   // GrepWidget still reads them for back-compat with older session
   // payloads. If the intersection were ever removed from toolInput.ts,
   // the call site in StreamMessage.tsx would compile (because rawInput
@@ -117,7 +117,7 @@ describe('asToolInputOneOf', () => {
   // Regression: the renderer used to PascalCase-normalize the name before
   // calling asToolInputOneOf because isSubagentDispatch was case-insensitive
   // and this helper was case-sensitive — the asymmetry forced a shim at
-  // the call site. Both layers are now case-sensitive against the SDK's
+  // the call site. Both layers are now case-sensitive against the CLI's
   // PascalCase contract; this test pins the case-sensitive behavior so any
   // future regression to lenient matching breaks loudly.
   it('is case-sensitive — lowercase variants do NOT match PascalCase expected set', () => {

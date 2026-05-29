@@ -425,7 +425,7 @@ export interface RateLimitSnapshot {
   /** 'five_hour' | 'seven_day' | 'seven_day_opus' | 'seven_day_sonnet' | 'overage' */
   rate_limit_type: string;
   status: 'allowed' | 'allowed_warning' | 'rejected';
-  /** 0–100. May be null when the SDK didn't include it. */
+  /** 0–100. May be null when the CLI didn't include it. */
   utilization: number | null;
   /** Unix epoch seconds. May be null. */
   resets_at: number | null;
@@ -479,7 +479,7 @@ export interface ServerStatus {
 }
 
 /**
- * Live MCP server status from the SDK during an active session.
+ * Live MCP server status from the CLI during an active session.
  */
 export interface SessionMcpServerStatus {
   name: string;
@@ -655,10 +655,9 @@ export interface LogQueryResult {
   total: number;
 }
 
-// Wave 2 — SDK Query-method return shapes (mirrored from
-// @anthropic-ai/claude-agent-sdk so the renderer doesn't have to import
-// the SDK types directly). Kept loose so minor SDK additions don't break
-// the frontend.
+// Wave 2 — CLI query-method return shapes (mirrored so the renderer
+// doesn't have to import the CLI types directly). Kept loose so minor CLI
+// additions don't break the frontend.
 
 export interface SessionAccountInfo {
   email?: string;
@@ -701,7 +700,7 @@ export interface TabStatusSummary {
   tabId: string;
   title: string;
   projectPath: string | null;
-  /** True iff a persistent SDK session is alive for this tab. */
+  /** True iff a persistent CLI session is alive for this tab. */
   sessionStarted: boolean;
   /** Roll-up: mainTurnInFlight || activeAgents > 0 || tasks.inFlight. */
   busy: boolean;
@@ -1114,7 +1113,7 @@ export const api = {
    * Re-claim ownership of an in-flight session for this window without
    * restarting it. Returns true if the main process had a live session for
    * this tabId (and rebound event routing to this window), false otherwise.
-   * Use after a renderer reload (Cmd+R) to avoid tearing down a healthy SDK
+   * Use after a renderer reload (Cmd+R) to avoid tearing down a healthy CLI
    * query and replacing it with a fresh resume.
    */
   async sessionRebind(tabId: string): Promise<boolean> {
@@ -1184,7 +1183,7 @@ export const api = {
     return apiCall("session_set_thinking", { tabId, config });
   },
 
-  /** Get the SDK-reported authenticated account for an active session. */
+  /** Get the CLI-reported authenticated account for an active session. */
   async sessionAccountInfo(tabId: string): Promise<SessionAccountInfo | null> {
     return apiCall("session_account_info", { tabId });
   },
@@ -1194,18 +1193,18 @@ export const api = {
     return apiCall("session_context_usage", { tabId });
   },
 
-  /** Get the list of slash commands the SDK knows about for this session. */
+  /** Get the list of slash commands the CLI knows about for this session. */
   async sessionSupportedCommands(tabId: string): Promise<SessionSlashCommand[]> {
     return apiCall("session_supported_commands", { tabId });
   },
 
-  /** Get the list of models the SDK knows about for this session. */
+  /** Get the list of models the CLI knows about for this session. */
   async sessionSupportedModels(tabId: string): Promise<SessionModelInfo[]> {
     return apiCall("session_supported_models", { tabId });
   },
 
   /**
-   * Get the SDK's model catalog for a given account without starting a session.
+   * Get the CLI's model catalog for a given account without starting a session.
    * Spins up an ephemeral query() scoped to `configDir` just long enough to
    * read the init handshake.
    */
@@ -1225,7 +1224,7 @@ export const api = {
     return apiCall("session_get_permissions", { tabId, projectPath, configDir });
   },
 
-  /** Switch the session between SDK mode and TUI mode. */
+  /** Switch the session between CLI mode and TUI mode. */
   async setSessionMode(tabId: string, mode: SessionMode): Promise<void> {
     return apiCall('session_set_mode', { tabId, mode });
   },
@@ -2136,7 +2135,7 @@ export const api = {
    * Update an account's per-session summary opt-in.
    *
    * `summarizeOnClose` toggles the auto-on-close generation; `summaryModel`
-   * is the model id (e.g. 'haiku', 'sonnet', 'opus', or a full SDK id like
+   * is the model id (e.g. 'haiku', 'sonnet', 'opus', or a full CLI id like
    * 'claude-haiku-4-5'). Pass `null` to clear the model. Both fields are
    * required for generation — toggling on while model is null leaves the
    * feature off in practice.
@@ -2375,7 +2374,7 @@ export const api = {
   },
 
   /**
-   * Subscribe to live changes in the count of sessions whose SDK turn is
+   * Subscribe to live changes in the count of sessions whose CLI turn is
    * currently in flight — derived as `sessionStatus === 'starting'` or
    * `conversationStatus === 'running'`.
    * Used by the titlebar to surface a warning on the upgrade button before

@@ -23,7 +23,7 @@ interface UsePermissionsReturn {
   /**
    * Allow the pending tool call but rewrite its input first. Used by the
    * AskUserQuestion card to inject the user's selected answers as the
-   * tool's effective input — the SDK's runtime then surfaces them as the
+   * tool's effective input — the CLI's runtime then surfaces them as the
    * tool's output (`AskUserQuestionOutput.answers`).
    */
   handlePermissionAllowWithInput: (

@@ -21,6 +21,12 @@ describe("messageRenderingConfig", () => {
       }
     });
 
+    it("defaults user.systemContext to the collapsible presentation with raw-payload metadata", () => {
+      const cfg = createDefaultConfig();
+      expect(cfg.kinds["user.systemContext"].presentation).toBe("collapsible");
+      expect(cfg.kinds["user.systemContext"].showRawPayload).toBe(true);
+    });
+
     it("returns independent copies on each call", () => {
       const a = createDefaultConfig();
       const b = createDefaultConfig();

@@ -1,15 +1,15 @@
 // Sessions module — TUI-mode JSONL listener
 //
-// Owns the JSONL tail for a TUI-mode session. The SDK iterator is not
-// running in this mode, so JSONL is the only event source. The listener:
-//   1. Splits each parsed line on the same two channels the SDK path uses:
+// Owns the JSONL tail for a TUI-mode session. The CLI stream-json output
+// is not running in this mode, so JSONL is the only event source. The listener:
+//   1. Splits each parsed line on the same two channels the stream-json path uses:
 //      `claude-output-extra:<tabId>` for closure carriers (queue-operation,
 //      attachment with task-notification XML), and `agent-output:<tabId>`
 //      for everything else. This lets the renderer consume the TUI stream
 //      through its existing handleStreamMessage pipeline — same normalization,
 //      same MessageList rendering, no parallel render path.
 //   2. Classifies events; on `result`, fires the shared notification helper
-//      so OS notifications / dock-badge updates work identically to SDK mode.
+//      so OS notifications / dock-badge updates work identically to stream-json mode.
 //   3. Reports `system:init` via the `onInit` callback (cold-start sessionId
 //      capture).
 //   4. Updates handle status via `onStatusChange` so the renderer's loading
@@ -38,7 +38,7 @@ const SUCCESS_STOP_REASONS: ReadonlySet<string> = new Set([
  * carries a terminal stop_reason. The CLI's interactive TUI never writes
  * top-level `result` lines, so we manufacture one here so the shared
  * notification helper (`dispatchResultNotification`) fires identically to
- * SDK mode.
+ * stream-json mode.
  *
  * Returns null when the stop_reason is non-terminal (tool_use, null, etc.),
  * meaning the turn isn't done yet.
@@ -94,7 +94,7 @@ export function createTuiJsonlListener(args: CreateTuiJsonlListenerArgs): TuiJso
     jsonlPath,
     filter: 'all',
     onMessage: (msg) => {
-      // Route to the same channels the SDK path uses so the renderer's
+      // Route to the same channels the stream-json path uses so the renderer's
       // existing handleStreamMessage / extra-carrier subscriptions cover us.
       if (isClosureCarrier(msg)) {
         sendToRenderer(`claude-output-extra:${tabId}`, msg);
@@ -132,8 +132,8 @@ export function createTuiJsonlListener(args: CreateTuiJsonlListenerArgs): TuiJso
         // streamEvent / rateLimit / compact — no status change
       }
 
-      // JSONL has no top-level `result` lines (only the SDK iterator produces
-      // those). Synthesize one from any `assistant` line with a terminal
+      // JSONL has no top-level `result` lines (only the CLI stream-json output
+      // produces those). Synthesize one from any `assistant` line with a terminal
       // stop_reason so the OS notification fires.
       const synth = synthResultFromAssistant(msg);
       if (synth) {

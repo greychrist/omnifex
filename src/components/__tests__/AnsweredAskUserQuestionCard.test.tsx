@@ -5,7 +5,7 @@ import { AnsweredAskUserQuestionCard } from '../AnsweredAskUserQuestionCard';
 
 afterEach(() => { cleanup(); });
 
-// Mirrors the SDK shape `AskUserQuestionCard.handleSubmit` produces — keep
+// Mirrors the CLI shape `AskUserQuestionCard.handleSubmit` produces — keep
 // these factories close to that so a wire-format drift breaks here first.
 function input(questions: { question: string; header?: string; options?: { label: string }[]; multiSelect?: boolean }[]) {
   return {
@@ -19,11 +19,11 @@ function input(questions: { question: string; header?: string; options?: { label
 }
 
 /**
- * Build the synthesised wire-format string the SDK/CLI actually returns
+ * Build the synthesised wire-format string the CLI actually returns
  * to the renderer. Verified against live session
  * `d6ac42ec-47c0-47ef-8b4b-81fda02fa2f5`. The original assumption was
  * that we'd see our structured `{ answers, annotations }` as JSON — the
- * SDK rewrites it to a human-readable sentence the model can consume.
+ * CLI rewrites it to a human-readable sentence the model can consume.
  */
 function resultWire(
   answers: Record<string, string>,
@@ -40,7 +40,7 @@ function resultWire(
 
 /**
  * The legacy JSON shape — retained for the fallback path and any future
- * SDK release that pipes the structured payload through unchanged.
+ * CLI release that pipes the structured payload through unchanged.
  */
 function resultJson(answers: Record<string, string>, annotations?: Record<string, { notes?: string }>) {
   return JSON.stringify({ answers, annotations });
@@ -87,7 +87,7 @@ describe('AnsweredAskUserQuestionCard (wire format — synthesised string)', () 
 
   it('shows the comma-joined picks for a multi-select answer', () => {
     // The live submit path joins multi-select picks with ', ' before sending
-    // to the SDK; the synthesised wire string preserves that joined value
+    // to the CLI; the synthesised wire string preserves that joined value
     // verbatim inside the `"q"="A, B"` slot. Our parser anchors on the
     // question's literal text and captures up to the next boundary, so the
     // ', ' inside the answer doesn't fool it into stopping early.

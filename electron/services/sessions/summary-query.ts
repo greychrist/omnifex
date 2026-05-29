@@ -13,9 +13,8 @@ import { buildClaudeEnv } from '../util/claude-env';
 //   The Claude Code CLI always persists a JSONL under
 //     <CLAUDE_CONFIG_DIR>/projects/<encoded-cwd>/<uuid>.jsonl
 //   regardless of which CLI mode you invoke. Earlier the summary path
-//   called the SDK's `query()` with the real project path as `cwd`,
-//   leaving throwaway one-message sessions in the user's real project
-//   session list.
+//   drove the CLI with the real project path as `cwd`, leaving throwaway
+//   one-message sessions in the user's real project session list.
 //
 //   The summary path now invokes `claude -p` (print mode) wrapped in
 //   `runCliOnce` (below) for one-shot await-and-go ergonomics, with the
@@ -136,7 +135,7 @@ export interface SummaryQueryDeps {
   tmpRoot?: string;
   /**
    * Resolve the Claude Code binary. Defaults to `findSystemClaudeBinary`
-   * (system installs → SDK-bundled per-platform binary). Injected in
+   * (system installs → app-bundled per-platform binary). Injected in
    * tests so they can pin to a fake path without depending on disk state.
    */
   resolveClaudeBinary?: () => string | null;

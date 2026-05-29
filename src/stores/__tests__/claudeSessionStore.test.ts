@@ -107,7 +107,7 @@ describe('claudeSessionStore', () => {
       parentToolUseId: null,
     });
     // isLoading represents the parent-turn lifecycle (true between prompt
-    // send and the SDK's result message). Streaming a partial text delta
+    // send and the CLI's result message). Streaming a partial text delta
     // does NOT end the turn — the in-chat typing-dots spinner is
     // suppressed independently via hasInflightAssistant in
     // ClaudeCodeSession.tsx, so this action must not touch isLoading or

@@ -124,7 +124,7 @@ describe('rate-limits service', () => {
   });
 
   describe('recordUtilization', () => {
-    it('preserves SDK-derived status on existing snapshot', () => {
+    it('preserves CLI-derived status on existing snapshot', () => {
       h.service.recordEvent('/Users/test/.claude', fiveHourEvent({
         status: 'rejected',
         utilization: 100,
@@ -222,7 +222,7 @@ describe('rate-limits service', () => {
       expect(h.service.getSnapshots()[0].utilization).toBe(42);
 
       // Second event arrives with the same window but no utilization (the
-      // SDK does this — emits status pings without re-stating the percent).
+      // CLI does this — emits status pings without re-stating the percent).
       // The widget should keep showing 42, not flip to null.
       h.service.recordEvent('/Users/test/.claude', {
         status: 'allowed',
@@ -330,7 +330,7 @@ describe('rate-limits service', () => {
     });
   });
 
-  describe('threshold detection — SDK status signals', () => {
+  describe('threshold detection — CLI status signals', () => {
     it("fires once on status 'allowed_warning'", () => {
       h.service.recordEvent(
         '/Users/test/.claude',

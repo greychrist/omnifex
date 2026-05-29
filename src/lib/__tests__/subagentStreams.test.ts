@@ -101,7 +101,7 @@ function taskNotification(
   } as unknown as JsonlNode;
 }
 
-// Patch shape mirrors the SDK's SDKTaskUpdatedMessage at sdk.d.ts:3619.
+// Patch shape mirrors the CLI's CliTaskUpdatedMessage at sdk.d.ts:3619.
 // Only the fields a consumer might apply — status, description, end_time,
 // total_paused_ms, error, is_backgrounded — appear here.
 function taskUpdated(
@@ -317,7 +317,7 @@ describe('deriveSubagents', () => {
   });
 
   it('background dispatch (run_in_background=true) stays running on the synchronous ACK tool_result', () => {
-    // The SDK fires an immediate "Async agent launched" tool_result for
+    // The CLI fires an immediate "Async agent launched" tool_result for
     // background dispatches; that's a dispatch ACK, not the actual return
     // value. Status should stay running until task_notification arrives.
     const subs = deriveSubagents([
@@ -732,8 +732,8 @@ describe('hasRunningSubagent', () => {
   });
 });
 
-describe('task_updated handling (SDKTaskUpdatedMessage patch application)', () => {
-  // SDKTaskUpdatedMessage carries a `patch` describing wire-safe TaskState
+describe('task_updated handling (CliTaskUpdatedMessage patch application)', () => {
+  // CliTaskUpdatedMessage carries a `patch` describing wire-safe TaskState
   // changes (status, description, end_time, error, is_backgrounded, …).
   // Until this batch the message was filtered from the chat timeline (via
   // `isTaskLifecycleMarker`'s `task_*` startsWith match) but its payload

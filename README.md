@@ -29,7 +29,7 @@ OmniFex is **macOS (Apple Silicon) only** and ships as an **unsigned** build. ma
 - Each session, agent, hook, MCP, and CLAUDE.md read/write is launched under the resolved account's `CLAUDE_CONFIG_DIR`.
 
 ### Interactive Claude Code sessions
-- Tabbed chat surface running on top of the official [`@anthropic-ai/claude-agent-sdk`](https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk).
+- Tabbed chat surface driving the official Claude CLI binary directly.
 - Streaming output, permission prompts, slash commands, and per-tab status.
 
 ### Custom agents
@@ -96,7 +96,7 @@ npm run rebuild:electron   # rebuild better-sqlite3 / node-pty for Electron's AB
 - **Renderer**: React 18 + TypeScript + Vite + Tailwind v4 + Radix / shadcn
 - **Main process**: TypeScript on Node, services wired through a typed IPC layer
 - **Persistence**: `better-sqlite3`
-- **Claude integration**: `@anthropic-ai/claude-agent-sdk` for interactive sessions, Claude CLI for agents
+- **Claude integration**: drives the Claude CLI binary directly for both interactive sessions and agents
 
 ## Project structure
 
@@ -120,7 +120,7 @@ omnifex/
 ## Security and privacy
 
 - All persistence is local. No telemetry, no analytics, no remote logging.
-- The main process talks to Anthropic only through the Claude Code SDK and CLI you have installed; OmniFex itself sends nothing to Anthropic.
+- The main process talks to Anthropic only through the Claude CLI you have installed; OmniFex itself sends nothing to Anthropic.
 - Per-tab permission gating for tool use, mirroring Claude Code's native permission model.
 
 ## License
@@ -132,5 +132,5 @@ OmniFex is published by GreyChrist.
 ## Acknowledgments
 
 - Originally forked from [opcode](https://github.com/getAsterisk/opcode) by [Asterisk](https://asterisk.so/).
-- Built on [Electron](https://www.electronjs.org/) and the [Claude Agent SDK](https://docs.anthropic.com/en/docs/claude-code).
+- Built on [Electron](https://www.electronjs.org/) and [Claude Code](https://docs.anthropic.com/en/docs/claude-code).
 - [Claude](https://claude.ai) by Anthropic.

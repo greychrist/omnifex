@@ -181,7 +181,7 @@ describe('slash commands service', () => {
   describe('skill discovery', () => {
     it('list includes project skills (.claude/skills/<name>/SKILL.md) as project-scoped', () => {
       // Skills live as folders under <projectPath>/.claude/skills/<skillName>/
-      // with a SKILL.md frontmatter file. The Claude Agent SDK exposes them
+      // with a SKILL.md frontmatter file. The CLI exposes them
       // alongside built-in slash commands, but with no scope info — so the
       // renderer mislabels them as "default". Including them here lets the
       // picker's dedup re-tag them as project.

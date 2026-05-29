@@ -25,7 +25,6 @@ export {
   MultiEditWidget,
   MultiEditResultWidget,
   SystemReminderWidget,
-  SystemContextWidget,
   SystemInitializedWidget,
   TaskWidget,
   WebSearchWidget,

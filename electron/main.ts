@@ -540,7 +540,7 @@ app.whenReady().then(() => {
     },
     // Account re-resolver: main re-resolves the account at session_start so
     // a path-rule change between the renderer's form-mount and the user's
-    // Start-click doesn't spawn the SDK under a stale account. Skipped for
+    // Start-click doesn't spawn the CLI under a stale account. Skipped for
     // resumes (they're anchored to the configDir that owns the JSONL) and
     // when manualAccountOverride is set (user explicitly picked an account
     // on the form). Returns null when the project doesn't resolve.

@@ -36,7 +36,7 @@ function normalizePath(p: string): string {
  *
  *  Returns `[]` on any error (not a repo, git missing, timeout) — never
  *  throws. Used to populate `additionalDirectories` at session start so the
- *  Agent SDK's sandbox allows writes into sibling worktrees of the same repo. */
+ *  CLI's sandbox allows writes into sibling worktrees of the same repo. */
 export function discoverWorktrees(
   cwd: string,
   opts?: { exec?: ExecSyncFn; fileExists?: (p: string) => boolean },

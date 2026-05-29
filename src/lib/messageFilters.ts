@@ -4,10 +4,10 @@ import { isSubagentPrompt } from "@/lib/subagentDispatch";
 import { detectSkillInjection } from "@/lib/skillDetection";
 import type { HardFilters } from "@/lib/messageRenderingConfig";
 
-// SDK subtypes the renderer treats as hook-lifecycle noise. `hook_progress`
+// CLI subtypes the renderer treats as hook-lifecycle noise. `hook_progress`
 // (mid-hook stdout/stderr) belongs in the set because it's plumbing —
 // without it the message leaked into messages[] as system.unknown gray
-// strips. `user_prompt_submit` is a hook *event* name (not an SDK
+// strips. `user_prompt_submit` is a hook *event* name (not a CLI
 // message subtype) but historical sessions stamped it as a subtype,
 // so it stays in the set for backward compatibility.
 const HOOK_LIFECYCLE_SUBTYPES: ReadonlySet<string> = new Set([
@@ -31,7 +31,7 @@ function isHookLifecycleMarker(msg: JsonlNode): boolean {
  *   tool-specific widgets (e.g. Bash, Edit, Read, Grep, etc.)
  * - Subagent task lifecycle markers (task_started / task_progress /
  *   task_notification) — those are rendered in the SubagentBar.
- * - When `hardFilters.hideHookLifecycle` is on (default), SDK hook
+ * - When `hardFilters.hideHookLifecycle` is on (default), CLI hook
  *   lifecycle events (hook_started / hook_response / user_prompt_submit).
  */
 export function filterDisplayableMessages(
@@ -44,7 +44,7 @@ export function filterDisplayableMessages(
 
   return messages.filter((message, index) => {
     // Skill-injection user messages have isMeta:true in the persisted
-    // JSONL (the SDK live-stream variant uses isSynthetic instead) but
+    // JSONL (the CLI live-stream variant uses isSynthetic instead) but
     // they carry the SKILL.md body — which we want to render. Detect
     // them here so the meta-noise filter below doesn't drop them, and
     // the user-message isMeta filter further down doesn't either.
@@ -66,8 +66,16 @@ export function filterDisplayableMessages(
       return false;
     }
 
-    // Skip SDK hook lifecycle events when the user has the filter on.
+    // Skip CLI hook lifecycle events when the user has the filter on.
     if (hideHookLifecycle && isHookLifecycleMarker(message)) {
+      return false;
+    }
+
+    // Always skip transient `system:status` phase pings (requesting /
+    // compacting). The stream reducer surfaces them as the live "Running…"
+    // activity label; they carry no body and must never render as an empty
+    // transcript row.
+    if (message.kind === "system" && message.subtype === "status") {
       return false;
     }
 

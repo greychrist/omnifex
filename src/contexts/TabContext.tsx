@@ -211,7 +211,7 @@ export const TabProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // in-memory; the registry is the only place a closed tab's identity
   // still lives). The registry merges partial updates, so it's safe to
   // call this each render — fields that aren't known yet (e.g. the
-  // sessionId before the SDK has emitted its `init` message) just stay
+  // sessionId before the CLI has emitted its `init` message) just stay
   // absent until the next render writes them.
   useEffect(() => {
     for (const tab of tabs) {
@@ -286,7 +286,7 @@ export const TabProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setActiveTabId(null);
       }
 
-      // Tab close is the only path that should tear down a main-process SDK
+      // Tab close is the only path that should tear down a main-process CLI
       // session. React unmount alone must NOT — Cmd+R reload, StrictMode
       // double-invoke, and tab visibility flips all trigger unmounts but
       // should keep the live session so rebind can claim it. main.stop()

@@ -24,8 +24,8 @@ interface SlashCommandPickerProps {
 }
 
 const SCOPE_LABEL: Record<string, string> = {
-  // Per-row badge for SDK-sourced commands. The scope value stays "default"
-  // (that's the SDK's own term) but we surface it to the user as "claude".
+  // Per-row badge for CLI-sourced commands. The scope value stays "default"
+  // (that's the CLI's own term) but we surface it to the user as "claude".
   default: "claude",
   project: "project",
   user: "user",

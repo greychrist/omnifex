@@ -3,14 +3,14 @@ import type { JsonlNode } from "@/types/jsonl";
 import { isSubagentDispatch, isSubagentPrompt } from "../subagentDispatch";
 
 describe("isSubagentDispatch", () => {
-  // The Claude Agent SDK and Claude Code CLI emit subagent dispatches under
+  // The Claude Code CLI emits subagent dispatches under
   // PascalCase 'Task' / 'Agent' on the wire. Earlier defense-in-depth
   // accepted lowercase / uppercase variants too, but no production code
   // path actually emits those — verified via session reducer + JSONL replay
   // — and the case-insensitive contract diverged from the case-sensitive
   // narrowing in `asToolInputOneOf`, forcing a normalization shim at every
   // call site. Tightening to PascalCase-only aligns both layers and lets
-  // the SDK contract be the single source of truth.
+  // the CLI contract be the single source of truth.
   it("matches PascalCase 'Task' only", () => {
     expect(isSubagentDispatch("Task")).toBe(true);
     expect(isSubagentDispatch("TASK")).toBe(false);

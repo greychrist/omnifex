@@ -90,7 +90,7 @@ describe('createJsonlTail', () => {
     expect((received[0] as { type: string }).type).toBe('attachment');
   });
 
-  it('ignores envelope types that the SDK iterator already yields (assistant/user/result/system)', async () => {
+  it('ignores envelope types that the CLI iterator already yields (assistant/user/result/system)', async () => {
     fs.writeFileSync(jsonlPath, '');
     start();
     fs.appendFileSync(
@@ -150,7 +150,7 @@ describe('createJsonlTail', () => {
   });
 
   it('handles file that does not exist yet (waits, then forwards once it appears)', async () => {
-    // Session start fires before the SDK writes its first line, so the tail
+    // Session start fires before the CLI writes its first line, so the tail
     // must tolerate an absent file. Once the file appears with content, the
     // carrier is forwarded.
     start();

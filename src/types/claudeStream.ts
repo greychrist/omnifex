@@ -1,30 +1,30 @@
 /**
- * Shape of one message off the Claude Agent SDK stream, as the renderer
- * receives it on `agent-output:<tabId>` events.
+ * Shape of one message off the `claude` CLI's stream-json output, as the
+ * renderer receives it on `agent-output:<tabId>` events.
  *
- * Anchored on `SDKMessage` (the SDK's 29-variant discriminated union)
- * intersected with `OmnifexEnvelope` (the main process timestamps each
- * message as it crosses the IPC boundary). Three OmniFex synthetic
- * variants cover what the SDK doesn't model:
+ * Anchored on `CliMessage` (the CLI's discriminated union of wire
+ * variants) intersected with `OmnifexEnvelope` (the main process
+ * timestamps each message as it crosses the IPC boundary). Three OmniFex
+ * synthetic variants cover what the CLI doesn't model:
  *
  *   - `permission_request` — emitted by `canUseTool` for the in-app
  *     permission gate. Wire is snake_case; the reducer normalises to
  *     camelCase `PermissionRequestPayload` before downstream consumers.
  *   - `system` + `notification` — OmniFex's toast-style status row
- *     (info/warn/error/stop). Distinct from `SDKNotificationMessage`
+ *     (info/warn/error/stop). Distinct from `CliNotificationMessage`
  *     (which has key/text/priority for the REPL notification queue) —
- *     we `Exclude` the SDK variant from the union so the discriminator
+ *     we `Exclude` the CLI variant from the union so the discriminator
  *     unambiguously names the OmniFex shape.
  *   - `summary` — compaction summary loaded from session JSONL.
  *
- * Why anchor on the full `SDKMessage` rather than enumerate variants:
+ * Why anchor on the full `CliMessage` rather than enumerate variants:
  * `subagentStreams.ts` consumes `task_started`/`task_progress`/
  * `task_notification`/`task_updated`; `messageFilters.ts` drops the
  * `hook_started`/`hook_progress`/`hook_response` family as plumbing
  * noise; `messageKind.ts` classifies `hook_started`/`hook_response`
  * (`hook_progress` is never reached because the filter strips it
  * upstream). Enumerating only the handful with first-class rendering
- * would force every other site back through casts. Using the SDK's
+ * would force every other site back through casts. Using the CLI's
  * own union and `Exclude`-ing the one colliding variant is the
  * smallest change that lets the compiler narrow correctly throughout.
  */
@@ -36,16 +36,15 @@ import type { PermissionSuggestion } from '../lib/types/permissionRequest';
 // ---------------------------------------------------------------------------
 //
 // These mirror what the `claude` CLI emits over its stream-json output
-// channel. Used to be re-exports from `@anthropic-ai/claude-agent-sdk`;
-// after the SDK was removed (Phase A) they live here as plain interfaces.
-// The fields are intentionally permissive (`message: unknown`, top-level
-// passthrough via index signature) because the renderer's only narrowing
-// need is on the top-level `type` discriminator.
+// channel, declared here as plain interfaces. The fields are intentionally
+// permissive (`message: unknown`, top-level passthrough via index
+// signature) because the renderer's only narrowing need is on the
+// top-level `type` discriminator.
 
 /**
  * Anthropic message-usage block as the CLI emits it on assistant /
- * result messages. Field set matches `BetaUsage` from the upstream SDK,
- * with everything optional because partial streams emit a partial usage
+ * result messages. Field set matches Anthropic's `BetaUsage`, with
+ * everything optional because partial streams emit a partial usage
  * object early in the turn.
  */
 export interface AnthropicMessageUsage {
@@ -58,7 +57,7 @@ export interface AnthropicMessageUsage {
   service_tier?: string;
 }
 
-export interface SDKAssistantMessage {
+export interface CliAssistantMessage {
   type: 'assistant';
   message: {
     id?: string;
@@ -74,7 +73,7 @@ export interface SDKAssistantMessage {
   uuid?: string;
 }
 
-export interface SDKUserMessage {
+export interface CliUserMessage {
   type: 'user';
   message: { role: 'user'; content: MessageContentBlock[] | string };
   parent_tool_use_id: string | null;
@@ -82,13 +81,13 @@ export interface SDKUserMessage {
   uuid?: string;
 }
 
-/** JSONL-replay variant — same wire shape as `SDKUserMessage`. */
-export type SDKUserMessageReplay = SDKUserMessage;
+/** JSONL-replay variant — same wire shape as `CliUserMessage`. */
+export type CliUserMessageReplay = CliUserMessage;
 
 /**
  * Fields shared by all `type: 'result'` variants regardless of subtype.
  */
-interface SDKResultBase {
+interface CliResultBase {
   type: 'result';
   duration_ms?: number;
   duration_api_ms?: number;
@@ -101,19 +100,19 @@ interface SDKResultBase {
 }
 
 /** Successful turn result. Carries the assistant's final `result` text. */
-export interface SDKResultMessage extends SDKResultBase {
+export interface CliResultMessage extends CliResultBase {
   subtype: 'success';
   result?: string;
 }
 
 /**
- * SDK's REPL-internal notification queue shape. OmniFex's own
+ * CLI's REPL-internal notification queue shape. OmniFex's own
  * `SystemNotificationMessage` (below) occupies the same `system+notification`
- * discriminator with a different shape; this SDK variant is never currently
+ * discriminator with a different shape; this CLI variant is never currently
  * emitted to the renderer but is kept declared so the union below can
  * exclude it cleanly.
  */
-export interface SDKNotificationMessage {
+export interface CliNotificationMessage {
   type: 'system';
   subtype: 'notification';
   key?: string;
@@ -126,7 +125,7 @@ export interface SDKNotificationMessage {
  * what the renderer reads; `[k: string]: unknown` keeps it permissive for
  * upstream additions.
  */
-export interface SDKSystemInitMessage {
+export interface CliSystemInitMessage {
   type: 'system';
   subtype: 'init';
   session_id?: string;
@@ -156,9 +155,9 @@ export interface SDKSystemInitMessage {
  * `string & not 'success'` so narrowing on `subtype !== 'success'`
  * works against the parent `Result | ResultError` shape.
  */
-export type SDKResultErrorSubtype = 'error_max_turns' | 'error_during_execution' | (string & { __brand?: never });
-export interface SDKResultErrorMessage extends SDKResultBase {
-  subtype: Exclude<SDKResultErrorSubtype, 'success'>;
+export type CliResultErrorSubtype = 'error_max_turns' | 'error_during_execution' | (string & { __brand?: never });
+export interface CliResultErrorMessage extends CliResultBase {
+  subtype: Exclude<CliResultErrorSubtype, 'success'>;
   errors?: string[];
   result?: string;
 }
@@ -169,9 +168,9 @@ export interface SDKResultErrorMessage extends SDKResultBase {
  * Kept slim — no index signature — so it doesn't poison narrowing on the
  * other union members (a `[k: string]: unknown` here would widen
  * `msg.message` on assistant/user variants to `unknown`). Exclude 'init'
- * so `subtype === 'init'` cleanly narrows to `SDKSystemInitMessage`.
+ * so `subtype === 'init'` cleanly narrows to `CliSystemInitMessage`.
  */
-export type SDKSystemOtherSubtype =
+export type CliSystemOtherSubtype =
   | 'compact_boundary'
   | 'task_started'
   | 'task_progress'
@@ -182,12 +181,12 @@ export type SDKSystemOtherSubtype =
   | 'permission_denied'
   | 'user_prompt_submit'
   | 'rate_limit_event';
-export interface SDKSystemOtherMessage {
+export interface CliSystemOtherMessage {
   type: 'system';
-  // 'init' lives on SDKSystemInitMessage; 'notification' lives on
+  // 'init' lives on CliSystemInitMessage; 'notification' lives on
   // SystemNotificationMessage. Subtypes outside this literal set go
   // through casts at the call site.
-  subtype: SDKSystemOtherSubtype;
+  subtype: CliSystemOtherSubtype;
   // Common opaque fields callers may pluck off — kept individually-typed
   // (no index signature) so they don't widen other variants in the union.
   task_id?: string;
@@ -207,19 +206,19 @@ export interface SDKSystemOtherMessage {
 }
 
 /** Per-token delta. Renderer ignores its body. */
-export interface SDKStreamEventMessage {
+export interface CliStreamEventMessage {
   type: 'stream_event';
 }
 
-export type SDKMessage =
-  | SDKAssistantMessage
-  | SDKUserMessage
-  | SDKResultMessage
-  | SDKResultErrorMessage
-  | SDKNotificationMessage
-  | SDKSystemInitMessage
-  | SDKSystemOtherMessage
-  | SDKStreamEventMessage;
+export type CliMessage =
+  | CliAssistantMessage
+  | CliUserMessage
+  | CliResultMessage
+  | CliResultErrorMessage
+  | CliNotificationMessage
+  | CliSystemInitMessage
+  | CliSystemOtherMessage
+  | CliStreamEventMessage;
 
 /**
  * Fields the main process attaches to every message as it crosses the IPC
@@ -227,12 +226,12 @@ export type SDKMessage =
  * carry `timestamp`.
  */
 export interface OmnifexEnvelope {
-  /** ISO timestamp stamped when the main process received the message from the SDK stream. */
+  /** ISO timestamp stamped when the main process received the message from the CLI stream. */
   receivedAt?: string;
   /** Wall-clock timestamp from JSONL history. Distinct from `receivedAt`. */
   timestamp?: string;
   /**
-   * Annotation applied by OmniFex's JSONL loader to messages the SDK marked
+   * Annotation applied by OmniFex's JSONL loader to messages the CLI marked
    * `meta`. The renderer skips meta rows unless an exemption applies (skill
    * injection, system context). Not emitted on live-stream messages.
    */
@@ -247,18 +246,18 @@ export interface OmnifexEnvelope {
 }
 
 /**
- * `SDKMessage` minus `SDKNotificationMessage`. The SDK variant carries
+ * `CliMessage` minus `CliNotificationMessage`. The CLI variant carries
  * `{ key, text, priority }` for the REPL's notification queue; OmniFex's
  * `SystemNotificationMessage` synthetic occupies the same `system+notification`
- * discriminator with a different shape. The SDK shape is never currently
+ * discriminator with a different shape. The CLI shape is never currently
  * emitted to the renderer; if that changes, route it through a distinct
  * subtype rather than colliding here.
  */
-type AnchoredSDKMessage = Exclude<SDKMessage, SDKNotificationMessage>;
+type AnchoredCliMessage = Exclude<CliMessage, CliNotificationMessage>;
 
 /**
  * `permission_request` is OmniFex-synthetic — it travels on the same
- * `agent-output:<tabId>` channel as SDK messages and is normalised
+ * `agent-output:<tabId>` channel as CLI messages and is normalised
  * onto `PermissionRequestPayload` by the JSONL classifier. Snake_case
  * field names match the wire format emitted by `permissions.ts`.
  *
@@ -310,7 +309,7 @@ export interface SystemNotificationMessage extends OmnifexEnvelope {
 
 /**
  * Synthetic for compaction-summary entries loaded from session JSONL.
- * SDK has `SDKCompactBoundaryMessage` for the live marker
+ * The CLI has `CliCompactBoundaryMessage` for the live marker
  * (`system+compact_boundary`); this synthetic is the *historical*
  * summary row that the Claude CLI writes as `{ type: 'summary',
  * leafUuid, summary }` at the top of a compacted JSONL session file.
@@ -322,7 +321,7 @@ export interface CompactionSummaryMessage extends OmnifexEnvelope {
 }
 
 export type ClaudeStreamMessage =
-  | (AnchoredSDKMessage & OmnifexEnvelope)
+  | (AnchoredCliMessage & OmnifexEnvelope)
   | PermissionRequestMessage
   | SystemNotificationMessage
   | CompactionSummaryMessage;
@@ -331,28 +330,28 @@ export type ClaudeStreamMessage =
 // Narrowing guards
 // ---------------------------------------------------------------------------
 
-/** True when `msg` is the SDK's assistant variant (carries a wrapped BetaMessage). */
+/** True when `msg` is the CLI's assistant variant (carries a wrapped BetaMessage). */
 export function isAssistantMessage(
   msg: ClaudeStreamMessage,
-): msg is SDKAssistantMessage & OmnifexEnvelope {
+): msg is CliAssistantMessage & OmnifexEnvelope {
   return msg.type === 'assistant';
 }
 
 /**
- * True when `msg` is an SDK user-variant — typed prompt, tool_result reply,
- * hook feedback, or JSONL-replay. Both `SDKUserMessage` and
- * `SDKUserMessageReplay` share `type: 'user'`.
+ * True when `msg` is a CLI user-variant — typed prompt, tool_result reply,
+ * hook feedback, or JSONL-replay. Both `CliUserMessage` and
+ * `CliUserMessageReplay` share `type: 'user'`.
  */
 export function isUserMessage(
   msg: ClaudeStreamMessage,
-): msg is (SDKUserMessage | SDKUserMessageReplay) & OmnifexEnvelope {
+): msg is (CliUserMessage | CliUserMessageReplay) & OmnifexEnvelope {
   return msg.type === 'user';
 }
 
 /** True when `msg` is a terminal turn result — success or error subtype. */
 export function isResultMessage(
   msg: ClaudeStreamMessage,
-): msg is SDKResultMessage & OmnifexEnvelope {
+): msg is CliResultMessage & OmnifexEnvelope {
   return msg.type === 'result';
 }
 
@@ -360,16 +359,16 @@ export function isResultMessage(
 // Content block discriminated union
 // ---------------------------------------------------------------------------
 //
-// The Anthropic SDK ships full beta block types (BetaTextBlock,
+// Anthropic publishes full beta block types (BetaTextBlock,
 // BetaToolUseBlock, …) at @anthropic-ai/sdk/resources/beta/messages, but
-// @anthropic-ai/sdk is a transitive dep of the agent SDK and not in
-// OmniFex's package.json. Rather than depend on the beta module's path
-// stability, we declare a local mirror covering only the discriminants /
-// fields OmniFex's renderer actually reads. Add fields here when a new
-// consumer needs them — don't reach into `as any` at call sites.
+// @anthropic-ai/sdk is not in OmniFex's package.json. Rather than depend on
+// the beta module's path stability, we declare a local mirror covering only
+// the discriminants / fields OmniFex's renderer actually reads. Add fields
+// here when a new consumer needs them — don't reach into `as any` at call
+// sites.
 //
 // Optional fields use `unknown` rather than precise types because the wire
-// payload is wider than the SDK's compile-time type (e.g. tool_result.content
+// payload is wider than the compile-time block type (e.g. tool_result.content
 // can be string | array). Callers that need the precise shape should narrow
 // at use site with their own guards.
 
@@ -448,7 +447,7 @@ export type MessageContentBlock =
  * Returns the inner content blocks for an assistant or user message, `undefined`
  * for any other variant. Always an array post boundary-normalization (see
  * `lib/normalizeMessage` — the CLI's bare-string user prompts get wrapped at
- * the JSONL / IPC ingress). Returned as `unknown` because the SDK's own
+ * the JSONL / IPC ingress). Returned as `unknown` because Anthropic's
  * `BetaMessage.content` type doesn't expose `Array.isArray`-narrowable shape
  * to callers; consumers should guard with `Array.isArray(content)` and treat
  * non-array as "missing / malformed". Saves dozens of

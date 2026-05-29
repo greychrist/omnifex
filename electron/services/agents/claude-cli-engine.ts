@@ -96,7 +96,7 @@ export function createClaudeCliEngine(
   /**
    * Permission requests originate at the CLI; we forward them to the
    * renderer and remember the originating tool_use_id keyed by request_id
-   * so the eventual control_response can mirror it (the SDK echoes
+   * so the eventual control_response can mirror it (the CLI echoes
    * `toolUseID` back in its PermissionResult).
    */
   const pendingPermissionToolUseIds = new Map<string, string>();
@@ -141,7 +141,7 @@ export function createClaudeCliEngine(
     };
 
     // Match control_response back to the awaiting sendControlRequest promise.
-    // The SDK envelope is {type:'control_response', response:{subtype, request_id, response?, error?}}.
+    // The CLI envelope is {type:'control_response', response:{subtype, request_id, response?, error?}}.
     if (p?.type === 'control_response' && p?.response?.request_id) {
       const id = p.response.request_id;
       const entry = pendingControlRequests.get(id);
@@ -183,9 +183,9 @@ export function createClaudeCliEngine(
 
     if (p?.type === 'system' && p?.subtype === 'init') {
       if (typeof p.session_id === 'string') sessionId = p.session_id;
-      // Cache catalog fields the SDK formerly exposed via Query.accountInfo()
-      // and friends. We don't type the inner shapes here — the engine stays
-      // SDK-type-free; sessions/queries.ts casts at the call site.
+      // Cache catalog fields the CLI exposes on its system:init message.
+      // We don't type the inner shapes here — the engine stays type-free;
+      // sessions/queries.ts casts at the call site.
       const init = payload as {
         account?: unknown;
         commands?: unknown[];
@@ -398,7 +398,7 @@ export function createClaudeCliEngine(
     // Build the PermissionResult body the CLI expects. `payload` from
     // sessions/permissions.ts carries renderer-side extras like updatedInput
     // / updatedPermissions; merge them onto the base shape so the CLI sees
-    // exactly what the SDK used to send.
+    // exactly the PermissionResult it expects.
     const permissionResult: Record<string, unknown> = {
       behavior: decision,
       toolUseID: toolUseId,

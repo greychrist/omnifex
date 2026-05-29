@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import { detectSkillInjection } from "@/lib/skillDetection";
 import { classifyStandaloneKind } from "@/lib/messageKind";
-import { classifyBlockKind, isBlockHiddenInCompact, isSystemContextText } from "@/lib/blockKind";
+import { classifyBlockKind, isBlockHiddenInCompact, isSystemContextText, deriveSystemContextLabel } from "@/lib/blockKind";
 import { summarizeHiddenEvents } from "@/lib/hiddenEventsSummary";
 import { HiddenBlocksExpander } from "@/components/HiddenBlocksExpander";
 import { SubagentReturnedMarker } from "@/components/SubagentReturnedMarker";
@@ -61,8 +61,7 @@ import {
   LSResultWidget,
   ThinkingWidget,
   WebSearchWidget,
-  WebFetchWidget,
-  SystemContextWidget
+  WebFetchWidget
 } from "./ToolWidgets";
 import { turnDuration } from "@/lib/sessionDerivedState";
 
@@ -215,7 +214,7 @@ const ResendExtra: React.FC<{
   const handleResend = (e: React.MouseEvent) => {
     e.stopPropagation();
     // Use the shared extractor so we handle both shapes user messages arrive in:
-    //   • live SDK stream  → content is an array of typed blocks
+    //   • live CLI stream  → content is an array of typed blocks
     //   • resumed/JSONL    → content is a raw string
     // The previous inline implementation only handled the array shape, which
     // made Resend a no-op on every resumed-session message (the empty text it
@@ -374,7 +373,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
     if (message.kind === 'system') {
       const sysRaw = message.raw;
 
-      // SDK notification — route through MessageFrame.
+      // CLI notification — route through MessageFrame.
       if (message.subtype === "notification") {
         const streamKind = classifyStandaloneKind(message, streamMessages) ?? "system.notification";
         return (
@@ -387,7 +386,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
         );
       }
 
-      // Fallback for any other system subtype (compact_boundary, future SDK
+      // Fallback for any other system subtype (compact_boundary, future CLI
       // subtypes, etc.). Route through MessageFrame so Appearance config takes
       // effect.
       const subtype = String(message.subtype);
@@ -548,7 +547,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
         }
 
         // Thinking content - render with ThinkingWidget.
-        // Skip signature-only blocks (SDK returns { thinking: "", signature: "..." }
+        // Skip signature-only blocks (CLI returns { thinking: "", signature: "..." }
         // when showThinkingSummaries is off — there's nothing to display).
         if (content.type === "thinking") {
           const thinkingText = content.thinking.trim();
@@ -862,7 +861,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
 
       // Check if this is a tool-result-only message first — must happen before
       // bracket-detection to avoid tool results with nested content arrays
-      // being misidentified as SDK system messages (the array coerces to
+      // being misidentified as CLI system messages (the array coerces to
       // "[object Object]" which starts/ends with brackets).
       const isToolResultOnly = Array.isArray(msg.content)
         && msg.content.length > 0
@@ -889,15 +888,32 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
         : '';
 
       // Detect system-injected context (skills, CLAUDE.md, system-reminders,
-      // and hook feedback like "Stop hook feedback: ...") and render as a
-      // collapsible System Context widget instead of a user-prompt card.
-      // The helper centralizes the patterns shared with the block- and
-      // whole-message-level classifiers in `blockKind.ts` / `messageKind.ts`.
+      // and hook feedback like "Stop hook feedback: ...") and route through
+      // MessageFrame's `collapsible` presentation so it picks up the user's
+      // configured color/icon and gains copy + raw-payload metadata. The
+      // header is content-derived ("Skill: …", "CLAUDE.md Context") unless the
+      // user has customized it in Appearance, in which case their label wins.
       if (isSystemContextText(contentStr)) {
-        return <SystemContextWidget content={contentStr} />;
+        const cfgHeader = renderConfig.kinds["user.systemContext"]?.headerLabel ?? null;
+        const headerOverride =
+          cfgHeader === null || cfgHeader === "System Context"
+            ? deriveSystemContextLabel(contentStr)
+            : cfgHeader;
+        return (
+          <MessageFrame
+            streamKind="user.systemContext"
+            message={message}
+            headerOverride={headerOverride}
+            actionBar={<CardActionBar message={message} text={contentStr.trim()} />}
+          >
+            <pre className="text-xs font-mono whitespace-pre-wrap max-h-60 overflow-y-auto">
+              {contentStr.trim()}
+            </pre>
+          </MessageFrame>
+        );
       }
 
-      // SDK-generated bracket messages like "[Request interrupted by user]"
+      // CLI-generated bracket messages like "[Request interrupted by user]"
       // or "[Session resumed]" come through as type:'user' but aren't the
       // user's words. Detect them (content is a single string wrapped in
       // square brackets) and render as a system notification so they're
@@ -920,7 +936,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
 
       // Check if this is a subagent prompt — a user message generated by
       // the Agent tool, not typed interactively. parent_tool_use_id is
-      // non-null when the SDK is inside a subagent context. We render
+      // non-null when the CLI is inside a subagent context. We render
       // these with an amber/yellow tint + Bot icon so they're visually
       // distinct from the user's own purple messages AND from tool results.
       const isSubagentPrompt = !isToolResultOnly

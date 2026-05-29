@@ -42,6 +42,23 @@ export function isSystemContextText(text: string): boolean {
 }
 
 /**
+ * Derive a human label for a `user.systemContext` message from its content
+ * (e.g. "Skill: Brainstorming Ideas Into Designs", "CLAUDE.md Context",
+ * "System Reminder"). Pure — the caller decides whether a user-customized
+ * config header should win over this derived value. Skill detection is
+ * checked first because a skill body may itself mention CLAUDE.md.
+ */
+export function deriveSystemContextLabel(content: string): string {
+  if (content.includes('Base directory for this skill:')) {
+    const m = /# (.+)/.exec(content);
+    return m ? `Skill: ${m[1]}` : 'Skill Loaded';
+  }
+  if (content.includes('CLAUDE.md')) return 'CLAUDE.md Context';
+  if (content.includes('<system-reminder>')) return 'System Reminder';
+  return 'System Context';
+}
+
+/**
  * Classify a single content block (text, tool_use, tool_result, thinking,
  * image) within its parent assistant or user node to a `MessageKindConfig`
  * id. This is the per-block analog of `classifyStandaloneKind` — the latter
@@ -81,9 +98,9 @@ export function classifyBlockKind(
     }
     // Anthropic-hosted server-side tools (code_execution, web_search,
     // web_fetch) emit `server_tool_use` blocks rather than `tool_use`.
-    // The Agent SDK doesn't currently surface these through the CLI, but
-    // classify defensively so a future SDK release doesn't drop them into
-    // the unknown-tool catch-all.
+    // The CLI doesn't currently surface these, but classify defensively
+    // so a future CLI release doesn't drop them into the unknown-tool
+    // catch-all.
     if (block.type === 'server_tool_use') {
       return 'assistant.serverToolUse';
     }
@@ -109,7 +126,7 @@ export function classifyBlockKind(
       return 'tool.result.codeExecution';
     }
     if (block.type === 'text') {
-      // Claude Code / the Agent SDK surface hook output back to the model
+      // Claude Code / the CLI surface hook output back to the model
       // as plain user text prefixed with "<HookEvent> hook feedback:"
       // (Stop / PreToolUse / PostToolUse / UserPromptSubmit / SubagentStop
       // / Notification / SessionEnd) or the "SessionStart hook additional

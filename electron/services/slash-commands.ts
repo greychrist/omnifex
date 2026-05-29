@@ -137,13 +137,13 @@ function scanDirectory(
 
 /**
  * Scan a `.claude/skills/` directory. Skills are folders, each containing a
- * `SKILL.md` with frontmatter (`name`, `description`). The Claude Agent SDK
- * exposes them alongside built-in slash commands, but its `SlashCommand`
- * shape (`name` / `description` / `argumentHint`) carries no source info,
- * so the renderer can't tell project skills apart from SDK defaults.
+ * `SKILL.md` with frontmatter (`name`, `description`). The CLI exposes them
+ * alongside built-in slash commands, but its `SlashCommand` shape
+ * (`name` / `description` / `argumentHint`) carries no source info, so the
+ * renderer can't tell project skills apart from CLI defaults.
  *
  * Emitting them here as project- or user-scoped pseudo-commands lets the
- * picker's dedup (custom commands win over SDK defaults) re-tag them with
+ * picker's dedup (custom commands win over CLI defaults) re-tag them with
  * the correct scope.
  */
 function scanSkillsDirectory(
@@ -166,7 +166,7 @@ function scanSkillsDirectory(
     if (!fs.existsSync(manifestPath)) continue;
     // Reuse commandFromFile so frontmatter parsing stays in one place. The
     // `name` (and thus `full_command`) is taken from the folder name —
-    // matching how the SDK reports the skill — not from the manifest's
+    // matching how the CLI reports the skill — not from the manifest's
     // basename ("SKILL").
     const cmd = commandFromFile(manifestPath, scope, namespace);
     if (cmd) {
@@ -211,7 +211,7 @@ export function createSlashCommandsService(): SlashCommandsService {
       commands.push(...scanDirectory(getCommandsDir(configDir), 'user', 'user'));
 
       // Global (user) skills — emitted as user-scoped so the picker's dedup
-      // can re-tag SDK-reported skills out of the "default" bucket.
+      // can re-tag CLI-reported skills out of the "default" bucket.
       const userSkillsDir = path.join(configDir, 'skills');
       commands.push(...scanSkillsDirectory(userSkillsDir, 'user', 'user'));
     }
