@@ -26,7 +26,7 @@ describe('MessageRenderingContext — first-load reset', () => {
     document.documentElement.style.removeProperty('--font-terminal');
   });
 
-  it('resets a v1 config to v2 defaults and writes an app_logs entry', async () => {
+  it('resets a v1 config to v3 defaults and writes an app_logs entry', async () => {
     // Simulate a v1 persisted config (version field is 1)
     vi.mocked(api.getSetting).mockResolvedValueOnce(
       JSON.stringify({ version: 1, kinds: { 'user.prompt': {} } }),
@@ -36,10 +36,10 @@ describe('MessageRenderingContext — first-load reset', () => {
 
     const { result } = renderHook(() => useMessageRenderingConfig(), { wrapper });
 
-    await waitFor(() => expect(result.current.config.version).toBe(2));
+    await waitFor(() => expect(result.current.config.version).toBe(3));
     expect(api.saveSetting).toHaveBeenCalledWith(
       'message_rendering_config',
-      expect.stringContaining('"version":2'),
+      expect.stringContaining('"version":3'),
     );
     expect(api.logWriteBatch).toHaveBeenCalledWith(
       expect.arrayContaining([
