@@ -1,7 +1,7 @@
 import React from "react";
-import { Lock } from "lucide-react";
+import { Lock, Undo2 } from "lucide-react";
 import type {
-  MessageKindConfig,
+  KindStyle,
   Palette,
   IconName,
   Presentation,
@@ -34,8 +34,26 @@ const SORTED_ICONS: readonly IconName[] = (() => {
     : rest);
 })();
 
+export type KindEditorMode = "category" | "override";
+
 interface KindEditorProps {
-  kind: MessageKindConfig;
+  mode: KindEditorMode;
+  /** Category name (category mode) or kind id (override mode). Informational
+   *  header + per-kind icon-chrome key. */
+  kindId: string;
+  label: string;
+  description?: string;
+  /** The fully-resolved style to render controls from. In category mode this
+   *  is the CategoryStyle itself; in override mode it is the category default
+   *  ⊕ the override (so set fields show their override value and unset fields
+   *  show the inherited value). */
+  style: KindStyle;
+  /** Override mode only: the raw override patch — which fields are actually
+   *  set on the override (vs. inherited from the category). */
+  override?: Partial<KindStyle>;
+  /** Override mode only: the category this kind inherits from, for the
+   *  "inheriting from {Category}" hint and placeholder text. */
+  inheritedCategoryLabel?: string;
   /** Kept on the props for backwards compatibility with the global palette
    *  retinting flow. Resolved into a `swatch` for the picker's initial
    *  value when the kind still references a palette name (legacy data). */
@@ -43,8 +61,14 @@ interface KindEditorProps {
   /** Global icon defaults — used to label "Use default (X)" placeholders so
    *  the user knows what the kind will inherit when an override is unset. */
   typography: Typography;
-  onChange: (patch: Partial<MessageKindConfig>) => void;
-  onResetKind: () => void;
+  /** Persist a style field. In override mode this writes only that field into
+   *  the override. */
+  onChange: (patch: Partial<KindStyle>) => void;
+  /** Override mode only: clear a field back to its inherited category value. */
+  onClearField?: (field: keyof KindStyle) => void;
+  /** Category mode: reset the category to its factory default. Override mode:
+   *  remove the override entirely. */
+  onReset: () => void;
 }
 
 const SENTINEL_DEFAULT = "__default__";
@@ -61,7 +85,7 @@ const BORDER_OPTIONS: { value: BorderStyle; label: string }[] = [
 ];
 
 /**
- * Resolve `kind.accentColor` (palette name OR hex) to a `#rrggbb` for the
+ * Resolve an accentColor (palette name OR hex) to a `#rrggbb` for the
  * native `<input type="color">`, which only accepts that exact form.
  * Falls back to a neutral grey for unknown values.
  */
@@ -157,28 +181,87 @@ const IconPicker: React.FC<{ value: IconName; onChange: (v: IconName) => void }>
   );
 };
 
+/**
+ * Small "inheriting from {Category}" affordance shown next to override fields.
+ * When the field is overridden, offers a revert button; when it's inherited,
+ * states so in muted text so the user knows the value comes from the category.
+ */
+const InheritHint: React.FC<{
+  overridden: boolean;
+  categoryLabel: string;
+  onClear: () => void;
+}> = ({ overridden, categoryLabel, onClear }) => {
+  if (overridden) {
+    return (
+      <button
+        type="button"
+        onClick={onClear}
+        className="inline-flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground underline underline-offset-2"
+        title={`Revert to the ${categoryLabel} category value`}
+      >
+        <Undo2 className="h-3 w-3" />
+        revert to inherited
+      </button>
+    );
+  }
+  return (
+    <span className="text-[10px] text-muted-foreground/70 italic">
+      inherited from {categoryLabel}
+    </span>
+  );
+};
+
 export const KindEditor: React.FC<KindEditorProps> = ({
-  kind,
+  mode,
+  kindId,
+  label,
+  description,
+  style,
+  override,
+  inheritedCategoryLabel,
   palette,
   typography,
   onChange,
-  onResetKind,
+  onClearField,
+  onReset,
 }) => {
-  const effectiveBordered = kind.iconBordered ?? typography.icon.bordered;
-  const effectiveBgOpacity = kind.iconBgOpacity ?? typography.icon.bgOpacity;
-  const overrideBgOpacity = kind.iconBgOpacity !== undefined;
+  const isOverride = mode === "override";
+  const ov = override ?? {};
+  const catLabel = inheritedCategoryLabel ?? "category";
 
-  const accentHex = resolveAccentHex(kind.accentColor, palette);
+  const has = (field: keyof KindStyle): boolean =>
+    isOverride ? Object.prototype.hasOwnProperty.call(ov, field) : true;
+
+  const clear = (field: keyof KindStyle) => {
+    onClearField?.(field);
+  };
+
+  const effectiveBordered = style.iconBordered ?? typography.icon.bordered;
+  const effectiveBgOpacity = style.iconBgOpacity ?? typography.icon.bgOpacity;
+  const overrideBgOpacity = has("iconBgOpacity");
+
+  const accentHex = resolveAccentHex(style.accentColor, palette);
+
+  // In override mode, the icon-chrome key controls inherit from the global
+  // typography unless the override itself sets them.
+  const iconBorderedSet = has("iconBordered");
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" data-testid="kind-editor">
       <header className="pb-2 border-b border-border">
-        <h4 className="text-heading-4">{kind.label}</h4>
-        <p className="text-caption text-muted-foreground mt-1">{kind.description}</p>
+        <h4 className="text-heading-4">{label}</h4>
+        {description && (
+          <p className="text-caption text-muted-foreground mt-1">{description}</p>
+        )}
         <p className="text-[10px] text-muted-foreground/70 mt-1 font-mono">
-          id: {kind.id} · origin: {kind.origin}
-          {kind.widget && ` · widget: ${kind.widget}`}
+          {isOverride ? `id: ${kindId}` : `category: ${kindId}`}
+          {style.widget && ` · widget: ${style.widget}`}
         </p>
+        {isOverride && (
+          <p className="text-[10px] text-muted-foreground/70 mt-0.5">
+            Unset fields inherit from the <strong>{catLabel}</strong> category.
+          </p>
+        )}
       </header>
 
       {/* 1. Hide in compact mode */}
@@ -186,21 +269,26 @@ export const KindEditor: React.FC<KindEditorProps> = ({
         <div className="space-y-0.5 flex-1">
           <Label className="flex items-center gap-1.5">
             Hide in compact mode
-            {kind.compactBoundaryLocked && (
+            {style.compactBoundaryLocked && (
               <Lock className="h-3 w-3 text-muted-foreground" />
             )}
           </Label>
           <p className="text-caption text-muted-foreground">
-            {kind.compactBoundaryLocked
-              ? kind.id === "unknown"
-                ? "Always visible — diagnostic catch-all."
-                : "Always visible — turn boundary."
+            {style.compactBoundaryLocked
+              ? "Always visible — turn boundary."
               : "When hidden, collapses into the nearest expander in compact mode."}
           </p>
+          {isOverride && (
+            <InheritHint
+              overridden={has("hiddenInCompact")}
+              categoryLabel={catLabel}
+              onClear={() => { clear("hiddenInCompact"); }}
+            />
+          )}
         </div>
         <Switch
-          checked={kind.hiddenInCompact}
-          disabled={kind.compactBoundaryLocked}
+          checked={style.hiddenInCompact}
+          disabled={style.compactBoundaryLocked}
           onCheckedChange={(checked) => { onChange({ hiddenInCompact: checked }); }}
         />
       </div>
@@ -208,12 +296,26 @@ export const KindEditor: React.FC<KindEditorProps> = ({
       {/* 2. Presentation + Border dropdowns */}
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-2">
-          <Label>Presentation</Label>
+          <div className="flex items-center justify-between gap-2">
+            <Label>Presentation</Label>
+            {isOverride && (
+              <InheritHint
+                overridden={has("presentation")}
+                categoryLabel={catLabel}
+                onClear={() => { clear("presentation"); }}
+              />
+            )}
+          </div>
           <Select
-            value={kind.presentation}
+            value={style.presentation}
             onValueChange={(v) => { onChange({ presentation: v as Presentation }); }}
           >
-            <SelectTrigger aria-label="Presentation"><SelectValue /></SelectTrigger>
+            <SelectTrigger
+              aria-label="Presentation"
+              className={cn(isOverride && !has("presentation") && "text-muted-foreground")}
+            >
+              <SelectValue />
+            </SelectTrigger>
             <SelectContent>
               {PRESENTATION_OPTIONS.map((o) => (
                 <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
@@ -223,12 +325,26 @@ export const KindEditor: React.FC<KindEditorProps> = ({
         </div>
 
         <div className="space-y-2">
-          <Label>Border</Label>
+          <div className="flex items-center justify-between gap-2">
+            <Label>Border</Label>
+            {isOverride && (
+              <InheritHint
+                overridden={has("borderStyle")}
+                categoryLabel={catLabel}
+                onClear={() => { clear("borderStyle"); }}
+              />
+            )}
+          </div>
           <Select
-            value={kind.borderStyle}
+            value={style.borderStyle}
             onValueChange={(v) => { onChange({ borderStyle: v as BorderStyle }); }}
           >
-            <SelectTrigger aria-label="Border"><SelectValue /></SelectTrigger>
+            <SelectTrigger
+              aria-label="Border"
+              className={cn(isOverride && !has("borderStyle") && "text-muted-foreground")}
+            >
+              <SelectValue />
+            </SelectTrigger>
             <SelectContent>
               {BORDER_OPTIONS.map((o) => (
                 <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
@@ -238,15 +354,58 @@ export const KindEditor: React.FC<KindEditorProps> = ({
         </div>
       </div>
 
-      {/* 3. Header label — only shown in card presentation.
+      {/* 3. Alignment */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <Label>Alignment</Label>
+          {isOverride && (
+            <InheritHint
+              overridden={has("alignment")}
+              categoryLabel={catLabel}
+              onClear={() => { clear("alignment"); }}
+            />
+          )}
+        </div>
+        <Select
+          value={style.alignment}
+          onValueChange={(v) => { onChange({ alignment: v as KindStyle["alignment"] }); }}
+        >
+          <SelectTrigger
+            aria-label="Alignment"
+            className={cn(isOverride && !has("alignment") && "text-muted-foreground")}
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="left">Left</SelectItem>
+            <SelectItem value="right">Right</SelectItem>
+            <SelectItem value="full">Full width</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* 4. Header label — only shown in card / collapsible presentation.
             Side-line messages don't have a visible header bar. */}
-      {kind.presentation === 'card' && (
+      {style.presentation !== 'side-line' && (
         <div className="space-y-2">
-          <Label htmlFor="header-label">Header label</Label>
+          <div className="flex items-center justify-between gap-2">
+            <Label htmlFor="header-label">Header label</Label>
+            {isOverride && (
+              <InheritHint
+                overridden={has("headerLabel")}
+                categoryLabel={catLabel}
+                onClear={() => { clear("headerLabel"); }}
+              />
+            )}
+          </div>
           <Input
             id="header-label"
-            value={kind.headerLabel ?? ""}
-            placeholder="(no header)"
+            value={style.headerLabel ?? ""}
+            placeholder={
+              isOverride && !has("headerLabel")
+                ? `(inherited: ${style.headerLabel ?? "no header"})`
+                : "(no header)"
+            }
             aria-label="Header label"
             onChange={(e) =>
               { onChange({
@@ -260,9 +419,18 @@ export const KindEditor: React.FC<KindEditorProps> = ({
         </div>
       )}
 
-      {/* 4. Accent colour — applies to all presentations. */}
+      {/* 5. Accent colour — applies to all presentations. */}
       <div className="space-y-2">
-        <Label htmlFor="accent-color">Accent colour</Label>
+        <div className="flex items-center justify-between gap-2">
+          <Label htmlFor="accent-color">Accent colour</Label>
+          {isOverride && (
+            <InheritHint
+              overridden={has("accentColor")}
+              categoryLabel={catLabel}
+              onClear={() => { clear("accentColor"); }}
+            />
+          )}
+        </div>
         <div className="flex items-center gap-2">
           {/* Native colour picker — clicking opens the OS picker. The
               hex value is what gets written; alpha/border tinting is
@@ -302,13 +470,22 @@ export const KindEditor: React.FC<KindEditorProps> = ({
 
       {/* 6. Icon — grid picker in a popover */}
       <div className="space-y-2">
-        <Label>Icon</Label>
-        <IconPicker value={kind.icon} onChange={(v) => { onChange({ icon: v }); }} />
+        <div className="flex items-center justify-between gap-2">
+          <Label>Icon</Label>
+          {isOverride && (
+            <InheritHint
+              overridden={has("icon")}
+              categoryLabel={catLabel}
+              onClear={() => { clear("icon"); }}
+            />
+          )}
+        </div>
+        <IconPicker value={style.icon} onChange={(v) => { onChange({ icon: v }); }} />
       </div>
 
-      {/* 7. Icon chrome — per-kind overrides for the icon's size, border,
-            and background opacity. Inherits from the global Typography →
-            Card icon defaults when unset. */}
+      {/* 7. Icon chrome — per-kind overrides for the icon's border and
+            background opacity. Inherits from the global Typography → Card
+            icon defaults when unset. */}
       <div className="space-y-3 pt-3 border-t border-border">
         <div>
           <Label>Icon chrome (per-kind overrides)</Label>
@@ -323,18 +500,20 @@ export const KindEditor: React.FC<KindEditorProps> = ({
           <Label className="text-caption">Chip border</Label>
           <Select
             value={
-              kind.iconBordered === undefined
+              !iconBorderedSet
                 ? SENTINEL_DEFAULT
-                : kind.iconBordered
+                : style.iconBordered
                   ? "on"
                   : "off"
             }
-            onValueChange={(v) =>
-              { onChange({
-                iconBordered:
-                  v === SENTINEL_DEFAULT ? undefined : v === "on",
-              }); }
-            }
+            onValueChange={(v) => {
+              if (v === SENTINEL_DEFAULT) {
+                if (isOverride) clear("iconBordered");
+                else onChange({ iconBordered: undefined });
+              } else {
+                onChange({ iconBordered: v === "on" });
+              }
+            }}
           >
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
@@ -352,17 +531,17 @@ export const KindEditor: React.FC<KindEditorProps> = ({
           <Label className="text-caption">Background opacity</Label>
           <div className={cn("flex items-center gap-2", !effectiveBordered && "opacity-50")}>
             <Switch
-              id={`${kind.id}-bg-override`}
+              id={`${kindId}-bg-override`}
               checked={overrideBgOpacity}
               disabled={!effectiveBordered}
-              onCheckedChange={(v) =>
-                { onChange({
-                  iconBgOpacity: v ? typography.icon.bgOpacity : undefined,
-                }); }
-              }
+              onCheckedChange={(v) => {
+                if (v) onChange({ iconBgOpacity: typography.icon.bgOpacity });
+                else if (isOverride) clear("iconBgOpacity");
+                else onChange({ iconBgOpacity: undefined });
+              }}
             />
             <Label
-              htmlFor={`${kind.id}-bg-override`}
+              htmlFor={`${kindId}-bg-override`}
               className="text-[10px] text-muted-foreground cursor-pointer w-12 shrink-0"
             >
               {overrideBgOpacity ? "Override" : "Default"}
@@ -386,19 +565,26 @@ export const KindEditor: React.FC<KindEditorProps> = ({
         </div>
       </div>
 
-      {/* 8. Show raw payload — diagnostic toggle, only for the unknown catch-all. */}
-      {kind.id === 'unknown' && (
+      {/* 8. Show raw payload — diagnostic toggle. */}
+      <div className="flex items-center justify-between gap-2">
         <label className="flex items-center gap-2">
           <input
             type="checkbox"
             aria-label="Show raw payload"
-            checked={kind.showRawPayload ?? true}
+            checked={style.showRawPayload ?? false}
             onChange={(e) => { onChange({ showRawPayload: e.target.checked }); }}
             className="h-4 w-4 rounded border border-input accent-foreground cursor-pointer"
           />
           <span className="text-xs">Show raw payload</span>
         </label>
-      )}
+        {isOverride && (
+          <InheritHint
+            overridden={has("showRawPayload")}
+            categoryLabel={catLabel}
+            onClear={() => { clear("showRawPayload"); }}
+          />
+        )}
+      </div>
 
       <div className="pt-2 border-t border-border flex items-center justify-between">
         <p className="text-caption text-muted-foreground">
@@ -406,10 +592,11 @@ export const KindEditor: React.FC<KindEditorProps> = ({
         </p>
         <button
           type="button"
-          onClick={onResetKind}
+          onClick={onReset}
+          aria-label={isOverride ? "Remove override" : "Reset category to default"}
           className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
         >
-          Reset this kind to default
+          {isOverride ? "Remove override" : "Reset category to default"}
         </button>
       </div>
     </div>

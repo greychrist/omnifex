@@ -10,13 +10,14 @@ import {
   createDefaultConfig,
   parseConfig,
   serializeConfig,
-  deriveKinds,
   pruneRedundantOverrides,
-  STYLE_FIELDS,
+  resolveKind,
+  originOf,
+  DEFAULT_CATEGORIES,
+  type Category,
   type MessageRenderingConfig,
-  type MessageKindConfig,
-  type MessageKindsById,
   type KindStyle,
+  type CategoryStyle,
   type Palette,
   type PaletteEntry,
   type PaletteName,
@@ -24,10 +25,16 @@ import {
   type Typography,
 } from "@/lib/messageRenderingConfig";
 import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
-import { MessageKindTree } from "./appearance/MessageKindTree";
+import { MessageKindTree, type TreeSelection } from "./appearance/MessageKindTree";
 import { KindEditor } from "./appearance/KindEditor";
 import { SamplePreview } from "./appearance/SamplePreview";
 import { TurnPreview } from "./appearance/TurnPreview";
+import {
+  SAMPLE_TIMESTAMP,
+  debugLabelForKindId,
+  previewTextForCategory,
+  previewTextForKindId,
+} from "./appearance/fixtures";
 import { PaletteEditor } from "./appearance/PaletteEditor";
 import { TypographyEditor } from "./appearance/TypographyEditor";
 import { TerminalEditor } from "./appearance/TerminalEditor";
@@ -39,7 +46,7 @@ const USER_DEFAULT_KEY = "message_rendering_config_user_default";
 
 type AppearanceSettingsProps = Pick<SettingsPanelProps, "setToast">;
 
-const FIRST_KIND_ID = "user.prompt";
+const FIRST_SELECTION: TreeSelection = { type: "category", id: "user" };
 
 interface FilterRowProps {
   label: string;
@@ -60,7 +67,7 @@ const FilterRow: React.FC<FilterRowProps> = ({ label, description, checked, onCh
 
 export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast }) => {
   const { config, setConfig: commitConfig } = useMessageRenderingConfig();
-  const [selectedId, setSelectedId] = useState<string>(FIRST_KIND_ID);
+  const [selected, setSelected] = useState<TreeSelection>(FIRST_SELECTION);
   const [previewMode, setPreviewMode] = useState<"compact" | "verbose">(config.defaultViewMode);
   const [hasUserDefault, setHasUserDefault] = useState(false);
   // Surface every section behind tabs instead of a single long scroll.
@@ -110,12 +117,17 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
     setPreviewMode(config.defaultViewMode);
   }, [config.defaultViewMode]);
 
+  // Every commit prunes overrides whose fields all equal their category
+  // (prune-on-save), keeping the persisted override map sparse. The override
+  // the user is actively editing is exempt so a just-added (still-inheriting)
+  // override isn't pruned out from under them before they diverge a field.
   const mutate = useCallback(
     (producer: (prev: MessageRenderingConfig) => MessageRenderingConfig) => {
-      commitConfig(producer(config));
+      const exempt = new Set<string>(selected.type === "override" ? [selected.id] : []);
+      commitConfig(pruneRedundantOverrides(producer(config), exempt));
       scheduleSavedToast();
     },
-    [config, commitConfig, scheduleSavedToast],
+    [config, commitConfig, scheduleSavedToast, selected],
   );
 
   const setTypography = useCallback(
@@ -156,47 +168,97 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
     }
   }, [commitConfig, setToast]);
 
-  // Phase-A shim: the settings UI still reads a flat per-kind catalog. We
-  // derive that view from the v3 categories + overrides on every render and
-  // translate edits back into sparse overrides. Phase B replaces this with
-  // dedicated category + override editors.
-  const derivedKinds: MessageKindsById = useMemo(() => deriveKinds(config), [config]);
-  const selectedKind = derivedKinds[selectedId] ?? derivedKinds[FIRST_KIND_ID];
+  // ── Category editing ──────────────────────────────────────────────────
+  // Categories carry a full style; an edit writes the field straight onto
+  // config.categories[c].
+  const updateCategory = useCallback(
+    (c: Category, patch: Partial<KindStyle>) => {
+      mutate((prev) => ({
+        ...prev,
+        categories: {
+          ...prev.categories,
+          [c]: { ...prev.categories[c], ...patch } as CategoryStyle,
+        },
+      }));
+    },
+    [mutate],
+  );
 
-  const updateKind = useCallback(
-    (id: string, patch: Partial<MessageKindConfig>) => {
+  const resetCategory = useCallback(
+    (c: Category) => {
+      mutate((prev) => ({
+        ...prev,
+        categories: {
+          ...prev.categories,
+          [c]: structuredClone(DEFAULT_CATEGORIES[c]),
+        },
+      }));
+      setToast({ message: `Reset "${DEFAULT_CATEGORIES[c].label}" category to default`, type: "success" });
+    },
+    [mutate, setToast],
+  );
+
+  // ── Override editing ──────────────────────────────────────────────────
+  // Overrides are sparse partial styles. Setting a field persists just that
+  // field; clearing a field removes it (reverting to the category default).
+  const setOverrideField = useCallback(
+    (id: string, patch: Partial<KindStyle>) => {
       mutate((prev) => {
-        // Fold the incoming patch into the kind's override, keeping only the
-        // style fields KindStyle understands (label is preserved separately).
         const nextOverride: Partial<KindStyle> & { label?: string } = {
           ...(prev.overrides[id] ?? {}),
+          ...patch,
         };
-        for (const f of STYLE_FIELDS) {
-          if (f in patch) {
-            (nextOverride as Record<string, unknown>)[f] = (patch as Record<string, unknown>)[f];
-          }
-        }
-        const next = {
-          ...prev,
-          overrides: { ...prev.overrides, [id]: nextOverride },
-        };
-        return pruneRedundantOverrides(next);
+        return { ...prev, overrides: { ...prev.overrides, [id]: nextOverride } };
       });
     },
     [mutate],
   );
 
-  const resetKind = useCallback(
+  const clearOverrideField = useCallback(
+    (id: string, field: keyof KindStyle) => {
+      mutate((prev) => {
+        const nextOverride: Partial<KindStyle> & { label?: string } = {
+          ...(prev.overrides[id] ?? {}),
+        };
+        delete nextOverride[field];
+        return { ...prev, overrides: { ...prev.overrides, [id]: nextOverride } };
+      });
+    },
+    [mutate],
+  );
+
+  const addOverride = useCallback(
     (id: string) => {
-      const label = derivedKinds[id]?.label ?? id;
+      // Select first so the new (empty) override is exempt from prune-on-save.
+      setSelected({ type: "override", id });
+      const exempt = new Set<string>([id]);
+      commitConfig(
+        pruneRedundantOverrides(
+          { ...config, overrides: { ...config.overrides, [id]: config.overrides[id] ?? {} } },
+          exempt,
+        ),
+      );
+      scheduleSavedToast();
+    },
+    [config, commitConfig, scheduleSavedToast],
+  );
+
+  const removeOverride = useCallback(
+    (id: string) => {
+      const label = config.overrides[id]?.label ?? id;
+      // If we're removing the selected override, drop the selection back to
+      // its category so the editor doesn't dangle on a missing id.
+      if (selected.type === "override" && selected.id === id) {
+        setSelected({ type: "category", id: originOf(id) });
+      }
       mutate((prev) => {
         const overrides = { ...prev.overrides };
         delete overrides[id];
         return { ...prev, overrides };
       });
-      setToast({ message: `Reset "${label}" to default`, type: "success" });
+      setToast({ message: `Removed "${label}" override`, type: "success" });
     },
-    [mutate, setToast, derivedKinds],
+    [mutate, setToast, config.overrides, selected],
   );
 
   const updatePalette = useCallback(
@@ -279,6 +341,48 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
     }));
   };
 
+  // Resolve the current selection into the editor + preview inputs.
+  const editor = useMemo(() => {
+    if (selected.type === "category") {
+      const c = selected.id;
+      const style = config.categories[c];
+      return {
+        mode: "category" as const,
+        kindId: c,
+        label: style.label,
+        description: style.description,
+        style: style as KindStyle,
+        previewKindId: undefined as string | undefined,
+        previewText: previewTextForCategory(c),
+        debugLabel: undefined as string | undefined,
+        onChange: (patch: Partial<KindStyle>) => { updateCategory(c, patch); },
+        onClearField: undefined,
+        onReset: () => { resetCategory(c); },
+        inheritedCategoryLabel: undefined as string | undefined,
+        override: undefined as Partial<KindStyle> | undefined,
+      };
+    }
+    const id = selected.id;
+    const cat = originOf(id);
+    const resolved = resolveKind(config, id);
+    const override = config.overrides[id] ?? {};
+    return {
+      mode: "override" as const,
+      kindId: id,
+      label: override.label ?? id,
+      description: `Inherits the ${config.categories[cat].label} category.`,
+      style: resolved,
+      previewKindId: id,
+      previewText: previewTextForKindId(id),
+      debugLabel: debugLabelForKindId(id),
+      onChange: (patch: Partial<KindStyle>) => { setOverrideField(id, patch); },
+      onClearField: (field: keyof KindStyle) => { clearOverrideField(id, field); },
+      onReset: () => { removeOverride(id); },
+      inheritedCategoryLabel: config.categories[cat].label,
+      override,
+    };
+  }, [selected, config, updateCategory, resetCategory, setOverrideField, clearOverrideField, removeOverride]);
+
   return (
     <div className="space-y-4">
       <Tabs value={activeTab} onValueChange={setActiveTab} variant="line" className="w-full">
@@ -297,8 +401,9 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
               <div>
                 <h3 className="text-heading-4">Message kinds</h3>
                 <p className="text-caption text-muted-foreground mt-1">
-                  Choose a kind on the left to edit its icon, accent color, header, and
-                  compact-mode visibility.
+                  Edit a <strong>category</strong> to restyle every kind that belongs to it,
+                  or add an <strong>override</strong> to special-case a single kind. Overrides
+                  inherit any field you leave unset from their category.
                 </p>
               </div>
             </div>
@@ -307,8 +412,10 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
               <div className="lg:border-r lg:pr-4 lg:border-border lg:max-h-[70vh] lg:overflow-y-auto">
                 <MessageKindTree
                   config={config}
-                  selectedId={selectedId}
-                  onSelect={setSelectedId}
+                  selected={selected}
+                  onSelect={setSelected}
+                  onAddOverride={addOverride}
+                  onRemoveOverride={removeOverride}
                 />
               </div>
 
@@ -321,16 +428,30 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
                     </span>
                   </div>
                   <div className="rounded-md border border-border bg-background p-4">
-                    <SamplePreview kind={selectedKind} palette={config.palette} />
+                    <SamplePreview
+                      style={editor.style}
+                      kindId={editor.previewKindId}
+                      text={editor.previewText}
+                      debugLabel={editor.debugLabel}
+                      palette={config.palette}
+                      timestamp={SAMPLE_TIMESTAMP}
+                    />
                   </div>
                 </div>
 
                 <KindEditor
-                  kind={selectedKind}
+                  mode={editor.mode}
+                  kindId={editor.kindId}
+                  label={editor.label}
+                  description={editor.description}
+                  style={editor.style}
+                  override={editor.override}
+                  inheritedCategoryLabel={editor.inheritedCategoryLabel}
                   palette={config.palette}
                   typography={config.typography}
-                  onChange={(patch) => { updateKind(selectedKind.id, patch); }}
-                  onResetKind={() => { resetKind(selectedKind.id); }}
+                  onChange={editor.onChange}
+                  onClearField={editor.onClearField}
+                  onReset={editor.onReset}
                 />
               </div>
             </div>

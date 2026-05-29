@@ -1,9 +1,9 @@
 import React from "react";
 import { Layers } from "lucide-react";
-import type { MessageRenderingConfig, MessageKindsById } from "@/lib/messageRenderingConfig";
-import { deriveKinds } from "@/lib/messageRenderingConfig";
+import type { MessageRenderingConfig } from "@/lib/messageRenderingConfig";
+import { resolveKind } from "@/lib/messageRenderingConfig";
 import { SamplePreview } from "./SamplePreview";
-import { FAKE_TURN_KIND_IDS } from "./fixtures";
+import { FAKE_TURN_KIND_IDS, SAMPLE_TIMESTAMP, debugLabelForKindId, previewTextForKindId } from "./fixtures";
 import { cn } from "@/lib/utils";
 
 interface TurnPreviewProps {
@@ -22,7 +22,7 @@ interface CompactItem {
 
 function groupTurn(
   kindIds: string[],
-  kinds: MessageKindsById,
+  config: MessageRenderingConfig,
 ): CompactItem[] {
   const items: CompactItem[] = [];
   let buffer: string[] = [];
@@ -33,9 +33,8 @@ function groupTurn(
     }
   };
   for (const id of kindIds) {
-    const k = kinds[id];
-    if (!k) continue;
-    if (k.hiddenInCompact && !k.compactBoundaryLocked) {
+    const style = resolveKind(config, id);
+    if (style.hiddenInCompact && !style.compactBoundaryLocked) {
       buffer.push(id);
     } else {
       flushGroup();
@@ -46,28 +45,34 @@ function groupTurn(
   return items;
 }
 
+const Sample: React.FC<{ config: MessageRenderingConfig; id: string }> = ({ config, id }) => (
+  <SamplePreview
+    style={resolveKind(config, id)}
+    kindId={id}
+    text={previewTextForKindId(id)}
+    debugLabel={debugLabelForKindId(id)}
+    palette={config.palette}
+    timestamp={SAMPLE_TIMESTAMP}
+  />
+);
+
 export const TurnPreview: React.FC<TurnPreviewProps> = ({ config, mode }) => {
-  const kinds = deriveKinds(config);
   if (mode === "verbose") {
     return (
       <div className="space-y-2">
-        {FAKE_TURN_KIND_IDS.map((id, i) => {
-          const k = kinds[id];
-          if (!k) return null;
-          return <SamplePreview key={`${id}-${i}`} kind={k} palette={config.palette} />;
-        })}
+        {FAKE_TURN_KIND_IDS.map((id, i) => (
+          <Sample key={`${id}-${i}`} config={config} id={id} />
+        ))}
       </div>
     );
   }
 
-  const items = groupTurn(FAKE_TURN_KIND_IDS, kinds);
+  const items = groupTurn(FAKE_TURN_KIND_IDS, config);
   return (
     <div className="space-y-2">
       {items.map((item, i) => {
         if (item.kind === "single") {
-          const k = kinds[item.ids[0]];
-          if (!k) return null;
-          return <SamplePreview key={`s-${i}`} kind={k} palette={config.palette} />;
+          return <Sample key={`s-${i}`} config={config} id={item.ids[0]} />;
         }
         return <CollapsedGroupMarker key={`g-${i}`} count={item.ids.length} />;
       })}
