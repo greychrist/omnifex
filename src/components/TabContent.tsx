@@ -31,6 +31,32 @@ const LimaViewer = lazy(() => import('@/components/LimaViewer').then(m => ({ def
 
 // Import non-lazy components for projects view
 
+/** Single-engine resolution shape baked into a started session's
+ *  initialSessionConfig (mirrors AgentSession's accountResolution). */
+type FormAccountResolution = {
+  account: { name: string; subscription_label: string; config_dir: string; session_defaults?: import('@/lib/api').SessionDefaults };
+  match_type: string;
+  match_detail: string;
+};
+
+/** Map one engine's resolved routing slot to the resolution shape the session
+ *  header consumes. Returns null when that engine has no matching rule —
+ *  callers must NOT fall back to the other engine's slot, or a Claude session
+ *  ends up showing a Codex account (and vice versa). */
+function slotToResolution(slot: ResolvePair[keyof ResolvePair]): FormAccountResolution | null {
+  if (!slot) return null;
+  return {
+    account: {
+      name: slot.account.name,
+      subscription_label: slot.account.subscription_label,
+      config_dir: slot.account.config_dir,
+      session_defaults: slot.account.session_defaults,
+    },
+    match_type: slot.matchType,
+    match_detail: slot.matchDetail,
+  };
+}
+
 interface TabPanelProps {
   tab: Tab;
   isActive: boolean;
@@ -69,11 +95,7 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
   // session-form header badge / tab title and to carry a manual override into
   // the spawned session. Distinct from `projectResolvePair`, which feeds the
   // form's per-engine account cell.
-  const [projectAccountResolution, setProjectAccountResolution] = React.useState<{
-    account: { name: string; subscription_label: string; config_dir: string; session_defaults?: import('@/lib/api').SessionDefaults };
-    match_type: string;
-    match_detail: string;
-  } | null>(null);
+  const [projectAccountResolution, setProjectAccountResolution] = React.useState<FormAccountResolution | null>(null);
   // Per-engine routing pair for the inline new-session form. The form reads
   // resolvePair[agent] so flipping the AgentPicker swaps which account shows.
   const [projectResolvePair, setProjectResolvePair] = React.useState<ResolvePair>({ claude: null, codex: null });
@@ -168,22 +190,25 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
       // user doesn't have to flip it; otherwise default to Claude.
       api.resolveAccountForProject(project.path).then((pair) => {
         setProjectResolvePair(pair);
-        setFormAgent(pair.claude ? 'claude' : pair.codex ? 'codex' : 'claude');
+        const engine: AgentKind = pair.claude ? 'claude' : pair.codex ? 'codex' : 'claude';
+        setFormAgent(engine);
         // Prefer the Claude slot for the tab badge (the Claude-centric chip),
         // falling back to Codex, then the project hint.
         const account = pair.claude?.account ?? pair.codex?.account ?? null;
         setProjectAccountName(account?.name ?? project.account_name ?? null);
         if (account) updateTab(tab.id, { accountName: account.name, accountColor: account.color, accountIcon: account.icon });
         else if (project.account_name) setProjectAccountName(project.account_name);
-      }).catch(() => { setProjectAccountName(project.account_name ?? null); });
 
-      // Resolve full account info (with match_type / match_detail) so the
-      // inline new-session form can show the same Account/Config/Matched-by
-      // block that ClaudeCodeSession's panel shows. Also seeds form defaults
-      // from the account's session_defaults if set.
-      api.explainAccountResolution(project.path).then((res) => {
-        setProjectAccountResolution(res ?? null);
-        const d = res?.account?.session_defaults;
+        // The Account/Config/Matched-by block and the resolution baked into a
+        // started session must reflect the engine that will actually launch
+        // (`engine`), NOT whichever engine owns the longest-prefix rule — that
+        // engine-agnostic resolution is what surfaced a Codex account in a
+        // Claude session's header. Derive it straight from this engine's slot.
+        const resolution = slotToResolution(pair[engine]);
+        setProjectAccountResolution(resolution);
+
+        // Seed form defaults from the launching engine's account, if set.
+        const d = resolution?.account.session_defaults;
         if (d) {
           if (d.model) setFormModel(d.model);
           if (d.effort) setFormEffort(d.effort);
@@ -194,7 +219,10 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
           if (d.thinkingConfig) setFormThinkingConfig(normalizeThinkingConfig(d.thinkingConfig));
           if (d.permissionMode) setFormPermissionMode(d.permissionMode);
         }
-      }).catch(() => { setProjectAccountResolution(null); });
+      }).catch(() => {
+        setProjectAccountName(project.account_name ?? null);
+        setProjectAccountResolution(null);
+      });
 
       // Update tab title to "<ProjectName>: Sessions" and flip the
       // tab icon from Folder → List so the strip reflects that the
@@ -283,6 +311,15 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
       const account = pair.claude?.account ?? pair.codex?.account ?? null;
       if (account) updateTab(tab.id, { accountName: account.name, accountColor: account.color, accountIcon: account.icon });
     }).catch(() => {});
+  };
+
+  // Flipping the AgentPicker must re-point the baked-in resolution at the
+  // newly-selected engine's slot — otherwise Start carries the previous
+  // engine's account into the session header. Derived from the already-fetched
+  // pair, so no extra IPC round-trip.
+  const handleFormAgentChange = (engine: AgentKind) => {
+    setFormAgent(engine);
+    setProjectAccountResolution(slotToResolution(projectResolvePair[engine]));
   };
 
   const handleStartNewSession = () => {
@@ -421,7 +458,7 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                             sessionStartMode={formSessionStartMode}
                             setSessionStartMode={setFormSessionStartMode}
                             agent={formAgent}
-                            setAgent={setFormAgent}
+                            setAgent={handleFormAgentChange}
                             agentPickerDisabled={loading}
                             onStart={handleStartNewSession}
                             onChangeAccount={() => { setShowChangeAccountDialog(true); }}

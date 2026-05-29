@@ -133,7 +133,7 @@ export interface AccountsService {
   resolve(projectPath: string): ResolvePair;
   setProjectOverride(projectPath: string, accountId: number): void;
   listProjectOverrides(): ProjectOverride[];
-  explainResolution(projectPath: string): ResolutionExplanation | null;
+  explainResolution(projectPath: string, engine?: AccountEngine): ResolutionExplanation | null;
 
   discoverAccounts(): Promise<DiscoveredConfigDirTuple[]>;
   /**
@@ -491,7 +491,26 @@ export function createAccountsService(db: Database): AccountsService {
   // match across engines, preferring an explicit override).
   // -------------------------------------------------------------------------
 
-  function explainResolution(projectPath: string): ResolutionExplanation | null {
+  function explainResolution(
+    projectPath: string,
+    engine?: AccountEngine,
+  ): ResolutionExplanation | null {
+    // Engine-scoped explanation: the session header knows which engine it is
+    // running, so it must see the account that routes for THAT engine. Reuse
+    // the per-engine partitioning in resolve() rather than picking whichever
+    // engine happens to own the longest-prefix rule — otherwise a Claude
+    // session on a path that also matches a Codex rule/override shows the
+    // Codex account.
+    if (engine) {
+      const slot = resolve(projectPath)[engine];
+      if (!slot) return null;
+      return {
+        account: slot.account,
+        match_type: slot.matchType,
+        match_detail: slot.matchDetail,
+      };
+    }
+
     const normalizedProject = normalizePath(projectPath);
 
     const overrideRow = raw

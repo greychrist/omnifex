@@ -29,7 +29,7 @@ export interface Services {
     listProjectOverrides(): unknown;
     discoverAccounts(): unknown;
     scanForNewAccounts(): unknown;
-    explainResolution(projectPath: string): unknown;
+    explainResolution(projectPath: string, engine?: string): unknown;
   };
   claude?: {
     listProjects(configDir?: string): unknown;
@@ -290,7 +290,7 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     list_project_overrides: wrap(() => accounts?.listProjectOverrides() ?? null),
     discover_accounts: wrap(() => accounts?.discoverAccounts() ?? null),
     scan_for_new_accounts: wrap(() => accounts?.scanForNewAccounts() ?? null),
-    explain_account_resolution: wrapWith((p: Record<string, unknown>) => accounts?.explainResolution((p?.projectPath ?? p?.project_path) as string) ?? null),
+    explain_account_resolution: wrapWith((p: Record<string, unknown>) => accounts?.explainResolution((p?.projectPath ?? p?.project_path) as string, p?.engine as string | undefined) ?? null),
 
     // ── Claude ────────────────────────────────────────────────────────────────
     list_projects: wrapWith((p: Record<string, unknown>) => claude?.listProjects(p?.config_dir as string | undefined) ?? null),

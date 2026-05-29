@@ -459,13 +459,13 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   useEffect(() => {
     if (hasInitialAccountOverride) return;
     if (projectPath) {
-      api.explainAccountResolution(projectPath).then((result) => {
+      api.explainAccountResolution(projectPath, agent).then((result) => {
         if (result) {
           setAccountResolution(result);
         }
       }).catch(console.error);
     }
-  }, [projectPath, hasInitialAccountOverride]);
+  }, [projectPath, hasInitialAccountOverride, agent]);
 
   // Apply per-account session defaults once when the account first resolves,
   // but only for new sessions (not when resuming or launched with explicit

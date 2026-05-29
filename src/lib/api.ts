@@ -2321,14 +2321,18 @@ export const api = {
   },
 
   /**
-   * Resolve account for a project path with explanation of why it matched
+   * Resolve account for a project path with explanation of why it matched.
+   * Pass `engine` to scope the result to that CLI engine's routing — the
+   * session header must show the account for the engine it is actually
+   * running, not whichever engine owns the longest-prefix rule. Omit `engine`
+   * for an engine-agnostic explanation (e.g. the Account Settings test tool).
    */
-  async explainAccountResolution(projectPath: string): Promise<{
+  async explainAccountResolution(projectPath: string, engine?: AgentKind): Promise<{
     account: Account;
     match_type: string;
     match_detail: string;
   } | null> {
-    return apiCall("explain_account_resolution", { projectPath });
+    return apiCall("explain_account_resolution", engine ? { projectPath, engine } : { projectPath });
   },
 
   // ---------------------------------------------------------------------------

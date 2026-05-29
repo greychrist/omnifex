@@ -784,8 +784,8 @@ app.whenReady().then(() => {
         syncCodexAuthWatchers();
         return created;
       },
-      explainResolution: (projectPath: string) =>
-        accountsService.explainResolution(projectPath),
+      explainResolution: (projectPath: string, engine?: string) =>
+        accountsService.explainResolution(projectPath, engine as never),
     },
     // Claude adapter
     claude: {

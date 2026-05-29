@@ -344,6 +344,34 @@ describe('accounts service', () => {
       expect(explanation!.match_detail).toBe('/home/user/work');
       expect(explanation!.account.id).toBe(work.id);
     });
+
+    it('resolves the requested engine, not whichever prefix is longest', () => {
+      // A Claude session on a path that ALSO matches a longer Codex rule must
+      // still report the Claude account in its header — engine-agnostic
+      // resolution would surface Codex here (the longer-prefix winner).
+      const claude = accounts.createAccount({ name: 'Personal', configDir: '/home/user/.claude' });
+      const codex = accounts.createAccount({ name: 'Codex', configDir: '/home/user/.codex', engine: 'codex' });
+      accounts.addPathRule(claude.id, '/home/user/proj', 0);
+      accounts.addPathRule(codex.id, '/home/user/proj/deep', 0);
+
+      const forClaude = accounts.explainResolution('/home/user/proj/deep/sub', 'claude');
+      expect(forClaude).not.toBeNull();
+      expect(forClaude!.account.id).toBe(claude.id);
+
+      const forCodex = accounts.explainResolution('/home/user/proj/deep/sub', 'codex');
+      expect(forCodex).not.toBeNull();
+      expect(forCodex!.account.id).toBe(codex.id);
+    });
+
+    it('returns null for an engine with no matching rule even when the other engine matches', () => {
+      // Deleting/never-having a Codex account for a path must not let a Claude
+      // match leak into the Codex slot (and vice versa).
+      const claude = accounts.createAccount({ name: 'Personal', configDir: '/home/user/.claude' });
+      accounts.addPathRule(claude.id, '/home/user/proj', 0);
+
+      expect(accounts.explainResolution('/home/user/proj/x', 'claude')!.account.id).toBe(claude.id);
+      expect(accounts.explainResolution('/home/user/proj/x', 'codex')).toBeNull();
+    });
   });
 
   // -----------------------------------------------------------------------
