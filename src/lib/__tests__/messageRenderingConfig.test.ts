@@ -10,6 +10,7 @@ import {
   DEFAULT_CATEGORIES,
   DEFAULT_OVERRIDES,
   CATEGORIES,
+  originOf,
 } from "../messageRenderingConfig";
 import { classifyStandaloneKind } from "../messageKind";
 import type { JsonlNode } from "@/types/jsonl";
@@ -555,6 +556,28 @@ describe("messageRenderingConfig", () => {
       const restored = parseConfig(serializeConfig(original));
       expect(restored.terminal.fontSize).toBe(15);
       expect(restored.terminal.cursorStyle).toBe("bar");
+    });
+  });
+
+  describe("originOf", () => {
+    it("maps dotted prefixes to categories", () => {
+      expect(originOf("user.prompt")).toBe("user");
+      expect(originOf("assistant.text.endTurn")).toBe("agent");
+      expect(originOf("system.notification.error")).toBe("system");
+      expect(originOf("attachment.todo_reminder")).toBe("attachment");
+    });
+    it("maps standalone bookkeeping ids", () => {
+      expect(originOf("pr-link")).toBe("bookkeeping");
+      expect(originOf("last-prompt")).toBe("bookkeeping");
+      expect(originOf("queue-operation")).toBe("bookkeeping");
+    });
+    it("maps cli envelopes + summary to system, permission to system", () => {
+      expect(originOf("cli-stream-init")).toBe("system");
+      expect(originOf("cli-stream-result")).toBe("system");
+      expect(originOf("permission.request")).toBe("system");
+    });
+    it("defaults unknown ids to system (never throws)", () => {
+      expect(originOf("totally.new.kind")).toBe("system");
     });
   });
 });

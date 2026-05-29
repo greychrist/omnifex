@@ -277,6 +277,23 @@ export const DEFAULT_CATEGORIES: Record<Category, CategoryStyle> = {
   bookkeeping: { label: "Bookkeeping", description: "Internal transcript records (hidden by default).",             presentation: "side-line",   accentColor: "muted",   icon: "FileText", headerLabel: null,     borderStyle: "dashed", alignment: "left",  hiddenInCompact: true },
 };
 
+const BOOKKEEPING_IDS = new Set([
+  "pr-link", "mode", "last-prompt", "queue-operation",
+  "ai-title", "file-history-snapshot", "permission-mode",
+]);
+
+export function originOf(kindId: string): Category {
+  if (BOOKKEEPING_IDS.has(kindId)) return "bookkeeping";
+  const head = kindId.split(".")[0];
+  switch (head) {
+    case "user": return "user";
+    case "assistant": return "agent";
+    case "attachment": return "attachment";
+    // system, cli-stream-*, summary, permission, unknown → system bucket
+    default: return "system";
+  }
+}
+
 export const DEFAULT_OVERRIDES: Record<string, Partial<KindStyle> & { label?: string }> = {
   "assistant.text.endTurn":      { label: "Execution complete",      accentColor: "green",   icon: "CheckCircle2",        compactBoundaryLocked: true },
   "assistant.thinking":          { label: "Thinking",                presentation: "collapsible", headerLabel: "Thinking", icon: "Brain",               widget: "ThinkingWidget" },
