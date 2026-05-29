@@ -1,6 +1,6 @@
 import React from "react";
 import { ChevronDown, ChevronRight, EyeOff, Lock, MessageSquare, Rows3 } from "lucide-react";
-import { isHexColor } from "@/lib/messageRenderingConfig";
+import { isHexColor, deriveKinds } from "@/lib/messageRenderingConfig";
 import type {
   MessageRenderingConfig,
   MessageKindConfig,
@@ -74,8 +74,9 @@ export const MessageKindTree: React.FC<MessageKindTreeProps> = ({
     bookkeeping: [],
     fallback: [],
   };
-  for (const id of Object.keys(config.kinds)) {
-    const k = config.kinds[id];
+  const kinds = deriveKinds(config);
+  for (const id of Object.keys(kinds)) {
+    const k = kinds[id];
     groups[groupOf(k)].push(k);
   }
   // Sort each group by the visible label (A→Z) so the list reads in

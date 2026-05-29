@@ -10,9 +10,13 @@ import {
   createDefaultConfig,
   parseConfig,
   serializeConfig,
-  DEFAULT_KINDS,
+  deriveKinds,
+  pruneRedundantOverrides,
+  STYLE_FIELDS,
   type MessageRenderingConfig,
   type MessageKindConfig,
+  type MessageKindsById,
+  type KindStyle,
   type Palette,
   type PaletteEntry,
   type PaletteName,
@@ -152,26 +156,47 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
     }
   }, [commitConfig, setToast]);
 
-  const selectedKind = config.kinds[selectedId] ?? config.kinds[FIRST_KIND_ID];
+  // Phase-A shim: the settings UI still reads a flat per-kind catalog. We
+  // derive that view from the v3 categories + overrides on every render and
+  // translate edits back into sparse overrides. Phase B replaces this with
+  // dedicated category + override editors.
+  const derivedKinds: MessageKindsById = useMemo(() => deriveKinds(config), [config]);
+  const selectedKind = derivedKinds[selectedId] ?? derivedKinds[FIRST_KIND_ID];
 
   const updateKind = useCallback(
     (id: string, patch: Partial<MessageKindConfig>) => {
-      mutate((prev) => ({
-        ...prev,
-        kinds: { ...prev.kinds, [id]: { ...prev.kinds[id], ...patch } },
-      }));
+      mutate((prev) => {
+        // Fold the incoming patch into the kind's override, keeping only the
+        // style fields KindStyle understands (label is preserved separately).
+        const nextOverride: Partial<KindStyle> & { label?: string } = {
+          ...(prev.overrides[id] ?? {}),
+        };
+        for (const f of STYLE_FIELDS) {
+          if (f in patch) {
+            (nextOverride as Record<string, unknown>)[f] = (patch as Record<string, unknown>)[f];
+          }
+        }
+        const next = {
+          ...prev,
+          overrides: { ...prev.overrides, [id]: nextOverride },
+        };
+        return pruneRedundantOverrides(next);
+      });
     },
     [mutate],
   );
 
   const resetKind = useCallback(
     (id: string) => {
-      const def = DEFAULT_KINDS.find((k) => k.id === id);
-      if (!def) return;
-      mutate((prev) => ({ ...prev, kinds: { ...prev.kinds, [id]: { ...def } } }));
-      setToast({ message: `Reset "${def.label}" to default`, type: "success" });
+      const label = derivedKinds[id]?.label ?? id;
+      mutate((prev) => {
+        const overrides = { ...prev.overrides };
+        delete overrides[id];
+        return { ...prev, overrides };
+      });
+      setToast({ message: `Reset "${label}" to default`, type: "success" });
     },
-    [mutate, setToast],
+    [mutate, setToast, derivedKinds],
   );
 
   const updatePalette = useCallback(

@@ -1,6 +1,7 @@
 import React from "react";
 import { Layers } from "lucide-react";
-import type { MessageRenderingConfig } from "@/lib/messageRenderingConfig";
+import type { MessageRenderingConfig, MessageKindsById } from "@/lib/messageRenderingConfig";
+import { deriveKinds } from "@/lib/messageRenderingConfig";
 import { SamplePreview } from "./SamplePreview";
 import { FAKE_TURN_KIND_IDS } from "./fixtures";
 import { cn } from "@/lib/utils";
@@ -21,7 +22,7 @@ interface CompactItem {
 
 function groupTurn(
   kindIds: string[],
-  config: MessageRenderingConfig,
+  kinds: MessageKindsById,
 ): CompactItem[] {
   const items: CompactItem[] = [];
   let buffer: string[] = [];
@@ -32,7 +33,7 @@ function groupTurn(
     }
   };
   for (const id of kindIds) {
-    const k = config.kinds[id];
+    const k = kinds[id];
     if (!k) continue;
     if (k.hiddenInCompact && !k.compactBoundaryLocked) {
       buffer.push(id);
@@ -46,11 +47,12 @@ function groupTurn(
 }
 
 export const TurnPreview: React.FC<TurnPreviewProps> = ({ config, mode }) => {
+  const kinds = deriveKinds(config);
   if (mode === "verbose") {
     return (
       <div className="space-y-2">
         {FAKE_TURN_KIND_IDS.map((id, i) => {
-          const k = config.kinds[id];
+          const k = kinds[id];
           if (!k) return null;
           return <SamplePreview key={`${id}-${i}`} kind={k} palette={config.palette} />;
         })}
@@ -58,12 +60,13 @@ export const TurnPreview: React.FC<TurnPreviewProps> = ({ config, mode }) => {
     );
   }
 
-  const items = groupTurn(FAKE_TURN_KIND_IDS, config);
+  const items = groupTurn(FAKE_TURN_KIND_IDS, kinds);
   return (
     <div className="space-y-2">
       {items.map((item, i) => {
         if (item.kind === "single") {
-          const k = config.kinds[item.ids[0]];
+          const k = kinds[item.ids[0]];
+          if (!k) return null;
           return <SamplePreview key={`s-${i}`} kind={k} palette={config.palette} />;
         }
         return <CollapsedGroupMarker key={`g-${i}`} count={item.ids.length} />;
