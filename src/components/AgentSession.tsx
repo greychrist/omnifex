@@ -938,7 +938,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
         const message = normalizedNode;
         const liveSlice = useClaudeSessionStore.getState().selectTab(sessionTabId);
         const hasExistingInit = liveSlice.messages.some(
-          (m) => m.kind === 'system' && (m as { subtype?: string }).subtype === 'init',
+          (m) => m.kind === 'cli-stream-init',
         );
         const reduced = reduceSessionStreamMessage(message, {
           projectPath,

@@ -603,9 +603,9 @@ export function inferredClosureEvents(
     if (dispatchedAt === undefined) continue;
     let resultIdx = -1;
     for (let i = dispatchedAt + 1; i < messages.length; i++) {
-      // result messages arrive as kind:'unknown' with raw.type==='result'
+      // result messages arrive as kind:'cli-stream-result'
       const node = messages[i];
-      if (node.kind === 'unknown' && (node.raw as { type?: string }).type === 'result') {
+      if (node.kind === 'cli-stream-result') {
         resultIdx = i;
         break;
       }

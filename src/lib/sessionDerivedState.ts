@@ -30,7 +30,14 @@ function isMainAssistant(node: JsonlNode): boolean {
 }
 
 function isResultNode(node: JsonlNode): boolean {
-  return node.kind === 'unknown' && (node.raw as { type?: string }).type === 'result';
+  // The CLI's turn-complete `result` envelope. Since the engine-mode
+  // reclassification (jsonlClassifier) it arrives as kind:'cli-stream-result';
+  // older/persisted transcripts never carried result rows at all, so there is
+  // no legacy `unknown`+`type:'result'` shape left to honor. This row is the
+  // authoritative turn-closer under --include-partial-messages, where the
+  // committed assistant carries stop_reason:null (the terminal reason rides
+  // the message_delta overlay, which never enters messages[]).
+  return node.kind === 'cli-stream-result';
 }
 
 function lastMainPromptIndex(messages: JsonlNode[]): number {
@@ -52,7 +59,7 @@ function lastMainPromptIndex(messages: JsonlNode[]): number {
 // matching a hardcoded plumbing list — means a new bookkeeping kind can't
 // silently reopen a closed turn.
 //
-//   - a `result` row (kind:'unknown', raw.type:'result') CLOSES the turn.
+//   - a `result` row (kind:'cli-stream-result') CLOSES the turn.
 //     Under --include-partial-messages the committed assistant carries
 //     stop_reason: null (the terminal reason rides the message_delta
 //     stream_event, which never enters messages[]), so the result row — not

@@ -421,7 +421,7 @@ describe('deriveSubagents', () => {
       const subs = deriveSubagents([
         bashBackground(TOOL_USE_ID, 'Build DMG'),
         toolResult(TOOL_USE_ID, false, 'Async agent launched'),
-        { kind: 'unknown', sessionId: '', receivedAt: '', raw: { type: 'result', subtype: 'success', result: 'awaiting' } } as any,
+        { kind: 'cli-stream-result', sessionId: '', receivedAt: '', raw: { type: 'result', subtype: 'success', result: 'awaiting' } } as any,
         { kind: 'user', userKind: 'prompt', sessionId: '', receivedAt: '', raw: { type: 'user', message: { content: [{ type: 'text', text: 'next' }] } } } as any,
       ]);
       expect(subs[0].status).toBe('completed_inferred');
@@ -432,7 +432,7 @@ describe('deriveSubagents', () => {
       const subs = deriveSubagents([
         bashBackground(TOOL_USE_ID, 'Build DMG'),
         toolResult(TOOL_USE_ID, false, 'Async agent launched'),
-        { kind: 'unknown', sessionId: '', receivedAt: '', raw: { type: 'result', subtype: 'success', result: 'awaiting' } } as any,
+        { kind: 'cli-stream-result', sessionId: '', receivedAt: '', raw: { type: 'result', subtype: 'success', result: 'awaiting' } } as any,
       ]);
       expect(subs[0].status).toBe('running');
     });
@@ -464,7 +464,7 @@ describe('deriveSubagents', () => {
     const subs = deriveSubagents([
       agentToolUse(TOOL_USE_ID, 'Verify', 'general-purpose', true),
       toolResult(TOOL_USE_ID, false, 'Async agent launched successfully'),
-      { kind: 'unknown', sessionId: '', receivedAt: '', raw: { type: 'result', subtype: 'success', result: 'awaiting' } } as any,
+      { kind: 'cli-stream-result', sessionId: '', receivedAt: '', raw: { type: 'result', subtype: 'success', result: 'awaiting' } } as any,
       { kind: 'user', userKind: 'prompt', sessionId: '', receivedAt: '', raw: { type: 'user', message: { content: [{ type: 'text', text: 'next prompt' }] } } } as any,
     ]);
     expect(subs[0].status).toBe('completed_inferred');
@@ -477,7 +477,7 @@ describe('deriveSubagents', () => {
     const subs = deriveSubagents([
       agentToolUse(TOOL_USE_ID, 'Verify', 'general-purpose', true),
       toolResult(TOOL_USE_ID, false, 'Async agent launched successfully'),
-      { kind: 'unknown', sessionId: '', receivedAt: '', raw: { type: 'result', subtype: 'success', result: 'awaiting' } } as any,
+      { kind: 'cli-stream-result', sessionId: '', receivedAt: '', raw: { type: 'result', subtype: 'success', result: 'awaiting' } } as any,
     ]);
     expect(subs[0].status).toBe('running');
   });
@@ -492,7 +492,7 @@ describe('deriveSubagents', () => {
     const subs = deriveSubagents([
       agentToolUse(TOOL_USE_ID, 'Verify', 'Explore', false),
       // No tool_result, no notification, but trailing user message
-      { kind: 'unknown', sessionId: '', receivedAt: '', raw: { type: 'result', subtype: 'success', result: 'huh' } } as any,
+      { kind: 'cli-stream-result', sessionId: '', receivedAt: '', raw: { type: 'result', subtype: 'success', result: 'huh' } } as any,
       { kind: 'user', userKind: 'prompt', sessionId: '', receivedAt: '', raw: { type: 'user', message: { content: [{ type: 'text', text: 'next' }] } } } as any,
     ]);
     expect(subs[0].status).toBe('completed_inferred');
@@ -504,7 +504,7 @@ describe('deriveSubagents', () => {
       agentToolUse(TOOL_USE_ID, 'Verify', 'general-purpose', true),
       toolResult(TOOL_USE_ID, false, 'Async agent launched'),
       taskNotification(TOOL_USE_ID, 'completed'),
-      { kind: 'unknown', sessionId: '', receivedAt: '', raw: { type: 'result', subtype: 'success', result: 'done' } } as any,
+      { kind: 'cli-stream-result', sessionId: '', receivedAt: '', raw: { type: 'result', subtype: 'success', result: 'done' } } as any,
       { kind: 'user', userKind: 'prompt', sessionId: '', receivedAt: '', raw: { type: 'user', message: { content: [{ type: 'text', text: 'next' }] } } } as any,
     ]);
     expect(subs[0].status).toBe('completed');

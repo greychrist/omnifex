@@ -64,7 +64,7 @@ These must hold at all times. If you find code that violates them, that code is 
 // True iff the conversation is "expecting more from Claude". Walks messages[]
 // from the end; only three kinds of node have the power to decide the turn
 // axis (first one wins), and everything else is skipped BY DEFAULT:
-//   - a `result` row (kind:'unknown', raw.type:'result') CLOSES the turn.
+//   - a `result` row (kind:'cli-stream-result') CLOSES the turn.
 //     Under --include-partial-messages the committed assistant carries
 //     stop_reason: null (the terminal reason rides the message_delta
 //     stream_event, which never enters messages[]), so the result row is the
@@ -96,9 +96,11 @@ conversationStatus(messages, tasks, subagents): 'running' | 'idle'
 Terminal `stop_reason` values that close `waitingOnClaude` on a main-chain assistant:
 `end_turn`, `stop_sequence`, `max_tokens`, `refusal`, `model_context_window_exceeded`.
 
-A trailing `result` row (kind `unknown`, `raw.type === 'result'`) **also** closes `waitingOnClaude`, independent of `stop_reason`. This is load-bearing under `--include-partial-messages`: the committed `assistant` message then carries `stop_reason: null` (the real `end_turn` arrives only on the `message_delta` stream_event, which is an overlay and never enters `messages[]`), so without honoring the result row the turn would never read as complete.
+A trailing `result` row (kind `cli-stream-result`) **also** closes `waitingOnClaude`, independent of `stop_reason`. This is load-bearing under `--include-partial-messages`: the committed `assistant` message then carries `stop_reason: null` (the real `end_turn` arrives only on the `message_delta` stream_event, which is an overlay and never enters `messages[]`), so without honoring the result row the turn would never read as complete.
 
-Note: CLI engine-mode `cli-stream-init` / `cli-stream-result` badge envelopes are a separate representation from the `unknown`+`result` row above; they appear in `messages[]` with placeholder badges but do **not** participate in derivation.
+The CLI's `system:init` and `type:'result'` lines classify to `cli-stream-init` / `cli-stream-result` (see `jsonlClassifier`) — these are the **only** representation (there is no parallel `unknown`+`result` row). `cli-stream-result` is the turn-closer for derivation and the `refreshContextUsage` / queue-drain trigger in the reducer; `cli-stream-init` drives session-id extraction, persistence, and the account/model/command fetches. Treating these envelopes as inert "badges only" is the regression that left sessions stuck on "Working" and the context popover empty.
+
+Separately, the engine (`assistantMeta.ts`) merges each chain's trailing `message_delta` (resolved `stop_reason` + final `usage`) back into the committed `assistant` frame before it reaches `messages[]`, so the end-turn card, completion band, and per-message cost — all of which read the assistant's own `stop_reason`/`usage` — see honest values rather than the `message_start`-era stubs.
 
 ## The in-flight rollup
 

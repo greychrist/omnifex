@@ -16,10 +16,12 @@ const baseCtx: StreamReducerContext = {
 
 // ── helpers that build JsonlNode fixtures ─────────────────────────────────────
 
+// The CLI `system:init` envelope classifies to kind:'cli-stream-init'
+// (jsonlClassifier routes every system:init there). The raw payload keeps
+// its original shape, so session_id is still on raw.
 function sysInit(sessionId = 'sess-1'): JsonlNode {
   return {
-    kind: 'system',
-    subtype: 'init',
+    kind: 'cli-stream-init',
     raw: { type: 'system', subtype: 'init', session_id: sessionId, sessionId } as never,
     sessionId,
     receivedAt: '2026-05-27T00:00:00Z',
@@ -36,11 +38,12 @@ function compactBoundary(): JsonlNode {
   };
 }
 
-/** `result` arrives as 'unknown' because the classifier has no 'result' kind yet. */
+/** `result` arrives as kind:'cli-stream-result' (jsonlClassifier routes every
+ *  `type:'result'` line there). The raw payload keeps its original shape. */
 function resultOk(): JsonlNode {
   return {
-    kind: 'unknown',
-    raw: { type: 'result', subtype: 'success', result: 'ok' },
+    kind: 'cli-stream-result',
+    raw: { type: 'result', subtype: 'success', result: 'ok' } as never,
     sessionId: '',
     receivedAt: '2026-05-27T00:00:00Z',
   };
@@ -48,8 +51,8 @@ function resultOk(): JsonlNode {
 
 function resultErr(): JsonlNode {
   return {
-    kind: 'unknown',
-    raw: { type: 'result', subtype: 'error', is_error: true, result: 'boom' },
+    kind: 'cli-stream-result',
+    raw: { type: 'result', subtype: 'error', is_error: true, result: 'boom' } as never,
     sessionId: '',
     receivedAt: '2026-05-27T00:00:00Z',
   };
@@ -183,8 +186,8 @@ describe('reduceSessionStreamMessage', () => {
 
   it('userInterrupted with is_error:false does NOT suppress', () => {
     const node: JsonlNode = {
-      kind: 'unknown',
-      raw: { type: 'result', subtype: 'error_max_turns', is_error: false, result: '' },
+      kind: 'cli-stream-result',
+      raw: { type: 'result', subtype: 'error_max_turns', is_error: false, result: '' } as never,
       sessionId: '',
       receivedAt: '2026-05-27T00:00:00Z',
     };
@@ -287,6 +290,17 @@ describe('reduceSessionStreamMessage', () => {
       };
       const r = reduceSessionStreamMessage(node, baseCtx);
       // 1000 * 0.000003 + 500 * 0.000015 = 0.003 + 0.0075 = 0.0105
+      expect(r.costDelta).toBeCloseTo(0.0105, 6);
+    });
+
+    it('cli-stream-result usage produces a positive costDelta', () => {
+      const node: JsonlNode = {
+        kind: 'cli-stream-result',
+        raw: { type: 'result', subtype: 'success', usage: { input_tokens: 1000, output_tokens: 500 } } as never,
+        sessionId: '',
+        receivedAt: '2026-05-27T00:00:00Z',
+      };
+      const r = reduceSessionStreamMessage(node, baseCtx);
       expect(r.costDelta).toBeCloseTo(0.0105, 6);
     });
 

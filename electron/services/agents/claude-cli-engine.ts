@@ -1,5 +1,11 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { buildClaudeEnv } from '../util/claude-env';
+import {
+  readMessageDeltaMeta,
+  applyAssistantMeta,
+  deltaStashKey,
+  type AssistantMeta,
+} from './assistantMeta';
 import type {
   AgentEngine,
   AgentEngineExit,
@@ -94,6 +100,11 @@ export function createClaudeCliEngine(
    * `toolUseID` back in its PermissionResult).
    */
   const pendingPermissionToolUseIds = new Map<string, string>();
+  // Latest message_delta meta per parent-chain, awaiting the committed
+  // assistant frame it belongs to. See assistantMeta.ts — reconstitutes the
+  // stop_reason + final usage that --include-partial-messages defers off the
+  // committed frame onto the message_delta overlay.
+  const pendingAssistantMeta = new Map<string, AssistantMeta>();
   let nextRequestSeq = 1;
   let lineBuf = '';
   let stderrBuf = '';
@@ -188,6 +199,27 @@ export function createClaudeCliEngine(
         agents: init.agents,
       };
     }
+    // --include-partial-messages defers the assistant's resolved stop_reason
+    // and final usage onto a trailing message_delta overlay; the committed
+    // {type:'assistant'} frame arrives with stop_reason:null and stub usage.
+    // Stash each chain's latest delta and merge it into the next committed
+    // assistant for that chain so downstream sees an honest frame. A `result`
+    // ends the turn — drop any unconsumed delta so it can't bleed forward.
+    const frame = payload as { parent_tool_use_id?: unknown };
+    const deltaMeta = readMessageDeltaMeta(payload);
+    if (deltaMeta) {
+      pendingAssistantMeta.set(deltaStashKey(frame), deltaMeta);
+    } else if (p?.type === 'assistant') {
+      const key = deltaStashKey(frame);
+      const meta: AssistantMeta | undefined = pendingAssistantMeta.get(key);
+      if (meta) {
+        applyAssistantMeta(payload, meta);
+        pendingAssistantMeta.delete(key);
+      }
+    } else if (p?.type === 'result') {
+      pendingAssistantMeta.clear();
+    }
+
     const msg: AgentMessage = {
       agent: 'claude',
       tabId: factory.tabId,

@@ -271,7 +271,7 @@ function inspectUserContent(blocks: unknown[]): {
 
 function computeCost(node: JsonlNode): number {
   // assistant nodes carry usage in raw.message.usage
-  // unknown nodes where raw.type === 'result' carry usage in raw.usage
+  // cli-stream-result envelopes carry the turn's rolled-up usage in raw.usage
   if (node.kind === 'assistant') {
     const usage = (node.raw as { message?: { usage?: { input_tokens?: number; output_tokens?: number } } }).message?.usage;
     if (!usage) return 0;
@@ -279,9 +279,9 @@ function computeCost(node: JsonlNode): number {
     const output = (usage.output_tokens || 0) * 0.000015;
     return input + output;
   }
-  if (node.kind === 'unknown') {
-    const raw = node.raw as { type?: string; usage?: { input_tokens?: number; output_tokens?: number } };
-    if (raw.type === 'result' && raw.usage) {
+  if (node.kind === 'cli-stream-result') {
+    const raw = node.raw as { usage?: { input_tokens?: number; output_tokens?: number } };
+    if (raw.usage) {
       const input = (raw.usage.input_tokens || 0) * 0.000003;
       const output = (raw.usage.output_tokens || 0) * 0.000015;
       return input + output;
@@ -343,8 +343,10 @@ export function reduceSessionStreamMessage(
 
   // system:init — extract session id, kick off live SDK info fetches,
   // skip duplicates without suppressing the fetches (they fire on every init,
-  // including post-rebind / restart).
-  if (node.kind === 'system' && node.subtype === 'init') {
+  // including post-rebind / restart). The classifier routes every system:init
+  // to kind:'cli-stream-init'; the raw payload keeps its original shape, so
+  // session_id is still read off raw.
+  if (node.kind === 'cli-stream-init') {
     const raw = node.raw as { session_id?: string };
     const sid = raw.session_id;
     if (sid) {
@@ -376,28 +378,26 @@ export function reduceSessionStreamMessage(
     effects.push({ kind: 'refreshContextUsage' });
   }
 
-  // Result nodes arrive as 'unknown' kind (the classifier passes them through
-  // because 'result' is not a JSONL kind). They mean "turn complete, awaiting
-  // next input" — not exit. Task 2's conversationStatus derivation owns the
-  // spinner signal; the reducer handles queue drain and context refresh.
-  if (node.kind === 'unknown') {
-    const raw = node.raw as { type?: string; is_error?: boolean };
-    if (raw.type === 'result') {
-      if (ctx.userInterrupted) {
-        result.clearUserInterrupted = true;
-        if (raw.is_error === true) {
-          // Deliberate cancel — swallow the SDK's post-interrupt error result so
-          // "Execution Failed" doesn't flash. Drop it from messages too.
-          result.clearLoading = true;
-          result.append = 'skip';
-          return result;
-        }
+  // Result nodes arrive as kind:'cli-stream-result' (the classifier routes
+  // every `type:'result'` line there). They mean "turn complete, awaiting
+  // next input" — not exit. conversationStatus derivation owns the spinner
+  // signal; the reducer handles queue drain and context refresh.
+  if (node.kind === 'cli-stream-result') {
+    const raw = node.raw as { is_error?: boolean };
+    if (ctx.userInterrupted) {
+      result.clearUserInterrupted = true;
+      if (raw.is_error === true) {
+        // Deliberate cancel — swallow the post-interrupt error result so
+        // "Execution Failed" doesn't flash. Drop it from messages too.
+        result.clearLoading = true;
+        result.append = 'skip';
+        return result;
       }
-
-      result.clearLoading = true;
-      effects.push({ kind: 'refreshContextUsage' });
-      effects.push({ kind: 'processQueuedPrompt' });
     }
+
+    result.clearLoading = true;
+    effects.push({ kind: 'refreshContextUsage' });
+    effects.push({ kind: 'processQueuedPrompt' });
   }
 
   return result;

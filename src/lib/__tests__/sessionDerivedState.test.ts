@@ -50,11 +50,16 @@ function assistantWithStop(
   };
 }
 
-// The CLI `result` envelope classifies to kind:'unknown' with raw.type:'result'
-// (see sessionStreamReducer's result handling). It's the turn-complete marker.
+// The CLI `result` envelope classifies to kind:'cli-stream-result' (see
+// jsonlClassifier — every `type:'result'` line routes there). It is the
+// turn-complete marker and closes `waitingOnClaude` regardless of the
+// preceding assistant's stop_reason — load-bearing under
+// --include-partial-messages, where the committed assistant carries
+// stop_reason:null and the terminal reason rides the message_delta overlay.
 function resultNode(timestamp: string): JsonlNode {
   return {
-    kind: 'unknown',
+    kind: 'cli-stream-result',
+    sessionId: 's1',
     receivedAt: timestamp,
     raw: { type: 'result', subtype: 'success', is_error: false, timestamp } as never,
   } as unknown as JsonlNode;
@@ -338,8 +343,8 @@ describe('turnDuration', () => {
   });
 });
 
-describe('cli-stream kinds do not affect derivation', () => {
-  it('does not treat cli-stream-result as a turn ender', () => {
+describe('cli-stream envelope derivation', () => {
+  it('treats a trailing cli-stream-result as the turn ender', () => {
     const msgs: JsonlNode[] = [
       userPrompt('2026-05-27T00:00:00Z'),
       {
@@ -349,7 +354,26 @@ describe('cli-stream kinds do not affect derivation', () => {
         raw: { type: 'result', subtype: 'success' } as never,
       },
     ];
-    expect(waitingOnClaude(msgs)).toBe(true); // still waiting — no real assistant arrived
+    expect(waitingOnClaude(msgs)).toBe(false); // result envelope closes the turn
+  });
+
+  it('closes the turn even when the committed assistant carries stop_reason:null', () => {
+    // The real --include-partial-messages shape: the committed assistant frame
+    // has stop_reason:null (terminal reason rides the message_delta overlay),
+    // and the cli-stream-result row is what actually ends the turn. Without
+    // honoring it, the null-stop_reason assistant pins waitingOnClaude true
+    // forever. This is the regression that left sessions stuck on "Working".
+    const msgs: JsonlNode[] = [
+      userPrompt('2026-05-27T00:00:00Z'),
+      assistantWithStop('2026-05-27T00:00:01Z', null),
+      {
+        kind: 'cli-stream-result',
+        sessionId: 's1',
+        receivedAt: '2026-05-27T00:00:02Z',
+        raw: { type: 'result', subtype: 'success' } as never,
+      },
+    ];
+    expect(waitingOnClaude(msgs)).toBe(false);
   });
 
   it('does not treat cli-stream-init as a turn start', () => {

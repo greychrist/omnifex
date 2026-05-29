@@ -213,7 +213,7 @@ export function getTaskList(messages: JsonlNode[]): TaskListEntry[] | null {
     // not once per session, so subagents that span multiple turns
     // need their pending tasks to stay pending. The renderer's
     // task-list summarizer treats real-state pending tasks correctly.
-    if (m.kind === 'unknown' && (m.raw as { type?: string }).type === 'result') {
+    if (m.kind === 'cli-stream-result') {
       currentTaskId = null;
       continue;
     }
