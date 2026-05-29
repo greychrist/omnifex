@@ -5,6 +5,17 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.72] — 2026-05-29
+
+Completes the partial-message turn-completion fix from 0.4.71. The engine-mode reclassification had renamed the CLI's `init` / `result` stream envelopes to `cli-stream-init` / `cli-stream-result`, but the consumers still matched the retired `system:init` / `unknown:result` shapes — so the turn-complete signal, the context-window readout, per-message cost, and the end-turn card all silently broke on live sessions.
+
+Installers remain **unsigned**.
+
+### Fixed
+
+- **Sessions no longer stick on "Working" and the context popover is no longer empty.** `waitingOnClaude`, the stream reducer's init/result effects (context-usage refresh, queued-prompt drain, session persistence, account/model/command fetches), `hasExistingInit`, and the task-list / subagent turn boundaries now all honor the `cli-stream-init` / `cli-stream-result` envelopes instead of the shapes the classifier no longer emits.
+- **The end-turn card, completion band, and per-message cost are back.** Under `--include-partial-messages` the committed assistant frame arrives with `stop_reason: null` and stub usage (the resolved values ride the trailing `message_delta` overlay). The engine now merges each chain's `message_delta` — stop_reason and final usage — into the committed assistant frame before it reaches the transcript, so consumers that read the assistant's own metadata see honest values, without dropping the streaming typewriter.
+
 ## [0.4.71] — 2026-05-28
 
 Fixes two streaming-session regressions introduced by partial-message mode (`--include-partial-messages`): turns no longer stick on "working" after they finish, and the final assistant message no longer vanishes when it completes. Also scopes account resolution to the launching engine and restores user-message bubble width.
