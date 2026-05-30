@@ -13,7 +13,9 @@ describe("accentStyle", () => {
 
     it("synthesises an entry from a hex accentColor (picker-driven)", () => {
       const cfg = createDefaultConfig();
-      cfg.overrides["user.prompt"] = { ...cfg.overrides["user.prompt"], accentColor: "#a855f7" };
+      // The helper reads the resolved kind's accent — in production that's the
+      // cascaded style injected as the category base, so set the category here.
+      cfg.categories.user.accentColor = "#a855f7";
       const entry = accentFor(cfg, "user.prompt");
       expect(entry?.swatch).toBe("#a855f7");
       // Synthesised hex entries always opt into the bg tint (bg ≠ null).
@@ -31,7 +33,7 @@ describe("accentStyle", () => {
       const cfg = createDefaultConfig();
       // mergeConfig would have stripped this; we set it directly to
       // verify the helper's tolerance.
-      cfg.overrides["user.prompt"] = { ...cfg.overrides["user.prompt"], accentColor: "neon" };
+      cfg.categories.user.accentColor = "neon";
       expect(accentFor(cfg, "user.prompt")).toBeNull();
     });
   });
@@ -39,7 +41,7 @@ describe("accentStyle", () => {
   describe("accentStyleFor", () => {
     it("derives borderColor / backgroundColor with alpha suffixes from the swatch", () => {
       const cfg = createDefaultConfig();
-      cfg.overrides["user.prompt"] = { ...cfg.overrides["user.prompt"], accentColor: "#a855f7" };
+      cfg.categories.user.accentColor = "#a855f7";
       const style = accentStyleFor(cfg, "user.prompt");
       // 33% border alpha (`55`) and 8% bg alpha (`14`) — matches the
       // legacy `border-X/30 bg-X/5` look.
@@ -51,7 +53,7 @@ describe("accentStyle", () => {
   describe("swatchFor", () => {
     it("returns the same hex passed in via accentColor", () => {
       const cfg = createDefaultConfig();
-      cfg.overrides["user.prompt"] = { ...cfg.overrides["user.prompt"], accentColor: "#123456" };
+      cfg.categories.user.accentColor = "#123456";
       expect(swatchFor(cfg, "user.prompt")).toBe("#123456");
     });
 

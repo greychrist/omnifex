@@ -46,6 +46,13 @@ export function previewTextForKindId(kindId: string): string {
   return KIND_FIXTURES[kindId] ?? "(no preview available)";
 }
 
+/** Preview text for an override: its kind-specific fixture when the rule's id is
+ *  a known kind id (the migrated defaults), else the category's representative
+ *  message (user-authored rules carry an opaque id). */
+export function previewTextForOverride(id: string, category: string): string {
+  return KIND_FIXTURES[id] ?? CATEGORY_FIXTURES[category] ?? "(no preview available)";
+}
+
 /** Preview text for a category, keyed by category name. */
 export const CATEGORY_FIXTURES: Record<string, string> = {
   user: "Can you refactor the auth middleware to use the new token format?",
@@ -57,6 +64,52 @@ export const CATEGORY_FIXTURES: Record<string, string> = {
 
 export function previewTextForCategory(category: string): string {
   return CATEGORY_FIXTURES[category] ?? "(no preview available)";
+}
+
+// ─── example raw JSON (match dialog) ──────────────────────────────────────────
+// A representative `JsonlNode.raw` per category. The override match dialog shows
+// this so users can click a field to seed a `path eq value` condition (and to
+// learn the real JSON keys — e.g. lowercase `subtype`, not `subType`). In a
+// later phase the dialog can pull a real message from the active session
+// instead of these fixtures.
+
+export const CATEGORY_RAW_FIXTURES: Record<string, unknown> = {
+  user: {
+    type: "user",
+    message: {
+      role: "user",
+      content: [{ type: "text", text: "Refactor the auth middleware." }],
+    },
+  },
+  agent: {
+    type: "assistant",
+    message: {
+      role: "assistant",
+      stop_reason: "tool_use",
+      content: [
+        { type: "tool_use", name: "Bash", input: { command: "ls -la" } },
+        { type: "text", text: "Running the command now." },
+      ],
+    },
+  },
+  system: {
+    type: "system",
+    subtype: "notification",
+    notification_type: "error",
+    body: "503 Service Unavailable from api.anthropic.com",
+  },
+  attachment: {
+    type: "attachment",
+    attachment: { type: "todo_reminder" },
+  },
+  bookkeeping: {
+    type: "system",
+    subtype: "file-history-snapshot",
+  },
+};
+
+export function exampleRawForCategory(category: string): unknown {
+  return CATEGORY_RAW_FIXTURES[category] ?? {};
 }
 
 // ─── fake turn ──────────────────────────────────────────────────────────────

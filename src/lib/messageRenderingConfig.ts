@@ -8,6 +8,7 @@
 // Derived from docs/message-rendering-config.yaml.
 
 import { isTypefaceId, type Typeface } from "./typefaceCatalog";
+import type { JsonlNode } from "@/types/jsonl";
 
 export const MESSAGE_RENDERING_CONFIG_KEY = "message_rendering_config";
 
@@ -254,30 +255,66 @@ export function originOf(kindId: string): Category {
   }
 }
 
-export const DEFAULT_OVERRIDES: Record<string, Partial<KindStyle> & { label?: string }> = {
-  "user.prompt":                 { label: "User prompt",             compactBoundaryLocked: true },
-  "assistant.text.endTurn":      { label: "Execution complete",      accentColor: "green",   icon: "CheckCircle2",        compactBoundaryLocked: true },
-  "assistant.thinking":          { label: "Thinking",                presentation: "collapsible", headerLabel: "Thinking", icon: "Brain",               widget: "ThinkingWidget", hiddenInCompact: true },
-  "assistant.tool-use":          { label: "Tool call",               accentColor: "info",    icon: "Terminal",            headerLabel: null,           hiddenInCompact: true },
-  "user.systemContext":          { label: "System context",          presentation: "collapsible", icon: "Sparkles",        accentColor: "purple",       showRawPayload: true, alignment: "left", hiddenInCompact: false },
-  "user.tool-result":            { label: "Tool result",             presentation: "side-line",   headerLabel: null,       alignment: "left",           hiddenInCompact: true },
-  "user.command":                { label: "Slash command",           presentation: "side-line",   icon: "ChevronRight",    alignment: "left" },
-  "system.notification.error":   { label: "Notification (error)",   accentColor: "red",     icon: "Bell",                presentation: "card",        hiddenInCompact: false },
-  "system.notification.warn":    { label: "Notification (warn)",    accentColor: "amber",   icon: "Bell",                presentation: "card",        hiddenInCompact: false },
-  "system.notification.stop":    { label: "Notification (stop)",    accentColor: "red",     icon: "Bell",                presentation: "card",        hiddenInCompact: false },
-  "system.api_error":            { label: "API error",              accentColor: "red",     icon: "AlertTriangle",       presentation: "card",        hiddenInCompact: false },
-  "system.compact_boundary":     { label: "Compacted",              icon: "Scissors",        presentation: "card",       widget: "CompactBoundaryWidget", hiddenInCompact: false },
-  "summary.compaction":          { label: "Conversation summary",   icon: "FileText",        presentation: "card",       widget: "SummaryWidget",     hiddenInCompact: false, compactBoundaryLocked: true },
-  "pr-link":                     { label: "Pull request",           presentation: "side-line",   icon: "GitPullRequest",  accentColor: "info",         hiddenInCompact: false },
-  "permission.request":          { label: "Permission request",     presentation: "card",    icon: "ShieldQuestion",     accentColor: "amber",        hiddenInCompact: false },
-  "permission.askUserQuestion":  { label: "Question",               presentation: "card",    icon: "MessageCircleQuestion", accentColor: "primary",   hiddenInCompact: false },
+// ─── v4 override matchers ────────────────────────────────────────────────────
+//
+// An override is no longer keyed by a precomputed kind id. It is a user-authored
+// rule that tests a message's raw JSON (plus the synthetic `$kind` / `$category`
+// paths) and, when every condition holds, contributes its sparse style to the
+// cascade. Each override is scoped to exactly one category, inherits that
+// category's base style, and applies only to messages the classifier put in
+// that category.
+
+export type MatchOp = "eq" | "contains" | "regex";
+
+/** A single `path op value` triple tested against a message. */
+export interface MatchCondition {
+  path: string;
+  op: MatchOp;
+  value: string | number | boolean | null;
+}
+
+/** A user-authored, category-scoped style rule. */
+export interface Override {
+  /** Stable, unique id. */
+  id: string;
+  label: string;
+  /** Scope + base style + tree grouping. */
+  category: Category;
+  /** Conditions ANDed together; empty ⇒ matches every message in `category`. */
+  match: MatchCondition[];
+  /** Sparse style patch edited in the right panel. */
+  style: Partial<KindStyle>;
+}
+
+/** Build a `$kind eq <id>` override — the exact-id match the v3 model used. */
+function kindOverride(id: string, label: string, style: Partial<KindStyle>): Override {
+  return { id, label, category: originOf(id), match: [{ path: "$kind", op: "eq", value: id }], style };
+}
+
+export const DEFAULT_OVERRIDES: Override[] = [
+  kindOverride("user.prompt",                 "User prompt",             { compactBoundaryLocked: true }),
+  kindOverride("assistant.text.endTurn",      "Execution complete",      { accentColor: "green",   icon: "CheckCircle2",        compactBoundaryLocked: true }),
+  kindOverride("assistant.thinking",          "Thinking",                { presentation: "collapsible", headerLabel: "Thinking", icon: "Brain",               widget: "ThinkingWidget", hiddenInCompact: true }),
+  kindOverride("assistant.tool-use",          "Tool call",               { accentColor: "info",    icon: "Terminal",            headerLabel: null,           hiddenInCompact: true }),
+  kindOverride("user.systemContext",          "System context",          { presentation: "collapsible", icon: "Sparkles",        accentColor: "purple",       showRawPayload: true, alignment: "left", hiddenInCompact: false }),
+  kindOverride("user.tool-result",            "Tool result",             { presentation: "side-line",   headerLabel: null,       alignment: "left",           hiddenInCompact: true }),
+  kindOverride("user.command",                "Slash command",           { presentation: "side-line",   icon: "ChevronRight",    alignment: "left" }),
+  kindOverride("system.notification.error",   "Notification (error)",    { accentColor: "red",     icon: "Bell",                presentation: "card",        hiddenInCompact: false }),
+  kindOverride("system.notification.warn",    "Notification (warn)",     { accentColor: "amber",   icon: "Bell",                presentation: "card",        hiddenInCompact: false }),
+  kindOverride("system.notification.stop",    "Notification (stop)",     { accentColor: "red",     icon: "Bell",                presentation: "card",        hiddenInCompact: false }),
+  kindOverride("system.api_error",            "API error",               { accentColor: "red",     icon: "AlertTriangle",       presentation: "card",        hiddenInCompact: false }),
+  kindOverride("system.compact_boundary",     "Compacted",               { icon: "Scissors",        presentation: "card",       widget: "CompactBoundaryWidget", hiddenInCompact: false }),
+  kindOverride("summary.compaction",          "Conversation summary",    { icon: "FileText",        presentation: "card",       widget: "SummaryWidget",     hiddenInCompact: false, compactBoundaryLocked: true }),
+  kindOverride("pr-link",                     "Pull request",            { presentation: "side-line",   icon: "GitPullRequest",  accentColor: "info",         hiddenInCompact: false }),
+  kindOverride("permission.request",          "Permission request",      { presentation: "card",    icon: "ShieldQuestion",     accentColor: "amber",        hiddenInCompact: false }),
+  kindOverride("permission.askUserQuestion",  "Question",                { presentation: "card",    icon: "MessageCircleQuestion", accentColor: "primary",   hiddenInCompact: false }),
   // Answered-AskUserQuestion sentinels. `originOf` routes these through the
   // "system" category (head "tool" → default), which is hiddenInCompact:true.
   // Override both to visible + locked so compact grouping never folds them.
-  "tool.askUserQuestion.answered":        { label: "Question (answered)",        hiddenInCompact: false, compactBoundaryLocked: true },
-  "tool.askUserQuestion.answered.result": { label: "Question (answered result)", hiddenInCompact: false, compactBoundaryLocked: true },
-  "unknown":                     { label: "Unknown",                presentation: "side-line", icon: "HelpCircle",        accentColor: "orange",       borderStyle: "dashed", headerLabel: "Unknown", hiddenInCompact: false, compactBoundaryLocked: true, showRawPayload: true },
-};
+  kindOverride("tool.askUserQuestion.answered",        "Question (answered)",        { hiddenInCompact: false, compactBoundaryLocked: true }),
+  kindOverride("tool.askUserQuestion.answered.result", "Question (answered result)", { hiddenInCompact: false, compactBoundaryLocked: true }),
+  kindOverride("unknown",                     "Unknown",                 { presentation: "side-line", icon: "HelpCircle",        accentColor: "orange",       borderStyle: "dashed", headerLabel: "Unknown", hiddenInCompact: false, compactBoundaryLocked: true, showRawPayload: true }),
+];
 
 // All kind ids the classifier can emit plus the curated overrides. Used by the
 // settings UI to enumerate known kinds and by the coverage test. New CLI kinds
@@ -316,14 +353,144 @@ export const STYLE_FIELDS: (keyof KindStyle)[] = [
 ];
 
 /**
- * Resolve a kind id to its full style: the category default for its origin,
- * shallow-merged with any per-kind override (override wins per field). Always
- * returns a complete style — there is no "missing kind" branch.
+ * Resolve a kind id to its category base style. This is the special case of
+ * `resolveMessageStyle` with no overrides applied — overrides are now
+ * message-matched (see `resolveMessageStyle`), not keyed by id, so this returns
+ * the complete base style for the kind's origin category and nothing more.
+ *
+ * The render path keeps calling `resolveKind` unchanged: `MessageFrame`
+ * computes the cascade once and injects an *effective config* (via
+ * `withResolvedKindStyle`) where the category base for the rendered kind IS the
+ * cascaded style, so every downstream `resolveKind(config, kindId)` transparently
+ * gets the matched result. When there is no message (settings previews), it
+ * returns the plain category base.
  */
 export function resolveKind(config: MessageRenderingConfig, kindId: string): KindStyle {
-  const base = config.categories[originOf(kindId)];
-  const patch = config.overrides[kindId];
-  return patch ? { ...base, ...patch } : { ...base };
+  return { ...config.categories[originOf(kindId)] };
+}
+
+// ─── match engine ────────────────────────────────────────────────────────────
+
+/**
+ * Resolve a dotted path against a raw message object, returning the set of
+ * values it reaches. `[]` on a segment means "expand every element of that
+ * array and continue the remainder of the path against each." A path with no
+ * `[]` resolves to exactly one value (wrapped in a single-element array);
+ * missing intermediate objects contribute nothing.
+ *
+ * `$kind` / `$category` are NOT handled here — `conditionsMatch` resolves those
+ * synthetic paths before falling back to this raw-JSON traversal.
+ */
+export function getByPath(root: unknown, path: string): unknown[] {
+  let current: unknown[] = root == null ? [] : [root];
+  for (const seg of path.split(".")) {
+    const isArray = seg.endsWith("[]");
+    const key = isArray ? seg.slice(0, -2) : seg;
+    const next: unknown[] = [];
+    for (const c of current) {
+      if (c == null || typeof c !== "object") continue;
+      const v = (c as Record<string, unknown>)[key];
+      if (isArray) {
+        if (Array.isArray(v)) next.push(...v);
+      } else {
+        next.push(v);
+      }
+    }
+    current = next;
+  }
+  return current;
+}
+
+function valuesForPath(
+  message: JsonlNodeLike | undefined,
+  kindId: string,
+  category: Category,
+  path: string,
+): unknown[] {
+  if (path === "$kind") return [kindId];
+  if (path === "$category") return [category];
+  const raw = message ? (message as { raw?: unknown }).raw : undefined;
+  return getByPath(raw, path);
+}
+
+function valueSatisfies(value: unknown, op: MatchOp, literal: MatchCondition["value"]): boolean {
+  switch (op) {
+    case "eq":
+      return value === literal;
+    case "contains":
+      return typeof value === "string" && typeof literal === "string" && value.includes(literal);
+    case "regex":
+      if (typeof value !== "string" || typeof literal !== "string") return false;
+      try {
+        return new RegExp(literal).test(value);
+      } catch {
+        return false;
+      }
+  }
+}
+
+/** A matchable message: a real `JsonlNode` (render/list path) or any bare
+ *  `{ raw }` bag (previews, tests). */
+type JsonlNodeLike = JsonlNode | { raw?: unknown };
+
+/**
+ * True when every condition holds (AND). A condition holds when at least one
+ * value its path resolves to satisfies the operator. An empty condition list
+ * matches every message (specificity 0).
+ */
+export function conditionsMatch(
+  match: MatchCondition[],
+  message: JsonlNodeLike | undefined,
+  kindId: string,
+  category: Category,
+): boolean {
+  for (const c of match) {
+    const candidates = valuesForPath(message, kindId, category, c.path);
+    if (!candidates.some((v) => valueSatisfies(v, c.op, c.value))) return false;
+  }
+  return true;
+}
+
+/**
+ * Full cascade resolution for a specific message. Starts from the kind's
+ * category base, then applies every matching override's sparse style in order
+ * of specificity (condition count) — more specific overrides overwrite less
+ * specific ones field-by-field; equal specificity breaks by array order (later
+ * wins). Unset fields fall through to the category base.
+ */
+export function resolveMessageStyle(
+  config: MessageRenderingConfig,
+  message: JsonlNodeLike | undefined,
+  kindId: string,
+): KindStyle {
+  const category = originOf(kindId);
+  const base = config.categories[category];
+  const hits = config.overrides
+    .filter((o) => o.category === category && conditionsMatch(o.match, message, kindId, category))
+    .slice()
+    .sort((a, b) => a.match.length - b.match.length);
+  return hits.reduce<KindStyle>((acc, o) => ({ ...acc, ...o.style }), { ...base });
+}
+
+/**
+ * Produce an effective config whose category base for `kindId`'s origin is
+ * replaced by `style`. `resolveKind(effective, kindId)` then returns exactly
+ * `style`. Used by `MessageFrame` to inject a pre-cascaded style into its
+ * subtree, and by the Appearance preview to render an arbitrary style.
+ */
+export function withResolvedKindStyle(
+  config: MessageRenderingConfig,
+  kindId: string,
+  style: KindStyle,
+): MessageRenderingConfig {
+  const cat = originOf(kindId);
+  return {
+    ...config,
+    categories: {
+      ...config.categories,
+      [cat]: { ...config.categories[cat], ...style } as CategoryStyle,
+    },
+  };
 }
 
 // ─── typography ─────────────────────────────────────────────────────────────
@@ -449,10 +616,10 @@ export const DEFAULT_TERMINAL: Terminal = {
 // ─── top-level config ───────────────────────────────────────────────────────
 
 export interface MessageRenderingConfig {
-  version: 3;
+  version: 4;
   defaultViewMode: "compact" | "verbose";
   categories: Record<Category, CategoryStyle>;
-  overrides: Record<string, Partial<KindStyle> & { label?: string }>;
+  overrides: Override[];
   palette: Palette;
   hardFilters: HardFilters;
   typography: Typography;
@@ -462,7 +629,7 @@ export interface MessageRenderingConfig {
 
 export function createDefaultConfig(): MessageRenderingConfig {
   return {
-    version: 3,
+    version: 4,
     defaultViewMode: "verbose",
     categories: structuredClone(DEFAULT_CATEGORIES),
     overrides: structuredClone(DEFAULT_OVERRIDES),
@@ -487,19 +654,21 @@ export function pruneRedundantOverrides(
   config: MessageRenderingConfig,
   exempt: ReadonlySet<string> = new Set(),
 ): MessageRenderingConfig {
-  const overrides: MessageRenderingConfig["overrides"] = {};
-  for (const [id, patch] of Object.entries(config.overrides)) {
-    const base = config.categories[originOf(id)] as unknown as Record<string, unknown>;
-    const kept: Record<string, unknown> = {};
-    for (const [field, value] of Object.entries(patch)) {
-      if (field === "label") continue; // label is identity, not style — always keep if present
-      if (value !== (base as Record<string, unknown>)[field]) kept[field] = value;
+  const overrides: Override[] = [];
+  for (const o of config.overrides) {
+    const base = config.categories[o.category] as unknown as Record<string, unknown>;
+    const keptStyle: Record<string, unknown> = {};
+    for (const [field, value] of Object.entries(o.style)) {
+      if (value !== base[field]) keptStyle[field] = value;
     }
-    if (patch.label !== undefined) kept.label = patch.label;
-    // An override that only carries a label (no diverging style) is redundant.
-    const styleFieldCount = Object.keys(kept).filter((k) => k !== "label").length;
-    if (styleFieldCount > 0 || exempt.has(id)) {
-      overrides[id] = kept as Partial<KindStyle> & { label?: string };
+    // A rule that carries match conditions is never dropped — it expresses an
+    // intentional grouping even when its style is empty. Style-only redundancy
+    // (no conditions, no diverging fields) is pruned unless the rule is the
+    // one being actively edited (exempt).
+    const hasStyle = Object.keys(keptStyle).length > 0;
+    const hasMatch = o.match.length > 0;
+    if (hasStyle || hasMatch || exempt.has(o.id)) {
+      overrides.push({ ...o, style: keptStyle as Partial<KindStyle> });
     }
   }
   return { ...config, overrides };
@@ -568,56 +737,139 @@ function validateStyleField(
   }
 }
 
+/** Shallow-merge saved category styles over the defaults already on `base`. */
+function mergeCategories(base: MessageRenderingConfig, saved: Record<string, unknown>): void {
+  if (!isRecord(saved.categories)) return;
+  for (const c of CATEGORIES) {
+    const sc = (saved.categories as Record<string, unknown>)[c];
+    if (!isRecord(sc)) continue;
+    const patch: Record<string, unknown> = {};
+    for (const f of STYLE_FIELDS) {
+      const val = validateStyleField(f, sc, base.palette);
+      if (val !== undefined) patch[f] = val;
+    }
+    if (typeof sc.label === "string") patch.label = sc.label;
+    if (typeof sc.description === "string") patch.description = sc.description;
+    base.categories[c] = { ...base.categories[c], ...patch } as CategoryStyle;
+  }
+}
+
+function isCategory(v: unknown): v is Category {
+  return typeof v === "string" && (CATEGORIES as readonly string[]).includes(v);
+}
+
+const MATCH_OPS: readonly MatchOp[] = ["eq", "contains", "regex"];
+
+/** Validate a raw match list into well-formed conditions, dropping junk. */
+function validateMatch(raw: unknown): MatchCondition[] {
+  if (!Array.isArray(raw)) return [];
+  const out: MatchCondition[] = [];
+  for (const c of raw) {
+    if (!isRecord(c)) continue;
+    if (typeof c.path !== "string") continue;
+    if (!(MATCH_OPS as readonly string[]).includes(c.op as string)) continue;
+    const v = c.value;
+    if (!(typeof v === "string" || typeof v === "number" || typeof v === "boolean" || v === null)) continue;
+    out.push({ path: c.path, op: c.op as MatchOp, value: v });
+  }
+  return out;
+}
+
+/** Validate a sparse style patch off a raw record (the override's `style`). */
+function validateStylePatch(rawStyle: unknown, palette: Palette): Partial<KindStyle> {
+  const patch: Partial<KindStyle> = {};
+  if (!isRecord(rawStyle)) return patch;
+  for (const f of STYLE_FIELDS) {
+    const val = validateStyleField(f, rawStyle, palette);
+    if (val !== undefined) (patch as Record<string, unknown>)[f] = val;
+  }
+  return patch;
+}
+
+/** Validate a saved v4 override object. Returns null when it lacks an id. */
+function validateOverride(entry: unknown, base: MessageRenderingConfig): Override | null {
+  if (!isRecord(entry)) return null;
+  if (typeof entry.id !== "string" || entry.id === "") return null;
+  const id = entry.id;
+  const category = isCategory(entry.category) ? entry.category : originOf(id);
+  const label = typeof entry.label === "string" ? entry.label : id;
+  return {
+    id,
+    label,
+    category,
+    match: validateMatch(entry.match),
+    style: validateStylePatch(entry.style, base.palette),
+  };
+}
+
+/** Upsert a `$kind eq <id>` style patch onto an Override[] (additive migration). */
+function upsertKindOverride(overrides: Override[], id: string, stylePatch: Partial<KindStyle>): void {
+  const existing = overrides.find(
+    (o) => o.id === id && o.match.length === 1 && o.match[0].path === "$kind",
+  );
+  if (existing) {
+    existing.style = { ...existing.style, ...stylePatch };
+  } else {
+    overrides.push(kindOverride(id, id, stylePatch));
+  }
+}
+
 export function mergeConfig(saved: unknown): MessageRenderingConfig {
   const base = createDefaultConfig();
   if (!isRecord(saved)) return base;
 
-  // v3: shallow-merge categories + overrides over the defaults.
-  if (saved.version === 3) {
-    if (isRecord(saved.categories)) {
-      for (const c of CATEGORIES) {
-        const sc = (saved.categories as Record<string, unknown>)[c];
-        if (isRecord(sc)) {
-          const patch: Record<string, unknown> = {};
-          for (const f of STYLE_FIELDS) {
-            const val = validateStyleField(f, sc, base.palette);
-            if (val !== undefined) patch[f] = val;
-          }
-          if (typeof sc.label === "string") patch.label = sc.label;
-          if (typeof sc.description === "string") patch.description = sc.description;
-          base.categories[c] = { ...base.categories[c], ...patch } as CategoryStyle;
-        }
-      }
-    }
-    if (isRecord(saved.overrides)) {
-      for (const [id, entry] of Object.entries(saved.overrides as Record<string, unknown>)) {
-        if (!isRecord(entry)) continue;
-        const patch: Partial<KindStyle> & { label?: string } = {};
-        for (const f of STYLE_FIELDS) {
-          const val = validateStyleField(f, entry, base.palette);
-          if (val !== undefined) (patch as Record<string, unknown>)[f] = val;
-        }
-        if (typeof entry.label === "string") patch.label = entry.label;
-        base.overrides[id] = { ...base.overrides[id], ...patch };
-      }
+  // v4: categories shallow-merged; overrides are authoritative (the saved array
+  // IS the user's full set — defaults the user deleted must stay deleted).
+  if (saved.version === 4) {
+    mergeCategories(base, saved);
+    if (Array.isArray(saved.overrides)) {
+      base.overrides = saved.overrides
+        .map((e) => validateOverride(e, base))
+        .filter((o): o is Override => o !== null);
     }
     return mergeShared(base, saved);
   }
 
-  // v2 (or pre-v2): convert each customized flat kind into a sparse override
-  // by diffing its style fields against the resolved category default. Fields
-  // that already match the default produce no override entry.
+  // v3→v4: the override record was keyed by kind id. Convert each entry 1:1
+  // into a `$kind eq <id>` rule, dropping none — behavior is identical after
+  // migration. The saved record is authoritative (replaces the defaults).
+  if (saved.version === 3) {
+    mergeCategories(base, saved);
+    if (isRecord(saved.overrides)) {
+      const converted: Override[] = [];
+      for (const [id, entry] of Object.entries(saved.overrides as Record<string, unknown>)) {
+        if (!isRecord(entry)) continue;
+        const label = typeof entry.label === "string" ? entry.label : id;
+        converted.push({
+          id,
+          label,
+          category: originOf(id),
+          match: [{ path: "$kind", op: "eq", value: id }],
+          style: validateStylePatch(entry, base.palette),
+        });
+      }
+      base.overrides = converted;
+    }
+    return mergeShared(base, saved);
+  }
+
+  // v2 (or pre-v2): convert each customized flat kind into a `$kind` override by
+  // diffing its style fields against the category default. Additive — layered
+  // onto the seeded DEFAULT_OVERRIDES so unrelated defaults survive.
   if (isRecord(saved.kinds)) {
     for (const [id, entry] of Object.entries(saved.kinds as Record<string, unknown>)) {
       if (!isRecord(entry)) continue;
-      const resolved = resolveKind(base, id) as unknown as Record<string, unknown>;
-      const diff: Record<string, unknown> = {};
+      // Diff against the kind's CURRENT effective style (category base ⊕ the
+      // seeded default $kind override), so a v2 value that diverges from a
+      // default override is captured even when it equals the bare category.
+      const resolved = resolveMessageStyle(base, { raw: {} }, id) as unknown as Record<string, unknown>;
+      const diff: Partial<KindStyle> = {};
       for (const f of STYLE_FIELDS) {
         const val = validateStyleField(f, entry, base.palette);
-        if (val !== undefined && val !== resolved[f]) diff[f] = val;
+        if (val !== undefined && val !== resolved[f]) (diff as Record<string, unknown>)[f] = val;
       }
       if (Object.keys(diff).length > 0) {
-        base.overrides[id] = { ...base.overrides[id], ...diff } as Partial<KindStyle> & { label?: string };
+        upsertKindOverride(base.overrides, id, diff);
       }
     }
   }

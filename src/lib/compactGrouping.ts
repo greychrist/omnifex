@@ -1,7 +1,7 @@
 import type { JsonlNode } from '@/types/jsonl';
 import type { MessageContentBlock } from '@/types/claudeStream';
 import type { MessageRenderingConfig } from './messageRenderingConfig';
-import { resolveKind } from './messageRenderingConfig';
+import { resolveMessageStyle } from './messageRenderingConfig';
 import { classifyStandaloneKind } from './messageKind';
 import { classifyBlockKind } from './blockKind';
 
@@ -61,7 +61,7 @@ export function isMessageFullyHidden(
 ): boolean {
   const wholeKind = resolveWholeMessageKind(msg, allMessages);
   if (wholeKind) {
-    const k = resolveKind(config, wholeKind);
+    const k = resolveMessageStyle(config, msg, wholeKind);
     if (k.compactBoundaryLocked) return false;
     return k.hiddenInCompact;
   }
@@ -88,7 +88,7 @@ export function isMessageFullyHidden(
       // visible) or genuinely something we have no toggle for.
       continue;
     }
-    const k = resolveKind(config, blockKind);
+    const k = resolveMessageStyle(config, msg, blockKind);
     if (k.compactBoundaryLocked) continue;
     if (k.hiddenInCompact) hidden += 1;
   }

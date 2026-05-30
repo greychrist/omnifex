@@ -11,15 +11,16 @@ describe("kindPresentation", () => {
     expect(headerLabelFor(cfg, "cli-stream-init")).toBeNull();
   });
 
-  it("returns null when the kind's headerLabel is null", () => {
+  it("returns null when the kind's category headerLabel is null", () => {
     const cfg = createDefaultConfig();
-    // v2 catalog: assistant.tool-use has headerLabel: null (no header shown).
-    expect(headerLabelFor(cfg, "assistant.tool-use")).toBeNull();
+    // The system category has headerLabel: null (no header shown); the helper
+    // reads the category base (= the cascaded style in production).
+    expect(headerLabelFor(cfg, "system.informational")).toBeNull();
   });
 
-  it("returns a user override for headerLabel", () => {
+  it("returns the category headerLabel for a kind", () => {
     const cfg = createDefaultConfig();
-    cfg.overrides["assistant.text"] = { ...cfg.overrides["assistant.text"], headerLabel: "Claude Code" };
+    cfg.categories.agent.headerLabel = "Claude Code";
     expect(headerLabelFor(cfg, "assistant.text")).toBe("Claude Code");
   });
 

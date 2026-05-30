@@ -1,5 +1,5 @@
 import React, { useMemo } from "react";
-import type { KindStyle } from "@/lib/messageRenderingConfig";
+import { withResolvedKindStyle, type KindStyle } from "@/lib/messageRenderingConfig";
 import {
   useMessageRenderingConfig,
   MessageRenderingPreviewProvider,
@@ -32,15 +32,15 @@ const PREVIEW_RECEIVED_AT = "2026-04-29T12:34:56";
  * to a rendered message.
  *
  * `style` may be a category style or an in-progress override edit that isn't
- * persisted under `kindId` yet, so we render against a synthesized config that
- * maps `kindId` to `style` via a sentinel override. `resolveKind` then returns
- * exactly `style` regardless of the kind's category origin.
+ * persisted yet, so we render against a synthesized config whose category base
+ * for `kindId` IS `style` and whose override rules are stripped. The cascade
+ * then returns exactly `style` regardless of the kind's category origin.
  */
 export const SamplePreview: React.FC<SamplePreviewProps> = ({ style, kindId, text }) => {
   const { config } = useMessageRenderingConfig();
 
   const previewConfig = useMemo(
-    () => ({ ...config, overrides: { ...config.overrides, [kindId]: style } }),
+    () => withResolvedKindStyle({ ...config, overrides: [] }, kindId, style),
     [config, kindId, style],
   );
 

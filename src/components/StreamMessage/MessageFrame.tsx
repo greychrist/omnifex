@@ -1,6 +1,6 @@
 import * as React from 'react';
-import { useMessageRenderingConfig } from '@/contexts/MessageRenderingContext';
-import { resolveKind } from '@/lib/messageRenderingConfig';
+import { useMessageRenderingConfig, MessageRenderingPreviewProvider } from '@/contexts/MessageRenderingContext';
+import { resolveKind, resolveMessageStyle, withResolvedKindStyle } from '@/lib/messageRenderingConfig';
 import { MessageFrameCard } from './MessageFrameCard';
 import { MessageFrameSideLine } from './MessageFrameSideLine';
 import { MessageFrameCollapsible } from './MessageFrameCollapsible';
@@ -35,7 +35,20 @@ export interface MessageFrameProps {
  */
 export const MessageFrame: React.FC<MessageFrameProps> = ({ streamKind, children, actionBar, message, headerOverride }) => {
   const { config } = useMessageRenderingConfig();
-  const kind = resolveKind(config, streamKind);
+
+  // Compute the cascaded style once for this message, then inject an effective
+  // config whose category base for `streamKind` IS that cascaded style. Every
+  // descendant (MessageFrameCard / Collapsible / KindHeader / the accent /
+  // typography / presentation helpers) keeps calling `resolveKind(config, id)`
+  // and transparently gets the matched style. With no `message` (previews) we
+  // fall back to the plain category base.
+  const { kind, effConfig } = React.useMemo(() => {
+    const resolved = message
+      ? resolveMessageStyle(config, message, streamKind)
+      : resolveKind(config, streamKind);
+    const eff = message ? withResolvedKindStyle(config, streamKind, resolved) : config;
+    return { kind: resolved, effConfig: eff };
+  }, [config, message, streamKind]);
 
   // When the kind opts into raw-payload display (today only `unknown`, but
   // the field is a general escape hatch), append a collapsible <details>
@@ -52,8 +65,9 @@ export const MessageFrame: React.FC<MessageFrameProps> = ({ streamKind, children
     </details>
   ) : null;
 
+  let inner: React.ReactNode;
   if (kind.presentation === 'card') {
-    return (
+    inner = (
       <div data-frame-variant="card">
         <MessageFrameCard kindId={streamKind} alignment={kind.alignment} actionBar={actionBar} message={message}>
           {children}
@@ -61,10 +75,8 @@ export const MessageFrame: React.FC<MessageFrameProps> = ({ streamKind, children
         </MessageFrameCard>
       </div>
     );
-  }
-
-  if (kind.presentation === 'collapsible') {
-    return (
+  } else if (kind.presentation === 'collapsible') {
+    inner = (
       <div data-frame-variant="collapsible">
         <MessageFrameCollapsible
           kindId={streamKind}
@@ -76,25 +88,34 @@ export const MessageFrame: React.FC<MessageFrameProps> = ({ streamKind, children
         </MessageFrameCollapsible>
       </div>
     );
+  } else {
+    // 'side-line' (and any future presentation variants fall through here).
+    // Resolve the icon-chip config (per-kind override → global default) so
+    // the side-line icon honors the same bordered/bg-opacity knobs as cards.
+    const iconBordered = kind.iconBordered ?? config.typography.icon.bordered;
+    const iconBgOpacity = kind.iconBgOpacity ?? config.typography.icon.bgOpacity;
+    inner = (
+      <div data-frame-variant="side-line">
+        <MessageFrameSideLine
+          iconName={kind.icon}
+          accentColor={kind.accentColor}
+          borderStyle={kind.borderStyle}
+          iconBordered={iconBordered}
+          iconBgOpacity={iconBgOpacity}
+        >
+          {children}
+        </MessageFrameSideLine>
+        {rawPayload && <div className="ml-6">{rawPayload}</div>}
+      </div>
+    );
   }
 
-  // 'side-line' (and any future presentation variants fall through here).
-  // Resolve the icon-chip config (per-kind override → global default) so
-  // the side-line icon honors the same bordered/bg-opacity knobs as cards.
-  const iconBordered = kind.iconBordered ?? config.typography.icon.bordered;
-  const iconBgOpacity = kind.iconBgOpacity ?? config.typography.icon.bgOpacity;
+  // Supply the effective config (where `streamKind` resolves to the cascaded
+  // style) to the subtree. With no message, `effConfig === config`, so the
+  // provider is a transparent pass-through of the live config.
   return (
-    <div data-frame-variant="side-line">
-      <MessageFrameSideLine
-        iconName={kind.icon}
-        accentColor={kind.accentColor}
-        borderStyle={kind.borderStyle}
-        iconBordered={iconBordered}
-        iconBgOpacity={iconBgOpacity}
-      >
-        {children}
-      </MessageFrameSideLine>
-      {rawPayload && <div className="ml-6">{rawPayload}</div>}
-    </div>
+    <MessageRenderingPreviewProvider config={effConfig}>
+      {inner}
+    </MessageRenderingPreviewProvider>
   );
 };
