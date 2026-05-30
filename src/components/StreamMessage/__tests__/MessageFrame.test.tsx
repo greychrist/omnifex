@@ -7,13 +7,13 @@ import { MessageRenderingProvider } from '@/contexts/MessageRenderingContext';
 import { DEFAULT_CATEGORIES, DEFAULT_OVERRIDES } from '@/lib/messageRenderingConfig';
 
 // Mock api — MessageRenderingProvider calls getSetting on mount. We return a
-// v3 config (categories + overrides) so MessageFrame resolves styles through
-// resolveKind exactly as it does in production.
+// v4 config (categories + override rules) so MessageFrame resolves styles
+// through the cascade exactly as it does in production.
 vi.mock('@/lib/api', () => ({
   api: {
     getSetting: vi.fn(async () =>
       JSON.stringify({
-        version: 3,
+        version: 4,
         defaultViewMode: 'verbose',
         categories: DEFAULT_CATEGORIES,
         overrides: DEFAULT_OVERRIDES,
@@ -62,10 +62,11 @@ describe('MessageFrame', () => {
   });
 
   it('renders MessageFrameSideLine when the kind presentation is side-line', async () => {
-    // user.tool-result resolves to a side-line override.
+    // user.tool-result resolves to a side-line override — its `$kind` rule only
+    // fires when a message is present, so pass one (raw is irrelevant to $kind).
     const { container, findByText } = render(
       <MessageRenderingProvider>
-        <MessageFrame streamKind="user.tool-result">noise</MessageFrame>
+        <MessageFrame streamKind="user.tool-result" message={{ raw: {} } as never}>noise</MessageFrame>
       </MessageRenderingProvider>
     );
     await findByText('noise');

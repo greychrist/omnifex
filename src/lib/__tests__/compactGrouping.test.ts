@@ -1,7 +1,33 @@
 import { describe, it, expect } from 'vitest';
 import type { JsonlNode } from '@/types/jsonl';
 import { buildCompactItems, isMessageFullyHidden, type CompactItem } from '../compactGrouping';
-import { createDefaultConfig, resolveKind, KNOWN_KIND_IDS } from '../messageRenderingConfig';
+import {
+  createDefaultConfig,
+  resolveMessageStyle,
+  originOf,
+  KNOWN_KIND_IDS,
+  type MessageRenderingConfig,
+} from '../messageRenderingConfig';
+
+// v4 overrides are message-matched rules, not an id-keyed map. Resolving a
+// kind's effective style means cascading against a `$kind`-bearing message;
+// unhiding a kind means upserting a `$kind eq <id>` rule with hiddenInCompact:false.
+function styleForKind(cfg: MessageRenderingConfig, id: string) {
+  return resolveMessageStyle(cfg, { raw: {} } as unknown as JsonlNode, id);
+}
+function unhide(cfg: MessageRenderingConfig, id: string): void {
+  const existing = cfg.overrides.find(
+    (o) => o.id === id && o.match.length === 1 && o.match[0].path === '$kind',
+  );
+  if (existing) {
+    existing.style = { ...existing.style, hiddenInCompact: false };
+  } else {
+    cfg.overrides.push({
+      id, label: id, category: originOf(id),
+      match: [{ path: '$kind', op: 'eq', value: id }], style: { hiddenInCompact: false },
+    });
+  }
+}
 
 function userText(text: string): JsonlNode {
   return { kind: 'user', userKind: 'prompt', sessionId: '', receivedAt: '', raw: { type: 'user', message: { role: 'user', content: [{ type: 'text', text }] } } } as unknown as JsonlNode;
@@ -110,14 +136,14 @@ describe('isMessageFullyHidden', () => {
 
   it('respects user toggle that unhides assistant.tool-use', () => {
     const cfg = createDefaultConfig();
-    cfg.overrides['assistant.tool-use'] = { ...cfg.overrides['assistant.tool-use'], hiddenInCompact: false };
+    unhide(cfg, 'assistant.tool-use');
     const msg = toolUseMsg('Read', { file_path: '/a' });
     expect(isMessageFullyHidden(msg, [msg], cfg)).toBe(false);
   });
 
   it('returns false for system.unknown when user unhides it', () => {
     const cfg = createDefaultConfig();
-    cfg.overrides['system.unknown'] = { ...cfg.overrides['system.unknown'], hiddenInCompact: false };
+    unhide(cfg, 'system.unknown');
     const msg = { kind: 'system', subtype: 'init', sessionId: '', receivedAt: '', raw: { type: 'system', subtype: 'init' } } as unknown as JsonlNode;
     expect(isMessageFullyHidden(msg, [msg], cfg)).toBe(false);
   });
@@ -149,7 +175,9 @@ describe('isMessageFullyHidden', () => {
     // hiddenInCompact=true on a locked kind must still return visible=false
     // (defense in depth — mergeConfig already prevents this combination).
     const cfg = createDefaultConfig();
-    cfg.overrides['user.prompt'] = { ...cfg.overrides['user.prompt'], hiddenInCompact: true }; // forced bypass attempt
+    // Forced bypass attempt: set hiddenInCompact:true on the locked user.prompt rule.
+    const promptRule = cfg.overrides.find((o) => o.id === 'user.prompt')!;
+    promptRule.style = { ...promptRule.style, hiddenInCompact: true };
     const msg = userText('hi');
     expect(isMessageFullyHidden(msg, [msg], cfg)).toBe(false);
   });
@@ -200,7 +228,7 @@ describe('buildCompactItems', () => {
 
   it('promotes a kind to single when user unhides it', () => {
     const cfg = createDefaultConfig();
-    cfg.overrides['system.unknown'] = { ...cfg.overrides['system.unknown'], hiddenInCompact: false };
+    unhide(cfg, 'system.unknown');
     const sysInit = { kind: 'system', subtype: 'init', sessionId: '', receivedAt: '', raw: { type: 'system', subtype: 'init' } } as unknown as JsonlNode;
     const msgs = [
       userText('hi'),
@@ -221,8 +249,8 @@ describe('buildCompactItems', () => {
   it('falls back to all-singles when user unhides everything', () => {
     const cfg = createDefaultConfig();
     for (const id of KNOWN_KIND_IDS) {
-      if (!resolveKind(cfg, id).compactBoundaryLocked) {
-        cfg.overrides[id] = { ...cfg.overrides[id], hiddenInCompact: false };
+      if (!styleForKind(cfg, id).compactBoundaryLocked) {
+        unhide(cfg, id);
       }
     }
     const msgs = [

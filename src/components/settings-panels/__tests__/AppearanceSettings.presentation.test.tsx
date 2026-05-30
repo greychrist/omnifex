@@ -50,12 +50,15 @@ function clickRow(label: string) {
 }
 
 describe('AppearanceSettings — category + override tree', () => {
-  it('lists the five categories and an Overrides section', async () => {
+  it('lists the five categories, each grouping its overrides', async () => {
     renderWithProvider();
     await screen.findAllByText('User');
-    for (const label of ['User', 'Agent', 'System', 'Attachment', 'Bookkeeping', 'Overrides']) {
+    for (const label of ['User', 'Agent', 'System', 'Attachment', 'Bookkeeping']) {
       expect(screen.getAllByText(label).length).toBeGreaterThan(0);
     }
+    // Default override rules render under their category (e.g. the agent group
+    // shows "Tool call" / "Execution complete").
+    expect(screen.getAllByText('Tool call').length).toBeGreaterThan(0);
   });
 
   it('shows a Presentation dropdown when a category is selected', async () => {
@@ -76,22 +79,41 @@ describe('AppearanceSettings — category + override tree', () => {
 });
 
 describe('AppearanceSettings — add override', () => {
-  it('creates config.overrides[id] for a picked classifier kind id', async () => {
+  it('creates a new category-scoped rule via the match dialog', async () => {
     renderWithProvider();
     await screen.findAllByText('User');
     saved.config = null;
 
-    // Open the Add-override picker.
-    fireEvent.click(screen.getByRole('button', { name: /add override/i }));
-    // Pick a known classifier id that is NOT already a default override.
-    // "assistant.text" has no default override.
-    const option = await screen.findByRole('option', { name: /assistant\.text$/ });
-    fireEvent.click(option);
+    // Open the Add-override dialog for the Agent category.
+    fireEvent.click(screen.getByRole('button', { name: /add override to agent/i }));
+    const dialog = await screen.findByRole('dialog');
 
-    // The override now exists (empty {} = inherits category) in persisted config.
+    // Author a label, then save.
+    const labelInput = within(dialog).getByLabelText('Override label');
+    fireEvent.change(labelInput, { target: { value: 'My rule' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Add override' }));
+
+    // A new agent-scoped rule with that label is persisted.
     expect(saved.config).not.toBeNull();
-    const cfg = saved.config as { overrides: Record<string, unknown> };
-    expect(cfg.overrides['assistant.text']).toBeDefined();
+    const cfg = saved.config as { overrides: { id: string; label: string; category: string; match: unknown[] }[] };
+    const created = cfg.overrides.find((o) => o.label === 'My rule');
+    expect(created).toBeDefined();
+    expect(created?.category).toBe('agent');
+    expect(created?.match).toEqual([]);
+  });
+
+  it('seeds a condition by clicking an example JSON field', async () => {
+    renderWithProvider();
+    await screen.findAllByText('User');
+
+    fireEvent.click(screen.getByRole('button', { name: /add override to system/i }));
+    const dialog = await screen.findByRole('dialog');
+
+    // The system example fixture exposes `subtype = "notification"`.
+    fireEvent.click(within(dialog).getByTitle('Add: subtype eq "notification"'));
+    // A condition row now carries that path.
+    const pathInput = within(dialog).getByLabelText('Condition 1 path') as HTMLInputElement;
+    expect(pathInput.value).toBe('subtype');
   });
 });
 
@@ -126,10 +148,12 @@ describe('AppearanceSettings — single-field override write', () => {
 
     // saveSetting should have been called with the updated config.
     expect(saved.config).not.toBeNull();
-    const cfg = saved.config as { overrides: Record<string, Record<string, unknown>> };
-    const override = cfg.overrides['assistant.tool-use'];
+    const cfg = saved.config as { overrides: { id: string; style: Record<string, unknown> }[] };
+    const rule = cfg.overrides.find((o) => o.id === 'assistant.tool-use');
+    expect(rule).toBeDefined();
+    const override = rule!.style;
 
-    // The override still exists (it still has accentColor, icon, headerLabel set).
+    // The rule's style still exists (accentColor, icon, headerLabel set).
     expect(override).toBeDefined();
 
     // hiddenInCompact: false matches the agent category default (false), so
@@ -151,18 +175,31 @@ describe('AppearanceSettings — single-field override write', () => {
 });
 
 describe('pruneRedundantOverrides (prune-on-save)', () => {
-  it('removes an override once every field matches its category', () => {
+  it('drops a style-only rule (no conditions) once every field matches its category', () => {
     const cfg = createDefaultConfig();
-    cfg.overrides['user.prompt'] = { accentColor: cfg.categories.user.accentColor };
+    cfg.overrides = [
+      { id: 'r1', label: 'r1', category: 'user', match: [], style: { accentColor: cfg.categories.user.accentColor } },
+    ];
     const cleaned = pruneRedundantOverrides(cfg);
-    expect(cleaned.overrides['user.prompt']).toBeUndefined();
+    expect(cleaned.overrides.find((o) => o.id === 'r1')).toBeUndefined();
   });
 
-  it('keeps an override whose field diverges from its category', () => {
+  it('keeps a rule whose style field diverges from its category', () => {
     const cfg = createDefaultConfig();
-    cfg.overrides['user.prompt'] = { accentColor: 'pink' };
+    cfg.overrides = [
+      { id: 'r1', label: 'r1', category: 'user', match: [], style: { accentColor: 'pink' } },
+    ];
     const cleaned = pruneRedundantOverrides(cfg);
-    expect(cleaned.overrides['user.prompt']).toMatchObject({ accentColor: 'pink' });
+    expect(cleaned.overrides.find((o) => o.id === 'r1')?.style).toMatchObject({ accentColor: 'pink' });
+  });
+
+  it('never drops a rule that carries match conditions, even with empty style', () => {
+    const cfg = createDefaultConfig();
+    cfg.overrides = [
+      { id: 'r1', label: 'r1', category: 'system', match: [{ path: 'subtype', op: 'eq', value: 'notification' }], style: {} },
+    ];
+    const cleaned = pruneRedundantOverrides(cfg);
+    expect(cleaned.overrides.find((o) => o.id === 'r1')).toBeDefined();
   });
 });
 

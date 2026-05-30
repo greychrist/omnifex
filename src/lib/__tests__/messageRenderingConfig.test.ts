@@ -5,6 +5,7 @@ import {
   parseConfig,
   serializeConfig,
   resolveKind,
+  resolveMessageStyle,
   DEFAULT_PALETTE,
   DEFAULT_TYPOGRAPHY,
   DEFAULT_CATEGORIES,
@@ -12,18 +13,32 @@ import {
   CATEGORIES,
   KNOWN_KIND_IDS,
   originOf,
+  type MessageRenderingConfig,
+  type Override,
 } from "../messageRenderingConfig";
 import { classifyStandaloneKind } from "../messageKind";
 import type { JsonlNode } from "@/types/jsonl";
 
+// In v4 overrides are message-matched, not id-keyed. The default overrides are
+// `$kind eq <id>` rules, so resolving a kind's *effective* style means cascading
+// against a message whose `$kind` is that id. A bare `{ raw: {} }` message is
+// enough for the synthetic `$kind` path to fire.
+function styleForKind(cfg: MessageRenderingConfig, id: string) {
+  return resolveMessageStyle(cfg, { raw: {} } as unknown as JsonlNode, id);
+}
+function findOverride(cfg: MessageRenderingConfig, id: string): Override | undefined {
+  return cfg.overrides.find((o) => o.id === id);
+}
+
 describe("messageRenderingConfig", () => {
-  describe("createDefaultConfig (v3)", () => {
-    it("is version 3 with categories + sparse overrides", () => {
+  describe("createDefaultConfig (v4)", () => {
+    it("is version 4 with categories + an override-rule array", () => {
       const cfg = createDefaultConfig();
-      expect(cfg.version).toBe(3);
+      expect(cfg.version).toBe(4);
       expect(Object.keys(cfg.categories).sort())
         .toEqual(["agent", "attachment", "bookkeeping", "system", "user"]);
-      expect(cfg.overrides["assistant.text.endTurn"]).toBeDefined();
+      expect(Array.isArray(cfg.overrides)).toBe(true);
+      expect(findOverride(cfg, "assistant.text.endTurn")).toBeDefined();
       // The flat catalog is gone.
       expect((cfg as unknown as { kinds?: unknown }).kinds).toBeUndefined();
     });
@@ -33,12 +48,20 @@ describe("messageRenderingConfig", () => {
       for (const c of CATEGORIES) {
         expect(cfg.categories[c].presentation).toBeDefined();
       }
-      expect(Object.keys(cfg.overrides).length).toBeLessThan(20);
+      expect(cfg.overrides.length).toBeLessThan(25);
+    });
+
+    it("every default override is a $kind matcher scoped to its origin category", () => {
+      const cfg = createDefaultConfig();
+      for (const o of cfg.overrides) {
+        expect(o.category).toBe(originOf(o.id));
+        expect(o.match).toEqual([{ path: "$kind", op: "eq", value: o.id }]);
+      }
     });
 
     it("defaults user.systemContext to the collapsible presentation with raw-payload metadata", () => {
       const cfg = createDefaultConfig();
-      const s = resolveKind(cfg, "user.systemContext");
+      const s = styleForKind(cfg, "user.systemContext");
       expect(s.presentation).toBe("collapsible");
       expect(s.showRawPayload).toBe(true);
     });
@@ -51,19 +74,21 @@ describe("messageRenderingConfig", () => {
     });
   });
 
-  describe("resolveKind", () => {
+  describe("resolveKind (category base only)", () => {
     const cfg = createDefaultConfig();
-    it("returns the category default when no override exists", () => {
+    it("returns the category default for the kind's origin", () => {
       const s = resolveKind(cfg, "user.prompt");
       expect(s.alignment).toBe("right");
       expect(s.headerLabel).toBe("You");
       expect(s.presentation).toBe("card");
     });
-    it("merges an override over its category, per-field", () => {
+    it("ignores overrides — it is the pure base, not the cascade", () => {
+      // assistant.text.endTurn has a default override (green / CheckCircle2),
+      // but resolveKind returns only the agent category base.
       const s = resolveKind(cfg, "assistant.text.endTurn");
-      expect(s.headerLabel).toBe("Claude");   // inherited from agent
-      expect(s.accentColor).toBe("green");     // from override
-      expect(s.icon).toBe("CheckCircle2");     // from override
+      expect(s.headerLabel).toBe("Claude");
+      expect(s.accentColor).toBe("primary"); // agent base, NOT the override's green
+      expect(s.icon).toBe("Bot");
     });
     it("resolves an unseen kind to its category (no unknown)", () => {
       const s = resolveKind(cfg, "attachment.workflow_keyword_request");
@@ -71,26 +96,77 @@ describe("messageRenderingConfig", () => {
     });
   });
 
-  describe("mergeConfig v2->v3 migration", () => {
-    it("carries a user-customized v2 kind into a v3 override", () => {
+  describe("resolveMessageStyle (full cascade)", () => {
+    const cfg = createDefaultConfig();
+    it("applies the matching $kind override over its category, per-field", () => {
+      const s = styleForKind(cfg, "assistant.text.endTurn");
+      expect(s.headerLabel).toBe("Claude");   // inherited from agent
+      expect(s.accentColor).toBe("green");     // from override
+      expect(s.icon).toBe("CheckCircle2");     // from override
+    });
+  });
+
+  describe("mergeConfig v2->v4 migration", () => {
+    it("carries a user-customized v2 kind into a $kind override rule", () => {
       const v2 = { version: 2, kinds: {
         "user.prompt": { id: "user.prompt", presentation: "side-line", accentColor: "pink" },
       } };
       const cfg = mergeConfig(v2);
-      expect(cfg.version).toBe(3);
-      expect(cfg.overrides["user.prompt"]).toMatchObject({ presentation: "side-line", accentColor: "pink" });
+      expect(cfg.version).toBe(4);
+      const ov = findOverride(cfg, "user.prompt");
+      expect(ov?.match).toEqual([{ path: "$kind", op: "eq", value: "user.prompt" }]);
+      expect(ov?.style).toMatchObject({ presentation: "side-line", accentColor: "pink" });
     });
     it("does not create an override for a v2 kind left at its defaults", () => {
-      // user.prompt's category default is a card; an explicit card matches and
-      // is dropped. (The seeded compactBoundaryLocked override remains.)
+      // assistant.text has no default override and its sole field matches the
+      // agent category, so no rule is produced for it.
       const v2 = { version: 2, kinds: { "assistant.text": { id: "assistant.text" } } };
       const cfg = mergeConfig(v2);
-      expect(cfg.overrides["assistant.text"]).toBeUndefined();
+      expect(findOverride(cfg, "assistant.text")).toBeUndefined();
     });
-    it("accepts a v3 config unchanged", () => {
-      const v3 = createDefaultConfig();
-      v3.overrides["pr-link"] = { accentColor: "teal" };
-      expect(mergeConfig(v3).overrides["pr-link"]).toMatchObject({ accentColor: "teal" });
+  });
+
+  describe("mergeConfig v3->v4 migration", () => {
+    it("converts each v3 record override 1:1 into a $kind rule, dropping none", () => {
+      const v3 = {
+        version: 3,
+        overrides: {
+          "assistant.tool-use": { label: "Tool call", accentColor: "info", icon: "Terminal" },
+          "pr-link": { accentColor: "teal" },
+        },
+      };
+      const cfg = mergeConfig(v3);
+      expect(cfg.version).toBe(4);
+
+      const tool = findOverride(cfg, "assistant.tool-use");
+      expect(tool).toBeDefined();
+      expect(tool?.label).toBe("Tool call");
+      expect(tool?.category).toBe("agent");
+      expect(tool?.match).toEqual([{ path: "$kind", op: "eq", value: "assistant.tool-use" }]);
+      expect(tool?.style).toMatchObject({ accentColor: "info", icon: "Terminal" });
+
+      const pr = findOverride(cfg, "pr-link");
+      expect(pr?.category).toBe("bookkeeping");
+      expect(pr?.style).toMatchObject({ accentColor: "teal" });
+      expect(pr?.label).toBe("pr-link"); // falls back to id when no label saved
+
+      // One rule per original override — nothing lost, nothing duplicated.
+      expect(cfg.overrides).toHaveLength(2);
+      // Behaviour is identical: the $kind rule reproduces the old exact-id match.
+      expect(styleForKind(cfg, "assistant.tool-use").accentColor).toBe("info");
+    });
+
+    it("accepts a v4 config unchanged (round-trips its override array)", () => {
+      const v4 = createDefaultConfig();
+      v4.overrides.push({
+        id: "custom-1", label: "Custom", category: "system",
+        match: [{ path: "subtype", op: "eq", value: "notification" }],
+        style: { accentColor: "teal" },
+      });
+      const merged = mergeConfig(v4);
+      const custom = findOverride(merged, "custom-1");
+      expect(custom?.match).toEqual([{ path: "subtype", op: "eq", value: "notification" }]);
+      expect(custom?.style).toMatchObject({ accentColor: "teal" });
     });
   });
 
@@ -109,14 +185,14 @@ describe("messageRenderingConfig", () => {
       expect(mergeConfig({ defaultViewMode: "weird" }).defaultViewMode).toBe("verbose");
     });
 
-    it("merges a partial v2 kind override into a v3 override (resolves correctly)", () => {
+    it("merges a partial v2 kind override into a $kind rule (resolves correctly)", () => {
       const cfg = mergeConfig({
         version: 2,
         kinds: {
           "user.prompt": { headerLabel: "Me", accentColor: "amber" },
         },
       });
-      const s = resolveKind(cfg, "user.prompt");
+      const s = styleForKind(cfg, "user.prompt");
       expect(s.headerLabel).toBe("Me");
       expect(s.accentColor).toBe("amber");
       // untouched fields keep category defaults
@@ -129,7 +205,7 @@ describe("messageRenderingConfig", () => {
         version: 2,
         kinds: { "user.prompt": { icon: "NotARealIcon" } },
       });
-      expect(resolveKind(cfg, "user.prompt").icon).toBe("User");
+      expect(styleForKind(cfg, "user.prompt").icon).toBe("User");
     });
 
     it("rejects accentColor strings that are neither palette names nor hex", () => {
@@ -137,7 +213,7 @@ describe("messageRenderingConfig", () => {
         version: 2,
         kinds: { "user.prompt": { accentColor: "neon" } },
       });
-      expect(resolveKind(cfg, "user.prompt").accentColor).toBe("blue");
+      expect(styleForKind(cfg, "user.prompt").accentColor).toBe("blue");
     });
 
     it("accepts hex accentColor strings (picker-driven configs)", () => {
@@ -146,7 +222,7 @@ describe("messageRenderingConfig", () => {
           version: 2,
           kinds: { "user.prompt": { accentColor: hex } },
         });
-        expect(resolveKind(cfg, "user.prompt").accentColor).toBe(hex);
+        expect(styleForKind(cfg, "user.prompt").accentColor).toBe(hex);
       }
     });
 
@@ -156,7 +232,7 @@ describe("messageRenderingConfig", () => {
       // their seeded overrides.
       const cfg = createDefaultConfig();
       const locked = KNOWN_KIND_IDS
-        .filter((id) => resolveKind(cfg, id).compactBoundaryLocked)
+        .filter((id) => styleForKind(cfg, id).compactBoundaryLocked)
         .sort();
       expect(locked).toEqual([
         "assistant.text.endTurn",
@@ -171,7 +247,7 @@ describe("messageRenderingConfig", () => {
         version: 2,
         kinds: { "assistant.thinking": { hiddenInCompact: false } },
       });
-      expect(resolveKind(cfg, "assistant.thinking").hiddenInCompact).toBe(false);
+      expect(styleForKind(cfg, "assistant.thinking").hiddenInCompact).toBe(false);
     });
 
     it("persists presentation, borderStyle, and showRawPayload through v2 migration", () => {
@@ -183,9 +259,9 @@ describe("messageRenderingConfig", () => {
         },
       };
       const merged = mergeConfig(persisted);
-      expect(resolveKind(merged, "user.prompt").presentation).toBe("side-line");
-      expect(resolveKind(merged, "user.prompt").borderStyle).toBe("dashed");
-      expect(resolveKind(merged, "system.away_summary").showRawPayload).toBe(true);
+      expect(styleForKind(merged, "user.prompt").presentation).toBe("side-line");
+      expect(styleForKind(merged, "user.prompt").borderStyle).toBe("dashed");
+      expect(styleForKind(merged, "system.away_summary").showRawPayload).toBe(true);
     });
 
     it("rejects invalid presentation and borderStyle values (v2 migration)", () => {
@@ -196,8 +272,8 @@ describe("messageRenderingConfig", () => {
         },
       });
       // Invalid values are dropped; resolves to category defaults.
-      expect(resolveKind(cfg, "user.prompt").presentation).toBe("card");
-      expect(resolveKind(cfg, "user.prompt").borderStyle).toBe("solid");
+      expect(styleForKind(cfg, "user.prompt").presentation).toBe("card");
+      expect(styleForKind(cfg, "user.prompt").borderStyle).toBe("solid");
     });
 
     it("merges palette entries by name", () => {
@@ -397,11 +473,12 @@ describe("messageRenderingConfig", () => {
     it("round-trips a config through JSON", () => {
       const original = createDefaultConfig();
       original.defaultViewMode = "compact";
-      original.overrides["user.prompt"] = { ...original.overrides["user.prompt"], headerLabel: "Greg" };
+      const promptOverride = findOverride(original, "user.prompt");
+      promptOverride!.style = { ...promptOverride!.style, headerLabel: "Greg" };
       const raw = serializeConfig(original);
       const restored = parseConfig(raw);
       expect(restored.defaultViewMode).toBe("compact");
-      expect(resolveKind(restored, "user.prompt").headerLabel).toBe("Greg");
+      expect(styleForKind(restored, "user.prompt").headerLabel).toBe("Greg");
     });
 
     it("returns defaults for null/empty/invalid JSON", () => {
@@ -496,11 +573,11 @@ describe("messageRenderingConfig", () => {
     });
 
     it("keeps overrides sparse (partial styles, ~a dozen, not 60+)", () => {
-      const ids = Object.keys(DEFAULT_OVERRIDES);
+      const ids = DEFAULT_OVERRIDES.map((o) => o.id);
       expect(ids).toContain("assistant.text.endTurn");
       expect(ids).toContain("user.systemContext");
       expect(ids).toContain("permission.askUserQuestion");
-      expect(ids.length).toBeLessThan(20);
+      expect(ids.length).toBeLessThan(25);
     });
   });
 

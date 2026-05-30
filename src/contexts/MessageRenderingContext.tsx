@@ -28,9 +28,9 @@ export const MessageRenderingProvider: React.FC<{ children: React.ReactNode }> =
       try {
         const raw = await api.getSetting(MESSAGE_RENDERING_CONFIG_KEY);
         // Version guard: pre-v2 (or missing) configs are reset to fresh
-        // defaults; v2 and v3 flow through mergeConfig, which migrates v2→v3
-        // and passes v3 through. The migration is recorded in app_logs only on
-        // the hard reset path (same pattern as the original v1→v2 reset).
+        // defaults; v2, v3 and v4 flow through mergeConfig, which migrates
+        // v2/v3→v4 and passes v4 through. The migration is recorded in app_logs
+        // only on the hard reset path (same pattern as the original v1→v2 reset).
         let parsed: unknown = null;
         try { parsed = raw ? (JSON.parse(raw) as unknown) : null; } catch { /* handled below */ }
         const persistedVersion =
@@ -46,7 +46,7 @@ export const MessageRenderingProvider: React.FC<{ children: React.ReactNode }> =
               level: 'info',
               source: 'frontend',
               category: 'settings:message-rendering',
-              message: 'reset message rendering config to v3 defaults',
+              message: 'reset message rendering config to v4 defaults',
             }]);
             setConfigState(fresh);
           }
