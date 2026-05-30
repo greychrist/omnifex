@@ -519,18 +519,28 @@ function initSchema(db: BetterSqlite3.Database): void {
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
 
+    -- Canonical shape matches the post-migration-v11 schema so fresh installs
+    -- end up identical to an upgraded DB (the v1/v2/v4/v5/v7/v8/v11 account
+    -- migrations all detect the already-correct shape and no-op). Notably:
+    --   * subscription_label (not the legacy account_type — v11 renamed it)
+    --   * engine + has_cost (added by v11)
+    --   * no is_default column (there is no "default" account; v8 dropped it).
+    --     Resolution is strictly path rule / project override, failure surfaced
+    --     as NoAccountError.
     CREATE TABLE IF NOT EXISTS accounts (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT UNIQUE NOT NULL,
       config_dir TEXT NOT NULL,
-      -- No is_default column. There is no notion of a "default" account.
-      -- Account resolution is strictly path rule / project override, with
-      -- failure surfaced as an error (NoAccountError). Migration v8 drops
-      -- this column from existing installs.
-      account_type TEXT NOT NULL DEFAULT 'pro',
+      subscription_label TEXT NOT NULL DEFAULT '',
+      engine TEXT NOT NULL DEFAULT 'claude',
+      has_cost INTEGER NOT NULL DEFAULT 1,
       color TEXT,
       icon TEXT,
       claude_binary TEXT,
+      session_defaults TEXT,
+      cli_path TEXT,
+      summarizeOnClose INTEGER NOT NULL DEFAULT 0,
+      summaryModel TEXT,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
@@ -549,9 +559,14 @@ function initSchema(db: BetterSqlite3.Database): void {
       FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
     );
 
+    -- Canonical post-v11 shape: composite (project_path, engine) key so a
+    -- project can carry one override per engine. Fresh installs skip v11's
+    -- override rebuild (it detects the engine column already present).
     CREATE TABLE IF NOT EXISTS project_account_overrides (
-      project_path TEXT PRIMARY KEY,
+      project_path TEXT NOT NULL,
+      engine TEXT NOT NULL DEFAULT 'claude',
       account_id INTEGER NOT NULL,
+      PRIMARY KEY (project_path, engine),
       FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
     );
 

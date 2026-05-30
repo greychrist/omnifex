@@ -236,12 +236,69 @@ function readJsonlFile(
 // Core scanning logic
 // ---------------------------------------------------------------------------
 
+/** Per-session parse cache. Keyed by absolute JSONL path; invalidated when the
+ *  file's mtime changes. Holds only the extracted usage rows (one per
+ *  assistant-with-usage message) plus the recovered cwd — far smaller than the
+ *  raw messages, and it means an unchanged session file is never re-read or
+ *  re-parsed on the next Usage-tab query. project_path is intentionally NOT
+ *  cached here: it's recovered per-project at scan time so a project rename is
+ *  reflected immediately. */
+type UsageRow = Omit<ParsedUsage, 'project_path'>;
+interface SessionCacheEntry {
+  mtimeMs: number;
+  rows: UsageRow[];
+  cwd: string | null;
+}
+export type UsageScanCache = Map<string, SessionCacheEntry>;
+
+function extractUsageRows(
+  messages: RawMessage[],
+  sessionId: string,
+  accountName: string,
+  accountType: string,
+): UsageRow[] {
+  const rows: UsageRow[] = [];
+  for (const msg of messages) {
+    if (msg.type !== 'assistant') continue;
+    if (!msg.message?.usage) continue;
+
+    const usage = msg.message.usage;
+    const model = msg.message.model ?? 'unknown';
+    const inputTokens = usage.input_tokens ?? 0;
+    const outputTokens = usage.output_tokens ?? 0;
+    const cacheCreation = usage.cache_creation_input_tokens ?? 0;
+    const cacheRead = usage.cache_read_input_tokens ?? 0;
+
+    const rates = getCostPerToken(model);
+    const cost = inputTokens * rates.input + outputTokens * rates.output;
+
+    const timestamp = msg.timestamp ?? '';
+    const date = timestamp ? timestamp.substring(0, 10) : '';
+
+    rows.push({
+      session_id: sessionId,
+      model,
+      input_tokens: inputTokens,
+      output_tokens: outputTokens,
+      cache_creation_tokens: cacheCreation,
+      cache_read_tokens: cacheRead,
+      cost,
+      timestamp,
+      date,
+      account_name: accountName,
+      account_type: accountType,
+    });
+  }
+  return rows;
+}
+
 function scanConfigDir(
   configDir: string,
   accountName: string,
   accountType: string,
   filter?: (timestamp: string) => boolean,
   logging?: LoggingService | null,
+  cache?: UsageScanCache,
 ): ParsedUsage[] {
   const results: ParsedUsage[] = [];
   const projectsDir = path.join(configDir, 'projects');
@@ -300,49 +357,30 @@ function scanConfigDir(
     // the naive fallback if every file is empty / cwd-less / corrupt.
     let recoveredProjectPath: string | null = null;
 
-    for (const { name: sessionEntryName } of orderedJsonl) {
+    for (const { name: sessionEntryName, mtimeMs } of orderedJsonl) {
       const sessionFile = path.join(projectDir, sessionEntryName);
       const sessionId = path.basename(sessionEntryName, '.jsonl');
-      const messages = readJsonlFile(sessionFile, logging);
+
+      // Cache hit when the file's mtime is unchanged: skip the read + parse.
+      let entry = cache?.get(sessionFile);
+      if (!entry || entry.mtimeMs !== mtimeMs) {
+        const messages = readJsonlFile(sessionFile, logging);
+        entry = {
+          mtimeMs,
+          rows: extractUsageRows(messages, sessionId, accountName, accountType),
+          cwd: recoverProjectPathFromMessages(messages),
+        };
+        cache?.set(sessionFile, entry);
+      }
 
       if (recoveredProjectPath === null) {
-        recoveredProjectPath = recoverProjectPathFromMessages(messages);
+        recoveredProjectPath = entry.cwd;
       }
       const projectPath = recoveredProjectPath ?? decodeProjectPathNaive(projectDirName);
 
-      for (const msg of messages) {
-        if (msg.type !== 'assistant') continue;
-        if (!msg.message?.usage) continue;
-
-        const timestamp = msg.timestamp ?? '';
-        if (filter && !filter(timestamp)) continue;
-
-        const usage = msg.message.usage;
-        const model = msg.message.model ?? 'unknown';
-        const inputTokens = usage.input_tokens ?? 0;
-        const outputTokens = usage.output_tokens ?? 0;
-        const cacheCreation = usage.cache_creation_input_tokens ?? 0;
-        const cacheRead = usage.cache_read_input_tokens ?? 0;
-
-        const rates = getCostPerToken(model);
-        const cost = inputTokens * rates.input + outputTokens * rates.output;
-
-        const date = timestamp ? timestamp.substring(0, 10) : '';
-
-        results.push({
-          session_id: sessionId,
-          project_path: projectPath,
-          model,
-          input_tokens: inputTokens,
-          output_tokens: outputTokens,
-          cache_creation_tokens: cacheCreation,
-          cache_read_tokens: cacheRead,
-          cost,
-          timestamp,
-          date,
-          account_name: accountName,
-          account_type: accountType,
-        });
+      for (const row of entry.rows) {
+        if (filter && !filter(row.timestamp)) continue;
+        results.push({ ...row, project_path: projectPath });
       }
     }
   }
@@ -484,6 +522,10 @@ export function createUsageService(
   accounts: AccountsService,
   logging?: LoggingService | null,
 ): UsageService {
+  // Per-session parse cache shared across every query on this service instance.
+  // Bounds repeated Usage-tab queries to re-reading only files whose mtime moved.
+  const scanCache: UsageScanCache = new Map();
+
   function collectEntries(filter?: (timestamp: string) => boolean): ParsedUsage[] {
     const all: ParsedUsage[] = [];
     for (const account of accounts.listAccounts()) {
@@ -493,11 +535,15 @@ export function createUsageService(
         account.subscription_label,
         filter,
         logging,
+        scanCache,
       );
+      // NB: do not log the full `entries` array — for a heavy history that's a
+      // large JSON blob written to app_logs on every Usage-tab query. The count
+      // is enough for diagnostics.
       logInfo(logging, `usage scrape: account "${account.name}" — ${entries.length} entries`, {
         account_name: account.name,
         config_dir: account.config_dir,
-        entries,
+        entry_count: entries.length,
       });
       all.push(...entries);
     }

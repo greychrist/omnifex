@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -215,6 +215,50 @@ describe('usage service', () => {
   // -------------------------------------------------------------------------
 
   describe('getUsageStats()', () => {
+    it('caches parsed sessions by mtime — a second query does not re-read unchanged files', () => {
+      const configDir = makeTmp();
+      buildConfigDir(configDir, [
+        {
+          name: '-Users-greg-myproject',
+          sessions: [[assistantMessage({ input: 100, output: 50 })]],
+        },
+      ]);
+
+      const service = createUsageService(makeAccountsService([configDir]));
+      const spy = vi.spyOn(fs, 'readFileSync');
+
+      const first = service.getUsageStats();
+      const readsAfterFirst = spy.mock.calls.length;
+      expect(readsAfterFirst).toBeGreaterThan(0);
+
+      const second = service.getUsageStats();
+      // No additional JSONL reads: the file's mtime is unchanged so the cache
+      // serves the parsed rows.
+      expect(spy.mock.calls.length).toBe(readsAfterFirst);
+      expect(second.total_tokens).toBe(first.total_tokens);
+
+      spy.mockRestore();
+    });
+
+    it('re-reads a session file after its mtime changes', () => {
+      const configDir = makeTmp();
+      const projectDir = path.join(configDir, 'projects', '-Users-greg-myproject');
+      fs.mkdirSync(projectDir, { recursive: true });
+      const sessionFile = path.join(projectDir, 's1.jsonl');
+      writeJsonl(sessionFile, [assistantMessage({ input: 100, output: 50 })]);
+
+      const service = createUsageService(makeAccountsService([configDir]));
+      expect(service.getUsageStats().total_input_tokens).toBe(100);
+
+      // Rewrite with new content and bump mtime into the future so the cache
+      // (keyed on mtimeMs) invalidates deterministically.
+      writeJsonl(sessionFile, [assistantMessage({ input: 999, output: 1 })]);
+      const future = new Date(Date.now() + 60_000);
+      fs.utimesSync(sessionFile, future, future);
+
+      expect(service.getUsageStats().total_input_tokens).toBe(999);
+    });
+
     it('returns correct totals from JSONL files', () => {
       const configDir = makeTmp();
 
@@ -971,36 +1015,10 @@ describe('usage service', () => {
       const scanEntry = infoEntries.find((e) => /scrape/i.test(String(e.message)));
       expect(scanEntry).toBeDefined();
       const metadata = JSON.parse(scanEntry.metadata);
-      expect(metadata).toHaveProperty('entries');
-      expect(Array.isArray(metadata.entries)).toBe(true);
-      expect(metadata.entries.length).toBe(1);
-    });
-
-    it('includes entry details (model, tokens, cost) in logged metadata', () => {
-      const configDir = makeTmp();
-      buildConfigDir(configDir, [
-        {
-          name: '-Users-greg-myproject',
-          sessions: [
-            [assistantMessage({ model: 'claude-opus-4', input: 500, output: 200, timestamp: '2026-04-10T10:00:00Z' })],
-          ],
-        },
-      ]);
-
-      const logger = makeFakeLogger();
-      const service = createUsageService(makeAccountsService([configDir]), logger);
-      service.getUsageStats();
-
-      const scanEntry = logger.getEntries().find(
-        (e) => e.level === 'info' && e.source === 'usage' && /scrape/i.test(String(e.message)),
-      );
-      expect(scanEntry).toBeDefined();
-      const metadata = JSON.parse(scanEntry.metadata);
-      const entry = metadata.entries[0];
-      expect(entry.model).toBe('claude-opus-4');
-      expect(entry.input_tokens).toBe(500);
-      expect(entry.output_tokens).toBe(200);
-      expect(typeof entry.cost).toBe('number');
+      // The scrape log records the entry COUNT, not the full parsed-entry array.
+      // Logging the whole array bloated app_logs on every Usage-tab query.
+      expect(metadata.entry_count).toBe(1);
+      expect(metadata).not.toHaveProperty('entries');
     });
 
     it('emits one log entry per account', () => {

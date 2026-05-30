@@ -25,6 +25,60 @@ describe('database', () => {
     expect(cols.some((c) => c.name === 'cli_path')).toBe(true);
   });
 
+  it('initSchema emits the post-v11 accounts shape (no account_type, has engine/has_cost/subscription_label)', () => {
+    const names = (db.raw.pragma('table_info(accounts)') as { name: string }[]).map((c) => c.name);
+    expect(names).toContain('subscription_label');
+    expect(names).toContain('engine');
+    expect(names).toContain('has_cost');
+    expect(names).not.toContain('account_type');
+  });
+
+  it('a fresh DB has the same accounts + overrides columns as a legacy DB migrated up (no init/migration drift)', () => {
+    // Legacy pre-v11 DB: old accounts/overrides shape, no schema_version rows,
+    // so every migration runs against it.
+    const legacy = new BetterSqlite3(':memory:');
+    legacy.exec(`
+      CREATE TABLE accounts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT UNIQUE NOT NULL,
+        config_dir TEXT NOT NULL,
+        account_type TEXT NOT NULL DEFAULT 'pro',
+        color TEXT, icon TEXT, claude_binary TEXT,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE TABLE account_path_rules (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        account_id INTEGER NOT NULL,
+        path_prefix TEXT NOT NULL,
+        priority INTEGER NOT NULL DEFAULT 0,
+        FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+      );
+      CREATE TABLE project_account_overrides (
+        project_path TEXT PRIMARY KEY,
+        account_id INTEGER NOT NULL,
+        FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+      );
+    `);
+    runMigrations(legacy, { homeDir: '/nonexistent-home-for-test' });
+
+    const colset = (d: BetterSqlite3.Database, table: string): string[] =>
+      (d.pragma(`table_info(${table})`) as { name: string }[]).map((c) => c.name).sort();
+
+    expect(colset(legacy, 'accounts')).toEqual(colset(db.raw, 'accounts'));
+    expect(colset(legacy, 'project_account_overrides')).toEqual(
+      colset(db.raw, 'project_account_overrides'),
+    );
+    legacy.close();
+  });
+
+  it('running migrations again on a fresh DB is a no-op (idempotent)', () => {
+    const before = (db.raw.pragma('table_info(accounts)') as { name: string }[]).map((c) => c.name);
+    expect(() => runMigrations(db.raw, { homeDir: '/nonexistent-home-for-test' })).not.toThrow();
+    const after = (db.raw.pragma('table_info(accounts)') as { name: string }[]).map((c) => c.name);
+    expect(after).toEqual(before);
+  });
+
   it('creates all required tables', () => {
     const tables = db.raw
       .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")

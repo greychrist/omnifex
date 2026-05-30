@@ -274,6 +274,19 @@ describe('accounts service', () => {
       expect(overrides[0].project_path).toBe('/home/user/projects/myapp');
     });
 
+    it('listPathRules orders by prefix length first, matching resolution precedence', () => {
+      const a = accounts.createAccount({ name: 'A', configDir: '/a' });
+      // Short prefix with a high priority must NOT be listed ahead of a longer
+      // prefix — resolution is longest-prefix-wins, and the list must agree so
+      // the UI does not imply the high-priority short rule takes precedence.
+      accounts.addPathRule(a.id, '/home/user/work', 99);
+      accounts.addPathRule(a.id, '/home/user/work/deep/nested', 0);
+
+      const rules = accounts.listPathRules();
+      expect(rules[0].path_prefix).toBe('/home/user/work/deep/nested');
+      expect(rules[1].path_prefix).toBe('/home/user/work');
+    });
+
     it('resolves the claude slot via longest matching path rule', () => {
       const work = accounts.createAccount({ name: 'Work', configDir: '/home/user/.claude-work', subscriptionLabel: 'team' });
       const oss = accounts.createAccount({ name: 'OSS', configDir: '/home/user/.claude-oss' });

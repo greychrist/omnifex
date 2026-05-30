@@ -367,7 +367,7 @@ export function createAccountsService(db: Database): AccountsService {
                 r.path_prefix, r.priority
          FROM account_path_rules r
          JOIN accounts a ON a.id = r.account_id
-         ORDER BY r.priority DESC, LENGTH(r.path_prefix) DESC`,
+         ORDER BY LENGTH(r.path_prefix) DESC, r.priority DESC`,
       )
       .all() as PathRule[];
   }
