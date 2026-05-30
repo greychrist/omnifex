@@ -1008,6 +1008,60 @@ describe('ipc handlers — storage channels', () => {
     ).rejects.toThrow(/identifier/i);
   });
 
+  it('rejects a config write whose configDir is not a known account dir', async () => {
+    const claude = { saveSettings: vi.fn().mockReturnValue(null) };
+    const accounts = { knownConfigDirs: () => ['/home/user/.claude', '/home/user/.claude-work'] };
+    const h = getHandlerMap({ claude, accounts } as any);
+
+    await expect(
+      invoke(h, 'save_claude_settings', {
+        configDir: '/home/user/.claude-someone-else',
+        settings: { theme: 'dark' },
+      }),
+    ).rejects.toThrow(/known account/i);
+    expect(claude.saveSettings).not.toHaveBeenCalled();
+  });
+
+  it('allows a config write to a known account dir (trailing slash tolerant)', async () => {
+    const claude = { saveSettings: vi.fn().mockReturnValue({ ok: true }) };
+    const accounts = { knownConfigDirs: () => ['/home/user/.claude-work'] };
+    const h = getHandlerMap({ claude, accounts } as any);
+
+    await invoke(h, 'save_claude_settings', {
+      configDir: '/home/user/.claude-work/',
+      settings: { theme: 'dark' },
+    });
+    expect(claude.saveSettings).toHaveBeenCalled();
+  });
+
+  it('does not block config writes on first run (no accounts configured yet)', async () => {
+    const claude = { saveSettings: vi.fn().mockReturnValue(null) };
+    const accounts = { knownConfigDirs: () => [] };
+    const h = getHandlerMap({ claude, accounts } as any);
+
+    await invoke(h, 'save_claude_settings', {
+      configDir: '/home/user/.claude',
+      settings: { theme: 'dark' },
+    });
+    expect(claude.saveSettings).toHaveBeenCalled();
+  });
+
+  it('guards mcp_add and slash_command_save against foreign configDirs', async () => {
+    const mcp = { add: vi.fn() };
+    const slashCommands = { save: vi.fn() };
+    const accounts = { knownConfigDirs: () => ['/home/user/.claude'] };
+    const h = getHandlerMap({ mcp, slashCommands, accounts } as any);
+
+    await expect(
+      invoke(h, 'mcp_add', { configDir: '/evil', name: 'x' }),
+    ).rejects.toThrow(/known account/i);
+    await expect(
+      invoke(h, 'slash_command_save', { configDir: '/evil', name: 'x' }),
+    ).rejects.toThrow(/known account/i);
+    expect(mcp.add).not.toHaveBeenCalled();
+    expect(slashCommands.save).not.toHaveBeenCalled();
+  });
+
   it('storage channels are null-safe when database is not wired', async () => {
     const emptyHandlers = getHandlerMap({});
     await expect(invoke(emptyHandlers, 'storage_list_tables')).resolves.toBeNull();

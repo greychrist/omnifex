@@ -788,6 +788,8 @@ app.whenReady().then(() => {
       },
       explainResolution: (projectPath: string, engine?: string) =>
         accountsService.explainResolution(projectPath, engine as never),
+      knownConfigDirs: () =>
+        accountsService.listAccounts().map((a) => a.config_dir).filter(Boolean),
     },
     // Claude adapter
     claude: {

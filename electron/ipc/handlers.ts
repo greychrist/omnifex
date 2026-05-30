@@ -30,6 +30,10 @@ export interface Services {
     discoverAccounts(): unknown;
     scanForNewAccounts(): unknown;
     explainResolution(projectPath: string, engine?: string): unknown;
+    /** Config dirs of every configured account — used to validate that a
+     *  renderer-supplied configDir on a config-edit channel actually belongs to
+     *  a known account (positive ownership check). */
+    knownConfigDirs(): string[];
   };
   claude?: {
     listProjects(configDir?: string): unknown;
@@ -294,6 +298,29 @@ function wrapWith<P>(fn: (params: P) => unknown): HandlerFn {
 export function getHandlerMap(services: Services = {}): Record<string, HandlerFn> {
   const { accounts, claude, sessions, usage, rateLimits, usageRunner, claudeBinary, mcp, slashCommands, sessionsSummary, logging, database, proxy, permissionsIO, models, gitWatcher, branchColors, gitBranches, lima, filesystem, notificationSounds, oneShotTerminal, codexAuth, codexSessionWalker, allowRawSql } = services;
 
+  // Positive account-ownership guard for config-editing channels. A non-empty
+  // configDir supplied by the renderer must belong to a known account, so a
+  // stale tab or a wrong account-dropdown selection can't write MCP servers,
+  // hooks, permission rules, or settings into some *other* account's global
+  // config dir. Enforced positively (membership) on top of the services' own
+  // negative guard (reject empty configDir / no ~/.claude default).
+  const normalizeDir = (dir: string): string => dir.replace(/\/+$/, '');
+  function assertOwnedConfigDir(configDir: unknown): void {
+    if (typeof configDir !== 'string' || configDir.length === 0) return;
+    let known: string[];
+    try {
+      known = accounts?.knownConfigDirs?.() ?? [];
+    } catch {
+      return; // accounts unavailable — fall back to the service-layer guard
+    }
+    // First-run / no accounts configured yet: nothing to scope against.
+    if (known.length === 0) return;
+    const set = new Set(known.map(normalizeDir));
+    if (!set.has(normalizeDir(configDir))) {
+      throw new Error(`configDir does not belong to a known account: ${configDir}`);
+    }
+  }
+
   const map: Record<string, HandlerFn> = {
     // ── Accounts ──────────────────────────────────────────────────────────────
     list_accounts: wrap(() => accounts?.list() ?? null),
@@ -332,6 +359,7 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     }),
     save_claude_settings: wrapWith((p: Record<string, unknown>) => {
       const configDir = (p?.configDir ?? p?.config_dir) as string | undefined;
+      assertOwnedConfigDir(configDir);
       const settings = p?.settings ?? p;
       return claude?.saveSettings(settings, configDir ? { configDir } : undefined) ?? null;
     }),
@@ -341,6 +369,7 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     }),
     save_system_prompt: wrapWith((p: Record<string, unknown>) => {
       const configDir = (p?.configDir ?? p?.config_dir) as string | undefined;
+      assertOwnedConfigDir(configDir);
       return claude?.saveSystemPrompt(p?.content ?? p?.prompt, configDir ? { configDir } : undefined) ?? null;
     }),
     check_claude_version: wrap(() => claude?.checkVersion() ?? null),
@@ -357,6 +386,9 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
       const scope = (p?.scope as string) || 'user';
       const configDir = (p?.configDir ?? p?.config_dir) as string | undefined;
       const projectPath = (p?.projectPath ?? p?.project_path) as string | undefined;
+      // Project-scope hooks write under projectPath, not an account dir, so only
+      // guard configDir when it's the user/local account-global target.
+      if (scope !== 'project') assertOwnedConfigDir(configDir);
       const hooks = p?.hooks ?? p?.config ?? p;
       return claude?.updateHooksConfig(scope, hooks, { configDir, projectPath }) ?? null;
     }),
@@ -430,6 +462,10 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
       const projectPath = (p?.projectPath ?? p?.project_path) as string | undefined;
       const tabId = (p?.tabId ?? p?.session_id) as string | undefined;
 
+      // User/local scope writes a permission rule into the account-global
+      // settings; make sure the configDir belongs to a known account.
+      if (p?.scope !== 'project') assertOwnedConfigDir(configDir);
+
       permissionsIO?.updatePermission({
         configDir,
         projectPath,
@@ -493,12 +529,12 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     list_claude_installations: wrap(() => claudeBinary?.listInstallations() ?? null),
 
     // ── MCP ───────────────────────────────────────────────────────────────────
-    mcp_add: wrapWith((p: Record<string, unknown>) => mcp?.add(p) ?? null),
+    mcp_add: wrapWith((p: Record<string, unknown>) => { assertOwnedConfigDir(p?.configDir ?? p?.config_dir); return mcp?.add(p) ?? null; }),
     mcp_list: wrapWith((p: Record<string, unknown>) => mcp?.list((p?.configDir ?? p?.config_dir) as string | undefined) ?? null),
     mcp_get: wrapWith((p: Record<string, unknown>) => mcp?.get(p?.name as string, (p?.configDir ?? p?.config_dir) as string | undefined) ?? null),
-    mcp_remove: wrapWith((p: Record<string, unknown>) => mcp?.remove(p?.name as string, (p?.configDir ?? p?.config_dir) as string | undefined) ?? null),
-    mcp_add_json: wrapWith((p: Record<string, unknown>) => mcp?.addJson(p) ?? null),
-    mcp_add_from_claude_desktop: wrapWith((p: Record<string, unknown>) => mcp?.addFromClaudeDesktop(p?.scope as string | undefined, (p?.configDir ?? p?.config_dir) as string | undefined) ?? null),
+    mcp_remove: wrapWith((p: Record<string, unknown>) => { assertOwnedConfigDir(p?.configDir ?? p?.config_dir); return mcp?.remove(p?.name as string, (p?.configDir ?? p?.config_dir) as string | undefined) ?? null; }),
+    mcp_add_json: wrapWith((p: Record<string, unknown>) => { assertOwnedConfigDir(p?.configDir ?? p?.config_dir); return mcp?.addJson(p) ?? null; }),
+    mcp_add_from_claude_desktop: wrapWith((p: Record<string, unknown>) => { assertOwnedConfigDir(p?.configDir ?? p?.config_dir); return mcp?.addFromClaudeDesktop(p?.scope as string | undefined, (p?.configDir ?? p?.config_dir) as string | undefined) ?? null; }),
     mcp_serve: wrapWith((_p: Record<string, unknown>) => mcp?.serve() ?? null),
     mcp_test_connection: wrapWith((p: Record<string, unknown>) => mcp?.testConnection(p?.name as string, (p?.configDir ?? p?.config_dir) as string | undefined) ?? null),
     mcp_reset_project_choices: wrap(() => mcp?.resetProjectChoices() ?? null),
@@ -515,12 +551,15 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
       (p?.commandId ?? p?.command_id) as string,
       (p?.configDir ?? p?.config_dir) as string | undefined,
     ) ?? null),
-    slash_command_save: wrapWith((p: Record<string, unknown>) => slashCommands?.save(p as any) ?? null),
-    slash_command_delete: wrapWith((p: Record<string, unknown>) => slashCommands?.delete(
-      (p?.commandId ?? p?.command_id) as string,
-      (p?.projectPath ?? p?.project_path) as string | undefined,
-      (p?.configDir ?? p?.config_dir) as string | undefined,
-    ) ?? null),
+    slash_command_save: wrapWith((p: Record<string, unknown>) => { assertOwnedConfigDir(p?.configDir ?? p?.config_dir); return slashCommands?.save(p as any) ?? null; }),
+    slash_command_delete: wrapWith((p: Record<string, unknown>) => {
+      assertOwnedConfigDir(p?.configDir ?? p?.config_dir);
+      return slashCommands?.delete(
+        (p?.commandId ?? p?.command_id) as string,
+        (p?.projectPath ?? p?.project_path) as string | undefined,
+        (p?.configDir ?? p?.config_dir) as string | undefined,
+      ) ?? null;
+    }),
 
     // ── Session Summaries ─────────────────────────────────────────────────────
     summary_get: wrapWith((p: Record<string, unknown>) => sessionsSummary?.getSummary(

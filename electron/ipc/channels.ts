@@ -1,0 +1,243 @@
+// Single source of truth for IPC channel names.
+//
+// This module has NO electron import on purpose: both the preload (which builds
+// the renderer-facing allow-list) and the IPC contract test import it. Keeping
+// the list here — instead of inline in preload.ts — lets a unit test assert that
+// the allow-list and the registered handler map stay in lockstep, which is the
+// guardrail that catches dead/broken channels before they ship.
+
+/** Channels the renderer may `invoke`. Every entry must have a handler (either
+ *  in `getHandlerMap()` or registered directly in `registerIpcHandlers` /
+ *  `main.ts`); see `ipc-channel-contract.test.ts`. */
+export const INVOKE_CHANNELS: readonly string[] = [
+  // Accounts
+  'list_accounts',
+  'create_account',
+  'update_account',
+  'update_account_summary',
+  'delete_account',
+  'list_path_rules',
+  'add_path_rule',
+  'remove_path_rule',
+  'resolve_account_for_project',
+  'set_project_account_override',
+  'list_project_overrides',
+  'discover_accounts',
+  'scan_for_new_accounts',
+  'explain_account_resolution',
+
+  // Claude
+  'list_projects',
+  'create_project',
+  'get_project_sessions',
+  'load_session_history',
+  'delete_session',
+  'delete_project',
+  'get_home_directory',
+  'get_claude_settings',
+  'save_claude_settings',
+  'get_system_prompt',
+  'save_system_prompt',
+  'check_claude_version',
+  'get_cli_usage',
+  'find_claude_md_files',
+  'read_claude_md_file',
+  'save_claude_md_file',
+  'get_hooks_config',
+  'update_hooks_config',
+  'validate_hook_command',
+  'get_merged_hooks_config',
+
+  // Sessions
+  'session_start',
+  'session_rebind',
+  'session_send_message',
+  'session_send_structured_message',
+  'session_respond_permission',
+  'session_respond_elicitation',
+  'session_stop',
+  'session_get_info',
+  'session_get_health',
+  // Wave 2 — Query-method passthroughs
+  'session_interrupt',
+  'session_set_model',
+  'session_set_permission_mode',
+  'session_set_effort',
+  'session_set_thinking',
+  'session_account_info',
+  'session_context_usage',
+  'session_supported_commands',
+  'session_supported_models',
+  'list_supported_models',
+  'session_mcp_server_status',
+  'session_plugins',
+  'session_get_permissions',
+  'session_update_permission',
+  'session_set_mode',
+  'session_tui_write',
+  'session_tui_resize',
+
+  // Usage
+  'get_usage_stats',
+  'get_usage_by_date_range',
+  'get_session_stats',
+  'get_usage_details',
+  'get_usage_by_account',
+
+  // Rate Limits
+  'get_rate_limits',
+  'get_rate_limit_settings',
+  'update_rate_limit_settings',
+
+  // Usage CLI Runner
+  'usage_run_cli',
+  'usage_get_last',
+  'accounts_validate_cli_path',
+
+  // Claude Binary
+  'get_claude_binary_path',
+  'set_claude_binary_path',
+  'list_claude_installations',
+
+  // MCP
+  'mcp_add',
+  'mcp_list',
+  'mcp_get',
+  'mcp_remove',
+  'mcp_add_json',
+  'mcp_add_from_claude_desktop',
+  'mcp_serve',
+  'mcp_test_connection',
+  'mcp_reset_project_choices',
+  'mcp_get_server_status',
+  'mcp_read_project_config',
+  'mcp_save_project_config',
+
+  // Slash Commands
+  'slash_commands_list',
+  'slash_command_get',
+  'slash_command_save',
+  'slash_command_delete',
+
+  // Session Summaries
+  'summary_get',
+  'summary_generate',
+  'summary_generating_now',
+
+  // Logging
+  'log_write_batch',
+  'log_query',
+  'log_count',
+  'log_prune',
+
+  // Storage
+  'storage_list_tables',
+  'storage_read_table',
+  'storage_update_row',
+  'storage_delete_row',
+  'storage_insert_row',
+  'storage_execute_sql',
+  'storage_reset_database',
+  'get_setting',
+  'save_setting',
+  'preview_notification_sound',
+
+  // Branch colors
+  'branch_colors_list',
+  'branch_colors_upsert',
+  'branch_colors_delete',
+
+  // Git
+  'get_git_branch',
+  'list_git_worktrees',
+  'start_session_git_watch',
+  'stop_session_git_watch',
+  'reconnect_session_git_watch',
+  'git_list_branches',
+
+  // Lima (VM viewer)
+  'lima_check_installed',
+  'lima_list_vms',
+  'lima_list_containers',
+  'lima_start_vm',
+  'lima_stop_vm',
+  'lima_start_container',
+  'lima_stop_container',
+
+  // Filesystem (FilePicker @-mention browser)
+  'list_directory_contents',
+  'search_files',
+  'fs_exists',
+
+  // Proxy
+  'get_proxy_settings',
+  'save_proxy_settings',
+
+  // Tab Status (renderer publishes per-tab summaries; popover reads list)
+  'tab_status_publish',
+  'tab_status_remove',
+  'tab_status_list',
+
+  // One-shot terminal (shared pty+xterm modal — Codex login, etc.)
+  'one_shot_terminal_spawn',
+  'one_shot_terminal_write',
+  'one_shot_terminal_resize',
+  'one_shot_terminal_kill',
+
+  // Codex auth (read ~/.codex/auth.json + drive `codex login` via OneShotTerminal)
+  'codex_auth_status',
+  'codex_auth_start_login',
+  'codex_auth_cancel_login',
+  'codex_binary_path',
+  'codex_logout',
+
+  // Codex sessions (rollout discovery under ~/.codex/sessions)
+  'codex_session_list',
+
+  // Updater
+  'updater:check',
+  'updater:download',
+  'updater:open',
+  'updater:install',
+  'updater:install-cancel',
+
+  // Electron-specific
+  'dialog:open',
+  'dialog:save',
+  'save_pasted_image',
+  'shell:openExternal',
+  'reveal_path_in_finder',
+  'get_app_version',
+  'window:minimize',
+  'window:maximize',
+  'window:close',
+];
+
+/** Event-channel prefixes the renderer may subscribe to. Channel names carry a
+ *  `:<suffix>` (usually a tabId), so membership is a `startsWith` test. */
+export const EVENT_CHANNEL_PREFIXES: readonly string[] = [
+  'session-',
+  // Engine output (Task 24 rename — main process emits on these).
+  'agent-output:',
+  'agent-error:',
+  'agent-complete:',
+  // Closure carriers tailed from the session JSONL.
+  'claude-output-extra:',
+  'claude-notification',
+  'claude-stream',
+  'claude-subagent:',
+  'claude-compact:',
+  'elicitation-request:',
+  'backend-log',
+  'updater:',
+  'notification-clicked',
+  'session-git-changed:',
+  'rate-limits:',
+  'tab-status:',
+  'one-shot-terminal-data:',
+  'one-shot-terminal-exit:',
+  'codex-auth-status-changed',
+];
+
+/** Event channels matched exactly (no suffix). */
+export const EVENT_CHANNEL_EXACT: readonly string[] = ['log-error'];
