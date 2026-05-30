@@ -872,7 +872,8 @@ describe('ipc handlers — storage channels', () => {
       );
       INSERT INTO items (name, value) VALUES ('alpha', 'one'), ('beta', 'two'), ('alphabet', 'three');
     `);
-    handlers = getHandlerMap({ database: db });
+    // allowRawSql: true models the dev build, where the admin DB tools are enabled.
+    handlers = getHandlerMap({ database: db, allowRawSql: true });
   });
 
   it('storage_list_tables returns all user tables', async () => {
@@ -974,6 +975,37 @@ describe('ipc handlers — storage channels', () => {
       query: 'SELECT name FROM items ORDER BY id',
     })) as any[];
     expect(rows.map((r) => r.name)).toEqual(['alpha', 'beta', 'alphabet']);
+  });
+
+  it('storage_execute_sql is disabled in packaged builds (allowRawSql falsy)', async () => {
+    // Production default: the arbitrary-SQL admin channel must be inert so a
+    // compromised renderer (rendered tool/MCP output) cannot run raw SQL.
+    const prod = getHandlerMap({ database: db });
+    await expect(
+      invoke(prod, 'storage_execute_sql', { query: 'SELECT name FROM items' }),
+    ).rejects.toThrow(/disabled/i);
+    // The table is untouched.
+    const count = db.raw.prepare('SELECT COUNT(*) AS c FROM items').get() as { c: number };
+    expect(count.c).toBe(3);
+  });
+
+  it('storage_read_table rejects an unsafe table identifier without executing it', async () => {
+    const result = (await invoke(handlers, 'storage_read_table', {
+      tableName: 'items"; DROP TABLE items;--',
+    })) as any;
+    expect(typeof result.error).toBe('string');
+    // The injection did not run — items still exists with all rows.
+    const count = db.raw.prepare('SELECT COUNT(*) AS c FROM items').get() as { c: number };
+    expect(count.c).toBe(3);
+  });
+
+  it('storage_insert_row rejects an unsafe table identifier', async () => {
+    await expect(
+      invoke(handlers, 'storage_insert_row', {
+        tableName: 'items"; DROP TABLE items;--',
+        values: { name: 'x' },
+      }),
+    ).rejects.toThrow(/identifier/i);
   });
 
   it('storage channels are null-safe when database is not wired', async () => {

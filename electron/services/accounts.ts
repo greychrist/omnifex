@@ -409,12 +409,16 @@ export function createAccountsService(db: Database): AccountsService {
       .prepare('SELECT engine FROM accounts WHERE id = ?')
       .get(accountId) as { engine: AccountEngine } | undefined;
     if (!acct) throw new Error(`Account ${accountId} not found`);
+    // Normalize before storing: resolve() looks up by the normalized project
+    // path, so an override written in any other form (trailing slash, ~, ..)
+    // would be stored under a key no reader can ever match — the override would
+    // silently never take effect.
     raw
       .prepare(
         `INSERT INTO project_account_overrides (project_path, engine, account_id) VALUES (?, ?, ?)
          ON CONFLICT(project_path, engine) DO UPDATE SET account_id = excluded.account_id`,
       )
-      .run(projectPath, acct.engine, accountId);
+      .run(normalizePath(projectPath), acct.engine, accountId);
   }
 
   function listProjectOverrides(): ProjectOverride[] {

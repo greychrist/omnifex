@@ -932,20 +932,6 @@ export const api = {
   },
 
   /**
-   * Opens a new Claude Code session
-   * @param path - Optional path to open the session in
-   * @returns Promise resolving when the session is opened
-   */
-  async openNewSession(path?: string): Promise<string> {
-    try {
-      return await apiCall<string>("open_new_session", { path });
-    } catch (error) {
-      console.error("Failed to open new session:", error);
-      throw error;
-    }
-  },
-
-  /**
    * Reads the CLAUDE.md system prompt file
    * @returns Promise resolving to the system prompt content
    */
@@ -1065,42 +1051,6 @@ export const api = {
     const params: Record<string, string> = { sessionId, projectId };
     if (projectPath) params.projectPath = projectPath;
     return apiCall("load_session_history", params);
-  },
-
-  /**
-   * Executes a new interactive Claude Code session with streaming output
-   */
-  async executeClaudeCode(projectPath: string, prompt: string, model: string, skipPermissions?: boolean): Promise<void> {
-    return apiCall("execute_claude_code", { projectPath, prompt, model, skipPermissions });
-  },
-
-  /**
-   * Continues an existing Claude Code conversation with streaming output
-   */
-  async continueClaudeCode(projectPath: string, prompt: string, model: string, skipPermissions?: boolean): Promise<void> {
-    return apiCall("continue_claude_code", { projectPath, prompt, model, skipPermissions });
-  },
-
-  /**
-   * Resumes an existing Claude Code session by ID with streaming output
-   */
-  async resumeClaudeCode(projectPath: string, sessionId: string, prompt: string, model: string, skipPermissions?: boolean): Promise<void> {
-    return apiCall("resume_claude_code", { projectPath, sessionId, prompt, model, skipPermissions });
-  },
-
-  /**
-   * Cancels the currently running Claude Code execution
-   * @param sessionId - Optional session ID to cancel a specific session
-   */
-  async cancelClaudeExecution(sessionId?: string): Promise<void> {
-    return apiCall("cancel_claude_execution", { sessionId });
-  },
-
-  /**
-   * Send input to a running Claude Code session via stdin
-   */
-  async sendSessionInput(sessionId: string, input: string): Promise<void> {
-    return apiCall("send_session_input", { sessionId, input });
   },
 
   // ─── Persistent Session API ───────────────────────────────────────
@@ -1280,15 +1230,6 @@ export const api = {
       since: filters?.since,
       until: filters?.until,
     });
-  },
-
-  /**
-   * Gets live output from a Claude session
-   * @param sessionId - The session ID to get output for
-   * @returns Promise resolving to the current live output
-   */
-  async getClaudeSessionOutput(sessionId: string): Promise<string> {
-    return apiCall("get_claude_session_output", { sessionId });
   },
 
   /**

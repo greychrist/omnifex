@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import os from 'node:os';
 import { createDatabase, type Database } from '../services/database';
 import { createAccountsService, type AccountsService } from '../services/accounts';
 
@@ -238,6 +239,39 @@ describe('accounts service', () => {
       expect(pair.claude?.account.id).toBe(work.id);
       expect(pair.claude?.matchType).toBe('override');
       expect(pair.codex).toBeNull();
+    });
+
+    it('override written with a non-normalized path still resolves (trailing slash)', () => {
+      const work = accounts.createAccount({ name: 'Work', configDir: '/home/user/.claude-work' });
+
+      // User picks an account for a path the renderer happened to pass with a
+      // trailing slash. resolve() normalizes before lookup, so the write must
+      // normalize too — otherwise the override silently never matches.
+      accounts.setProjectOverride('/home/user/projects/myapp/', work.id);
+
+      const pair = accounts.resolve('/home/user/projects/myapp');
+      expect(pair.claude?.account.id).toBe(work.id);
+      expect(pair.claude?.matchType).toBe('override');
+    });
+
+    it('override written with a ~ path resolves against the absolute project path', () => {
+      const work = accounts.createAccount({ name: 'Work', configDir: '/home/user/.claude-work' });
+      const home = os.homedir();
+
+      accounts.setProjectOverride('~/projects/myapp', work.id);
+
+      const pair = accounts.resolve(`${home}/projects/myapp`);
+      expect(pair.claude?.account.id).toBe(work.id);
+      expect(pair.claude?.matchType).toBe('override');
+    });
+
+    it('listProjectOverrides reports the normalized stored path', () => {
+      const work = accounts.createAccount({ name: 'Work', configDir: '/home/user/.claude-work' });
+      accounts.setProjectOverride('/home/user/projects/myapp/', work.id);
+
+      const overrides = accounts.listProjectOverrides();
+      expect(overrides).toHaveLength(1);
+      expect(overrides[0].project_path).toBe('/home/user/projects/myapp');
     });
 
     it('resolves the claude slot via longest matching path rule', () => {

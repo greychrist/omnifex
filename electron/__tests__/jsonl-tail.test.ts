@@ -90,6 +90,34 @@ describe('createJsonlTail', () => {
     expect((received[0] as { type: string }).type).toBe('attachment');
   });
 
+  it('does not corrupt a multibyte UTF-8 codepoint split across two drains', async () => {
+    // The CLI flushes the JSONL incrementally. If a drain boundary lands in the
+    // middle of a multibyte character, a naive string-based pendingTail loses the
+    // dangling bytes (decoded to U+FFFD) and the line is corrupted/dropped —
+    // which leaves a background dispatch stuck `running`.
+    fs.writeFileSync(jsonlPath, '');
+    tail = createJsonlTail({
+      jsonlPath,
+      filter: 'all',
+      onMessage: (m) => received.push(m),
+    });
+
+    const marker = '日本語🚀'; // 3- and 4-byte codepoints
+    const obj = { type: 'assistant', summary: `pre${marker}post` };
+    const json = JSON.stringify(obj);
+    const buf = Buffer.from(json + '\n', 'utf8');
+
+    // Cut one byte into the first multibyte char so the boundary is mid-codepoint.
+    const splitAt = Buffer.from(json.slice(0, json.indexOf(marker)), 'utf8').length + 1;
+    fs.appendFileSync(jsonlPath, buf.subarray(0, splitAt));
+    await wait(); // let a poll cycle drain the partial bytes
+    fs.appendFileSync(jsonlPath, buf.subarray(splitAt));
+
+    await waitUntil(() => received.length >= 1);
+    expect(received).toHaveLength(1);
+    expect((received[0] as { summary: string }).summary).toBe(`pre${marker}post`);
+  });
+
   it('ignores envelope types that the CLI iterator already yields (assistant/user/result/system)', async () => {
     fs.writeFileSync(jsonlPath, '');
     start();

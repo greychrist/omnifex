@@ -91,7 +91,11 @@ export function isClosureCarrier(parsed: unknown): boolean {
 export function createJsonlTail(args: CreateJsonlTailArgs): JsonlTailHandle {
   const { jsonlPath, onMessage, onError, filter = 'closure-carriers' } = args;
   let offset = 0;
-  let pendingTail = '';
+  // Raw bytes after the last newline. Kept as a Buffer (not a string) so a
+  // multibyte UTF-8 codepoint straddling a read boundary survives intact —
+  // decoding only happens once a full line's bytes are present.
+  let pendingTail: Buffer = Buffer.alloc(0);
+  const NEWLINE = 0x0a;
   let drainPoll: NodeJS.Timeout | null = null;
   let waitPoll: NodeJS.Timeout | null = null;
   let stopped = false;
@@ -114,7 +118,7 @@ export function createJsonlTail(args: CreateJsonlTailArgs): JsonlTailHandle {
     } catch (err) {
       // File disappeared (rotation) — reset and wait for it to reappear.
       offset = 0;
-      pendingTail = '';
+      pendingTail = Buffer.alloc(0);
       stopDrainPoll();
       startWaitingForFile();
       safeFire(err);
@@ -123,7 +127,7 @@ export function createJsonlTail(args: CreateJsonlTailArgs): JsonlTailHandle {
     // External truncation / rotation: size shrank.
     if (stat.size < offset) {
       offset = 0;
-      pendingTail = '';
+      pendingTail = Buffer.alloc(0);
     }
     if (stat.size === offset) return;
     const len = stat.size - offset;
@@ -148,13 +152,16 @@ export function createJsonlTail(args: CreateJsonlTailArgs): JsonlTailHandle {
       }
     }
     offset = stat.size;
-    const text = pendingTail + buf.toString('utf8');
-    const lines = text.split('\n');
-    // The last element is whatever follows the final \n — typically an
-    // empty string when the file ends cleanly, or a partial line if a
-    // write split mid-line. Hold it until the next drain.
-    pendingTail = lines.pop() ?? '';
-    for (const line of lines) {
+    // Work on raw bytes so a multibyte codepoint split across reads is never
+    // decoded until it's whole. Split on the newline byte; everything after the
+    // final newline is held (as bytes) until the next drain.
+    const combined = pendingTail.length ? Buffer.concat([pendingTail, buf]) : buf;
+    let lineStart = 0;
+    let nl = combined.indexOf(NEWLINE, lineStart);
+    while (nl !== -1) {
+      const line = combined.toString('utf8', lineStart, nl);
+      lineStart = nl + 1;
+      nl = combined.indexOf(NEWLINE, lineStart);
       if (!line) continue;
       let parsed: unknown;
       try {
@@ -170,6 +177,7 @@ export function createJsonlTail(args: CreateJsonlTailArgs): JsonlTailHandle {
         }
       }
     }
+    pendingTail = lineStart < combined.length ? combined.subarray(lineStart) : Buffer.alloc(0);
   };
 
   const stopDrainPoll = (): void => {

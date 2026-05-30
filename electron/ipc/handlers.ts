@@ -215,6 +215,25 @@ export interface Services {
   codexSessionWalker?: {
     listSessions(): Promise<import('../services/codex-session-walker').CodexSessionEntry[]>;
   };
+  /**
+   * Enables the arbitrary-SQL admin channel (`storage_execute_sql`). Set from
+   * `!app.isPackaged` in main.ts so the raw-SQL escape hatch only exists in dev
+   * builds — a compromised renderer (e.g. via rendered tool/MCP output) must not
+   * be able to run raw SQL against the live database in a shipped app.
+   */
+  allowRawSql?: boolean;
+}
+
+/**
+ * Guard a SQL identifier (table/column name) that has to be interpolated into a
+ * statement rather than bound as a parameter. Throws on anything that isn't a
+ * plain identifier, blocking quote-breakout injection through the storage admin
+ * channels.
+ */
+function assertSafeIdentifier(name: unknown): asserts name is string {
+  if (typeof name !== 'string' || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+    throw new Error(`Invalid SQL identifier: ${String(name)}`);
+  }
 }
 
 // The handler type used in the map — receives the IPC event plus the params
@@ -273,7 +292,7 @@ function wrapWith<P>(fn: (params: P) => unknown): HandlerFn {
  * renderer gets a defined (but empty) response rather than a blocked channel.
  */
 export function getHandlerMap(services: Services = {}): Record<string, HandlerFn> {
-  const { accounts, claude, sessions, usage, rateLimits, usageRunner, claudeBinary, mcp, slashCommands, sessionsSummary, logging, database, proxy, permissionsIO, models, gitWatcher, branchColors, gitBranches, lima, filesystem, notificationSounds, oneShotTerminal, codexAuth, codexSessionWalker } = services;
+  const { accounts, claude, sessions, usage, rateLimits, usageRunner, claudeBinary, mcp, slashCommands, sessionsSummary, logging, database, proxy, permissionsIO, models, gitWatcher, branchColors, gitBranches, lima, filesystem, notificationSounds, oneShotTerminal, codexAuth, codexSessionWalker, allowRawSql } = services;
 
   const map: Record<string, HandlerFn> = {
     // ── Accounts ──────────────────────────────────────────────────────────────
@@ -541,6 +560,7 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
       const searchQuery = p?.searchQuery as string | undefined;
 
       try {
+        assertSafeIdentifier(table);
         // Get columns — return full PRAGMA info so the renderer gets pk, type_name, etc.
         const colInfo = database.raw.prepare(`PRAGMA table_info("${table}")`).all() as {
           cid: number; name: string; type: string; notnull: number; dflt_value: string | null; pk: number;
@@ -580,6 +600,8 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
       const primaryKeyValues = p?.primaryKeyValues as Record<string, unknown>;
       const updates = p?.updates as Record<string, unknown>;
       if (!table || !primaryKeyValues || !updates) return null;
+      assertSafeIdentifier(table);
+      [...Object.keys(updates), ...Object.keys(primaryKeyValues)].forEach(assertSafeIdentifier);
       const sets = Object.keys(updates).map(k => `"${k}" = ?`).join(', ');
       const wheres = Object.keys(primaryKeyValues).map(k => `"${k}" = ?`).join(' AND ');
       const values = [...Object.values(updates), ...Object.values(primaryKeyValues)];
@@ -590,6 +612,8 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
       const table = (p?.tableName ?? p?.table_name) as string;
       const primaryKeyValues = p?.primaryKeyValues as Record<string, unknown>;
       if (!table || !primaryKeyValues) return null;
+      assertSafeIdentifier(table);
+      Object.keys(primaryKeyValues).forEach(assertSafeIdentifier);
       const wheres = Object.keys(primaryKeyValues).map(k => `"${k}" = ?`).join(' AND ');
       return database.raw.prepare(`DELETE FROM "${table}" WHERE ${wheres}`).run(...Object.values(primaryKeyValues));
     }),
@@ -598,12 +622,19 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
       const table = (p?.tableName ?? p?.table_name) as string;
       const values = (p?.values ?? p?.data) as Record<string, unknown>;
       if (!table || !values) return null;
+      assertSafeIdentifier(table);
+      Object.keys(values).forEach(assertSafeIdentifier);
       const cols = Object.keys(values).map(k => `"${k}"`).join(', ');
       const placeholders = Object.keys(values).map(() => '?').join(', ');
       return database.raw.prepare(`INSERT INTO "${table}" (${cols}) VALUES (${placeholders})`).run(...Object.values(values));
     }),
     storage_execute_sql: wrapWith((p: Record<string, unknown>) => {
       if (!database) return null;
+      // Dev-only escape hatch. Disabled in packaged builds (allowRawSql is set
+      // from !app.isPackaged) so rendered tool/MCP output can never drive raw SQL.
+      if (!allowRawSql) {
+        throw new Error('Raw SQL execution is disabled in this build');
+      }
       const sql = (p?.query ?? p?.sql) as string;
       if (!sql) return null;
       return database.raw.prepare(sql).all();

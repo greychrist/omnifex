@@ -721,6 +721,8 @@ app.whenReady().then(() => {
 
   registerIpcHandlers({
     database: db,
+    // Arbitrary-SQL admin channel is dev-only; never exposed in shipped builds.
+    allowRawSql: !app.isPackaged,
     // Accounts adapter — maps handler interface to service methods
     accounts: {
       list: () => accountsService.listAccounts(),
