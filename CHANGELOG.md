@@ -5,6 +5,22 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.74] — 2026-05-30
+
+Ships user-authored message override matchers — overrides are now rules that match a message's raw JSON instead of being keyed by a fixed kind id.
+
+Installers remain **unsigned**.
+
+### Added
+
+- **User-authored override matchers.** An override is now a category-scoped rule that tests a message's raw JSON (plus the synthetic `$kind` / `$category` paths) with `eq` / `contains` / `regex` conditions. Every matching rule layers its sparse style over the category base in a full per-field cascade (most-specific wins; ties by definition order).
+- **Match-authoring UI.** The message-kinds tree is grouped by category with a per-category "+ Add override" and per-rule edit/delete. A centered dialog authors the label + conditions, including click-to-add from an example message's JSON fields. A read-only "Matching rules" panel sits under the live Sample.
+
+### Changed
+
+- Appearance config bumped to **v4**: overrides are stored as an array of match rules. Existing overrides migrate forward losslessly — each becomes a `$kind eq <id>` rule, so styling is identical after upgrade.
+- The renderer resolves each message's style through the new cascade (`resolveMessageStyle`) at a single choke point, leaving the render hot path otherwise untouched.
+
 ## [0.4.73] — 2026-05-30
 
 Ships the two-tier message-kind styling model and a live per-turn status label, plus a faithful Appearance preview.
