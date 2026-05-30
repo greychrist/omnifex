@@ -467,13 +467,11 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
             && (b as { name?: string }).name!.toLowerCase() === "askuserquestion",
         );
         if (tu) {
-          // Look up the matching tool_result directly from `streamMessages`
-          // rather than the `toolResults` state cache: the cache is
-          // populated by a useEffect, so on the first render after the
-          // result lands `getToolResult` would still return null and the
-          // card would flash "(no answer recorded)" for one frame.
-          // Classification already guarantees the result is in
-          // streamMessages by the time we reach here.
+          // Look up the matching tool_result directly from `streamMessages`.
+          // (`toolResults` is now a synchronous useMemo so a cache lookup would
+          // also work; this direct scan is kept as the explicit, self-contained
+          // path for this branch.) Classification already guarantees the result
+          // is in streamMessages by the time we reach here.
           const tuId = tu.id;
           let resultContent: string | undefined;
           if (tuId) {

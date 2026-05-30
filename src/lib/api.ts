@@ -702,7 +702,9 @@ export interface TabStatusSummary {
   projectPath: string | null;
   /** True iff a persistent CLI session is alive for this tab. */
   sessionStarted: boolean;
-  /** Roll-up: mainTurnInFlight || activeAgents > 0 || tasks.inFlight. */
+  /** Roll-up: mainTurnInFlight || activeAgents > 0 || in-progress task, plus a
+   *  pending permission. Mirrors the header/TabManager spinner (in_progress
+   *  tasks only — pending todos do not count as working). */
   busy: boolean;
   /**
    * Is Claude currently doing work on this session?
