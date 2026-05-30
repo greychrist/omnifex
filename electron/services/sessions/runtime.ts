@@ -97,8 +97,16 @@ function teardownJsonlTail(state: JsonlTailState): void {
  *
  * Status transitions (sessionStatus axis only — conversationStatus is now
  * derived by the renderer from JSONL content):
- *  - engine error   → sessionStatus='error'    (next send triggers restart)
- *  - engine exit    → sessionStatus='stopped'  (clean close)
+ *  - engine stderr line → NO status change. A non-empty stderr line is surfaced
+ *    (toast + app_log) but is NOT treated as session-ending — most CLI stderr is
+ *    benign noise (MCP-auth notices, deprecation warnings). The session stays
+ *    live. See the engine.onError handler below for the full rationale.
+ *  - engine exit    → sessionStatus='stopped' + session removed from the map.
+ *    The renderer's next prompt does a fresh start (full --resume) since the
+ *    handle is gone.
+ *  - sessionStatus='error' is reached only by a failed engine.start()/restart
+ *    (a spawn that rejects). While a handle sits in 'error', the next send calls
+ *    ensureLiveEngine → restartQuery to transparently respawn it.
  */
 export function listenToMessages(
   tabId: string,

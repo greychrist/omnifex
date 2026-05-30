@@ -269,8 +269,19 @@ export function createClaudeCliEngine(
    */
   async function start(p: AgentStartParams): Promise<void> {
     if (child !== null) {
-      try { child.kill('SIGTERM'); } catch { /* already gone */ }
+      // Detach THIS engine's listeners from the outgoing child before killing
+      // it. The kill is async — the old process still emits 'exit' a tick
+      // later — and on the restart path the runtime sees the same SessionHandle,
+      // so it can't distinguish that stale exit from a genuine session end and
+      // would tear down the just-restarted session. Removing the listeners makes
+      // the dying child's exit a no-op for us. (F2)
+      const old = child;
       child = null;
+      old.removeAllListeners('exit');
+      old.removeAllListeners('error');
+      try { old.stdout?.removeAllListeners(); } catch { /* ignore */ }
+      try { old.stderr?.removeAllListeners(); } catch { /* ignore */ }
+      try { old.kill('SIGTERM'); } catch { /* already gone */ }
     }
     lineBuf = '';
     stderrBuf = '';

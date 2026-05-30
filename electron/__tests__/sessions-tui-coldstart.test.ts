@@ -40,6 +40,35 @@ describe('start({ mode: "tui" })', () => {
     await expect(Promise.resolve(result)).rejects.toThrow(/configDir/i);
   });
 
+  it('does not leave a zombie "starting" handle when the PTY spawn throws', async () => {
+    const tmpConfig = fs.mkdtempSync(path.join(os.tmpdir(), 'omnifex-coldzombie-'));
+    fs.mkdirSync(path.join(tmpConfig, 'projects', '-Users-test-proj'), { recursive: true });
+
+    vi.mocked(ptySpawn).mockReset();
+    vi.mocked(ptySpawn).mockImplementation(() => {
+      throw new Error('pty spawn failed: bad binary');
+    });
+
+    const sendToRenderer = vi.fn();
+    const sessions = createSessionsService(sendToRenderer);
+
+    const result = sessions.start({
+      tabId: 'cold-zombie',
+      projectPath: '/Users/test/proj',
+      configDir: tmpConfig,
+      model: '',
+      permissionMode: '',
+      mode: 'tui',
+    });
+
+    await expect(Promise.resolve(result)).rejects.toThrow(/pty spawn failed/i);
+
+    // The handle must not linger in the map reporting itself alive/starting.
+    const health = sessions.getHealth('cold-zombie');
+    expect(health.alive).toBe(false);
+    expect(sessions.getSessionId('cold-zombie')).toBeNull();
+  });
+
   it('spawns claude with --session-id <uuid> and sets handle.sessionId to that uuid immediately', async () => {
     const tmpConfig = fs.mkdtempSync(path.join(os.tmpdir(), 'omnifex-startcold-'));
     const projectPath = '/Users/test/proj';

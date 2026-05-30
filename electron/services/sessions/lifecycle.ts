@@ -721,17 +721,32 @@ export function createSessionsService(
       ownership?.register(tabId, params.ownerWebContentsId);
     }
 
-    const tui = createTuiSession({
-      tabId,
-      projectPath,
-      configDir,
-      sessionId,
-      // resume=true → CLI spawns with `--resume <id>` (continues prior turns).
-      // resume=false → CLI spawns with `--session-id <id>` (fresh session
-      // with a caller-chosen UUID so the JSONL path is known up front).
-      resume: resuming,
-      claudeBinaryPath: binaryPath,
-    });
+    // The handle is already in the map (sessions.set above) so a rebind during
+    // spawn can find it. createTuiSession → ptySpawn can throw synchronously
+    // (bad binary/env), which would otherwise strand a 'starting' zombie handle
+    // with no tui and no JSONL listener — getHealth would keep reporting it
+    // alive. Wrap the spawn + wiring so any throw cleans the handle up before
+    // it propagates to the caller's reject path.
+    let tui: ReturnType<typeof createTuiSession>;
+    try {
+      tui = createTuiSession({
+        tabId,
+        projectPath,
+        configDir,
+        sessionId,
+        // resume=true → CLI spawns with `--resume <id>` (continues prior turns).
+        // resume=false → CLI spawns with `--session-id <id>` (fresh session
+        // with a caller-chosen UUID so the JSONL path is known up front).
+        resume: resuming,
+        claudeBinaryPath: binaryPath,
+      });
+    } catch (err) {
+      if (sessions.get(tabId) === handle) {
+        sessions.delete(tabId);
+        ownership?.unregister(tabId);
+      }
+      throw err;
+    }
 
     tui.onData((data: string) => sendToRenderer(`session-tui-data:${tabId}`, data));
     tui.onExit((r: { exitCode: number }) => {
