@@ -15,9 +15,11 @@ export interface RateLimitInfo {
 /**
  * Categorisation the session runtime cares about.
  *
- * - `init`: CLI announced a session id; status flips to 'idle'.
- * - `result`: turn complete; status flips to 'idle' and a notification
- *   should fire.
+ * - `init`: CLI announced a session id (catalog/account data captured). Main
+ *   does NOT flip any conversation status — conversationStatus is derived by
+ *   the renderer from JSONL content (see docs/session-lifecycle.md).
+ * - `result`: turn complete; a notification should fire. No main-side status
+ *   flip (the renderer derives 'idle'/'running' from the transcript).
  * - `rateLimit`: rate-limits service should be told.
  * - `compact`: CliCompactBoundaryMessage — the stream is pausing for
  *   conversation compaction. Status stays 'running'; UI may show a hint.

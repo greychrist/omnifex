@@ -53,6 +53,30 @@ Baseline before any change: `npm run check` clean; `npm test` = 166 files, 2248 
 - [ ] Re-run multi-agent assessment; confirm each finding cleared. Loop until clean.
 - [ ] `npm run rebuild:electron` (leave app launchable for Greg).
 
+## STATUS (end of unattended run)
+
+All waves landed except the items below. `npm run check`, `npm run build`, `npm test` all green; coverage run at the end. Branch NOT merged.
+
+### Deliberately deferred (need visual QA — exactly the review you reserved)
+- **AgentSession.tsx full decomposition (H2/H3 extraction).** Root cause fixed
+  (useTabSession setters are now memoized/stable — test-backed), but the
+  `streamCtxRef` shim and the 2442-line component were NOT split. Extracting
+  header/side-panel/prompt-bar subtrees and removing streamCtxRef is a
+  high-visual-risk change that can't be verified without running the app and
+  watching a live stream. Left for your review session.
+- **F7 full lift-and-slice of StreamMessage tool-result resolution.** Did the
+  safe slice (effect+state → useMemo, removes the double-render/flash). The full
+  O(N²)→O(N) fix is blocked because `streamMessages` is woven through ~15 call
+  sites in StreamMessage (classification, skill detection, completion band,
+  inline tool-result scans) — not a clean extraction.
+- **M2 SessionList per-row summary cache** — pure optimization, contained but
+  unverified-visually; left as a follow-up.
+- **App.tsx dead `View` switch + `previousView`, and `Tab.sessionData: any` /
+  `useNotifications` typing** — low-value, cascade-risk; left for review.
+- **L3 migration source ordering (v4 before v3)** — runner sorts by version, so
+  it's correct; physical reorder skipped to avoid SQL-block risk for zero
+  behavior change.
+
 ## Decisions made unattended
 - **Codex per-account routing** (CODEX_HOME): documented Non-Goal; left as-is, documented in CLAUDE.md. Not expanding into a risky feature overnight.
 - **F8**: wire onError→error (recovery path made real) rather than delete.

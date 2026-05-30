@@ -21,7 +21,7 @@ Is the CLI process up? Mirrors the lifecycle of the main-process session handle.
 | ---------- | ---------------------- | ------------------------------------------------------------------------- |
 | `starting` | dialing / ringing      | `startSession()` fired, awaiting the CLI engine's first output            |
 | `started`  | connected, on the call | CLI process is alive; session has a GUID; ready for conversation          |
-| `error`    | lost connection        | Stream errored; session kept alive for retry via `restartQuery`           |
+| `error`    | lost connection        | A `start()`/`restart` spawn failed; the next send retries via `restartQuery`. NOTE: a mid-stream CLI stderr line does NOT flip to `error` — most stderr is benign noise, so the runtime surfaces it (toast) and keeps the session live. A real CLI crash exits → `stopped` and the next prompt does a fresh `--resume` start. |
 | `stopped`  | hung up                | Clean close — tab closed or main-process teardown                         |
 
 There is no `idle` or `running` here. Those belong to `conversationStatus`. The connection being up does not say anything about whether a turn is in flight.

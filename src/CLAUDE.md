@@ -15,15 +15,15 @@ See the root `CLAUDE.md` for the full architecture, build commands, and account-
 - Keep account-aware UI consistent:
   - project open flow in `src/App.tsx`
   - account management in `src/components/AccountSettings.tsx`
-  - active session state in `src/components/ClaudeCodeSession.tsx`
+  - active session state in `src/components/AgentSession.tsx`
   - account badges wherever project/run attribution matters (`AccountBadge.tsx`, `AccountPickerDialog.tsx`)
 
 ## High-Value Areas
 
 - `src/App.tsx`
   Project picker, account picker handoff, high-level navigation, tab system integration
-- `src/components/ClaudeCodeSession.tsx`
-  Streaming session UX — subscribes to `session-*` / `claude-stream` / `agent-output:*` event channels exposed via the preload prefix allow-list
+- `src/components/AgentSession.tsx`
+  Streaming session UX (formerly `ClaudeCodeSession.tsx`) — subscribes to `session-*` / `claude-stream` / `agent-output:*` event channels exposed via the preload prefix allow-list
 - `src/components/AccountSettings.tsx`
   Accounts + path rule management UI
 - `src/components/Settings.tsx`

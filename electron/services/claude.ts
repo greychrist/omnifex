@@ -98,7 +98,9 @@ export interface ClaudeVersionStatus {
 }
 
 export interface ClaudeSettingsOpts {
-  /** Override the config dir to read/write. Defaults to ~/.claude */
+  /** Account config dir to read/write. There is NO ~/.claude default — the
+   *  getters/setters throw on an empty configDir. The account is resolved
+   *  upstream; never hard-code a default here. */
   configDir?: string;
 }
 
@@ -202,7 +204,6 @@ function readJsonlFile(filePath: string): unknown[] {
   }
 }
 
-/** Get the default claude config dir (~/.claude). */
 /**
  * Distinct config dirs across all accounts. Used by listing/scanning paths
  * that legitimately span every account (e.g. listProjects, the agent-history

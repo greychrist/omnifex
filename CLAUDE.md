@@ -85,18 +85,26 @@ Any change that touches session status, conversation status, the spinner / in-fl
   Multi-account CRUD, path rules, project overrides, resolution, discovery.
 - `electron/services/claude.ts`
   Project listing, Claude settings, CLAUDE.md file ops, hooks config, version checks.
-- `electron/services/sessions/` (split across `tui.ts`, `lifecycle.ts`, etc.)
-  Interactive sessions through the Claude CLI binary, spawned via `node-pty` for TUI mode and `child_process` for non-interactive queries. The binary is located at runtime via `electron/services/claude-binary.ts`.
-- `electron/services/agents.ts`
-  Agent CRUD and execution through the Claude CLI.
-- `electron/services/usage.ts`
-  Usage aggregation across config dirs.
+- `electron/services/sessions/` (split across `tui.ts`, `lifecycle.ts`, `runtime.ts`, `permissions.ts`, etc.)
+  Interactive sessions, spawned via `node-pty` (TUI mode) / `child_process` (stream-json). Engine selection (Claude vs Codex) lives here; the binary is located at runtime via `electron/services/claude-binary.ts`.
+- `electron/services/agents/`
+  Multi-engine agent runtime behind a shared `AgentEngine` interface: `claude-cli-engine.ts`, `codex-cli-engine.ts`, `json-rpc-client.ts`, `codex-binary.ts`. (There is no `electron/services/agents.ts` — agent/session execution moved into `sessions/lifecycle.ts` + this engine layer.)
+- `electron/services/usage.ts` / `usage-runner.ts`
+  Usage aggregation across config dirs; the runner scrapes the CLI `/usage` TUI for rate-limit/utilization data.
+- `electron/services/rate-limits.ts`
+  Rate-limit snapshot storage + threshold notifications.
 - `electron/services/mcp.ts`
   MCP server management.
 - `electron/services/slash-commands.ts`
   Slash-command storage and resolution.
+- `electron/services/auth/codex-auth.ts` + `one-shot-terminal.ts`
+  Codex authentication (`codex login` driven through a shared pty terminal) and the one-shot pty/xterm modal it uses.
+- `electron/services/lima.ts` / `git-worktrees.ts`
+  Lima VM viewer and git-worktree listing.
 - `electron/services/database.ts`
   `better-sqlite3` factory, schema init, migrations.
+
+This is a multi-engine app (Claude + Codex). Codex is reachable but partial — `codex-cli-engine.ts` has explicit `not yet wired` stubs for some control paths, and Codex deliberately reads a single `~/.codex` (it does not consume the per-account CODEX_HOME that `resolve()` can compute).
 
 ## Multi-Account Rules
 
@@ -142,8 +150,8 @@ Other account rules:
   Project open flow and account picker handoff.
 - `src/components/AccountSettings.tsx`
   Accounts and path-rule UI.
-- `src/components/ClaudeCodeSession.tsx`
-  Core session UX and stream handling.
+- `src/components/AgentSession.tsx`
+  Core session UX and stream handling (formerly `ClaudeCodeSession.tsx`).
 
 ## Testing And Verification
 
