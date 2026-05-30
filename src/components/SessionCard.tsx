@@ -1,6 +1,7 @@
 import * as React from "react";
 import { Database, RotateCcw, RefreshCw, Copy, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { resolveContextLimit } from "@/lib/contextLimit";
 import type { SessionContextUsage } from "@/lib/api";
 import { Popover } from "@/components/ui/popover";
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
@@ -126,15 +127,11 @@ export function SessionCard({
       {(() => {
         const useSdk = contextUsage !== undefined && contextUsage !== null;
         const tokens = useSdk ? contextUsage.totalTokens : totalTokens;
-        const expectsLargeContext = !!model?.includes("[1m]");
         const sdkLimit = useSdk ? contextUsage.maxTokens : null;
-        const limit = sdkLimit != null
-          ? expectsLargeContext
-            ? sdkLimit
-            : Math.min(sdkLimit, 200_000)
-          : expectsLargeContext
-            ? 1_000_000
-            : 200_000;
+        // Trust the live CLI window when present; only fall back to the model
+        // "[1m]" heuristic before any live data arrives. (Fixes resume pinning
+        // the gauge to 200k — see resolveContextLimit for the full rationale.)
+        const limit = resolveContextLimit({ sdkMaxTokens: sdkLimit, model });
         if (tokens <= 0 || limit <= 0) return null;
         const pct = Math.min(100, (tokens / limit) * 100);
         const color = pct > 80 ? "text-red-400" : pct > 50 ? "text-orange-400" : "text-foreground";
