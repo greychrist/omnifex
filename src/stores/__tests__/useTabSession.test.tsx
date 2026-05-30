@@ -50,6 +50,24 @@ describe('useTabSession', () => {
     expect(captured!.isLoading).toBe(false);
   });
 
+  it('keeps setter identity stable across re-renders (root-cause of the streamCtxRef shim)', () => {
+    const captures: ReturnType<typeof useTabSession>[] = [];
+    const { rerender } = render(<HookHarness tabId={TAB} capture={(s) => { captures.push(s); }} />);
+
+    // Force a re-render that also mutates the slice — setters must NOT change
+    // identity even as the data does.
+    act(() => { useClaudeSessionStore.getState().patchTab(TAB, { isLoading: true }); });
+    rerender(<HookHarness tabId={TAB} capture={(s) => { captures.push(s); }} />);
+
+    const first = captures[0]!;
+    const last = captures[captures.length - 1]!;
+    expect(last.setMessages).toBe(first.setMessages);
+    expect(last.appendMessage).toBe(first.appendMessage);
+    expect(last.setIsLoading).toBe(first.setIsLoading);
+    // ...while the data still updated.
+    expect(last.isLoading).toBe(true);
+  });
+
   it('setMessages with a value writes through to the store', () => {
     let captured: ReturnType<typeof useTabSession> | null = null;
     render(<HookHarness tabId={TAB} capture={(s) => { captured = s; }} />);

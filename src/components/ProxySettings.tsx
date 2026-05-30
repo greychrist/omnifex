@@ -3,6 +3,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { logAndForget } from "@/lib/fireAndLog";
+import { api } from '@/lib/api';
 
 export interface ProxySettings {
   http_proxy: string | null;
@@ -35,7 +36,7 @@ export function ProxySettings({ setToast, onChange }: ProxySettingsProps) {
 
   const loadSettings = useCallback(async () => {
     try {
-      const loadedSettings = await window.electronAPI.invoke('get_proxy_settings') as ProxySettings;
+      const loadedSettings = await api.getProxySettings<ProxySettings>();
       setSettings(loadedSettings);
       setOriginalSettings(loadedSettings);
     } catch (error) {
@@ -56,7 +57,7 @@ export function ProxySettings({ setToast, onChange }: ProxySettingsProps) {
   // through onChange below.
   const saveSettings = useCallback(async () => {
     try {
-      await window.electronAPI.invoke('save_proxy_settings', { settings });
+      await api.saveProxySettings(settings);
       setOriginalSettings(settings);
       setToast({
         message: 'Proxy settings saved and applied successfully.',

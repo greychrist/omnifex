@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
 import { useShallow } from 'zustand/react/shallow';
@@ -229,17 +230,31 @@ export function useTabSession(tabId: string): UseTabSessionResult {
   );
   const resetTab = useClaudeSessionStore((s) => s.resetTab);
 
+  // Memoize the setters so their identity is stable across renders for a given
+  // tabId. makeSetter reads `getState()` at call time, so a setter is a pure
+  // function of tabId — safe to build once. Stable setters are what let
+  // consumers (useSessionLifecycle, AgentSession effects) depend on them in
+  // dependency arrays without churn, and remove the need for the stale-closure
+  // ref shims that the unstable-setter version forced. The store actions
+  // (appendMessage/insertBefore/resetTab) are stable Zustand references.
+  const setters = useMemo(
+    () => ({
+      setMessages: makeSetter(tabId, 'messages'),
+      setClaudeSessionId: makeSetter(tabId, 'claudeSessionId'),
+      setExtractedSessionInfo: makeSetter(tabId, 'extractedSessionInfo'),
+      setSdkAccountInfo: makeSetter(tabId, 'sdkAccountInfo'),
+      setContextUsage: makeSetter(tabId, 'contextUsage'),
+      setSupportedModels: makeSetter(tabId, 'supportedModels'),
+      setIsLoading: makeSetter(tabId, 'isLoading'),
+      appendMessage: (msg: JsonlNode) => { appendMessage(tabId, msg); },
+      insertMessageBeforeFirstUser: (msg: JsonlNode) => { insertBefore(tabId, msg); },
+      resetTab: () => { resetTab(tabId); },
+    }),
+    [tabId, appendMessage, insertBefore, resetTab],
+  );
+
   return {
     ...slice,
-    setMessages: makeSetter(tabId, 'messages'),
-    setClaudeSessionId: makeSetter(tabId, 'claudeSessionId'),
-    setExtractedSessionInfo: makeSetter(tabId, 'extractedSessionInfo'),
-    setSdkAccountInfo: makeSetter(tabId, 'sdkAccountInfo'),
-    setContextUsage: makeSetter(tabId, 'contextUsage'),
-    setSupportedModels: makeSetter(tabId, 'supportedModels'),
-    setIsLoading: makeSetter(tabId, 'isLoading'),
-    appendMessage: (msg) => { appendMessage(tabId, msg); },
-    insertMessageBeforeFirstUser: (msg) => { insertBefore(tabId, msg); },
-    resetTab: () => { resetTab(tabId); },
+    ...setters,
   };
 }

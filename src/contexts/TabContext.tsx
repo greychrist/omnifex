@@ -1,4 +1,4 @@
-import React, { createContext, useState, useContext, useCallback, useEffect, useRef } from 'react';
+import React, { createContext, useState, useContext, useCallback, useEffect, useRef, useMemo } from 'react';
 import { TabPersistenceService } from '@/services/tabPersistence';
 import { SessionPersistenceService } from '@/services/sessionPersistence';
 import { sessionNameRegistry } from '@/services/sessionNameRegistry';
@@ -382,7 +382,11 @@ export const TabProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return tabsRef.current.filter(tab => tab.type === type);
   }, []);
 
-  const value: TabContextType = {
+  // Memoize so the provider value identity only changes when tabs/activeTabId
+  // change — the callbacks are already useCallback-stable. Without this, every
+  // setTabs (which fires on every stream-driven updateTab) produced a fresh
+  // value object and re-rendered every useTabContext()/useTabState() consumer.
+  const value: TabContextType = useMemo(() => ({
     tabs,
     activeTabId,
     addTab,
@@ -393,7 +397,7 @@ export const TabProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     getTabById,
     closeAllTabs,
     getTabsByType
-  };
+  }), [tabs, activeTabId, addTab, removeTab, updateTab, setActiveTab, reorderTabs, getTabById, closeAllTabs, getTabsByType]);
 
   return (
     <TabContext.Provider value={value}>

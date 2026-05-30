@@ -1078,8 +1078,12 @@ export const api = {
     return apiCall("session_send_structured_message", { tabId, content });
   },
 
-  async respondPermission(tabId: string, requestId: string, behavior: string, updatedInput?: any, updatedPermissions?: any[]): Promise<void> {
-    return apiCall("session_respond_permission", { tabId, requestId, behavior, updatedInput, updatedPermissions });
+  // The main process resolves the session's single in-flight permission prompt
+  // via a FIFO queue (sessions/permissions.ts), NOT by request id — so no
+  // requestId is sent. Don't reintroduce one expecting request-targeted
+  // dispatch; that contract doesn't exist until the queue matches by id.
+  async respondPermission(tabId: string, behavior: string, updatedInput?: any, updatedPermissions?: any[]): Promise<void> {
+    return apiCall("session_respond_permission", { tabId, behavior, updatedInput, updatedPermissions });
   },
 
   async respondElicitation(tabId: string, action: 'accept' | 'decline' | 'cancel', content?: Record<string, unknown>): Promise<void> {
@@ -1855,6 +1859,15 @@ export const api = {
       console.error(`Failed to save setting ${key}:`, error);
       throw error;
     }
+  },
+
+  /** Proxy (HTTP/HTTPS/ALL_PROXY) settings applied to spawned CLI processes. */
+  async getProxySettings<T = unknown>(): Promise<T> {
+    return apiCall<T>('get_proxy_settings');
+  },
+
+  async saveProxySettings(settings: unknown): Promise<void> {
+    await apiCall('save_proxy_settings', { settings });
   },
 
   /**

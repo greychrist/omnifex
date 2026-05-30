@@ -44,7 +44,6 @@ export function usePermissions(): UsePermissionsReturn {
     api
       .respondPermission(
         tabId,
-        pendingPermission.requestId,
         "allow",
         undefined,
         selectedSuggestions.length > 0 ? selectedSuggestions : undefined,
@@ -56,7 +55,7 @@ export function usePermissions(): UsePermissionsReturn {
   const handlePermissionDeny = (tabId: string) => {
     if (!pendingPermission) return;
     api
-      .respondPermission(tabId, pendingPermission.requestId, "deny")
+      .respondPermission(tabId, "deny")
       .catch(console.error);
     setPendingPermission(null);
   };
@@ -69,7 +68,6 @@ export function usePermissions(): UsePermissionsReturn {
     api
       .respondPermission(
         tabId,
-        pendingPermission.requestId,
         "allow",
         updatedInput,
         undefined,

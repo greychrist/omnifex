@@ -82,8 +82,15 @@ export function usePublishTabStatus({
     // Spec: working iff (waiting on Claude response) OR (any in-progress
     // task) OR (any running subagent). Does NOT include `waitingFor` —
     // a session waiting on the user is "ready" for the user, not working.
+    //
+    // Uses `inProgress > 0`, NOT `taskSummary.running` — the latter also counts
+    // *pending* (planned-but-unstarted) todos, which would make this popover/
+    // gate path disagree with the header/TabManager spinner (driven by
+    // sessionDerivedState.hasOpenTasks, in_progress only). A session that ends
+    // with unstarted todos is idle, and both paths must agree on that.
+    const hasInProgressTask = taskSummary.inProgress > 0;
     const promptStatus: 'working' | 'ready' =
-      mainTurnInFlight || activeAgents > 0 || taskSummary.running ? 'working' : 'ready';
+      mainTurnInFlight || activeAgents > 0 || hasInProgressTask ? 'working' : 'ready';
     // `busy` keeps its existing semantic (also folds in waitingFor) for
     // the install-gate's "wait for idle" path — a paused-on-permission
     // tab shouldn't be torn down mid-flight either.

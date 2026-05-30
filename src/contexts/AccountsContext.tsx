@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { api, type Account } from '@/lib/api';
 import { logAndForget } from "@/lib/fireAndLog";
 
@@ -40,8 +40,13 @@ export const AccountsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     return accounts.find(a => a.name === name)?.subscription_label ?? null;
   }, [accounts]);
 
+  const value = useMemo(
+    () => ({ accounts, refresh, getColor, getIcon, getAccountType }),
+    [accounts, refresh, getColor, getIcon, getAccountType],
+  );
+
   return (
-    <AccountsContext.Provider value={{ accounts, refresh, getColor, getIcon, getAccountType }}>
+    <AccountsContext.Provider value={value}>
       {children}
     </AccountsContext.Provider>
   );

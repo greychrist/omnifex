@@ -313,9 +313,6 @@ interface StreamMessageProps {
  * Component to render a single Claude Code stream message
  */
 const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamMessages, onLinkDetected, accountType, inExpandedGroup, compact, onResend }) => {
-  // State to track tool results mapped by tool call ID
-  const [toolResults, setToolResults] = useState<Map<string, MessageContentBlock>>(new Map());
-
   // Get current theme. Memoize the derived theme + components map so
   // ReactMarkdown sees stable prop references across renders — without
   // this, every render rebuilds the Prism-highlighted code DOM and the
@@ -327,11 +324,14 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
   // Per-kind accent colors, live-reload from Appearance settings
   const { config: renderConfig } = useMessageRenderingConfig();
 
-  // Extract all tool results from stream messages
-  useEffect(() => {
+  // Extract all tool results from stream messages, keyed by tool_use_id.
+  // Computed during render (useMemo) rather than in an effect+setState: the
+  // old effect forced a second render of every mounted message on every stream
+  // tick, and left a one-frame window where results were missing on first
+  // paint. useMemo recomputes only when the streamMessages identity changes —
+  // same trigger, half the renders, no flash.
+  const toolResults = useMemo(() => {
     const results = new Map<string, MessageContentBlock>();
-
-    // Iterate through all messages to find tool results
     streamMessages.forEach(node => {
       if (node.kind !== 'user') return;
       const w = node.raw;
@@ -343,8 +343,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
         });
       }
     });
-
-    setToolResults(results);
+    return results;
   }, [streamMessages]);
 
   // Helper to get tool result for a specific tool call ID
