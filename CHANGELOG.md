@@ -5,6 +5,29 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.73] — 2026-05-30
+
+Ships the two-tier message-kind styling model and a live per-turn status label, plus a faithful Appearance preview.
+
+Installers remain **unsigned**.
+
+### Added
+
+- **Two-tier message-kind styling: categories + overrides.** Every message kind now belongs to one of five categories (User, Agent, System, Attachment, Bookkeeping) that carry the base style; sparse per-kind overrides patch on top. Appearance settings gains category editors, an override list, and add-override. Existing styling migrates forward automatically.
+- **Live status phase label** on in-flight turns (e.g. requesting / compacting), with collapsible message cards.
+- Design spec for user-authored message override matchers (not yet shipped).
+
+### Changed
+
+- **Appearance preview now renders through the real transcript renderer** (card / side-line / collapsible + header), so the Sample is identical to how messages actually appear in a session.
+- Appearance editor: accent colour and icon picker share one row, and the card leading icon is slightly smaller, to reclaim vertical space.
+- Internal: SDK-era language purged from session plumbing.
+
+### Fixed
+
+- Appearance icon chrome: the chip-border "Use default" option now selects correctly for categories (previously stuck on Bordered / No border).
+- Answered AskUserQuestion cards stay visible in compact mode.
+
 ## [0.4.72] — 2026-05-29
 
 Completes the partial-message turn-completion fix from 0.4.71. The engine-mode reclassification had renamed the CLI's `init` / `result` stream envelopes to `cli-stream-init` / `cli-stream-result`, but the consumers still matched the retired `system:init` / `unknown:result` shapes — so the turn-complete signal, the context-window readout, per-message cost, and the end-turn card all silently broke on live sessions.
