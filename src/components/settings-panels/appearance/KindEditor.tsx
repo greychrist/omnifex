@@ -22,6 +22,7 @@ import {
 import { Popover } from "@/components/ui/popover";
 import { ChevronDown } from "lucide-react";
 import { IconRenderer } from "./iconMap";
+import { chipBorderValue, chipBorderPatch, type ChipBorderValue } from "./iconChrome";
 import { cn } from "@/lib/utils";
 
 // Sort once at module load. "none" pinned at the top; the rest alphabetical
@@ -70,8 +71,6 @@ interface KindEditorProps {
    *  remove the override entirely. */
   onReset: () => void;
 }
-
-const SENTINEL_DEFAULT = "__default__";
 
 const PRESENTATION_OPTIONS: { value: Presentation; label: string }[] = [
   { value: "card", label: "Card" },
@@ -241,10 +240,6 @@ export const KindEditor: React.FC<KindEditorProps> = ({
   const overrideBgOpacity = has("iconBgOpacity");
 
   const accentHex = resolveAccentHex(style.accentColor, palette);
-
-  // In override mode, the icon-chrome key controls inherit from the global
-  // typography unless the override itself sets them.
-  const iconBorderedSet = has("iconBordered");
 
   return (
     <div className="space-y-6" data-testid="kind-editor">
@@ -419,68 +414,66 @@ export const KindEditor: React.FC<KindEditorProps> = ({
         </div>
       )}
 
-      {/* 5. Accent colour — applies to all presentations. */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between gap-2">
-          <Label htmlFor="accent-color">Accent colour</Label>
-          {isOverride && (
-            <InheritHint
-              overridden={has("accentColor")}
-              categoryLabel={catLabel}
-              onClear={() => { clear("accentColor"); }}
-            />
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          {/* Native colour picker — clicking opens the OS picker. The
-              hex value is what gets written; alpha/border tinting is
-              derived from it by `accentStyleFromEntry`. */}
-          <input
-            id="accent-color"
-            type="color"
-            value={accentHex}
-            onChange={(e) => { onChange({ accentColor: e.target.value }); }}
-            className={cn(
-              "h-9 w-12 cursor-pointer rounded-md border border-border",
-              "bg-background p-1",
-              "focus:outline-none focus:ring-1 focus:ring-ring",
+      {/* 5 + 6. Accent colour + Icon — side by side to save vertical space. */}
+      <div className="grid grid-cols-2 gap-3 items-start">
+        <div className="space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <Label htmlFor="accent-color">Accent colour</Label>
+            {isOverride && (
+              <InheritHint
+                overridden={has("accentColor")}
+                categoryLabel={catLabel}
+                onClear={() => { clear("accentColor"); }}
+              />
             )}
-            aria-label="Accent colour picker"
-          />
-          <Input
-            value={accentHex}
-            onChange={(e) => {
-              const v = e.target.value.trim();
-              // Accept partial typing without bouncing the user — only
-              // commit when the value looks like a valid hex. Anything
-              // else is held in the controlled input via the picker's
-              // value above.
-              if (isHexColor(v)) {
-                onChange({ accentColor: v.toLowerCase() });
-              }
-            }}
-            className="font-mono text-xs h-9 w-24"
-            aria-label="Accent colour hex"
-          />
-        </div>
-        <p className="text-caption text-muted-foreground">
-          Drives the card border and a subtle bg tint.
-        </p>
-      </div>
-
-      {/* 6. Icon — grid picker in a popover */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between gap-2">
-          <Label>Icon</Label>
-          {isOverride && (
-            <InheritHint
-              overridden={has("icon")}
-              categoryLabel={catLabel}
-              onClear={() => { clear("icon"); }}
+          </div>
+          <div className="flex items-center gap-2">
+            {/* Native colour picker — clicking opens the OS picker. The
+                hex value is what gets written; alpha/border tinting is
+                derived from it by `accentStyleFromEntry`. */}
+            <input
+              id="accent-color"
+              type="color"
+              value={accentHex}
+              onChange={(e) => { onChange({ accentColor: e.target.value }); }}
+              className={cn(
+                "h-9 w-12 cursor-pointer rounded-md border border-border",
+                "bg-background p-1",
+                "focus:outline-none focus:ring-1 focus:ring-ring",
+              )}
+              aria-label="Accent colour picker"
             />
-          )}
+            <Input
+              value={accentHex}
+              onChange={(e) => {
+                const v = e.target.value.trim();
+                // Accept partial typing without bouncing the user — only
+                // commit when the value looks like a valid hex. Anything
+                // else is held in the controlled input via the picker's
+                // value above.
+                if (isHexColor(v)) {
+                  onChange({ accentColor: v.toLowerCase() });
+                }
+              }}
+              className="font-mono text-xs h-9 min-w-0 flex-1"
+              aria-label="Accent colour hex"
+            />
+          </div>
         </div>
-        <IconPicker value={style.icon} onChange={(v) => { onChange({ icon: v }); }} />
+
+        <div className="space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <Label>Icon</Label>
+            {isOverride && (
+              <InheritHint
+                overridden={has("icon")}
+                categoryLabel={catLabel}
+                onClear={() => { clear("icon"); }}
+              />
+            )}
+          </div>
+          <IconPicker value={style.icon} onChange={(v) => { onChange({ icon: v }); }} />
+        </div>
       </div>
 
       {/* 7. Icon chrome — per-kind overrides for the icon's border and
@@ -499,25 +492,12 @@ export const KindEditor: React.FC<KindEditorProps> = ({
         <div className="grid grid-cols-[10rem_minmax(0,1fr)] items-center gap-3">
           <Label className="text-caption">Chip border</Label>
           <Select
-            value={
-              !iconBorderedSet
-                ? SENTINEL_DEFAULT
-                : style.iconBordered
-                  ? "on"
-                  : "off"
-            }
-            onValueChange={(v) => {
-              if (v === SENTINEL_DEFAULT) {
-                if (isOverride) clear("iconBordered");
-                else onChange({ iconBordered: undefined });
-              } else {
-                onChange({ iconBordered: v === "on" });
-              }
-            }}
+            value={chipBorderValue(style.iconBordered)}
+            onValueChange={(v) => { onChange(chipBorderPatch(v as ChipBorderValue)); }}
           >
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value={SENTINEL_DEFAULT}>
+              <SelectItem value="default">
                 Use default ({typography.icon.bordered ? "Bordered" : "No border"})
               </SelectItem>
               <SelectItem value="on">Bordered</SelectItem>

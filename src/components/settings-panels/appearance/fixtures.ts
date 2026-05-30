@@ -59,10 +59,6 @@ export function previewTextForCategory(category: string): string {
   return CATEGORY_FIXTURES[category] ?? "(no preview available)";
 }
 
-// Fixed sample timestamp shown on every preview card, formatted to match
-// the live renderer's CardTimestamp output (M/D/YY H:MM:SS AM/PM).
-export const SAMPLE_TIMESTAMP = "4/29/26 12:34:56 PM";
-
 // ─── fake turn ──────────────────────────────────────────────────────────────
 // A representative sequence used in the compact/verbose turn preview, ordered
 // to mirror a realistic turn: user sends → context injected → assistant thinks
@@ -100,9 +96,3 @@ export const FAKE_TURN_KIND_IDS: string[] = [
   // ── unknown fallback ──
   "unknown",                // side-line · dashed · visible in compact (override)
 ];
-
-// Raw CLI type/subtype labels matching what the renderer's debug overlay
-// shows on each kind — for the preview's optional debug label.
-export function debugLabelForKindId(kindId: string): string {
-  return kindId;
-}

@@ -3,7 +3,7 @@ import { Layers } from "lucide-react";
 import type { MessageRenderingConfig } from "@/lib/messageRenderingConfig";
 import { resolveKind } from "@/lib/messageRenderingConfig";
 import { SamplePreview } from "./SamplePreview";
-import { FAKE_TURN_KIND_IDS, SAMPLE_TIMESTAMP, debugLabelForKindId, previewTextForKindId } from "./fixtures";
+import { FAKE_TURN_KIND_IDS, previewTextForKindId } from "./fixtures";
 import { cn } from "@/lib/utils";
 
 interface TurnPreviewProps {
@@ -50,9 +50,6 @@ const Sample: React.FC<{ config: MessageRenderingConfig; id: string }> = ({ conf
     style={resolveKind(config, id)}
     kindId={id}
     text={previewTextForKindId(id)}
-    debugLabel={debugLabelForKindId(id)}
-    palette={config.palette}
-    timestamp={SAMPLE_TIMESTAMP}
   />
 );
 

@@ -100,6 +100,21 @@ export const MessageRenderingProvider: React.FC<{ children: React.ReactNode }> =
   );
 };
 
+/**
+ * Supplies an explicit config to a subtree without touching the live persisted
+ * config. Used by the Appearance preview so sample messages render through the
+ * real MessageFrame against a synthesized config (a category style, or an
+ * in-progress override edit). `setConfig` is a no-op.
+ */
+export const MessageRenderingPreviewProvider: React.FC<{
+  config: MessageRenderingConfig;
+  children: React.ReactNode;
+}> = ({ config, children }) => (
+  <MessageRenderingContext.Provider value={{ config, setConfig: () => {}, loaded: true }}>
+    {children}
+  </MessageRenderingContext.Provider>
+);
+
 export function useMessageRenderingConfig(): MessageRenderingContextValue {
   const ctx = useContext(MessageRenderingContext);
   if (!ctx) {

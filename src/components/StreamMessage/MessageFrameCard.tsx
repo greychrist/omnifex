@@ -148,7 +148,7 @@ export const MessageFrameCard: React.FC<MessageFrameCardProps> = ({
               >
                 <IconRenderer
                   name={iconName}
-                  className="h-3.5 w-3.5"
+                  className="h-3 w-3"
                 />
               </div>
             )}

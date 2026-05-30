@@ -30,8 +30,6 @@ import { KindEditor } from "./appearance/KindEditor";
 import { SamplePreview } from "./appearance/SamplePreview";
 import { TurnPreview } from "./appearance/TurnPreview";
 import {
-  SAMPLE_TIMESTAMP,
-  debugLabelForKindId,
   previewTextForCategory,
   previewTextForKindId,
 } from "./appearance/fixtures";
@@ -356,9 +354,7 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
         label: style.label,
         description: style.description,
         style: style as KindStyle,
-        previewKindId: undefined as string | undefined,
         previewText: previewTextForCategory(c),
-        debugLabel: undefined as string | undefined,
         onChange: (patch: Partial<KindStyle>) => { updateCategory(c, patch); },
         onClearField: undefined,
         onReset: () => { resetCategory(c); },
@@ -376,9 +372,7 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
       label: override.label ?? id,
       description: `Inherits the ${config.categories[cat].label} category.`,
       style: resolved,
-      previewKindId: id,
       previewText: previewTextForKindId(id),
-      debugLabel: debugLabelForKindId(id),
       onChange: (patch: Partial<KindStyle>) => { setOverrideField(id, patch); },
       onClearField: (field: keyof KindStyle) => { clearOverrideField(id, field); },
       onReset: () => { removeOverride(id); },
@@ -434,11 +428,8 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
                   <div className="rounded-md border border-border bg-background p-4">
                     <SamplePreview
                       style={editor.style}
-                      kindId={editor.previewKindId}
+                      kindId={editor.kindId}
                       text={editor.previewText}
-                      debugLabel={editor.debugLabel}
-                      palette={config.palette}
-                      timestamp={SAMPLE_TIMESTAMP}
                     />
                   </div>
                 </div>

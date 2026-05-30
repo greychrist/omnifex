@@ -166,6 +166,18 @@ describe('pruneRedundantOverrides (prune-on-save)', () => {
   });
 });
 
+describe('AppearanceSettings — sample preview', () => {
+  it('renders the sample through the real MessageFrame', async () => {
+    // The preview must look exactly like a rendered message, which means it
+    // goes through the same <MessageFrame> the transcript uses. MessageFrame
+    // tags every variant with data-frame-variant; a bespoke preview card has
+    // no such marker.
+    const { container } = renderWithProvider();
+    await screen.findAllByText('User');
+    expect(container.querySelector('[data-frame-variant]')).not.toBeNull();
+  });
+});
+
 describe('AppearanceSettings — presentation control', () => {
   it('renders a Border dropdown via the shadcn Select primitive', async () => {
     renderWithProvider();
