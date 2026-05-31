@@ -3,30 +3,17 @@ import type { JsonlNode } from '@/types/jsonl';
 import { buildCompactItems, isMessageFullyHidden, type CompactItem } from '../compactGrouping';
 import {
   createDefaultConfig,
-  resolveMessageStyle,
-  originOf,
-  KNOWN_KIND_IDS,
+  resolveKind,
+  KIND_REGISTRY,
   type MessageRenderingConfig,
 } from '../messageRenderingConfig';
 
-// v4 overrides are message-matched rules, not an id-keyed map. Resolving a
-// kind's effective style means cascading against a `$kind`-bearing message;
-// unhiding a kind means upserting a `$kind eq <id>` rule with hiddenInCompact:false.
+// v5 model: per-kind overrides live in config.kinds[id] (sparse Partial<KindStyle>).
 function styleForKind(cfg: MessageRenderingConfig, id: string) {
-  return resolveMessageStyle(cfg, { raw: {} } as unknown as JsonlNode, id);
+  return resolveKind(cfg, id);
 }
 function unhide(cfg: MessageRenderingConfig, id: string): void {
-  const existing = cfg.overrides.find(
-    (o) => o.id === id && o.match.length === 1 && o.match[0].path === '$kind',
-  );
-  if (existing) {
-    existing.style = { ...existing.style, hiddenInCompact: false };
-  } else {
-    cfg.overrides.push({
-      id, label: id, category: originOf(id),
-      match: [{ path: '$kind', op: 'eq', value: id }], style: { hiddenInCompact: false },
-    });
-  }
+  cfg.kinds[id] = { ...cfg.kinds[id], hiddenInCompact: false };
 }
 
 function userText(text: string): JsonlNode {
@@ -171,13 +158,12 @@ describe('isMessageFullyHidden', () => {
   });
 
   it('never hides compactBoundaryLocked kinds even if hiddenInCompact is forced true', () => {
-    // user.prompt is compactBoundaryLocked in the v2 catalog; forcing
-    // hiddenInCompact=true on a locked kind must still return visible=false
-    // (defense in depth — mergeConfig already prevents this combination).
+    // user.prompt is compactBoundaryLocked in the registry; forcing
+    // hiddenInCompact:true on a locked kind must still return visible=false
+    // (defense in depth — compactBoundaryLocked short-circuits the hidden check).
     const cfg = createDefaultConfig();
-    // Forced bypass attempt: set hiddenInCompact:true on the locked user.prompt rule.
-    const promptRule = cfg.overrides.find((o) => o.id === 'user.prompt')!;
-    promptRule.style = { ...promptRule.style, hiddenInCompact: true };
+    // Forced bypass attempt: set hiddenInCompact:true on user.prompt via config.kinds.
+    cfg.kinds['user.prompt'] = { ...cfg.kinds['user.prompt'], hiddenInCompact: true };
     const msg = userText('hi');
     expect(isMessageFullyHidden(msg, [msg], cfg)).toBe(false);
   });
@@ -248,7 +234,7 @@ describe('buildCompactItems', () => {
 
   it('falls back to all-singles when user unhides everything', () => {
     const cfg = createDefaultConfig();
-    for (const id of KNOWN_KIND_IDS) {
+    for (const id of Object.keys(KIND_REGISTRY)) {
       if (!styleForKind(cfg, id).compactBoundaryLocked) {
         unhide(cfg, id);
       }

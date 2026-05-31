@@ -4,30 +4,14 @@ import '@testing-library/jest-dom/vitest';
 import { render, cleanup, fireEvent } from '@testing-library/react';
 import { MessageFrame } from '@/components/StreamMessage/MessageFrame';
 import { MessageRenderingProvider } from '@/contexts/MessageRenderingContext';
-import { DEFAULT_CATEGORIES, DEFAULT_OVERRIDES } from '@/lib/messageRenderingConfig';
+import { createDefaultConfig, serializeConfig } from '@/lib/messageRenderingConfig';
 
 // Mock api — MessageRenderingProvider calls getSetting on mount. We return a
-// v4 config (categories + override rules) so MessageFrame resolves styles
-// through the cascade exactly as it does in production.
+// v5 config serialized from createDefaultConfig() so MessageFrame resolves
+// styles through the registry cascade exactly as it does in production.
 vi.mock('@/lib/api', () => ({
   api: {
-    getSetting: vi.fn(async () =>
-      JSON.stringify({
-        version: 4,
-        defaultViewMode: 'verbose',
-        categories: DEFAULT_CATEGORIES,
-        overrides: DEFAULT_OVERRIDES,
-        hardFilters: {},
-        palette: {},
-        typography: {
-          header: { typeface: 'inter', size: 'sm', weight: 'semibold', italic: false },
-          content: { typeface: 'inter', size: 'sm', weight: 'normal', italic: false },
-          icon: { size: 'base', bordered: true, bgOpacity: 100 },
-        },
-        terminal: { typeface: 'jetbrains-mono', fontSize: 13, cursorStyle: 'block' },
-        debug: { showCardKindLabel: false },
-      })
-    ),
+    getSetting: vi.fn(async () => serializeConfig(createDefaultConfig())),
     saveSetting: vi.fn(),
     logWriteBatch: vi.fn(),
   },

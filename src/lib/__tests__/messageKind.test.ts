@@ -1,6 +1,41 @@
 import { describe, it, expect } from 'vitest';
 import type { JsonlNode } from '@/types/jsonl';
 import { classifyStandaloneKind } from '../messageKind';
+import { KIND_REGISTRY } from '@/lib/messageRenderingConfig';
+
+// ── Classifier ↔ Registry coverage ─────────────────────────────────────────
+// Every ID that the block/message classifiers and MessageFrame can emit must
+// have a registry entry so the three-layer style cascade can resolve it.
+// IDs that are only internal sentinels (tool.askUserQuestion.answered, .result)
+// or dynamically composed (attachment.*) are handled before the registry
+// lookup and are intentionally excluded from this set.
+const EMITTABLE_IDS = [
+  // agent
+  "assistant.text", "assistant.text.endTurn", "assistant.thinking",
+  "assistant.tool-use", "assistant.askUserQuestion",
+  // user
+  "user.prompt", "user.command", "user.commandOutput", "user.subagentPrompt",
+  "user.skillInjection", "user.systemContext", "user.sdkSystemBracket",
+  "user.tool-result", "user.image",
+  // system
+  "system.notification.info", "system.notification.warn",
+  "system.notification.error", "system.notification.stop",
+  "system.hook_started", "system.hook_response", "system.permission_denied",
+  "system.userPromptSubmit", "system.api_error", "system.unknown",
+  // permission / summary / fallback
+  "permission.request", "permission.askUserQuestion",
+  "summary.compaction", "unknown",
+];
+
+describe('classifier ↔ registry coverage', () => {
+  it('every emittable kind id is registered', () => {
+    for (const id of EMITTABLE_IDS) expect(KIND_REGISTRY[id], id).toBeDefined();
+  });
+
+  it('no registry id is dead weight (all are in the emittable set)', () => {
+    for (const id of Object.keys(KIND_REGISTRY)) expect(EMITTABLE_IDS, id).toContain(id);
+  });
+});
 
 const attachment = (subtype?: string): JsonlNode =>
   ({ kind: 'attachment', sessionId: '', receivedAt: '', raw: { type: 'attachment', attachment: subtype ? { type: subtype } : {} } }) as unknown as JsonlNode;

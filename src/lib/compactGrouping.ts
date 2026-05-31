@@ -12,12 +12,29 @@ import { classifyBlockKind } from './blockKind';
  *
  * Returns `null` for mixed-content messages (regular assistant / user
  * prompt) that need per-block analysis instead of a whole-message kind.
+ *
+ * Internal sentinel IDs that the classifier emits but that intentionally
+ * have no registry entries (tool.askUserQuestion.answered and .result) are
+ * mapped to their effective registry kind so resolveKind can resolve them
+ * correctly instead of falling through to the system-category default.
  */
 function resolveWholeMessageKind(
   msg: JsonlNode,
   allMessages: JsonlNode[],
 ): string | null {
-  return classifyStandaloneKind(msg, allMessages);
+  const raw = classifyStandaloneKind(msg, allMessages);
+  // Sentinel IDs for the answered AskUserQuestion pair are internal dispatch
+  // signals (StreamMessage short-circuits to AnsweredAskUserQuestionCard /
+  // null before the registry lookup runs). Map them to the registry entry
+  // that carries the correct compact-grouping style so they are never folded
+  // into a HiddenEventsGroup.
+  if (
+    raw === 'tool.askUserQuestion.answered' ||
+    raw === 'tool.askUserQuestion.answered.result'
+  ) {
+    return 'assistant.askUserQuestion';
+  }
+  return raw;
 }
 
 /**

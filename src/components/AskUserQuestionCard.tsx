@@ -74,9 +74,10 @@ export function AskUserQuestionCard({ request, onSubmit, onCancel }: AskUserQues
   // outer card with the per-kind translucent border + bg, and `accentSwatch`
   // colors the question icon so per-kind theming (Settings → Chats) still
   // reads against the lighter inline surface.
-  // resolved* applies the kind's catalog accent override (primary), not just the
-  // bare system-category gray — this card renders outside a MessageFrame so it
-  // doesn't get the resolved effConfig the transcript cards do.
+  // This card renders outside a MessageFrame, so it calls accentStyleFor /
+  // swatchFor directly. Those helpers cascade through resolveKind (category
+  // base → registry default → user patch), so the per-kind accent (indigo)
+  // applies automatically — no special helper or effConfig needed.
   const accentStyle = accentStyleFor(config, 'permission.askUserQuestion');
   const accentSwatch = swatchFor(config, 'permission.askUserQuestion');
 
