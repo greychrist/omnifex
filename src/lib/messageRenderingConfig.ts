@@ -284,6 +284,30 @@ export const DEFAULT_CATEGORIES: Record<Category, CategoryStyle> = {
   system: { label: "System", description: "Notifications, hooks, errors, lifecycle, prompts.",         presentation: "card", accentColor: "muted",   icon: "Info", headerLabel: null,     borderStyle: "solid", alignment: "left",  hiddenInCompact: true  },
 };
 
+// ─── style fields ────────────────────────────────────────────────────────────
+
+// The styling fields shared by categories and overrides — everything that
+// drives a card's look. Identity fields (id/label/description) are excluded.
+export const STYLE_FIELDS: (keyof KindStyle)[] = [
+  "presentation", "accentColor", "icon", "headerLabel", "borderStyle", "alignment",
+  "hiddenInCompact", "compactBoundaryLocked", "widget", "showRawPayload",
+  "iconBordered", "iconBgOpacity",
+];
+
+/**
+ * Three-layer merge: category base → KIND_REGISTRY built-in default → user patch.
+ * This is the single source of truth for every kind's effective style.
+ */
+export function resolveKind(config: MessageRenderingConfig, kindId: string): KindStyle {
+  return {
+    ...config.categories[categoryOf(kindId)],
+    ...KIND_REGISTRY[kindId]?.default,
+    ...config.kinds[kindId],
+  };
+}
+
+// ─── legacy origin resolver (used by mergeConfig v2/v3 migration) ────────────
+
 const BOOKKEEPING_IDS = new Set([
   "pr-link", "mode", "last-prompt", "queue-operation",
   "ai-title", "file-history-snapshot", "permission-mode",
@@ -295,19 +319,14 @@ export function originOf(kindId: string): Category {
   switch (head) {
     case "user": return "user";
     case "assistant": return "agent";
-    // attachment, system, cli-stream-*, summary, permission, unknown → system bucket
     default: return "system";
   }
 }
 
 // ─── v4 override matchers ────────────────────────────────────────────────────
 //
-// An override is no longer keyed by a precomputed kind id. It is a user-authored
-// rule that tests a message's raw JSON (plus the synthetic `$kind` / `$category`
-// paths) and, when every condition holds, contributes its sparse style to the
-// cascade. Each override is scoped to exactly one category, inherits that
-// category's base style, and applies only to messages the classifier put in
-// that category.
+// Used by mergeConfig v3/v4 branches and by UI components that match overrides
+// against messages. Removed in A3 when mergeConfig is rewritten.
 
 export type MatchOp = "eq" | "contains" | "regex";
 
@@ -331,43 +350,13 @@ export interface Override {
   style: Partial<KindStyle>;
 }
 
-
-// The styling fields shared by categories and overrides — everything that
-// drives a card's look. Identity fields (id/label/description) are excluded.
-export const STYLE_FIELDS: (keyof KindStyle)[] = [
-  "presentation", "accentColor", "icon", "headerLabel", "borderStyle", "alignment",
-  "hiddenInCompact", "compactBoundaryLocked", "widget", "showRawPayload",
-  "iconBordered", "iconBgOpacity",
-];
-
-/**
- * Resolve a kind id to its category base style. This is the special case of
- * `resolveMessageStyle` with no overrides applied — overrides are now
- * message-matched (see `resolveMessageStyle`), not keyed by id, so this returns
- * the complete base style for the kind's origin category and nothing more.
- *
- * The render path keeps calling `resolveKind` unchanged: `MessageFrame`
- * computes the cascade once and injects an *effective config* (via
- * `withResolvedKindStyle`) where the category base for the rendered kind IS the
- * cascaded style, so every downstream `resolveKind(config, kindId)` transparently
- * gets the matched result. When there is no message (settings previews), it
- * returns the plain category base.
- */
-export function resolveKind(config: MessageRenderingConfig, kindId: string): KindStyle {
-  return { ...config.categories[originOf(kindId)] };
-}
-
-// ─── match engine ────────────────────────────────────────────────────────────
+/** A matchable message: a real `JsonlNode` (render/list path) or any bare
+ *  `{ raw }` bag (previews, tests). */
+type JsonlNodeLike = JsonlNode | { raw?: unknown };
 
 /**
  * Resolve a dotted path against a raw message object, returning the set of
- * values it reaches. `[]` on a segment means "expand every element of that
- * array and continue the remainder of the path against each." A path with no
- * `[]` resolves to exactly one value (wrapped in a single-element array);
- * missing intermediate objects contribute nothing.
- *
- * `$kind` / `$category` are NOT handled here — `conditionsMatch` resolves those
- * synthetic paths before falling back to this raw-JSON traversal.
+ * values it reaches.
  */
 export function getByPath(root: unknown, path: string): unknown[] {
   let current: unknown[] = root == null ? [] : [root];
@@ -417,10 +406,6 @@ function valueSatisfies(value: unknown, op: MatchOp, literal: MatchCondition["va
   }
 }
 
-/** A matchable message: a real `JsonlNode` (render/list path) or any bare
- *  `{ raw }` bag (previews, tests). */
-type JsonlNodeLike = JsonlNode | { raw?: unknown };
-
 /**
  * True when every condition holds (AND). A condition holds when at least one
  * value its path resolves to satisfies the operator. An empty condition list
@@ -440,11 +425,8 @@ export function conditionsMatch(
 }
 
 /**
- * Full cascade resolution for a specific message. Starts from the kind's
- * category base, then applies every matching override's sparse style in order
- * of specificity (condition count) — more specific overrides overwrite less
- * specific ones field-by-field; equal specificity breaks by array order (later
- * wins). Unset fields fall through to the category base.
+ * Full cascade resolution for a specific message (legacy override path).
+ * Used by components and mergeConfig v2 migration until A3 rewrites mergeConfig.
  */
 export function resolveMessageStyle(
   config: MessageRenderingConfig,
@@ -453,7 +435,7 @@ export function resolveMessageStyle(
 ): KindStyle {
   const category = originOf(kindId);
   const base = config.categories[category];
-  const hits = config.overrides
+  const hits = (config.overrides ?? [])
     .filter((o) => o.category === category && conditionsMatch(o.match, message, kindId, category))
     .slice()
     .sort((a, b) => a.match.length - b.match.length);
@@ -462,9 +444,7 @@ export function resolveMessageStyle(
 
 /**
  * Produce an effective config whose category base for `kindId`'s origin is
- * replaced by `style`. `resolveKind(effective, kindId)` then returns exactly
- * `style`. Used by `MessageFrame` to inject a pre-cascaded style into its
- * subtree, and by the Appearance preview to render an arbitrary style.
+ * replaced by `style`. Used by MessageFrame and the Appearance preview.
  */
 export function withResolvedKindStyle(
   config: MessageRenderingConfig,
@@ -607,6 +587,8 @@ export interface MessageRenderingConfig {
   version: 4;
   defaultViewMode: "compact" | "verbose";
   categories: Record<Category, CategoryStyle>;
+  /** Per-kind user style patches — the third layer of resolveKind. */
+  kinds: Record<string, Partial<KindStyle>>;
   overrides: Override[];
   palette: Palette;
   hardFilters: HardFilters;
@@ -620,6 +602,7 @@ export function createDefaultConfig(): MessageRenderingConfig {
     version: 4,
     defaultViewMode: "verbose",
     categories: structuredClone(DEFAULT_CATEGORIES),
+    kinds: {},
     overrides: [],
     palette: structuredClone(DEFAULT_PALETTE),
     hardFilters: { ...DEFAULT_HARD_FILTERS },

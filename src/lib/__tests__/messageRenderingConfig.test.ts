@@ -18,6 +18,23 @@ import {
   type MessageRenderingConfig,
   type Override,
 } from "../messageRenderingConfig";
+
+describe("resolveKind (three-layer merge)", () => {
+  it("layers category → registry default → user patch", () => {
+    const cfg = createDefaultConfig();
+    expect(resolveKind(cfg, "assistant.text").icon).toBe("Bot"); // agent category icon (no registry override)
+    expect(resolveKind(cfg, "permission.request").accentColor).toBe("amber"); // registry default
+    expect(resolveKind(cfg, "permission.request").icon).toBe("ShieldQuestion");
+    cfg.kinds["permission.request"] = { accentColor: "teal" }; // user patch wins
+    expect(resolveKind(cfg, "permission.request").accentColor).toBe("teal");
+    expect(resolveKind(cfg, "permission.request").icon).toBe("ShieldQuestion"); // unpatched field falls through
+  });
+
+  it("an unregistered id resolves to the system category base", () => {
+    const cfg = createDefaultConfig();
+    expect(resolveKind(cfg, "future.kind").accentColor).toBe("muted");
+  });
+});
 import { classifyStandaloneKind } from "../messageKind";
 import type { JsonlNode } from "@/types/jsonl";
 
