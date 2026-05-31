@@ -1,11 +1,12 @@
-// Message-rendering config — data model and defaults.
+// Message-rendering config — data model, defaults, and live resolver.
 //
-// This module is the source of truth for the Appearance settings UI. It does
-// NOT yet drive the actual StreamMessage renderer; wiring that up is a
-// follow-on change. The settings screen reads and writes this config via
+// This module is the source of truth for message-kind styling. It owns:
+//   • KIND_REGISTRY — maps kind id → category + built-in default chrome.
+//   • resolveKind — three-layer merge: category base → registry default →
+//     per-kind user patch (config.kinds[id]). All rendering decisions go
+//     through this single function.
+// The settings screen reads and writes this config via
 // `api.saveSetting(MESSAGE_RENDERING_CONFIG_KEY, ...)`.
-//
-// Derived from docs/message-rendering-config.yaml.
 
 import { isTypefaceId, type Typeface } from "./typefaceCatalog";
 import type { JsonlNode } from "@/types/jsonl";
@@ -158,7 +159,7 @@ export const ALLOWED_ICONS = [
   "Flame",
   "Smile",
   "Hourglass",
-  // v2 catalog additions
+  // Extended catalog additions
   "AlertOctagon",
   "AlertTriangle",
   "Bell",
@@ -179,7 +180,7 @@ export const ALLOWED_ICONS = [
   "ImageUp",
   "MonitorCog",
   "Slash",
-  // v3 catalog additions
+  // Permission / question icons
   "GitPullRequest",
   "ShieldQuestion",
   "MessageCircleQuestion",
@@ -198,18 +199,20 @@ export type Alignment = "left" | "right" | "full";
 export type Presentation = 'card' | 'side-line' | 'collapsible';
 export type BorderStyle = 'solid' | 'dashed';
 
-// ─── v3 category + override model ───────────────────────────────────────────
+// ─── category + kind registry model ─────────────────────────────────────────
 //
-// Two-tier model: top-level CATEGORIES carry default styling for all kinds
-// that belong to them; sparse OVERRIDES carry per-kind style patches on top.
-// `resolveKind(config, id)` merges category ⊕ override and is the single
-// source of truth for every kind's style; there is no flat catalog anymore.
+// Three-layer model: CATEGORIES carry default styling for all kinds in them;
+// KIND_REGISTRY carries built-in per-kind chrome layered on top; and
+// config.kinds carries sparse user patches as the final layer.
+// `resolveKind(config, id)` merges all three and is the single source of
+// truth for every kind's effective style. There is no match engine or
+// overrides array in this path.
 
 export const CATEGORIES = ["user", "agent", "system"] as const;
 export type Category = (typeof CATEGORIES)[number];
 
-/** Styling fields shared by categories and overrides. Identity fields
- *  (id/label/description/origin) are NOT here. */
+/** Styling fields shared by categories and kind registry entries. Identity
+ *  fields (id/label/description) are NOT here. */
 export interface KindStyle {
   presentation: Presentation;
   accentColor: string;
@@ -286,8 +289,8 @@ export const DEFAULT_CATEGORIES: Record<Category, CategoryStyle> = {
 
 // ─── style fields ────────────────────────────────────────────────────────────
 
-// The styling fields shared by categories and overrides — everything that
-// drives a card's look. Identity fields (id/label/description) are excluded.
+// The styling fields shared by categories and kind registry entries — everything
+// that drives a card's look. Identity fields (id/label/description) are excluded.
 export const STYLE_FIELDS: (keyof KindStyle)[] = [
   "presentation", "accentColor", "icon", "headerLabel", "borderStyle", "alignment",
   "hiddenInCompact", "compactBoundaryLocked", "widget", "showRawPayload",
@@ -306,7 +309,7 @@ export function resolveKind(config: MessageRenderingConfig, kindId: string): Kin
   };
 }
 
-// ─── legacy origin resolver (used by mergeConfig v2/v3 migration) ────────────
+// ─── legacy origin resolver (used by pre-v5 mergeConfig branches) ────────────
 
 const BOOKKEEPING_IDS = new Set([
   "pr-link", "mode", "last-prompt", "queue-operation",
@@ -323,10 +326,11 @@ export function originOf(kindId: string): Category {
   }
 }
 
-// ─── v4 override matchers ────────────────────────────────────────────────────
+// ─── legacy override matchers ────────────────────────────────────────────────
 //
-// Used by mergeConfig v3/v4 branches and by UI components that match overrides
-// against messages. Removed in A3 when mergeConfig is rewritten.
+// Used by pre-v5 mergeConfig branches and by UI components that match saved
+// overrides against messages. These types and helpers remain for backward
+// compatibility with persisted configs that contain an overrides array.
 
 export type MatchOp = "eq" | "contains" | "regex";
 
@@ -425,8 +429,9 @@ export function conditionsMatch(
 }
 
 /**
- * Full cascade resolution for a specific message (legacy override path).
- * Used by components and mergeConfig v2 migration until A3 rewrites mergeConfig.
+ * Full cascade resolution for a specific message using the legacy overrides
+ * array. Used by pre-v5 mergeConfig branches and components that read saved
+ * override arrays from older persisted configs.
  */
 export function resolveMessageStyle(
   config: MessageRenderingConfig,
@@ -465,8 +470,8 @@ export function withResolvedKindStyle(
 //
 // Global typography applied to every message kind. Two style slots — the
 // `header` row that sits above a card's body, and the `content` body text.
-// Per-kind overrides are intentionally out of scope for v1; one pair of
-// sliders keeps the UI simple and the config small.
+// Per-kind typography customization is intentionally out of scope; one pair
+// of sliders keeps the UI simple and the config small.
 
 export type FontSize = "xs" | "sm" | "base" | "lg";
 export type FontWeight =
@@ -757,7 +762,7 @@ function validateStylePatch(rawStyle: unknown, palette: Palette): Partial<KindSt
   return patch;
 }
 
-/** Validate a saved v4 override object. Returns null when it lacks an id. */
+/** Validate a saved override object from a persisted config. Returns null when it lacks an id. */
 function validateOverride(entry: unknown, base: MessageRenderingConfig): Override | null {
   if (!isRecord(entry)) return null;
   if (typeof entry.id !== "string" || entry.id === "") return null;
@@ -773,7 +778,7 @@ function validateOverride(entry: unknown, base: MessageRenderingConfig): Overrid
   };
 }
 
-/** Upsert a `$kind eq <id>` style patch onto an Override[] (additive migration). */
+/** Upsert a `$kind eq <id>` style patch onto an Override[] (used during pre-v5 config conversion). */
 function upsertKindOverride(overrides: Override[], id: string, stylePatch: Partial<KindStyle>): void {
   const existing = overrides.find(
     (o) => o.id === id && o.match.length === 1 && o.match[0].path === "$kind",
@@ -789,8 +794,9 @@ export function mergeConfig(saved: unknown): MessageRenderingConfig {
   const base = createDefaultConfig();
   if (!isRecord(saved)) return base;
 
-  // v4: categories shallow-merged; overrides are authoritative (the saved array
-  // IS the user's full set — defaults the user deleted must stay deleted).
+  // v5 (current): categories shallow-merged; kinds map validated entry by entry;
+  // shared blocks merged last. The saved overrides array is authoritative —
+  // defaults the user deleted must stay deleted.
   if (saved.version === 4) {
     mergeCategories(base, saved);
     if (Array.isArray(saved.overrides)) {
@@ -801,9 +807,9 @@ export function mergeConfig(saved: unknown): MessageRenderingConfig {
     return mergeShared(base, saved);
   }
 
-  // v3→v4: the override record was keyed by kind id. Convert each entry 1:1
-  // into a `$kind eq <id>` rule, dropping none — behavior is identical after
-  // migration. The saved record is authoritative (replaces the defaults).
+  // Pre-v5 (version 3): override record was keyed by kind id. Convert each
+  // entry into a `$kind eq <id>` rule so it survives in the overrides array.
+  // The saved record is authoritative (replaces the defaults).
   if (saved.version === 3) {
     mergeCategories(base, saved);
     if (isRecord(saved.overrides)) {
@@ -824,15 +830,15 @@ export function mergeConfig(saved: unknown): MessageRenderingConfig {
     return mergeShared(base, saved);
   }
 
-  // v2 (or pre-v2): convert each customized flat kind into a `$kind` override by
-  // diffing its style fields against the category default. Additive — layered
-  // onto the seeded DEFAULT_OVERRIDES so unrelated defaults survive.
+  // Pre-v5 (version 2 or older): convert each customized flat kind into a
+  // `$kind` override by diffing its style fields against the category default.
+  // Additive — layered onto the seeded defaults so unrelated entries survive.
   if (isRecord(saved.kinds)) {
     for (const [id, entry] of Object.entries(saved.kinds as Record<string, unknown>)) {
       if (!isRecord(entry)) continue;
-      // Diff against the kind's CURRENT effective style (category base ⊕ the
-      // seeded default $kind override), so a v2 value that diverges from a
-      // default override is captured even when it equals the bare category.
+      // Diff against the kind's CURRENT effective style (category base merged
+      // with the seeded default), so a saved value that diverges from a seeded
+      // default is captured even when it equals the bare category base.
       const resolved = resolveMessageStyle(base, { raw: {} }, id) as unknown as Record<string, unknown>;
       const diff: Partial<KindStyle> = {};
       for (const f of STYLE_FIELDS) {
@@ -851,7 +857,7 @@ export function mergeConfig(saved: unknown): MessageRenderingConfig {
 /**
  * Merge the shared (non-kind) config blocks — view mode, palette, hard
  * filters, typography, debug, terminal — from a saved record onto `base`.
- * Used by both the v3 pass-through and the v2→v3 migration branches.
+ * Used by all mergeConfig version branches after their version-specific work.
  */
 function mergeShared(
   base: MessageRenderingConfig,
