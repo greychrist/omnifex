@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Send, MessageCircleQuestion, ChevronUp, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { resolvedAccentStyleFor, resolvedSwatchFor } from "@/lib/accentStyle";
+import { accentStyleFor, swatchFor } from "@/lib/accentStyle";
 import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
 import { CardFooter } from "@/components/StreamMessage/MessageFrameCard";
 import type { PermissionRequestPayload } from "@/lib/types/permissionRequest";
@@ -77,8 +77,8 @@ export function AskUserQuestionCard({ request, onSubmit, onCancel }: AskUserQues
   // resolved* applies the kind's catalog accent override (primary), not just the
   // bare system-category gray — this card renders outside a MessageFrame so it
   // doesn't get the resolved effConfig the transcript cards do.
-  const accentStyle = resolvedAccentStyleFor(config, 'permission.askUserQuestion');
-  const accentSwatch = resolvedSwatchFor(config, 'permission.askUserQuestion');
+  const accentStyle = accentStyleFor(config, 'permission.askUserQuestion');
+  const accentSwatch = swatchFor(config, 'permission.askUserQuestion');
 
   const questions = useMemo(() => parseQuestions(request.toolInput), [request.toolInput]);
   // Serialized request payload for the shared card footer's copy button, so the
