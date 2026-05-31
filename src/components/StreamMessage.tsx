@@ -20,7 +20,6 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
 import { swatchFor } from "@/lib/accentStyle";
-import { contentClassNames, typographyFontFamily } from "@/lib/typographyClasses";
 import { KindHeader } from "@/components/KindHeader";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -1040,11 +1039,15 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
                     return (
                       <div key={idx}>
                         {textWithoutImages && (
-                          <div
-                            className={cn(contentClassNames(renderConfig), "whitespace-pre-wrap")}
-                            style={{ fontFamily: typographyFontFamily(renderConfig.typography.content) }}
-                          >
-                            {textWithoutImages}
+                          // Render markdown the same way assistant text does, so
+                          // System Context / skill-injection bodies (and any other
+                          // user-role text) render properly instead of printing
+                          // raw markdown — and a fenced ```markdown block gets the
+                          // Rendered/Source tabbed control via buildMarkdownComponents.
+                          <div className="prose prose-sm dark:prose-invert max-w-none">
+                            <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={mdComponents}>
+                              {textWithoutImages}
+                            </ReactMarkdown>
                           </div>
                         )}
                         {imagePaths.length > 0 && (

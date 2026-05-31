@@ -185,3 +185,39 @@ describe('final assistant text vs. result-row de-dup', () => {
     expect(screen.getByText(/Final answer for the user\./)).toBeTruthy();
   });
 });
+
+function makeUserTextNode(text: string): JsonlNode {
+  return {
+    kind: 'user',
+    userKind: 'prompt',
+    sessionId: 'sess-1',
+    receivedAt: '2026-05-27T10:00:00Z',
+    raw: {
+      type: 'user',
+      message: { role: 'user', content: [{ type: 'text', text }] },
+    },
+  } as unknown as JsonlNode;
+}
+
+describe('user-role messages render markdown (matching assistant styling)', () => {
+  it('renders a markdown heading as an <h1>, not raw "# ..." text', () => {
+    // System Context / skill-injection bodies (and user text in general) used to
+    // render as raw whitespace-pre-wrap text — markdown was printed literally.
+    const node = makeUserTextNode('# Big Heading\n\nSome **bold** body.');
+    const { container } = render(<StreamMessage message={node} streamMessages={[node]} />);
+
+    const h1 = container.querySelector('h1');
+    expect(h1?.textContent).toContain('Big Heading');
+    expect(container.querySelector('strong')?.textContent).toContain('bold');
+  });
+
+  it('renders a fenced ```markdown block through the Rendered/Source tabbed control', () => {
+    const fenced = '```markdown\n# Inside a fence\n```';
+    const node = makeUserTextNode(fenced);
+    render(<StreamMessage message={node} streamMessages={[node]} />);
+
+    // MarkdownBlock exposes the Rendered/Source pill toggle.
+    expect(screen.getByRole('button', { name: 'Rendered' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Source' })).toBeTruthy();
+  });
+});
