@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { createDefaultConfig } from "../messageRenderingConfig";
-import { accentFor, accentStyleFor, swatchFor } from "../accentStyle";
+import { accentFor, accentStyleFor, swatchFor, resolvedAccentFor, resolvedSwatchFor } from "../accentStyle";
 
 describe("accentStyle", () => {
   describe("accentFor", () => {
@@ -35,6 +35,24 @@ describe("accentStyle", () => {
       // verify the helper's tolerance.
       cfg.categories.user.accentColor = "neon";
       expect(accentFor(cfg, "user.prompt")).toBeNull();
+    });
+  });
+
+  describe("resolvedAccentFor (per-kind override accent for live cards)", () => {
+    it("applies the permission.askUserQuestion override accent instead of the bare category gray", () => {
+      const cfg = createDefaultConfig();
+      // accentFor returns only the category base — system → muted/gray, which is
+      // why the live AskUserQuestion card rendered gray.
+      expect(accentFor(cfg, "permission.askUserQuestion")?.swatch).toBe(cfg.palette.muted.swatch);
+      // resolvedAccentFor applies the catalog's $kind override (accentColor: primary).
+      expect(resolvedAccentFor(cfg, "permission.askUserQuestion")?.swatch).toBe(cfg.palette.primary.swatch);
+      expect(resolvedSwatchFor(cfg, "permission.askUserQuestion")).toBe(cfg.palette.primary.swatch);
+    });
+
+    it("agrees with accentFor when a kind has no per-kind override", () => {
+      const cfg = createDefaultConfig();
+      // user.prompt: category user → blue, no $kind override; both resolvers agree.
+      expect(resolvedAccentFor(cfg, "user.prompt")?.swatch).toBe(accentFor(cfg, "user.prompt")?.swatch);
     });
   });
 

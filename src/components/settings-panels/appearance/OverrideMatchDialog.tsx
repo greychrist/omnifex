@@ -1,6 +1,7 @@
 import React from "react";
 import { Plus, X } from "lucide-react";
 import type { Category, MatchCondition, MatchOp } from "@/lib/messageRenderingConfig";
+import { KNOWN_KIND_IDS, originOf } from "@/lib/messageRenderingConfig";
 import {
   Dialog,
   DialogContent,
@@ -90,6 +91,14 @@ export const OverrideMatchDialog: React.FC<OverrideMatchDialogProps> = ({
 
   const examplePaths = React.useMemo(() => flattenExamplePaths(exampleRaw), [exampleRaw]);
 
+  // The kinds the classifier can put in THIS override's category — so a `$kind`
+  // condition is a pick-from-a-list, not a remember-and-type. (The override is
+  // category-scoped, so only same-category kinds can ever match.)
+  const kindsForCategory = React.useMemo(
+    () => KNOWN_KIND_IDS.filter((id) => originOf(id) === category),
+    [category],
+  );
+
   const addCondition = (path = "", valueText = "") => {
     setConditions((cs) => [...cs, { path, op: "eq", valueText }]);
   };
@@ -148,7 +157,14 @@ export const OverrideMatchDialog: React.FC<OverrideMatchDialogProps> = ({
                 No conditions — this rule matches every {categoryLabel} message.
               </p>
             )}
-            {conditions.map((c, idx) => (
+            {conditions.map((c, idx) => {
+              // When matching on the synthetic `$kind` path, the value is one of
+              // a known, finite set — render a dropdown of the category's kinds
+              // instead of a free-text box so the user picks rather than recalls.
+              const isKindMatch = c.path.trim() === "$kind";
+              const parsed = parseLiteral(c.valueText);
+              const kindValue = typeof parsed === "string" ? parsed : "";
+              return (
               <div key={idx} className="flex items-center gap-1.5">
                 <Input
                   value={c.path}
@@ -167,13 +183,29 @@ export const OverrideMatchDialog: React.FC<OverrideMatchDialogProps> = ({
                     ))}
                   </SelectContent>
                 </Select>
-                <Input
-                  value={c.valueText}
-                  onChange={(e) => { updateCondition(idx, { valueText: e.target.value }); }}
-                  placeholder={'value (e.g. "error")'}
-                  aria-label={`Condition ${idx + 1} value`}
-                  className="font-mono text-xs h-8 flex-1 min-w-0"
-                />
+                {isKindMatch ? (
+                  <Select
+                    value={kindValue}
+                    onValueChange={(v) => { updateCondition(idx, { valueText: formatMatchValue(v) }); }}
+                  >
+                    <SelectTrigger aria-label={`Condition ${idx + 1} kind`} className="h-8 flex-1 min-w-0 font-mono text-xs">
+                      <SelectValue placeholder="pick a kind…" />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-72">
+                      {kindsForCategory.map((id) => (
+                        <SelectItem key={id} value={id} className="font-mono text-xs">{id}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Input
+                    value={c.valueText}
+                    onChange={(e) => { updateCondition(idx, { valueText: e.target.value }); }}
+                    placeholder={'value (e.g. "error")'}
+                    aria-label={`Condition ${idx + 1} value`}
+                    className="font-mono text-xs h-8 flex-1 min-w-0"
+                  />
+                )}
                 <button
                   type="button"
                   onClick={() => { removeCondition(idx); }}
@@ -183,14 +215,26 @@ export const OverrideMatchDialog: React.FC<OverrideMatchDialogProps> = ({
                   <X className="h-3.5 w-3.5" />
                 </button>
               </div>
-            ))}
-            <button
-              type="button"
-              onClick={() => { addCondition(); }}
-              className="flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground"
-            >
-              <Plus className="h-3.5 w-3.5" /> Add condition
-            </button>
+              );
+            })}
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => { addCondition(); }}
+                className="flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground"
+              >
+                <Plus className="h-3.5 w-3.5" /> Add condition
+              </button>
+              {kindsForCategory.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => { addCondition("$kind", formatMatchValue(kindsForCategory[0])); }}
+                  className="flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground"
+                >
+                  <Plus className="h-3.5 w-3.5" /> Match a kind
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Example JSON — click a field to seed a condition */}
