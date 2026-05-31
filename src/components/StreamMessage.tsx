@@ -356,17 +356,49 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
     // Inner field access may still read `wire` (= message.raw as ClaudeStreamMessage)
     // for convenience, but every routing decision is on message.kind.
 
-    // Bookkeeping kinds: never render in the message feed.
+    // Live-overlay transport / non-transcript artifacts: never render in the
+    // message feed (these aren't JSONL transcript lines).
     if (
-      message.kind === 'last-prompt' ||
-      message.kind === 'permission-mode' ||
-      message.kind === 'ai-title' ||
-      message.kind === 'file-history-snapshot' ||
       message.kind === 'stream-event' ||
       message.kind === 'rate-limit' ||
       message.kind === 'lifecycle'
     ) {
       return null;
+    }
+
+    // Bookkeeping JSONL kinds — previously dropped, now rendered as a one-line
+    // side-line marker so every JSONL line has a reference in the feed. Each is
+    // a registry kind (see KIND_REGISTRY), so its chrome/visibility is fully
+    // controllable in Settings → Chats. Routed through MessageFrame with the
+    // kind id as streamKind.
+    if (
+      message.kind === 'permission-mode' ||
+      message.kind === 'last-prompt' ||
+      message.kind === 'ai-title' ||
+      message.kind === 'queue-operation' ||
+      message.kind === 'file-history-snapshot'
+    ) {
+      const body = (() => {
+        switch (message.kind) {
+          case 'permission-mode':
+            return `Permission → ${message.raw.permissionMode}`;
+          case 'last-prompt':
+            return 'Bookmarked prompt';
+          case 'ai-title':
+            return `Session titled "${message.raw.aiTitle}"`;
+          case 'queue-operation':
+            return `Background: ${message.raw.operation}`;
+          case 'file-history-snapshot':
+            return message.raw.messageId
+              ? `File snapshot (${message.raw.messageId})`
+              : 'File snapshot';
+        }
+      })();
+      return (
+        <MessageFrame streamKind={message.kind} message={message}>
+          <span className="text-xs font-mono">{body}</span>
+        </MessageFrame>
+      );
     }
 
     if (message.kind === 'system') {
