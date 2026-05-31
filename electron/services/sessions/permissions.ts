@@ -18,6 +18,50 @@ function currentPermissionMode(handle: SessionHandle): string {
   return handle.permissionMode || 'default';
 }
 
+/**
+ * Built-in file-modification tools. `acceptEdits` auto-approves these without
+ * prompting (mirrors the CLI's own acceptEdits semantics for file edits). Read
+ * isn't here — the CLI never routes read-only tools through the prompt tool.
+ */
+const FILE_EDIT_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
+
+/**
+ * Decide whether the current permission mode auto-resolves a tool request
+ * without prompting the user. Returns `'allow'` / `'deny'` for an automatic
+ * decision, or `null` to fall through to the normal "show the permission card"
+ * path.
+ *
+ * Because OmniFex spawns the CLI with `--permission-prompt-tool stdio`, this
+ * decider is the authority for every request the CLI can't resolve from its
+ * own allow/deny rules — so the mode has to be honored HERE, not just passed to
+ * the CLI. (Previously only `bypassPermissions` was handled, which is why
+ * switching the bottom-bar dropdown to acceptEdits / dontAsk appeared to do
+ * nothing: the label changed but the decider prompted identically.)
+ *
+ *  - `bypassPermissions` → allow everything
+ *  - `acceptEdits`       → allow file-edit tools; prompt for the rest
+ *  - `dontAsk`           → deny everything that reached the prompt tool
+ *                          (the CLI already short-circuits pre-approved tools)
+ *  - `default` / `plan` / `auto` → prompt (null). `auto`'s CLI-side safety
+ *    classifier runs inside the CLI before it ever delegates here, so a request
+ *    that still reaches us is one the CLI wants a human to confirm.
+ */
+function autoDecisionForMode(
+  mode: string,
+  toolName: string,
+): 'allow' | 'deny' | null {
+  switch (mode) {
+    case 'bypassPermissions':
+      return 'allow';
+    case 'acceptEdits':
+      return FILE_EDIT_TOOLS.has(toolName) ? 'allow' : null;
+    case 'dontAsk':
+      return 'deny';
+    default:
+      return null;
+  }
+}
+
 const NOTIF_BODY_CAP = 140;
 
 function truncate(s: string): string {
@@ -234,21 +278,27 @@ export function createPermissionRequestHandler(
     const requestId = req.requestId;
     const permissionMode = currentPermissionMode(handle);
 
-    if (permissionMode === 'bypassPermissions') {
+    // Codex approvals are patch/exec — there's no Claude-style tool name to
+    // match, so acceptEdits (which keys off file-edit tools) can't auto-resolve
+    // here and falls through to the prompt. Only the tool-name-agnostic modes
+    // (bypassPermissions → allow, dontAsk → deny) auto-decide. Pass the kind as
+    // the "tool name" so acceptEdits correctly returns null (no match).
+    const autoDecision = autoDecisionForMode(permissionMode, `codex.${req.kind}`);
+    if (autoDecision) {
       logEntry({
         level: 'info',
-        message: `permission decision: allow codex.${req.kind} (${permissionMode})`,
+        message: `permission decision: ${autoDecision} codex.${req.kind} (${permissionMode})`,
         metadata: {
           event: 'permission.decision',
           agent: 'codex',
           kind: req.kind,
-          behavior: 'allow',
+          behavior: autoDecision,
           persisted: false,
           permission_mode: permissionMode,
-          auto_allowed: true,
+          auto_allowed: autoDecision === 'allow',
         },
       });
-      handle.engine?.respondPermission(requestId, 'allow')
+      handle.engine?.respondPermission(requestId, autoDecision)
         .catch((e: unknown) => console.error('[sessions] engine.respondPermission failed:', e));
       return;
     }
@@ -347,22 +397,29 @@ export function createPermissionRequestHandler(
     const requestId = req.requestId;
     const permissionMode = currentPermissionMode(handle);
 
-    // bypassPermissions: auto-allow without prompting the user.
-    if (permissionMode === 'bypassPermissions') {
+    // Auto-resolve per the live permission mode (the bottom-bar dropdown sets
+    // handle.permissionMode, read fresh above). Only modes that don't need a
+    // prompt return non-null here; everything else falls through to the card.
+    const autoDecision = autoDecisionForMode(permissionMode, toolName);
+    if (autoDecision) {
       logEntry({
         level: 'info',
-        message: `permission decision: allow ${toolName} (${permissionMode})`,
+        message: `permission decision: ${autoDecision} ${toolName} (${permissionMode})`,
         metadata: {
           event: 'permission.decision',
           tool_name: toolName,
           tool_use_id: toolUseID,
-          behavior: 'allow',
+          behavior: autoDecision,
           persisted: false,
           permission_mode: permissionMode,
-          auto_allowed: true,
+          auto_allowed: autoDecision === 'allow',
         },
       });
-      handle.engine?.respondPermission(requestId, 'allow', { updatedInput: toolInput })
+      const body: Record<string, unknown> =
+        autoDecision === 'allow'
+          ? { updatedInput: toolInput }
+          : { message: `Denied by permission mode: ${permissionMode}` };
+      handle.engine?.respondPermission(requestId, autoDecision, body)
         .catch((e: unknown) => console.error('[sessions] engine.respondPermission failed:', e));
       return;
     }

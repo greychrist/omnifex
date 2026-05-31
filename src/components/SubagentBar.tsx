@@ -206,13 +206,9 @@ export const SubagentBar: React.FC<SubagentBarProps> = ({
   const running = runningCount > 0;
   const expanded = !collapsed;
 
-  // Mirrors TaskList's header status icon: green ListChecks at rest,
-  // spinning Loader2 while any subagent is running.
-  const StatusIcon = running ? Loader2 : ListChecks;
-  const statusIconClass = cn(
-    'h-3.5 w-3.5',
-    running ? 'text-muted-foreground animate-spin' : 'text-emerald-400',
-  );
+  // Header status icon: green ListChecks at rest. While running, the
+  // "N running" pill already carries the spinner, so the standalone icon
+  // is omitted to avoid a duplicate spinner beside it.
 
   return (
     <div className={cn('shrink-0 flex flex-col', className)}>
@@ -254,7 +250,7 @@ export const SubagentBar: React.FC<SubagentBarProps> = ({
                 {runningCount} running
               </span>
             )}
-            <StatusIcon className={statusIconClass} />
+            {!running && <ListChecks className="h-3.5 w-3.5 text-emerald-400" />}
           </button>
           {onDismissAllCompleted && (
             <button

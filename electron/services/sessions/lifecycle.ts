@@ -81,7 +81,7 @@ export function createSessionsService(
   const sessions = new Map<string, SessionHandle>();
   // Hoisted so both the public return and stop()'s plugin-cache eviction
   // share the same instance.
-  const queryPassthroughs = createQueryPassthroughs(sessions, sendToRenderer);
+  const queryPassthroughs = createQueryPassthroughs(sessions, sendToRenderer, logging);
 
   const runtimeDeps: RuntimeDeps = {
     sendToRenderer,

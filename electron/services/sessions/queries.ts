@@ -19,11 +19,37 @@ import type {
   SendToRenderer,
 } from './types';
 import { enrichPlugin, type EnrichedPlugin } from './plugins';
+import type { LoggingService } from '../logging';
 
 export function createQueryPassthroughs(
   sessions: Map<string, SessionHandle>,
   sendToRenderer: SendToRenderer | null = null,
+  logging: LoggingService | null = null,
 ) {
+  // Persist a control-protocol diagnostic to app_logs. console.error alone
+  // never reaches the DB, which is why mid-session setting changes that
+  // silently no-op (effort/permission/model control_requests) left no trace
+  // to debug. `ok:false` rows record the swallowed engine error.
+  const logControl = (
+    op: string,
+    tabId: string,
+    detail: Record<string, unknown>,
+  ): void => {
+    if (!logging) return;
+    try {
+      logging.writeBatch([{
+        timestamp: new Date().toISOString(),
+        level: detail.ok === false ? 'error' : 'info',
+        source: 'claude-sdk',
+        category: 'session-control',
+        message: `session control: ${op} (tab ${tabId})`,
+        metadata: JSON.stringify({ event: 'session.control', op, tab_id: tabId, ...detail }),
+      }]);
+    } catch (err) {
+      console.error('[sessions] control logging failed:', err);
+    }
+  };
+
   function liveEngine(tabId: string): SessionHandle | null {
     const handle = sessions.get(tabId);
     if (!handle) return null;
@@ -57,22 +83,34 @@ export function createQueryPassthroughs(
 
   async function setModel(tabId: string, model?: string): Promise<void> {
     const handle = liveEngine(tabId);
-    if (!handle) return;
+    if (!handle) {
+      logControl('set_model', tabId, { ok: false, reason: 'no-live-engine', model });
+      return;
+    }
     try {
-      await handle.engine!.sendControlRequest('set_model', { model });
+      const res = await handle.engine!.sendControlRequest('set_model', { model });
+      logControl('set_model', tabId, { ok: true, model, response: res ?? null });
     } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
       console.error(`[sessions] setModel failed for tab ${tabId}:`, err);
+      logControl('set_model', tabId, { ok: false, model, error: msg });
     }
   }
 
   async function setPermissionMode(tabId: string, mode: PermissionMode): Promise<void> {
     const handle = liveEngine(tabId);
-    if (!handle) return;
+    if (!handle) {
+      logControl('set_permission_mode', tabId, { ok: false, reason: 'no-live-engine', mode });
+      return;
+    }
     handle.permissionMode = mode;
     try {
-      await handle.engine!.sendControlRequest('set_permission_mode', { mode });
+      const res = await handle.engine!.sendControlRequest('set_permission_mode', { mode });
+      logControl('set_permission_mode', tabId, { ok: true, mode, response: res ?? null });
     } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
       console.error(`[sessions] setPermissionMode failed for tab ${tabId}:`, err);
+      logControl('set_permission_mode', tabId, { ok: false, mode, error: msg });
     }
   }
 
@@ -81,13 +119,19 @@ export function createQueryPassthroughs(
     level: 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null,
   ): Promise<void> {
     const handle = liveEngine(tabId);
-    if (!handle) return;
+    if (!handle) {
+      logControl('set_effort', tabId, { ok: false, reason: 'no-live-engine', level });
+      return;
+    }
     try {
-      await handle.engine!.sendControlRequest('apply_flag_settings', {
+      const res = await handle.engine!.sendControlRequest('apply_flag_settings', {
         settings: { effortLevel: level ?? undefined },
       });
+      logControl('set_effort', tabId, { ok: true, level, response: res ?? null });
     } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
       console.error(`[sessions] setEffort failed for tab ${tabId}:`, err);
+      logControl('set_effort', tabId, { ok: false, level, error: msg });
     }
   }
 
