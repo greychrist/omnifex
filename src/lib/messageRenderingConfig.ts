@@ -285,6 +285,11 @@ export const KIND_REGISTRY: Record<string, KindDef> = {
   // actions worth seeing).
   "control.effort": { id: "control.effort", category: "system", label: "Effort changed", description: "You changed the reasoning effort level.", default: { presentation: "side-line", icon: "Settings", accentColor: "info", hiddenInCompact: false } },
   "control.model": { id: "control.model", category: "system", label: "Model changed", description: "You changed the model.", default: { presentation: "side-line", icon: "Settings", accentColor: "info", hiddenInCompact: false } },
+  // Live permission marker. The persisted `permission-mode` JSONL line (above)
+  // covers resume; jsonl-tail never forwards it live, so this synthetic marker
+  // gives immediate feedback. Keeps its own ShieldCheck/amber identity to match
+  // the persisted permission-mode kind.
+  "control.permission": { id: "control.permission", category: "system", label: "Permission changed (live)", description: "You changed the permission mode.", default: { presentation: "side-line", icon: "ShieldCheck", accentColor: "amber", hiddenInCompact: false } },
 };
 
 export function categoryOf(id: string): Category {

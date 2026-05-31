@@ -401,6 +401,21 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
       );
     }
 
+    // Synthetic control-change markers (effort/model/permission). One render
+    // branch for the whole family; the row text is the only difference.
+    if (message.kind === 'control-change') {
+      const labels: Record<'effort' | 'model' | 'permission', string> = {
+        effort: 'Effort',
+        model: 'Model',
+        permission: 'Permission',
+      };
+      return (
+        <MessageFrame streamKind={`control.${message.control}`} message={message}>
+          <span className="text-xs font-mono">{labels[message.control]} → {message.value}</span>
+        </MessageFrame>
+      );
+    }
+
     if (message.kind === 'system') {
       const sysRaw = message.raw;
 

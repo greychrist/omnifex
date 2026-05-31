@@ -2253,7 +2253,18 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
                 setEffort(level);
                 if (persistentSessionRef.current) {
                   const tid = tabIdRef.current;
-                  api.sessionSetEffort(tid, level).catch((err: unknown) => {
+                  api.sessionSetEffort(tid, level).then(() => {
+                    // Drop a live transcript marker so the change is visible in
+                    // scrollback. Effort never reaches the JSONL, so this is the
+                    // only record — live-session only (not persisted).
+                    appendMessage({
+                      kind: 'control-change',
+                      control: 'effort',
+                      value: String(level),
+                      sessionId: tid,
+                      receivedAt: new Date().toISOString(),
+                    });
+                  }).catch((err: unknown) => {
                     console.error('[sessions] sessionSetEffort failed:', err);
                   });
                 }
@@ -2268,7 +2279,18 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
                 setSelectedModel(newModel);
                 if (persistentSessionRef.current) {
                   const tid = tabIdRef.current;
-                  api.sessionSetModel(tid, newModel).catch((err: unknown) => {
+                  api.sessionSetModel(tid, newModel).then(() => {
+                    // Live transcript marker — model changes are out-of-band
+                    // control requests that never reach the JSONL, so this
+                    // live-only marker is the only scrollback record.
+                    appendMessage({
+                      kind: 'control-change',
+                      control: 'model',
+                      value: String(newModel),
+                      sessionId: tid,
+                      receivedAt: new Date().toISOString(),
+                    });
+                  }).catch((err: unknown) => {
                     console.error('[sessions] sessionSetModel failed:', err);
                   });
                 }
@@ -2282,7 +2304,22 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
                 setPermissionMode(mode);
                 if (persistentSessionRef.current) {
                   const tid = tabIdRef.current;
-                  api.sessionSetPermissionMode(tid, mode).catch((err: unknown) => {
+                  api.sessionSetPermissionMode(tid, mode).then(() => {
+                    // Live transcript marker. The CLI DOES persist a
+                    // `permission-mode` JSONL line, but jsonl-tail only forwards
+                    // closure-carriers (queue-operation/attachment) to the live
+                    // stream — so the persisted line shows up only on resume,
+                    // never live. This synthetic marker gives the immediate
+                    // feedback; the persisted line covers scrollback after
+                    // resume. They never coexist in one view, so no double.
+                    appendMessage({
+                      kind: 'control-change',
+                      control: 'permission',
+                      value: String(mode),
+                      sessionId: tid,
+                      receivedAt: new Date().toISOString(),
+                    });
+                  }).catch((err: unknown) => {
                     console.error('[sessions] sessionSetPermissionMode failed:', err);
                   });
                 }

@@ -56,3 +56,23 @@ describe('bookkeeping JSONL kinds render (were return null)', () => {
     expect(screen.getByText(/Bookmarked prompt/)).toBeInTheDocument();
   });
 });
+
+describe('synthetic control-change markers render', () => {
+  it("renders a control-change effort node as 'Effort → high'", () => {
+    const node = { kind: 'control-change', control: 'effort', value: 'high', sessionId: 's', receivedAt: '2026-05-31T00:00:00Z' } as unknown as JsonlNode;
+    renderNode(node);
+    expect(screen.getByText(/Effort → high/)).toBeInTheDocument();
+  });
+
+  it("renders a control-change model node as 'Model → opus'", () => {
+    const node = { kind: 'control-change', control: 'model', value: 'opus', sessionId: 's', receivedAt: '2026-05-31T00:00:00Z' } as unknown as JsonlNode;
+    renderNode(node);
+    expect(screen.getByText(/Model → opus/)).toBeInTheDocument();
+  });
+
+  it("renders a control-change permission node as 'Permission → plan'", () => {
+    const node = { kind: 'control-change', control: 'permission', value: 'plan', sessionId: 's', receivedAt: '2026-05-31T00:00:00Z' } as unknown as JsonlNode;
+    renderNode(node);
+    expect(screen.getByText(/Permission → plan/)).toBeInTheDocument();
+  });
+});
