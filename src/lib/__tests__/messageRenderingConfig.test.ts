@@ -666,3 +666,24 @@ describe("resolveKind — classifier output coverage", () => {
     expect(s.alignment).toBe("left");
   });
 });
+
+// ─── bookkeeping kind registry entries (control-change feedback feature) ──────
+
+describe("bookkeeping kind registry entries", () => {
+  const ids = ["permission-mode", "last-prompt", "ai-title", "queue-operation", "file-history-snapshot"] as const;
+
+  it("registers all five bookkeeping kinds under the system category", () => {
+    for (const id of ids) {
+      expect(KIND_REGISTRY[id], id).toBeDefined();
+      expect(categoryOf(id), id).toBe("system");
+    }
+  });
+
+  it("permission-mode is visible in compact; passive bookkeeping is hidden", () => {
+    const cfg = createDefaultConfig();
+    expect(resolveKind(cfg, "permission-mode").hiddenInCompact).toBe(false);
+    for (const id of ["last-prompt", "ai-title", "queue-operation", "file-history-snapshot"]) {
+      expect(resolveKind(cfg, id).hiddenInCompact, id).toBe(true);
+    }
+  });
+});
