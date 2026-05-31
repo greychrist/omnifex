@@ -211,7 +211,10 @@ export type JsonlNode =
   // Overlay (CLI stream only — never enters messages[])
   | { kind: 'stream-event'; uuid: string; deltaText: string }
   | { kind: 'rate-limit'; info: RateLimitInfo }
-  | { kind: 'lifecycle'; eventType: LifecycleKind; raw: unknown };
+  | { kind: 'lifecycle'; eventType: LifecycleKind; raw: unknown }
+  // Synthetic control-change markers (live-session only; never produced by
+  // classifyJsonlLine — injected via appendMessage when a control picker fires).
+  | { kind: 'control-change'; control: 'effort' | 'model' | 'permission'; value: string; sessionId: string; receivedAt: string };
 
 /** Convenience: which kinds appear in the renderer's `messages[]`. */
 export type RenderedKind = Exclude<JsonlNode['kind'], 'stream-event' | 'rate-limit' | 'lifecycle'>;

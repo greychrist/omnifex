@@ -687,3 +687,16 @@ describe("bookkeeping kind registry entries", () => {
     }
   });
 });
+
+// ─── synthetic control-change kinds ───────────────────────────────────────────
+
+describe("control-change kinds", () => {
+  it("registers control.effort and control.model under system, visible in compact", () => {
+    const cfg = createDefaultConfig();
+    for (const id of ["control.effort", "control.model"]) {
+      expect(KIND_REGISTRY[id], id).toBeDefined();
+      expect(categoryOf(id), id).toBe("system");
+      expect(resolveKind(cfg, id).hiddenInCompact, id).toBe(false);
+    }
+  });
+});

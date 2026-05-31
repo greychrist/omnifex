@@ -279,6 +279,12 @@ export const KIND_REGISTRY: Record<string, KindDef> = {
   "ai-title": { id: "ai-title", category: "system", label: "Session title", description: "Auto-generated session title.", default: { presentation: "side-line", icon: "Tag", accentColor: "muted", hiddenInCompact: true } },
   "queue-operation": { id: "queue-operation", category: "system", label: "Background task", description: "Background-task enqueue (e.g. a run_in_background command).", default: { presentation: "side-line", icon: "ListOrdered", accentColor: "info", hiddenInCompact: true } },
   "file-history-snapshot": { id: "file-history-snapshot", category: "system", label: "File snapshot", description: "CLI editor undo/redo snapshot.", default: { presentation: "side-line", icon: "Clock", accentColor: "muted", hiddenInCompact: true } },
+  // ── synthetic control-change markers (live-session only) ──
+  // Unified family: same chrome (Settings icon, info accent); distinct ids so
+  // each stays independently re-stylable. Visible in compact (deliberate user
+  // actions worth seeing).
+  "control.effort": { id: "control.effort", category: "system", label: "Effort changed", description: "You changed the reasoning effort level.", default: { presentation: "side-line", icon: "Settings", accentColor: "info", hiddenInCompact: false } },
+  "control.model": { id: "control.model", category: "system", label: "Model changed", description: "You changed the model.", default: { presentation: "side-line", icon: "Settings", accentColor: "info", hiddenInCompact: false } },
 };
 
 export function categoryOf(id: string): Category {
