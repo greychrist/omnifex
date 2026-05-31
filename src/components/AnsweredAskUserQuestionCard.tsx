@@ -263,7 +263,7 @@ export function AnsweredAskUserQuestionCard({
                                      the question column so multi-word
                                      Other-text answers breathe)
             For Other answers the answer cell renders
-            `You typed: "<text>"` directly. */}
+            `Other: <text>` directly. */}
         <div
           className={cn(
             'grid items-baseline gap-x-3 gap-y-1.5',
@@ -301,7 +301,7 @@ export function AnsweredAskUserQuestionCard({
                   )}
                 >
                   {otherText
-                    ? <>You typed: “{otherText}”</>
+                    ? <>Other: {otherText}</>
                     : hasAnswer
                       ? answer
                       : '(no answer recorded)'}

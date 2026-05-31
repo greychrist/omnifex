@@ -100,29 +100,31 @@ describe('AnsweredAskUserQuestionCard (wire format — synthesised string)', () 
     expect(screen.getByText('A, B')).toBeTruthy();
   });
 
-  it('shows the italic "You typed:" form when the user selected Other (and only that form)', () => {
+  it('shows the "Other:" form when the user selected Other (rendered once)', () => {
     render(
       <AnsweredAskUserQuestionCard
         input={input([{ question: 'Pick', options: [{ label: 'X' }] }])}
         resultContent={resultWire({ Pick: 'Magenta' }, ['Magenta'])}
       />,
     );
-    // The italic line renders the typed text with curly quotes.
-    expect(screen.getByText(/You typed:.*Magenta/)).toBeTruthy();
+    // The answer cell renders the typed text prefixed with "Other:".
+    expect(screen.getByText(/Other:\s*Magenta/)).toBeTruthy();
     // And the raw text "Magenta" doesn't render a second time outside the
-    // "You typed:" line — the answer column shows the typed form
-    // exclusively for Other answers (no duplication).
+    // "Other:" line — the answer column shows the typed form exclusively for
+    // Other answers (no duplication). This was the user-reported double-render.
     expect(screen.getAllByText(/Magenta/).length).toBe(1);
+    // The older "You typed:" phrasing is gone.
+    expect(screen.queryByText(/You typed/)).toBeNull();
   });
 
-  it('omits the "You typed:" sub-line when there is no annotation', () => {
+  it('omits the "Other:" line when there is no annotation', () => {
     render(
       <AnsweredAskUserQuestionCard
         input={input([{ question: 'Pick', options: [{ label: 'X' }] }])}
         resultContent={resultWire({ Pick: 'X' })}
       />,
     );
-    expect(screen.queryByText(/You typed:/)).toBeNull();
+    expect(screen.queryByText(/Other:/)).toBeNull();
   });
 
   it('parses the live session d6ac42ec-47c0-47ef-8b4b-81fda02fa2f5 verbatim', () => {
@@ -153,12 +155,12 @@ describe('AnsweredAskUserQuestionCard (wire format — synthesised string)', () 
     expect(screen.queryByText('(no answer recorded)')).toBeNull();
     expect(screen.getByText('Blue')).toBeTruthy();
     expect(screen.getByText('TypeScript, Python')).toBeTruthy();
-    // Other answers now render exclusively as the italic "You typed: …"
-    // form in the answer column — the prior layout duplicated the raw
-    // value in a separate column too, which read as noise.
+    // Other answers render exclusively as the "Other: …" form in the answer
+    // column — the prior layout duplicated the raw value in a separate column
+    // too, which read as noise (the user-reported double-render).
     expect(screen.getAllByText(/This is a test, custom, answer/).length).toBe(1);
-    expect(screen.getByText(/You typed:.*This is a test/)).toBeTruthy();
-    expect(screen.getAllByText(/You typed:/).length).toBe(1);
+    expect(screen.getByText(/Other:.*This is a test/)).toBeTruthy();
+    expect(screen.getAllByText(/Other:/).length).toBe(1);
   });
 
   it('falls back to "(no answer recorded)" when the result content is missing', () => {
