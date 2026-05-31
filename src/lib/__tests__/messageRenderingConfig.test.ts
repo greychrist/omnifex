@@ -12,6 +12,8 @@ import {
   DEFAULT_OVERRIDES,
   CATEGORIES,
   KNOWN_KIND_IDS,
+  KIND_REGISTRY,
+  categoryOf,
   originOf,
   type MessageRenderingConfig,
   type Override,
@@ -693,5 +695,25 @@ describe("messageRenderingConfig", () => {
     it("defaults unknown ids to system (never throws)", () => {
       expect(originOf("totally.new.kind")).toBe("system");
     });
+  });
+});
+
+describe("kind registry", () => {
+  it("has exactly the three real categories", () => {
+    expect([...CATEGORIES]).toEqual(["user", "agent", "system"]);
+  });
+
+  it("registers every catalog kind under a real category", () => {
+    for (const [id, def] of Object.entries(KIND_REGISTRY)) {
+      expect(def.id).toBe(id);
+      expect(CATEGORIES).toContain(def.category);
+    }
+  });
+
+  it("categoryOf returns the registry category, falling back to system", () => {
+    expect(categoryOf("permission.request")).toBe("system");
+    expect(categoryOf("assistant.text")).toBe("agent");
+    expect(categoryOf("user.prompt")).toBe("user");
+    expect(categoryOf("totally.unknown.future.id")).toBe("system");
   });
 });

@@ -205,7 +205,7 @@ export type BorderStyle = 'solid' | 'dashed';
 // `resolveKind(config, id)` merges category ⊕ override and is the single
 // source of truth for every kind's style; there is no flat catalog anymore.
 
-export const CATEGORIES = ["user", "agent", "system", "attachment", "bookkeeping"] as const;
+export const CATEGORIES = ["user", "agent", "system"] as const;
 export type Category = (typeof CATEGORIES)[number];
 
 /** Styling fields shared by categories and overrides. Identity fields
@@ -230,12 +230,58 @@ export interface CategoryStyle extends KindStyle {
   description: string;
 }
 
+export interface KindDef {
+  id: string;
+  category: Category;
+  label: string;
+  description: string;
+  /** Built-in chrome for this kind, layered over the category base. */
+  default: Partial<KindStyle>;
+}
+
+export const KIND_REGISTRY: Record<string, KindDef> = {
+  // ── agent ──
+  "assistant.text": { id: "assistant.text", category: "agent", label: "Assistant text", description: "Claude's reply text.", default: {} },
+  "assistant.text.endTurn": { id: "assistant.text.endTurn", category: "agent", label: "Execution complete", description: "Final assistant text that ended the turn.", default: { accentColor: "green", icon: "CheckCircle2", compactBoundaryLocked: true } },
+  "assistant.thinking": { id: "assistant.thinking", category: "agent", label: "Thinking", description: "Extended-thinking blocks.", default: { presentation: "collapsible", headerLabel: "Thinking", icon: "Brain", widget: "ThinkingWidget", hiddenInCompact: true } },
+  "assistant.tool-use": { id: "assistant.tool-use", category: "agent", label: "Tool call", description: "Claude invoking a tool.", default: { accentColor: "info", icon: "Terminal", headerLabel: null, hiddenInCompact: true } },
+  "assistant.askUserQuestion": { id: "assistant.askUserQuestion", category: "agent", label: "Question (answered)", description: "An answered AskUserQuestion card.", default: { presentation: "card", icon: "MessageCircleQuestion", accentColor: "indigo", hiddenInCompact: false } },
+  // ── user ──
+  "user.prompt": { id: "user.prompt", category: "user", label: "User prompt", description: "What you typed.", default: { compactBoundaryLocked: true } },
+  "user.command": { id: "user.command", category: "user", label: "Slash command", description: "A `/command` you ran.", default: { presentation: "side-line", icon: "ChevronRight", alignment: "left" } },
+  "user.commandOutput": { id: "user.commandOutput", category: "user", label: "Command output", description: "Local stdout from a slash command.", default: { presentation: "side-line", alignment: "left", hiddenInCompact: true } },
+  "user.subagentPrompt": { id: "user.subagentPrompt", category: "user", label: "Subagent prompt", description: "A prompt generated for a subagent.", default: { icon: "Bot", accentColor: "amber", alignment: "left" } },
+  "user.skillInjection": { id: "user.skillInjection", category: "user", label: "Skill injection", description: "Skill body injected into the conversation.", default: { presentation: "collapsible", icon: "Sparkles", accentColor: "purple", alignment: "left" } },
+  "user.systemContext": { id: "user.systemContext", category: "user", label: "System context", description: "Hook feedback, system-reminders, skill preambles.", default: { presentation: "collapsible", icon: "Sparkles", accentColor: "purple", showRawPayload: true, alignment: "left", hiddenInCompact: false } },
+  "user.sdkSystemBracket": { id: "user.sdkSystemBracket", category: "user", label: "System notice", description: "CLI bracket notices like [Request interrupted].", default: { presentation: "side-line", icon: "Info", alignment: "left" } },
+  "user.tool-result": { id: "user.tool-result", category: "user", label: "Tool result", description: "Output returned from a tool call.", default: { presentation: "side-line", headerLabel: null, alignment: "left", hiddenInCompact: true } },
+  "user.image": { id: "user.image", category: "user", label: "Image", description: "A pasted or attached image.", default: { icon: "Image", alignment: "left" } },
+  // ── system ──
+  "system.notification.info": { id: "system.notification.info", category: "system", label: "Notification (info)", description: "Informational CLI notification.", default: { icon: "Bell", presentation: "card", hiddenInCompact: false } },
+  "system.notification.warn": { id: "system.notification.warn", category: "system", label: "Notification (warn)", description: "Warning CLI notification.", default: { accentColor: "amber", icon: "Bell", presentation: "card", hiddenInCompact: false } },
+  "system.notification.error": { id: "system.notification.error", category: "system", label: "Notification (error)", description: "Error CLI notification.", default: { accentColor: "red", icon: "Bell", presentation: "card", hiddenInCompact: false } },
+  "system.notification.stop": { id: "system.notification.stop", category: "system", label: "Notification (stop)", description: "Stop CLI notification.", default: { accentColor: "red", icon: "Bell", presentation: "card", hiddenInCompact: false } },
+  "system.hook_started": { id: "system.hook_started", category: "system", label: "Hook started", description: "A hook began running.", default: { icon: "Hook" } },
+  "system.hook_response": { id: "system.hook_response", category: "system", label: "Hook response", description: "A hook returned.", default: { icon: "Hook" } },
+  "system.permission_denied": { id: "system.permission_denied", category: "system", label: "Permission denied", description: "A tool permission was denied.", default: { accentColor: "red", icon: "ShieldX", presentation: "card", hiddenInCompact: false } },
+  "system.userPromptSubmit": { id: "system.userPromptSubmit", category: "system", label: "Prompt submitted", description: "UserPromptSubmit lifecycle envelope.", default: { icon: "Send" } },
+  "system.api_error": { id: "system.api_error", category: "system", label: "API error", description: "An API or tool error.", default: { accentColor: "red", icon: "AlertTriangle", presentation: "card", hiddenInCompact: false } },
+  "system.unknown": { id: "system.unknown", category: "system", label: "System (other)", description: "Any unrecognized system subtype.", default: { icon: "Info" } },
+  "permission.request": { id: "permission.request", category: "system", label: "Permission request", description: "Live tool-permission prompt.", default: { presentation: "card", icon: "ShieldQuestion", accentColor: "amber", hiddenInCompact: false } },
+  "permission.askUserQuestion": { id: "permission.askUserQuestion", category: "system", label: "Question (live)", description: "Live AskUserQuestion prompt.", default: { presentation: "card", icon: "MessageCircleQuestion", accentColor: "indigo", hiddenInCompact: false } },
+  // ── summary / fallback (resolve to system) ──
+  "summary.compaction": { id: "summary.compaction", category: "system", label: "Conversation summary", description: "Compaction summary card.", default: { icon: "FileText", presentation: "card", widget: "SummaryWidget", hiddenInCompact: false, compactBoundaryLocked: true } },
+  "unknown": { id: "unknown", category: "system", label: "Unknown", description: "Unclassifiable message — shows raw payload.", default: { presentation: "side-line", icon: "HelpCircle", accentColor: "orange", borderStyle: "dashed", headerLabel: "Unknown", hiddenInCompact: false, compactBoundaryLocked: true, showRawPayload: true } },
+};
+
+export function categoryOf(id: string): Category {
+  return KIND_REGISTRY[id]?.category ?? "system";
+}
+
 export const DEFAULT_CATEGORIES: Record<Category, CategoryStyle> = {
-  user:        { label: "User",        description: "Your prompts, tool results, commands, injected context.",       presentation: "card",        accentColor: "blue",    icon: "User",     headerLabel: "You",    borderStyle: "solid",  alignment: "right", hiddenInCompact: false },
-  agent:       { label: "Agent",       description: "Claude's text, thinking, tool calls, completions.",            presentation: "card",        accentColor: "primary", icon: "Bot",      headerLabel: "Claude", borderStyle: "solid",  alignment: "left",  hiddenInCompact: false },
-  system:      { label: "System",      description: "Notifications, hooks, errors, lifecycle envelopes.",           presentation: "card",        accentColor: "muted",   icon: "Info",     headerLabel: null,     borderStyle: "solid",  alignment: "left",  hiddenInCompact: true },
-  attachment:  { label: "Attachment",  description: "Harness-injected context (reminders, diagnostics, skills).",   presentation: "collapsible", accentColor: "muted",   icon: "Paperclip",headerLabel: null,     borderStyle: "solid",  alignment: "left",  hiddenInCompact: true, showRawPayload: true },
-  bookkeeping: { label: "Bookkeeping", description: "Internal transcript records (hidden by default).",             presentation: "side-line",   accentColor: "muted",   icon: "FileText", headerLabel: null,     borderStyle: "dashed", alignment: "left",  hiddenInCompact: true },
+  user:   { label: "User",   description: "Your prompts, commands, tool results, injected context.", presentation: "card", accentColor: "blue",    icon: "User", headerLabel: "You",    borderStyle: "solid", alignment: "right", hiddenInCompact: false },
+  agent:  { label: "Agent",  description: "Claude's text, thinking, tool calls, completions.",        presentation: "card", accentColor: "primary", icon: "Bot",  headerLabel: "Claude", borderStyle: "solid", alignment: "left",  hiddenInCompact: false },
+  system: { label: "System", description: "Notifications, hooks, errors, lifecycle, prompts.",         presentation: "card", accentColor: "muted",   icon: "Info", headerLabel: null,     borderStyle: "solid", alignment: "left",  hiddenInCompact: true  },
 };
 
 const BOOKKEEPING_IDS = new Set([
@@ -244,13 +290,12 @@ const BOOKKEEPING_IDS = new Set([
 ]);
 
 export function originOf(kindId: string): Category {
-  if (BOOKKEEPING_IDS.has(kindId)) return "bookkeeping";
+  if (BOOKKEEPING_IDS.has(kindId)) return "system";
   const head = kindId.split(".")[0];
   switch (head) {
     case "user": return "user";
     case "assistant": return "agent";
-    case "attachment": return "attachment";
-    // system, cli-stream-*, summary, permission, unknown → system bucket
+    // attachment, system, cli-stream-*, summary, permission, unknown → system bucket
     default: return "system";
   }
 }
@@ -286,68 +331,6 @@ export interface Override {
   style: Partial<KindStyle>;
 }
 
-/** Build a `$kind eq <id>` override — the exact-id match the v3 model used. */
-function kindOverride(id: string, label: string, style: Partial<KindStyle>): Override {
-  return { id, label, category: originOf(id), match: [{ path: "$kind", op: "eq", value: id }], style };
-}
-
-export const DEFAULT_OVERRIDES: Override[] = [
-  kindOverride("user.prompt",                 "User prompt",             { compactBoundaryLocked: true }),
-  kindOverride("assistant.text.endTurn",      "Execution complete",      { accentColor: "green",   icon: "CheckCircle2",        compactBoundaryLocked: true }),
-  kindOverride("assistant.thinking",          "Thinking",                { presentation: "collapsible", headerLabel: "Thinking", icon: "Brain",               widget: "ThinkingWidget", hiddenInCompact: true }),
-  kindOverride("assistant.tool-use",          "Tool call",               { accentColor: "info",    icon: "Terminal",            headerLabel: null,           hiddenInCompact: true }),
-  // The *answered* AskUserQuestion card lives in the agent category (Claude
-  // asked the user). The live interactive prompt keeps permission.askUserQuestion
-  // below. Same chrome (Question / question icon) on both.
-  kindOverride("assistant.askUserQuestion",   "Question",                { presentation: "card",    icon: "MessageCircleQuestion", accentColor: "primary",   hiddenInCompact: false }),
-  kindOverride("user.systemContext",          "System context",          { presentation: "collapsible", icon: "Sparkles",        accentColor: "purple",       showRawPayload: true, alignment: "left", hiddenInCompact: false }),
-  kindOverride("user.tool-result",            "Tool result",             { presentation: "side-line",   headerLabel: null,       alignment: "left",           hiddenInCompact: true }),
-  kindOverride("user.command",                "Slash command",           { presentation: "side-line",   icon: "ChevronRight",    alignment: "left" }),
-  kindOverride("system.notification.error",   "Notification (error)",    { accentColor: "red",     icon: "Bell",                presentation: "card",        hiddenInCompact: false }),
-  kindOverride("system.notification.warn",    "Notification (warn)",     { accentColor: "amber",   icon: "Bell",                presentation: "card",        hiddenInCompact: false }),
-  kindOverride("system.notification.stop",    "Notification (stop)",     { accentColor: "red",     icon: "Bell",                presentation: "card",        hiddenInCompact: false }),
-  kindOverride("system.api_error",            "API error",               { accentColor: "red",     icon: "AlertTriangle",       presentation: "card",        hiddenInCompact: false }),
-  kindOverride("system.compact_boundary",     "Compacted",               { icon: "Scissors",        presentation: "card",       widget: "CompactBoundaryWidget", hiddenInCompact: false }),
-  kindOverride("summary.compaction",          "Conversation summary",    { icon: "FileText",        presentation: "card",       widget: "SummaryWidget",     hiddenInCompact: false, compactBoundaryLocked: true }),
-  kindOverride("pr-link",                     "Pull request",            { presentation: "side-line",   icon: "GitPullRequest",  accentColor: "info",         hiddenInCompact: false }),
-  kindOverride("permission.request",          "Permission request",      { presentation: "card",    icon: "ShieldQuestion",     accentColor: "amber",        hiddenInCompact: false }),
-  kindOverride("permission.askUserQuestion",  "Question",                { presentation: "card",    icon: "MessageCircleQuestion", accentColor: "primary",   hiddenInCompact: false }),
-  // Answered-AskUserQuestion sentinels. `originOf` routes these through the
-  // "system" category (head "tool" → default), which is hiddenInCompact:true.
-  // Override both to visible + locked so compact grouping never folds them.
-  kindOverride("tool.askUserQuestion.answered",        "Question (answered)",        { hiddenInCompact: false, compactBoundaryLocked: true }),
-  kindOverride("tool.askUserQuestion.answered.result", "Question (answered result)", { hiddenInCompact: false, compactBoundaryLocked: true }),
-  kindOverride("unknown",                     "Unknown",                 { presentation: "side-line", icon: "HelpCircle",        accentColor: "orange",       borderStyle: "dashed", headerLabel: "Unknown", hiddenInCompact: false, compactBoundaryLocked: true, showRawPayload: true }),
-];
-
-// All kind ids the classifier can emit plus the curated overrides. Used by the
-// settings UI to enumerate known kinds and by the coverage test. New CLI kinds
-// not listed here still resolve via `originOf` + category defaults.
-export const KNOWN_KIND_IDS: readonly string[] = [
-  "assistant.text", "assistant.text.endTurn", "assistant.thinking", "assistant.tool-use",
-  "assistant.askUserQuestion",
-  "user.prompt", "user.tool-result", "user.meta.skill", "user.meta.attachment",
-  "user.meta.other", "user.subagentPrompt", "user.command", "user.commandOutput",
-  "user.skillInjection", "user.systemContext", "user.sdkSystemBracket",
-  "system.notification.info", "system.notification.warn", "system.notification.error",
-  "system.notification.stop", "system.api_error", "system.stop_hook_summary",
-  "system.hook_started", "system.hook_progress", "system.hook_response",
-  "system.local_command", "system.turn_duration", "system.away_summary",
-  "system.compact_boundary", "system.informational", "system.permission_denied",
-  "system.userPromptSubmit", "system.unknown", "summary.compaction",
-  "cli-stream-init", "cli-stream-result",
-  "permission.request", "permission.askUserQuestion",
-  "attachment.unknown", "attachment.todo_reminder", "attachment.task_reminder",
-  "attachment.diagnostics", "attachment.command_permissions", "attachment.skill_listing",
-  "attachment.deferred_tools_delta", "attachment.mcp_instructions_delta",
-  "attachment.hook_success", "attachment.hook_additional_context",
-  "attachment.edited_text_file", "attachment.nested_memory", "attachment.queued_command",
-  "attachment.auto_mode", "attachment.hook_blocking_error", "attachment.date_change",
-  "attachment.ultrathink_effort", "attachment.plan_mode_exit", "attachment.file",
-  "attachment.compact_file_reference", "attachment.invoked_skills",
-  "queue-operation", "permission-mode", "last-prompt", "ai-title",
-  "file-history-snapshot", "unknown",
-] as const;
 
 // The styling fields shared by categories and overrides — everything that
 // drives a card's look. Identity fields (id/label/description) are excluded.
@@ -637,7 +620,7 @@ export function createDefaultConfig(): MessageRenderingConfig {
     version: 4,
     defaultViewMode: "verbose",
     categories: structuredClone(DEFAULT_CATEGORIES),
-    overrides: structuredClone(DEFAULT_OVERRIDES),
+    overrides: [],
     palette: structuredClone(DEFAULT_PALETTE),
     hardFilters: { ...DEFAULT_HARD_FILTERS },
     typography: structuredClone(DEFAULT_TYPOGRAPHY),
