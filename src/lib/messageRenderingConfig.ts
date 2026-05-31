@@ -9,7 +9,6 @@
 // `api.saveSetting(MESSAGE_RENDERING_CONFIG_KEY, ...)`.
 
 import { isTypefaceId, type Typeface } from "./typefaceCatalog";
-import type { JsonlNode } from "@/types/jsonl";
 
 export const MESSAGE_RENDERING_CONFIG_KEY = "message_rendering_config";
 
@@ -159,7 +158,7 @@ export const ALLOWED_ICONS = [
   "Flame",
   "Smile",
   "Hourglass",
-  // Extended catalog additions
+  // v2 catalog additions
   "AlertOctagon",
   "AlertTriangle",
   "Bell",
@@ -180,7 +179,7 @@ export const ALLOWED_ICONS = [
   "ImageUp",
   "MonitorCog",
   "Slash",
-  // Permission / question icons
+  // v3 catalog additions
   "GitPullRequest",
   "ShieldQuestion",
   "MessageCircleQuestion",
@@ -196,17 +195,16 @@ export type IconName = (typeof ALLOWED_ICONS)[number];
 // ─── message kinds ──────────────────────────────────────────────────────────
 
 export type Alignment = "left" | "right" | "full";
-export type Presentation = 'card' | 'side-line' | 'collapsible';
-export type BorderStyle = 'solid' | 'dashed';
+export type Presentation = "card" | "side-line" | "collapsible";
+export type BorderStyle = "solid" | "dashed";
 
 // ─── category + kind registry model ─────────────────────────────────────────
 //
 // Three-layer model: CATEGORIES carry default styling for all kinds in them;
 // KIND_REGISTRY carries built-in per-kind chrome layered on top; and
 // config.kinds carries sparse user patches as the final layer.
-// `resolveKind(config, id)` merges all three and is the single source of
-// truth for every kind's effective style. There is no match engine or
-// overrides array in this path.
+// resolveKind(config, id) merges all three and is the single source of
+// truth for every kind's effective style.
 
 export const CATEGORIES = ["user", "agent", "system"] as const;
 export type Category = (typeof CATEGORIES)[number];
@@ -309,169 +307,10 @@ export function resolveKind(config: MessageRenderingConfig, kindId: string): Kin
   };
 }
 
-// ─── legacy origin resolver (used by pre-v5 mergeConfig branches) ────────────
-
-const BOOKKEEPING_IDS = new Set([
-  "pr-link", "mode", "last-prompt", "queue-operation",
-  "ai-title", "file-history-snapshot", "permission-mode",
-]);
-
-export function originOf(kindId: string): Category {
-  if (BOOKKEEPING_IDS.has(kindId)) return "system";
-  const head = kindId.split(".")[0];
-  switch (head) {
-    case "user": return "user";
-    case "assistant": return "agent";
-    default: return "system";
-  }
-}
-
-// ─── legacy override matchers ────────────────────────────────────────────────
-//
-// Used by pre-v5 mergeConfig branches and by UI components that match saved
-// overrides against messages. These types and helpers remain for backward
-// compatibility with persisted configs that contain an overrides array.
-
-export type MatchOp = "eq" | "contains" | "regex";
-
-/** A single `path op value` triple tested against a message. */
-export interface MatchCondition {
-  path: string;
-  op: MatchOp;
-  value: string | number | boolean | null;
-}
-
-/** A user-authored, category-scoped style rule. */
-export interface Override {
-  /** Stable, unique id. */
-  id: string;
-  label: string;
-  /** Scope + base style + tree grouping. */
-  category: Category;
-  /** Conditions ANDed together; empty ⇒ matches every message in `category`. */
-  match: MatchCondition[];
-  /** Sparse style patch edited in the right panel. */
-  style: Partial<KindStyle>;
-}
-
-/** A matchable message: a real `JsonlNode` (render/list path) or any bare
- *  `{ raw }` bag (previews, tests). */
-type JsonlNodeLike = JsonlNode | { raw?: unknown };
-
-/**
- * Resolve a dotted path against a raw message object, returning the set of
- * values it reaches.
- */
-export function getByPath(root: unknown, path: string): unknown[] {
-  let current: unknown[] = root == null ? [] : [root];
-  for (const seg of path.split(".")) {
-    const isArray = seg.endsWith("[]");
-    const key = isArray ? seg.slice(0, -2) : seg;
-    const next: unknown[] = [];
-    for (const c of current) {
-      if (c == null || typeof c !== "object") continue;
-      const v = (c as Record<string, unknown>)[key];
-      if (isArray) {
-        if (Array.isArray(v)) next.push(...v);
-      } else {
-        next.push(v);
-      }
-    }
-    current = next;
-  }
-  return current;
-}
-
-function valuesForPath(
-  message: JsonlNodeLike | undefined,
-  kindId: string,
-  category: Category,
-  path: string,
-): unknown[] {
-  if (path === "$kind") return [kindId];
-  if (path === "$category") return [category];
-  const raw = message ? (message as { raw?: unknown }).raw : undefined;
-  return getByPath(raw, path);
-}
-
-function valueSatisfies(value: unknown, op: MatchOp, literal: MatchCondition["value"]): boolean {
-  switch (op) {
-    case "eq":
-      return value === literal;
-    case "contains":
-      return typeof value === "string" && typeof literal === "string" && value.includes(literal);
-    case "regex":
-      if (typeof value !== "string" || typeof literal !== "string") return false;
-      try {
-        return new RegExp(literal).test(value);
-      } catch {
-        return false;
-      }
-  }
-}
-
-/**
- * True when every condition holds (AND). A condition holds when at least one
- * value its path resolves to satisfies the operator. An empty condition list
- * matches every message (specificity 0).
- */
-export function conditionsMatch(
-  match: MatchCondition[],
-  message: JsonlNodeLike | undefined,
-  kindId: string,
-  category: Category,
-): boolean {
-  for (const c of match) {
-    const candidates = valuesForPath(message, kindId, category, c.path);
-    if (!candidates.some((v) => valueSatisfies(v, c.op, c.value))) return false;
-  }
-  return true;
-}
-
-/**
- * Full cascade resolution for a specific message using the legacy overrides
- * array. Used by pre-v5 mergeConfig branches and components that read saved
- * override arrays from older persisted configs.
- */
-export function resolveMessageStyle(
-  config: MessageRenderingConfig,
-  message: JsonlNodeLike | undefined,
-  kindId: string,
-): KindStyle {
-  const category = originOf(kindId);
-  const base = config.categories[category];
-  const hits = (config.overrides ?? [])
-    .filter((o) => o.category === category && conditionsMatch(o.match, message, kindId, category))
-    .slice()
-    .sort((a, b) => a.match.length - b.match.length);
-  return hits.reduce<KindStyle>((acc, o) => ({ ...acc, ...o.style }), { ...base });
-}
-
-/**
- * Produce an effective config whose category base for `kindId`'s origin is
- * replaced by `style`. Used by MessageFrame and the Appearance preview.
- */
-export function withResolvedKindStyle(
-  config: MessageRenderingConfig,
-  kindId: string,
-  style: KindStyle,
-): MessageRenderingConfig {
-  const cat = originOf(kindId);
-  return {
-    ...config,
-    categories: {
-      ...config.categories,
-      [cat]: { ...config.categories[cat], ...style } as CategoryStyle,
-    },
-  };
-}
-
 // ─── typography ─────────────────────────────────────────────────────────────
 //
 // Global typography applied to every message kind. Two style slots — the
-// `header` row that sits above a card's body, and the `content` body text.
-// Per-kind typography customization is intentionally out of scope; one pair
-// of sliders keeps the UI simple and the config small.
+// header row that sits above a card's body, and the content body text.
 
 export type FontSize = "xs" | "sm" | "base" | "lg";
 export type FontWeight =
@@ -498,9 +337,9 @@ export interface IconStyle {
    *  chat background — the icon "punches out" of the card's tinted accent.
    *  When false, the icon sits flat against the card background. */
   bordered: boolean;
-  /** Opacity (0-100) of the chip's background when `bordered` is true.
+  /** Opacity (0-100) of the chip's background when bordered is true.
    *  100 = fully opaque chat-background fill, 0 = transparent (chip border
-   *  only). Ignored when `bordered` is false. */
+   *  only). Ignored when bordered is false. */
   bgOpacity: number;
 }
 
@@ -547,10 +386,7 @@ export const DEFAULT_DEBUG: DebugOptions = {
 
 // ─── terminal ───────────────────────────────────────────────────────────────
 //
-// Settings specific to the xterm surface in TUI mode. Lives next to typography
-// because both are user-facing presentation knobs and they share the same
-// import/export config blob — but the terminal lives in its own section to
-// avoid coupling to message-card structure that doesn't apply.
+// Settings specific to the xterm surface in TUI mode.
 
 export type TerminalCursorStyle = "block" | "underline" | "bar";
 
@@ -586,15 +422,14 @@ export const DEFAULT_TERMINAL: Terminal = {
   cursorStyle: "block",
 };
 
-// ─── top-level config ───────────────────────────────────────────────────────
+// ─── top-level config (v5) ──────────────────────────────────────────────────
 
 export interface MessageRenderingConfig {
-  version: 4;
+  version: 5;
   defaultViewMode: "compact" | "verbose";
   categories: Record<Category, CategoryStyle>;
   /** Per-kind user style patches — the third layer of resolveKind. */
   kinds: Record<string, Partial<KindStyle>>;
-  overrides: Override[];
   palette: Palette;
   hardFilters: HardFilters;
   typography: Typography;
@@ -604,11 +439,10 @@ export interface MessageRenderingConfig {
 
 export function createDefaultConfig(): MessageRenderingConfig {
   return {
-    version: 4,
+    version: 5,
     defaultViewMode: "verbose",
     categories: structuredClone(DEFAULT_CATEGORIES),
     kinds: {},
-    overrides: [],
     palette: structuredClone(DEFAULT_PALETTE),
     hardFilters: { ...DEFAULT_HARD_FILTERS },
     typography: structuredClone(DEFAULT_TYPOGRAPHY),
@@ -617,55 +451,22 @@ export function createDefaultConfig(): MessageRenderingConfig {
   };
 }
 
-/**
- * Drop override fields that equal their category default; remove an override
- * entirely when nothing diverges. Keeps the persisted override map sparse.
- *
- * `exempt` lists override ids that must survive even when fully redundant —
- * used by the settings UI so a freshly added (still-empty) override the user
- * is actively editing isn't pruned out from under them before they diverge a
- * field. Exempt overrides still have redundant *fields* trimmed.
- */
-export function pruneRedundantOverrides(
-  config: MessageRenderingConfig,
-  exempt: ReadonlySet<string> = new Set(),
-): MessageRenderingConfig {
-  const overrides: Override[] = [];
-  for (const o of config.overrides) {
-    const base = config.categories[o.category] as unknown as Record<string, unknown>;
-    const keptStyle: Record<string, unknown> = {};
-    for (const [field, value] of Object.entries(o.style)) {
-      if (value !== base[field]) keptStyle[field] = value;
-    }
-    // A rule that carries match conditions is never dropped — it expresses an
-    // intentional grouping even when its style is empty. Style-only redundancy
-    // (no conditions, no diverging fields) is pruned unless the rule is the
-    // one being actively edited (exempt).
-    const hasStyle = Object.keys(keptStyle).length > 0;
-    const hasMatch = o.match.length > 0;
-    if (hasStyle || hasMatch || exempt.has(o.id)) {
-      overrides.push({ ...o, style: keptStyle as Partial<KindStyle> });
-    }
-  }
-  return { ...config, overrides };
-}
-
 // ─── merge / load / validate ────────────────────────────────────────────────
 //
-// Merge strategy is ADDITIVE: the default config is always the baseline.
-// User overrides are applied on top. Unknown kind IDs in saved data are
-// silently dropped (schema drift across app versions). Unknown palette keys
-// are ignored.
+// Merge strategy: the default config is always the baseline; user patches are
+// applied on top. On a version mismatch the saved config is discarded and
+// defaults are returned (full reset). Unknown kind IDs in saved data are
+// silently dropped. Unknown palette keys are ignored.
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
 /**
- * True when `v` looks like a CSS hex colour: `#rgb`, `#rrggbb`, or the
- * 8-digit RGBA variant `#rrggbbaa`. Permissive enough to accept what an
- * `<input type="color">` emits (always 7-char `#rrggbb`) plus typed-in
- * shorthands and alpha variants. The accent helpers in `accentStyle.ts`
+ * True when v looks like a CSS hex colour: #rgb, #rrggbb, or the
+ * 8-digit RGBA variant #rrggbbaa. Permissive enough to accept what an
+ * <input type="color"> emits (always 7-char #rrggbb) plus typed-in
+ * shorthands and alpha variants. The accent helpers in accentStyle.ts
  * pad/derive border + bg alphas on top of whichever form is stored.
  */
 export function isHexColor(v: unknown): v is string {
@@ -674,7 +475,7 @@ export function isHexColor(v: unknown): v is string {
 
 /**
  * Validate and coerce a single style field off a raw record. Returns the
- * accepted value, or `undefined` when the raw value is missing/invalid so the
+ * accepted value, or undefined when the raw value is missing/invalid so the
  * caller can fall back to the inherited default.
  */
 function validateStyleField(
@@ -713,7 +514,23 @@ function validateStyleField(
   }
 }
 
-/** Shallow-merge saved category styles over the defaults already on `base`. */
+/** Validate and clean a saved kinds map, dropping junk entries and unknown fields. */
+function validateKindsMap(raw: unknown, palette: Palette): Record<string, Partial<KindStyle>> {
+  const out: Record<string, Partial<KindStyle>> = {};
+  if (!isRecord(raw)) return out;
+  for (const [id, patch] of Object.entries(raw)) {
+    if (!isRecord(patch)) continue;
+    const clean: Record<string, unknown> = {};
+    for (const f of STYLE_FIELDS) {
+      const v = validateStyleField(f, patch, palette);
+      if (v !== undefined) clean[f] = v;
+    }
+    if (Object.keys(clean).length > 0) out[id] = clean as Partial<KindStyle>;
+  }
+  return out;
+}
+
+/** Shallow-merge saved category styles over the defaults already on base. */
 function mergeCategories(base: MessageRenderingConfig, saved: Record<string, unknown>): void {
   if (!isRecord(saved.categories)) return;
   for (const c of CATEGORIES) {
@@ -730,134 +547,18 @@ function mergeCategories(base: MessageRenderingConfig, saved: Record<string, unk
   }
 }
 
-function isCategory(v: unknown): v is Category {
-  return typeof v === "string" && (CATEGORIES as readonly string[]).includes(v);
-}
-
-const MATCH_OPS: readonly MatchOp[] = ["eq", "contains", "regex"];
-
-/** Validate a raw match list into well-formed conditions, dropping junk. */
-function validateMatch(raw: unknown): MatchCondition[] {
-  if (!Array.isArray(raw)) return [];
-  const out: MatchCondition[] = [];
-  for (const c of raw) {
-    if (!isRecord(c)) continue;
-    if (typeof c.path !== "string") continue;
-    if (!(MATCH_OPS as readonly string[]).includes(c.op as string)) continue;
-    const v = c.value;
-    if (!(typeof v === "string" || typeof v === "number" || typeof v === "boolean" || v === null)) continue;
-    out.push({ path: c.path, op: c.op as MatchOp, value: v });
-  }
-  return out;
-}
-
-/** Validate a sparse style patch off a raw record (the override's `style`). */
-function validateStylePatch(rawStyle: unknown, palette: Palette): Partial<KindStyle> {
-  const patch: Partial<KindStyle> = {};
-  if (!isRecord(rawStyle)) return patch;
-  for (const f of STYLE_FIELDS) {
-    const val = validateStyleField(f, rawStyle, palette);
-    if (val !== undefined) (patch as Record<string, unknown>)[f] = val;
-  }
-  return patch;
-}
-
-/** Validate a saved override object from a persisted config. Returns null when it lacks an id. */
-function validateOverride(entry: unknown, base: MessageRenderingConfig): Override | null {
-  if (!isRecord(entry)) return null;
-  if (typeof entry.id !== "string" || entry.id === "") return null;
-  const id = entry.id;
-  const category = isCategory(entry.category) ? entry.category : originOf(id);
-  const label = typeof entry.label === "string" ? entry.label : id;
-  return {
-    id,
-    label,
-    category,
-    match: validateMatch(entry.match),
-    style: validateStylePatch(entry.style, base.palette),
-  };
-}
-
-/** Upsert a `$kind eq <id>` style patch onto an Override[] (used during pre-v5 config conversion). */
-function upsertKindOverride(overrides: Override[], id: string, stylePatch: Partial<KindStyle>): void {
-  const existing = overrides.find(
-    (o) => o.id === id && o.match.length === 1 && o.match[0].path === "$kind",
-  );
-  if (existing) {
-    existing.style = { ...existing.style, ...stylePatch };
-  } else {
-    overrides.push(kindOverride(id, id, stylePatch));
-  }
-}
-
 export function mergeConfig(saved: unknown): MessageRenderingConfig {
   const base = createDefaultConfig();
-  if (!isRecord(saved)) return base;
-
-  // v5 (current): categories shallow-merged; kinds map validated entry by entry;
-  // shared blocks merged last. The saved overrides array is authoritative —
-  // defaults the user deleted must stay deleted.
-  if (saved.version === 4) {
-    mergeCategories(base, saved);
-    if (Array.isArray(saved.overrides)) {
-      base.overrides = saved.overrides
-        .map((e) => validateOverride(e, base))
-        .filter((o): o is Override => o !== null);
-    }
-    return mergeShared(base, saved);
-  }
-
-  // Pre-v5 (version 3): override record was keyed by kind id. Convert each
-  // entry into a `$kind eq <id>` rule so it survives in the overrides array.
-  // The saved record is authoritative (replaces the defaults).
-  if (saved.version === 3) {
-    mergeCategories(base, saved);
-    if (isRecord(saved.overrides)) {
-      const converted: Override[] = [];
-      for (const [id, entry] of Object.entries(saved.overrides as Record<string, unknown>)) {
-        if (!isRecord(entry)) continue;
-        const label = typeof entry.label === "string" ? entry.label : id;
-        converted.push({
-          id,
-          label,
-          category: originOf(id),
-          match: [{ path: "$kind", op: "eq", value: id }],
-          style: validateStylePatch(entry, base.palette),
-        });
-      }
-      base.overrides = converted;
-    }
-    return mergeShared(base, saved);
-  }
-
-  // Pre-v5 (version 2 or older): convert each customized flat kind into a
-  // `$kind` override by diffing its style fields against the category default.
-  // Additive — layered onto the seeded defaults so unrelated entries survive.
-  if (isRecord(saved.kinds)) {
-    for (const [id, entry] of Object.entries(saved.kinds as Record<string, unknown>)) {
-      if (!isRecord(entry)) continue;
-      // Diff against the kind's CURRENT effective style (category base merged
-      // with the seeded default), so a saved value that diverges from a seeded
-      // default is captured even when it equals the bare category base.
-      const resolved = resolveMessageStyle(base, { raw: {} }, id) as unknown as Record<string, unknown>;
-      const diff: Partial<KindStyle> = {};
-      for (const f of STYLE_FIELDS) {
-        const val = validateStyleField(f, entry, base.palette);
-        if (val !== undefined && val !== resolved[f]) (diff as Record<string, unknown>)[f] = val;
-      }
-      if (Object.keys(diff).length > 0) {
-        upsertKindOverride(base.overrides, id, diff);
-      }
-    }
-  }
-
+  // Full reset for anything that is not a v5 record.
+  if (!isRecord(saved) || saved.version !== 5) return base;
+  mergeCategories(base, saved);
+  base.kinds = validateKindsMap(saved.kinds, base.palette);
   return mergeShared(base, saved);
 }
 
 /**
  * Merge the shared (non-kind) config blocks — view mode, palette, hard
- * filters, typography, debug, terminal — from a saved record onto `base`.
- * Used by all mergeConfig version branches after their version-specific work.
+ * filters, typography, debug, terminal — from a saved record onto base.
  */
 function mergeShared(
   base: MessageRenderingConfig,
@@ -881,8 +582,8 @@ function mergeShared(
     }
   }
 
-  // Hard filters — migrate legacy keys (dropTaskLifecycle → hideSubagentLifecycle,
-  // dropHookLifecycle → hideHookLifecycle). The five removed JSONL node-filter
+  // Hard filters — migrate legacy keys (dropTaskLifecycle -> hideSubagentLifecycle,
+  // dropHookLifecycle -> hideHookLifecycle). The five removed JSONL node-filter
   // keys (dropBookkeeping, dropHookSummaries, dropEmptyUser, dropClosureCarriers,
   // dropSystemInformational) are silently ignored on load from old saved configs.
   if (isRecord(saved.hardFilters)) {
@@ -927,7 +628,7 @@ function mergeShared(
     if (typeof t.fontSize === "number") base.terminal.fontSize = clampFontSize(t.fontSize);
     if (isTerminalCursorStyle(t.cursorStyle)) base.terminal.cursorStyle = t.cursorStyle;
     // Unknown / wrong-typed fields fall through to the defaults already on
-    // `base.terminal` from createDefaultConfig() above.
+    // base.terminal from createDefaultConfig() above.
   }
 
   return base;
@@ -952,7 +653,7 @@ function mergeTypographyStyle(
   if (!isRecord(saved)) return base;
   const raw = saved;
 
-  // Migration path: legacy records have a `family` field. Map it to a
+  // Migration path: legacy records have a family field. Map it to a
   // sensible default typeface so the user's intent (sans vs serif vs mono)
   // is preserved across the schema change.
   let typeface: Typeface = base.typeface;
