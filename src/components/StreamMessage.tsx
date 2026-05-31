@@ -953,7 +953,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
         && !isCommand
         && contentStr.includes('<local-command-stdout>');
       const userKindId = isToolResultOnly
-        ? "tool.result.generic"
+        ? "user.tool-result"
         : isSubagentPrompt
         ? "user.subagentPrompt"
         : skillInjection
@@ -1160,7 +1160,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
                       renderedSomething = true;
                       return (
                         <div key={idx} className="space-y-2">
-                          <KindHeader kindId="tool.result.generic" fallbackLabel="Tool Result" />
+                          <KindHeader kindId="user.tool-result" fallbackLabel="Tool Result" />
 
                           {beforeReminder && (
                             <div className="ml-6 p-2 bg-background rounded-md border">
@@ -1192,7 +1192,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
                       renderedSomething = true;
                       return (
                         <div key={idx} className="space-y-2">
-                          <KindHeader kindId="tool.result.generic" fallbackLabel="Edit Result" />
+                          <KindHeader kindId="user.tool-result" fallbackLabel="Edit Result" />
                           <EditResultWidget content={contentText} />
                         </div>
                       );
@@ -1207,7 +1207,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
                       renderedSomething = true;
                       return (
                         <div key={idx} className="space-y-2">
-                          <KindHeader kindId="tool.result.generic" fallbackLabel="MultiEdit Result" />
+                          <KindHeader kindId="user.tool-result" fallbackLabel="MultiEdit Result" />
                           <MultiEditResultWidget content={contentText} />
                         </div>
                       );
@@ -1254,7 +1254,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
                       renderedSomething = true;
                       return (
                         <div key={idx} className="space-y-2">
-                          <KindHeader kindId="tool.result.generic" fallbackLabel="Directory Contents" />
+                          <KindHeader kindId="user.tool-result" fallbackLabel="Directory Contents" />
                           <LSResultWidget content={contentText} />
                         </div>
                       );
@@ -1292,7 +1292,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
                       renderedSomething = true;
                       return (
                         <div key={idx} className="space-y-2">
-                          <KindHeader kindId="tool.result.generic" fallbackLabel="Read Result" />
+                          <KindHeader kindId="user.tool-result" fallbackLabel="Read Result" />
                           <ReadResultWidget content={contentText} filePath={filePath} />
                         </div>
                       );
@@ -1303,7 +1303,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
                       renderedSomething = true;
                       return (
                         <div key={idx} className="space-y-2">
-                          <KindHeader kindId="tool.result.generic" fallbackLabel="Tool Result" />
+                          <KindHeader kindId="user.tool-result" fallbackLabel="Tool Result" />
                           <div className="ml-6 p-3 bg-muted/50 rounded-md border text-sm text-muted-foreground italic">
                             Tool did not return any output
                           </div>
@@ -1316,7 +1316,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
                       <div key={idx} className="space-y-2">
                         {content.is_error
                           ? <KindHeader kindId="system.api_error" fallbackLabel="Tool Error" fallbackIcon="AlertCircle" showIcon />
-                          : <KindHeader kindId="tool.result.generic" fallbackLabel="Tool Result" />}
+                          : <KindHeader kindId="user.tool-result" fallbackLabel="Tool Result" />}
                         <div className="ml-6 p-2 bg-background rounded-md border">
                           <pre className="text-xs font-mono overflow-x-auto whitespace-pre-wrap">
                             {contentText}

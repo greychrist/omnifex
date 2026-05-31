@@ -621,6 +621,13 @@ describe("validateStyleField (via kinds merge)", () => {
   });
 });
 
+// ─── tool-result kind id unification ─────────────────────────────────────────
+
+it("registers user.tool-result and not the old duplicate id", () => {
+  expect(KIND_REGISTRY["user.tool-result"]).toBeDefined();
+  expect(KIND_REGISTRY["tool.result.generic"]).toBeUndefined();
+});
+
 // ─── resolveKind — special cases from the classifier ──────────────────────────
 
 describe("resolveKind — classifier output coverage", () => {
