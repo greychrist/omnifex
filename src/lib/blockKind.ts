@@ -37,7 +37,11 @@ const HOOK_FEEDBACK_PREFIX = /^[A-Z][A-Za-z]* hook (feedback|additional context)
 export function isSystemContextText(text: string): boolean {
   if (typeof text !== 'string') return false;
   if (text.includes('<system-reminder>')) return true;
-  if (text.includes('Base directory for this skill:')) return true;
+  // Anchored at the start (like the hook-feedback prefix below): the CLI puts
+  // this preamble at the START of a skill-load message, so a user who pastes or
+  // quotes skill content mid-message (e.g. a JSON example beginning with "{")
+  // is NOT misclassified as a skill load.
+  if (text.trimStart().startsWith('Base directory for this skill:')) return true;
   if (HOOK_FEEDBACK_PREFIX.test(text.trimStart())) return true;
   return false;
 }

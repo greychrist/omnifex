@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { classifyBlockKind, isBlockHiddenInCompact, deriveSystemContextLabel } from '../blockKind';
+import { classifyBlockKind, isBlockHiddenInCompact, deriveSystemContextLabel, isSystemContextText } from '../blockKind';
 import { createDefaultConfig, resolveMessageStyle } from '../messageRenderingConfig';
 import { KNOWN_TOOL_NAMES } from '../types/toolInput';
 import type { JsonlNode } from '@/types/jsonl';
@@ -24,6 +24,34 @@ describe('deriveSystemContextLabel', () => {
 
   it('falls back to "System Context" for anything else', () => {
     expect(deriveSystemContextLabel('some other injected context')).toBe('System Context');
+  });
+});
+
+describe('isSystemContextText — skill preamble must be anchored at the start', () => {
+  it('matches a real skill load (preamble at the start)', () => {
+    expect(isSystemContextText('Base directory for this skill: /x/y\n\n# Heading')).toBe(true);
+  });
+
+  it('tolerates leading whitespace before the preamble', () => {
+    expect(isSystemContextText('\n  Base directory for this skill: /x/y')).toBe(true);
+  });
+
+  it('does NOT match when the user pastes/quotes the preamble mid-message', () => {
+    // The reported bug: pasting a System Context example (JSON, starts with "{")
+    // that contains the preamble was misclassified as a skill load.
+    const pasted =
+      '{\n  "type": "user",\n  "text": "Base directory for this skill: /x/y\\n\\n# Systematic Debugging"\n}';
+    expect(isSystemContextText(pasted)).toBe(false);
+  });
+
+  it('does NOT match when the preamble appears after some prose', () => {
+    expect(isSystemContextText('Here is the message I got:\n\nBase directory for this skill: /x')).toBe(false);
+  });
+
+  it('classifyBlockKind returns null (→ user.prompt) for a user text block quoting the preamble', () => {
+    const text = 'look at this paste:\n\nBase directory for this skill: /x\n\n# Stuff';
+    const node = user([{ type: 'text', text }]);
+    expect(classifyBlockKind({ type: 'text', text } as any, node)).toBeNull();
   });
 });
 
