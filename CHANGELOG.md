@@ -5,6 +5,32 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.75] — 2026-05-31
+
+Replaces the message-styling model with a code-level kind registry, fixes the "everything renders gray" bug, and adds visible feedback when you change permission / effort / model — plus visibility for every JSONL line.
+
+Installers remain **unsigned**.
+
+### Added
+
+- **Control-change markers.** Changing the permission level, effort, or model now drops a one-line marker into the transcript (`Permission → acceptEdits`, `Effort → high`, `Model → opus`). Permission rides the CLI's persisted `permission-mode` line (survives resume); effort/model are synthesized live (live-session only). All are first-class, themeable kinds.
+- **Universal JSONL visibility.** The five previously-dropped bookkeeping kinds (`permission-mode`, `last-prompt`, `ai-title`, `queue-operation`, `file-history-snapshot`) now render as side-line markers — collapsed in compact, reachable in verbose, and fully stylable in Settings → Chats. Nothing in the JSONL is silently invisible anymore.
+
+### Changed
+
+- **Id-keyed kind registry replaces the override/match model.** Message styling now resolves through a single `resolveKind(config, id)` three-layer merge (category base → built-in `KIND_REGISTRY` default → your sparse per-kind patch). The catalog is pruned to the ~30 kinds the classifier actually emits.
+- **Permission modes now enforce in the stdio decider.** Because OmniFex drives the CLI with `--permission-prompt-tool stdio`, the bottom-bar dropdown is honored locally: `bypassPermissions` → allow, `acceptEdits` → auto-approve file edits, `dontAsk` → deny, `default`/`plan`/`auto` → prompt. Previously only `bypassPermissions` was handled, so switching to acceptEdits/dontAsk changed the label but prompted identically.
+- **Settings → Chats is registry-driven.** A fixed tree of real kinds with a per-kind editor; no more match-rule authoring UI.
+- **AskUserQuestion "Other" answers** render once as `Other: <text>` (was the doubled `You typed: "…"`).
+
+### Fixed
+
+- **Permission Request and AskUserQuestion cards rendered gray.** Two causes: the live permission card used the category-base accent helper (dropping its amber override), and the intended `primary` accent's swatch was itself gray. Live cards now use the cascade-aware helper; permission prompts are amber and question cards indigo.
+
+### Removed
+
+- The `path/op/value` override match engine, the v4 override array, the override/match editor UI (`OverrideMatchDialog`, `MatchingRules`, `matchFormat`), and the ~37 dead catalog entries. Saved configs reset once to fresh v5 defaults on load (no migration).
+
 ## [0.4.74] — 2026-05-30
 
 Ships user-authored message override matchers — overrides are now rules that match a message's raw JSON instead of being keyed by a fixed kind id.
