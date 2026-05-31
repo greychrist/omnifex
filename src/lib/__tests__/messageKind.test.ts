@@ -430,3 +430,12 @@ describe('classifyStandaloneKind — bookkeeping kinds', () => {
     expect(classifyStandaloneKind(node as unknown as JsonlNode, [])).toBe(expected);
   });
 });
+
+describe('classifyStandaloneKind — control-change', () => {
+  it('returns control.<control> for a synthetic control-change node', () => {
+    const e = { kind: 'control-change', control: 'effort', value: 'high', sessionId: 's', receivedAt: 't' };
+    expect(classifyStandaloneKind(e as unknown as JsonlNode, [])).toBe('control.effort');
+    const m = { kind: 'control-change', control: 'model', value: 'opus', sessionId: 's', receivedAt: 't' };
+    expect(classifyStandaloneKind(m as unknown as JsonlNode, [])).toBe('control.model');
+  });
+});

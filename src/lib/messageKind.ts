@@ -198,6 +198,11 @@ export function classifyStandaloneKind(
     return msg.kind;
   }
 
+  // Synthetic control-change markers (effort/model/permission) → control.<x>.
+  if (msg.kind === 'control-change') {
+    return `control.${msg.control}`;
+  }
+
   // Subagent prompts: user-role messages synthesized by the Task/Agent tool.
   if (isSubagentPrompt(msg, allMessages)) {
     return 'user.subagentPrompt';
