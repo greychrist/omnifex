@@ -96,7 +96,11 @@ export function classifyStandaloneKind(
     const raw = msg.raw as { type?: string; tool_name?: string; subtype?: string };
     if (raw.type === 'permission_request') {
       const toolName = (raw as { tool_name?: string }).tool_name;
-      if (toolName === 'AskUserQuestion') return 'permission.askUserQuestion';
+      // AskUserQuestion is Claude asking the user a question — it arrives over
+      // the permission transport but is NOT an approval gate, so it lives in the
+      // agent category (assistant.*), not permission.*. (Real tool-approval
+      // prompts stay permission.request.)
+      if (toolName === 'AskUserQuestion') return 'assistant.askUserQuestion';
       return 'permission.request';
     }
     if (raw.type === 'summary') {
@@ -111,7 +115,7 @@ export function classifyStandaloneKind(
   // assistant message would only contain the tool_use, and hide the user
   // message that just carries the matching tool_result. Only fires once
   // the tool_result has actually landed — while the user is mid-answer
-  // the live `permission.askUserQuestion` prompt is the visible card and
+  // the live `assistant.askUserQuestion` prompt is the visible card and
   // the in-bubble fallback handles the assistant message normally.
   //
   // The two returned IDs (`tool.askUserQuestion.answered` and `.result`)

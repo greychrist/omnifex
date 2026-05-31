@@ -32,7 +32,7 @@ interface MessageFrameCardProps {
   headerFallbackLabel?: string | null;
   /** Overrides the kind's configured `headerLabel`. Use for variants that
    *  borrow another kind's chrome but carry a specific fixed label (e.g.
-   *  AnsweredAskUserQuestionCard reuses `permission.askUserQuestion`
+   *  AnsweredAskUserQuestionCard reuses `assistant.askUserQuestion`
    *  chrome but renders "Question answered" / "N questions answered"). */
   headerLabel?: string | null;
   /** Override the kind's icon when the variant needs a tighter signal

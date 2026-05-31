@@ -216,12 +216,13 @@ function extractOtherText(note: string | undefined): string | null {
   return text.length > 0 ? text : null;
 }
 
-// Reuse the live-dialog kind so chrome (HelpCircle icon, blue accent)
-// matches the AskUserQuestionCard that produced this answer. The v2
-// catalog (messageRenderingConfig.ts) dropped the dedicated answered
-// kind; the answered card is visually a "post-submit" companion to the
-// permission prompt and a single shared entry is enough.
-const KIND_ID = 'permission.askUserQuestion';
+// Reuse the live-dialog kind so chrome (icon, accent) matches the
+// AskUserQuestionCard that produced this answer. This is an agent-category kind
+// (Claude asking the user a question), NOT a permission gate — see
+// messageKind.ts. The v2 catalog dropped the dedicated answered kind; the
+// answered card is visually a "post-submit" companion to the question prompt
+// and a single shared entry is enough.
+const KIND_ID = 'assistant.askUserQuestion';
 
 export function AnsweredAskUserQuestionCard({
   input,

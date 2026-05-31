@@ -576,7 +576,7 @@ describe("messageRenderingConfig", () => {
       const ids = DEFAULT_OVERRIDES.map((o) => o.id);
       expect(ids).toContain("assistant.text.endTurn");
       expect(ids).toContain("user.systemContext");
-      expect(ids).toContain("permission.askUserQuestion");
+      expect(ids).toContain("assistant.askUserQuestion");
       expect(ids.length).toBeLessThan(25);
     });
   });

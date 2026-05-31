@@ -296,6 +296,8 @@ export const DEFAULT_OVERRIDES: Override[] = [
   kindOverride("assistant.text.endTurn",      "Execution complete",      { accentColor: "green",   icon: "CheckCircle2",        compactBoundaryLocked: true }),
   kindOverride("assistant.thinking",          "Thinking",                { presentation: "collapsible", headerLabel: "Thinking", icon: "Brain",               widget: "ThinkingWidget", hiddenInCompact: true }),
   kindOverride("assistant.tool-use",          "Tool call",               { accentColor: "info",    icon: "Terminal",            headerLabel: null,           hiddenInCompact: true }),
+  // AskUserQuestion is Claude asking the user — agent category, not a permission gate.
+  kindOverride("assistant.askUserQuestion",   "Question",                { presentation: "card",    icon: "MessageCircleQuestion", accentColor: "primary",   hiddenInCompact: false }),
   kindOverride("user.systemContext",          "System context",          { presentation: "collapsible", icon: "Sparkles",        accentColor: "purple",       showRawPayload: true, alignment: "left", hiddenInCompact: false }),
   kindOverride("user.tool-result",            "Tool result",             { presentation: "side-line",   headerLabel: null,       alignment: "left",           hiddenInCompact: true }),
   kindOverride("user.command",                "Slash command",           { presentation: "side-line",   icon: "ChevronRight",    alignment: "left" }),
@@ -307,7 +309,6 @@ export const DEFAULT_OVERRIDES: Override[] = [
   kindOverride("summary.compaction",          "Conversation summary",    { icon: "FileText",        presentation: "card",       widget: "SummaryWidget",     hiddenInCompact: false, compactBoundaryLocked: true }),
   kindOverride("pr-link",                     "Pull request",            { presentation: "side-line",   icon: "GitPullRequest",  accentColor: "info",         hiddenInCompact: false }),
   kindOverride("permission.request",          "Permission request",      { presentation: "card",    icon: "ShieldQuestion",     accentColor: "amber",        hiddenInCompact: false }),
-  kindOverride("permission.askUserQuestion",  "Question",                { presentation: "card",    icon: "MessageCircleQuestion", accentColor: "primary",   hiddenInCompact: false }),
   // Answered-AskUserQuestion sentinels. `originOf` routes these through the
   // "system" category (head "tool" → default), which is hiddenInCompact:true.
   // Override both to visible + locked so compact grouping never folds them.
@@ -321,6 +322,7 @@ export const DEFAULT_OVERRIDES: Override[] = [
 // not listed here still resolve via `originOf` + category defaults.
 export const KNOWN_KIND_IDS: readonly string[] = [
   "assistant.text", "assistant.text.endTurn", "assistant.thinking", "assistant.tool-use",
+  "assistant.askUserQuestion",
   "user.prompt", "user.tool-result", "user.meta.skill", "user.meta.attachment",
   "user.meta.other", "user.subagentPrompt", "user.command", "user.commandOutput",
   "user.skillInjection", "user.systemContext", "user.sdkSystemBracket",
@@ -331,7 +333,7 @@ export const KNOWN_KIND_IDS: readonly string[] = [
   "system.compact_boundary", "system.informational", "system.permission_denied",
   "system.userPromptSubmit", "system.unknown", "summary.compaction",
   "cli-stream-init", "cli-stream-result",
-  "permission.request", "permission.askUserQuestion",
+  "permission.request",
   "attachment.unknown", "attachment.todo_reminder", "attachment.task_reminder",
   "attachment.diagnostics", "attachment.command_permissions", "attachment.skill_listing",
   "attachment.deferred_tools_delta", "attachment.mcp_instructions_delta",

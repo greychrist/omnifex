@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { JsonlNode } from '@/types/jsonl';
 import { classifyStandaloneKind } from '../messageKind';
+import { originOf } from '../messageRenderingConfig';
 
 const attachment = (subtype?: string): JsonlNode =>
   ({ kind: 'attachment', sessionId: '', receivedAt: '', raw: { type: 'attachment', attachment: subtype ? { type: subtype } : {} } }) as unknown as JsonlNode;
@@ -32,12 +33,12 @@ describe('classifyStandaloneKind', () => {
     expect(classifyStandaloneKind(summary(), [])).toBe('summary.compaction');
   });
 
-  it('routes AskUserQuestion permission requests to their own kind', () => {
-    // Distinct kind so the AskUserQuestionCard's accent color is editable
-    // independently of the generic Bash/Read permission prompt.
-    expect(classifyStandaloneKind(permReq('AskUserQuestion'), [])).toBe(
-      'permission.askUserQuestion',
-    );
+  it('routes AskUserQuestion to the agent category — it is Claude asking, not a permission gate', () => {
+    // Distinct kind (own accent/icon) AND under the agent origin, since it is
+    // Claude posing a question to the user — not an approval prompt like Bash/Read.
+    const kind = classifyStandaloneKind(permReq('AskUserQuestion'), []);
+    expect(kind).toBe('assistant.askUserQuestion');
+    expect(originOf(kind!)).toBe('agent');
   });
 
   describe('AskUserQuestion answered-pair elevation', () => {
