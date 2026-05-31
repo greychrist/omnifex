@@ -1,413 +1,472 @@
-# Message Rendering Config — Research Draft
+# Message Rendering Config — v5 Reference
 #
-# Purpose: capture the current message-rendering rules from StreamMessage.tsx,
-# messageFilters.ts, and compactGrouping.ts in a single data file, so we can
-# explore making the view layer config-driven (tweak without recompiling).
+# This file documents the LIVE config model that drives the renderer via
+# resolveKind(). Source of truth: src/lib/messageRenderingConfig.ts.
+# Date: 2026-05-31.
 #
-# Status: DESCRIPTIVE — reflects behavior as of 2026-04-22. Not yet wired into
-# the renderer. Source-of-truth remains the TSX components; use this file to
-# plan the extraction.
-#
-# Source files surveyed:
-#   - src/components/StreamMessage.tsx           (primary renderer)
-#   - src/components/ClaudeCodeSession.tsx       (viewMode state, line ~411)
-#   - src/lib/messageFilters.ts                  (filterDisplayableMessages)
-#   - src/lib/compactGrouping.ts                 (boundary detection)
-#   - src/components/tools/*.tsx                 (per-tool widgets)
+# Stored in the database as JSON under the key `message_rendering_config`.
+# Read/written via api.saveSetting(MESSAGE_RENDERING_CONFIG_KEY, ...).
+# Parsed with parseConfig() / mergeConfig(); saved configs with version != 5
+# are fully discarded and replaced with fresh defaults on load (no migration).
 #
 # ─────────────────────────────────────────────────────────────────────────────
-# SCHEMA
+# CONFIG SHAPE (v5)
 # ─────────────────────────────────────────────────────────────────────────────
 #
-# Each entry under `messageKinds` describes one visually-distinct message
-# variant. Fields:
+# version: 5                        # must be exactly 5; mismatch → full reset
+# defaultViewMode: verbose | compact
+# categories:                       # full CategoryStyle for user / agent / system
+#   user:   { ...CategoryStyle }
+#   agent:  { ...CategoryStyle }
+#   system: { ...CategoryStyle }
+# kinds:                            # SPARSE — user patches only; most IDs absent
+#   "assistant.text": { ...Partial<KindStyle> }
+#   # ... (only IDs the user has overridden appear here)
+# palette:                          # PaletteName → PaletteEntry (border/bg/swatch)
+#   primary: { border: "...", bg: "...", swatch: "#..." }
+#   # ...
+# typography:
+#   header:  { typeface, size, weight, italic }
+#   content: { typeface, size, weight, italic }
+#   icon:    { bordered, bgOpacity }
+# terminal:
+#   typeface: <mono typeface id>
+#   fontSize: 13          # px, clamped [8, 32]
+#   cursorStyle: block | underline | bar
+# hardFilters:
+#   hidePartialStreaming: false
+#   hideSubagentLifecycle: false
+#   hideHookLifecycle: false
+#   hideRateLimitNotices: false
+# debug:
+#   showCardKindLabel: false
 #
-#   id:            Stable slug for the kind. Used as config key.
-#   match:         Discriminator. All listed conditions must hold (AND).
-#                  Expressed as message-path predicates:
-#                    type          - top-level message.type
-#                    subtype       - message.subtype (for system msgs)
-#                    contentType   - content block .type
-#                    roleHint      - 'user' | 'assistant' | 'system' | 'tool'
-#                    flags         - boolean predicates on the message
-#                    textPattern   - regex / substring match on content
-#   classify:      How the app categorizes the message.
-#                    origin      : 'user' | 'assistant' | 'system' | 'tool' | 'subagent'
-#                    isBoundary  : if true, always shown in compact mode
-#                    isMeta      : internal marker; never rendered
-#   visual:
-#     icon         : Lucide component name OR unicode glyph (prefix "lucide:" / "glyph:")
-#     label        : Header text (may be null for inline-only)
-#     accentColor  : tailwind token family (primary | blue | amber | green | red | gray | muted)
-#     align        : 'left' | 'right' | 'full'
-#     widget       : Optional named widget that owns the body (bypasses default render)
-#   compact:
-#     hidden       : true if this kind is collapsed into CollapsibleGroup in compact mode
-#     promoteIf    : Optional condition under which a normally-hidden kind is promoted
-#                    to boundary (e.g. "latest TodoWrite in turn")
-#   notes:         Free-form caveats / edge cases.
+# ─────────────────────────────────────────────────────────────────────────────
+# RESOLUTION — resolveKind(config, id)
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Three layers merged left-to-right (later layers win):
+#   1. config.categories[categoryOf(id)]    — category base style
+#   2. KIND_REGISTRY[id].default            — built-in per-kind chrome (in code)
+#   3. config.kinds[id]                     — sparse user patch (may be absent)
+#
+# categoryOf(id): returns KIND_REGISTRY[id].category, falling back to "system"
+# for any unrecognized id.
+#
+# There is NO match engine, NO overrides array, NO condition/operator DSL,
+# NO $kind/$category selectors, and NO KNOWN_KIND_IDS list. Kind identity is
+# the registry key string, looked up directly.
 #
 # ─────────────────────────────────────────────────────────────────────────────
-# GLOBAL SETTINGS
+# KindStyle FIELDS
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# These fields are shared by CategoryStyle and KIND_REGISTRY entries.
+# Identity fields (id, label, description) are NOT part of KindStyle.
+#
+# Field              Type / allowed values
+# ─────────────────  ──────────────────────────────────────────────────────────
+# presentation       "card" | "side-line" | "collapsible"
+# accentColor        PaletteName ("primary" | "blue" | "amber" | "green" |
+#                    "red" | "gray" | "muted" | "info" | "sysInit" | "purple" |
+#                    "orange" | "teal" | "pink" | "indigo" | "cyan" | "yellow" |
+#                    "lime" | "brown" | "chocolate" | "tan" | "black")
+#                    OR a CSS hex color (#rgb | #rrggbb | #rrggbbaa)
+# icon               IconName — one of the allowed Lucide icon names or unicode
+#                    glyphs ("ℹ" | "✗" | "⚠" | "none"); see ALLOWED_ICONS in
+#                    src/lib/messageRenderingConfig.ts for the full list
+# headerLabel        string | null   (null → no header label rendered)
+# borderStyle        "solid" | "dashed"
+# alignment          "left" | "right" | "full"
+# hiddenInCompact    boolean  — hidden in compact view mode
+# compactBoundaryLocked  boolean?  — always a compact boundary even when hidden
+# widget             string?  — named widget that owns card body rendering
+# showRawPayload     boolean?  — render raw JSON payload below the card body
+# iconBordered       boolean?  — icon rendered in a bordered chip (per-kind override)
+# iconBgOpacity      number? (0-100)  — chip bg opacity when iconBordered is true
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# CATEGORY DEFAULTS  (DEFAULT_CATEGORIES)
 # ─────────────────────────────────────────────────────────────────────────────
 
-version: 1
+categories:
+  user:
+    label: "User"
+    description: "Your prompts, commands, tool results, injected context."
+    presentation: card
+    accentColor: blue
+    icon: User
+    headerLabel: "You"
+    borderStyle: solid
+    alignment: right
+    hiddenInCompact: false
 
-viewModes:
-  compact:
-    description: Collapses interior turn content; shows only boundary messages.
-    default: false
-  verbose:
-    description: Shows every displayable message in order.
-    default: true
+  agent:
+    label: "Agent"
+    description: "Claude's text, thinking, tool calls, completions."
+    presentation: card
+    accentColor: primary
+    icon: Bot
+    headerLabel: "Claude"
+    borderStyle: solid
+    alignment: left
+    hiddenInCompact: false
 
-# Hard filters applied before any rendering (messageFilters.ts).
-globalFilters:
-  - id: drop-meta
-    when: { flags: [isMeta] }
-    unless: { anyOf: [{ has: leafUuid }, { has: summary }] }
-    reason: Internal SDK markers; never useful to render.
-  - id: drop-task-lifecycle
-    when: { type: system, subtypePrefix: task_ }
-    reason: Rendered in SubagentBar, not main stream.
-  - id: drop-empty-user
-    when: { type: user, contentEmpty: true }
-    reason: Placeholder user messages from SDK with no content.
-
-# Accent color palette — change once, propagates to all kinds that reference it.
-palette:
-  primary:    { border: "primary/20",      bg: "primary/5" }        # assistant
-  blue:       { border: "blue-400/30",     bg: "rgba(96,165,250,0.10)" }   # user
-  amber:      { border: "amber-500/30",    bg: "rgba(245,158,11,0.12)" }   # subagent prompt
-  green:      { border: "green-500/20",    bg: "green-500/5" }      # success result
-  red:        { border: "destructive/20",  bg: "destructive/5" }    # error result
-  gray:       { border: "gray-500/20",     bg: "gray-500/5" }       # system context
-  muted:      { border: "border/30",       bg: "muted/30" }         # tool result
-  info:       { border: "muted-foreground/30", bg: null }           # SDK system msgs
-  sysInit:    { border: "blue-500/20",     bg: "blue-500/5" }       # system init
+  system:
+    label: "System"
+    description: "Notifications, hooks, errors, lifecycle, prompts."
+    presentation: card
+    accentColor: muted
+    icon: Info
+    headerLabel: null
+    borderStyle: solid
+    alignment: left
+    hiddenInCompact: true
 
 # ─────────────────────────────────────────────────────────────────────────────
-# MESSAGE KINDS
+# KIND CATALOG  (KIND_REGISTRY — every registered id)
 # ─────────────────────────────────────────────────────────────────────────────
+#
+# Grouped by category. Each entry shows the id, label, one-line purpose, and
+# notable default chrome from KIND_REGISTRY[id].default.
+# Fields absent from "default" inherit from the category base via resolveKind.
+# The kinds: map in a saved config need only contain ids the user has patched.
 
-messageKinds:
+kinds:
 
-  # ── USER ──────────────────────────────────────────────────────────────────
+  # ── agent ──────────────────────────────────────────────────────────────────
 
-  - id: user.prompt
-    match:
-      type: user
-      contentType: text
-      flags: { not: [isMeta, parent_tool_use_id] }
-    classify: { origin: user, isBoundary: true }
-    visual:
-      icon: lucide:User
-      label: "You"
-      accentColor: blue
-      align: right
-    compact: { hidden: false }
-    notes: >
-      Right-aligned card. Supports @/path image attachments and
-      <command-name>/<command-args> markup extraction.
+  assistant.text:
+    label: "Assistant text"
+    purpose: "Claude's reply text."
+    default: {}   # inherits all chrome from agent category base
 
-  - id: user.image
-    match:
-      type: user
-      contentType: image
-      flags: [sourceIsBase64]
-    classify: { origin: user, isBoundary: true }
-    visual:
-      icon: null
-      label: "Pasted image"
-      accentColor: blue
-      align: right
-    compact: { hidden: false }
-
-  - id: user.subagentPrompt
-    match:
-      type: user
-      flags: [hasParentToolUseId]
-      notFlags: [isToolResultOnly]
-    classify: { origin: subagent, isBoundary: true }
-    visual:
-      icon: lucide:Bot
-      label: null
-      accentColor: amber
-      align: left
-    compact: { hidden: false }
-    notes: Amber tint distinguishes SDK-spawned subagent prompts from real user input.
-
-  - id: user.sdkSystemBracket
-    match:
-      type: user
-      contentType: text
-      textPattern: "^\\[.{0,200}\\]$"
-    classify: { origin: system, isBoundary: false }
-    visual:
-      icon: "glyph:ℹ"
-      label: "SDK System Message"
-      accentColor: info
-      align: full
-    compact: { hidden: true }
-    notes: Matches "[Request interrupted by user]", "[Session resumed]", etc.
-
-  - id: user.systemContext
-    match:
-      type: user
-      contentType: text
-      textContains:
-        anyOf: ["<system-reminder>", "Base directory for this skill:", "CLAUDE.md"]
-    classify: { origin: system, isBoundary: false }
-    visual:
-      icon: lucide:Info
-      label: "System Context"    # or "Skill: ...", "CLAUDE.md Context", "System Reminder"
-      accentColor: gray
-      align: full
-      widget: SystemWidget
-    compact: { hidden: false }
-    notes: Collapsible. Label derived from content sniffing in SystemWidget.
-
-  # ── ASSISTANT ─────────────────────────────────────────────────────────────
-
-  - id: assistant.text
-    match:
-      type: assistant
-      contentType: text
-    classify: { origin: assistant, isBoundary: true }
-    visual:
-      icon: lucide:Bot
-      label: null
-      accentColor: primary
-      align: left
-    compact: { hidden: false }
-    notes: >
-      Boundary only when stop_reason === 'end_turn' OR the message has text
-      content and no non-text blocks (see compactGrouping.ts:24-31).
-
-  - id: assistant.thinking
-    match:
-      type: assistant
-      contentType: thinking
-    classify: { origin: assistant, isBoundary: false }
-    visual:
-      icon: null
-      label: null
-      accentColor: primary
-      align: left
-      widget: ThinkingWidget
-    compact: { hidden: true }
-
-  - id: assistant.toolUse
-    match:
-      type: assistant
-      contentType: tool_use
-    classify: { origin: tool, isBoundary: false }
-    visual:
-      icon: null        # per-tool widgets own icon
-      label: null
-      accentColor: primary
-      align: left
-      widget: "@tool"   # dispatch via toolWidgets map below
-    compact:
-      hidden: true
-      promoteIf: "isLatestTodoWriteInTurn"   # see compactGrouping.ts:45-50
-    notes: See `toolWidgets` section for per-tool dispatch.
-
-  # ── TOOL RESULTS (carried on user messages) ──────────────────────────────
-
-  - id: tool.result.generic
-    match:
-      type: user
-      contentType: tool_result
-    classify: { origin: tool, isBoundary: false }
-    visual:
-      icon: lucide:Terminal
-      label: "Tool Result"
-      accentColor: muted
-      align: left
-    compact:
-      hidden: true
-      hideWhenPairedWith: assistant.toolUse   # suppressed if widget already rendered
-    notes: >
-      Several sub-variants are sniffed from text content and relabeled:
-        - "Edit Result"      when body contains "has been updated"
-        - "MultiEdit Result" when body contains "multiple edits"
-        - "Directory Contents" + tree for LS-shaped results
-        - "Read Result" when body has "line →" pattern
-        - Empty → "Tool did not return any output"
-      is_error=true adds red AlertCircle; otherwise green CheckCircle2.
-
-  - id: tool.result.systemReminder
-    match:
-      type: user
-      contentType: tool_result
-      textContains: "<system-reminder>"
-    classify: { origin: system, isBoundary: false }
-    visual:
-      icon: lucide:Info
-      label: "System Reminder"
-      accentColor: gray
-      widget: SystemReminderWidget
-    compact: { hidden: true }
-
-  # ── RESULT (final turn output) ───────────────────────────────────────────
-
-  - id: result.success
-    match:
-      type: result
-      flags: { not: [is_error] }
-    classify: { origin: system, isBoundary: true }
-    visual:
-      icon: lucide:CheckCircle2
-      label: "Execution Complete"
+  assistant.text.endTurn:
+    label: "Execution complete"
+    purpose: "Final assistant text that ended the turn."
+    default:
       accentColor: green
-      align: full
-    compact: { hidden: false }
-    notes: Shows cost (hidden for 'max' account), duration, turns, tokens.
+      icon: CheckCircle2
+      compactBoundaryLocked: true
 
-  - id: result.error
-    match:
-      type: result
-      flags: [is_error]
-    classify: { origin: system, isBoundary: true }
-    visual:
-      icon: lucide:AlertCircle
-      label: "Execution Failed"
-      accentColor: red
-      align: full
-    compact: { hidden: false }
+  assistant.thinking:
+    label: "Thinking"
+    purpose: "Extended-thinking blocks."
+    default:
+      presentation: collapsible
+      headerLabel: "Thinking"
+      icon: Brain
+      widget: ThinkingWidget
+      hiddenInCompact: true
 
-  # ── SYSTEM ───────────────────────────────────────────────────────────────
-
-  - id: system.init
-    match: { type: system, subtype: init }
-    classify: { origin: system, isBoundary: false }
-    visual:
-      icon: lucide:Settings
-      label: "System Initialized"
-      accentColor: sysInit
-      align: full
-      widget: SystemInitWidget
-    compact: { hidden: true }
-    notes: Session ID, model, cwd, tool registry (regular + MCP grouped).
-
-  - id: system.notification.error
-    match: { type: system, subtype: notification, notification_type: [error, error_api, error_rate_limit] }
-    classify: { origin: system, isBoundary: false }
-    visual:
-      icon: "glyph:✗"
-      label: null
-      accentColor: red
-      align: full
-    compact: { hidden: false }
-
-  - id: system.notification.stop
-    match: { type: system, subtype: notification, notification_type: stop }
-    classify: { origin: system, isBoundary: false }
-    visual:
-      icon: lucide:CircleStop
-      label: null
-      accentColor: red
-    compact: { hidden: false }
-
-  - id: system.notification.warn
-    match: { type: system, subtype: notification, notification_type: warn }
-    classify: { origin: system, isBoundary: false }
-    visual:
-      icon: "glyph:⚠"
-      label: null
-      accentColor: info   # yellow-ish; swap palette entry if desired
-    compact: { hidden: false }
-
-  - id: system.notification.info
-    match: { type: system, subtype: notification, notification_type: info }
-    classify: { origin: system, isBoundary: false }
-    visual:
-      icon: null
-      label: null
+  assistant.tool-use:
+    label: "Tool call"
+    purpose: "Claude invoking a tool."
+    default:
       accentColor: info
-    compact: { hidden: true }
+      icon: Terminal
+      headerLabel: null
+      hiddenInCompact: true
 
-  - id: system.compactBoundary
-    match: { type: system, subtype: compact_boundary }
-    classify: { origin: system, isMeta: true }
-    visual: { icon: null, label: null, widget: null }
-    compact: { hidden: true }
-    notes: SDK context-compaction marker. Currently never rendered.
+  assistant.askUserQuestion:
+    label: "Question (answered)"
+    purpose: "An answered AskUserQuestion card."
+    default:
+      presentation: card
+      icon: MessageCircleQuestion
+      accentColor: indigo
+      hiddenInCompact: false
 
-  # ── PERMISSION / SUMMARY ─────────────────────────────────────────────────
+  # ── user ───────────────────────────────────────────────────────────────────
 
-  - id: permission.request
-    match: { type: permission_request }
-    classify: { origin: system, isBoundary: true }
-    visual:
-      icon: null
-      label: null
-      widget: PermissionDialog
-      align: full
-    compact: { hidden: false }
+  user.prompt:
+    label: "User prompt"
+    purpose: "What you typed."
+    default:
+      compactBoundaryLocked: true
 
-  - id: summary.compaction
-    match:
-      flags: [hasLeafUuid, hasSummary]
-      type: summary
-    classify: { origin: system, isBoundary: true }
-    visual:
-      icon: null
-      label: null
+  user.command:
+    label: "Slash command"
+    purpose: "A /command you ran."
+    default:
+      presentation: side-line
+      icon: ChevronRight
+      alignment: left
+
+  user.commandOutput:
+    label: "Command output"
+    purpose: "Local stdout from a slash command."
+    default:
+      presentation: side-line
+      alignment: left
+      hiddenInCompact: true
+
+  user.subagentPrompt:
+    label: "Subagent prompt"
+    purpose: "A prompt generated for a subagent."
+    default:
+      icon: Bot
+      accentColor: amber
+      alignment: left
+
+  user.skillInjection:
+    label: "Skill injection"
+    purpose: "Skill body injected into the conversation."
+    default:
+      presentation: collapsible
+      icon: Sparkles
+      accentColor: purple
+      alignment: left
+
+  user.systemContext:
+    label: "System context"
+    purpose: "Hook feedback, system-reminders, skill preambles."
+    default:
+      presentation: collapsible
+      icon: Sparkles
+      accentColor: purple
+      showRawPayload: true
+      alignment: left
+      hiddenInCompact: false
+
+  user.sdkSystemBracket:
+    label: "System notice"
+    purpose: "CLI bracket notices like [Request interrupted]."
+    default:
+      presentation: side-line
+      icon: Info
+      alignment: left
+
+  user.tool-result:
+    label: "Tool result"
+    purpose: "Output returned from a tool call."
+    default:
+      presentation: side-line
+      headerLabel: null
+      alignment: left
+      hiddenInCompact: true
+
+  user.image:
+    label: "Image"
+    purpose: "A pasted or attached image."
+    default:
+      icon: Image
+      alignment: left
+
+  # ── system ─────────────────────────────────────────────────────────────────
+
+  system.notification.info:
+    label: "Notification (info)"
+    purpose: "Informational CLI notification."
+    default:
+      icon: Bell
+      presentation: card
+      hiddenInCompact: false
+
+  system.notification.warn:
+    label: "Notification (warn)"
+    purpose: "Warning CLI notification."
+    default:
+      accentColor: amber
+      icon: Bell
+      presentation: card
+      hiddenInCompact: false
+
+  system.notification.error:
+    label: "Notification (error)"
+    purpose: "Error CLI notification."
+    default:
+      accentColor: red
+      icon: Bell
+      presentation: card
+      hiddenInCompact: false
+
+  system.notification.stop:
+    label: "Notification (stop)"
+    purpose: "Stop CLI notification."
+    default:
+      accentColor: red
+      icon: Bell
+      presentation: card
+      hiddenInCompact: false
+
+  system.hook_started:
+    label: "Hook started"
+    purpose: "A hook began running."
+    default:
+      icon: Hook
+
+  system.hook_response:
+    label: "Hook response"
+    purpose: "A hook returned."
+    default:
+      icon: Hook
+
+  system.permission_denied:
+    label: "Permission denied"
+    purpose: "A tool permission was denied."
+    default:
+      accentColor: red
+      icon: ShieldX
+      presentation: card
+      hiddenInCompact: false
+
+  system.userPromptSubmit:
+    label: "Prompt submitted"
+    purpose: "UserPromptSubmit lifecycle envelope."
+    default:
+      icon: Send
+
+  system.api_error:
+    label: "API error"
+    purpose: "An API or tool error."
+    default:
+      accentColor: red
+      icon: AlertTriangle
+      presentation: card
+      hiddenInCompact: false
+
+  system.unknown:
+    label: "System (other)"
+    purpose: "Any unrecognized system subtype."
+    default:
+      icon: Info
+
+  permission.request:
+    label: "Permission request"
+    purpose: "Live tool-permission prompt."
+    default:
+      presentation: card
+      icon: ShieldQuestion
+      accentColor: amber
+      hiddenInCompact: false
+
+  permission.askUserQuestion:
+    label: "Question (live)"
+    purpose: "Live AskUserQuestion prompt."
+    default:
+      presentation: card
+      icon: MessageCircleQuestion
+      accentColor: indigo
+      hiddenInCompact: false
+
+  summary.compaction:
+    label: "Conversation summary"
+    purpose: "Compaction summary card."
+    default:
+      icon: FileText
+      presentation: card
       widget: SummaryWidget
-    compact: { hidden: false }
+      hiddenInCompact: false
+      compactBoundaryLocked: true
+
+  unknown:
+    label: "Unknown"
+    purpose: "Unclassifiable message — shows raw payload."
+    default:
+      presentation: side-line
+      icon: HelpCircle
+      accentColor: orange
+      borderStyle: dashed
+      headerLabel: "Unknown"
+      hiddenInCompact: false
+      compactBoundaryLocked: true
+      showRawPayload: true
 
 # ─────────────────────────────────────────────────────────────────────────────
-# TOOL WIDGET DISPATCH
+# PALETTE  (DEFAULT_PALETTE — all 21 named entries)
 # ─────────────────────────────────────────────────────────────────────────────
-# When a message kind has widget: "@tool", dispatch on tool_use.name.
-# Names are lowercased before lookup. Unknown tools use `fallback`.
+#
+# Each entry has three fields:
+#   border  — Tailwind class fragment used for the card's border color
+#   bg      — Tailwind class fragment, rgba() value, or null for no background
+#   swatch  — Hex string used for the color swatch in the editor UI
+#
+# accentColor on any KindStyle or CategoryStyle references one of these names
+# OR a raw CSS hex color (#rgb / #rrggbb / #rrggbbaa).
 
-toolWidgets:
-  task:       { widget: TaskWidget,       icon: lucide:ListTree }
-  edit:       { widget: EditWidget,       icon: lucide:Pencil }
-  multiedit:  { widget: MultiEditWidget,  icon: lucide:Pencil }
-  todowrite:  { widget: TodoWidget,       icon: lucide:CheckSquare,  canBePromotedToBoundary: true }
-  todoread:   { widget: TodoReadWidget,   icon: lucide:ListChecks }
-  ls:         { widget: LSWidget,         icon: lucide:FolderTree }
-  read:       { widget: ReadWidget,       icon: lucide:FileText }
-  glob:       { widget: GlobWidget,       icon: lucide:Search }
-  bash:       { widget: BashWidget,       icon: lucide:Terminal }
-  write:      { widget: WriteWidget,      icon: lucide:FilePlus }
-  grep:       { widget: GrepWidget,       icon: lucide:Search }
-  websearch:  { widget: WebSearchWidget,  icon: lucide:Globe }
-  webfetch:   { widget: WebFetchWidget,   icon: lucide:Download }
-  # MCP tools match by prefix.
-  "mcp__*":   { widget: MCPWidget,        icon: lucide:Plug }
-  fallback:   { widget: null,             icon: lucide:Terminal,     label: "Tool" }
+palette:
+  primary:    { border: "primary/20",            bg: "primary/5",                  swatch: "#8b8b8b" }
+  blue:       { border: "blue-400/30",           bg: "rgba(96,165,250,0.10)",      swatch: "#60a5fa" }
+  amber:      { border: "amber-500/30",          bg: "rgba(245,158,11,0.12)",      swatch: "#f59e0b" }
+  green:      { border: "green-500/20",          bg: "green-500/5",                swatch: "#22c55e" }
+  red:        { border: "destructive/20",        bg: "destructive/5",              swatch: "#ef4444" }
+  gray:       { border: "gray-500/20",           bg: "gray-500/5",                 swatch: "#6b7280" }
+  muted:      { border: "border/30",             bg: "muted/30",                   swatch: "#4b5563" }
+  info:       { border: "muted-foreground/30",   bg: null,                         swatch: "#9ca3af" }
+  sysInit:    { border: "blue-500/20",           bg: "blue-500/5",                 swatch: "#3b82f6" }
+  purple:     { border: "purple-500/30",         bg: "purple-500/5",               swatch: "#a855f7" }
+  orange:     { border: "orange-500/30",         bg: "orange-500/5",               swatch: "#f97316" }
+  teal:       { border: "teal-500/30",           bg: "teal-500/5",                 swatch: "#14b8a6" }
+  pink:       { border: "pink-500/30",           bg: "pink-500/5",                 swatch: "#ec4899" }
+  indigo:     { border: "indigo-500/30",         bg: "indigo-500/5",               swatch: "#6366f1" }
+  cyan:       { border: "cyan-500/30",           bg: "cyan-500/5",                 swatch: "#06b6d4" }
+  yellow:     { border: "yellow-500/30",         bg: "yellow-500/5",               swatch: "#eab308" }
+  lime:       { border: "lime-500/30",           bg: "lime-500/5",                 swatch: "#84cc16" }
+  brown:      { border: "amber-900/30",          bg: "amber-900/5",                swatch: "#92400e" }
+  chocolate:  { border: "amber-950/30",          bg: "amber-950/5",                swatch: "#78350f" }
+  tan:        { border: "amber-300/30",          bg: "amber-300/5",                swatch: "#d4a574" }
+  black:      { border: "neutral-900/30",        bg: "neutral-900/5",              swatch: "#171717" }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# OPEN QUESTIONS FOR MAKING THIS LIVE
+# TYPOGRAPHY
 # ─────────────────────────────────────────────────────────────────────────────
 #
-# 1. Load location: ship the default as a bundled YAML and allow a user
-#    override at `~/Library/Application Support/GreyChrist/message-rendering.yaml`?
-#    Watch with chokidar so edits hot-reload in the renderer?
+# Global typography applied to every message kind — not per-kind overridable.
+# Two text slots (header / content) plus icon chip settings.
 #
-# 2. Predicate DSL: the `match` fields above assume a tiny evaluator
-#    (type/subtype equality, flag presence, regex). Need to decide how
-#    expressive to make it vs. keeping a fixed set of predicates.
+# TypographyStyle fields:
+#   typeface  — catalog ID from src/lib/typefaceCatalog.ts
+#   size      — "xs" | "sm" | "base" | "lg"
+#   weight    — "thin" | "extralight" | "light" | "normal" | "medium" |
+#               "semibold" | "bold" | "extrabold" | "black"
+#   italic    — boolean
 #
-# 3. Icon resolution: Lucide icons are tree-shaken at build time today. Moving
-#    to config means either (a) pre-importing every Lucide icon used here
-#    (inflates bundle), or (b) an allow-list of icons the renderer knows.
-#    Option (b) is probably right — keeps bundle lean, config references
-#    symbolic names.
+# IconStyle fields:
+#   bordered    — when true, the icon renders inside a bordered chip that
+#                 punches out of the card's tinted accent
+#   bgOpacity   — 0-100; chip background opacity when bordered is true;
+#                 ignored when bordered is false
+
+typography:
+  header:  { typeface: inter, size: sm, weight: semibold, italic: false }
+  content: { typeface: inter, size: sm, weight: normal,   italic: false }
+  icon:    { bordered: true, bgOpacity: 100 }
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TERMINAL
+# ─────────────────────────────────────────────────────────────────────────────
 #
-# 4. Widgets: these stay in TSX; config only references them by name. If a
-#    config references a widget that doesn't exist, fall back to default
-#    rendering and log once.
+# Settings for the xterm surface in TUI mode.
+# fontSize is clamped to [8, 32] px on load; out-of-range values are corrected.
+
+terminal:
+  typeface: jetbrains-mono
+  fontSize: 13
+  cursorStyle: block      # block | underline | bar
+
+# ─────────────────────────────────────────────────────────────────────────────
+# HARD FILTERS
+# ─────────────────────────────────────────────────────────────────────────────
 #
-# 5. Compact-mode promotion (`isLatestTodoWriteInTurn`) is the one place
-#    where the rule isn't a pure predicate over a single message — it needs
-#    turn context. Keep that logic in compactGrouping.ts; config just flags
-#    kinds as "promotable".
+# Live overlay filters applied to CLI overlay channels (Chat mode only).
+# These suppress entire event classes before they reach the message stream.
 #
-# 6. Account-scoped overrides? Probably overkill for v1 — start with a
-#    single global config file.
+#   hidePartialStreaming   — stream_event (typewriter / partial-text events)
+#   hideSubagentLifecycle  — task_started / task_updated / task_progress
+#                            (these are rendered in SubagentBar, not the stream)
+#   hideHookLifecycle      — hook_started / hook_progress / hook_response
+#   hideRateLimitNotices   — rate_limit_event
+
+hardFilters:
+  hidePartialStreaming: false
+  hideSubagentLifecycle: false
+  hideHookLifecycle: false
+  hideRateLimitNotices: false
+
+# ─────────────────────────────────────────────────────────────────────────────
+# DEBUG
+# ─────────────────────────────────────────────────────────────────────────────
+
+debug:
+  showCardKindLabel: false   # when true, every card shows its kind id bottom-left
