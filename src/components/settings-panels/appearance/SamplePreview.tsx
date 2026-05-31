@@ -1,5 +1,5 @@
 import React, { useMemo } from "react";
-import { withResolvedKindStyle, type KindStyle } from "@/lib/messageRenderingConfig";
+import type { KindStyle } from "@/lib/messageRenderingConfig";
 import {
   useMessageRenderingConfig,
   MessageRenderingPreviewProvider,
@@ -11,11 +11,10 @@ import type { JsonlNode } from "@/types/jsonl";
 
 interface SamplePreviewProps {
   /** The fully-resolved style to preview — a category style or an in-progress
-   *  override edit. */
+   *  kind edit. */
   style: KindStyle;
-  /** Kind id (override) or category name. Injected as a sentinel override into
-   *  a synthesized config so the real renderer resolves exactly `style`, even
-   *  for a category or an edit not yet persisted under this id. */
+  /** Kind id (kind mode) or category name. Injected as a sparse kinds patch into
+   *  a synthesized config so the real renderer resolves exactly `style`. */
   kindId: string;
   /** Body text to render in the message. */
   text: string;
@@ -31,16 +30,21 @@ const PREVIEW_RECEIVED_AT = "2026-04-29T12:34:56";
  * `KindHeader`) the transcript uses — so the editor preview is pixel-identical
  * to a rendered message.
  *
- * `style` may be a category style or an in-progress override edit that isn't
- * persisted yet, so we render against a synthesized config whose category base
- * for `kindId` IS `style` and whose override rules are stripped. The cascade
- * then returns exactly `style` regardless of the kind's category origin.
+ * `style` may be a category style or an in-progress kind edit that isn't
+ * persisted yet. We render against a synthesized config whose `kinds[kindId]`
+ * patch forces resolution to exactly `style`. The cascade in `resolveKind`
+ * merges: category base → registry default → user patch (config.kinds[kindId]).
+ * By injecting `style` directly as the kinds entry, the preview reflects the
+ * editor's current values regardless of whether they're persisted.
  */
 export const SamplePreview: React.FC<SamplePreviewProps> = ({ style, kindId, text }) => {
   const { config } = useMessageRenderingConfig();
 
   const previewConfig = useMemo(
-    () => withResolvedKindStyle({ ...config, overrides: [] }, kindId, style),
+    () => ({
+      ...config,
+      kinds: { ...config.kinds, [kindId]: style },
+    }),
     [config, kindId, style],
   );
 

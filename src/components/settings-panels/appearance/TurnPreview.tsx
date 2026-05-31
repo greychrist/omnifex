@@ -1,19 +1,10 @@
 import React from "react";
 import { Layers } from "lucide-react";
-import type { JsonlNode } from "@/types/jsonl";
 import type { MessageRenderingConfig } from "@/lib/messageRenderingConfig";
-import { resolveMessageStyle } from "@/lib/messageRenderingConfig";
+import { resolveKind } from "@/lib/messageRenderingConfig";
 import { SamplePreview } from "./SamplePreview";
 import { FAKE_TURN_KIND_IDS, previewTextForKindId } from "./fixtures";
 import { cn } from "@/lib/utils";
-
-// The turn preview renders fixture kinds with no real message, so resolve each
-// kind's style by cascading against a bare `$kind`-bearing message — this fires
-// the default `$kind` rules (and any user rule keyed only on `$kind`).
-const SYNTHETIC_MESSAGE = { raw: {} } as unknown as JsonlNode;
-function resolveFixtureStyle(config: MessageRenderingConfig, id: string) {
-  return resolveMessageStyle(config, SYNTHETIC_MESSAGE, id);
-}
 
 interface TurnPreviewProps {
   config: MessageRenderingConfig;
@@ -42,7 +33,7 @@ function groupTurn(
     }
   };
   for (const id of kindIds) {
-    const style = resolveFixtureStyle(config, id);
+    const style = resolveKind(config, id);
     if (style.hiddenInCompact && !style.compactBoundaryLocked) {
       buffer.push(id);
     } else {
@@ -56,7 +47,7 @@ function groupTurn(
 
 const Sample: React.FC<{ config: MessageRenderingConfig; id: string }> = ({ config, id }) => (
   <SamplePreview
-    style={resolveFixtureStyle(config, id)}
+    style={resolveKind(config, id)}
     kindId={id}
     text={previewTextForKindId(id)}
   />

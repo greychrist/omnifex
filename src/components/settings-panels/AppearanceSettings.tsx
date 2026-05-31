@@ -10,14 +10,14 @@ import {
   createDefaultConfig,
   parseConfig,
   serializeConfig,
-  pruneRedundantOverrides,
-  originOf,
+  resolveKind,
+  categoryOf,
+  KIND_REGISTRY,
   DEFAULT_CATEGORIES,
   type Category,
   type MessageRenderingConfig,
   type KindStyle,
   type CategoryStyle,
-  type MatchCondition,
   type Palette,
   type PaletteEntry,
   type PaletteName,
@@ -29,12 +29,9 @@ import { MessageKindTree, type TreeSelection } from "./appearance/MessageKindTre
 import { KindEditor } from "./appearance/KindEditor";
 import { SamplePreview } from "./appearance/SamplePreview";
 import { TurnPreview } from "./appearance/TurnPreview";
-import { MatchingRules } from "./appearance/MatchingRules";
-import { OverrideMatchDialog } from "./appearance/OverrideMatchDialog";
 import {
   previewTextForCategory,
-  previewTextForOverride,
-  exampleRawForCategory,
+  previewTextForKindId,
 } from "./appearance/fixtures";
 import { PaletteEditor } from "./appearance/PaletteEditor";
 import { TypographyEditor } from "./appearance/TypographyEditor";
@@ -69,14 +66,6 @@ const FilterRow: React.FC<FilterRowProps> = ({ label, description, checked, onCh
 export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast }) => {
   const { config, setConfig: commitConfig } = useMessageRenderingConfig();
   const [selected, setSelected] = useState<TreeSelection>(FIRST_SELECTION);
-  // The centered match dialog authors an override's label + conditions. `null`
-  // when closed; otherwise it's creating a new rule in a category or editing
-  // an existing rule by id.
-  const [dialog, setDialog] = useState<
-    | { mode: "create"; category: Category }
-    | { mode: "edit"; id: string }
-    | null
-  >(null);
   const [previewMode, setPreviewMode] = useState<"compact" | "verbose">(config.defaultViewMode);
   const [hasUserDefault, setHasUserDefault] = useState(false);
   // Surface every section behind tabs instead of a single long scroll.
@@ -126,17 +115,12 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
     setPreviewMode(config.defaultViewMode);
   }, [config.defaultViewMode]);
 
-  // Every commit prunes overrides whose fields all equal their category
-  // (prune-on-save), keeping the persisted override map sparse. The override
-  // the user is actively editing is exempt so a just-added (still-inheriting)
-  // override isn't pruned out from under them before they diverge a field.
   const mutate = useCallback(
     (producer: (prev: MessageRenderingConfig) => MessageRenderingConfig) => {
-      const exempt = new Set<string>(selected.type === "override" ? [selected.id] : []);
-      commitConfig(pruneRedundantOverrides(producer(config), exempt));
+      commitConfig(producer(config));
       scheduleSavedToast();
     },
-    [config, commitConfig, scheduleSavedToast, selected],
+    [config, commitConfig, scheduleSavedToast],
   );
 
   const setTypography = useCallback(
@@ -207,104 +191,40 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
     [mutate, setToast],
   );
 
-  // ── Override editing ──────────────────────────────────────────────────
-  // Overrides are message-matched rules carrying a sparse style. Styling is
-  // edited in the right panel (here); the label + match conditions are edited
-  // in the centered dialog (below). `style` is updated field-by-field.
-  const patchOverrideStyle = useCallback(
-    (id: string, update: (style: Partial<KindStyle>) => Partial<KindStyle>) => {
-      mutate((prev) => ({
-        ...prev,
-        overrides: prev.overrides.map((o) =>
-          o.id === id ? { ...o, style: update(o.style) } : o,
-        ),
-      }));
+  // ── Kind editing ──────────────────────────────────────────────────────
+  // Kinds carry a sparse user patch in config.kinds[id]. An edit writes
+  // only the changed field into the patch; unset fields inherit from the
+  // registry default ⊕ category base.
+  const updateKind = useCallback(
+    (id: string, patch: Partial<KindStyle>) => {
+      mutate((prev) => ({ ...prev, kinds: { ...prev.kinds, [id]: { ...(prev.kinds[id] ?? {}), ...patch } } }));
     },
     [mutate],
   );
 
-  const setOverrideField = useCallback(
-    (id: string, patch: Partial<KindStyle>) => {
-      patchOverrideStyle(id, (style) => ({ ...style, ...patch }));
-    },
-    [patchOverrideStyle],
-  );
-
-  const clearOverrideField = useCallback(
+  const clearKindField = useCallback(
     (id: string, field: keyof KindStyle) => {
-      patchOverrideStyle(id, (style) => {
-        const next = { ...style };
+      mutate((prev) => {
+        const next = { ...(prev.kinds[id] ?? {}) };
         delete next[field];
-        return next;
+        const kinds = { ...prev.kinds };
+        if (Object.keys(next).length === 0) delete kinds[id]; else kinds[id] = next;
+        return { ...prev, kinds };
       });
     },
-    [patchOverrideStyle],
-  );
-
-  // Commit a new rule (dialog "create") or update an existing rule's label +
-  // match (dialog "edit" / "Edit rules"). A rule that carries conditions is
-  // never pruned, so a brand-new rule survives even with an empty style.
-  const createOverride = useCallback(
-    (category: Category, label: string, match: MatchCondition[]) => {
-      const id = crypto.randomUUID();
-      setSelected({ type: "override", id });
-      const next: MessageRenderingConfig = {
-        ...config,
-        overrides: [...config.overrides, { id, label, category, match, style: {} }],
-      };
-      commitConfig(pruneRedundantOverrides(next, new Set<string>([id])));
-      scheduleSavedToast();
-    },
-    [config, commitConfig, scheduleSavedToast],
-  );
-
-  const updateOverrideMatch = useCallback(
-    (id: string, label: string, match: MatchCondition[]) => {
-      mutate((prev) => ({
-        ...prev,
-        overrides: prev.overrides.map((o) => (o.id === id ? { ...o, label, match } : o)),
-      }));
-    },
     [mutate],
   );
 
-  const removeOverride = useCallback(
+  const resetKind = useCallback(
     (id: string) => {
-      const target = config.overrides.find((o) => o.id === id);
-      const label = target?.label ?? id;
-      // If we're removing the selected override, drop the selection back to its
-      // category so the editor doesn't dangle on a missing id.
-      if (selected.type === "override" && selected.id === id) {
-        setSelected({ type: "category", id: target?.category ?? originOf(id) });
-      }
-      mutate((prev) => ({
-        ...prev,
-        overrides: prev.overrides.filter((o) => o.id !== id),
-      }));
-      setToast({ message: `Removed "${label}" override`, type: "success" });
+      mutate((prev) => {
+        const kinds = { ...prev.kinds };
+        delete kinds[id];
+        return { ...prev, kinds };
+      });
+      setToast({ message: `Reset "${KIND_REGISTRY[id]?.label ?? id}" to default`, type: "success" });
     },
-    [mutate, setToast, config.overrides, selected],
-  );
-
-  // Dialog plumbing: "+ Add override" (per category) and ✎ Edit / "Edit rules".
-  const openAddDialog = useCallback((category: Category) => {
-    setDialog({ mode: "create", category });
-  }, []);
-  const openEditDialog = useCallback((id: string) => {
-    setDialog({ mode: "edit", id });
-  }, []);
-  const closeDialog = useCallback(() => { setDialog(null); }, []);
-  const saveDialog = useCallback(
-    (data: { label: string; match: MatchCondition[] }) => {
-      if (!dialog) return;
-      if (dialog.mode === "create") {
-        createOverride(dialog.category, data.label, data.match);
-      } else {
-        updateOverrideMatch(dialog.id, data.label, data.match);
-      }
-      setDialog(null);
-    },
-    [dialog, createOverride, updateOverrideMatch],
+    [mutate, setToast],
   );
 
   const updatePalette = useCallback(
@@ -387,10 +307,10 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
     }));
   };
 
-  // Resolve the current selection into the editor + preview + matching-rules
-  // inputs. A category carries a full style; an override carries a sparse style
-  // over its category base. A stale override selection (just deleted) falls back
-  // to the User category so the editor never dangles on a missing id.
+  // Resolve the current selection into the editor + preview inputs.
+  // A category carries a full style; a kind carries a resolved style
+  // (category base → registry default → user patch) with a sparse patch
+  // for the inherit-hint affordances.
   const editor = useMemo(() => {
     const categoryEditor = (c: Category) => {
       const style = config.categories[c];
@@ -406,39 +326,32 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
         onReset: () => { resetCategory(c); },
         inheritedCategoryLabel: undefined as string | undefined,
         override: undefined as Partial<KindStyle> | undefined,
-        rules: { kind: "category" as const, categoryLabel: style.label, description: style.description },
       };
     };
 
     if (selected.type === "category") return categoryEditor(selected.id);
 
-    const ov = config.overrides.find((o) => o.id === selected.id);
-    if (!ov) return categoryEditor("user");
+    if (selected.type === "kind") {
+      const id = selected.id;
+      const def = KIND_REGISTRY[id];
+      const cat = categoryOf(id);
+      return {
+        mode: "kind" as const,
+        kindId: id,
+        label: def?.label ?? id,
+        description: def?.description ?? `Inherits the ${config.categories[cat].label} category.`,
+        style: resolveKind(config, id),
+        previewText: previewTextForKindId(id),
+        onChange: (patch: Partial<KindStyle>) => { updateKind(id, patch); },
+        onClearField: (field: keyof KindStyle) => { clearKindField(id, field); },
+        onReset: () => { resetKind(id); },
+        inheritedCategoryLabel: config.categories[cat].label,
+        override: config.kinds[id],
+      };
+    }
 
-    const cat = ov.category;
-    const catLabel = config.categories[cat].label;
-    const resolved: KindStyle = { ...config.categories[cat], ...ov.style };
-    return {
-      mode: "override" as const,
-      kindId: ov.id,
-      label: ov.label,
-      description: `Inherits the ${catLabel} category.`,
-      style: resolved,
-      previewText: previewTextForOverride(ov.id, cat),
-      onChange: (patch: Partial<KindStyle>) => { setOverrideField(ov.id, patch); },
-      onClearField: (field: keyof KindStyle) => { clearOverrideField(ov.id, field); },
-      onReset: () => { removeOverride(ov.id); },
-      inheritedCategoryLabel: catLabel,
-      override: ov.style,
-      rules: {
-        kind: "override" as const,
-        label: ov.label,
-        categoryLabel: catLabel,
-        match: ov.match,
-        onEdit: () => { openEditDialog(ov.id); },
-      },
-    };
-  }, [selected, config, updateCategory, resetCategory, setOverrideField, clearOverrideField, removeOverride, openEditDialog]);
+    return categoryEditor("user");
+  }, [selected, config, updateCategory, resetCategory, updateKind, clearKindField, resetKind]);
 
   return (
     <div className="space-y-4">
@@ -458,9 +371,9 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
               <div>
                 <h3 className="text-heading-4">Message kinds</h3>
                 <p className="text-caption text-muted-foreground mt-1">
-                  Edit a <strong>category</strong> to restyle every message in it, or add an{" "}
-                  <strong>override</strong> — a rule that matches a message's JSON and restyles
-                  just those messages. Overrides inherit any field you leave unset from their category.
+                  Edit a <strong>category</strong> to restyle every message in it, or select a{" "}
+                  <strong>specific kind</strong> to override just that kind's style. Unset kind
+                  fields inherit from the category.
                 </p>
               </div>
             </div>
@@ -471,9 +384,6 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
                   config={config}
                   selected={selected}
                   onSelect={setSelected}
-                  onAddOverride={openAddDialog}
-                  onEditOverride={openEditDialog}
-                  onRemoveOverride={removeOverride}
                 />
               </div>
 
@@ -493,23 +403,6 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
                     />
                   </div>
                 </div>
-
-                {/* Read-only matching rules for the active selection. */}
-                {editor.rules.kind === "category" ? (
-                  <MatchingRules
-                    kind="category"
-                    categoryLabel={editor.rules.categoryLabel}
-                    description={editor.rules.description}
-                  />
-                ) : (
-                  <MatchingRules
-                    kind="override"
-                    label={editor.rules.label}
-                    categoryLabel={editor.rules.categoryLabel}
-                    match={editor.rules.match}
-                    onEdit={editor.rules.onEdit}
-                  />
-                )}
 
                 <KindEditor
                   mode={editor.mode}
@@ -725,25 +618,6 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
       <p className="text-caption text-muted-foreground text-center">
         Changes save automatically.
       </p>
-
-      {dialog && (() => {
-        const editOverride =
-          dialog.mode === "edit" ? config.overrides.find((o) => o.id === dialog.id) : undefined;
-        const category: Category = dialog.mode === "create" ? dialog.category : (editOverride?.category ?? "user");
-        return (
-          <OverrideMatchDialog
-            open
-            mode={dialog.mode}
-            category={category}
-            categoryLabel={config.categories[category].label}
-            initialLabel={editOverride?.label ?? ""}
-            initialMatch={editOverride?.match ?? []}
-            exampleRaw={exampleRawForCategory(category)}
-            onSave={saveDialog}
-            onCancel={closeDialog}
-          />
-        );
-      })()}
     </div>
   );
 };

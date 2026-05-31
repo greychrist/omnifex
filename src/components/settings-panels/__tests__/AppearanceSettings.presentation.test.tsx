@@ -3,16 +3,16 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import '@testing-library/jest-dom/vitest';
 import { render, screen, fireEvent, cleanup, within } from '@testing-library/react';
 import { AppearanceSettings } from '@/components/settings-panels/AppearanceSettings';
+import { MessageKindTree } from '@/components/settings-panels/appearance/MessageKindTree';
 import { MessageRenderingProvider } from '@/contexts/MessageRenderingContext';
 import {
   createDefaultConfig,
-  pruneRedundantOverrides,
 } from '@/lib/messageRenderingConfig';
 
 afterEach(() => { cleanup(); });
 
 // Capture the last config persisted via saveSetting so tests can assert on
-// the shape that actually gets written (prune-on-save behaviour).
+// the shape that actually gets written.
 const saved: { config: unknown } = { config: null };
 
 vi.mock('@/lib/api', () => ({
@@ -49,15 +49,43 @@ function clickRow(label: string) {
   fireEvent.click(btn);
 }
 
-describe('AppearanceSettings — category + override tree', () => {
-  it('lists the five categories, each grouping its overrides', async () => {
+describe('MessageKindTree — registry-driven', () => {
+  it('lists registry kinds under their category', () => {
+    render(
+      <MessageKindTree
+        config={createDefaultConfig()}
+        selected={{ type: "category", id: "system" }}
+        onSelect={() => {}}
+      />,
+    );
+    // system category kinds
+    expect(screen.getByText("Permission request")).toBeInTheDocument();
+    // agent category kind (still in the tree, just under a different category)
+    expect(screen.getByText("Execution complete")).toBeInTheDocument();
+  });
+
+  it('lists the three categories', () => {
+    render(
+      <MessageKindTree
+        config={createDefaultConfig()}
+        selected={{ type: "category", id: "user" }}
+        onSelect={() => {}}
+      />,
+    );
+    expect(screen.getByText('User')).toBeInTheDocument();
+    expect(screen.getByText('Agent')).toBeInTheDocument();
+    expect(screen.getByText('System')).toBeInTheDocument();
+  });
+});
+
+describe('AppearanceSettings — category + kind tree', () => {
+  it('lists the three categories', async () => {
     renderWithProvider();
     await screen.findAllByText('User');
-    for (const label of ['User', 'Agent', 'System', 'Attachment', 'Bookkeeping']) {
+    for (const label of ['User', 'Agent', 'System']) {
       expect(screen.getAllByText(label).length).toBeGreaterThan(0);
     }
-    // Default override rules render under their category (e.g. the agent group
-    // shows "Tool call" / "Execution complete").
+    // Registry kinds render under their category
     expect(screen.getAllByText('Tool call').length).toBeGreaterThan(0);
   });
 
@@ -69,137 +97,52 @@ describe('AppearanceSettings — category + override tree', () => {
     expect(controls.length).toBeGreaterThan(0);
   });
 
-  it('opens an override editor with a remove affordance when an override is selected', async () => {
+  it('opens a kind editor with a reset affordance when a kind is selected', async () => {
     renderWithProvider();
     await screen.findAllByText('User');
-    // "Execution complete" is a curated default override (assistant.text.endTurn).
+    // "Execution complete" is a kind in the agent category.
     clickRow('Execution complete');
-    expect(screen.getByRole('button', { name: /remove override/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /reset to default/i })).toBeInTheDocument();
   });
 });
 
-describe('AppearanceSettings — add override', () => {
-  it('creates a new category-scoped rule via the match dialog', async () => {
+describe('AppearanceSettings — kind field editing', () => {
+  it('persists the changed field into config.kinds[id], not inherited category values', async () => {
+    // Selecting "Tool call" (assistant.tool-use) opens a kind editor.
+    // Toggling "Hide in compact mode" writes only that field into config.kinds[id].
     renderWithProvider();
     await screen.findAllByText('User');
     saved.config = null;
 
-    // Open the Add-override dialog for the Agent category.
-    fireEvent.click(screen.getByRole('button', { name: /add override to agent/i }));
-    const dialog = await screen.findByRole('dialog');
-
-    // Author a label, then save.
-    const labelInput = within(dialog).getByLabelText('Override label');
-    fireEvent.change(labelInput, { target: { value: 'My rule' } });
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Add override' }));
-
-    // A new agent-scoped rule with that label is persisted.
-    expect(saved.config).not.toBeNull();
-    const cfg = saved.config as { overrides: { id: string; label: string; category: string; match: unknown[] }[] };
-    const created = cfg.overrides.find((o) => o.label === 'My rule');
-    expect(created).toBeDefined();
-    expect(created?.category).toBe('agent');
-    expect(created?.match).toEqual([]);
-  });
-
-  it('seeds a condition by clicking an example JSON field', async () => {
-    renderWithProvider();
-    await screen.findAllByText('User');
-
-    fireEvent.click(screen.getByRole('button', { name: /add override to system/i }));
-    const dialog = await screen.findByRole('dialog');
-
-    // The system example fixture exposes `subtype = "notification"`.
-    fireEvent.click(within(dialog).getByTitle('Add: subtype eq "notification"'));
-    // A condition row now carries that path.
-    const pathInput = within(dialog).getByLabelText('Condition 1 path') as HTMLInputElement;
-    expect(pathInput.value).toBe('subtype');
-  });
-});
-
-describe('AppearanceSettings — single-field override write', () => {
-  it('persists only the changed field into the override, not inherited category values', async () => {
-    // Regression guard: changing one field on an override must write only that
-    // field (plus any already-set fields) into config.overrides[id]. It must
-    // NOT copy inherited-from-category values (alignment, presentation,
-    // borderStyle, etc.) into the sparse patch.
-    //
-    // "Tool call" (assistant.tool-use) is a good fixture: it explicitly sets
-    // accentColor, icon, headerLabel, and hiddenInCompact in its override —
-    // but NOT alignment, presentation, or borderStyle, which are inherited
-    // from the agent category. Toggling hiddenInCompact exercises the
-    // setOverrideField → mutate → pruneRedundantOverrides write path.
-    renderWithProvider();
-    await screen.findAllByText('User');
-    saved.config = null;
-
-    // Select the "Tool call" override in the tree so the KindEditor shows it.
+    // Select "Tool call" in the tree.
     clickRow('Tool call');
 
-    // The KindEditor for "Tool call" renders a "Hide in compact mode" switch.
-    // "Tool call" has hiddenInCompact: true in its override, so aria-checked is true.
-    // Clicking toggles it to false → calls setOverrideField('assistant.tool-use', { hiddenInCompact: false }).
+    // The KindEditor for "Tool call" shows a "Hide in compact mode" switch.
+    // assistant.tool-use registry default has hiddenInCompact: true.
     const editor = screen.getByTestId('kind-editor');
     const switches = within(editor).getAllByRole('switch');
-    // The first switch in the editor is always "Hide in compact mode".
+    // First switch is always "Hide in compact mode".
     const hiddenSwitch = switches[0];
     expect(hiddenSwitch).toHaveAttribute('aria-checked', 'true');
     fireEvent.click(hiddenSwitch);
 
     // saveSetting should have been called with the updated config.
     expect(saved.config).not.toBeNull();
-    const cfg = saved.config as { overrides: { id: string; style: Record<string, unknown> }[] };
-    const rule = cfg.overrides.find((o) => o.id === 'assistant.tool-use');
-    expect(rule).toBeDefined();
-    const override = rule!.style;
+    const cfg = saved.config as { kinds: Record<string, Record<string, unknown>> };
 
-    // The rule's style still exists (accentColor, icon, headerLabel set).
-    expect(override).toBeDefined();
+    // The kinds map now has an entry for this id.
+    expect(cfg.kinds).toBeDefined();
+    const patch = cfg.kinds['assistant.tool-use'];
+    expect(patch).toBeDefined();
 
-    // hiddenInCompact: false matches the agent category default (false), so
-    // pruneRedundantOverrides removes it from the sparse patch.
-    expect(Object.prototype.hasOwnProperty.call(override, 'hiddenInCompact')).toBe(false);
+    // hiddenInCompact was written.
+    expect(Object.prototype.hasOwnProperty.call(patch, 'hiddenInCompact')).toBe(true);
+    expect(patch.hiddenInCompact).toBe(false);
 
-    // Fields never set on this override must not have been copied from the category.
-    // These are the core regression assertions — they guard against the bug where
-    // editing one field causes inherited values to bleed into the sparse override.
-    expect(Object.prototype.hasOwnProperty.call(override, 'alignment')).toBe(false);
-    expect(Object.prototype.hasOwnProperty.call(override, 'presentation')).toBe(false);
-    expect(Object.prototype.hasOwnProperty.call(override, 'borderStyle')).toBe(false);
-
-    // The fields that WERE already in the override are still there.
-    expect(override.accentColor).toBe('info');
-    expect(override.icon).toBe('Terminal');
-    expect(Object.prototype.hasOwnProperty.call(override, 'headerLabel')).toBe(true);
-  });
-});
-
-describe('pruneRedundantOverrides (prune-on-save)', () => {
-  it('drops a style-only rule (no conditions) once every field matches its category', () => {
-    const cfg = createDefaultConfig();
-    cfg.overrides = [
-      { id: 'r1', label: 'r1', category: 'user', match: [], style: { accentColor: cfg.categories.user.accentColor } },
-    ];
-    const cleaned = pruneRedundantOverrides(cfg);
-    expect(cleaned.overrides.find((o) => o.id === 'r1')).toBeUndefined();
-  });
-
-  it('keeps a rule whose style field diverges from its category', () => {
-    const cfg = createDefaultConfig();
-    cfg.overrides = [
-      { id: 'r1', label: 'r1', category: 'user', match: [], style: { accentColor: 'pink' } },
-    ];
-    const cleaned = pruneRedundantOverrides(cfg);
-    expect(cleaned.overrides.find((o) => o.id === 'r1')?.style).toMatchObject({ accentColor: 'pink' });
-  });
-
-  it('never drops a rule that carries match conditions, even with empty style', () => {
-    const cfg = createDefaultConfig();
-    cfg.overrides = [
-      { id: 'r1', label: 'r1', category: 'system', match: [{ path: 'subtype', op: 'eq', value: 'notification' }], style: {} },
-    ];
-    const cleaned = pruneRedundantOverrides(cfg);
-    expect(cleaned.overrides.find((o) => o.id === 'r1')).toBeDefined();
+    // Fields not in the patch (inherited) must NOT have been written.
+    expect(Object.prototype.hasOwnProperty.call(patch, 'alignment')).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(patch, 'presentation')).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(patch, 'borderStyle')).toBe(false);
   });
 });
 
@@ -224,13 +167,13 @@ describe('AppearanceSettings — presentation control', () => {
     expect(border.getAttribute('role')).toBe('combobox');
   });
 
-  it('shows inherited placeholders for unset fields in override mode', async () => {
+  it('shows inherited placeholders for unset fields in kind mode', async () => {
     renderWithProvider();
     await screen.findAllByText('User');
-    // "Tool call" (assistant.tool-use) override does not set borderStyle, so it
-    // inherits the Agent category. The editor should mark inherited fields.
+    // Select a kind that has no user patch — inherited fields show "inherited" hint.
     clickRow('Tool call');
     const editor = screen.getByTestId('kind-editor');
+    // At least some fields show the inherit hint since no user patch is set.
     expect(within(editor).getAllByText(/inherited/i).length).toBeGreaterThan(0);
   });
 });

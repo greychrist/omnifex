@@ -35,7 +35,7 @@ const SORTED_ICONS: readonly IconName[] = (() => {
     : rest);
 })();
 
-export type KindEditorMode = "category" | "override";
+export type KindEditorMode = "category" | "kind";
 
 interface KindEditorProps {
   mode: KindEditorMode;
@@ -224,12 +224,12 @@ export const KindEditor: React.FC<KindEditorProps> = ({
   onClearField,
   onReset,
 }) => {
-  const isOverride = mode === "override";
+  const isKind = mode === "kind";
   const ov = override ?? {};
   const catLabel = inheritedCategoryLabel ?? "category";
 
   const has = (field: keyof KindStyle): boolean =>
-    isOverride ? Object.prototype.hasOwnProperty.call(ov, field) : true;
+    isKind ? Object.prototype.hasOwnProperty.call(ov, field) : true;
 
   const clear = (field: keyof KindStyle) => {
     onClearField?.(field);
@@ -249,10 +249,10 @@ export const KindEditor: React.FC<KindEditorProps> = ({
           <p className="text-caption text-muted-foreground mt-1">{description}</p>
         )}
         <p className="text-[10px] text-muted-foreground/70 mt-1 font-mono">
-          {isOverride ? `id: ${kindId}` : `category: ${kindId}`}
+          {isKind ? `kind: ${kindId}` : `category: ${kindId}`}
           {style.widget && ` · widget: ${style.widget}`}
         </p>
-        {isOverride && (
+        {isKind && (
           <p className="text-[10px] text-muted-foreground/70 mt-0.5">
             Unset fields inherit from the <strong>{catLabel}</strong> category.
           </p>
@@ -273,7 +273,7 @@ export const KindEditor: React.FC<KindEditorProps> = ({
               ? "Always visible — turn boundary."
               : "When hidden, collapses into the nearest expander in compact mode."}
           </p>
-          {isOverride && (
+          {isKind && (
             <InheritHint
               overridden={has("hiddenInCompact")}
               categoryLabel={catLabel}
@@ -293,7 +293,7 @@ export const KindEditor: React.FC<KindEditorProps> = ({
         <div className="space-y-2">
           <div className="flex items-center justify-between gap-2">
             <Label>Presentation</Label>
-            {isOverride && (
+            {isKind && (
               <InheritHint
                 overridden={has("presentation")}
                 categoryLabel={catLabel}
@@ -307,7 +307,7 @@ export const KindEditor: React.FC<KindEditorProps> = ({
           >
             <SelectTrigger
               aria-label="Presentation"
-              className={cn(isOverride && !has("presentation") && "text-muted-foreground")}
+              className={cn(isKind && !has("presentation") && "text-muted-foreground")}
             >
               <SelectValue />
             </SelectTrigger>
@@ -322,7 +322,7 @@ export const KindEditor: React.FC<KindEditorProps> = ({
         <div className="space-y-2">
           <div className="flex items-center justify-between gap-2">
             <Label>Border</Label>
-            {isOverride && (
+            {isKind && (
               <InheritHint
                 overridden={has("borderStyle")}
                 categoryLabel={catLabel}
@@ -336,7 +336,7 @@ export const KindEditor: React.FC<KindEditorProps> = ({
           >
             <SelectTrigger
               aria-label="Border"
-              className={cn(isOverride && !has("borderStyle") && "text-muted-foreground")}
+              className={cn(isKind && !has("borderStyle") && "text-muted-foreground")}
             >
               <SelectValue />
             </SelectTrigger>
@@ -353,7 +353,7 @@ export const KindEditor: React.FC<KindEditorProps> = ({
       <div className="space-y-2">
         <div className="flex items-center justify-between gap-2">
           <Label>Alignment</Label>
-          {isOverride && (
+          {isKind && (
             <InheritHint
               overridden={has("alignment")}
               categoryLabel={catLabel}
@@ -367,7 +367,7 @@ export const KindEditor: React.FC<KindEditorProps> = ({
         >
           <SelectTrigger
             aria-label="Alignment"
-            className={cn(isOverride && !has("alignment") && "text-muted-foreground")}
+            className={cn(isKind && !has("alignment") && "text-muted-foreground")}
           >
             <SelectValue />
           </SelectTrigger>
@@ -385,7 +385,7 @@ export const KindEditor: React.FC<KindEditorProps> = ({
         <div className="space-y-2">
           <div className="flex items-center justify-between gap-2">
             <Label htmlFor="header-label">Header label</Label>
-            {isOverride && (
+            {isKind && (
               <InheritHint
                 overridden={has("headerLabel")}
                 categoryLabel={catLabel}
@@ -397,7 +397,7 @@ export const KindEditor: React.FC<KindEditorProps> = ({
             id="header-label"
             value={style.headerLabel ?? ""}
             placeholder={
-              isOverride && !has("headerLabel")
+              isKind && !has("headerLabel")
                 ? `(inherited: ${style.headerLabel ?? "no header"})`
                 : "(no header)"
             }
@@ -419,7 +419,7 @@ export const KindEditor: React.FC<KindEditorProps> = ({
         <div className="space-y-2">
           <div className="flex items-center justify-between gap-2">
             <Label htmlFor="accent-color">Accent colour</Label>
-            {isOverride && (
+            {isKind && (
               <InheritHint
                 overridden={has("accentColor")}
                 categoryLabel={catLabel}
@@ -464,7 +464,7 @@ export const KindEditor: React.FC<KindEditorProps> = ({
         <div className="space-y-2">
           <div className="flex items-center justify-between gap-2">
             <Label>Icon</Label>
-            {isOverride && (
+            {isKind && (
               <InheritHint
                 overridden={has("icon")}
                 categoryLabel={catLabel}
@@ -516,7 +516,7 @@ export const KindEditor: React.FC<KindEditorProps> = ({
               disabled={!effectiveBordered}
               onCheckedChange={(v) => {
                 if (v) onChange({ iconBgOpacity: typography.icon.bgOpacity });
-                else if (isOverride) clear("iconBgOpacity");
+                else if (isKind) clear("iconBgOpacity");
                 else onChange({ iconBgOpacity: undefined });
               }}
             />
@@ -557,7 +557,7 @@ export const KindEditor: React.FC<KindEditorProps> = ({
           />
           <span className="text-xs">Show raw payload</span>
         </label>
-        {isOverride && (
+        {isKind && (
           <InheritHint
             overridden={has("showRawPayload")}
             categoryLabel={catLabel}
@@ -573,10 +573,10 @@ export const KindEditor: React.FC<KindEditorProps> = ({
         <button
           type="button"
           onClick={onReset}
-          aria-label={isOverride ? "Remove override" : "Reset category to default"}
+          aria-label={isKind ? "Reset to default" : "Reset category to default"}
           className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
         >
-          {isOverride ? "Remove override" : "Reset category to default"}
+          {isKind ? "Reset to default" : "Reset category to default"}
         </button>
       </div>
     </div>
