@@ -27,41 +27,31 @@ export const MessageRenderingProvider: React.FC<{ children: React.ReactNode }> =
     logAndForget('message-rendering-context:iife', (async () => {
       try {
         const raw = await api.getSetting(MESSAGE_RENDERING_CONFIG_KEY);
-        // Version guard: pre-v2 (or missing) configs are reset to fresh
-        // defaults; v2, v3 and v4 flow through mergeConfig, which migrates
-        // v2/v3→v4 and passes v4 through. The migration is recorded in app_logs
-        // only on the hard reset path (same pattern as the original v1→v2 reset).
-        let parsed: unknown = null;
-        try { parsed = raw ? (JSON.parse(raw) as unknown) : null; } catch { /* handled below */ }
-        const persistedVersion =
-          parsed !== null && typeof parsed === 'object' && parsed !== null && 'version' in parsed
-            ? (parsed as { version?: unknown }).version
-            : undefined;
-        if (!raw || (typeof persistedVersion === 'number' ? persistedVersion : 1) < 2) {
-          const fresh = createDefaultConfig();
-          if (!cancelled) {
-            await api.saveSetting(MESSAGE_RENDERING_CONFIG_KEY, JSON.stringify(fresh));
-            await api.logWriteBatch([{
-              timestamp: new Date().toISOString(),
-              level: 'info',
-              source: 'frontend',
-              category: 'settings:message-rendering',
-              message: 'reset message rendering config to v4 defaults',
-            }]);
-            setConfigState(fresh);
-          }
-        } else {
-          if (!cancelled) setConfigState(parseConfig(raw));
+        const parsed = parseConfig(raw);            // resets non-v5 to defaults
+        let wasReset = !raw;
+        try {
+          wasReset = wasReset || (JSON.parse(raw ?? 'null') as { version?: unknown } | null)?.version !== 5;
+        } catch {
+          wasReset = true;
         }
+        if (wasReset && !cancelled) {
+          await api.saveSetting(MESSAGE_RENDERING_CONFIG_KEY, serializeConfig(parsed));
+          await api.logWriteBatch([{
+            timestamp: new Date().toISOString(),
+            level: 'info',
+            source: 'frontend',
+            category: 'settings:message-rendering',
+            message: 'reset message rendering config to v5 defaults',
+          }]);
+        }
+        if (!cancelled) setConfigState(parsed);
       } catch {
         /* keep defaults */
       } finally {
         if (!cancelled) setLoaded(true);
       }
     })());
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, []);
 
   // Mirror the chat Content typeface to a CSS variable on :root so any

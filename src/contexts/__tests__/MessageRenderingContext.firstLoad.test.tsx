@@ -26,7 +26,7 @@ describe('MessageRenderingContext — first-load reset', () => {
     document.documentElement.style.removeProperty('--font-terminal');
   });
 
-  it('resets a v1 config to v4 defaults and writes an app_logs entry', async () => {
+  it('resets a v1 config to v5 defaults and writes an app_logs entry', async () => {
     // Simulate a v1 persisted config (version field is 1)
     vi.mocked(api.getSetting).mockResolvedValueOnce(
       JSON.stringify({ version: 1, kinds: { 'user.prompt': {} } }),
@@ -36,10 +36,10 @@ describe('MessageRenderingContext — first-load reset', () => {
 
     const { result } = renderHook(() => useMessageRenderingConfig(), { wrapper });
 
-    await waitFor(() => expect(result.current.config.version).toBe(4));
+    await waitFor(() => expect(result.current.config.version).toBe(5));
     expect(api.saveSetting).toHaveBeenCalledWith(
       'message_rendering_config',
-      expect.stringContaining('"version":4'),
+      expect.stringContaining('"version":5'),
     );
     expect(api.logWriteBatch).toHaveBeenCalledWith(
       expect.arrayContaining([
@@ -53,8 +53,8 @@ describe('MessageRenderingContext — first-load reset', () => {
     );
   });
 
-  it('leaves a v2 config untouched', async () => {
-    // Simulate a persisted v2 config
+  it('resets a v2 config to v5 defaults (non-v5 configs are always reset)', async () => {
+    // Simulate a persisted v2 config — parseConfig resets any non-v5 to fresh defaults
     vi.mocked(api.getSetting).mockResolvedValueOnce(
       JSON.stringify({
         version: 2,
@@ -65,6 +65,30 @@ describe('MessageRenderingContext — first-load reset', () => {
         typography: {},
         terminal: {},
       }),
+    );
+    vi.mocked(api.saveSetting).mockResolvedValue(undefined);
+    vi.mocked(api.logWriteBatch).mockResolvedValue(undefined);
+
+    const { result } = renderHook(() => useMessageRenderingConfig(), { wrapper });
+    await waitFor(() => expect(result.current.config.version).toBe(5));
+
+    expect(api.saveSetting).toHaveBeenCalledWith(
+      'message_rendering_config',
+      expect.stringContaining('"version":5'),
+    );
+    expect(api.logWriteBatch).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: expect.stringContaining('reset'),
+        }),
+      ]),
+    );
+  });
+
+  it('leaves a v5 config untouched', async () => {
+    // Simulate a persisted v5 config — no reset, no save
+    vi.mocked(api.getSetting).mockResolvedValueOnce(
+      JSON.stringify({ version: 5 }),
     );
 
     renderHook(() => useMessageRenderingConfig(), { wrapper });
