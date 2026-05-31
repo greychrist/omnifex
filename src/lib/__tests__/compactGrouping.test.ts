@@ -360,6 +360,17 @@ describe('buildCompactItems', () => {
     expect(items.map((i: CompactItem) => i.kind)).toEqual(['single', 'group', 'single']);
   });
 
+  it("folds a fully-hidden tool-use message into a group", () => {
+    const cfg = createDefaultConfig();
+    const toolUse = {
+      kind: "assistant", sessionId: "", receivedAt: "",
+      raw: { type: "assistant", message: { role: "assistant", content: [{ type: "tool_use", name: "Bash", id: "t1", input: {} }] } },
+    } as never;
+    // assistant.tool-use default is hiddenInCompact:true and not boundary-locked
+    const items = buildCompactItems([toolUse], cfg);
+    expect(items[0].kind).toBe("group");
+  });
+
   it('groups Task dispatch / return alongside other hidden tool calls when their kinds are hidden', () => {
     // Subagent dispatch / return follow the kind toggles like every other
     // tool — assistant.tool-use and user.tool-result are hidden by

@@ -1,7 +1,7 @@
 import type { JsonlNode } from '@/types/jsonl';
 import type { MessageContentBlock } from '@/types/claudeStream';
 import type { MessageRenderingConfig } from './messageRenderingConfig';
-import { resolveMessageStyle } from './messageRenderingConfig';
+import { resolveKind } from './messageRenderingConfig';
 
 /**
  * Matches the literal prefix Claude Code prepends when surfacing hook
@@ -160,7 +160,7 @@ export function isBlockHiddenInCompact(
 ): boolean {
   const id = classifyBlockKind(block, parent);
   if (!id) return false;
-  const kind = resolveMessageStyle(config, parent, id);
+  const kind = resolveKind(config, id);
   if (kind.compactBoundaryLocked) return false;
   return kind.hiddenInCompact;
 }
