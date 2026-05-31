@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { createDefaultConfig } from "../messageRenderingConfig";
-import { accentFor, accentStyleFor, swatchFor, resolvedAccentFor, resolvedSwatchFor } from "../accentStyle";
+import { accentFor, accentStyleFor, swatchFor } from "../accentStyle";
 
 describe("accentStyle", () => {
   describe("accentFor", () => {
@@ -38,24 +38,6 @@ describe("accentStyle", () => {
     });
   });
 
-  describe("resolvedAccentFor (per-kind override accent for live cards)", () => {
-    it("applies the permission.askUserQuestion override accent instead of the bare category gray", () => {
-      const cfg = createDefaultConfig();
-      // accentFor returns only the category base — system → muted/gray, which is
-      // why the live AskUserQuestion card rendered gray.
-      expect(accentFor(cfg, "permission.askUserQuestion")?.swatch).toBe(cfg.palette.muted.swatch);
-      // resolvedAccentFor applies the catalog's $kind override (accentColor: primary).
-      expect(resolvedAccentFor(cfg, "permission.askUserQuestion")?.swatch).toBe(cfg.palette.primary.swatch);
-      expect(resolvedSwatchFor(cfg, "permission.askUserQuestion")).toBe(cfg.palette.primary.swatch);
-    });
-
-    it("agrees with accentFor when a kind has no per-kind override", () => {
-      const cfg = createDefaultConfig();
-      // user.prompt: category user → blue, no $kind override; both resolvers agree.
-      expect(resolvedAccentFor(cfg, "user.prompt")?.swatch).toBe(accentFor(cfg, "user.prompt")?.swatch);
-    });
-  });
-
   describe("accentStyleFor", () => {
     it("derives borderColor / backgroundColor with alpha suffixes from the swatch", () => {
       const cfg = createDefaultConfig();
@@ -78,6 +60,19 @@ describe("accentStyle", () => {
     it("returns the palette swatch for a palette-name accentColor", () => {
       const cfg = createDefaultConfig();
       expect(swatchFor(cfg, "user.prompt")).toBe("#60a5fa");
+    });
+  });
+
+  describe("accentStyleFor (cascade-aware via resolveKind)", () => {
+    it("applies the registry default accent for a live card kind", () => {
+      const cfg = createDefaultConfig();
+      expect(swatchFor(cfg, "permission.request")).toBe("#f59e0b"); // amber registry default
+      expect(accentStyleFor(cfg, "permission.request")?.borderColor).toBe("#f59e0b55");
+    });
+    it("honors a user kind patch over the registry default", () => {
+      const cfg = createDefaultConfig();
+      cfg.kinds["permission.request"] = { accentColor: "#123456" };
+      expect(swatchFor(cfg, "permission.request")).toBe("#123456");
     });
   });
 });
