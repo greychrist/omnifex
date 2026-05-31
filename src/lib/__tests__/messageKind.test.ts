@@ -25,6 +25,11 @@ const EMITTABLE_IDS = [
   // permission / summary / fallback
   "permission.request", "permission.askUserQuestion",
   "summary.compaction", "unknown",
+  // bookkeeping (real JSONL lines, rendered as side-line markers)
+  "permission-mode", "last-prompt", "ai-title", "queue-operation",
+  "file-history-snapshot",
+  // synthetic control-change markers (effort/model/permission)
+  "control.effort", "control.model", "control.permission",
 ];
 
 describe('classifier ↔ registry coverage', () => {

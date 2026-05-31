@@ -36,6 +36,18 @@ export const KIND_FIXTURES: Record<string, string> = {
   "permission.askUserQuestion": "Should I proceed with the destructive rename, or create a copy first?",
   "summary.compaction": "Earlier the user asked to refactor auth; the agent edited middleware.ts and added tests.",
   "unknown": "(unrecognized message type — raw payload shown above)",
+
+  // ── bookkeeping (real JSONL lines) ──
+  "permission-mode": "Permission → acceptEdits",
+  "last-prompt": "Bookmarked prompt",
+  "ai-title": 'Session titled "Refactor auth"',
+  "queue-operation": "Background: enqueue",
+  "file-history-snapshot": "File snapshot",
+
+  // ── synthetic control-change markers ──
+  "control.effort": "Effort → high",
+  "control.model": "Model → opus",
+  "control.permission": "Permission → acceptEdits",
 };
 
 export function previewTextForKindId(kindId: string): string {
