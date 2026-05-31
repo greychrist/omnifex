@@ -185,7 +185,14 @@ function formatLocalTimestamp(isoOrNumeric: string): string {
   return `${m}/${day}/${yy} ${h}:${mins}:${secs} ${ampm}`;
 }
 
-const CardFooter: React.FC<{
+/**
+ * The bottom-left metadata chip (kind label + raw-JSON copy button) and the
+ * bottom-right timestamp shared by every message card. Exported so non-frame
+ * custom cards (e.g. the live AskUserQuestionCard) can show the same affordance.
+ * Position is `absolute bottom-…`, so the host container must be `relative` and
+ * reserve a little bottom padding for the chip.
+ */
+export const CardFooter: React.FC<{
   receivedAt?: string;
   message?: JsonlNode;
   copyText?: string;

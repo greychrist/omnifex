@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
 import { AskUserQuestionCard } from "../AskUserQuestionCard";
 import type { PermissionRequestPayload } from "@/lib/types/permissionRequest";
 
@@ -271,6 +271,43 @@ describe("AskUserQuestionCard", () => {
 
       expect(screen.getByText("Pick a color")).toBeTruthy();
       expect(screen.getByRole("button", { name: /send answer/i })).toBeTruthy();
+    });
+  });
+
+  describe("metadata footer", () => {
+    it("shows the shared card footer (kind label + copy button) for JSON extraction", async () => {
+      const writeText = vi.fn().mockResolvedValue(undefined);
+      Object.assign(navigator, { clipboard: { writeText } });
+
+      render(
+        <AskUserQuestionCard request={makeRequest()} onSubmit={vi.fn()} onCancel={vi.fn()} />,
+      );
+
+      // Same bottom-left chip as every other card: "category · kind".
+      expect(screen.getByText("permission · askUserQuestion")).toBeTruthy();
+
+      const copyBtn = screen.getByRole("button", { name: "Copy" });
+      fireEvent.click(copyBtn);
+      await waitFor(() => { expect(writeText).toHaveBeenCalledTimes(1); });
+
+      const copied = JSON.parse(writeText.mock.calls[0][0] as string);
+      expect(copied.toolName).toBe("AskUserQuestion");
+      expect(copied.toolInput.questions[0].question).toBe("Pick a color");
+    });
+
+    it("still offers the footer copy on malformed input (no parseable questions)", () => {
+      const writeText = vi.fn().mockResolvedValue(undefined);
+      Object.assign(navigator, { clipboard: { writeText } });
+
+      render(
+        <AskUserQuestionCard
+          request={makeRequest({ toolInput: { questions: "not-an-array" } })}
+          onSubmit={vi.fn()}
+          onCancel={vi.fn()}
+        />,
+      );
+      expect(screen.getByText("permission · askUserQuestion")).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Copy" })).toBeTruthy();
     });
   });
 });

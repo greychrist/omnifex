@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { accentStyleFor, swatchFor } from "@/lib/accentStyle";
 import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
+import { CardFooter } from "@/components/StreamMessage/MessageFrameCard";
 import type { PermissionRequestPayload } from "@/lib/types/permissionRequest";
 
 /**
@@ -77,6 +78,9 @@ export function AskUserQuestionCard({ request, onSubmit, onCancel }: AskUserQues
   const accentSwatch = swatchFor(config, 'permission.askUserQuestion');
 
   const questions = useMemo(() => parseQuestions(request.toolInput), [request.toolInput]);
+  // Serialized request payload for the shared card footer's copy button, so the
+  // live prompt can be extracted as JSON for investigation like every other card.
+  const requestJson = useMemo(() => JSON.stringify(request, null, 2), [request]);
 
   // selections[i]: for single-select → string | null. for multi-select → string[].
   // For both modes the special value `OTHER_VALUE` means "user picked Other"
@@ -169,8 +173,8 @@ export function AskUserQuestionCard({ request, onSubmit, onCancel }: AskUserQues
     // can dismiss instead of being stuck on a permission prompt that has
     // nothing to allow.
     return (
-      <div className="mx-2 my-2 rounded-lg border shadow-sm" style={accentStyle}>
-        <div className="p-3 space-y-2">
+      <div className="relative mx-2 my-2 rounded-lg border shadow-sm" style={accentStyle}>
+        <div className="p-3 pb-7 space-y-2">
           <div className="text-sm font-medium">Question from agent</div>
           <div className="text-xs text-muted-foreground">
             The agent invoked AskUserQuestion but the input had no parseable questions.
@@ -179,17 +183,19 @@ export function AskUserQuestionCard({ request, onSubmit, onCancel }: AskUserQues
             <Button size="sm" variant="secondary" onClick={onCancel}>Dismiss</Button>
           </div>
         </div>
+        <CardFooter kindId="permission.askUserQuestion" copyText={requestJson} />
       </div>
     );
   }
 
   return (
-    <div className="mx-2 my-2 rounded-lg border shadow-sm" style={accentStyle}>
+    <div className="relative mx-2 my-2 rounded-lg border shadow-sm" style={accentStyle}>
       {/* Outer column: header / scroll region / footer. Outer spacing is
           tighter (space-y-3) so the scroll boundary and the buttons sit
           close to the questions; the inner scroll region carries the wider
-          space-y-4 between questions to match the prior layout. */}
-      <div className="p-3 space-y-3">
+          space-y-4 between questions to match the prior layout. pb-7 reserves
+          room for the absolutely-positioned CardFooter chip below. */}
+      <div className="p-3 pb-7 space-y-3">
         {/* Header */}
         <div className="flex items-start gap-2">
           <MessageCircleQuestion className="h-4 w-4 mt-0.5 shrink-0" style={{ color: accentSwatch }} />
@@ -378,6 +384,7 @@ export function AskUserQuestionCard({ request, onSubmit, onCancel }: AskUserQues
         </>
         )}
       </div>
+      <CardFooter kindId="permission.askUserQuestion" copyText={requestJson} />
     </div>
   );
 }
