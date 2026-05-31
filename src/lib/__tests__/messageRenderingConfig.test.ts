@@ -576,7 +576,8 @@ describe("messageRenderingConfig", () => {
       const ids = DEFAULT_OVERRIDES.map((o) => o.id);
       expect(ids).toContain("assistant.text.endTurn");
       expect(ids).toContain("user.systemContext");
-      expect(ids).toContain("assistant.askUserQuestion");
+      expect(ids).toContain("permission.askUserQuestion"); // live prompt
+      expect(ids).toContain("assistant.askUserQuestion"); // answered card (agent category)
       expect(ids.length).toBeLessThan(25);
     });
   });

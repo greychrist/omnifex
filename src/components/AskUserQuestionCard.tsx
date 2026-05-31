@@ -73,8 +73,8 @@ export function AskUserQuestionCard({ request, onSubmit, onCancel }: AskUserQues
   // outer card with the per-kind translucent border + bg, and `accentSwatch`
   // colors the question icon so per-kind theming (Settings → Chats) still
   // reads against the lighter inline surface.
-  const accentStyle = accentStyleFor(config, 'assistant.askUserQuestion');
-  const accentSwatch = swatchFor(config, 'assistant.askUserQuestion');
+  const accentStyle = accentStyleFor(config, 'permission.askUserQuestion');
+  const accentSwatch = swatchFor(config, 'permission.askUserQuestion');
 
   const questions = useMemo(() => parseQuestions(request.toolInput), [request.toolInput]);
 
