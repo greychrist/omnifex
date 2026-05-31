@@ -1,6 +1,6 @@
 import * as React from 'react';
-import { useMessageRenderingConfig, MessageRenderingPreviewProvider } from '@/contexts/MessageRenderingContext';
-import { resolveKind, resolveMessageStyle, withResolvedKindStyle } from '@/lib/messageRenderingConfig';
+import { useMessageRenderingConfig } from '@/contexts/MessageRenderingContext';
+import { resolveKind } from '@/lib/messageRenderingConfig';
 import { MessageFrameCard } from './MessageFrameCard';
 import { MessageFrameSideLine } from './MessageFrameSideLine';
 import { MessageFrameCollapsible } from './MessageFrameCollapsible';
@@ -36,19 +36,7 @@ export interface MessageFrameProps {
 export const MessageFrame: React.FC<MessageFrameProps> = ({ streamKind, children, actionBar, message, headerOverride }) => {
   const { config } = useMessageRenderingConfig();
 
-  // Compute the cascaded style once for this message, then inject an effective
-  // config whose category base for `streamKind` IS that cascaded style. Every
-  // descendant (MessageFrameCard / Collapsible / KindHeader / the accent /
-  // typography / presentation helpers) keeps calling `resolveKind(config, id)`
-  // and transparently gets the matched style. With no `message` (previews) we
-  // fall back to the plain category base.
-  const { kind, effConfig } = React.useMemo(() => {
-    const resolved = message
-      ? resolveMessageStyle(config, message, streamKind)
-      : resolveKind(config, streamKind);
-    const eff = message ? withResolvedKindStyle(config, streamKind, resolved) : config;
-    return { kind: resolved, effConfig: eff };
-  }, [config, message, streamKind]);
+  const kind = React.useMemo(() => resolveKind(config, streamKind), [config, streamKind]);
 
   // When the kind opts into raw-payload display (today only `unknown`, but
   // the field is a general escape hatch), append a collapsible <details>
@@ -110,12 +98,5 @@ export const MessageFrame: React.FC<MessageFrameProps> = ({ streamKind, children
     );
   }
 
-  // Supply the effective config (where `streamKind` resolves to the cascaded
-  // style) to the subtree. With no message, `effConfig === config`, so the
-  // provider is a transparent pass-through of the live config.
-  return (
-    <MessageRenderingPreviewProvider config={effConfig}>
-      {inner}
-    </MessageRenderingPreviewProvider>
-  );
+  return inner;
 };
