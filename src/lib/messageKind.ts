@@ -185,6 +185,19 @@ export function classifyStandaloneKind(
     return 'system.unknown';
   }
 
+  // Bookkeeping JSONL kinds: the kind id equals the node kind. Returning it
+  // here (rather than null) lets compact-grouping read each kind's registry
+  // `hiddenInCompact` flag instead of force-sweeping them into a hidden group.
+  if (
+    msg.kind === 'permission-mode' ||
+    msg.kind === 'last-prompt' ||
+    msg.kind === 'ai-title' ||
+    msg.kind === 'queue-operation' ||
+    msg.kind === 'file-history-snapshot'
+  ) {
+    return msg.kind;
+  }
+
   // Subagent prompts: user-role messages synthesized by the Task/Agent tool.
   if (isSubagentPrompt(msg, allMessages)) {
     return 'user.subagentPrompt';

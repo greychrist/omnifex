@@ -417,3 +417,16 @@ describe('classifyStandaloneKind', () => {
   });
 });
 
+
+describe('classifyStandaloneKind — bookkeeping kinds', () => {
+  const cases: Array<[string, Record<string, unknown>]> = [
+    ['permission-mode', { kind: 'permission-mode', raw: { type: 'permission-mode', permissionMode: 'acceptEdits' }, sessionId: 's' }],
+    ['last-prompt', { kind: 'last-prompt', raw: { type: 'last-prompt', lastPrompt: 'hi', leafUuid: 'u' }, sessionId: 's' }],
+    ['ai-title', { kind: 'ai-title', raw: { type: 'ai-title', aiTitle: 'T' }, sessionId: 's' }],
+    ['queue-operation', { kind: 'queue-operation', raw: { type: 'queue-operation', operation: 'enqueue' }, sessionId: 's', receivedAt: 't' }],
+    ['file-history-snapshot', { kind: 'file-history-snapshot', raw: { type: 'file-history-snapshot', snapshot: {} } }],
+  ];
+  it.each(cases)('returns %s for that node kind', (expected, node) => {
+    expect(classifyStandaloneKind(node as unknown as JsonlNode, [])).toBe(expected);
+  });
+});
