@@ -692,4 +692,64 @@ describe('usage-runner', () => {
     expect(timeoutLog).toBeDefined();
     expect(timeoutLog!.metadata).toContain('Quick safety check');
   });
+
+  it('warns in the Log tab when a parse succeeds but a CLI label has drifted (silent zero)', async () => {
+    // The whole point of the drift guard: a render where the CLI reworded
+    // "Total cost:" → "Total spend:" still parses ok (windows intact), so the
+    // session cost is silently stored as 0. That must leave a loud warn-level
+    // breadcrumb instead of looking like real zero usage.
+    const drifted = MAX_FULL_FIXTURE.replace('Total cost:             $0.0000', 'Total spend:            $4.2000');
+
+    const logs: { level: string; message: string; metadata?: string }[] = [];
+    const fakeLogging = {
+      writeBatch: (entries: { level: string; message: string; metadata?: string }[]) => {
+        for (const e of entries) logs.push({ level: e.level, message: e.message, metadata: e.metadata });
+      },
+    } as unknown as import('../services/logging').LoggingService;
+
+    const runner = createUsageRunnerService({
+      accounts: makeFakeAccountsService(),
+      rateLimits: makeFakeRateLimits(),
+      spawnPty: makeScriptedSpawn(drifted),
+      findClaudeBinary: () => '/fake/claude',
+      now: () => Date.UTC(2023, 10, 15, 10, 40, 0),
+      ...TUNING,
+      logging: fakeLogging,
+    });
+
+    const result = await runner.run('personal');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Silent corruption confirmed: cost parsed as 0 despite the $4.20 render.
+    expect(result.parsed.session.cost_usd).toBe(0);
+
+    const driftLog = logs.find(
+      (l) => l.level === 'warn' && /drift/i.test(l.message),
+    );
+    expect(driftLog).toBeDefined();
+    expect(driftLog!.metadata).toContain('Total cost:');
+  });
+
+  it('does not emit a drift warning for a healthy render', async () => {
+    const logs: { level: string; message: string; metadata?: string }[] = [];
+    const fakeLogging = {
+      writeBatch: (entries: { level: string; message: string; metadata?: string }[]) => {
+        for (const e of entries) logs.push({ level: e.level, message: e.message, metadata: e.metadata });
+      },
+    } as unknown as import('../services/logging').LoggingService;
+
+    const runner = createUsageRunnerService({
+      accounts: makeFakeAccountsService(),
+      rateLimits: makeFakeRateLimits(),
+      spawnPty: makeScriptedSpawn(MAX_FULL_FIXTURE),
+      findClaudeBinary: () => '/fake/claude',
+      now: () => Date.UTC(2023, 10, 15, 10, 40, 0),
+      ...TUNING,
+      logging: fakeLogging,
+    });
+
+    const result = await runner.run('personal');
+    expect(result.ok).toBe(true);
+    expect(logs.some((l) => /drift/i.test(l.message))).toBe(false);
+  });
 });

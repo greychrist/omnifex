@@ -2,7 +2,7 @@ import type { AccountsService } from './accounts';
 import type { RateLimitsService } from './rate-limits';
 import { findClaudeBinary as defaultFindClaudeBinary } from './util/find-claude-binary';
 import { stripAnsi } from './usage-runner/ansi';
-import { parseUsageOutput, isUsageOutputComplete, type UsageData } from './usage-runner/parser';
+import { parseUsageOutput, isUsageOutputComplete, collectUsageDriftWarnings, type UsageData } from './usage-runner/parser';
 import { resetsLabelToEpoch } from './usage-runner/resets-label';
 import { ensureTrustedScratchCwd } from './usage-runner/scratch-cwd';
 import { repairCorruptedWords } from './usage-runner/repair';
@@ -411,6 +411,18 @@ export function createUsageRunnerService(deps: UsageRunnerDeps): UsageRunnerServ
       account: accountName,
       windows: parsed.data.windows.map((w) => ({ label: w.label, pct: w.pct_used })),
     });
+    // Silent-zero drift guard. A parse can be structurally `ok` (≥1 window)
+    // while the CLI has reworded a label, in which case the affected field is
+    // stored as a default 0 with no error. Surface that as a loud-but-harmless
+    // warning in the Log tab — same philosophy as the welcome-footer marker
+    // drift — so a future CLI wording change is diagnosable instead of looking
+    // like real zero usage. See collectUsageDriftWarnings.
+    const driftWarnings = collectUsageDriftWarnings(repaired);
+    if (driftWarnings.length > 0) {
+      logWarn('usage output drift — parsed ok but expected labels missing (silent zeros likely)', {
+        account: accountName, warnings: driftWarnings, raw,
+      });
+    }
     // Dual-write to rate-limits — convert the human label ("Resets 7pm
     // (America/New_York)" or "in 5h") to an absolute epoch (seconds) so the
     // 7-day/5-hour pills can render the same countdown the 5-hour widget

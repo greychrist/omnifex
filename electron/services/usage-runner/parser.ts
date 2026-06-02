@@ -91,6 +91,87 @@ export function isUsageOutputComplete(input: string): boolean {
   return true;
 }
 
+// The five session-block field labels the CLI always renders inside a
+// `Session` block (even on a fresh session, at $0.00 / 0). These are
+// LABEL-ONLY probes — no value capture — so they detect "the wording
+// changed" independently of "the value is genuinely 0". Keep this list in
+// sync with the value-capturing regexes in `parseSessionBlock`.
+const SESSION_FIELD_LABELS: { label: string; re: RegExp }[] = [
+  { label: 'Total cost:', re: /Total cost:/ },
+  { label: 'Total duration (API):', re: /Total duration \(API\):/ },
+  { label: 'Total duration (wall):', re: /Total duration \(wall\):/ },
+  { label: 'Total code changes:', re: /Total code changes:/ },
+  { label: 'Usage:', re: /Usage:/ },
+];
+
+/**
+ * Audit a `/usage` render for *silent* label drift — cases where the parser
+ * still returns `ok: true` but a value it extracted is a default-zero because
+ * the CLI reworded a label, not because usage was genuinely zero.
+ *
+ * `parseSessionBlock` collapses "label not found" and "value is 0" into the
+ * same `0`, so a reworded `Total cost:` → `Total spend:` silently stores $0
+ * with no error signal. Same for a window whose `% used` phrasing changes.
+ * This returns human-readable warnings the runner logs at `warn` level, so the
+ * next CLI drift surfaces in the Log tab the same loud-but-harmless way the
+ * welcome-footer marker drift already does — instead of masquerading as real
+ * zero usage.
+ *
+ * Conservative by design: a label is only flagged when its PARENT section is
+ * present. A free-tier or partial render that legitimately omits the `Session`
+ * block (or a whole window) is a different, already-tolerated shape — not
+ * drift — so it produces no warnings and no false alarms.
+ */
+export function collectUsageDriftWarnings(input: string): string[] {
+  const text = input.replace(/\r\n/g, '\n');
+  const warnings: string[] = [];
+
+  // Session block: present header ⇒ every field label below is expected.
+  if (SECTION_HEADERS.session.test(text)) {
+    const block = sliceSection(
+      text,
+      SECTION_HEADERS.session,
+      SECTION_HEADERS.current_session,
+      SECTION_HEADERS.week_all_models,
+      SECTION_HEADERS.week_sonnet,
+      SECTION_HEADERS.contributing,
+    ) ?? '';
+    for (const { label, re } of SESSION_FIELD_LABELS) {
+      if (!re.test(block)) {
+        warnings.push(
+          `session field label not found: "${label}" — storing 0; likely CLI wording drift`,
+        );
+      }
+    }
+  }
+
+  // Windows: a matched header should be followed by a `% used` line. A header
+  // without one means the usage-bar phrasing drifted.
+  const windowHeaders: [UsageWindow['label'], RegExp][] = [
+    ['current_session', SECTION_HEADERS.current_session],
+    ['week_all_models', SECTION_HEADERS.week_all_models],
+    ['week_sonnet', SECTION_HEADERS.week_sonnet],
+  ];
+  for (const [label, header] of windowHeaders) {
+    if (!header.test(text)) continue;
+    const block = sliceSection(
+      text,
+      header,
+      SECTION_HEADERS.current_session,
+      SECTION_HEADERS.week_all_models,
+      SECTION_HEADERS.week_sonnet,
+      SECTION_HEADERS.contributing,
+    ) ?? '';
+    if (!/(\d+(?:\.\d+)?)\s*%\s*used/i.test(block)) {
+      warnings.push(
+        `window "${label}" header found but no "% used" line; likely CLI wording drift`,
+      );
+    }
+  }
+
+  return warnings;
+}
+
 export function parseUsageOutput(input: string): ParseResult {
   const text = input.replace(/\r\n/g, '\n');
 
