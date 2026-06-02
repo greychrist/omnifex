@@ -5,6 +5,21 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.76] — 2026-06-02
+
+Keeps OmniFex's CLI-output parsing in step with Claude Code 2.1.159: fixes the doubled "Other" answer, adds a loud signal when the `/usage` scraper drifts, and stops a bogus entry leaking into the usage breakdown.
+
+Installers remain **unsigned**.
+
+### Added
+
+- **`/usage` silent-drift warning.** The `/usage` TUI scraper returns `ok` as long as one window parses, and collapses "label not found" and "value is 0" into the same `0` — so a reworded CLI label (e.g. `Total cost:` → `Total spend:`) silently stored `0` with no signal. A new audit flags expected labels that have gone missing while their parent section is present and logs them at `warn` level, so the next CLI wording change surfaces loudly in the Log tab instead of masquerading as zero usage. Conservative by design: a legitimately-absent section (free-tier / mid-async-load render) is not flagged.
+
+### Fixed
+
+- **AskUserQuestion "Other" answers rendered twice.** Claude Code's synthesized result text drifted from `User has answered your questions: … user notes: …` to `Your questions have been answered: … notes: …`. The bare `notes:` delimiter broke the answer-boundary and annotation regexes, so an "Other" answer rendered doubled and un-prefixed. Both formats now parse (the `user ` prefix is optional); verified against the current CLI.
+- **Bogus "0% used" entry in the usage breakdown.** A 0%-used window renders its bar label as a glyph-less `0% used` line; because the pty buffer stacks multiple redraw frames, that line was mis-read as a "What's contributing" headline and injected as a spurious entry. Bare `N% used` usage-bar labels are now skipped during contributing parsing.
+
 ## [0.4.75] — 2026-05-31
 
 Replaces the message-styling model with a code-level kind registry, fixes the "everything renders gray" bug, and adds visible feedback when you change permission / effort / model — plus visibility for every JSONL line.
