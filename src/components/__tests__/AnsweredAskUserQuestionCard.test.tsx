@@ -20,10 +20,16 @@ function input(questions: { question: string; header?: string; options?: { label
 
 /**
  * Build the synthesised wire-format string the CLI actually returns
- * to the renderer. Verified against live session
- * `d6ac42ec-47c0-47ef-8b4b-81fda02fa2f5`. The original assumption was
- * that we'd see our structured `{ answers, annotations }` as JSON — the
- * CLI rewrites it to a human-readable sentence the model can consume.
+ * to the renderer. This mirrors the *current* shipping format, verified
+ * verbatim against live session `736548cc-2da0-44fb-8951-95624e7c035e`:
+ *
+ *   `Your questions have been answered: "Q"="A" notes: User selected Other: "A". You can now continue with these answers in mind.`
+ *
+ * Note the bare `notes:` delimiter and the `.` terminating the final clause
+ * (pairs or notes) before the trailer. Older CLI builds emitted
+ * `User has answered your questions: … user notes: …` instead — that variant
+ * still appears in real transcripts, so the parser tolerates both. The
+ * `d6ac42ec…` test below freezes the legacy form as a back-compat guard.
  */
 function resultWire(
   answers: Record<string, string>,
@@ -33,9 +39,9 @@ function resultWire(
     .map(([q, a]) => `"${q}"="${a}"`)
     .join(', ');
   const notes = others && others.length > 0
-    ? ` user notes: ${others.map((t) => `User selected Other: "${t}"`).join('. ')}.`
+    ? ` notes: ${others.map((t) => `User selected Other: "${t}"`).join('. ')}`
     : '';
-  return `User has answered your questions: ${pairs}${notes} You can now continue with the user's answers in mind.`;
+  return `Your questions have been answered: ${pairs}${notes}. You can now continue with these answers in mind.`;
 }
 
 /**
@@ -127,10 +133,11 @@ describe('AnsweredAskUserQuestionCard (wire format — synthesised string)', () 
     expect(screen.queryByText(/Other:/)).toBeNull();
   });
 
-  it('parses the live session d6ac42ec-47c0-47ef-8b4b-81fda02fa2f5 verbatim', () => {
-    // Frozen against the actual JSONL content from the bug-report screenshot.
-    // If the wire format changes, this test breaks first and points at the
-    // specific session that proves the regression.
+  it('parses the legacy "user notes:" wire format (session d6ac42ec) verbatim', () => {
+    // Frozen against the actual JSONL content from the original bug-report
+    // screenshot — the older CLI form (`User has answered your questions: …
+    // user notes: …`). This variant still appears in real transcripts, so it
+    // stays as a back-compat guard alongside the current-format test above.
     const liveContent =
       'User has answered your questions: ' +
       '"Which color do you prefer?"="Blue", ' +
@@ -161,6 +168,43 @@ describe('AnsweredAskUserQuestionCard (wire format — synthesised string)', () 
     expect(screen.getAllByText(/This is a test, custom, answer/).length).toBe(1);
     expect(screen.getByText(/Other:.*This is a test/)).toBeTruthy();
     expect(screen.getAllByText(/Other:/).length).toBe(1);
+  });
+
+  it('parses the current CLI wire format (" notes:" delimiter, "Your questions have been answered" prefix)', () => {
+    // Verbatim tool_result from live session
+    // 736548cc-2da0-44fb-8951-95624e7c035e. The CLI drifted from
+    // "User has answered your questions: … user notes: …" to
+    // "Your questions have been answered: … notes: …", which broke both the
+    // answer-boundary lookahead and the annotation extractor — the answer
+    // overshot into the notes section and rendered the typed text twice with
+    // no "Other:" prefix (the user-reported double-render).
+    const liveContent =
+      'Your questions have been answered: ' +
+      '"The verify gate\'s a11y stage fails on the home-page YouTube iframe (third-party markup), unrelated to WS-203. How do you want to handle it so the billing work can land?"=' +
+      '"I\'ve already fixed this and ported the fix to develop - you can verify that but we don\'t need to fix it here."' +
+      ' notes: User selected Other: "I\'ve already fixed this and ported the fix to develop - you can verify that but we don\'t need to fix it here."' +
+      '. You can now continue with these answers in mind.';
+
+    render(
+      <AnsweredAskUserQuestionCard
+        input={input([
+          {
+            question:
+              "The verify gate's a11y stage fails on the home-page YouTube iframe (third-party markup), unrelated to WS-203. How do you want to handle it so the billing work can land?",
+            header: 'A11Y BLOCKER',
+            options: [{ label: 'Skip it' }],
+          },
+        ])}
+        resultContent={liveContent}
+      />,
+    );
+
+    // Rendered exactly once, as the "Other: …" form — not doubled, and with
+    // no leaked "notes:" / "User selected Other:" wire noise.
+    expect(screen.getAllByText(/I've already fixed this and ported the fix to develop/).length).toBe(1);
+    expect(screen.getByText(/Other:\s*I've already fixed this/)).toBeTruthy();
+    expect(screen.queryByText(/User selected Other/)).toBeNull();
+    expect(screen.queryByText(/(?:^|\s)notes:/)).toBeNull();
   });
 
   it('falls back to "(no answer recorded)" when the result content is missing', () => {

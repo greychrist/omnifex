@@ -61,10 +61,17 @@ interface ParsedAnswerPayload {
  * does NOT pass our structured `{ questions, answers, annotations }` payload
  * through to the model as JSON — it synthesises a human-readable string:
  *
- *   `User has answered your questions: "Q1"="A1", "Q2"="A2, A3" user notes: User selected Other: "<typed>". You can now continue with the user's answers in mind.`
+ *   `Your questions have been answered: "Q1"="A1", "Q2"="A2, A3" notes: User selected Other: "<typed>". You can now continue with these answers in mind.`
+ *
+ * The exact wording drifts between CLI builds — the prefix has been both
+ * "User has answered your questions:" and "Your questions have been
+ * answered:", and the annotation delimiter has been both `user notes:` and a
+ * bare `notes:`. We anchor on each question's literal text from the tool_use
+ * input rather than the prefix, and tolerate the optional `user ` on the
+ * delimiter, so neither drift breaks extraction.
  *
  * We anchor on each question's literal text from the tool_use input to
- * extract the answer, then scan the trailing `user notes:` section for
+ * extract the answer, then scan the trailing `notes:` section for
  * `User selected Other: "<text>"` patterns. When an Other-text equals a
  * question's answer (always true today, because `handleSubmit` swaps the
  * OTHER_VALUE sentinel for the typed text before sending), that question
@@ -134,14 +141,16 @@ function parseAnswerPayload(
     const escaped = qText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     // Lookahead boundaries (in order of likelihood):
     //   `", "` — another question follows
-    //   `" user notes:` — annotations section follows
+    //   `" notes:` — annotations section follows. The `user ` prefix is
+    //                optional: older CLI builds emitted `user notes:`, the
+    //                current build emits a bare `notes:`. Accept both.
     //   ` You can now …` — end of payload (period optional: the live
     //                       format has a `.` only when notes precede it,
     //                       since the period belongs to the notes' own
     //                       terminator, not the trailer itself)
     //   end of string — fallback for truncated content
     const re = new RegExp(
-      `"${escaped}"="([\\s\\S]*?)"(?=, "|\\s+user notes:|\\.?\\s*You can now|$)`,
+      `"${escaped}"="([\\s\\S]*?)"(?=, "|\\s+(?:user )?notes:|\\.?\\s*You can now|$)`,
     );
     const m = text.match(re);
     if (m) answers[qText] = m[1];
@@ -160,7 +169,7 @@ function parseAnswerPayload(
   // aggregates them into one trailing sentence), so matching by answer
   // text is the only honest mapping back.
   const annotations: Record<string, { notes?: string }> = {};
-  const notesMatch = /user notes:\s*([\s\S]*?)(?:\.\s*You can now continue|$)/.exec(text);
+  const notesMatch = /(?:user )?notes:\s*([\s\S]*?)(?:\.\s*You can now continue|$)/.exec(text);
   if (notesMatch) {
     const notes = notesMatch[1];
     const otherTexts: string[] = Array.from(
