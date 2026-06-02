@@ -342,6 +342,14 @@ function parseContributing(text: string): { headline: string; detail: string }[]
       flush();
       continue;
     }
+    // Skip a bare "N% used" usage-bar label outright — neither headline nor
+    // detail. The pty buffer stacks multiple redraw frames, and because the
+    // first "What's contributing" header can sit in an earlier frame, this
+    // slice spans into a later frame's window block. A bar-FILLED window line
+    // ("████ 17% used") is already disqualified by its leading glyph, but a
+    // 0%-used window renders a glyph-less "0% used" that would otherwise match
+    // the percent-headline test below and inject a bogus contributing entry.
+    if (/^\d+(?:\.\d+)?%\s*used\s*$/.test(trimmed)) continue;
     if (/^\d+%/.test(trimmed)) {
       flush();
       current = { headline: trimmed, detail: [] };

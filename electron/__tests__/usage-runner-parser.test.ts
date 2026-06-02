@@ -97,3 +97,71 @@ Resets May 25 at 7pm (America/New_York)
     expect(isUsageOutputComplete(FIXTURE)).toBe(false);
   });
 });
+
+describe('parseUsageOutput contributing — multi-frame buffers', () => {
+  // The pty buffer accumulates multiple TUI redraw frames. The first
+  // "What's contributing" header can land in an earlier (incomplete) frame,
+  // so the contributing slice legitimately spans into the later complete
+  // frame to reach the real entries. A 0%-used window renders its bar label
+  // as a bare "0% used" line (no leading bar glyph to disqualify it), which
+  // otherwise gets mis-read as a contributing headline — injecting a bogus
+  // entry. Verified against the live 2.1.159 capture on 2026-06-02.
+  const TWO_FRAME = `
+Session
+Total cost: $0.0000
+Total duration (API): 0s
+Total duration (wall): 1s
+Total code changes: 0 lines added, 0 lines removed
+Usage: 0 input, 0 output, 0 cache read, 0 cache write
+Current session
+████ 17% used
+Resets 1:10am (America/New_York)
+Current week (all models)
+██ 4% used
+Resets Jun 8 at 7pm (America/New_York)
+Current week (Sonnet only)
+0% used
+Resets Jun 8 at 7pm (America/New_York)
+What's contributing to your limits usage?
+Scanning local sessions…
+
+Session
+Total cost: $0.0000
+Total duration (API): 0s
+Total duration (wall): 1s
+Total code changes: 0 lines added, 0 lines removed
+Usage: 0 input, 0 output, 0 cache read, 0 cache write
+Current session
+████ 17% used
+Resets 1:10am (America/New_York)
+Current week (all models)
+██ 4% used
+Resets Jun 8 at 7pm (America/New_York)
+Current week (Sonnet only)
+0% used
+Resets Jun 8 at 7pm (America/New_York)
+What's contributing to your limits usage?
+Approximate, based on local sessions on this machine
+Last 24h · independent characteristics of your usage
+
+82% of your usage came from subagent-heavy sessions
+Each subagent runs its own requests.
+
+51% of your usage was at >150k context
+Longer sessions are more expensive even when cached.
+`;
+
+  it('does not inject a bogus "0% used" entry from a later frame', () => {
+    const result = parseUsageOutput(TWO_FRAME);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const headlines = result.data.contributing.map((c) => c.headline);
+    // The bar-less window label must never appear as a contributing headline.
+    expect(headlines).not.toContain('0% used');
+    // The two real entries survive intact.
+    expect(headlines).toEqual([
+      '82% of your usage came from subagent-heavy sessions',
+      '51% of your usage was at >150k context',
+    ]);
+  });
+});
