@@ -5,6 +5,20 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.77] — 2026-06-07
+
+Makes the chat's auto-scroll stickiness adjustable instead of hardcoded, and tightens the defaults so the view lets go sooner when you scroll up to read history.
+
+Installers remain **unsigned**.
+
+### Added
+
+- **Configurable chat auto-scroll thresholds.** The transcript's stick-to-bottom hysteresis — how far you can scroll up before the chat stops following new messages, and how close to the bottom you must return before it resumes — is now tunable from Settings → General ("Chat auto-scroll"). Values persist in `app_settings` and apply live to open chats. The two-threshold dead zone that prevents flapping from content-height jitter is preserved.
+
+### Changed
+
+- **Auto-scroll defaults tightened to resume 200px / stop 400px** (previously 400px / 800px). The old disengage distance kept the view pinned to the bottom too aggressively while reading earlier messages.
+
 ## [0.4.76] — 2026-06-02
 
 Keeps OmniFex's CLI-output parsing in step with Claude Code 2.1.159: fixes the doubled "Other" answer, adds a loud signal when the `/usage` scraper drifts, and stops a bogus entry leaking into the usage breakdown.
