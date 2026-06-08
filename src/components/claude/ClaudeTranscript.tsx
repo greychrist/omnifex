@@ -11,6 +11,8 @@ import { useFindInChat } from "@/hooks/useFindInChat";
 import { buildCompactItems } from "@/lib/compactGrouping";
 import { filterDisplayableMessages } from "@/lib/messageFilters";
 import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
+import { useAutoScroll } from "@/contexts/AutoScrollContext";
+import { nextNearBottom } from "@/lib/autoScrollThresholds";
 import type { JsonlNode } from "@/types/jsonl";
 import type { ViewMode } from "@/components/SessionViewToggle";
 
@@ -78,6 +80,7 @@ export function ClaudeTranscript({
   isNearBottomRef,
 }: ClaudeTranscriptProps): React.ReactElement {
   const { config: renderConfig } = useMessageRenderingConfig();
+  const { reengagePx, disengagePx } = useAutoScroll();
 
   // Filter out messages that shouldn't be displayed (honors the user's
   // hard-filter toggles in Appearance settings).
@@ -173,16 +176,15 @@ export function ClaudeTranscript({
     // Two-threshold hysteresis to prevent false "user scrolled up" detection.
     // Wider-than-you'd-expect thresholds so content-height jitter (code blocks
     // finishing layout, images loading) doesn't disengage stickiness, and the
-    // user has real room to scroll back without the view yanking to the bottom:
-    // - Within 400px: near bottom, keep auto-scrolling
-    // - Beyond 800px: user is reading history, stop auto-scrolling
-    // - 400–800px: dead zone (no state change)
-    if (distanceFromBottom < 400) {
-      isNearBottomRef.current = true;
-    } else if (distanceFromBottom > 800) {
-      isNearBottomRef.current = false;
-    }
-  }, [isNearBottomRef]);
+    // user has real room to scroll back without the view yanking to the bottom.
+    // The re-engage / disengage distances are user-tunable in
+    // Settings → General (see AutoScrollContext / autoScrollThresholds).
+    isNearBottomRef.current = nextNearBottom(
+      distanceFromBottom,
+      isNearBottomRef.current,
+      { reengagePx, disengagePx },
+    );
+  }, [isNearBottomRef, reengagePx, disengagePx]);
 
   return (
     <div className="flex-1 min-h-0 px-10 py-2 bg-muted/30 relative">

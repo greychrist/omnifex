@@ -5,6 +5,7 @@ import {
   Volume2,
 } from "lucide-react";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -20,6 +21,7 @@ import { cn } from "@/lib/utils";
 import { ClaudeVersionSelector } from "@/components/ClaudeVersionSelector";
 import { useTheme } from "@/hooks";
 import { useAppFont } from "@/contexts/AppFontContext";
+import { useAutoScroll } from "@/contexts/AutoScrollContext";
 import { APP_FONT_CHOICES } from "@/lib/typefaceCatalog";
 import { TabPersistenceService } from "@/services/tabPersistence";
 import type { SettingsPanelProps } from "./types";
@@ -54,6 +56,28 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
 }) => {
   const { theme, setTheme } = useTheme();
   const { appFont, setAppFont, isLoading: appFontLoading } = useAppFont();
+  const {
+    reengagePx,
+    disengagePx,
+    setThresholds: setAutoScrollThresholds,
+  } = useAutoScroll();
+  // Local draft strings so typing stays smooth; committed to the context
+  // (which persists + clamps) on blur or Enter. Re-seeded whenever the
+  // context values change (e.g. after the clamp adjusts disengage up).
+  const [reengageDraft, setReengageDraft] = useState(String(reengagePx));
+  const [disengageDraft, setDisengageDraft] = useState(String(disengagePx));
+
+  useEffect(() => {
+    setReengageDraft(String(reengagePx));
+  }, [reengagePx]);
+  useEffect(() => {
+    setDisengageDraft(String(disengagePx));
+  }, [disengagePx]);
+
+  const commitAutoScroll = (next: { reengagePx: number; disengagePx: number }) => {
+    void setAutoScrollThresholds(next);
+    setToast({ message: "Auto-scroll thresholds updated", type: "success" });
+  };
   const [tabPersistenceEnabled, setTabPersistenceEnabled] = useState(true);
   const [startupIntroEnabled, setStartupIntroEnabled] = useState(true);
   const [successSound, setSuccessSound] = useState<NotificationSoundId>(DEFAULT_SUCCESS_SOUND);
@@ -232,6 +256,73 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
                 }
               })}
             />
+          </div>
+
+          {/* Chat auto-scroll thresholds — how the transcript decides whether
+              to keep sticking to the bottom while messages stream. The chat
+              stops auto-scrolling once you scroll up past "stop" px, and
+              resumes once you scroll back within "resume" px of the bottom.
+              The gap between them is a dead zone that prevents flapping.
+              Persisted as `autoscroll_reengage_px` / `autoscroll_disengage_px`
+              and applied live to open chats (see AutoScrollContext). */}
+          <div className="border-t border-border pt-4 mt-2" />
+          <div className="space-y-3">
+            <div>
+              <Label>Chat auto-scroll</Label>
+              <p className="text-caption text-muted-foreground mt-1">
+                How far you can scroll up before the chat stops following new
+                messages. Larger “stop” = stickier (more aggressive). Defaults:
+                resume 200px, stop 400px.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-between gap-3">
+              <Label htmlFor="autoscroll-disengage" className="text-body-small">
+                Stop following after scrolling up (px)
+              </Label>
+              <Input
+                id="autoscroll-disengage"
+                type="number"
+                min={0}
+                step={50}
+                className="w-32"
+                value={disengageDraft}
+                onChange={(e) => setDisengageDraft(e.target.value)}
+                onBlur={() =>
+                  commitAutoScroll({
+                    reengagePx: Number.parseInt(reengageDraft, 10) || 0,
+                    disengagePx: Number.parseInt(disengageDraft, 10) || 0,
+                  })
+                }
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") e.currentTarget.blur();
+                }}
+              />
+            </div>
+
+            <div className="flex items-center justify-between gap-3">
+              <Label htmlFor="autoscroll-reengage" className="text-body-small">
+                Resume following within (px) of bottom
+              </Label>
+              <Input
+                id="autoscroll-reengage"
+                type="number"
+                min={0}
+                step={50}
+                className="w-32"
+                value={reengageDraft}
+                onChange={(e) => setReengageDraft(e.target.value)}
+                onBlur={() =>
+                  commitAutoScroll({
+                    reengagePx: Number.parseInt(reengageDraft, 10) || 0,
+                    disengagePx: Number.parseInt(disengageDraft, 10) || 0,
+                  })
+                }
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") e.currentTarget.blur();
+                }}
+              />
+            </div>
           </div>
 
           {/* Notification Sounds — pick what plays when a task completes
