@@ -72,6 +72,29 @@ describe('ClaudeCliEngine', () => {
     expect(opts.env.CLAUDE_CONFIG_DIR).toBe('/home/user/.claude');
   });
 
+  it('passes --model for a concrete model id', async () => {
+    const fake = makeFakeChild();
+    mockedSpawn.mockReturnValue(fake as never);
+    const engine = createClaudeCliEngine({ tabId: 't', claudeBinaryPath: '/bin/claude' });
+
+    await engine.start({ ...baseParams, model: 'sonnet' });
+
+    const args = mockedSpawn.mock.calls[0]![1] as string[];
+    expect(args).toContain('--model');
+    expect(args[args.indexOf('--model') + 1]).toBe('sonnet');
+  });
+
+  it("omits --model when the selection is 'default' (let the CLI pick)", async () => {
+    const fake = makeFakeChild();
+    mockedSpawn.mockReturnValue(fake as never);
+    const engine = createClaudeCliEngine({ tabId: 't', claudeBinaryPath: '/bin/claude' });
+
+    await engine.start({ ...baseParams, model: 'default' });
+
+    const args = mockedSpawn.mock.calls[0]![1] as string[];
+    expect(args).not.toContain('--model');
+  });
+
   it('uses --resume (not --session-id) on a warm restart', async () => {
     const fake = makeFakeChild();
     mockedSpawn.mockReturnValue(fake as never);

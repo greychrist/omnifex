@@ -62,7 +62,9 @@ function buildArgs(p: AgentStartParams): string[] {
   } else {
     args.push('--session-id', p.sessionId);
   }
-  if (p.model) {
+  // 'default' means "let the CLI pick" — the CLI catalog exposes it as a
+  // selectable entry, but as an argv value it's redundant; omit the flag.
+  if (p.model && p.model !== 'default') {
     args.push('--model', p.model);
   }
   if (p.permissionMode && CLI_ARGV_PERMISSION_MODES.has(p.permissionMode)) {
