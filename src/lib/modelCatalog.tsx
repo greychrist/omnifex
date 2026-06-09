@@ -15,10 +15,14 @@ const icon = <Zap className="h-3.5 w-3.5" />;
 /** Map a CLI catalog entry to the picker's display shape. */
 export function toPickerModel(info: SessionModelInfo): Model {
   const name = info.displayName || info.value;
+  // CLI descriptions are "·"-separated, detail first ("Opus 4.8 with 1M
+  // context · Best for everyday, complex tasks"). The detail segment is the
+  // part that identifies the model; keep it, drop the marketing tail.
+  const description = (info.description ?? '').split('·')[0].trim();
   return {
     id: info.value,
     name,
-    description: info.description ?? '',
+    description,
     icon,
     shortName: (name[0] ?? '?').toUpperCase(),
     color: 'text-primary',

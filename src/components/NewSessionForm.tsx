@@ -272,7 +272,14 @@ export const NewSessionForm: React.FC<NewSessionFormProps> = ({
                       setModelOpen(false);
                     }}
                   >
-                    <span className="text-xs">{model.name}</span>
+                    <span className="flex flex-col items-start min-w-0">
+                      <span className="text-xs">{model.name}</span>
+                      {model.description && (
+                        <span className="text-[10px] text-muted-foreground truncate">
+                          {model.description}
+                        </span>
+                      )}
+                    </span>
                   </DropdownRow>
                 ))}
               </div>

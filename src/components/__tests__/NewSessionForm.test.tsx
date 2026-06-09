@@ -124,6 +124,23 @@ describe('NewSessionForm — model picker', () => {
     expect(screen.getAllByText('Default (recommended)').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Haiku').length).toBeGreaterThan(0);
   });
+
+  it('shows the catalog description detail under each model name', async () => {
+    const { api } = await import('@/lib/api');
+    vi.mocked(api.listSupportedModels).mockResolvedValue([
+      {
+        value: 'default',
+        displayName: 'Default (recommended)',
+        description: 'Opus 4.8 with 1M context · Best for everyday, complex tasks',
+      },
+      { value: 'sonnet', displayName: 'Sonnet', description: 'Sonnet 4.6 · Efficient for routine tasks' },
+    ]);
+    render(<Harness />);
+    fireEvent.click(await screen.findByTitle('Sonnet'));
+    // Detail segment (before the ·) is shown; the marketing tail is not.
+    expect(screen.getAllByText('Opus 4.8 with 1M context').length).toBeGreaterThan(0);
+    expect(screen.queryByText(/Best for everyday/)).toBeNull();
+  });
 });
 
 describe('NewSessionForm — agent picker', () => {

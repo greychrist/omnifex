@@ -53,6 +53,20 @@ describe('toPickerModel', () => {
     expect(m.name).toBe('sonnet');
     expect(m.shortName).toBe('S');
   });
+
+  it('keeps only the detail segment of the description (text before the first ·)', () => {
+    const m = toPickerModel({
+      value: 'default',
+      displayName: 'Default (recommended)',
+      description: 'Opus 4.8 with 1M context · Best for everyday, complex tasks',
+    });
+    expect(m.description).toBe('Opus 4.8 with 1M context');
+  });
+
+  it('passes dot-free descriptions through unchanged', () => {
+    const m = toPickerModel({ value: 'haiku', displayName: 'Haiku', description: 'Fastest for quick answers' });
+    expect(m.description).toBe('Fastest for quick answers');
+  });
 });
 
 describe('FALLBACK_MODELS', () => {
