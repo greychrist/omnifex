@@ -389,6 +389,29 @@ const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 13,
+    description:
+      'model_catalog.fetched_at: epoch-ms INTEGER → ISO-8601 TEXT, matching ' +
+      'the timestamp style used everywhere else in the schema (and readable ' +
+      'in DB browsers). SQLite cannot ALTER a column type, so rebuild-table.',
+    up(db) {
+      db.exec(`
+        CREATE TABLE model_catalog_new (
+          config_dir   TEXT PRIMARY KEY,
+          cli_version  TEXT NOT NULL,
+          catalog_json TEXT NOT NULL,
+          fetched_at   TEXT NOT NULL
+        );
+        INSERT INTO model_catalog_new (config_dir, cli_version, catalog_json, fetched_at)
+          SELECT config_dir, cli_version, catalog_json,
+                 strftime('%Y-%m-%dT%H:%M:%fZ', fetched_at / 1000.0, 'unixepoch')
+          FROM model_catalog;
+        DROP TABLE model_catalog;
+        ALTER TABLE model_catalog_new RENAME TO model_catalog;
+      `);
+    },
+  },
 ];
 
 /**

@@ -197,7 +197,7 @@ describe('modelsService.getCatalog (SQLite-persisted)', () => {
   function catalogRow() {
     return db.raw
       .prepare('SELECT cli_version, catalog_json, fetched_at FROM model_catalog WHERE config_dir = ?')
-      .get(CONFIG) as { cli_version: string; catalog_json: string; fetched_at: number } | undefined;
+      .get(CONFIG) as { cli_version: string; catalog_json: string; fetched_at: string } | undefined;
   }
 
   it('cache miss: live-fetches, persists, and returns the catalog', async () => {
@@ -212,6 +212,19 @@ describe('modelsService.getCatalog (SQLite-persisted)', () => {
     expect(row).toBeTruthy();
     expect(JSON.parse(row!.catalog_json)).toEqual(FRESH);
     expect(row!.cli_version).toBe('2.1.170');
+  });
+
+  it('persists human-readable rows: ISO-8601 fetched_at, pretty-printed JSON', () => {
+    const service = createModelsService(db, {
+      cliVersionFn: () => '2.1.170',
+      nowFn: () => Date.UTC(2026, 5, 9, 18, 30, 0, 123),
+    });
+    service.upsertCatalog(CONFIG, SEEDED);
+
+    const row = catalogRow()!;
+    expect(row.fetched_at).toBe('2026-06-09T18:30:00.123Z');
+    // Pretty-printed (2-space indent) so DB browsers show readable JSON.
+    expect(row.catalog_json).toBe(JSON.stringify(SEEDED, null, 2));
   });
 
   it('cache hit: returns the persisted catalog without spawning an engine', async () => {

@@ -34,6 +34,35 @@ describe('database', () => {
     expect(cols).toEqual(['config_dir', 'cli_version', 'catalog_json', 'fetched_at']);
   });
 
+  it('migration v13 turns fetched_at into ISO-8601 TEXT and converts existing epoch-ms rows', () => {
+    // fetched_at is TEXT on a fully-migrated DB.
+    const info = db.raw.pragma('table_info(model_catalog)') as { name: string; type: string }[];
+    expect(info.find((c) => c.name === 'fetched_at')!.type).toBe('TEXT');
+
+    // A pre-v13 DB (INTEGER epoch-ms rows) gets its data converted in place.
+    // Pin schema_version at 12 so only v13 runs against this minimal fixture.
+    const legacy = new BetterSqlite3(':memory:');
+    legacy.exec(`
+      CREATE TABLE schema_version (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
+      INSERT INTO schema_version VALUES (12, '2026-06-09T00:00:00Z');
+      CREATE TABLE model_catalog (
+        config_dir   TEXT PRIMARY KEY,
+        cli_version  TEXT NOT NULL,
+        catalog_json TEXT NOT NULL,
+        fetched_at   INTEGER NOT NULL
+      );
+    `);
+    legacy
+      .prepare('INSERT INTO model_catalog VALUES (?, ?, ?, ?)')
+      .run('/cfg', '2.1.170', '[]', Date.UTC(2026, 5, 9, 18, 30, 0, 500));
+    runMigrations(legacy, { homeDir: '/nonexistent-home-for-test' });
+    const converted = legacy
+      .prepare('SELECT fetched_at FROM model_catalog WHERE config_dir = ?')
+      .get('/cfg') as { fetched_at: string };
+    expect(converted.fetched_at).toBe('2026-06-09T18:30:00.500Z');
+    legacy.close();
+  });
+
   it('initSchema emits the post-v11 accounts shape (no account_type, has engine/has_cost/subscription_label)', () => {
     const names = (db.raw.pragma('table_info(accounts)') as { name: string }[]).map((c) => c.name);
     expect(names).toContain('subscription_label');

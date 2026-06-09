@@ -147,6 +147,8 @@ export function createModelsService(db: Database, opts: ModelsServiceOptions = {
   function upsertCatalog(configDir: string, models: ModelInfo[]): void {
     if (!configDir || models.length === 0) return;
     try {
+      // Pretty-printed JSON + ISO timestamp: the row is a debugging surface
+      // (DB browsers, support bundles), so keep it human-readable.
       db.raw.prepare(
         `INSERT INTO model_catalog (config_dir, cli_version, catalog_json, fetched_at)
          VALUES (?, ?, ?, ?)
@@ -154,7 +156,7 @@ export function createModelsService(db: Database, opts: ModelsServiceOptions = {
            cli_version = excluded.cli_version,
            catalog_json = excluded.catalog_json,
            fetched_at = excluded.fetched_at`,
-      ).run(configDir, cliVersion() ?? '', JSON.stringify(models), now());
+      ).run(configDir, cliVersion() ?? '', JSON.stringify(models, null, 2), new Date(now()).toISOString());
     } catch (err) {
       console.error('[models] upsertCatalog failed:', err);
     }
@@ -180,13 +182,15 @@ export function createModelsService(db: Database, opts: ModelsServiceOptions = {
     const row = db.raw
       .prepare('SELECT cli_version, catalog_json, fetched_at FROM model_catalog WHERE config_dir = ?')
       .get(configDir) as
-      | { cli_version: string; catalog_json: string; fetched_at: number }
+      | { cli_version: string; catalog_json: string; fetched_at: string }
       | undefined;
     const ver = cliVersion();
     const rowModels = row ? safeParse(row.catalog_json) : null;
 
     if (row && rowModels && (ver === null || row.cli_version === ver)) {
-      if (now() - row.fetched_at > ttlMs) {
+      // NaN from an unparseable timestamp fails the > comparison, which
+      // degrades to "no background refresh" — acceptable for a cache row.
+      if (now() - Date.parse(row.fetched_at) > ttlMs) {
         void refresh(configDir).catch((err: unknown) => {
           console.error('[models] background refresh failed:', err);
         });
