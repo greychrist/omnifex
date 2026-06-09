@@ -28,6 +28,12 @@ export interface SessionDefaultsRowProps {
    * catalog instead of the static fallback.
    */
   configDir?: string;
+  /**
+   * 'row' (default) lays the three fields out side by side; 'column' stacks
+   * them full-width — used in narrow containers like the SessionCard
+   * context popover where a row truncates every trigger.
+   */
+  direction?: 'row' | 'column';
   className?: string;
 }
 
@@ -81,8 +87,11 @@ export function SessionDefaultsRow({
   permissionMode,
   setPermissionMode,
   configDir,
+  direction = 'row',
   className,
 }: SessionDefaultsRowProps) {
+  const layout =
+    direction === 'column' ? 'flex flex-col items-stretch gap-2' : 'flex items-end gap-2';
   const [modelOpen, setModelOpen] = useState(false);
   const [effortOpen, setEffortOpen] = useState(false);
   const [permsOpen, setPermsOpen] = useState(false);
@@ -98,7 +107,7 @@ export function SessionDefaultsRow({
     const selectedModelData = modelList.find((m) => m.id === model) ?? modelList[0];
     const selectedRawModel = modelCatalogRaw.find((m) => m.value === model);
     return (
-      <div className={`flex items-end gap-2 ${className ?? ''}`}>
+      <div className={`${layout} ${className ?? ''}`}>
         <Field label="Model">
           <FormModelPicker
             selectedModelData={selectedModelData}
@@ -134,7 +143,7 @@ export function SessionDefaultsRow({
 
   // Codex: plain selects fed by the engine-keyed option lists.
   return (
-    <div className={`flex items-end gap-2 ${className ?? ''}`}>
+    <div className={`${layout} ${className ?? ''}`}>
       <Dropdown
         id="session-defaults-model"
         label="Model"

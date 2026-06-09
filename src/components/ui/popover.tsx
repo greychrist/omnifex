@@ -2,6 +2,7 @@ import * as React from "react";
 import * as ReactDOM from "react-dom";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
+import { computePopoverPosition } from "./popoverPosition";
 
 interface PopoverProps {
   /**
@@ -122,16 +123,16 @@ export const Popover: React.FC<PopoverProps> = ({
     const compute = () => {
       const trig = triggerRef.current;
       if (!trig) return;
-      const r = trig.getBoundingClientRect();
-      const cw = contentRef.current?.offsetWidth ?? 0;
-      const ch = contentRef.current?.offsetHeight ?? 0;
-      const GAP = 8;
-      const top = side === "top" ? r.top - ch - GAP : r.bottom + GAP;
-      let left: number;
-      if (align === "start") left = r.left;
-      else if (align === "end") left = r.right - cw;
-      else left = r.left + r.width / 2 - cw / 2;
-      setCoords({ top, left });
+      // computePopoverPosition clamps into the viewport so panels anchored
+      // near an edge never render off-screen (see popoverPosition.tsx).
+      setCoords(computePopoverPosition({
+        triggerRect: trig.getBoundingClientRect(),
+        contentWidth: contentRef.current?.offsetWidth ?? 0,
+        contentHeight: contentRef.current?.offsetHeight ?? 0,
+        side,
+        align,
+        viewport: { width: window.innerWidth, height: window.innerHeight },
+      }));
     };
     compute();
     // Recompute once the content has measured its actual size (e.g. fonts

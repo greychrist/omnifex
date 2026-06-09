@@ -1842,6 +1842,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
             controls={
               <SessionDefaultsRow
                 engine={agent}
+                direction="column"
                 configDir={accountResolution?.account.config_dir}
                 model={selectedModel}
                 setModel={(newModel) => {

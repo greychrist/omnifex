@@ -55,6 +55,26 @@ describe('SessionDefaultsRow', () => {
     expect(screen.getByText('Default')).toBeTruthy();
   });
 
+  it("direction='column' stacks the fields vertically", () => {
+    const { container } = render(
+      <TooltipProvider>
+        <SessionDefaultsRow
+          engine="claude"
+          model="sonnet"
+          setModel={() => {}}
+          effort="high"
+          setEffort={() => {}}
+          permissionMode="default"
+          setPermissionMode={() => {}}
+          direction="column"
+        />
+      </TooltipProvider>,
+    );
+    const root = container.firstElementChild as HTMLElement;
+    expect(root.className).toContain('flex-col');
+    expect(root.className).toContain('items-stretch');
+  });
+
   it("engine='claude' model picker lists the fallback catalog incl. Fable 5", () => {
     render(<Harness engine="claude" />);
     fireEvent.click(screen.getByText('Sonnet'));
