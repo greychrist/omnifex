@@ -58,7 +58,7 @@ import { createUsageRunnerService } from './services/usage-runner';
 import { createLoggingService } from './services/logging';
 import { createProxyService } from './services/proxy';
 import { createMCPService } from './services/mcp';
-import { createModelsService } from './services/models';
+import { createModelsService, type ModelInfo } from './services/models';
 import { createSlashCommandsService } from './services/slash-commands';
 import { createFilesystemService } from './services/filesystem';
 import { createOneShotTerminalService } from './services/one-shot-terminal';
@@ -550,6 +550,9 @@ app.whenReady().then(() => {
     // when manualAccountOverride is set (user explicitly picked an account
     // on the form). Returns null when the project doesn't resolve.
     (projectPath: string) => accountsService.resolve(projectPath).claude?.account.config_dir ?? null,
+    // Model-catalog write-through: live sessions persist their init-time
+    // model list so pre-session pickers stay warm for this account.
+    (configDir, models) => modelsService.upsertCatalog(configDir, models as ModelInfo[]),
   );
   const claudeService = createClaudeService(db, accountsService);
   const usageService = createUsageService(accountsService, loggingService);

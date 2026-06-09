@@ -45,6 +45,12 @@ export interface RuntimeDeps {
    * to the renderer code path that observed it.
    */
   logging?: LoggingService | null;
+  /**
+   * Optional write-through: persists the CLI init-time model catalog for
+   * this session's configDir (models service `upsertCatalog`) so the
+   * pre-session pickers stay warm without an ephemeral engine spawn.
+   */
+  modelCatalogSink?: ((configDir: string, models: unknown[]) => void) | null;
 }
 
 interface JsonlTailState {
@@ -134,13 +140,22 @@ export function listenToMessages(
       (message as Record<string, unknown>).receivedAt = agentMsg.receivedAt;
 
       switch (event.kind) {
-        case 'init':
+        case 'init': {
           // The CLI emits `system:init` mid-turn AFTER the first user
           // message, NOT on spawn. By the time this fires, lifecycle has
           // already flipped sessionStatus to 'started'. Only capture catalog
           // data (commands/models/agents/account) that arrives in this payload:
           if (!handle.initData) handle.initData = engine.getInitData();
+          const initModels = handle.initData?.models;
+          if (deps.modelCatalogSink && Array.isArray(initModels) && initModels.length > 0) {
+            try {
+              deps.modelCatalogSink(handle.configDir, initModels);
+            } catch (err) {
+              console.error('[sessions] model catalog write-through failed:', err);
+            }
+          }
           break;
+        }
         case 'rateLimit':
           if (rateLimitHook) {
             try {

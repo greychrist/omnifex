@@ -103,6 +103,57 @@ function makeLoggingStub(): { service: LoggingService; entries: LogEntry[] } {
   return { service, entries };
 }
 
+describe('runtime.listenToMessages — model catalog write-through', () => {
+  const INIT_MODELS = [
+    { value: 'claude-fable-5[1m]', displayName: 'Fable 5' },
+    { value: 'sonnet', displayName: 'Sonnet' },
+  ];
+
+  function setup(initModels: unknown) {
+    const engine = makeFakeEngine();
+    vi.mocked(engine.getInitData).mockReturnValue(
+      initModels === undefined ? {} : { models: initModels as never },
+    );
+    const handle = makeHandle(engine);
+    const sessions = new Map<string, SessionHandle>([['tab-1', handle]]);
+    const modelCatalogSink = vi.fn();
+    void listenToMessages('tab-1', handle, {
+      sendToRenderer: vi.fn(),
+      notificationHooks: {},
+      rateLimitHook: null,
+      ownership: null,
+      sessions,
+      modelCatalogSink,
+    });
+    return { engine, modelCatalogSink };
+  }
+
+  it('persists the init-time model catalog for the session configDir', () => {
+    const { engine, modelCatalogSink } = setup(INIT_MODELS);
+
+    engine._emitMessage({ type: 'system', subtype: 'init', models: INIT_MODELS });
+
+    expect(modelCatalogSink).toHaveBeenCalledWith('/c', INIT_MODELS);
+  });
+
+  it('does not call the sink when init data has no models', () => {
+    const { engine, modelCatalogSink } = setup(undefined);
+
+    engine._emitMessage({ type: 'system', subtype: 'init' });
+
+    expect(modelCatalogSink).not.toHaveBeenCalled();
+  });
+
+  it('a throwing sink does not break message handling', () => {
+    const { engine, modelCatalogSink } = setup(INIT_MODELS);
+    modelCatalogSink.mockImplementation(() => { throw new Error('db locked'); });
+
+    expect(() => {
+      engine._emitMessage({ type: 'system', subtype: 'init', models: INIT_MODELS });
+    }).not.toThrow();
+  });
+});
+
 describe('runtime.listenToMessages — engine.onError', () => {
   it('does NOT emit agent-complete on stderr-driven error', () => {
     const engine = makeFakeEngine();

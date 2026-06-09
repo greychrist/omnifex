@@ -77,6 +77,13 @@ export function createSessionsService(
    * (user explicitly picked an account on the form).
    */
   resolveAccountConfigDir: ((projectPath: string) => string | null) | null = null,
+  /**
+   * Optional write-through for the CLI init-time model catalog. Called with
+   * (configDir, models) when a live session's `system:init` carries a model
+   * list; main wires this to the models service's `upsertCatalog` so
+   * pre-session pickers stay warm without ephemeral engine spawns.
+   */
+  modelCatalogSink: ((configDir: string, models: unknown[]) => void) | null = null,
 ): SessionsService {
   const sessions = new Map<string, SessionHandle>();
   // Hoisted so both the public return and stop()'s plugin-cache eviction
@@ -90,6 +97,7 @@ export function createSessionsService(
     ownership,
     sessions,
     logging,
+    modelCatalogSink,
   };
 
   // -------------------------------------------------------------------------
