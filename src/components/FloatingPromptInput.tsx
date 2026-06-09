@@ -13,23 +13,10 @@ import { TooltipProvider, TooltipSimple } from "@/components/ui/tooltip-modern";
 import { FilePicker } from "./FilePicker";
 import { SlashCommandPicker } from "./SlashCommandPicker";
 import { ImagePreview } from "./ImagePreview";
-import { type FileEntry, type SlashCommand, type SessionModelInfo } from "@/lib/api";
+import { type FileEntry, type SlashCommand } from "@/lib/api";
 
 // Sub-components
-import {
-  FormModelPicker,
-  ExpandedModelPicker,
-} from "./ModelPicker";
-import { effectiveModels, useModelCatalog } from "@/lib/modelCatalog";
-import {
-  type EffortLevel,
-  type ThinkingConfig,
-  EFFORT_LEVELS,
-  PERMISSION_MODES,
-  EffortPicker,
-  PermissionPicker,
-} from "./ControlBar";
-import type { PermissionMode } from "./ControlBar";
+import type { EffortLevel, ThinkingConfig, PermissionMode } from "./ControlBar";
 import {
   extractImagePaths,
   handleImagePaste,
@@ -38,9 +25,9 @@ import {
 } from "./ImageAttachments";
 import { useSlashCommandAutocomplete } from "@/hooks/useSlashCommandAutocomplete";
 
-// Re-export types and constants so existing consumers don't break
+// Re-export types so existing consumers don't break. The model / effort /
+// permission pickers themselves moved to the SessionCard context popover.
 export type { EffortLevel, ThinkingConfig, PermissionMode };
-export { EFFORT_LEVELS, PERMISSION_MODES };
 
 interface FloatingPromptInputProps {
   onSend: (prompt: string, model: string, images?: string[]) => void;
@@ -52,25 +39,15 @@ interface FloatingPromptInputProps {
   onCancel?: () => void;
   extraMenuItems?: React.ReactNode;
   /**
-   * Optional content rendered as its own row immediately above the left-side
-   * control pickers (model / effort / permission). Used by the
-   * session view to surface the CLI ↔ Terminal mode toggle here, freeing
-   * vertical space in the top header above. Renders nothing when omitted.
+   * Chat ↔ Terminal mode toggle, stacked with `outputStyleToggle` in the
+   * left-side column. Renders nothing when omitted.
    */
   modeToggle?: React.ReactNode;
   /**
-   * Optional content rendered as its own row immediately above the right-side
-   * extras (copy / MCP / plugins / permissions). Used by the session view to
-   * surface the Compact ↔ Verbose output style toggle alongside the control
-   * pickers it modifies.
+   * Compact ↔ Verbose output toggle, stacked beneath `modeToggle` in the
+   * left-side column at equal width.
    */
   outputStyleToggle?: React.ReactNode;
-  permissionMode?: string;
-  onPermissionModeChange?: (mode: string) => void;
-  supportedModels?: SessionModelInfo[];
-  onLiveModelChange?: (model: string) => void;
-  effort?: EffortLevel;
-  onEffortChange?: (level: EffortLevel) => void;
   configDir?: string;
   tabId?: string;
   /** Pre-fetched built-in CLI slash commands (loaded during session init). */
@@ -93,12 +70,6 @@ const FloatingPromptInputInner = (
     extraMenuItems,
     modeToggle,
     outputStyleToggle,
-    permissionMode = "default",
-    onPermissionModeChange,
-    supportedModels,
-    onLiveModelChange,
-    effort = 'high',
-    onEffortChange,
     configDir,
     tabId,
     supportedCommands,
@@ -113,14 +84,11 @@ const FloatingPromptInputInner = (
   }, [defaultModel]);
 
   const [isExpanded, setIsExpanded] = useState(false);
-  const [modelPickerOpen, setModelPickerOpen] = useState(false);
-  const [effortPickerOpen, setEffortPickerOpen] = useState(false);
   const [showFilePicker, setShowFilePicker] = useState(false);
   const [filePickerQuery, setFilePickerQuery] = useState("");
   const [cursorPosition, setCursorPosition] = useState(0);
   const [embeddedImages, setEmbeddedImages] = useState<string[]>([]);
   const [pastedImages, setPastedImages] = useState<string[]>([]);
-  const [permissionPickerOpen, setPermissionPickerOpen] = useState(false);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const expandedTextareaRef = useRef<HTMLTextAreaElement>(null);
@@ -381,29 +349,6 @@ const FloatingPromptInputInner = (
     setPrompt(newPrompt);
   };
 
-  // -- Model selection --
-  const handleModelSelect = (modelId: string) => {
-    setSelectedModel(modelId);
-    onLiveModelChange?.(modelId);
-    setModelPickerOpen(false);
-  };
-
-  // -- Derived data --
-  // Model list precedence: live session catalog (CLI init data) → cached
-  // per-account catalog → static fallback. The `?? models[0]` guard keeps
-  // stale persisted ids (e.g. 'opus') rendering — the CLI still accepts
-  // them as aliases even when the catalog no longer lists them.
-  const { raw: catalogRaw } = useModelCatalog(configDir);
-  const rawCatalog = supportedModels && supportedModels.length > 0 ? supportedModels : catalogRaw;
-  const effectiveModelList = effectiveModels(rawCatalog);
-  const selectedModelData =
-    effectiveModelList.find((m) => m.id === selectedModel) || effectiveModelList[0];
-  // Effort capability for the current selection. Unknown selection (stale
-  // id, no catalog) → undefined → picker shows all levels.
-  const selectedRawModel = rawCatalog.find((m) => m.value === selectedModel);
-  const effortLevels = selectedRawModel?.supportedEffortLevels;
-  const effortSupported = selectedRawModel ? selectedRawModel.supportsEffort === true : true;
-
   // Active textarea helper
   const activeTextarea = () => isExpanded ? expandedTextareaRef.current : textareaRef.current;
 
@@ -472,29 +417,7 @@ const FloatingPromptInputInner = (
                 onDrop={handleDrop}
               />
 
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <ExpandedModelPicker
-                    selectedModelData={selectedModelData}
-                    models={effectiveModelList}
-                    selectedModel={selectedModel}
-                    onSelect={handleModelSelect}
-                    open={modelPickerOpen}
-                    onOpenChange={setModelPickerOpen}
-                  />
-
-                  {effortSupported && (
-                    <EffortPicker
-                      effort={effort}
-                      onEffortChange={onEffortChange}
-                      open={effortPickerOpen}
-                      onOpenChange={setEffortPickerOpen}
-                      variant="expanded"
-                      levels={effortLevels}
-                    />
-                  )}
-                </div>
-
+              <div className="flex items-center justify-end">
                 <TooltipSimple content="Send message" side="top">
                   <motion.div
                     whileTap={{ scale: 0.97 }}
@@ -551,40 +474,15 @@ const FloatingPromptInputInner = (
 
           <div className="p-3">
             <div className="flex items-end gap-2">
-              {/* Control pickers — left side, stacked vertically with the
-                  same full-value form triggers as the session-start screen */}
-              <div className="flex flex-col items-stretch gap-1 shrink-0 mb-1 w-44">
-                <FormModelPicker
-                  selectedModelData={selectedModelData}
-                  models={effectiveModelList}
-                  selectedModel={selectedModel}
-                  onSelect={handleModelSelect}
-                  open={modelPickerOpen}
-                  onOpenChange={setModelPickerOpen}
-                  disabled={disabled}
-                />
-
-                {effortSupported && (
-                  <EffortPicker
-                    effort={effort}
-                    onEffortChange={onEffortChange}
-                    open={effortPickerOpen}
-                    onOpenChange={setEffortPickerOpen}
-                    disabled={disabled}
-                    levels={effortLevels}
-                    variant="form"
-                  />
-                )}
-
-                <PermissionPicker
-                  permissionMode={permissionMode}
-                  onPermissionModeChange={onPermissionModeChange}
-                  open={permissionPickerOpen}
-                  onOpenChange={setPermissionPickerOpen}
-                  disabled={disabled}
-                  variant="form"
-                />
-              </div>
+              {/* Left side: mode + output toggles stacked vertically at equal
+                  widths. The model/effort/permission pickers live in the
+                  SessionCard context popover. */}
+              {(modeToggle || outputStyleToggle) && (
+                <div className="flex flex-col items-stretch gap-1.5 shrink-0 mb-1 w-52">
+                  {modeToggle}
+                  {outputStyleToggle}
+                </div>
+              )}
 
               {/* Prompt Input - Center */}
               <div className="flex-1 relative">
@@ -687,21 +585,10 @@ const FloatingPromptInputInner = (
                 </AnimatePresence>
               </div>
 
-              {/* Right side: mode + output toggles stacked, with the extra
-                  menu items arranged in a 2×2 square beside them */}
-              {(extraMenuItems || outputStyleToggle || modeToggle) && (
-                <div className="flex items-end gap-2 shrink-0 mb-1">
-                  {(modeToggle || outputStyleToggle) && (
-                    <div className="flex flex-col items-end gap-1.5">
-                      {modeToggle}
-                      {outputStyleToggle}
-                    </div>
-                  )}
-                  {extraMenuItems && (
-                    <div className="grid grid-cols-2 gap-0.5">
-                      {extraMenuItems}
-                    </div>
-                  )}
+              {/* Right side: the extra menu items in a 2×2 square */}
+              {extraMenuItems && (
+                <div className="grid grid-cols-2 gap-0.5 shrink-0 mb-1">
+                  {extraMenuItems}
                 </div>
               )}
             </div>

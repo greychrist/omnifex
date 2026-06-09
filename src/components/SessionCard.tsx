@@ -39,6 +39,12 @@ interface SessionCardProps {
   /** Current Claude session id (GUID). When present, surfaces in the context
    *  popover with a copy button. */
   sessionId?: string | null;
+  /**
+   * Live session controls (model / effort / permission pickers) rendered
+   * inside the context popover. Injected by AgentSession so this card stays
+   * presentation-only.
+   */
+  controls?: React.ReactNode;
   className?: string;
 }
 
@@ -58,6 +64,7 @@ export function SessionCard({
   clearDisabled,
   clearReason,
   sessionId,
+  controls,
   className,
 }: SessionCardProps) {
   const [contextPopoverOpen, setContextPopoverOpen] = React.useState(false);
@@ -211,6 +218,12 @@ export function SessionCard({
                 <div className="text-xs text-muted-foreground font-mono">
                   {tokens.toLocaleString()} / {limit.toLocaleString()} tokens
                 </div>
+
+                {controls && (
+                  <div className="pt-2 mt-1 border-t border-border/50">
+                    {controls}
+                  </div>
+                )}
 
                 {useSdk && sortedCategories.length > 0 && chartReady ? (
                   <>

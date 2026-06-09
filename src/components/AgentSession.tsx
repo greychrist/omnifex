@@ -31,6 +31,7 @@ import {
 } from "./FloatingPromptInput";
 import { normalizeThinkingConfig } from "@/lib/thinkingConfig";
 import { modelDisplayName } from "@/lib/modelCatalog";
+import { SessionDefaultsRow } from "@/components/shared/SessionDefaultsRow";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { SlashCommandsManager } from "./SlashCommandsManager";
 import { SessionMCPStatus } from "./SessionMCPStatus";
@@ -1838,6 +1839,85 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
             clearDisabled={clearButtonDisabled}
             clearReason={clearButtonReason}
             sessionId={claudeSessionId}
+            controls={
+              <SessionDefaultsRow
+                engine={agent}
+                configDir={accountResolution?.account.config_dir}
+                model={selectedModel}
+                setModel={(newModel) => {
+                  // Updates selectedModel AND, if a session is running, pushes
+                  // the switch to the CLI immediately via sessionSetModel() so
+                  // the user doesn't have to wait until the next send.
+                  setSelectedModel(newModel);
+                  if (persistentSessionRef.current) {
+                    const tid = tabIdRef.current;
+                    api.sessionSetModel(tid, newModel).then(() => {
+                      // Live transcript marker — model changes are out-of-band
+                      // control requests that never reach the JSONL, so this
+                      // live-only marker is the only scrollback record.
+                      appendMessage({
+                        kind: 'control-change',
+                        control: 'model',
+                        value: String(newModel),
+                        sessionId: tid,
+                        receivedAt: new Date().toISOString(),
+                      });
+                    }).catch((err: unknown) => {
+                      console.error('[sessions] sessionSetModel failed:', err);
+                    });
+                  }
+                }}
+                effort={effort}
+                setEffort={(level) => {
+                  setEffort(level as EffortLevel);
+                  if (persistentSessionRef.current) {
+                    const tid = tabIdRef.current;
+                    api.sessionSetEffort(tid, level as EffortLevel).then(() => {
+                      // Drop a live transcript marker so the change is visible in
+                      // scrollback. Effort never reaches the JSONL, so this is the
+                      // only record — live-session only (not persisted).
+                      appendMessage({
+                        kind: 'control-change',
+                        control: 'effort',
+                        value: String(level),
+                        sessionId: tid,
+                        receivedAt: new Date().toISOString(),
+                      });
+                    }).catch((err: unknown) => {
+                      console.error('[sessions] sessionSetEffort failed:', err);
+                    });
+                  }
+                }}
+                permissionMode={permissionMode}
+                setPermissionMode={(mode) => {
+                  // Update local state AND, if a session is running, push the
+                  // change to the CLI via sessionSetPermissionMode(). Swallow
+                  // errors so a bad mode doesn't revert the UI.
+                  setPermissionMode(mode);
+                  if (persistentSessionRef.current) {
+                    const tid = tabIdRef.current;
+                    api.sessionSetPermissionMode(tid, mode).then(() => {
+                      // Live transcript marker. The CLI DOES persist a
+                      // `permission-mode` JSONL line, but jsonl-tail only forwards
+                      // closure-carriers (queue-operation/attachment) to the live
+                      // stream — so the persisted line shows up only on resume,
+                      // never live. This synthetic marker gives the immediate
+                      // feedback; the persisted line covers scrollback after
+                      // resume. They never coexist in one view, so no double.
+                      appendMessage({
+                        kind: 'control-change',
+                        control: 'permission',
+                        value: String(mode),
+                        sessionId: tid,
+                        receivedAt: new Date().toISOString(),
+                      });
+                    }).catch((err: unknown) => {
+                      console.error('[sessions] sessionSetPermissionMode failed:', err);
+                    });
+                  }
+                }}
+              />
+            }
           />
           <div
             role="separator"
@@ -2248,86 +2328,12 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
               configDir={accountResolution?.account.config_dir}
               tabId={tabIdRef.current}
               defaultModel={selectedModel}
-              effort={effort}
-              onEffortChange={(level) => {
-                setEffort(level);
-                if (persistentSessionRef.current) {
-                  const tid = tabIdRef.current;
-                  api.sessionSetEffort(tid, level).then(() => {
-                    // Drop a live transcript marker so the change is visible in
-                    // scrollback. Effort never reaches the JSONL, so this is the
-                    // only record — live-session only (not persisted).
-                    appendMessage({
-                      kind: 'control-change',
-                      control: 'effort',
-                      value: String(level),
-                      sessionId: tid,
-                      receivedAt: new Date().toISOString(),
-                    });
-                  }).catch((err: unknown) => {
-                    console.error('[sessions] sessionSetEffort failed:', err);
-                  });
-                }
-              }}
-              supportedModels={supportedModels}
               supportedCommands={supportedCommands}
-              onLiveModelChange={(newModel) => {
-                // Wave 2.5 — clicking a model in the bottom picker updates
-                // selectedModel AND, if a session is running, pushes the
-                // switch to the CLI immediately via sessionSetModel() so
-                // the user doesn't have to wait until the next send.
-                setSelectedModel(newModel);
-                if (persistentSessionRef.current) {
-                  const tid = tabIdRef.current;
-                  api.sessionSetModel(tid, newModel).then(() => {
-                    // Live transcript marker — model changes are out-of-band
-                    // control requests that never reach the JSONL, so this
-                    // live-only marker is the only scrollback record.
-                    appendMessage({
-                      kind: 'control-change',
-                      control: 'model',
-                      value: String(newModel),
-                      sessionId: tid,
-                      receivedAt: new Date().toISOString(),
-                    });
-                  }).catch((err: unknown) => {
-                    console.error('[sessions] sessionSetModel failed:', err);
-                  });
-                }
-              }}
-              permissionMode={permissionMode}
-              onPermissionModeChange={(mode) => {
-                // Wave 2.4b — update local state AND, if a session is
-                // running, push the change to the CLI via
-                // sessionSetPermissionMode(). Swallow errors so a bad
-                // mode doesn't revert the UI — the user can pick another.
-                setPermissionMode(mode);
-                if (persistentSessionRef.current) {
-                  const tid = tabIdRef.current;
-                  api.sessionSetPermissionMode(tid, mode).then(() => {
-                    // Live transcript marker. The CLI DOES persist a
-                    // `permission-mode` JSONL line, but jsonl-tail only forwards
-                    // closure-carriers (queue-operation/attachment) to the live
-                    // stream — so the persisted line shows up only on resume,
-                    // never live. This synthetic marker gives the immediate
-                    // feedback; the persisted line covers scrollback after
-                    // resume. They never coexist in one view, so no double.
-                    appendMessage({
-                      kind: 'control-change',
-                      control: 'permission',
-                      value: String(mode),
-                      sessionId: tid,
-                      receivedAt: new Date().toISOString(),
-                    });
-                  }).catch((err: unknown) => {
-                    console.error('[sessions] sessionSetPermissionMode failed:', err);
-                  });
-                }
-              }}
               modeToggle={
-                <div className="flex items-center gap-1.5">
-                  <HeaderLabel>mode</HeaderLabel>
+                <div className="flex items-center gap-1.5 w-full">
+                  <HeaderLabel className="w-12 shrink-0">mode</HeaderLabel>
                   <SessionModeToggle
+                    className="flex-1"
                     mode={sessionMode}
                     onChange={(next) => {
                       api.setSessionMode(tabIdRef.current, next).catch((err: unknown) => {
@@ -2343,9 +2349,9 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
                 </div>
               }
               outputStyleToggle={
-                <div className="flex items-center gap-1.5">
-                  <HeaderLabel>output</HeaderLabel>
-                  <SessionViewToggle mode={viewMode} onChange={setViewMode} />
+                <div className="flex items-center gap-1.5 w-full">
+                  <HeaderLabel className="w-12 shrink-0">output</HeaderLabel>
+                  <SessionViewToggle className="flex-1" mode={viewMode} onChange={setViewMode} />
                 </div>
               }
               extraMenuItems={

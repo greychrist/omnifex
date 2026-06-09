@@ -61,60 +61,6 @@ export function ModelPickerDropdown({ models, selectedModel, onSelect }: ModelPi
 }
 
 // ---------------------------------------------------------------------------
-// ExpandedModelPicker — the labeled trigger+popover used in the expanded modal
-// ---------------------------------------------------------------------------
-
-interface ExpandedModelPickerProps {
-  selectedModelData: Model;
-  models: Model[];
-  selectedModel: string;
-  onSelect: (modelId: string) => void;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}
-
-export function ExpandedModelPicker({
-  selectedModelData,
-  models,
-  selectedModel,
-  onSelect,
-  open,
-  onOpenChange,
-}: ExpandedModelPickerProps) {
-  return (
-    <div className="flex items-center gap-2">
-      <span className="text-xs text-muted-foreground">Model:</span>
-      <Popover
-        trigger={
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => { onOpenChange(!open); }}
-            className="gap-2"
-          >
-            <span className={selectedModelData.color}>
-              {selectedModelData.icon}
-            </span>
-            {selectedModelData.name}
-          </Button>
-        }
-        content={
-          <ModelPickerDropdown
-            models={models}
-            selectedModel={selectedModel}
-            onSelect={onSelect}
-          />
-        }
-        open={open}
-        onOpenChange={onOpenChange}
-        align="start"
-        side="top"
-      />
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // FormModelPicker — full-name trigger that fills its container.
 // Used by NewSessionForm. Same dropdown content as the others.
 // ---------------------------------------------------------------------------

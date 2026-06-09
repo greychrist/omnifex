@@ -6,16 +6,18 @@ interface SessionModeToggleProps {
   onChange: (mode: 'rich' | 'tui') => void;
   disabled?: boolean;
   disabledReason?: string;
+  className?: string;
 }
 
 export function SessionModeToggle({
-  mode, onChange, disabled, disabledReason,
+  mode, onChange, disabled, disabledReason, className,
 }: SessionModeToggleProps) {
   return (
     <div
       className={cn(
         'inline-flex rounded-md border border-border bg-muted/30 p-0.5',
         disabled && 'opacity-50 cursor-not-allowed',
+        className,
       )}
       title={disabled ? disabledReason : undefined}
     >
@@ -24,7 +26,7 @@ export function SessionModeToggle({
         disabled={disabled}
         onClick={() => { onChange('rich'); }}
         className={cn(
-          'flex items-center gap-1 px-2 py-1 text-xs rounded disabled:pointer-events-none',
+          'flex flex-1 items-center justify-center gap-1 px-2 py-1 text-xs rounded disabled:pointer-events-none',
           mode === 'rich' ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground',
         )}
       >
@@ -36,7 +38,7 @@ export function SessionModeToggle({
         disabled={disabled}
         onClick={() => { onChange('tui'); }}
         className={cn(
-          'flex items-center gap-1 px-2 py-1 text-xs rounded disabled:pointer-events-none',
+          'flex flex-1 items-center justify-center gap-1 px-2 py-1 text-xs rounded disabled:pointer-events-none',
           mode === 'tui' ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground',
         )}
       >
