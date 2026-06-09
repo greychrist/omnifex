@@ -11,6 +11,10 @@ vi.mock('node:fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs')>();
   return { ...actual, default: { ...actual, existsSync: vi.fn(() => true) } };
 });
+vi.mock('node:child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:child_process')>();
+  return { ...actual, execSync: vi.fn() };
+});
 
 const mockedCreate = vi.mocked(createClaudeCliEngine);
 
@@ -301,5 +305,31 @@ describe('modelsService.getCatalog (SQLite-persisted)', () => {
     const service = createModelsService(db, { cliVersionFn: () => '2.1.170' });
     service.upsertCatalog(CONFIG, []);
     expect(catalogRow()).toBeUndefined();
+  });
+
+  it('default version probe runs `claude --version` once and caches it', async () => {
+    const { execSync } = await import('node:child_process');
+    vi.mocked(execSync).mockReset().mockReturnValue('2.1.170 (Claude Code)\n');
+    const service = createModelsService(db); // no cliVersionFn — real probe path
+
+    service.upsertCatalog(CONFIG, SEEDED);
+    service.upsertCatalog('/other/config', SEEDED);
+
+    expect(catalogRow()!.cli_version).toBe('2.1.170 (Claude Code)');
+    expect(vi.mocked(execSync)).toHaveBeenCalledTimes(1); // cached after first probe
+  });
+
+  it('failed version probe degrades to null: cached rows match any version', async () => {
+    const { execSync } = await import('node:child_process');
+    vi.mocked(execSync).mockReset().mockImplementation(() => { throw new Error('ENOENT'); });
+
+    const seeder = createModelsService(db, { cliVersionFn: () => '1.0.0' });
+    seeder.upsertCatalog(CONFIG, SEEDED);
+
+    const service = createModelsService(db); // probe throws → version null
+    const result = await service.getCatalog(CONFIG);
+
+    expect(result).toEqual(SEEDED);
+    expect(mockedCreate).not.toHaveBeenCalled();
   });
 });
