@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createModelsService } from '../services/models';
+import { createDatabase, type Database } from '../services/database';
 import { createClaudeCliEngine } from '../services/agents/claude-cli-engine';
 import type { AgentEngine, InitData } from '../services/agents/types';
 
@@ -85,15 +86,22 @@ function makeFakeEngine(opts?: {
 }
 
 describe('modelsService.listSupported', () => {
+  let db: Database;
+
   beforeEach(() => {
     mockedCreate.mockReset();
+    db = createDatabase(':memory:');
   });
+
+  function createService(opts: Parameters<typeof createModelsService>[1] = {}) {
+    return createModelsService(db, { cliVersionFn: () => '2.1.170', ...opts });
+  }
 
   it('returns the CLI-reported model list from init data', async () => {
     const fake = makeFakeEngine();
     mockedCreate.mockReturnValue(fake);
 
-    const service = createModelsService();
+    const service = createService();
     const result = await service.listSupported('/tmp/claude-config');
 
     expect(result).toEqual([
@@ -106,7 +114,7 @@ describe('modelsService.listSupported', () => {
     const fake = makeFakeEngine();
     mockedCreate.mockReturnValue(fake);
 
-    const service = createModelsService();
+    const service = createService();
     await service.listSupported('/Users/test/.claude-work');
 
     expect(fake.start).toHaveBeenCalledTimes(1);
@@ -118,7 +126,7 @@ describe('modelsService.listSupported', () => {
     const fake = makeFakeEngine();
     mockedCreate.mockReturnValue(fake);
 
-    const service = createModelsService();
+    const service = createService();
     await service.listSupported('/tmp/claude-config');
 
     expect(fake.close).toHaveBeenCalled();
@@ -128,7 +136,7 @@ describe('modelsService.listSupported', () => {
     const fake = makeFakeEngine({ startReject: new Error('init failed') });
     mockedCreate.mockReturnValue(fake);
 
-    const service = createModelsService();
+    const service = createService();
     const result = await service.listSupported('/tmp/claude-config');
 
     expect(result).toEqual([]);
@@ -139,7 +147,7 @@ describe('modelsService.listSupported', () => {
     const fake = makeFakeEngine({ startReject: new Error('boom') });
     mockedCreate.mockReturnValue(fake);
 
-    const service = createModelsService();
+    const service = createService();
     await expect(service.listSupported('/tmp/claude-config')).resolves.toEqual([]);
   });
 
@@ -147,7 +155,7 @@ describe('modelsService.listSupported', () => {
     const fake = makeFakeEngine({ delayMs: 10_000 });
     mockedCreate.mockReturnValue(fake);
 
-    const service = createModelsService({ timeoutMs: 50 });
+    const service = createService({ timeoutMs: 50 });
     const result = await service.listSupported('/tmp/claude-config');
 
     expect(result).toEqual([]);
@@ -160,8 +168,138 @@ describe('modelsService.listSupported', () => {
     const fake = makeFakeEngine({ startReject: new Error('configDir is empty') });
     mockedCreate.mockReturnValue(fake);
 
-    const service = createModelsService();
+    const service = createService();
     const result = await service.listSupported('');
     expect(result).toEqual([]);
+  });
+});
+
+describe('modelsService.getCatalog (SQLite-persisted)', () => {
+  const CONFIG = '/Users/test/.claude-personal';
+  const FRESH = [
+    { value: 'claude-fable-5[1m]', displayName: 'Fable 5', description: 'Most capable' },
+    { value: 'sonnet', displayName: 'Sonnet', description: 'Efficient' },
+  ];
+  const SEEDED = [
+    { value: 'default', displayName: 'Default (recommended)', description: 'Opus 4.8' },
+  ];
+  let db: Database;
+
+  beforeEach(() => {
+    mockedCreate.mockReset();
+    db = createDatabase(':memory:');
+  });
+
+  function catalogRow() {
+    return db.raw
+      .prepare('SELECT cli_version, catalog_json, fetched_at FROM model_catalog WHERE config_dir = ?')
+      .get(CONFIG) as { cli_version: string; catalog_json: string; fetched_at: number } | undefined;
+  }
+
+  it('cache miss: live-fetches, persists, and returns the catalog', async () => {
+    mockedCreate.mockReturnValue(makeFakeEngine({ models: FRESH }));
+    const service = createModelsService(db, { cliVersionFn: () => '2.1.170' });
+
+    const result = await service.getCatalog(CONFIG);
+
+    expect(result).toEqual(FRESH);
+    expect(mockedCreate).toHaveBeenCalledTimes(1);
+    const row = catalogRow();
+    expect(row).toBeTruthy();
+    expect(JSON.parse(row!.catalog_json)).toEqual(FRESH);
+    expect(row!.cli_version).toBe('2.1.170');
+  });
+
+  it('cache hit: returns the persisted catalog without spawning an engine', async () => {
+    const service = createModelsService(db, { cliVersionFn: () => '2.1.170' });
+    service.upsertCatalog(CONFIG, SEEDED);
+
+    const result = await service.getCatalog(CONFIG);
+
+    expect(result).toEqual(SEEDED);
+    expect(mockedCreate).not.toHaveBeenCalled();
+  });
+
+  it('CLI version mismatch: refetches live and updates the row', async () => {
+    const oldService = createModelsService(db, { cliVersionFn: () => '2.0.0' });
+    oldService.upsertCatalog(CONFIG, SEEDED);
+
+    mockedCreate.mockReturnValue(makeFakeEngine({ models: FRESH }));
+    const service = createModelsService(db, { cliVersionFn: () => '2.1.170' });
+    const result = await service.getCatalog(CONFIG);
+
+    expect(result).toEqual(FRESH);
+    expect(mockedCreate).toHaveBeenCalledTimes(1);
+    expect(catalogRow()!.cli_version).toBe('2.1.170');
+  });
+
+  it('stale row: returns it immediately and refreshes in the background', async () => {
+    const past = 1_000_000;
+    let now = past;
+    const service = createModelsService(db, {
+      cliVersionFn: () => '2.1.170',
+      ttlMs: 60_000,
+      nowFn: () => now,
+    });
+    service.upsertCatalog(CONFIG, SEEDED);
+    mockedCreate.mockReturnValue(makeFakeEngine({ models: FRESH }));
+
+    now = past + 120_000; // beyond TTL
+    const result = await service.getCatalog(CONFIG);
+    expect(result).toEqual(SEEDED); // stale served synchronously
+
+    await vi.waitFor(() => {
+      expect(JSON.parse(catalogRow()!.catalog_json)).toEqual(FRESH);
+    });
+  });
+
+  it('fresh row within TTL: no background refresh is kicked', async () => {
+    const service = createModelsService(db, {
+      cliVersionFn: () => '2.1.170',
+      ttlMs: 60_000,
+      nowFn: () => 1_000_000,
+    });
+    service.upsertCatalog(CONFIG, SEEDED);
+
+    await service.getCatalog(CONFIG);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(mockedCreate).not.toHaveBeenCalled();
+  });
+
+  it('live fetch fails on version mismatch: serves the stale row', async () => {
+    const oldService = createModelsService(db, { cliVersionFn: () => '2.0.0' });
+    oldService.upsertCatalog(CONFIG, SEEDED);
+
+    mockedCreate.mockReturnValue(makeFakeEngine({ startReject: new Error('spawn failed') }));
+    const service = createModelsService(db, { cliVersionFn: () => '2.1.170' });
+
+    const result = await service.getCatalog(CONFIG);
+    expect(result).toEqual(SEEDED);
+  });
+
+  it('live fetch fails with no row: returns []', async () => {
+    mockedCreate.mockReturnValue(makeFakeEngine({ startReject: new Error('spawn failed') }));
+    const service = createModelsService(db, { cliVersionFn: () => '2.1.170' });
+
+    const result = await service.getCatalog(CONFIG);
+    expect(result).toEqual([]);
+    expect(catalogRow()).toBeUndefined();
+  });
+
+  it('unknown CLI version: an existing row matches regardless of its stored version', async () => {
+    const oldService = createModelsService(db, { cliVersionFn: () => '2.0.0' });
+    oldService.upsertCatalog(CONFIG, SEEDED);
+
+    const service = createModelsService(db, { cliVersionFn: () => null });
+    const result = await service.getCatalog(CONFIG);
+
+    expect(result).toEqual(SEEDED);
+    expect(mockedCreate).not.toHaveBeenCalled();
+  });
+
+  it('upsertCatalog ignores empty model lists', () => {
+    const service = createModelsService(db, { cliVersionFn: () => '2.1.170' });
+    service.upsertCatalog(CONFIG, []);
+    expect(catalogRow()).toBeUndefined();
   });
 });

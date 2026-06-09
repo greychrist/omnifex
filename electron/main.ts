@@ -486,6 +486,11 @@ app.whenReady().then(() => {
     | import('./services/sessions-summary').SessionsSummaryService
     | null = null;
 
+  // Constructed before sessionsService so live sessions can write their
+  // init-time model catalog through to the persisted cache (Task: dynamic
+  // model catalog — see docs/superpowers/specs/2026-06-09-dynamic-model-catalog-design.md).
+  const modelsService = createModelsService(db);
+
   const sessionsService = _sessionsService = createSessionsService(
     sendToRenderer,
     {
@@ -651,7 +656,6 @@ app.whenReady().then(() => {
     },
   });
   sessionsSummaryServiceRef = sessionsSummaryService;
-  const modelsService = createModelsService();
   const sessionGitWatcher = _gitWatcherService = createSessionGitWatcher({
     sendToRenderer,
   });
@@ -927,9 +931,11 @@ app.whenReady().then(() => {
     },
     // Permissions I/O adapter
     permissionsIO: permissionsIOService,
-    // Models adapter — standalone model catalog lookup (no active session)
+    // Models adapter — standalone model catalog lookup (no active session).
+    // Served from the SQLite-persisted catalog; falls back to a live
+    // ephemeral-engine fetch when the cache is cold or the CLI version moved.
     models: {
-      listSupported: (configDir: string) => modelsService.listSupported(configDir),
+      listSupported: (configDir: string) => modelsService.getCatalog(configDir),
     },
     gitWatcher: {
       listWorktrees: (projectPath: string) => listWorktrees(projectPath),
