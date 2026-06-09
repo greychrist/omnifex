@@ -25,6 +25,15 @@ describe('database', () => {
     expect(cols.some((c) => c.name === 'cli_path')).toBe(true);
   });
 
+  it('migration v12 creates the model_catalog table', () => {
+    const row = db.raw
+      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='model_catalog'")
+      .get();
+    expect(row).toBeTruthy();
+    const cols = (db.raw.pragma('table_info(model_catalog)') as { name: string }[]).map((c) => c.name);
+    expect(cols).toEqual(['config_dir', 'cli_version', 'catalog_json', 'fetched_at']);
+  });
+
   it('initSchema emits the post-v11 accounts shape (no account_type, has engine/has_cost/subscription_label)', () => {
     const names = (db.raw.pragma('table_info(accounts)') as { name: string }[]).map((c) => c.name);
     expect(names).toContain('subscription_label');

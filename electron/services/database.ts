@@ -373,6 +373,22 @@ const migrations: Migration[] = [
       }
     },
   },
+  {
+    version: 12,
+    description:
+      'model_catalog: per-config-dir cache of the CLI-reported model list, ' +
+      'keyed for invalidation by the CLI version that produced it.',
+    up(db) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS model_catalog (
+          config_dir   TEXT PRIMARY KEY,
+          cli_version  TEXT NOT NULL,
+          catalog_json TEXT NOT NULL,
+          fetched_at   INTEGER NOT NULL
+        );
+      `);
+    },
+  },
 ];
 
 /**
