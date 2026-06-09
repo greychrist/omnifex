@@ -327,6 +327,7 @@ export const AccountDialog: React.FC<AccountDialogProps> = ({
             setEffort={setEffort}
             permissionMode={permission}
             setPermissionMode={setPermission}
+            configDir={configDir || undefined}
           />
 
           {/* Codex sign-in row (edit + codex only) */}

@@ -11,6 +11,7 @@ const { apiMock, useCodexAuthStatusMock } = vi.hoisted(() => ({
     codexLogout: vi.fn(),
     getCodexBinaryPath: vi.fn(),
     subscribeCodexAuthStatus: vi.fn(),
+    listSupportedModels: vi.fn(),
   },
   useCodexAuthStatusMock: vi.fn(),
 }));
@@ -38,6 +39,7 @@ vi.mock('../IconPicker', () => ({
 beforeEach(() => {
   apiMock.getHomeDirectory.mockReset().mockResolvedValue('/home/test');
   apiMock.codexLogout.mockReset().mockResolvedValue(undefined);
+  apiMock.listSupportedModels.mockReset().mockResolvedValue([]);
   useCodexAuthStatusMock.mockReset().mockReturnValue(null);
 });
 

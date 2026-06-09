@@ -30,7 +30,7 @@ import {
   type ThinkingConfig,
 } from "./FloatingPromptInput";
 import { normalizeThinkingConfig } from "@/lib/thinkingConfig";
-import { MODELS } from "./ModelPicker";
+import { modelDisplayName } from "@/lib/modelCatalog";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { SlashCommandsManager } from "./SlashCommandsManager";
 import { SessionMCPStatus } from "./SessionMCPStatus";
@@ -2134,7 +2134,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
                         <div className="flex items-center gap-2 mb-1">
                           <span className="text-xs font-medium text-muted-foreground">#{index + 1}</span>
                           <span className="text-xs px-1.5 py-0.5 bg-primary/10 text-primary rounded">
-                            {MODELS.find((m) => m.id === queuedPrompt.model)?.name ?? queuedPrompt.model}
+                            {modelDisplayName(queuedPrompt.model, supportedModels)}
                           </span>
                         </div>
                         <p className="text-sm line-clamp-2 break-words">{queuedPrompt.prompt}</p>

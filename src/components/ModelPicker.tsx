@@ -1,5 +1,5 @@
 import React from "react";
-import { Zap, ChevronUp, ChevronDown } from "lucide-react";
+import { ChevronUp, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Popover } from "@/components/ui/popover";
@@ -15,32 +15,9 @@ export interface Model {
   color: string;
 }
 
-export const MODELS: Model[] = [
-  {
-    id: "opus",
-    name: "Opus 4.8",
-    description: "Most capable, best for complex work",
-    icon: <Zap className="h-3.5 w-3.5" />,
-    shortName: "O",
-    color: "text-primary"
-  },
-  {
-    id: "sonnet",
-    name: "Sonnet",
-    description: "Faster, efficient for most tasks",
-    icon: <Zap className="h-3.5 w-3.5" />,
-    shortName: "S",
-    color: "text-primary"
-  },
-  {
-    id: "haiku",
-    name: "Haiku",
-    description: "Fastest and cheapest, good for simple tasks",
-    icon: <Zap className="h-3.5 w-3.5" />,
-    shortName: "H",
-    color: "text-primary"
-  }
-];
+// The model list is dynamic — sourced from the CLI catalog via
+// src/lib/modelCatalog.tsx (live session init data or the per-account
+// cached lookup). The static fallback lives there too (FALLBACK_MODELS).
 
 // ---------------------------------------------------------------------------
 // ModelPickerDropdown — the popup content shared by compact and expanded modes

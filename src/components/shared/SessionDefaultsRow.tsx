@@ -11,7 +11,8 @@ import {
   PermissionPicker,
   type EffortLevel,
 } from '@/components/ControlBar';
-import { FormModelPicker, MODELS } from '@/components/ModelPicker';
+import { FormModelPicker } from '@/components/ModelPicker';
+import { useModelCatalog } from '@/lib/modelCatalog';
 
 export interface SessionDefaultsRowProps {
   engine: AccountEngine;
@@ -21,6 +22,12 @@ export interface SessionDefaultsRowProps {
   setEffort: (v: string) => void;
   permissionMode: string;
   setPermissionMode: (v: string) => void;
+  /**
+   * Config dir of the account these defaults belong to. When set (and the
+   * engine is Claude) the model picker shows that account's live CLI model
+   * catalog instead of the static fallback.
+   */
+  configDir?: string;
   className?: string;
 }
 
@@ -73,24 +80,29 @@ export function SessionDefaultsRow({
   setEffort,
   permissionMode,
   setPermissionMode,
+  configDir,
   className,
 }: SessionDefaultsRowProps) {
   const [modelOpen, setModelOpen] = useState(false);
   const [effortOpen, setEffortOpen] = useState(false);
   const [permsOpen, setPermsOpen] = useState(false);
+  const { models: modelList, raw: modelCatalogRaw } = useModelCatalog(
+    engine === 'claude' ? configDir : undefined,
+  );
 
   // Claude reuses the same stylized, icon-bearing pickers as the new-session
   // page (ControlBar + ModelPicker). Reusing them means the permission option
   // set (all six CLI modes) and the per-mode colors stay in one place and any
   // fix propagates to both surfaces.
   if (engine === 'claude') {
-    const selectedModelData = MODELS.find((m) => m.id === model) ?? MODELS[0];
+    const selectedModelData = modelList.find((m) => m.id === model) ?? modelList[0];
+    const selectedRawModel = modelCatalogRaw.find((m) => m.value === model);
     return (
       <div className={`flex items-end gap-2 ${className ?? ''}`}>
         <Field label="Model">
           <FormModelPicker
             selectedModelData={selectedModelData}
-            models={MODELS}
+            models={modelList}
             selectedModel={model}
             onSelect={setModel}
             open={modelOpen}
@@ -104,6 +116,7 @@ export function SessionDefaultsRow({
             open={effortOpen}
             onOpenChange={setEffortOpen}
             variant="form"
+            levels={selectedRawModel?.supportedEffortLevels}
           />
         </Field>
         <Field label="Permissions">

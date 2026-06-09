@@ -80,6 +80,28 @@ describe("EffortPicker (compact)", () => {
     }
   });
 
+  it("filters the dropdown to the supported levels when `levels` is set", () => {
+    renderInProvider(
+      <EffortPicker
+        effort="high"
+        open={true}
+        onOpenChange={vi.fn()}
+        levels={["low", "medium", "high", "max"]}
+      />,
+    );
+    expect(screen.queryByText("Extra High")).toBeNull();
+    for (const name of ["Low", "Medium", "High"]) {
+      expect(screen.getAllByText(name).length).toBeGreaterThan(0);
+    }
+  });
+
+  it("shows all levels when `levels` is omitted", () => {
+    renderInProvider(
+      <EffortPicker effort="high" open={true} onOpenChange={vi.fn()} />,
+    );
+    expect(screen.getAllByText("Extra High").length).toBeGreaterThan(0);
+  });
+
   it("calls onEffortChange and closes when a level is picked", () => {
     const onEffortChange = vi.fn();
     const onOpenChange = vi.fn();

@@ -144,15 +144,22 @@ interface EffortPickerProps {
   /** "compact" (bottom bar), "expanded" (modal), or "form" (full-name
    *  trigger that fills its container — used in NewSessionForm). */
   variant?: "compact" | "expanded" | "form";
+  /**
+   * Levels the selected model actually supports (from the CLI model
+   * catalog's `supportedEffortLevels`). Omitted/undefined shows all five —
+   * the fallback when no catalog data exists for the selection.
+   */
+  levels?: EffortLevel[];
 }
 
-function EffortPickerDropdown({ effort, onSelect }: { effort: EffortLevel; onSelect: (level: EffortLevel) => void }) {
+function EffortPickerDropdown({ effort, onSelect, levels }: { effort: EffortLevel; onSelect: (level: EffortLevel) => void; levels?: EffortLevel[] }) {
+  const visible = levels ? EFFORT_LEVELS.filter((l) => levels.includes(l.id)) : EFFORT_LEVELS;
   return (
     <div className="w-[280px] p-1">
       <div className="text-[10px] uppercase tracking-wider text-muted-foreground px-3 pt-2 pb-1.5 border-b border-border/50 mb-1">
         Effort
       </div>
-      {EFFORT_LEVELS.map((level) => (
+      {visible.map((level) => (
         <button
           key={level.id}
           onClick={() => { onSelect(level.id); }}
@@ -175,7 +182,7 @@ function EffortPickerDropdown({ effort, onSelect }: { effort: EffortLevel; onSel
   );
 }
 
-export function EffortPicker({ effort, onEffortChange, open, onOpenChange, disabled, variant = "compact" }: EffortPickerProps) {
+export function EffortPicker({ effort, onEffortChange, open, onOpenChange, disabled, variant = "compact", levels }: EffortPickerProps) {
   const currentLevel = EFFORT_LEVELS.find(e => e.id === effort);
 
   const handleSelect = (level: EffortLevel) => {
@@ -208,7 +215,7 @@ export function EffortPicker({ effort, onEffortChange, open, onOpenChange, disab
               </TooltipContent>
             </Tooltip>
           }
-          content={<EffortPickerDropdown effort={effort} onSelect={handleSelect} />}
+          content={<EffortPickerDropdown effort={effort} onSelect={handleSelect} levels={levels} />}
           open={open}
           onOpenChange={onOpenChange}
           align="start"
@@ -235,7 +242,7 @@ export function EffortPicker({ effort, onEffortChange, open, onOpenChange, disab
             <ChevronDown className="h-3 w-3 opacity-50" />
           </Button>
         }
-        content={<EffortPickerDropdown effort={effort} onSelect={handleSelect} />}
+        content={<EffortPickerDropdown effort={effort} onSelect={handleSelect} levels={levels} />}
         open={open}
         onOpenChange={onOpenChange}
         align="start"
@@ -272,7 +279,7 @@ export function EffortPicker({ effort, onEffortChange, open, onOpenChange, disab
           </TooltipContent>
         </Tooltip>
       }
-      content={<EffortPickerDropdown effort={effort} onSelect={handleSelect} />}
+      content={<EffortPickerDropdown effort={effort} onSelect={handleSelect} levels={levels} />}
       open={open}
       onOpenChange={onOpenChange}
       align="start"

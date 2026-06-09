@@ -23,6 +23,17 @@ vi.mock('@/hooks', () => ({
   useTheme: () => ({ theme: 'gray' as const, setTheme: async () => {} }),
 }));
 
+// The form fetches the resolved account's model catalog on mount. Resolve
+// to an empty list so the picker exercises the static FALLBACK_MODELS path
+// deterministically (no preload bridge exists under jsdom).
+vi.mock('@/lib/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/api')>();
+  return {
+    ...actual,
+    api: { ...actual.api, listSupportedModels: vi.fn(async () => []) },
+  };
+});
+
 afterEach(() => { cleanup(); });
 
 /** Minimal valid Account for a slot. Only `name` is displayed by the form. */
@@ -78,7 +89,7 @@ function Harness({
   onStart?: () => void;
 } = {}) {
   const [agent, setAgent] = useState<AgentKind>(initialAgent);
-  const [model, setModel] = useState('opus');
+  const [model, setModel] = useState('sonnet');
   const [effort, setEffort] = useState<EffortLevel>('high');
   const [perm, setPerm] = useState('acceptEdits');
   const [mode, setMode] = useState<SessionMode>('rich');
@@ -103,6 +114,17 @@ function Harness({
     />
   );
 }
+
+describe('NewSessionForm — model picker', () => {
+  it('lists the fallback catalog (incl. Fable 5 and Default) when no live catalog resolves', async () => {
+    render(<Harness />);
+    // Trigger shows the current selection ('sonnet' → 'Sonnet').
+    fireEvent.click(await screen.findByTitle('Sonnet'));
+    expect(screen.getAllByText('Fable 5').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Default (recommended)').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Haiku').length).toBeGreaterThan(0);
+  });
+});
 
 describe('NewSessionForm — agent picker', () => {
   it('renders the AgentPicker with Claude selected and shows the Claude slot account', () => {

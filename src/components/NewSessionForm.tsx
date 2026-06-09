@@ -12,7 +12,7 @@ import {
   PERMISSION_MODES,
   type EffortLevel,
 } from "./ControlBar";
-import { MODELS } from "./ModelPicker";
+import { useModelCatalog } from "@/lib/modelCatalog";
 import type { AgentKind, CodexAuthStatus, ResolvePair, SessionMode } from "@/lib/api";
 
 interface NewSessionFormProps {
@@ -175,7 +175,17 @@ export const NewSessionForm: React.FC<NewSessionFormProps> = ({
   const [effortOpen, setEffortOpen] = useState(false);
   const [permissionsOpen, setPermissionsOpen] = useState(false);
 
-  const selectedModelData = MODELS.find((m) => m.id === selectedModel) ?? MODELS[0];
+  // Dynamic model catalog for the resolved Claude account (falls back to the
+  // static list when no account routes here yet, or for the Codex engine —
+  // whose model options this picker has never differentiated).
+  const { models: modelList, raw: modelCatalogRaw } = useModelCatalog(
+    agent === 'claude' ? activeSlot?.account.config_dir : undefined,
+  );
+  const selectedModelData = modelList.find((m) => m.id === selectedModel) ?? modelList[0];
+  const selectedRawModel = modelCatalogRaw.find((m) => m.value === selectedModel);
+  const effortLevelList = selectedRawModel?.supportedEffortLevels
+    ? EFFORT_LEVELS.filter((l) => selectedRawModel.supportedEffortLevels!.includes(l.id))
+    : EFFORT_LEVELS;
   const selectedEffort = EFFORT_LEVELS.find((e) => e.id === effort);
   const selectedPermission =
     PERMISSION_MODES.find((m) => m.id === permissionMode) ?? PERMISSION_MODES[0];
@@ -253,7 +263,7 @@ export const NewSessionForm: React.FC<NewSessionFormProps> = ({
             }
             content={
               <div className="w-[260px] p-1">
-                {MODELS.map((model) => (
+                {modelList.map((model) => (
                   <DropdownRow
                     key={model.id}
                     selected={model.id === selectedModel}
@@ -292,7 +302,7 @@ export const NewSessionForm: React.FC<NewSessionFormProps> = ({
             }
             content={
               <div className="w-[240px] p-1">
-                {EFFORT_LEVELS.map((level) => (
+                {effortLevelList.map((level) => (
                   <DropdownRow
                     key={level.id}
                     selected={level.id === effort}

@@ -15,7 +15,7 @@ function Harness({
   engine: AccountEngine;
   onModel?: (v: string) => void;
 }) {
-  const [model, setModel] = useState(engine === 'claude' ? 'opus' : 'gpt-5-codex');
+  const [model, setModel] = useState(engine === 'claude' ? 'sonnet' : 'gpt-5-codex');
   const [effort, setEffort] = useState('medium');
   const [permissionMode, setPermissionMode] = useState(
     engine === 'claude' ? 'default' : 'read-only',
@@ -51,8 +51,15 @@ describe('SessionDefaultsRow', () => {
     expect(screen.queryByLabelText(/model/i)).toBeNull();
     // Trigger reflects the current model + permission mode via the shared
     // ModelPicker / PermissionPicker components.
-    expect(screen.getByText('Opus 4.8')).toBeTruthy();
+    expect(screen.getByText('Sonnet')).toBeTruthy();
     expect(screen.getByText('Default')).toBeTruthy();
+  });
+
+  it("engine='claude' model picker lists the fallback catalog incl. Fable 5", () => {
+    render(<Harness engine="claude" />);
+    fireEvent.click(screen.getByText('Sonnet'));
+    expect(screen.getAllByText('Fable 5').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Default (recommended)').length).toBeGreaterThan(0);
   });
 
   it("engine='claude' permission picker lists all six CLI modes when opened", () => {

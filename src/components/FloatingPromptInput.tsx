@@ -17,10 +17,10 @@ import { type FileEntry, type SlashCommand, type SessionModelInfo } from "@/lib/
 
 // Sub-components
 import {
-  MODELS,
   CompactModelPicker,
   ExpandedModelPicker,
 } from "./ModelPicker";
+import { effectiveModels, useModelCatalog } from "@/lib/modelCatalog";
 import {
   type EffortLevel,
   type ThinkingConfig,
@@ -95,6 +95,7 @@ const FloatingPromptInputInner = (
     outputStyleToggle,
     permissionMode = "default",
     onPermissionModeChange,
+    supportedModels,
     onLiveModelChange,
     effort = 'high',
     onEffortChange,
@@ -388,9 +389,20 @@ const FloatingPromptInputInner = (
   };
 
   // -- Derived data --
-  const effectiveModels = MODELS;
+  // Model list precedence: live session catalog (CLI init data) → cached
+  // per-account catalog → static fallback. The `?? models[0]` guard keeps
+  // stale persisted ids (e.g. 'opus') rendering — the CLI still accepts
+  // them as aliases even when the catalog no longer lists them.
+  const { raw: catalogRaw } = useModelCatalog(configDir);
+  const rawCatalog = supportedModels && supportedModels.length > 0 ? supportedModels : catalogRaw;
+  const effectiveModelList = effectiveModels(rawCatalog);
   const selectedModelData =
-    effectiveModels.find((m) => m.id === selectedModel) || effectiveModels[0];
+    effectiveModelList.find((m) => m.id === selectedModel) || effectiveModelList[0];
+  // Effort capability for the current selection. Unknown selection (stale
+  // id, no catalog) → undefined → picker shows all levels.
+  const selectedRawModel = rawCatalog.find((m) => m.value === selectedModel);
+  const effortLevels = selectedRawModel?.supportedEffortLevels;
+  const effortSupported = selectedRawModel ? selectedRawModel.supportsEffort === true : true;
 
   // Active textarea helper
   const activeTextarea = () => isExpanded ? expandedTextareaRef.current : textareaRef.current;
@@ -464,20 +476,23 @@ const FloatingPromptInputInner = (
                 <div className="flex items-center gap-4">
                   <ExpandedModelPicker
                     selectedModelData={selectedModelData}
-                    models={effectiveModels}
+                    models={effectiveModelList}
                     selectedModel={selectedModel}
                     onSelect={handleModelSelect}
                     open={modelPickerOpen}
                     onOpenChange={setModelPickerOpen}
                   />
 
-                  <EffortPicker
-                    effort={effort}
-                    onEffortChange={onEffortChange}
-                    open={effortPickerOpen}
-                    onOpenChange={setEffortPickerOpen}
-                    variant="expanded"
-                  />
+                  {effortSupported && (
+                    <EffortPicker
+                      effort={effort}
+                      onEffortChange={onEffortChange}
+                      open={effortPickerOpen}
+                      onOpenChange={setEffortPickerOpen}
+                      variant="expanded"
+                      levels={effortLevels}
+                    />
+                  )}
                 </div>
 
                 <TooltipSimple content="Send message" side="top">
@@ -542,7 +557,7 @@ const FloatingPromptInputInner = (
                 <div className="flex items-center gap-1">
                   <CompactModelPicker
                     selectedModelData={selectedModelData}
-                    models={effectiveModels}
+                    models={effectiveModelList}
                     selectedModel={selectedModel}
                     onSelect={handleModelSelect}
                     open={modelPickerOpen}
@@ -550,13 +565,16 @@ const FloatingPromptInputInner = (
                     disabled={disabled}
                   />
 
-                  <EffortPicker
-                    effort={effort}
-                    onEffortChange={onEffortChange}
-                    open={effortPickerOpen}
-                    onOpenChange={setEffortPickerOpen}
-                    disabled={disabled}
-                  />
+                  {effortSupported && (
+                    <EffortPicker
+                      effort={effort}
+                      onEffortChange={onEffortChange}
+                      open={effortPickerOpen}
+                      onOpenChange={setEffortPickerOpen}
+                      disabled={disabled}
+                      levels={effortLevels}
+                    />
+                  )}
 
                   <PermissionPicker
                     permissionMode={permissionMode}
