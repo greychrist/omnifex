@@ -101,7 +101,10 @@ function DropdownTrigger({
       variant="outline"
       size="sm"
       onClick={onClick}
-      className="w-full justify-between h-9 px-2 font-normal gap-1"
+      // min-h-9 + flex-1 (inside the cell's flex-col) lets every trigger
+      // stretch to the row height set by the tallest cell — the two-line
+      // model trigger — so the row stays visually aligned.
+      className="w-full justify-between min-h-9 h-auto flex-1 px-2 font-normal gap-1"
       aria-expanded={open}
       title={title}
     >
@@ -206,12 +209,13 @@ export const NewSessionForm: React.FC<NewSessionFormProps> = ({
         />
       </div>
 
-      {/* Account cell + 4 dropdowns on a single row, labels on top. The
+      {/* Account cell + 3 dropdowns on a single row, labels on top. The
           leftmost cell auto-sizes — it shows the resolved AccountBadge (for
           either engine) with an edit pencil, or a "Choose account" button
-          when the active engine has no routing target yet. The four dropdown
-          columns split the remaining space equally. */}
-      <div className="grid gap-2 grid-cols-[auto_1fr_1fr_1fr_1fr]">
+          when the active engine has no routing target yet. Model gets the
+          widest track (its trigger carries a name + detail line), Effort the
+          narrowest (short values like "Hi High"). */}
+      <div className="grid gap-2 grid-cols-[auto_minmax(0,1.8fr)_minmax(0,0.7fr)_minmax(0,1.1fr)]">
         <div className="flex flex-col gap-1">
           <Label className="text-[10px] uppercase tracking-wider text-foreground/50">
             Account
@@ -222,7 +226,7 @@ export const NewSessionForm: React.FC<NewSessionFormProps> = ({
               size="sm"
               onClick={onChangeAccount}
               disabled={!onChangeAccount}
-              className="justify-between h-9 px-2 font-normal gap-2 whitespace-nowrap"
+              className="justify-between min-h-9 h-auto flex-1 px-2 font-normal gap-2 whitespace-nowrap"
               title="Use a different account for this session"
             >
               <span className="flex items-center gap-1">
@@ -236,7 +240,7 @@ export const NewSessionForm: React.FC<NewSessionFormProps> = ({
               size="sm"
               onClick={onChooseAccount}
               disabled={!onChooseAccount}
-              className="justify-center h-9 px-3 font-normal whitespace-nowrap"
+              className="justify-center min-h-9 h-auto flex-1 px-3 font-normal whitespace-nowrap"
               title="No account routes here yet — choose one for this engine"
             >
               Choose account
@@ -258,7 +262,14 @@ export const NewSessionForm: React.FC<NewSessionFormProps> = ({
                 onClick={() => { setModelOpen(!modelOpen); }}
                 title={selectedModelData.name}
               >
-                <span className="text-[11px] truncate">{selectedModelData.name}</span>
+                <span className="flex flex-col items-start min-w-0 py-1">
+                  <span className="text-[11px] truncate">{selectedModelData.name}</span>
+                  {selectedModelData.description && (
+                    <span className="text-[10px] text-muted-foreground truncate">
+                      {selectedModelData.description}
+                    </span>
+                  )}
+                </span>
               </DropdownTrigger>
             }
             content={

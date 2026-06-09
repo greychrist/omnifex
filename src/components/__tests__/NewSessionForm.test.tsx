@@ -141,6 +141,16 @@ describe('NewSessionForm — model picker', () => {
     expect(screen.getAllByText('Opus 4.8 with 1M context').length).toBeGreaterThan(0);
     expect(screen.queryByText(/Best for everyday/)).toBeNull();
   });
+
+  it('always shows the selected model detail line in the closed trigger', async () => {
+    const { api } = await import('@/lib/api');
+    vi.mocked(api.listSupportedModels).mockResolvedValue([
+      { value: 'sonnet', displayName: 'Sonnet', description: 'Sonnet 4.6 · Efficient for routine tasks' },
+    ]);
+    render(<Harness />);
+    // Without opening the dropdown, the trigger carries the detail line.
+    expect(await screen.findByText('Sonnet 4.6')).toBeTruthy();
+  });
 });
 
 describe('NewSessionForm — agent picker', () => {
