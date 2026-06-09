@@ -17,7 +17,7 @@ import { type FileEntry, type SlashCommand, type SessionModelInfo } from "@/lib/
 
 // Sub-components
 import {
-  CompactModelPicker,
+  FormModelPicker,
   ExpandedModelPicker,
 } from "./ModelPicker";
 import { effectiveModels, useModelCatalog } from "@/lib/modelCatalog";
@@ -551,39 +551,39 @@ const FloatingPromptInputInner = (
 
           <div className="p-3">
             <div className="flex items-end gap-2">
-              {/* Control pickers — left side; optional mode toggle row above */}
-              <div className="flex flex-col items-start gap-1 shrink-0 mb-1">
-                {modeToggle}
-                <div className="flex items-center gap-1">
-                  <CompactModelPicker
-                    selectedModelData={selectedModelData}
-                    models={effectiveModelList}
-                    selectedModel={selectedModel}
-                    onSelect={handleModelSelect}
-                    open={modelPickerOpen}
-                    onOpenChange={setModelPickerOpen}
-                    disabled={disabled}
-                  />
+              {/* Control pickers — left side, stacked vertically with the
+                  same full-value form triggers as the session-start screen */}
+              <div className="flex flex-col items-stretch gap-1 shrink-0 mb-1 w-44">
+                <FormModelPicker
+                  selectedModelData={selectedModelData}
+                  models={effectiveModelList}
+                  selectedModel={selectedModel}
+                  onSelect={handleModelSelect}
+                  open={modelPickerOpen}
+                  onOpenChange={setModelPickerOpen}
+                  disabled={disabled}
+                />
 
-                  {effortSupported && (
-                    <EffortPicker
-                      effort={effort}
-                      onEffortChange={onEffortChange}
-                      open={effortPickerOpen}
-                      onOpenChange={setEffortPickerOpen}
-                      disabled={disabled}
-                      levels={effortLevels}
-                    />
-                  )}
-
-                  <PermissionPicker
-                    permissionMode={permissionMode}
-                    onPermissionModeChange={onPermissionModeChange}
-                    open={permissionPickerOpen}
-                    onOpenChange={setPermissionPickerOpen}
+                {effortSupported && (
+                  <EffortPicker
+                    effort={effort}
+                    onEffortChange={onEffortChange}
+                    open={effortPickerOpen}
+                    onOpenChange={setEffortPickerOpen}
                     disabled={disabled}
+                    levels={effortLevels}
+                    variant="form"
                   />
-                </div>
+                )}
+
+                <PermissionPicker
+                  permissionMode={permissionMode}
+                  onPermissionModeChange={onPermissionModeChange}
+                  open={permissionPickerOpen}
+                  onOpenChange={setPermissionPickerOpen}
+                  disabled={disabled}
+                  variant="form"
+                />
               </div>
 
               {/* Prompt Input - Center */}
@@ -687,12 +687,18 @@ const FloatingPromptInputInner = (
                 </AnimatePresence>
               </div>
 
-              {/* Extra menu items - Right side; optional output-style toggle row above */}
-              {(extraMenuItems || outputStyleToggle) && (
-                <div className="flex flex-col items-end gap-1 shrink-0 mb-1">
-                  {outputStyleToggle}
+              {/* Right side: mode + output toggles stacked, with the extra
+                  menu items arranged in a 2×2 square beside them */}
+              {(extraMenuItems || outputStyleToggle || modeToggle) && (
+                <div className="flex items-end gap-2 shrink-0 mb-1">
+                  {(modeToggle || outputStyleToggle) && (
+                    <div className="flex flex-col items-end gap-1.5">
+                      {modeToggle}
+                      {outputStyleToggle}
+                    </div>
+                  )}
                   {extraMenuItems && (
-                    <div className="flex items-center gap-0.5">
+                    <div className="grid grid-cols-2 gap-0.5">
                       {extraMenuItems}
                     </div>
                   )}

@@ -2344,7 +2344,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
               }
               outputStyleToggle={
                 <div className="flex items-center gap-1.5">
-                  <HeaderLabel>output style</HeaderLabel>
+                  <HeaderLabel>output</HeaderLabel>
                   <SessionViewToggle mode={viewMode} onChange={setViewMode} />
                 </div>
               }

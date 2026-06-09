@@ -1,10 +1,8 @@
 import React from "react";
-import { ChevronUp, ChevronDown } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Popover } from "@/components/ui/popover";
-import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip-modern";
-import { motion } from "framer-motion";
 
 export interface Model {
   id: string;
@@ -59,75 +57,6 @@ export function ModelPickerDropdown({ models, selectedModel, onSelect }: ModelPi
         </button>
       ))}
     </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// CompactModelPicker — the compact trigger+popover used in the bottom bar
-// ---------------------------------------------------------------------------
-
-interface CompactModelPickerProps {
-  selectedModelData: Model;
-  models: Model[];
-  selectedModel: string;
-  onSelect: (modelId: string) => void;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  disabled?: boolean;
-}
-
-export function CompactModelPicker({
-  selectedModelData,
-  models,
-  selectedModel,
-  onSelect,
-  open,
-  onOpenChange,
-  disabled,
-}: CompactModelPickerProps) {
-  return (
-    <Popover
-      trigger={
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <motion.div
-              whileTap={{ scale: 0.97 }}
-              transition={{ duration: 0.15 }}
-            >
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={disabled}
-                className="h-9 px-2 bg-background hover:bg-accent/50 gap-1 shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_30%,transparent)]"
-              >
-                <span className={selectedModelData.color}>
-                  {selectedModelData.icon}
-                </span>
-                <span className="text-[10px] font-bold opacity-70">
-                  {selectedModelData.shortName}
-                </span>
-                <ChevronUp className="h-3 w-3 ml-0.5 opacity-50" />
-              </Button>
-            </motion.div>
-          </TooltipTrigger>
-          <TooltipContent side="top">
-            <p className="text-xs font-medium">{selectedModelData.name}</p>
-            <p className="text-xs text-muted-foreground">{selectedModelData.description}</p>
-          </TooltipContent>
-        </Tooltip>
-      }
-      content={
-        <ModelPickerDropdown
-          models={models}
-          selectedModel={selectedModel}
-          onSelect={onSelect}
-        />
-      }
-      open={open}
-      onOpenChange={onOpenChange}
-      align="start"
-      side="top"
-    />
   );
 }
 
