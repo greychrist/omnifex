@@ -199,6 +199,12 @@ export const Popover: React.FC<PopoverProps> = ({
   const portalNode = open && typeof document !== "undefined" && (
     <div
       ref={contentRef}
+      // Lets an ancestor Radix DismissableLayer (e.g. a Dialog) recognise a
+      // press inside this portaled content as "inside" and skip dismissing —
+      // see isInsidePopover in ui/dialog.tsx. Without it, a popover embedded
+      // in a dialog (the account editor's model/effort/permission pickers)
+      // closes the whole dialog the moment you pick an option.
+      data-omnifex-popover=""
       style={{
         position: "fixed",
         top: coords?.top ?? -9999,
