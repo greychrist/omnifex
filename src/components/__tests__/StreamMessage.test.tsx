@@ -269,6 +269,18 @@ describe('system away_summary recap rendering', () => {
     expect(screen.queryByText('system.away_summary')).toBeNull();
   });
 
+  it('wraps the recap in the shared prose container so card padding matches text cards', () => {
+    // Other text cards render bodies as <p> inside .prose, whose paragraph
+    // margins (no first-child reset in styles.css) create the visual top/bottom
+    // padding. A bare span skips that rhythm and the card looks tighter.
+    const node = makeAwaySummaryNode('Recap body in prose.');
+    render(<StreamMessage message={node} streamMessages={[node]} />);
+
+    const body = screen.getByText('Recap body in prose.');
+    expect(body.tagName).toBe('P');
+    expect(body.closest('.prose')).toBeTruthy();
+  });
+
   it('other system subtypes keep the mono styling and inline subtype label', () => {
     const node = {
       kind: 'system',

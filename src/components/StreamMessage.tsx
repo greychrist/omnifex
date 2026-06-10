@@ -456,14 +456,19 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
           )}
           {/* eslint-disable-next-line @typescript-eslint/no-base-to-string -- caller controls input; falls back to JSON.stringify upstream. */}
           {text && (
-            <span
-              className={cn(
-                "block whitespace-pre-wrap break-words",
-                isAwaySummary ? "text-sm italic" : "text-xs font-mono",
-              )}
-            >
-              {String(text)}
-            </span>
+            isAwaySummary ? (
+              // Same prose container as assistant/user text cards: the prose
+              // paragraph margins supply the vertical rhythm that makes card
+              // padding look identical, and the container tracks the chat
+              // Content typeface setting.
+              <div className="prose prose-sm dark:prose-invert max-w-none">
+                <p className="italic whitespace-pre-wrap break-words">{String(text)}</p>
+              </div>
+            ) : (
+              <span className="block text-xs font-mono whitespace-pre-wrap break-words">
+                {String(text)}
+              </span>
+            )
           )}
         </MessageFrame>
       );
