@@ -8,6 +8,7 @@ import {
   type MessageRenderingConfig,
 } from "@/lib/messageRenderingConfig";
 import { resolveTypeface } from "@/lib/typefaceCatalog";
+import { FONT_SIZE_REM, FONT_WEIGHT_VALUE } from "@/lib/typographyClasses";
 import { logAndForget } from "@/lib/fireAndLog";
 
 interface MessageRenderingContextValue {
@@ -60,10 +61,20 @@ export const MessageRenderingProvider: React.FC<{ children: React.ReactNode }> =
   // styles.css. Without this, those surfaces inherit body's --font-sans —
   // i.e. the App font — which makes the chat Content picker look like it
   // only affects the user-prompt body.
+  //
+  // Size and weight ride the same mechanism (`--chat-content-size` /
+  // `--chat-content-weight`). They CAN'T go through the Tailwind class path
+  // (contentClassNames) like the header does: the content body renders inside
+  // `.prose` / `.prose-sm`, whose own `font-size` rules in styles.css beat
+  // utility classes — so without these variables only the typeface changed
+  // and size/weight were silently ignored.
+  const { typeface, size, weight } = config.typography.content;
   useEffect(() => {
-    const stack = resolveTypeface(config.typography.content.typeface).cssFamily;
-    document.documentElement.style.setProperty("--chat-content-font", stack);
-  }, [config.typography.content.typeface]);
+    const root = document.documentElement.style;
+    root.setProperty("--chat-content-font", resolveTypeface(typeface).cssFamily);
+    root.setProperty("--chat-content-size", FONT_SIZE_REM[size]);
+    root.setProperty("--chat-content-weight", String(FONT_WEIGHT_VALUE[weight]));
+  }, [typeface, size, weight]);
 
   // Same pattern for the TUI terminal. TerminalView reads `--font-terminal`
   // first, falling back to `--font-mono`, so a missing var (e.g. context

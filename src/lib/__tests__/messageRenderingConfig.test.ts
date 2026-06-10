@@ -298,6 +298,16 @@ describe("mergeConfig", () => {
     const cfg = mergeConfig({ version: 5 });
     expect(cfg.typography).toEqual(DEFAULT_TYPOGRAPHY);
   });
+
+  it("accepts the xxs (extra extra small) font size", () => {
+    const cfg = mergeConfig({
+      version: 5,
+      typography: {
+        content: { typeface: "inter", size: "xxs", weight: "normal", italic: false },
+      },
+    });
+    expect(cfg.typography.content.size).toBe("xxs");
+  });
 });
 
 // ─── typeface migration ───────────────────────────────────────────────────────

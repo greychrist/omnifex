@@ -330,7 +330,7 @@ export function resolveKind(config: MessageRenderingConfig, kindId: string): Kin
 // Global typography applied to every message kind. Two style slots — the
 // header row that sits above a card's body, and the content body text.
 
-export type FontSize = "xs" | "sm" | "base" | "lg";
+export type FontSize = "xxs" | "xs" | "sm" | "base" | "lg";
 export type FontWeight =
   | "thin"
   | "extralight"
@@ -652,7 +652,7 @@ function mergeShared(
   return base;
 }
 
-const SIZE_VALUES: readonly FontSize[] = ["xs", "sm", "base", "lg"];
+const SIZE_VALUES: readonly FontSize[] = ["xxs", "xs", "sm", "base", "lg"];
 const WEIGHT_VALUES: readonly FontWeight[] = [
   "thin",
   "extralight",

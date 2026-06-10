@@ -24,6 +24,7 @@ interface TypographyEditorProps {
 }
 
 const SIZES: { value: FontSize; label: string }[] = [
+  { value: "xxs", label: "Extra extra small" },
   { value: "xs", label: "Extra small" },
   { value: "sm", label: "Small" },
   { value: "base", label: "Base" },

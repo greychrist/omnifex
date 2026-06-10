@@ -622,18 +622,32 @@ html.is-macos body {
 .prose {
   color: var(--color-foreground);
   max-width: 65ch;
-  font-size: 1rem;
+  /* Size, weight, and family all track Chats → Typography → Content, set by
+     MessageRenderingProvider as CSS variables on :root. The variable path is
+     required (not utility classes): these `.prose` / `.prose-sm` rules set
+     font-size and would beat any text-* / font-* class on the content
+     container, so the picker's size/weight were silently ignored before.
+     Fallbacks preserve the prior defaults when the chat context isn't mounted. */
+  font-size: var(--chat-content-size, 1rem);
   line-height: 1.75;
-  /* Pick up the chat Content typeface set by MessageRenderingProvider so
-     assistant markdown, thinking, tool-widget prose, and fenced markdown
-     blocks track the Chats → Typography → Content picker instead of
-     silently inheriting the global App font from body. */
   font-family: var(--chat-content-font, inherit);
+  /* Body text inherits this; headings/strong keep their own bolder weights. */
+  font-weight: var(--chat-content-weight, 400);
 }
 
 .prose-sm {
-  font-size: 0.875rem;
+  /* Content containers use `prose prose-sm`; this rule wins on font-size by
+     source order, so it must read the same variable as `.prose` above. */
+  font-size: var(--chat-content-size, 0.875rem);
   line-height: 1.714;
+}
+
+/* Extra-extra-small step below Tailwind's text-xs, for the Typography size
+   picker's "Extra extra small" option. Used by the class-based header/preview
+   path; the content body reads --chat-content-size (0.625rem) to match. */
+.text-xxs {
+  font-size: 0.625rem;
+  line-height: 0.85rem;
 }
 
 .prose p {
