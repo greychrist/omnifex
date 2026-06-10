@@ -445,11 +445,26 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
           ?? sysRaw.title
           ?? '';
       const streamKind = classifyStandaloneKind(message, streamMessages) ?? "system.informational";
+      // away_summary is a user-facing recap, not diagnostics: prose body
+      // (regular font, italic) with no inline subtype label — the card's
+      // configured header + footer chip already identify the kind.
+      const isAwaySummary = subtype === 'away_summary';
       return (
         <MessageFrame streamKind={streamKind} message={message}>
-          <span className="text-xs font-mono opacity-70">system.{subtype}</span>
+          {!isAwaySummary && (
+            <span className="text-xs font-mono opacity-70">system.{subtype}</span>
+          )}
           {/* eslint-disable-next-line @typescript-eslint/no-base-to-string -- caller controls input; falls back to JSON.stringify upstream. */}
-          {text && <span className="block text-xs font-mono whitespace-pre-wrap break-words">{String(text)}</span>}
+          {text && (
+            <span
+              className={cn(
+                "block whitespace-pre-wrap break-words",
+                isAwaySummary ? "text-sm italic" : "text-xs font-mono",
+              )}
+            >
+              {String(text)}
+            </span>
+          )}
         </MessageFrame>
       );
     }

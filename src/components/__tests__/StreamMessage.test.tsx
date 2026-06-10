@@ -257,4 +257,29 @@ describe('system away_summary recap rendering', () => {
     expect(body.className).toContain('whitespace-pre-wrap');
     expect(body.className).toContain('break-words');
   });
+
+  it('renders the recap in the regular font, italic, without the subtype label', () => {
+    const node = makeAwaySummaryNode('Recap body in prose.');
+    render(<StreamMessage message={node} streamMessages={[node]} />);
+
+    const body = screen.getByText('Recap body in prose.');
+    expect(body.className).toContain('italic');
+    expect(body.className).not.toContain('font-mono');
+    // No inline "system.away_summary" label inside the card body.
+    expect(screen.queryByText('system.away_summary')).toBeNull();
+  });
+
+  it('other system subtypes keep the mono styling and inline subtype label', () => {
+    const node = {
+      kind: 'system',
+      subtype: 'compact_boundary',
+      sessionId: 'sess-1',
+      receivedAt: '2026-05-27T10:00:00Z',
+      raw: { type: 'system', subtype: 'compact_boundary', message: 'boundary hit' },
+    } as unknown as JsonlNode;
+    render(<StreamMessage message={node} streamMessages={[node]} />);
+
+    expect(screen.getByText('system.compact_boundary')).toBeTruthy();
+    expect(screen.getByText('boundary hit').className).toContain('font-mono');
+  });
 });
