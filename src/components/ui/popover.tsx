@@ -212,6 +212,13 @@ export const Popover: React.FC<PopoverProps> = ({
         // Hide until first measurement to avoid a one-frame flash at -9999.
         visibility: coords ? "visible" : "hidden",
         zIndex: 100,
+        // A modal Radix Dialog sets `body { pointer-events: none }` and only
+        // re-enables its own layer. This content portals to body and isn't a
+        // Radix layer, so it would inherit `none` and swallow every click —
+        // the dialog stays open but options can't be selected. Re-enable
+        // pointer events for our own subtree. Outside a modal this is the
+        // default, so it's a no-op there.
+        pointerEvents: "auto",
       }}
       className="min-w-[200px]"
     >

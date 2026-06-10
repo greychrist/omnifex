@@ -46,6 +46,25 @@ describe("popover-aware dialog dismissal", () => {
     expect(isInsidePopover(screen.getByText("option-a"))).toBe(true);
   });
 
+  it("keeps the popover content interactive when a modal layer disables body pointer events", () => {
+    // A modal Radix Dialog sets `body { pointer-events: none }` and only its
+    // own layer back to `auto`. The popover portals to body and is NOT a Radix
+    // layer, so without an explicit override it inherits `none` — clicks fall
+    // straight through the option (the "dialog stays open but I can't pick
+    // anything" symptom). The portal must re-enable pointer events on itself.
+    render(
+      <Popover
+        open
+        trigger={<button>t</button>}
+        content={<button>option-a</button>}
+      />,
+    );
+    const marked = screen
+      .getByText("option-a")
+      .closest(`[${POPOVER_MARKER_ATTR}]`) as HTMLElement;
+    expect(marked.style.pointerEvents).toBe("auto");
+  });
+
   it("treats a genuine outside target as outside (still dismisses)", () => {
     const outside = document.createElement("div");
     document.body.appendChild(outside);
