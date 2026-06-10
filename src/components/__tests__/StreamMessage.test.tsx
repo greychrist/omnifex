@@ -244,4 +244,17 @@ describe('system away_summary recap rendering', () => {
       screen.getByText('Recap: finished the migration while you were away.'),
     ).toBeTruthy();
   });
+
+  it('wraps long fallback bodies instead of truncating to one line', () => {
+    // The generic system fallback used `truncate` (nowrap + ellipsis), which
+    // clipped multi-paragraph bodies to a single line and forced the card
+    // into horizontal overflow. Long bodies must wrap.
+    const node = makeAwaySummaryNode('A very long recap line that must wrap.');
+    render(<StreamMessage message={node} streamMessages={[node]} />);
+
+    const body = screen.getByText('A very long recap line that must wrap.');
+    expect(body.className).not.toContain('truncate');
+    expect(body.className).toContain('whitespace-pre-wrap');
+    expect(body.className).toContain('break-words');
+  });
 });

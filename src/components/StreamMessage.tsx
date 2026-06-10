@@ -449,7 +449,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
         <MessageFrame streamKind={streamKind} message={message}>
           <span className="text-xs font-mono opacity-70">system.{subtype}</span>
           {/* eslint-disable-next-line @typescript-eslint/no-base-to-string -- caller controls input; falls back to JSON.stringify upstream. */}
-          {text && <span className="text-xs font-mono truncate">{String(text)}</span>}
+          {text && <span className="block text-xs font-mono whitespace-pre-wrap break-words">{String(text)}</span>}
         </MessageFrame>
       );
     }
