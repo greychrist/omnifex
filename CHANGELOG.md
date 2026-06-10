@@ -5,6 +5,47 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.78] — 2026-06-09
+
+### Added
+
+- **Dynamic model catalog (Fable 5 support).** Model pickers across the app
+  (chat session, New Session form, account session defaults) now list the
+  models the Claude CLI actually reports for the resolved account — including
+  Claude Fable 5 and the CLI's "Default (recommended)" entry — instead of a
+  hardcoded list. Catalogs are persisted per account in SQLite (migrations
+  v12/v13), invalidated when the CLI version changes, refreshed in the
+  background after 24h, and kept warm for free by live sessions' init data.
+- **Capability-aware effort picker.** Effort levels filter to what the
+  selected model supports (e.g. no `xhigh` on Sonnet); the picker hides for
+  models without effort support (Haiku).
+- Model dropdowns show each model's detail line (e.g. "Opus 4.8 with 1M
+  context") so "Default (recommended)" says what it resolves to.
+
+### Changed
+
+- Selecting "Default (recommended)" launches sessions without `--model`,
+  deferring to the CLI's own default.
+- Session controls (model / effort / permissions) moved from the chat bar
+  into the session widget's context popover; the chat bar keeps the mode and
+  output toggles (stacked, equal width) and the 2×2 quick-action square.
+- New Session form: rebalanced column widths and the model trigger always
+  shows the selected model's detail line.
+- Message card headers are tighter (reduced vertical padding).
+- Away-summary recap cards render as italic prose in the chat Content
+  typeface, matching other text cards' body rhythm, without the inline
+  subtype label.
+
+### Fixed
+
+- Popovers (including the new session-controls dropdowns) clamp to the
+  viewport instead of rendering off-screen near window edges.
+- Generic system cards wrap long bodies instead of truncating to one line.
+- `model_catalog` rows store ISO-8601 timestamps and pretty-printed JSON for
+  readability in DB browsers.
+
+Installers remain **unsigned**.
+
 ## [0.4.77] — 2026-06-07
 
 Makes the chat's auto-scroll stickiness adjustable instead of hardcoded, and tightens the defaults so the view lets go sooner when you scroll up to read history.
