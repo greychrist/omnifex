@@ -84,6 +84,13 @@ export function FormModelPicker({
   onOpenChange,
   disabled,
 }: FormModelPickerProps) {
+  // Apply the pick AND close the dropdown, matching EffortPicker /
+  // PermissionPicker (ControlBar handleSelect). Without the close, selecting a
+  // model left the popover open ("it changes but doesn't close").
+  const handleSelect = (modelId: string) => {
+    onSelect(modelId);
+    onOpenChange(false);
+  };
   return (
     <Popover
       trigger={
@@ -109,7 +116,7 @@ export function FormModelPicker({
         <ModelPickerDropdown
           models={models}
           selectedModel={selectedModel}
-          onSelect={onSelect}
+          onSelect={handleSelect}
         />
       }
       open={open}
