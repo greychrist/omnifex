@@ -5,6 +5,23 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.81] — 2026-06-10
+
+### Fixed
+
+- **Account editor session defaults are usable again.** Completes the v0.4.80
+  fix: a modal dialog disables pointer events outside its own layer, and the
+  default model / effort / permission pickers portal their menus to the page
+  body — so options rendered as non-interactive and clicks fell through
+  (dialog stayed open but nothing changed). The picker menus now re-enable
+  pointer events on their own content.
+- **Model dropdown closes after you pick a model.** Selecting a model applied
+  the change but left the dropdown open, unlike the effort and permission
+  pickers. It now closes on select, in both the session controls popover and
+  the account editor.
+
+Installers remain **unsigned** — macOS Gatekeeper blocks first launch; right-click → Open.
+
 ## [0.4.80] — 2026-06-10
 
 ### Fixed
