@@ -21,7 +21,8 @@ const EMITTABLE_IDS = [
   "system.notification.info", "system.notification.warn",
   "system.notification.error", "system.notification.stop",
   "system.hook_started", "system.hook_response", "system.permission_denied",
-  "system.userPromptSubmit", "system.api_error", "system.unknown",
+  "system.userPromptSubmit", "system.api_error", "system.away_summary",
+  "system.unknown",
   // permission / summary / fallback
   "permission.request", "permission.askUserQuestion",
   "summary.compaction", "unknown",
@@ -244,6 +245,10 @@ describe('classifyStandaloneKind', () => {
       expect(classifyStandaloneKind(sys('hook_started'), [])).toBe('system.hook_started');
       expect(classifyStandaloneKind(sys('hook_response'), [])).toBe('system.hook_response');
       expect(classifyStandaloneKind(sys('user_prompt_submit'), [])).toBe('system.userPromptSubmit');
+    });
+
+    it('classifies away_summary as its own separately-stylable kind', () => {
+      expect(classifyStandaloneKind(sys('away_summary'), [])).toBe('system.away_summary');
     });
 
     it('routes system.init to system.unknown (cli-stream-init intercepts init before this branch)', () => {

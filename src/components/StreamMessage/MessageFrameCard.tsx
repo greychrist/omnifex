@@ -135,10 +135,11 @@ export const MessageFrameCard: React.FC<MessageFrameCardProps> = ({
             buttons. CardContent sits below with its own padding and a
             pb-9 reserve for the absolute footer.
             Padding overrides keep the card compact (shadcn defaults of
-            p-6 would balloon every chat row). */}
+            p-6 would balloon every chat row; py-1.5 keeps the header row
+            tight). */}
         {(iconName !== "none" || hasHeaderLabel) && (
           <CardHeader
-            className="px-4 py-3 flex flex-row items-center gap-3 space-y-0"
+            className="px-4 py-1.5 flex flex-row items-center gap-3 space-y-0"
             style={accentStyle?.borderColor ? { borderBottomColor: accentStyle.borderColor as string } : undefined}
           >
             {iconName !== "none" && (

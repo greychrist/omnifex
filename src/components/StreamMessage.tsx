@@ -437,9 +437,11 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
       // effect.
       const subtype = String(message.subtype);
       // System variants don't share a common text field; pick whichever
-      // narrative-style field the specific subtype carries.
+      // narrative-style field the specific subtype carries. `content` holds the
+      // recap body for summary subtypes like away_summary / stop_hook_summary.
       const text =
         (sysRaw as unknown as { message?: unknown }).message
+          ?? (sysRaw as unknown as { content?: unknown }).content
           ?? sysRaw.title
           ?? '';
       const streamKind = classifyStandaloneKind(message, streamMessages) ?? "system.informational";

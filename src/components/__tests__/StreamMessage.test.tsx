@@ -221,3 +221,27 @@ describe('user-role messages render markdown (matching assistant styling)', () =
     expect(screen.getByRole('button', { name: 'Source' })).toBeTruthy();
   });
 });
+
+describe('system away_summary recap rendering', () => {
+  function makeAwaySummaryNode(content: string): JsonlNode {
+    return {
+      kind: 'system',
+      subtype: 'away_summary',
+      sessionId: 'sess-1',
+      receivedAt: '2026-05-27T10:00:00Z',
+      raw: { type: 'system', subtype: 'away_summary', content },
+    } as unknown as JsonlNode;
+  }
+
+  it('shows the recap text carried in the away_summary content field', () => {
+    // away_summary stores its recap narrative in `content` (not message/title).
+    // The generic system fallback used to read only message/title, so the recap
+    // body rendered blank in chat mode.
+    const node = makeAwaySummaryNode('Recap: finished the migration while you were away.');
+    render(<StreamMessage message={node} streamMessages={[node]} />);
+
+    expect(
+      screen.getByText('Recap: finished the migration while you were away.'),
+    ).toBeTruthy();
+  });
+});

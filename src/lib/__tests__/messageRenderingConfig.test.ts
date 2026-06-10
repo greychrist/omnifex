@@ -474,6 +474,14 @@ describe("kind registry", () => {
       expect(s.presentation, `no presentation for "${id}"`).toBeDefined();
     }
   });
+
+  it("exposes system.away_summary as a separately-stylable system kind", () => {
+    const def = KIND_REGISTRY["system.away_summary"];
+    expect(def).toBeDefined();
+    expect(def.category).toBe("system");
+    expect(def.label.length).toBeGreaterThan(0);
+    expect(resolveKind(createDefaultConfig(), "system.away_summary").presentation).toBeDefined();
+  });
 });
 
 // ─── category catalog ─────────────────────────────────────────────────────────
