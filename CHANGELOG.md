@@ -5,6 +5,36 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.79] — 2026-06-10
+
+### Added
+
+- **Terminal-mode control mirror.** When you switch model (`/model`) or cycle
+  permission mode (shift+tab) inside a live TUI session, OmniFex now detects
+  the change from the session JSONL and reflects it in the session controls.
+  In TUI mode those pickers are read-only — the terminal owns model / effort /
+  permission — so they mirror the CLI's live state instead of silently no-oping.
+- **"Extra extra small" content text size.** A new `xxs` step below Extra small
+  in Chats → Typography → Content (and Header).
+
+### Fixed
+
+- **Content typography size and weight now apply.** Previously only the font
+  family took effect in chat content; the size and weight pickers were ignored
+  because they reached the `.prose` body as Tailwind classes that its own CSS
+  overrode. Size and weight now flow through CSS variables like the family does.
+  Defaults are unchanged, so existing text doesn't resize until you change a
+  setting.
+- **Session control popover no longer closes when you click an option.**
+  Selecting a model / effort / permission option used to collapse the whole
+  context popover before the selection registered, because each picker portals
+  its menu to `document.body` and read as a click "outside" the parent popover.
+
+### Notes
+
+- Installers remain **unsigned** — macOS Gatekeeper blocks first launch;
+  right-click → Open to run.
+
 ## [0.4.78] — 2026-06-09
 
 ### Added
