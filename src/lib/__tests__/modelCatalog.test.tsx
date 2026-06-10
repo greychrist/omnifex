@@ -6,8 +6,11 @@ import {
   FALLBACK_MODELS,
   effectiveModels,
   modelDisplayName,
+  modelFamily,
+  pickModelOption,
   useModelCatalog,
 } from '../modelCatalog';
+import type { Model } from '@/components/ModelPicker';
 import type { SessionModelInfo } from '@/lib/api';
 
 vi.mock('@/lib/api', async (importOriginal) => {
@@ -97,6 +100,41 @@ describe('modelDisplayName', () => {
   it('falls back to FALLBACK_MODELS, then the raw id', () => {
     expect(modelDisplayName('sonnet')).toBe('Sonnet');
     expect(modelDisplayName('mystery-model')).toBe('mystery-model');
+  });
+});
+
+describe('modelFamily', () => {
+  it('extracts the family keyword from a concrete CLI model id', () => {
+    expect(modelFamily('claude-opus-4-8')).toBe('opus');
+    expect(modelFamily('claude-sonnet-4-6-20260101')).toBe('sonnet');
+    expect(modelFamily('claude-haiku-4-5')).toBe('haiku');
+    expect(modelFamily('claude-fable-5[1m]')).toBe('fable');
+  });
+
+  it('returns null for ids with no recognizable family (e.g. "default")', () => {
+    expect(modelFamily('default')).toBeNull();
+    expect(modelFamily('')).toBeNull();
+  });
+});
+
+describe('pickModelOption', () => {
+  const mk = (id: string, name = id): Model => ({
+    id, name, description: '', icon: null, shortName: name[0]?.toUpperCase() ?? '?', color: 'text-primary',
+  });
+  const models = [mk('default', 'Default'), mk('sonnet', 'Sonnet'), mk('opus', 'Opus'), mk('haiku', 'Haiku')];
+
+  it('prefers an exact id match (the common alias case)', () => {
+    expect(pickModelOption('opus', models).id).toBe('opus');
+    expect(pickModelOption('default', models).id).toBe('default');
+  });
+
+  it('falls back to a family match for a concrete CLI id', () => {
+    expect(pickModelOption('claude-opus-4-8', models).id).toBe('opus');
+    expect(pickModelOption('claude-sonnet-4-6', models).id).toBe('sonnet');
+  });
+
+  it('falls back to the first option when nothing matches', () => {
+    expect(pickModelOption('gpt-5-codex', models).id).toBe('default');
   });
 });
 

@@ -1393,6 +1393,31 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     return () => { unlisten(); };
   }, []);
 
+  // Mirror model / permission-mode changes the user makes inside a live TUI
+  // session. In TUI mode the terminal owns these — the popover pickers are
+  // read-only there — so this keeps them in sync when the user switches model
+  // (`/model`) or cycles permission mode (shift+tab) in the terminal. The
+  // main process detects the change from the session JSONL and emits here.
+  // Effort/thinking isn't covered (never reaches the JSONL).
+  useEffect(() => {
+    const unlisten = window.electronAPI.onEvent(
+      `session-control-state:${tabIdRef.current}`,
+      (...args: unknown[]) => {
+        const payload = args[0] as { model?: string; permissionMode?: string } | undefined;
+        // selectedModel may become a concrete CLI id (e.g. `claude-opus-4-8`);
+        // SessionDefaultsRow's pickModelOption resolves it to the right
+        // picker option for display.
+        if (typeof payload?.model === 'string' && payload.model.length > 0) {
+          setSelectedModel(payload.model);
+        }
+        if (typeof payload?.permissionMode === 'string' && payload.permissionMode.length > 0) {
+          setPermissionMode(payload.permissionMode);
+        }
+      },
+    );
+    return () => { unlisten(); };
+  }, []);
+
   // session-status events are now consumed by useSessionLifecycle, which
   // exposes the resulting `sessionStatus` enum. Derived `isSessionStarting`
   // / `isSessionActive` predicates above.
@@ -1843,6 +1868,10 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
               <SessionDefaultsRow
                 engine={agent}
                 direction="column"
+                // TUI mode owns these via the terminal; the pickers can't
+                // drive the CLI (no control-protocol engine in TUI), so they
+                // render read-only and mirror the auto-detected live state.
+                disabled={sessionMode === 'tui'}
                 configDir={accountResolution?.account.config_dir}
                 model={selectedModel}
                 setModel={(newModel) => {

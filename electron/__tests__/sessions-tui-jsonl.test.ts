@@ -193,6 +193,57 @@ describe('createTuiJsonlListener', () => {
     expect(showNotification).not.toHaveBeenCalled();
   });
 
+  it('emits onControlState with the model from an assistant line, deduped', async () => {
+    const onControlState = vi.fn();
+    fs.writeFileSync(jsonlPath, '');
+    handle = createTuiJsonlListener({
+      tabId: 'tab-model',
+      projectPath: '/p',
+      jsonlPath,
+      sendToRenderer: vi.fn(),
+      notificationHooks: {},
+      onInit: () => {},
+      onControlState,
+    });
+    // Two assistant lines with the SAME model, then one with a new model.
+    fs.appendFileSync(
+      jsonlPath,
+      JSON.stringify({ type: 'assistant', sessionId: 's', timestamp: '2026-06-10T00:00:00Z', message: { role: 'assistant', content: [], model: 'claude-opus-4-8' } }) + '\n' +
+      JSON.stringify({ type: 'assistant', sessionId: 's', timestamp: '2026-06-10T00:00:01Z', message: { role: 'assistant', content: [], model: 'claude-opus-4-8' } }) + '\n' +
+      JSON.stringify({ type: 'assistant', sessionId: 's', timestamp: '2026-06-10T00:00:02Z', message: { role: 'assistant', content: [], model: 'claude-sonnet-4-6' } }) + '\n',
+    );
+    await waitUntil(() => onControlState.mock.calls.length >= 2);
+    const models = onControlState.mock.calls
+      .map((c) => (c[0] as { model?: string }).model)
+      .filter(Boolean);
+    expect(models).toEqual(['claude-opus-4-8', 'claude-sonnet-4-6']);
+  });
+
+  it('emits onControlState with permissionMode from a permission-mode line, deduped', async () => {
+    const onControlState = vi.fn();
+    fs.writeFileSync(jsonlPath, '');
+    handle = createTuiJsonlListener({
+      tabId: 'tab-perm',
+      projectPath: '/p',
+      jsonlPath,
+      sendToRenderer: vi.fn(),
+      notificationHooks: {},
+      onInit: () => {},
+      onControlState,
+    });
+    fs.appendFileSync(
+      jsonlPath,
+      JSON.stringify({ type: 'permission-mode', permissionMode: 'plan' }) + '\n' +
+      JSON.stringify({ type: 'permission-mode', permissionMode: 'plan' }) + '\n' +
+      JSON.stringify({ type: 'permission-mode', permissionMode: 'acceptEdits' }) + '\n',
+    );
+    await waitUntil(() => onControlState.mock.calls.length >= 2);
+    const modes = onControlState.mock.calls
+      .map((c) => (c[0] as { permissionMode?: string }).permissionMode)
+      .filter(Boolean);
+    expect(modes).toEqual(['plan', 'acceptEdits']);
+  });
+
   it('fires the notification helper on a result line', async () => {
     const showNotification = vi.fn();
     const sendToRenderer = vi.fn();

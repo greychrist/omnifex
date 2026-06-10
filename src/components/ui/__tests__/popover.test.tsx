@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { useState } from "react";
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, fireEvent, screen, cleanup } from "@testing-library/react";
 import { Popover } from "../popover";
@@ -134,6 +135,62 @@ describe("Popover portal rendering", () => {
     // Trigger walks back to document.body through the rendered tree as
     // normal (it's not portaled).
     expect(trigger.closest("body")).toBe(document.body);
+  });
+});
+
+// Reproduces the nested-portal close bug: an inner Popover lives inside an
+// outer Popover's content. Both portal their content to document.body as
+// SEPARATE subtrees, so a press inside the inner popover is, by raw DOM
+// containment, "outside" the outer popover's content node. Without the
+// nesting registry, the outer popover's mousedown click-outside handler
+// closes the whole stack the moment you press an inner option (the symptom:
+// "I click a model/effort/permission option and the popover just closes").
+describe("Popover nested-portal click handling", () => {
+  function Nested({ onSelect }: { onSelect?: () => void }) {
+    const [outerOpen, setOuterOpen] = useState(true);
+    const [innerOpen, setInnerOpen] = useState(false);
+    return (
+      <Popover
+        open={outerOpen}
+        onOpenChange={setOuterOpen}
+        trigger={<button>outer-trigger</button>}
+        content={
+          <div>
+            <span>outer-content</span>
+            <Popover
+              open={innerOpen}
+              onOpenChange={setInnerOpen}
+              trigger={<button>inner-trigger</button>}
+              content={<button onClick={() => { onSelect?.(); }}>inner-option</button>}
+            />
+          </div>
+        }
+      />
+    );
+  }
+
+  it("keeps the outer popover open when an inner popover option is pressed", () => {
+    let selected = false;
+    render(<Nested onSelect={() => { selected = true; }} />);
+
+    fireEvent.click(screen.getByText("inner-trigger"));
+    expect(screen.getByText("inner-option")).toBeTruthy();
+
+    // mousedown is what the click-outside handler listens on. Pressing the
+    // inner option must not be treated as a click outside the outer popover.
+    const option = screen.getByText("inner-option");
+    fireEvent.mouseDown(option);
+    fireEvent.click(option);
+
+    expect(screen.getByText("outer-content")).toBeTruthy();
+    expect(selected).toBe(true);
+  });
+
+  it("still closes the outer popover on a genuine outside press", () => {
+    render(<Nested />);
+    expect(screen.getByText("outer-content")).toBeTruthy();
+    fireEvent.mouseDown(document.body);
+    expect(screen.queryByText("outer-content")).toBeNull();
   });
 });
 

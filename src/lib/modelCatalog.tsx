@@ -46,6 +46,38 @@ export function effectiveModels(raw: SessionModelInfo[] | undefined | null): Mod
   return raw && raw.length > 0 ? raw.map(toPickerModel) : FALLBACK_MODELS;
 }
 
+// Known model families, longest-first so e.g. nothing shadows a more
+// specific keyword. Used to bridge the gap between the picker's alias ids
+// (`opus`, `sonnet`) and the concrete ids the CLI stamps on assistant JSONL
+// lines (`claude-opus-4-8`) — see pickModelOption.
+const MODEL_FAMILIES = ['opus', 'sonnet', 'haiku', 'fable'] as const;
+
+/** Extract the model family keyword from any model id/name, or null. */
+export function modelFamily(id: string): string | null {
+  const lower = id.toLowerCase();
+  return MODEL_FAMILIES.find((fam) => lower.includes(fam)) ?? null;
+}
+
+/**
+ * Resolve the catalog option to display for a given model id. Exact id match
+ * wins (the normal alias case, e.g. `opus`). For a concrete CLI id detected
+ * from a live TUI session (`claude-opus-4-8`), fall back to the option in the
+ * same family so the read-only picker still shows "Opus" rather than the
+ * first option. Last resort is the first option.
+ */
+export function pickModelOption(model: string, models: Model[]): Model {
+  const exact = models.find((m) => m.id === model);
+  if (exact) return exact;
+  const fam = modelFamily(model);
+  if (fam) {
+    const byFamily = models.find(
+      (m) => modelFamily(m.id) === fam || modelFamily(m.name) === fam,
+    );
+    if (byFamily) return byFamily;
+  }
+  return models[0];
+}
+
 /** Display name for a model id across raw catalog + fallback. */
 export function modelDisplayName(id: string, raw?: SessionModelInfo[] | null): string {
   return (

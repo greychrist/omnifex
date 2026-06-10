@@ -12,7 +12,7 @@ import {
   type EffortLevel,
 } from '@/components/ControlBar';
 import { FormModelPicker } from '@/components/ModelPicker';
-import { useModelCatalog } from '@/lib/modelCatalog';
+import { useModelCatalog, pickModelOption } from '@/lib/modelCatalog';
 
 export interface SessionDefaultsRowProps {
   engine: AccountEngine;
@@ -34,6 +34,12 @@ export interface SessionDefaultsRowProps {
    * context popover where a row truncates every trigger.
    */
   direction?: 'row' | 'column';
+  /**
+   * Renders the pickers read-only. Used for live TUI sessions, where the
+   * terminal — not OmniFex — owns model / effort / permission, so the pickers
+   * mirror the CLI's state (auto-detected) but can't drive it.
+   */
+  disabled?: boolean;
   className?: string;
 }
 
@@ -88,6 +94,7 @@ export function SessionDefaultsRow({
   setPermissionMode,
   configDir,
   direction = 'row',
+  disabled = false,
   className,
 }: SessionDefaultsRowProps) {
   const layout =
@@ -104,7 +111,9 @@ export function SessionDefaultsRow({
   // set (all six CLI modes) and the per-mode colors stay in one place and any
   // fix propagates to both surfaces.
   if (engine === 'claude') {
-    const selectedModelData = modelList.find((m) => m.id === model) ?? modelList[0];
+    // pickModelOption bridges concrete CLI ids (e.g. `claude-opus-4-8`,
+    // detected from a live TUI session) to the picker's alias options.
+    const selectedModelData = pickModelOption(model, modelList);
     const selectedRawModel = modelCatalogRaw.find((m) => m.value === model);
     return (
       <div className={`${layout} ${className ?? ''}`}>
@@ -116,6 +125,7 @@ export function SessionDefaultsRow({
             onSelect={setModel}
             open={modelOpen}
             onOpenChange={setModelOpen}
+            disabled={disabled}
           />
         </Field>
         <Field label="Effort">
@@ -126,6 +136,7 @@ export function SessionDefaultsRow({
             onOpenChange={setEffortOpen}
             variant="form"
             levels={selectedRawModel?.supportedEffortLevels}
+            disabled={disabled}
           />
         </Field>
         <Field label="Permissions">
@@ -135,8 +146,16 @@ export function SessionDefaultsRow({
             open={permsOpen}
             onOpenChange={setPermsOpen}
             variant="form"
+            disabled={disabled}
           />
         </Field>
+        {disabled && (
+          <p className="text-[10px] leading-snug text-muted-foreground">
+            Managed by the terminal — change model with <code>/model</code>,
+            effort/permissions with the CLI's own controls. These mirror the
+            live session.
+          </p>
+        )}
       </div>
     );
   }

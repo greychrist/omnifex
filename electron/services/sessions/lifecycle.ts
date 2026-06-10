@@ -603,6 +603,11 @@ export function createSessionsService(
           // is already 'started' for a mid-session toggle; conversationStatus
           // is now derived by the renderer, so no update needed.
         },
+        onControlState: (state) => {
+          // Mirror in-terminal model / permission-mode switches to the
+          // renderer's read-only pickers (TUI mode owns these, not OmniFex).
+          sendToRenderer(`session-control-state:${tabId}`, state);
+        },
       });
     } else {
       // tui -> rich: kill the pty, then re-start the engine with --resume.
@@ -792,6 +797,11 @@ export function createSessionsService(
         // flips to 'started' here. conversationStatus is now derived
         // by the renderer from JSONL content.
         setStatus(handle, { sessionStatus: 'started' }, tabId, sendToRenderer);
+      },
+      onControlState: (state) => {
+        // Mirror in-terminal model / permission-mode switches to the
+        // renderer's read-only pickers (TUI mode owns these, not OmniFex).
+        sendToRenderer(`session-control-state:${tabId}`, state);
       },
     });
 

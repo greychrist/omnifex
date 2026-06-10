@@ -43,6 +43,25 @@ interface PopoverProps {
 }
 
 /**
+ * Lets a nested Popover register its portaled content node with every
+ * ancestor Popover. Because each popover portals its content to
+ * `document.body` as a separate subtree, an inner popover's content is —
+ * by raw DOM containment — "outside" the outer popover's content node. Left
+ * unhandled, the outer popover's click-outside handler fires the instant you
+ * press an option in the inner popover, collapsing the whole stack (the
+ * "click an option and the popover just closes" bug). Each Popover provides
+ * this context to its children and, when open, registers its own content
+ * node with its parent; registrations bubble up so arbitrary nesting depth
+ * is covered.
+ */
+interface PopoverNesting {
+  /** Register a node as belonging to this popover layer (and all ancestors).
+   *  Returns a cleanup that unregisters it. */
+  registerDescendant: (node: HTMLElement) => () => void;
+}
+const PopoverNestingContext = React.createContext<PopoverNesting | null>(null);
+
+/**
  * Popover component for displaying floating content.
  *
  * Content is rendered via `createPortal` into `document.body` so it escapes
@@ -78,16 +97,43 @@ export const Popover: React.FC<PopoverProps> = ({
   const contentRef = React.useRef<HTMLDivElement>(null);
   const [coords, setCoords] = React.useState<{ top: number; left: number } | null>(null);
 
+  // Nested-popover registry. `descendants` holds the portaled content nodes
+  // of child popovers (and their children) so click-outside can treat a press
+  // inside any descendant popover as "inside" this one.
+  const parentNesting = React.useContext(PopoverNestingContext);
+  const descendantsRef = React.useRef<Set<HTMLElement>>(new Set());
+  const registerDescendant = React.useCallback((node: HTMLElement) => {
+    descendantsRef.current.add(node);
+    const parentCleanup = parentNesting?.registerDescendant(node);
+    return () => {
+      descendantsRef.current.delete(node);
+      parentCleanup?.();
+    };
+  }, [parentNesting]);
+  const nesting = React.useMemo<PopoverNesting>(() => ({ registerDescendant }), [registerDescendant]);
+
+  // While open, register our own content node with every ancestor popover so
+  // their click-outside handlers don't treat a press inside us as "outside".
+  React.useEffect(() => {
+    if (!open || !parentNesting) return;
+    const node = contentRef.current;
+    if (!node) return;
+    return parentNesting.registerDescendant(node);
+  }, [open, parentNesting]);
+
   // Close on click outside
   React.useEffect(() => {
     if (!open) return;
 
     const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+      const insideDescendant = [...descendantsRef.current].some((n) => n.contains(target));
       if (
         triggerRef.current &&
         contentRef.current &&
-        !triggerRef.current.contains(event.target as Node) &&
-        !contentRef.current.contains(event.target as Node)
+        !triggerRef.current.contains(target) &&
+        !contentRef.current.contains(target) &&
+        !insideDescendant
       ) {
         setOpen(false);
       }
@@ -179,11 +225,13 @@ export const Popover: React.FC<PopoverProps> = ({
   );
 
   return (
-    <div className={triggerClassName}>
-      <div ref={triggerRef} onClick={() => { setOpen(!open); }}>
-        {trigger}
+    <PopoverNestingContext.Provider value={nesting}>
+      <div className={triggerClassName}>
+        <div ref={triggerRef} onClick={() => { setOpen(!open); }}>
+          {trigger}
+        </div>
+        {portalNode && ReactDOM.createPortal(portalNode, document.body)}
       </div>
-      {portalNode && ReactDOM.createPortal(portalNode, document.body)}
-    </div>
+    </PopoverNestingContext.Provider>
   );
 };
