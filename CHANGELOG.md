@@ -5,6 +5,19 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.80] — 2026-06-10
+
+### Fixed
+
+- **Account editor no longer closes when picking a default.** The default
+  model / effort / permission pickers in the Add/Edit account dialog are
+  Popovers that portal their menu to the page body — outside the dialog — so
+  pressing an option registered as a click "outside" the dialog and collapsed
+  it before the choice applied. Dialogs now recognise a press inside one of
+  these popovers as inside the dialog; genuine outside clicks still close it.
+
+Installers remain **unsigned** — macOS Gatekeeper blocks first launch; right-click → Open.
+
 ## [0.4.79] — 2026-06-10
 
 ### Added
