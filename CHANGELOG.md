@@ -5,6 +5,30 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.82] — 2026-06-11
+
+### Added
+
+- **Customizable tab status indicators.** A new "Tab status indicators"
+  section in General settings lets you set the icon and color for each tab
+  state (Error, Permission request, Question waiting, Completed), plus a
+  shared glyph size, bordered chip, and chip background opacity. A live
+  preview accompanies each state.
+
+### Changed
+
+- **Distinct, flashing per-state tab glyphs.** The single green dot is
+  replaced by a glyph per state — shield for a pending permission, question
+  mark for an AskUserQuestion, check-in-circle for a completed background
+  tab, alert for errors — each flashing to draw the eye.
+- **Project tabs size to their full name** instead of truncating; long names
+  scroll in the tab strip rather than clipping to an ellipsis.
+- **Tamer markdown heading sizes in chat.** Headings were using
+  article-grade scaling that read as oversized; they're now proportionate to
+  the chat body text.
+
+Installers remain **unsigned** — macOS Gatekeeper blocks first launch; right-click → Open.
+
 ## [0.4.81] — 2026-06-10
 
 ### Fixed
