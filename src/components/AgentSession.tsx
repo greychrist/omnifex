@@ -66,6 +66,7 @@ import { resolveBranchColors } from '@/lib/branchColors';
 import type { BranchColor } from '@/lib/api';
 import { deriveSubagents, createSubagentColorAllocator } from "@/lib/subagentStreams";
 import { getTaskList, summarizeTaskList } from "@/lib/taskList";
+import { deriveWaitingFor, type TabWaitingFor } from "@/lib/tabWaitingFor";
 import { SubagentBar } from "./SubagentBar";
 import { TaskList } from "./claude/tools/TaskList";
 import { fireAndLog, logAndForget } from "@/lib/fireAndLog";
@@ -1147,6 +1148,18 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     lastPromptStatusRef.current = promptStatus;
     updateTab(tabIdRef.current, { promptStatus });
   }, [promptStatus, updateTab]);
+
+  // Mirror the "waiting on the human" state onto the tab so the TabManager
+  // can show a shield (permission) / question mark (AskUserQuestion). Same
+  // pending permission that drives usePublishTabStatus and the in-session
+  // permission card — one source of truth.
+  const tabWaitingFor: TabWaitingFor = deriveWaitingFor(pendingPermission);
+  const lastWaitingForRef = useRef<TabWaitingFor | undefined>(undefined);
+  useEffect(() => {
+    if (lastWaitingForRef.current === tabWaitingFor) return;
+    lastWaitingForRef.current = tabWaitingFor;
+    updateTab(tabIdRef.current, { waitingFor: tabWaitingFor });
+  }, [tabWaitingFor, updateTab]);
 
   // Publish this tab's busy/idle summary up to main on every change. The
   // status popover and the install-gate both read from the aggregated list.

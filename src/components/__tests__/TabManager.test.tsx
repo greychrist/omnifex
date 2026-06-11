@@ -202,7 +202,7 @@ describe('TabManager — rendering', () => {
     expect(dots.length).toBe(1);
   });
 
-  it('renders the unread-result pulsing dot independently of other statuses', () => {
+  it('renders a green checkmark for a completed (unread-result) tab', () => {
     installState({
       tabs: [
         makeTab({ id: 'a', type: 'chat', title: 'Done', hasUnreadResult: true, status: 'idle' }),
@@ -211,8 +211,59 @@ describe('TabManager — rendering', () => {
     });
 
     const { container } = render(<TabManager />);
-    // The ping span is the outer animated layer.
-    expect(container.querySelector('span.animate-ping')).not.toBeNull();
+    const check = container.querySelector('[aria-label="Completed"]');
+    expect(check).not.toBeNull();
+    // Flashes to draw the eye, like the unread-result dot it replaced.
+    expect(check?.classList.contains('animate-pulse')).toBe(true);
+  });
+
+  it('renders a yellow shield when a permission request is pending', () => {
+    installState({
+      tabs: [
+        makeTab({ id: 'a', type: 'chat', title: 'Perm', waitingFor: 'permission' }),
+      ],
+      activeTabId: 'a',
+    });
+
+    const { container } = render(<TabManager />);
+    const shield = container.querySelector('[aria-label="Permission request"]');
+    expect(shield).not.toBeNull();
+    expect(shield?.classList.contains('animate-pulse')).toBe(true);
+  });
+
+  it('renders a yellow question mark when a question is waiting', () => {
+    installState({
+      tabs: [
+        makeTab({ id: 'a', type: 'chat', title: 'Q', waitingFor: 'question' }),
+      ],
+      activeTabId: 'a',
+    });
+
+    const { container } = render(<TabManager />);
+    expect(container.querySelector('[aria-label="Question waiting"]')).not.toBeNull();
+  });
+
+  it('prioritizes the permission shield over the working spinner', () => {
+    // A pending permission keeps the conversation "running" (an open task),
+    // so the tab is both working AND waiting on the user. The shield must win
+    // — the user needs to know it's blocked on them, not just busy.
+    installState({
+      tabs: [
+        makeTab({
+          id: 'a',
+          type: 'chat',
+          title: 'Blocked',
+          status: 'running',
+          promptStatus: 'working',
+          waitingFor: 'permission',
+        }),
+      ],
+      activeTabId: 'a',
+    });
+
+    const { container } = render(<TabManager />);
+    expect(container.querySelector('[aria-label="Permission request"]')).not.toBeNull();
+    expect(container.querySelector('.animate-spin')).toBeNull();
   });
 });
 

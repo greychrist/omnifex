@@ -24,6 +24,8 @@ import { useAppFont } from "@/contexts/AppFontContext";
 import { useAutoScroll } from "@/contexts/AutoScrollContext";
 import { APP_FONT_CHOICES } from "@/lib/typefaceCatalog";
 import { TabPersistenceService } from "@/services/tabPersistence";
+import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
+import { TabIndicatorsEditor } from "./TabIndicatorsEditor";
 import type { SettingsPanelProps } from "./types";
 import { fireAndLog, logAndForget } from "@/lib/fireAndLog";
 import {
@@ -56,6 +58,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
 }) => {
   const { theme, setTheme } = useTheme();
   const { appFont, setAppFont, isLoading: appFontLoading } = useAppFont();
+  const { config, setConfig } = useMessageRenderingConfig();
   const {
     reengagePx,
     disengagePx,
@@ -430,6 +433,15 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
                 </Button>
               </div>
             </div>
+          </div>
+
+          {/* Tab status indicators — the per-tab glyphs in the tab strip. */}
+          <div className="space-y-3 border-t border-border/50 pt-4">
+            <TabIndicatorsEditor
+              indicators={config.tabIndicators}
+              palette={config.palette}
+              onChange={(next) => { setConfig({ ...config, tabIndicators: next }); }}
+            />
           </div>
 
         </div>

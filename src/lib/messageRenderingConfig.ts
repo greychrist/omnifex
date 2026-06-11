@@ -373,6 +373,44 @@ export const DEFAULT_TYPOGRAPHY: Typography = {
   icon: { bordered: true, bgOpacity: 100 },
 };
 
+// ─── tab status indicators ───────────────────────────────────────────────────
+// The per-tab glyph in the tab strip (TabManager) for each non-working state.
+// Icon + color are per-state; size + chip chrome are shared across all four.
+
+export type TabIndicatorKey = "error" | "permission" | "question" | "complete";
+export type TabIndicatorSize = "sm" | "md" | "lg";
+
+export interface TabIndicatorStyle {
+  /** Icon name from ALLOWED_ICONS (rendered via IconRenderer). */
+  icon: IconName;
+  /** Palette name or hex, resolved like a kind's accentColor. */
+  color: string;
+}
+
+export interface TabIndicators {
+  error: TabIndicatorStyle;
+  permission: TabIndicatorStyle;
+  question: TabIndicatorStyle;
+  complete: TabIndicatorStyle;
+  /** Shared glyph size: sm/md/lg → 14/16/18px. */
+  size: TabIndicatorSize;
+  /** Shared: render each glyph inside a bordered chip. */
+  bordered: boolean;
+  /** Shared chip background opacity (0–100); only applies when bordered. */
+  bgOpacity: number;
+}
+
+export const DEFAULT_TAB_INDICATORS: TabIndicators = {
+  // Defaults reproduce the hard-coded glyphs the tab strip shipped with.
+  error: { icon: "AlertCircle", color: "red" },
+  permission: { icon: "Shield", color: "yellow" },
+  question: { icon: "MessageCircleQuestion", color: "yellow" },
+  complete: { icon: "CheckCircle2", color: "green" },
+  size: "md",
+  bordered: false,
+  bgOpacity: 100,
+};
+
 // ─── hard filters ───────────────────────────────────────────────────────────
 
 export interface HardFilters {
@@ -451,6 +489,7 @@ export interface MessageRenderingConfig {
   palette: Palette;
   hardFilters: HardFilters;
   typography: Typography;
+  tabIndicators: TabIndicators;
   terminal: Terminal;
   debug: DebugOptions;
 }
@@ -464,6 +503,7 @@ export function createDefaultConfig(): MessageRenderingConfig {
     palette: structuredClone(DEFAULT_PALETTE),
     hardFilters: { ...DEFAULT_HARD_FILTERS },
     typography: structuredClone(DEFAULT_TYPOGRAPHY),
+    tabIndicators: structuredClone(DEFAULT_TAB_INDICATORS),
     terminal: { ...DEFAULT_TERMINAL },
     debug: { ...DEFAULT_DEBUG },
   };
@@ -630,6 +670,10 @@ function mergeShared(
     };
   }
 
+  if (isRecord(saved.tabIndicators)) {
+    base.tabIndicators = mergeTabIndicators(saved.tabIndicators, base.tabIndicators);
+  }
+
   if (isRecord(saved.debug)) {
     const d = saved.debug;
     base.debug = {
@@ -706,6 +750,52 @@ function mergeIconStyle(saved: unknown, base: IconStyle): IconStyle {
   return {
     bordered: typeof s.bordered === "boolean" ? s.bordered : base.bordered,
     bgOpacity: opacity,
+  };
+}
+
+const TAB_INDICATOR_SIZES: readonly TabIndicatorSize[] = ["sm", "md", "lg"];
+
+/** A tab-indicator color is a palette name or a hex string, same as a kind's
+ *  accentColor. */
+function isTabIndicatorColor(v: unknown): v is string {
+  return (
+    isHexColor(v) ||
+    (typeof v === "string" &&
+      Object.prototype.hasOwnProperty.call(DEFAULT_PALETTE, v))
+  );
+}
+
+function mergeTabIndicatorStyle(
+  saved: unknown,
+  base: TabIndicatorStyle,
+): TabIndicatorStyle {
+  if (!isRecord(saved)) return base;
+  const icon =
+    typeof saved.icon === "string" &&
+    (ALLOWED_ICONS as readonly string[]).includes(saved.icon)
+      ? (saved.icon as IconName)
+      : base.icon;
+  const color = isTabIndicatorColor(saved.color) ? saved.color : base.color;
+  return { icon, color };
+}
+
+function mergeTabIndicators(saved: unknown, base: TabIndicators): TabIndicators {
+  if (!isRecord(saved)) return base;
+  const s = saved;
+  const bgOpacity =
+    typeof s.bgOpacity === "number" && Number.isFinite(s.bgOpacity)
+      ? Math.max(0, Math.min(100, Math.round(s.bgOpacity)))
+      : base.bgOpacity;
+  return {
+    error: mergeTabIndicatorStyle(s.error, base.error),
+    permission: mergeTabIndicatorStyle(s.permission, base.permission),
+    question: mergeTabIndicatorStyle(s.question, base.question),
+    complete: mergeTabIndicatorStyle(s.complete, base.complete),
+    size: TAB_INDICATOR_SIZES.includes(s.size as TabIndicatorSize)
+      ? (s.size as TabIndicatorSize)
+      : base.size,
+    bordered: typeof s.bordered === "boolean" ? s.bordered : base.bordered,
+    bgOpacity,
   };
 }
 

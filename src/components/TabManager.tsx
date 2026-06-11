@@ -1,7 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence, Reorder } from 'framer-motion';
-import { X, Plus, MessageSquare, AlertCircle, Folder, BarChart, Server, Settings, FileText, HardDrive, List } from 'lucide-react';
+import { X, Plus, MessageSquare, Folder, BarChart, Server, Settings, FileText, HardDrive, List } from 'lucide-react';
 import { Spinner } from '@/components/ui/spinner';
+import { useMessageRenderingConfig } from '@/contexts/MessageRenderingContext';
+import { TabStatusGlyph } from '@/components/TabStatusGlyph';
 import { AccountBadge } from './AccountBadge';
 import { useTabState } from '@/hooks/useTabState';
 import { Tab, useTabContext } from '@/contexts/TabContext';
@@ -59,26 +61,33 @@ export function getTabIcon(tab: Pick<Tab, 'type' | 'icon'>): typeof MessageSquar
 
 const TabItem: React.FC<TabItemProps> = ({ tab, isActive, onClose, onClick, isDragging = false, setDraggedTabId }) => {
   const [isHovered, setIsHovered] = useState(false);
+  const { config } = useMessageRenderingConfig();
 
   const getStatusIcon = () => {
-    // Unread result badge takes priority — pulsing dot for visibility
-    if (tab.hasUnreadResult) {
-      return (
-        <span className="relative flex h-2.5 w-2.5">
-          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
-          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500" />
-        </span>
-      );
-    }
+    const ind = config.tabIndicators;
+    const palette = config.palette;
     if (tab.status === 'error') {
-      return <AlertCircle className="w-3 h-3 text-red-500" />;
+      return <TabStatusGlyph style={ind.error} indicators={ind} palette={palette} ariaLabel="Error" />;
+    }
+    // Waiting on the human outranks the spinner: a pending permission keeps
+    // the conversation "running" (open task), so the tab is both working AND
+    // blocked on the user. Surface what the user can act on, not just "busy".
+    if (tab.waitingFor === 'permission') {
+      return <TabStatusGlyph style={ind.permission} indicators={ind} palette={palette} ariaLabel="Permission request" />;
+    }
+    if (tab.waitingFor === 'question') {
+      return <TabStatusGlyph style={ind.question} indicators={ind} palette={palette} ariaLabel="Question waiting" />;
     }
     // Spinner reflects promptStatus (working = agent is doing work: main
     // turn in flight, active task, or running subagent). Falls back to
     // the older `status === 'running'` for tabs that haven't published
-    // promptStatus yet (non-chat tabs or pre-mount).
+    // promptStatus yet (non-chat tabs or pre-mount). Not configurable.
     if (tab.promptStatus === 'working' || (!tab.promptStatus && tab.status === 'running')) {
-      return <Spinner className="size-3" />;
+      return <Spinner className="size-3.5" />;
+    }
+    // Completed: a result landed on a background tab (cleared on read).
+    if (tab.hasUnreadResult) {
+      return <TabStatusGlyph style={ind.complete} indicators={ind} palette={palette} ariaLabel="Completed" />;
     }
     return null;
   };
@@ -99,7 +108,11 @@ const TabItem: React.FC<TabItemProps> = ({ tab, isActive, onClose, onClick, isDr
         "relative flex items-center gap-[7px] text-sm cursor-pointer select-none group",
         "transition-colors duration-100",
         "rounded-md h-[26px] px-[10px]",
-        "min-w-[120px] max-w-[220px]",
+        // Size to content (with a sensible floor) instead of capping width:
+        // the tab grows to fit the full project name. shrink-0 keeps the tab
+        // from being compressed when many are open — the strip is
+        // overflow-x-auto, so long names scroll rather than truncate.
+        "min-w-[120px] w-max shrink-0",
         isActive
           ? "text-foreground bg-background shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_75%,transparent)]"
           : "text-muted-foreground hover:text-foreground hover:bg-white/5",
@@ -116,8 +129,8 @@ const TabItem: React.FC<TabItemProps> = ({ tab, isActive, onClose, onClick, isDr
         <Icon className={cn("w-[15px] h-[15px]", isActive ? "opacity-100" : "opacity-65")} />
       </div>
 
-      {/* Title */}
-      <span className="flex-1 truncate font-medium min-w-0">
+      {/* Title — full name, no truncation (tab sizes to content) */}
+      <span className="flex-1 whitespace-nowrap font-medium">
         {tab.title}
       </span>
 
@@ -131,8 +144,9 @@ const TabItem: React.FC<TabItemProps> = ({ tab, isActive, onClose, onClick, isDr
         />
       )}
 
-      {/* Status indicator (fixed slot) */}
-      <div className="flex items-center justify-center w-[14px] flex-shrink-0">
+      {/* Status indicator slot — min width keeps tab layout stable when empty,
+          but grows for larger glyph sizes or the bordered chip. */}
+      <div className="flex items-center justify-center min-w-4 flex-shrink-0">
         {statusIcon}
         {tab.hasUnsavedChanges && !statusIcon && (
           <span

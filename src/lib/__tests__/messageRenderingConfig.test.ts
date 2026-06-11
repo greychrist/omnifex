@@ -7,6 +7,7 @@ import {
   resolveKind,
   DEFAULT_PALETTE,
   DEFAULT_TYPOGRAPHY,
+  DEFAULT_TAB_INDICATORS,
   DEFAULT_CATEGORIES,
   CATEGORIES,
   KIND_REGISTRY,
@@ -297,6 +298,47 @@ describe("mergeConfig", () => {
   it("returns defaults when typography is entirely absent", () => {
     const cfg = mergeConfig({ version: 5 });
     expect(cfg.typography).toEqual(DEFAULT_TYPOGRAPHY);
+  });
+
+  it("returns default tab indicators when absent", () => {
+    const cfg = mergeConfig({ version: 5 });
+    expect(cfg.tabIndicators).toEqual(DEFAULT_TAB_INDICATORS);
+  });
+
+  it("merges tab-indicator overrides safely (partial keeps defaults)", () => {
+    const cfg = mergeConfig({
+      version: 5,
+      tabIndicators: {
+        question: { icon: "HelpCircle", color: "#ff0000" },
+        size: "lg",
+        bordered: true,
+        bgOpacity: 40,
+      },
+    });
+    expect(cfg.tabIndicators.question).toEqual({ icon: "HelpCircle", color: "#ff0000" });
+    expect(cfg.tabIndicators.size).toBe("lg");
+    expect(cfg.tabIndicators.bordered).toBe(true);
+    expect(cfg.tabIndicators.bgOpacity).toBe(40);
+    // untouched states fall back to defaults
+    expect(cfg.tabIndicators.permission).toEqual(DEFAULT_TAB_INDICATORS.permission);
+  });
+
+  it("rejects invalid tab-indicator values", () => {
+    const cfg = mergeConfig({
+      version: 5,
+      tabIndicators: {
+        error: { icon: "NotARealIcon", color: "banana" },
+        size: "gigantic",
+        bordered: "yes",
+        bgOpacity: 999,
+      },
+    });
+    // bad icon/color fall back to the default style for that state
+    expect(cfg.tabIndicators.error).toEqual(DEFAULT_TAB_INDICATORS.error);
+    expect(cfg.tabIndicators.size).toBe(DEFAULT_TAB_INDICATORS.size);
+    expect(cfg.tabIndicators.bordered).toBe(DEFAULT_TAB_INDICATORS.bordered);
+    // out-of-range opacity clamps into 0–100
+    expect(cfg.tabIndicators.bgOpacity).toBe(100);
   });
 
   it("accepts the xxs (extra extra small) font size", () => {

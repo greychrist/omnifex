@@ -3,6 +3,7 @@ import { TabPersistenceService } from '@/services/tabPersistence';
 import { SessionPersistenceService } from '@/services/sessionPersistence';
 import { sessionNameRegistry } from '@/services/sessionNameRegistry';
 import { api, type AgentKind, type SessionMode } from '@/lib/api';
+import type { TabWaitingFor } from '@/lib/tabWaitingFor';
 import { logAndForget } from "@/lib/fireAndLog";
 
 export interface Tab {
@@ -64,6 +65,13 @@ export interface Tab {
    * the popover badge + upgrade gate. Independent of `status` (lifecycle).
    */
   promptStatus?: 'working' | 'ready';
+  /**
+   * Which "waiting on the human" state this chat tab is in, mirrored from
+   * the session's pending permission (see deriveWaitingFor). Drives the
+   * TabManager per-tab indicator: 'permission' → shield, 'question' →
+   * question mark. null/undefined when nothing is waiting on the user.
+   */
+  waitingFor?: TabWaitingFor;
   hasUnsavedChanges: boolean;
   hasUnreadResult?: boolean;
   order: number;
