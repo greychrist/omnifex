@@ -674,16 +674,20 @@ html.is-macos body {
   line-height: 1.1111111;
 }
 
+/* Heading scale is em-relative to the prose base (the Content/markdown size).
+   These are deliberately tamer than Tailwind Typography's article defaults
+   (which were h1 2.25 / h2 1.5 / h3 1.25) — those read as oversized in a chat
+   surface, where headings sit only a line or two above body text. */
 .prose h1 {
-  font-size: 2.25em;
-}
-
-.prose h2 {
   font-size: 1.5em;
 }
 
+.prose h2 {
+  font-size: 1.3em;
+}
+
 .prose h3 {
-  font-size: 1.25em;
+  font-size: 1.15em;
 }
 
 .prose h4 {
