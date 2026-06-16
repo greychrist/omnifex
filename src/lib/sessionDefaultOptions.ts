@@ -11,7 +11,7 @@ export const MODEL_OPTIONS: Record<AccountEngine, DropdownOption[]> = {
   // catalog (src/lib/modelCatalog.tsx). The claude key exists to satisfy the
   // Record type and mirrors FALLBACK_MODELS there.
   claude: [
-    { id: 'default', label: 'Default (recommended)' },
+    { id: 'default', label: 'Account Default' },
     { id: 'claude-fable-5[1m]', label: 'Fable 5' },
     { id: 'sonnet', label: 'Sonnet' },
     { id: 'haiku', label: 'Haiku' },

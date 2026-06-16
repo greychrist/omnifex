@@ -46,6 +46,35 @@ export function effectiveModels(raw: SessionModelInfo[] | undefined | null): Mod
   return raw && raw.length > 0 ? raw.map(toPickerModel) : FALLBACK_MODELS;
 }
 
+/**
+ * Relabel the catalog's `default` entry so the picker tells the truth about
+ * what "default" actually runs. OmniFex's "default" means "omit `--model` and
+ * let the CLI decide", which makes the CLI read the `model` pin from that
+ * account's settings.json. So the honest label is "Account Default", and the
+ * subtitle is that pinned model's name (resolved through the catalog, then the
+ * static fallback for ids the account can't see — e.g. a stale Fable pin).
+ * With nothing pinned, the CLI uses its recommended default, so we keep the
+ * catalog `default` entry's own description. Returns a new array; non-default
+ * entries are passed through by reference.
+ */
+export function withAccountDefaultLabel(
+  models: Model[],
+  pinnedModel: string | null | undefined,
+  raw?: SessionModelInfo[] | null,
+): Model[] {
+  const hasPin = !!pinnedModel && pinnedModel !== 'default';
+  return models.map((m) => {
+    if (m.id !== 'default') return m;
+    if (!hasPin) return { ...m, name: 'Account Default' };
+    const inCatalog = models.find((x) => x.id === pinnedModel)?.description;
+    const description =
+      inCatalog && inCatalog.length > 0
+        ? inCatalog
+        : modelDisplayName(pinnedModel, raw);
+    return { ...m, name: 'Account Default', description };
+  });
+}
+
 // Known model families, longest-first so e.g. nothing shadows a more
 // specific keyword. Used to bridge the gap between the picker's alias ids
 // (`opus`, `sonnet`) and the concrete ids the CLI stamps on assistant JSONL
@@ -100,6 +129,7 @@ export function useModelCatalog(configDir?: string): {
 } {
   const [raw, setRaw] = useState<SessionModelInfo[]>([]);
   const [loading, setLoading] = useState(false);
+  const [pinnedModel, setPinnedModel] = useState<string | null>(null);
 
   useEffect(() => {
     if (!configDir) {
@@ -124,5 +154,33 @@ export function useModelCatalog(configDir?: string): {
     };
   }, [configDir]);
 
-  return { models: effectiveModels(raw), raw, loading };
+  // The account's true "default" is the `model` pin in its settings.json (the
+  // CLI reads it when OmniFex omits --model). Read it so the picker can name
+  // the real model behind "Account Default" instead of the catalog's generic
+  // "recommended" copy. Failure → null → fall back to the recommended label.
+  useEffect(() => {
+    if (!configDir) {
+      setPinnedModel(null);
+      return;
+    }
+    let cancelled = false;
+    api
+      .getClaudeSettings({ configDir })
+      .then((settings) => {
+        const m = typeof settings?.model === 'string' ? settings.model : null;
+        if (!cancelled) setPinnedModel(m);
+      })
+      .catch(() => {
+        if (!cancelled) setPinnedModel(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [configDir]);
+
+  return {
+    models: withAccountDefaultLabel(effectiveModels(raw), pinnedModel, raw),
+    raw,
+    loading,
+  };
 }

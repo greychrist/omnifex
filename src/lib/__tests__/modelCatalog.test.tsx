@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, waitFor, cleanup } from '@testing-library/react';
 import {
   toPickerModel,
@@ -8,6 +8,7 @@ import {
   modelDisplayName,
   modelFamily,
   pickModelOption,
+  withAccountDefaultLabel,
   useModelCatalog,
 } from '../modelCatalog';
 import type { Model } from '@/components/ModelPicker';
@@ -17,16 +18,28 @@ vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>();
   return {
     ...actual,
-    api: { ...actual.api, listSupportedModels: vi.fn() },
+    api: {
+      ...actual.api,
+      listSupportedModels: vi.fn(),
+      getClaudeSettings: vi.fn(),
+    },
   };
 });
 
 import { api } from '@/lib/api';
 const mockedList = vi.mocked(api.listSupportedModels);
+const mockedSettings = vi.mocked(api.getClaudeSettings);
+
+beforeEach(() => {
+  // Default: account pins no model in settings.json, so "default" keeps the
+  // CLI-recommended description. Individual tests override.
+  mockedSettings.mockResolvedValue({});
+});
 
 afterEach(() => {
   cleanup();
   mockedList.mockReset();
+  mockedSettings.mockReset();
 });
 
 const RAW: SessionModelInfo[] = [
@@ -38,6 +51,15 @@ const RAW: SessionModelInfo[] = [
     supportedEffortLevels: ['low', 'medium', 'high', 'xhigh', 'max'],
   },
   { value: 'haiku', displayName: 'Haiku', description: 'Fastest' },
+];
+
+// A realistic entitled catalog (no Fable) with a "default" entry, mirroring
+// what the CLI initialize handshake returns for a non-Fable account.
+const CATALOG: SessionModelInfo[] = [
+  { value: 'default', displayName: 'Default (recommended)', description: 'Opus 4.8 with 1M context · Best for everyday, complex tasks' },
+  { value: 'opus[1m]', displayName: 'Opus', description: 'Opus 4.8 with 1M context · Best for everyday, complex tasks' },
+  { value: 'sonnet', displayName: 'Sonnet', description: 'Sonnet 4.6 · Efficient for routine tasks' },
+  { value: 'haiku', displayName: 'Haiku', description: 'Haiku 4.5 · Fastest for quick answers' },
 ];
 
 describe('toPickerModel', () => {
@@ -141,8 +163,15 @@ describe('pickModelOption', () => {
 describe('useModelCatalog', () => {
   it('is inert without a configDir (fallback models, no fetch)', () => {
     const { result } = renderHook(() => useModelCatalog(undefined));
-    expect(result.current.models).toBe(FALLBACK_MODELS);
+    // Same fallback set, but the "default" entry is relabeled "Account Default".
+    expect(result.current.models.map((m) => m.id)).toEqual(
+      FALLBACK_MODELS.map((m) => m.id),
+    );
+    expect(result.current.models.find((m) => m.id === 'default')?.name).toBe(
+      'Account Default',
+    );
     expect(mockedList).not.toHaveBeenCalled();
+    expect(mockedSettings).not.toHaveBeenCalled();
   });
 
   it('fetches the catalog for a configDir and maps it', async () => {
@@ -163,6 +192,91 @@ describe('useModelCatalog', () => {
     await waitFor(() => {
       expect(result.current.loading).toBe(false);
     });
-    expect(result.current.models).toBe(FALLBACK_MODELS);
+    // Fallback set is used; only the "default" entry's label changes.
+    expect(result.current.models.map((m) => m.id)).toEqual(
+      FALLBACK_MODELS.map((m) => m.id),
+    );
+    expect(result.current.models.find((m) => m.id === 'default')?.name).toBe(
+      'Account Default',
+    );
+  });
+
+  it('relabels "default" to the account-pinned model from settings.json', async () => {
+    mockedList.mockResolvedValue(CATALOG);
+    mockedSettings.mockResolvedValue({ model: 'opus[1m]' });
+    const { result } = renderHook(() => useModelCatalog('/Users/g/.claude-personal'));
+
+    await waitFor(() => {
+      const def = result.current.models.find((m) => m.id === 'default');
+      expect(def?.name).toBe('Account Default');
+      expect(def?.description).toBe('Opus 4.8 with 1M context');
+    });
+    expect(mockedSettings).toHaveBeenCalledWith({
+      configDir: '/Users/g/.claude-personal',
+    });
+  });
+
+  it('surfaces an unavailable pin (e.g. Fable) honestly via the fallback name', async () => {
+    mockedList.mockResolvedValue(CATALOG);
+    mockedSettings.mockResolvedValue({ model: 'claude-fable-5[1m]' });
+    const { result } = renderHook(() => useModelCatalog('/Users/g/.claude-personal'));
+
+    await waitFor(() => {
+      const def = result.current.models.find((m) => m.id === 'default');
+      expect(def?.name).toBe('Account Default');
+      expect(def?.description).toBe('Fable 5');
+    });
+  });
+
+  it('keeps the CLI-recommended description when nothing is pinned', async () => {
+    mockedList.mockResolvedValue(CATALOG);
+    mockedSettings.mockResolvedValue({});
+    const { result } = renderHook(() => useModelCatalog('/Users/g/.claude-personal'));
+
+    await waitFor(() => {
+      const def = result.current.models.find((m) => m.id === 'default');
+      expect(def?.name).toBe('Account Default');
+      expect(def?.description).toBe('Opus 4.8 with 1M context');
+    });
+  });
+});
+
+describe('withAccountDefaultLabel', () => {
+  const models: Model[] = [
+    { id: 'default', name: 'Default (recommended)', description: 'Opus 4.8 with 1M context', icon: null, shortName: 'D', color: 'text-primary' },
+    { id: 'opus[1m]', name: 'Opus', description: 'Opus 4.8 with 1M context', icon: null, shortName: 'O', color: 'text-primary' },
+    { id: 'sonnet', name: 'Sonnet', description: 'Sonnet 4.6', icon: null, shortName: 'S', color: 'text-primary' },
+  ];
+
+  it('renames the default entry to "Account Default"', () => {
+    const out = withAccountDefaultLabel(models, null);
+    expect(out.find((m) => m.id === 'default')?.name).toBe('Account Default');
+  });
+
+  it('leaves non-default entries untouched', () => {
+    const out = withAccountDefaultLabel(models, 'opus[1m]');
+    expect(out.find((m) => m.id === 'opus[1m]')).toEqual(
+      models.find((m) => m.id === 'opus[1m]'),
+    );
+  });
+
+  it('uses the pinned model catalog description when it is in the list', () => {
+    const out = withAccountDefaultLabel(models, 'sonnet');
+    expect(out.find((m) => m.id === 'default')?.description).toBe('Sonnet 4.6');
+  });
+
+  it('falls back to a friendly display name for a pin not in the catalog', () => {
+    const out = withAccountDefaultLabel(models, 'claude-fable-5[1m]');
+    expect(out.find((m) => m.id === 'default')?.description).toBe('Fable 5');
+  });
+
+  it('keeps the recommended description when no model is pinned', () => {
+    const out = withAccountDefaultLabel(models, null);
+    expect(out.find((m) => m.id === 'default')?.description).toBe('Opus 4.8 with 1M context');
+  });
+
+  it('treats a literal "default" pin as no pin', () => {
+    const out = withAccountDefaultLabel(models, 'default');
+    expect(out.find((m) => m.id === 'default')?.description).toBe('Opus 4.8 with 1M context');
   });
 });

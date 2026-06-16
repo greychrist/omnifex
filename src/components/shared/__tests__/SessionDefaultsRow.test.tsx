@@ -79,7 +79,8 @@ describe('SessionDefaultsRow', () => {
     render(<Harness engine="claude" />);
     fireEvent.click(screen.getByText('Sonnet'));
     expect(screen.getAllByText('Fable 5').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Default (recommended)').length).toBeGreaterThan(0);
+    // The "default" entry is relabeled "Account Default" by useModelCatalog.
+    expect(screen.getAllByText('Account Default').length).toBeGreaterThan(0);
   });
 
   it("engine='claude' permission picker lists all six CLI modes when opened", () => {

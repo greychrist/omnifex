@@ -30,7 +30,11 @@ vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>();
   return {
     ...actual,
-    api: { ...actual.api, listSupportedModels: vi.fn(async () => []) },
+    api: {
+      ...actual.api,
+      listSupportedModels: vi.fn(async () => []),
+      getClaudeSettings: vi.fn(async () => ({})),
+    },
   };
 });
 
@@ -121,7 +125,9 @@ describe('NewSessionForm — model picker', () => {
     // Trigger shows the current selection ('sonnet' → 'Sonnet').
     fireEvent.click(await screen.findByTitle('Sonnet'));
     expect(screen.getAllByText('Fable 5').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Default (recommended)').length).toBeGreaterThan(0);
+    // The catalog "default" entry renders as "Account Default" (the picker
+    // names the account's real default rather than the generic CLI label).
+    expect(screen.getAllByText('Account Default').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Haiku').length).toBeGreaterThan(0);
   });
 
