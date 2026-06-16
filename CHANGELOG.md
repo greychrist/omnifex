@@ -5,6 +5,22 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.83] — 2026-06-16
+
+### Changed
+
+- **Model picker names the real account default.** The "Default
+  (recommended)" entry is now labeled **"Account Default"**, and its subtitle
+  shows the model that will actually run — resolved from the account's
+  `settings.json` `model` pin (or a friendly fallback name for a pin the
+  account can't access, e.g. a stale Fable selection). Because "default"
+  launches without `--model` and lets the CLI choose, the picker previously
+  implied a recommended model while a different pinned model ran; it now tells
+  the truth across every Claude model dropdown.
+
+Installers remain **unsigned** — macOS Gatekeeper blocks first launch;
+right-click → Open to run.
+
 ## [0.4.82] — 2026-06-11
 
 ### Added
