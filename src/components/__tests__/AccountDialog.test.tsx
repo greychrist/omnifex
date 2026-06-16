@@ -12,6 +12,7 @@ const { apiMock, useCodexAuthStatusMock } = vi.hoisted(() => ({
     getCodexBinaryPath: vi.fn(),
     subscribeCodexAuthStatus: vi.fn(),
     listSupportedModels: vi.fn(),
+    getClaudeSettings: vi.fn(),
   },
   useCodexAuthStatusMock: vi.fn(),
 }));
@@ -40,6 +41,7 @@ beforeEach(() => {
   apiMock.getHomeDirectory.mockReset().mockResolvedValue('/home/test');
   apiMock.codexLogout.mockReset().mockResolvedValue(undefined);
   apiMock.listSupportedModels.mockReset().mockResolvedValue([]);
+  apiMock.getClaudeSettings.mockReset().mockResolvedValue({});
   useCodexAuthStatusMock.mockReset().mockReturnValue(null);
 });
 
