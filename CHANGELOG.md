@@ -5,6 +5,28 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.84] — 2026-06-18
+
+### Fixed
+
+- **Terminal mode no longer dies with `posix_spawnp failed`.** node-pty 1.1.0
+  leaked one pseudo-terminal per spawn (an off-by-one in its `low_fds`
+  cleanup never closed the first fd), so every terminal-mode launch slowly
+  consumed the macOS system-wide pty cap (`kern.tty.ptmx_max`, 511). Once
+  exhausted, every switch-to-terminal threw the opaque `posix_spawnp failed`
+  until the app was restarted. Upgraded to `node-pty@1.2.0-beta.13`, which
+  fixes the cleanup and ships ABI-stable N-API prebuilts; verified zero leak
+  across repeated spawns under both Node and the packaged Electron runtime.
+
+### Changed
+
+- **Slash-command picker opens on "All".** The scope tabs are reordered to
+  **All · Project · User · Claude**, so the picker now shows every command by
+  default instead of starting filtered to Project.
+
+Installers remain **unsigned** — macOS Gatekeeper blocks first launch;
+right-click → Open to run.
+
 ## [0.4.83] — 2026-06-16
 
 ### Changed
