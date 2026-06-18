@@ -99,21 +99,21 @@ describe('SlashCommandPicker filter tabs', () => {
     notNull(screen.queryByRole('button', { name: 'Claude' }));
   });
 
-  it('renders tabs in order Project · User · Claude · All', async () => {
+  it('renders tabs in order All · Project · User · Claude', async () => {
     renderPicker();
     await waitFor(() => { expect(slashCommandsListMock).toHaveBeenCalled(); });
     const tabBar = getFilterButton('Project').parentElement!;
     const labels = Array.from(tabBar.querySelectorAll('button')).map(b => b.textContent);
-    expect(labels).toEqual(['Project', 'User', 'Claude', 'All']);
+    expect(labels).toEqual(['All', 'Project', 'User', 'Claude']);
   });
 
-  it('selects the Project tab on open', async () => {
+  it('selects the All tab on open', async () => {
     renderPicker();
     await waitFor(() => { isNull(screen.queryByText(/Loading commands/)); });
-    // Only the project-scoped command should be visible; user + CLI are filtered out.
+    // "All" is the default selection — every scope should be visible.
     notNull(screen.queryByText('/projonly'));
-    isNull(screen.queryByText('/useronly'));
-    isNull(screen.queryByText('/help'));
+    notNull(screen.queryByText('/useronly'));
+    notNull(screen.queryByText('/help'));
   });
 
   it('User tab shows only user-scoped commands', async () => {
@@ -135,34 +135,37 @@ describe('SlashCommandPicker filter tabs', () => {
     isNull(screen.queryByText('/useronly'));
   });
 
-  it('ArrowRight cycles to the next tab (Project → User)', async () => {
+  it('ArrowRight cycles to the next tab (All → Project)', async () => {
     renderPicker();
     await waitFor(() => { isNull(screen.queryByText(/Loading commands/)); });
-    fireEvent.keyDown(window, { key: 'ArrowRight' });
-    notNull(screen.queryByText('/useronly'));
-    isNull(screen.queryByText('/projonly'));
-  });
-
-  it('ArrowLeft wraps from Project to All', async () => {
-    renderPicker();
-    await waitFor(() => { isNull(screen.queryByText(/Loading commands/)); });
-    fireEvent.keyDown(window, { key: 'ArrowLeft' });
-    // "All" shows everything
-    notNull(screen.queryByText('/projonly'));
-    notNull(screen.queryByText('/useronly'));
-    notNull(screen.queryByText('/help'));
-  });
-
-  it('ArrowRight from the last tab (All) wraps back to Project', async () => {
-    renderPicker();
-    await waitFor(() => { isNull(screen.queryByText(/Loading commands/)); });
-    // Project → User → Claude → All → Project
-    fireEvent.keyDown(window, { key: 'ArrowRight' });
-    fireEvent.keyDown(window, { key: 'ArrowRight' });
-    fireEvent.keyDown(window, { key: 'ArrowRight' });
     fireEvent.keyDown(window, { key: 'ArrowRight' });
     notNull(screen.queryByText('/projonly'));
     isNull(screen.queryByText('/useronly'));
+    isNull(screen.queryByText('/help'));
+  });
+
+  it('ArrowLeft wraps from All to Claude', async () => {
+    renderPicker();
+    await waitFor(() => { isNull(screen.queryByText(/Loading commands/)); });
+    fireEvent.keyDown(window, { key: 'ArrowLeft' });
+    // "Claude" (last tab) shows only the CLI default-scope commands.
+    notNull(screen.queryByText('/help'));
+    notNull(screen.queryByText('/clear'));
+    isNull(screen.queryByText('/projonly'));
+    isNull(screen.queryByText('/useronly'));
+  });
+
+  it('ArrowRight from the last tab (Claude) wraps back to All', async () => {
+    renderPicker();
+    await waitFor(() => { isNull(screen.queryByText(/Loading commands/)); });
+    // All → Project → User → Claude → All
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    notNull(screen.queryByText('/projonly'));
+    notNull(screen.queryByText('/useronly'));
+    notNull(screen.queryByText('/help'));
   });
 
   it('only fires onSelect once when Enter is pressed twice in a row', async () => {
@@ -184,6 +187,9 @@ describe('SlashCommandPicker filter tabs', () => {
     slashCommandsListMock.mockResolvedValue([projectCmd, projectCmd2]);
     renderPicker();
     await waitFor(() => { notNull(screen.queryByText('/projonly')); });
+    // Narrow to the Project tab so only the two project commands are listed
+    // (the default "All" tab would interleave the CLI commands).
+    fireEvent.click(getFilterButton('Project'));
     // Selected row gets the .bg-accent class; the first row should be selected on load.
     const rowOne = screen.getByText('/projonly').closest('tr')!;
     const rowTwo = screen.getByText('/projonly2').closest('tr')!;

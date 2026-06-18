@@ -40,12 +40,13 @@ const SCOPE_COLOR: Record<string, string> = {
 type ScopeFilter = "project" | "user" | "default" | "all";
 
 // Order matters: tab order is also the left/right-arrow cycle order, and the
-// first entry is the initial selection on open.
+// first entry is the initial selection on open. "All" leads so the picker
+// opens showing every scope by default.
 const SCOPE_FILTERS: { value: ScopeFilter; label: string }[] = [
+  { value: "all", label: "All" },
   { value: "project", label: "Project" },
   { value: "user", label: "User" },
   { value: "default", label: "Claude" },
-  { value: "all", label: "All" },
 ];
 
 const DESCRIPTION_PREVIEW_LENGTH = 60;
