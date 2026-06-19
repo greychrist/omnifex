@@ -138,6 +138,7 @@ Notes:
 - Subscribing to `session-status:<tabId>` expecting a `conversationStatus` field. That field is not in the payload.
 - Computing in-flight via `listInFlightTabIds`. It returns `[]` — the main process no longer tracks conversation state. Use the renderer-side selector instead.
 - Renderer components subscribing to `session-status:<tabId>` directly. The hook owns that subscription; consumers read the derived state.
+- Dropping a turn-closing `cli-stream-result` row from `messages[]` (e.g. to hide a card). The trailing partial assistant carries `stop_reason: null`, so the result row is the only thing that lets `waitingOnClaude()` settle — drop it and the per-tab "Turn in flight" rollup sticks on WORKING forever, even though `isLoading` cleared. If a result must not render as-is, keep it in `messages[]` and rewrite its presentation (the user-cancel path neutralizes `is_error` via the reducer's `replaceWith`), never `append: 'skip'` it.
 
 ## Where the canonical types live
 

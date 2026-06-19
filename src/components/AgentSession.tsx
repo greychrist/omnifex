@@ -1045,11 +1045,14 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
         }
 
         if (reduced.append === 'skip') return;
+        // The reducer may hand back a rewritten node (e.g. a user-cancel
+        // result kept as a benign turn-closer) — append that, not the raw one.
+        const nodeToAppend = reduced.replaceWith ?? message;
         if (reduced.append === 'insertBeforeFirstUser') {
-          ctx.insertMessageBeforeFirstUser(message);
+          ctx.insertMessageBeforeFirstUser(nodeToAppend);
           return;
         }
-        ctx.appendMessage(message);
+        ctx.appendMessage(nodeToAppend);
       }
     } catch (err) {
       // Write directly to app_logs (not via console.error → LogService).

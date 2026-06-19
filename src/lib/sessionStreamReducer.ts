@@ -95,6 +95,13 @@ export type AppendMode = 'append' | 'insertBeforeFirstUser' | 'skip';
 
 export interface StreamReducerResult {
   append: AppendMode;
+  /**
+   * When set, the caller appends THIS node instead of the original message.
+   * Used to keep a turn-closer in messages[] while rewriting its presentation
+   * (e.g. a user-cancel result kept so waitingOnClaude() can settle, but with
+   * is_error stripped so it renders as a benign completion, not a failure).
+   */
+  replaceWith?: JsonlNode;
   effects: StreamReducerEffect[];
   /** New live session id from a system:init message, if any. */
   sessionIdUpdate?: string;
@@ -396,10 +403,20 @@ export function reduceSessionStreamMessage(
     if (ctx.userInterrupted) {
       result.clearUserInterrupted = true;
       if (raw.is_error === true) {
-        // Deliberate cancel — swallow the post-interrupt error result so
-        // "Execution Failed" doesn't flash. Drop it from messages too.
+        // Deliberate user cancel. Keep the result row in messages[] — it is
+        // the only turn-closer there (the trailing partial assistant carries
+        // stop_reason:null), and without it waitingOnClaude() stays true
+        // forever, leaving the tab stuck on "Turn in flight"/WORKING after
+        // Stop. Neutralize is_error so it renders as a benign completion badge
+        // (like any normal turn) instead of a red "failed" card — a cancel is
+        // not a failure. Don't drain the prompt queue: the user stopped on
+        // purpose, so queued prompts must not auto-fire.
         result.clearLoading = true;
-        result.append = 'skip';
+        result.replaceWith = {
+          ...node,
+          raw: { ...(node.raw as Record<string, unknown>), is_error: false },
+        } as JsonlNode;
+        result.append = 'append';
         return result;
       }
     }

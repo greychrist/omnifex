@@ -178,15 +178,25 @@ describe('reduceSessionStreamMessage', () => {
     );
   });
 
-  it('interrupted error result is suppressed when userInterrupted is true', () => {
+  it('interrupted error result is kept as a neutralized turn-closer (not skipped)', () => {
+    // Dropping the post-interrupt result row used to leave the trailing
+    // partial assistant (stop_reason:null) as the last turn-significant node,
+    // so waitingOnClaude() stayed true forever and the tab was stuck on
+    // "Turn in flight"/WORKING after Stop. Keep the result row so the turn
+    // axis can close; neutralize is_error so a deliberate cancel renders as a
+    // benign completion, not a red "failed" card.
     const r = reduceSessionStreamMessage(resultErr(), {
       ...baseCtx,
       userInterrupted: true,
     });
-    expect(r.append).toBe('skip');
+    expect(r.append).toBe('append');
+    expect(r.replaceWith).toBeDefined();
+    expect(r.replaceWith!.kind).toBe('cli-stream-result');
+    expect((r.replaceWith as { raw?: { is_error?: boolean } }).raw?.is_error).not.toBe(true);
     expect(r.clearLoading).toBe(true);
     expect(r.clearUserInterrupted).toBe(true);
-    expect(r.effects).toEqual([]);
+    // A deliberate cancel must not auto-drain queued prompts.
+    expect(r.effects.map((e) => e.kind)).not.toContain('processQueuedPrompt');
   });
 
   it('compact_boundary requests context usage refresh and still appends', () => {
