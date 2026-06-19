@@ -5,6 +5,28 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.85] — 2026-06-19
+
+### Fixed
+
+- **Stuck "Turn in flight" after Stop.** Hitting Stop left a tab showing
+  WORKING / "Turn in flight" even though the session was idle. The CLI's
+  post-interrupt result row (the only signal that closes the turn) was being
+  dropped from the message list to avoid an error card; it's now kept as a
+  benign completion, so the per-tab spinner clears correctly.
+
+### Added
+
+- **Chat picker shows newly-added CLI commands.** The slash-command picker
+  previously listed only the commands captured when the session started, so a
+  long-running session missed built-ins added by a later CLI update (e.g.
+  `/design-sync`) that terminal mode already showed. The picker now reads a
+  fresh, version-keyed command catalog (persisted per account, refreshed when
+  the CLI version changes), so new commands appear without restarting.
+
+Installers remain **unsigned** — macOS Gatekeeper blocks first launch;
+right-click → Open to run.
+
 ## [0.4.84] — 2026-06-18
 
 ### Fixed
