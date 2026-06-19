@@ -26,11 +26,13 @@ vi.mock('framer-motion', () => ({
 
 const slashCommandsListMock = vi.fn();
 const sessionSupportedCommandsMock = vi.fn();
+const listSupportedCommandsMock = vi.fn();
 
 vi.mock('@/lib/api', () => ({
   api: {
     slashCommandsList: (...args: any[]) => slashCommandsListMock(...args),
     sessionSupportedCommands: (...args: any[]) => sessionSupportedCommandsMock(...args),
+    listSupportedCommands: (...args: any[]) => listSupportedCommandsMock(...args),
   },
 }));
 
@@ -69,8 +71,10 @@ const baseProps = {
 beforeEach(() => {
   slashCommandsListMock.mockReset();
   sessionSupportedCommandsMock.mockReset();
+  listSupportedCommandsMock.mockReset();
   slashCommandsListMock.mockResolvedValue([projectCmd, userCmd]);
   sessionSupportedCommandsMock.mockResolvedValue(sdkCommands);
+  listSupportedCommandsMock.mockResolvedValue([]);
   // jsdom doesn't implement scrollIntoView; the picker's selection effect uses it.
   if (!('scrollIntoView' in Element.prototype)) {
     (Element.prototype as any).scrollIntoView = () => {};
@@ -82,7 +86,7 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-const renderPicker = (props: Partial<typeof baseProps> = {}) =>
+const renderPicker = (props: Partial<typeof baseProps> & { configDir?: string } = {}) =>
   render(<SlashCommandPicker {...baseProps} {...props} />);
 
 const getFilterButton = (label: string) =>
@@ -123,6 +127,27 @@ describe('SlashCommandPicker filter tabs', () => {
     notNull(screen.queryByText('/useronly'));
     isNull(screen.queryByText('/projonly'));
     isNull(screen.queryByText('/help'));
+  });
+
+  it('surfaces a fresh CLI command from the config-dir catalog that the session snapshot lacks', async () => {
+    // The stale session snapshot is missing /design-sync; the fresh catalog
+    // (keyed by configDir) has it. The picker must union both so it appears.
+    listSupportedCommandsMock.mockResolvedValue([
+      { name: 'design-sync', description: 'Sync design tokens' },
+    ]);
+    renderPicker({ configDir: '/Users/me/.claude-personal' });
+    await waitFor(() => { isNull(screen.queryByText(/Loading commands/)); });
+    // Default tab is "All" — the freshly-catalogued command shows up.
+    notNull(screen.queryByText('/design-sync'));
+    // And it doesn't crash the existing session/custom commands.
+    notNull(screen.queryByText('/help'));
+    notNull(screen.queryByText('/projonly'));
+  });
+
+  it('does not fetch the config-dir catalog when no configDir is provided', async () => {
+    renderPicker(); // baseProps has no configDir
+    await waitFor(() => { expect(sessionSupportedCommandsMock).toHaveBeenCalled(); });
+    expect(listSupportedCommandsMock).not.toHaveBeenCalled();
   });
 
   it('Claude tab shows only CLI (default-scope) commands', async () => {

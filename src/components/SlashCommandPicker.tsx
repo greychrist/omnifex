@@ -143,20 +143,39 @@ export const SlashCommandPicker: React.FC<SlashCommandPickerProps> = ({
 
       const customCommands = await api.slashCommandsList(projectPath, configDir);
 
-      let defaultCommands: SlashCommand[] = [];
+      // Union two CLI-command sources, freshest first, deduped by name:
+      //   1. The config-dir command catalog — a fresh, version-keyed list that
+      //      includes built-ins added by a later CLI update (e.g. /design-sync).
+      //      A long-running session's init snapshot misses those.
+      //   2. The live session's init-time list — a fallback that also covers
+      //      anything session-specific the catalog (run from a scratch cwd)
+      //      might not surface.
+      const defaultByName = new Map<string, SlashCommand>();
+      const addDefaults = (cmds: import("@/lib/api").SessionSlashCommand[]) => {
+        for (const cmd of toSlashCommands(cmds)) {
+          if (!defaultByName.has(cmd.full_command)) defaultByName.set(cmd.full_command, cmd);
+        }
+      };
+      if (configDir) {
+        try {
+          const catalog = await api.listSupportedCommands(configDir);
+          if (catalog?.length) addDefaults(catalog);
+        } catch {
+          // Catalog fetch failed (binary missing, etc.) — fall through.
+        }
+      }
       if (tabId) {
         try {
           const sdkCommands = await api.sessionSupportedCommands(tabId);
-          if (sdkCommands?.length) {
-            defaultCommands = toSlashCommands(sdkCommands);
-          }
+          if (sdkCommands?.length) addDefaults(sdkCommands);
         } catch {
           // Session may not be ready yet
         }
       }
-      if (!defaultCommands.length && prefetchedCommands?.length) {
-        defaultCommands = toSlashCommands(prefetchedCommands);
+      if (!defaultByName.size && prefetchedCommands?.length) {
+        addDefaults(prefetchedCommands);
       }
+      const defaultCommands: SlashCommand[] = [...defaultByName.values()];
 
       const merged = deduplicateCommands(defaultCommands, customCommands);
       // Final safety: deduplicate by full_command in case any slip through

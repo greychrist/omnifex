@@ -412,6 +412,25 @@ const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 14,
+    description:
+      'command_catalog: per-config-dir cache of the CLI-reported slash-command ' +
+      'list (incl. built-ins and plugins), keyed for invalidation by the CLI ' +
+      'version that produced it. Mirrors model_catalog — a long-running ' +
+      "session's frozen init snapshot misses commands added by a later CLI " +
+      'update, so the picker reads this fresh, version-keyed cache instead.',
+    up(db) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS command_catalog (
+          config_dir   TEXT PRIMARY KEY,
+          cli_version  TEXT NOT NULL,
+          catalog_json TEXT NOT NULL,
+          fetched_at   TEXT NOT NULL
+        );
+      `);
+    },
+  },
 ];
 
 /**

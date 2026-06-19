@@ -159,6 +159,9 @@ export interface Services {
   models?: {
     listSupported(configDir: string): unknown;
   };
+  commands?: {
+    listSupported(configDir: string): unknown;
+  };
   gitWatcher?: {
     listWorktrees(projectPath: string): Promise<{ path: string; branch: string | null }[]>;
     startSession(projectPath: string): Promise<{
@@ -296,7 +299,7 @@ function wrapWith<P>(fn: (params: P) => unknown): HandlerFn {
  * renderer gets a defined (but empty) response rather than a blocked channel.
  */
 export function getHandlerMap(services: Services = {}): Record<string, HandlerFn> {
-  const { accounts, claude, sessions, usage, rateLimits, usageRunner, claudeBinary, mcp, slashCommands, sessionsSummary, logging, database, proxy, permissionsIO, models, gitWatcher, branchColors, gitBranches, lima, filesystem, notificationSounds, oneShotTerminal, codexAuth, codexSessionWalker, allowRawSql } = services;
+  const { accounts, claude, sessions, usage, rateLimits, usageRunner, claudeBinary, mcp, slashCommands, sessionsSummary, logging, database, proxy, permissionsIO, models, commands, gitWatcher, branchColors, gitBranches, lima, filesystem, notificationSounds, oneShotTerminal, codexAuth, codexSessionWalker, allowRawSql } = services;
 
   // Positive account-ownership guard for config-editing channels. A non-empty
   // configDir supplied by the renderer must belong to a known account, so a
@@ -449,6 +452,7 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
 
     // ── Standalone model list (no active session required) ─────────────────
     list_supported_models: wrapWith((p: Record<string, unknown>) => models?.listSupported((p?.configDir ?? p?.config_dir) as string) ?? []),
+    list_supported_commands: wrapWith((p: Record<string, unknown>) => commands?.listSupported((p?.configDir ?? p?.config_dir) as string) ?? []),
 
     // ── Session Permissions ────────────────────────────────────────────────
     session_get_permissions: wrapWith((p: Record<string, unknown>) => {

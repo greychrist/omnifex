@@ -69,6 +69,7 @@ export const INVOKE_CHANNELS: readonly string[] = [
   'session_supported_commands',
   'session_supported_models',
   'list_supported_models',
+  'list_supported_commands',
   'session_mcp_server_status',
   'session_plugins',
   'session_get_permissions',

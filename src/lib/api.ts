@@ -1168,6 +1168,17 @@ export const api = {
     return apiCall("list_supported_models", { configDir });
   },
 
+  /**
+   * Get the CLI's slash-command catalog for a given account without relying on
+   * a live session's frozen init snapshot. Served from the SQLite-persisted
+   * catalog (refreshed when the CLI version changes) with a live ephemeral
+   * fetch fallback — this is what surfaces newly-added built-ins like
+   * /design-sync in the chat picker.
+   */
+  async listSupportedCommands(configDir: string): Promise<SessionSlashCommand[]> {
+    return apiCall("list_supported_commands", { configDir });
+  },
+
   async sessionMcpServerStatus(tabId: string): Promise<SessionMcpServerStatus[]> {
     return apiCall("session_mcp_server_status", { tabId });
   },

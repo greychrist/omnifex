@@ -59,6 +59,7 @@ import { createLoggingService } from './services/logging';
 import { createProxyService } from './services/proxy';
 import { createMCPService } from './services/mcp';
 import { createModelsService, type ModelInfo } from './services/models';
+import { createCommandsCatalogService } from './services/commands-catalog';
 import { createSlashCommandsService } from './services/slash-commands';
 import { createFilesystemService } from './services/filesystem';
 import { createOneShotTerminalService } from './services/one-shot-terminal';
@@ -490,6 +491,7 @@ app.whenReady().then(() => {
   // init-time model catalog through to the persisted cache (Task: dynamic
   // model catalog — see docs/superpowers/specs/2026-06-09-dynamic-model-catalog-design.md).
   const modelsService = createModelsService(db);
+  const commandsCatalogService = createCommandsCatalogService(db);
 
   const sessionsService = _sessionsService = createSessionsService(
     sendToRenderer,
@@ -939,6 +941,14 @@ app.whenReady().then(() => {
     // ephemeral-engine fetch when the cache is cold or the CLI version moved.
     models: {
       listSupported: (configDir: string) => modelsService.getCatalog(configDir),
+    },
+    // Commands adapter — standalone slash-command catalog lookup (no active
+    // session). Like models, served from the SQLite-persisted catalog with a
+    // live ephemeral-engine fallback; refreshes when the CLI version moves so
+    // built-ins added by a CLI update (e.g. /design-sync) surface in the chat
+    // picker without restarting a long-running session.
+    commands: {
+      listSupported: (configDir: string) => commandsCatalogService.getCatalog(configDir),
     },
     gitWatcher: {
       listWorktrees: (projectPath: string) => listWorktrees(projectPath),
