@@ -132,6 +132,7 @@ interface AgentSessionProps {
       account: {
         name: string;
         subscription_label: string;
+        has_cost: boolean;
         config_dir: string;
         session_defaults?: import('@/lib/api').SessionDefaults;
       };
@@ -278,7 +279,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
 
   const [showSlashCommandsSettings, setShowSlashCommandsSettings] = useState(false);
   const [accountResolution, setAccountResolution] = useState<{
-    account: { name: string; subscription_label: string; config_dir: string; session_defaults?: import('@/lib/api').SessionDefaults };
+    account: { name: string; subscription_label: string; has_cost: boolean; config_dir: string; session_defaults?: import('@/lib/api').SessionDefaults };
     match_type: string;
     match_detail: string;
   } | null>(initialSessionConfig?.accountResolution ?? null);
@@ -1789,7 +1790,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
           {accountResolution && (
             <AccountCard
               accountName={accountResolution.account.name}
-              accountType={accountResolution.account.subscription_label}
+              hasCost={accountResolution.account.has_cost}
               agent={agent}
               configDir={accountResolution.account.config_dir}
               matchType={accountResolution.match_type}
@@ -2020,6 +2021,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
                 account: {
                   name: account.name,
                   subscription_label: account.subscription_label,
+                  has_cost: account.has_cost,
                   config_dir: account.config_dir,
                   session_defaults: account.session_defaults,
                 },

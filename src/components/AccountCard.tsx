@@ -11,15 +11,17 @@ import { Button } from "@/components/ui/button";
 import { AccountBadge } from "./AccountBadge";
 import { HeaderLabel } from "./HeaderLabel";
 import { RateLimitWidget } from "./claude-code-session/RateLimitWidget";
+import { CostWidget } from "./claude-code-session/CostWidget";
 import { UsageDetailPopover } from "./claude-code-session/UsageDetailPopover";
 import { useUsageAutoRefresh } from "@/hooks/useUsageAutoRefresh";
 
 interface AccountCardProps {
   accountName: string;
-  /** Account type: "max", "enterprise", "pro", "free". Enterprise accounts
-   *  hide the rate-limit widgets + refresh button since those numbers have
-   *  no meaning under an enterprise plan. */
-  accountType?: string;
+  /** Whether usage on this account costs money (true for e.g. Enterprise/API,
+   *  false for Max). Drives the usage widget: cost-based accounts show a dollar
+   *  figure (they have no rate-limit windows); rate-limited accounts show the
+   *  5h/7d utilization chart. */
+  hasCost?: boolean;
   /** Engine driving this session. When set, the account badge appends the
    *  brand mark after the account type (e.g. "Personal : max [Claude]"). */
   agent?: AgentKind | null;
@@ -41,7 +43,7 @@ interface AccountCardProps {
  */
 export function AccountCard({
   accountName,
-  accountType,
+  hasCost,
   agent,
   configDir,
   matchType,
@@ -55,13 +57,19 @@ export function AccountCard({
   const [accountPopoverOpen, setAccountPopoverOpen] = React.useState(false);
   const [usagePopoverOpen, setUsagePopoverOpen] = React.useState(false);
 
-  const showUsage = accountType !== "enterprise";
+  // Cost-based accounts (Enterprise/API) are billed per token and expose no
+  // rate-limit windows, so we show a dollar figure instead of the 5h/7d chart.
+  // Both variants still fetch /usage and open the same detail popover.
+  const costBased = hasCost === true;
 
   const {
     data: usageData,
     loading: usageLoading,
     refresh: refreshUsage,
-  } = useUsageAutoRefresh(accountName, showUsage && sessionStatus === 'active');
+  } = useUsageAutoRefresh(accountName, sessionStatus === 'active');
+
+  const sessionCostUsd =
+    usageData?.ok ? usageData.parsed.session.cost_usd : null;
 
   const handleRefreshClick = React.useCallback(async () => {
     if (usageLoading) return;
@@ -168,34 +176,51 @@ export function AccountCard({
           }
         />
       </div>
-      {showUsage && (
-        <>
-          <UsageDetailPopover
-            open={usagePopoverOpen}
-            onOpenChange={setUsagePopoverOpen}
-            data={usageData}
-            loading={usageLoading}
-            onRefresh={() => void refreshUsage()}
-            align="start"
-            trigger={
-              <div className="flex flex-col items-start gap-1">
-                <RateLimitWidget
-                  snapshot={fiveHourRateLimit ?? null}
-                  windowType="five_hour"
-                  accountName={accountName}
-                  onClick={() => { setUsagePopoverOpen((v) => !v); }}
-                  hideLabel
-                />
-                <RateLimitWidget
-                  snapshot={sevenDayRateLimit ?? null}
-                  windowType="seven_day"
-                  accountName={accountName}
-                  onClick={() => { setUsagePopoverOpen((v) => !v); }}
-                  hideLabel
-                />
-              </div>
-            }
-          />
+      <UsageDetailPopover
+        open={usagePopoverOpen}
+        onOpenChange={setUsagePopoverOpen}
+        data={usageData}
+        loading={usageLoading}
+        onRefresh={() => void refreshUsage()}
+        align="start"
+        trigger={
+          costBased ? (
+            // Invisible label spacer so the single cost pill drops down to the
+            // account-badge row instead of sitting up at the "account" label
+            // (the parent row is items-start). Mirrors the account column's
+            // label + badge stack without hardcoding the label height.
+            <div className="flex flex-col items-start gap-0.5">
+              <HeaderLabel aria-hidden className="invisible">account</HeaderLabel>
+              <CostWidget
+                costUsd={sessionCostUsd}
+                loading={usageLoading}
+                accountName={accountName}
+                onClick={() => { setUsagePopoverOpen((v) => !v); }}
+                hideLabel
+              />
+            </div>
+          ) : (
+            <div className="flex flex-col items-start gap-1">
+              <RateLimitWidget
+                snapshot={fiveHourRateLimit ?? null}
+                windowType="five_hour"
+                accountName={accountName}
+                onClick={() => { setUsagePopoverOpen((v) => !v); }}
+                hideLabel
+              />
+              <RateLimitWidget
+                snapshot={sevenDayRateLimit ?? null}
+                windowType="seven_day"
+                accountName={accountName}
+                onClick={() => { setUsagePopoverOpen((v) => !v); }}
+                hideLabel
+              />
+            </div>
+          )
+        }
+      />
+      {(() => {
+        const refreshButton = (
           <Button
             size="sm"
             variant="outline"
@@ -210,8 +235,19 @@ export function AccountCard({
           >
             <RefreshCw className={cn('h-3.5 w-3.5', usageLoading && 'animate-spin')} />
           </Button>
-        </>
-      )}
+        );
+        // Cost view is a single pill on the badge row, so drop the refresh
+        // button to that row too (same invisible-label spacer as the pill).
+        // The chart view stacks two pills, so the button stays at the top.
+        return costBased ? (
+          <div className="flex flex-col items-start gap-0.5">
+            <HeaderLabel aria-hidden className="invisible">account</HeaderLabel>
+            {refreshButton}
+          </div>
+        ) : (
+          refreshButton
+        );
+      })()}
     </div>
   );
 }

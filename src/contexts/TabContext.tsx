@@ -45,6 +45,7 @@ export interface Tab {
       account: {
         name: string;
         subscription_label: string;
+        has_cost: boolean;
         config_dir: string;
         session_defaults?: import('@/lib/api').SessionDefaults;
       };

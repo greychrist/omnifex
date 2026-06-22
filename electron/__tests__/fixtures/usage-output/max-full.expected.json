@@ -11,9 +11,21 @@
     "cache_write": 0
   },
   "windows": [
-    { "label": "current_session", "pct_used": 33, "resets_at_label": "9:40am (America/New_York)" },
-    { "label": "week_all_models", "pct_used": 68, "resets_at_label": "7pm (America/New_York)" },
-    { "label": "week_sonnet", "pct_used": 6, "resets_at_label": "7pm (America/New_York)" }
+    {
+      "label": "current_session",
+      "pct_used": 33,
+      "resets_at_label": "9:40am (America/New_York)"
+    },
+    {
+      "label": "week_all_models",
+      "pct_used": 68,
+      "resets_at_label": "7pm (America/New_York)"
+    },
+    {
+      "label": "week_sonnet",
+      "pct_used": 6,
+      "resets_at_label": "7pm (America/New_York)"
+    }
   ],
   "contributing": [
     {
@@ -25,7 +37,20 @@
       "detail": "Each subagent runs its own requests. Be deliberate about spawning them — and prefer plan mode for short-lived work."
     }
   ],
-  "skills": { "rows": [], "more_count": null },
-  "subagents": { "rows": [], "more_count": null },
-  "plugins": { "rows": [], "more_count": null }
+  "skills": {
+    "rows": [],
+    "more_count": null
+  },
+  "subagents": {
+    "rows": [],
+    "more_count": null
+  },
+  "plugins": {
+    "rows": [],
+    "more_count": null
+  },
+  "mcp_servers": {
+    "rows": [],
+    "more_count": null
+  }
 }

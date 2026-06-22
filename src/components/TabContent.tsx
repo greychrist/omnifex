@@ -34,7 +34,7 @@ const LimaViewer = lazy(() => import('@/components/LimaViewer').then(m => ({ def
 /** Single-engine resolution shape baked into a started session's
  *  initialSessionConfig (mirrors AgentSession's accountResolution). */
 type FormAccountResolution = {
-  account: { name: string; subscription_label: string; config_dir: string; session_defaults?: import('@/lib/api').SessionDefaults };
+  account: { name: string; subscription_label: string; has_cost: boolean; config_dir: string; session_defaults?: import('@/lib/api').SessionDefaults };
   match_type: string;
   match_detail: string;
 };
@@ -49,6 +49,7 @@ function slotToResolution(slot: ResolvePair[keyof ResolvePair]): FormAccountReso
     account: {
       name: slot.account.name,
       subscription_label: slot.account.subscription_label,
+      has_cost: slot.account.has_cost,
       config_dir: slot.account.config_dir,
       session_defaults: slot.account.session_defaults,
     },
@@ -582,6 +583,7 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                       account: {
                         name: account.name,
                         subscription_label: account.subscription_label,
+                        has_cost: account.has_cost,
                         config_dir: account.config_dir,
                         session_defaults: account.session_defaults,
                       },

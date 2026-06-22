@@ -88,6 +88,7 @@ export function UsageDetailPopover({
             />
           </Section>
 
+          {data.parsed.windows.length > 0 && (
           <Section title="Limits">
             {data.parsed.windows.map((w) => (
               <div key={w.label} className="space-y-1">
@@ -107,6 +108,7 @@ export function UsageDetailPopover({
               </div>
             ))}
           </Section>
+          )}
 
           {data.parsed.contributing.length > 0 && (
             <Section title="What's contributing">
@@ -127,6 +129,9 @@ export function UsageDetailPopover({
           )}
           {data.parsed.plugins.rows.length > 0 && (
             <UsageRankedTable title="Plugins" table={data.parsed.plugins} />
+          )}
+          {data.parsed.mcp_servers.rows.length > 0 && (
+            <UsageRankedTable title="MCP servers" table={data.parsed.mcp_servers} />
           )}
 
           <div className="flex items-center justify-between pt-2 border-t border-border">

@@ -146,6 +146,12 @@ export interface UsageRunData {
   skills: { rows: { name: string; pct_used: number }[]; more_count: number | null };
   subagents: { rows: { name: string; pct_used: number }[]; more_count: number | null };
   plugins: { rows: { name: string; pct_used: number }[]; more_count: number | null };
+  /**
+   * MCP-server usage breakdown. Rendered by enterprise/Console accounts (and
+   * any account using MCP servers). Names can contain spaces, e.g.
+   * "claude.ai Atlassian".
+   */
+  mcp_servers: { rows: { name: string; pct_used: number }[]; more_count: number | null };
 }
 
 export type UsageRunResult =

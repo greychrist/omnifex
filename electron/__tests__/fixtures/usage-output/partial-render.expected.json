@@ -11,10 +11,27 @@
     "cache_write": 234
   },
   "windows": [
-    { "label": "current_session", "pct_used": 12, "resets_at_label": "9:40am (America/New_York)" }
+    {
+      "label": "current_session",
+      "pct_used": 12,
+      "resets_at_label": "9:40am (America/New_York)"
+    }
   ],
   "contributing": [],
-  "skills": { "rows": [], "more_count": null },
-  "subagents": { "rows": [], "more_count": null },
-  "plugins": { "rows": [], "more_count": null }
+  "skills": {
+    "rows": [],
+    "more_count": null
+  },
+  "subagents": {
+    "rows": [],
+    "more_count": null
+  },
+  "plugins": {
+    "rows": [],
+    "more_count": null
+  },
+  "mcp_servers": {
+    "rows": [],
+    "more_count": null
+  }
 }

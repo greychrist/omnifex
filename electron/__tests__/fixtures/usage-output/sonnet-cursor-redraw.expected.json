@@ -47,29 +47,69 @@
   ],
   "skills": {
     "rows": [
-      { "name": "/superpowers:subagent-drive…", "pct_used": 6 },
-      { "name": "/superpowers:test-driven-de…", "pct_used": 4 },
-      { "name": "/resolve-ticket", "pct_used": 3 },
-      { "name": "/omnifex-release", "pct_used": 2 },
-      { "name": "/verify", "pct_used": 2 },
-      { "name": "/fewer-permission-prompts", "pct_used": 1 },
-      { "name": "/superpowers:brainstorming", "pct_used": 1 },
-      { "name": "/superpowers:writing-plans", "pct_used": 1 }
+      {
+        "name": "/superpowers:subagent-drive…",
+        "pct_used": 6
+      },
+      {
+        "name": "/superpowers:test-driven-de…",
+        "pct_used": 4
+      },
+      {
+        "name": "/resolve-ticket",
+        "pct_used": 3
+      },
+      {
+        "name": "/omnifex-release",
+        "pct_used": 2
+      },
+      {
+        "name": "/verify",
+        "pct_used": 2
+      },
+      {
+        "name": "/fewer-permission-prompts",
+        "pct_used": 1
+      },
+      {
+        "name": "/superpowers:brainstorming",
+        "pct_used": 1
+      },
+      {
+        "name": "/superpowers:writing-plans",
+        "pct_used": 1
+      }
     ],
     "more_count": 2
   },
   "subagents": {
     "rows": [
-      { "name": "superpowers:subagent-driven…", "pct_used": 10 },
-      { "name": "general-purpose", "pct_used": 1 },
-      { "name": "Explore", "pct_used": 1 }
+      {
+        "name": "superpowers:subagent-driven…",
+        "pct_used": 10
+      },
+      {
+        "name": "general-purpose",
+        "pct_used": 1
+      },
+      {
+        "name": "Explore",
+        "pct_used": 1
+      }
     ],
     "more_count": null
   },
   "plugins": {
     "rows": [
-      { "name": "superpowers", "pct_used": 22 }
+      {
+        "name": "superpowers",
+        "pct_used": 22
+      }
     ],
+    "more_count": null
+  },
+  "mcp_servers": {
+    "rows": [],
     "more_count": null
   }
 }

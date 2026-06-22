@@ -11,11 +11,32 @@
     "cache_write": 0
   },
   "windows": [
-    { "label": "current_session", "pct_used": 0, "resets_at_label": "in 5h" },
-    { "label": "week_all_models", "pct_used": 0, "resets_at_label": "in 7d" }
+    {
+      "label": "current_session",
+      "pct_used": 0,
+      "resets_at_label": "in 5h"
+    },
+    {
+      "label": "week_all_models",
+      "pct_used": 0,
+      "resets_at_label": "in 7d"
+    }
   ],
   "contributing": [],
-  "skills": { "rows": [], "more_count": null },
-  "subagents": { "rows": [], "more_count": null },
-  "plugins": { "rows": [], "more_count": null }
+  "skills": {
+    "rows": [],
+    "more_count": null
+  },
+  "subagents": {
+    "rows": [],
+    "more_count": null
+  },
+  "plugins": {
+    "rows": [],
+    "more_count": null
+  },
+  "mcp_servers": {
+    "rows": [],
+    "more_count": null
+  }
 }

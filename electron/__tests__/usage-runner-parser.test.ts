@@ -96,6 +96,80 @@ Resets May 25 at 7pm (America/New_York)
 `;
     expect(isUsageOutputComplete(FIXTURE)).toBe(false);
   });
+
+  it('accepts a window-less (enterprise) render once the tables footer prints', () => {
+    // Enterprise/Console accounts have no subscription rate-limit windows, so
+    // the TUI never renders the "Current session"/"Current week" headers — it
+    // shows a persistent "Loading usage data…" placeholder then the
+    // contributing breakdown + ranked tables. The render is complete once the
+    // "d to day · w to week" tables footer prints.
+    const FIXTURE = `
+Session
+Total cost: $0.0000
+
+Loading usage data…
+
+What's contributing to your limits usage?
+
+100% of your usage came from subagent-heavy sessions
+  Each subagent runs its own requests.
+
+Subagents % of usage
+general-purpose 16%
+
+d to day · w to week
+`;
+    expect(isUsageOutputComplete(FIXTURE)).toBe(true);
+  });
+
+  it('keeps waiting on a window-less render before the tables footer prints', () => {
+    // Still mid-load: contributing header is up but the local-session scan
+    // hasn't finished (no tables footer yet). Don't snapshot a partial render.
+    const FIXTURE = `
+Session
+Total cost: $0.0000
+
+Loading usage data…
+
+What's contributing to your limits usage?
+
+Scanning local sessions…
+`;
+    expect(isUsageOutputComplete(FIXTURE)).toBe(false);
+  });
+});
+
+describe('parseUsageOutput — MCP servers table', () => {
+  it('parses space-containing MCP server names and isolates the table', () => {
+    const FIXTURE = `
+Session
+Total cost: $0.0000
+
+What's contributing to your limits usage?
+
+Subagents % of usage
+general-purpose 16%
+
+MCP servers % of usage
+claude.ai Atlassian 3%
+some-server 1%
+… 4 more
+
+d to day · w to week
+`;
+    const result = parseUsageOutput(FIXTURE);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.mcp_servers.rows).toEqual([
+      { name: 'claude.ai Atlassian', pct_used: 3 },
+      { name: 'some-server', pct_used: 1 },
+    ]);
+    expect(result.data.mcp_servers.more_count).toBe(4);
+    // The subagents table above must not bleed the MCP rows in.
+    expect(result.data.subagents.rows).toEqual([
+      { name: 'general-purpose', pct_used: 16 },
+    ]);
+  });
 });
 
 describe('parseUsageOutput contributing — multi-frame buffers', () => {

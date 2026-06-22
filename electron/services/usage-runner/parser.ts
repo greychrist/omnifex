@@ -22,12 +22,15 @@ export interface UsageData {
   windows: UsageWindow[];
   contributing: { headline: string; detail: string }[];
   /**
-   * Three ranked tables Claude shows beneath "What's contributing" — see
-   * notes on `UsageRunData.skills` in `src/lib/api.ts` for shape details.
+   * Ranked tables Claude shows beneath "What's contributing" — see notes on
+   * `UsageRunData.skills` in `src/lib/api.ts` for shape details. `mcp_servers`
+   * is rendered by enterprise/Console accounts (and any account using MCP
+   * servers); its row names contain spaces (e.g. "claude.ai Atlassian").
    */
   skills: UsageTable;
   subagents: UsageTable;
   plugins: UsageTable;
+  mcp_servers: UsageTable;
 }
 
 
@@ -56,6 +59,7 @@ const SECTION_HEADERS = {
   skills_table: /^[ \t]*Skills\s+% of usage\s*$/m,
   subagents_table: /^[ \t]*Subagents\s+% of usage\s*$/m,
   plugins_table: /^[ \t]*Plugins\s+% of usage\s*$/m,
+  mcp_table: /^[ \t]*MCP servers\s+% of usage\s*$/m,
   // Footer hint Claude prints after the tables ("d to day · w to week").
   // Used as a hard end-boundary for the last table.
   tables_footer: /^[ \t]*d to day\b/m,
@@ -72,6 +76,29 @@ const SECTION_HEADERS = {
 export function isUsageOutputComplete(input: string): boolean {
   const result = parseUsageOutput(input);
   if (!result.ok) return false;
+
+  // Window-less (enterprise / Console) shape: these accounts have no
+  // subscription rate-limit windows, so the TUI never renders the
+  // "Current session" / "Current week" headers — it shows a persistent
+  // "Loading usage data…" placeholder instead, then the contributing
+  // section + ranked tables. Detect the absence of ALL window headers and
+  // treat the render as complete once the tables footer ("d to day · w to
+  // week") prints — that footer is the last thing drawn, so its presence
+  // means the async local-session scan finished. If the footer never shows
+  // (e.g. no local sessions to scan) the runner's quiet-timeout grace still
+  // snapshots correctly; this is purely a fast-path. Ordering protects the
+  // MAX path: windows render ABOVE the tables, so a MAX render that's far
+  // enough along to show the footer already has its window headers and
+  // takes the branch below.
+  const text = input.replace(/\r\n/g, '\n');
+  const anyWindowHeader =
+    SECTION_HEADERS.current_session.test(text) ||
+    SECTION_HEADERS.week_all_models.test(text) ||
+    SECTION_HEADERS.week_sonnet.test(text);
+  if (!anyWindowHeader) {
+    return SECTION_HEADERS.tables_footer.test(text);
+  }
+
   // All three known windows must have parsed. A non-empty Resets line is
   // required EXCEPT for 0%-used windows — observed in Claude Code 2.1.148:
   // when Sonnet usage is 0%, the TUI renders the header + bar but omits the
@@ -184,16 +211,26 @@ export function parseUsageOutput(input: string): ParseResult {
   const ws = parseWindow(text, 'week_sonnet', SECTION_HEADERS.week_sonnet);
   if (ws) windows.push(ws);
 
-  if (windows.length === 0) return { ok: false, reason: 'no_windows' };
+  // A valid render has at least one rate-limit window (subscription
+  // accounts: MAX/Pro) OR the "What's contributing" section (enterprise /
+  // Console accounts, which expose no per-window rate limits and render only
+  // the contributing breakdown + ranked tables). Requiring one of the two
+  // keeps the auth-error / mid-load garbage cases failing — those have
+  // neither — while letting the window-less enterprise shape through.
+  const hasContributing = SECTION_HEADERS.contributing.test(text);
+  if (windows.length === 0 && !hasContributing) {
+    return { ok: false, reason: 'no_windows' };
+  }
 
   const contributing = parseContributing(text);
   const skills = parseTable(text, SECTION_HEADERS.skills_table);
   const subagents = parseTable(text, SECTION_HEADERS.subagents_table);
   const plugins = parseTable(text, SECTION_HEADERS.plugins_table);
+  const mcp_servers = parseTable(text, SECTION_HEADERS.mcp_table);
 
   return {
     ok: true,
-    data: { session, windows, contributing, skills, subagents, plugins },
+    data: { session, windows, contributing, skills, subagents, plugins, mcp_servers },
   };
 }
 
@@ -300,6 +337,7 @@ function parseTable(text: string, header: RegExp): UsageTable {
     SECTION_HEADERS.skills_table,
     SECTION_HEADERS.subagents_table,
     SECTION_HEADERS.plugins_table,
+    SECTION_HEADERS.mcp_table,
     SECTION_HEADERS.tables_footer,
   );
   if (!block) return { rows: [], more_count: null };
@@ -322,7 +360,22 @@ function parseTable(text: string, header: RegExp): UsageTable {
 }
 
 function parseContributing(text: string): { headline: string; detail: string }[] {
-  const block = sliceSection(text, SECTION_HEADERS.contributing) ?? '';
+  // Bound the slice to the first ranked-table header / tables footer so the
+  // enterprise shape (which renders tables directly below the contributing
+  // entries, with no intervening window block) doesn't pull table rows into
+  // the contributing scan. Table rows are "name N%" (name-first) and don't
+  // match the percent-headline test anyway, but bounding keeps the slice
+  // honest and cheap. MAX renders without tables slice to end-of-text as
+  // before.
+  const block = sliceSection(
+    text,
+    SECTION_HEADERS.contributing,
+    SECTION_HEADERS.skills_table,
+    SECTION_HEADERS.subagents_table,
+    SECTION_HEADERS.plugins_table,
+    SECTION_HEADERS.mcp_table,
+    SECTION_HEADERS.tables_footer,
+  ) ?? '';
   // Each entry starts with a percent-headed headline (e.g. "86% of your usage
   // was at >150k context"), followed by one or more wrapped detail lines that
   // we collapse into a single paragraph. Both headline and detail lines may

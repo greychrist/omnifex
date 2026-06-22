@@ -1,0 +1,32 @@
+{
+  "session": {
+    "cost_usd": 0,
+    "api_duration_s": 0,
+    "wall_duration_s": 1,
+    "code_added": 0,
+    "code_removed": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "cache_read": 0,
+    "cache_write": 0
+  },
+  "windows": [],
+  "contributing": [
+    {
+      "headline": "100% of your usage came from subagent-heavy sessions",
+      "detail": "Each subagent runs its own requests. Be deliberate about spawning them — and consider configuring a cheaper model for simpler subagents."
+    },
+    {
+      "headline": "90% of your usage was at >150k context",
+      "detail": "Longer sessions are more expensive even when cached. /compact mid-task, /clear when switching to new tasks."
+    },
+    {
+      "headline": "16% of your usage came from subagents under \"general-purpose\"",
+      "detail": "If this runs frequently, consider configuring its subagents with a cheaper model or tightening their prompts."
+    }
+  ],
+  "skills": { "rows": [], "more_count": null },
+  "subagents": { "rows": [{ "name": "general-purpose", "pct_used": 16 }], "more_count": null },
+  "plugins": { "rows": [], "more_count": null },
+  "mcp_servers": { "rows": [{ "name": "claude.ai Atlassian", "pct_used": 3 }], "more_count": null }
+}
