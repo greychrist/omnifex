@@ -5,6 +5,27 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.86] — 2026-06-22
+
+### Added
+
+- **Enterprise `/usage` support with a cost widget.** Enterprise/Console
+  accounts have no subscription rate-limit windows, so the `/usage` scraper
+  used to fail them outright. The parser now understands the window-less
+  render (session block + "What's contributing" breakdown + ranked tables,
+  including a new **MCP servers** table) and the account card shows a
+  session-cost dollar pill instead of the 5h/7d utilization chart for
+  cost-based accounts.
+
+### Fixed
+
+- **`/usage` no longer reports `parse_failed` on enterprise accounts.** The
+  parser's "no windows" gate now succeeds when a contributing section is
+  present; genuinely empty / auth-error renders still fail as before.
+
+Installers remain **unsigned** — macOS Gatekeeper blocks first launch;
+right-click → Open to run.
+
 ## [0.4.85] — 2026-06-19
 
 ### Fixed
