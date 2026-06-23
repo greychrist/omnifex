@@ -5,6 +5,31 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.87] — 2026-06-23
+
+### Fixed
+
+- **Context-window gauge wrong on resumed 1M sessions.** A resumed
+  "Account Default" Opus 1M session showed an alarming, incorrect percentage
+  (e.g. 91% against a 200k window) because the client-side fallback only
+  detected a 1M window from a literal `[1m]` suffix the resumed model string
+  never carries. The gauge now also honors the account's `settings.json` model
+  (e.g. `opus[1m]`), with a model-family guard so an explicit cross-family pick
+  doesn't inherit the default's 1M window.
+- **Live context usage now loads on resume.** Resuming a session loaded its
+  history without ever fetching the live context window (that only happened on
+  the next turn), leaving the gauge on a client-side estimate with no category
+  breakdown. The live window + breakdown are now fetched as soon as a resumed
+  session is active.
+- **Control requests can no longer hang the session.** `get_context_usage` (and
+  other control requests) had no timeout — a dropped or unanswered
+  `control_response` left the awaiting call pending forever, surfacing as
+  `session_context_usage: reply was never sent`. Control requests now time out
+  after 10s and are all rejected when the engine exits.
+
+Installers remain **unsigned** — macOS Gatekeeper blocks first launch;
+right-click → Open to run.
+
 ## [0.4.86] — 2026-06-22
 
 ### Added
