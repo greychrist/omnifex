@@ -1,6 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { buildClaudeEnv } from '../util/claude-env';
 import { createAssistantResolver } from './assistantMeta';
+import { createControlRequestRegistry } from './control-request-registry';
 import type {
   AgentEngine,
   AgentEngineExit,
@@ -86,10 +87,10 @@ export function createClaudeCliEngine(
   const permissionCallbacks: Array<(r: AgentPermissionRequest) => void> = [];
   const exitCallbacks: Array<(info: AgentEngineExit) => void> = [];
   const errorCallbacks: Array<(err: Error) => void> = [];
-  const pendingControlRequests = new Map<
-    string,
-    { resolve: (v: unknown) => void; reject: (e: Error) => void }
-  >();
+  // In-flight control_requests, with a hard timeout + exit cleanup so a
+  // never-arriving control_response can't hang the awaiting promise forever
+  // (the old "session_context_usage: reply was never sent" symptom).
+  const pendingControlRequests = createControlRequestRegistry();
   /**
    * Permission requests originate at the CLI; we forward them to the
    * renderer and remember the originating tool_use_id keyed by request_id
@@ -141,14 +142,10 @@ export function createClaudeCliEngine(
     // The CLI envelope is {type:'control_response', response:{subtype, request_id, response?, error?}}.
     if (p?.type === 'control_response' && p?.response?.request_id) {
       const id = p.response.request_id;
-      const entry = pendingControlRequests.get(id);
-      if (entry) {
-        pendingControlRequests.delete(id);
-        if (p.response.subtype === 'error') {
-          entry.reject(new Error(p.response.error ?? 'unknown control_response error'));
-        } else {
-          entry.resolve(p.response.response);
-        }
+      if (p.response.subtype === 'error') {
+        pendingControlRequests.fail(id, new Error(p.response.error ?? 'unknown control_response error'));
+      } else {
+        pendingControlRequests.settle(id, p.response.response);
       }
       return;
     }
@@ -313,6 +310,12 @@ export function createClaudeCliEngine(
 
     child.on('exit', (code, signal) => {
       const info: AgentEngineExit = { code: code ?? -1, signal };
+      // Fail any in-flight control_requests now — their response can never
+      // arrive once the child is gone, and waiting for each one's timeout would
+      // leave the renderer's awaiting IPC calls hanging needlessly.
+      pendingControlRequests.failAll(
+        new Error(`control_request aborted: engine exited (code ${code ?? -1}${signal ? `, signal ${signal}` : ''})`),
+      );
       for (const cb of exitCallbacks) {
         try { cb(info); } catch { /* swallow */ }
       }
@@ -438,18 +441,13 @@ export function createClaudeCliEngine(
       request: { subtype, ...(params ?? {}) },
     };
     const line = JSON.stringify(envelope) + '\n';
-    return new Promise<T>((resolve, reject) => {
-      pendingControlRequests.set(requestId, {
-        resolve: resolve as (v: unknown) => void,
-        reject,
-      });
-      child!.stdin.write(line, (err) => {
-        if (err) {
-          pendingControlRequests.delete(requestId);
-          reject(err);
-        }
-      });
+    const promise = pendingControlRequests.create<T>(requestId, subtype);
+    child.stdin.write(line, (err) => {
+      // A failed write means no response will ever come — reject now rather
+      // than waiting for the timeout.
+      if (err) pendingControlRequests.fail(requestId, err);
     });
+    return promise;
   }
 
   async function interrupt(): Promise<void> {
