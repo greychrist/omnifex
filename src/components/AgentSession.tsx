@@ -270,6 +270,14 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   const [codexMessages, setCodexMessages] = useState<AgentMessage[]>([]);
   const [copyPopoverOpen, setCopyPopoverOpen] = useState(false);
   const [totalTokens, setTotalTokens] = useState(0);
+  // The account's resolved default model from its settings.json (`model` key,
+  // e.g. "opus[1m]"). When the context gauge is on its client-side fallback —
+  // e.g. a resumed session before its next turn (history loads statically, so
+  // live usage isn't fetched), or a TUI session — an "Account Default"
+  // session's own model string carries no [1m] suffix, so this is the only
+  // signal that the resolved default is a 1M model. Feeds the fallback
+  // denominator. See resolveContextLimit.
+  const [accountDefaultModel, setAccountDefaultModel] = useState<string | null>(null);
   // Pre-fetched built-in slash commands from the CLI, loaded alongside models
   // during session init so the picker has them immediately.
   const [supportedCommands, setSupportedCommands] = useState<import('@/lib/api').SessionSlashCommand[]>([]);
@@ -469,6 +477,25 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
       }).catch(console.error);
     }
   }, [projectPath, hasInitialAccountOverride, agent]);
+
+  // Resolve the account's default model from its settings.json so the
+  // context-gauge fallback can size a 1M-context "Account Default" session
+  // correctly (the live window is unavailable in TUI mode, and the session's
+  // own model string never carries the [1m] suffix). Re-reads on account
+  // change rather than persisting, so a later settings.json edit isn't stale.
+  const accountConfigDir = accountResolution?.account.config_dir ?? null;
+  useEffect(() => {
+    if (!accountConfigDir) { setAccountDefaultModel(null); return; }
+    let cancelled = false;
+    api.getClaudeSettings({ configDir: accountConfigDir })
+      .then((settings) => {
+        if (cancelled) return;
+        const m = (settings as { model?: unknown } | null)?.model;
+        setAccountDefaultModel(typeof m === 'string' ? m : null);
+      })
+      .catch(() => { if (!cancelled) setAccountDefaultModel(null); });
+    return () => { cancelled = true; };
+  }, [accountConfigDir]);
 
   // Apply per-account session defaults once when the account first resolves,
   // but only for new sessions (not when resuming or launched with explicit
@@ -1749,6 +1776,27 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
           ? 'starting'
           : 'ended';
 
+  // Proactively pull the live context window once a session is active but we
+  // don't have it yet. Resuming a session loads history statically and never
+  // fetches usage — the stream-driven refresh only fires on init/result/
+  // compact_boundary — so an idle resumed chat-mode session would otherwise sit
+  // on the client-side fallback (wrong denominator, no category breakdown)
+  // until its next turn. The control request is now timeout-guarded (see
+  // control-request-registry.ts), so this can't hang; on a null/timed-out reply
+  // the gauge simply stays on the fallback. Re-runs only when the active flag
+  // flips or `contextUsage` clears, so it can't loop.
+  useEffect(() => {
+    if (displayStatus !== 'active' || contextUsage != null) return;
+    const tabId = tabIdRef.current;
+    let cancelled = false;
+    api.sessionContextUsage(tabId)
+      .then((usage) => {
+        if (!cancelled && usage) streamCtxRef.current.setContextUsage(usage);
+      })
+      .catch(() => { /* hang-safe; fallback gauge stays until the next turn */ });
+    return () => { cancelled = true; };
+  }, [displayStatus, contextUsage]);
+
   // Compute restart-button gating once so it can be passed to both the
   // header (where the button lives) and any tooltip consumers.
   const clearButtonDisabled =
@@ -1870,6 +1918,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
             className="ml-auto"
             totalTokens={totalTokens}
             model={selectedModel}
+            defaultModel={accountDefaultModel}
             contextUsage={contextUsage}
             sessionStatus={displayStatus}
             onReconnect={() => void handleReconnect()}

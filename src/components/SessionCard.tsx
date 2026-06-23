@@ -27,6 +27,12 @@ const CATEGORY_COLORS = [
 interface SessionCardProps {
   totalTokens: number;
   model?: string;
+  /** The account's resolved default model (settings.json `model`, e.g.
+   *  "opus[1m]"). Lets the client-side fallback detect a 1M window for an
+   *  "Account Default" session whose own model string lacks the [1m] suffix —
+   *  notably a resumed session (history loaded statically, no live usage yet)
+   *  or a TUI session. See resolveContextLimit. */
+  defaultModel?: string | null;
   contextUsage?: SessionContextUsage | null;
   sessionStatus?: 'starting' | 'active' | 'ended';
   /** Force-reconnect button click handler. Renders inside the status badge
@@ -57,6 +63,7 @@ interface SessionCardProps {
 export function SessionCard({
   totalTokens,
   model,
+  defaultModel,
   contextUsage,
   sessionStatus,
   onReconnect,
@@ -138,7 +145,7 @@ export function SessionCard({
         // Trust the live CLI window when present; only fall back to the model
         // "[1m]" heuristic before any live data arrives. (Fixes resume pinning
         // the gauge to 200k — see resolveContextLimit for the full rationale.)
-        const limit = resolveContextLimit({ sdkMaxTokens: sdkLimit, model });
+        const limit = resolveContextLimit({ sdkMaxTokens: sdkLimit, model, defaultModel });
         if (tokens <= 0 || limit <= 0) return null;
         const pct = Math.min(100, (tokens / limit) * 100);
         const color = pct > 80 ? "text-red-400" : pct > 50 ? "text-orange-400" : "text-foreground";
