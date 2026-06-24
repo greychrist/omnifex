@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import '@testing-library/jest-dom/vitest';
-import { render, screen, fireEvent, cleanup, within } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, within, waitFor } from '@testing-library/react';
 import { AppearanceSettings } from '@/components/settings-panels/AppearanceSettings';
 import { MessageKindTree } from '@/components/settings-panels/appearance/MessageKindTree';
 import { MessageRenderingProvider } from '@/contexts/MessageRenderingContext';
@@ -126,8 +126,9 @@ describe('AppearanceSettings — kind field editing', () => {
     expect(hiddenSwitch).toHaveAttribute('aria-checked', 'true');
     fireEvent.click(hiddenSwitch);
 
-    // saveSetting should have been called with the updated config.
-    expect(saved.config).not.toBeNull();
+    // saveSetting is debounced (the global commit re-renders all chats + writes
+    // to disk, so rapid edits coalesce) — wait for the commit to land.
+    await waitFor(() => expect(saved.config).not.toBeNull());
     const cfg = saved.config as { kinds: Record<string, Record<string, unknown>> };
 
     // The kinds map now has an entry for this id.
@@ -143,6 +144,44 @@ describe('AppearanceSettings — kind field editing', () => {
     expect(Object.prototype.hasOwnProperty.call(patch, 'alignment')).toBe(false);
     expect(Object.prototype.hasOwnProperty.call(patch, 'presentation')).toBe(false);
     expect(Object.prototype.hasOwnProperty.call(patch, 'borderStyle')).toBe(false);
+  });
+});
+
+describe('AppearanceSettings — edits are debounced before the global commit', () => {
+  it('coalesces a rapid burst of color edits into a single persisted commit', async () => {
+    const { api } = await import('@/lib/api');
+    const saveSetting = vi.mocked(api.saveSetting);
+
+    renderWithProvider();
+    await screen.findAllByText('User');
+
+    // Drop the first-load reset write so we count only edit-driven commits.
+    saveSetting.mockClear();
+
+    const picker = screen.getByLabelText('Accent colour picker');
+
+    // Simulate an OS color-picker drag: many onChange events in quick
+    // succession, like the native <input type="color"> streams.
+    const hexes = ['#111111', '#222222', '#333333', '#444444', '#555555'];
+    for (const value of hexes) {
+      fireEvent.change(picker, { target: { value } });
+    }
+
+    // Synchronously after the burst the global commit hasn't fired yet — the
+    // whole point: dragging doesn't re-render every chat / write to disk per
+    // tick.
+    const configWrites = () =>
+      saveSetting.mock.calls.filter(([key]) => key === 'message_rendering_config').length;
+    expect(configWrites()).toBe(0);
+
+    // After the debounce settles, exactly one commit lands, carrying the LAST
+    // value from the burst.
+    await waitFor(() => expect(configWrites()).toBe(1));
+    expect(configWrites()).toBe(1);
+    expect(saved.config).not.toBeNull();
+    const cfg = saved.config as { categories: Record<string, { accentColor?: string }> };
+    // Default selection is the "user" category; its accentColor took the last edit.
+    expect(cfg.categories.user.accentColor).toBe('#555555');
   });
 });
 

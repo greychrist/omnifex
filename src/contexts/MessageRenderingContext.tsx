@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
+import React, { createContext, useContext, useEffect, useMemo, useState, useCallback } from "react";
 import { api } from "@/lib/api";
 import {
   MESSAGE_RENDERING_CONFIG_KEY,
@@ -94,8 +94,14 @@ export const MessageRenderingProvider: React.FC<{ children: React.ReactNode }> =
     }
   }, []);
 
+  // Memoize so the provider value keeps a stable identity across re-renders
+  // that don't change config/loaded — without this, every provider render
+  // hands consumers a fresh object and re-renders all of them (every chat
+  // message subscribes to this context).
+  const value = useMemo(() => ({ config, setConfig, loaded }), [config, setConfig, loaded]);
+
   return (
-    <MessageRenderingContext.Provider value={{ config, setConfig, loaded }}>
+    <MessageRenderingContext.Provider value={value}>
       {children}
     </MessageRenderingContext.Provider>
   );

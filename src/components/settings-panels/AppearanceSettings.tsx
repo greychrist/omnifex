@@ -42,6 +42,14 @@ import { fireAndLog } from "@/lib/fireAndLog";
 
 const USER_DEFAULT_KEY = "message_rendering_config_user_default";
 
+// Edits are applied to a local draft instantly (so the in-panel previews stay
+// live) and pushed to the global MessageRenderingContext on this debounce. The
+// global commit is the expensive step: it re-renders every message in every
+// open chat (all subscribe to the context) and persists to disk. A native
+// color-input drag streams dozens of onChange/sec; without coalescing, each
+// became a full chat re-render + disk write — the source of the picker lag.
+const COMMIT_DEBOUNCE_MS = 150;
+
 type AppearanceSettingsProps = Pick<SettingsPanelProps, "setToast">;
 
 const FIRST_SELECTION: TreeSelection = { type: "category", id: "user" };
@@ -64,7 +72,69 @@ const FilterRow: React.FC<FilterRowProps> = ({ label, description, checked, onCh
 );
 
 export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast }) => {
-  const { config, setConfig: commitConfig } = useMessageRenderingConfig();
+  const { config: committedConfig, setConfig: commitConfig } = useMessageRenderingConfig();
+
+  // Local working copy. The whole panel reads/edits `config` (bound to the
+  // draft below) so previews update instantly; the global commit is debounced.
+  const [draft, setDraft] = useState<MessageRenderingConfig>(committedConfig);
+  const config = draft;
+  const commitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The exact object last pushed to the context. Lets the sync effect tell our
+  // own debounced commit (skip) from an external config change — first load,
+  // import, reset — which must replace the draft.
+  const lastCommittedRef = useRef<MessageRenderingConfig | null>(null);
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+
+  const pushToGlobal = useCallback(
+    (next: MessageRenderingConfig) => {
+      lastCommittedRef.current = next;
+      commitConfig(next); // re-renders chat consumers + persists
+    },
+    [commitConfig],
+  );
+
+  const scheduleCommit = useCallback(() => {
+    if (commitTimerRef.current) clearTimeout(commitTimerRef.current);
+    commitTimerRef.current = setTimeout(() => {
+      commitTimerRef.current = null;
+      pushToGlobal(draftRef.current);
+    }, COMMIT_DEBOUNCE_MS);
+  }, [pushToGlobal]);
+
+  // Wholesale replacement (import / factory reset / restore default): update
+  // the draft and commit immediately, cancelling any pending debounced commit.
+  const replaceConfig = useCallback(
+    (next: MessageRenderingConfig) => {
+      if (commitTimerRef.current) {
+        clearTimeout(commitTimerRef.current);
+        commitTimerRef.current = null;
+      }
+      setDraft(next);
+      pushToGlobal(next);
+    },
+    [pushToGlobal],
+  );
+
+  // Adopt external config changes (first load, import, reset) into the draft.
+  // Skip our own debounced commits (same object ref) so an edit the user is
+  // mid-drag on isn't clobbered.
+  useEffect(() => {
+    if (committedConfig === lastCommittedRef.current) return;
+    setDraft(committedConfig);
+  }, [committedConfig]);
+
+  // Flush a pending commit on unmount so a fast edit-then-leave isn't lost.
+  useEffect(() => {
+    return () => {
+      if (commitTimerRef.current) {
+        clearTimeout(commitTimerRef.current);
+        commitTimerRef.current = null;
+        pushToGlobal(draftRef.current);
+      }
+    };
+  }, [pushToGlobal]);
+
   const [selected, setSelected] = useState<TreeSelection>(FIRST_SELECTION);
   const [previewMode, setPreviewMode] = useState<"compact" | "verbose">(config.defaultViewMode);
   const [hasUserDefault, setHasUserDefault] = useState(false);
@@ -117,10 +187,11 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
 
   const mutate = useCallback(
     (producer: (prev: MessageRenderingConfig) => MessageRenderingConfig) => {
-      commitConfig(producer(config));
+      setDraft((prev) => producer(prev));
+      scheduleCommit();
       scheduleSavedToast();
     },
-    [config, commitConfig, scheduleSavedToast],
+    [scheduleCommit, scheduleSavedToast],
   );
 
   const setTypography = useCallback(
@@ -154,12 +225,12 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
         setToast({ message: "No personal default saved yet", type: "error" });
         return;
       }
-      commitConfig(parseConfig(raw));
+      replaceConfig(parseConfig(raw));
       setToast({ message: "Restored your saved default", type: "success" });
     } catch {
       setToast({ message: "Failed to restore default", type: "error" });
     }
-  }, [commitConfig, setToast]);
+  }, [replaceConfig, setToast]);
 
   // ── Category editing ──────────────────────────────────────────────────
   // Categories carry a full style; an edit writes the field straight onto
@@ -251,9 +322,9 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
     if (!window.confirm("Reset all appearance settings to defaults? This cannot be undone.")) {
       return;
     }
-    commitConfig(createDefaultConfig());
+    replaceConfig(createDefaultConfig());
     setToast({ message: "Appearance settings reset to defaults", type: "success" });
-  }, [commitConfig, setToast]);
+  }, [replaceConfig, setToast]);
 
   const exportConfig = useCallback(() => {
     const blob = new Blob([JSON.stringify(config, null, 2)], { type: "application/json" });
@@ -273,14 +344,14 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({ setToast
       try {
         const text = await file.text();
         const imported = parseConfig(text);
-        commitConfig(imported);
+        replaceConfig(imported);
         setPreviewMode(imported.defaultViewMode);
         setToast({ message: `Imported ${file.name}`, type: "success" });
       } catch {
         setToast({ message: "Failed to import config", type: "error" });
       }
     },
-    [commitConfig, setToast],
+    [replaceConfig, setToast],
   );
 
   const hardFiltersChecked = useMemo(
