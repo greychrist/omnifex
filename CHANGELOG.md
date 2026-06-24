@@ -5,6 +5,23 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.88] — 2026-06-24
+
+### Fixed
+
+- **Color picker no longer lags the app.** Editing appearance colors (and other
+  appearance settings) wrote to the global config on every change — and since
+  every open chat message subscribes to that config, a single native
+  color-picker drag re-rendered every transcript and wrote settings to disk
+  dozens of times per second. Appearance edits now apply to a local draft
+  (keeping the in-panel preview live) and commit to the global config on a short
+  debounce, so a drag produces one coalesced update when you pause instead of a
+  per-tick re-render storm. The rendering-config context value is also memoized
+  so consumers don't re-render on unrelated updates.
+
+Installers remain **unsigned** — macOS Gatekeeper blocks first launch;
+right-click → Open to run.
+
 ## [0.4.87] — 2026-06-23
 
 ### Fixed
