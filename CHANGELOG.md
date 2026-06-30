@@ -5,6 +5,21 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.89] — 2026-06-30
+
+### Added
+
+- **Subagents now show the model they ran on and their final run stats.** Each
+  row in the Subagents panel surfaces a short model label (e.g. `haiku-4-5`)
+  alongside authoritative end-of-run totals (duration, tokens, tool count). The
+  model isn't in the live message stream — it lives in each subagent's separate
+  transcript file — so OmniFex reads it from disk and merges it onto the row by
+  `tool_use_id`, preferring the authoritative `toolUseResult` totals over the
+  live running tally. Stats populate when a subagent completes; in-flight rows
+  keep showing live progress numbers.
+
+Installers remain **unsigned** — macOS Gatekeeper blocks first launch; right-click → Open.
+
 ## [0.4.88] — 2026-06-24
 
 ### Fixed
