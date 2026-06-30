@@ -41,3 +41,46 @@ describe('SubagentBar header spinner', () => {
     expect(container.querySelectorAll('.animate-spin').length).toBe(0);
   });
 });
+
+describe('SubagentBar row meta', () => {
+  beforeEach(() => {
+    // Expand so the per-subagent rows (and their meta) render.
+    window.localStorage.setItem('greychrist.subagentBar.collapsed', '0');
+  });
+
+  it('shows a short model label and authoritative stats in the row meta', () => {
+    const subs: Subagent[] = [
+      makeSub({
+        toolUseId: 'a',
+        status: 'completed',
+        model: 'claude-haiku-4-5-20251001',
+        finalTotalTokens: 71591,
+        finalDurationMs: 53161,
+        finalToolUseCount: 20,
+      }),
+    ];
+    const { container } = render(<SubagentBar subagents={subs} />);
+    const text = container.textContent ?? '';
+    expect(text).toContain('haiku-4-5'); // 'claude-' prefix + date suffix stripped
+    expect(text).toContain('20 tools');
+    expect(text).toContain('72k tok');
+    expect(text).toContain('53s');
+  });
+
+  it('prefers authoritative final stats over the live latest entry', () => {
+    const subs: Subagent[] = [
+      makeSub({
+        toolUseId: 'a',
+        status: 'completed',
+        latest: { description: 'mid', totalTokens: 1000, toolUses: 5, durationMs: 2000 },
+        finalTotalTokens: 71591,
+        finalToolUseCount: 20,
+        finalDurationMs: 53161,
+      }),
+    ];
+    const { container } = render(<SubagentBar subagents={subs} />);
+    const text = container.textContent ?? '';
+    expect(text).toContain('20 tools');
+    expect(text).not.toContain('5 tools');
+  });
+});

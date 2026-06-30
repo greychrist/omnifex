@@ -49,6 +49,53 @@ export interface Subagent {
   /** Which carrier finalised this row, if any. `'parent_result'` indicates
    *  the inferred-closure path (no direct closure carrier was seen). */
   closureSource?: SubagentState['closureSource'];
+  /** The model the subagent ran on. Merged in from disk via
+   *  `applySubagentMeta` — never present in the live message stream. */
+  model?: string;
+  /** Authoritative end-of-run totals from the parent Task's `toolUseResult`,
+   *  merged in via `applySubagentMeta`. Preferred over the live
+   *  `latest.*` numbers when present (the stream's running totals can lag
+   *  the final tally). */
+  finalTotalTokens?: number;
+  finalDurationMs?: number;
+  finalToolUseCount?: number;
+}
+
+/**
+ * Per-subagent metadata sourced from disk (model + authoritative totals),
+ * keyed by the dispatching Task's `tool_use_id`. Mirrors the main-process
+ * `SubagentMeta` shape without coupling this module to the IPC layer.
+ */
+export interface SubagentMetaInput {
+  agentType?: string;
+  model?: string;
+  totalTokens?: number;
+  durationMs?: number;
+  toolUseCount?: number;
+}
+
+/**
+ * Merge disk-sourced metadata onto derived subagent rows by `toolUseId`.
+ * Pure — returns a new array and never mutates the input. Rows without a
+ * matching entry pass through untouched. `agentType` is only filled when the
+ * dispatch didn't already supply one (the dispatch's `subagent_type` wins).
+ */
+export function applySubagentMeta(
+  subs: Subagent[],
+  meta: Record<string, SubagentMetaInput>,
+): Subagent[] {
+  return subs.map((sub) => {
+    const m = meta[sub.toolUseId];
+    if (!m) return sub;
+    return {
+      ...sub,
+      agentType: sub.agentType ?? m.agentType,
+      model: m.model ?? sub.model,
+      finalTotalTokens: m.totalTokens ?? sub.finalTotalTokens,
+      finalDurationMs: m.durationMs ?? sub.finalDurationMs,
+      finalToolUseCount: m.toolUseCount ?? sub.finalToolUseCount,
+    };
+  });
 }
 
 export const SUBAGENT_PALETTE_SIZE = 16;

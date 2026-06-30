@@ -64,7 +64,7 @@ import { GitBranchBadge } from "./claude-code-session/GitBranchBadge";
 import { GitWatchStatusIcon } from "./claude-code-session/GitWatchStatusIcon";
 import { resolveBranchColors } from '@/lib/branchColors';
 import type { BranchColor } from '@/lib/api';
-import { deriveSubagents, createSubagentColorAllocator } from "@/lib/subagentStreams";
+import { deriveSubagents, applySubagentMeta, createSubagentColorAllocator, type SubagentMetaInput } from "@/lib/subagentStreams";
 import { getTaskList, summarizeTaskList } from "@/lib/taskList";
 import { deriveWaitingFor, type TabWaitingFor } from "@/lib/tabWaitingFor";
 import { SubagentBar } from "./SubagentBar";
@@ -708,12 +708,50 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   // Rendered above the prompt input so parallel Agent/Task dispatches are visible.
   const colorAllocatorRef = useRef(createSubagentColorAllocator());
   const [dismissedSubagents, setDismissedSubagents] = useState<Set<string>>(new Set());
-  const subagents = useMemo(() => {
+  const baseSubagents = useMemo(() => {
     const all = deriveSubagents(messages, colorAllocatorRef.current);
     return dismissedSubagents.size === 0
       ? all
       : all.filter((s) => !dismissedSubagents.has(s.toolUseId));
   }, [messages, dismissedSubagents]);
+  // Per-subagent model + authoritative totals, fetched from disk. The live
+  // stream never carries the model (it lives in the subagent's separate
+  // transcript) and only carries running totals, so we enrich completed rows
+  // by reading the on-disk JSONL via the main process. Keyed by tool_use_id.
+  const [subagentMeta, setSubagentMeta] = useState<Record<string, SubagentMetaInput>>({});
+  const subagentMetaRef = useRef(subagentMeta);
+  subagentMetaRef.current = subagentMeta;
+  const subagents = useMemo(
+    () => applySubagentMeta(baseSubagents, subagentMeta),
+    [baseSubagents, subagentMeta],
+  );
+  // Stable signature of completed rows — drives the meta fetch without
+  // depending on `subagentMeta` itself (which the fetch sets), so resolving
+  // models can't re-trigger the effect into a loop.
+  const completedSubagentIds = useMemo(
+    () => baseSubagents.filter((s) => s.status !== 'running').map((s) => s.toolUseId),
+    [baseSubagents],
+  );
+  const completedSubagentSig = completedSubagentIds.join(',');
+  useEffect(() => {
+    if (!claudeSessionId || !accountConfigDir || !projectPath) return;
+    if (completedSubagentIds.length === 0) return;
+    // Only hit disk when at least one completed row still lacks a model.
+    const needsFetch = completedSubagentIds.some(
+      (id) => !subagentMetaRef.current[id]?.model,
+    );
+    if (!needsFetch) return;
+    let cancelled = false;
+    api
+      .getSubagentMeta(accountConfigDir, projectPath, claudeSessionId)
+      .then((map) => {
+        if (cancelled || !map || Object.keys(map).length === 0) return;
+        setSubagentMeta((prev) => ({ ...prev, ...map }));
+      })
+      .catch(() => { /* best-effort enrichment — silence is fine */ });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [completedSubagentSig, claudeSessionId, accountConfigDir, projectPath]);
   // Typing bubble used to bridge on `hasRunningSubagent(subagents)` so a
   // stuck-running row would keep the spinner on after `isLoading` flipped
   // false. That coupled visual session activity to outstanding-subagent

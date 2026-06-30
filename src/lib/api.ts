@@ -513,6 +513,21 @@ export interface SessionPluginInfo {
 }
 
 /**
+ * Per-subagent metadata read from disk: the model the subagent ran on plus
+ * authoritative end-of-run totals from the parent Task's `toolUseResult`.
+ * Surfaced in the SubagentBar; keyed by the Task `tool_use_id`.
+ */
+export interface SubagentMetaEntry {
+  agentId?: string;
+  agentType?: string;
+  model?: string;
+  totalTokens?: number;
+  durationMs?: number;
+  toolUseCount?: number;
+  status?: string;
+}
+
+/**
  * MCP configuration for project scope (.mcp.json)
  */
 export interface MCPProjectConfig {
@@ -1191,6 +1206,20 @@ export const api = {
 
   async sessionPlugins(tabId: string, force = false): Promise<SessionPluginInfo[]> {
     return apiCall("session_plugins", { tabId, force });
+  },
+
+  /**
+   * Per-subagent metadata (model + authoritative end-of-run totals) read
+   * from the on-disk session JSONL and per-subagent transcripts. Keyed by
+   * the dispatching Task's `tool_use_id` — the same key SubagentBar rows use.
+   * Works for both live and replayed sessions since it reads from disk.
+   */
+  async getSubagentMeta(
+    configDir: string,
+    projectPath: string,
+    sessionId: string,
+  ): Promise<Record<string, SubagentMetaEntry>> {
+    return apiCall("session_subagent_meta", { configDir, projectPath, sessionId });
   },
 
   async sessionGetPermissions(tabId: string, projectPath: string, configDir: string): Promise<any[]> {

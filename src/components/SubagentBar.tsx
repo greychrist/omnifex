@@ -50,6 +50,15 @@ function formatElapsed(ms?: number): string {
   return m > 0 ? `${m}m ${String(r).padStart(2, '0')}s` : `${r}s`;
 }
 
+// Compact a CLI model id for the dense row meta: drop the `claude-` vendor
+// prefix and any trailing `-YYYYMMDD` date stamp, e.g.
+// `claude-haiku-4-5-20251001` → `haiku-4-5`. Leaves unrecognised shapes
+// (local models, already-short ids) untouched.
+function formatModel(model?: string): string {
+  if (!model) return '';
+  return model.replace(/^claude-/, '').replace(/-\d{8}$/, '');
+}
+
 interface SubagentRowProps {
   sub: Subagent;
   onDismiss?: (toolUseId: string) => void;
@@ -89,10 +98,17 @@ const SubagentRow: React.FC<SubagentRowProps> = ({ sub, onDismiss }) => {
       <span className={cn('inline-block h-2 w-2 rounded-full animate-pulse', color.dot)} />
     );
 
-  const tokens = latest?.totalTokens ? `${Math.round(latest.totalTokens / 1000)}k tok` : '';
-  const tools = latest?.toolUses ? `${latest.toolUses} tools` : '';
-  const elapsed = formatElapsed(latest?.durationMs);
-  const metaBits = [tools, tokens, elapsed].filter(Boolean).join(' · ');
+  // Prefer the authoritative end-of-run totals (merged from disk via
+  // applySubagentMeta) over the live `latest.*` running tally, which can lag
+  // the final numbers.
+  const tokenCount = sub.finalTotalTokens ?? latest?.totalTokens;
+  const toolCount = sub.finalToolUseCount ?? latest?.toolUses;
+  const durationMs = sub.finalDurationMs ?? latest?.durationMs;
+  const model = formatModel(sub.model);
+  const tokens = tokenCount ? `${Math.round(tokenCount / 1000)}k tok` : '';
+  const tools = toolCount ? `${toolCount} tools` : '';
+  const elapsed = formatElapsed(durationMs);
+  const metaBits = [model, tools, tokens, elapsed].filter(Boolean).join(' · ');
 
   const headline = latest?.description || sub.description || 'Working…';
   const agentLabel = sub.agentType ?? 'Agent';

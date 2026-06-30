@@ -84,6 +84,7 @@ export interface Services {
     getSupportedModels(sessionId: string): unknown;
     getMcpServerStatus(sessionId: string): unknown;
     getPlugins(sessionId: string, force?: boolean): unknown;
+    getSubagentMeta(args: { configDir: string; projectPath: string; sessionId: string }): unknown;
     setMode(tabId: string, mode: 'rich' | 'tui'): Promise<unknown>;
     tuiWrite(tabId: string, data: string): unknown;
     tuiResize(tabId: string, cols: number, rows: number): unknown;
@@ -430,6 +431,11 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     session_supported_models: wrapWith((p: Record<string, unknown>) => sessions?.getSupportedModels((p?.tabId ?? p?.session_id) as string) ?? null),
     session_mcp_server_status: wrapWith((p: Record<string, unknown>) => sessions?.getMcpServerStatus((p?.tabId ?? p?.session_id) as string) ?? null),
     session_plugins: wrapWith((p: Record<string, unknown>) => sessions?.getPlugins((p?.tabId ?? p?.session_id) as string, Boolean(p?.force)) ?? null),
+    session_subagent_meta: wrapWith((p: Record<string, unknown>) => sessions?.getSubagentMeta({
+      configDir: (p?.configDir ?? p?.config_dir) as string,
+      projectPath: (p?.projectPath ?? p?.project_path) as string,
+      sessionId: (p?.sessionId ?? p?.session_id) as string,
+    }) ?? null),
     session_set_mode: wrapWith((p: Record<string, unknown>) =>
       sessions?.setMode(
         (p?.tabId ?? p?.session_id) as string,

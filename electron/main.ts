@@ -73,6 +73,7 @@ import {
   ENABLED_SETTING_KEY,
 } from './services/sessions-summary';
 import { createSummaryQueryRunner } from './services/sessions/summary-query';
+import { readSubagentMeta } from './services/sessions/subagent-meta';
 import { createPermissionsIOService } from './services/permissions-io';
 import { createUpdaterService } from './services/updater';
 import { createInstallerService } from './services/installer';
@@ -862,6 +863,8 @@ app.whenReady().then(() => {
       getSupportedModels: (sessionId: string) => sessionsService.getSupportedModels(sessionId),
       getMcpServerStatus: (sessionId: string) => sessionsService.getMcpServerStatus(sessionId),
       getPlugins: (sessionId: string, force?: boolean) => sessionsService.getPlugins(sessionId, force),
+      getSubagentMeta: (args: { configDir: string; projectPath: string; sessionId: string }) =>
+        readSubagentMeta(args),
       setMode: (tabId: string, mode: 'rich' | 'tui') => sessionsService.setMode(tabId, mode),
       tuiWrite: (tabId: string, data: string) => sessionsService.tuiWrite(tabId, data),
       tuiResize: (tabId: string, cols: number, rows: number) =>

@@ -4,6 +4,7 @@ import path from 'node:path';
 import type { JsonlNode } from '@/types/jsonl';
 import {
   deriveSubagents,
+  applySubagentMeta,
   clearCompleted,
   isTaskLifecycleMarker,
   hasRunningSubagent,
@@ -225,6 +226,45 @@ describe('createSubagentColorAllocator', () => {
   it('release is a no-op for an unknown toolUseId', () => {
     const allocator = createSubagentColorAllocator();
     expect(() => allocator.release('never-acquired')).not.toThrow();
+  });
+});
+
+describe('applySubagentMeta', () => {
+  it('merges model and authoritative stats onto the matching toolUseId', () => {
+    const subs = deriveSubagents([agentToolUse(TOOL_USE_ID), taskNotification(TOOL_USE_ID)]);
+    const merged = applySubagentMeta(subs, {
+      [TOOL_USE_ID]: {
+        model: 'claude-haiku-4-5-20251001',
+        agentType: 'code-reviewer',
+        totalTokens: 71591,
+        durationMs: 53161,
+        toolUseCount: 20,
+      },
+    });
+    expect(merged[0].model).toBe('claude-haiku-4-5-20251001');
+    expect(merged[0].finalTotalTokens).toBe(71591);
+    expect(merged[0].finalDurationMs).toBe(53161);
+    expect(merged[0].finalToolUseCount).toBe(20);
+  });
+
+  it('fills agentType from meta only when the dispatch did not provide one', () => {
+    // agentToolUse dispatches with subagent_type 'Explore' — meta must not clobber it.
+    const subs = deriveSubagents([agentToolUse(TOOL_USE_ID, 'desc', 'Explore'), taskNotification(TOOL_USE_ID)]);
+    const merged = applySubagentMeta(subs, { [TOOL_USE_ID]: { agentType: 'code-reviewer' } });
+    expect(merged[0].agentType).toBe('Explore');
+  });
+
+  it('leaves rows without a meta entry unchanged', () => {
+    const subs = deriveSubagents([agentToolUse(TOOL_USE_ID), taskNotification(TOOL_USE_ID)]);
+    const merged = applySubagentMeta(subs, {});
+    expect(merged[0].model).toBeUndefined();
+    expect(merged[0].finalTotalTokens).toBeUndefined();
+  });
+
+  it('does not mutate the input array', () => {
+    const subs = deriveSubagents([agentToolUse(TOOL_USE_ID), taskNotification(TOOL_USE_ID)]);
+    applySubagentMeta(subs, { [TOOL_USE_ID]: { model: 'claude-opus-4-8' } });
+    expect(subs[0].model).toBeUndefined();
   });
 });
 
