@@ -7,13 +7,14 @@
     <strong>A desktop GUI for Claude Code with first-class multi-account support.</strong>
   </p>
   <p>
-    Route projects to specific Claude accounts, run interactive sessions and custom agents,
-    manage MCP servers, edit CLAUDE.md files, and track usage — all without leaving the app.
+    Route projects to specific accounts, run interactive Claude Code sessions in a rich chat
+    or full terminal view, manage MCP servers, slash commands, hooks and permissions, and
+    track token usage and rate limits — all without leaving the app.
   </p>
 </div>
 
 > [!NOTE]
-> This project is not affiliated with, endorsed by, or sponsored by Anthropic. Claude is a trademark of Anthropic, PBC. This is an independent project that uses Claude Code.
+> This project is not affiliated with, endorsed by, or sponsored by Anthropic. Claude is a trademark of Anthropic, PBC. This is an independent project that drives the Claude Code CLI you install yourself.
 >
 > OmniFex is a long-running fork of [opcode](https://github.com/getAsterisk/opcode) by Asterisk, licensed under AGPL-3.0. It has since been rewritten on Electron and reshaped around multi-account workflows; little of the original Tauri/Rust codebase remains.
 
@@ -21,32 +22,58 @@
 
 OmniFex is **macOS (Apple Silicon) only** and ships as an **unsigned** build. macOS Gatekeeper will block the first launch — right-click → **Open** to bypass it once. A proper Developer ID signature is on the roadmap.
 
+The app drives the **Claude Code CLI** directly (via `node-pty` for terminal mode and `child_process` for structured streaming), so a working, authenticated Claude Code install is required. There is no web/REST mode and OmniFex bundles no model of its own.
+
 ## Features
 
 ### Multi-account routing
-- Bind projects to specific Claude accounts via path-prefix rules.
-- Longest-match-wins resolution with explicit per-project overrides.
-- Each session, agent, hook, MCP, and CLAUDE.md read/write is launched under the resolved account's `CLAUDE_CONFIG_DIR`.
+- Bind projects to specific Claude accounts using path-prefix rules, with **longest-match-wins** resolution and explicit per-project overrides.
+- Auto-discover existing accounts on your machine and scan for new ones.
+- Every session, agent, hook, MCP call, usage read, and CLAUDE.md edit runs under the resolved account's `CLAUDE_CONFIG_DIR`.
+- An account-resolution explainer shows exactly why a given project maps to a given account.
 
-### Interactive Claude Code sessions
-- Tabbed chat surface driving the official Claude CLI binary directly.
-- Streaming output, permission prompts, slash commands, and per-tab status.
+### Interactive sessions
+- **Two view modes** for the same live session: a structured **rich chat** (streaming JSON) with tool-call widgets, and a full **terminal (TUI)** view backed by the real CLI. Toggle between them mid-session.
+- Live controls in rich mode: **model picker**, **reasoning effort** (low → max), **extended-thinking** config, and **permission mode** (default / acceptEdits / bypassPermissions / plan).
+- **Slash-command picker** (`/`) plus per-session command discovery.
+- **Subagent tracking** — subagent runs are surfaced inline with their model and authoritative end-of-run stats (duration, tokens, tool count).
+- Image attachments, in-session find, permission and elicitation prompts, and per-tab context-usage / cost readouts.
+- Multi-tab layout with per-tab status glyphs (session state, engine, rate-limit warnings) and an aggregate status popover.
 
-### Custom agents
-- Define agents with custom system prompts, MCP access, and tools.
-- Run them as background tasks through the Claude CLI; track history and logs.
+### Multi-engine (Claude + Codex)
+- **Claude Code** is fully wired: sessions, agents, MCP, hooks, slash commands, permissions, and usage.
+- **OpenAI Codex** is partially wired today: you can create Codex-engine accounts and sign in (OAuth via `codex login`, or `OPENAI_API_KEY`), and browse on-disk Codex sessions. Full Codex session execution is still in progress.
 
 ### MCP server management
-- Add, edit, and test MCP servers from the UI.
-- Import server configs from Claude Desktop and Claude Code.
+- Add, edit, remove, and test MCP servers (command- or URL-based) from the UI.
+- Import server configs from Claude Desktop.
+- Scope servers at the user, local, or project level, and view live per-session server status.
+
+### Slash commands, hooks & permissions
+- Create and manage custom **slash commands** (with `description` and `allowed-tools` frontmatter) at user, local, or project scope.
+- View, edit, and validate Claude Code **hooks** across scopes.
+- Edit **permission rules** (allow/deny) at user, local, or project scope; new rules are pushed live to the active session.
 
 ### Usage analytics
-- Aggregate token and cost usage across every configured account.
-- Breakdowns by model, project, and time period.
+- Aggregate token usage and estimated cost across every configured account.
+- Break down by model, project, and date range, with per-account comparison.
 
-### CLAUDE.md and hooks
+### Rate limits
+- Scrape the CLI `/usage` view to capture five-hour and weekly **utilization %** and reset times.
+- Store rate-limit snapshots per account and fire **threshold notifications** (with configurable percentages and sounds) as you approach a limit.
+
+### CLAUDE.md & session summaries
 - Inline editor with live preview for CLAUDE.md files.
-- View and edit Claude Code hooks config from the same surface.
+- On-demand, cached **session summaries** generated by a model call.
+
+### Git awareness
+- Show the current branch per project, list **git worktrees**, and assign **per-project branch colors**.
+- A lightweight watcher refreshes the branch badge as your working tree changes.
+
+### Appearance & the rest
+- Deep theming: color palettes, typography, terminal fonts, and per-message-kind icons, with JSON export/import.
+- **Lima VM viewer** — list and start/stop Lima VMs and their Docker containers.
+- HTTP/HTTPS **proxy** settings, OS **notifications** with sound preview, and an in-app **auto-updater** that pulls new builds from GitHub Releases.
 
 ## Install
 
@@ -65,6 +92,7 @@ Once installed, OmniFex checks `releases/latest` on launch and offers in-place u
 
 - **Claude Code CLI** installed and authenticated. See [Anthropic's setup guide](https://docs.anthropic.com/en/docs/claude-code).
 - Apple Silicon Mac running a current macOS.
+- *(Optional)* the **Codex CLI** and **Lima** on your `PATH` if you want the Codex-account and VM-viewer features.
 
 ## Build from source
 
@@ -84,8 +112,8 @@ npm run make         # produces .dmg and .zip in out/make/
 Other useful scripts:
 
 ```bash
-npm run check        # tsc --noEmit across renderer and main process
-npm test             # vitest one-shot
+npm run check              # tsc --noEmit across renderer and main process
+npm test                   # vitest one-shot
 npm run test:coverage
 npm run rebuild:electron   # rebuild better-sqlite3 / node-pty for Electron's ABI
 ```
@@ -93,10 +121,11 @@ npm run rebuild:electron   # rebuild better-sqlite3 / node-pty for Electron's AB
 ## Tech stack
 
 - **Runtime**: Electron 41 (Node 22, Chromium)
-- **Renderer**: React 18 + TypeScript + Vite + Tailwind v4 + Radix / shadcn
-- **Main process**: TypeScript on Node, services wired through a typed IPC layer
+- **Renderer**: React 18 + TypeScript + Vite 6 + Tailwind v4 + Radix / shadcn
+- **Main process**: TypeScript on Node, services wired through a typed, allow-listed IPC layer
 - **Persistence**: `better-sqlite3`
-- **Claude integration**: drives the Claude CLI binary directly for both interactive sessions and agents
+- **Terminal**: `node-pty` + `@xterm/xterm`
+- **Claude/Codex integration**: drives the CLI binaries directly — `node-pty` for terminal mode, `child_process` streaming JSON for the rich engine
 
 ## Project structure
 
@@ -105,12 +134,20 @@ omnifex/
 ├── electron/              # Main process
 │   ├── main.ts            # App bootstrap, service wiring
 │   ├── preload.ts         # IPC allow-list
-│   ├── ipc/               # IPC handlers
-│   ├── services/          # Business logic (accounts, sessions, agents, mcp, usage, …)
+│   ├── ipc/               # IPC handlers + channel registry
+│   ├── services/          # Business logic
+│   │   ├── accounts.ts    #   multi-account resolution & path rules
+│   │   ├── sessions/      #   session lifecycle, TUI, permissions, subagents
+│   │   ├── agents/        #   Claude & Codex engine layer
+│   │   ├── auth/          #   Codex auth
+│   │   ├── usage*.ts      #   usage aggregation + /usage scraping
+│   │   ├── rate-limits.ts #   rate-limit snapshots & notifications
+│   │   ├── mcp.ts         #   MCP management
+│   │   └── …              #   slash commands, hooks, lima, git, updater, …
 │   └── __tests__/         # Vitest suites for main-process code
 ├── src/                   # Renderer (React)
-│   ├── components/        # UI
-│   ├── contexts/          # Theme, tabs, accounts
+│   ├── components/        # UI (sessions, accounts, MCP, usage, settings, …)
+│   ├── contexts/          # Theme, tabs, accounts, message rendering
 │   ├── stores/            # Zustand stores
 │   └── lib/               # Typed API surface (api.ts) + IPC adapter
 ├── icons/                 # App icon assets
@@ -119,9 +156,9 @@ omnifex/
 
 ## Security and privacy
 
-- All persistence is local. No telemetry, no analytics, no remote logging.
-- The main process talks to Anthropic only through the Claude CLI you have installed; OmniFex itself sends nothing to Anthropic.
-- Per-tab permission gating for tool use, mirroring Claude Code's native permission model.
+- All persistence is local (SQLite + your existing Claude/Codex config dirs). No telemetry, no analytics, no remote logging.
+- OmniFex talks to model providers only through the CLI binaries you install and authenticate; it sends nothing to Anthropic or OpenAI itself.
+- Per-session permission gating for tool use, mirroring Claude Code's native permission model.
 
 ## License
 
