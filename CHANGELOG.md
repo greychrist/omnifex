@@ -5,6 +5,21 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.90] — 2026-06-30
+
+### Fixed
+
+- **Account usage now works past the new Chrome-extension prompt.** Claude Code
+  added a first-run "Claude in Chrome extension detected" prompt that renders
+  before the welcome screen. OmniFex's `/usage` scraper had no handler for it,
+  so the scrape stalled until its timeout and surfaced the raw prompt buffer
+  instead of usage data. The runner now recognizes the prompt and presses Esc
+  ("keep browser tools off") — never Enter, whose highlighted default would opt
+  the account into browser tools — then continues to the welcome screen and
+  sends `/usage` as normal.
+
+Installers remain **unsigned** — macOS Gatekeeper blocks first launch; right-click → Open.
+
 ## [0.4.89] — 2026-06-30
 
 ### Added
