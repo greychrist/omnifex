@@ -270,10 +270,20 @@ export function createUsageRunnerService(deps: UsageRunnerDeps): UsageRunnerServ
     // spacing variant the TUI produces.
     const READY_MARKERS = ['for shortcuts', 'shift+tab to cycle'];
     const TRUST_MARKER = 'trust this folder';
+    // Claude Code added a first-run "Claude in Chrome extension detected"
+    // prompt that renders BEFORE the welcome footer. Its default-highlighted
+    // choice is "❯ 1. Yes, use my browser", so pressing Enter would opt the
+    // account into browser tools. Pressing Esc chooses "keep browser tools
+    // off" and continues to the welcome screen — that's what we want for a
+    // read-only usage scrape. Match on the prompt title; fall back to the
+    // action hint in case the wording drifts.
+    const CHROME_MARKER = 'chrome extension detected';
     const compact = (s: string) => s.replace(/\s+/g, '');
     const COMPACT_READY_MARKERS = READY_MARKERS.map(compact);
     const COMPACT_TRUST_MARKER = compact(TRUST_MARKER);
+    const COMPACT_CHROME_MARKER = compact(CHROME_MARKER);
     let trustConfirmed = false;
+    let chromeDismissed = false;
     let readyLogged = false;
     while (Date.now() < hardDeadline) {
       const stripped = stripAnsi(buffer);
@@ -296,6 +306,15 @@ export function createUsageRunnerService(deps: UsageRunnerDeps): UsageRunnerServ
         });
         pty.write('\r');
         trustConfirmed = true;
+      }
+      if (!chromeDismissed && compactStripped.toLowerCase().includes(COMPACT_CHROME_MARKER)) {
+        // Esc keeps browser tools off and dismisses the prompt. Do NOT send
+        // Enter — that would accept the highlighted "use my browser" default.
+        logInfo('chrome-extension prompt observed — sending Esc to keep browser tools off', {
+          account: accountName,
+        });
+        pty.write('\x1b');
+        chromeDismissed = true;
       }
       if (exited) break;
       await sleep(50);

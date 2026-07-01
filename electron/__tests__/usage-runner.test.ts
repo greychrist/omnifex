@@ -604,6 +604,79 @@ describe('usage-runner', () => {
     expect(result.parsed.windows.length).toBe(3);
   });
 
+  it('dismisses the Chrome-extension interstitial (Esc) and still reaches /usage', async () => {
+    // Claude Code added a first-run "Claude in Chrome extension detected"
+    // prompt that appears BEFORE the welcome footer. Its default-highlighted
+    // choice ("❯ 1. Yes, use my browser") would opt the account into browser
+    // tools if we blindly pressed Enter. The runner must recognize the prompt
+    // and press Esc ("keep browser tools off"), then continue to the welcome
+    // screen. Greg hit this in the wild — the scrape stalled on the prompt.
+    const chromePrompt = [
+      ' Claude in Chrome extension detected',
+      '',
+      ' Claude will use your Chrome browser by default.',
+      '',
+      ' ❯ 1. Yes, use my browser',
+      ' 2. No, keep browser tools off',
+      '',
+      ' Enter to confirm · Esc to keep browser tools off',
+    ].join('\n');
+
+    const writes: string[] = [];
+    const chromeSpawn: PtySpawner = () => {
+      const dataHandlers: ((d: string) => void)[] = [];
+      const exitHandlers: ((code: { exitCode: number }) => void)[] = [];
+      let killed = false;
+      // Emit the Chrome interstitial first; the welcome footer only appears
+      // once the runner dismisses it with Esc.
+      setTimeout(() => {
+        if (killed) return;
+        for (const h of dataHandlers) h(chromePrompt);
+      }, 5);
+      return {
+        write: (data: string) => {
+          writes.push(data);
+          if (data.includes('\x1b')) {
+            // Esc pressed — dialog dismissed, welcome screen renders.
+            setTimeout(() => {
+              if (killed) return;
+              for (const h of dataHandlers) h('\n? for shortcuts ');
+            }, 5);
+          }
+          if (data.includes('/usage')) {
+            setTimeout(() => {
+              if (killed) return;
+              for (const h of dataHandlers) h(MAX_FULL_FIXTURE);
+            }, 30);
+          }
+        },
+        kill: () => { killed = true; for (const h of exitHandlers) h({ exitCode: 0 }); },
+        onData: (cb) => { dataHandlers.push(cb); },
+        onExit: (cb) => { exitHandlers.push(cb); },
+      };
+    };
+
+    const observedAt = Date.UTC(2023, 10, 15, 10, 40, 0);
+    const runner = createUsageRunnerService({
+      accounts: makeFakeAccountsService(),
+      rateLimits: makeFakeRateLimits(),
+      spawnPty: chromeSpawn,
+      findClaudeBinary: () => '/fake/claude',
+      now: () => observedAt,
+      ...TUNING,
+    });
+    const result = await runner.run('personal');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.parsed.windows.length).toBe(3);
+    // Esc must have been sent before /usage, and Enter (\r) must NOT have been
+    // used to answer the Chrome prompt (that would enable browser tools).
+    const escIdx = writes.findIndex((w) => w.includes('\x1b'));
+    const usageIdx = writes.findIndex((w) => w.includes('/usage'));
+    expect(escIdx).toBeGreaterThanOrEqual(0);
+    expect(escIdx).toBeLessThan(usageIdx);
+  });
+
   it('passes the scratch cwd from ensureCwd into spawnPty (not os.homedir)', async () => {
     const seenOpts: { cwd: string; env: NodeJS.ProcessEnv }[] = [];
     const wrapped: PtySpawner = (cmd, args, opts) => {
