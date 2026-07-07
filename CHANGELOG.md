@@ -5,6 +5,31 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.91] — 2026-07-07
+
+### Added
+
+- **Session header shows the live model, effort, and permission at a glance.**
+  A thin-font rollup above the context gauge (e.g. `fable 5 | high | auto
+  review`) mirrors the session's active controls without opening the context
+  popover.
+
+### Changed
+
+- **"Account Default" now names the model it actually runs.** The model picker
+  and header summary resolve the real model — from the CLI's live
+  `get_context_usage` response, the last assistant message's model stamp, the
+  account's `settings.json` pin, or the catalog's own recommended-default
+  entry, in that order — and render it as e.g. "Account Default (Fable 5)". A
+  bare "Default" label appears only when nothing is knowable yet (session not
+  started, no catalog).
+- **The context gauge bar stretches across the free header space** instead of
+  rendering as a fixed 44px sliver, making context pressure readable from
+  across the room.
+- README rewritten to reflect the app's actual capabilities.
+
+Installers remain **unsigned** — macOS Gatekeeper blocks first launch; right-click → Open.
+
 ## [0.4.90] — 2026-06-30
 
 ### Fixed
