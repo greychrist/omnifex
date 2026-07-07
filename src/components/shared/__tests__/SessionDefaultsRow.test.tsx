@@ -83,6 +83,24 @@ describe('SessionDefaultsRow', () => {
     expect(screen.getAllByText('Account Default').length).toBeGreaterThan(0);
   });
 
+  it("engine='claude' names the live model inside the Account Default label", () => {
+    render(
+      <TooltipProvider>
+        <SessionDefaultsRow
+          engine="claude"
+          model="default"
+          setModel={() => {}}
+          effort="high"
+          setEffort={() => {}}
+          permissionMode="default"
+          setPermissionMode={() => {}}
+          activeDefaultModel="claude-fable-5"
+        />
+      </TooltipProvider>,
+    );
+    expect(screen.getByText('Account Default (Fable 5)')).toBeTruthy();
+  });
+
   it("engine='claude' permission picker lists all six CLI modes when opened", () => {
     render(<Harness engine="claude" />);
     // Open the permissions picker (its trigger shows the current mode "Default").

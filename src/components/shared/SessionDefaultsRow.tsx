@@ -12,7 +12,7 @@ import {
   type EffortLevel,
 } from '@/components/ControlBar';
 import { FormModelPicker } from '@/components/ModelPicker';
-import { useModelCatalog, pickModelOption } from '@/lib/modelCatalog';
+import { useModelCatalog, pickModelOption, resolveActualModelName } from '@/lib/modelCatalog';
 
 export interface SessionDefaultsRowProps {
   engine: AccountEngine;
@@ -40,6 +40,13 @@ export interface SessionDefaultsRowProps {
    * mirror the CLI's state (auto-detected) but can't drive it.
    */
   disabled?: boolean;
+  /**
+   * Concrete model id the live session actually runs (from get_context_usage
+   * or the last assistant JSONL line). When set, the "Account Default" entry
+   * is labeled with it — "Account Default (Fable 5)" — overriding the
+   * settings-pin/catalog inference, since the live signal is authoritative.
+   */
+  activeDefaultModel?: string | null;
   className?: string;
 }
 
@@ -95,6 +102,7 @@ export function SessionDefaultsRow({
   configDir,
   direction = 'row',
   disabled = false,
+  activeDefaultModel,
   className,
 }: SessionDefaultsRowProps) {
   const layout =
@@ -111,16 +119,28 @@ export function SessionDefaultsRow({
   // set (all six CLI modes) and the per-mode colors stay in one place and any
   // fix propagates to both surfaces.
   if (engine === 'claude') {
+    // The live session's actual model beats the settings-pin/catalog
+    // inference baked into modelList's "Account Default (…)" label.
+    const models = activeDefaultModel
+      ? modelList.map((m) =>
+          m.id === 'default'
+            ? {
+                ...m,
+                name: `Account Default (${resolveActualModelName(activeDefaultModel, modelList, modelCatalogRaw)})`,
+              }
+            : m,
+        )
+      : modelList;
     // pickModelOption bridges concrete CLI ids (e.g. `claude-opus-4-8`,
     // detected from a live TUI session) to the picker's alias options.
-    const selectedModelData = pickModelOption(model, modelList);
+    const selectedModelData = pickModelOption(model, models);
     const selectedRawModel = modelCatalogRaw.find((m) => m.value === model);
     return (
       <div className={`${layout} ${className ?? ''}`}>
         <Field label="Model">
           <FormModelPicker
             selectedModelData={selectedModelData}
-            models={modelList}
+            models={models}
             selectedModel={model}
             onSelect={setModel}
             open={modelOpen}

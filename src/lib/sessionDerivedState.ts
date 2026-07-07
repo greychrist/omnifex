@@ -145,6 +145,24 @@ export function sessionStartedAt(messages: JsonlNode[]): string | null {
   return typeof ts === 'string' ? ts : null;
 }
 
+// The concrete model id the session is actually running, read off the most
+// recent main-chain assistant message (the CLI stamps `message.model` on every
+// assistant JSONL line). Covers resumed transcripts and the window before the
+// first get_context_usage fetch. Sidechain (subagent) assistants are skipped —
+// they may run a different model — and so are `<synthetic>` stamps (the CLI's
+// marker on synthesized error assistants). Null when no assistant has spoken.
+export function lastAssistantModel(messages: JsonlNode[]): string | null {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const node = messages[i];
+    if (node.kind !== 'assistant' || !isMainAssistant(node)) continue;
+    const model = (node.raw as { message?: { model?: unknown } }).message?.model;
+    if (typeof model === 'string' && model.length > 0 && model !== '<synthetic>') {
+      return model;
+    }
+  }
+  return null;
+}
+
 // The permission mode in effect at the end of the session, for restoring a
 // resumed tab to where it left off. Walks messages[] from the end and returns
 // the first `permissionMode` it finds on either a dedicated `permission-mode`

@@ -8,6 +8,7 @@ import {
   turnDuration,
   sessionStartedAt,
   lastPermissionMode,
+  lastAssistantModel,
 } from '../sessionDerivedState';
 
 // Minimal helpers — these build JsonlNodes with the fields the derivation reads.
@@ -386,6 +387,47 @@ describe('cli-stream envelope derivation', () => {
       },
     ];
     expect(waitingOnClaude(msgs)).toBe(false); // no user prompt — not waiting
+  });
+});
+
+describe('lastAssistantModel', () => {
+  function assistantWithModel(
+    timestamp: string,
+    model: string | undefined,
+    opts: { isSidechain?: boolean } = {},
+  ): JsonlNode {
+    const node = assistantWithStop(timestamp, 'end_turn', opts);
+    (node as { raw: { message: { model?: string } } }).raw.message.model = model;
+    return node;
+  }
+
+  it('returns the model of the most recent main-chain assistant', () => {
+    const msgs = [
+      assistantWithModel('t1', 'claude-sonnet-4-6'),
+      assistantWithModel('t2', 'claude-fable-5'),
+    ];
+    expect(lastAssistantModel(msgs)).toBe('claude-fable-5');
+  });
+
+  it('skips sidechain (subagent) assistants', () => {
+    const msgs = [
+      assistantWithModel('t1', 'claude-fable-5'),
+      assistantWithModel('t2', 'claude-haiku-4-5', { isSidechain: true }),
+    ];
+    expect(lastAssistantModel(msgs)).toBe('claude-fable-5');
+  });
+
+  it('skips synthetic error assistants', () => {
+    const msgs = [
+      assistantWithModel('t1', 'claude-fable-5'),
+      assistantWithModel('t2', '<synthetic>'),
+    ];
+    expect(lastAssistantModel(msgs)).toBe('claude-fable-5');
+  });
+
+  it('returns null when no assistant carries a model', () => {
+    expect(lastAssistantModel([])).toBeNull();
+    expect(lastAssistantModel([userPrompt('t1'), assistantWithModel('t2', undefined)])).toBeNull();
   });
 });
 

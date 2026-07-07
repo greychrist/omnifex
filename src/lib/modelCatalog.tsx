@@ -50,12 +50,13 @@ export function effectiveModels(raw: SessionModelInfo[] | undefined | null): Mod
  * Relabel the catalog's `default` entry so the picker tells the truth about
  * what "default" actually runs. OmniFex's "default" means "omit `--model` and
  * let the CLI decide", which makes the CLI read the `model` pin from that
- * account's settings.json. So the honest label is "Account Default", and the
- * subtitle is that pinned model's name (resolved through the catalog, then the
+ * account's settings.json. So the honest label is "Account Default", with the
+ * pinned model's name in parentheses — "Account Default (Fable 5)" — so the
+ * trigger shows what actually runs (resolved through the catalog, then the
  * static fallback for ids the account can't see — e.g. a stale Fable pin).
  * With nothing pinned, the CLI uses its recommended default, so we keep the
- * catalog `default` entry's own description. Returns a new array; non-default
- * entries are passed through by reference.
+ * plain label and the catalog `default` entry's own description. Returns a
+ * new array; non-default entries are passed through by reference.
  */
 export function withAccountDefaultLabel(
   models: Model[],
@@ -65,13 +66,19 @@ export function withAccountDefaultLabel(
   const hasPin = !!pinnedModel && pinnedModel !== 'default';
   return models.map((m) => {
     if (m.id !== 'default') return m;
-    if (!hasPin) return { ...m, name: 'Account Default' };
+    if (!hasPin) {
+      // No pin: the CLI's recommended model runs. Name it when the catalog
+      // identifies it; only fall back to the bare label when it can't.
+      const rec = recommendedDefaultModel(raw);
+      return rec?.displayName
+        ? { ...m, name: `Account Default (${rec.displayName})` }
+        : { ...m, name: 'Account Default' };
+    }
+    const pinnedName = modelDisplayName(pinnedModel, raw);
     const inCatalog = models.find((x) => x.id === pinnedModel)?.description;
     const description =
-      inCatalog && inCatalog.length > 0
-        ? inCatalog
-        : modelDisplayName(pinnedModel, raw);
-    return { ...m, name: 'Account Default', description };
+      inCatalog && inCatalog.length > 0 ? inCatalog : pinnedName;
+    return { ...m, name: `Account Default (${pinnedName})`, description };
   });
 }
 
@@ -105,6 +112,61 @@ export function pickModelOption(model: string, models: Model[]): Model {
     if (byFamily) return byFamily;
   }
   return models[0];
+}
+
+/**
+ * The real model behind the CLI catalog's `default` entry. The CLI stamps
+ * that entry with the recommended model's own description ("Opus 4.8 with 1M
+ * context · …"), so an exact description match against the other entries
+ * identifies it; failing that, a model-family keyword in the description
+ * does. Null when the catalog gives no resolvable default (e.g. the static
+ * fallback's generic copy).
+ */
+export function recommendedDefaultModel(
+  raw?: SessionModelInfo[] | null,
+): SessionModelInfo | null {
+  const def = raw?.find((m) => m.value === 'default');
+  if (!def) return null;
+  const others = raw!.filter((m) => m.value !== 'default');
+  const byDescription = others.find(
+    (m) => !!def.description && m.description === def.description,
+  );
+  if (byDescription) return byDescription;
+  const fam = modelFamily(def.description ?? '');
+  if (fam) {
+    const byFamily = others.find(
+      (m) => modelFamily(m.value) === fam || modelFamily(m.displayName) === fam,
+    );
+    if (byFamily) return byFamily;
+  }
+  return null;
+}
+
+/**
+ * Human name for the model a session is *actually* running — an alias
+ * ('sonnet'), a `[1m]` catalog id, or a concrete CLI id like `claude-fable-5`
+ * (from `get_context_usage` / assistant JSONL lines). Exact catalog match
+ * first, then a family match against the picker options (excluding the
+ * relabeled `default` entry, which would echo its own "Account Default (…)"
+ * label back), then the raw id.
+ */
+export function resolveActualModelName(
+  id: string,
+  models: Model[],
+  raw?: SessionModelInfo[] | null,
+): string {
+  const fromRaw = raw?.find((m) => m.value === id)?.displayName;
+  if (fromRaw) return fromRaw;
+  const fromFallback = FALLBACK_MODELS.find((m) => m.id === id)?.name;
+  if (fromFallback) return fromFallback;
+  const fam = modelFamily(id);
+  if (fam) {
+    const byFamily = models.find(
+      (m) => m.id !== 'default' && (modelFamily(m.id) === fam || modelFamily(m.name) === fam),
+    );
+    if (byFamily) return byFamily.name;
+  }
+  return id;
 }
 
 /** Display name for a model id across raw catalog + fallback. */

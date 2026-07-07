@@ -65,6 +65,48 @@ describe('SessionCard — context popover controls', () => {
     expect(screen.getByText('91%')).toBeTruthy();
   });
 
+  it('renders the active-controls summary above the context gauge', () => {
+    render(
+      <SessionCard
+        totalTokens={12_000}
+        model="sonnet"
+        contextUsage={USAGE}
+        sessionStatus="active"
+        controlsSummary="Fable 5 | High | Auto Review"
+      />,
+    );
+    expect(screen.getByText('Fable 5 | High | Auto Review')).toBeTruthy();
+  });
+
+  it('renders no summary text when none is provided', () => {
+    render(
+      <SessionCard
+        totalTokens={12_000}
+        model="sonnet"
+        contextUsage={USAGE}
+        sessionStatus="active"
+      />,
+    );
+    expect(screen.queryByText(/\|/)).toBeNull();
+  });
+
+  it('stretches the context gauge to fill available width', () => {
+    render(
+      <SessionCard
+        totalTokens={12_000}
+        model="sonnet"
+        contextUsage={USAGE}
+        sessionStatus="active"
+      />,
+    );
+    const trigger = screen.getByText('12.0k').closest('button')!;
+    expect(trigger.className).toContain('w-full');
+    // The progress track grows with the trigger instead of a fixed width.
+    const track = trigger.querySelector('.flex-1');
+    expect(track).toBeTruthy();
+    expect(trigger.querySelector('.w-11')).toBeNull();
+  });
+
   it('renders no controls section when none are provided', () => {
     render(
       <SessionCard

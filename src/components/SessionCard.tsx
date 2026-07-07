@@ -51,6 +51,10 @@ interface SessionCardProps {
    * presentation-only.
    */
   controls?: React.ReactNode;
+  /** One-line rollup of the active controls ("Fable 5 | High | Auto Review"),
+   *  rendered in thin small type above the context gauge so the live state is
+   *  visible without opening the popover. */
+  controlsSummary?: string | null;
   className?: string;
 }
 
@@ -72,6 +76,7 @@ export function SessionCard({
   clearReason,
   sessionId,
   controls,
+  controlsSummary,
   className,
 }: SessionCardProps) {
   const [contextPopoverOpen, setContextPopoverOpen] = React.useState(false);
@@ -185,19 +190,22 @@ export function SessionCard({
             : slicesFromCategories;
 
         return (
-          <div className="flex flex-col items-start gap-0.5">
-            <HeaderLabel>&nbsp;</HeaderLabel>
+          <div className="flex flex-1 min-w-0 flex-col items-stretch gap-0.5">
+            <HeaderLabel className="font-light lowercase whitespace-nowrap truncate">
+              {controlsSummary || '\u00A0'}
+            </HeaderLabel>
           <Popover
             open={contextPopoverOpen}
             onOpenChange={setContextPopoverOpen}
             align="end"
             side="bottom"
             className="w-96"
+            triggerClassName="relative block w-full"
             trigger={
               <button
                 type="button"
                 className={cn(
-                  "inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-mono font-medium cursor-pointer text-foreground",
+                  "inline-flex w-full items-center gap-1.5 px-2 py-0.5 rounded text-xs font-mono font-medium cursor-pointer text-foreground",
                   "bg-background shadow-[0_0_0_1px_color-mix(in_oklch,var(--color-muted-foreground)_45%,transparent)]",
                 )}
               >
@@ -205,7 +213,7 @@ export function SessionCard({
                 <span className={cn("font-mono", color)}>
                   {tokens >= 1000 ? `${(tokens / 1000).toFixed(1)}k` : tokens}
                 </span>
-                <div className="w-11 h-1.5 bg-foreground/10 rounded-full overflow-hidden relative">
+                <div className="flex-1 min-w-11 h-1.5 bg-foreground/10 rounded-full overflow-hidden relative">
                   <div
                     className="absolute inset-0 rounded-full bg-gradient-to-r from-green-400 via-orange-400 to-red-400 transition-[clip-path]"
                     style={{ clipPath: `inset(0 ${100 - pct}% 0 0)` }}

@@ -30,7 +30,8 @@ import {
   type ThinkingConfig,
 } from "./FloatingPromptInput";
 import { normalizeThinkingConfig } from "@/lib/thinkingConfig";
-import { modelDisplayName } from "@/lib/modelCatalog";
+import { modelDisplayName, effectiveModels } from "@/lib/modelCatalog";
+import { sessionControlSummary } from "@/lib/sessionControlSummary";
 import { SessionDefaultsRow } from "@/components/shared/SessionDefaultsRow";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { SlashCommandsManager } from "./SlashCommandsManager";
@@ -47,7 +48,7 @@ import { WebviewPreview } from "./WebviewPreview";
 import type { JsonlNode } from "@/types/jsonl";
 import { normalizeJsonlNode } from "@/lib/normalizeMessage";
 import { classifyJsonlLine } from '@/lib/jsonlClassifier';
-import { lastPermissionMode } from '@/lib/sessionDerivedState';
+import { lastPermissionMode, lastAssistantModel } from '@/lib/sessionDerivedState';
 import { reduceSessionStreamMessage } from '@/lib/sessionStreamReducer';
 import { runStreamEffect } from '@/lib/sessionStreamEffects';
 import { appendInflightDelta } from '@/lib/inflightCoalescer';
@@ -496,6 +497,16 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
       .catch(() => { if (!cancelled) setAccountDefaultModel(null); });
     return () => { cancelled = true; };
   }, [accountConfigDir]);
+
+  // Concrete model id the session actually runs. get_context_usage is the
+  // authoritative live signal (rich mode); the last assistant JSONL line
+  // covers resumed transcripts and the window before the first usage fetch.
+  // Resolves what an "Account Default" selection really means in the header
+  // summary and the context-popover model picker.
+  const liveDefaultModel = useMemo(
+    () => contextUsage?.model || lastAssistantModel(messages),
+    [contextUsage, messages],
+  );
 
   // Apply per-account session defaults once when the account first resolves,
   // but only for new sessions (not when resuming or launched with explicit
@@ -1953,7 +1964,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
           )}
           {/* mode and output-style controls have moved to the chat bar (see FloatingPromptInput below). */}
           <SessionCard
-            className="ml-auto"
+            className="ml-auto flex-1 min-w-0"
             totalTokens={totalTokens}
             model={selectedModel}
             defaultModel={accountDefaultModel}
@@ -1968,6 +1979,19 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
             clearDisabled={clearButtonDisabled}
             clearReason={clearButtonReason}
             sessionId={claudeSessionId}
+            controlsSummary={
+              agent === 'claude'
+                ? sessionControlSummary({
+                    model: selectedModel,
+                    liveModel: liveDefaultModel,
+                    accountDefaultModel,
+                    models: effectiveModels(supportedModels),
+                    raw: supportedModels,
+                    effort,
+                    permissionMode,
+                  })
+                : undefined
+            }
             controls={
               <SessionDefaultsRow
                 engine={agent}
@@ -1977,6 +2001,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
                 // render read-only and mirror the auto-detected live state.
                 disabled={sessionMode === 'tui'}
                 configDir={accountResolution?.account.config_dir}
+                activeDefaultModel={liveDefaultModel}
                 model={selectedModel}
                 setModel={(newModel) => {
                   // Updates selectedModel AND, if a session is running, pushes

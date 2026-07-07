@@ -8,6 +8,8 @@ import {
   modelDisplayName,
   modelFamily,
   pickModelOption,
+  resolveActualModelName,
+  recommendedDefaultModel,
   withAccountDefaultLabel,
   useModelCatalog,
 } from '../modelCatalog';
@@ -208,7 +210,7 @@ describe('useModelCatalog', () => {
 
     await waitFor(() => {
       const def = result.current.models.find((m) => m.id === 'default');
-      expect(def?.name).toBe('Account Default');
+      expect(def?.name).toBe('Account Default (Opus)');
       expect(def?.description).toBe('Opus 4.8 with 1M context');
     });
     expect(mockedSettings).toHaveBeenCalledWith({
@@ -223,21 +225,80 @@ describe('useModelCatalog', () => {
 
     await waitFor(() => {
       const def = result.current.models.find((m) => m.id === 'default');
-      expect(def?.name).toBe('Account Default');
+      expect(def?.name).toBe('Account Default (Fable 5)');
       expect(def?.description).toBe('Fable 5');
     });
   });
 
-  it('keeps the CLI-recommended description when nothing is pinned', async () => {
+  it('names the CLI-recommended model when nothing is pinned', async () => {
     mockedList.mockResolvedValue(CATALOG);
     mockedSettings.mockResolvedValue({});
     const { result } = renderHook(() => useModelCatalog('/Users/g/.claude-personal'));
 
     await waitFor(() => {
       const def = result.current.models.find((m) => m.id === 'default');
-      expect(def?.name).toBe('Account Default');
+      // No pin, but the catalog's default entry identifies the recommended
+      // model (opus[1m]) via its shared description — name it.
+      expect(def?.name).toBe('Account Default (Opus)');
       expect(def?.description).toBe('Opus 4.8 with 1M context');
     });
+  });
+});
+
+describe('resolveActualModelName', () => {
+  it('prefers an exact raw-catalog match', () => {
+    expect(resolveActualModelName('claude-fable-5[1m]', FALLBACK_MODELS, RAW)).toBe('Fable 5');
+  });
+
+  it('resolves an alias through the static fallback', () => {
+    expect(resolveActualModelName('sonnet', FALLBACK_MODELS, null)).toBe('Sonnet');
+  });
+
+  it('resolves a concrete CLI id (e.g. from get_context_usage) by family', () => {
+    expect(resolveActualModelName('claude-fable-5', FALLBACK_MODELS, null)).toBe('Fable 5');
+    expect(resolveActualModelName('claude-sonnet-4-6-20260101', FALLBACK_MODELS, null)).toBe('Sonnet');
+  });
+
+  it('never resolves through the relabeled default entry', () => {
+    // A catalog whose only "fable" mention is inside the Account Default
+    // label must not echo that label back as the model name.
+    const models: Model[] = [
+      { id: 'default', name: 'Account Default (Fable 5)', description: '', icon: null, shortName: 'D', color: 'text-primary' },
+      { id: 'sonnet', name: 'Sonnet', description: '', icon: null, shortName: 'S', color: 'text-primary' },
+    ];
+    expect(resolveActualModelName('claude-fable-5', models, null)).toBe('claude-fable-5');
+  });
+
+  it('falls back to the raw id when nothing matches', () => {
+    expect(resolveActualModelName('mystery-model', FALLBACK_MODELS, null)).toBe('mystery-model');
+  });
+});
+
+describe('recommendedDefaultModel', () => {
+  it('matches the default entry to the real model by shared description', () => {
+    // The CLI stamps the default entry with the recommended model's own
+    // description — in CATALOG that is opus[1m].
+    expect(recommendedDefaultModel(CATALOG)?.value).toBe('opus[1m]');
+  });
+
+  it('falls back to a family keyword in the default description', () => {
+    const catalog: SessionModelInfo[] = [
+      { value: 'default', displayName: 'Default (recommended)', description: 'Sonnet 4.6, tuned for speed' },
+      { value: 'sonnet', displayName: 'Sonnet', description: 'Efficient for routine tasks' },
+    ];
+    expect(recommendedDefaultModel(catalog)?.value).toBe('sonnet');
+  });
+
+  it('returns null when the catalog gives no resolvable default', () => {
+    expect(recommendedDefaultModel(null)).toBeNull();
+    expect(recommendedDefaultModel([])).toBeNull();
+    expect(recommendedDefaultModel(RAW)).toBeNull(); // no default entry at all
+    expect(
+      recommendedDefaultModel([
+        { value: 'default', displayName: 'Default (recommended)', description: 'The CLI picks' },
+        { value: 'haiku', displayName: 'Haiku', description: 'Fastest' },
+      ]),
+    ).toBeNull();
   });
 });
 
@@ -248,9 +309,32 @@ describe('withAccountDefaultLabel', () => {
     { id: 'sonnet', name: 'Sonnet', description: 'Sonnet 4.6', icon: null, shortName: 'S', color: 'text-primary' },
   ];
 
-  it('renames the default entry to "Account Default"', () => {
+  it('renames the default entry to "Account Default" when nothing identifies the model', () => {
     const out = withAccountDefaultLabel(models, null);
     expect(out.find((m) => m.id === 'default')?.name).toBe('Account Default');
+  });
+
+  it('names the CLI-recommended model with no pin when the raw catalog identifies it', () => {
+    const out = withAccountDefaultLabel(models, null, CATALOG);
+    expect(out.find((m) => m.id === 'default')?.name).toBe('Account Default (Opus)');
+  });
+
+  it('names the pinned model in the label so the picker shows what actually runs', () => {
+    const out = withAccountDefaultLabel(models, 'sonnet');
+    expect(out.find((m) => m.id === 'default')?.name).toBe('Account Default (Sonnet)');
+  });
+
+  it('resolves the pinned name through the raw catalog when provided', () => {
+    const raw: SessionModelInfo[] = [
+      { value: 'opus[1m]', displayName: 'Opus', description: 'Opus 4.8 with 1M context' },
+    ];
+    const out = withAccountDefaultLabel(models, 'opus[1m]', raw);
+    expect(out.find((m) => m.id === 'default')?.name).toBe('Account Default (Opus)');
+  });
+
+  it('names a pin missing from the catalog via the static fallback', () => {
+    const out = withAccountDefaultLabel(models, 'claude-fable-5[1m]');
+    expect(out.find((m) => m.id === 'default')?.name).toBe('Account Default (Fable 5)');
   });
 
   it('leaves non-default entries untouched', () => {
