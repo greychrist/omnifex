@@ -1964,7 +1964,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
           )}
           {/* mode and output-style controls have moved to the chat bar (see FloatingPromptInput below). */}
           <SessionCard
-            className="ml-auto flex-1 min-w-0"
+            className="ml-auto min-w-0"
             totalTokens={totalTokens}
             model={selectedModel}
             defaultModel={accountDefaultModel}
