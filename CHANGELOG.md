@@ -5,6 +5,27 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.93] — 2026-07-09
+
+### Fixed
+
+- **Session header can no longer be resized shorter than its content.** The
+  resize floor now tracks the current-branch badge (wrap-aware), so long
+  worktree lists still scroll inside the header but the default branch badge
+  never spills out the bottom.
+- **Reopened sessions show the model they actually ran.** The header summary
+  no longer falls back to "default (recommended)"; it resolves the live model
+  from the session transcript, and resuming relaunches with that model
+  instead of a hardcoded seed. Concrete CLI ids display human-readable
+  (`claude-opus-4-8` → "Opus 4.8").
+
+### Changed
+
+- **Branch badge font reduced** from 12px to 11px, so long branch names fit
+  and wrap less.
+
+Installers remain **unsigned**.
+
 ## [0.4.92] — 2026-07-07
 
 ### Fixed
