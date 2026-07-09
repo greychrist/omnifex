@@ -9,6 +9,7 @@ import {
   modelFamily,
   pickModelOption,
   resolveActualModelName,
+  prettyModelName,
   recommendedDefaultModel,
   withAccountDefaultLabel,
   useModelCatalog,
@@ -266,11 +267,37 @@ describe('resolveActualModelName', () => {
       { id: 'default', name: 'Account Default (Fable 5)', description: '', icon: null, shortName: 'D', color: 'text-primary' },
       { id: 'sonnet', name: 'Sonnet', description: '', icon: null, shortName: 'S', color: 'text-primary' },
     ];
-    expect(resolveActualModelName('claude-fable-5', models, null)).toBe('claude-fable-5');
+    expect(resolveActualModelName('claude-fable-5', models, null)).toBe('Fable 5');
   });
 
-  it('falls back to the raw id when nothing matches', () => {
-    expect(resolveActualModelName('mystery-model', FALLBACK_MODELS, null)).toBe('mystery-model');
+  it('prettifies a concrete CLI id the catalog cannot resolve', () => {
+    // FALLBACK_MODELS has no opus entry, so no family match — the raw id
+    // must still come out human-readable, not as "claude-opus-4-8".
+    expect(resolveActualModelName('claude-opus-4-8', FALLBACK_MODELS, null)).toBe('Opus 4.8');
+  });
+
+  it('prettifies unknown ids as a last resort', () => {
+    expect(resolveActualModelName('mystery-model', FALLBACK_MODELS, null)).toBe('Mystery Model');
+  });
+});
+
+describe('prettyModelName', () => {
+  it('drops the claude- prefix and dots the version', () => {
+    expect(prettyModelName('claude-opus-4-8')).toBe('Opus 4.8');
+    expect(prettyModelName('claude-fable-5')).toBe('Fable 5');
+  });
+
+  it('drops trailing date stamps', () => {
+    expect(prettyModelName('claude-haiku-4-5-20251001')).toBe('Haiku 4.5');
+  });
+
+  it('strips the [1m] suffix and handles bare aliases', () => {
+    expect(prettyModelName('opus[1m]')).toBe('Opus');
+    expect(prettyModelName('sonnet')).toBe('Sonnet');
+  });
+
+  it('returns the id untouched when nothing readable remains', () => {
+    expect(prettyModelName('20260101')).toBe('20260101');
   });
 });
 

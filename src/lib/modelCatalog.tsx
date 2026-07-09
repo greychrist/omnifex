@@ -143,12 +143,32 @@ export function recommendedDefaultModel(
 }
 
 /**
+ * Human-readable name derived from a model id alone, for ids no catalog can
+ * resolve: strip the `claude-` prefix and any `[1m]` suffix, drop date-stamp
+ * segments, capitalize the words, and join version digits with dots —
+ * `claude-opus-4-8` → "Opus 4.8", `claude-haiku-4-5-20251001` → "Haiku 4.5".
+ * Returns the id untouched when nothing readable remains.
+ */
+export function prettyModelName(id: string): string {
+  const parts = id
+    .replace(/\[1m\]$/, '')
+    .replace(/^claude-/, '')
+    .split('-')
+    .filter((p) => p.length > 0 && !/^\d{6,}$/.test(p));
+  const words = parts.filter((p) => !/^\d+$/.test(p));
+  const version = parts.filter((p) => /^\d+$/.test(p)).join('.');
+  const name = words.map((w) => w[0].toUpperCase() + w.slice(1)).join(' ');
+  if (!name) return id;
+  return version ? `${name} ${version}` : name;
+}
+
+/**
  * Human name for the model a session is *actually* running — an alias
  * ('sonnet'), a `[1m]` catalog id, or a concrete CLI id like `claude-fable-5`
  * (from `get_context_usage` / assistant JSONL lines). Exact catalog match
  * first, then a family match against the picker options (excluding the
  * relabeled `default` entry, which would echo its own "Account Default (…)"
- * label back), then the raw id.
+ * label back), then the prettified id.
  */
 export function resolveActualModelName(
   id: string,
@@ -166,7 +186,7 @@ export function resolveActualModelName(
     );
     if (byFamily) return byFamily.name;
   }
-  return id;
+  return prettyModelName(id);
 }
 
 /** Display name for a model id across raw catalog + fallback. */

@@ -103,6 +103,10 @@ const pickGerund = (): string => GERUNDS[Math.floor(Math.random() * GERUNDS.leng
 const HEADER_HEIGHT_KEY = 'omnifex.session-header-height';
 const MIN_HEADER_HEIGHT = 60;
 const MAX_HEADER_HEIGHT = 600;
+// Vertical chrome around the branch card's content — header py-1.5 (12px)
+// plus card py-1 (8px). Added to the measured branch-column height to get
+// the shortest header that still shows the current-branch badge in full.
+const HEADER_VERTICAL_CHROME = 20;
 
 interface AgentSessionProps {
   /**
@@ -414,6 +418,32 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     if (headerHeight == null) return;
     window.localStorage.setItem(HEADER_HEIGHT_KEY, String(headerHeight));
   }, [headerHeight]);
+  // Floor for the resizable header: shrinking lets long worktree lists
+  // scroll, but never below the branch column (label + current-branch badge).
+  // Measured live — the badge wraps on long branch names, so a constant
+  // floor would under- or over-shoot.
+  const branchColRef = useRef<HTMLDivElement>(null);
+  const [headerMinHeight, setHeaderMinHeight] = useState(MIN_HEADER_HEIGHT);
+  const hasBranchCard = !!sessionGit?.project?.branch;
+  useEffect(() => {
+    const el = branchColRef.current;
+    if (!el) {
+      setHeaderMinHeight(MIN_HEADER_HEIGHT);
+      return;
+    }
+    const update = () => {
+      setHeaderMinHeight(
+        Math.max(
+          MIN_HEADER_HEIGHT,
+          Math.ceil(el.getBoundingClientRect().height) + HEADER_VERTICAL_CHROME,
+        ),
+      );
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => { observer.disconnect(); };
+  }, [hasBranchCard]);
   const handleHeaderResizeStart = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault();
     const headerEl = headerRef.current;
@@ -428,7 +458,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     document.body.style.cursor = 'ns-resize';
     const onMove = (ev: PointerEvent) => {
       const next = Math.max(
-        MIN_HEADER_HEIGHT,
+        headerMinHeight,
         Math.min(MAX_HEADER_HEIGHT, startHeight + (ev.clientY - startY)),
       );
       setHeaderHeight(next);
@@ -443,7 +473,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     handleEl.addEventListener('pointermove', onMove);
     handleEl.addEventListener('pointerup', onUp);
     handleEl.addEventListener('pointercancel', onUp);
-  }, [headerHeight]);
+  }, [headerHeight, headerMinHeight]);
   const handleHeaderResizeReset = useCallback(() => {
     setHeaderHeight(null);
     window.localStorage.removeItem(HEADER_HEIGHT_KEY);
@@ -917,6 +947,14 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
         lastPermissionMode(nodes)
         ?? accountResolutionRef.current?.account.session_defaults?.permissionMode;
       if (resumedMode) setPermissionMode(resumedMode);
+
+      // Restore the model the session actually ran (same resume fidelity as
+      // the permission mode above). Without this, selectedModel keeps its
+      // hardcoded mount seed — the header summary names the wrong model and
+      // a relaunch would even spawn with it. Concrete CLI ids are an accepted
+      // selectedModel state (the TUI control mirror sets them too).
+      const resumedModel = lastAssistantModel(nodes);
+      if (resumedModel) setSelectedModel(resumedModel);
 
       // Scroll to bottom after loading history
       setTimeout(() => {
@@ -1866,7 +1904,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
         <div
           ref={headerRef}
           className="relative flex items-start gap-2 px-4 py-1.5 border-b border-border/30 bg-muted shrink-0"
-          style={headerHeight != null ? { height: headerHeight } : undefined}
+          style={headerHeight != null ? { height: Math.max(headerHeight, headerMinHeight) } : undefined}
         >
           <TooltipSimple content="Back to Project page" side="bottom">
             <Button
@@ -1905,7 +1943,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
                 headerHeight != null && "self-stretch min-h-0",
               )}
             >
-              <div className="flex flex-col items-start gap-0.5">
+              <div ref={branchColRef} className="flex flex-col items-start gap-0.5">
                 <HeaderLabel>branch</HeaderLabel>
                 <GitBranchBadge
                   name={gitStatus.branch}

@@ -94,6 +94,64 @@ describe('sessionControlSummary', () => {
     ).toBe('Default | High | Default');
   });
 
+  // Regression: a reopened tab seeds `model` with a hardcoded alias before
+  // any catalog arrives. The summary must surface the transcript's actual
+  // model — never the fallback catalog's "Default (recommended)" entry.
+  it('prefers the live model over the selection seed on a reopened session', () => {
+    expect(
+      sessionControlSummary({
+        model: 'opus',
+        liveModel: 'claude-opus-4-8',
+        accountDefaultModel: null,
+        models: FALLBACK_MODELS,
+        raw: null,
+        effort: 'high',
+        permissionMode: 'auto',
+      }),
+    ).toBe('Opus 4.8 | High | Auto Review');
+  });
+
+  it('prefers the live model over an explicit alias selection', () => {
+    expect(
+      sessionControlSummary({
+        model: 'sonnet',
+        liveModel: 'claude-fable-5',
+        accountDefaultModel: null,
+        models: FALLBACK_MODELS,
+        raw: RAW,
+        effort: 'high',
+        permissionMode: 'auto',
+      }),
+    ).toBe('Fable 5 | High | Auto Review');
+  });
+
+  it('never shows the default entry for a selection the catalog cannot resolve', () => {
+    expect(
+      sessionControlSummary({
+        model: 'opus',
+        accountDefaultModel: null,
+        models: FALLBACK_MODELS,
+        raw: null,
+        effort: 'high',
+        permissionMode: 'auto',
+      }),
+    ).toBe('Opus | High | Auto Review');
+  });
+
+  it('treats a literal "default" live model as no live signal', () => {
+    expect(
+      sessionControlSummary({
+        model: 'default',
+        liveModel: 'default',
+        accountDefaultModel: 'claude-fable-5[1m]',
+        models: FALLBACK_MODELS,
+        raw: RAW,
+        effort: 'high',
+        permissionMode: 'auto',
+      }),
+    ).toBe('Fable 5 | High | Auto Review');
+  });
+
   it('resolves an explicit alias selection through the picker catalog', () => {
     expect(
       sessionControlSummary({

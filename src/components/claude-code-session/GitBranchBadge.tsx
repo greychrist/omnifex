@@ -90,7 +90,7 @@ export const GitBranchBadge: React.FC<GitBranchBadgeProps> = ({
     return (
       <span
         className={cn(
-          'inline-flex items-center gap-1 px-2 py-0.5 rounded border text-xs font-mono font-medium',
+          'inline-flex items-center gap-1 px-2 py-0.5 rounded border text-[11px] font-mono font-medium',
           isTrunk && 'bg-black text-white border-black',
         )}
         style={inlineStyle}
@@ -112,7 +112,7 @@ export const GitBranchBadge: React.FC<GitBranchBadgeProps> = ({
         <button
           type="button"
           className={cn(
-            'inline-flex items-center gap-1 px-2 py-0.5 rounded border text-xs font-mono font-medium cursor-pointer',
+            'inline-flex items-center gap-1 px-2 py-0.5 rounded border text-[11px] font-mono font-medium cursor-pointer',
             'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
             isTrunk && 'bg-black text-white border-black',
           )}
