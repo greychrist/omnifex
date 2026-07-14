@@ -376,8 +376,15 @@ export const ProjectList: React.FC<ProjectListProps> = ({
                   // the column is visibly empty rather than showing an
                   // epoch-zero "55y ago".
                   const lastActivity = project.most_recent_session ?? 0;
+                  // Close the pinned group with a heavier rule. Only the LAST
+                  // pinned row carries it, and only when unpinned rows follow
+                  // — all-pinned (or none-pinned) would otherwise render a
+                  // stray line under the table with nothing to separate.
+                  const isPinBoundary =
+                    !!project.pinned && !!visibleProjects[index + 1] && !visibleProjects[index + 1].pinned;
                   return (
                     <motion.tr
+                      data-pin-boundary={isPinBoundary ? 'true' : undefined}
                       key={project.id}
                       initial={{ opacity: 0, y: 4 }}
                       animate={{ opacity: 1, y: 0 }}
@@ -388,7 +395,39 @@ export const ProjectList: React.FC<ProjectListProps> = ({
                       // we deliberately omit `cursor-pointer` here —
                       // the hover tint is presentational, not an
                       // affordance.
-                      className="border-b border-border/30 transition-colors hover:bg-accent/40"
+                      className={cn(
+                        "transition-colors hover:bg-accent/40",
+                        // Ordinary row separator.
+                        "border-b border-border/30",
+                        // The pinned group closes with a double rule, drawn as
+                        // a 5px `border-bottom-style: double`. Chromium splits
+                        // the width line/gap/line as floor(w/3) for each line
+                        // and the remainder for the gap, so 5px gives 1px/3px/
+                        // 1px: hairlines matching the other row separators,
+                        // with an open gap between them. (3px would be 1/1/1 —
+                        // the lines nearly touch and read as one thick rule;
+                        // 7px would be 2/3/2, thickening the lines rather than
+                        // opening the gap.)
+                        //
+                        // Not a box-shadow: Tailwind preflight leaves tables
+                        // at `border-collapse: collapse`, and Chromium doesn't
+                        // paint box-shadows on rows in a collapsed table — the
+                        // rule would silently never appear. Borders do render
+                        // (the row's own border-b proves it), and the collapse
+                        // algorithm resolves on width, so 3px beats the next
+                        // row's 1px and survives.
+                        // The colour needs `!` and `color-mix`, for two
+                        // reasons worth knowing: styles.css sets
+                        // `* { border-color: var(--color-border) }` OUTSIDE
+                        // any @layer, and unlayered rules beat layered ones
+                        // regardless of specificity — so every Tailwind
+                        // border-colour utility is overridden app-wide.
+                        // And Tailwind bakes `border-*` colours to a hex at
+                        // build time, which wouldn't follow the theme;
+                        // `var()` inside color-mix resolves at runtime.
+                        isPinBoundary &&
+                          "border-b-[5px] [border-bottom-style:double] [border-bottom-color:color-mix(in_oklch,var(--color-muted-foreground)_45%,transparent)]!",
+                      )}
                     >
                       <td className="px-3 py-2 font-medium">
                         {/* Name renders as a link-styled <button> with a

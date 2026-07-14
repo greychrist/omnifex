@@ -135,6 +135,121 @@ describe('claude service', () => {
       expect(createProjectPinsService(db).isPinned('/home/user/delpin')).toBe(false);
     });
 
+    // A project's identity is its recovered path, not its encoded dir name:
+    // pins, account overrides and path rules all key on project_path. Claude
+    // can end up with several encoded dirs resolving to one real folder (the
+    // documented rename case — it keeps writing the new cwd into the old
+    // dir), which surfaced as the same project listed twice.
+    describe('directories that resolve to the same path', () => {
+      const REAL = '/Users/greg/Repos/work/pi-tuitive';
+
+      /** Two encoded dirs, both resolving to REAL via their JSONL cwd. */
+      function makeTwoDirs(configDir: string): void {
+        const dirs: [string, number][] = [
+          ['-Users-greg-Repos-work-pi-tuitive', 18],
+          ['-Users-greg-Repos-work-pi-tuitive-fe', 1],
+        ];
+        for (const [id, count] of dirs) {
+          const d = path.join(configDir, 'projects', id);
+          fs.mkdirSync(d, { recursive: true });
+          for (let i = 0; i < count; i++) {
+            const f = path.join(d, `${id}-s${i}.jsonl`);
+            fs.writeFileSync(f, JSON.stringify({ type: 'user', cwd: REAL }) + '\n');
+            // The 18-session dir is the recently-active one; the 1-session
+            // dir is the stale leftover.
+            const when = id.endsWith('-fe') ? new Date('2026-07-01') : new Date('2026-07-14');
+            fs.utimesSync(f, when, when);
+          }
+        }
+      }
+
+      it('lists one row per real project, merging every contributing dir', async () => {
+        const configDir = path.join(tmpDir, '.claude-merge');
+        makeTwoDirs(configDir);
+        accounts.createAccount({ name: 'Work', configDir });
+
+        const rows = (await service.listProjects()).filter((p) => p.path === REAL);
+        expect(rows).toHaveLength(1);
+        // No conversation becomes unreachable: 18 + 1.
+        expect(rows[0].sessions).toHaveLength(19);
+        // The primary dir is the recently-active one.
+        expect(rows[0].id).toBe('-Users-greg-Repos-work-pi-tuitive');
+      });
+
+      it('reports the newest activity across the merged dirs', async () => {
+        const configDir = path.join(tmpDir, '.claude-merge2');
+        makeTwoDirs(configDir);
+        accounts.createAccount({ name: 'Work', configDir });
+
+        const row = (await service.listProjects()).find((p) => p.path === REAL);
+        const jul14 = Math.floor(new Date('2026-07-14').getTime() / 1000);
+        expect(row?.most_recent_session).toBe(jul14);
+      });
+
+      it('getProjectSessions returns sessions from every contributing dir', async () => {
+        const configDir = path.join(tmpDir, '.claude-merge3');
+        makeTwoDirs(configDir);
+        const acct = accounts.createAccount({ name: 'Work', configDir });
+        // getProjectSessions resolves the account by path rule (no default
+        // fallback), so the rule is required for the lookup to land.
+        accounts.addPathRule(acct.id, '/Users/greg/Repos/work');
+
+        const sessions = await service.getProjectSessions(
+          '-Users-greg-Repos-work-pi-tuitive',
+          REAL,
+        );
+        expect(sessions).toHaveLength(19);
+      });
+
+      it('deleteProject removes every dir that resolves to the path', async () => {
+        const configDir = path.join(tmpDir, '.claude-merge4');
+        makeTwoDirs(configDir);
+        const account = accounts.createAccount({ name: 'Work', configDir });
+
+        await service.deleteProject({
+          accountId: account.id,
+          projectId: '-Users-greg-Repos-work-pi-tuitive',
+        });
+        // Leaving the stale dir behind would resurrect the duplicate row.
+        expect(fs.existsSync(path.join(configDir, 'projects', '-Users-greg-Repos-work-pi-tuitive'))).toBe(false);
+        expect(fs.existsSync(path.join(configDir, 'projects', '-Users-greg-Repos-work-pi-tuitive-fe'))).toBe(false);
+      });
+
+      it('opens a session that lives in a secondary dir', async () => {
+        // A merged row lists sessions from every contributing dir, so history
+        // loading must find them there too — otherwise the row promises 19
+        // conversations and silently opens some of them empty.
+        const configDir = path.join(tmpDir, '.claude-merge5');
+        makeTwoDirs(configDir);
+        const acct = accounts.createAccount({ name: 'Work', configDir });
+        accounts.addPathRule(acct.id, '/Users/greg/Repos/work');
+
+        const history = await service.loadSessionHistory(
+          '-Users-greg-Repos-work-pi-tuitive-fe-s0',   // lives in the stale dir
+          '-Users-greg-Repos-work-pi-tuitive',         // but asked for via the primary id
+          REAL,
+        );
+        expect(history.length).toBeGreaterThan(0);
+      });
+
+      it('keeps genuinely distinct projects separate', async () => {
+        // Guard against over-merging: same basename, different real folders.
+        const configDir = path.join(tmpDir, '.claude-distinct');
+        for (const [id, cwd] of [
+          ['-Users-greg-a-pi-tuitive', '/Users/greg/a/pi-tuitive'],
+          ['-Users-greg-b-pi-tuitive', '/Users/greg/b/pi-tuitive'],
+        ]) {
+          const d = path.join(configDir, 'projects', id);
+          fs.mkdirSync(d, { recursive: true });
+          fs.writeFileSync(path.join(d, 's.jsonl'), JSON.stringify({ type: 'user', cwd }) + '\n');
+        }
+        accounts.createAccount({ name: 'W', configDir });
+
+        const rows = (await service.listProjects()).filter((p) => p.path.endsWith('/pi-tuitive'));
+        expect(rows).toHaveLength(2);
+      });
+    });
+
     // Regression: Claude Code's project-dir encoding (/ → -) is lossy.
     // `-Users-greg-Repos-work-pi-tuitive-fe` could decode to either
     // `/Users/greg/Repos/work/pi-tuitive-fe` (correct) or

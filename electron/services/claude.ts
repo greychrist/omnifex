@@ -352,6 +352,35 @@ function recoverProjectPath(projectDir: string, projectId: string): string {
   return fallback;
 }
 
+/**
+ * Every project dir under `projectsDir` whose recovered path is `projectPath`.
+ *
+ * A project's identity is its recovered path — pins, account overrides and
+ * account path rules all key on `project_path`. But Claude can leave several
+ * encoded dirs resolving to one real folder (see recoverProjectPath's rename
+ * note: it keeps writing the new cwd into the old encoded dir). So any caller
+ * that means "the whole project" must union these dirs rather than trust a
+ * single encoded id — otherwise the same folder lists twice, and sessions in
+ * the non-primary dirs become unreachable.
+ *
+ * Usually returns exactly one dir; the multi-dir case is the leftover.
+ */
+function findProjectDirsForPath(projectsDir: string, projectPath: string): string[] {
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(projectsDir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const matches: string[] = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const dir = path.join(projectsDir, entry.name);
+    if (recoverProjectPath(dir, entry.name) === projectPath) matches.push(entry.name);
+  }
+  return matches;
+}
+
 function encodeProjectId(projectPath: string): string {
   // Claude Code convention: leading dash + slashes replaced with dashes
   // e.g., /Users/foo/bar → -Users-foo-bar
@@ -491,7 +520,12 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
   // -------------------------------------------------------------------------
 
   async function listProjects(): Promise<Project[]> {
-    const projects: Project[] = [];
+    // Keyed by recovered path, not by encoded dir name: the path is the
+    // project's identity everywhere else (pins, overrides, path rules), and
+    // several encoded dirs can resolve to one folder. Keying by id listed such
+    // a project once per dir — visually identical rows that pins, which key on
+    // path, could not tell apart. See findProjectDirsForPath.
+    const byPath = new Map<string, Project>();
     const seenIds = new Set<string>();
 
     // Read pins once per listing, not once per project — the renderer gets
@@ -549,19 +583,40 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
         }
 
         const projectPath = recoverProjectPath(projectDir, projectId);
-        projects.push({
-          id: projectId,
-          path: projectPath,
-          sessions,
-          created_at: Math.floor(createdAt / 1000),
-          most_recent_session:
-            mostRecent !== undefined ? Math.floor(mostRecent / 1000) : undefined,
-          account_id: account.id,
-          account_name: account.name,
-          pinned: pinnedPaths.has(projectPath),
-        });
+        const recentSec =
+          mostRecent !== undefined ? Math.floor(mostRecent / 1000) : undefined;
+        const createdSec = Math.floor(createdAt / 1000);
+
+        const existing = byPath.get(projectPath);
+        if (!existing) {
+          byPath.set(projectPath, {
+            id: projectId,
+            path: projectPath,
+            sessions,
+            created_at: createdSec,
+            most_recent_session: recentSec,
+            account_id: account.id,
+            account_name: account.name,
+            pinned: pinnedPaths.has(projectPath),
+          });
+          continue;
+        }
+
+        // Same folder, another encoded dir. Union the sessions so none become
+        // unreachable, take the earliest creation, and let the most recently
+        // active dir be the primary — its id and account represent the row.
+        existing.sessions = [...new Set([...existing.sessions, ...sessions])];
+        existing.created_at = Math.min(existing.created_at, createdSec);
+        if ((recentSec ?? 0) > (existing.most_recent_session ?? 0)) {
+          existing.id = projectId;
+          existing.account_id = account.id;
+          existing.account_name = account.name;
+          existing.most_recent_session = recentSec;
+        }
       }
     }
+
+    const projects = [...byPath.values()];
 
     // Sort by most_recent_session DESC (undefined last)
     projects.sort((a, b) => {
@@ -598,52 +653,67 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
       );
     }
 
-    const projectDir = path.join(configDir, 'projects', projectId);
-    // Account exists but no on-disk sessions yet — legitimate empty state.
-    if (!fs.existsSync(projectDir)) return [];
-
-    let entries: fs.Dirent[];
-    try {
-      entries = fs.readdirSync(projectDir, { withFileTypes: true });
-    } catch {
-      return [];
-    }
+    const projectsDir = path.join(configDir, 'projects');
+    // One folder can span several encoded dirs, and listProjects merges them
+    // into a single row listing all their sessions — so read every one of
+    // them here too. Reading only `projectId` would list 19 sessions and then
+    // fail to produce the ones living in the non-primary dir.
+    const resolvedPath =
+      projectPath ?? recoverProjectPath(path.join(projectsDir, projectId), projectId);
+    const dirNames = findProjectDirsForPath(projectsDir, resolvedPath);
+    // Nothing resolved (e.g. a fresh project dir with no JSONL yet) — fall
+    // back to exactly the id we were asked for.
+    const projectDirs = dirNames.length > 0 ? dirNames : [projectId];
 
     const sessions: Session[] = [];
 
-    for (const entry of entries) {
-      if (!entry.isFile() || !entry.name.endsWith('.jsonl')) continue;
-      const sessionId = entry.name.replace(/\.jsonl$/, '');
-      const filePath = path.join(projectDir, entry.name);
+    for (const dirName of projectDirs) {
+      const projectDir = path.join(projectsDir, dirName);
+      // Account exists but no on-disk sessions yet — legitimate empty state.
+      if (!fs.existsSync(projectDir)) continue;
 
-      let createdAt = Date.now();
-      let mtimeFallback: string | undefined;
-      let fileSize: number | undefined;
-
+      let entries: fs.Dirent[];
       try {
-        const stat = fs.statSync(filePath);
-        createdAt = stat.birthtimeMs;
-        mtimeFallback = new Date(stat.mtimeMs).toISOString();
-        fileSize = stat.size;
+        entries = fs.readdirSync(projectDir, { withFileTypes: true });
       } catch {
-        // ignore
+        continue;
       }
 
-      const { firstMessage, firstTimestamp, lastTimestamp } =
-        extractSessionMetadata(filePath);
-      const decodedPath = projectPath ?? recoverProjectPath(projectDir, projectId);
+      for (const entry of entries) {
+        if (!entry.isFile() || !entry.name.endsWith('.jsonl')) continue;
+        const sessionId = entry.name.replace(/\.jsonl$/, '');
+        const filePath = path.join(projectDir, entry.name);
 
-      sessions.push({
-        id: sessionId,
-        project_id: projectId,
-        project_path: decodedPath,
-        created_at: Math.floor(createdAt / 1000),
-        first_message: firstMessage,
-        first_timestamp: firstTimestamp,
-        last_timestamp: lastTimestamp ?? mtimeFallback,
-        message_timestamp: lastTimestamp ?? mtimeFallback,
-        file_size_bytes: fileSize,
-      });
+        let createdAt = Date.now();
+        let mtimeFallback: string | undefined;
+        let fileSize: number | undefined;
+
+        try {
+          const stat = fs.statSync(filePath);
+          createdAt = stat.birthtimeMs;
+          mtimeFallback = new Date(stat.mtimeMs).toISOString();
+          fileSize = stat.size;
+        } catch {
+          // ignore
+        }
+
+        const { firstMessage, firstTimestamp, lastTimestamp } =
+          extractSessionMetadata(filePath);
+
+        sessions.push({
+          id: sessionId,
+          // The row's primary id, even for sessions read out of a secondary
+          // dir — loadSessionHistory resolves the real dir by searching.
+          project_id: projectId,
+          project_path: resolvedPath,
+          created_at: Math.floor(createdAt / 1000),
+          first_message: firstMessage,
+          first_timestamp: firstTimestamp,
+          last_timestamp: lastTimestamp ?? mtimeFallback,
+          message_timestamp: lastTimestamp ?? mtimeFallback,
+          file_size_bytes: fileSize,
+        });
+      }
     }
 
     // Sort by created_at DESC
@@ -669,10 +739,23 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
       );
     }
 
-    const filePath = path.join(configDir, 'projects', projectId, `${sessionId}.jsonl`);
-    if (!fs.existsSync(filePath)) return [];
+    const projectsDir = path.join(configDir, 'projects');
+    const filePath = path.join(projectsDir, projectId, `${sessionId}.jsonl`);
+    if (fs.existsSync(filePath)) return readJsonlFile(filePath);
 
-    return readJsonlFile(filePath);
+    // Not under the primary dir. A merged row lists sessions from every
+    // encoded dir resolving to the same folder (see findProjectDirsForPath),
+    // and they all carry the primary's project_id — so look in the siblings
+    // before giving up, or those conversations would open empty.
+    const resolvedPath =
+      projectPath ?? recoverProjectPath(path.join(projectsDir, projectId), projectId);
+    for (const dirName of findProjectDirsForPath(projectsDir, resolvedPath)) {
+      if (dirName === projectId) continue;
+      const sibling = path.join(projectsDir, dirName, `${sessionId}.jsonl`);
+      if (fs.existsSync(sibling)) return readJsonlFile(sibling);
+    }
+
+    return [];
   }
 
   // -------------------------------------------------------------------------
@@ -798,12 +881,23 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
       throw new Error(`deleteProject: unknown account id ${accountId}`);
     }
 
-    const projectDir = path.join(account.config_dir, 'projects', projectId);
-    // Drop the pin before the directory goes — recoverProjectPath needs the
-    // JSONL inside it. Otherwise a later project at the same path would be
-    // silently born pinned.
-    pins.setPinned(recoverProjectPath(projectDir, projectId), false);
-    fs.rmSync(projectDir, { recursive: true, force: true });
+    const projectsDir = path.join(account.config_dir, 'projects');
+    const projectDir = path.join(projectsDir, projectId);
+    // Resolve the path (and so the sibling dirs) BEFORE deleting anything —
+    // recoverProjectPath reads the JSONLs inside these dirs.
+    const resolvedPath = recoverProjectPath(projectDir, projectId);
+    // Delete every dir that resolves to this folder, not just the primary:
+    // the row represents the merged project, so leaving a sibling behind
+    // would resurrect it as a duplicate row on the next listing.
+    const dirNames = findProjectDirsForPath(projectsDir, resolvedPath);
+    const targets = dirNames.length > 0 ? dirNames : [projectId];
+
+    // Drop the pin first, while the path is still resolvable. Otherwise a
+    // later project at the same path would be silently born pinned.
+    pins.setPinned(resolvedPath, false);
+    for (const dirName of targets) {
+      fs.rmSync(path.join(projectsDir, dirName), { recursive: true, force: true });
+    }
     return { deletedPath: projectDir };
   }
 

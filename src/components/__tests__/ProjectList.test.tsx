@@ -287,3 +287,61 @@ describe('ProjectList — click semantics', () => {
     ).toBeNull();
   });
 });
+
+describe('ProjectList — pinned/unpinned boundary', () => {
+  const mixed = (): Project[] => [
+    makeProject({ id: 'a', path: '/repos/alpha', most_recent_session: 1000, pinned: true }),
+    makeProject({ id: 'b', path: '/repos/bravo', most_recent_session: 3000 }),
+    makeProject({ id: 'c', path: '/repos/charlie', most_recent_session: 5000 }),
+  ];
+
+  it('marks the last pinned row as the group boundary', () => {
+    const { container } = render(
+      <ProjectList projects={mixed()} onProjectClick={() => {}} />,
+    );
+    const rows = Array.from(container.querySelectorAll('tbody tr'));
+    // alpha is the only pinned row, so it closes the pinned group.
+    expect(rows[0].getAttribute('data-pin-boundary')).toBe('true');
+    expect(rows[1].getAttribute('data-pin-boundary')).not.toBe('true');
+    expect(rows[2].getAttribute('data-pin-boundary')).not.toBe('true');
+  });
+
+  it('marks only the LAST pinned row when several are pinned', () => {
+    const twoPinned: Project[] = [
+      makeProject({ id: 'a', path: '/repos/alpha', most_recent_session: 1000, pinned: true }),
+      makeProject({ id: 'z', path: '/repos/zulu', most_recent_session: 9000, pinned: true }),
+      makeProject({ id: 'b', path: '/repos/bravo', most_recent_session: 3000 }),
+    ];
+    const { container } = render(
+      <ProjectList projects={twoPinned} onProjectClick={() => {}} />,
+    );
+    const rows = Array.from(container.querySelectorAll('tbody tr'));
+    // zulu, alpha, bravo — the boundary sits under alpha, not zulu.
+    expect(rows[0].getAttribute('data-pin-boundary')).not.toBe('true');
+    expect(rows[1].getAttribute('data-pin-boundary')).toBe('true');
+  });
+
+  it('draws no boundary when nothing is pinned', () => {
+    const { container } = render(
+      <ProjectList
+        projects={[makeProject({ id: 'b', path: '/repos/bravo' })]}
+        onProjectClick={() => {}}
+      />,
+    );
+    expect(container.querySelector('[data-pin-boundary="true"]')).toBeNull();
+  });
+
+  it('draws no boundary when every project is pinned', () => {
+    // A trailing rule under the last row would read as a stray line.
+    const { container } = render(
+      <ProjectList
+        projects={[
+          makeProject({ id: 'a', path: '/repos/alpha', pinned: true }),
+          makeProject({ id: 'z', path: '/repos/zulu', pinned: true }),
+        ]}
+        onProjectClick={() => {}}
+      />,
+    );
+    expect(container.querySelector('[data-pin-boundary="true"]')).toBeNull();
+  });
+});
