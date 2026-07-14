@@ -5,6 +5,38 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.95] — 2026-07-14
+
+### Added
+
+- **Pin projects to the top of the Projects list.** A pin button sits in each
+  row's actions (outline when unpinned, filled when pinned). Pinned projects
+  form a group that always leads the list — under every sort column and both
+  sort directions — and the active sort orders rows within the pinned group
+  and within the rest. Pins persist across restarts. Deleting a project also
+  drops its pin, so a later project at the same path is never born pinned.
+
+### Security
+
+- **vite 6.4.3** — fixes a `server.fs.deny` bypass (GHSA-fx2h-pf6j-xcff) and
+  a launch-editor NTLMv2 disclosure (GHSA-v6wh-96g9-6wx3). Both are
+  Windows-only and dev-server-only, so neither affected shipped macOS builds.
+- **undici 7.28.0** (via jsdom, test-only) — clears six advisories including
+  two SOCKS5 proxy issues; **js-yaml 4.3.0** (via eslint) and
+  **@tootallnate/once 2.0.1** (via node-gyp).
+- All of the above are build/test tooling and none of it ships: the packaged
+  app bundles only better-sqlite3, bindings, file-uri-to-path, node-addon-api
+  and node-pty.
+
+### Changed
+
+- Added `.github/dependabot.yml`, ignoring major bumps of vite and
+  @vitejs/plugin-react. Dependabot repeatedly proposed vite 8 (the
+  Rollup→Rolldown migration) as a security fix, but the advisories are patched
+  in 6.4.3 within our existing range. Patches and minors still flow.
+
+Installers remain **unsigned**.
+
 ## [0.4.94] — 2026-07-14
 
 ### Added
