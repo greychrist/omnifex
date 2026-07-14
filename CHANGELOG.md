@@ -5,6 +5,29 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.96] — 2026-07-14
+
+### Fixed
+
+- **A project no longer appears twice in the Projects list.** Claude can leave
+  several encoded project directories resolving to one real folder (notably
+  after a folder rename, when it keeps writing the new working directory into
+  the old one). The list keyed on the encoded directory name rather than the
+  path it actually displays, so such a project listed once per directory —
+  visually identical rows that pinning, which keys on the path, could not tell
+  apart. Projects are now merged by path: one row per real folder, its sessions
+  the union of every contributing directory, so no conversation becomes
+  unreachable. Opening a session and deleting a project follow the same rule —
+  deleting removes every directory behind the row.
+
+### Changed
+
+- **The pinned group now closes with a double rule**, so pinned projects read
+  as a distinct block rather than relying on the pin icon alone. It appears
+  only when unpinned rows actually follow.
+
+Installers remain **unsigned**.
+
 ## [0.4.95] — 2026-07-14
 
 ### Added
