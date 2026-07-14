@@ -118,6 +118,13 @@ export interface Account {
  * a PTY (see `electron/services/usage-runner.ts`). Mirrors the parser shape.
  */
 export interface UsageRunData {
+  /**
+   * True when the CLI replayed last-known bars because the usage endpoint was
+   * rate-limited or a refresh failed ("Showing last-known usage as of …",
+   * Claude Code 2.1.208+). The numbers describe an earlier observation, not
+   * the moment of the scrape.
+   */
+  stale: boolean;
   session: {
     cost_usd: number;
     api_duration_s: number;

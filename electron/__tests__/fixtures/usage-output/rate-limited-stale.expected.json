@@ -1,9 +1,9 @@
 {
-  "stale": false,
+  "stale": true,
   "session": {
     "cost_usd": 0,
     "api_duration_s": 0,
-    "wall_duration_s": 6,
+    "wall_duration_s": 3,
     "code_added": 0,
     "code_removed": 0,
     "input_tokens": 0,
@@ -14,12 +14,12 @@
   "windows": [
     {
       "label": "current_session",
-      "pct_used": 0,
-      "resets_at_label": "4:30pm (America/New_York)"
+      "pct_used": 33,
+      "resets_at_label": "9:40am (America/New_York)"
     },
     {
       "label": "week_all_models",
-      "pct_used": 69,
+      "pct_used": 68,
       "resets_at_label": "7pm (America/New_York)"
     },
     {
@@ -28,16 +28,7 @@
       "resets_at_label": "7pm (America/New_York)"
     }
   ],
-  "contributing": [
-    {
-      "headline": "86% of your usage was at >150k context",
-      "detail": "Longer sessions are more expensive even when cached. /compact mid-task, /clear when switching to new tasks."
-    },
-    {
-      "headline": "64% of your usage came from subagent-heavy sessions",
-      "detail": "Each subagent runs its own requests. Be deliberate about spawning them — and"
-    }
-  ],
+  "contributing": [],
   "skills": {
     "rows": [],
     "more_count": null

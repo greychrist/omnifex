@@ -25,6 +25,42 @@ describe('parseUsageOutput fixtures', () => {
   }
 });
 
+describe('stale (last-known) render detection', () => {
+  // Claude Code 2.1.208: when the usage endpoint is rate-limited (or a
+  // refresh fails), /usage renders last-known bars with a marker line:
+  //   "Showing last-known usage as of <time> (rate limited — try again in a moment)"
+  //   "Showing last-known usage as of <time> (could not refresh)"
+  // The bars parse normally, but the data is stale and must be flagged so
+  // the runner doesn't record it as fresh utilization.
+  const WINDOWS = `
+Current session
+33% used
+Resets 9:40am (America/New_York)
+
+Current week (all models)
+68% used
+Resets 7pm (America/New_York)
+
+Current week (Sonnet only)
+6% used
+Resets 7pm (America/New_York)
+`;
+
+  it('flags the "(could not refresh)" variant as stale', () => {
+    const result = parseUsageOutput(
+      `Showing last-known usage as of 5:43pm (could not refresh)\n${WINDOWS}`,
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.data.stale).toBe(true);
+  });
+
+  it('does not flag a normal render', () => {
+    const result = parseUsageOutput(WINDOWS);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.data.stale).toBe(false);
+  });
+});
+
 describe('isUsageOutputComplete', () => {
   it('accepts a window at 0% usage even when it has no Resets line', () => {
     // Observed in 2026-05-22 real /usage output: when Sonnet usage is 0%,

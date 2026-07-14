@@ -124,6 +124,33 @@ describe('usage-runner', () => {
     expect(cached?.ok).toBe(true);
   });
 
+  it('stale (last-known) render: returns parsed data flagged stale, never records utilization', async () => {
+    // Claude Code 2.1.208: a rate-limited /usage shows LAST-KNOWN bars with a
+    // "Showing last-known usage as of <time> (rate limited — try again in a
+    // moment)" marker. The bars parse fine, but recording them via
+    // recordUtilization would store stale utilization with a fresh
+    // observed_at. The runner must skip the dual-write for stale renders.
+    const STALE_FIXTURE = MAX_FULL_FIXTURE.replace(
+      '\nCurrent session',
+      '\nShowing last-known usage as of 5:43pm (rate limited — try again in a moment)\n\nCurrent session',
+    );
+    const accounts = makeFakeAccountsService();
+    const rateLimits = makeFakeRateLimits();
+    const runner = createUsageRunnerService({
+      accounts, rateLimits,
+      spawnPty: makeScriptedSpawn(STALE_FIXTURE),
+      findClaudeBinary: () => '/fake/claude',
+      now: () => Date.UTC(2023, 10, 15, 10, 40, 0),
+      ...TUNING,
+    });
+    const result = await runner.run('personal');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.parsed.stale).toBe(true);
+    expect(result.parsed.windows.length).toBe(3);
+    expect(rateLimits.recordUtilization).not.toHaveBeenCalled();
+  });
+
   it('waits for the full render before parsing, even when bytes arrive in chunks', async () => {
     // Emit the fixture in three slices: first only the session header (no
     // windows yet), then two of the three windows, then the third. The runner

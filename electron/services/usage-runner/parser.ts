@@ -8,6 +8,14 @@ export interface UsageRow { name: string; pct_used: number }
 export interface UsageTable { rows: UsageRow[]; more_count: number | null }
 
 export interface UsageData {
+  /**
+   * True when the render carries the 2.1.208+ "Showing last-known usage as
+   * of <time> …" marker — the CLI is replaying cached bars because the usage
+   * endpoint was rate-limited or a refresh failed. The numbers still parse,
+   * but they describe an earlier point in time; the runner must not record
+   * them as fresh utilization.
+   */
+  stale: boolean;
   session: {
     cost_usd: number;
     api_duration_s: number;
@@ -64,6 +72,12 @@ const SECTION_HEADERS = {
   // Used as a hard end-boundary for the last table.
   tables_footer: /^[ \t]*d to day\b/m,
 };
+
+// 2.1.208+ rate-limited / refresh-failed render marker. Both observed
+// variants share the prefix:
+//   "Showing last-known usage as of <time> (rate limited — try again in a moment)"
+//   "Showing last-known usage as of <time> (could not refresh)"
+const STALE_MARKER = /^[ \t]*Showing last-known usage/m;
 
 /**
  * Returns true when the captured TUI text appears to be a complete `/usage`
@@ -230,7 +244,10 @@ export function parseUsageOutput(input: string): ParseResult {
 
   return {
     ok: true,
-    data: { session, windows, contributing, skills, subagents, plugins, mcp_servers },
+    data: {
+      stale: STALE_MARKER.test(text),
+      session, windows, contributing, skills, subagents, plugins, mcp_servers,
+    },
   };
 }
 

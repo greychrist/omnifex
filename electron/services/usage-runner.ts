@@ -442,6 +442,20 @@ export function createUsageRunnerService(deps: UsageRunnerDeps): UsageRunnerServ
         account: accountName, warnings: driftWarnings, raw,
       });
     }
+    // A stale render (2.1.208+ "Showing last-known usage as of …") replays
+    // cached bars from an earlier point in time. Recording those via
+    // recordUtilization would stamp old utilization with a fresh observed_at,
+    // so skip the dual-write entirely — the prior good values in the
+    // rate-limits store already describe that earlier observation.
+    if (parsed.data.stale) {
+      logWarn('stale (last-known) usage render — skipping utilization dual-write', {
+        account: accountName,
+        windows: parsed.data.windows.map((w) => ({ label: w.label, pct: w.pct_used })),
+      });
+      return cacheAndReturn(accountName, {
+        ok: true, observed_at: observedAt, raw, parsed: parsed.data,
+      });
+    }
     // Dual-write to rate-limits — convert the human label ("Resets 7pm
     // (America/New_York)" or "in 5h") to an absolute epoch (seconds) so the
     // 7-day/5-hour pills can render the same countdown the 5-hour widget

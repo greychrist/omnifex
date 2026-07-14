@@ -1,4 +1,5 @@
 {
+  "stale": false,
   "session": {
     "cost_usd": 0,
     "api_duration_s": 0,
@@ -25,8 +26,30 @@
       "detail": "If this runs frequently, consider configuring its subagents with a cheaper model or tightening their prompts."
     }
   ],
-  "skills": { "rows": [], "more_count": null },
-  "subagents": { "rows": [{ "name": "general-purpose", "pct_used": 16 }], "more_count": null },
-  "plugins": { "rows": [], "more_count": null },
-  "mcp_servers": { "rows": [{ "name": "claude.ai Atlassian", "pct_used": 3 }], "more_count": null }
+  "skills": {
+    "rows": [],
+    "more_count": null
+  },
+  "subagents": {
+    "rows": [
+      {
+        "name": "general-purpose",
+        "pct_used": 16
+      }
+    ],
+    "more_count": null
+  },
+  "plugins": {
+    "rows": [],
+    "more_count": null
+  },
+  "mcp_servers": {
+    "rows": [
+      {
+        "name": "claude.ai Atlassian",
+        "pct_used": 3
+      }
+    ],
+    "more_count": null
+  }
 }

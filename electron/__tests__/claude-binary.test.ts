@@ -31,12 +31,17 @@ describe('claude binary service', () => {
     expect(service.getPath()).toBe('/usr/local/bin/claude');
   });
 
-  it('listInstallations returns an array', () => {
+  // listInstallations execSyncs `--version` on every real binary it discovers
+  // (which/nvm/standard paths + one per installed VS Code extension copy —
+  // observed 9 on a machine with 8 accumulated extension versions). Each probe
+  // is fast alone, but under full-suite CPU contention the serial spawns can
+  // blow the default 5s budget, so these two get explicit headroom.
+  it('listInstallations returns an array', { timeout: 20_000 }, () => {
     const installations = service.listInstallations();
     expect(Array.isArray(installations)).toBe(true);
   });
 
-  it('each installation has path and source fields', () => {
+  it('each installation has path and source fields', { timeout: 20_000 }, () => {
     const installations = service.listInstallations();
     for (const inst of installations) {
       expect(inst).toHaveProperty('path');
