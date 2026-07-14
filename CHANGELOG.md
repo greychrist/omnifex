@@ -5,6 +5,34 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.94] — 2026-07-14
+
+### Added
+
+- **Unknown-record catch-all card.** Any session-transcript record type
+  OmniFex doesn't recognize now renders as an "Unknown" marker with its raw
+  payload (the chrome designed for this in Settings → Chats), instead of
+  silently vanishing — live and on history reload. Unrecognized content
+  blocks inside assistant/user messages render as labeled payloads too.
+- **Model fallbacks are visible.** CLI model-availability notices (the
+  `model_fallback` family — e.g. Fable 5 safety fallbacks — and
+  `error_during_execution`) now render in the transcript; in-message
+  fallback blocks show a readable "Model fell back: X → Y" marker; and both
+  signals refresh the session summary immediately, so the header names the
+  model actually running instead of lagging until turn end.
+
+### Fixed
+
+- **Rate-limited `/usage` renders are no longer recorded as fresh data.**
+  Claude Code 2.1.208 replays last-known bars with an "as of" note when the
+  usage endpoint is rate-limited; the scraper now flags those renders stale
+  and skips the utilization write, preserving the prior good observation.
+- **Compaction summaries survive session reload.** Summary records carry no
+  top-level timestamp and were dropped by the classifier on reopen; the
+  SummaryWidget now renders them on resumed transcripts.
+
+Installers remain **unsigned**.
+
 ## [0.4.93] — 2026-07-09
 
 ### Fixed
