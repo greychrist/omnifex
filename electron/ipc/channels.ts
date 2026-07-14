@@ -33,6 +33,7 @@ export const INVOKE_CHANNELS: readonly string[] = [
   'load_session_history',
   'delete_session',
   'delete_project',
+  'set_project_pinned',
   'get_home_directory',
   'get_claude_settings',
   'save_claude_settings',

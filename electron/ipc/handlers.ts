@@ -42,6 +42,7 @@ export interface Services {
     loadSessionHistory(sessionId: string, projectId: string, projectPath?: string): unknown;
     deleteSession(sessionId: string, projectId: string, projectPath?: string): unknown;
     deleteProject(args: { accountId: number; projectId: string }): unknown;
+    setProjectPinned(args: { projectPath: string; pinned: boolean }): unknown;
     getHomeDirectory(): unknown;
     getSettings(opts?: unknown): unknown;
     saveSettings(settings: unknown, opts?: unknown): unknown;
@@ -355,6 +356,13 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
         throw new Error('delete_project: accountId is required');
       }
       return claude?.deleteProject({ accountId, projectId }) ?? null;
+    }),
+    set_project_pinned: wrapWith((p: Record<string, unknown>) => {
+      const projectPath = (p?.projectPath ?? p?.project_path) as string;
+      if (!projectPath) {
+        throw new Error('set_project_pinned: projectPath is required');
+      }
+      return claude?.setProjectPinned({ projectPath, pinned: p?.pinned === true }) ?? null;
     }),
     get_home_directory: wrap(() => claude?.getHomeDirectory() ?? null),
     get_claude_settings: wrapWith((p: Record<string, unknown>) => {

@@ -431,6 +431,22 @@ const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 15,
+    description:
+      'project_pins: the set of project paths the user pinned to the top of ' +
+      'the Projects list. A bare set — pin order is never read (the list sorts ' +
+      'within the pinned group by the active sort key), so there is no ' +
+      'pinned_at column. Keyed by path like project_account_overrides; a pin ' +
+      'for a path that no longer exists on disk is inert.',
+    up(db) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS project_pins (
+          project_path TEXT PRIMARY KEY
+        );
+      `);
+    },
+  },
 ];
 
 /**

@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createDatabase, type Database } from '../services/database';
 import { createAccountsService, type AccountsService } from '../services/accounts';
 import { createClaudeService, type ClaudeService } from '../services/claude';
+import { createProjectPinsService } from '../services/project-pins';
 import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
@@ -75,6 +76,63 @@ describe('claude service', () => {
       expect(projects.length).toBeGreaterThanOrEqual(1);
       const found = projects.find((p) => p.id === projectId);
       expect(found).toBeDefined();
+    });
+
+    it('stamps pinned onto projects, reading the pins table', async () => {
+      // The renderer gets pin state inside the payload it already fetches —
+      // no second IPC call, so the two can't drift out of sync.
+      const configDir = path.join(tmpDir, '.claude-pins');
+      const projectId = '-home-user-pinned';
+      const projectDir = path.join(configDir, 'projects', projectId);
+      fs.mkdirSync(projectDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(projectDir, 'sess.jsonl'),
+        JSON.stringify({ type: 'user', cwd: '/home/user/pinned' }) + '\n',
+      );
+      accounts.createAccount({ name: 'Test', configDir });
+
+      const before = await service.listProjects();
+      expect(before.find((p) => p.id === projectId)?.pinned).toBe(false);
+
+      createProjectPinsService(db).setPinned('/home/user/pinned', true);
+
+      const after = await service.listProjects();
+      expect(after.find((p) => p.id === projectId)?.pinned).toBe(true);
+    });
+
+    it('setProjectPinned toggles the pin visible to listProjects', async () => {
+      const configDir = path.join(tmpDir, '.claude-toggle');
+      const projectId = '-home-user-toggle';
+      const projectDir = path.join(configDir, 'projects', projectId);
+      fs.mkdirSync(projectDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(projectDir, 'sess.jsonl'),
+        JSON.stringify({ type: 'user', cwd: '/home/user/toggle' }) + '\n',
+      );
+      accounts.createAccount({ name: 'Test', configDir });
+
+      service.setProjectPinned({ projectPath: '/home/user/toggle', pinned: true });
+      expect((await service.listProjects()).find((p) => p.id === projectId)?.pinned).toBe(true);
+
+      service.setProjectPinned({ projectPath: '/home/user/toggle', pinned: false });
+      expect((await service.listProjects()).find((p) => p.id === projectId)?.pinned).toBe(false);
+    });
+
+    it('deleting a project drops its pin, so a same-path project is not born pinned', async () => {
+      const configDir = path.join(tmpDir, '.claude-delpin');
+      const projectId = '-home-user-delpin';
+      const projectDir = path.join(configDir, 'projects', projectId);
+      fs.mkdirSync(projectDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(projectDir, 'sess.jsonl'),
+        JSON.stringify({ type: 'user', cwd: '/home/user/delpin' }) + '\n',
+      );
+      const account = accounts.createAccount({ name: 'Test', configDir });
+
+      service.setProjectPinned({ projectPath: '/home/user/delpin', pinned: true });
+      await service.deleteProject({ accountId: account.id, projectId });
+
+      expect(createProjectPinsService(db).isPinned('/home/user/delpin')).toBe(false);
     });
 
     // Regression: Claude Code's project-dir encoding (/ → -) is lossy.

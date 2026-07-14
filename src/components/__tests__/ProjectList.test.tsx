@@ -50,9 +50,108 @@ function makeProject(partial: Partial<Project> & Pick<Project, 'id' | 'path'>): 
   return {
     sessions: [],
     created_at: 0,
+    pinned: false,
     ...partial,
   };
 }
+
+describe('ProjectList — pinned projects', () => {
+  const rowNames = (container: HTMLElement): string[] =>
+    Array.from(container.querySelectorAll('tbody tr')).map(
+      (row) => row.querySelector('td')?.textContent ?? '',
+    );
+
+  // alpha is the OLDEST, so under the default lastActivity-desc sort it would
+  // land last. Pinning it must drag it to the top.
+  const projects = (): Project[] => [
+    makeProject({ id: 'a', path: '/repos/alpha', most_recent_session: 1000, pinned: true }),
+    makeProject({ id: 'b', path: '/repos/bravo', most_recent_session: 3000 }),
+    makeProject({ id: 'c', path: '/repos/charlie', most_recent_session: 5000 }),
+  ];
+
+  it('floats pinned projects to the top under the default sort', () => {
+    const { container } = render(
+      <ProjectList projects={projects()} onProjectClick={() => {}} />,
+    );
+    expect(rowNames(container)).toEqual(['alpha', 'charlie', 'bravo']);
+  });
+
+  it('keeps pins on top when the sort direction flips', () => {
+    // The trap: if the pin comparator multiplied by `dir` like every other
+    // comparator does, flipping to ascending would sink pinned rows to the
+    // BOTTOM — the exact opposite of what a pin is for.
+    const { container } = render(
+      <ProjectList projects={projects()} onProjectClick={() => {}} />,
+    );
+    fireEvent.click(screen.getByText('Last activity'));  // desc -> asc
+    const names = rowNames(container);
+    expect(names[0]).toBe('alpha');
+    expect(names).toEqual(['alpha', 'bravo', 'charlie']);
+  });
+
+  it('keeps pins on top under every sort column, both directions', () => {
+    const { container } = render(
+      <ProjectList projects={projects()} onProjectClick={() => {}} />,
+    );
+    for (const header of ['Name', 'Path', 'Account', 'Sessions', 'Last activity']) {
+      fireEvent.click(screen.getByText(header));
+      expect(rowNames(container)[0]).toBe('alpha');
+      fireEvent.click(screen.getByText(header));  // flip direction
+      expect(rowNames(container)[0]).toBe('alpha');
+    }
+  });
+
+  it('sorts within the pinned group by the active sort', () => {
+    const twoPinned: Project[] = [
+      makeProject({ id: 'a', path: '/repos/alpha', most_recent_session: 1000, pinned: true }),
+      makeProject({ id: 'z', path: '/repos/zulu', most_recent_session: 9000, pinned: true }),
+      makeProject({ id: 'b', path: '/repos/bravo', most_recent_session: 3000 }),
+    ];
+    const { container } = render(
+      <ProjectList projects={twoPinned} onProjectClick={() => {}} />,
+    );
+    // Both pinned rows lead; zulu (9000) outranks alpha (1000) within them.
+    expect(rowNames(container)).toEqual(['zulu', 'alpha', 'bravo']);
+  });
+
+  it('fires onTogglePin with the inverted state when the pin button is clicked', () => {
+    const onTogglePin = vi.fn();
+    render(
+      <ProjectList
+        projects={[makeProject({ id: 'b', path: '/repos/bravo' })]}
+        onProjectClick={() => {}}
+        onTogglePin={onTogglePin}
+      />,
+    );
+    fireEvent.click(screen.getByLabelText('Pin this project'));
+    expect(onTogglePin).toHaveBeenCalledTimes(1);
+    expect(onTogglePin.mock.calls[0][0].path).toBe('/repos/bravo');
+    expect(onTogglePin.mock.calls[0][1]).toBe(true);
+  });
+
+  it('offers to unpin an already-pinned project', () => {
+    const onTogglePin = vi.fn();
+    render(
+      <ProjectList
+        projects={[makeProject({ id: 'a', path: '/repos/alpha', pinned: true })]}
+        onProjectClick={() => {}}
+        onTogglePin={onTogglePin}
+      />,
+    );
+    fireEvent.click(screen.getByLabelText('Unpin this project'));
+    expect(onTogglePin.mock.calls[0][1]).toBe(false);
+  });
+
+  it('renders no pin button when onTogglePin is not supplied', () => {
+    render(
+      <ProjectList
+        projects={[makeProject({ id: 'b', path: '/repos/bravo' })]}
+        onProjectClick={() => {}}
+      />,
+    );
+    expect(screen.queryByLabelText('Pin this project')).toBeNull();
+  });
+});
 
 describe('ProjectList — "Last activity" sort', () => {
   it('default-sorts by Claude session activity (most_recent_session) DESC', () => {
@@ -91,6 +190,7 @@ describe('ProjectList — click semantics', () => {
         most_recent_session: 1000,
         account_id: 7,
         account_name: 'Personal',
+        pinned: false,
       },
     ];
     return render(

@@ -8,6 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import type { Database } from './database';
 import type { AccountsService } from './accounts';
+import { createProjectPinsService } from './project-pins';
 import { buildClaudeEnv } from './util/claude-env';
 
 /**
@@ -65,6 +66,9 @@ export interface Project {
   most_recent_session?: number;
   account_id?: number;
   account_name?: string;
+  /** True when the user pinned this project to the top of the Projects list.
+   *  Stamped by listProjects from the project_pins table. */
+  pinned: boolean;
 }
 
 export interface Session {
@@ -108,6 +112,8 @@ export interface ClaudeService {
   getHomeDirectory(): string;
 
   listProjects(): Promise<Project[]>;
+  /** Pin/unpin a project to the top of the Projects list. Idempotent. */
+  setProjectPinned(args: { projectPath: string; pinned: boolean }): void;
   createProject(projectPath: string): Project;
   getProjectSessions(projectId: string, projectPath?: string): Promise<Session[]>;
 
@@ -435,8 +441,9 @@ const EXEC_OPTIONS = {
 // ---------------------------------------------------------------------------
 
 export function createClaudeService(db: Database, accounts: AccountsService): ClaudeService {
-  // db is accepted for future use (e.g. caching, settings storage)
-  void db;
+  // Pin state is stamped onto each Project by listProjects. Constructed here
+  // rather than injected so the service's existing two-arg shape holds.
+  const pins = createProjectPinsService(db);
 
   // -------------------------------------------------------------------------
   // getHomeDirectory
@@ -473,6 +480,9 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
       created_at: Math.floor(Date.now() / 1000),
       account_id: account?.id,
       account_name: account?.name,
+      // A freshly created project is never pinned. (deleteProject drops any
+      // stale pin for the path, so this can't inherit one either.)
+      pinned: false,
     };
   }
 
@@ -483,6 +493,11 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
   async function listProjects(): Promise<Project[]> {
     const projects: Project[] = [];
     const seenIds = new Set<string>();
+
+    // Read pins once per listing, not once per project — the renderer gets
+    // pin state stamped into the payload it already fetches, so there's no
+    // second round trip and no client-side merge to drift.
+    const pinnedPaths = new Set(pins.list());
 
     const accountList = accounts.listAccounts();
 
@@ -543,6 +558,7 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
             mostRecent !== undefined ? Math.floor(mostRecent / 1000) : undefined,
           account_id: account.id,
           account_name: account.name,
+          pinned: pinnedPaths.has(projectPath),
         });
       }
     }
@@ -555,6 +571,14 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
     });
 
     return projects;
+  }
+
+  // -------------------------------------------------------------------------
+  // setProjectPinned
+  // -------------------------------------------------------------------------
+
+  function setProjectPinned(args: { projectPath: string; pinned: boolean }): void {
+    pins.setPinned(args.projectPath, args.pinned);
   }
 
   // -------------------------------------------------------------------------
@@ -775,6 +799,10 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
     }
 
     const projectDir = path.join(account.config_dir, 'projects', projectId);
+    // Drop the pin before the directory goes — recoverProjectPath needs the
+    // JSONL inside it. Otherwise a later project at the same path would be
+    // silently born pinned.
+    pins.setPinned(recoverProjectPath(projectDir, projectId), false);
     fs.rmSync(projectDir, { recursive: true, force: true });
     return { deletedPath: projectDir };
   }
@@ -1112,6 +1140,7 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
   return {
     getHomeDirectory,
     listProjects,
+    setProjectPinned,
     createProject,
     getProjectSessions,
     loadSessionHistory,

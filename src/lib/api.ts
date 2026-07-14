@@ -67,6 +67,9 @@ export interface Project {
   account_id?: number;
   /** Account name for display */
   account_name?: string;
+  /** True when pinned to the top of the Projects list. Stamped by
+   *  list_projects from the pins table, so it can't drift from the rows. */
+  pinned: boolean;
 }
 
 /**
@@ -868,6 +871,20 @@ export const api = {
       return await apiCall<Project[]>("list_projects");
     } catch (error) {
       console.error("Failed to list projects:", error);
+      throw error;
+    }
+  },
+
+  /**
+   * Pins or unpins a project to the top of the Projects list.
+   * @param projectPath - The project's decoded path (the pin key)
+   * @param pinned - Desired state; idempotent in both directions
+   */
+  async setProjectPinned(projectPath: string, pinned: boolean): Promise<void> {
+    try {
+      await apiCall<null>('set_project_pinned', { projectPath, pinned });
+    } catch (error) {
+      console.error("Failed to set project pinned:", error);
       throw error;
     }
   },

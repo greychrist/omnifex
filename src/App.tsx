@@ -285,6 +285,26 @@ function AppContent() {
   };
 
   /**
+   * Pin/unpin a project. Optimistic so the row reorders instantly; on failure
+   * we roll back and refetch, mirroring handleDeleteProject.
+   */
+  const handleTogglePin = async (project: Project, pinned: boolean) => {
+    const previous = projects;
+    setProjects((prev) =>
+      prev.map((p) => (p.id === project.id ? { ...p, pinned } : p)),
+    );
+    try {
+      await api.setProjectPinned(project.path, pinned);
+    } catch (err) {
+      console.error('Failed to toggle project pin:', err);
+      setProjects(previous);
+      const msg = err instanceof Error ? err.message : String(err);
+      setToast({ type: 'error', message: `Failed to ${pinned ? 'pin' : 'unpin'} project: ${msg}` });
+      void loadProjects();
+    }
+  };
+
+  /**
    * Re-fetch the session list for the currently-selected project. Triggered
    * by the SessionList refresh button when the user wants to pick up new
    * sessions that were created in a different tab / since the page rendered.
@@ -417,6 +437,7 @@ function AppContent() {
             onProjectClick={fireAndLog('app:project-click', handleProjectClick)}
             onOpenProject={handleOpenProject}
             onDeleteProject={handleDeleteProject}
+            onTogglePin={handleTogglePin}
             loading={loading}
           />
         );

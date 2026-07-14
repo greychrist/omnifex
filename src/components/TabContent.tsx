@@ -176,6 +176,24 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
     }
   };
 
+  const handleTogglePin = async (project: Project, pinned: boolean) => {
+    // Optimistic: the row reorders instantly. Same rollback+refetch shape as
+    // handleDeleteProject.
+    const previous = projects;
+    setProjects((prev) =>
+      prev.map((p) => (p.id === project.id ? { ...p, pinned } : p)),
+    );
+    try {
+      await api.setProjectPinned(project.path, pinned);
+    } catch (err) {
+      console.error('Failed to toggle project pin:', err);
+      setProjects(previous);
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(`Failed to ${pinned ? 'pin' : 'unpin'} project: ${msg}`);
+      void loadProjects();
+    }
+  };
+
   const handleProjectClick = async (project: Project) => {
     try {
       setLoading(true);
@@ -542,6 +560,7 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                       onProjectClick={fireAndLog('tab-content:project-click', handleProjectClick)}
                       onOpenProject={handleOpenProject}
                       onDeleteProject={handleDeleteProject}
+                      onTogglePin={handleTogglePin}
                       loading={loading}
                     />
                   </div>

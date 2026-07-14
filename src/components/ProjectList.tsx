@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { FolderOpen, ArrowUp, ArrowDown, ArrowUpDown, ExternalLink, Trash2, Infinity as InfinityIcon } from "lucide-react";
+import { FolderOpen, ArrowUp, ArrowDown, ArrowUpDown, ExternalLink, Trash2, Pin, Infinity as InfinityIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
@@ -78,6 +78,13 @@ interface ProjectListProps {
    */
   onDeleteProject?: (project: Project) => void | Promise<void>;
   /**
+   * Optional callback fired when the user toggles a project's pin. Receives
+   * the project and the DESIRED state. The parent owns the API call and the
+   * refetch — same contract as onDeleteProject — so when omitted the pin
+   * icon is hidden and the list degrades gracefully.
+   */
+  onTogglePin?: (project: Project, pinned: boolean) => void | Promise<void>;
+  /**
    * Whether the list is currently loading
    */
   loading?: boolean;
@@ -142,6 +149,7 @@ export const ProjectList: React.FC<ProjectListProps> = ({
   onProjectClick,
   onOpenProject,
   onDeleteProject,
+  onTogglePin,
   className,
 }) => {
   const [sortKey, setSortKey] = useState<SortKey>('lastActivity');
@@ -169,7 +177,7 @@ export const ProjectList: React.FC<ProjectListProps> = ({
       : projects.filter((p) => (p.account_name ?? '(unassigned)') === accountFilter);
 
     const dir = sortDir === 'asc' ? 1 : -1;
-    const cmp = (a: Project, b: Project): number => {
+    const bySortKey = (a: Project, b: Project): number => {
       switch (sortKey) {
         case 'name':
           return getProjectName(a.path).localeCompare(getProjectName(b.path)) * dir;
@@ -189,6 +197,18 @@ export const ProjectList: React.FC<ProjectListProps> = ({
           return (av - bv) * dir;
         }
       }
+    };
+
+    // Pinned projects form a group that always leads, whatever the sort. The
+    // active sort then orders rows *within* each group.
+    //
+    // Deliberately NOT multiplied by `dir`: every comparator above flips with
+    // the sort direction, but this one must not. If it did, sorting ascending
+    // would sink pinned projects to the bottom — the precise opposite of what
+    // pinning is for. Covered by a test per sort key, per direction.
+    const cmp = (a: Project, b: Project): number => {
+      if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1;
+      return bySortKey(a, b);
     };
     return [...filtered].sort(cmp);
   }, [projects, accountFilter, sortKey, sortDir]);
@@ -346,7 +366,7 @@ export const ProjectList: React.FC<ProjectListProps> = ({
                   {/* Actions column — header is intentionally empty; the
                       icons in each row carry their own tooltips. Width is
                       fixed so the column doesn't grow with row count. */}
-                  <th className="px-3 py-2 w-[88px]" aria-label="Actions" />
+                  <th className="px-3 py-2 w-[120px]" aria-label="Actions" />
                 </tr>
               </thead>
               <tbody>
@@ -412,6 +432,25 @@ export const ProjectList: React.FC<ProjectListProps> = ({
                       </td>
                       <td className="px-3 py-2">
                         <div className="flex items-center justify-end gap-1">
+                          {onTogglePin && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                void onTogglePin(project, !project.pinned);
+                              }}
+                              className={cn(
+                                "p-1 rounded-md transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+                                project.pinned
+                                  ? "text-foreground hover:text-muted-foreground hover:bg-accent/60"
+                                  : "text-muted-foreground hover:text-foreground hover:bg-accent/60",
+                              )}
+                              title={project.pinned ? "Unpin this project" : "Pin this project to the top"}
+                              aria-label={project.pinned ? "Unpin this project" : "Pin this project"}
+                            >
+                              <Pin className={cn("h-4 w-4", project.pinned && "fill-current")} />
+                            </button>
+                          )}
                           <button
                             type="button"
                             onClick={(e) => {

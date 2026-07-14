@@ -812,6 +812,8 @@ app.whenReady().then(() => {
         claudeService.deleteSession(sessionId, projectId, projectPath),
       deleteProject: (args: { accountId: number; projectId: string }) =>
         claudeService.deleteProject(args),
+      setProjectPinned: (args: { projectPath: string; pinned: boolean }) =>
+        claudeService.setProjectPinned(args),
       getHomeDirectory: () => claudeService.getHomeDirectory(),
       getSettings: (opts?: any) => claudeService.getClaudeSettings(opts),
       saveSettings: (settings: any, opts?: any) => claudeService.saveClaudeSettings(settings, opts),
