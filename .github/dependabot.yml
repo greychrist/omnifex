@@ -1,0 +1,32 @@
+# Dependabot config.
+#
+# Note there is no CI in this repo — the GitHub Actions workflows were removed
+# in v0.3.12 and releases are built locally (see .claude/skills/omnifex-release).
+# So a dependabot PR is only ever "green" because nothing tested it. Every bump
+# must be verified locally (`npm run check && npm test && npm run build`) before
+# it reaches a release.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    ignore:
+      # Vite is the build toolchain (Electron Forge drives the renderer build
+      # through @electron-forge/plugin-vite, which declares NO peer range on
+      # vite — so npm will not warn us if a major is incompatible; it would
+      # simply break at build time).
+      #
+      # Dependabot proposed vite 6 -> 8 (PR #10) as a "security" update, but
+      # both vite advisories it cited were fixed in 6.4.3, which our existing
+      # ^6.0.3 range already accepts. Vite 8 is the rolldown-vite merge —
+      # Rollup is replaced by Rolldown as the bundler — which is a toolchain
+      # migration, not a patch, and buys zero extra security.
+      #
+      # Major vite upgrades should be deliberate and separately verified, not
+      # smuggled in via a security bump. Patches/minors still flow normally.
+      - dependency-name: vite
+        update-types: ["version-update:semver-major"]
+      # Same reasoning: plugin-react majors are coupled to vite majors.
+      - dependency-name: "@vitejs/plugin-react"
+        update-types: ["version-update:semver-major"]
