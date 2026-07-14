@@ -501,8 +501,16 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
         return <SummaryWidget summary={unknownRaw.summary as string} leafUuid={unknownRaw.leafUuid as string} />;
       }
 
-      // All other unknown kinds — nothing to render.
-      return null;
+      // Catch-all card for everything else. The "unknown" registry kind
+      // (orange dashed side-line, showRawPayload) was designed for exactly
+      // this; MessageFrame renders the raw payload from the kind config, so
+      // the body only needs to name what arrived.
+      const typeLabel = typeof unknownRaw.type === 'string' ? unknownRaw.type : 'untyped record';
+      return (
+        <MessageFrame streamKind="unknown" message={message}>
+          <span className="text-xs font-mono">Unrecognized record: {typeLabel}</span>
+        </MessageFrame>
+      );
     }
 
     // AskUserQuestion pair — elevate the answered card to a top-level
@@ -753,7 +761,28 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
           );
         }
 
-        return null;
+        // Model-fallback marker — the CLI swapped models mid-message (e.g. a
+        // Fable 5 safety fallback to Opus). Name both models; this is the
+        // only in-message signal the user got a different model than asked.
+        if ((content as { type?: string }).type === 'fallback') {
+          const fb = content as unknown as { from?: { model?: string }; to?: { model?: string } };
+          return (
+            <div key={idx} className="text-xs font-mono text-muted-foreground">
+              Model fell back: {fb.from?.model ?? 'unknown'} → {fb.to?.model ?? 'unknown'}
+            </div>
+          );
+        }
+
+        // Catch-all: never silently drop a content block. New CLI block types
+        // surface as a labeled payload instead of vanishing.
+        return (
+          <div key={idx} className="text-xs font-mono text-muted-foreground">
+            <span>Unrecognized content block: <code>{(content as { type?: string }).type ?? 'untyped'}</code></span>
+            <pre className="mt-1 p-2 bg-background rounded-md border overflow-x-auto whitespace-pre-wrap">
+              {JSON.stringify(content, null, 2)}
+            </pre>
+          </div>
+        );
       };
 
       // Determine which blocks are visible. A block is "visible" if
@@ -1395,7 +1424,18 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
                     );
                   }
 
-                  return null;
+                  // Catch-all: never silently drop a content block (mirrors
+                  // the assistant-side fallthrough). New CLI block types
+                  // surface as a labeled payload instead of vanishing.
+                  renderedSomething = true;
+                  return (
+                    <div key={idx} className="text-xs font-mono text-muted-foreground">
+                      <span>Unrecognized content block: <code>{(content as { type?: string }).type ?? 'untyped'}</code></span>
+                      <pre className="mt-1 p-2 bg-background rounded-md border overflow-x-auto whitespace-pre-wrap">
+                        {JSON.stringify(content, null, 2)}
+                      </pre>
+                    </div>
+                  );
                 })}
         </MessageFrame>
       );

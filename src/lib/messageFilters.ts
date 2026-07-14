@@ -159,7 +159,13 @@ export function filterDisplayableMessages(
               hasVisibleContent = true;
               break;
             }
+            continue;
           }
+          // Any block type this filter doesn't recognize counts as visible —
+          // the renderer has a catch-all card for unknown blocks, and hiding
+          // the whole message here would silently drop it one stage earlier.
+          hasVisibleContent = true;
+          break;
         }
         if (!hasVisibleContent) {
           return false;

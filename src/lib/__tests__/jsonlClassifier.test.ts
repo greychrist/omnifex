@@ -69,6 +69,21 @@ describe('classifyJsonlLine', () => {
     expect(node?.kind).toBe('unknown');
   });
 
+  it('returns kind: unknown even when timestamp and receivedAt are both absent', () => {
+    // The catch-all must catch: several real CLI record types (`summary`,
+    // `mode`) ship with no top-level timestamp, and dropping them here meant
+    // they could never render, on any path. Ordering falls back to file
+    // position, which the history loader already preserves.
+    const node = classifyJsonlLine({ type: 'unknown-future-type', sessionId: 's1' });
+    expect(node?.kind).toBe('unknown');
+    if (node?.kind === 'unknown') expect(node.receivedAt).toBeNull();
+  });
+
+  it('classifies a compaction summary record (no timestamp on disk) as unknown so SummaryWidget can render it', () => {
+    const node = classifyJsonlLine({ type: 'summary', summary: 'Compacted: fixed the parser', leafUuid: 'u-1' });
+    expect(node?.kind).toBe('unknown');
+  });
+
   it('returns null only when BOTH timestamp and receivedAt are absent on a kind that requires receivedAt', () => {
     const raw = { type: 'assistant', sessionId: 's1', message: { role: 'assistant', content: [] } };
     expect(classifyJsonlLine(raw)).toBeNull();
@@ -223,6 +238,29 @@ describe('classifyJsonlLine', () => {
     expect(node?.kind).toBe('system');
     if (node?.kind === 'system') {
       expect(node.subtype).toBe('permission_denied');
+    }
+  });
+
+  it('classifies model-fallback and execution-error system subtypes as system nodes', () => {
+    // Observed in real transcripts (Fable 5 safety-fallback notices carry a
+    // user-facing `content` string). These were silently invisible before.
+    const subtypes = [
+      'model_fallback',
+      'model_refusal_fallback',
+      'model_refusal_no_fallback',
+      'model_consent_fallback',
+      'error_during_execution',
+    ];
+    for (const subtype of subtypes) {
+      const node = classifyJsonlLine({
+        type: 'system',
+        subtype,
+        content: 'Switching models',
+        sessionId: 'sid',
+        timestamp: '2026-07-14T00:00:00Z',
+      });
+      expect(node?.kind).toBe('system');
+      if (node?.kind === 'system') expect(node.subtype).toBe(subtype);
     }
   });
 

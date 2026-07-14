@@ -295,3 +295,81 @@ describe('system away_summary recap rendering', () => {
     expect(screen.getByText('boundary hit').className).toContain('font-mono');
   });
 });
+
+describe('unknown-record catch-all rendering', () => {
+  // "I don't want unrendered messages" — every record the classifier can't
+  // name must still produce something visible, never a silent null.
+
+  it('renders a visible fallback card for an unknown record type', () => {
+    const node = {
+      kind: 'unknown',
+      sessionId: 'sess-1',
+      receivedAt: '2026-07-14T10:00:00Z',
+      raw: {
+        type: 'pr-link',
+        prNumber: 216,
+        prUrl: 'https://github.com/example/repo/pull/216',
+        timestamp: '2026-07-14T10:00:00Z',
+      },
+    } as unknown as JsonlNode;
+    const { container } = render(<StreamMessage message={node} streamMessages={[node]} />);
+
+    // Must name the record type so the user (and we) can see what arrived.
+    expect(container.textContent).toContain('pr-link');
+  });
+
+  it('renders an unknown record even when it carries no wall-clock stamp', () => {
+    const node = {
+      kind: 'unknown',
+      sessionId: 'sess-1',
+      receivedAt: null,
+      raw: { type: 'mode', mode: 'normal' },
+    } as unknown as JsonlNode;
+    const { container } = render(<StreamMessage message={node} streamMessages={[node]} />);
+
+    expect(container.textContent).toContain('mode');
+  });
+
+  it('renders an assistant model-fallback block as readable text naming both models', () => {
+    const node = {
+      kind: 'assistant',
+      sessionId: 'sess-1',
+      receivedAt: '2026-07-14T10:00:00Z',
+      raw: {
+        type: 'assistant',
+        message: {
+          role: 'assistant',
+          content: [
+            { type: 'fallback', from: { model: 'claude-fable-5' }, to: { model: 'claude-opus-4-8' } },
+          ],
+          stop_reason: null,
+          usage: { input_tokens: 1, output_tokens: 1 },
+        },
+      },
+    } as unknown as JsonlNode;
+    const { container } = render(<StreamMessage message={node} streamMessages={[node]} />);
+
+    expect(container.textContent).toContain('claude-fable-5');
+    expect(container.textContent).toContain('claude-opus-4-8');
+  });
+
+  it('renders a visible fallback for an unrecognized assistant content block', () => {
+    const node = {
+      kind: 'assistant',
+      sessionId: 'sess-1',
+      receivedAt: '2026-07-14T10:00:00Z',
+      raw: {
+        type: 'assistant',
+        message: {
+          role: 'assistant',
+          content: [{ type: 'server_tool_use', name: 'web_search', input: { query: 'x' } }],
+          stop_reason: null,
+          usage: { input_tokens: 1, output_tokens: 1 },
+        },
+      },
+    } as unknown as JsonlNode;
+    const { container } = render(<StreamMessage message={node} streamMessages={[node]} />);
+
+    expect(container.textContent).toContain('server_tool_use');
+  });
+});

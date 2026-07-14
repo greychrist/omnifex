@@ -362,3 +362,54 @@ describe('reduceSessionStreamMessage overlay handling', () => {
     expect(result.costDelta).toBe(0);
   });
 });
+
+describe('model-fallback context refresh', () => {
+  // A fallback means the model actually running just changed. Waiting for
+  // turn end leaves the header summary naming the wrong model mid-turn, so
+  // both fallback signals request an immediate get_context_usage refresh —
+  // same pattern as compact_boundary.
+
+  it('model-fallback system records request a context usage refresh', () => {
+    for (const subtype of [
+      'model_fallback',
+      'model_refusal_fallback',
+      'model_refusal_no_fallback',
+      'model_consent_fallback',
+    ]) {
+      const node: JsonlNode = {
+        kind: 'system',
+        subtype,
+        raw: { type: 'system', subtype, content: 'Switching models', sessionId: '' },
+        sessionId: '',
+        receivedAt: '2026-07-14T00:00:00Z',
+      } as unknown as JsonlNode;
+      const r = reduceSessionStreamMessage(node, baseCtx);
+      expect(r.append).toBe('append');
+      expect(r.effects.map((e) => e.kind)).toContain('refreshContextUsage');
+    }
+  });
+
+  it('an assistant message carrying a fallback block requests a context usage refresh', () => {
+    const r = reduceSessionStreamMessage(
+      assistantNode([
+        { type: 'fallback', from: { model: 'claude-fable-5' }, to: { model: 'claude-opus-4-8' } },
+        { type: 'text', text: 'continuing on the fallback model' },
+      ]),
+      baseCtx,
+    );
+    expect(r.append).toBe('append');
+    expect(r.effects.map((e) => e.kind)).toContain('refreshContextUsage');
+  });
+
+  it('error_during_execution does NOT trigger a refresh (not a model change)', () => {
+    const node: JsonlNode = {
+      kind: 'system',
+      subtype: 'error_during_execution',
+      raw: { type: 'system', subtype: 'error_during_execution', sessionId: '' },
+      sessionId: '',
+      receivedAt: '2026-07-14T00:00:00Z',
+    } as unknown as JsonlNode;
+    const r = reduceSessionStreamMessage(node, baseCtx);
+    expect(r.effects.map((e) => e.kind)).not.toContain('refreshContextUsage');
+  });
+});

@@ -394,6 +394,32 @@ export function reduceSessionStreamMessage(
     effects.push({ kind: 'refreshContextUsage' });
   }
 
+  // Model-fallback family — the CLI just switched (or refused and switched)
+  // the running model. Refresh immediately so the header summary names the
+  // actual model instead of lagging until the turn's result arrives.
+  // (`error_during_execution` is excluded: an error, not a model change.)
+  if (
+    node.kind === 'system' &&
+    (node.subtype === 'model_fallback' ||
+      node.subtype === 'model_refusal_fallback' ||
+      node.subtype === 'model_refusal_no_fallback' ||
+      node.subtype === 'model_consent_fallback')
+  ) {
+    effects.push({ kind: 'refreshContextUsage' });
+  }
+
+  // The in-message form of the same event: an assistant message opening with
+  // a `fallback` content block (e.g. Fable → Opus safety fallback).
+  if (node.kind === 'assistant') {
+    const content = (node.raw as { message?: { content?: unknown } }).message?.content;
+    if (
+      Array.isArray(content) &&
+      content.some((b) => (b as { type?: string }).type === 'fallback')
+    ) {
+      effects.push({ kind: 'refreshContextUsage' });
+    }
+  }
+
   // Result nodes arrive as kind:'cli-stream-result' (the classifier routes
   // every `type:'result'` line there). They mean "turn complete, awaiting
   // next input" — not exit. conversationStatus derivation owns the spinner

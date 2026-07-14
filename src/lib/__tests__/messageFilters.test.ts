@@ -180,3 +180,22 @@ describe('filterDisplayableMessages', () => {
   });
 
 });
+
+describe('unknown content-block visibility', () => {
+  it('keeps a user message whose only block is an unrecognized type', () => {
+    // The renderer has a catch-all card for unknown blocks; dropping the
+    // whole message here would silently erase it one stage earlier.
+    const node = {
+      kind: 'user', userKind: 'prompt', sessionId: '', receivedAt: '',
+      raw: {
+        type: 'user',
+        message: {
+          role: 'user',
+          content: [{ type: 'document', source: { type: 'url', url: 'https://x.test/a.pdf' } }],
+        },
+      },
+    } as unknown as JsonlNode;
+    const out = filterDisplayableMessages([node]);
+    expect(out).toHaveLength(1);
+  });
+});

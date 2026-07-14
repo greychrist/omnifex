@@ -17,8 +17,10 @@ import type {
 
 /**
  * Single source of truth for classifying a parsed JSONL line into the
- * renderer's taxonomy. Returns null for shapes we explicitly drop or
- * don't recognize — the caller appends only non-null results.
+ * renderer's taxonomy. Returns null only for malformed input (non-object,
+ * missing `type`) and for known kinds missing their required fields;
+ * unrecognized types always classify as 'unknown' so the renderer's
+ * catch-all card can show them — the caller appends only non-null results.
  *
  * Pure function; safe to call repeatedly on the same input. Tolerant of
  * missing optional fields (real JSONL lines often omit `timestamp` on
@@ -71,7 +73,10 @@ export function classifyJsonlLine(raw: unknown): JsonlNode | null {
     case 'result':
       return classifyCliResult(r, sessionId, receivedAt);
     default:
-      if (receivedAt === null) return null;
+      // Catch-all: never drop. Some real record types ('summary', 'mode')
+      // persist with no top-level timestamp, so unlike the content kinds
+      // above, 'unknown' tolerates a null wall-clock — the history loader
+      // preserves file order, which is ordering enough for a marker card.
       return {
         kind: 'unknown',
         raw: r,
@@ -173,6 +178,11 @@ const SYSTEM_SUBTYPES: ReadonlySet<SystemSubtype> = new Set<SystemSubtype>([
   'informational',
   'status',
   'permission_denied',
+  'model_fallback',
+  'model_refusal_fallback',
+  'model_refusal_no_fallback',
+  'model_consent_fallback',
+  'error_during_execution',
 ]);
 
 function classifyLastPrompt(r: Record<string, unknown>, sessionId: string): JsonlNode | null {
@@ -213,7 +223,8 @@ function classifyFileSnapshot(r: Record<string, unknown>): JsonlNode | null {
 function classifySystem(r: Record<string, unknown>, sessionId: string, receivedAt: string | null): JsonlNode | null {
   const subtype = r.subtype;
   if (typeof subtype !== 'string' || !SYSTEM_SUBTYPES.has(subtype as SystemSubtype)) {
-    if (receivedAt === null) return null;
+    // Unrecognized system subtype → catch-all, timestamp or not (same
+    // rationale as the top-level default branch).
     return { kind: 'unknown', raw: r, sessionId, receivedAt };
   }
   if (receivedAt === null) return null;

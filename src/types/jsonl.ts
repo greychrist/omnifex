@@ -110,7 +110,14 @@ export type SystemSubtype =
   | 'compact_boundary'
   | 'informational'
   | 'status'
-  | 'permission_denied';
+  | 'permission_denied'
+  // Model-availability events. The CLI switches (or refuses to switch) models
+  // mid-session and explains why in `content` — e.g. Fable 5 safety fallbacks.
+  | 'model_fallback'
+  | 'model_refusal_fallback'
+  | 'model_refusal_no_fallback'
+  | 'model_consent_fallback'
+  | 'error_during_execution';
 
 export interface SystemRaw extends RawLineBase {
   type: 'system';
@@ -185,9 +192,13 @@ export interface UsageShape {
   [key: string]: unknown;
 }
 
-// Real-but-unhandled envelope types (fall through to 'unknown'):
-//   - 'mode' (2 occurrences in 137 sessions as of 2026-05-27; promote to a kind
-//     if usage grows enough to need filtering)
+// Real-but-unhandled envelope types fall through to 'unknown' and render via
+// the catch-all card (KIND_REGISTRY "unknown"): e.g. 'mode', 'pr-link',
+// 'summary'. Promote one to its own kind when it deserves better chrome.
+// 'unknown' is the only conversation kind with a nullable receivedAt: several
+// real record types ('summary', 'mode') persist with no top-level timestamp,
+// and the catch-all must catch those too — ordering falls back to file
+// position, which the history loader preserves.
 
 /** Discriminated union — exactly one `kind` per node. */
 export type JsonlNode =
@@ -195,7 +206,7 @@ export type JsonlNode =
   | { kind: 'assistant'; raw: AssistantRaw; sessionId: string; receivedAt: string }
   | { kind: 'user'; raw: UserRaw; sessionId: string; receivedAt: string; userKind: UserKind }
   | { kind: 'attachment'; raw: AttachmentRaw; sessionId: string; receivedAt: string }
-  | { kind: 'unknown'; raw: Record<string, unknown>; sessionId: string; receivedAt: string }
+  | { kind: 'unknown'; raw: Record<string, unknown>; sessionId: string; receivedAt: string | null }
   // Closure carriers (background-bash plumbing)
   | { kind: 'queue-operation'; raw: QueueOpRaw; sessionId: string; receivedAt: string }
   // CLI bookkeeping (TUI-only in practice)
