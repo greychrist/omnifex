@@ -59,7 +59,7 @@
     "tailwind-merge": "^2.6.0",
     "tailwindcss": "^4.1.8",
     "zod": "^4.4.3",
-    "zustand": "^5.0.6"
+    "zustand": "^5.0.14"
   },
   "overrides": {
     "qs": "^6.15.2",
