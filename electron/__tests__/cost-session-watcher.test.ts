@@ -38,7 +38,7 @@ describe('session-cost watcher', () => {
     const upserts: Array<{ sessionId: string; rows: SessionCostDailyRow[] }> = [];
     const svc = createSessionCostService({
       sendToRenderer: () => {},
-      costHistory: { replaceSession: (sessionId, rows) => upserts.push({ sessionId, rows }) } as never,
+      costHistory: { replaceSession: (sessionId: string, rows: SessionCostDailyRow[]) => upserts.push({ sessionId, rows }) } as never,
       getOverrides: () => undefined,
       fs: world.fakeFs,
       stat: world.stat,
