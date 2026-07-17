@@ -107,6 +107,34 @@ function sysStatus(status: string | null): JsonlNode {
   };
 }
 
+/** Assistant node carrying full per-message usage (model, requestId, message.id)
+ *  — the shape `computeCost` reads for model-aware, cache-aware pricing. */
+function assistantUsageNode(opts: {
+  id?: string;
+  model?: string;
+  requestId?: string;
+  usage: Record<string, number>;
+}): JsonlNode {
+  return {
+    kind: 'assistant',
+    raw: {
+      type: 'assistant',
+      sessionId: '',
+      timestamp: '2026-05-27T00:00:00Z',
+      requestId: opts.requestId,
+      message: {
+        role: 'assistant',
+        id: opts.id,
+        model: opts.model,
+        content: [{ type: 'text', text: 'hi' }],
+        usage: opts.usage,
+      },
+    } as never,
+    sessionId: '',
+    receivedAt: '2026-05-27T00:00:00Z',
+  };
+}
+
 describe('reduceSessionStreamMessage — system:status phase label', () => {
   it('turns a "requesting" status into a Requesting activity label', () => {
     const r = reduceSessionStreamMessage(sysStatus('requesting'), baseCtx);
@@ -325,7 +353,10 @@ describe('reduceSessionStreamMessage', () => {
       expect(r.costDelta).toBeCloseTo(0.0105, 6);
     });
 
-    it('cli-stream-result usage produces a positive costDelta', () => {
+    it('cli-stream-result usage contributes zero (rollup of already-counted assistant messages)', () => {
+      // cli-stream-result.usage is the CLI's turn-level rollup of the same
+      // assistant messages the reducer already priced individually — pricing
+      // it again here would double-count the turn's cost.
       const node: JsonlNode = {
         kind: 'cli-stream-result',
         raw: { type: 'result', subtype: 'success', usage: { input_tokens: 1000, output_tokens: 500 } } as never,
@@ -333,7 +364,7 @@ describe('reduceSessionStreamMessage', () => {
         receivedAt: '2026-05-27T00:00:00Z',
       };
       const r = reduceSessionStreamMessage(node, baseCtx);
-      expect(r.costDelta).toBeCloseTo(0.0105, 6);
+      expect(r.costDelta).toBe(0);
     });
 
     it('messages with no usage produce zero costDelta and an empty metrics delta', () => {
@@ -411,5 +442,50 @@ describe('model-fallback context refresh', () => {
     } as unknown as JsonlNode;
     const r = reduceSessionStreamMessage(node, baseCtx);
     expect(r.effects.map((e) => e.kind)).not.toContain('refreshContextUsage');
+  });
+});
+
+describe('costDelta pricing', () => {
+  const M = 1_000_000;
+
+  it('prices by model with cache tokens (opus 4.8)', () => {
+    const node = assistantUsageNode({
+      id: 'm1',
+      model: 'claude-opus-4-8',
+      usage: { input_tokens: 2, output_tokens: 5199, cache_read_input_tokens: 190350 },
+    });
+    const expected = 2 * (5 / M) + 5199 * (25 / M) + 190350 * (5 / M) * 0.1;
+    const r = reduceSessionStreamMessage(node, baseCtx);
+    expect(r.costDelta).toBeCloseTo(expected, 10);
+  });
+
+  it('cli-stream-result contributes zero (rollup of already-counted messages)', () => {
+    const node: JsonlNode = {
+      kind: 'cli-stream-result',
+      raw: {
+        type: 'result',
+        subtype: 'success',
+        usage: { input_tokens: 100, output_tokens: 100 },
+      } as never,
+      sessionId: '',
+      receivedAt: '2026-05-27T00:00:00Z',
+    };
+    const r = reduceSessionStreamMessage(node, baseCtx);
+    expect(r.costDelta).toBe(0);
+  });
+
+  it('same requestId delivered twice counts once when ctx.seenCostKeys is provided', () => {
+    const ctx: StreamReducerContext = { ...baseCtx, seenCostKeys: new Set<string>() };
+    const node = assistantUsageNode({
+      requestId: 'req_1',
+      model: 'claude-sonnet-4-5',
+      usage: { input_tokens: 100, output_tokens: 100 },
+    });
+
+    const first = reduceSessionStreamMessage(node, ctx);
+    expect(first.costDelta).toBeGreaterThan(0);
+
+    const second = reduceSessionStreamMessage(node, ctx);
+    expect(second.costDelta).toBe(0);
   });
 });

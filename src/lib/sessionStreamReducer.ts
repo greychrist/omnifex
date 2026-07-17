@@ -1,6 +1,7 @@
 import type { JsonlNode } from '@/types/jsonl';
 import type { PermissionRequestPayload } from './types/permissionRequest';
 import { phaseLabel } from './phaseLabel';
+import { computeMessageCost, type PricingOverrides, type UsageTokens } from '@/lib/pricing';
 
 export type { PermissionRequestPayload };
 
@@ -27,6 +28,12 @@ export interface StreamReducerContext {
   userInterrupted: boolean;
   /** Current messages.length, snapshotted before this message is folded in. */
   messagesLength: number;
+  /** Optional pricing overrides (per MTok), loaded once per session. */
+  pricingOverrides?: PricingOverrides;
+  /** Dedup set for cost accounting: requestId/message.id keys already priced.
+   *  Live streams re-deliver assistant messages per content block; without
+   *  this, session cost inflates. Owned by the caller, reset per session. */
+  seenCostKeys?: Set<string>;
 }
 
 export type StreamReducerEffect =
@@ -277,25 +284,22 @@ function inspectUserContent(blocks: unknown[]): {
   };
 }
 
-function computeCost(node: JsonlNode): number {
-  // assistant nodes carry usage in raw.message.usage
-  // cli-stream-result envelopes carry the turn's rolled-up usage in raw.usage
-  if (node.kind === 'assistant') {
-    const usage = (node.raw as { message?: { usage?: { input_tokens?: number; output_tokens?: number } } }).message?.usage;
-    if (!usage) return 0;
-    const input = (usage.input_tokens || 0) * 0.000003;
-    const output = (usage.output_tokens || 0) * 0.000015;
-    return input + output;
+function computeCost(node: JsonlNode, ctx: StreamReducerContext): number {
+  // Only assistant nodes are priced. cli-stream-result usage is the CLI's
+  // rollup of the same assistant messages — counting both double-counts.
+  if (node.kind !== 'assistant') return 0;
+  const raw = node.raw as {
+    requestId?: string;
+    message?: { id?: string; model?: string; usage?: UsageTokens };
+  };
+  const usage = raw.message?.usage;
+  if (!usage) return 0;
+  const key = raw.requestId ?? raw.message?.id;
+  if (key && ctx.seenCostKeys) {
+    if (ctx.seenCostKeys.has(key)) return 0;
+    ctx.seenCostKeys.add(key);
   }
-  if (node.kind === 'cli-stream-result') {
-    const raw = node.raw as { usage?: { input_tokens?: number; output_tokens?: number } };
-    if (raw.usage) {
-      const input = (raw.usage.input_tokens || 0) * 0.000003;
-      const output = (raw.usage.output_tokens || 0) * 0.000015;
-      return input + output;
-    }
-  }
-  return 0;
+  return computeMessageCost(raw.message?.model ?? '', usage, ctx.pricingOverrides).usd;
 }
 
 export function reduceSessionStreamMessage(
@@ -317,7 +321,7 @@ export function reduceSessionStreamMessage(
   const effects: StreamReducerEffect[] = [];
   let metrics: MetricsDelta = { ...EMPTY_METRICS_DELTA };
   let activity: ActivityUpdate | null = null;
-  const costDelta = computeCost(node);
+  const costDelta = computeCost(node, ctx);
 
   if (node.kind === 'assistant') {
     const content = (node.raw as { message?: { content?: unknown } }).message?.content;

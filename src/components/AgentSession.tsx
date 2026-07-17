@@ -50,6 +50,7 @@ import { normalizeJsonlNode } from "@/lib/normalizeMessage";
 import { classifyJsonlLine } from '@/lib/jsonlClassifier';
 import { lastPermissionMode, lastAssistantModel } from '@/lib/sessionDerivedState';
 import { reduceSessionStreamMessage } from '@/lib/sessionStreamReducer';
+import { parsePricingOverrides, type PricingOverrides } from '@/lib/pricing';
 import { runStreamEffect } from '@/lib/sessionStreamEffects';
 import { appendInflightDelta } from '@/lib/inflightCoalescer';
 import { maybeAutoGenerateSummaryOnLeave } from "@/lib/sessionSummaryGate";
@@ -714,6 +715,27 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     modelChanges: [] as { from: string; to: string; timestamp: number }[],
   });
 
+  // Cost accounting for the reducer's costDelta computation (Task 8):
+  // seenCostKeys dedups repeated deliveries of the same requestId/message.id
+  // (live streams re-emit assistant messages per content block), and
+  // pricingOverrides is loaded once on mount below. Both are refs, not state
+  // — they're read inside the ctx literal passed to reduceSessionStreamMessage
+  // per-message and must never trigger a re-render or effect re-run.
+  const costSeenKeysRef = useRef<Set<string>>(new Set());
+  const pricingOverridesRef = useRef<PricingOverrides | undefined>(undefined);
+
+  // Load pricing_overrides once per mount. Empty dep array + ref-only writes
+  // (no setState) — this must never become a render-loop trigger like the
+  // TabContent inline-closure bug (see project memory).
+  useEffect(() => {
+    void api
+      .getSetting('pricing_overrides')
+      .then((raw) => {
+        pricingOverridesRef.current = parsePricingOverrides(raw);
+      })
+      .catch(() => {});
+  }, []);
+
   // Notify parent of the active projectPath. TabContent passes a fresh
   // inline closure for this prop on every render and its `updateTab`
   // implementation always allocates a new tabs array + new `updatedAt`
@@ -1063,6 +1085,8 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
           hasExtractedSession: !!liveSlice.extractedSessionInfo,
           userInterrupted: userInterruptedRef.current,
           messagesLength: liveSlice.messages.length,
+          pricingOverrides: pricingOverridesRef.current,
+          seenCostKeys: costSeenKeysRef.current,
         });
 
         if (reduced.activityUpdate) {
@@ -1722,6 +1746,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     setRawJsonlOutput([]);
     setTotalTokens(0);
     setSessionCost(0);
+    costSeenKeysRef.current = new Set();
     setClaudeSessionId(null);
     setContextUsage(null);
     setSdkAccountInfo(null);
