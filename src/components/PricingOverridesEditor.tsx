@@ -16,7 +16,7 @@ const PLACEHOLDER = `{
  */
 export function PricingOverridesEditor() {
   const [text, setText] = useState('');
-  const [status, setStatus] = useState<'idle' | 'saved' | 'invalid'>('idle');
+  const [status, setStatus] = useState<'idle' | 'saved' | 'invalid' | 'error'>('idle');
 
   useEffect(() => {
     void api.getSetting('pricing_overrides').then((v) => {
@@ -30,9 +30,13 @@ export function PricingOverridesEditor() {
       setStatus('invalid');
       return;
     }
-    await api.saveSetting('pricing_overrides', trimmed);
-    setStatus('saved');
-    setTimeout(() => setStatus('idle'), 2000);
+    try {
+      await api.saveSetting('pricing_overrides', trimmed);
+      setStatus('saved');
+      setTimeout(() => setStatus('idle'), 2000);
+    } catch {
+      setStatus('error');
+    }
   };
 
   return (
@@ -55,6 +59,7 @@ export function PricingOverridesEditor() {
         <Button size="sm" onClick={() => void save()}>Save</Button>
         {status === 'saved' && <span className="text-xs text-green-400">Saved</span>}
         {status === 'invalid' && <span className="text-xs text-red-400">Not a valid overrides JSON object</span>}
+        {status === 'error' && <span className="text-xs text-red-400">Save failed — value not persisted</span>}
       </div>
     </div>
   );
