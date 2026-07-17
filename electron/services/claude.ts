@@ -716,9 +716,44 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
       }
     }
 
+    // Dedup by session id. The CLI can write the same session into more than
+    // one contributing dir (e.g. a `.claude/worktrees/<name>` dir and the
+    // project-root dir both resolve to this path — see
+    // findProjectDirsForPath), so the loop above can push two rows sharing an
+    // id. Keep the one whose transcript is most current: newest
+    // last_timestamp/message_timestamp wins, ties broken by larger
+    // file_size_bytes, then by later created_at.
+    const byId = new Map<string, Session>();
+    for (const session of sessions) {
+      const existing = byId.get(session.id);
+      if (!existing) {
+        byId.set(session.id, session);
+        continue;
+      }
+
+      const existingTs = existing.message_timestamp ?? existing.last_timestamp;
+      const candidateTs = session.message_timestamp ?? session.last_timestamp;
+      const existingTime = existingTs ? Date.parse(existingTs) : NaN;
+      const candidateTime = candidateTs ? Date.parse(candidateTs) : NaN;
+
+      let candidateIsNewer: boolean;
+      if (!Number.isNaN(candidateTime) && !Number.isNaN(existingTime)) {
+        candidateIsNewer = candidateTime > existingTime;
+      } else if (!Number.isNaN(candidateTime) !== !Number.isNaN(existingTime)) {
+        candidateIsNewer = !Number.isNaN(candidateTime);
+      } else if ((session.file_size_bytes ?? 0) !== (existing.file_size_bytes ?? 0)) {
+        candidateIsNewer = (session.file_size_bytes ?? 0) > (existing.file_size_bytes ?? 0);
+      } else {
+        candidateIsNewer = session.created_at > existing.created_at;
+      }
+
+      if (candidateIsNewer) byId.set(session.id, session);
+    }
+    const deduped = [...byId.values()];
+
     // Sort by created_at DESC
-    sessions.sort((a, b) => b.created_at - a.created_at);
-    return sessions;
+    deduped.sort((a, b) => b.created_at - a.created_at);
+    return deduped;
   }
 
   // -------------------------------------------------------------------------

@@ -201,6 +201,58 @@ describe('claude service', () => {
         expect(sessions).toHaveLength(19);
       });
 
+      // Regression: the Claude CLI can write the SAME session id into both a
+      // `.claude/worktrees/<name>` encoded dir and the project-root encoded
+      // dir (worktree session, later surfaced under the root too). Both dirs
+      // resolve to REAL, so getProjectSessions merged them without dedup,
+      // producing two Session rows sharing one `id` — duplicate React keys
+      // and a visibly doubled row in SessionList.
+      it('dedups a session id that appears in more than one contributing dir, keeping the newer copy', async () => {
+        const configDir = path.join(tmpDir, '.claude-dupsession');
+        const rootId = '-Users-greg-Repos-work-pi-tuitive';
+        const worktreeId = '-Users-greg-Repos-work-pi-tuitive--claude-worktrees-PI-272-289';
+
+        const rootDir = path.join(configDir, 'projects', rootId);
+        const worktreeDir = path.join(configDir, 'projects', worktreeId);
+        fs.mkdirSync(rootDir, { recursive: true });
+        fs.mkdirSync(worktreeDir, { recursive: true });
+
+        const oldFile = path.join(rootDir, 'dup-session.jsonl');
+        const newFile = path.join(worktreeDir, 'dup-session.jsonl');
+
+        fs.writeFileSync(
+          oldFile,
+          JSON.stringify({
+            type: 'user',
+            cwd: REAL,
+            timestamp: '2026-07-01T00:00:00.000Z',
+            message: { content: 'stale root copy' },
+          }) + '\n',
+        );
+        fs.writeFileSync(
+          newFile,
+          JSON.stringify({
+            type: 'user',
+            cwd: REAL,
+            timestamp: '2026-07-14T00:00:00.000Z',
+            message: { content: 'fresh worktree copy' },
+          }) + '\n',
+        );
+        const oldWhen = new Date('2026-07-01');
+        const newWhen = new Date('2026-07-14');
+        fs.utimesSync(oldFile, oldWhen, oldWhen);
+        fs.utimesSync(newFile, newWhen, newWhen);
+
+        const acct = accounts.createAccount({ name: 'Work', configDir });
+        accounts.addPathRule(acct.id, '/Users/greg/Repos/work');
+
+        const sessions = await service.getProjectSessions(rootId, REAL);
+        const dups = sessions.filter((s) => s.id === 'dup-session');
+        expect(dups).toHaveLength(1);
+        expect(dups[0].first_message).toBe('fresh worktree copy');
+        expect(dups[0].last_timestamp).toBe('2026-07-14T00:00:00.000Z');
+      });
+
       it('deleteProject removes every dir that resolves to the path', async () => {
         const configDir = path.join(tmpDir, '.claude-merge4');
         makeTwoDirs(configDir);
