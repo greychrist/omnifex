@@ -16,6 +16,10 @@ export type { PermissionRequestPayload };
  * The reducer is intentionally narrow — currentActivity gerunds, raw JSONL
  * appending, session metrics, and cost tracking still live in the
  * component. Folding those in is a follow-up.
+ *
+ * Caveat: not actually pure — computeCost mutates `ctx.seenCostKeys` (the
+ * caller-owned dedup set) as a side effect, by design; see the field's doc
+ * comment on StreamReducerContext.
  */
 
 export interface StreamReducerContext {

@@ -70,9 +70,12 @@ export function CostsView() {
 
   const rescan = useCallback(async () => {
     setRescanning(true);
+    setError(null);
     try {
       await api.sessionCostRescan();
       await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
     } finally {
       setRescanning(false);
     }
