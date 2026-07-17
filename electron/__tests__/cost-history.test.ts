@@ -97,9 +97,14 @@ describe('cost-history', () => {
       ],
       [path.join(PROJ_DIR, 'sessA', 'subagents')]: [{ name: 'agent-x1.jsonl', isDirectory: false }],
     };
+    const stats: Record<string, { mtimeMs: number; size: number }> = {};
+    for (const [p, content] of Object.entries(files)) {
+      stats[p] = { mtimeMs: content.length, size: content.length };
+    }
     const fakeFs: CostFs = {
       readFile: (p) => files[p] ?? null,
       listDir: (p) => dirs[p] ?? [],
+      stat: (p) => stats[p] ?? null,
     };
     const svc = createCostHistoryService(db, fakeFs);
     const result = svc.backfill([{ name: 'Work', config_dir: CFG }]);
@@ -109,5 +114,76 @@ describe('cost-history', () => {
     expect(rows.map((r) => r.model)).toEqual(['claude-haiku-4-5', 'claude-opus-4-8']);
     expect(rows[1].project_path).toBe('/Users/me/proj');
     expect(rows[1].session_id).toBe('sessA');
+  });
+
+  it('backfill skips unchanged sessions on a repeat sweep, and rescans only sessions whose files changed', () => {
+    const CFG = '/cfg';
+    const PROJ_DIR = path.join(CFG, 'projects', '-Users-me-proj');
+    const sessionLineA = JSON.stringify({
+      type: 'assistant', requestId: 'r1', timestamp: '2026-07-17T01:00:00Z', cwd: '/Users/me/proj',
+      message: { id: 'm1', model: 'claude-opus-4-8', usage: { output_tokens: 1000 } },
+    });
+    const sessionLineB = JSON.stringify({
+      type: 'assistant', requestId: 'r1', timestamp: '2026-07-17T01:00:00Z', cwd: '/Users/me/proj2',
+      message: { id: 'm1', model: 'claude-sonnet-5', usage: { output_tokens: 200 } },
+    });
+    const SESSION_A = path.join(PROJ_DIR, 'sessA.jsonl');
+    const SESSION_B = path.join(PROJ_DIR, 'sessB.jsonl');
+    const files: Record<string, string> = {
+      [SESSION_A]: sessionLineA,
+      [SESSION_B]: sessionLineB,
+    };
+    const dirs: Record<string, Array<{ name: string; isDirectory: boolean }>> = {
+      [path.join(CFG, 'projects')]: [{ name: '-Users-me-proj', isDirectory: true }],
+      [PROJ_DIR]: [
+        { name: 'sessA.jsonl', isDirectory: false },
+        { name: 'sessB.jsonl', isDirectory: false },
+      ],
+      [path.join(PROJ_DIR, 'sessA', 'subagents')]: [],
+      [path.join(PROJ_DIR, 'sessB', 'subagents')]: [],
+    };
+    let readCount = 0;
+    const fakeFs: CostFs = {
+      readFile: (p) => {
+        if (p in files) readCount += 1;
+        return files[p] ?? null;
+      },
+      listDir: (p) => dirs[p] ?? [],
+      stat: (p) => (p in files ? { mtimeMs: files[p].length, size: files[p].length } : null),
+    };
+    const svc = createCostHistoryService(db, fakeFs);
+
+    const first = svc.backfill([{ name: 'Work', config_dir: CFG }]);
+    expect(first.sessionsScanned).toBe(2);
+    expect(readCount).toBe(2);
+
+    // Second sweep over an unchanged world: no content reads, nothing scanned.
+    readCount = 0;
+    const second = svc.backfill([{ name: 'Work', config_dir: CFG }]);
+    expect(second.sessionsScanned).toBe(0);
+    expect(readCount).toBe(0);
+
+    // Mutate only sessA's content (and its stat signature) — third sweep
+    // should rescan just that one session.
+    files[SESSION_A] = sessionLineA + '\n' + sessionLineA;
+    readCount = 0;
+    const third = svc.backfill([{ name: 'Work', config_dir: CFG }]);
+    expect(third.sessionsScanned).toBe(1);
+    expect(readCount).toBe(1);
+  });
+
+  it("aggregate groups by week ('%Y-W%W' bucket)", () => {
+    const svc = createCostHistoryService(db);
+    // 2026-07-13 (Mon) and 2026-07-15 (Wed) fall in the same %Y-W%W bucket.
+    svc.replaceSession('s1', [row({ session_id: 's1', date: '2026-07-13', cost_usd: 1 })]);
+    svc.replaceSession('s2', [row({ session_id: 's2', date: '2026-07-15', cost_usd: 2 })]);
+    // 2026-07-20 (Mon of the following week) is a separate bucket.
+    svc.replaceSession('s3', [row({ session_id: 's3', date: '2026-07-20', cost_usd: 5 })]);
+
+    const weeks = svc.aggregate({}, 'week');
+    expect(weeks).toHaveLength(2);
+    expect(weeks[0].cost_usd).toBeCloseTo(3, 10);
+    expect(weeks[1].cost_usd).toBeCloseTo(5, 10);
+    expect(weeks[0].period).not.toBe(weeks[1].period);
   });
 });

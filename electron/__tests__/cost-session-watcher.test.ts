@@ -22,11 +22,12 @@ function assistantLine(req: string, out: number): string {
 function makeWorld(initial: string) {
   const files: Record<string, string> = { [SESSION_FILE]: initial };
   const dirs: Record<string, Array<{ name: string; isDirectory: boolean }>> = { [SUBAGENTS_DIR]: [] };
+  const stat = (p: string) => (p in files ? { mtimeMs: files[p].length, size: files[p].length } : null);
   const fakeFs: CostFs = {
     readFile: (p) => files[p] ?? null,
     listDir: (p) => dirs[p] ?? [],
+    stat,
   };
-  const stat = (p: string) => (p in files ? { mtimeMs: files[p].length, size: files[p].length } : null);
   return { files, dirs, fakeFs, stat };
 }
 
@@ -169,6 +170,70 @@ describe('session-cost watcher', () => {
     expect(emitted).toHaveLength(1);
     const payload = emitted[0].payload as { totalUsd: number };
     expect(payload.totalUsd).toBeCloseTo(2500 * (25 / 1_000_000), 10);
+  });
+
+  it('a non-agent .jsonl appearing in the subagents dir must not trigger an emission', () => {
+    vi.useFakeTimers();
+    const world = makeWorld(assistantLine('r1', 1000));
+    const emitted: Array<{ channel: string; payload: unknown }> = [];
+    const svc = createSessionCostService({
+      sendToRenderer: (channel, payload) => emitted.push({ channel, payload }),
+      costHistory: null,
+      getOverrides: () => undefined,
+      fs: world.fakeFs,
+      stat: world.stat,
+      pollMs: 1000,
+    });
+    svc.watch(args);
+    vi.advanceTimersByTime(1100);
+    expect(emitted).toHaveLength(0);
+
+    // A non-agent-* file lands in the subagents dir (e.g. a stray/renamed
+    // file) — compute() ignores it, so signature() must too, or the watcher
+    // spuriously emits an unchanged snapshot.
+    const STRAY_FILE = path.join(SUBAGENTS_DIR, 'notes.jsonl');
+    world.files[STRAY_FILE] = assistantLine('stray', 9999);
+    world.dirs[SUBAGENTS_DIR] = [{ name: 'notes.jsonl', isDirectory: false }];
+    vi.advanceTimersByTime(1100);
+    expect(emitted).toHaveLength(0);
+  });
+
+  it('captures the baseline signature before compute() so a write racing the initial read is still detected', () => {
+    vi.useFakeTimers();
+    const world = makeWorld(assistantLine('r1', 1000));
+    // Simulate a concurrent write landing exactly between signature capture
+    // and the initial compute()'s readFile: the very first readFile call
+    // appends new content to the file it just "read" (as if a real writer
+    // hit the disk mid-read). If watch() captured signature() AFTER
+    // compute(), that baseline would already reflect the concurrent write
+    // and the change would never be seen as a diff.
+    let readCount = 0;
+    const racingFs: CostFs = {
+      readFile: (p) => {
+        const content = world.fakeFs.readFile(p);
+        readCount += 1;
+        if (readCount === 1 && p === SESSION_FILE) {
+          world.files[SESSION_FILE] += '\n' + assistantLine('r2', 2000);
+        }
+        return content;
+      },
+      listDir: (p) => world.fakeFs.listDir(p),
+      stat: (p) => world.fakeFs.stat(p),
+    };
+    const emitted: Array<{ channel: string; payload: unknown }> = [];
+    const svc = createSessionCostService({
+      sendToRenderer: (channel, payload) => emitted.push({ channel, payload }),
+      costHistory: null,
+      getOverrides: () => undefined,
+      fs: racingFs,
+      stat: world.stat,
+      pollMs: 1000,
+    });
+    svc.watch(args);
+    vi.advanceTimersByTime(1100);
+    expect(emitted).toHaveLength(1);
+    const payload = emitted[0].payload as { totalUsd: number };
+    expect(payload.totalUsd).toBeCloseTo(3000 * (25 / 1_000_000), 10);
   });
 
   it("unwatch() on a session that was never watched is a no-op", () => {

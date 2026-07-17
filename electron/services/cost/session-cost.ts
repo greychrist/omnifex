@@ -65,7 +65,7 @@ export function createSessionCostService(deps: SessionCostDeps): SessionCostServ
     const main = stat(sessionFile);
     const subs = fsDeps
       .listDir(subagentsDir)
-      .filter((e) => !e.isDirectory && e.name.endsWith('.jsonl'))
+      .filter((e) => !e.isDirectory && e.name.startsWith('agent-') && e.name.endsWith('.jsonl'))
       .map((e) => {
         const s = stat(path.join(subagentsDir, e.name));
         return `${e.name}:${s?.size ?? 0}:${s?.mtimeMs ?? 0}`;
@@ -102,8 +102,12 @@ export function createSessionCostService(deps: SessionCostDeps): SessionCostServ
 
   function watch(args: SessionCostArgs): SessionCostSnapshot {
     unwatch(args.sessionId);
+    // Capture the baseline signature BEFORE compute() reads the files: if a
+    // write lands between them, signature() must not silently absorb it into
+    // the "unchanged" baseline (which would mean the write is never emitted).
+    const baselineSignature = signature(args);
     const initial = compute(args);
-    const state = { timer: null as unknown as NodeJS.Timeout, signature: signature(args) };
+    const state = { timer: null as unknown as NodeJS.Timeout, signature: baselineSignature };
     state.timer = setInterval(() => {
       const sig = signature(args);
       if (sig === state.signature) return;

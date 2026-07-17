@@ -16,6 +16,7 @@ import { computeSessionCost, type SessionCostDailyRow } from './session-cost-cor
 export interface CostFs {
   readFile(p: string): string | null;
   listDir(p: string): Array<{ name: string; isDirectory: boolean }>;
+  stat(p: string): { mtimeMs: number; size: number } | null;
 }
 
 export const nodeCostFs: CostFs = {
@@ -33,6 +34,14 @@ export const nodeCostFs: CostFs = {
         .map((e) => ({ name: e.name, isDirectory: e.isDirectory() }));
     } catch {
       return [];
+    }
+  },
+  stat(p: string): { mtimeMs: number; size: number } | null {
+    try {
+      const s = fs.statSync(p);
+      return { mtimeMs: s.mtimeMs, size: s.size };
+    } catch {
+      return null;
     }
   },
 };
@@ -114,7 +123,31 @@ function recoverProjectPath(content: string, dirName: string): string {
   return dirName.replace(/-/g, '/');
 }
 
+/** Change-detection signature for a session's on-disk JSONLs: main file
+ *  `size:mtimeMs` plus each `agent-*.jsonl` `name:size:mtimeMs` (sorted).
+ *  Mirrors session-cost.ts's live-watcher signature() so the two stay
+ *  consistent about what counts as "the same session content". */
+function sessionFileSignature(fsDeps: CostFs, mainPath: string, subagentsDir: string): string {
+  const main = fsDeps.stat(mainPath);
+  const subs = fsDeps
+    .listDir(subagentsDir)
+    .filter((e) => !e.isDirectory && e.name.startsWith('agent-') && e.name.endsWith('.jsonl'))
+    .map((e) => {
+      const s = fsDeps.stat(path.join(subagentsDir, e.name));
+      return `${e.name}:${s?.size ?? 0}:${s?.mtimeMs ?? 0}`;
+    })
+    .sort()
+    .join(',');
+  return `${main?.size ?? 0}:${main?.mtimeMs ?? 0}|${subs}`;
+}
+
 export function createCostHistoryService(db: Database, fsDeps: CostFs = nodeCostFs): CostHistoryService {
+  // Per-service in-memory cache: session file path -> last-scanned signature.
+  // Lets the hourly backfill sweep skip sessions whose JSONLs haven't
+  // changed since the last pass, instead of re-reading and rewriting every
+  // row for every surviving session on every run (unbounded growth under
+  // 365-day retention otherwise).
+  const scannedSignatures = new Map<string, string>();
   const insertStmt = db.raw.prepare(`
     INSERT INTO session_cost_daily (
       session_id, date, model, account_name, config_dir, project_path,
@@ -184,9 +217,14 @@ export function createCostHistoryService(db: Database, fsDeps: CostFs = nodeCost
         for (const entry of entries) {
           if (entry.isDirectory || !entry.name.endsWith('.jsonl')) continue;
           const sessionId = entry.name.slice(0, -'.jsonl'.length);
-          const sessionContent = fsDeps.readFile(path.join(projectDir, entry.name));
-          if (sessionContent === null) continue;
+          const mainPath = path.join(projectDir, entry.name);
           const subagentsDir = path.join(projectDir, sessionId, 'subagents');
+
+          const signature = sessionFileSignature(fsDeps, mainPath, subagentsDir);
+          if (scannedSignatures.get(mainPath) === signature) continue; // unchanged, skip entirely
+
+          const sessionContent = fsDeps.readFile(mainPath);
+          if (sessionContent === null) continue;
           const subagentContents = fsDeps
             .listDir(subagentsDir)
             .filter((e) => !e.isDirectory && e.name.startsWith('agent-') && e.name.endsWith('.jsonl'))
@@ -203,6 +241,7 @@ export function createCostHistoryService(db: Database, fsDeps: CostFs = nodeCost
             overrides,
           });
           replaceSession(sessionId, dailyRows);
+          scannedSignatures.set(mainPath, signature);
           sessionsScanned += 1;
         }
       }

@@ -95,4 +95,28 @@ describe('parsePricingOverrides', () => {
     expect(parsePricingOverrides(null)).toBeUndefined();
     expect(parsePricingOverrides('[1,2]')).toBeUndefined();
   });
+
+  it('drops a string value for a known field, leaving the entry empty and dropped', () => {
+    expect(parsePricingOverrides('{"opus":{"input":"5"}}')).toEqual({});
+  });
+
+  it('drops non-finite numbers (Infinity via numeric overflow)', () => {
+    expect(parsePricingOverrides('{"opus":{"input":1e999}}')).toEqual({});
+  });
+
+  it('keeps valid fields alongside dropped ones in the same entry', () => {
+    expect(parsePricingOverrides('{"opus":{"input":5,"output":"bad","cacheRead":1e999}}')).toEqual({
+      opus: { input: 5 },
+    });
+  });
+
+  it('drops a non-object entry entirely while keeping valid siblings', () => {
+    expect(parsePricingOverrides('{"opus":5,"sonnet":{"input":3}}')).toEqual({
+      sonnet: { input: 3 },
+    });
+  });
+
+  it('drops unknown fields even when numeric', () => {
+    expect(parsePricingOverrides('{"opus":{"input":5,"bogus":1}}')).toEqual({ opus: { input: 5 } });
+  });
 });

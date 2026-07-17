@@ -136,7 +136,16 @@ export function computeMessageCost(
   };
 }
 
-/** Safe parse for the `pricing_overrides` app setting (JSON object or bust). */
+const KNOWN_OVERRIDE_FIELDS = ['input', 'output', 'cacheRead', 'cacheWrite5m', 'cacheWrite1h'] as const;
+
+/** Safe parse for the `pricing_overrides` app setting (JSON object or bust).
+ *
+ * Validates each entry down to the five known numeric fields: non-object
+ * entries are dropped entirely, and any field whose value isn't a finite
+ * number (string, NaN, Infinity, unknown key) is dropped. A bad value must
+ * never survive to `resolveRates` — a NaN rate produces a NaN cost, and
+ * `cost_usd REAL NOT NULL` stores NaN as NULL, aborting the whole backfill
+ * insert with nothing louder than a console.warn. */
 export function parsePricingOverrides(
   json: string | null | undefined,
 ): PricingOverrides | undefined {
@@ -144,7 +153,21 @@ export function parsePricingOverrides(
   try {
     const parsed: unknown = JSON.parse(json);
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return undefined;
-    return parsed as PricingOverrides;
+    const result: PricingOverrides = {};
+    for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
+      const entry: PricingOverride = {};
+      for (const field of KNOWN_OVERRIDE_FIELDS) {
+        const v = (value as Record<string, unknown>)[field];
+        if (typeof v === 'number' && Number.isFinite(v)) {
+          entry[field] = v;
+        }
+      }
+      if (Object.keys(entry).length > 0) {
+        result[key] = entry;
+      }
+    }
+    return result;
   } catch {
     return undefined;
   }
