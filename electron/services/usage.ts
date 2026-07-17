@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { AccountsService } from './accounts';
 import type { LoggingService } from './logging';
+import { computeMessageCost } from '../../src/lib/pricing';
 
 // ---------------------------------------------------------------------------
 // Logging helpers — piped in from the factory so we can log, not swallow, IO
@@ -124,13 +125,19 @@ export interface UsageService {
 
 interface RawMessage {
   type: string;
+  requestId?: string;
   message?: {
+    id?: string;
     role?: string;
     usage?: {
       input_tokens?: number;
       output_tokens?: number;
       cache_creation_input_tokens?: number;
       cache_read_input_tokens?: number;
+      cache_creation?: {
+        ephemeral_5m_input_tokens?: number;
+        ephemeral_1h_input_tokens?: number;
+      };
     };
     model?: string;
   };
@@ -157,17 +164,6 @@ interface ParsedUsage {
   date: string;
   account_name: string;
   account_type: string;
-}
-
-// ---------------------------------------------------------------------------
-// Cost model
-// ---------------------------------------------------------------------------
-
-function getCostPerToken(model: string): { input: number; output: number } {
-  if (model.includes('opus')) return { input: 15 / 1_000_000, output: 75 / 1_000_000 };
-  if (model.includes('sonnet')) return { input: 3 / 1_000_000, output: 15 / 1_000_000 };
-  if (model.includes('haiku')) return { input: 0.25 / 1_000_000, output: 1.25 / 1_000_000 };
-  return { input: 3 / 1_000_000, output: 15 / 1_000_000 }; // default to sonnet
 }
 
 // ---------------------------------------------------------------------------
@@ -257,39 +253,40 @@ function extractUsageRows(
   accountName: string,
   accountType: string,
 ): UsageRow[] {
-  const rows: UsageRow[] = [];
+  // One row per billed API request: the CLI writes one line per content
+  // block, sharing requestId/message.id with identical usage — summing raw
+  // lines double-counts. Last occurrence wins.
+  const byKey = new Map<string, UsageRow>();
+  let idx = 0;
   for (const msg of messages) {
+    idx += 1;
     if (msg.type !== 'assistant') continue;
     if (!msg.message?.usage) continue;
 
     const usage = msg.message.usage;
     const model = msg.message.model ?? 'unknown';
-    const inputTokens = usage.input_tokens ?? 0;
-    const outputTokens = usage.output_tokens ?? 0;
-    const cacheCreation = usage.cache_creation_input_tokens ?? 0;
-    const cacheRead = usage.cache_read_input_tokens ?? 0;
-
-    const rates = getCostPerToken(model);
-    const cost = inputTokens * rates.input + outputTokens * rates.output;
+    const key = msg.requestId ?? msg.message.id ?? `line:${idx}`;
+    const { usd } = computeMessageCost(model, usage);
 
     const timestamp = msg.timestamp ?? '';
     const date = timestamp ? timestamp.substring(0, 10) : '';
 
-    rows.push({
+    if (byKey.has(key)) byKey.delete(key);
+    byKey.set(key, {
       session_id: sessionId,
       model,
-      input_tokens: inputTokens,
-      output_tokens: outputTokens,
-      cache_creation_tokens: cacheCreation,
-      cache_read_tokens: cacheRead,
-      cost,
+      input_tokens: usage.input_tokens ?? 0,
+      output_tokens: usage.output_tokens ?? 0,
+      cache_creation_tokens: usage.cache_creation_input_tokens ?? 0,
+      cache_read_tokens: usage.cache_read_input_tokens ?? 0,
+      cost: usd,
       timestamp,
       date,
       account_name: accountName,
       account_type: accountType,
     });
   }
-  return rows;
+  return [...byKey.values()];
 }
 
 function scanConfigDir(

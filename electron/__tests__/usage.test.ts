@@ -285,8 +285,12 @@ describe('usage service', () => {
       expect(stats.total_cache_read_tokens).toBe(5);
       expect(stats.total_tokens).toBe(430);
       expect(stats.total_sessions).toBe(1);
-      // Cost: (300 * 3 + 130 * 15) / 1_000_000 = (900 + 1950) / 1_000_000
-      const expectedCost = (300 * 3 + 130 * 15) / 1_000_000;
+      // Cost: sonnet rate 3/15 per M; cache read 0.1x input, cache write(5m) 1.25x input.
+      // msg1 (100/50, cacheRead 5, cacheCreation 10): 100*3 + 50*15 + 5*(3*0.1) + 10*(3*1.25) = 1089
+      // msg2 (200/80, no cache): 200*3 + 80*15 = 1800
+      const M = 1_000_000;
+      const expectedCost =
+        (100 * 3 + 50 * 15 + 5 * (3 * 0.1) + 10 * (3 * 1.25)) / M + (200 * 3 + 80 * 15) / M;
       expect(stats.total_cost).toBeCloseTo(expectedCost, 10);
     });
 
@@ -861,6 +865,62 @@ describe('usage service', () => {
       // default (sonnet): 3/M input, 15/M output
       const expectedCost = 3 + 15; // = 18
       expect(stats.total_cost).toBeCloseTo(expectedCost, 5);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Current model rates, cache-token pricing, and per-request dedup
+  // -------------------------------------------------------------------------
+
+  describe('current model rates, cache pricing, and per-request dedup', () => {
+    it('prices opus 4.8 at current rates including cache tokens', () => {
+      const configDir = makeTmp();
+      buildConfigDir(configDir, [
+        {
+          name: '-Users-greg-proj',
+          sessions: [
+            [
+              assistantMessage({
+                model: 'claude-opus-4-8',
+                input: 100,
+                output: 200,
+                cacheRead: 1000,
+                cacheCreation: 500,
+              }),
+            ],
+          ],
+        },
+      ]);
+
+      const accounts = makeAccountsService([configDir]);
+      const service = createUsageService(accounts);
+      const stats = service.getUsageStats();
+
+      // opus-4-8: 5/M input, 25/M output; cache read 0.1x input, cache write(5m) 1.25x input
+      const M = 1_000_000;
+      const expected =
+        100 * (5 / M) + 200 * (25 / M) + 1000 * (5 / M) * 0.1 + 500 * (5 / M) * 1.25;
+      expect(stats.total_cost).toBeCloseTo(expected, 10);
+    });
+
+    it('counts a multi-line message (same requestId) exactly once', () => {
+      const configDir = makeTmp();
+      // Two JSONL lines sharing requestId 'req_1' with identical usage — the CLI
+      // writes one line per content block for a single billed request, so
+      // summing raw lines would double count. Only the last should be kept.
+      const line = { ...assistantMessage({ input: 200, output: 100 }), requestId: 'req_1' };
+      buildConfigDir(configDir, [
+        {
+          name: '-Users-greg-proj',
+          sessions: [[line, line]],
+        },
+      ]);
+
+      const accounts = makeAccountsService([configDir]);
+      const service = createUsageService(accounts);
+      const stats = service.getUsageStats();
+
+      expect(stats.total_tokens).toBe(300); // 200 + 100, counted once
     });
   });
 
