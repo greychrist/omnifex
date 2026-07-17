@@ -178,6 +178,7 @@ const SYSTEM_SUBTYPES: ReadonlySet<SystemSubtype> = new Set<SystemSubtype>([
   'informational',
   'status',
   'permission_denied',
+  'thinking_tokens',
   'model_fallback',
   'model_refusal_fallback',
   'model_refusal_no_fallback',

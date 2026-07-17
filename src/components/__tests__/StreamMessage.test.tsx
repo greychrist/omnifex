@@ -296,6 +296,33 @@ describe('system away_summary recap rendering', () => {
   });
 });
 
+describe('system thinking_tokens rendering', () => {
+  function makeThinkingTokensNode(estimated_tokens: number, estimated_tokens_delta?: number): JsonlNode {
+    return {
+      kind: 'system',
+      subtype: 'thinking_tokens',
+      sessionId: 'sess-1',
+      receivedAt: '2026-05-27T10:00:00Z',
+      raw: { type: 'system', subtype: 'thinking_tokens', estimated_tokens, estimated_tokens_delta },
+    } as unknown as JsonlNode;
+  }
+
+  it('renders a formatted "~N thinking tokens" body from estimated_tokens', () => {
+    const node = makeThinkingTokensNode(800, 50);
+    render(<StreamMessage message={node} streamMessages={[node]} />);
+
+    expect(screen.getByText('~800 thinking tokens')).toBeTruthy();
+  });
+
+  it('keeps the mono styling and inline subtype label (same fallback mechanism as other system subtypes)', () => {
+    const node = makeThinkingTokensNode(1200, 50);
+    render(<StreamMessage message={node} streamMessages={[node]} />);
+
+    expect(screen.getByText('system.thinking_tokens')).toBeTruthy();
+    expect(screen.getByText('~1200 thinking tokens').className).toContain('font-mono');
+  });
+});
+
 describe('unknown-record catch-all rendering', () => {
   // "I don't want unrendered messages" — every record the classifier can't
   // name must still produce something visible, never a silent null.

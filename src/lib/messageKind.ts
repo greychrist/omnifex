@@ -180,6 +180,7 @@ export function classifyStandaloneKind(
     if (subtype === 'hook_started') return 'system.hook_started';
     if (subtype === 'hook_response') return 'system.hook_response';
     if (subtype === 'permission_denied') return 'system.permission_denied';
+    if (subtype === 'thinking_tokens') return 'system.thinking_tokens';
     if (subtype === 'user_prompt_submit') return 'system.userPromptSubmit';
     if (subtype === 'away_summary') return 'system.away_summary';
     // Fallback: any other system subtype renders as the unknown gray inline strip.

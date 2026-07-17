@@ -439,11 +439,16 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
       // System variants don't share a common text field; pick whichever
       // narrative-style field the specific subtype carries. `content` holds the
       // recap body for summary subtypes like away_summary / stop_hook_summary.
+      // thinking_tokens carries no narrative field at all — it's a running
+      // numeric estimate — so its body is synthesized from `estimated_tokens`.
+      const estimatedTokens = (sysRaw as unknown as { estimated_tokens?: number }).estimated_tokens;
       const text =
-        (sysRaw as unknown as { message?: unknown }).message
-          ?? (sysRaw as unknown as { content?: unknown }).content
-          ?? sysRaw.title
-          ?? '';
+        subtype === 'thinking_tokens'
+          ? (typeof estimatedTokens === 'number' ? `~${estimatedTokens} thinking tokens` : '')
+          : (sysRaw as unknown as { message?: unknown }).message
+            ?? (sysRaw as unknown as { content?: unknown }).content
+            ?? sysRaw.title
+            ?? '';
       const streamKind = classifyStandaloneKind(message, streamMessages) ?? "system.informational";
       // away_summary is a user-facing recap, not diagnostics: prose body
       // (regular font, italic) with no inline subtype label — the card's

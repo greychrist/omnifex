@@ -22,7 +22,7 @@ const EMITTABLE_IDS = [
   "system.notification.error", "system.notification.stop",
   "system.hook_started", "system.hook_response", "system.permission_denied",
   "system.userPromptSubmit", "system.api_error", "system.away_summary",
-  "system.unknown",
+  "system.thinking_tokens", "system.unknown",
   // permission / summary / fallback
   "permission.request", "permission.askUserQuestion",
   "summary.compaction", "unknown",
@@ -257,6 +257,24 @@ describe('classifyStandaloneKind', () => {
       // reaches classifyStandaloneKind, it falls through to system.unknown —
       // the dedicated system.init catalog row was deleted.
       expect(classifyStandaloneKind(sys('init'), [])).toBe('system.unknown');
+    });
+  });
+
+  describe('system.thinking_tokens', () => {
+    // system + thinking_tokens is a running estimate of the current turn's
+    // thinking size, emitted roughly every ~50 thinking tokens. Until
+    // first-classed it fell through to system.unknown like any other
+    // unrecognized subtype.
+    const sys = (extras: Record<string, unknown>): JsonlNode =>
+      ({
+        kind: 'system', subtype: 'thinking_tokens', sessionId: '', receivedAt: '',
+        raw: { type: 'system', subtype: 'thinking_tokens', ...extras },
+      }) as unknown as JsonlNode;
+
+    it('classifies thinking_tokens as its own separately-stylable kind', () => {
+      expect(
+        classifyStandaloneKind(sys({ estimated_tokens: 800, estimated_tokens_delta: 50 }), []),
+      ).toBe('system.thinking_tokens');
     });
   });
 

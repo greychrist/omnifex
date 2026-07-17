@@ -111,6 +111,7 @@ export type SystemSubtype =
   | 'informational'
   | 'status'
   | 'permission_denied'
+  | 'thinking_tokens'
   // Model-availability events. The CLI switches (or refuses to switch) models
   // mid-session and explains why in `content` — e.g. Fable 5 safety fallbacks.
   | 'model_fallback'
@@ -137,6 +138,9 @@ export interface SystemRaw extends RawLineBase {
    * live activity label via `phaseLabel`, never rendered in the transcript.
    */
   status?: string | null;
+  /** Present when subtype === 'thinking_tokens' — running estimate of the current turn's thinking size. */
+  estimated_tokens?: number;
+  estimated_tokens_delta?: number;
 }
 
 export interface CliInitRaw {

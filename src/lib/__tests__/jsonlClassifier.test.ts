@@ -167,6 +167,23 @@ describe('classifyJsonlLine', () => {
     }
   });
 
+  it('classifies system/thinking_tokens', () => {
+    const sample = {
+      type: 'system',
+      subtype: 'thinking_tokens',
+      estimated_tokens: 800,
+      estimated_tokens_delta: 50,
+      uuid: 'e1d44641-7100-4fdd-8408-bdef7f745da7',
+      sessionId: '0e1e60a9-7c56-4a8e-a185-3083ec130353',
+      timestamp: '2026-04-29T17:19:18.835Z',
+    };
+    const node = classifyJsonlLine(sample);
+    expect(node?.kind).toBe('system');
+    if (node?.kind === 'system') {
+      expect(node.subtype).toBe('thinking_tokens');
+    }
+  });
+
   it('classifies system/away_summary', () => {
     const node = classifyJsonlLine(JSONL_SAMPLES['system/away_summary']);
     expect(node?.kind).toBe('system');
