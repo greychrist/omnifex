@@ -447,6 +447,33 @@ const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 16,
+    description: 'Add session_cost_daily table for durable cost history',
+    up: (db) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS session_cost_daily (
+          session_id            TEXT NOT NULL,
+          date                  TEXT NOT NULL,
+          model                 TEXT NOT NULL,
+          account_name          TEXT NOT NULL,
+          config_dir            TEXT NOT NULL,
+          project_path          TEXT,
+          input_tokens          INTEGER NOT NULL DEFAULT 0,
+          output_tokens         INTEGER NOT NULL DEFAULT 0,
+          cache_read_tokens     INTEGER NOT NULL DEFAULT 0,
+          cache_write_5m_tokens INTEGER NOT NULL DEFAULT 0,
+          cache_write_1h_tokens INTEGER NOT NULL DEFAULT 0,
+          cost_usd              REAL NOT NULL,
+          is_estimated          INTEGER NOT NULL DEFAULT 0,
+          updated_at            TEXT NOT NULL,
+          PRIMARY KEY (session_id, date, model)
+        );
+        CREATE INDEX IF NOT EXISTS idx_session_cost_daily_date ON session_cost_daily(date);
+        CREATE INDEX IF NOT EXISTS idx_session_cost_daily_account ON session_cost_daily(account_name, date);
+      `);
+    },
+  },
 ];
 
 /**
