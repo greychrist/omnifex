@@ -4,6 +4,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { api, type AccountUsageStats, type UsageStats } from "@/lib/api";
 import { AccountBadge } from "@/components/AccountBadge";
+import { CostsView } from "@/components/CostsView";
 import { useAccounts } from "@/contexts/AccountsContext";
 import { Filter, ChevronDown, ChevronUp } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
@@ -202,6 +203,7 @@ export const UsageDashboard: React.FC<UsageDashboardProps> = ({}) => {
     "all" | "7d" | "30d"
   >("30d");
   const [selectedAccount, setSelectedAccount] = useState<string>("all");
+  const [view, setView] = useState<"usage" | "costs">("usage");
 
   const loadData = useCallback(async () => {
     try {
@@ -259,75 +261,89 @@ export const UsageDashboard: React.FC<UsageDashboardProps> = ({}) => {
       <div className="max-w-5xl mx-auto flex flex-col h-full">
         {/* Header */}
         <div className="p-6 shrink-0 space-y-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-xl font-bold">Usage Dashboard</h1>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {fmtNumber(grandTotals.sessions)} sessions &middot;{" "}
-                {fmtTokens(grandTotals.tokens)} tokens
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <Filter className="h-4 w-4 text-muted-foreground" />
-              {(["7d", "30d", "all"] as const).map((range) => (
-                <Button
-                  key={range}
-                  variant={selectedDateRange === range ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => { setSelectedDateRange(range); }}
-                  disabled={loading}
-                >
-                  {range === "all"
-                    ? "All Time"
-                    : range === "7d"
-                      ? "7 Days"
-                      : "30 Days"}
-                </Button>
-              ))}
-            </div>
+          <div className="mb-4 flex gap-2">
+            <Button size="sm" variant={view === "usage" ? "default" : "outline"} onClick={() => { setView("usage"); }}>
+              Usage
+            </Button>
+            <Button size="sm" variant={view === "costs" ? "default" : "outline"} onClick={() => { setView("costs"); }}>
+              Costs
+            </Button>
           </div>
+          {view === "usage" && (
+            <>
+              <div className="flex items-center justify-between">
+                <div>
+                  <h1 className="text-xl font-bold">Usage Dashboard</h1>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {fmtNumber(grandTotals.sessions)} sessions &middot;{" "}
+                    {fmtTokens(grandTotals.tokens)} tokens
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Filter className="h-4 w-4 text-muted-foreground" />
+                  {(["7d", "30d", "all"] as const).map((range) => (
+                    <Button
+                      key={range}
+                      variant={selectedDateRange === range ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => { setSelectedDateRange(range); }}
+                      disabled={loading}
+                    >
+                      {range === "all"
+                        ? "All Time"
+                        : range === "7d"
+                          ? "7 Days"
+                          : "30 Days"}
+                    </Button>
+                  ))}
+                </div>
+              </div>
 
-          {/* Account picker */}
-          {accounts.length > 0 && (
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground">Account:</span>
-              <button
-                type="button"
-                className={cn(
-                  "text-xs px-2.5 py-1 rounded-md transition-colors",
-                  selectedAccount === "all"
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:text-foreground hover:bg-muted",
-                )}
-                onClick={() => { setSelectedAccount("all"); }}
-              >
-                All
-              </button>
-              {accounts.map((acct) => (
-                <button
-                  key={acct.id}
-                  type="button"
-                  className={cn(
-                    "text-xs px-2.5 py-1 rounded-md transition-colors flex items-center gap-1.5",
-                    selectedAccount === acct.name
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:text-foreground hover:bg-muted",
-                  )}
-                  onClick={() => { setSelectedAccount(acct.name); }}
-                >
-                  {acct.name}
-                  <span className="opacity-60 uppercase text-[10px]">
-                    {acct.subscription_label}
-                  </span>
-                </button>
-              ))}
-            </div>
+              {/* Account picker */}
+              {accounts.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">Account:</span>
+                  <button
+                    type="button"
+                    className={cn(
+                      "text-xs px-2.5 py-1 rounded-md transition-colors",
+                      selectedAccount === "all"
+                        ? "bg-primary text-primary-foreground"
+                        : "text-muted-foreground hover:text-foreground hover:bg-muted",
+                    )}
+                    onClick={() => { setSelectedAccount("all"); }}
+                  >
+                    All
+                  </button>
+                  {accounts.map((acct) => (
+                    <button
+                      key={acct.id}
+                      type="button"
+                      className={cn(
+                        "text-xs px-2.5 py-1 rounded-md transition-colors flex items-center gap-1.5",
+                        selectedAccount === acct.name
+                          ? "bg-primary text-primary-foreground"
+                          : "text-muted-foreground hover:text-foreground hover:bg-muted",
+                      )}
+                      onClick={() => { setSelectedAccount(acct.name); }}
+                    >
+                      {acct.name}
+                      <span className="opacity-60 uppercase text-[10px]">
+                        {acct.subscription_label}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </div>
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto px-6 pb-6">
-          {loading ? (
+          {view === "costs" ? (
+            <CostsView />
+          ) : loading ? (
             <div className="flex items-center justify-center h-64">
               <Spinner className="size-8 text-muted-foreground" />
             </div>
