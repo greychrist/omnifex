@@ -80,6 +80,14 @@ export const INVOKE_CHANNELS: readonly string[] = [
   'session_tui_write',
   'session_tui_resize',
 
+  // Session Cost
+  'session_cost_get',
+  'session_cost_watch',
+  'session_cost_unwatch',
+  'session_cost_history',
+  'session_cost_sessions',
+  'session_cost_rescan',
+
   // Usage
   'get_usage_stats',
   'get_usage_by_date_range',

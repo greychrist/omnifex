@@ -83,6 +83,9 @@ import { createSessionGitWatcher, listWorktrees } from './services/git-watcher';
 import { createBranchColorsService } from './services/branch-colors';
 import { listBranches as listGitBranches } from './services/git-branches';
 import { createLimaService } from './services/lima';
+import { createCostHistoryService } from './services/cost/cost-history';
+import { createSessionCostService } from './services/cost/session-cost';
+import { parsePricingOverrides } from '../src/lib/pricing';
 import { registerIpcHandlers } from './ipc/handlers';
 import { createWindowRouter } from './window-router';
 import { classifyNavigation } from './navigation-policy';
@@ -95,6 +98,7 @@ const router = createWindowRouter();
 let _sessionsService: { stopAll(): void } | null = null;
 let _notificationsService: { dismissAll(): void } | null = null;
 let _gitWatcherService: { disposeAll(): void } | null = null;
+let _sessionCostService: { stopAll(): void } | null = null;
 let _db: { close(): void } | null = null;
 let _initialized = false;
 
@@ -559,6 +563,29 @@ app.whenReady().then(() => {
   );
   const claudeService = createClaudeService(db, accountsService);
   const usageService = createUsageService(accountsService, loggingService);
+  const costHistoryService = createCostHistoryService(db);
+  const sessionCostService = _sessionCostService = createSessionCostService({
+    sendToRenderer,
+    costHistory: costHistoryService,
+    getOverrides: () => parsePricingOverrides(db.getSetting('pricing_overrides')),
+  });
+  // Backfill history from surviving transcripts shortly after startup, then
+  // sweep hourly to catch sessions run outside OmniFex (terminal claude-work).
+  setTimeout(() => {
+    try {
+      const r = costHistoryService.backfill(accountsService.listAccounts());
+      console.log(`[cost-history] startup backfill: ${r.sessionsScanned} sessions`);
+    } catch (err) {
+      console.warn('[cost-history] startup backfill failed:', err);
+    }
+  }, 30_000);
+  setInterval(() => {
+    try {
+      costHistoryService.backfill(accountsService.listAccounts());
+    } catch (err) {
+      console.warn('[cost-history] sweep failed:', err);
+    }
+  }, 60 * 60 * 1000);
   const proxyService = createProxyService(db);
   const mcpService = createMCPService();
   const slashCommandsService = createSlashCommandsService();
@@ -873,6 +900,18 @@ app.whenReady().then(() => {
         sessionsService.tuiResize(tabId, cols, rows),
       getMode: (tabId: string) => sessionsService.getMode(tabId),
     },
+    // Session cost adapter
+    cost: {
+      get: (a: { configDir: string; projectPath: string; sessionId: string; accountName: string }) =>
+        sessionCostService.get(a),
+      watch: (a: { configDir: string; projectPath: string; sessionId: string; accountName: string }) =>
+        sessionCostService.watch(a),
+      unwatch: (sessionId: string) => sessionCostService.unwatch(sessionId),
+      history: (f: Record<string, unknown>) =>
+        costHistoryService.aggregate(f as never, ((f.groupBy as string) ?? 'day') as 'day' | 'week' | 'month'),
+      sessions: (f: Record<string, unknown>) => costHistoryService.sessions(f as never),
+      rescan: () => costHistoryService.backfill(accountsService.listAccounts()),
+    },
     // Usage adapter
     usage: {
       getStats: (_params?: any) => usageService.getUsageStats(),
@@ -1183,6 +1222,7 @@ app.whenReady().then(() => {
 app.on('before-quit', () => {
   _sessionsService?.stopAll();
   _gitWatcherService?.disposeAll();
+  _sessionCostService?.stopAll();
   _db?.close();
 });
 

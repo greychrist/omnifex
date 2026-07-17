@@ -1,6 +1,12 @@
 import { apiCall } from './apiAdapter';
 import type { HooksConfiguration } from '@/types/hooks';
 
+/** Drop `undefined` optional params before an object crosses the IPC
+ *  boundary — the main process can't distinguish `undefined` from missing. */
+function stripUndefined<T extends object>(obj: T): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(obj as Record<string, unknown>).filter(([, v]) => v !== undefined));
+}
+
 /**
  * Which agent engine drives a session. Mirrors the backend `AgentKind` in
  * `electron/services/agents/types.ts`. The renderer can't import from
@@ -433,6 +439,54 @@ export interface AccountUsageStats {
   account_name: string;
   account_type: string;
   stats: UsageStats;
+}
+
+/** Live per-session cost snapshot, computed from the on-disk JSONL transcript
+ *  (main session + subagent transcripts). Mirrors the backend
+ *  `SessionCostSnapshot` in `electron/services/cost/session-cost-core.ts`. */
+export interface SessionCostSnapshot {
+  totalUsd: number;
+  estimated: boolean;
+  breakdown: { inputUsd: number; outputUsd: number; cacheReadUsd: number; cacheWriteUsd: number };
+  subagentUsd: number;
+  byModel: Array<{ model: string; usd: number; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number }>;
+  tokens: { input: number; output: number; cacheRead: number; cacheWrite: number };
+}
+
+/** One aggregated period row from the durable cost-history table. Mirrors
+ *  the backend `CostHistoryPeriod` in `electron/services/cost/cost-history.ts`. */
+export interface CostHistoryPeriod {
+  period: string;
+  cost_usd: number;
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  cache_write_tokens: number;
+  is_estimated: number;
+}
+
+/** One session's aggregated cost row from the durable cost-history table.
+ *  Mirrors the backend `CostSessionRow` in `electron/services/cost/cost-history.ts`. */
+export interface CostSessionRow {
+  session_id: string;
+  account_name: string;
+  project_path: string | null;
+  first_date: string;
+  last_date: string;
+  cost_usd: number;
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  cache_write_tokens: number;
+}
+
+/** Shared filter shape for `sessionCostHistory` / `sessionCostSessions`. */
+export interface CostHistoryFilterParams {
+  startDate?: string;
+  endDate?: string;
+  accountName?: string;
+  projectPath?: string;
+  model?: string;
 }
 
 /** Latest rate-limit snapshot for one (account, rate-limit-type) pair. */
@@ -1244,6 +1298,39 @@ export const api = {
     sessionId: string,
   ): Promise<Record<string, SubagentMetaEntry>> {
     return apiCall("session_subagent_meta", { configDir, projectPath, sessionId });
+  },
+
+  /** Live-watch a session's cost; pushes updates on `session-cost:<sessionId>`. */
+  async sessionCostWatch(
+    configDir: string,
+    projectPath: string,
+    sessionId: string,
+    accountName: string,
+  ): Promise<SessionCostSnapshot | null> {
+    return apiCall("session_cost_watch", { configDir, projectPath, sessionId, accountName });
+  },
+
+  async sessionCostUnwatch(sessionId: string): Promise<null> {
+    return apiCall("session_cost_unwatch", { sessionId });
+  },
+
+  /** Aggregated cost-history rows, bucketed by day/week/month, from the
+   *  durable `session_cost_daily` table (survives transcript pruning). */
+  async sessionCostHistory(
+    filters: CostHistoryFilterParams & { groupBy: 'day' | 'week' | 'month' },
+  ): Promise<CostHistoryPeriod[]> {
+    return apiCall("session_cost_history", stripUndefined(filters));
+  },
+
+  /** Per-session cost rows from the durable cost-history table. */
+  async sessionCostSessions(filters: CostHistoryFilterParams): Promise<CostSessionRow[]> {
+    return apiCall("session_cost_sessions", stripUndefined(filters));
+  },
+
+  /** Force a full re-scan of every account's surviving JSONLs into the
+   *  cost-history table (same work the startup backfill / hourly sweep do). */
+  async sessionCostRescan(): Promise<{ sessionsScanned: number } | null> {
+    return apiCall("session_cost_rescan", {});
   },
 
   async sessionGetPermissions(tabId: string, projectPath: string, configDir: string): Promise<any[]> {

@@ -91,6 +91,14 @@ export interface Services {
     tuiResize(tabId: string, cols: number, rows: number): unknown;
     getMode(tabId: string): unknown;
   };
+  cost?: {
+    get(args: { configDir: string; projectPath: string; sessionId: string; accountName: string }): unknown;
+    watch(args: { configDir: string; projectPath: string; sessionId: string; accountName: string }): unknown;
+    unwatch(sessionId: string): unknown;
+    history(filters: Record<string, unknown>): unknown;
+    sessions(filters: Record<string, unknown>): unknown;
+    rescan(): unknown;
+  };
   usage?: {
     getStats(params?: unknown): unknown;
     getByDateRange(params: unknown): unknown;
@@ -301,7 +309,7 @@ function wrapWith<P>(fn: (params: P) => unknown): HandlerFn {
  * renderer gets a defined (but empty) response rather than a blocked channel.
  */
 export function getHandlerMap(services: Services = {}): Record<string, HandlerFn> {
-  const { accounts, claude, sessions, usage, rateLimits, usageRunner, claudeBinary, mcp, slashCommands, sessionsSummary, logging, database, proxy, permissionsIO, models, commands, gitWatcher, branchColors, gitBranches, lima, filesystem, notificationSounds, oneShotTerminal, codexAuth, codexSessionWalker, allowRawSql } = services;
+  const { accounts, claude, sessions, cost, usage, rateLimits, usageRunner, claudeBinary, mcp, slashCommands, sessionsSummary, logging, database, proxy, permissionsIO, models, commands, gitWatcher, branchColors, gitBranches, lima, filesystem, notificationSounds, oneShotTerminal, codexAuth, codexSessionWalker, allowRawSql } = services;
 
   // Positive account-ownership guard for config-editing channels. A non-empty
   // configDir supplied by the renderer must belong to a known account, so a
@@ -463,6 +471,40 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
         (p?.rows ?? p?.num_rows) as number,
       ) ?? null
     ),
+
+    // ── Session Cost ─────────────────────────────────────────────────────────
+    session_cost_get: wrapWith((p: Record<string, unknown>) => cost?.get({
+      configDir: (p?.configDir ?? p?.config_dir) as string,
+      projectPath: (p?.projectPath ?? p?.project_path) as string,
+      sessionId: (p?.sessionId ?? p?.session_id) as string,
+      accountName: (p?.accountName ?? p?.account_name) as string,
+    }) ?? null),
+    session_cost_watch: wrapWith((p: Record<string, unknown>) => cost?.watch({
+      configDir: (p?.configDir ?? p?.config_dir) as string,
+      projectPath: (p?.projectPath ?? p?.project_path) as string,
+      sessionId: (p?.sessionId ?? p?.session_id) as string,
+      accountName: (p?.accountName ?? p?.account_name) as string,
+    }) ?? null),
+    session_cost_unwatch: wrapWith((p: Record<string, unknown>) => {
+      cost?.unwatch((p?.sessionId ?? p?.session_id) as string);
+      return null;
+    }),
+    session_cost_history: wrapWith((p: Record<string, unknown>) => cost?.history({
+      startDate: p?.startDate ?? p?.start_date,
+      endDate: p?.endDate ?? p?.end_date,
+      accountName: p?.accountName ?? p?.account_name,
+      projectPath: p?.projectPath ?? p?.project_path,
+      model: p?.model,
+      groupBy: p?.groupBy ?? p?.group_by,
+    }) ?? []),
+    session_cost_sessions: wrapWith((p: Record<string, unknown>) => cost?.sessions({
+      startDate: p?.startDate ?? p?.start_date,
+      endDate: p?.endDate ?? p?.end_date,
+      accountName: p?.accountName ?? p?.account_name,
+      projectPath: p?.projectPath ?? p?.project_path,
+      model: p?.model,
+    }) ?? []),
+    session_cost_rescan: wrapWith(() => cost?.rescan() ?? null),
 
     // ── Standalone model list (no active session required) ─────────────────
     list_supported_models: wrapWith((p: Record<string, unknown>) => models?.listSupported((p?.configDir ?? p?.config_dir) as string) ?? []),
