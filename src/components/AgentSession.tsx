@@ -1959,6 +1959,8 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
               fiveHourRateLimit={rateLimitSnapshots.five_hour ?? null}
               sevenDayRateLimit={rateLimitSnapshots.seven_day ?? null}
               sessionStatus={displayStatus}
+              sessionId={claudeSessionId}
+              projectPath={projectPath}
             />
           )}
           {gitStatus?.branch && (

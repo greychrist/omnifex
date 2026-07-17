@@ -13,6 +13,10 @@ interface CostWidgetProps {
   onClick?: () => void;
   /** Hide the HeaderLabel above the badge. */
   hideLabel?: boolean;
+  /** True when any priced message used an unknown-model estimate. */
+  estimated?: boolean;
+  /** Computed snapshot for the tooltip breakdown (null = scraped fallback). */
+  breakdown?: import('@/lib/api').SessionCostSnapshot | null;
   className?: string;
 }
 
@@ -38,6 +42,8 @@ export function CostWidget({
   accountName,
   onClick,
   hideLabel,
+  estimated,
+  breakdown,
   className,
 }: CostWidgetProps) {
   const label = 'Session cost';
@@ -64,8 +70,15 @@ export function CostWidget({
 
   const tooltip = [
     accountName ? `${accountName} · ${label}` : label,
-    formatCost(costUsd),
-    'billed per token — no rate-limit windows on this account',
+    `${estimated ? '~' : ''}${formatCost(costUsd)}`,
+    ...(breakdown
+      ? [
+          `input ${formatCost(breakdown.breakdown.inputUsd)} · output ${formatCost(breakdown.breakdown.outputUsd)}`,
+          `cache read ${formatCost(breakdown.breakdown.cacheReadUsd)} · cache write ${formatCost(breakdown.breakdown.cacheWriteUsd)}`,
+          breakdown.subagentUsd > 0 ? `subagents ${formatCost(breakdown.subagentUsd)}` : '',
+          'computed from session transcript tokens',
+        ]
+      : ['billed per token — no rate-limit windows on this account']),
   ]
     .filter(Boolean)
     .join('\n');
@@ -86,7 +99,7 @@ export function CostWidget({
       >
         <DollarSign className="w-3.5 h-3.5 text-foreground" />
         <span className="font-mono text-right tabular-nums min-w-[5ch]">
-          {formatCost(costUsd)}
+          {estimated ? '~' : ''}{formatCost(costUsd)}
         </span>
       </button>
     </div>

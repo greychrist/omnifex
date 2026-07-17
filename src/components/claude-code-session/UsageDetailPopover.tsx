@@ -13,6 +13,7 @@ interface Props {
   onRefresh: () => void;
   nowMs?: number;
   align?: 'start' | 'center' | 'end';
+  sessionCost?: import('@/lib/api').SessionCostSnapshot | null;
 }
 
 const WINDOW_LABELS: Record<string, string> = {
@@ -46,11 +47,28 @@ export function UsageDetailPopover({
   onRefresh,
   nowMs,
   align = 'end',
+  sessionCost,
 }: Props) {
   const now = nowMs ?? Date.now();
 
   const content = (
     <div className="w-[420px] max-h-[70vh] overflow-y-auto">
+      {sessionCost && (
+        <Section title="This session (computed)">
+          <KV k="Total" v={`${sessionCost.estimated ? '~' : ''}$${sessionCost.totalUsd.toFixed(4)}`} />
+          <KV k="Input" v={`$${sessionCost.breakdown.inputUsd.toFixed(4)}`} />
+          <KV k="Output" v={`$${sessionCost.breakdown.outputUsd.toFixed(4)}`} />
+          <KV k="Cache read" v={`$${sessionCost.breakdown.cacheReadUsd.toFixed(4)}`} />
+          <KV k="Cache write" v={`$${sessionCost.breakdown.cacheWriteUsd.toFixed(4)}`} />
+          {sessionCost.subagentUsd > 0 && (
+            <KV k="Subagents" v={`$${sessionCost.subagentUsd.toFixed(4)}`} />
+          )}
+          <KV
+            k="Tokens"
+            v={`${sessionCost.tokens.input} in / ${sessionCost.tokens.output} out / ${sessionCost.tokens.cacheRead} cr / ${sessionCost.tokens.cacheWrite} cw`}
+          />
+        </Section>
+      )}
       {data == null && (
         <div className="text-sm text-muted-foreground">No usage data yet.</div>
       )}

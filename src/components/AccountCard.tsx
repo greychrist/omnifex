@@ -14,6 +14,7 @@ import { RateLimitWidget } from "./claude-code-session/RateLimitWidget";
 import { CostWidget } from "./claude-code-session/CostWidget";
 import { UsageDetailPopover } from "./claude-code-session/UsageDetailPopover";
 import { useUsageAutoRefresh } from "@/hooks/useUsageAutoRefresh";
+import { useSessionCost } from "@/hooks/useSessionCost";
 
 interface AccountCardProps {
   accountName: string;
@@ -33,6 +34,10 @@ interface AccountCardProps {
   sevenDayRateLimit?: RateLimitSnapshot | null;
   /** Drives the visibility-aware /usage auto-refresh inside the card. */
   sessionStatus?: 'starting' | 'active' | 'ended';
+  /** Active Claude session id, used to drive the live computed-cost watcher. */
+  sessionId?: string | null;
+  /** Project path for the active session, used to drive the live computed-cost watcher. */
+  projectPath?: string;
   className?: string;
 }
 
@@ -52,6 +57,8 @@ export function AccountCard({
   fiveHourRateLimit,
   sevenDayRateLimit,
   sessionStatus,
+  sessionId,
+  projectPath,
   className,
 }: AccountCardProps) {
   const [accountPopoverOpen, setAccountPopoverOpen] = React.useState(false);
@@ -68,8 +75,16 @@ export function AccountCard({
     refresh: refreshUsage,
   } = useUsageAutoRefresh(accountName, sessionStatus === 'active');
 
-  const sessionCostUsd =
-    usageData?.ok ? usageData.parsed.session.cost_usd : null;
+  const computedCost = useSessionCost({
+    enabled: costBased,
+    configDir,
+    projectPath,
+    sessionId,
+    accountName,
+  });
+  const sessionCostUsd = computedCost
+    ? computedCost.totalUsd
+    : usageData?.ok ? usageData.parsed.session.cost_usd : null;
 
   const handleRefreshClick = React.useCallback(async () => {
     if (usageLoading) return;
@@ -183,6 +198,7 @@ export function AccountCard({
         loading={usageLoading}
         onRefresh={() => void refreshUsage()}
         align="start"
+        sessionCost={costBased ? computedCost : null}
         trigger={
           costBased ? (
             // Invisible label spacer so the single cost pill drops down to the
@@ -193,6 +209,8 @@ export function AccountCard({
               <HeaderLabel aria-hidden className="invisible">account</HeaderLabel>
               <CostWidget
                 costUsd={sessionCostUsd}
+                estimated={computedCost?.estimated ?? false}
+                breakdown={computedCost}
                 loading={usageLoading}
                 accountName={accountName}
                 onClick={() => { setUsagePopoverOpen((v) => !v); }}
