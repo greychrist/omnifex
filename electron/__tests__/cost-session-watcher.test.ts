@@ -247,4 +247,91 @@ describe('session-cost watcher', () => {
     });
     expect(() => svc.unwatch('never-watched')).not.toThrow();
   });
+
+  describe('sessions run in a CLI worktree (different encoded projects/ dir)', () => {
+    const PROJECTS_DIR = path.join(CFG, 'projects');
+    const ALT_DIR_NAME = '-Users-me-proj--claude-worktrees-FIX-1';
+    const ALT_DIR = path.join(PROJECTS_DIR, ALT_DIR_NAME);
+    const ALT_SESSION_FILE = path.join(ALT_DIR, 'sess1.jsonl');
+
+    function makeWorktreeWorld() {
+      const world = makeWorld('');
+      delete world.files[SESSION_FILE]; // primary encoded dir never got this transcript
+      world.files[ALT_SESSION_FILE] = assistantLine('r1', 1000);
+      world.dirs[PROJECTS_DIR] = [
+        { name: '-Users-me-proj', isDirectory: true },
+        { name: ALT_DIR_NAME, isDirectory: true },
+      ];
+      return world;
+    }
+
+    it('get() finds the transcript under the sibling encoded dir and returns the real cost, not zero', () => {
+      const world = makeWorktreeWorld();
+      const svc = createSessionCostService({
+        sendToRenderer: () => {},
+        costHistory: null,
+        getOverrides: () => undefined,
+        fs: world.fakeFs,
+        stat: world.stat,
+      });
+      const snap = svc.get(args);
+      expect(snap.totalUsd).toBeCloseTo(1000 * (25 / 1_000_000), 10);
+    });
+
+    it('watch() resolves the same alternate dir for signature() and compute(), and emits on a change to the alt file', () => {
+      vi.useFakeTimers();
+      const world = makeWorktreeWorld();
+      const emitted: Array<{ channel: string; payload: unknown }> = [];
+      const svc = createSessionCostService({
+        sendToRenderer: (channel, payload) => emitted.push({ channel, payload }),
+        costHistory: null,
+        getOverrides: () => undefined,
+        fs: world.fakeFs,
+        stat: world.stat,
+        pollMs: 1000,
+      });
+      const initial = svc.watch(args);
+      expect(initial.totalUsd).toBeCloseTo(1000 * (25 / 1_000_000), 10);
+
+      vi.advanceTimersByTime(1100);
+      expect(emitted).toHaveLength(0); // no change yet
+
+      world.files[ALT_SESSION_FILE] += '\n' + assistantLine('r2', 2000);
+      vi.advanceTimersByTime(1100);
+      expect(emitted).toHaveLength(1);
+      const payload = emitted[0].payload as { totalUsd: number };
+      expect(payload.totalUsd).toBeCloseTo(3000 * (25 / 1_000_000), 10);
+    });
+
+    it('caches the resolved alt dir so later polls do not rescan projects/ for the same session', () => {
+      vi.useFakeTimers();
+      const world = makeWorktreeWorld();
+      let projectsDirScans = 0;
+      const countingFs: CostFs = {
+        readFile: (p) => world.fakeFs.readFile(p),
+        listDir: (p) => {
+          if (p === PROJECTS_DIR) projectsDirScans += 1;
+          return world.fakeFs.listDir(p);
+        },
+        stat: (p) => world.fakeFs.stat(p),
+      };
+      const emitted: Array<{ channel: string; payload: unknown }> = [];
+      const svc = createSessionCostService({
+        sendToRenderer: (channel, payload) => emitted.push({ channel, payload }),
+        costHistory: null,
+        getOverrides: () => undefined,
+        fs: countingFs,
+        stat: world.stat,
+        pollMs: 1000,
+      });
+
+      svc.watch(args);
+      expect(projectsDirScans).toBe(1);
+
+      world.files[ALT_SESSION_FILE] += '\n' + assistantLine('r2', 2000);
+      vi.advanceTimersByTime(1100);
+      expect(emitted).toHaveLength(1);
+      expect(projectsDirScans).toBe(1); // still cached, no rescan on the poll tick
+    });
+  });
 });

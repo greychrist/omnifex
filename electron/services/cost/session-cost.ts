@@ -51,9 +51,43 @@ export function createSessionCostService(deps: SessionCostDeps): SessionCostServ
   const stat = deps.stat ?? nodeStat;
   const pollMs = deps.pollMs ?? 1000;
   const watchers = new Map<string, { timer: NodeJS.Timeout; signature: string }>();
+  // Sessions launched with a cwd inside a CLI worktree (.claude/worktrees/<name>)
+  // get encoded into a *different* projects/ subdirectory than the app's own
+  // project path would predict. Once we've located the real directory for a
+  // sessionId (by scanning projects/'s siblings), remember it so the poll
+  // loop's signature() call doesn't rescan every subdirectory on every tick.
+  const resolvedDirs = new Map<string, string>();
+
+  function resolveProjectDir(args: SessionCostArgs): string {
+    const cached = resolvedDirs.get(args.sessionId);
+    if (cached) return cached;
+
+    const projectsDir = path.join(args.configDir, 'projects');
+    const primaryDir = path.join(projectsDir, encodeProjectKey(args.projectPath));
+    const primaryFile = path.join(primaryDir, `${args.sessionId}.jsonl`);
+    if (stat(primaryFile)) {
+      resolvedDirs.set(args.sessionId, primaryDir);
+      return primaryDir;
+    }
+
+    for (const entry of fsDeps.listDir(projectsDir)) {
+      if (!entry.isDirectory) continue;
+      const candidateDir = path.join(projectsDir, entry.name);
+      if (candidateDir === primaryDir) continue;
+      const candidateFile = path.join(candidateDir, `${args.sessionId}.jsonl`);
+      if (stat(candidateFile)) {
+        resolvedDirs.set(args.sessionId, candidateDir);
+        return candidateDir;
+      }
+    }
+
+    // Not found anywhere — fall back to the primary dir so callers keep the
+    // existing "missing file -> zero snapshot" behavior instead of erroring.
+    return primaryDir;
+  }
 
   function paths(args: SessionCostArgs) {
-    const projectDir = path.join(args.configDir, 'projects', encodeProjectKey(args.projectPath));
+    const projectDir = resolveProjectDir(args);
     return {
       sessionFile: path.join(projectDir, `${args.sessionId}.jsonl`),
       subagentsDir: path.join(projectDir, args.sessionId, 'subagents'),
