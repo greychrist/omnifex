@@ -47,6 +47,8 @@ export function CostWidget({
   className,
 }: CostWidgetProps) {
   const label = 'Session cost';
+  // Icon carries the $ — strip it from the rendered text to avoid "$ $1.19"
+  const pillValue = (v: number) => formatCost(v).slice(1);
 
   // No data yet — render the same muted placeholder shape as RateLimitWidget.
   if (costUsd == null) {
@@ -99,7 +101,7 @@ export function CostWidget({
       >
         <DollarSign className="w-3.5 h-3.5 text-foreground" />
         <span className="font-mono text-right tabular-nums min-w-[5ch]">
-          {estimated ? '~' : ''}{formatCost(costUsd)}
+          {estimated ? '~' : ''}{pillValue(costUsd)}
         </span>
       </button>
     </div>

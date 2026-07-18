@@ -30,13 +30,26 @@ describe('CostWidget', () => {
     const onClick = vi.fn();
     render(<CostWidget costUsd={3.5} onClick={onClick} accountName="Acme" />);
     const btn = screen.getByRole('button');
-    expect(btn.textContent).toContain('$3.50');
+    expect(btn.textContent).toContain('3.50');
+    // Icon carries the $; rendered text should not have "$$" or duplicate currency marker
+    expect(btn.textContent).not.toContain('$$');
     fireEvent.click(btn);
     expect(onClick).toHaveBeenCalledTimes(1);
   });
 
   it('renders $0.00 at the start of a session', () => {
     render(<CostWidget costUsd={0} onClick={() => {}} />);
-    expect(screen.getByRole('button').textContent).toContain('$0.00');
+    expect(screen.getByRole('button').textContent).toContain('0.00');
+    expect(screen.getByRole('button').textContent).not.toContain('$$');
+  });
+
+  it('tooltip contains the formatted cost with $, while rendered pill text does not', () => {
+    render(<CostWidget costUsd={1.23} onClick={() => {}} accountName="Test" />);
+    const btn = screen.getByRole('button');
+    // Rendered pill text has icon (carries $) + value without $
+    expect(btn.textContent).toContain('1.23');
+    expect(btn.textContent).not.toContain('$$');
+    // Tooltip contains the full formatted cost with $
+    expect(btn.title).toContain('$1.23');
   });
 });
