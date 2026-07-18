@@ -993,12 +993,30 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   // Resume effect: when a session prop is provided, seed claudeSessionId
   // and load history. setClaudeSessionId routed through streamCtxRef
   // because it's a useTabSession setter that recreates per render.
+  //
+  // Guarded on `claudeSessionId == null`: this must never stomp an id the
+  // live stream has already established. `session` (tab.sessionData) is
+  // the *pre-fork* id the user resumed from; `claudeSessionId` moves on to
+  // the CLI's live session id via `onSessionInit` (~line 1260, fires on
+  // spawn/rebind) or the reducer's `sessionIdUpdate` (~line 1127, fires on
+  // every `system:init` stream line) as soon as the CLI reports it — which
+  // can (and for a resume-with-fork, does) differ from `session.id`. If
+  // this effect ever re-runs after that point — e.g. a renderer reload
+  // (Cmd+R) or app relaunch remounts the tab and reconstructs a fresh
+  // `session` object from persisted state (TabContext.tsx's tab restore),
+  // racing the auto-start effect's async `rebindPersistentSession()` /
+  // `sessionGetHealth` re-seed (useSessionLifecycle.ts) that resolves the
+  // *correct* live id — an unconditional write here would flip
+  // claudeSessionId back to the stale pre-fork id, and every consumer
+  // keyed on it (e.g. `useSessionCost`'s `session-cost:<id>` channel)
+  // would follow it back to the wrong session. Once claudeSessionId is
+  // non-null, only the stream/init paths above may move it.
   useEffect(() => {
-    if (session) {
+    if (session && claudeSessionId == null) {
       streamCtxRef.current.setClaudeSessionId(session.id);
       logAndForget('claude-code-session:load-session-history', loadSessionHistory());
     }
-  }, [session, loadSessionHistory]);
+  }, [session, loadSessionHistory, claudeSessionId]);
 
   const handleJsonlLine = useCallback((payload: string | object) => {
     try {
