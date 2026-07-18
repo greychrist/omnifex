@@ -25,6 +25,7 @@ import {
 } from "@/lib/api";
 import { useAccounts } from "@/contexts/AccountsContext";
 import { logAndForget } from "@/lib/fireAndLog";
+import { formatCost } from "@/components/claude-code-session/CostWidget";
 
 /**
  * FNV-1a hash mirror — must produce the same output as `promptHash` in
@@ -234,6 +235,37 @@ export const SessionList: React.FC<SessionListProps> = ({
       cancelled = true;
     };
   }, []);
+
+  // Per-session cost, keyed by session id, from the durable
+  // `session_cost_daily` table (populated by the startup backfill / hourly
+  // sweep / live watcher). Fetched project-scoped so the list can show each
+  // session's total without opening it. Sessions missing from the table
+  // render an em-dash; a rescan from the Costs view fills them in.
+  const [sessionCosts, setSessionCosts] = useState<Map<string, number>>(
+    () => new Map(),
+  );
+
+  useEffect(() => {
+    if (!projectPath) {
+      setSessionCosts(new Map());
+      return;
+    }
+    let cancelled = false;
+    api
+      .sessionCostSessions({ projectPath })
+      .then((rows) => {
+        if (cancelled) return;
+        setSessionCosts(new Map(rows.map((r) => [r.session_id, r.cost_usd])));
+      })
+      .catch(() => {
+        if (!cancelled) setSessionCosts(new Map());
+      });
+    return () => {
+      cancelled = true;
+    };
+    // Re-fetch when the visible session set changes (e.g. after a manual
+    // refresh) so newly-computed costs surface without a remount.
+  }, [projectPath, sessions]);
 
   // Codex rollouts whose recorded `cwd` matches the current project. When
   // the rollout didn't log a cwd (projectPath === null) we drop it from the
@@ -672,15 +704,13 @@ export const SessionList: React.FC<SessionListProps> = ({
                 corners as a faint shadow. */}
             <thead className="sticky top-0 z-10 bg-muted text-[11px] uppercase tracking-wider text-muted-foreground">
               <tr>
-                {/* Agent badge column — narrow, just enough for the
-                    Lucide Bot icon + a 1-letter glyph. Identifies which
-                    engine owns each row so the unified list stays
-                    legible without grouping headers. */}
-                <th className="text-left font-medium py-2 px-3 w-12" aria-label="Agent" />
-                <th className="text-left font-medium py-2 px-3 w-36">Date</th>
+                {/* The engine (Claude / Codex) is identified by an icon
+                    prefixed to the Date cell rather than a dedicated
+                    column, so the list stays compact. */}
+                <th className="text-left font-medium py-2 px-3 w-40">Date</th>
                 <th className="text-left font-medium py-2 px-3">Summary</th>
                 <th className="text-left font-medium py-2 px-3 w-28">Session ID</th>
-                <th className="text-right font-medium py-2 px-3 w-20">Size</th>
+                <th className="text-right font-medium py-2 px-3 w-24">Size / Cost</th>
                 {/* Consolidated actions column — launch + summary refresh
                     + trash. Width fits all three icons with gap-1 padding;
                     aria-label is on each button so the column header can
@@ -754,48 +784,48 @@ export const SessionList: React.FC<SessionListProps> = ({
                       session.todo_data && "bg-primary/5",
                     )}
                   >
-                    <td className="py-2 px-3 align-top" aria-label="Claude session">
-                      <span
-                        className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wide font-semibold text-muted-foreground"
-                        title="Claude session"
-                      >
-                        <Bot className="h-3.5 w-3.5" aria-hidden="true" />
-                        Claude
-                      </span>
-                    </td>
                     <td className="py-2 px-3 text-[11px] text-muted-foreground whitespace-nowrap leading-tight align-top">
-                      {/* Dates wrapped in a launch button — same
-                          contract as ProjectList's name cell.
-                          Trailing ExternalLink glyph signals the
-                          launch affordance. Top-aligned so the icon
-                          sits next to the first date line. The whole
-                          stacked block is one click target. */}
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleLaunch(session);
-                        }}
-                        className="inline-flex items-start gap-1 text-left text-muted-foreground hover:text-foreground hover:underline focus-visible:underline focus:outline-none"
-                        // aria-label fixes the accessible name to
-                        // "Launch session" so the button matches the
-                        // rightmost icon launcher in screen-reader
-                        // and test queries. Visible date text is still
-                        // there for sighted users.
-                        aria-label="Launch session"
-                        title="Launch session"
-                      >
-                        <span>
-                          {firstDate && <div>{fmt(firstDate)}</div>}
-                          <div className={firstDate ? 'text-muted-foreground/70' : ''}>
-                            {fmt(lastDate)}
-                          </div>
+                      {/* Engine icon + dates. The icon replaces the old
+                          dedicated agent column; the dates are wrapped in
+                          a launch button — same contract as ProjectList's
+                          name cell. Trailing ExternalLink glyph signals
+                          the launch affordance. Top-aligned so the icons
+                          sit next to the first date line. */}
+                      <div className="flex items-start gap-1.5">
+                        <span
+                          className="text-muted-foreground mt-[1px] shrink-0"
+                          title="Claude session"
+                          aria-label="Claude session"
+                        >
+                          <Bot className="h-3.5 w-3.5" aria-hidden="true" />
                         </span>
-                        <ExternalLink
-                          className="h-3 w-3 opacity-60 mt-[1px]"
-                          aria-hidden="true"
-                        />
-                      </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleLaunch(session);
+                          }}
+                          className="inline-flex items-start gap-1 text-left text-muted-foreground hover:text-foreground hover:underline focus-visible:underline focus:outline-none"
+                          // aria-label fixes the accessible name to
+                          // "Launch session" so the button matches the
+                          // rightmost icon launcher in screen-reader
+                          // and test queries. Visible date text is still
+                          // there for sighted users.
+                          aria-label="Launch session"
+                          title="Launch session"
+                        >
+                          <span>
+                            {firstDate && <div>{fmt(firstDate)}</div>}
+                            <div className={firstDate ? 'text-muted-foreground/70' : ''}>
+                              {fmt(lastDate)}
+                            </div>
+                          </span>
+                          <ExternalLink
+                            className="h-3 w-3 opacity-60 mt-[1px]"
+                            aria-hidden="true"
+                          />
+                        </button>
+                      </div>
                     </td>
                     <td className="py-2 px-3 text-xs text-foreground/90 max-w-0 align-top">
                       {summary ? (
@@ -855,15 +885,30 @@ export const SessionList: React.FC<SessionListProps> = ({
                         )}
                       </button>
                     </td>
-                    <td
-                      className="py-2 px-3 text-right text-[11px] font-mono tabular-nums text-muted-foreground align-top whitespace-nowrap"
-                      title={
-                        typeof session.file_size_bytes === 'number'
-                          ? `${session.file_size_bytes.toLocaleString()} bytes`
-                          : 'Unknown size'
-                      }
-                    >
-                      {formatBytes(session.file_size_bytes)}
+                    {/* Size (top) + Cost (bottom), stacked and styled like
+                        the Date column — same size font, second line dimmed. */}
+                    <td className="py-2 px-3 text-right text-[11px] font-mono tabular-nums text-muted-foreground align-top whitespace-nowrap leading-tight">
+                      <div
+                        title={
+                          typeof session.file_size_bytes === 'number'
+                            ? `${session.file_size_bytes.toLocaleString()} bytes`
+                            : 'Unknown size'
+                        }
+                      >
+                        {formatBytes(session.file_size_bytes)}
+                      </div>
+                      <div
+                        className="text-muted-foreground/70"
+                        title={
+                          sessionCosts.has(session.id)
+                            ? 'Total cost computed from this session’s transcript tokens'
+                            : 'No cost recorded yet — open the Costs view to rescan'
+                        }
+                      >
+                        {sessionCosts.has(session.id)
+                          ? formatCost(sessionCosts.get(session.id)!)
+                          : '—'}
+                      </div>
                     </td>
                     <td className="py-2 px-3 align-top">
                       <div className="flex items-center justify-end gap-1">
@@ -957,34 +1002,34 @@ export const SessionList: React.FC<SessionListProps> = ({
                     }}
                     className="border-t border-border/30 transition-colors hover:bg-accent/40"
                   >
-                    <td className="py-2 px-3 align-top" aria-label="Codex session">
-                      <span
-                        className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wide font-semibold text-emerald-600 dark:text-emerald-400"
-                        title="Codex session"
-                      >
-                        <Bot className="h-3.5 w-3.5" aria-hidden="true" />
-                        Codex
-                      </span>
-                    </td>
                     <td className="py-2 px-3 text-[11px] text-muted-foreground whitespace-nowrap leading-tight align-top">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleLaunchCodex(entry);
-                        }}
-                        className="inline-flex items-start gap-1 text-left text-muted-foreground hover:text-foreground hover:underline focus-visible:underline focus:outline-none"
-                        aria-label="Launch Codex session"
-                        title="Launch Codex session"
-                      >
-                        <span>
-                          <div>{fmt(lastDate)}</div>
+                      <div className="flex items-start gap-1.5">
+                        <span
+                          className="text-emerald-600 dark:text-emerald-400 mt-[1px] shrink-0"
+                          title="Codex session"
+                          aria-label="Codex session"
+                        >
+                          <Bot className="h-3.5 w-3.5" aria-hidden="true" />
                         </span>
-                        <ExternalLink
-                          className="h-3 w-3 opacity-60 mt-[1px]"
-                          aria-hidden="true"
-                        />
-                      </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleLaunchCodex(entry);
+                          }}
+                          className="inline-flex items-start gap-1 text-left text-muted-foreground hover:text-foreground hover:underline focus-visible:underline focus:outline-none"
+                          aria-label="Launch Codex session"
+                          title="Launch Codex session"
+                        >
+                          <span>
+                            <div>{fmt(lastDate)}</div>
+                          </span>
+                          <ExternalLink
+                            className="h-3 w-3 opacity-60 mt-[1px]"
+                            aria-hidden="true"
+                          />
+                        </button>
+                      </div>
                     </td>
                     <td className="py-2 px-3 text-xs text-foreground/90 max-w-0 align-top">
                       {entry.projectPath ? (
@@ -1015,12 +1060,18 @@ export const SessionList: React.FC<SessionListProps> = ({
                         )}
                       </button>
                     </td>
-                    <td className="py-2 px-3 text-right text-[11px] font-mono tabular-nums text-muted-foreground align-top whitespace-nowrap">
-                      {/* Size requires a stat() round-trip we don't yet do
-                          for Codex rollouts — leave the column populated
-                          with an em-dash so the row visually aligns with
-                          the Claude rows above. */}
-                      —
+                    {/* Size (top) + Cost (bottom), stacked to match the
+                        Claude rows. Size needs a stat() round-trip we don't
+                        do for Codex rollouts yet; cost is keyed by
+                        conversationId and rarely present — both usually
+                        render an em-dash so the column still aligns. */}
+                    <td className="py-2 px-3 text-right text-[11px] font-mono tabular-nums text-muted-foreground align-top whitespace-nowrap leading-tight">
+                      <div>—</div>
+                      <div className="text-muted-foreground/70">
+                        {sessionCosts.has(entry.conversationId)
+                          ? formatCost(sessionCosts.get(entry.conversationId)!)
+                          : '—'}
+                      </div>
                     </td>
                     <td className="py-2 px-3 align-top">
                       <div className="flex items-center justify-end gap-1">

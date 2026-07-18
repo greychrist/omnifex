@@ -873,6 +873,13 @@ export const TabContent: React.FC = () => {
     const handleBackToProject = () => {
       const currentTab = tabs.find((t) => t.id === activeTabId);
       if (currentTab?.type === 'chat') {
+        // Backing out CLOSES the session: tear down the live main-process
+        // handle and clear the per-tab store slice so nothing stays bound to
+        // this (reused) tab id. Otherwise opening a *different* session into
+        // the same tab later would rebind to this stale handle and drag its
+        // cost / context / claudeSessionId onto the newly-opened session.
+        void api.stopSession(currentTab.id).catch(() => {});
+        useClaudeSessionStore.getState().resetTab(currentTab.id);
         updateTab(currentTab.id, {
           type: 'projects',
           title: 'Projects',

@@ -85,6 +85,20 @@ vi.mock('@/lib/api', async () => {
         lastActivity: string;
         jsonlPath: string;
       }>),
+      // Per-session cost rows from the durable cost-history table, keyed
+      // by session_id. Default: none; cost-aware tests override.
+      sessionCostSessions: vi.fn(async () => [] as Array<{
+        session_id: string;
+        account_name: string;
+        project_path: string | null;
+        first_date: string;
+        last_date: string;
+        cost_usd: number;
+        input_tokens: number;
+        output_tokens: number;
+        cache_read_tokens: number;
+        cache_write_tokens: number;
+      }>),
     },
     // Mirror the setting key constants the component imports.
     PROMPT_TEMPLATE_SETTING_KEY: 'sessionsSummary.promptTemplate',
@@ -623,12 +637,12 @@ describe('SessionList — Codex partition (Task 16)', () => {
       '/Users/test/.codex/sessions/2026/05/09/rollout-019d1c78-c93c-7e10-807d-43a194215440.jsonl',
   };
 
-  it('renders a Codex row with badge when api.listCodexSessions returns an entry under this project', async () => {
+  it('renders a Codex row with engine icon when api.listCodexSessions returns an entry under this project', async () => {
     vi.mocked(api.listCodexSessions).mockResolvedValueOnce([codexEntry]);
     vi.mocked(api.summaryGet).mockResolvedValue(null);
     render(<SessionList sessions={[]} projectPath="/x" />);
-    // Codex badge → uppercase label in the row's first cell.
-    expect(await screen.findByText(/codex/i)).toBeTruthy();
+    // Codex engine → icon with accessible name in the Date cell.
+    expect(await screen.findByLabelText('Codex session')).toBeTruthy();
     // Conversation id is rendered (first 8 chars are surfaced as the copy-id label).
     expect(screen.getByText(codexEntry.conversationId.slice(0, 8))).toBeTruthy();
   });
@@ -699,6 +713,54 @@ describe('SessionList — Codex partition (Task 16)', () => {
         listener as EventListener,
       );
     }
+  });
+});
+
+describe('SessionList cost column + agent icon', () => {
+  const costRow = {
+    session_id: 'sess-1',
+    account_name: 'Test',
+    project_path: '/x',
+    first_date: '2026-05-05',
+    last_date: '2026-05-05',
+    cost_usd: 1.1276,
+    input_tokens: 1,
+    output_tokens: 2,
+    cache_read_tokens: 3,
+    cache_write_tokens: 4,
+  };
+
+  it('renders a merged Size / Cost column header', async () => {
+    render(<SessionList sessions={[sessionFixture]} projectPath="/x" />);
+    await screen.findByText('old first message preview');
+    expect(screen.getByText('Size / Cost')).toBeTruthy();
+  });
+
+  it('shows the per-session cost fetched for the project path', async () => {
+    vi.mocked(api.sessionCostSessions).mockResolvedValueOnce([costRow]);
+    render(<SessionList sessions={[sessionFixture]} projectPath="/x" />);
+    // 1.1276 formats to two decimals ($1.13) via the shared formatter.
+    expect(await screen.findByText('$1.13')).toBeTruthy();
+    expect(vi.mocked(api.sessionCostSessions)).toHaveBeenCalledWith(
+      expect.objectContaining({ projectPath: '/x' }),
+    );
+  });
+
+  it('shows an em-dash when no cost row exists for a session', async () => {
+    vi.mocked(api.sessionCostSessions).mockResolvedValueOnce([]);
+    render(<SessionList sessions={[sessionFixture]} projectPath="/x" />);
+    await screen.findByText('old first message preview');
+    // Size and Cost both fall back to em-dash; at least one present.
+    expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('no longer renders a standalone "Claude" agent-type label, but keeps the icon', async () => {
+    render(<SessionList sessions={[sessionFixture]} projectPath="/x" />);
+    await screen.findByText('old first message preview');
+    // The old dedicated agent column rendered the literal text "Claude".
+    expect(screen.queryByText('Claude', { exact: true })).toBeNull();
+    // The engine is still identified by an icon with an accessible name.
+    expect(screen.getAllByLabelText('Claude session').length).toBeGreaterThanOrEqual(1);
   });
 });
 

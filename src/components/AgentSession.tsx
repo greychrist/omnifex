@@ -72,7 +72,8 @@ import { deriveWaitingFor, type TabWaitingFor } from "@/lib/tabWaitingFor";
 import { SubagentBar } from "./SubagentBar";
 import { TaskList } from "./claude/tools/TaskList";
 import { fireAndLog, logAndForget } from "@/lib/fireAndLog";
-import { decideAutoStart } from "@/lib/sessionAutoStart";
+import { decideResumeSeed } from "@/lib/resumeSeedDecision";
+import { decideAutoStart, decideRebindTarget } from "@/lib/sessionAutoStart";
 import { exportAsJsonl, exportAsMarkdown } from "@/lib/sessionExporters";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useSessionLifecycle } from "@/hooks/useSessionLifecycle";
@@ -990,29 +991,34 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     }
   }, [session]);
 
-  // Resume effect: when a session prop is provided, seed claudeSessionId
-  // and load history. setClaudeSessionId routed through streamCtxRef
-  // because it's a useTabSession setter that recreates per render.
+  // Resume effect: seed claudeSessionId from the session prop and load its
+  // history. setClaudeSessionId routed through streamCtxRef because it's a
+  // useTabSession setter that recreates per render.
   //
-  // Guarded on `claudeSessionId == null`: this must never stomp an id the
-  // live stream has already established. `session` (tab.sessionData) is
-  // the *pre-fork* id the user resumed from; `claudeSessionId` moves on to
-  // the CLI's live session id via `onSessionInit` (~line 1260, fires on
-  // spawn/rebind) or the reducer's `sessionIdUpdate` (~line 1127, fires on
-  // every `system:init` stream line) as soon as the CLI reports it — which
-  // can (and for a resume-with-fork, does) differ from `session.id`. If
-  // this effect ever re-runs after that point — e.g. a renderer reload
-  // (Cmd+R) or app relaunch remounts the tab and reconstructs a fresh
-  // `session` object from persisted state (TabContext.tsx's tab restore),
-  // racing the auto-start effect's async `rebindPersistentSession()` /
-  // `sessionGetHealth` re-seed (useSessionLifecycle.ts) that resolves the
-  // *correct* live id — an unconditional write here would flip
-  // claudeSessionId back to the stale pre-fork id, and every consumer
-  // keyed on it (e.g. `useSessionCost`'s `session-cost:<id>` channel)
-  // would follow it back to the wrong session. Once claudeSessionId is
-  // non-null, only the stream/init paths above may move it.
+  // The decision is delegated to `decideResumeSeed` (see its doc). Two forces
+  // move the tab's session id and must not fight:
+  //   - the *prop* (`tab.sessionData`) changes when the user selects a
+  //     different session — we MUST follow it, because several open paths
+  //     (TabContent's `handleOpenSessionInTab` / `handleClaudeSessionSelected`)
+  //     reassign `sessionData` without resetting the per-tab store slice, so
+  //     `claudeSessionId` is still the *previous* session's id. Failing to
+  //     follow pins the header cost pill (`useSessionCost`) to the wrong
+  //     session's total forever — the "same $ on every session" bug.
+  //   - the live *stream* advances claudeSessionId to the CLI's forked-on-
+  //     resume id via `onSessionInit` / the reducer's `sessionIdUpdate`. That
+  //     leaves the prop id stable; we must NOT stomp it back (commit 3c60728).
+  // `prevSessionIdRef` lets us tell which value changed. It starts `undefined`
+  // (first run for this mount) so a remount over an already-live tab does not
+  // re-seed a stale pre-fork prop id over the surviving live id.
+  const prevSessionIdRef = useRef<string | null | undefined>(undefined);
   useEffect(() => {
-    if (session && claudeSessionId == null) {
+    const decision = decideResumeSeed({
+      sessionId: session?.id ?? null,
+      claudeSessionId,
+      prevSessionId: prevSessionIdRef.current,
+    });
+    prevSessionIdRef.current = session?.id ?? null;
+    if (decision === 'reseed' && session) {
       streamCtxRef.current.setClaudeSessionId(session.id);
       logAndForget('claude-code-session:load-session-history', loadSessionHistory());
     }
@@ -1416,10 +1422,30 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     if (action === 'skip') return;
     if (action === 'rebind-or-resume' && session) {
       (async () => {
-        const rebound = await rebindPersistentSession();
-        if (!rebound) {
-          await startPersistentSession(session.id);
+        // `sessionRebind` is keyed by tabId, not session id. A reused tab
+        // (back to Projects, then open a *different* session) can still hold
+        // a live handle for the previous session; rebinding would reattach
+        // this tab's stream / context / claudeSessionId — and the cost pill —
+        // to the wrong session. Only rebind when the live session IS the one
+        // the user opened; otherwise tear down the stale handle and resume the
+        // selected session.
+        const health = await api.sessionGetHealth(tabIdRef.current).catch(() => null);
+        const target = decideRebindTarget({
+          healthAlive: !!health?.alive,
+          healthSessionId: health?.sessionId ?? null,
+          selectedSessionId: session.id,
+        });
+        if (target === 'rebind') {
+          const rebound = await rebindPersistentSession();
+          if (!rebound) {
+            await startPersistentSession(session.id);
+          }
+          return;
         }
+        if (health?.alive) {
+          await api.stopSession(tabIdRef.current).catch(() => {});
+        }
+        await startPersistentSession(session.id);
       })().catch((err: unknown) => { console.error("[auto-start] resume/rebind failed:", err); });
     } else if (action === 'fresh-start') {
       startPersistentSession().catch((err: unknown) =>
