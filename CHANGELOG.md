@@ -5,6 +5,50 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.97] — 2026-07-18
+
+### Added
+
+- **Session cost tracking.** Every session's cost is now computed directly from
+  its transcript tokens — model- and cache-aware, with per-request dedup — and
+  surfaced in three places: a live cost widget in the account header for
+  cost-based accounts, a new per-session figure in the session list, and a
+  dedicated **Costs** view with UTC-month reconciliation filters and a rescan
+  button. A durable `session_cost_daily` table (seeded by a startup backfill and
+  refreshed by an hourly sweep and a live watcher) means costs survive
+  transcript pruning and are available without opening a session.
+- **Pricing overrides editor** in Settings, so per-model rates can be corrected
+  or extended without a code change.
+- **Styleable message categories** for `rate_limit_event` and `thinking_tokens`
+  system lines, so they can be themed distinctly in the transcript.
+
+### Changed
+
+- **Session list Size/Cost column.** Size and cost are merged into one stacked
+  cell (size on top, cost below), styled like the Date column. The standalone
+  agent-type column is gone — the engine (Claude/Codex) is now shown as an icon
+  prefixed to the Date cell.
+
+### Fixed
+
+- **Opening a session now shows that session's real cost.** The header cost pill
+  and context meter previously snapped to an unrelated session's value. Two
+  id-plumbing bugs were behind it: the resume seed no longer refuses to follow a
+  newly-opened session, and the tab-keyed rebind no longer reattaches a reused
+  tab to a leftover session (it verifies the live session matches before
+  rebinding, otherwise resumes the one you opened).
+- **Backing out of a session now closes it**, tearing down the main-process
+  handle and clearing the tab slice so no stale session stays bound to a reused
+  tab.
+- Session rows are de-duplicated when a session spans multiple encoded project
+  directories.
+- The cost pill shows a single currency marker (the icon carries the `$`).
+- Assorted cost-watcher hardening: override validation, a watcher race fix,
+  cache-token pricing, worktree-aware transcript lookup, resolved-dir cache
+  cleanup on unwatch, and surfaced rescan/save errors.
+
+Installers remain **unsigned**.
+
 ## [0.4.96] — 2026-07-14
 
 ### Fixed
