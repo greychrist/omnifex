@@ -82,9 +82,7 @@ export function AccountCard({
     sessionId,
     accountName,
   });
-  const sessionCostUsd = computedCost
-    ? computedCost.totalUsd
-    : usageData?.ok ? usageData.parsed.session.cost_usd : null;
+  const sessionCostUsd = computedCost?.totalUsd ?? null;
 
   const handleRefreshClick = React.useCallback(async () => {
     if (usageLoading) return;

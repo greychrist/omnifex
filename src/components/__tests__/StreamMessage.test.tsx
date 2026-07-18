@@ -43,6 +43,7 @@ function makeAssistantNode(opts: {
   inputTokens?: number;
   outputTokens?: number;
   cacheRead?: number;
+  model?: string;
 }): Extract<JsonlNode, { kind: 'assistant' }> {
   return {
     kind: 'assistant',
@@ -52,6 +53,7 @@ function makeAssistantNode(opts: {
       type: 'assistant',
       message: {
         role: 'assistant',
+        model: opts.model,
         content: [{ type: 'text', text: opts.text ?? 'Hello from Claude' }],
         stop_reason: opts.stop_reason ?? null,
         usage: {
@@ -160,6 +162,27 @@ describe('AssistantCompletionBand', () => {
       <StreamMessage message={node} streamMessages={[node]} />,
     );
     expect(screen.queryByText(/cached/)).toBeNull();
+  });
+
+  it('prices the message using the actual model and includes cache-read cost (not the flat hardcoded sonnet rate)', () => {
+    // claude-opus-4-8: input $5/MTok, output $25/MTok, cacheRead $0.5/MTok
+    // (0.1x input, per pricing.ts's baseRates). A flat sonnet-rate
+    // computation (3/15 per MTok, no cache term) would instead show
+    // $0.0035 (100*0.000003 + 200*0.000015) — this must NOT appear.
+    const node = makeAssistantNode({
+      stop_reason: 'end_turn',
+      inputTokens: 100,
+      outputTokens: 200,
+      cacheRead: 1000,
+      model: 'claude-opus-4-8',
+    });
+    render(
+      <StreamMessage message={node} streamMessages={[node]} accountType="pro" />,
+    );
+    // cost = 100*0.000005 + 200*0.000025 + 1000*0.0000005
+    //      = 0.0005 + 0.005 + 0.0005 = 0.0060
+    expect(screen.getByText(/\$0\.0060/)).toBeTruthy();
+    expect(screen.queryByText(/\$0\.0035/)).toBeNull();
   });
 });
 

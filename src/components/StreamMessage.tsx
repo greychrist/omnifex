@@ -64,6 +64,7 @@ import {
   WebFetchWidget
 } from "./ToolWidgets";
 import { turnDuration } from "@/lib/sessionDerivedState";
+import { computeMessageCost, type UsageTokens } from "@/lib/pricing";
 
 // Stable module-level reference: ReactMarkdown re-renders if `remarkPlugins`
 // is a new array each call, which rebuilds nested Prism syntax-highlighted
@@ -244,9 +245,6 @@ const TERMINAL_STOP_REASONS = new Set([
   'model_context_window_exceeded',
 ]);
 
-const INPUT_RATE = 0.000003;
-const OUTPUT_RATE = 0.000015;
-
 function AssistantCompletionBand({
   node,
   allMessages,
@@ -262,11 +260,12 @@ function AssistantCompletionBand({
   if (!stopReason || !TERMINAL_STOP_REASONS.has(stopReason)) return null;
 
   const duration = turnDuration(allMessages, index);
-  const usage = (node.raw as { message?: { usage?: Record<string, unknown> } }).message?.usage ?? {};
-  const inputTokens = typeof usage.input_tokens === 'number' ? usage.input_tokens : 0;
-  const outputTokens = typeof usage.output_tokens === 'number' ? usage.output_tokens : 0;
-  const cacheRead = typeof usage.cache_read_input_tokens === 'number' ? usage.cache_read_input_tokens : 0;
-  const cost = inputTokens * INPUT_RATE + outputTokens * OUTPUT_RATE;
+  const raw = node.raw as { message?: { model?: string; usage?: UsageTokens } };
+  const usage: UsageTokens = raw.message?.usage ?? {};
+  const inputTokens = usage.input_tokens ?? 0;
+  const outputTokens = usage.output_tokens ?? 0;
+  const cacheRead = usage.cache_read_input_tokens ?? 0;
+  const cost = computeMessageCost(raw.message?.model ?? '', usage).usd;
 
   const parts: string[] = [];
   if (duration !== null) parts.push(formatDurationMs(duration));
