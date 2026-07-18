@@ -346,6 +346,72 @@ describe('system thinking_tokens rendering', () => {
   });
 });
 
+describe('rate_limit_event rendering', () => {
+  // rate_limit_event is a TOP-LEVEL `type` (no `subtype`), unlike
+  // thinking_tokens — classifyJsonlLine routes it to its own JsonlNode kind
+  // ('rate-limit-event') rather than 'system'. Previously it fell through
+  // the top-level switch's default branch and rendered as "Unrecognized
+  // record: rate_limit_event".
+  function makeRateLimitEventNode(info: Record<string, unknown> | undefined): JsonlNode {
+    return {
+      kind: 'rate-limit-event',
+      sessionId: 'sess-1',
+      receivedAt: '2026-05-27T10:00:00Z',
+      raw: { type: 'rate_limit_event', rate_limit_info: info },
+    } as unknown as JsonlNode;
+  }
+
+  it('renders "<rateLimitType> · <status>" from rate_limit_info', () => {
+    const node = makeRateLimitEventNode({ status: 'allowed', rateLimitType: 'five_hour' });
+    render(<StreamMessage message={node} streamMessages={[node]} />);
+
+    expect(screen.getByText('five_hour · allowed')).toBeTruthy();
+  });
+
+  it('appends a "resets <local time>" segment when resetsAt is present', () => {
+    const resetsAt = 1784362200;
+    const node = makeRateLimitEventNode({ status: 'allowed', rateLimitType: 'five_hour', resetsAt });
+    render(<StreamMessage message={node} streamMessages={[node]} />);
+
+    const expectedTime = new Date(resetsAt * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    expect(screen.getByText(`five_hour · allowed · resets ${expectedTime}`)).toBeTruthy();
+  });
+
+  it('appends "overage rejected" when overageStatus is rejected', () => {
+    const node = makeRateLimitEventNode({
+      status: 'rejected',
+      rateLimitType: 'five_hour',
+      overageStatus: 'rejected',
+      overageDisabledReason: 'org_level_disabled',
+      isUsingOverage: false,
+    });
+    render(<StreamMessage message={node} streamMessages={[node]} />);
+
+    expect(screen.getByText('five_hour · rejected · overage rejected')).toBeTruthy();
+  });
+
+  it('does not append an overage segment when overageStatus is not rejected', () => {
+    const node = makeRateLimitEventNode({ status: 'allowed', rateLimitType: 'five_hour', overageStatus: 'allowed' });
+    render(<StreamMessage message={node} streamMessages={[node]} />);
+
+    expect(screen.getByText('five_hour · allowed')).toBeTruthy();
+  });
+
+  it('degrades gracefully when rate_limit_info is entirely missing (never crashes)', () => {
+    const node = makeRateLimitEventNode(undefined);
+    expect(() => render(<StreamMessage message={node} streamMessages={[node]} />)).not.toThrow();
+    expect(screen.getByText('system.rate_limit')).toBeTruthy();
+  });
+
+  it('keeps the mono styling and inline kind label (same fallback mechanism as thinking_tokens)', () => {
+    const node = makeRateLimitEventNode({ status: 'allowed', rateLimitType: 'five_hour' });
+    render(<StreamMessage message={node} streamMessages={[node]} />);
+
+    expect(screen.getByText('system.rate_limit')).toBeTruthy();
+    expect(screen.getByText('five_hour · allowed').className).toContain('font-mono');
+  });
+});
+
 describe('unknown-record catch-all rendering', () => {
   // "I don't want unrendered messages" — every record the classifier can't
   // name must still produce something visible, never a silent null.

@@ -13,6 +13,7 @@
  *   permission-mode
  *   queue-operation
  *   rate-limit
+ *   rate-limit-event
  *   stream-event
  *   system
  *   unknown
@@ -185,6 +186,12 @@ export function classifyStandaloneKind(
     if (subtype === 'away_summary') return 'system.away_summary';
     // Fallback: any other system subtype renders as the unknown gray inline strip.
     return 'system.unknown';
+  }
+
+  // rate_limit_event: a top-level `type`, not a `system` subtype (see the
+  // JsonlNode doc comment). Its own separately-stylable registry id.
+  if (msg.kind === 'rate-limit-event') {
+    return 'system.rate_limit';
   }
 
   // Bookkeeping JSONL kinds: the kind id equals the node kind. Returning it

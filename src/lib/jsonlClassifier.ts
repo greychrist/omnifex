@@ -13,6 +13,7 @@ import type {
   SystemSubtype,
   CliInitRaw,
   CliResultRaw,
+  RateLimitEventRaw,
 } from '@/types/jsonl';
 
 /**
@@ -72,6 +73,8 @@ export function classifyJsonlLine(raw: unknown): JsonlNode | null {
       return classifySystem(r, sessionId, receivedAt);
     case 'result':
       return classifyCliResult(r, sessionId, receivedAt);
+    case 'rate_limit_event':
+      return classifyRateLimitEvent(r, sessionId, receivedAt);
     default:
       // Catch-all: never drop. Some real record types ('summary', 'mode')
       // persist with no top-level timestamp, so unlike the content kinds
@@ -246,5 +249,15 @@ function classifyCliInit(r: Record<string, unknown>, sessionId: string, received
 function classifyCliResult(r: Record<string, unknown>, sessionId: string, receivedAt: string | null): JsonlNode | null {
   if (receivedAt === null) return null;
   return { kind: 'cli-stream-result', raw: r as unknown as CliResultRaw, sessionId, receivedAt };
+}
+
+// rate_limit_event lines carry no `subtype`/narrative field to validate
+// against (unlike classifyAttachment/classifyQueueOp above), and real
+// samples have been observed without a top-level `timestamp` — so this
+// never returns null and never requires receivedAt. The alternative (any
+// stricter check) would silently drop the line back to the 'unknown'
+// catch-all, defeating the point of first-classing it.
+function classifyRateLimitEvent(r: Record<string, unknown>, sessionId: string, receivedAt: string | null): JsonlNode {
+  return { kind: 'rate-limit-event', raw: r as unknown as RateLimitEventRaw, sessionId, receivedAt };
 }
 

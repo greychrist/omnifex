@@ -22,7 +22,7 @@ const EMITTABLE_IDS = [
   "system.notification.error", "system.notification.stop",
   "system.hook_started", "system.hook_response", "system.permission_denied",
   "system.userPromptSubmit", "system.api_error", "system.away_summary",
-  "system.thinking_tokens", "system.unknown",
+  "system.thinking_tokens", "system.rate_limit", "system.unknown",
   // permission / summary / fallback
   "permission.request", "permission.askUserQuestion",
   "summary.compaction", "unknown",
@@ -275,6 +275,34 @@ describe('classifyStandaloneKind', () => {
       expect(
         classifyStandaloneKind(sys({ estimated_tokens: 800, estimated_tokens_delta: 50 }), []),
       ).toBe('system.thinking_tokens');
+    });
+  });
+
+  describe('system.rate_limit', () => {
+    // rate_limit_event is a TOP-LEVEL `type`, not a `system` subtype — it has
+    // no `subtype` field at all. Mapping it onto the existing overlay
+    // `rate-limit` JsonlNode kind would make it invisible: that kind is
+    // explicitly skipped from the transcript in sessionStreamReducer.ts and
+    // StreamMessage.tsx (it only ever drove the live RateLimitWidget). So it
+    // gets its own JsonlNode kind (classifyJsonlLine → 'rate-limit-event')
+    // and its own separately-stylable registry id here.
+    const rateLimitEvent = (extras: Record<string, unknown> = {}): JsonlNode =>
+      ({
+        kind: 'rate-limit-event', sessionId: '', receivedAt: '',
+        raw: { type: 'rate_limit_event', ...extras },
+      }) as unknown as JsonlNode;
+
+    it('classifies rate_limit_event as its own separately-stylable kind', () => {
+      expect(
+        classifyStandaloneKind(
+          rateLimitEvent({ rate_limit_info: { status: 'allowed', rateLimitType: 'five_hour' } }),
+          [],
+        ),
+      ).toBe('system.rate_limit');
+    });
+
+    it('classifies it the same way even with no rate_limit_info payload', () => {
+      expect(classifyStandaloneKind(rateLimitEvent(), [])).toBe('system.rate_limit');
     });
   });
 

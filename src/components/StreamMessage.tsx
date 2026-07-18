@@ -478,6 +478,41 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
       );
     }
 
+    if (message.kind === 'rate-limit-event') {
+      // rate_limit_event is a top-level `type` (its own node kind), not a
+      // `system` subtype — so it needs its own render branch, but it reuses
+      // the same MessageFrame chrome as the system fallback. The line carries
+      // no narrative field: the body is synthesized from `rate_limit_info`
+      // (rateLimitType · status [· resets <time>] [· overage rejected]) and
+      // degrades to empty when the info block is absent, never crashing.
+      const info = message.raw.rate_limit_info;
+      const segments: string[] = [];
+      if (info) {
+        const head = [info.rateLimitType, info.status].filter(Boolean).join(' · ');
+        if (head) segments.push(head);
+        if (typeof info.resetsAt === 'number') {
+          const time = new Date(info.resetsAt * 1000).toLocaleTimeString([], {
+            hour: 'numeric',
+            minute: '2-digit',
+          });
+          segments.push(`resets ${time}`);
+        }
+        if (info.overageStatus === 'rejected') segments.push('overage rejected');
+      }
+      const text = segments.join(' · ');
+      const streamKind = classifyStandaloneKind(message, streamMessages) ?? 'system.rate_limit';
+      return (
+        <MessageFrame streamKind={streamKind} message={message}>
+          <span className="text-xs font-mono opacity-70">system.rate_limit</span>
+          {text && (
+            <span className="block text-xs font-mono whitespace-pre-wrap break-words">
+              {text}
+            </span>
+          )}
+        </MessageFrame>
+      );
+    }
+
     if (message.kind === 'cli-stream-init') {
       return <CliInitBadge node={message} />;
     }

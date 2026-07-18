@@ -184,6 +184,34 @@ describe('classifyJsonlLine', () => {
     }
   });
 
+  it('classifies rate_limit_event as its own top-level kind (not system — it has no subtype field)', () => {
+    const sample = {
+      type: 'rate_limit_event',
+      rate_limit_info: {
+        status: 'allowed',
+        resetsAt: 1784362200,
+        rateLimitType: 'five_hour',
+        overageStatus: 'rejected',
+        overageDisabledReason: 'org_level_disabled',
+        isUsingOverage: false,
+      },
+      uuid: 'e1d44641-7100-4fdd-8408-bdef7f745da7',
+      session_id: '0e1e60a9-7c56-4a8e-a185-3083ec130353',
+    };
+    const node = classifyJsonlLine(sample);
+    expect(node?.kind).toBe('rate-limit-event');
+    if (node?.kind === 'rate-limit-event') {
+      expect(node.sessionId).toBe('0e1e60a9-7c56-4a8e-a185-3083ec130353');
+      expect(node.raw.rate_limit_info?.status).toBe('allowed');
+      expect(node.raw.rate_limit_info?.rateLimitType).toBe('five_hour');
+    }
+  });
+
+  it('classifies rate_limit_event even with no rate_limit_info payload (degrades gracefully, never unknown)', () => {
+    const node = classifyJsonlLine({ type: 'rate_limit_event', uuid: 'u1', session_id: 's1' });
+    expect(node?.kind).toBe('rate-limit-event');
+  });
+
   it('classifies system/away_summary', () => {
     const node = classifyJsonlLine(JSONL_SAMPLES['system/away_summary']);
     expect(node?.kind).toBe('system');

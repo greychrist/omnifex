@@ -188,6 +188,29 @@ export interface RateLimitInfo {
   surpassedThreshold?: number;
 }
 
+/**
+ * Payload nested under `rate_limit_info` on a transcript `rate_limit_event`
+ * line (distinct from the live-stream `RateLimitInfo` above — the persisted
+ * line additionally carries overage fields the runtime hook doesn't surface).
+ * All fields are optional: the CLI omits utilization/resetsAt on some
+ * events (see rate-limits.ts's COALESCE comment) and always degrades
+ * gracefully rather than dropping the line.
+ */
+export interface RateLimitEventInfo {
+  status?: string;
+  resetsAt?: number;
+  rateLimitType?: string;
+  overageStatus?: string;
+  overageDisabledReason?: string;
+  isUsingOverage?: boolean;
+}
+
+export interface RateLimitEventRaw extends RawLineBase {
+  type: 'rate_limit_event';
+  session_id?: string;
+  rate_limit_info?: RateLimitEventInfo;
+}
+
 export interface UsageShape {
   input_tokens?: number;
   output_tokens?: number;
@@ -223,6 +246,14 @@ export type JsonlNode =
   // CLI engine-mode stream envelopes (engine/--output-format stream-json)
   | { kind: 'cli-stream-init'; raw: CliInitRaw; sessionId: string; receivedAt: string }
   | { kind: 'cli-stream-result'; raw: CliResultRaw; sessionId: string; receivedAt: string }
+  // rate_limit_event transcript line — a top-level `type`, NOT a `system`
+  // subtype (it has no `subtype` field at all). Kept distinct from the
+  // `rate-limit` overlay kind below: that kind is a live-stream-only signal
+  // that's intentionally skipped from messages[] (drives RateLimitWidget
+  // only), so reusing it here would make this transcript line invisible.
+  // receivedAt is nullable because real rate_limit_event lines have been
+  // observed with no top-level `timestamp` field (same tolerance as 'unknown').
+  | { kind: 'rate-limit-event'; raw: RateLimitEventRaw; sessionId: string; receivedAt: string | null }
   // Overlay (CLI stream only — never enters messages[])
   | { kind: 'stream-event'; uuid: string; deltaText: string }
   | { kind: 'rate-limit'; info: RateLimitInfo }
