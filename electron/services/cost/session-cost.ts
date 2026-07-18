@@ -158,6 +158,7 @@ export function createSessionCostService(deps: SessionCostDeps): SessionCostServ
     if (w) {
       clearInterval(w.timer);
       watchers.delete(sessionId);
+      resolvedDirs.delete(sessionId);
     }
   }
 
