@@ -57,7 +57,7 @@
     "recharts": "^3.8.1",
     "remark-gfm": "^4.0.0",
     "tailwind-merge": "^2.6.0",
-    "tailwindcss": "^4.1.8",
+    "tailwindcss": "^4.3.3",
     "zod": "^4.4.3",
     "zustand": "^5.0.6"
   },
