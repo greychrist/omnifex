@@ -5,6 +5,31 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.98] — 2026-07-21
+
+### Added
+
+- **Quick Launch on the project list.** Each project row now has a ⚡ Quick
+  Launch button that starts a fresh session immediately, bypassing the sessions
+  page. It resolves the launching engine/account/session-defaults up front, and
+  falls back to the sessions page (with the usual "no account configured"
+  guidance) when no account routes to the folder.
+- **Dedicated Sessions button** on each project row to open the sessions page —
+  the behavior the old Launch affordance used to carry.
+
+### Changed
+
+- Project-row action icons (Pin, Quick Launch, Sessions) now use the app's
+  styled tooltip on hover instead of the native browser tooltip; screen-reader
+  `aria-label`s are unchanged.
+
+### Removed
+
+- The per-project **Delete** button (and its confirm dialog) on the project
+  list, along with the duplicated launch glyph next to the project name.
+
+Installers remain **unsigned** — macOS Gatekeeper blocks first launch; right-click → Open.
+
 ## [0.4.97] — 2026-07-18
 
 ### Added
