@@ -179,7 +179,7 @@ describe('ProjectList — "Last activity" sort', () => {
 describe('ProjectList — click semantics', () => {
   function renderWithOne(handlers: {
     onProjectClick?: (p: Project) => void;
-    onDeleteProject?: (p: Project) => void;
+    onQuickLaunch?: (p: Project) => void;
   }) {
     const projects: Project[] = [
       {
@@ -197,7 +197,7 @@ describe('ProjectList — click semantics', () => {
       <ProjectList
         projects={projects}
         onProjectClick={handlers.onProjectClick ?? (() => {})}
-        onDeleteProject={handlers.onDeleteProject}
+        onQuickLaunch={handlers.onQuickLaunch}
       />,
     );
   }
@@ -207,8 +207,8 @@ describe('ProjectList — click semantics', () => {
     const { container } = renderWithOne({ onProjectClick });
 
     // The five informational cells in order: name, path, account,
-    // sessions, last activity, plus the new actions cell. We only want
-    // to assert the four non-actionable middle cells stay inert; the
+    // sessions, last activity, plus the actions cell. We only want to
+    // assert the four non-actionable middle cells stay inert; the
     // actions cell is exercised separately below.
     const cells = Array.from(
       container.querySelectorAll('tbody tr td'),
@@ -226,9 +226,8 @@ describe('ProjectList — click semantics', () => {
     renderWithOne({ onProjectClick });
 
     // The name button's accessible name is its textContent ("alpha").
-    // The Rocket button's accessible name comes from its aria-label
-    // ("Launch this project") — different role-name match, so this
-    // unambiguously hits the link.
+    // The action buttons' accessible names come from their aria-labels,
+    // so this unambiguously hits the name link.
     const nameButton = screen.getByRole('button', { name: 'alpha' });
     fireEvent.click(nameButton);
     expect(onProjectClick).toHaveBeenCalledTimes(1);
@@ -237,51 +236,40 @@ describe('ProjectList — click semantics', () => {
     );
   });
 
-  it('fires onProjectClick when the user clicks the Rocket icon', () => {
+  it('fires onProjectClick when the user clicks the Sessions icon', () => {
     const onProjectClick = vi.fn();
     renderWithOne({ onProjectClick });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Launch this project' }));
+    fireEvent.click(screen.getByRole('button', { name: 'View project sessions' }));
     expect(onProjectClick).toHaveBeenCalledTimes(1);
-  });
-
-  it('opens the confirm dialog (does not delete yet) when Trash is clicked', () => {
-    const onDeleteProject = vi.fn();
-    renderWithOne({ onDeleteProject });
-
-    fireEvent.click(screen.getByRole('button', { name: 'Delete this project' }));
-    expect(onDeleteProject).not.toHaveBeenCalled();
-    // Dialog should be visible. Scope a query inside the dialog so we
-    // don't match the path text that also appears in the table row.
-    const dialog = screen.getByRole('dialog');
-    expect(dialog.textContent).toContain('Delete this project?');
-    expect(dialog.textContent).toContain('/repos/alpha');
-    expect(dialog.textContent).toContain('Personal');
-  });
-
-  it('fires onDeleteProject only after the user confirms the dialog', () => {
-    const onDeleteProject = vi.fn();
-    renderWithOne({ onDeleteProject });
-
-    fireEvent.click(screen.getByRole('button', { name: 'Delete this project' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
-    expect(onDeleteProject).toHaveBeenCalledTimes(1);
-    expect(onDeleteProject).toHaveBeenCalledWith(
+    expect(onProjectClick).toHaveBeenCalledWith(
       expect.objectContaining({ id: '-repos-alpha' }),
     );
   });
 
-  it('does not fire onDeleteProject when the user cancels the dialog', () => {
-    const onDeleteProject = vi.fn();
-    renderWithOne({ onDeleteProject });
+  it('fires onQuickLaunch (not onProjectClick) when the user clicks the Quick Launch icon', () => {
+    const onProjectClick = vi.fn();
+    const onQuickLaunch = vi.fn();
+    renderWithOne({ onProjectClick, onQuickLaunch });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Delete this project' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-    expect(onDeleteProject).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Quick launch a new session' }));
+    expect(onQuickLaunch).toHaveBeenCalledTimes(1);
+    expect(onQuickLaunch).toHaveBeenCalledWith(
+      expect.objectContaining({ id: '-repos-alpha' }),
+    );
+    // Quick Launch must bypass the sessions page entirely.
+    expect(onProjectClick).not.toHaveBeenCalled();
   });
 
-  it('hides the trash icon entirely when no onDeleteProject prop is provided', () => {
-    renderWithOne({}); // no onDeleteProject
+  it('hides the Quick Launch icon when no onQuickLaunch prop is provided', () => {
+    renderWithOne({}); // no onQuickLaunch
+    expect(
+      screen.queryByRole('button', { name: 'Quick launch a new session' }),
+    ).toBeNull();
+  });
+
+  it('renders no Delete button', () => {
+    renderWithOne({ onQuickLaunch: vi.fn() });
     expect(
       screen.queryByRole('button', { name: 'Delete this project' }),
     ).toBeNull();

@@ -249,44 +249,8 @@ function AppContent() {
   };
 
   /**
-   * Optimistically remove the project from the on-screen list and call
-   * the IPC. On failure we restore the row + reload from disk so the UI
-   * matches reality. ProjectList's confirm dialog has already gated the
-   * call, so by the time we get here the user has actively chosen this.
-   */
-  const handleDeleteProject = async (project: Project) => {
-    if (project.account_id === undefined) {
-      setToast({
-        type: 'error',
-        message: 'Cannot delete: this project has no account binding.',
-      });
-      return;
-    }
-    const previous = projects;
-    setProjects((prev) => prev.filter((p) => p.id !== project.id));
-    try {
-      await api.deleteClaudeProject({
-        accountId: project.account_id,
-        projectId: project.id,
-      });
-      setToast({
-        type: 'success',
-        message: `Deleted ${project.path}`,
-      });
-    } catch (err) {
-      console.error('Failed to delete project:', err);
-      setProjects(previous);
-      const msg = err instanceof Error ? err.message : String(err);
-      setToast({ type: 'error', message: `Failed to delete project: ${msg}` });
-      // Refetch so we don't leave the optimistic snapshot in place if
-      // something else changed in the meantime.
-      void loadProjects();
-    }
-  };
-
-  /**
    * Pin/unpin a project. Optimistic so the row reorders instantly; on failure
-   * we roll back and refetch, mirroring handleDeleteProject.
+   * we roll back and refetch.
    */
   const handleTogglePin = async (project: Project, pinned: boolean) => {
     const previous = projects;
@@ -436,7 +400,6 @@ function AppContent() {
             projects={projects}
             onProjectClick={fireAndLog('app:project-click', handleProjectClick)}
             onOpenProject={handleOpenProject}
-            onDeleteProject={handleDeleteProject}
             onTogglePin={handleTogglePin}
             loading={loading}
           />

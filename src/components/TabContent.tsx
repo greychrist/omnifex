@@ -148,37 +148,9 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
     }
   };
   
-  /**
-   * Optimistically remove the project from the on-screen list and call the
-   * IPC. On failure we restore the row + reload from disk so the UI matches
-   * reality. ProjectList's confirm dialog has already gated the call.
-   * Tab-content has no toast surface, so success is silent (the row vanishing
-   * is the feedback) and failure shows the inline error banner.
-   */
-  const handleDeleteProject = async (project: Project) => {
-    if (project.account_id === undefined) {
-      setError('Cannot delete: this project has no account binding.');
-      return;
-    }
-    const previous = projects;
-    setProjects((prev) => prev.filter((p) => p.id !== project.id));
-    try {
-      await api.deleteClaudeProject({
-        accountId: project.account_id,
-        projectId: project.id,
-      });
-    } catch (err) {
-      console.error('Failed to delete project:', err);
-      setProjects(previous);
-      const msg = err instanceof Error ? err.message : String(err);
-      setError(`Failed to delete project: ${msg}`);
-      void loadProjects();
-    }
-  };
-
   const handleTogglePin = async (project: Project, pinned: boolean) => {
-    // Optimistic: the row reorders instantly. Same rollback+refetch shape as
-    // handleDeleteProject.
+    // Optimistic: the row reorders instantly, then rolls back + refetches
+    // from disk if the IPC fails.
     const previous = projects;
     setProjects((prev) =>
       prev.map((p) => (p.id === project.id ? { ...p, pinned } : p)),
@@ -386,6 +358,58 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
     }
   };
   
+  // Quick Launch: start a brand-new session for a project straight from the
+  // project list, bypassing the sessions page. Mirrors handleStartNewSession
+  // but resolves the launching engine/account/defaults up front (the sessions
+  // page normally seeds that via handleProjectClick's form state, which we
+  // skip here).
+  const handleQuickLaunch = async (project: Project) => {
+    try {
+      setError(null);
+      const pair = await api.resolveAccountForProject(project.path);
+      const engine: AgentKind = pair.claude ? 'claude' : pair.codex ? 'codex' : 'claude';
+      const account = pair.claude?.account ?? pair.codex?.account ?? null;
+      if (!account) {
+        // No path rule / override routes this folder to an account. Defer to
+        // the sessions-page flow, which surfaces the NO_ACCOUNT_FOR_PROJECT
+        // guidance and lets the user fix routing — no silent no-account launch.
+        await handleProjectClick(project);
+        return;
+      }
+      const resolution = slotToResolution(pair[engine]);
+      const d = resolution?.account.session_defaults;
+
+      // Same slice reset as handleStartNewSession / openSessionInTab: without
+      // it a previous chat's extractedSessionInfo leaks into the fresh mount.
+      useClaudeSessionStore.getState().resetTab(tab.id);
+      const projectName = project.path.split('/').pop() || 'Session';
+      updateTab(tab.id, {
+        type: 'chat',
+        title: projectName,
+        agent: engine,
+        sessionId: undefined,
+        sessionData: undefined,
+        initialProjectPath: project.path,
+        icon: undefined,
+        accountName: account.name,
+        accountColor: account.color,
+        accountIcon: account.icon,
+        initialSessionConfig: {
+          model: d?.model ?? 'opus',
+          effort: d?.effort ?? 'high',
+          thinkingConfig: d?.thinkingConfig ? normalizeThinkingConfig(d.thinkingConfig) : undefined,
+          permissionMode: d?.permissionMode ?? 'acceptEdits',
+          sessionStartMode: 'rich',
+          accountResolution: resolution ?? undefined,
+        },
+      });
+    } catch (err) {
+      console.error('Quick launch failed:', err, 'project:', JSON.stringify(project));
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(`Failed to launch session: ${msg}`);
+    }
+  };
+
   // Resolve account badge for chat tabs on mount
   useEffect(() => {
     if (tab.type === 'chat' && !tab.accountName && tab.initialProjectPath) {
@@ -559,7 +583,7 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                       projects={projects}
                       onProjectClick={fireAndLog('tab-content:project-click', handleProjectClick)}
                       onOpenProject={handleOpenProject}
-                      onDeleteProject={handleDeleteProject}
+                      onQuickLaunch={fireAndLog('tab-content:project-quick-launch', handleQuickLaunch)}
                       onTogglePin={handleTogglePin}
                       loading={loading}
                     />

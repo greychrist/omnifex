@@ -1,17 +1,10 @@
 import React, { useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { FolderOpen, ArrowUp, ArrowDown, ArrowUpDown, ExternalLink, Trash2, Pin, Infinity as InfinityIcon } from "lucide-react";
+import { FolderOpen, ArrowUp, ArrowDown, ArrowUpDown, Zap, List, Pin, Infinity as InfinityIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { TooltipProvider, TooltipSimple } from "@/components/ui/tooltip-modern";
 import type { Project } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { AccountBadge } from "@/components/AccountBadge";
@@ -60,9 +53,9 @@ interface ProjectListProps {
    */
   projects: Project[];
   /**
-   * Callback when a project is launched. Fired by clicking the project
-   * name (rendered as a link) or the launch icon — never by clicking
-   * elsewhere in the row.
+   * Callback to open the project's sessions page. Fired by clicking the
+   * project name (rendered as a link) or the Sessions icon — never by
+   * clicking elsewhere in the row.
    */
   onProjectClick: (project: Project) => void;
   /**
@@ -70,18 +63,18 @@ interface ProjectListProps {
    */
   onOpenProject?: () => void | Promise<void>;
   /**
-   * Optional callback fired after the user confirms the delete dialog.
-   * The parent owns the actual API call and list refetch — ProjectList
-   * just delivers the project to delete. When omitted, the trash icon
-   * is hidden so this component degrades gracefully in callers that
-   * haven't wired delete yet.
+   * Optional callback fired by the Quick Launch icon. Starts a brand-new
+   * session for the project immediately, bypassing the sessions page. The
+   * parent owns the actual launch. When omitted, the Quick Launch icon is
+   * hidden so this component degrades gracefully in callers (e.g. the
+   * legacy non-tab view) that can't start a session inline.
    */
-  onDeleteProject?: (project: Project) => void | Promise<void>;
+  onQuickLaunch?: (project: Project) => void | Promise<void>;
   /**
    * Optional callback fired when the user toggles a project's pin. Receives
    * the project and the DESIRED state. The parent owns the API call and the
-   * refetch — same contract as onDeleteProject — so when omitted the pin
-   * icon is hidden and the list degrades gracefully.
+   * refetch, so when omitted the pin icon is hidden and the list degrades
+   * gracefully.
    */
   onTogglePin?: (project: Project, pinned: boolean) => void | Promise<void>;
   /**
@@ -148,17 +141,13 @@ export const ProjectList: React.FC<ProjectListProps> = ({
   projects,
   onProjectClick,
   onOpenProject,
-  onDeleteProject,
+  onQuickLaunch,
   onTogglePin,
   className,
 }) => {
   const [sortKey, setSortKey] = useState<SortKey>('lastActivity');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
   const [accountFilter, setAccountFilter] = useState<string>('all');
-  // The project the user has armed for deletion. The dialog is open iff
-  // this is non-null. Single piece of state — no separate `dialogOpen`
-  // flag — so confirming/cancelling can't get out of sync with the row.
-  const [pendingDelete, setPendingDelete] = useState<Project | null>(null);
 
   // Distinct account names present in the project list — sorted alpha for
   // a stable dropdown order. `'(unassigned)'` covers projects with no
@@ -234,6 +223,7 @@ export const ProjectList: React.FC<ProjectListProps> = ({
   };
 
   return (
+    <TooltipProvider>
     <div className={cn("h-full overflow-hidden", className)}>
       <div className="max-w-6xl mx-auto flex flex-col h-full">
         {/* Header */}
@@ -430,22 +420,18 @@ export const ProjectList: React.FC<ProjectListProps> = ({
                       )}
                     >
                       <td className="px-3 py-2 font-medium">
-                        {/* Name renders as a link-styled <button> with a
-                            trailing ExternalLink glyph so the launch
-                            affordance is visible at a glance. Both name
-                            and icon live inside the same button — one
-                            click target, one hover underline. The icon
-                            is muted (`opacity-60`) so it reads as
-                            secondary chrome. The rest of the row has
+                        {/* Name renders as a link-styled <button> that opens
+                            the project's sessions page. The launch/sessions
+                            affordances live in the actions cell, so the name
+                            carries no trailing glyph. The rest of the row has
                             no click target. */}
                         <button
                           type="button"
                           onClick={() => { onProjectClick(project); }}
                           className="inline-flex items-center gap-1 text-left text-foreground hover:underline focus-visible:underline focus:outline-none"
-                          title="Launch this project"
+                          title="View this project's sessions"
                         >
                           {getProjectName(project.path)}
-                          <ExternalLink className="h-3.5 w-3.5 opacity-60" aria-hidden="true" />
                         </button>
                       </td>
                       <td className="px-3 py-2 text-muted-foreground font-mono text-xs truncate max-w-[420px]" title={project.path}>
@@ -472,55 +458,55 @@ export const ProjectList: React.FC<ProjectListProps> = ({
                       <td className="px-3 py-2">
                         <div className="flex items-center justify-end gap-1">
                           {onTogglePin && (
+                            <TooltipSimple content={project.pinned ? "Unpin this project" : "Pin this project to the top"}>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  void onTogglePin(project, !project.pinned);
+                                }}
+                                className={cn(
+                                  "p-1 rounded-md transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+                                  project.pinned
+                                    ? "text-foreground hover:text-muted-foreground hover:bg-accent/60"
+                                    : "text-muted-foreground hover:text-foreground hover:bg-accent/60",
+                                )}
+                                aria-label={project.pinned ? "Unpin this project" : "Pin this project"}
+                              >
+                                <Pin className={cn("h-4 w-4", project.pinned && "fill-current")} />
+                              </button>
+                            </TooltipSimple>
+                          )}
+                          {onQuickLaunch && (
+                            <TooltipSimple content="Quick launch a new session (skips the sessions page)">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  // Belt-and-suspenders: stop the click from
+                                  // bubbling to any future row-level handler.
+                                  e.stopPropagation();
+                                  void onQuickLaunch(project);
+                                }}
+                                className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                                aria-label="Quick launch a new session"
+                              >
+                                <Zap className="h-4 w-4" />
+                              </button>
+                            </TooltipSimple>
+                          )}
+                          <TooltipSimple content="View this project's sessions">
                             <button
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                void onTogglePin(project, !project.pinned);
+                                onProjectClick(project);
                               }}
-                              className={cn(
-                                "p-1 rounded-md transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-                                project.pinned
-                                  ? "text-foreground hover:text-muted-foreground hover:bg-accent/60"
-                                  : "text-muted-foreground hover:text-foreground hover:bg-accent/60",
-                              )}
-                              title={project.pinned ? "Unpin this project" : "Pin this project to the top"}
-                              aria-label={project.pinned ? "Unpin this project" : "Pin this project"}
+                              className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                              aria-label="View project sessions"
                             >
-                              <Pin className={cn("h-4 w-4", project.pinned && "fill-current")} />
+                              <List className="h-4 w-4" />
                             </button>
-                          )}
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              // Belt-and-suspenders: stop the click from
-                              // bubbling to any future row-level handler.
-                              // No row click exists today, but we don't
-                              // want a passive future change to silently
-                              // double-fire onProjectClick.
-                              e.stopPropagation();
-                              onProjectClick(project);
-                            }}
-                            className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                            title="Launch this project"
-                            aria-label="Launch this project"
-                          >
-                            <ExternalLink className="h-4 w-4" />
-                          </button>
-                          {onDeleteProject && (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setPendingDelete(project);
-                              }}
-                              className="p-1 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-destructive"
-                              title="Delete this project from the account's Claude folder"
-                              aria-label="Delete this project"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                          )}
+                          </TooltipSimple>
                         </div>
                       </td>
                     </motion.tr>
@@ -558,77 +544,7 @@ export const ProjectList: React.FC<ProjectListProps> = ({
           )}
         </div>
       </div>
-
-      {/* Permanent-delete confirm. Body lists path, account, and session
-          count so the user has every load-bearing fact in front of them
-          before pressing the destructive button. The dialog is the only
-          gate — once it closes via Delete, the parent removes the row
-          optimistically and fires the API. */}
-      <Dialog
-        open={pendingDelete !== null}
-        onOpenChange={(open) => {
-          if (!open) setPendingDelete(null);
-        }}
-      >
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Delete this project?</DialogTitle>
-            <DialogDescription>
-              This permanently removes the project's folder from the
-              account's Claude config directory — every session, summary,
-              and todo file under it will be deleted from disk.
-            </DialogDescription>
-          </DialogHeader>
-          {pendingDelete && (
-            <div className="space-y-2 text-sm">
-              <div>
-                <span className="text-muted-foreground">Path:</span>{' '}
-                <span className="font-mono text-xs break-all">
-                  {pendingDelete.path}
-                </span>
-              </div>
-              {pendingDelete.account_name && (
-                <div>
-                  <span className="text-muted-foreground">Account:</span>{' '}
-                  <span className="font-medium">{pendingDelete.account_name}</span>
-                </div>
-              )}
-              <div>
-                <span className="text-muted-foreground">Sessions:</span>{' '}
-                <span className="font-medium tabular-nums">
-                  {pendingDelete.sessions.length}
-                </span>{' '}
-                will be permanently deleted.
-              </div>
-            </div>
-          )}
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => { setPendingDelete(null); }}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              onClick={() => {
-                const target = pendingDelete;
-                if (!target) return;
-                // Close the dialog first so the parent's optimistic state
-                // update (likely setProjects([...without target])) flows
-                // through to a stable list with no flash of dialog over
-                // the removed row.
-                setPendingDelete(null);
-                void onDeleteProject?.(target);
-              }}
-            >
-              Delete
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
+    </TooltipProvider>
   );
 };
