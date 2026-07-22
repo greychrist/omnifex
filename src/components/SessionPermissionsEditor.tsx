@@ -7,6 +7,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { api } from "@/lib/api";
 import { fireAndLog, logAndForget } from "@/lib/fireAndLog";
+import { unmatchedFileRuleWarning } from "@/lib/permissionCardLogic";
 interface PermissionLevel {
   label: string;
   scope: "user" | "project" | "local";
@@ -210,6 +211,7 @@ export function SessionPermissionsEditor({
 
                 {/* Add rule inline */}
                 {newRule?.scope === level.scope ? (
+                  <>
                   <div className="flex items-center gap-1.5 pt-1">
                     <Select
                       value={newRule.behavior}
@@ -238,6 +240,15 @@ export function SessionPermissionsEditor({
                       Cancel
                     </Button>
                   </div>
+                  {/* CLI ≥2.1.210 warns at startup for Write/NotebookEdit/Glob
+                      path rules (never matched by file permission checks);
+                      surface the same warning at authoring time. */}
+                  {unmatchedFileRuleWarning(newRule.value) && (
+                    <p className="text-[10px] text-amber-500 pt-1 font-mono">
+                      {unmatchedFileRuleWarning(newRule.value)}
+                    </p>
+                  )}
+                  </>
                 ) : (
                   <Button
                     variant="ghost"

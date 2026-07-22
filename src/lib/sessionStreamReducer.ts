@@ -292,6 +292,12 @@ function computeCost(node: JsonlNode, ctx: StreamReducerContext): number {
   // Only assistant nodes are priced. cli-stream-result usage is the CLI's
   // rollup of the same assistant messages — counting both double-counts.
   if (node.kind !== 'assistant') return 0;
+  // Live-forwarded subagent assistants (--forward-subagent-text) carry their
+  // own usage, but persisted parent transcripts never contain these lines —
+  // pricing them would make live cost disagree with the same session's cost
+  // on reload. Subagent totals surface via SubagentBar meta instead.
+  const parentToolUseId = (node.raw as { parent_tool_use_id?: unknown }).parent_tool_use_id;
+  if (typeof parentToolUseId === 'string' && parentToolUseId.length > 0) return 0;
   const raw = node.raw as {
     requestId?: string;
     message?: { id?: string; model?: string; usage?: UsageTokens };

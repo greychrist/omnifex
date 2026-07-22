@@ -55,6 +55,11 @@ function buildArgs(p: AgentStartParams): string[] {
     '--input-format', 'stream-json',
     '--verbose',
     '--include-partial-messages',
+    // Forward subagent text/thinking into the stream as assistant envelopes
+    // tagged with parent_tool_use_id (CLI ≥2.1.211). The renderer routes
+    // them to the SubagentBar row; derivation/cost/filters exclude them
+    // from main-chain logic (see src/lib/subagentDispatch.ts).
+    '--forward-subagent-text',
     '--permission-prompt-tool', 'stdio',
     '--setting-sources', 'user,project,local',
   ];

@@ -72,6 +72,19 @@ describe('ClaudeCliEngine', () => {
     expect(opts.env.CLAUDE_CONFIG_DIR).toBe('/home/user/.claude');
   });
 
+  it('enables --forward-subagent-text so subagent narration reaches the stream', async () => {
+    // CLI ≥2.1.211: forwards subagent text/thinking as assistant envelopes
+    // tagged with parent_tool_use_id. SubagentBar rows render them live.
+    const fake = makeFakeChild();
+    mockedSpawn.mockReturnValue(fake as never);
+    const engine = createClaudeCliEngine({ tabId: 't', claudeBinaryPath: '/bin/claude' });
+
+    await engine.start(baseParams);
+
+    const args = mockedSpawn.mock.calls[0]![1] as string[];
+    expect(args).toContain('--forward-subagent-text');
+  });
+
   it('passes --model for a concrete model id', async () => {
     const fake = makeFakeChild();
     mockedSpawn.mockReturnValue(fake as never);

@@ -99,6 +99,31 @@ export function buildSessionSuggestion(ruleString: string): SessionSuggestion {
 }
 
 /**
+ * Warn when a rule is in a form the CLI's file permission checks never match.
+ * As of CLI 2.1.210, only `Edit(path)` and `Read(path)` rules participate in
+ * file permission checks — `Write(path)`, `NotebookEdit(path)`, and
+ * `Glob(path)` are accepted but dead, and the CLI logs a startup warning for
+ * each. Bare tool-name rules (no path) still match the tool everywhere and
+ * are fine. Returns the warning text to show inline, or null when the rule
+ * is unaffected.
+ */
+export function unmatchedFileRuleWarning(ruleString: string): string | null {
+  const parsed = parseRuleString(ruleString);
+  if (!parsed.ruleContent) return null;
+  const replacement =
+    parsed.toolName === 'Write' || parsed.toolName === 'NotebookEdit'
+      ? 'Edit'
+      : parsed.toolName === 'Glob'
+        ? 'Read'
+        : null;
+  if (!replacement) return null;
+  return (
+    `${parsed.toolName}(path) rules are never matched by file permission checks ` +
+    `(CLI ≥2.1.210) — use ${replacement}(${parsed.ruleContent}) instead.`
+  );
+}
+
+/**
  * Pull the initial editable rule string out of the first CLI suggestion, or
  * fall back to the bare tool name if the CLI didn't provide one.
  */

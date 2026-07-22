@@ -5,6 +5,7 @@ import {
   buildPersistedSuggestion,
   buildSessionSuggestion,
   getInitialRuleString,
+  unmatchedFileRuleWarning,
   SCOPE_OPTIONS,
   DEFAULT_SCOPE,
 } from '../permissionCardLogic';
@@ -150,5 +151,38 @@ describe('SCOPE_OPTIONS', () => {
     for (const o of SCOPE_OPTIONS) {
       expect(o.description.length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe('unmatchedFileRuleWarning', () => {
+  // CLI ≥2.1.210: file permission checks match only Edit(path) and
+  // Read(path). Write(path)/NotebookEdit(path)/Glob(path) rules are accepted
+  // but never matched, and the CLI warns for each at startup. Mirror that
+  // warning at authoring time so the rule never gets saved in a dead form.
+  it('warns on Write(path) and suggests Edit', () => {
+    expect(unmatchedFileRuleWarning('Write(docs/**)')).toContain('Edit(docs/**)');
+  });
+
+  it('warns on NotebookEdit(path) and suggests Edit', () => {
+    expect(unmatchedFileRuleWarning('NotebookEdit(notebooks/**)')).toContain(
+      'Edit(notebooks/**)',
+    );
+  });
+
+  it('warns on Glob(path) and suggests Read', () => {
+    expect(unmatchedFileRuleWarning('Glob(src/**)')).toContain('Read(src/**)');
+  });
+
+  it('does not warn on bare tool-name rules (they match the tool everywhere)', () => {
+    expect(unmatchedFileRuleWarning('Write')).toBeNull();
+    expect(unmatchedFileRuleWarning('Glob')).toBeNull();
+  });
+
+  it('does not warn on matched forms or other tools', () => {
+    expect(unmatchedFileRuleWarning('Edit(docs/**)')).toBeNull();
+    expect(unmatchedFileRuleWarning('Read(src/**)')).toBeNull();
+    expect(unmatchedFileRuleWarning('Bash(git:*)')).toBeNull();
+    expect(unmatchedFileRuleWarning('WebFetch(domain:example.com)')).toBeNull();
+    expect(unmatchedFileRuleWarning('')).toBeNull();
   });
 });

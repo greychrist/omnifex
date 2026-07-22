@@ -244,6 +244,38 @@ describe('createTuiJsonlListener', () => {
     expect(modes).toEqual(['plan', 'acceptEdits']);
   });
 
+  it('emits onControlState with effort from an assistant line, deduped', async () => {
+    // CLI ≥2.1.212 stamps the reasoning effort level on each assistant
+    // transcript line as a top-level `effort` field (verified on 2.1.217).
+    const onControlState = vi.fn();
+    fs.writeFileSync(jsonlPath, '');
+    handle = createTuiJsonlListener({
+      tabId: 'tab-effort',
+      projectPath: '/p',
+      jsonlPath,
+      sendToRenderer: vi.fn(),
+      notificationHooks: {},
+      onInit: () => {},
+      onControlState,
+    });
+    fs.appendFileSync(
+      jsonlPath,
+      JSON.stringify({ type: 'assistant', sessionId: 's', effort: 'high', message: { role: 'assistant', content: [], model: 'claude-opus-4-8' } }) + '\n' +
+      JSON.stringify({ type: 'assistant', sessionId: 's', effort: 'high', message: { role: 'assistant', content: [], model: 'claude-opus-4-8' } }) + '\n' +
+      JSON.stringify({ type: 'assistant', sessionId: 's', effort: 'max', message: { role: 'assistant', content: [], model: 'claude-opus-4-8' } }) + '\n',
+    );
+    await waitUntil(() => {
+      const efforts = onControlState.mock.calls
+        .map((c) => (c[0] as { effort?: string }).effort)
+        .filter(Boolean);
+      return efforts.length >= 2;
+    });
+    const efforts = onControlState.mock.calls
+      .map((c) => (c[0] as { effort?: string }).effort)
+      .filter(Boolean);
+    expect(efforts).toEqual(['high', 'max']);
+  });
+
   it('fires the notification helper on a result line', async () => {
     const showNotification = vi.fn();
     const sendToRenderer = vi.fn();

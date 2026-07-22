@@ -632,13 +632,15 @@ describe('useSessionLifecycle — sessionStatus + conversationStatus', () => {
     expect(result.current.lifecycle.conversationStatus).toBe('running');
   });
 
-  it('user message with parent_tool_use_id but plain-text content is classified as prompt, not tool-result', async () => {
-    // Regression guard for the old heuristic: a resumed session may carry
-    // parent_tool_use_id on a plain user prompt (conversation-tree chaining).
-    // That must NOT be mistaken for a tool-result reply or the derivation will
-    // skip it and report 'idle' when the session is actually waiting on Claude.
+  it('user message with a parent_tool_use_id is forwarded subagent traffic and does not drive the turn axis', async () => {
+    // Contract change with --forward-subagent-text (CLI ≥2.1.211): a
+    // non-empty parent_tool_use_id on a user/assistant envelope marks
+    // live-forwarded subagent traffic. The old guard here assumed resumed
+    // main-chain prompts "may carry" the field for conversation-tree
+    // chaining — that shape does not exist on the wire (0 occurrences
+    // across 110 persisted transcripts, and live main-chain lines carry
+    // null; verified 2026-07-22 on CLI 2.1.217/2.1.218).
     (api.startSession as any).mockResolvedValueOnce(undefined);
-    // Plain-text content — not a tool_result block array.
     const messages = [
       makeUserPrompt({ parent_tool_use_id: 'toolu_abc123', message: { role: 'user', content: 'hello' } }),
     ];
@@ -647,19 +649,19 @@ describe('useSessionLifecycle — sessionStatus + conversationStatus', () => {
     act(() => {
       eventListeners['session-status:tab-life']({ sessionStatus: 'started' });
     });
-    // The user message must be seen as a prompt → waitingOnClaude → 'running'.
-    // If mis-classified as 'tool-result' the derivation would return 'idle'.
-    expect(result.current.lifecycle.conversationStatus).toBe('running');
+    // A lone forwarded subagent prompt is not a main-chain prompt awaiting a
+    // reply — the parent turn axis stays idle (the running subagent row is
+    // what keeps the session in-flight, via hasOpenSubagents).
+    expect(result.current.lifecycle.conversationStatus).toBe('idle');
   });
 
-  it('assistant message with parent_tool_use_id and terminal stop_reason is not skipped by waitingOnClaude', async () => {
-    // Regression guard for the old isSidechain heuristic: setting isSidechain=true
-    // on a main-chain assistant (because parent_tool_use_id was set) would cause
-    // waitingOnClaude to skip it and falsely report 'running' when the turn is done.
+  it('assistant message with a parent_tool_use_id is forwarded subagent text and cannot close the parent turn', async () => {
+    // Same contract change: the subagent's own end_turn brackets ITS turn,
+    // not the parent's. The parent is still waiting on its Task tool call,
+    // so the unanswered main prompt keeps the derivation at 'running'.
     (api.startSession as any).mockResolvedValueOnce(undefined);
     const messages = [
       makeUserPrompt(),
-      // parent_tool_use_id set but this is a main-chain reply — stop_reason ends the turn.
       makeAssistantMsg('end_turn', { parent_tool_use_id: 'toolu_xyz789' }),
     ];
     const { result } = renderHook(harness({ messages, tasks: [], subagents: [] }));
@@ -667,9 +669,7 @@ describe('useSessionLifecycle — sessionStatus + conversationStatus', () => {
     act(() => {
       eventListeners['session-status:tab-life']({ sessionStatus: 'started' });
     });
-    // The assistant's stop_reason must end the turn. If isSidechain=true were set
-    // the derivation would skip the assistant and see only the unanswered prompt → 'running'.
-    expect(result.current.lifecycle.conversationStatus).toBe('idle');
+    expect(result.current.lifecycle.conversationStatus).toBe('running');
   });
 });
 

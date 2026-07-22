@@ -1,4 +1,5 @@
 import type { JsonlNode } from '@/types/jsonl';
+import { forwardedParentToolUseId } from '@/lib/subagentDispatch';
 
 /**
  * Turn axis of the session — derived by the renderer from JSONL content +
@@ -26,7 +27,16 @@ type WithStatus = { status: string };
 function isMainAssistant(node: JsonlNode): boolean {
   if (node.kind !== 'assistant') return false;
   const isSidechain = (node.raw as { isSidechain?: boolean }).isSidechain === true;
-  return !isSidechain;
+  // Live-forwarded subagent assistants (--forward-subagent-text) carry a
+  // non-empty parent_tool_use_id instead of isSidechain — same exclusion:
+  // they may run a different model and their stop_reason brackets the
+  // subagent's own turn, not the main one.
+  return !isSidechain && forwardedParentToolUseId(node.raw) === null;
+}
+
+/** Forwarded subagent user prompts must not anchor main-turn derivations. */
+function isMainUserNode(node: JsonlNode): boolean {
+  return node.kind === 'user' && forwardedParentToolUseId(node.raw) === null;
 }
 
 function isResultNode(node: JsonlNode): boolean {
@@ -43,7 +53,7 @@ function isResultNode(node: JsonlNode): boolean {
 function lastMainPromptIndex(messages: JsonlNode[]): number {
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const n = messages[i];
-    if (n.kind === 'user' && n.userKind === 'prompt') return i;
+    if (n.kind === 'user' && n.userKind === 'prompt' && isMainUserNode(n)) return i;
   }
   return -1;
 }
@@ -82,7 +92,10 @@ export function waitingOnClaude(messages: JsonlNode[]): boolean {
       if (stop === null) return true;
       return !TERMINAL_STOP_REASONS.has(stop);
     }
-    if (n.kind === 'user') break; // defer to the prompt-awaiting check
+    if (n.kind === 'user') {
+      if (!isMainUserNode(n)) continue; // forwarded subagent prompt — not main-turn traffic
+      break; // defer to the prompt-awaiting check
+    }
     // anything else is not turn-significant — keep scanning backward.
   }
 
@@ -127,7 +140,7 @@ export function turnDuration(messages: JsonlNode[], assistantIndex: number): num
   if (!node || node.kind !== 'assistant') return null;
   for (let i = assistantIndex - 1; i >= 0; i -= 1) {
     const candidate = messages[i];
-    if (candidate.kind === 'user' && candidate.userKind === 'prompt') {
+    if (candidate.kind === 'user' && candidate.userKind === 'prompt' && isMainUserNode(candidate)) {
       const start = Date.parse((candidate.raw as { timestamp?: string }).timestamp ?? '');
       const end = Date.parse((node.raw as { timestamp?: string }).timestamp ?? '');
       if (Number.isFinite(start) && Number.isFinite(end)) return Math.max(0, end - start);

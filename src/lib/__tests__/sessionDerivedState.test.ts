@@ -494,3 +494,87 @@ describe('sessionStartedAt', () => {
     expect(sessionStartedAt(msgs)).toBe('2026-05-27T01:00:00Z');
   });
 });
+
+describe('forwarded subagent messages (--forward-subagent-text)', () => {
+  // Live-forwarded subagent lines are regular user/assistant envelopes with a
+  // non-empty top-level `parent_tool_use_id` (verified against CLI 2.1.217;
+  // main-chain lines carry null / omit it). They must never decide the main
+  // turn axis, name the session model, or anchor turn durations.
+  function forwardedAssistant(timestamp: string, stop_reason: string | null, model = 'claude-haiku-4-5-20251001'): JsonlNode {
+    return {
+      kind: 'assistant',
+      sessionId: 's1',
+      receivedAt: timestamp,
+      raw: {
+        type: 'assistant',
+        parent_tool_use_id: 'toolu_fwd_1',
+        message: { role: 'assistant', content: [], stop_reason, model },
+        sessionId: 's1',
+        timestamp,
+      } as never,
+    };
+  }
+
+  function forwardedUserPrompt(timestamp: string): JsonlNode {
+    return {
+      kind: 'user',
+      userKind: 'prompt',
+      sessionId: 's1',
+      receivedAt: timestamp,
+      raw: {
+        type: 'user',
+        parent_tool_use_id: 'toolu_fwd_1',
+        message: { role: 'user', content: [{ type: 'text', text: 'subagent prompt' }] },
+        sessionId: 's1',
+        timestamp,
+      } as never,
+    };
+  }
+
+  it('waitingOnClaude: a forwarded assistant with a terminal stop_reason does not close the parent turn', () => {
+    // Parent dispatched a Task and is still waiting; the subagent finished
+    // its own message. The turn is still open.
+    const msgs = [
+      userPrompt('2026-07-22T10:00:00Z'),
+      forwardedAssistant('2026-07-22T10:00:10Z', 'end_turn'),
+    ];
+    expect(waitingOnClaude(msgs)).toBe(true);
+  });
+
+  it('waitingOnClaude: a forwarded user prompt after the result does not reopen the turn', () => {
+    const msgs = [
+      userPrompt('2026-07-22T10:00:00Z'),
+      resultNode('2026-07-22T10:00:20Z'),
+      forwardedUserPrompt('2026-07-22T10:00:25Z'),
+    ];
+    expect(waitingOnClaude(msgs)).toBe(false);
+  });
+
+  it('lastAssistantModel skips forwarded subagent assistants', () => {
+    const mainAssistant: JsonlNode = {
+      kind: 'assistant',
+      sessionId: 's1',
+      receivedAt: '2026-07-22T10:00:00Z',
+      raw: {
+        type: 'assistant',
+        message: { role: 'assistant', content: [], stop_reason: 'end_turn', model: 'claude-fable-5' },
+        sessionId: 's1',
+        timestamp: '2026-07-22T10:00:00Z',
+      } as never,
+    };
+    const msgs = [
+      mainAssistant,
+      forwardedAssistant('2026-07-22T10:00:10Z', 'end_turn', 'claude-haiku-4-5-20251001'),
+    ];
+    expect(lastAssistantModel(msgs)).toBe('claude-fable-5');
+  });
+
+  it('turnDuration anchors on the real user prompt, not a forwarded subagent prompt', () => {
+    const msgs = [
+      userPrompt('2026-07-22T10:00:00Z'),
+      forwardedUserPrompt('2026-07-22T10:00:30Z'),
+      assistantWithStop('2026-07-22T10:01:00Z', 'end_turn'),
+    ];
+    expect(turnDuration(msgs, 2)).toBe(60_000);
+  });
+});

@@ -893,3 +893,87 @@ describe.skipIf(!fs.existsSync(FIXTURE))('deriveSubagents with real transcript',
     expect(s.latest?.toolUses).toBe(29);
   });
 });
+
+describe('forwarded subagent text (--forward-subagent-text)', () => {
+  function forwardedAssistantText(parentToolUseId: string, text: string): JsonlNode {
+    return {
+      kind: 'assistant', sessionId: '', receivedAt: '',
+      raw: {
+        type: 'assistant',
+        parent_tool_use_id: parentToolUseId,
+        message: {
+          role: 'assistant',
+          model: 'claude-haiku-4-5-20251001',
+          content: [{ type: 'text', text }],
+        },
+      },
+    } as unknown as JsonlNode;
+  }
+
+  function forwardedAssistantThinking(parentToolUseId: string, thinking: string): JsonlNode {
+    return {
+      kind: 'assistant', sessionId: '', receivedAt: '',
+      raw: {
+        type: 'assistant',
+        parent_tool_use_id: parentToolUseId,
+        message: {
+          role: 'assistant',
+          model: 'claude-haiku-4-5-20251001',
+          content: [{ type: 'thinking', thinking, signature: 'sig' }],
+        },
+      },
+    } as unknown as JsonlNode;
+  }
+
+  it('surfaces forwarded assistant text as the latest progress entry on the dispatched row', () => {
+    const subs = deriveSubagents([
+      agentToolUse(TOOL_USE_ID),
+      taskStarted(TOOL_USE_ID),
+      forwardedAssistantText(TOOL_USE_ID, 'Scanning the auth module for the bug now.'),
+    ]);
+    expect(subs).toHaveLength(1);
+    expect(subs[0].latest?.description).toBe('Scanning the auth module for the bug now.');
+    expect(subs[0].status).toBe('running');
+  });
+
+  it('keeps the running usage tally from the last task_progress when text arrives', () => {
+    const subs = deriveSubagents([
+      agentToolUse(TOOL_USE_ID),
+      taskStarted(TOOL_USE_ID),
+      taskProgress(TOOL_USE_ID, 'working', { total_tokens: 5000, tool_uses: 3, duration_ms: 9000 }),
+      forwardedAssistantText(TOOL_USE_ID, 'Found it — patching.'),
+    ]);
+    expect(subs[0].latest?.description).toBe('Found it — patching.');
+    // The numeric tally must carry forward, not blank out, so the row's
+    // meta bits (tokens/tools/elapsed) don't flicker away on each text.
+    expect(subs[0].latest?.totalTokens).toBe(5000);
+    expect(subs[0].latest?.toolUses).toBe(3);
+  });
+
+  it('falls back to thinking content when the forwarded message has no text block', () => {
+    const subs = deriveSubagents([
+      agentToolUse(TOOL_USE_ID),
+      taskStarted(TOOL_USE_ID),
+      forwardedAssistantThinking(TOOL_USE_ID, 'The user wants a summary of the diff.'),
+    ]);
+    expect(subs[0].latest?.description).toBe('The user wants a summary of the diff.');
+  });
+
+  it('ignores forwarded text after the row reached a terminal status', () => {
+    const subs = deriveSubagents([
+      agentToolUse(TOOL_USE_ID),
+      taskStarted(TOOL_USE_ID),
+      taskNotification(TOOL_USE_ID, 'completed', 'all done'),
+      forwardedAssistantText(TOOL_USE_ID, 'late straggler'),
+    ]);
+    expect(subs[0].status).toBe('completed');
+    expect(subs[0].latest?.description).not.toBe('late straggler');
+  });
+
+  it('ignores forwarded text with no matching dispatch', () => {
+    const subs = deriveSubagents([
+      forwardedAssistantText('toolu_never_dispatched', 'orphan'),
+    ]);
+    expect(subs).toHaveLength(0);
+  });
+});

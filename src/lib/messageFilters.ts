@@ -1,6 +1,6 @@
 import type { JsonlNode } from "@/types/jsonl";
 import { isTaskLifecycleMarker } from "@/lib/subagentStreams";
-import { isSubagentPrompt } from "@/lib/subagentDispatch";
+import { forwardedParentToolUseId, isSubagentPrompt } from "@/lib/subagentDispatch";
 import { detectSkillInjection } from "@/lib/skillDetection";
 import type { HardFilters } from "@/lib/messageRenderingConfig";
 
@@ -76,6 +76,15 @@ export function filterDisplayableMessages(
     // activity label; they carry no body and must never render as an empty
     // transcript row.
     if (message.kind === "system" && message.subtype === "status") {
+      return false;
+    }
+
+    // Skip live-forwarded subagent assistant text (--forward-subagent-text):
+    // it belongs to the SubagentBar row keyed by parent_tool_use_id, not the
+    // main transcript. A bare non-null check is safe for assistants — no
+    // persisted main-chain assistant line carries a non-null value (subagent
+    // transcripts live in separate agent-*.jsonl files).
+    if (message.kind === "assistant" && forwardedParentToolUseId(message.raw) !== null) {
       return false;
     }
 

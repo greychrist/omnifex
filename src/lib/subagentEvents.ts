@@ -155,7 +155,15 @@ export type SubagentEvent =
         isBackgrounded?: boolean;
       };
     }
-  | { kind: 'ClosedByParentResult'; toolUseId: string };
+  | { kind: 'ClosedByParentResult'; toolUseId: string }
+  | {
+      // Live-forwarded subagent narration (--forward-subagent-text).
+      // Text of the subagent's latest assistant message (thinking fallback),
+      // shown as the row's progress line between task_progress ticks.
+      kind: 'ForwardedText';
+      toolUseId: string;
+      text: string;
+    };
 
 // ---------------------------------------------------------------------------
 // XML extraction (queue-operation / attachment.queued_command carriers)
@@ -220,6 +228,31 @@ export function isTaskLifecycleMarker(m: unknown): m is TaskLifecycleMessage {
 // Translation: messages → events
 // ---------------------------------------------------------------------------
 
+/** Cap forwarded narration entries so a subagent's multi-page final report
+ *  doesn't bloat the per-row event log the expanded SubagentBar renders. */
+const FORWARDED_TEXT_MAX_LENGTH = 500;
+
+/**
+ * Extract the narration line from a forwarded subagent assistant envelope:
+ * concatenated `text` blocks first, `thinking` blocks as the fallback
+ * (early in a turn only thinking has streamed). Empty string when the
+ * message carries neither (e.g. a tool_use-only frame).
+ */
+function forwardedNarration(raw: Record<string, unknown>): string {
+  const content = (raw as { message?: { content?: unknown } }).message?.content;
+  if (!Array.isArray(content)) return '';
+  let text = '';
+  let thinking = '';
+  for (const block of content as Array<{ type?: string; text?: unknown; thinking?: unknown }>) {
+    if (block.type === 'text' && typeof block.text === 'string') text += block.text;
+    else if (block.type === 'thinking' && typeof block.thinking === 'string') thinking += block.thinking;
+  }
+  const chosen = (text.trim() || thinking.trim());
+  return chosen.length > FORWARDED_TEXT_MAX_LENGTH
+    ? `${chosen.slice(0, FORWARDED_TEXT_MAX_LENGTH)}…`
+    : chosen;
+}
+
 /**
  * Translate the raw message stream into an ordered event log. Pure; only the
  * supplied messages drive output. The reducer in `applyEvents` then folds
@@ -235,6 +268,21 @@ export function messagesToEvents(messages: JsonlNode[]): SubagentEvent[] {
   for (let i = 0; i < messages.length; i++) {
     const m = messages[i];
     const raw = (m as unknown as { raw?: Record<string, unknown> }).raw ?? {};
+
+    // 0. Live-forwarded subagent narration (--forward-subagent-text, CLI
+    //    ≥2.1.211): assistant envelopes tagged with the dispatching Task's
+    //    tool_use_id. Their text (or thinking, when no text block landed)
+    //    becomes the row's live progress line. Handled before the dispatch
+    //    scan so a subagent's own nested tool_use blocks can't create
+    //    phantom rows in the parent's bar.
+    if (m.kind === 'assistant') {
+      const parentId = (raw as { parent_tool_use_id?: unknown }).parent_tool_use_id;
+      if (typeof parentId === 'string' && parentId.length > 0) {
+        const text = forwardedNarration(raw);
+        if (text) events.push({ kind: 'ForwardedText', toolUseId: parentId, text });
+        continue;
+      }
+    }
 
     // 1. Dispatch — assistant tool_use blocks where the tool either is
     //    Agent/Task explicitly OR rides run_in_background:true (background
@@ -453,6 +501,27 @@ export function applyEvents(events: SubagentEvent[]): Map<string, SubagentState>
         s.events.push(entry);
         s.latest = entry;
         if (ev.taskId && !s.taskId) s.taskId = ev.taskId;
+        break;
+      }
+      case 'ForwardedText': {
+        // Narration only ever attaches to an already-dispatched row —
+        // byId.get, not ensureState, so an orphan parent id (nested
+        // subagent, replay edge) can't create a phantom row.
+        const s = byId.get(ev.toolUseId);
+        if (!s) break;
+        if (isTerminal(s.status)) break;
+        // Carry the numeric tally forward from the previous entry so the
+        // row's meta bits (tokens/tools/elapsed) don't blank out between
+        // task_progress ticks.
+        const entry: SubagentProgressEntry = {
+          description: ev.text,
+          lastToolName: s.latest?.lastToolName,
+          totalTokens: s.latest?.totalTokens,
+          toolUses: s.latest?.toolUses,
+          durationMs: s.latest?.durationMs,
+        };
+        s.events.push(entry);
+        s.latest = entry;
         break;
       }
       case 'ToolResult': {

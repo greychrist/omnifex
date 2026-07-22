@@ -49,6 +49,8 @@ import type { JsonlNode } from "@/types/jsonl";
 import { normalizeJsonlNode } from "@/lib/normalizeMessage";
 import { classifyJsonlLine } from '@/lib/jsonlClassifier';
 import { lastPermissionMode, lastAssistantModel } from '@/lib/sessionDerivedState';
+import { changeSessionModel, mirrorControlState } from '@/lib/sessionModelChange';
+import { forwardedParentToolUseId } from '@/lib/subagentDispatch';
 import { reduceSessionStreamMessage } from '@/lib/sessionStreamReducer';
 import { parsePricingOverrides, type PricingOverrides } from '@/lib/pricing';
 import { runStreamEffect } from '@/lib/sessionStreamEffects';
@@ -1194,7 +1196,14 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
         // Reconcile inflight assistant: clear streaming bubble when canonical
         // message arrives or an error notification lands.
         const store = useClaudeSessionStore.getState();
-        if (reduced.append === 'append' && message.kind === 'assistant') {
+        // Forwarded subagent assistants (--forward-subagent-text, tagged with
+        // parent_tool_use_id) must not clear the PARENT's streaming bubble —
+        // they belong to the SubagentBar row, not the main chain.
+        if (
+          reduced.append === 'append' &&
+          message.kind === 'assistant' &&
+          forwardedParentToolUseId(message.raw) === null
+        ) {
           store.clearInflightAssistant(tabIdRef.current);
           clearInflightBuffer(tabIdRef.current);
         }
@@ -1592,30 +1601,25 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     return () => { unlisten(); };
   }, []);
 
-  // Mirror model / permission-mode changes the user makes inside a live TUI
-  // session. In TUI mode the terminal owns these — the popover pickers are
-  // read-only there — so this keeps them in sync when the user switches model
-  // (`/model`) or cycles permission mode (shift+tab) in the terminal. The
-  // main process detects the change from the session JSONL and emits here.
-  // Effort/thinking isn't covered (never reaches the JSONL).
+  // Mirror model / permission-mode / effort changes the user makes inside a
+  // live TUI session. In TUI mode the terminal owns these — the popover
+  // pickers are read-only there — so this keeps them in sync when the user
+  // switches model (`/model`), cycles permission mode (shift+tab), or changes
+  // effort in the terminal. The main process detects the change from the
+  // session JSONL and emits here. Thinking isn't covered (never reaches the
+  // JSONL).
   useEffect(() => {
     const unlisten = window.electronAPI.onEvent(
       `session-control-state:${tabIdRef.current}`,
       (...args: unknown[]) => {
-        const payload = args[0] as { model?: string; permissionMode?: string } | undefined;
-        // selectedModel may become a concrete CLI id (e.g. `claude-opus-4-8`);
-        // SessionDefaultsRow's pickModelOption resolves it to the right
-        // picker option for display.
-        if (typeof payload?.model === 'string' && payload.model.length > 0) {
-          setSelectedModel(payload.model);
-        }
-        if (typeof payload?.permissionMode === 'string' && payload.permissionMode.length > 0) {
-          setPermissionMode(payload.permissionMode);
-        }
+        mirrorControlState(
+          args[0] as { model?: string; permissionMode?: string; effort?: string } | undefined,
+          { setSelectedModel, setPermissionMode, setEffort, setContextUsage },
+        );
       },
     );
     return () => { unlisten(); };
-  }, []);
+  }, [setContextUsage]);
 
   // session-status events are now consumed by useSessionLifecycle, which
   // exposes the resulting `sessionStatus` enum. Derived `isSessionStarting`
@@ -2114,26 +2118,20 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
                 model={selectedModel}
                 setModel={(newModel) => {
                   // Updates selectedModel AND, if a session is running, pushes
-                  // the switch to the CLI immediately via sessionSetModel() so
-                  // the user doesn't have to wait until the next send.
-                  setSelectedModel(newModel);
-                  if (persistentSessionRef.current) {
-                    const tid = tabIdRef.current;
-                    api.sessionSetModel(tid, newModel).then(() => {
-                      // Live transcript marker — model changes are out-of-band
-                      // control requests that never reach the JSONL, so this
-                      // live-only marker is the only scrollback record.
-                      appendMessage({
-                        kind: 'control-change',
-                        control: 'model',
-                        value: String(newModel),
-                        sessionId: tid,
-                        receivedAt: new Date().toISOString(),
-                      });
-                    }).catch((err: unknown) => {
+                  // the switch to the CLI immediately via sessionSetModel(),
+                  // then refreshes context usage so the header summary's live
+                  // model signal tracks the switch (see sessionModelChange.ts).
+                  void changeSessionModel(newModel, {
+                    tabId: tabIdRef.current,
+                    hasLiveSession: !!persistentSessionRef.current,
+                    api,
+                    setSelectedModel,
+                    setContextUsage,
+                    appendMessage,
+                    onError: (err) => {
                       console.error('[sessions] sessionSetModel failed:', err);
-                    });
-                  }
+                    },
+                  });
                 }}
                 effort={effort}
                 setEffort={(level) => {

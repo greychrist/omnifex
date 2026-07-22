@@ -437,7 +437,8 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
       const subtype = String(message.subtype);
       // System variants don't share a common text field; pick whichever
       // narrative-style field the specific subtype carries. `content` holds the
-      // recap body for summary subtypes like away_summary / stop_hook_summary.
+      // recap body for summary subtypes like away_summary / stop_hook_summary;
+      // `body` is the notification-style shape some CLI warnings use.
       // thinking_tokens carries no narrative field at all — it's a running
       // numeric estimate — so its body is synthesized from `estimated_tokens`.
       const estimatedTokens = (sysRaw as unknown as { estimated_tokens?: number }).estimated_tokens;
@@ -446,6 +447,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
           ? (typeof estimatedTokens === 'number' ? `~${estimatedTokens} thinking tokens` : '')
           : (sysRaw as unknown as { message?: unknown }).message
             ?? (sysRaw as unknown as { content?: unknown }).content
+            ?? (sysRaw as unknown as { body?: unknown }).body
             ?? sysRaw.title
             ?? '';
       const streamKind = classifyStandaloneKind(message, streamMessages) ?? "system.informational";

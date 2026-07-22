@@ -34,7 +34,19 @@ Bash                     → all bash commands
 - Shell operators are respected: `Bash(safe-cmd *)` does NOT cover `safe-cmd && other-cmd`. Each subcommand needs its own rule.
 - Argument-constraining rules are fragile (option reordering, redirects, variable expansion break them). For URL filtering, deny `curl`/`wget` and use `WebFetch(domain:...)`.
 
-## Read / Edit / Write
+## Read / Edit
+
+**Only `Edit(path)` and `Read(path)` rules participate in file permission
+checks** (CLI ≥2.1.210). `Write(path)`, `NotebookEdit(path)`, and `Glob(path)`
+rules are accepted but never matched — the CLI emits a startup warning for
+each one, in every list (allow/ask/deny). Use `Edit(docs/**)` instead of
+`Write(docs/**)`/`NotebookEdit(docs/**)`, and `Read(docs/**)` instead of
+`Glob(docs/**)`. Bare tool-name rules without a path (e.g. deny `Write`) are
+unaffected — they match the tool everywhere.
+
+A `Read(path)` **deny** rule also blocks the Edit tool on the same path,
+including creating new files there (CLI ≥2.1.208). Write/NotebookEdit aren't
+covered by that — add an `Edit` deny rule for paths no tool may change.
 
 Gitignore-style patterns with four path prefix types:
 
@@ -52,9 +64,22 @@ Glob: `*` matches within a single directory, `**` matches recursively.
 ```
 Read(//Users/greg/Repos/personal/reference/WIN/**)
 Edit(//Users/greg/Repos/personal/WIN/.claude/**)
-Write(~/scratch/*.md)
+Edit(~/scratch/*.md)
 Edit                      → all edits, no restriction
 ```
+
+Depth semantics (tightened in CLI 2.1.214):
+
+- Bare filenames match at any depth under the anchor: `Read(.env)` ≡
+  `Read(**/.env)`.
+- A single-segment directory pattern anchors at the rule's source dir only:
+  allow `Edit(src/**)` matches `<cwd>/src/` — NOT nested `src/` dirs anywhere
+  in the tree (pre-2.1.214 allow rules wrongly matched any depth). Write
+  `Edit(**/src/**)` for any-depth. Hook `if:` conditions changed the same way;
+  deny/ask rules keep their any-depth match.
+- The anchor for `/path` rules is the settings source (project root for
+  project settings, `~/.claude/` for user settings, original cwd for
+  settings.local.json / CLI flags / session rules).
 
 Read/Edit deny rules apply only to Claude's built-in file tools, NOT to Bash subprocesses. `Read(./.env)` in deny blocks the Read tool but does not stop `cat .env`. For OS-level enforcement, use sandboxing.
 

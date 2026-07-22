@@ -79,15 +79,16 @@ export interface CreateTuiJsonlListenerArgs {
   /** Called whenever the listener classifies a status-altering event.
    *  Lifecycle uses this to update handle.status. */
   onStatusChange?: (status: 'idle' | 'running') => void;
-  /** Called when the model or permission mode the user is running changes —
-   *  detected by tailing the JSONL the CLI writes in TUI mode. In TUI mode
-   *  the PTY is the source of truth (the popover can't drive the CLI via the
-   *  control protocol), so this is how OmniFex's read-only mirror stays in
-   *  sync when the user switches model (`/model`) or cycles permission mode
-   *  (shift+tab) inside the terminal. Fires once per actual change (deduped).
-   *  Effort/thinking are intentionally not covered: they never reach the
-   *  JSONL, and detecting them would require fragile ANSI screen-scraping. */
-  onControlState?: (state: { model?: string; permissionMode?: string }) => void;
+  /** Called when the model, permission mode, or effort the user is running
+   *  changes — detected by tailing the JSONL the CLI writes in TUI mode. In
+   *  TUI mode the PTY is the source of truth (the popover can't drive the CLI
+   *  via the control protocol), so this is how OmniFex's read-only mirror
+   *  stays in sync when the user switches model (`/model`), cycles permission
+   *  mode (shift+tab), or changes effort inside the terminal. Fires once per
+   *  actual change (deduped). Effort became detectable in CLI 2.1.212, which
+   *  stamps a top-level `effort` field on assistant lines; thinking still
+   *  never reaches the JSONL and stays uncovered. */
+  onControlState?: (state: { model?: string; permissionMode?: string; effort?: string }) => void;
 }
 
 export interface TuiJsonlHandle {
@@ -95,18 +96,23 @@ export interface TuiJsonlHandle {
 }
 
 /**
- * Pull a control-state delta (model / permission mode) out of a parsed JSONL
- * line, or null when the line carries neither. `model` rides on `assistant`
- * lines (`message.model`); `permissionMode` rides on dedicated
+ * Pull a control-state delta (model / permission mode / effort) out of a
+ * parsed JSONL line, or null when the line carries none. `model` rides on
+ * `assistant` lines (`message.model`) and `effort` on the same lines as a
+ * top-level field (CLI ≥2.1.212); `permissionMode` rides on dedicated
  * `permission-mode` records and on `user` envelopes (both carry the field).
  */
-function controlStateFromLine(raw: unknown): { model?: string; permissionMode?: string } | null {
+function controlStateFromLine(
+  raw: unknown,
+): { model?: string; permissionMode?: string; effort?: string } | null {
   if (!raw || typeof raw !== 'object') return null;
   const r = raw as Record<string, unknown>;
   if (r.type === 'assistant') {
+    const delta: { model?: string; effort?: string } = {};
     const model = (r.message as { model?: unknown } | undefined)?.model;
-    if (typeof model === 'string' && model.length > 0) return { model };
-    return null;
+    if (typeof model === 'string' && model.length > 0) delta.model = model;
+    if (typeof r.effort === 'string' && r.effort.length > 0) delta.effort = r.effort;
+    return delta.model || delta.effort ? delta : null;
   }
   if (r.type === 'permission-mode' || r.type === 'user') {
     const mode = r.permissionMode;
@@ -121,6 +127,7 @@ export function createTuiJsonlListener(args: CreateTuiJsonlListenerArgs): TuiJso
   let turnInFlight = false;
   let lastModel: string | null = null;
   let lastPermissionMode: string | null = null;
+  let lastEffort: string | null = null;
 
   const tail: JsonlTailHandle = createJsonlTail({
     jsonlPath,
@@ -146,6 +153,10 @@ export function createTuiJsonlListener(args: CreateTuiJsonlListenerArgs): TuiJso
         if (delta?.permissionMode && delta.permissionMode !== lastPermissionMode) {
           lastPermissionMode = delta.permissionMode;
           onControlState({ permissionMode: delta.permissionMode });
+        }
+        if (delta?.effort && delta.effort !== lastEffort) {
+          lastEffort = delta.effort;
+          onControlState({ effort: delta.effort });
         }
       }
 

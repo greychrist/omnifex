@@ -199,3 +199,58 @@ describe('unknown content-block visibility', () => {
     expect(out).toHaveLength(1);
   });
 });
+
+describe('forwarded subagent assistant text (--forward-subagent-text)', () => {
+  const parentTaskDispatch = (): JsonlNode =>
+    ({
+      kind: 'assistant', sessionId: '', receivedAt: '',
+      raw: {
+        type: 'assistant',
+        message: {
+          role: 'assistant',
+          content: [
+            { type: 'tool_use', id: 'toolu_fwd_1', name: 'Task', input: { description: 'sub', prompt: 'go' } },
+          ],
+        },
+      },
+    }) as unknown as JsonlNode;
+
+  const forwardedAssistant = (): JsonlNode =>
+    ({
+      kind: 'assistant', sessionId: '', receivedAt: '',
+      raw: {
+        type: 'assistant',
+        parent_tool_use_id: 'toolu_fwd_1',
+        message: { role: 'assistant', content: [{ type: 'text', text: 'subagent says hi' }] },
+      },
+    }) as unknown as JsonlNode;
+
+  const mainAssistant = (): JsonlNode =>
+    ({
+      kind: 'assistant', sessionId: '', receivedAt: '',
+      raw: {
+        type: 'assistant',
+        parent_tool_use_id: null,
+        message: { role: 'assistant', content: [{ type: 'text', text: 'parent says hi' }] },
+      },
+    }) as unknown as JsonlNode;
+
+  it('hides forwarded subagent assistant messages from the transcript', () => {
+    // Their content belongs to the SubagentBar row, not the main transcript —
+    // interleaving subagent narration with the parent conversation is noise.
+    const msgs = [parentTaskDispatch(), forwardedAssistant(), mainAssistant()];
+    const out = filterDisplayableMessages(msgs);
+    const texts = out.map((m) =>
+      JSON.stringify(
+        (m as unknown as { raw?: { message?: { content?: unknown } } }).raw?.message?.content ?? '',
+      ),
+    );
+    expect(texts.join()).not.toContain('subagent says hi');
+    expect(texts.join()).toContain('parent says hi');
+  });
+
+  it('keeps main-chain assistants with a null parent_tool_use_id', () => {
+    const out = filterDisplayableMessages([mainAssistant()]);
+    expect(out).toHaveLength(1);
+  });
+});

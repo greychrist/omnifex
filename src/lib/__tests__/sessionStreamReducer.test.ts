@@ -489,3 +489,24 @@ describe('costDelta pricing', () => {
     expect(second.costDelta).toBe(0);
   });
 });
+
+describe('forwarded subagent messages (--forward-subagent-text)', () => {
+  it('does not price forwarded subagent assistant usage into the session cost', () => {
+    // Forwarded subagent assistants (parent_tool_use_id set) carry their own
+    // usage blocks. Persisted parent transcripts never contain these lines,
+    // so pricing them live would make the live session cost disagree with
+    // the same session's cost on reload. Subagent totals surface via the
+    // SubagentBar meta instead.
+    const node = assistantUsageNode({
+      id: 'msg_sub_1',
+      model: 'claude-haiku-4-5-20251001',
+      usage: { input_tokens: 1000, output_tokens: 1000 },
+    });
+    ((node as unknown as { raw: Record<string, unknown> }).raw).parent_tool_use_id = 'toolu_parent_1';
+    const r = reduceSessionStreamMessage(node, { ...baseCtx, seenCostKeys: new Set<string>() });
+    expect(r.costDelta).toBe(0);
+    // The node itself still lands in messages[] — SubagentBar derivation
+    // reads forwarded text from there.
+    expect(r.append).toBe('append');
+  });
+});

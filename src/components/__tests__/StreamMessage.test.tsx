@@ -317,6 +317,26 @@ describe('system away_summary recap rendering', () => {
     expect(screen.getByText('system.compact_boundary')).toBeTruthy();
     expect(screen.getByText('boundary hit').className).toContain('font-mono');
   });
+
+  it('shows text carried only in the body field (CLI warning shape)', () => {
+    // Several CLI system lines put their human text in `body` (the
+    // notification shape); the generic fallback read message/content/title
+    // only, so a recognized subtype carrying just `body` rendered label-only.
+    const node = {
+      kind: 'system',
+      subtype: 'informational',
+      sessionId: 'sess-1',
+      receivedAt: '2026-07-22T10:00:00Z',
+      raw: {
+        type: 'system',
+        subtype: 'informational',
+        body: 'Transcript writes are failing (disk full)',
+      },
+    } as unknown as JsonlNode;
+    render(<StreamMessage message={node} streamMessages={[node]} />);
+
+    expect(screen.getByText('Transcript writes are failing (disk full)')).toBeTruthy();
+  });
 });
 
 describe('system thinking_tokens rendering', () => {

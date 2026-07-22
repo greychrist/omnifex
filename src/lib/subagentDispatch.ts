@@ -16,6 +16,20 @@ export function isSubagentDispatch(name: unknown): boolean {
 }
 
 /**
+ * The `parent_tool_use_id` a live-forwarded subagent line carries, or null.
+ * Under `--forward-subagent-text` (CLI ≥2.1.211) subagent text/thinking
+ * arrives as regular user/assistant envelopes whose top-level
+ * `parent_tool_use_id` names the dispatching Task/Agent tool_use. Main-chain
+ * lines carry null (live stream) or omit the field entirely (persisted
+ * JSONL — verified: no persisted user/assistant line carries a non-null
+ * value; subagent transcripts live in separate agent-*.jsonl files).
+ */
+export function forwardedParentToolUseId(raw: unknown): string | null {
+  const id = (raw as { parent_tool_use_id?: unknown } | null)?.parent_tool_use_id;
+  return typeof id === 'string' && id.length > 0 ? id : null;
+}
+
+/**
  * True when a user-role message is a synthesized subagent prompt — i.e.
  * its `parent_tool_use_id` matches a Task/Agent tool_use somewhere in the
  * stream. The bare presence of `parent_tool_use_id` is NOT enough: the
