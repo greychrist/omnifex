@@ -5,6 +5,42 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.99] — 2026-07-22
+
+### Added
+
+- **Live subagent narration.** Chat sessions now spawn the CLI with
+  `--forward-subagent-text` (CLI ≥2.1.211): each SubagentBar row shows what
+  the subagent is actually saying/thinking as its live progress line, between
+  the CLI's periodic tool/token progress ticks. Forwarded subagent traffic is
+  kept out of the main transcript, the turn spinner, the header model summary,
+  and the session cost tally (subagent totals still surface via row meta).
+- **Effort mirroring.** The CLI (≥2.1.212) now stamps the reasoning-effort
+  level on assistant transcript lines, so terminal-mode effort changes are
+  detected and mirrored into the read-only Effort picker — previously
+  impossible ("effort never reaches the JSONL").
+- **Permission rule authoring warning.** The session permissions editor warns
+  inline when a rule is in a form the CLI never matches
+  (`Write(path)`/`NotebookEdit(path)`/`Glob(path)`, per CLI ≥2.1.210) and
+  suggests the `Edit(...)`/`Read(...)` replacement.
+
+### Changed
+
+- `docs/permission-syntax.md` updated for CLI 2.1.208–2.1.214 semantics:
+  Edit/Read-only file-permission matching, `Read` deny rules covering the
+  Edit tool, and single-segment `dir/**` anchor narrowing.
+
+### Fixed
+
+- **Session widget model desync.** Changing the model mid-session (picker or
+  `/model`) updated the popover picker but left the header summary naming the
+  old model until the next turn completed. The live model signal now refreshes
+  the moment the CLI confirms the switch, in both chat and terminal modes.
+- System messages that carry their text in a `body` field no longer render as
+  a label-only card in the transcript.
+
+Installers remain **unsigned**.
+
 ## [0.4.98] — 2026-07-21
 
 ### Added
