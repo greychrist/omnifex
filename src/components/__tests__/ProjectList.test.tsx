@@ -261,6 +261,28 @@ describe('ProjectList — click semantics', () => {
     expect(onProjectClick).not.toHaveBeenCalled();
   });
 
+  // Quick Launch sits in the Name column, right-aligned against the column
+  // edge, so the launch affordance reads next to the thing it launches
+  // instead of at the far right of the row. It is the ONLY quick-launch
+  // control per row — the actions cell keeps Pin + Sessions.
+  it('renders the Quick Launch icon in the name cell, not the actions cell', () => {
+    const { container } = renderWithOne({ onQuickLaunch: vi.fn() });
+    const launch = screen.getByRole('button', { name: 'Quick launch a new session' });
+    const cells = Array.from(container.querySelectorAll('tbody tr td'));
+
+    expect(cells[0].contains(launch)).toBe(true);
+    expect(cells[cells.length - 1].contains(launch)).toBe(false);
+    // Exactly one launch control per row.
+    expect(
+      screen.getAllByRole('button', { name: 'Quick launch a new session' }),
+    ).toHaveLength(1);
+  });
+
+  it('keeps the name cell text free of the Quick Launch icon (sort assertions read textContent)', () => {
+    const { container } = renderWithOne({ onQuickLaunch: vi.fn() });
+    expect(container.querySelector('tbody tr td')?.textContent).toBe('alpha');
+  });
+
   it('hides the Quick Launch icon when no onQuickLaunch prop is provided', () => {
     renderWithOne({}); // no onQuickLaunch
     expect(

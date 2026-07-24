@@ -421,18 +421,39 @@ export const ProjectList: React.FC<ProjectListProps> = ({
                     >
                       <td className="px-3 py-2 font-medium">
                         {/* Name renders as a link-styled <button> that opens
-                            the project's sessions page. The launch/sessions
-                            affordances live in the actions cell, so the name
-                            carries no trailing glyph. The rest of the row has
-                            no click target. */}
-                        <button
-                          type="button"
-                          onClick={() => { onProjectClick(project); }}
-                          className="inline-flex items-center gap-1 text-left text-foreground hover:underline focus-visible:underline focus:outline-none"
-                          title="View this project's sessions"
-                        >
-                          {getProjectName(project.path)}
-                        </button>
+                            the project's sessions page. Quick Launch rides
+                            along at the right edge of this column so the
+                            "start a session" affordance sits next to the
+                            thing it starts — the actions cell keeps Pin and
+                            Sessions. The rest of the row has no click
+                            target. */}
+                        <div className="flex items-center justify-between gap-2">
+                          <button
+                            type="button"
+                            onClick={() => { onProjectClick(project); }}
+                            className="inline-flex min-w-0 items-center gap-1 text-left text-foreground hover:underline focus-visible:underline focus:outline-none"
+                            title="View this project's sessions"
+                          >
+                            {getProjectName(project.path)}
+                          </button>
+                          {onQuickLaunch && (
+                            <TooltipSimple content="Quick launch a new session (skips the sessions page)">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  // Belt-and-suspenders: stop the click from
+                                  // bubbling to any future row-level handler.
+                                  e.stopPropagation();
+                                  void onQuickLaunch(project);
+                                }}
+                                className="shrink-0 p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                                aria-label="Quick launch a new session"
+                              >
+                                <Zap className="h-4 w-4" />
+                              </button>
+                            </TooltipSimple>
+                          )}
+                        </div>
                       </td>
                       <td className="px-3 py-2 text-muted-foreground font-mono text-xs truncate max-w-[420px]" title={project.path}>
                         {getDisplayPath(project.path, 60)}
@@ -474,23 +495,6 @@ export const ProjectList: React.FC<ProjectListProps> = ({
                                 aria-label={project.pinned ? "Unpin this project" : "Pin this project"}
                               >
                                 <Pin className={cn("h-4 w-4", project.pinned && "fill-current")} />
-                              </button>
-                            </TooltipSimple>
-                          )}
-                          {onQuickLaunch && (
-                            <TooltipSimple content="Quick launch a new session (skips the sessions page)">
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  // Belt-and-suspenders: stop the click from
-                                  // bubbling to any future row-level handler.
-                                  e.stopPropagation();
-                                  void onQuickLaunch(project);
-                                }}
-                                className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                                aria-label="Quick launch a new session"
-                              >
-                                <Zap className="h-4 w-4" />
                               </button>
                             </TooltipSimple>
                           )}
