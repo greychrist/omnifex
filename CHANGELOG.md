@@ -5,6 +5,31 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.100] — 2026-07-24
+
+### Fixed
+
+- **Account editor no longer stretches its content past the dialog edges.**
+  `DialogContent` is a grid whose single *implicit* column is sized `auto`, so
+  the track's base size is the largest min-content contribution of its
+  children — free to exceed the dialog's own content box. The session-defaults
+  row supplied that contribution (three `flex-1` fields wrapping
+  `whitespace-nowrap` triggers), widening the track for every sibling and
+  clipping the description, the inputs, and the Save button at the padding
+  edge. The column is now explicit as `minmax(0, 1fr)`, capping the track so
+  children shrink and their labels truncate. Fixes every dialog, not just the
+  account editor.
+
+### Changed
+
+- **Quick Launch moved into the Projects "Name" column**, right-aligned
+  against the column edge, so the launch affordance sits next to the thing it
+  launches. The actions cell keeps Pin + Sessions and no longer carries a
+  duplicate Zap icon.
+
+Installers remain **unsigned** — macOS Gatekeeper blocks first launch;
+right-click → Open to get past it.
+
 ## [0.4.99] — 2026-07-22
 
 ### Added
