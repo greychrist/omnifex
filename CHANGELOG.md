@@ -5,6 +5,60 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.101] — 2026-07-27
+
+### Added
+
+- **Account email verification.** Accounts can record the email their config
+  directory is expected to be signed in as, and OmniFex confirms it at session
+  start. Nothing in the `override → path rule → null` resolution chain checked
+  *who* was actually logged in, so a config dir silently re-authenticated as a
+  different account would happily run a session against it. The field lives in
+  the account editor with a **Detect** button that fills it from
+  `claude auth status --json`, and first-run discovery prefills it, so the
+  feature works without typing anything. Leaving it blank opts out — those
+  accounts perform zero extra I/O.
+
+- **Verification shields on the account badge.** Green check when the config
+  dir is signed in as the expected account, red alert when it's a different
+  account or signed out, muted question mark when the check couldn't run. The
+  shield replaces the engine brand mark only when there's a verdict to report;
+  accounts with no expected email keep the badge exactly as before, since
+  asserting "verified" for an unconfigured check would be a claim we haven't
+  earned.
+
+- **Session identity checks, twice, neither blocking.** A pre-flight read of
+  `<configDir>/.claude.json` before the CLI spawns (both chat and terminal
+  modes), then a stronger re-check against the account the CLI itself reports
+  in its `system:init` payload — the identity of the process actually running,
+  which catches a credential file that has gone stale. A mismatch shows a
+  dismissible banner naming expected vs detected; the session still starts.
+
+- **Restart session.** When a mismatch means the *running* process holds the
+  wrong credentials, the banner and the account popover offer a restart —
+  logging back in can't reach an already-spawned CLI. The restart stops the
+  process and cold-starts with `--resume`, preserving the conversation. When
+  the mismatch was only a stale expectation that now matches the session,
+  everything simply turns green and no restart is offered.
+
+- **Automatic re-checking.** One filesystem watcher per Claude config
+  directory, mirroring the existing Codex auth watcher: log out and back in
+  from a terminal and the shields self-correct without a restart or a manual
+  refresh. The badge in Settings and a **Re-check** button in the account
+  popover force an immediate check on demand.
+
+### Changed
+
+- The Settings account row now states the *passing* verdict, not just
+  failures. Rendering nothing on success made "verified", "not configured",
+  and "the check never ran" indistinguishable, which is how a silently broken
+  safety check gets mistaken for a clean bill of health. A config directory
+  that no account owns is now its own reported state rather than being folded
+  into "opted out", and it writes a warning to the app log.
+
+Installers remain **unsigned** — macOS Gatekeeper will block first launch;
+right-click → Open to run it.
+
 ## [0.4.100] — 2026-07-24
 
 ### Fixed
