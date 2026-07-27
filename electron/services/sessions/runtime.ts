@@ -14,6 +14,7 @@ import type {
   RateLimitHook,
   SessionOwnership,
   LoggingService,
+  AccountMismatch,
 } from './types';
 import type { AgentMessage } from '../agents/types';
 import { classifyRuntimeEvent } from './events';
@@ -51,6 +52,18 @@ export interface RuntimeDeps {
    * pre-session pickers stay warm without an ephemeral engine spawn.
    */
   modelCatalogSink?: ((configDir: string, models: unknown[]) => void) | null;
+  /**
+   * Optional identity re-check against the CLI's own init payload. Called with
+   * (configDir, observedEmail) on `system:init`. Returns a mismatch to report,
+   * or null. Stronger evidence than the pre-flight `.claude.json` read in
+   * lifecycle.start(): this is the identity of the process actually running
+   * the session, so it catches a stale credential file. Rich mode only — TUI
+   * sessions produce no init data. See
+   * docs/superpowers/specs/2026-07-27-account-email-verification-design.md
+   */
+  accountMismatchSink?:
+    | ((configDir: string, observedEmail: string | null) => AccountMismatch | null)
+    | null;
 }
 
 interface JsonlTailState {
@@ -152,6 +165,16 @@ export function listenToMessages(
               deps.modelCatalogSink(handle.configDir, initModels);
             } catch (err) {
               console.error('[sessions] model catalog write-through failed:', err);
+            }
+          }
+          if (deps.accountMismatchSink) {
+            const acct = handle.initData?.account as { email?: unknown } | undefined;
+            const observed = typeof acct?.email === 'string' ? acct.email : null;
+            try {
+              const mismatch = deps.accountMismatchSink(handle.configDir, observed);
+              if (mismatch) sendToRenderer(`session-account-mismatch:${tabId}`, mismatch);
+            } catch (err) {
+              console.error('[sessions] account mismatch re-check failed:', err);
             }
           }
           break;

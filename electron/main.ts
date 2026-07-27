@@ -66,6 +66,13 @@ import { createOneShotTerminalService } from './services/one-shot-terminal';
 import { createCodexAuthService } from './services/auth/codex-auth';
 import { createCodexSessionWalker } from './services/codex-session-walker';
 import {
+  readOauthIdentity,
+  probeAuthStatus,
+  classifyIdentity,
+  watchOauthIdentity,
+  type IdentityVerdict,
+} from './services/account-identity';
+import {
   createSessionsSummaryService,
   DEFAULT_SUMMARY_PROMPT,
   PROMPT_TEMPLATE_SETTING_KEY,
@@ -399,6 +406,7 @@ app.whenReady().then(() => {
     accounts: accountsService,
     db,
     discover: () => accountsService.discoverAccounts(),
+    readIdentity: readOauthIdentity,
   }).catch((err: unknown) => {
     console.error('[first-run-discovery] failed:', err);
   });
@@ -498,6 +506,41 @@ app.whenReady().then(() => {
   const modelsService = createModelsService(db);
   const commandsCatalogService = createCommandsCatalogService(db);
 
+  /**
+   * The one place a config dir is turned into an identity verdict. Feeds the
+   * session pre-flight check, the Settings row, and the session badge, so
+   * "verified" means exactly one thing across the app.
+   *
+   * Cheap by construction — the `.claude.json` read, never a CLI spawn —
+   * because the pre-flight path runs on every cold start.
+   */
+  const accountIdentityVerdict = (configDir: string): IdentityVerdict => {
+    const account = accountsService.getAccountByConfigDir(configDir);
+    const expected = account?.expected_email ?? null;
+    // Only read the file when there's an expectation to check it against.
+    const detected =
+      account && expected ? (readOauthIdentity(configDir)?.email ?? null) : null;
+    const status = classifyIdentity({
+      accountExists: !!account,
+      expected,
+      detected,
+    });
+    if (status === 'unknown-account') {
+      // Nothing owns this config dir, so nothing can be checked. This state is
+      // indistinguishable from "passed" unless we say so — a routing or
+      // path-normalization bug would otherwise silently disable verification
+      // while looking like a clean bill of health.
+      loggingService.writeBatch([{
+        timestamp: new Date().toISOString(),
+        level: 'warn',
+        source: 'backend',
+        category: 'account-identity',
+        message: `identity check skipped: no account owns configDir=${configDir}`,
+      }]);
+    }
+    return { status, expected, detected, configDir };
+  };
+
   const sessionsService = _sessionsService = createSessionsService(
     sendToRenderer,
     {
@@ -560,6 +603,40 @@ app.whenReady().then(() => {
     // Model-catalog write-through: live sessions persist their init-time
     // model list so pre-session pickers stay warm for this account.
     (configDir, models) => modelsService.upsertCatalog(configDir, models as ModelInfo[]),
+    // Account identity pre-flight. Cheap by construction — the `.claude.json`
+    // read, never a CLI spawn — because this runs on every cold start. An
+    // account with no expected_email short-circuits before any I/O.
+    (configDir: string) => {
+      const verdict = accountIdentityVerdict(configDir);
+      if (verdict.status !== 'mismatch' && verdict.status !== 'signed-out') return null;
+      return {
+        expected: verdict.expected!,
+        detected: verdict.detected,
+        configDir,
+        source: 'oauth-file' as const,
+      };
+    },
+    // Post-init re-check against the CLI's own reported identity. `observedEmail
+    // === null` returns null deliberately: an init payload with no account
+    // block is missing evidence, not evidence of absence, and the pre-flight
+    // check already covered the logged-out case.
+    (configDir: string, observedEmail: string | null) => {
+      if (observedEmail === null) return null;
+      const account = accountsService.getAccountByConfigDir(configDir);
+      const expected = account?.expected_email;
+      const status = classifyIdentity({
+        accountExists: !!account,
+        expected,
+        detected: observedEmail,
+      });
+      if (status !== 'mismatch') return null;
+      return {
+        expected: expected!,
+        detected: observedEmail,
+        configDir,
+        source: 'session-init' as const,
+      };
+    },
   );
   const claudeService = createClaudeService(db, accountsService);
   const usageService = createUsageService(accountsService, loggingService);
@@ -736,11 +813,52 @@ app.whenReady().then(() => {
     }
   }
   syncCodexAuthWatchers();
+
+  // Same shape as the Codex watchers above, for Claude accounts: watch each
+  // account's `.claude.json` so a logout/login done outside OmniFex (in a
+  // terminal) self-corrects the verification badges instead of leaving a stale
+  // red shield until the user remounts something. The watcher only fires on a
+  // real identity change, so this is quiet in the common case.
+  const identityWatchers = new Map<string, { dispose(): void }>();
+  function syncAccountIdentityWatchers(): void {
+    const claudeDirs = new Set(
+      accountsService
+        .listAccounts()
+        .filter((a) => a.engine === 'claude' && a.config_dir)
+        .map((a) => a.config_dir),
+    );
+    for (const [dir, sub] of identityWatchers) {
+      if (!claudeDirs.has(dir)) {
+        try { sub.dispose(); } catch { /* best-effort */ }
+        identityWatchers.delete(dir);
+      }
+    }
+    for (const dir of claudeDirs) {
+      if (identityWatchers.has(dir)) continue;
+      identityWatchers.set(
+        dir,
+        watchOauthIdentity(dir, () => {
+          const verdict = accountIdentityVerdict(dir);
+          for (const w of windows) {
+            if (!w.isDestroyed()) {
+              w.webContents.send('account-identity-changed', { configDir: dir, verdict });
+            }
+          }
+        }),
+      );
+    }
+  }
+  syncAccountIdentityWatchers();
+
   app.on('before-quit', () => {
     for (const sub of codexAuthWatchers.values()) {
       try { sub.dispose(); } catch { /* best-effort */ }
     }
     codexAuthWatchers.clear();
+    for (const sub of identityWatchers.values()) {
+      try { sub.dispose(); } catch { /* best-effort */ }
+    }
+    identityWatchers.clear();
   });
 
   const notificationSoundsService = createNotificationSoundsService({
@@ -774,8 +892,10 @@ app.whenReady().then(() => {
           icon: data.icon,
           sessionDefaults: data.sessionDefaults ?? data.session_defaults,
           cliPath: data.cliPath ?? data.cli_path ?? null,
+          expectedEmail: data.expectedEmail ?? data.expected_email ?? null,
         });
         syncCodexAuthWatchers();
+        syncAccountIdentityWatchers();
         return acct;
       },
       update: (_id: any, data: any) => {
@@ -791,8 +911,16 @@ app.whenReady().then(() => {
               ? (data.sessionDefaults ?? data.session_defaults)
               : undefined,
           cliPath: data.cliPath ?? data.cli_path ?? null,
+          // Same preserve-vs-set distinction as sessionDefaults: api.ts strips
+          // undefined before the invoke, so an absent key means "leave it",
+          // while an explicit null means "clear the check".
+          expectedEmail:
+            'expectedEmail' in data || 'expected_email' in data
+              ? ((data.expectedEmail ?? data.expected_email ?? null) as string | null)
+              : undefined,
         });
         syncCodexAuthWatchers();
+        syncAccountIdentityWatchers();
       },
       updateSummarySettings: (data: any) =>
         accountsService.updateSummarySettings(
@@ -803,6 +931,7 @@ app.whenReady().then(() => {
       delete: (id: any) => {
         accountsService.deleteAccount(id);
         syncCodexAuthWatchers();
+        syncAccountIdentityWatchers();
       },
       listPathRules: () => accountsService.listPathRules(),
       addPathRule: (rule: any) =>
@@ -821,6 +950,7 @@ app.whenReady().then(() => {
       scanForNewAccounts: async () => {
         const created = await accountsService.scanForNewAccounts();
         syncCodexAuthWatchers();
+        syncAccountIdentityWatchers();
         return created;
       },
       explainResolution: (projectPath: string, engine?: string) =>
@@ -1045,6 +1175,14 @@ app.whenReady().then(() => {
     },
     codexSessionWalker: {
       listSessions: () => codexSessionWalkerService.listSessions(),
+    },
+    accountIdentity: {
+      read: (configDir: string) => readOauthIdentity(configDir),
+      probe: (configDir: string) =>
+        probeAuthStatus(configDir, {
+          resolveBinary: () => claudeBinaryService.getPath(),
+        }),
+      verdict: (configDir: string) => accountIdentityVerdict(configDir),
     },
   });
 

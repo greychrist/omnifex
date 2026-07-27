@@ -474,6 +474,28 @@ const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 17,
+    description:
+      'Add expected_email to accounts — the address the user asserts this ' +
+      'config dir should be logged in as. Nullable; null means "do not check", ' +
+      'so the session-start verification does no I/O for accounts that have ' +
+      'not opted in. See ' +
+      'docs/superpowers/specs/2026-07-27-account-email-verification-design.md',
+    up: (db) => {
+      // No-op when `accounts` is missing. A bare `table_info` pragma returns []
+      // for a nonexistent table, which would read as "column absent" and send
+      // us into an ALTER against nothing — see the same guard on v7/v8.
+      const tableExists = db
+        .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='accounts'")
+        .get();
+      if (!tableExists) return;
+      const cols = db.pragma('table_info(accounts)') as { name: string }[];
+      if (!cols.some((c) => c.name === 'expected_email')) {
+        db.exec('ALTER TABLE accounts ADD COLUMN expected_email TEXT');
+      }
+    },
+  },
 ];
 
 /**

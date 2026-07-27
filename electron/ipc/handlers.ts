@@ -233,6 +233,16 @@ export interface Services {
     listSessions(): Promise<import('../services/codex-session-walker').CodexSessionEntry[]>;
   };
   /**
+   * Who is actually authenticated in a Claude config dir. `read` is the cheap
+   * `.claude.json` lookup — safe to call once per account row. `probe` spawns
+   * the CLI and must stay behind an explicit user action.
+   */
+  accountIdentity?: {
+    read(configDir: string): import('../services/account-identity').OauthIdentity | null;
+    probe(configDir: string): import('../services/account-identity').AuthStatus;
+    verdict(configDir: string): import('../services/account-identity').IdentityVerdict;
+  };
+  /**
    * Enables the arbitrary-SQL admin channel (`storage_execute_sql`). Set from
    * `!app.isPackaged` in main.ts so the raw-SQL escape hatch only exists in dev
    * builds — a compromised renderer (e.g. via rendered tool/MCP output) must not
@@ -309,7 +319,7 @@ function wrapWith<P>(fn: (params: P) => unknown): HandlerFn {
  * renderer gets a defined (but empty) response rather than a blocked channel.
  */
 export function getHandlerMap(services: Services = {}): Record<string, HandlerFn> {
-  const { accounts, claude, sessions, cost, usage, rateLimits, usageRunner, claudeBinary, mcp, slashCommands, sessionsSummary, logging, database, proxy, permissionsIO, models, commands, gitWatcher, branchColors, gitBranches, lima, filesystem, notificationSounds, oneShotTerminal, codexAuth, codexSessionWalker, allowRawSql } = services;
+  const { accounts, claude, sessions, cost, usage, rateLimits, usageRunner, claudeBinary, mcp, slashCommands, sessionsSummary, logging, database, proxy, permissionsIO, models, commands, gitWatcher, branchColors, gitBranches, lima, filesystem, notificationSounds, oneShotTerminal, codexAuth, codexSessionWalker, accountIdentity, allowRawSql } = services;
 
   // Positive account-ownership guard for config-editing channels. A non-empty
   // configDir supplied by the renderer must belong to a known account, so a
@@ -581,6 +591,15 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     ),
     accounts_validate_cli_path: wrapWith((p: Record<string, unknown>) =>
       validateCliPath(((p?.path ?? p?.cli_path) as string | null | undefined) ?? null),
+    ),
+    account_identity_read: wrapWith((p: Record<string, unknown>) =>
+      accountIdentity?.read((p?.configDir ?? p?.config_dir) as string) ?? null,
+    ),
+    account_identity_probe: wrapWith((p: Record<string, unknown>) =>
+      accountIdentity?.probe((p?.configDir ?? p?.config_dir) as string) ?? null,
+    ),
+    account_identity_verdict: wrapWith((p: Record<string, unknown>) =>
+      accountIdentity?.verdict((p?.configDir ?? p?.config_dir) as string) ?? null,
     ),
 
     // ── Claude Binary ─────────────────────────────────────────────────────────

@@ -54,4 +54,13 @@ describe('IPC channel contract', () => {
     const dead = [...allow].filter((ch) => !registered.has(ch));
     expect(dead).toEqual([]);
   });
+
+  it('exposes the account-identity channels with registered handlers', () => {
+    // Named explicitly so a half-wired change fails on the specific feature
+    // rather than only in the generic sweep above.
+    for (const ch of ['account_identity_read', 'account_identity_probe']) {
+      expect(allow.has(ch)).toBe(true);
+      expect(registered.has(ch)).toBe(true);
+    }
+  });
 });

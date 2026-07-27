@@ -14,7 +14,10 @@ import {
 import { SessionInspectorPanel } from "@/components/SessionInspectorPanel";
 import { Button } from "@/components/ui/button";
 import { Popover } from "@/components/ui/popover";
-import { api, type Session, type RateLimitSnapshot, type Account, type ResolvePair, type SessionMode } from "@/lib/api";
+import { api, type Session, type RateLimitSnapshot, type Account, type ResolvePair, type SessionMode, type AccountMismatch } from "@/lib/api";
+import { AccountMismatchBanner } from "@/components/AccountMismatchBanner";
+import { useAccountVerdict } from "@/hooks/useAccountVerdict";
+import { resolveSessionVerification } from "@/lib/accountVerification";
 import { cn } from "@/lib/utils";
 import { NewSessionForm } from "./NewSessionForm";
 import { AccountPickerDialog } from "./AccountPickerDialog";
@@ -375,6 +378,29 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   );
   // Adapt this tab's single resolved account into the per-engine ResolvePair
   // shape NewSessionForm now consumes. AgentSession only tracks one resolved
+  // Account identity verification, resolved once here and shared by the header
+  // banner and the account card so both make the same claim. Lives at this
+  // level (rather than inside AccountCard) because the banner needs it too.
+  const {
+    verdict: identityVerdict,
+    loaded: identityLoaded,
+    error: identityError,
+    recheck: recheckIdentity,
+  } = useAccountVerdict(accountResolution?.account.config_dir ?? null);
+
+  const sessionVerification = useMemo(
+    () =>
+      resolveSessionVerification({
+        verdict: identityVerdict,
+        // The session's own reported identity outranks the config-dir file.
+        // Null in TUI mode (no init payload) or before init lands.
+        sessionEmail: sdkAccountInfo?.email ?? null,
+        loaded: identityLoaded,
+        error: identityError,
+      }),
+    [identityVerdict, identityLoaded, identityError, sdkAccountInfo?.email],
+  );
+
   // account (the active tab's), so it lands in the slot for the current
   // engine; the other slot is null. The form only reads `account.name`, so the
   // synthesized Account fields beyond name/config_dir/subscription_label are
@@ -393,6 +419,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
       icon: null,
       session_defaults: a.session_defaults,
       cli_path: null,
+      expected_email: null,
       created_at: '',
       updated_at: '',
     };
@@ -674,6 +701,11 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   // (isSessionStarting / isSessionActive) below — they keep call sites
   // readable but are no longer independent state.
   const [sessionMode, setSessionMode] = useState<SessionMode>('rich');
+  // Set when this session's config dir turns out to be signed in as somebody
+  // other than the account's expected email. Cleared on session reset so a
+  // stale warning can't outlive the session that produced it.
+  const [accountMismatch, setAccountMismatch] = useState<AccountMismatch | null>(null);
+  const [restartingSession, setRestartingSession] = useState(false);
   // Open/close state for the SessionInspectorPanel — persisted across
   // app sessions so the user's preference sticks.
   const INSPECTOR_PREF_KEY = 'omnifex_session_inspector_open';
@@ -1601,6 +1633,32 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     return () => { unlisten(); };
   }, []);
 
+  // Secondary account confirmation. Main emits this when the session's config
+  // dir turns out to be authenticated as somebody other than the account's
+  // recorded email — from the pre-flight `.claude.json` read at start, and
+  // again from the CLI's own `system:init` payload in rich mode. Purely
+  // informational; the session is already running.
+  useEffect(() => {
+    const unlisten = window.electronAPI.onEvent(
+      `session-account-mismatch:${tabIdRef.current}`,
+      (...args: unknown[]) => {
+        const payload = args[0] as AccountMismatch | undefined;
+        if (payload) setAccountMismatch(payload);
+      },
+    );
+    return () => { unlisten(); };
+  }, []);
+
+  // Once the session is confirmed to be running as the expected account, drop
+  // the banner. This is the "the expectation was wrong, not the session" case:
+  // the user corrected the email, nothing needs restarting, so the warning has
+  // stopped being true and shouldn't linger.
+  useEffect(() => {
+    if (sessionVerification?.status === 'verified' && accountMismatch) {
+      setAccountMismatch(null);
+    }
+  }, [sessionVerification?.status, accountMismatch]);
+
   // Mirror model / permission-mode / effort changes the user makes inside a
   // live TUI session. In TUI mode the terminal owns these — the popover
   // pickers are read-only there — so this keeps them in sync when the user
@@ -1768,6 +1826,40 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     }
   };
 
+  /**
+   * Restart this session's CLI process, resuming the conversation.
+   *
+   * Deliberately NOT `handleReconnect`: that tries a cheap rebind first, which
+   * reattaches to the same still-running process. The whole point here is that
+   * the running process holds credentials for the wrong account, so it must be
+   * torn down and respawned — a re-login can't reach an existing process.
+   */
+  const handleRestartSession = async () => {
+    const tid = tabIdRef.current;
+    setRestartingSession(true);
+    try {
+      persistentSessionRef.current = false;
+      try { await api.stopSession(tid); } catch { /* best effort */ }
+
+      unlistenRefs.current.forEach((u) => { u(); });
+      unlistenRefs.current = [];
+
+      resetStatus({ sessionStatus: 'stopped', conversationStatus: null });
+      setIsLoading(false);
+      setError(null);
+      // Clear the stale verdict; the fresh session re-reports its identity.
+      setAccountMismatch(null);
+      setSdkAccountInfo(null);
+
+      await startPersistentSession(claudeSessionId ?? undefined);
+    } catch (err) {
+      console.error('restart: startPersistentSession failed:', err);
+      setError('Failed to restart session: ' + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setRestartingSession(false);
+    }
+  };
+
   const handleClear = async () => {
     if (!isSessionActive || isLoading || waitingForPermission) return;
     const tid = tabIdRef.current;
@@ -1799,6 +1891,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     setContextUsage(null);
     setSdkAccountInfo(null);
     setExtractedSessionInfo(null);
+    setAccountMismatch(null);
 
     // Spin up a fresh session (no resumeId) so the user can keep typing.
     try {
@@ -2003,6 +2096,14 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
               configDir={accountResolution.account.config_dir}
               matchType={accountResolution.match_type}
               matchDetail={accountResolution.match_detail}
+              verification={sessionVerification}
+              onRecheck={recheckIdentity}
+              onRestart={
+                sessionVerification?.needsRestart
+                  ? () => { void handleRestartSession(); }
+                  : null
+              }
+              restarting={restartingSession}
               sdkAccount={sdkAccountInfo}
               fiveHourRateLimit={rateLimitSnapshots.five_hour ?? null}
               sevenDayRateLimit={rateLimitSnapshots.seven_day ?? null}
@@ -2197,6 +2298,21 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
             <div className="absolute left-1/2 -translate-x-1/2 bottom-0 h-0.5 w-12 rounded-full bg-foreground/15 transition-colors group-hover:bg-foreground/40" />
           </div>
         </div>
+        {/* Sits outside the header, which carries an explicit resizable
+            height — putting the banner inside would eat the user's layout. */}
+        <AccountMismatchBanner
+          mismatch={accountMismatch}
+          onDismiss={() => { setAccountMismatch(null); }}
+          // Only offer a restart when it would actually change something. If
+          // the expectation was corrected and now matches the running session,
+          // needsRestart is false and the button stays away.
+          onRestart={
+            sessionVerification?.needsRestart
+              ? () => { void handleRestartSession(); }
+              : null
+          }
+          restarting={restartingSession}
+        />
         {!sessionStarted && (
           <div className="flex-1 flex items-center justify-center p-8">
             <NewSessionForm

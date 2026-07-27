@@ -35,6 +35,13 @@ export interface Account {
   icon: string | null;
   session_defaults?: SessionDefaults;
   cli_path: string | null;
+  /**
+   * The email the user asserts this config dir should be authenticated as.
+   * Null means "don't check" — the session-start verification is skipped
+   * entirely and does no I/O. Set from Settings, prefilled by discovery.
+   * See docs/superpowers/specs/2026-07-27-account-email-verification-design.md
+   */
+  expected_email: string | null;
   created_at: string;
   updated_at: string;
   /** Whether per-session summaries auto-generate on tab close. */
@@ -54,6 +61,8 @@ export interface CreateAccountOptions {
   icon?: string;
   sessionDefaults?: SessionDefaults;
   cliPath?: string | null;
+  /** Expected login email. Omit or pass null for "don't check". */
+  expectedEmail?: string | null;
 }
 
 export interface UpdateAccountOptions {
@@ -66,6 +75,8 @@ export interface UpdateAccountOptions {
   icon?: string;
   sessionDefaults?: SessionDefaults | null;
   cliPath?: string | null;
+  /** undefined preserves the current value, null clears it, string sets it. */
+  expectedEmail?: string | null;
 }
 
 export interface PathRule {
@@ -114,6 +125,13 @@ export interface ResolvePair {
 
 export interface AccountsService {
   listAccounts(): Account[];
+  /**
+   * Look up the account that owns a config dir, comparing normalized paths so
+   * a trailing slash or `~` doesn't miss. Null when no account claims it.
+   * Note this is a reverse lookup, NOT resolution — it never participates in
+   * the override → path rule → null chain.
+   */
+  getAccountByConfigDir(configDir: string): Account | null;
   createAccount(opts: CreateAccountOptions): Account;
   updateAccount(id: number, opts: UpdateAccountOptions): void;
   /** Update the per-session summarization opt-in for an account. Pass
@@ -169,6 +187,7 @@ interface AccountRow {
   icon: string | null;
   session_defaults: string | null;
   cli_path: string | null;
+  expected_email: string | null;
   created_at: string;
   updated_at: string;
   summarizeOnClose: number; // SQLite stores 0/1
@@ -220,6 +239,7 @@ function rowToAccount(row: AccountRow): Account {
       ? normalizeSessionDefaults(JSON.parse(row.session_defaults))
       : undefined,
     cli_path: row.cli_path,
+    expected_email: row.expected_email ?? null,
     created_at: row.created_at,
     updated_at: row.updated_at,
     summarizeOnClose: row.summarizeOnClose !== 0,
@@ -260,12 +280,20 @@ export function createAccountsService(db: Database): AccountsService {
     return rows.map(rowToAccount);
   }
 
+  function getAccountByConfigDir(configDir: string): Account | null {
+    if (!configDir) return null;
+    const target = normalizePath(configDir);
+    const rows = raw.prepare('SELECT * FROM accounts').all() as AccountRow[];
+    const match = rows.find((r) => normalizePath(r.config_dir) === target);
+    return match ? rowToAccount(match) : null;
+  }
+
   function createAccount(opts: CreateAccountOptions): Account {
     const info = raw
       .prepare(
         `INSERT INTO accounts
-           (name, config_dir, engine, subscription_label, has_cost, color, icon, session_defaults, cli_path)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           (name, config_dir, engine, subscription_label, has_cost, color, icon, session_defaults, cli_path, expected_email)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         opts.name,
@@ -277,6 +305,7 @@ export function createAccountsService(db: Database): AccountsService {
         opts.icon ?? null,
         opts.sessionDefaults ? JSON.stringify(opts.sessionDefaults) : null,
         opts.cliPath ?? null,
+        opts.expectedEmail ?? null,
       );
 
     const row = raw
@@ -293,6 +322,12 @@ export function createAccountsService(db: Database): AccountsService {
     const hasCostValue =
       opts.hasCost === undefined ? null : opts.hasCost ? 1 : 0;
 
+    // expected_email needs three-way semantics (set / preserve / clear), and
+    // COALESCE can't express them: "clear it" and "leave it" both arrive as
+    // SQL NULL. The explicit flag column distinguishes them.
+    const setExpectedEmail = opts.expectedEmail === undefined ? 0 : 1;
+    const expectedEmailValue = opts.expectedEmail ?? null;
+
     if (opts.sessionDefaults !== undefined) {
       raw
         .prepare(
@@ -301,6 +336,7 @@ export function createAccountsService(db: Database): AccountsService {
                subscription_label = COALESCE(?, subscription_label),
                has_cost = COALESCE(?, has_cost),
                color = ?, icon = ?, session_defaults = ?, cli_path = ?,
+               expected_email = CASE WHEN ? = 1 THEN ? ELSE expected_email END,
                updated_at = CURRENT_TIMESTAMP
            WHERE id = ?`,
         )
@@ -313,6 +349,8 @@ export function createAccountsService(db: Database): AccountsService {
           opts.icon ?? null,
           opts.sessionDefaults !== null ? JSON.stringify(opts.sessionDefaults) : null,
           opts.cliPath ?? null,
+          setExpectedEmail,
+          expectedEmailValue,
           id,
         );
     } else {
@@ -322,7 +360,9 @@ export function createAccountsService(db: Database): AccountsService {
            SET name = ?, config_dir = ?,
                subscription_label = COALESCE(?, subscription_label),
                has_cost = COALESCE(?, has_cost),
-               color = ?, icon = ?, cli_path = ?, updated_at = CURRENT_TIMESTAMP
+               color = ?, icon = ?, cli_path = ?,
+               expected_email = CASE WHEN ? = 1 THEN ? ELSE expected_email END,
+               updated_at = CURRENT_TIMESTAMP
            WHERE id = ?`,
         )
         .run(
@@ -333,6 +373,8 @@ export function createAccountsService(db: Database): AccountsService {
           opts.color ?? null,
           opts.icon ?? null,
           opts.cliPath ?? null,
+          setExpectedEmail,
+          expectedEmailValue,
           id,
         );
     }
@@ -584,6 +626,7 @@ export function createAccountsService(db: Database): AccountsService {
 
   return {
     listAccounts,
+    getAccountByConfigDir,
     createAccount,
     updateAccount,
     updateSummarySettings,

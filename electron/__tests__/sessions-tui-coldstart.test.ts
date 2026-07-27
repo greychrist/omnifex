@@ -154,4 +154,44 @@ describe('start({ mode: "tui" })', () => {
 
     fs.rmSync(tmpConfig, { recursive: true, force: true });
   });
+
+  // TUI mode produces no init data, so the pre-flight file read is the ONLY
+  // identity check these sessions ever get. If it stops firing here, TUI
+  // sessions silently lose verification entirely.
+  it('runs the account identity pre-flight before the TUI cold start', async () => {
+    vi.mocked(ptySpawn).mockReset();
+    vi.mocked(ptySpawn).mockImplementation(() => {
+      throw new Error('pty spawn failed');
+    });
+
+    const sent: Array<[string, unknown]> = [];
+    const sessions = createSessionsService(
+      (ch: string, ...args: unknown[]) => { sent.push([ch, args[0]]); },
+      undefined, null, null, null, null, null, null, null,
+      (() => ({
+        expected: 'work@example.com',
+        detected: null,
+        configDir: '/tmp/.claude-personal',
+        source: 'oauth-file' as const,
+      })) as never,
+    );
+
+    await Promise.resolve(
+      sessions.start({
+        tabId: 'tui-mismatch',
+        projectPath: '/Users/test/proj',
+        configDir: '/tmp/.claude-personal',
+        model: '',
+        permissionMode: '',
+        mode: 'tui',
+      }),
+    ).catch(() => { /* spawn failure is irrelevant — the check runs first */ });
+
+    expect(sent.find(([ch]) => ch === 'session-account-mismatch:tui-mismatch')?.[1]).toEqual({
+      expected: 'work@example.com',
+      detected: null,
+      configDir: '/tmp/.claude-personal',
+      source: 'oauth-file',
+    });
+  });
 });

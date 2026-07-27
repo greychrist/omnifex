@@ -50,6 +50,7 @@ function makeAccount(over: Partial<Account> & Pick<Account, 'name' | 'engine'>):
     color: null,
     icon: null,
     cli_path: null,
+    expected_email: null,
     created_at: '',
     updated_at: '',
     ...over,

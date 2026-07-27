@@ -52,6 +52,7 @@ function makeAccount(overrides: Partial<Account> = {}): Account {
     color: null,
     icon: null,
     cli_path: null,
+    expected_email: null,
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
     ...overrides,
@@ -65,6 +66,7 @@ function makeAccountsService(configDirs: string[]): AccountsService {
 
   return {
     listAccounts: () => accounts,
+    getAccountByConfigDir: () => null,
     createAccount: () => accounts[0],
     updateAccount: () => {},
     updateSummarySettings: () => {},
@@ -976,6 +978,7 @@ describe('usage service', () => {
       ];
       const svc = createUsageService({
         listAccounts: () => accounts,
+        getAccountByConfigDir: () => null,
         createAccount: () => accounts[0],
         updateAccount: () => {},
         updateSummarySettings: () => {},
@@ -1023,6 +1026,7 @@ describe('usage service', () => {
       const accounts = [makeAccount({ id: 1, name: 'Test', config_dir: dir })];
       const svc = createUsageService({
         listAccounts: () => accounts,
+        getAccountByConfigDir: () => null,
         createAccount: () => accounts[0],
         updateAccount: () => {},
         updateSummarySettings: () => {},

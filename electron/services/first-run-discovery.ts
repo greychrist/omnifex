@@ -39,6 +39,14 @@ export interface FirstTimeDiscoveryDeps {
   db: Pick<Database, 'getSetting' | 'saveSetting'>;
   /** Returns the engine-tagged config dirs to seed accounts from. */
   discover: () => Promise<DiscoveredConfigDir[]>;
+  /**
+   * Reads the OAuth identity for a config dir so discovered accounts get their
+   * expected email prefilled — account email verification then works without
+   * the user typing anything. Injectable for tests; main passes
+   * `readOauthIdentity` from services/account-identity.ts. Omitted means no
+   * prefill (accounts are created with expected_email = null, i.e. no check).
+   */
+  readIdentity?: (configDir: string) => { email: string | null } | null;
 }
 
 export interface FirstTimeDiscoveryResult {
@@ -67,7 +75,11 @@ export async function runFirstTimeDiscovery(
   const created: Array<{ name: string; configDir: string; engine: AccountEngine }> = [];
   for (const { dirName, configDir, engine } of found) {
     const name = nameFromConfigDir(dirName, engine);
-    deps.accounts.createAccount({ name, configDir, engine });
+    // Claude only — Codex identity lives in ~/.codex/auth.json and is already
+    // surfaced by codexAuth.getStatus, so there's nothing to prefill here.
+    const expectedEmail =
+      engine === 'claude' ? (deps.readIdentity?.(configDir)?.email ?? null) : null;
+    deps.accounts.createAccount({ name, configDir, engine, expectedEmail });
     created.push({ name, configDir, engine });
   }
 

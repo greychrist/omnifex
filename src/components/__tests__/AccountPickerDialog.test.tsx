@@ -43,6 +43,7 @@ function makeAccount(partial: Partial<Account> & Pick<Account, 'id' | 'name' | '
     color: null,
     icon: null,
     cli_path: null,
+    expected_email: null,
     created_at: '',
     updated_at: '',
     ...partial,

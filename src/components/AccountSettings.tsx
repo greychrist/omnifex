@@ -9,7 +9,8 @@ import {
 } from "@/lib/api";
 import { AccountBadge } from "@/components/AccountBadge";
 import { useAccounts } from "@/contexts/AccountsContext";
-import { Trash2, Plus, Pencil, FolderOpen } from "lucide-react";
+import { useAccountVerdict } from "@/hooks/useAccountVerdict";
+import { Trash2, Plus, Pencil, FolderOpen, ShieldCheck, ShieldAlert, ShieldQuestion } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { fireAndLog, logAndForget } from "@/lib/fireAndLog";
 import {
@@ -80,6 +81,136 @@ const EnginePill: React.FC<{ engine: AccountEngine }> = ({ engine }) => (
     {engine === "codex" ? "Codex" : "Claude"}
   </span>
 );
+
+/**
+ * One row in the accounts list.
+ *
+ * Extracted from the enclosing `.map()` specifically so it can call
+ * `useAccountVerdict` — hooks can't run inside a map callback. The row is
+ * also where the expected-vs-detected email check surfaces.
+ */
+const AccountListRow: React.FC<{
+  account: Account;
+  onEdit: (account: Account) => void;
+  onDelete: (id: number) => void;
+}> = ({ account, onEdit, onDelete }) => {
+  // Passing null disables the hook entirely, so accounts that haven't opted
+  // into verification cost zero IPC round-trips. The comparison itself lives
+  // in the main process (`classifyIdentity`) — this row only renders the
+  // answer, so there's no second definition of "verified" to drift.
+  const { verdict, loaded, error, recheck } = useAccountVerdict(
+    account.expected_email ? account.config_dir : null,
+  );
+  const expected = account.expected_email;
+  const detected = verdict?.detected ?? null;
+
+  // Deliberately renders the PASSING case too. Showing nothing on success
+  // would make "verified", "opted out", and "the check never ran" look
+  // identical — which is how a silently broken safety check gets mistaken for
+  // a clean bill of health. `error` stays distinct from `signed-out`: a failed
+  // read is not evidence about account state.
+  const status: 'verified' | 'mismatch' | 'signed-out' | 'error' | null = !expected
+    ? null
+    : error
+      ? 'error'
+      : !loaded
+        ? null
+        : verdict?.status === 'verified'
+          ? 'verified'
+          : verdict?.status === 'mismatch'
+            ? 'mismatch'
+            : verdict?.status === 'signed-out'
+              ? 'signed-out'
+              : 'error';
+
+  return (
+    <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg border border-border bg-muted/30">
+      <AccountBadge name={account.name} color={account.color} />
+      <EnginePill engine={account.engine} />
+      <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
+        {account.subscription_label}
+      </span>
+      {!account.has_cost && (
+        <span className="text-[10px] font-medium text-muted-foreground/70 uppercase tracking-wide">
+          no cost
+        </span>
+      )}
+      {status !== null && (
+        // Text color, not a border: unlayered `* { border-color }` in
+        // styles.css overrides Tailwind border-color utilities app-wide.
+        <button
+          type="button"
+          onClick={recheck}
+          aria-label={`Re-check account identity for ${account.name}`}
+          className={cn(
+            "text-[10px] font-medium whitespace-nowrap flex items-center gap-1",
+            "hover:underline focus:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded",
+            status === "verified"
+              ? "text-emerald-500"
+              : status === "error"
+                ? "text-muted-foreground"
+                : "text-red-500",
+          )}
+          title={
+            (status === "verified"
+              ? `This config dir is signed in as the expected account (${expected}).`
+              : status === "error"
+                ? "Could not read this config dir's signed-in account. This is not the same as being signed out."
+                : `Expected ${expected}.`) + " Click to re-check."
+          }
+        >
+          {status === "verified" && (
+            <>
+              <ShieldCheck className="h-3 w-3" strokeWidth={2.4} aria-hidden="true" />
+              {`Verified: ${detected}`}
+            </>
+          )}
+          {status === "error" && (
+            <>
+              <ShieldQuestion className="h-3 w-3" strokeWidth={2.4} aria-hidden="true" />
+              Couldn&apos;t verify
+            </>
+          )}
+          {status === "signed-out" && (
+            <>
+              <ShieldAlert className="h-3 w-3" strokeWidth={2.4} aria-hidden="true" />
+              Not signed in
+            </>
+          )}
+          {status === "mismatch" && (
+            <>
+              <ShieldAlert className="h-3 w-3" strokeWidth={2.4} aria-hidden="true" />
+              {`Signed in as ${detected}`}
+            </>
+          )}
+        </button>
+      )}
+      <span className="text-xs text-muted-foreground flex-1 truncate">
+        {account.config_dir}
+      </span>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-6 px-2 text-xs text-muted-foreground"
+        onClick={() => { onEdit(account); }}
+        title="Edit"
+        aria-label={`Edit ${account.name}`}
+      >
+        <Pencil className="w-3 h-3" />
+      </Button>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-6 px-2 text-xs text-muted-foreground hover:text-destructive"
+        onClick={fireAndLog('account-settings:click', () => onDelete(account.id))}
+        title="Delete"
+        aria-label={`Delete ${account.name}`}
+      >
+        <Trash2 className="w-3 h-3" />
+      </Button>
+    </div>
+  );
+};
 
 export const AccountSettings: React.FC = () => {
   const { refresh: refreshAccountsContext } = useAccounts();
@@ -178,6 +309,7 @@ export const AccountSettings: React.FC = () => {
           color: payload.color,
           icon: payload.icon,
           sessionDefaults: payload.sessionDefaults ?? null,
+          expectedEmail: payload.expectedEmail,
         });
       } else {
         await api.createAccount({
@@ -189,6 +321,7 @@ export const AccountSettings: React.FC = () => {
           color: payload.color,
           icon: payload.icon,
           sessionDefaults: payload.sessionDefaults,
+          expectedEmail: payload.expectedEmail,
         });
       }
       closeDialog();
@@ -236,44 +369,12 @@ export const AccountSettings: React.FC = () => {
         <h3 className="text-sm font-semibold mb-3">Accounts</h3>
         <div className="space-y-2">
           {accounts.map((account) => (
-            <div
+            <AccountListRow
               key={account.id}
-              className="flex items-center gap-3 px-3 py-2.5 rounded-lg border border-border bg-muted/30"
-            >
-              <AccountBadge name={account.name} color={account.color} />
-              <EnginePill engine={account.engine} />
-              <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
-                {account.subscription_label}
-              </span>
-              {!account.has_cost && (
-                <span className="text-[10px] font-medium text-muted-foreground/70 uppercase tracking-wide">
-                  no cost
-                </span>
-              )}
-              <span className="text-xs text-muted-foreground flex-1 truncate">
-                {account.config_dir}
-              </span>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-6 px-2 text-xs text-muted-foreground"
-                onClick={() => { openEdit(account); }}
-                title="Edit"
-                aria-label={`Edit ${account.name}`}
-              >
-                <Pencil className="w-3 h-3" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-6 px-2 text-xs text-muted-foreground hover:text-destructive"
-                onClick={fireAndLog('account-settings:click', () => handleDelete(account.id))}
-                title="Delete"
-                aria-label={`Delete ${account.name}`}
-              >
-                <Trash2 className="w-3 h-3" />
-              </Button>
-            </div>
+              account={account}
+              onEdit={openEdit}
+              onDelete={handleDelete}
+            />
           ))}
         </div>
 

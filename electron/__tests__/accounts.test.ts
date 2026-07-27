@@ -508,4 +508,67 @@ describe('accounts service', () => {
       expect(reread.summaryModel).toBeNull();
     });
   });
+
+  // -----------------------------------------------------------------------
+  // expected_email — the address the user asserts a config dir should be
+  // authenticated as. Null means "don't check".
+  // -----------------------------------------------------------------------
+
+  describe('expected_email', () => {
+    it('defaults to null on a freshly created account', () => {
+      const acct = accounts.createAccount({ name: 'personal', configDir: '/tmp/.claude-personal' });
+      expect(acct.expected_email).toBeNull();
+    });
+
+    it('round-trips expectedEmail through createAccount', () => {
+      const acct = accounts.createAccount({
+        name: 'personal',
+        configDir: '/tmp/.claude-personal',
+        expectedEmail: 'gpchristie@gmail.com',
+      });
+      expect(acct.expected_email).toBe('gpchristie@gmail.com');
+    });
+
+    it('updateAccount sets, preserves on undefined, and clears on null', () => {
+      const acct = accounts.createAccount({
+        name: 'personal',
+        configDir: '/tmp/.claude-personal',
+        expectedEmail: 'a@example.com',
+      });
+      const base = { name: 'personal', configDir: '/tmp/.claude-personal' };
+
+      accounts.updateAccount(acct.id, { ...base, expectedEmail: 'b@example.com' });
+      expect(accounts.listAccounts()[0].expected_email).toBe('b@example.com');
+
+      // undefined preserves
+      accounts.updateAccount(acct.id, { ...base });
+      expect(accounts.listAccounts()[0].expected_email).toBe('b@example.com');
+
+      // null clears
+      accounts.updateAccount(acct.id, { ...base, expectedEmail: null });
+      expect(accounts.listAccounts()[0].expected_email).toBeNull();
+    });
+
+    it('preserves expectedEmail across an update that also writes sessionDefaults', () => {
+      const acct = accounts.createAccount({
+        name: 'personal',
+        configDir: '/tmp/.claude-personal',
+        expectedEmail: 'a@example.com',
+      });
+      accounts.updateAccount(acct.id, {
+        name: 'personal',
+        configDir: '/tmp/.claude-personal',
+        sessionDefaults: { model: 'claude-opus-5' },
+      });
+      expect(accounts.listAccounts()[0].expected_email).toBe('a@example.com');
+    });
+
+    it('getAccountByConfigDir finds an account by normalized path and returns null otherwise', () => {
+      accounts.createAccount({ name: 'personal', configDir: '/tmp/.claude-personal' });
+      expect(accounts.getAccountByConfigDir('/tmp/.claude-personal')?.name).toBe('personal');
+      expect(accounts.getAccountByConfigDir('/tmp/.claude-personal/')?.name).toBe('personal');
+      expect(accounts.getAccountByConfigDir('/tmp/.claude-nope')).toBeNull();
+      expect(accounts.getAccountByConfigDir('')).toBeNull();
+    });
+  });
 });

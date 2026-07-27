@@ -20,6 +20,7 @@ import type {
   PersistPermissionRuleFn,
   RateLimitHook,
   ElicitationDecision,
+  AccountMismatch,
 } from './types';
 import {
   createPermissionRequestHandler,
@@ -84,6 +85,26 @@ export function createSessionsService(
    * pre-session pickers stay warm without ephemeral engine spawns.
    */
   modelCatalogSink: ((configDir: string, models: unknown[]) => void) | null = null,
+  /**
+   * Optional identity verifier. Given the resolved configDir, returns an
+   * AccountMismatch when the account's `expected_email` disagrees with whoever
+   * is actually authenticated there, or null when it matches / no expectation
+   * is set. Injected as a closure so lifecycle keeps no DB dependency.
+   *
+   * MUST be cheap — this runs on every cold start. main.ts wires it to the
+   * `.claude.json` read, never to a CLI spawn. See
+   * docs/superpowers/specs/2026-07-27-account-email-verification-design.md
+   */
+  verifyAccountIdentity: ((configDir: string) => AccountMismatch | null) | null = null,
+  /**
+   * Optional post-init identity re-check, forwarded to runtime. Compares
+   * against the account email the CLI reports in its own `system:init`
+   * payload — the identity of the running process, so it catches a stale
+   * `.claude.json` that the pre-flight check would have believed.
+   */
+  accountMismatchSink:
+    | ((configDir: string, observedEmail: string | null) => AccountMismatch | null)
+    | null = null,
 ): SessionsService {
   const sessions = new Map<string, SessionHandle>();
   // Hoisted so both the public return and stop()'s plugin-cache eviction
@@ -98,6 +119,7 @@ export function createSessionsService(
     sessions,
     logging,
     modelCatalogSink,
+    accountMismatchSink,
   };
 
   // -------------------------------------------------------------------------
@@ -133,6 +155,33 @@ export function createSessionsService(
           }]);
         }
         configDir = resolved;
+      }
+    }
+
+    // Secondary confirmation: is this config dir actually logged in as the
+    // account we think it is? Deliberately sits ABOVE the mode branch so TUI
+    // and rich sessions share one call site, and runs against the RE-RESOLVED
+    // configDir — checking the renderer-supplied one would verify the wrong
+    // account exactly when a path rule just changed. Never blocks: the session
+    // starts either way. See
+    // docs/superpowers/specs/2026-07-27-account-email-verification-design.md
+    if (verifyAccountIdentity && configDir) {
+      try {
+        const mismatch = verifyAccountIdentity(configDir);
+        if (mismatch) {
+          sendToRenderer(`session-account-mismatch:${tabId}`, mismatch);
+          logging?.writeBatch([{
+            timestamp: new Date().toISOString(),
+            level: 'warn',
+            source: 'backend',
+            category: `session:${tabId}`,
+            message:
+              `account identity mismatch: expected=${mismatch.expected} ` +
+              `detected=${mismatch.detected ?? '(not signed in)'} configDir=${configDir}`,
+          }]);
+        }
+      } catch (err) {
+        console.error('[sessions] account identity verification failed:', err);
       }
     }
 

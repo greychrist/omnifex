@@ -140,7 +140,22 @@ Notes:
 - Renderer components subscribing to `session-status:<tabId>` directly. The hook owns that subscription; consumers read the derived state.
 - Dropping a turn-closing `cli-stream-result` row from `messages[]` (e.g. to hide a card). The trailing partial assistant carries `stop_reason: null`, so the result row is the only thing that lets `waitingOnClaude()` settle — drop it and the per-tab "Turn in flight" rollup sticks on WORKING forever, even though `isLoading` cleared. If a result must not render as-is, keep it in `messages[]` and rewrite its presentation (the user-cancel path neutralizes `is_error` via the reducer's `replaceWith`), never `append: 'skip'` it.
 
+## Account identity verification
+
+An account may carry an `expected_email` (nullable column on `accounts`, migration v17). When set, session start performs a secondary confirmation that the resolved config dir is actually authenticated as that address. Null means no check and no I/O — an account that hasn't opted in costs nothing on the start path.
+
+Two checks, both **non-blocking** — the session starts regardless:
+
+1. **Pre-flight** — `lifecycle.start()`, both rich and TUI modes. Reads `<configDir>/.claude.json` → `oauthAccount.emailAddress`. Runs against the **re-resolved** config dir, not the one the renderer supplied, so a path-rule change between form-mount and Start-click can't cause the wrong account to be verified. No CLI spawn.
+2. **Post-init** — `runtime.ts`, rich mode only. Compares against `account.email` in the CLI's own `system:init` payload. Stronger evidence: that is the identity of the process actually running the session, so it catches a `.claude.json` that has gone stale.
+
+Both emit `session-account-mismatch:<tabId>` with `{ expected, detected, configDir, source }`, where `source` is `'oauth-file'` or `'session-init'`. `detected: null` means nobody is signed in, which is treated as a mismatch — it's the same failure class as being signed in as the wrong person. Comparison is trimmed and case-insensitive, with no Gmail dot-folding or plus-address normalization.
+
+**Known limitation:** TUI-mode sessions get only check 1, because TUI mode produces no init data (`getInitData()` returns null). A credential state that has drifted from `.claude.json` will therefore not be caught in TUI mode. `claude auth status --json` is the authoritative answer and is available in Settings behind the **Detect** button; it is deliberately never run on the session-start path because it costs a process spawn.
+
+Spec: `docs/superpowers/specs/2026-07-27-account-email-verification-design.md`
+
 ## Where the canonical types live
 
-- `electron/services/sessions/types.ts` — `SessionStatus` enum plus the `SessionHandle` shape. Re-exported via `src/lib/api.ts` for the renderer.
+- `electron/services/sessions/types.ts` — `SessionStatus` enum plus the `SessionHandle` shape, and `AccountMismatch` (the `session-account-mismatch` payload). Re-exported via `src/lib/api.ts` for the renderer.
 - `src/lib/sessionDerivedState.ts` — `ConversationStatus` type and all derivation functions. Also re-exported (as `@deprecated`) via `src/lib/api.ts` for backward compatibility — prefer the direct import.

@@ -104,6 +104,14 @@ export const INVOKE_CHANNELS: readonly string[] = [
   'usage_run_cli',
   'usage_get_last',
   'accounts_validate_cli_path',
+  // Account identity — who is actually logged in to a config dir.
+  // `_read` is the cheap .claude.json read (safe to call per-row);
+  // `_probe` spawns `claude auth status --json` (explicit user action only).
+  'account_identity_read',
+  'account_identity_probe',
+  // Full verdict for a config dir (account lookup + read + compare done in
+  // main). The renderer never re-implements the comparison.
+  'account_identity_verdict',
 
   // Claude Binary
   'get_claude_binary_path',
@@ -251,4 +259,10 @@ export const EVENT_CHANNEL_PREFIXES: readonly string[] = [
 ];
 
 /** Event channels matched exactly (no suffix). */
-export const EVENT_CHANNEL_EXACT: readonly string[] = ['log-error'];
+export const EVENT_CHANNEL_EXACT: readonly string[] = [
+  'log-error',
+  // Broadcast when a Claude account's signed-in identity actually changes on
+  // disk, so verification badges self-correct after a logout/login performed
+  // outside OmniFex. Payload: { configDir, verdict }.
+  'account-identity-changed',
+];

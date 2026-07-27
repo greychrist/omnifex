@@ -55,6 +55,52 @@ describe('runFirstTimeDiscovery', () => {
     expect(byName['Work'].config_dir).toBe('/home/user/.codex-work');
   });
 
+  // Prefilling expected_email means account email verification works out of
+  // the box, without the user typing anything into Settings first.
+  it('prefills expectedEmail for discovered Claude accounts', async () => {
+    await runFirstTimeDiscovery({
+      accounts,
+      db,
+      discover: fakeDiscoverTwo,
+      readIdentity: () => ({ email: 'gpchristie@gmail.com' }),
+    });
+
+    const list = accounts.listAccounts();
+    const byName = Object.fromEntries(list.map((a) => [a.name, a]));
+    expect(byName['Claude'].expected_email).toBe('gpchristie@gmail.com');
+  });
+
+  it('leaves expectedEmail unset for codex accounts (their identity lives elsewhere)', async () => {
+    await runFirstTimeDiscovery({
+      accounts,
+      db,
+      discover: fakeDiscoverTwo,
+      readIdentity: () => ({ email: 'gpchristie@gmail.com' }),
+    });
+
+    const byName = Object.fromEntries(accounts.listAccounts().map((a) => [a.name, a]));
+    expect(byName['Work'].expected_email).toBeNull();
+  });
+
+  it('leaves expectedEmail unset when no identity can be read', async () => {
+    await runFirstTimeDiscovery({
+      accounts,
+      db,
+      discover: fakeDiscoverTwo,
+      readIdentity: () => null,
+    });
+
+    const byName = Object.fromEntries(accounts.listAccounts().map((a) => [a.name, a]));
+    expect(byName['Claude'].expected_email).toBeNull();
+  });
+
+  it('leaves expectedEmail unset when no reader is injected at all', async () => {
+    await runFirstTimeDiscovery({ accounts, db, discover: fakeDiscoverTwo });
+
+    const byName = Object.fromEntries(accounts.listAccounts().map((a) => [a.name, a]));
+    expect(byName['Claude'].expected_email).toBeNull();
+  });
+
   it('sets discovery_completed=true after a run', async () => {
     expect(db.getSetting('discovery_completed')).toBeNull();
 

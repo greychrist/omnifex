@@ -1,11 +1,13 @@
 import * as React from "react";
-import { ShieldCheck, ShieldAlert, RefreshCw } from "lucide-react";
+import { ShieldCheck, ShieldAlert, ShieldQuestion, RefreshCw, RotateCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type {
   AgentKind,
   SessionAccountInfo,
   RateLimitSnapshot,
+  IdentityStatus,
 } from "@/lib/api";
+import type { SessionVerification } from "@/lib/accountVerification";
 import { Popover } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { AccountBadge } from "./AccountBadge";
@@ -26,6 +28,17 @@ interface AccountCardProps {
   /** Engine driving this session. When set, the account badge appends the
    *  brand mark after the account type (e.g. "Personal : max [Claude]"). */
   agent?: AgentKind | null;
+  /**
+   * Resolved account identity verification. Supplied by AgentSession rather
+   * than fetched here so the card and the header banner can never make
+   * contradictory claims about the same session.
+   */
+  verification?: SessionVerification | null;
+  /** Force a fresh identity check. */
+  onRecheck?: () => void;
+  /** Supplied only when the running process actually holds wrong credentials. */
+  onRestart?: (() => void) | null;
+  restarting?: boolean;
   configDir: string;
   matchType: string;
   matchDetail: string;
@@ -50,6 +63,10 @@ export function AccountCard({
   accountName,
   hasCost,
   agent,
+  verification,
+  onRecheck,
+  onRestart,
+  restarting = false,
   configDir,
   matchType,
   matchDetail,
@@ -63,6 +80,8 @@ export function AccountCard({
 }: AccountCardProps) {
   const [accountPopoverOpen, setAccountPopoverOpen] = React.useState(false);
   const [usagePopoverOpen, setUsagePopoverOpen] = React.useState(false);
+
+  const shieldStatus: IdentityStatus | null = verification?.status ?? null;
 
   // Cost-based accounts (Enterprise/API) are billed per token and expose no
   // rate-limit windows, so we show a dollar figure instead of the 5h/7d chart.
@@ -115,11 +134,87 @@ export function AccountCard({
               className="rounded hover:opacity-80 transition-opacity focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               title="Click for account details"
             >
-              <AccountBadge name={accountName} agent={agent} />
+              <AccountBadge name={accountName} agent={agent} verification={shieldStatus} />
             </button>
           }
           content={
             <div className="flex flex-col gap-3 text-left">
+              {/* Account identity. Lives in the popover rather than on the
+                  shield itself: the badge is already a popover trigger, and a
+                  button inside a button is invalid markup. */}
+              {verification && (
+                <div className="flex flex-col gap-1.5">
+                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+                    {verification.status === "verified" && (
+                      <ShieldCheck className="w-3 h-3 text-emerald-500" />
+                    )}
+                    {(verification.status === "mismatch" ||
+                      verification.status === "signed-out") && (
+                      <ShieldAlert className="w-3 h-3 text-red-500" />
+                    )}
+                    {verification.status === "unknown-account" && (
+                      <ShieldQuestion className="w-3 h-3 opacity-70" />
+                    )}
+                    account identity
+                  </div>
+
+                  {verification.status === "unknown-account" ? (
+                    <div className="text-xs text-muted-foreground">
+                      Couldn&apos;t verify — no account owns this config directory.
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-1 text-xs">
+                      <div className="flex justify-between gap-2">
+                        <span className="text-foreground/50">Expected</span>
+                        <span className="font-mono text-foreground/90 truncate">
+                          {verification.expected}
+                        </span>
+                      </div>
+                      <div className="flex justify-between gap-2">
+                        <span className="text-foreground/50">Detected</span>
+                        <span
+                          className={cn(
+                            "font-mono truncate",
+                            verification.status === "verified"
+                              ? "text-emerald-500"
+                              : "text-red-500",
+                          )}
+                        >
+                          {verification.detected ?? "not signed in"}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-6 px-2 text-[11px]"
+                      onClick={onRecheck}
+                    >
+                      <RefreshCw className="w-3 h-3 mr-1" />
+                      Re-check
+                    </Button>
+                    {/* Absent unless the running process genuinely holds the
+                        wrong credentials — a corrected expectation needs no
+                        restart. */}
+                    {onRestart && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-6 px-2 text-[11px]"
+                        onClick={onRestart}
+                        disabled={restarting}
+                        title="Stop this session's CLI process and start a fresh one, resuming the conversation."
+                      >
+                        <RotateCw className={cn("w-3 h-3 mr-1", restarting && "animate-spin")} />
+                        {restarting ? "Restarting…" : "Restart session"}
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              )}
               {sdkAccount && (
                 <div>
                   <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1 flex items-center gap-1">

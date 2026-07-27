@@ -26,6 +26,21 @@ export interface AccountInfo {
   [k: string]: unknown;
 }
 
+/**
+ * Result of comparing an account's `expected_email` against the identity
+ * actually authenticated in its config dir. `detected: null` means nobody is
+ * logged in — treated as a mismatch, since that's the same failure class as
+ * being logged in as the wrong person.
+ */
+export interface AccountMismatch {
+  expected: string;
+  detected: string | null;
+  configDir: string;
+  /** Which check produced this: the cheap pre-flight file read, or the
+   *  authoritative `system:init` payload from the running CLI. */
+  source: 'oauth-file' | 'session-init';
+}
+
 export interface ModelInfo {
   id: string;
   displayName?: string;

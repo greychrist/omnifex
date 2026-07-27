@@ -154,6 +154,90 @@ describe('runtime.listenToMessages — model catalog write-through', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Post-init identity confirmation. The `system:init` account payload is the
+// identity of the process actually running the session — stronger evidence
+// than the pre-flight file read, which can be stale.
+// ---------------------------------------------------------------------------
+
+describe('runtime.listenToMessages — account identity re-check', () => {
+  function setup(account: unknown) {
+    const engine = makeFakeEngine();
+    vi.mocked(engine.getInitData).mockReturnValue(
+      (account === undefined ? {} : { account }) as never,
+    );
+    const handle = makeHandle(engine);
+    const sessions = new Map<string, SessionHandle>([['tab-1', handle]]);
+    const sent: Array<[string, unknown]> = [];
+    const accountMismatchSink = vi.fn();
+    void listenToMessages('tab-1', handle, {
+      sendToRenderer: ((ch: string, ...args: unknown[]) => {
+        sent.push([ch, args[0]]);
+      }) as SendToRenderer,
+      notificationHooks: {},
+      rateLimitHook: null,
+      ownership: null,
+      sessions,
+      accountMismatchSink,
+    });
+    return { engine, accountMismatchSink, sent };
+  }
+
+  it('re-checks against the system:init payload and emits with source=session-init', () => {
+    const { engine, accountMismatchSink, sent } = setup({ email: 'personal@example.com' });
+    accountMismatchSink.mockReturnValue({
+      expected: 'work@example.com',
+      detected: 'personal@example.com',
+      configDir: '/c',
+      source: 'session-init',
+    });
+
+    engine._emitMessage({ type: 'system', subtype: 'init' });
+
+    expect(accountMismatchSink).toHaveBeenCalledWith('/c', 'personal@example.com');
+    expect(sent.find(([ch]) => ch === 'session-account-mismatch:tab-1')?.[1]).toMatchObject({
+      source: 'session-init',
+      detected: 'personal@example.com',
+    });
+  });
+
+  it('emits nothing when the sink reports a match', () => {
+    const { engine, accountMismatchSink, sent } = setup({ email: 'work@example.com' });
+    accountMismatchSink.mockReturnValue(null);
+
+    engine._emitMessage({ type: 'system', subtype: 'init' });
+
+    expect(sent.some(([ch]) => ch.startsWith('session-account-mismatch:'))).toBe(false);
+  });
+
+  it('passes null when the init payload carries no account block', () => {
+    const { engine, accountMismatchSink } = setup(undefined);
+    accountMismatchSink.mockReturnValue(null);
+
+    engine._emitMessage({ type: 'system', subtype: 'init' });
+
+    expect(accountMismatchSink).toHaveBeenCalledWith('/c', null);
+  });
+
+  it('passes null when account.email is not a string', () => {
+    const { engine, accountMismatchSink } = setup({ email: 42 });
+    accountMismatchSink.mockReturnValue(null);
+
+    engine._emitMessage({ type: 'system', subtype: 'init' });
+
+    expect(accountMismatchSink).toHaveBeenCalledWith('/c', null);
+  });
+
+  it('a throwing sink does not break message handling', () => {
+    const { engine, accountMismatchSink } = setup({ email: 'personal@example.com' });
+    accountMismatchSink.mockImplementation(() => { throw new Error('db locked'); });
+
+    expect(() => {
+      engine._emitMessage({ type: 'system', subtype: 'init' });
+    }).not.toThrow();
+  });
+});
+
 describe('runtime.listenToMessages — engine.onError', () => {
   it('does NOT emit agent-complete on stderr-driven error', () => {
     const engine = makeFakeEngine();

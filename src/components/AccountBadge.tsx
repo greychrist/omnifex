@@ -3,9 +3,9 @@ import { cn } from "@/lib/utils";
 import { useAccounts } from "@/contexts/AccountsContext";
 import { useTheme } from "@/hooks";
 import { ICON_MAP } from "./IconPicker";
-import { User } from "lucide-react";
+import { User, ShieldCheck, ShieldAlert, ShieldQuestion } from "lucide-react";
 import { BrandIcon } from "./shared/BrandIcon";
-import type { AgentKind } from "@/lib/api";
+import type { AgentKind, IdentityStatus } from "@/lib/api";
 
 const FALLBACK_COLORS = [
   "bg-blue-500/20 text-blue-400 border-blue-500/30 dark:text-blue-400",
@@ -73,6 +73,16 @@ interface AccountBadgeProps {
    *  the badge carries engine identity alongside account identity. Ignored
    *  by the `compact` variant. */
   agent?: AgentKind | null;
+  /**
+   * Account identity verdict. When it carries something worth asserting
+   * (`verified` / `mismatch` / `signed-out` / `unknown-account`), a shield
+   * replaces the engine brand mark in the trailing slot.
+   *
+   * `unverified` and `null` deliberately keep the brand mark: with no expected
+   * email configured there is nothing to attest, and a green shield there
+   * would be a claim we haven't earned. Ignored by the `compact` variant.
+   */
+  verification?: IdentityStatus | null;
   variant?: "full" | "compact";
   /**
    * Text size of the "full" badge. Defaults to `xs` (11px text + 14px icon)
@@ -92,6 +102,7 @@ export const AccountBadge: React.FC<AccountBadgeProps> = ({
   icon,
   accountType: accountTypeProp,
   agent,
+  verification,
   variant = "full",
   size = "xs",
   className,
@@ -118,7 +129,48 @@ export const AccountBadge: React.FC<AccountBadgeProps> = ({
   // inheriting the themed color and washing out.
   const brandIconSizeClass = size === "sm" ? "h-[13px] w-[13px]" : "h-[12px] w-[12px]";
   const brandIconColorClass = theme === "light" ? "text-neutral-900" : "text-white";
-  const brandIcon = agent ? (
+
+  // The trailing slot shows EITHER the engine brand mark or an identity
+  // shield — the shield wins when there's a verdict to report, because "is
+  // this the right account?" matters more at a glance than "which engine".
+  // Colors are hard-coded rather than themed: green/red must not be mixed
+  // toward the account tint, or a red alert on an amber account stops reading
+  // as an alert.
+  const shield = verification
+    ? {
+        verified: {
+          Icon: ShieldCheck,
+          className: "text-emerald-500",
+          label: "Signed in as the expected account",
+        },
+        mismatch: {
+          Icon: ShieldAlert,
+          className: "text-red-500",
+          label: "Signed in as a DIFFERENT account than expected",
+        },
+        "signed-out": {
+          Icon: ShieldAlert,
+          className: "text-red-500",
+          label: "This config directory is not signed in",
+        },
+        "unknown-account": {
+          Icon: ShieldQuestion,
+          className: "opacity-70",
+          label: "Couldn't verify — no account owns this config directory",
+        },
+        // Nothing to attest; falls through to the brand mark below.
+        unverified: null,
+      }[verification]
+    : null;
+
+  const trailingMark = shield ? (
+    <shield.Icon
+      role="img"
+      aria-label={shield.label}
+      className={cn(brandIconSizeClass, shield.className)}
+      strokeWidth={2.4}
+    />
+  ) : agent ? (
     <BrandIcon
       agent={agent}
       className={cn(brandIconSizeClass, brandIconColorClass, "opacity-90")}
@@ -180,7 +232,7 @@ export const AccountBadge: React.FC<AccountBadgeProps> = ({
         {resolvedType && (
           <span className="opacity-70">: {resolvedType}</span>
         )}
-        {brandIcon}
+        {trailingMark}
       </span>
     );
   }
@@ -197,7 +249,7 @@ export const AccountBadge: React.FC<AccountBadgeProps> = ({
     >
       <IconComponent className={fallbackIconSizeClass} strokeWidth={2.2} />
       {name}
-      {brandIcon}
+      {trailingMark}
     </span>
   );
 };

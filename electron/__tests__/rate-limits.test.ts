@@ -18,6 +18,7 @@ function makeAccount(overrides: Partial<Account> = {}): Account {
     color: null,
     icon: null,
     cli_path: null,
+    expected_email: null,
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
     ...overrides,
@@ -27,6 +28,7 @@ function makeAccount(overrides: Partial<Account> = {}): Account {
 function makeAccountsService(accounts: Account[]): AccountsService {
   return {
     listAccounts: () => accounts,
+    getAccountByConfigDir: () => null,
     createAccount: () => accounts[0],
     updateAccount: () => {},
         updateSummarySettings: () => {},

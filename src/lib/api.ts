@@ -113,6 +113,12 @@ export interface Account {
    * Shell aliases are not supported — paste a resolved path.
    */
   cli_path: string | null;
+  /**
+   * The email this config dir is expected to be authenticated as. Null means
+   * no verification is performed for this account — sessions skip the check
+   * entirely and Settings shows no badge.
+   */
+  expected_email: string | null;
   created_at: string;
   updated_at: string;
   /** Per-session summary opt-in. Default false. */
@@ -753,6 +759,65 @@ export interface SessionAccountInfo {
   apiProvider?: 'firstParty' | 'bedrock' | 'vertex' | 'foundry' | 'anthropicAws' | 'mantle';
 }
 
+/**
+ * Identity cached in `<configDir>/.claude.json`. Cheap to read — safe to call
+ * once per account row. May be stale after a logout, since the CLI leaves
+ * `oauthAccount` behind.
+ */
+export interface AccountIdentity {
+  email: string | null;
+  displayName: string | null;
+  organizationName: string | null;
+  organizationType: string | null;
+}
+
+/**
+ * The CLI's own answer from `claude auth status --json`. Authoritative, and
+ * distinguishes logged-out from stale — but costs a process spawn, so only
+ * call it from an explicit user action.
+ */
+export interface AccountAuthStatus {
+  loggedIn: boolean;
+  email: string | null;
+  authMethod: string | null;
+  apiProvider: string | null;
+  orgName: string | null;
+  subscriptionType: string | null;
+}
+
+/**
+ * Verdict of an account identity check.
+ *
+ * `unverified` (the user set no expected email) and `unknown-account` (no
+ * account row owns this config dir) are deliberately distinct: only the first
+ * is a choice, the second is a bug worth surfacing.
+ */
+export type IdentityStatus =
+  | 'verified'
+  | 'mismatch'
+  | 'signed-out'
+  | 'unverified'
+  | 'unknown-account';
+
+export interface IdentityVerdict {
+  status: IdentityStatus;
+  expected: string | null;
+  detected: string | null;
+  configDir: string;
+}
+
+/**
+ * Emitted on `session-account-mismatch:<tabId>` when a session's config dir is
+ * authenticated as somebody other than the account's `expected_email`.
+ * `detected: null` means nobody is signed in.
+ */
+export interface AccountMismatch {
+  expected: string;
+  detected: string | null;
+  configDir: string;
+  source: 'oauth-file' | 'session-init';
+}
+
 export interface SessionContextUsageCategory {
   name: string;
   tokens: number;
@@ -1241,6 +1306,52 @@ export const api = {
   /** Get the CLI-reported authenticated account for an active session. */
   async sessionAccountInfo(tabId: string): Promise<SessionAccountInfo | null> {
     return apiCall("session_account_info", { tabId });
+  },
+
+  /**
+   * Who is signed in to a config dir, per `<configDir>/.claude.json`. Cheap —
+   * no CLI spawn — so it's safe to call once per account row.
+   */
+  async readAccountIdentity(configDir: string): Promise<AccountIdentity | null> {
+    return apiCall("account_identity_read", { configDir });
+  },
+
+  /**
+   * Ask the CLI directly (`claude auth status --json`). Authoritative but
+   * costs a process spawn — call only from an explicit user action.
+   */
+  async probeAccountAuthStatus(configDir: string): Promise<AccountAuthStatus | null> {
+    return apiCall("account_identity_probe", { configDir });
+  },
+
+  /**
+   * Full identity verdict for a config dir. Main owns the comparison, so no
+   * renderer surface re-implements what "verified" means. Cheap — no spawn.
+   */
+  async accountIdentityVerdict(configDir: string): Promise<IdentityVerdict | null> {
+    return apiCall("account_identity_verdict", { configDir });
+  },
+
+  /**
+   * Fires when a config dir's signed-in account actually changes on disk — a
+   * logout/login done in a terminal, say. Main only broadcasts on a real
+   * change, so this is quiet in the common case. Returns an unsubscribe fn.
+   */
+  subscribeAccountIdentity(
+    configDir: string,
+    cb: (verdict: IdentityVerdict) => void,
+  ): () => void {
+    return window.electronAPI.onEvent(
+      "account-identity-changed",
+      (...args: unknown[]) => {
+        const payload = args[0] as
+          | { configDir?: string; verdict?: IdentityVerdict }
+          | undefined;
+        // The broadcast goes to every window; filter to the dir we care about.
+        if (!payload || payload.configDir !== configDir || !payload.verdict) return;
+        cb(payload.verdict);
+      },
+    );
   },
 
   /** Get the current context-window usage for an active session. */
@@ -2347,6 +2458,8 @@ export const api = {
     icon?: string;
     sessionDefaults?: SessionDefaults;
     cliPath?: string | null;
+    /** Expected login email. null / omitted means no verification. */
+    expectedEmail?: string | null;
   }): Promise<Account> {
     // No isDefault parameter — there is no notion of a default account.
     // Account binding is via path rules / project overrides; failure to
@@ -2358,6 +2471,7 @@ export const api = {
     if (opts.icon !== undefined) params.icon = opts.icon;
     if (opts.sessionDefaults !== undefined) params.sessionDefaults = opts.sessionDefaults;
     if (opts.cliPath !== undefined) params.cliPath = opts.cliPath;
+    if (opts.expectedEmail !== undefined) params.expectedEmail = opts.expectedEmail;
     return apiCall<Account>('create_account', params);
   },
 
@@ -2373,6 +2487,8 @@ export const api = {
       icon?: string;
       sessionDefaults?: SessionDefaults | null;
       cliPath?: string | null;
+      /** undefined preserves, null clears, string sets. */
+      expectedEmail?: string | null;
     },
   ): Promise<void> {
     const params: Record<string, any> = { id, name: opts.name, configDir: opts.configDir };
@@ -2382,6 +2498,7 @@ export const api = {
     if (opts.icon !== undefined) params.icon = opts.icon;
     if (opts.sessionDefaults !== undefined) params.sessionDefaults = opts.sessionDefaults;
     if (opts.cliPath !== undefined) params.cliPath = opts.cliPath;
+    if (opts.expectedEmail !== undefined) params.expectedEmail = opts.expectedEmail;
     return apiCall<void>('update_account', params);
   },
 

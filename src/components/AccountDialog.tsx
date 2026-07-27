@@ -31,6 +31,8 @@ export interface AccountDialogSavePayload {
   color?: string;
   icon?: string;
   sessionDefaults?: SessionDefaults;
+  /** Expected login email. null turns the session-start check off. */
+  expectedEmail: string | null;
 }
 
 export interface AccountDialogProps {
@@ -91,6 +93,12 @@ export const AccountDialog: React.FC<AccountDialogProps> = ({
   const [color, setColor] = useState("#3b82f6");
   const [icon, setIcon] = useState("user");
 
+  // Expected login email — the account this config dir should be
+  // authenticated as. Blank means the session-start check is off.
+  const [expectedEmail, setExpectedEmail] = useState("");
+  const [detecting, setDetecting] = useState(false);
+  const [detectError, setDetectError] = useState<string | null>(null);
+
   // Session-defaults fields, flattened so they can be wired straight into
   // SessionDefaultsRow.
   const [model, setModel] = useState("");
@@ -111,6 +119,7 @@ export const AccountDialog: React.FC<AccountDialogProps> = ({
       setEngine(account.engine);
       setSubscriptionLabel(account.subscription_label ?? "");
       setHasCost(account.has_cost);
+      setExpectedEmail(account.expected_email ?? "");
       setColor(account.color ?? "#3b82f6");
       setIcon(account.icon ?? "user");
       const sd = account.session_defaults ?? {};
@@ -124,6 +133,7 @@ export const AccountDialog: React.FC<AccountDialogProps> = ({
       setEngine("claude");
       setSubscriptionLabel("");
       setHasCost(true);
+      setExpectedEmail("");
       setColor("#3b82f6");
       setIcon("user");
       setModel("");
@@ -160,6 +170,7 @@ export const AccountDialog: React.FC<AccountDialogProps> = ({
       hasCost,
       color,
       icon,
+      expectedEmail: expectedEmail.trim() || null,
       sessionDefaults: {
         model: model || undefined,
         effort: (effort || undefined) as SessionDefaults["effort"],
@@ -170,6 +181,27 @@ export const AccountDialog: React.FC<AccountDialogProps> = ({
         permissionMode: permission,
       },
     });
+  };
+
+  // Ask the CLI who this config dir is actually signed in as. Uses the
+  // authoritative probe (a process spawn) rather than the cheap file read
+  // precisely because this is an explicit, one-off user action.
+  const handleDetect = (): void => {
+    if (!configDir) return;
+    setDetecting(true);
+    setDetectError(null);
+    void api
+      .probeAccountAuthStatus(configDir)
+      .then((status) => {
+        if (status?.email) setExpectedEmail(status.email);
+        else setDetectError("No signed-in account found in this config dir.");
+      })
+      .catch(() => {
+        setDetectError("Couldn't reach the Claude CLI.");
+      })
+      .finally(() => {
+        setDetecting(false);
+      });
   };
 
   const handleSignOut = (): void => {
@@ -285,6 +317,41 @@ export const AccountDialog: React.FC<AccountDialogProps> = ({
               className="h-8 text-sm"
             />
           </div>
+
+          {/* Expected login email — Claude only. Codex surfaces its own
+              signed-in address in the auth row below. */}
+          {engine === "claude" && (
+            <div className="space-y-1">
+              <label htmlFor="account-email" className="text-xs text-muted-foreground">
+                Email
+              </label>
+              <div className="flex gap-2">
+                <Input
+                  id="account-email"
+                  placeholder="you@example.com"
+                  value={expectedEmail}
+                  onChange={(e) => { setExpectedEmail(e.target.value); }}
+                  autoComplete="off"
+                  spellCheck={false}
+                  className="h-8 text-sm"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 shrink-0"
+                  onClick={handleDetect}
+                  disabled={detecting || !configDir}
+                >
+                  {detecting ? "Detecting…" : "Detect"}
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {detectError ??
+                  "Sessions warn if this config dir is signed in as someone else. Leave blank to skip the check."}
+              </p>
+            </div>
+          )}
 
           {/* Has cost */}
           <label className="flex items-center gap-2 text-sm">

@@ -106,3 +106,108 @@ describe('sessions.start — account re-resolution', () => {
     expect(sessions.getConfigDir('tab-rr')).toBe('/from-renderer');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Secondary confirmation: is the resolved config dir actually authenticated as
+// the account we think it is? Never blocks — the session starts either way.
+// ---------------------------------------------------------------------------
+
+describe('sessions.start — account identity verification', () => {
+  const baseParams = {
+    tabId: 'tab-v',
+    projectPath: '/Users/test/proj',
+    model: '',
+    permissionMode: '',
+  } as const;
+
+  function makeService(
+    sendToRenderer: (channel: string, ...args: unknown[]) => void,
+    verify: ((configDir: string) => unknown) | null,
+    resolveAccountConfigDir: ((projectPath: string) => string | null) | null = null,
+  ) {
+    return createSessionsService(
+      sendToRenderer,
+      undefined,               // notificationHooks
+      null,                    // logging
+      null,                    // ownership
+      null,                    // persistPermissionRule
+      null,                    // rateLimitHook
+      null,                    // onSessionClosed
+      resolveAccountConfigDir, // resolveAccountConfigDir
+      null,                    // modelCatalogSink
+      verify as never,         // verifyAccountIdentity
+    );
+  }
+
+  it('emits session-account-mismatch and STILL starts the session', () => {
+    const sent: Array<[string, unknown]> = [];
+    const verify = vi.fn(() => ({
+      expected: 'work@example.com',
+      detected: 'personal@example.com',
+      configDir: '/tmp/.claude-personal',
+      source: 'oauth-file' as const,
+    }));
+
+    const sessions = makeService(
+      (ch, ...args) => { sent.push([ch, args[0]]); },
+      verify,
+    );
+
+    sessions.start({ ...baseParams, configDir: '/tmp/.claude-personal' });
+
+    expect(sent.find(([ch]) => ch === 'session-account-mismatch:tab-v')?.[1]).toEqual({
+      expected: 'work@example.com',
+      detected: 'personal@example.com',
+      configDir: '/tmp/.claude-personal',
+      source: 'oauth-file',
+    });
+    // The warning is informational — it must not gate the launch.
+    expect(sessions.getConfigDir('tab-v')).toBe('/tmp/.claude-personal');
+  });
+
+  it('emits nothing when the verifier reports a match', () => {
+    const sent: string[] = [];
+    const sessions = makeService((ch) => { sent.push(ch); }, () => null);
+
+    sessions.start({ ...baseParams, configDir: '/tmp/.claude-personal' });
+
+    expect(sent.some((ch) => ch.startsWith('session-account-mismatch:'))).toBe(false);
+  });
+
+  it('does no verification work at all when no verifier is injected', () => {
+    const sent: string[] = [];
+    const sessions = createSessionsService((ch: string) => { sent.push(ch); });
+
+    sessions.start({ ...baseParams, configDir: '/tmp/.claude-personal' });
+
+    expect(sent.some((ch) => ch.startsWith('session-account-mismatch:'))).toBe(false);
+  });
+
+  it('verifies against the RE-RESOLVED configDir, not the one the renderer sent', () => {
+    const seen: string[] = [];
+    const sessions = makeService(
+      vi.fn(),
+      (dir: string) => { seen.push(dir); return null; },
+      () => '/tmp/.claude-work',
+    );
+
+    sessions.start({ ...baseParams, configDir: '/tmp/.claude-personal' });
+
+    // Checking the renderer-supplied dir would verify the wrong account
+    // exactly when a path rule has just changed.
+    expect(seen).toEqual(['/tmp/.claude-work']);
+  });
+
+  it('a throwing verifier does not break the launch', () => {
+    const sent: string[] = [];
+    const sessions = makeService(
+      (ch) => { sent.push(ch); },
+      () => { throw new Error('boom'); },
+    );
+
+    expect(() => {
+      sessions.start({ ...baseParams, configDir: '/tmp/.claude-personal' });
+    }).not.toThrow();
+    expect(sessions.getConfigDir('tab-v')).toBe('/tmp/.claude-personal');
+  });
+});

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, fireEvent } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
 import type { Account, CodexAuthStatus } from '@/lib/api';
 
 // Hoist mocks alongside vi.mock() factories. See CodexSignInModal.test.tsx
@@ -13,6 +13,7 @@ const { apiMock, useCodexAuthStatusMock } = vi.hoisted(() => ({
     subscribeCodexAuthStatus: vi.fn(),
     listSupportedModels: vi.fn(),
     getClaudeSettings: vi.fn(),
+    probeAccountAuthStatus: vi.fn(),
   },
   useCodexAuthStatusMock: vi.fn(),
 }));
@@ -42,6 +43,7 @@ beforeEach(() => {
   apiMock.codexLogout.mockReset().mockResolvedValue(undefined);
   apiMock.listSupportedModels.mockReset().mockResolvedValue([]);
   apiMock.getClaudeSettings.mockReset().mockResolvedValue({});
+  apiMock.probeAccountAuthStatus.mockReset().mockResolvedValue(null);
   useCodexAuthStatusMock.mockReset().mockReturnValue(null);
 });
 
@@ -64,6 +66,7 @@ function makeAccount(overrides: Partial<Account> = {}): Account {
     icon: 'user',
     session_defaults: {},
     cli_path: null,
+    expected_email: null,
     created_at: '',
     updated_at: '',
     ...overrides,
@@ -163,5 +166,150 @@ describe('AccountDialog', () => {
         hasCost: false,
       }),
     );
+  });
+
+  // -------------------------------------------------------------------------
+  // Expected login email — the secondary confirmation that a config dir is
+  // authenticated as the account we think it is.
+  // -------------------------------------------------------------------------
+
+  describe('expected email', () => {
+    const claudeAccount = (overrides: Partial<Account> = {}): Account =>
+      makeAccount({ engine: 'claude', config_dir: '/home/test/.claude', ...overrides });
+
+    it('edit mode seeds the email field from account.expected_email', () => {
+      render(
+        <AccountDialog
+          mode="edit"
+          account={claudeAccount({ expected_email: 'a@example.com' })}
+          open={true}
+          onClose={() => {}}
+          onSave={() => {}}
+        />,
+      );
+      expect((screen.getByLabelText(/^email$/i) as HTMLInputElement).value).toBe(
+        'a@example.com',
+      );
+    });
+
+    it('saves the typed email as expectedEmail', () => {
+      const onSave = vi.fn();
+      render(
+        <AccountDialog
+          mode="edit"
+          account={claudeAccount()}
+          open={true}
+          onClose={() => {}}
+          onSave={onSave}
+        />,
+      );
+      fireEvent.change(screen.getByLabelText(/^email$/i), {
+        target: { value: 'b@example.com' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: /save/i }));
+      expect(onSave).toHaveBeenCalledWith(
+        expect.objectContaining({ expectedEmail: 'b@example.com' }),
+      );
+    });
+
+    it('saves null when the field is emptied, so the check is turned off', () => {
+      const onSave = vi.fn();
+      render(
+        <AccountDialog
+          mode="edit"
+          account={claudeAccount({ expected_email: 'a@example.com' })}
+          open={true}
+          onClose={() => {}}
+          onSave={onSave}
+        />,
+      );
+      fireEvent.change(screen.getByLabelText(/^email$/i), { target: { value: '' } });
+      fireEvent.click(screen.getByRole('button', { name: /save/i }));
+      expect(onSave).toHaveBeenCalledWith(
+        expect.objectContaining({ expectedEmail: null }),
+      );
+    });
+
+    it('trims whitespace-only input to null rather than storing blanks', () => {
+      const onSave = vi.fn();
+      render(
+        <AccountDialog
+          mode="edit"
+          account={claudeAccount({ expected_email: 'a@example.com' })}
+          open={true}
+          onClose={() => {}}
+          onSave={onSave}
+        />,
+      );
+      fireEvent.change(screen.getByLabelText(/^email$/i), { target: { value: '   ' } });
+      fireEvent.click(screen.getByRole('button', { name: /save/i }));
+      expect(onSave).toHaveBeenCalledWith(
+        expect.objectContaining({ expectedEmail: null }),
+      );
+    });
+
+    it('Detect fills the field from the CLI probe', async () => {
+      apiMock.probeAccountAuthStatus.mockResolvedValue({
+        loggedIn: true,
+        email: 'detected@example.com',
+        authMethod: 'claude.ai',
+        apiProvider: 'firstParty',
+        orgName: 'Org',
+        subscriptionType: 'max',
+      });
+      render(
+        <AccountDialog
+          mode="edit"
+          account={claudeAccount()}
+          open={true}
+          onClose={() => {}}
+          onSave={() => {}}
+        />,
+      );
+      fireEvent.click(screen.getByRole('button', { name: /detect/i }));
+      await waitFor(() => {
+        expect((screen.getByLabelText(/^email$/i) as HTMLInputElement).value).toBe(
+          'detected@example.com',
+        );
+      });
+      expect(apiMock.probeAccountAuthStatus).toHaveBeenCalledWith('/home/test/.claude');
+    });
+
+    it('Detect reports when no signed-in account is found', async () => {
+      apiMock.probeAccountAuthStatus.mockResolvedValue({
+        loggedIn: false,
+        email: null,
+        authMethod: null,
+        apiProvider: null,
+        orgName: null,
+        subscriptionType: null,
+      });
+      render(
+        <AccountDialog
+          mode="edit"
+          account={claudeAccount()}
+          open={true}
+          onClose={() => {}}
+          onSave={() => {}}
+        />,
+      );
+      fireEvent.click(screen.getByRole('button', { name: /detect/i }));
+      await waitFor(() => {
+        expect(screen.getByText(/no signed-in account/i)).toBeTruthy();
+      });
+    });
+
+    it('does not render the email field for codex accounts', () => {
+      render(
+        <AccountDialog
+          mode="edit"
+          account={makeAccount({ engine: 'codex' })}
+          open={true}
+          onClose={() => {}}
+          onSave={() => {}}
+        />,
+      );
+      expect(screen.queryByLabelText(/^email$/i)).toBeNull();
+    });
   });
 });

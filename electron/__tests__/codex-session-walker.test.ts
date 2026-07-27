@@ -40,6 +40,7 @@ function codexAccount(id: number, configDir: string): Account {
     color: null,
     icon: null,
     cli_path: null,
+    expected_email: null,
     created_at: '',
     updated_at: '',
   };

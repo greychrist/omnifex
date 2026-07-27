@@ -19,6 +19,8 @@ const { apiMock } = vi.hoisted(() => ({
     scanForNewAccounts: vi.fn(),
     explainAccountResolution: vi.fn(),
     getHomeDirectory: vi.fn(),
+    accountIdentityVerdict: vi.fn(),
+    subscribeAccountIdentity: vi.fn(),
   },
 }));
 
@@ -91,6 +93,7 @@ function makeAccount(overrides: Partial<Account> = {}): Account {
     icon: 'user',
     session_defaults: {},
     cli_path: null,
+    expected_email: null,
     created_at: '',
     updated_at: '',
     ...overrides,
@@ -119,6 +122,8 @@ beforeEach(() => {
   apiMock.scanForNewAccounts.mockReset().mockResolvedValue([]);
   apiMock.explainAccountResolution.mockReset().mockResolvedValue(null);
   apiMock.getHomeDirectory.mockReset().mockResolvedValue('/home/test');
+  apiMock.accountIdentityVerdict.mockReset().mockResolvedValue(null);
+  apiMock.subscribeAccountIdentity.mockReset().mockReturnValue(() => {});
 });
 
 describe('AccountSettings', () => {
@@ -210,6 +215,174 @@ describe('AccountSettings', () => {
 
     await waitFor(() => {
       expect(apiMock.deleteAccount).toHaveBeenCalledWith(1);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Expected-vs-detected email badge.
+  // -------------------------------------------------------------------------
+
+  describe('account identity badge', () => {
+    const WITH_EXPECTATION = makeAccount({
+      id: 1,
+      name: 'Personal',
+      expected_email: 'work@example.com',
+    });
+
+    it('shows a mismatch badge when the detected email differs from expected', async () => {
+      apiMock.listAccounts.mockResolvedValue([WITH_EXPECTATION]);
+      apiMock.accountIdentityVerdict.mockResolvedValue({
+        status: 'mismatch',
+        expected: 'work@example.com',
+        detected: 'personal@example.com',
+        configDir: '/home/test/.claude-personal',
+      });
+
+      render(<AccountSettings />);
+
+      expect(await screen.findByText(/signed in as personal@example\.com/i)).toBeTruthy();
+    });
+
+    // A passing check must produce POSITIVE evidence. Rendering nothing on
+    // success makes "verified", "not configured", and "the check itself never
+    // ran" indistinguishable — which defeats the point of a safety check.
+    it('shows the verified email when expected and detected agree', async () => {
+      apiMock.listAccounts.mockResolvedValue([WITH_EXPECTATION]);
+      apiMock.accountIdentityVerdict.mockResolvedValue({
+        status: 'verified',
+        expected: 'work@example.com',
+        detected: 'WORK@example.com',
+        configDir: '/home/test/.claude-personal',
+      });
+
+      render(<AccountSettings />);
+
+      expect(await screen.findByText(/verified: WORK@example\.com/i)).toBeTruthy();
+      // ...and specifically NOT the failure phrasing.
+      expect(screen.queryByText(/signed in as/i)).toBeNull();
+      expect(screen.queryByText(/not signed in/i)).toBeNull();
+    });
+
+    it('distinguishes an unreadable identity from being signed out', async () => {
+      apiMock.listAccounts.mockResolvedValue([WITH_EXPECTATION]);
+      apiMock.accountIdentityVerdict.mockRejectedValue(new Error('IPC blew up'));
+
+      render(<AccountSettings />);
+
+      // A failed read is NOT evidence of being logged out — saying "not signed
+      // in" here would be an outright false claim about account state.
+      expect(await screen.findByText(/couldn't verify/i)).toBeTruthy();
+      expect(screen.queryByText(/not signed in/i)).toBeNull();
+    });
+
+    it('shows nothing at all for an account that opted out', async () => {
+      apiMock.listAccounts.mockResolvedValue([makeAccount({ expected_email: null })]);
+
+      render(<AccountSettings />);
+      await screen.findByText('Personal');
+
+      expect(screen.queryByText(/verified:/i)).toBeNull();
+      expect(screen.queryByText(/couldn't verify/i)).toBeNull();
+      expect(screen.queryByText(/not signed in/i)).toBeNull();
+    });
+
+    it('shows a not-signed-in badge when no identity can be read', async () => {
+      apiMock.listAccounts.mockResolvedValue([WITH_EXPECTATION]);
+      apiMock.accountIdentityVerdict.mockResolvedValue({
+        status: 'signed-out',
+        expected: 'work@example.com',
+        detected: null,
+        configDir: '/home/test/.claude-personal',
+      });
+
+      render(<AccountSettings />);
+
+      expect(await screen.findByText(/not signed in/i)).toBeTruthy();
+    });
+
+    it('shows no verdict before the identity read resolves', async () => {
+      apiMock.listAccounts.mockResolvedValue([WITH_EXPECTATION]);
+      // Never resolves — this is the pre-load state. Without a `loaded` flag
+      // the row would flash "Not signed in" on every Settings open.
+      apiMock.accountIdentityVerdict.mockReturnValue(new Promise(() => { /* pending */ }));
+
+      render(<AccountSettings />);
+      await screen.findByText('Personal');
+
+      expect(screen.queryByText(/not signed in/i)).toBeNull();
+      expect(screen.queryByText(/signed in as/i)).toBeNull();
+      expect(screen.queryByText(/verified:/i)).toBeNull();
+      expect(screen.queryByText(/couldn't verify/i)).toBeNull();
+    });
+
+    it('clicking the badge re-checks', async () => {
+      apiMock.listAccounts.mockResolvedValue([WITH_EXPECTATION]);
+      apiMock.accountIdentityVerdict.mockResolvedValue({
+        status: 'mismatch',
+        expected: 'work@example.com',
+        detected: 'personal@example.com',
+        configDir: '/home/test/.claude-personal',
+      });
+
+      render(<AccountSettings />);
+      await screen.findByText(/signed in as personal@example\.com/i);
+      const callsBefore = apiMock.accountIdentityVerdict.mock.calls.length;
+
+      // The user has re-logged-in elsewhere; the next read finds it fixed.
+      apiMock.accountIdentityVerdict.mockResolvedValue({
+        status: 'verified',
+        expected: 'work@example.com',
+        detected: 'work@example.com',
+        configDir: '/home/test/.claude-personal',
+      });
+      fireEvent.click(screen.getByRole('button', { name: /re-check account identity/i }));
+
+      await waitFor(() => {
+        expect(apiMock.accountIdentityVerdict.mock.calls.length).toBeGreaterThan(callsBefore);
+      });
+      expect(await screen.findByText(/verified: work@example\.com/i)).toBeTruthy();
+    });
+
+    // The watcher is what makes a logout/login done in a terminal self-correct
+    // without the user hunting for a refresh.
+    it('self-corrects when the identity changes on disk', async () => {
+      let push: ((v: unknown) => void) | null = null;
+      apiMock.subscribeAccountIdentity.mockImplementation(
+        (_dir: string, cb: (v: unknown) => void) => {
+          push = cb;
+          return () => {};
+        },
+      );
+      apiMock.listAccounts.mockResolvedValue([WITH_EXPECTATION]);
+      apiMock.accountIdentityVerdict.mockResolvedValue({
+        status: 'signed-out',
+        expected: 'work@example.com',
+        detected: null,
+        configDir: '/home/test/.claude-personal',
+      });
+
+      render(<AccountSettings />);
+      await screen.findByText(/not signed in/i);
+
+      // Main observed a real change on disk and pushed the new verdict.
+      push!({
+        status: 'verified',
+        expected: 'work@example.com',
+        detected: 'work@example.com',
+        configDir: '/home/test/.claude-personal',
+      });
+
+      expect(await screen.findByText(/verified: work@example\.com/i)).toBeTruthy();
+      expect(screen.queryByText(/not signed in/i)).toBeNull();
+    });
+
+    it('never asks for a verdict for an account with no expected_email', async () => {
+      apiMock.listAccounts.mockResolvedValue([makeAccount({ expected_email: null })]);
+
+      render(<AccountSettings />);
+      await screen.findByText('Personal');
+
+      expect(apiMock.accountIdentityVerdict).not.toHaveBeenCalled();
     });
   });
 });
