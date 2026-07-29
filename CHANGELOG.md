@@ -5,6 +5,44 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.102] — 2026-07-29
+
+### Fixed
+
+- **Images returned by tools now appear in the transcript.** Screenshots from
+  MCP browser/devtools tools — and `Read` on an image file — were silently
+  dropped, leaving only the tool-call entry behind. An image arrives nested
+  inside a `tool_result` rather than as top-level content, and three layers
+  each discarded it on the assumption another handled it: the visibility filter
+  treated the message as empty for any widget-backed tool, the renderer
+  returned nothing because "a widget handles this", and the widget in question
+  (`MCPWidget`) never read its result at all. A fourth bug sat behind those —
+  the array-content path would have printed an image's entire base64 payload
+  as text. Extraction is now shared by the filter and the renderer, so the two
+  can't disagree, and both the Anthropic and raw MCP image shapes are accepted.
+
+- **The image lightbox no longer opens off the edge of the window.** `w-fit` on
+  a `left-[50%]`-anchored fixed element resolves its width against the space
+  from that anchor to the right edge — half the viewport. Measured at 1200px
+  wide, the container came out 600px while the image inside was allowed 1080px,
+  so it overflowed and ran off-screen with the centering computed on the wrong
+  width. The preview box is now sized explicitly and the image scales within it.
+
+- **Tool-result images are now styled like every other message.** They render
+  as a framed card with a title, icon, and footer chip instead of an
+  un-framed block, and they have their own entry in Appearance settings
+  (`Tool result image`) so colour, icon, label, and compact-mode visibility can
+  be set independently of ordinary tool output. They stay visible in compact
+  mode by default — a returned screenshot is usually the point of the call,
+  not plumbing.
+
+- Corrected an ineffective test-timeout fix from v0.4.101: the account-identity
+  watcher tests raised an inner timeout above Vitest's per-test limit, which
+  could never take effect. The per-test timeout is now raised instead.
+
+Installers remain **unsigned** — macOS Gatekeeper will block first launch;
+right-click → Open to run it.
+
 ## [0.4.101] — 2026-07-27
 
 ### Added
