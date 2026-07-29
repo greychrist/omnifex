@@ -2,6 +2,7 @@ import type { JsonlNode } from '@/types/jsonl';
 import type { MessageContentBlock } from '@/types/claudeStream';
 import type { MessageRenderingConfig } from './messageRenderingConfig';
 import { resolveKind } from './messageRenderingConfig';
+import { toolResultHasImages } from './toolResultImages';
 
 /**
  * Matches the literal prefix Claude Code prepends when surfacing hook
@@ -115,10 +116,15 @@ export function classifyBlockKind(
   if (role === 'user') {
     if (block.type === 'image') return 'user.image';
     if (block.type === 'tool_result') {
-      // All tool_result blocks map to the single v2 catalog row `user.tool-result`.
-      // The previous per-variant split (generic vs. systemReminder) has been
-      // collapsed because the v2 catalog has a single row and per-variant
-      // sub-IDs caused the renderer's `config.kinds[id]` lookup to miss.
+      // Image-bearing results get their own catalog row. Unlike the old
+      // generic/systemReminder split, this ID *is* registered in
+      // KIND_REGISTRY, so the renderer's `config.kinds[id]` lookup hits and
+      // the user can style it — the point being that ordinary tool output
+      // defaults to hidden in compact mode, which would bury screenshots.
+      if (toolResultHasImages(block)) return 'user.tool-result.image';
+      // Everything else maps to the single `user.tool-result` row. The old
+      // per-variant sub-IDs were collapsed because they weren't registered
+      // and the lookup missed.
       return 'user.tool-result';
     }
     // Server-side code-execution result blocks — paired with server_tool_use

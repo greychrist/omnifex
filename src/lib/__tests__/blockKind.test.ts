@@ -396,3 +396,52 @@ describe('lastCardIdx algorithm (compact toolbar anchor)', () => {
     expect(computeLastCardIdx(blocks, message, config, true)).toBe(0);
   });
 });
+
+// A tool result carrying a screenshot gets its own kind, so it can be styled
+// and shown/hidden in compact mode independently of ordinary tool output —
+// which defaults to hidden and would otherwise bury every screenshot.
+describe('classifyBlockKind — tool results carrying images', () => {
+  const imageBlock = {
+    type: 'image',
+    source: { type: 'base64', media_type: 'image/png', data: 'AAAA' },
+  };
+
+  it('classifies an image-bearing tool_result as user.tool-result.image', () => {
+    const parent = user([
+      { type: 'tool_result', tool_use_id: 't1', content: [imageBlock] },
+    ]);
+    expect(classifyBlockKind(parent.raw.message.content[0], parent)).toBe(
+      'user.tool-result.image',
+    );
+  });
+
+  it('still classifies it as an image result when text accompanies the image', () => {
+    const parent = user([
+      {
+        type: 'tool_result',
+        tool_use_id: 't1',
+        content: [{ type: 'text', text: 'Screenshot captured' }, imageBlock],
+      },
+    ]);
+    expect(classifyBlockKind(parent.raw.message.content[0], parent)).toBe(
+      'user.tool-result.image',
+    );
+  });
+
+  it('leaves image-free tool results on user.tool-result', () => {
+    const parent = user([
+      { type: 'tool_result', tool_use_id: 't1', content: [{ type: 'text', text: 'ok' }] },
+    ]);
+    expect(classifyBlockKind(parent.raw.message.content[0], parent)).toBe('user.tool-result');
+  });
+
+  it('leaves string-content tool results on user.tool-result', () => {
+    const parent = user([{ type: 'tool_result', tool_use_id: 't1', content: 'done' }]);
+    expect(classifyBlockKind(parent.raw.message.content[0], parent)).toBe('user.tool-result');
+  });
+
+  it('leaves a top-level pasted image on user.image', () => {
+    const parent = user([imageBlock]);
+    expect(classifyBlockKind(parent.raw.message.content[0], parent)).toBe('user.image');
+  });
+});

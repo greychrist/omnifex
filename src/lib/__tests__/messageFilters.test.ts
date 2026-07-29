@@ -253,4 +253,80 @@ describe('forwarded subagent assistant text (--forward-subagent-text)', () => {
     const out = filterDisplayableMessages([mainAssistant()]);
     expect(out).toHaveLength(1);
   });
+
+  // Tool results for widget-backed tools are normally dropped, because the
+  // widget is assumed to render the payload. That assumption breaks for
+  // images: no widget renders them (MCPWidget discards `result` outright), so
+  // dropping the message loses the screenshot entirely.
+  describe('tool results carrying images', () => {
+    const toolCall = (id: string, name: string): JsonlNode =>
+      ({
+        kind: 'assistant', sessionId: '', receivedAt: '',
+        raw: {
+          type: 'assistant',
+          message: { role: 'assistant', content: [{ type: 'tool_use', id, name, input: {} }] },
+        },
+      }) as unknown as JsonlNode;
+
+    const imageResult = (toolUseId: string): JsonlNode =>
+      ({
+        kind: 'user', userKind: 'tool-result', sessionId: '', receivedAt: '',
+        raw: {
+          type: 'user',
+          message: {
+            role: 'user',
+            content: [
+              {
+                type: 'tool_result',
+                tool_use_id: toolUseId,
+                content: [
+                  { type: 'text', text: 'Screenshot captured' },
+                  {
+                    type: 'image',
+                    source: { type: 'base64', media_type: 'image/png', data: 'AAAA' },
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      }) as unknown as JsonlNode;
+
+    const textResult = (toolUseId: string): JsonlNode =>
+      ({
+        kind: 'user', userKind: 'tool-result', sessionId: '', receivedAt: '',
+        raw: {
+          type: 'user',
+          message: {
+            role: 'user',
+            content: [
+              { type: 'tool_result', tool_use_id: toolUseId, content: [{ type: 'text', text: 'ok' }] },
+            ],
+          },
+        },
+      }) as unknown as JsonlNode;
+
+    it('keeps an MCP tool result that contains a screenshot', () => {
+      const out = filterDisplayableMessages([
+        toolCall('t1', 'mcp__chrome-devtools__take_screenshot'),
+        imageResult('t1'),
+      ]);
+      expect(out).toHaveLength(2);
+    });
+
+    it('keeps a Read result that contains an image', () => {
+      const out = filterDisplayableMessages([toolCall('t2', 'Read'), imageResult('t2')]);
+      expect(out).toHaveLength(2);
+    });
+
+    // The existing suppression must survive — only image-bearing results are
+    // rescued, or every widget tool starts double-rendering its payload.
+    it('still drops a widget-backed tool result with no images', () => {
+      const out = filterDisplayableMessages([
+        toolCall('t3', 'mcp__chrome-devtools__list_pages'),
+        textResult('t3'),
+      ]);
+      expect(out).toHaveLength(1);
+    });
+  });
 });

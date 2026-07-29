@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { createDefaultConfig } from "../messageRenderingConfig";
+import { createDefaultConfig, resolveKind } from "../messageRenderingConfig";
 import { headerLabelFor, iconNameFor, presentationFor } from "../kindPresentation";
 
 describe("kindPresentation", () => {
@@ -47,5 +47,42 @@ describe("kindPresentation", () => {
     expect(p.iconName).toBe("User");
     expect(p.swatch).toBeDefined();
     expect(p.style).toBeDefined();
+  });
+
+  // Regression guard. Tool-result images previously inherited
+  // `user.tool-result`, whose `side-line` presentation renders no header and
+  // no footer chip — so screenshots read as un-framed strays next to every
+  // other message, and its `hiddenInCompact: true` buried them in compact mode.
+  describe("user.tool-result.image", () => {
+    it("renders as a framed card, unlike plain tool results", () => {
+      const cfg = createDefaultConfig();
+      expect(resolveKind(cfg, "user.tool-result.image").presentation).toBe("card");
+      expect(resolveKind(cfg, "user.tool-result").presentation).toBe("side-line");
+    });
+
+    it("has a title, so it doesn't render as an anonymous block", () => {
+      const cfg = createDefaultConfig();
+      expect(headerLabelFor(cfg, "user.tool-result.image")).toBe("Image");
+    });
+
+    it("carries its own icon", () => {
+      const cfg = createDefaultConfig();
+      expect(iconNameFor(cfg, "user.tool-result.image")).toBe("Image");
+    });
+
+    it("is visible in compact mode by default, unlike plain tool results", () => {
+      const cfg = createDefaultConfig();
+      // A returned screenshot is usually the point of the call, not plumbing.
+      expect(cfg.kinds["user.tool-result.image"]?.hiddenInCompact ?? false).toBe(false);
+    });
+
+    it("stays user-overridable like any other kind", () => {
+      const cfg = createDefaultConfig();
+      cfg.kinds["user.tool-result.image"] = {
+        ...cfg.kinds["user.tool-result.image"],
+        headerLabel: "Screenshot",
+      };
+      expect(headerLabelFor(cfg, "user.tool-result.image")).toBe("Screenshot");
+    });
   });
 });

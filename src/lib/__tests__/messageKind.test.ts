@@ -16,7 +16,7 @@ const EMITTABLE_IDS = [
   // user
   "user.prompt", "user.command", "user.commandOutput", "user.subagentPrompt",
   "user.skillInjection", "user.systemContext", "user.sdkSystemBracket",
-  "user.tool-result", "user.image",
+  "user.tool-result", "user.tool-result.image", "user.image",
   // system
   "system.notification.info", "system.notification.warn",
   "system.notification.error", "system.notification.stop",

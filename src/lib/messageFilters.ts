@@ -2,6 +2,7 @@ import type { JsonlNode } from "@/types/jsonl";
 import { isTaskLifecycleMarker } from "@/lib/subagentStreams";
 import { forwardedParentToolUseId, isSubagentPrompt } from "@/lib/subagentDispatch";
 import { detectSkillInjection } from "@/lib/skillDetection";
+import { toolResultHasImages } from "@/lib/toolResultImages";
 import type { HardFilters } from "@/lib/messageRenderingConfig";
 
 // CLI subtypes the renderer treats as hook-lifecycle noise. `hook_progress`
@@ -156,7 +157,12 @@ export function filterDisplayableMessages(
                           toolsWithWidgets.includes(toolName)) ||
                         toolUse.name?.startsWith("mcp__")
                       ) {
-                        willBeSkipped = true;
+                        // ...unless the result carries an image. The skip above
+                        // assumes the tool's widget renders the payload, which
+                        // is false for images — MCPWidget discards `result`
+                        // outright — so skipping here would drop a screenshot
+                        // and leave only the tool-call entry behind.
+                        willBeSkipped = !toolResultHasImages(content);
                       }
                       break;
                     }

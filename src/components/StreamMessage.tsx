@@ -34,6 +34,7 @@ import {
   TOOLS_WITH_WIDGETS_LOWER,
   warnUnhandledKnownTool,
 } from "@/lib/types/toolInput";
+import { extractToolResultImages, toolResultHasImages } from "@/lib/toolResultImages";
 import { AnsweredAskUserQuestionCard } from "@/components/AnsweredAskUserQuestionCard";
 import { CardActionBar, CardActionButton, CardActionDivider } from "@/components/CardActionBar";
 import { MessageFrame } from "@/components/StreamMessage/MessageFrame";
@@ -169,12 +170,22 @@ const DownloadableImage: React.FC<{
         </div>
       </div>
       <Dialog open={lightboxOpen} onOpenChange={setLightboxOpen}>
-        <DialogContent className="max-w-[90vw] max-h-[90vh] w-fit p-0 bg-transparent border-0 shadow-none">
+        {/*
+          The box is sized EXPLICITLY (w/h), not `w-fit`, and the image scales
+          inside it. `w-fit` on a `left-[50%]`-anchored fixed element resolves
+          fit-content against the space from that 50% anchor to the right edge
+          — i.e. half the viewport. The container then shrank to 50vw while the
+          image was still allowed 90vw, so it overflowed its own container (no
+          overflow-hidden here) and ran off the right edge, with
+          `translate-x-[-50%]` centering on the wrong width. Measured at 1200px
+          wide: container 600px, image 1080px, right edge at 1380.
+        */}
+        <DialogContent className="w-[90vw] h-[90vh] max-w-none flex items-center justify-center p-0 bg-transparent border-0 shadow-none">
           <DialogTitle className="sr-only">{alt || 'Image preview'}</DialogTitle>
           <img
             src={src}
             alt={alt}
-            className="max-w-[90vw] max-h-[90vh] object-contain rounded-md"
+            className="max-w-full max-h-full object-contain rounded-md"
           />
         </DialogContent>
       </Dialog>
@@ -1091,7 +1102,17 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
       const isCommandOutput = !isToolResultOnly && !isSubagentPrompt && !skillInjection
         && !isCommand
         && contentStr.includes('<local-command-stdout>');
-      const userKindId = isToolResultOnly
+      // A tool result carrying images gets its own kind so the user can style
+      // it and control compact visibility separately from ordinary tool output
+      // (which defaults to hidden, and would bury every screenshot). This frame
+      // is per-MESSAGE, not per-block, so the decision has to be made here —
+      // classifyBlockKind's per-block answer never reaches MessageFrame on this
+      // path.
+      const isImageToolResult = isToolResultOnly
+        && (msg.content as MessageContentBlock[]).some((c) => toolResultHasImages(c));
+      const userKindId = isImageToolResult
+        ? "user.tool-result.image"
+        : isToolResultOnly
         ? "user.tool-result"
         : isSubagentPrompt
         ? "user.subagentPrompt"
@@ -1271,16 +1292,42 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
                       );
                     }
 
+                    // Images a tool returned. The widget above renders the
+                    // call, never its images (MCPWidget discards `result`
+                    // entirely), so these have to render here or a screenshot
+                    // is lost — leaving only the tool-call entry behind.
+                    const resultImages = extractToolResultImages(content);
+
                     if (hasCorrespondingWidget) {
-                      return null;
+                      if (resultImages.length === 0) return null;
+                      // Render the images beneath the widget and drop the rest
+                      // of the payload, which the widget already owns.
+                      renderedSomething = true;
+                      return (
+                        <div key={idx} className="flex flex-wrap gap-2 mt-2">
+                          {resultImages.map((img, i) => (
+                            <DownloadableImage
+                              key={i}
+                              src={img.dataUrl}
+                              alt="Tool result image"
+                              mediaType={img.mediaType}
+                              className="max-w-sm max-h-64 rounded-md border border-border object-contain"
+                            />
+                          ))}
+                        </div>
+                      );
                     }
                     // Extract the actual content string
                     let contentText = '';
                     if (typeof content.content === 'string') {
                       contentText = content.content;
                     } else if (Array.isArray(content.content)) {
-                      // Handle array of content blocks
+                      // Handle array of content blocks. Image blocks are
+                      // deliberately excluded: they're rendered as images
+                      // below, and JSON.stringify would otherwise dump the
+                      // whole base64 payload into the transcript as text.
                       contentText = content.content
+                        .filter((c) => !(c && typeof c === 'object' && (c as { type?: string }).type === 'image'))
                         .map((c) => (typeof c === 'string' ? c : ('text' in c && typeof c.text === 'string' ? c.text : JSON.stringify(c))))
                         .join('\n');
                     } else if (content.content && typeof content.content === 'object') {
@@ -1288,6 +1335,35 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
                       contentText = JSON.stringify(content.content, null, 2);
                     }
 
+                    // A tool without a widget that still returned images (rare
+                    // — most image-producing tools are widget-backed). Render
+                    // them alongside whatever text came with them, ahead of the
+                    // per-tool specialized branches below: none of those handle
+                    // images, and they'd fall through to a text-only render
+                    // that silently drops the picture.
+                    if (resultImages.length > 0) {
+                      renderedSomething = true;
+                      return (
+                        <div key={idx} className="space-y-2">
+                          {contentText.trim() && (
+                            <div className="text-xs text-muted-foreground whitespace-pre-wrap">
+                              {contentText}
+                            </div>
+                          )}
+                          <div className="flex flex-wrap gap-2">
+                            {resultImages.map((img, i) => (
+                              <DownloadableImage
+                                key={i}
+                                src={img.dataUrl}
+                                alt="Tool result image"
+                                mediaType={img.mediaType}
+                                className="max-w-sm max-h-64 rounded-md border border-border object-contain"
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    }
 
                     // Always show system reminders regardless of widget status
                     const reminderMatch = /<system-reminder>(.*?)<\/system-reminder>/s.exec(contentText);

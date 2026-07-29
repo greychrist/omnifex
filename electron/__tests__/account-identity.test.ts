@@ -175,9 +175,12 @@ describe('watchOauthIdentity', () => {
 
     writeIdentity(dir, 'b@example.com');
 
-    await vi.waitFor(() => { expect(onChange).toHaveBeenCalled(); }, { timeout: 3000 });
+    await vi.waitFor(() => { expect(onChange).toHaveBeenCalled(); }, { timeout: 10000 });
     sub.dispose();
-  });
+    // 20s test timeout: fs.watch delivery has no latency guarantee and the
+    // full suite runs these in parallel. A waitFor longer than vitest's
+    // default 5s per-test timeout is dead code without this.
+  }, 20000);
 
   // macOS FSEvents names `.claude.json` in the event stream even when an
   // unrelated file in the same dir was written, so the watcher cannot filter
@@ -216,9 +219,12 @@ describe('watchOauthIdentity', () => {
     fs.writeFileSync(tmp, JSON.stringify({ numStartups: 3 }), 'utf8');
     fs.renameSync(tmp, path.join(dir, '.claude.json'));
 
-    await vi.waitFor(() => { expect(onChange).toHaveBeenCalled(); }, { timeout: 3000 });
+    await vi.waitFor(() => { expect(onChange).toHaveBeenCalled(); }, { timeout: 10000 });
     sub.dispose();
-  });
+    // 20s test timeout: fs.watch delivery has no latency guarantee and the
+    // full suite runs these in parallel. A waitFor longer than vitest's
+    // default 5s per-test timeout is dead code without this.
+  }, 20000);
 
   it('stops firing after dispose', async () => {
     const dir = tmpConfigDir(JSON.stringify({ oauthAccount: { emailAddress: 'a@example.com' } }));

@@ -256,6 +256,16 @@ export const KIND_REGISTRY: Record<string, KindDef> = {
   "user.systemContext": { id: "user.systemContext", category: "user", label: "System context", description: "Hook feedback, system-reminders, skill preambles.", default: { presentation: "collapsible", icon: "Sparkles", accentColor: "purple", showRawPayload: true, alignment: "left", hiddenInCompact: false } },
   "user.sdkSystemBracket": { id: "user.sdkSystemBracket", category: "user", label: "System notice", description: "CLI bracket notices like [Request interrupted].", default: { presentation: "side-line", icon: "Info", alignment: "left" } },
   "user.tool-result": { id: "user.tool-result", category: "user", label: "Tool result", description: "Output returned from a tool call.", default: { presentation: "side-line", headerLabel: null, alignment: "left", hiddenInCompact: true } },
+  // Its own row rather than folding into `user.tool-result`: that kind defaults
+  // to hiddenInCompact, which would bury every screenshot a tool returns. Split
+  // out so images can be styled and shown/hidden independently of ordinary tool
+  // output. Visible in compact by default — a screenshot is usually the point
+  // of the call, not plumbing.
+  // `card`, not the `side-line` that plain tool results use: side-line renders
+  // no header and no footer chip, which is why these read as "not the same
+  // component" next to every other message. A returned screenshot is content
+  // worth framing, so it gets the standard card chrome and a title.
+  "user.tool-result.image": { id: "user.tool-result.image", category: "user", label: "Tool result image", description: "A screenshot or image returned by a tool.", default: { presentation: "card", headerLabel: "Image", alignment: "left", icon: "Image", accentColor: "indigo", hiddenInCompact: false } },
   "user.image": { id: "user.image", category: "user", label: "Image", description: "A pasted or attached image.", default: { icon: "Image", alignment: "left" } },
   // ── system ──
   "system.notification.info": { id: "system.notification.info", category: "system", label: "Notification (info)", description: "Informational CLI notification.", default: { icon: "Bell", presentation: "card", hiddenInCompact: false } },
