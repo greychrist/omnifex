@@ -24,7 +24,14 @@ const TERMINAL_STOP_REASONS = new Set([
 // If/when the repo's canonical types are typed strictly, swap these aliases.
 type WithStatus = { status: string };
 
-function isMainAssistant(node: JsonlNode): boolean {
+/**
+ * Exported because any per-turn metric needs the same exclusion — see
+ * `turnDelta.ts` and `contextTimeline.ts`, both of which would otherwise treat
+ * a subagent's context window as the main thread's.
+ */
+export function isMainAssistant(
+  node: JsonlNode,
+): node is Extract<JsonlNode, { kind: 'assistant' }> {
   if (node.kind !== 'assistant') return false;
   const isSidechain = (node.raw as { isSidechain?: boolean }).isSidechain === true;
   // Live-forwarded subagent assistants (--forward-subagent-text) carry a

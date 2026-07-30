@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { ChevronDown, ChevronUp } from "lucide-react";
+import { ChevronDown, ChevronUp, BarChartHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TooltipSimple } from "@/components/ui/tooltip-modern";
 import { StreamMessage } from "@/components/StreamMessage";
@@ -11,7 +11,11 @@ import { useFindInChat } from "@/hooks/useFindInChat";
 import { buildCompactItems } from "@/lib/compactGrouping";
 import { filterDisplayableMessages } from "@/lib/messageFilters";
 import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
+import { cn } from "@/lib/utils";
 import { useAutoScroll } from "@/contexts/AutoScrollContext";
+import { useSessionGauges } from "@/contexts/SessionGaugesContext";
+import { buildContextTimeline } from "@/lib/contextTimeline";
+import { ContextTimelineTick } from "@/components/ContextTimelineTick";
 import { nextNearBottom } from "@/lib/autoScrollThresholds";
 import type { JsonlNode } from "@/types/jsonl";
 import type { ViewMode } from "@/components/SessionViewToggle";
@@ -37,6 +41,8 @@ export interface ClaudeTranscriptProps {
   currentActivity: string;
   /** Running token total used in the typing-dots row. */
   totalTokens: number;
+  /** Context window for this session — scales the timeline rail's bars. */
+  contextLimit: number;
   /** Error string to render under the transcript, if any. */
   error: string | null;
   /** Tab id forwarded to InflightAssistantBubble. */
@@ -74,6 +80,7 @@ export function ClaudeTranscript({
   hasInflightAssistant,
   currentActivity,
   totalTokens,
+  contextLimit,
   error,
   tabId,
   messagesEndRef,
@@ -81,6 +88,32 @@ export function ClaudeTranscript({
 }: ClaudeTranscriptProps): React.ReactElement {
   const { config: renderConfig } = useMessageRenderingConfig();
   const { reengagePx, disengagePx } = useAutoScroll();
+  const { contextTimelineEnabled, setContextTimelineEnabled, contextJump } =
+    useSessionGauges();
+
+  // Built over the FULL message array and keyed by node identity, so hard
+  // filters can hide rows without shifting the series or corrupting deltas.
+  const timeline = useMemo(
+    () =>
+      contextTimelineEnabled
+        ? buildContextTimeline(messages, {
+            limit: contextLimit,
+            jumpThresholdTokens: contextJump.thresholdTokens,
+          })
+        : null,
+    [contextTimelineEnabled, messages, contextLimit, contextJump.thresholdTokens],
+  );
+
+  /** Wraps a rendered row in the rail gutter when the timeline is on. */
+  const withTimeline = (node: JsonlNode | undefined, body: React.ReactNode) => {
+    if (!timeline) return body;
+    return (
+      <div className="flex gap-2">
+        <ContextTimelineTick point={node ? timeline.get(node) : undefined} />
+        <div className="flex-1 min-w-0">{body}</div>
+      </div>
+    );
+  };
 
   // Filter out messages that shouldn't be displayed (honors the user's
   // hard-filter toggles in Appearance settings).
@@ -200,6 +233,24 @@ export function ClaudeTranscript({
       />
     )}
     <div className="absolute right-1 bottom-6 z-10 flex flex-col gap-1">
+      <TooltipSimple
+        content={contextTimelineEnabled ? "Hide context timeline" : "Show context timeline"}
+        side="left"
+      >
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Toggle context timeline"
+          aria-pressed={contextTimelineEnabled}
+          onClick={() => void setContextTimelineEnabled(!contextTimelineEnabled)}
+          className={cn(
+            "h-8 w-8 hover:bg-accent/50 transition-colors bg-background/80 backdrop-blur-sm border border-border/50",
+            contextTimelineEnabled && "text-primary",
+          )}
+        >
+          <BarChartHorizontal className="h-3.5 w-3.5" />
+        </Button>
+      </TooltipSimple>
       <TooltipSimple content="Scroll to top" side="left">
         <Button
           variant="ghost"
@@ -233,13 +284,16 @@ export function ClaudeTranscript({
           {viewMode === 'verbose'
             ? displayableMessages.map((message, idx) => (
                 <div key={idx}>
-                  <StreamMessage
-                    message={message}
-                    streamMessages={messages}
-                    onLinkDetected={onLinkDetected}
-                    accountType={accountType}
-                    onResend={onResend}
-                  />
+                  {withTimeline(
+                    message,
+                    <StreamMessage
+                      message={message}
+                      streamMessages={messages}
+                      onLinkDetected={onLinkDetected}
+                      accountType={accountType}
+                      onResend={onResend}
+                    />,
+                  )}
                 </div>
               ))
             : (() => {
@@ -247,24 +301,33 @@ export function ClaudeTranscript({
                 return items.map((item) =>
                   item.kind === 'single' ? (
                     <div key={item.key}>
-                      <StreamMessage
-                        message={item.message}
-                        streamMessages={messages}
-                        onLinkDetected={onLinkDetected}
-                        accountType={accountType}
-                        compact
-                        onResend={onResend}
-                      />
+                      {withTimeline(
+                        item.message,
+                        <StreamMessage
+                          message={item.message}
+                          streamMessages={messages}
+                          onLinkDetected={onLinkDetected}
+                          accountType={accountType}
+                          compact
+                          onResend={onResend}
+                        />,
+                      )}
                     </div>
                   ) : (
-                    <HiddenEventsGroup
-                      key={item.key}
-                      messages={item.messages}
-                      streamMessages={messages}
-                      accountType={accountType}
-                      onLinkDetected={onLinkDetected}
-                      onResend={onResend}
-                    />
+                    <div key={item.key}>
+                      {/* A collapsed group reports its EXIT state — the context
+                          size after everything inside it ran. */}
+                      {withTimeline(
+                        item.messages[item.messages.length - 1],
+                        <HiddenEventsGroup
+                          messages={item.messages}
+                          streamMessages={messages}
+                          accountType={accountType}
+                          onLinkDetected={onLinkDetected}
+                          onResend={onResend}
+                        />,
+                      )}
+                    </div>
                   ),
                 );
               })()}

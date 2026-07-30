@@ -10,6 +10,7 @@
  */
 
 import type { JsonlNode } from '@/types/jsonl';
+import { isMainAssistant } from '@/lib/sessionDerivedState';
 
 export const CONTEXT_JUMP_ENABLED_SETTING_KEY = 'context_jump_enabled';
 export const CONTEXT_JUMP_TOKENS_SETTING_KEY = 'context_jump_tokens';
@@ -44,10 +45,13 @@ export interface TurnDelta {
 
 /**
  * What this turn had in context: the same sum the gauge uses.
- * Null for anything that isn't an assistant turn carrying usage.
+ *
+ * Null for anything that isn't a MAIN-THREAD assistant turn carrying usage.
+ * Subagent messages carry usage describing their own context window, so
+ * counting them fabricates jumps the main thread never took.
  */
 export function turnContextTotal(node: JsonlNode): number | null {
-  if (node.kind !== 'assistant') return null;
+  if (!isMainAssistant(node)) return null;
   const usage = node.raw.message?.usage as
     | {
         input_tokens?: number;

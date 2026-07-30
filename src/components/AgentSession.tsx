@@ -2037,6 +2037,7 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
       hasInflightAssistant={hasInflightAssistant}
       currentActivity={currentActivity}
       totalTokens={totalTokens}
+      contextLimit={contextLimit}
       error={error}
       tabId={tabIdRef.current}
       messagesEndRef={messagesEndRef}

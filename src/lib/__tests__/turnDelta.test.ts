@@ -48,6 +48,20 @@ const toolResult = (): JsonlNode =>
     raw: { type: 'user', message: { role: 'user', content: [] } },
   }) as unknown as JsonlNode;
 
+/** A subagent's assistant message. Its usage describes ITS context, not ours. */
+const sidechain = (total: number): JsonlNode => {
+  const node = assistant(total) as unknown as { raw: Record<string, unknown> };
+  node.raw.isSidechain = true;
+  return node as unknown as JsonlNode;
+};
+
+/** A live-forwarded subagent message (--forward-subagent-text). Same exclusion. */
+const forwarded = (total: number): JsonlNode => {
+  const node = assistant(total) as unknown as { raw: Record<string, unknown> };
+  node.raw.parent_tool_use_id = 'toolu_123';
+  return node as unknown as JsonlNode;
+};
+
 const compactBoundary = (): JsonlNode =>
   ({
     kind: 'system',
@@ -64,6 +78,25 @@ describe('turnContextTotal', () => {
 
   it('is null for a turn with no usage', () => {
     expect(turnContextTotal(prompt())).toBeNull();
+  });
+
+  // A subagent's usage describes the subagent's own context window. Counting
+  // it as main-thread context invents jumps that never happened.
+  it('is null for subagent messages', () => {
+    expect(turnContextTotal(sidechain(900_000))).toBeNull();
+    expect(turnContextTotal(forwarded(900_000))).toBeNull();
+  });
+});
+
+describe('lastTurnDelta — subagent isolation', () => {
+  it('does not let a subagent message become the current total', () => {
+    const msgs = [assistant(100_000), prompt(), assistant(160_000), sidechain(900_000)];
+    expect(lastTurnDelta(msgs)?.newTotal).toBe(160_000);
+  });
+
+  it('does not let a subagent message become the baseline', () => {
+    const msgs = [assistant(100_000), sidechain(900_000), prompt(), assistant(160_000)];
+    expect(lastTurnDelta(msgs)).toMatchObject({ prevTotal: 100_000, deltaTokens: 60_000 });
   });
 });
 
