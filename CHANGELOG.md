@@ -5,6 +5,52 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.103] — 2026-07-30
+
+### Added
+
+- **Context-pressure banner.** When a session's context passes a budget you set,
+  a banner appears across the top of the session — amber at 80% of the budget,
+  red at 100%. Clicking it runs `/compact` and it clears itself once the
+  compaction lands. The budget is either a percentage of the window or an
+  absolute token count (default 250k). An absolute budget clamps to 95% of the
+  real window, so red stays reachable on a 200k session where the CLI
+  auto-compacts before the ceiling. Not dismissible by design — a warning you
+  can wave away becomes one you wave away reflexively — but it can be turned
+  off entirely in Settings → General.
+
+- **Prompt-cache countdown.** The session header now shows how much of the
+  prompt cache's lifetime is left under the context gauge (`cache 42m left
+  (1h)`), turning amber at 80% elapsed and red at 90%, and the tab picks up a
+  matching indicator so a background session's cache running out is visible
+  from another tab. There is no readable cache-TTL setting to consult — the
+  effective TTL depends on env knobs plus subscription state, usage overage,
+  query source and a server-controlled allowlist — so the TTL is observed from
+  what the CLI actually reported in `usage.cache_creation`. No observation
+  means no timer rather than a guess.
+
+- **Single-turn context jumps are flagged.** A skill or file load can add
+  hundreds of thousands of tokens in one turn; a "compact every N turns" habit
+  structurally can't see that. Any turn adding more than a configurable amount
+  (default 50k) now gets a one-line note. It reports rather than offering to
+  compact, on purpose: compacting straight after a big load would discard the
+  thing that was just loaded.
+
+- **Cache TTL changes are surfaced.** A 1h → 5m drop usually means usage
+  overage, and it shrinks the follow-up window twelvefold. The change now gets
+  a one-line note, and the countdown names the active TTL inline so the drop
+  stays legible afterwards.
+
+### Changed
+
+- Tab status indicators gain a configurable "prompt cache expiring" glyph
+  (default hourglass, yellow → red), editable alongside the existing four in
+  Settings → General. Unlike the others it does not pulse — flashing suits "I
+  need you now", not a countdown that would strobe for minutes.
+
+Installers remain **unsigned**. macOS Gatekeeper will block first launch;
+right-click → Open to get past it.
+
 ## [0.4.102] — 2026-07-29
 
 ### Fixed
