@@ -5,6 +5,32 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.104] — 2026-07-30
+
+Supersedes 0.4.103, which was tagged but never released — it carried the
+Opus 5 pricing bug below. Everything listed under 0.4.103 ships here.
+
+### Fixed
+
+- **Opus 5 costs were reported at three times the real rate.** The pricing
+  table matched `opus-4-5` through `opus-4-8` explicitly and then fell through
+  to a bare `opus` catch-all still priced for Opus 3 at $15/$75 per MTok.
+  `claude-opus-5` matched none of the specific rows, so it landed on the
+  catch-all — and since Opus 5 became the default Opus, that inflated every
+  cost figure the app displayed. Opus 5 bills at $5/$25, the same as Opus 4.8.
+  Modern Opus models now each have their own row above the legacy catch-all.
+
+### Added
+
+- **Fast-mode turns are priced correctly.** Fast mode bills at $10/$50 per
+  MTok — double standard — on the two models that support it (Opus 5 and
+  Opus 4.8). Cost is now taken from `usage.speed` per turn rather than
+  assuming every turn ran at standard speed. An explicit pricing override
+  still wins, so a rate you set by hand is never silently doubled.
+
+Installers remain **unsigned**. macOS Gatekeeper will block first launch;
+right-click → Open to get past it.
+
 ## [0.4.103] — 2026-07-30
 
 ### Added
