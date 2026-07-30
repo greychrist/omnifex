@@ -34,6 +34,12 @@ export interface TurnDelta {
   deltaTokens: number;
   prevTotal: number;
   newTotal: number;
+  /**
+   * Identity of the prompt this delta is anchored to. Stable for the whole
+   * turn and different on the next one, which is what lets the banner remember
+   * a dismissal without suppressing the next jump.
+   */
+  anchorId: string;
 }
 
 /**
@@ -60,49 +66,94 @@ export function turnContextTotal(node: JsonlNode): number | null {
 }
 
 /**
- * Growth between the two most recent assistant turns, or null when there is no
- * meaningful delta to report.
+ * How much context has grown since the human last hit enter, or null when
+ * there is no meaningful delta to report.
+ *
+ * The anchor is the last `userKind === 'prompt'` node, NOT the previous
+ * assistant message. That distinction is the whole point: one prompt produces
+ * a whole tool loop of assistant messages, so an assistant-to-assistant
+ * difference measures one step of a loop rather than the turn. It also made
+ * the notice useless in practice — a skill load would register on exactly one
+ * message and be wiped by the next step of the same turn, seconds later.
  *
  * Null cases, each of which would otherwise produce a misleading number:
- *  - fewer than two turns with usage — nothing to difference
- *  - a compact_boundary between them — compaction drops context by design, so
- *    the delta is hugely negative and means the opposite of a problem
+ *  - no prompt to anchor to, or no assistant usage on either side of it
+ *  - a compact_boundary between the baseline and now — compaction drops
+ *    context by design, so the delta means the opposite of a problem
  *  - any shrink — same reasoning, without the explicit marker
  */
 export function lastTurnDelta(messages: JsonlNode[]): TurnDelta | null {
-  let newTotal: number | null = null;
-  let sawCompactBoundary = false;
+  const anchor = lastPrompt(messages);
+  if (anchor === null) return null;
+  const anchorIdx = anchor.index;
 
+  // Newest usage in the current turn, and the last usage before it started.
+  const next = lastTotalInRange(messages, anchorIdx + 1, messages.length - 1);
+  if (next === null) return null;
+  const base = lastTotalInRange(messages, 0, anchorIdx - 1);
+  if (base === null) return null;
+
+  if (hasCompactBoundaryAfter(messages, base.index)) return null;
+
+  const deltaTokens = next.total - base.total;
+  if (deltaTokens <= 0) return null;
+  return {
+    deltaTokens,
+    prevTotal: base.total,
+    newTotal: next.total,
+    anchorId: promptAnchorId(anchor.node, anchorIdx),
+  };
+}
+
+function lastPrompt(
+  messages: JsonlNode[],
+): { node: Extract<JsonlNode, { kind: 'user' }>; index: number } | null {
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const node = messages[i];
+    if (node.kind === 'user' && node.userKind === 'prompt') return { node, index: i };
+  }
+  return null;
+}
 
-    if (node.kind === 'system' && node.subtype === 'compact_boundary') {
-      // Only matters once we're between the two turns being differenced.
-      if (newTotal !== null) sawCompactBoundary = true;
-      continue;
-    }
-
-    const total = turnContextTotal(node);
-    if (total === null) continue;
-
-    if (newTotal === null) {
-      newTotal = total;
-      continue;
-    }
-    if (sawCompactBoundary) return null;
-    const deltaTokens = newTotal - total;
-    if (deltaTokens <= 0) return null;
-    return { deltaTokens, prevTotal: total, newTotal };
+/** Newest assistant context total in [from, to], or null if there is none. */
+function lastTotalInRange(
+  messages: JsonlNode[],
+  from: number,
+  to: number,
+): { total: number; index: number } | null {
+  for (let i = Math.min(to, messages.length - 1); i >= Math.max(from, 0); i -= 1) {
+    const total = turnContextTotal(messages[i]);
+    if (total !== null) return { total, index: i };
   }
   return null;
 }
 
 /**
+ * A compaction after the baseline invalidates it: the pre-compaction total is
+ * not comparable to the current one. Scanned from the baseline rather than
+ * from the prompt, because `/compact` lands between the two.
+ */
+function hasCompactBoundaryAfter(messages: JsonlNode[], baseIdx: number): boolean {
+  for (let i = baseIdx + 1; i < messages.length; i += 1) {
+    const node = messages[i];
+    if (node.kind === 'system' && node.subtype === 'compact_boundary') return true;
+  }
+  return false;
+}
+
+/** Index fallback keeps the id stable within a render when the CLI omits uuid. */
+function promptAnchorId(node: Extract<JsonlNode, { kind: 'user' }>, index: number): string {
+  const raw = node.raw as { uuid?: string; promptId?: string };
+  return raw.uuid ?? raw.promptId ?? `${node.receivedAt}#${index}`;
+}
+
+/**
  * The jump worth telling the user about, or null.
  *
- * Only ever reports the most recent delta, which is what makes the notice
- * self-clearing: the big turn stops being "most recent" as soon as an ordinary
- * one lands, and the notice disappears without any dismissal state.
+ * Reports only the current turn, so the notice lives exactly as long as the
+ * prompt that caused it: it holds while that turn runs, and clears when the
+ * next prompt re-anchors the delta. `SessionNotices` layers a dismissal on top
+ * of that, keyed to `anchorId`.
  */
 export function evaluateContextJump(opts: {
   messages: JsonlNode[];

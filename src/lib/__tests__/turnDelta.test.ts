@@ -28,13 +28,24 @@ const assistant = (total: number, receivedAt = '2026-07-30T10:00:00Z'): JsonlNod
     },
   }) as unknown as JsonlNode;
 
-const user = (): JsonlNode =>
+/** A prompt the human actually typed — the anchor for a turn. */
+const prompt = (uuid = 'p1'): JsonlNode =>
   ({
     kind: 'user',
     sessionId: 's1',
     receivedAt: '2026-07-30T10:00:00Z',
     userKind: 'prompt',
-    raw: { type: 'user', message: { role: 'user', content: 'hi' } },
+    raw: { type: 'user', uuid, message: { role: 'user', content: 'hi' } },
+  }) as unknown as JsonlNode;
+
+/** A tool_result the harness wrote back. Not a turn boundary. */
+const toolResult = (): JsonlNode =>
+  ({
+    kind: 'user',
+    sessionId: 's1',
+    receivedAt: '2026-07-30T10:00:00Z',
+    userKind: 'tool-result',
+    raw: { type: 'user', message: { role: 'user', content: [] } },
   }) as unknown as JsonlNode;
 
 const compactBoundary = (): JsonlNode =>
@@ -52,39 +63,80 @@ describe('turnContextTotal', () => {
   });
 
   it('is null for a turn with no usage', () => {
-    expect(turnContextTotal(user())).toBeNull();
+    expect(turnContextTotal(prompt())).toBeNull();
   });
 });
 
 describe('lastTurnDelta', () => {
-  it('reports the growth between the last two assistant turns', () => {
-    const msgs = [assistant(477_456), user(), assistant(802_456)];
+  it('measures growth since the last prompt the human typed', () => {
+    const msgs = [assistant(477_456), prompt(), assistant(802_456)];
     expect(lastTurnDelta(msgs)).toEqual({
       deltaTokens: 325_000,
       prevTotal: 477_456,
       newTotal: 802_456,
+      anchorId: 'p1',
     });
   });
 
-  it('is null with only one turn to go on', () => {
-    expect(lastTurnDelta([assistant(43_000)])).toBeNull();
+  // The regression this rewrite exists for. Measured from session
+  // 856ad35e: a skill load added 324,691 tokens mid-turn, and the tool loop
+  // kept going. Differencing the two most recent ASSISTANT messages reported
+  // the trailing +1,394 and the notice vanished seconds after it appeared.
+  it('holds the jump for the rest of a tool-looping turn', () => {
+    const msgs = [
+      assistant(64_843),
+      prompt(),
+      assistant(389_534), // the skill body lands
+      toolResult(),
+      assistant(390_928), // ordinary follow-up steps
+      toolResult(),
+      assistant(391_000),
+    ];
+    expect(lastTurnDelta(msgs)?.deltaTokens).toBe(326_157);
+  });
+
+  it('re-anchors on the next prompt', () => {
+    const msgs = [
+      assistant(64_843),
+      prompt('p1'),
+      assistant(389_534),
+      prompt('p2'),
+      assistant(391_000),
+    ];
+    expect(lastTurnDelta(msgs)).toMatchObject({
+      deltaTokens: 1_466,
+      prevTotal: 389_534,
+      anchorId: 'p2',
+    });
+  });
+
+  it('is null before the turn has produced any usage', () => {
+    expect(lastTurnDelta([assistant(43_000), prompt()])).toBeNull();
+  });
+
+  it('is null with no baseline before the prompt', () => {
+    // A session's very first prompt has nothing to difference against.
+    expect(lastTurnDelta([prompt(), assistant(220_000)])).toBeNull();
+  });
+
+  it('is null with no prompt to anchor to', () => {
+    expect(lastTurnDelta([assistant(100_000), assistant(400_000)])).toBeNull();
     expect(lastTurnDelta([])).toBeNull();
   });
 
   // A compaction drops context by design. Differencing across it reports a
   // huge negative "jump" that means the opposite of a problem.
   it('is null across a compact boundary', () => {
-    const msgs = [assistant(802_456), compactBoundary(), assistant(60_000)];
+    const msgs = [assistant(802_456), compactBoundary(), prompt(), assistant(60_000)];
     expect(lastTurnDelta(msgs)).toBeNull();
   });
 
   it('is null when context shrank without a compaction', () => {
-    const msgs = [assistant(300_000), assistant(280_000)];
-    expect(lastTurnDelta(msgs)).toBeNull();
+    expect(lastTurnDelta([assistant(300_000), prompt(), assistant(280_000)])).toBeNull();
   });
 
-  it('ignores non-assistant nodes between the turns', () => {
-    const msgs = [assistant(100_000), user(), user(), assistant(160_000)];
+  it('does not treat a tool_result as a turn boundary', () => {
+    const msgs = [assistant(100_000), prompt(), toolResult(), assistant(160_000)];
     expect(lastTurnDelta(msgs)?.deltaTokens).toBe(60_000);
   });
 });
@@ -97,8 +149,8 @@ describe('evaluateContextJump', () => {
   });
 
   it('fires on a jump at or above the threshold', () => {
-    const msgs = [assistant(100_000), assistant(150_000)];
-    expect(evaluateContextJump({ messages: msgs, setting })).toEqual({
+    const msgs = [assistant(100_000), prompt(), assistant(150_000)];
+    expect(evaluateContextJump({ messages: msgs, setting })).toMatchObject({
       deltaTokens: 50_000,
       prevTotal: 100_000,
       newTotal: 150_000,
@@ -106,23 +158,27 @@ describe('evaluateContextJump', () => {
   });
 
   it('stays quiet just below the threshold', () => {
-    const msgs = [assistant(100_000), assistant(149_999)];
+    const msgs = [assistant(100_000), prompt(), assistant(149_999)];
     expect(evaluateContextJump({ messages: msgs, setting })).toBeNull();
   });
 
   it('stays quiet when disabled', () => {
-    const msgs = [assistant(100_000), assistant(500_000)];
+    const msgs = [assistant(100_000), prompt(), assistant(500_000)];
     expect(
       evaluateContextJump({ messages: msgs, setting: { ...setting, enabled: false } }),
     ).toBeNull();
   });
 
-  // Reporting only the most recent delta is what makes the notice self-clear:
-  // the big turn scrolls out of "most recent" as soon as a normal one lands.
-  it('clears once a later, smaller turn lands', () => {
-    const jumped = [assistant(100_000), assistant(425_000)];
+  // The notice now survives its whole turn and clears when the human moves on,
+  // rather than being wiped by the next tool-loop step.
+  it('persists through the turn and clears on the next prompt', () => {
+    const jumped = [assistant(100_000), prompt('p1'), assistant(425_000)];
     expect(evaluateContextJump({ messages: jumped, setting })).not.toBeNull();
-    const settled = [...jumped, assistant(427_000)];
-    expect(evaluateContextJump({ messages: settled, setting })).toBeNull();
+
+    const stillRunning = [...jumped, toolResult(), assistant(427_000)];
+    expect(evaluateContextJump({ messages: stillRunning, setting })).not.toBeNull();
+
+    const nextTurn = [...stillRunning, prompt('p2'), assistant(428_000)];
+    expect(evaluateContextJump({ messages: nextTurn, setting })).toBeNull();
   });
 });
