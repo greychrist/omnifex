@@ -31,6 +31,9 @@ const STATES: { key: TabIndicatorKey; label: string }[] = [
   { key: "permission", label: "Permission request" },
   { key: "question", label: "Question waiting" },
   { key: "complete", label: "Completed" },
+  // The configured color is the warn step; the critical step reddens on its own
+  // (see TabManager), and this glyph renders without the pulse.
+  { key: "cacheExpiring", label: "Prompt cache expiring" },
 ];
 
 const SIZES: { value: TabIndicatorSize; label: string }[] = [

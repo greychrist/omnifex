@@ -22,6 +22,12 @@ import { ClaudeVersionSelector } from "@/components/ClaudeVersionSelector";
 import { useTheme } from "@/hooks";
 import { useAppFont } from "@/contexts/AppFontContext";
 import { useAutoScroll } from "@/contexts/AutoScrollContext";
+import { useSessionGauges } from "@/contexts/SessionGaugesContext";
+import {
+  defaultValueForMode,
+  resolveBudgetTokens,
+  formatTokens,
+} from "@/lib/contextPressure";
 import { APP_FONT_CHOICES } from "@/lib/typefaceCatalog";
 import { TabPersistenceService } from "@/services/tabPersistence";
 import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
@@ -81,6 +87,39 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
     void setAutoScrollThresholds(next);
     setToast({ message: "Auto-scroll thresholds updated", type: "success" });
   };
+  // Context-pressure budget + cache countdown. Same draft-string pattern as the
+  // auto-scroll inputs above: typing stays smooth, the value commits on blur or
+  // Enter (where the context clamps and persists it).
+  const {
+    contextPressure,
+    setContextPressure,
+    cacheTimerEnabled,
+    setCacheTimerEnabled,
+  } = useSessionGauges();
+  const [pressureDraft, setPressureDraft] = useState(String(contextPressure.value));
+  useEffect(() => {
+    setPressureDraft(String(contextPressure.value));
+  }, [contextPressure.value]);
+
+  const commitPressureValue = () => {
+    const parsed = Number.parseInt(pressureDraft, 10);
+    const next = Number.isFinite(parsed)
+      ? parsed
+      : defaultValueForMode(contextPressure.mode);
+    void setContextPressure({ ...contextPressure, value: next });
+    setToast({ message: "Compact threshold updated", type: "success" });
+  };
+
+  // Spell out what the setting resolves to on both window sizes, so the
+  // clamp on absolute budgets larger than the window isn't a surprise.
+  const pressureExplanation = (() => {
+    const describe = (limit: number, label: string) => {
+      const budget = resolveBudgetTokens(contextPressure, limit);
+      return `${label}: amber at ${formatTokens(Math.floor(budget * 0.8))}, red at ${formatTokens(budget)}`;
+    };
+    return `${describe(1_000_000, "1M session")} · ${describe(200_000, "200k session")}.`;
+  })();
+
   const [tabPersistenceEnabled, setTabPersistenceEnabled] = useState(true);
   const [startupIntroEnabled, setStartupIntroEnabled] = useState(true);
   const [successSound, setSuccessSound] = useState<NotificationSoundId>(DEFAULT_SUCCESS_SOUND);
@@ -432,6 +471,107 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
                   <Volume2 className="h-4 w-4" />
                 </Button>
               </div>
+            </div>
+          </div>
+
+          {/* Session gauges — the context-pressure banner and the prompt-cache
+              countdown. Both persist in app_settings and apply live to open
+              sessions (see SessionGaugesContext). */}
+          <div className="border-t border-border pt-4 mt-2" />
+          <div className="space-y-3">
+            <div>
+              <Label>Context pressure banner</Label>
+              <p className="text-caption text-muted-foreground mt-1">
+                Shows a banner across the top of a session once its context
+                passes your budget. Click the banner to run <code>/compact</code>.
+                Amber at 80% of the budget, red at 100%.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <Label htmlFor="context-pressure-enabled" className="text-body-small">
+                Warn when context fills up
+              </Label>
+              <Switch
+                id="context-pressure-enabled"
+                checked={contextPressure.enabled}
+                onCheckedChange={fireAndLog('general-settings:checked-change', (checked) => {
+                  void setContextPressure({ ...contextPressure, enabled: checked });
+                })}
+              />
+            </div>
+
+            <div className="flex items-center justify-between gap-3">
+              <Label className="text-body-small">Budget measured in</Label>
+              <div className="w-48">
+                <Select
+                  value={contextPressure.mode}
+                  disabled={!contextPressure.enabled}
+                  onValueChange={fireAndLog('general-settings:value-change', (v) => {
+                    const mode = v === 'percent' ? 'percent' : 'tokens';
+                    // Swap in that mode's default rather than reinterpreting the
+                    // old number — 250000 percent, or 80 tokens, are nonsense.
+                    void setContextPressure({
+                      ...contextPressure,
+                      mode,
+                      value: defaultValueForMode(mode),
+                    });
+                  })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="tokens">Absolute tokens</SelectItem>
+                    <SelectItem value="percent">Percent of window</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between gap-3">
+              <Label htmlFor="context-pressure-value" className="text-body-small">
+                {contextPressure.mode === 'percent'
+                  ? 'Compact threshold (% of window)'
+                  : 'Compact threshold (tokens)'}
+              </Label>
+              <Input
+                id="context-pressure-value"
+                type="number"
+                min={contextPressure.mode === 'percent' ? 1 : 1000}
+                max={contextPressure.mode === 'percent' ? 100 : undefined}
+                step={contextPressure.mode === 'percent' ? 5 : 10_000}
+                className="w-32"
+                disabled={!contextPressure.enabled}
+                value={pressureDraft}
+                onChange={(e) => setPressureDraft(e.target.value)}
+                onBlur={commitPressureValue}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") e.currentTarget.blur();
+                }}
+              />
+            </div>
+
+            <p className="text-caption text-muted-foreground">
+              {pressureExplanation}
+            </p>
+
+            <div className="flex items-center justify-between">
+              <div className="space-y-1">
+                <Label htmlFor="cache-timer-enabled">Prompt cache countdown</Label>
+                <p className="text-caption text-muted-foreground">
+                  Shows how long the prompt cache has left under the context
+                  gauge, and flags the tab as it runs out. The cache TTL is read
+                  from what the CLI actually reported on the last turn.
+                </p>
+              </div>
+              <Switch
+                id="cache-timer-enabled"
+                checked={cacheTimerEnabled}
+                onCheckedChange={fireAndLog('general-settings:checked-change', (checked) => {
+                  void setCacheTimerEnabled(checked);
+                })}
+              />
             </div>
           </div>
 

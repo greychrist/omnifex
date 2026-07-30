@@ -7,6 +7,8 @@ import { TabStatusGlyph } from '@/components/TabStatusGlyph';
 import { AccountBadge } from './AccountBadge';
 import { useTabState } from '@/hooks/useTabState';
 import { Tab, useTabContext } from '@/contexts/TabContext';
+import { useSecondTick } from '@/hooks/useSecondTick';
+import { evaluateCacheExpiry } from '@/lib/cacheExpiry';
 import { cn } from '@/lib/utils';
 import { fireAndLog } from "@/lib/fireAndLog";
 
@@ -59,37 +61,100 @@ export function getTabIcon(tab: Pick<Tab, 'type' | 'icon'>): typeof MessageSquar
   }
 }
 
+export type TabStatusIndicator =
+  | { kind: 'error' }
+  | { kind: 'permission' }
+  | { kind: 'question' }
+  | { kind: 'spinner' }
+  | { kind: 'complete' }
+  | { kind: 'cacheExpiring'; critical: boolean };
+
+/**
+ * Pure precedence resolver for a tab's status glyph — exported for testing,
+ * like getTabIcon. `nowMs` is passed in so the cache countdown stays
+ * deterministic under test.
+ */
+export function resolveTabStatusIndicator(
+  tab: Tab,
+  nowMs: number,
+): TabStatusIndicator | null {
+  if (tab.status === 'error') return { kind: 'error' };
+  // Waiting on the human outranks the spinner: a pending permission keeps
+  // the conversation "running" (open task), so the tab is both working AND
+  // blocked on the user. Surface what the user can act on, not just "busy".
+  if (tab.waitingFor === 'permission') return { kind: 'permission' };
+  if (tab.waitingFor === 'question') return { kind: 'question' };
+  // Spinner reflects promptStatus (working = agent is doing work: main
+  // turn in flight, active task, or running subagent). Falls back to
+  // the older `status === 'running'` for tabs that haven't published
+  // promptStatus yet (non-chat tabs or pre-mount). Not configurable.
+  if (tab.promptStatus === 'working' || (!tab.promptStatus && tab.status === 'running')) {
+    return { kind: 'spinner' };
+  }
+  // Completed: a result landed on a background tab (cleared on read).
+  if (tab.hasUnreadResult) return { kind: 'complete' };
+  // Ambient, so it ranks last: the prompt cache on a background session is
+  // about to expire. Cleared once expired — the cost is already sunk, and a
+  // permanent glyph would just be noise.
+  if (tab.cacheAnchorMs != null && tab.cacheTtlMs != null) {
+    const { level } = evaluateCacheExpiry({
+      anchorMs: tab.cacheAnchorMs,
+      ttlMs: tab.cacheTtlMs,
+      nowMs,
+    });
+    if (level === 'warn' || level === 'critical') {
+      return { kind: 'cacheExpiring', critical: level === 'critical' };
+    }
+  }
+  return null;
+}
+
 const TabItem: React.FC<TabItemProps> = ({ tab, isActive, onClose, onClick, isDragging = false, setDraggedTabId }) => {
   const [isHovered, setIsHovered] = useState(false);
   const { config } = useMessageRenderingConfig();
 
+  // Tick only while this tab has a live (unexpired) cache clock. Once the
+  // countdown is done `active` goes false and the shared interval drops this
+  // subscriber — an idle tab strip runs no timer at all.
+  const cacheTracking = tab.cacheAnchorMs != null && tab.cacheTtlMs != null;
+  const [cacheTickActive, setCacheTickActive] = useState(cacheTracking);
+  const nowMs = useSecondTick(cacheTickActive);
+  const indicator = resolveTabStatusIndicator(tab, nowMs);
+  const cacheDone =
+    cacheTracking && nowMs - (tab.cacheAnchorMs ?? 0) >= (tab.cacheTtlMs ?? 0);
+  useEffect(() => {
+    setCacheTickActive(cacheTracking && !cacheDone);
+  }, [cacheTracking, cacheDone]);
+
   const getStatusIcon = () => {
     const ind = config.tabIndicators;
     const palette = config.palette;
-    if (tab.status === 'error') {
-      return <TabStatusGlyph style={ind.error} indicators={ind} palette={palette} ariaLabel="Error" />;
+    switch (indicator?.kind) {
+      case 'error':
+        return <TabStatusGlyph style={ind.error} indicators={ind} palette={palette} ariaLabel="Error" />;
+      case 'permission':
+        return <TabStatusGlyph style={ind.permission} indicators={ind} palette={palette} ariaLabel="Permission request" />;
+      case 'question':
+        return <TabStatusGlyph style={ind.question} indicators={ind} palette={palette} ariaLabel="Question waiting" />;
+      case 'spinner':
+        return <Spinner className="size-3.5" />;
+      case 'complete':
+        return <TabStatusGlyph style={ind.complete} indicators={ind} palette={palette} ariaLabel="Completed" />;
+      case 'cacheExpiring':
+        return (
+          <TabStatusGlyph
+            style={ind.cacheExpiring}
+            indicators={ind}
+            palette={palette}
+            ariaLabel={indicator.critical ? "Prompt cache about to expire" : "Prompt cache expiring soon"}
+            // A slow countdown must not strobe for minutes.
+            pulse={false}
+            colorOverride={indicator.critical ? 'red' : undefined}
+          />
+        );
+      default:
+        return null;
     }
-    // Waiting on the human outranks the spinner: a pending permission keeps
-    // the conversation "running" (open task), so the tab is both working AND
-    // blocked on the user. Surface what the user can act on, not just "busy".
-    if (tab.waitingFor === 'permission') {
-      return <TabStatusGlyph style={ind.permission} indicators={ind} palette={palette} ariaLabel="Permission request" />;
-    }
-    if (tab.waitingFor === 'question') {
-      return <TabStatusGlyph style={ind.question} indicators={ind} palette={palette} ariaLabel="Question waiting" />;
-    }
-    // Spinner reflects promptStatus (working = agent is doing work: main
-    // turn in flight, active task, or running subagent). Falls back to
-    // the older `status === 'running'` for tabs that haven't published
-    // promptStatus yet (non-chat tabs or pre-mount). Not configurable.
-    if (tab.promptStatus === 'working' || (!tab.promptStatus && tab.status === 'running')) {
-      return <Spinner className="size-3.5" />;
-    }
-    // Completed: a result landed on a background tab (cleared on read).
-    if (tab.hasUnreadResult) {
-      return <TabStatusGlyph style={ind.complete} indicators={ind} palette={palette} ariaLabel="Completed" />;
-    }
-    return null;
   };
 
   const Icon = getTabIcon(tab);

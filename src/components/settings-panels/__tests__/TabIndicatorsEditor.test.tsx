@@ -22,16 +22,23 @@ function renderEditor(overrides = {}) {
 describe("TabIndicatorsEditor", () => {
   it("renders a live preview for each of the four states", () => {
     renderEditor();
-    for (const label of ["Error", "Permission request", "Question waiting", "Completed"]) {
+    for (const label of [
+      "Error",
+      "Permission request",
+      "Question waiting",
+      "Completed",
+      "Prompt cache expiring",
+    ]) {
       expect(screen.getByLabelText(`${label} preview`)).toBeTruthy();
     }
   });
 
   it("renders an icon picker and colour input per state", () => {
     renderEditor();
-    // 4 icon-picker triggers (aria-label "Icon") + 4 colour inputs.
-    expect(screen.getAllByLabelText("Icon").length).toBe(4);
-    expect(screen.getAllByLabelText("Colour").length).toBe(4);
+    // One icon-picker trigger (aria-label "Icon") + one colour input per state:
+    // error, permission, question, complete, cacheExpiring.
+    expect(screen.getAllByLabelText("Icon").length).toBe(5);
+    expect(screen.getAllByLabelText("Colour").length).toBe(5);
   });
 
   it("toggles the shared bordered chip", () => {

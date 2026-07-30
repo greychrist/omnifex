@@ -389,7 +389,12 @@ export const DEFAULT_TYPOGRAPHY: Typography = {
 // The per-tab glyph in the tab strip (TabManager) for each non-working state.
 // Icon + color are per-state; size + chip chrome are shared across all four.
 
-export type TabIndicatorKey = "error" | "permission" | "question" | "complete";
+export type TabIndicatorKey =
+  | "error"
+  | "permission"
+  | "question"
+  | "complete"
+  | "cacheExpiring";
 export type TabIndicatorSize = "sm" | "md" | "lg";
 
 export interface TabIndicatorStyle {
@@ -404,6 +409,14 @@ export interface TabIndicators {
   permission: TabIndicatorStyle;
   question: TabIndicatorStyle;
   complete: TabIndicatorStyle;
+  /**
+   * Prompt-cache countdown running low on a background session. Unlike the
+   * four above this one is ambient rather than actionable, so it ranks last in
+   * TabManager's precedence chain and renders without the pulse.
+   * Reddens automatically at the critical step; the configured color is the
+   * warn color. See src/lib/cacheExpiry.ts.
+   */
+  cacheExpiring: TabIndicatorStyle;
   /** Shared glyph size: sm/md/lg → 14/16/18px. */
   size: TabIndicatorSize;
   /** Shared: render each glyph inside a bordered chip. */
@@ -418,6 +431,7 @@ export const DEFAULT_TAB_INDICATORS: TabIndicators = {
   permission: { icon: "Shield", color: "yellow" },
   question: { icon: "MessageCircleQuestion", color: "yellow" },
   complete: { icon: "CheckCircle2", color: "green" },
+  cacheExpiring: { icon: "Hourglass", color: "yellow" },
   size: "md",
   bordered: false,
   bgOpacity: 100,
@@ -803,6 +817,9 @@ function mergeTabIndicators(saved: unknown, base: TabIndicators): TabIndicators 
     permission: mergeTabIndicatorStyle(s.permission, base.permission),
     question: mergeTabIndicatorStyle(s.question, base.question),
     complete: mergeTabIndicatorStyle(s.complete, base.complete),
+    // Added after ship; the defaults-as-baseline merge supplies it for saved
+    // configs, so no version bump (which would reset the whole config).
+    cacheExpiring: mergeTabIndicatorStyle(s.cacheExpiring, base.cacheExpiring),
     size: TAB_INDICATOR_SIZES.includes(s.size as TabIndicatorSize)
       ? (s.size as TabIndicatorSize)
       : base.size,

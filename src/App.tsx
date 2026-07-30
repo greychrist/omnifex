@@ -7,6 +7,7 @@ import { AccountsProvider } from "@/contexts/AccountsContext";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { AppFontProvider } from "@/contexts/AppFontContext";
 import { AutoScrollProvider } from "@/contexts/AutoScrollContext";
+import { SessionGaugesProvider } from "@/contexts/SessionGaugesContext";
 import { MessageRenderingProvider } from "@/contexts/MessageRenderingContext";
 import { useNotifications } from "@/hooks/useNotifications";
 import { Card } from "@/components/ui/card";
@@ -579,6 +580,7 @@ function App() {
   return (
     <AppFontProvider>
       <AutoScrollProvider>
+        <SessionGaugesProvider>
         <ThemeProvider>
           <MessageRenderingProvider>
             <AccountsProvider>
@@ -589,6 +591,7 @@ function App() {
             </AccountsProvider>
           </MessageRenderingProvider>
         </ThemeProvider>
+        </SessionGaugesProvider>
       </AutoScrollProvider>
     </AppFontProvider>
   );

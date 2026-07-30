@@ -16,6 +16,11 @@ import { Button } from "@/components/ui/button";
 import { Popover } from "@/components/ui/popover";
 import { api, type Session, type RateLimitSnapshot, type Account, type ResolvePair, type SessionMode, type AccountMismatch } from "@/lib/api";
 import { AccountMismatchBanner } from "@/components/AccountMismatchBanner";
+import { ContextPressureBanner } from "@/components/ContextPressureBanner";
+import { useSessionGauges } from "@/contexts/SessionGaugesContext";
+import { resolveContextLimit } from "@/lib/contextLimit";
+import { evaluateContextPressure, selectContextTokens } from "@/lib/contextPressure";
+import { observeCacheTtlMs, lastAssistantAnchorMs } from "@/lib/cacheExpiry";
 import { useAccountVerdict } from "@/hooks/useAccountVerdict";
 import { resolveSessionVerification } from "@/lib/accountVerification";
 import { cn } from "@/lib/utils";
@@ -960,6 +965,48 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     setTotalTokens(tokens);
   }, [messages]);
 
+  // ── Session gauges: context pressure + prompt-cache countdown ────────────
+  //
+  // Both read the same numbers the SessionCard gauge already renders, via the
+  // shared selector, so a banner and a gauge can never disagree.
+  const { contextPressure: contextPressureSetting, cacheTimerEnabled } = useSessionGauges();
+
+  const { tokens: gaugeTokens, sdkMaxTokens } = useMemo(
+    () => selectContextTokens({ contextUsage, fallbackTokens: totalTokens }),
+    [contextUsage, totalTokens],
+  );
+  const contextLimit = useMemo(
+    () => resolveContextLimit({ sdkMaxTokens, model: selectedModel, defaultModel: accountDefaultModel }),
+    [sdkMaxTokens, selectedModel, accountDefaultModel],
+  );
+  // (contextPressure itself is derived below, once sessionStatus exists — it
+  // gates on the live-session predicate.)
+
+  // Anchor + TTL change once per turn, so no clock lives here. AgentSession is
+  // large with a deep child tree; ticking a countdown at this level would
+  // re-render all of it every second. SessionCard and TabManager each own a
+  // local interval instead.
+  const cacheTtlMs = useMemo(
+    () => (cacheTimerEnabled ? observeCacheTtlMs(messages) : null),
+    [messages, cacheTimerEnabled],
+  );
+  const cacheAnchorMs = useMemo(
+    () => (cacheTimerEnabled ? lastAssistantAnchorMs(messages) : null),
+    [messages, cacheTimerEnabled],
+  );
+
+  // Mirror the cache clock onto the tab so the tab strip can show a glyph for
+  // background sessions. Guarded by a last-value ref exactly like the
+  // promptStatus mirror below: updateTab returns a new tab object every call,
+  // so an unguarded write from an effect is a render loop.
+  const lastCacheMirrorRef = useRef<string>('');
+  useEffect(() => {
+    const key = `${cacheAnchorMs ?? ''}:${cacheTtlMs ?? ''}`;
+    if (lastCacheMirrorRef.current === key) return;
+    lastCacheMirrorRef.current = key;
+    updateTab(tabIdRef.current, { cacheAnchorMs, cacheTtlMs });
+  }, [cacheAnchorMs, cacheTtlMs, updateTab]);
+
   // Load session history when resuming an existing session. Uses
   // streamCtxRef for the useTabSession setters that recreate every
   // render — without that indirection, this callback would re-create on
@@ -1339,6 +1386,22 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   //                        conversationStatus values
   const isSessionStarting = sessionStatus === 'starting';
   const isSessionActive = sessionStatus === 'started';
+
+  // Context-pressure banner. Gated on isSessionActive — the strict 'started'
+  // predicate — NOT on `sessionStarted` (= "not stopped"), which is also true
+  // while dialing and after a failed start. Its only action is running
+  // /compact, which a session whose CLI isn't up cannot do: gating it loosely
+  // flashed an un-actionable banner while a resumed session dialed, then
+  // yanked it away when the resume failed.
+  const contextPressure = useMemo(
+    () => evaluateContextPressure({
+      tokens: gaugeTokens,
+      limit: contextLimit,
+      setting: contextPressureSetting,
+      sessionLive: isSessionActive,
+    }),
+    [gaugeTokens, contextLimit, contextPressureSetting, isSessionActive],
+  );
   // "Has the user committed to a session in this tab?" Gates the
   // NewSessionForm empty-state vs. the chat view. The hook seeds
   // sessionStatus to 'starting' at mount when there's a session to
@@ -1418,6 +1481,18 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     },
     [sendPromptRaw],
   );
+
+  // Run /compact from the context-pressure banner. Branches on session mode
+  // exactly as FloatingPromptInput's onSend does: TUI mode writes into the pty
+  // (the TUI subprocess isn't listening on stream-json stdin), chat mode goes
+  // through handleSendPrompt so it inherits the existing queueing behavior.
+  const handleCompact = useCallback(() => {
+    if (sessionMode === 'tui') {
+      createTuiPromptHandler(tabIdRef.current)('/compact', selectedModel);
+      return;
+    }
+    void handleSendPrompt('/compact', selectedModel);
+  }, [sessionMode, selectedModel, handleSendPrompt]);
 
   // Stable resend callback. Without memoization, every render of this
   // component handed every `StreamMessage` a fresh `onResend` function ref,
@@ -2183,6 +2258,9 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
             model={selectedModel}
             defaultModel={accountDefaultModel}
             contextUsage={contextUsage}
+            cacheAnchorMs={cacheAnchorMs}
+            cacheTtlMs={cacheTtlMs}
+            cacheBusy={isLoading}
             sessionStatus={displayStatus}
             onReconnect={() => void handleReconnect()}
             onClear={() => {
@@ -2312,6 +2390,18 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
               : null
           }
           restarting={restartingSession}
+        />
+        {/* Stacks under the account banner, in the same slot outside the
+            resizable header. Not dismissible by design — see the spec.
+            No render-site gate: `contextPressure` already resolves to 'none'
+            unless the session is live, and a second gate here could only
+            disagree with it. */}
+        <ContextPressureBanner
+          pressure={contextPressure}
+          tokens={gaugeTokens}
+          limit={contextLimit}
+          busy={isLoading}
+          onCompact={fireAndLog('claude-code-session:compact', handleCompact)}
         />
         {!sessionStarted && (
           <div className="flex-1 flex items-center justify-center p-8">

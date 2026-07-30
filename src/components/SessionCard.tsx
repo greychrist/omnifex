@@ -7,6 +7,7 @@ import { Popover } from "@/components/ui/popover";
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import { Button } from "@/components/ui/button";
 import { HeaderLabel } from "./HeaderLabel";
+import { CacheTimerRow } from "./CacheTimerRow";
 import { fireAndLog } from "@/lib/fireAndLog";
 
 // Palette for context-usage categories. Each category comes with its own
@@ -34,6 +35,13 @@ interface SessionCardProps {
    *  or a TUI session. See resolveContextLimit. */
   defaultModel?: string | null;
   contextUsage?: SessionContextUsage | null;
+  /** Prompt-cache clock, from AgentSession. Both null when the timer is
+   *  disabled or no turn has written cache yet — the row then hides. The
+   *  countdown itself ticks inside CacheTimerRow, not here. */
+  cacheAnchorMs?: number | null;
+  cacheTtlMs?: number | null;
+  /** True while a main turn is in flight; the cache row goes neutral. */
+  cacheBusy?: boolean;
   sessionStatus?: 'starting' | 'active' | 'ended';
   /** Force-reconnect button click handler. Renders inside the status badge
    *  while sessionStatus === 'ended'. */
@@ -69,6 +77,9 @@ export function SessionCard({
   model,
   defaultModel,
   contextUsage,
+  cacheAnchorMs = null,
+  cacheTtlMs = null,
+  cacheBusy = false,
   sessionStatus,
   onReconnect,
   onClear,
@@ -337,6 +348,15 @@ export function SessionCard({
                 </div>
               </div>
             }
+          />
+          {/* Prompt-cache countdown, directly under the gauge bar. Lives inside
+              this column so it sits below the bar rather than beside it, which
+              also means it needs context data to have arrived — by which point
+              a cache write has been observed anyway. */}
+          <CacheTimerRow
+            anchorMs={cacheAnchorMs}
+            ttlMs={cacheTtlMs}
+            busy={cacheBusy}
           />
           </div>
         );

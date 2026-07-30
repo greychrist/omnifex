@@ -73,6 +73,16 @@ export interface Tab {
    * question mark. null/undefined when nothing is waiting on the user.
    */
   waitingFor?: TabWaitingFor;
+  /**
+   * Prompt-cache clock, mirrored from the session so the tab strip can warn
+   * that a background session's cache is about to expire. `cacheAnchorMs` is
+   * the last assistant turn's timestamp, `cacheTtlMs` the TTL the CLI actually
+   * used (observed from usage.cache_creation). Both null when no turn has
+   * written cache, or when the timer is disabled. TabManager owns the clock —
+   * these two values only change once per turn. See src/lib/cacheExpiry.ts.
+   */
+  cacheAnchorMs?: number | null;
+  cacheTtlMs?: number | null;
   hasUnsavedChanges: boolean;
   hasUnreadResult?: boolean;
   order: number;
