@@ -5,6 +5,22 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.106] — 2026-07-30
+
+### Fixed
+
+- **The context-timeline toggle now sits beside the rail it controls**, at the
+  bottom-left of the transcript, instead of in the scroll-button stack on the
+  far side of the message column.
+- **The toggle shows when it is on.** Its active state was a tinted glyph, which
+  at 14px against a translucent button was near-invisible — the exact question
+  the control exists to answer. It now carries a filled background and border.
+- **The prompt-cache TTL notice stays until dismissed.** It cleared as soon as
+  any later turn wrote cache, which during a busy turn is seconds — often before
+  it had been read.
+
+Installers remain **unsigned**.
+
 ## [0.4.105] — 2026-07-30
 
 ### Added
