@@ -267,6 +267,13 @@ export const KIND_REGISTRY: Record<string, KindDef> = {
   // worth framing, so it gets the standard card chrome and a title.
   "user.tool-result.image": { id: "user.tool-result.image", category: "user", label: "Tool result image", description: "A screenshot or image returned by a tool.", default: { presentation: "card", headerLabel: "Image", alignment: "left", icon: "Image", accentColor: "indigo", hiddenInCompact: false } },
   "user.image": { id: "user.image", category: "user", label: "Image", description: "A pasted or attached image.", default: { icon: "Image", alignment: "left" } },
+  // The CLI writes the /compact summary as a `user` record, so without its own
+  // kind it renders as something you typed — a wall of recap text wearing your
+  // colour. Left-aligned and collapsible because it is long by construction
+  // and is reference material, not conversation. Visible in compact view: it
+  // marks where the earlier history stops existing, which is exactly the thing
+  // you are looking for when scanning a long session.
+  "user.compactSummary": { id: "user.compactSummary", category: "user", label: "Compact summary", description: "The recap written when a session is compacted.", default: { presentation: "collapsible", headerLabel: "Compacted", icon: "Scissors", accentColor: "teal", alignment: "left", hiddenInCompact: false } },
   // ── system ──
   "system.notification.info": { id: "system.notification.info", category: "system", label: "Notification (info)", description: "Informational CLI notification.", default: { icon: "Bell", presentation: "card", hiddenInCompact: false } },
   "system.notification.warn": { id: "system.notification.warn", category: "system", label: "Notification (warn)", description: "Warning CLI notification.", default: { accentColor: "amber", icon: "Bell", presentation: "card", hiddenInCompact: false } },

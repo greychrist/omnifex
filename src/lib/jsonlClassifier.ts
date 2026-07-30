@@ -114,6 +114,27 @@ function isAttachmentMarker(content: unknown): boolean {
   return first.text.startsWith('[Image: ');
 }
 
+/**
+ * A /compact summary reaches us as a `user` record on both ingress paths, but
+ * the two paths agree on nothing:
+ *
+ *  - persisted JSONL → `isCompactSummary: true` (+ `isVisibleInTranscriptOnly`
+ *    for a plain compaction, absent for a directed summarize)
+ *  - stream-json     → neither field survives; the CLI emits
+ *    `isReplay: !isCompactSummary`, and every other emitter hard-codes
+ *    `isReplay: true`, so an explicit `false` is the marker
+ *
+ * `isSynthetic` is deliberately NOT consulted: the CLI defines it as
+ * `isMeta || isVisibleInTranscriptOnly`, so it fires for skill bodies and
+ * image markers too, and it misses a directed summarize entirely.
+ */
+export function isCompactSummaryRecord(r: Record<string, unknown>): boolean {
+  if (r.isCompactSummary === true) return true;
+  // Strict `=== false`: a live prompt omits isReplay, and `undefined` must not
+  // be read as "not a replay, therefore a summary".
+  return r.isReplay === false;
+}
+
 function classifyUser(r: Record<string, unknown>, sessionId: string, receivedAt: string | null): JsonlNode | null {
   if (receivedAt === null) return null;
   const message = r.message;
@@ -123,7 +144,9 @@ function classifyUser(r: Record<string, unknown>, sessionId: string, receivedAt:
   const hasSourceToolUseID = typeof r.sourceToolUseID === 'string' && r.sourceToolUseID.length > 0;
 
   let userKind: UserKind;
-  if (isToolResultOnly(content)) {
+  if (isCompactSummaryRecord(r)) {
+    userKind = 'compact-summary';
+  } else if (isToolResultOnly(content)) {
     userKind = 'tool-result';
   } else if (isMeta && hasSourceToolUseID) {
     userKind = 'meta-skill';

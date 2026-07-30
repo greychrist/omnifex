@@ -52,6 +52,104 @@ describe('classifyJsonlLine', () => {
     expect(node?.kind).toBe('attachment');
   });
 
+  // A /compact summary is written by the CLI as a `user` record, so without a
+  // dedicated kind it reads as something the user typed. Two ingress shapes:
+  // the persisted JSONL carries `isCompactSummary`, while stream-json drops
+  // that field and leaves only `isReplay: false` (the CLI emits
+  // `isReplay: !isCompactSummary`, and every other emitter hard-codes `true`).
+  describe('compact summaries', () => {
+    const body = { role: 'user', content: [{ type: 'text', text: 'Session continued…' }] };
+
+    it('classifies the persisted shape as userKind=compact-summary', () => {
+      const node = classifyJsonlLine({
+        type: 'user',
+        sessionId: 'sid-1',
+        timestamp: '2026-07-30T21:08:29.956Z',
+        isVisibleInTranscriptOnly: true,
+        isCompactSummary: true,
+        message: body,
+      });
+      expect(node?.kind).toBe('user');
+      if (node?.kind === 'user') expect(node.userKind).toBe('compact-summary');
+    });
+
+    // The live envelope has no isCompactSummary at all — only isSynthetic
+    // (which is the union isMeta||isVisibleInTranscriptOnly, so it fires for
+    // skill bodies too) and an explicit isReplay:false.
+    it('classifies the live stream-json shape as userKind=compact-summary', () => {
+      const node = classifyJsonlLine({
+        type: 'user',
+        session_id: 'sid-1',
+        receivedAt: '2026-07-30T21:08:30.237Z',
+        parent_tool_use_id: null,
+        isReplay: false,
+        isSynthetic: true,
+        message: body,
+      });
+      expect(node?.kind).toBe('user');
+      if (node?.kind === 'user') expect(node.userKind).toBe('compact-summary');
+    });
+
+    // A directed /summarize sets isCompactSummary but NOT
+    // isVisibleInTranscriptOnly, so isSynthetic is absent on the wire. It is
+    // still a compaction summary and must not read as a prompt.
+    it('catches a directed summarize, which carries no isSynthetic', () => {
+      const node = classifyJsonlLine({
+        type: 'user',
+        session_id: 'sid-1',
+        receivedAt: '2026-07-30T21:08:30.237Z',
+        isReplay: false,
+        message: body,
+      });
+      expect(node?.kind).toBe('user');
+      if (node?.kind === 'user') expect(node.userKind).toBe('compact-summary');
+    });
+
+    // isSynthetic is far too broad to key on: the CLI sets it for every skill
+    // body and image marker. Those already have their own kinds and must keep
+    // them.
+    it('does not mistake a synthetic skill body for a compact summary', () => {
+      const node = classifyJsonlLine({
+        type: 'user',
+        sessionId: 'sid-1',
+        timestamp: '2026-07-30T21:00:00Z',
+        isMeta: true,
+        isSynthetic: true,
+        sourceToolUseID: 'toolu_skill',
+        message: { role: 'user', content: [{ type: 'text', text: 'SKILL.md body' }] },
+      });
+      expect(node?.kind).toBe('user');
+      if (node?.kind === 'user') expect(node.userKind).toBe('meta-skill');
+    });
+
+    // Replayed history is the common case on resume — every one of those
+    // carries isReplay:true and is an ordinary prompt.
+    it('leaves a replayed prompt as userKind=prompt', () => {
+      const node = classifyJsonlLine({
+        type: 'user',
+        session_id: 'sid-1',
+        receivedAt: '2026-07-30T21:00:00Z',
+        isReplay: true,
+        message: body,
+      });
+      expect(node?.kind).toBe('user');
+      if (node?.kind === 'user') expect(node.userKind).toBe('prompt');
+    });
+
+    // A live prompt omits isReplay entirely. `undefined` must not be read as
+    // "not a replay, therefore a compact summary".
+    it('leaves a live prompt with no isReplay field as userKind=prompt', () => {
+      const node = classifyJsonlLine({
+        type: 'user',
+        session_id: 'sid-1',
+        receivedAt: '2026-07-30T21:00:00Z',
+        message: body,
+      });
+      expect(node?.kind).toBe('user');
+      if (node?.kind === 'user') expect(node.userKind).toBe('prompt');
+    });
+  });
+
   it('classifies queue-operation lines', () => {
     const node = classifyJsonlLine(JSONL_SAMPLES['queue-operation']);
     expect(node?.kind).toBe('queue-operation');

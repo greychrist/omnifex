@@ -65,6 +65,7 @@ import {
   WebFetchWidget
 } from "./ToolWidgets";
 import { turnDuration } from "@/lib/sessionDerivedState";
+import { isCompactSummaryRecord } from "@/lib/jsonlClassifier";
 import { computeMessageCost, type UsageTokens } from "@/lib/pricing";
 
 // Stable module-level reference: ReactMarkdown re-renders if `remarkPlugins`
@@ -1003,6 +1004,13 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
         return null;
       }
 
+      // The /compact recap. Identified by record flags, not content, and
+      // resolved up here so it wins over the content sniffers below — a
+      // summary that happens to quote a <system-reminder> is still a summary.
+      const isCompactSummary = isCompactSummaryRecord(
+        userRaw as unknown as Record<string, unknown>,
+      );
+
       // Handle different message structures
       const msg = userRaw.message || userRaw;
 
@@ -1040,7 +1048,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
       // configured color/icon and gains copy + raw-payload metadata. The
       // header is content-derived ("Skill: …", "CLAUDE.md Context") unless the
       // user has customized it in Appearance, in which case their label wins.
-      if (isSystemContextText(contentStr)) {
+      if (!isCompactSummary && isSystemContextText(contentStr)) {
         const cfgHeader = resolveKind(renderConfig, "user.systemContext").headerLabel ?? null;
         const headerOverride =
           cfgHeader === null || cfgHeader === "System Context"
@@ -1110,7 +1118,9 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
       // path.
       const isImageToolResult = isToolResultOnly
         && (msg.content as MessageContentBlock[]).some((c) => toolResultHasImages(c));
-      const userKindId = isImageToolResult
+      const userKindId = isCompactSummary
+        ? "user.compactSummary"
+        : isImageToolResult
         ? "user.tool-result.image"
         : isToolResultOnly
         ? "user.tool-result"
@@ -1125,7 +1135,10 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, streamM
         : "user.prompt";
 
       const userSwatch = swatchFor(renderConfig, userKindId);
-      const showResend = !!onResend && !isToolResultOnly && !isSubagentPrompt && !skillInjection;
+      // No resend on a compact summary: the button re-sends the card's text as
+      // a new prompt, and here that text is the entire recap.
+      const showResend = !!onResend && !isToolResultOnly && !isSubagentPrompt && !skillInjection
+        && !isCompactSummary;
       const userActionBar = !isToolResultOnly ? (
         <CardActionBar
           message={msg}

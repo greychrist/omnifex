@@ -253,6 +253,22 @@ kinds:
       icon: Image
       alignment: left
 
+  user.compactSummary:
+    label: "Compact summary"
+    purpose: "The recap written when a session is compacted."
+    # Matched on record flags, not content: `isCompactSummary` in persisted
+    # JSONL, `isReplay === false` on the stream-json path (which drops the
+    # former). `isSynthetic` is NOT a valid discriminator — the CLI defines it
+    # as `isMeta || isVisibleInTranscriptOnly`, so it also covers skill bodies
+    # and image markers, and it misses a directed summarize entirely.
+    default:
+      presentation: collapsible
+      headerLabel: "Compacted"
+      icon: Scissors
+      accentColor: teal
+      alignment: left
+      hiddenInCompact: false
+
   # ── system ─────────────────────────────────────────────────────────────────
 
   system.notification.info:

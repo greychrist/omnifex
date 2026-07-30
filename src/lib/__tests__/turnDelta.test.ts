@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { JsonlNode } from '@/types/jsonl';
+import { classifyJsonlLine } from '../jsonlClassifier';
 import {
   DEFAULT_CONTEXT_JUMP_TOKENS,
   turnContextTotal,
@@ -71,6 +72,23 @@ const compactBoundary = (): JsonlNode =>
     raw: { type: 'system', subtype: 'compact_boundary' },
   }) as unknown as JsonlNode;
 
+/**
+ * The /compact summary. A `user` record, but nothing the human typed. Built
+ * through the real classifier rather than hand-stamped, so this stays a
+ * regression test: if classifyUser stops recognising the record it goes back
+ * to `userKind: 'prompt'` and these expectations break.
+ */
+const compactSummary = (): JsonlNode =>
+  classifyJsonlLine({
+    type: 'user',
+    sessionId: 's1',
+    timestamp: '2026-07-30T10:00:00Z',
+    uuid: 'cs1',
+    isCompactSummary: true,
+    isVisibleInTranscriptOnly: true,
+    message: { role: 'user', content: 'Session continued…' },
+  }) as JsonlNode;
+
 describe('turnContextTotal', () => {
   it('sums input + cache_read + cache_creation + output', () => {
     expect(turnContextTotal(assistant(477_456))).toBe(477_456);
@@ -97,6 +115,37 @@ describe('lastTurnDelta — subagent isolation', () => {
   it('does not let a subagent message become the baseline', () => {
     const msgs = [assistant(100_000), sidechain(900_000), prompt(), assistant(160_000)];
     expect(lastTurnDelta(msgs)).toMatchObject({ prevTotal: 100_000, deltaTokens: 60_000 });
+  });
+});
+
+// Compact summaries used to classify as 'prompt', which made the summary the
+// turn anchor. These cases came out right anyway, because the CLI persists a
+// compact_boundary immediately before the summary and hasCompactBoundaryAfter
+// suppresses the delta. Pinned so the two guards can't be removed together:
+// drop the boundary check and the anchor alone still has to hold this line.
+describe('lastTurnDelta — compact summaries are not prompts', () => {
+  it('anchors on the human prompt, not the summary that follows a compaction', () => {
+    const msgs = [
+      assistant(500_000),
+      compactBoundary(),
+      compactSummary(),
+      assistant(80_000),
+      prompt('p9'),
+      assistant(140_000),
+    ];
+    expect(lastTurnDelta(msgs)).toMatchObject({
+      prevTotal: 80_000,
+      newTotal: 140_000,
+      deltaTokens: 60_000,
+      anchorId: 'p9',
+    });
+  });
+
+  // With the summary as anchor this reported a jump of the entire rebuilt
+  // context, every time, immediately after compacting.
+  it('reports nothing when the only user record since the drop is the summary', () => {
+    const msgs = [assistant(500_000), compactBoundary(), compactSummary(), assistant(80_000)];
+    expect(lastTurnDelta(msgs)).toBeNull();
   });
 });
 

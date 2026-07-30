@@ -47,6 +47,28 @@ export interface UserRaw extends RawLineBase {
   isMeta?: boolean;
   /** Set when a meta record was emitted on behalf of a specific tool_use (e.g. Skill bodies). */
   sourceToolUseID?: string;
+  /**
+   * Persisted-JSONL marker for a /compact summary. Absent from the
+   * stream-json envelope, which is why `isReplay` is also consulted.
+   */
+  isCompactSummary?: boolean;
+  /**
+   * Set alongside `isCompactSummary` for a plain compaction, but NOT for a
+   * directed summarize (that path emits `summarizeMetadata` instead).
+   */
+  isVisibleInTranscriptOnly?: boolean;
+  /**
+   * Live-stream only. Every CLI emitter hard-codes `true` except the
+   * compact-summary yield, which emits `!isCompactSummary` — so an explicit
+   * `false` is the compact summary. `undefined` means "not a replay at all".
+   */
+  isReplay?: boolean;
+  /**
+   * Live-stream shorthand for `isMeta || isVisibleInTranscriptOnly`. Too
+   * coarse to identify a compact summary on its own — it also covers every
+   * skill body and image marker.
+   */
+  isSynthetic?: boolean;
 }
 
 export interface AttachmentRaw extends RawLineBase {
@@ -94,7 +116,9 @@ export type UserKind =
   | 'tool-result'
   | 'meta-skill'
   | 'meta-attachment'
-  | 'meta-other';
+  | 'meta-other'
+  /** The summary the CLI writes after /compact. A `user` record, but not a prompt. */
+  | 'compact-summary';
 
 export type SystemSubtype =
   | 'init'

@@ -10,6 +10,7 @@ import {
   lastPermissionMode,
   lastAssistantModel,
 } from '../sessionDerivedState';
+import { classifyJsonlLine } from '../jsonlClassifier';
 
 // Minimal helpers — these build JsonlNodes with the fields the derivation reads.
 function userPrompt(timestamp: string, sessionId = 's1'): JsonlNode {
@@ -27,6 +28,19 @@ function userPrompt(timestamp: string, sessionId = 's1'): JsonlNode {
       timestamp,
     } as never,
   };
+}
+
+// The summary the CLI writes after /compact. Built through the real
+// classifier so the userKind under test is the one production computes.
+function compactSummary(timestamp: string, sessionId = 's1'): JsonlNode {
+  return classifyJsonlLine({
+    type: 'user',
+    sessionId,
+    timestamp,
+    isCompactSummary: true,
+    isVisibleInTranscriptOnly: true,
+    message: { role: 'user', content: 'Session continued…' },
+  }) as JsonlNode;
 }
 
 function assistantWithStop(
@@ -240,6 +254,24 @@ describe('waitingOnClaude', () => {
     const msgs = [
       userPrompt('2026-05-27T00:00:00Z'),
       systemNode('hook_started'),
+    ];
+    expect(waitingOnClaude(msgs)).toBe(true);
+  });
+
+  // A /compact summary is a `user` record. It used to classify as 'prompt',
+  // which meant a resumed transcript whose history begins at the compaction
+  // had a "prompt" nothing would ever answer — a spinner with no turn behind
+  // it. The summary is now its own userKind and cannot hold the turn open.
+  it('does not treat a lone compact summary as an unanswered prompt', () => {
+    expect(waitingOnClaude([compactSummary('2026-05-27T00:00:00Z')])).toBe(false);
+  });
+
+  // The inverse: a real prompt that a compaction interrupted is still
+  // unanswered, and the summary trailing it must not close the turn either.
+  it('still waits when a compaction interrupted an unanswered prompt', () => {
+    const msgs = [
+      userPrompt('2026-05-27T00:00:00Z'),
+      compactSummary('2026-05-27T00:00:05Z'),
     ];
     expect(waitingOnClaude(msgs)).toBe(true);
   });
