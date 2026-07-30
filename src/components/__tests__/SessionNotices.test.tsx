@@ -18,7 +18,6 @@ const JUMP = {
 const DROP = {
   fromMs: CACHE_TTL_1H_MS,
   toMs: CACHE_TTL_5M_MS,
-  isMostRecentWrite: true,
 };
 
 const dismissJump = () =>
@@ -98,16 +97,25 @@ describe('SessionNotices — TTL change', () => {
     render(
       <SessionNotices
         jump={null}
-        ttlChange={{ fromMs: CACHE_TTL_5M_MS, toMs: CACHE_TTL_1H_MS, isMostRecentWrite: true }}
+        ttlChange={{ fromMs: CACHE_TTL_5M_MS, toMs: CACHE_TTL_1H_MS }}
       />,
     );
     expect(screen.getByText(/cache/i).textContent ?? '').not.toMatch(/overage/i);
   });
 
-  it('goes quiet once the change is no longer the newest write', () => {
+  // Previously this self-cleared once a later turn confirmed the new TTL, which
+  // meant it could vanish before it was read. It now behaves like the other
+  // banners: it stays until dismissed.
+  it('stays visible after a later turn confirms the new TTL', () => {
+    render(<SessionNotices jump={null} ttlChange={DROP} />);
+    expect(screen.getByText(/prompt cache TTL/i)).toBeInTheDocument();
+  });
+
+  it('can be dismissed once it has gone stale', () => {
     const { container } = render(
-      <SessionNotices jump={null} ttlChange={{ ...DROP, isMostRecentWrite: false }} />,
+      <SessionNotices jump={null} ttlChange={DROP} />,
     );
+    fireEvent.click(screen.getByRole('button', { name: /dismiss cache ttl/i }));
     expect(container).toBeEmptyDOMElement();
   });
 });

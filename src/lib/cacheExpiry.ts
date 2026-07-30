@@ -83,13 +83,8 @@ export function observeCacheTtlMs(messages: JsonlNode[]): number | null {
 
 export interface CacheTtlChange {
   fromMs: number;
+  /** The TTL now in force — always equal to `observeCacheTtlMs` on the same array. */
   toMs: number;
-  /**
-   * True while the change is still the newest cache write. Goes false once a
-   * later turn writes cache and confirms the new TTL — which is what lets the
-   * notice be sticky and then disappear on its own, with no dismissal state.
-   */
-  isMostRecentWrite: boolean;
 }
 
 /**
@@ -113,11 +108,7 @@ export function lastCacheTtlChange(messages: JsonlNode[]): CacheTtlChange | null
 
   for (let i = 0; i < writes.length - 1; i += 1) {
     if (writes[i] !== writes[i + 1]) {
-      return {
-        fromMs: writes[i + 1],
-        toMs: writes[i],
-        isMostRecentWrite: i === 0,
-      };
+      return { fromMs: writes[i + 1], toMs: writes[i] };
     }
   }
   return null;

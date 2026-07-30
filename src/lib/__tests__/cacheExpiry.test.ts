@@ -91,7 +91,6 @@ describe('lastCacheTtlChange', () => {
     expect(lastCacheTtlChange(msgs)).toEqual({
       fromMs: CACHE_TTL_1H_MS,
       toMs: CACHE_TTL_5M_MS,
-      isMostRecentWrite: true,
     });
   });
 
@@ -108,24 +107,27 @@ describe('lastCacheTtlChange', () => {
     expect(lastCacheTtlChange([])).toBeNull();
   });
 
-  // This is what makes the notice sticky-then-gone: it stays while the change
-  // is still the newest cache write, and goes stale once another write lands.
-  it('goes stale once a later write confirms the new TTL', () => {
+  // The notice is dismissal-driven now, so a later confirming write must not
+  // change what gets reported — only the user clicking the X clears it.
+  it('still reports the change after a later write confirms the new TTL', () => {
     const msgs = [
       oneHour('2026-07-30T10:00:00Z'),
       fiveMin('2026-07-30T10:05:00Z'),
       fiveMin('2026-07-30T10:06:00Z'),
     ];
-    expect(lastCacheTtlChange(msgs)?.isMostRecentWrite).toBe(false);
+    expect(lastCacheTtlChange(msgs)).toEqual({
+      fromMs: CACHE_TTL_1H_MS,
+      toMs: CACHE_TTL_5M_MS,
+    });
   });
 
-  it('ignores cache-read-only turns when deciding staleness', () => {
+  it('ignores cache-read-only turns, which carry no TTL signal', () => {
     const msgs = [
       oneHour('2026-07-30T10:00:00Z'),
       fiveMin('2026-07-30T10:05:00Z'),
       assistant('2026-07-30T10:06:00Z', { ephemeral_1h_input_tokens: 0, ephemeral_5m_input_tokens: 0 }),
     ];
-    expect(lastCacheTtlChange(msgs)?.isMostRecentWrite).toBe(true);
+    expect(lastCacheTtlChange(msgs)?.toMs).toBe(CACHE_TTL_5M_MS);
   });
 });
 

@@ -49,10 +49,10 @@ export const SessionNotices: React.FC<SessionNoticesProps> = ({ jump, ttlChange 
   const [dismissedTtl, setDismissedTtl] = useState<string | null>(null);
 
   const jumpKey = jump?.anchorId ?? null;
-  const ttlKey =
-    ttlChange && ttlChange.isMostRecentWrite
-      ? `${ttlChange.fromMs}->${ttlChange.toMs}`
-      : null;
+  // Stays until dismissed. It used to auto-clear once a later turn confirmed
+  // the new TTL, which during a busy turn meant it vanished within seconds —
+  // often before it had been read at all.
+  const ttlKey = ttlChange ? `${ttlChange.fromMs}->${ttlChange.toMs}` : null;
 
   const showJump = jumpKey !== null && jumpKey !== dismissedJump;
   const showTtl = ttlKey !== null && ttlKey !== dismissedTtl;

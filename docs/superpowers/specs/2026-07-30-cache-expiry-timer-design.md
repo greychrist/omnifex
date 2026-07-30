@@ -220,11 +220,15 @@ follow up in shrinks 12×, and the cache write premium changes with it, so the
 drop is worth noticing rather than letting the countdown quietly get shorter.
 
 `lastCacheTtlChange(messages)` finds the most recent point where the per-turn
-TTL classification changed, returning `{ fromMs, toMs, isMostRecentWrite }`.
-`isMostRecentWrite` is the staleness flag that makes the notice sticky and then
-self-clearing: true while the change is still the newest cache write, false
-once a later turn writes cache and confirms the new TTL. Cache-read-only turns
-carry no TTL signal and are skipped when deciding staleness.
+TTL classification changed, returning `{ fromMs, toMs }`. Cache-read-only turns
+carry no TTL signal and are skipped.
+
+**Revised 2026-07-30.** This originally returned a third field,
+`isMostRecentWrite`, which self-cleared the notice once a later turn confirmed
+the new TTL. In practice that meant it disappeared within seconds of appearing —
+a busy turn writes cache repeatedly — so it could vanish before it was read. The
+notice is now dismissal-driven like the others, and the flag has been deleted
+rather than left unread.
 
 Two surfaces:
 
