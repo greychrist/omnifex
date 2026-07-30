@@ -35,6 +35,8 @@ export interface UsageTokens {
     ephemeral_5m_input_tokens?: number;
     ephemeral_1h_input_tokens?: number;
   };
+  /** Which speed served the turn — `'fast'` bills at the fast-mode rate. */
+  speed?: string | null;
 }
 
 export interface MessageCost {
@@ -50,13 +52,27 @@ export interface MessageCost {
 const MTOK = 1_000_000;
 
 // Ordered most-specific-first; first `model.includes(pattern)` match wins.
-const RATE_TABLE: Array<{ pattern: string; inputPerM: number; outputPerM: number }> = [
+//
+// The bare `opus` row is a LEGACY catch-all priced for Opus 3. Every modern
+// Opus needs its own row above it — `claude-opus-5` matched none of the
+// `opus-4-x` patterns and fell through to 15/75, inflating its cost 3x.
+//
+// `fastInputPerM` / `fastOutputPerM` are set only on models that actually
+// support fast mode (Opus 5 and Opus 4.8; 4.7's was removed upstream).
+const RATE_TABLE: Array<{
+  pattern: string;
+  inputPerM: number;
+  outputPerM: number;
+  fastInputPerM?: number;
+  fastOutputPerM?: number;
+}> = [
   { pattern: 'fable', inputPerM: 10, outputPerM: 50 },
   { pattern: 'mythos', inputPerM: 10, outputPerM: 50 },
-  { pattern: 'opus-4-5', inputPerM: 5, outputPerM: 25 },
-  { pattern: 'opus-4-6', inputPerM: 5, outputPerM: 25 },
+  { pattern: 'opus-5', inputPerM: 5, outputPerM: 25, fastInputPerM: 10, fastOutputPerM: 50 },
+  { pattern: 'opus-4-8', inputPerM: 5, outputPerM: 25, fastInputPerM: 10, fastOutputPerM: 50 },
   { pattern: 'opus-4-7', inputPerM: 5, outputPerM: 25 },
-  { pattern: 'opus-4-8', inputPerM: 5, outputPerM: 25 },
+  { pattern: 'opus-4-6', inputPerM: 5, outputPerM: 25 },
+  { pattern: 'opus-4-5', inputPerM: 5, outputPerM: 25 },
   { pattern: 'opus', inputPerM: 15, outputPerM: 75 },
   { pattern: 'haiku-4-5', inputPerM: 1, outputPerM: 5 },
   { pattern: 'haiku', inputPerM: 0.25, outputPerM: 1.25 },
@@ -79,12 +95,26 @@ function baseRates(inputPerM: number, outputPerM: number): ModelRates {
 export function resolveRates(
   model: string,
   overrides?: PricingOverrides,
+  opts?: {
+    /**
+     * `usage.speed` from the turn. `'fast'` selects the fast-mode rate on
+     * models that have one; anything else (including a model with no fast
+     * rate) uses the standard rate rather than inventing a premium.
+     */
+    speed?: string | null;
+  },
 ): { rates: ModelRates; estimated: boolean } {
   const m = (model || '').toLowerCase();
   const entry = RATE_TABLE.find((e) => m.includes(e.pattern));
-  let rates = entry
-    ? baseRates(entry.inputPerM, entry.outputPerM)
-    : baseRates(DEFAULT_RATES.inputPerM, DEFAULT_RATES.outputPerM);
+
+  const fast = opts?.speed === 'fast';
+  const inputPerM = (fast ? entry?.fastInputPerM : undefined) ?? entry?.inputPerM;
+  const outputPerM = (fast ? entry?.fastOutputPerM : undefined) ?? entry?.outputPerM;
+
+  let rates =
+    entry && inputPerM != null && outputPerM != null
+      ? baseRates(inputPerM, outputPerM)
+      : baseRates(DEFAULT_RATES.inputPerM, DEFAULT_RATES.outputPerM);
   let estimated = !entry;
 
   if (overrides) {
@@ -120,7 +150,10 @@ export function computeMessageCost(
   usage: UsageTokens,
   overrides?: PricingOverrides,
 ): MessageCost {
-  const { rates, estimated } = resolveRates(model, overrides);
+  // An explicit user override wins over the fast-mode rate — it is a
+  // deliberate statement about what a token costs, so fast mode must not
+  // silently double it. resolveRates applies overrides last.
+  const { rates, estimated } = resolveRates(model, overrides, { speed: usage.speed });
   const inputUsd = (usage.input_tokens ?? 0) * rates.input;
   const outputUsd = (usage.output_tokens ?? 0) * rates.output;
   const cacheReadUsd = (usage.cache_read_input_tokens ?? 0) * rates.cacheRead;
