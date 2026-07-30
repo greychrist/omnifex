@@ -5,6 +5,46 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.107] — 2026-07-30
+
+### Added
+
+- **`/compact` summaries render as their own message kind** (`user.compactSummary`)
+  instead of as something you typed. The CLI writes the post-compaction recap as
+  a `user` record, so it arrived wearing your colour and offering a Resend button
+  that would have re-sent the entire recap. The new kind is collapsible, teal,
+  labelled "Compacted", and configurable in Settings → Chats like every other
+  kind.
+- **The context rail is coloured by proximity to the budget** — green, amber,
+  red — so a long session can be scanned for where it got expensive without
+  reading a number. Thresholds come from the same function the context-pressure
+  banner uses, so the two cannot disagree about where amber starts. The banner's
+  own on/off switch is ignored: the rail has its own toggle, and honouring both
+  would paint a uniformly green history for anyone who turned the banner off.
+
+### Fixed
+
+- **The rail's readout no longer overruns the next row.** It was absolutely
+  positioned, so it contributed no height and a short row let its numbers print
+  over its neighbour's — worst at a compaction marker, the shortest row in the
+  transcript carrying the most label lines.
+- **The rail reads as one continuous line.** It was 1px and stopped at each row's
+  edge, rendering the series as a dashed ladder; it is now 4px, and the inter-row
+  spacing moves inside the row while the rail is on so consecutive segments meet.
+  Messages keep the same visual separation.
+- **The transcript no longer jogs sideways partway down.** The rail's gutter is
+  reserved from the first row, where before it appeared only once the first
+  usage reading arrived — leaving the opening messages un-indented and every
+  later one pushed right.
+- **The rail's size readout is larger and leads the row**, above the proportional
+  bar rather than below it. The jump and "compacted" annotations stay small: the
+  gutter is 4rem wide and "compacted" wraps at the larger size.
+- **A resumed session that begins at a compaction no longer shows a phantom
+  spinner.** Because the summary classified as an ordinary prompt, the in-flight
+  predicate read it as a prompt awaiting a reply that would never come.
+
+Installers remain **unsigned**.
+
 ## [0.4.106] — 2026-07-30
 
 ### Fixed
