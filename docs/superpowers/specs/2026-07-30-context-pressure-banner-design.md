@@ -228,6 +228,37 @@ Verification gate (renderer-only change): `npm run check`, `npm run build`,
 `npm test`. Then `npm run rebuild:electron` before relaunching the app, since a
 vitest run leaves `better-sqlite3` built for Node rather than Electron.
 
+## Addendum — single-turn context jumps
+
+A turn-count habit ("compact every ~40 turns") structurally cannot see a skill
+or file load that adds hundreds of thousands of tokens in one turn. Only a
+delta alarm can, so `src/lib/turnDelta.ts` computes one from the same usage
+numbers the gauge sums:
+
+```
+total(N) = input + cache_read + cache_creation + output
+delta(N) = total(N) − total(N−1)      // consecutive assistant turns
+```
+
+`lastTurnDelta` returns null in three cases that would otherwise produce a
+misleading number: fewer than two turns with usage, a `compact_boundary`
+between them (compaction drops context by design — the delta is hugely negative
+and means the opposite of a problem), and any shrink for the same reason.
+
+Configurable via `context_jump_enabled` / `context_jump_tokens`, default 50,000
+tokens absolute. Absolute rather than a percentage because what makes a jump
+notable is its raw size: a 325k load is alarming on a 1M window exactly as much
+as on a 200k one.
+
+Surfaced as a one-line notice in `SessionNotices.tsx`, beneath the banner.
+Because the evaluator only ever reports the *most recent* delta, the notice
+self-clears the moment an ordinary turn lands — no dismissal state.
+
+**Deliberately not actionable.** Wiring the notice to `/compact` is the obvious
+temptation and it is wrong: a large jump is usually a skill or file load that
+was just requested, and compacting immediately would discard it. The notice
+reports; the banner acts.
+
 ## Known Limitations
 
 - **TUI mode lags by up to one turn.** The CLI does not answer

@@ -213,6 +213,29 @@ Verification gate (renderer-only change): `npm run check`, `npm run build`,
 `npm test`. Then `npm run rebuild:electron` before relaunching, since a vitest
 run leaves `better-sqlite3` built for Node rather than Electron.
 
+## Addendum — TTL change detection
+
+A 1h → 5m drop usually means the account entered usage overage. The window to
+follow up in shrinks 12×, and the cache write premium changes with it, so the
+drop is worth noticing rather than letting the countdown quietly get shorter.
+
+`lastCacheTtlChange(messages)` finds the most recent point where the per-turn
+TTL classification changed, returning `{ fromMs, toMs, isMostRecentWrite }`.
+`isMostRecentWrite` is the staleness flag that makes the notice sticky and then
+self-clearing: true while the change is still the newest cache write, false
+once a later turn writes cache and confirms the new TTL. Cache-read-only turns
+carry no TTL signal and are skipped when deciding staleness.
+
+Two surfaces:
+
+- The countdown names the TTL inline — `cache 4:12 left (5m)` — so a drop stays
+  legible after the one-off notice has cleared.
+- A one-line notice in `SessionNotices.tsx`, which names both TTLs and adds
+  "usually means usage overage" only when the TTL actually *dropped*.
+
+Rides the existing `cache_timer_enabled` toggle rather than adding a third
+switch.
+
 ## Known Limitations
 
 - **The TTL is retrospective.** It reflects what the last cache-writing turn

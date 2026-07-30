@@ -104,6 +104,18 @@ describe('CacheTimerRow', () => {
     expect(row.className).not.toContain('red');
   });
 
+  // The TTL is visible in the row itself, not just the tooltip, so a 1h → 5m
+  // drop is legible even if the change notice was missed.
+  it('names the TTL inline', () => {
+    renderRow({ ttlMs: CACHE_TTL_5M_MS });
+    expect(screen.getByText(/cache/).textContent).toContain('5m');
+  });
+
+  it('names a 1h TTL inline', () => {
+    renderRow({ ttlMs: CACHE_TTL_1H_MS });
+    expect(screen.getByText(/cache/).textContent).toContain('1h');
+  });
+
   it('handles a 1h TTL', () => {
     renderRow({ ttlMs: CACHE_TTL_1H_MS });
     expect(screen.getByText(/cache/).textContent).toContain('60m');

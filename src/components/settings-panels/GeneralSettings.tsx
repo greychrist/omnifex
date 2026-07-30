@@ -28,6 +28,7 @@ import {
   resolveBudgetTokens,
   formatTokens,
 } from "@/lib/contextPressure";
+import { DEFAULT_CONTEXT_JUMP_TOKENS } from "@/lib/turnDelta";
 import { APP_FONT_CHOICES } from "@/lib/typefaceCatalog";
 import { TabPersistenceService } from "@/services/tabPersistence";
 import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
@@ -95,6 +96,8 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
     setContextPressure,
     cacheTimerEnabled,
     setCacheTimerEnabled,
+    contextJump,
+    setContextJump,
   } = useSessionGauges();
   const [pressureDraft, setPressureDraft] = useState(String(contextPressure.value));
   useEffect(() => {
@@ -108,6 +111,20 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
       : defaultValueForMode(contextPressure.mode);
     void setContextPressure({ ...contextPressure, value: next });
     setToast({ message: "Compact threshold updated", type: "success" });
+  };
+
+  const [jumpDraft, setJumpDraft] = useState(String(contextJump.thresholdTokens));
+  useEffect(() => {
+    setJumpDraft(String(contextJump.thresholdTokens));
+  }, [contextJump.thresholdTokens]);
+
+  const commitJumpTokens = () => {
+    const parsed = Number.parseInt(jumpDraft, 10);
+    void setContextJump({
+      ...contextJump,
+      thresholdTokens: Number.isFinite(parsed) ? parsed : DEFAULT_CONTEXT_JUMP_TOKENS,
+    });
+    setToast({ message: "Jump threshold updated", type: "success" });
   };
 
   // Spell out what the setting resolves to on both window sizes, so the
@@ -555,6 +572,43 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
             <p className="text-caption text-muted-foreground">
               {pressureExplanation}
             </p>
+
+            <div className="flex items-center justify-between">
+              <div className="space-y-1">
+                <Label htmlFor="context-jump-enabled">Flag large single-turn jumps</Label>
+                <p className="text-caption text-muted-foreground">
+                  Notes when one turn adds a lot of context at once — a skill or
+                  file load. A turn-count habit can’t catch these; only a delta can.
+                </p>
+              </div>
+              <Switch
+                id="context-jump-enabled"
+                checked={contextJump.enabled}
+                onCheckedChange={fireAndLog('general-settings:checked-change', (checked) => {
+                  void setContextJump({ ...contextJump, enabled: checked });
+                })}
+              />
+            </div>
+
+            <div className="flex items-center justify-between gap-3">
+              <Label htmlFor="context-jump-tokens" className="text-body-small">
+                Flag turns adding more than (tokens)
+              </Label>
+              <Input
+                id="context-jump-tokens"
+                type="number"
+                min={1000}
+                step={10_000}
+                className="w-32"
+                disabled={!contextJump.enabled}
+                value={jumpDraft}
+                onChange={(e) => setJumpDraft(e.target.value)}
+                onBlur={commitJumpTokens}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") e.currentTarget.blur();
+                }}
+              />
+            </div>
 
             <div className="flex items-center justify-between">
               <div className="space-y-1">

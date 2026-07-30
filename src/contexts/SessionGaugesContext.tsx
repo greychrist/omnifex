@@ -22,6 +22,14 @@ import {
   CACHE_TIMER_ENABLED_SETTING_KEY,
   DEFAULT_CACHE_TIMER_ENABLED,
 } from "@/lib/cacheExpiry";
+import {
+  CONTEXT_JUMP_ENABLED_SETTING_KEY,
+  CONTEXT_JUMP_TOKENS_SETTING_KEY,
+  DEFAULT_CONTEXT_JUMP,
+  clampJumpTokens,
+  parseJumpTokens,
+  type ContextJumpSetting,
+} from "@/lib/turnDelta";
 
 /**
  * The two session-header gauges that are user-configurable: the
@@ -38,6 +46,8 @@ interface SessionGaugesContextType {
   setContextPressure: (next: ContextPressureSetting) => Promise<void>;
   cacheTimerEnabled: boolean;
   setCacheTimerEnabled: (next: boolean) => Promise<void>;
+  contextJump: ContextJumpSetting;
+  setContextJump: (next: ContextJumpSetting) => Promise<void>;
   isLoading: boolean;
 }
 
@@ -53,18 +63,23 @@ export const SessionGaugesProvider: React.FC<{ children: React.ReactNode }> = ({
   const [cacheTimerEnabled, setCacheTimerEnabledState] = useState(
     DEFAULT_CACHE_TIMER_ENABLED,
   );
+  const [contextJump, setContextJumpState] =
+    useState<ContextJumpSetting>(DEFAULT_CONTEXT_JUMP);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
       try {
-        const [enabledRaw, modeRaw, valueRaw, cacheRaw] = await Promise.all([
-          api.getSetting(CONTEXT_PRESSURE_ENABLED_SETTING_KEY),
-          api.getSetting(CONTEXT_PRESSURE_MODE_SETTING_KEY),
-          api.getSetting(CONTEXT_PRESSURE_VALUE_SETTING_KEY),
-          api.getSetting(CACHE_TIMER_ENABLED_SETTING_KEY),
-        ]);
+        const [enabledRaw, modeRaw, valueRaw, cacheRaw, jumpEnabledRaw, jumpTokensRaw] =
+          await Promise.all([
+            api.getSetting(CONTEXT_PRESSURE_ENABLED_SETTING_KEY),
+            api.getSetting(CONTEXT_PRESSURE_MODE_SETTING_KEY),
+            api.getSetting(CONTEXT_PRESSURE_VALUE_SETTING_KEY),
+            api.getSetting(CACHE_TIMER_ENABLED_SETTING_KEY),
+            api.getSetting(CONTEXT_JUMP_ENABLED_SETTING_KEY),
+            api.getSetting(CONTEXT_JUMP_TOKENS_SETTING_KEY),
+          ]);
         if (cancelled) return;
         const mode = parseContextPressureMode(modeRaw);
         setContextPressureState({
@@ -75,6 +90,13 @@ export const SessionGaugesProvider: React.FC<{ children: React.ReactNode }> = ({
         setCacheTimerEnabledState(
           cacheRaw === null ? DEFAULT_CACHE_TIMER_ENABLED : cacheRaw === "true",
         );
+        setContextJumpState({
+          enabled:
+            jumpEnabledRaw === null
+              ? DEFAULT_CONTEXT_JUMP.enabled
+              : jumpEnabledRaw === "true",
+          thresholdTokens: parseJumpTokens(jumpTokensRaw),
+        });
       } catch (error) {
         console.error("Failed to load session gauge settings:", error);
       } finally {
@@ -122,6 +144,28 @@ export const SessionGaugesProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   }, []);
 
+  const setContextJump = useCallback(async (next: ContextJumpSetting) => {
+    const clamped: ContextJumpSetting = {
+      ...next,
+      thresholdTokens: clampJumpTokens(next.thresholdTokens),
+    };
+    setContextJumpState(clamped);
+    try {
+      await Promise.all([
+        api.saveSetting(
+          CONTEXT_JUMP_ENABLED_SETTING_KEY,
+          clamped.enabled ? "true" : "false",
+        ),
+        api.saveSetting(
+          CONTEXT_JUMP_TOKENS_SETTING_KEY,
+          String(clamped.thresholdTokens),
+        ),
+      ]);
+    } catch (error) {
+      console.error("Failed to save context jump setting:", error);
+    }
+  }, []);
+
   return (
     <SessionGaugesContext.Provider
       value={{
@@ -129,6 +173,8 @@ export const SessionGaugesProvider: React.FC<{ children: React.ReactNode }> = ({
         setContextPressure,
         cacheTimerEnabled,
         setCacheTimerEnabled,
+        contextJump,
+        setContextJump,
         isLoading,
       }}
     >

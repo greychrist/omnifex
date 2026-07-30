@@ -20,7 +20,9 @@ import { ContextPressureBanner } from "@/components/ContextPressureBanner";
 import { useSessionGauges } from "@/contexts/SessionGaugesContext";
 import { resolveContextLimit } from "@/lib/contextLimit";
 import { evaluateContextPressure, selectContextTokens } from "@/lib/contextPressure";
-import { observeCacheTtlMs, lastAssistantAnchorMs } from "@/lib/cacheExpiry";
+import { observeCacheTtlMs, lastAssistantAnchorMs, lastCacheTtlChange } from "@/lib/cacheExpiry";
+import { evaluateContextJump } from "@/lib/turnDelta";
+import { SessionNotices } from "@/components/SessionNotices";
 import { useAccountVerdict } from "@/hooks/useAccountVerdict";
 import { resolveSessionVerification } from "@/lib/accountVerification";
 import { cn } from "@/lib/utils";
@@ -969,7 +971,11 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   //
   // Both read the same numbers the SessionCard gauge already renders, via the
   // shared selector, so a banner and a gauge can never disagree.
-  const { contextPressure: contextPressureSetting, cacheTimerEnabled } = useSessionGauges();
+  const {
+    contextPressure: contextPressureSetting,
+    cacheTimerEnabled,
+    contextJump: contextJumpSetting,
+  } = useSessionGauges();
 
   const { tokens: gaugeTokens, sdkMaxTokens } = useMemo(
     () => selectContextTokens({ contextUsage, fallbackTokens: totalTokens }),
@@ -992,6 +998,18 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   );
   const cacheAnchorMs = useMemo(
     () => (cacheTimerEnabled ? lastAssistantAnchorMs(messages) : null),
+    [messages, cacheTimerEnabled],
+  );
+
+  // Informational notices. Both self-clear from their own data — the jump when
+  // an ordinary turn lands, the TTL change when a later turn writes cache — so
+  // neither needs dismissal state.
+  const contextJump = useMemo(
+    () => evaluateContextJump({ messages, setting: contextJumpSetting }),
+    [messages, contextJumpSetting],
+  );
+  const cacheTtlChange = useMemo(
+    () => (cacheTimerEnabled ? lastCacheTtlChange(messages) : null),
     [messages, cacheTimerEnabled],
   );
 
@@ -2403,6 +2421,12 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
           busy={isLoading}
           onCompact={fireAndLog('claude-code-session:compact', handleCompact)}
         />
+        {/* Same live-session gate as the banner: these describe what just
+            happened in a running session, and a transcript loaded from disk
+            shouldn't announce a jump that happened days ago. */}
+        {isSessionActive && (
+          <SessionNotices jump={contextJump} ttlChange={cacheTtlChange} />
+        )}
         {!sessionStarted && (
           <div className="flex-1 flex items-center justify-center p-8">
             <NewSessionForm

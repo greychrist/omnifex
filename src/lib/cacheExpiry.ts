@@ -81,6 +81,48 @@ export function observeCacheTtlMs(messages: JsonlNode[]): number | null {
   return null;
 }
 
+export interface CacheTtlChange {
+  fromMs: number;
+  toMs: number;
+  /**
+   * True while the change is still the newest cache write. Goes false once a
+   * later turn writes cache and confirms the new TTL — which is what lets the
+   * notice be sticky and then disappear on its own, with no dismissal state.
+   */
+  isMostRecentWrite: boolean;
+}
+
+/**
+ * The most recent point at which the effective cache TTL changed, or null.
+ *
+ * A 1h → 5m drop usually means the account entered usage overage: the window
+ * you have to follow up in shrinks 12×, and the write premium changes with it.
+ * Worth surfacing rather than letting the countdown quietly get shorter.
+ */
+export function lastCacheTtlChange(messages: JsonlNode[]): CacheTtlChange | null {
+  // Newest-first list of the TTL each cache-writing turn used.
+  const writes: number[] = [];
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const breakdown = cacheCreationOf(messages[i]);
+    if (!breakdown) continue;
+    const oneHour = breakdown.ephemeral_1h_input_tokens ?? 0;
+    const fiveMin = breakdown.ephemeral_5m_input_tokens ?? 0;
+    if (oneHour > 0) writes.push(CACHE_TTL_1H_MS);
+    else if (fiveMin > 0) writes.push(CACHE_TTL_5M_MS);
+  }
+
+  for (let i = 0; i < writes.length - 1; i += 1) {
+    if (writes[i] !== writes[i + 1]) {
+      return {
+        fromMs: writes[i + 1],
+        toMs: writes[i],
+        isMostRecentWrite: i === 0,
+      };
+    }
+  }
+  return null;
+}
+
 /**
  * When the TTL last restarted: the timestamp of the last assistant message.
  *

@@ -4,6 +4,7 @@ import {
   CACHE_TTL_1H_MS,
   CACHE_TTL_5M_MS,
   observeCacheTtlMs,
+  lastCacheTtlChange,
   lastAssistantAnchorMs,
   evaluateCacheExpiry,
   formatRemaining,
@@ -78,6 +79,53 @@ describe('observeCacheTtlMs', () => {
     expect(observeCacheTtlMs([user('2026-07-30T10:00:00Z')])).toBeNull();
     expect(observeCacheTtlMs([assistant('2026-07-30T10:00:00Z')])).toBeNull();
     expect(observeCacheTtlMs([assistant('2026-07-30T10:00:00Z', null)])).toBeNull();
+  });
+});
+
+describe('lastCacheTtlChange', () => {
+  const oneHour = (t: string) => assistant(t, { ephemeral_1h_input_tokens: 12_000 });
+  const fiveMin = (t: string) => assistant(t, { ephemeral_5m_input_tokens: 900 });
+
+  it('reports a 1h → 5m drop', () => {
+    const msgs = [oneHour('2026-07-30T10:00:00Z'), fiveMin('2026-07-30T10:05:00Z')];
+    expect(lastCacheTtlChange(msgs)).toEqual({
+      fromMs: CACHE_TTL_1H_MS,
+      toMs: CACHE_TTL_5M_MS,
+      isMostRecentWrite: true,
+    });
+  });
+
+  it('reports a 5m → 1h recovery too', () => {
+    const msgs = [fiveMin('2026-07-30T10:00:00Z'), oneHour('2026-07-30T10:05:00Z')];
+    expect(lastCacheTtlChange(msgs)?.toMs).toBe(CACHE_TTL_1H_MS);
+  });
+
+  it('is null when the TTL never changed', () => {
+    expect(lastCacheTtlChange([oneHour('2026-07-30T10:00:00Z')])).toBeNull();
+    expect(
+      lastCacheTtlChange([oneHour('2026-07-30T10:00:00Z'), oneHour('2026-07-30T10:05:00Z')]),
+    ).toBeNull();
+    expect(lastCacheTtlChange([])).toBeNull();
+  });
+
+  // This is what makes the notice sticky-then-gone: it stays while the change
+  // is still the newest cache write, and goes stale once another write lands.
+  it('goes stale once a later write confirms the new TTL', () => {
+    const msgs = [
+      oneHour('2026-07-30T10:00:00Z'),
+      fiveMin('2026-07-30T10:05:00Z'),
+      fiveMin('2026-07-30T10:06:00Z'),
+    ];
+    expect(lastCacheTtlChange(msgs)?.isMostRecentWrite).toBe(false);
+  });
+
+  it('ignores cache-read-only turns when deciding staleness', () => {
+    const msgs = [
+      oneHour('2026-07-30T10:00:00Z'),
+      fiveMin('2026-07-30T10:05:00Z'),
+      assistant('2026-07-30T10:06:00Z', { ephemeral_1h_input_tokens: 0, ephemeral_5m_input_tokens: 0 }),
+    ];
+    expect(lastCacheTtlChange(msgs)?.isMostRecentWrite).toBe(true);
   });
 });
 

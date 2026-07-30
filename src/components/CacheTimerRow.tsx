@@ -61,13 +61,15 @@ export const CacheTimerRow: React.FC<CacheTimerRowProps> = ({
   let text: string;
   let tone: string;
   if (busy) {
-    text = 'cache refreshing…';
+    text = `cache refreshing… (${ttlLabel})`;
     tone = 'text-muted-foreground';
   } else if (level === 'expired') {
-    text = 'cache expired';
+    text = `cache expired (${ttlLabel})`;
     tone = 'text-muted-foreground';
   } else {
-    text = `cache ${formatRemaining(remainingMs)} left`;
+    // TTL named inline, not just in the tooltip, so a 1h → 5m drop stays
+    // legible after the one-off change notice has cleared.
+    text = `cache ${formatRemaining(remainingMs)} left (${ttlLabel})`;
     tone =
       level === 'critical'
         ? 'text-red-500'
