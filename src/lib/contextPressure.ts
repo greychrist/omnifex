@@ -115,6 +115,29 @@ export function resolveBudgetTokens(
 }
 
 /**
+ * Where a token count sits against the configured budget — thresholds only,
+ * with none of the banner's gating.
+ *
+ * Split out because the transcript's context rail colours every row by the
+ * same three levels but answers to a different switch (`context_timeline_
+ * enabled`) and has no notion of a live session — it is a history. Sharing
+ * this function is what makes "amber" mean one thing across the app; the rail
+ * having its own copy of 80%-of-budget is precisely how the two would drift.
+ */
+export function contextPressureLevel(opts: {
+  tokens: number;
+  limit: number;
+  setting: ContextPressureSetting;
+}): ContextPressureLevel {
+  const { tokens, limit, setting } = opts;
+  if (tokens <= 0 || limit <= 0) return 'none';
+  const budgetTokens = resolveBudgetTokens(setting, limit);
+  if (budgetTokens <= 0) return 'none';
+  if (tokens >= budgetTokens) return 'critical';
+  return tokens >= budgetTokens * WARN_FRACTION_OF_BUDGET ? 'warn' : 'none';
+}
+
+/**
  * Decide whether the banner shows, and in which of its two levels.
  *
  * Pure and stateless by design: there is no "already shown" latch, so the
@@ -144,14 +167,7 @@ export function evaluateContextPressure(opts: {
   const pct = Math.min(100, (tokens / limit) * 100);
   if (budgetTokens <= 0) return inert;
 
-  const level: ContextPressureLevel =
-    tokens >= budgetTokens
-      ? 'critical'
-      : tokens >= budgetTokens * WARN_FRACTION_OF_BUDGET
-        ? 'warn'
-        : 'none';
-
-  return { level, budgetTokens, pct };
+  return { level: contextPressureLevel({ tokens, limit, setting }), budgetTokens, pct };
 }
 
 /**

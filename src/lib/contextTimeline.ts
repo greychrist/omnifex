@@ -9,6 +9,11 @@
 
 import type { JsonlNode } from '@/types/jsonl';
 import { turnContextTotal } from '@/lib/turnDelta';
+import {
+  contextPressureLevel,
+  type ContextPressureLevel,
+  type ContextPressureSetting,
+} from '@/lib/contextPressure';
 
 export const CONTEXT_TIMELINE_ENABLED_SETTING_KEY = 'context_timeline_enabled';
 export const DEFAULT_CONTEXT_TIMELINE_ENABLED = false;
@@ -26,6 +31,12 @@ export interface ContextTimelinePoint {
   isReset: boolean;
   /** tokens / limit, clamped to 0..1, for bar width. */
   fraction: number;
+  /**
+   * Where `tokens` sits against the configured budget — drives the rail's
+   * green/amber/red. Shared with the context-pressure banner rather than
+   * re-derived, so the rail turns amber exactly when the banner would.
+   */
+  level: ContextPressureLevel;
 }
 
 /**
@@ -39,10 +50,20 @@ export interface ContextTimelinePoint {
  */
 export function buildContextTimeline(
   messages: JsonlNode[],
-  opts: { limit: number; jumpThresholdTokens: number },
+  opts: {
+    limit: number;
+    jumpThresholdTokens: number;
+    /**
+     * The banner's budget setting. Only its thresholds are used — `enabled`
+     * gates the banner, not the rail, which has its own toggle.
+     */
+    pressure: ContextPressureSetting;
+  },
 ): Map<JsonlNode, ContextTimelinePoint> {
-  const { limit, jumpThresholdTokens } = opts;
+  const { limit, jumpThresholdTokens, pressure } = opts;
   const points = new Map<JsonlNode, ContextTimelinePoint>();
+  const levelAt = (tokens: number) =>
+    contextPressureLevel({ tokens, limit, setting: pressure });
 
   let lastTotal: number | null = null;
   let pendingReset = false;
@@ -66,6 +87,7 @@ export function buildContextTimeline(
           isJump: false,
           isReset: false,
           fraction: windowFraction(lastTotal, limit),
+          level: levelAt(lastTotal),
         });
       }
       continue;
@@ -83,6 +105,7 @@ export function buildContextTimeline(
       isJump: delta !== null && delta >= jumpThresholdTokens,
       isReset,
       fraction: windowFraction(total, limit),
+      level: levelAt(total),
     });
   }
 

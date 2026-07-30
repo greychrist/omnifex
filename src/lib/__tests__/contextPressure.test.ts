@@ -6,6 +6,8 @@ import {
   parseContextPressureValue,
   clampContextPressureValue,
   evaluateContextPressure,
+  contextPressureLevel,
+  DEFAULT_CONTEXT_PRESSURE_TOKENS,
   selectContextTokens,
   type ContextPressureSetting,
 } from '../contextPressure';
@@ -209,5 +211,59 @@ describe('selectContextTokens', () => {
     expect(
       selectContextTokens({ contextUsage: null, fallbackTokens: 90_000 }),
     ).toEqual({ tokens: 90_000, sdkMaxTokens: null });
+  });
+});
+
+// The timeline rail needs the same thresholds the banner uses, but not the
+// banner's gates: the rail has its own toggle, and a session that is not
+// "live" still has a history worth colouring. Sharing this helper is what
+// stops the rail and the banner from disagreeing about where amber starts.
+describe('contextPressureLevel', () => {
+  const LIMIT = 1_000_000;
+  const budget = DEFAULT_CONTEXT_PRESSURE_TOKENS; // 250k
+
+  it('is none below 80% of the budget', () => {
+    expect(contextPressureLevel({ tokens: budget * 0.8 - 1, limit: LIMIT, setting: ON() }))
+      .toBe('none');
+  });
+
+  it('is warn from 80% of the budget', () => {
+    expect(contextPressureLevel({ tokens: budget * 0.8, limit: LIMIT, setting: ON() }))
+      .toBe('warn');
+  });
+
+  it('is critical at the budget', () => {
+    expect(contextPressureLevel({ tokens: budget, limit: LIMIT, setting: ON() }))
+      .toBe('critical');
+  });
+
+  // The rail must stay honest when the banner is switched off, otherwise a
+  // user who dismissed the banner sees a uniformly green history.
+  it('ignores the banner enabled flag', () => {
+    expect(contextPressureLevel({ tokens: budget, limit: LIMIT, setting: ON({ enabled: false }) }))
+      .toBe('critical');
+  });
+
+  it('is none when there is no window to measure against', () => {
+    expect(contextPressureLevel({ tokens: 500_000, limit: 0, setting: ON() })).toBe('none');
+  });
+
+  it('is none at zero tokens', () => {
+    expect(contextPressureLevel({ tokens: 0, limit: LIMIT, setting: ON() })).toBe('none');
+  });
+
+  it('tracks percent mode against the real window', () => {
+    const setting = ON({ mode: 'percent', value: 50 });
+    expect(contextPressureLevel({ tokens: 500_000, limit: LIMIT, setting })).toBe('critical');
+    expect(contextPressureLevel({ tokens: 100_000, limit: LIMIT, setting })).toBe('none');
+  });
+
+  // The banner and the rail resolve levels through the same function, so a
+  // drift between them is not expressible.
+  it('agrees with the level evaluateContextPressure reports', () => {
+    for (const tokens of [10_000, 200_000, 250_000, 900_000]) {
+      expect(contextPressureLevel({ tokens, limit: LIMIT, setting: ON() }))
+        .toBe(evaluateContextPressure({ tokens, limit: LIMIT, setting: ON() }).level);
+    }
   });
 });

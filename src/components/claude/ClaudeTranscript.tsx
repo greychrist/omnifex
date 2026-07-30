@@ -17,6 +17,7 @@ import { buildContextTimeline } from "@/lib/contextTimeline";
 import { ContextTimelineTick } from "@/components/ContextTimelineTick";
 import { ContextTimelineToggle } from "@/components/ContextTimelineToggle";
 import { nextNearBottom } from "@/lib/autoScrollThresholds";
+import { cn } from "@/lib/utils";
 import type { JsonlNode } from "@/types/jsonl";
 import type { ViewMode } from "@/components/SessionViewToggle";
 
@@ -88,7 +89,7 @@ export function ClaudeTranscript({
 }: ClaudeTranscriptProps): React.ReactElement {
   const { config: renderConfig } = useMessageRenderingConfig();
   const { reengagePx, disengagePx } = useAutoScroll();
-  const { contextTimelineEnabled, setContextTimelineEnabled, contextJump } =
+  const { contextTimelineEnabled, setContextTimelineEnabled, contextJump, contextPressure } =
     useSessionGauges();
 
   // Built over the FULL message array and keyed by node identity, so hard
@@ -99,18 +100,36 @@ export function ClaudeTranscript({
         ? buildContextTimeline(messages, {
             limit: contextLimit,
             jumpThresholdTokens: contextJump.thresholdTokens,
+            // Only the thresholds are borrowed. `contextPressure.enabled`
+            // gates the banner; the rail answers to its own toggle, so
+            // turning the banner off must not flatten the rail to green.
+            pressure: contextPressure,
           })
         : null,
-    [contextTimelineEnabled, messages, contextLimit, contextJump.thresholdTokens],
+    [
+      contextTimelineEnabled,
+      messages,
+      contextLimit,
+      contextJump.thresholdTokens,
+      contextPressure,
+    ],
   );
 
-  /** Wraps a rendered row in the rail gutter when the timeline is on. */
+  /**
+   * Wraps a rendered row in the rail gutter when the timeline is on.
+   *
+   * The row spacing moves INSIDE the row (`pb-4` on the message column) rather
+   * than staying on the container as `space-y-4`. With the gap between rows,
+   * each rail segment stopped at its own row's edge and the series rendered as
+   * a dashed ladder; with the gap inside, the gutter cell stretches through it
+   * and consecutive rails meet. Messages keep the same visual separation.
+   */
   const withTimeline = (node: JsonlNode | undefined, body: React.ReactNode) => {
     if (!timeline) return body;
     return (
       <div className="flex gap-2">
         <ContextTimelineTick point={node ? timeline.get(node) : undefined} />
-        <div className="flex-1 min-w-0">{body}</div>
+        <div className="flex-1 min-w-0 pb-4">{body}</div>
       </div>
     );
   };
@@ -270,7 +289,12 @@ export function ClaudeTranscript({
         contain: 'paint',
       }}
     >
-      <div ref={contentRef} className="w-full px-4 pt-8 pb-4 space-y-4">
+      {/* No `space-y-4` while the rail is on — the spacing lives inside each
+          row instead, so the rail can run through it unbroken. */}
+      <div
+        ref={contentRef}
+        className={cn("w-full px-4 pt-8 pb-4", !timeline && "space-y-4")}
+      >
           {viewMode === 'verbose'
             ? displayableMessages.map((message, idx) => (
                 <div key={idx}>

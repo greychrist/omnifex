@@ -1,9 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import type { JsonlNode } from '@/types/jsonl';
 import { buildContextTimeline } from '../contextTimeline';
+import { DEFAULT_CONTEXT_PRESSURE } from '../contextPressure';
 
 const LIMIT = 1_000_000;
-const opts = { limit: LIMIT, jumpThresholdTokens: 50_000 };
+// Default budget is an absolute 250k, so warn lands at 200k and critical at 250k.
+const opts = {
+  limit: LIMIT,
+  jumpThresholdTokens: 50_000,
+  pressure: DEFAULT_CONTEXT_PRESSURE,
+};
 
 const assistant = (total: number): JsonlNode =>
   ({
@@ -154,5 +160,46 @@ describe('buildContextTimeline — fraction', () => {
     const a = assistant(250_000);
     const t = buildContextTimeline([a], { ...opts, limit: 0 });
     expect(t.get(a)?.fraction).toBe(0);
+  });
+});
+
+// The rail is coloured green/amber/red by where each row sits against the
+// budget. Levels come from contextPressure so the rail and the banner cannot
+// disagree about where amber starts.
+describe('buildContextTimeline — pressure level', () => {
+  const at = (tokens: number) => {
+    const node = assistant(tokens);
+    return buildContextTimeline([node], opts).get(node);
+  };
+
+  it('is none well below the budget', () => {
+    expect(at(50_000)?.level).toBe('none');
+  });
+
+  it('is warn at 80% of the budget', () => {
+    expect(at(200_000)?.level).toBe('warn');
+  });
+
+  it('is critical at the budget', () => {
+    expect(at(250_000)?.level).toBe('critical');
+  });
+
+  // Carried-forward rows hold the previous reading, so they must hold its
+  // colour too — otherwise the rail flickers back to green between samples.
+  it('carries the level forward on rows with no reading', () => {
+    const a = assistant(250_000);
+    const p = prompt();
+    const t = buildContextTimeline([a, p], opts);
+    expect(t.get(p)?.isSample).toBe(false);
+    expect(t.get(p)?.level).toBe('critical');
+  });
+
+  // A compaction is the one place the colour should visibly fall back.
+  it('drops the level after a compaction resets the window', () => {
+    const before = assistant(250_000);
+    const after = assistant(20_000);
+    const t = buildContextTimeline([before, compactBoundary(), after], opts);
+    expect(t.get(before)?.level).toBe('critical');
+    expect(t.get(after)?.level).toBe('none');
   });
 });
