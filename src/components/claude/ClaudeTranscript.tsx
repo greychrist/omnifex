@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { ChevronDown, ChevronUp, BarChartHorizontal } from "lucide-react";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TooltipSimple } from "@/components/ui/tooltip-modern";
 import { StreamMessage } from "@/components/StreamMessage";
@@ -11,11 +11,11 @@ import { useFindInChat } from "@/hooks/useFindInChat";
 import { buildCompactItems } from "@/lib/compactGrouping";
 import { filterDisplayableMessages } from "@/lib/messageFilters";
 import { useMessageRenderingConfig } from "@/contexts/MessageRenderingContext";
-import { cn } from "@/lib/utils";
 import { useAutoScroll } from "@/contexts/AutoScrollContext";
 import { useSessionGauges } from "@/contexts/SessionGaugesContext";
 import { buildContextTimeline } from "@/lib/contextTimeline";
 import { ContextTimelineTick } from "@/components/ContextTimelineTick";
+import { ContextTimelineToggle } from "@/components/ContextTimelineToggle";
 import { nextNearBottom } from "@/lib/autoScrollThresholds";
 import type { JsonlNode } from "@/types/jsonl";
 import type { ViewMode } from "@/components/SessionViewToggle";
@@ -232,25 +232,15 @@ export function ClaudeTranscript({
         onClose={() => { setFindOpen(false); setFindQuery(''); }}
       />
     )}
+    {/* Sits on the left, beside the gutter it controls — the scroll buttons on
+        the right are unrelated chrome. */}
+    <div className="absolute left-1 bottom-6 z-10">
+      <ContextTimelineToggle
+        active={contextTimelineEnabled}
+        onToggle={() => void setContextTimelineEnabled(!contextTimelineEnabled)}
+      />
+    </div>
     <div className="absolute right-1 bottom-6 z-10 flex flex-col gap-1">
-      <TooltipSimple
-        content={contextTimelineEnabled ? "Hide context timeline" : "Show context timeline"}
-        side="left"
-      >
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="Toggle context timeline"
-          aria-pressed={contextTimelineEnabled}
-          onClick={() => void setContextTimelineEnabled(!contextTimelineEnabled)}
-          className={cn(
-            "h-8 w-8 hover:bg-accent/50 transition-colors bg-background/80 backdrop-blur-sm border border-border/50",
-            contextTimelineEnabled && "text-primary",
-          )}
-        >
-          <BarChartHorizontal className="h-3.5 w-3.5" />
-        </Button>
-      </TooltipSimple>
       <TooltipSimple content="Scroll to top" side="left">
         <Button
           variant="ghost"
