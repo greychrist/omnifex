@@ -5,6 +5,39 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.105] — 2026-07-30
+
+### Added
+
+- **Context timeline rail.** A vertical gutter alongside the transcript showing
+  the context size at each message, so a session can be reviewed after the fact
+  to find where context jumped. Bars scale with window occupancy; steps over the
+  context-jump threshold get an amber marker and a delta label, and a
+  compaction renders as a labelled break. Off by default — toggle it from the
+  floating button stack at the bottom-right of the transcript. Works on old
+  sessions with no re-run, since the readings were always in the transcript.
+
+### Fixed
+
+- **The context-jump notice now measures a turn, not a tool-loop step.** It
+  differenced the two most recent assistant messages, but one prompt produces a
+  whole loop of them — so a large load registered on a single message and was
+  wiped seconds later by the next step. Replaying a real session where a skill
+  load added 324,691 tokens: the notice was visible for 1 of 329 render states
+  before, and 80 after. It is now anchored to the prompt you typed and holds
+  until the next one. Growth accumulated across several sub-threshold steps is
+  caught too, which the old check structurally could not see.
+- **Subagent context no longer leaks into main-thread figures.** A subagent's
+  `usage` describes its own context window; counting it could fabricate a
+  main-thread jump that never happened.
+
+### Changed
+
+- The context-jump and cache-TTL notices are now dismissible. Dismissal is keyed
+  to the prompt that caused it, so waving one off never suppresses the next.
+
+Installers remain **unsigned**.
+
 ## [0.4.104] — 2026-07-30
 
 Supersedes 0.4.103, which was tagged but never released — it carried the
