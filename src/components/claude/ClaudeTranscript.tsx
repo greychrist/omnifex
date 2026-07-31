@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { ChevronDown, ChevronUp } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronDown, ChevronUp, ChevronsDown, ChevronsUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TooltipSimple } from "@/components/ui/tooltip-modern";
 import { StreamMessage } from "@/components/StreamMessage";
@@ -17,9 +17,14 @@ import { buildContextTimeline } from "@/lib/contextTimeline";
 import { ContextTimelineTick } from "@/components/ContextTimelineTick";
 import { ContextTimelineToggle } from "@/components/ContextTimelineToggle";
 import { nextNearBottom } from "@/lib/autoScrollThresholds";
+import { stepTarget, isStepStop, isMainPrompt, type StepDirection } from "@/lib/transcriptStepper";
 import { cn } from "@/lib/utils";
 import type { JsonlNode } from "@/types/jsonl";
 import type { ViewMode } from "@/components/SessionViewToggle";
+
+/** Shared chrome for the floating scroll/step buttons on the right edge. */
+const NAV_BUTTON =
+  "h-8 w-8 hover:bg-accent/50 transition-colors bg-background/80 backdrop-blur-sm border border-border/50";
 
 export interface ClaudeTranscriptProps {
   /** All stream messages for this tab — passed to StreamMessage as the streamMessages context. */
@@ -65,7 +70,7 @@ export interface ClaudeTranscriptProps {
  * Claude transcript — the body of the chat. Renders all messages, the
  * streaming bubble, the typing-dots row, and an inline error card. Owns
  * the find-in-chat bar and the scroll machinery (stick-to-bottom logic,
- * scroll-to-top/bottom buttons, resize observer).
+ * the scroll/step navigation buttons, resize observer).
  *
  * Extracted from `ClaudeCodeSession` (now `AgentSession`) so the agent
  * shell can swap Claude vs. Codex transcripts without duplicating chrome.
@@ -211,15 +216,85 @@ export function ClaudeTranscript({
     return () => { observer.disconnect(); };
   }, [waitingForPermission, isNearBottomRef]);
 
-  const scrollToTop = useCallback(() => {
-    parentRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+  /**
+   * Where the last navigation button aimed, held until the smooth scroll has
+   * had time to land. Smooth scrolling is asynchronous, so a second press
+   * arrives while `scrollTop` still reads the old position — without this,
+   * pressing "next" three times quickly advances one row, not three.
+   */
+  const pendingTargetRef = useRef<number | null>(null);
+
+  const scrollToPosition = useCallback((top: number) => {
+    const el = parentRef.current;
+    if (!el) return;
+    pendingTargetRef.current = top;
+    el.scrollTo({ top, behavior: 'smooth' });
+    // Released on a timer rather than on arrival: grabbing the scrollbar
+    // mid-animation cancels the scroll, and a cancelled scroll fires no
+    // "arrived" event to hook. 400ms is past the browser's smooth-scroll
+    // duration, so a held-down button never outruns it.
+    window.setTimeout(() => {
+      if (pendingTargetRef.current === top) pendingTargetRef.current = null;
+    }, 400);
   }, []);
+
+  const scrollToTop = useCallback(() => {
+    scrollToPosition(0);
+  }, [scrollToPosition]);
 
   const scrollToBottom = useCallback(() => {
     const el = parentRef.current;
     if (!el) return;
-    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+    // Clamped rather than raw scrollHeight: the browser clamps the scroll
+    // itself, but the pending target is compared against real positions.
+    scrollToPosition(Math.max(0, el.scrollHeight - el.clientHeight));
+  }, [scrollToPosition]);
+
+  /**
+   * Row tops relative to the scroll container's content, in document order.
+   *
+   * Measured from the DOM instead of tracked alongside the message array:
+   * hard filters and compact-mode grouping both change which nodes become
+   * rows, and every row is variable-height, so an index-keyed model would
+   * need the same measurement anyway.
+   */
+  const rowOffsets = useCallback((selector: string): number[] => {
+    const scrollEl = parentRef.current;
+    const contentEl = contentRef.current;
+    if (!scrollEl || !contentEl) return [];
+    const containerTop = scrollEl.getBoundingClientRect().top;
+    return Array.from(contentEl.querySelectorAll<HTMLElement>(selector)).map(
+      (el) => el.getBoundingClientRect().top - containerTop + scrollEl.scrollTop,
+    );
   }, []);
+
+  /**
+   * Both button pairs share this: the only difference between stepping
+   * messages and stepping prompts is which rows supply the offsets.
+   */
+  const step = useCallback(
+    (direction: StepDirection, selector: string) => {
+      const el = parentRef.current;
+      if (!el) return;
+      const target = stepTarget({
+        offsets: rowOffsets(selector),
+        scrollTop: pendingTargetRef.current ?? el.scrollTop,
+        direction,
+      });
+      if (target !== null) scrollToPosition(target);
+    },
+    [rowOffsets, scrollToPosition],
+  );
+
+  const stepPrev = useCallback(() => { step('prev', '[data-transcript-step]'); }, [step]);
+  const stepNext = useCallback(() => { step('next', '[data-transcript-step]'); }, [step]);
+  const promptPrev = useCallback(() => { step('prev', '[data-transcript-prompt]'); }, [step]);
+  const promptNext = useCallback(() => { step('next', '[data-transcript-prompt]'); }, [step]);
+
+  const hasPrompt = useMemo(
+    () => displayableMessages.some(isMainPrompt),
+    [displayableMessages],
+  );
 
   const handleScroll = useCallback(() => {
     const el = parentRef.current;
@@ -259,30 +334,94 @@ export function ClaudeTranscript({
         onToggle={() => void setContextTimelineEnabled(!contextTimelineEnabled)}
       />
     </div>
+    {/* Three icon families, because six stacked buttons are otherwise
+        indistinguishable at 14px: double chevrons jump to an end, single
+        chevrons step one message, arrows step one prompt. */}
     <div className="absolute right-1 bottom-6 z-10 flex flex-col gap-1">
       <TooltipSimple content="Scroll to top" side="left">
         <Button
           variant="ghost"
           size="icon"
           onClick={scrollToTop}
-          className="h-8 w-8 hover:bg-accent/50 transition-colors bg-background/80 backdrop-blur-sm border border-border/50"
+          aria-label="Scroll to top"
+          className={NAV_BUTTON}
+        >
+          <ChevronsUp className="h-3.5 w-3.5" />
+        </Button>
+      </TooltipSimple>
+      <TooltipSimple content="Previous message" side="left">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={stepPrev}
+          aria-label="Previous message"
+          className={NAV_BUTTON}
         >
           <ChevronUp className="h-3.5 w-3.5" />
         </Button>
       </TooltipSimple>
+      <TooltipSimple content="Next message" side="left">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={stepNext}
+          aria-label="Next message"
+          className={NAV_BUTTON}
+        >
+          <ChevronDown className="h-3.5 w-3.5" />
+        </Button>
+      </TooltipSimple>
+      {/* Separates the two step pairs. Without it the column reads as five
+          interchangeable arrows and you have to hover to find the one you
+          want. */}
+      <div className="mx-auto my-0.5 h-px w-4 bg-border/60" aria-hidden="true" />
+      {/* Wrapped in spans: a disabled Button swallows the pointer events the
+          tooltip trigger needs, so the tooltip would vanish exactly when the
+          reason for the disabled state is worth explaining. */}
+      <TooltipSimple content="Previous prompt" side="left">
+        <span>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={promptPrev}
+            aria-label="Previous prompt"
+            disabled={!hasPrompt}
+            className={NAV_BUTTON}
+          >
+            <ArrowUp className="h-3.5 w-3.5" />
+          </Button>
+        </span>
+      </TooltipSimple>
+      <TooltipSimple content="Next prompt" side="left">
+        <span>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={promptNext}
+            aria-label="Next prompt"
+            disabled={!hasPrompt}
+            className={NAV_BUTTON}
+          >
+            <ArrowDown className="h-3.5 w-3.5" />
+          </Button>
+        </span>
+      </TooltipSimple>
+      <div className="mx-auto my-0.5 h-px w-4 bg-border/60" aria-hidden="true" />
       <TooltipSimple content="Scroll to bottom" side="left">
         <Button
           variant="ghost"
           size="icon"
           onClick={scrollToBottom}
-          className="h-8 w-8 hover:bg-accent/50 transition-colors bg-background/80 backdrop-blur-sm border border-border/50"
+          aria-label="Scroll to bottom"
+          className={NAV_BUTTON}
         >
-          <ChevronDown className="h-3.5 w-3.5" />
+          <ChevronsDown className="h-3.5 w-3.5" />
         </Button>
       </TooltipSimple>
     </div>
     <div
       ref={parentRef}
+      data-transcript-scroll
       className="h-full overflow-y-auto relative border border-border/50 rounded-lg bg-background"
       onScroll={handleScroll}
       style={{
@@ -295,9 +434,17 @@ export function ClaudeTranscript({
         ref={contentRef}
         className={cn("w-full px-4 pt-8 pb-4", !timeline && "space-y-4")}
       >
+          {/* data-transcript-step / -prompt are the anchors the prev/next and
+              last-prompt buttons measure. Marked on the row wrapper rather
+              than counted in an array so they follow whatever the filters and
+              the view mode actually rendered. */}
           {viewMode === 'verbose'
             ? displayableMessages.map((message, idx) => (
-                <div key={idx}>
+                <div
+                  key={idx}
+                  data-transcript-step={isStepStop(message) ? "" : undefined}
+                  data-transcript-prompt={isMainPrompt(message) ? "" : undefined}
+                >
                   {withTimeline(
                     message,
                     <StreamMessage
@@ -314,7 +461,11 @@ export function ClaudeTranscript({
                 const items = buildCompactItems(displayableMessages, renderConfig);
                 return items.map((item) =>
                   item.kind === 'single' ? (
-                    <div key={item.key}>
+                    <div
+                      key={item.key}
+                      data-transcript-step={isStepStop(item.message) ? "" : undefined}
+                      data-transcript-prompt={isMainPrompt(item.message) ? "" : undefined}
+                    >
                       {withTimeline(
                         item.message,
                         <StreamMessage
@@ -328,7 +479,10 @@ export function ClaudeTranscript({
                       )}
                     </div>
                   ) : (
-                    <div key={item.key}>
+                    // A collapsed group is one landable row: it holds only
+                    // hidden events, so stepping past it entirely would skip
+                    // the expander that reaches them.
+                    <div key={item.key} data-transcript-step>
                       {/* A collapsed group reports its EXIT state — the context
                           size after everything inside it ran. */}
                       {withTimeline(
