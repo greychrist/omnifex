@@ -5,6 +5,27 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.109] — 2026-07-31
+
+### Fixed
+
+- **OmniFex quits when you close it.** macOS reported it as "running in the
+  background" because closing the last window left the process resident in the
+  Dock — the stock Electron convention, which this app never wanted. It now
+  quits on every platform.
+- **A quit that would end work in flight asks first.** Closing a window now
+  stops any session mid-turn, so both quit paths show a dialog naming how many
+  sessions are still working. Cancel is the default and the escape key, so a
+  stray Return cannot kill a turn. Update-driven quits skip the question — the
+  installer already gates on busy sessions, and a second prompt could strand a
+  half-applied update.
+- **A cancelled quit no longer tears the app down.** Shutdown moved from
+  `before-quit` to `will-quit`: preventing a quit does not stop Electron
+  calling the remaining `before-quit` listeners, so cancelling would have
+  closed the database and stopped every session underneath a still-running app.
+
+Installers remain **unsigned**.
+
 ## [0.4.108] — 2026-07-30
 
 ### Added
