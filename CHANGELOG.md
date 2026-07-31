@@ -5,6 +5,33 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.108] — 2026-07-30
+
+### Added
+
+- **Step through the transcript one message or one prompt at a time.** Four new
+  buttons sit between scroll-to-top and scroll-to-bottom: previous/next message,
+  and previous/next prompt. The prompt pair walks the conversation's actual
+  turns, skipping tool results, assistant messages, skill injections, and any
+  subagent's prompt — it lands only on things you typed.
+- **`/compact` summaries are stepped over.** They are session machinery rather
+  than conversation, and they are long. A collapsed "N Hidden Events" group is
+  still a stop, since stepping past it would skip the only handle that reaches
+  what is inside.
+
+### Changed
+
+- **The scroll buttons are now three icon families**, because six stacked
+  buttons are indistinguishable at 14px: double chevrons jump to an end, single
+  chevrons step one message, arrows step one prompt.
+
+### Fixed
+
+- **The floating scroll buttons have accessible names.** They are icon-only and
+  their labels lived in a hover tooltip, which is nothing to a screen reader.
+
+Installers remain **unsigned**.
+
 ## [0.4.107] — 2026-07-30
 
 ### Added
