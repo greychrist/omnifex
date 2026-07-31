@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, protocol, Notification, shell, Menu, clipboard } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, protocol, Notification, shell, Menu, clipboard } from 'electron';
 import type { MenuItemConstructorOptions } from 'electron';
 import { execSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -39,6 +39,7 @@ process.on('uncaughtException', (err) => {
 process.on('unhandledRejection', (err) => {
   console.error('Unhandled rejection:', err);
 });
+import { decideQuit } from './quit-policy';
 import { createDatabase, ensureDefaultSettings } from './services/database';
 import { createAccountsService } from './services/accounts';
 import { runFirstTimeDiscovery } from './services/first-run-discovery';
@@ -108,6 +109,50 @@ let _gitWatcherService: { disposeAll(): void } | null = null;
 let _sessionCostService: { stopAll(): void } | null = null;
 let _db: { close(): void } | null = null;
 let _initialized = false;
+/** Set once the services exist; see the in-flight broadcaster in whenReady. */
+let _workingCount: (() => number) | null = null;
+/** True for a quit the user already agreed to, or one the installer drives. */
+let _quitAuthorized = false;
+
+/** Quit without re-asking about in-flight work. */
+function quitAuthorized(): void {
+  _quitAuthorized = true;
+  app.quit();
+}
+
+/**
+ * Gate for every quit path. Returns false only when the user cancels.
+ *
+ * Answering "Quit anyway" latches `_quitAuthorized`, so the later stages of
+ * the same quit — each window's `close`, then `before-quit` — do not ask
+ * again.
+ */
+function mayQuit(win?: BrowserWindow): boolean {
+  const decision = decideQuit({
+    workingCount: _workingCount?.() ?? 0,
+    authorized: _quitAuthorized,
+  });
+  if (decision.action === 'allow') return true;
+
+  const options = {
+    type: 'warning' as const,
+    buttons: ['Cancel', 'Quit anyway'],
+    // Cancel is both the default and the escape hatch: the destructive
+    // option should never be what a stray Return key picks.
+    defaultId: 0,
+    cancelId: 0,
+    title: 'Quit OmniFex?',
+    message: decision.prompt.message,
+    detail: decision.prompt.detail,
+  };
+  const parent = win ?? BrowserWindow.getFocusedWindow();
+  const choice = parent
+    ? dialog.showMessageBoxSync(parent, options)
+    : dialog.showMessageBoxSync(options);
+  if (choice !== 1) return false;
+  _quitAuthorized = true;
+  return true;
+}
 
 function anyWindowFocused(): boolean {
   for (const w of windows) {
@@ -231,6 +276,14 @@ function createWindow(): BrowserWindow {
     win.webContents.openDevTools();
   }
   win.show();
+
+  // Closing the last window is a quit now, so it asks the same question
+  // Cmd+Q does — and asks it here, while there is still a window to hang the
+  // dialog on and to go back to if the user cancels.
+  win.on('close', (event) => {
+    if (BrowserWindow.getAllWindows().length > 1) return;
+    if (!mayQuit(win)) event.preventDefault();
+  });
 
   win.on('focus', () => {
     // Clear unread badge when user focuses any window
@@ -1215,8 +1268,10 @@ app.whenReady().then(() => {
     const filePath: string = data?.filePath ?? data?.file_path ?? data;
     const errMsg = await shell.openPath(filePath);
     if (errMsg) throw new Error(errMsg);
-    // Give the DMG a moment to mount, then quit so the user can drag-install
-    setTimeout(() => app.quit(), 1500);
+    // Give the DMG a moment to mount, then quit so the user can drag-install.
+    // Authorized: the user asked for the update, and the installer runs its own
+    // busy-session gate — a second prompt here could strand a half-done install.
+    setTimeout(quitAuthorized, 1500);
   });
 
   // Tab Status — renderer-published per-tab summaries (busy/idle, agent
@@ -1264,7 +1319,8 @@ app.whenReady().then(() => {
       listSessionStatuses: () => sessionsService.listSessionStatuses(),
       stopAll: () => sessionsService.stopAll(),
     },
-    appQuit: () => app.quit(),
+    // Same reason as the DMG path above: the install gate already asked.
+    appQuit: quitAuthorized,
     spawn: (cmd, args, opts) => spawn(cmd, args, opts),
     sendToRenderer: (channel, payload) => {
       // Send to all renderers — the install flow is global.
@@ -1321,22 +1377,28 @@ app.whenReady().then(() => {
     return { success: true };
   });
 
+  // Sessions genuinely mid-turn. `workingTabIds` (promptStatus === 'working')
+  // rather than `busyTabIds`, so this counts real work and not a session
+  // paused on a permission prompt — the install gate keeps the broader
+  // "wait for everything to settle" semantics for itself.
+  //
+  // Read by both the in-flight broadcast below and the quit guard, so the
+  // titlebar's warning and the quit dialog's can never disagree.
+  const workingCount = (): number => {
+    const fromRenderer = tabStatusService.list().length > 0
+      ? tabStatusService.workingTabIds().length
+      : null;
+    return fromRenderer ?? sessionsService.listInFlightTabIds().length;
+  };
+  _workingCount = workingCount;
+
   // Broadcast in-flight session count so the titlebar can decide, before the
   // user clicks install, whether to show the plain "Update Available" button
   // or the active-sessions warning. 1 s poll is plenty — the count only
   // changes when a session enters/leaves a turn, not per stream message.
   let lastInFlightCount = -1;
   const broadcastInFlight = (): void => {
-    // Drives the upgrade-button "active sessions" warning. Use
-    // `workingTabIds` (promptStatus === 'working') so the warning fires
-    // only when the agent is genuinely doing work — not when a session
-    // is just paused on a permission prompt. The install-gate itself
-    // keeps using `busyTabIds` for its broader "wait for everything to
-    // settle" semantics.
-    const fromRenderer = tabStatusService.list().length > 0
-      ? tabStatusService.workingTabIds().length
-      : null;
-    const count = fromRenderer ?? sessionsService.listInFlightTabIds().length;
+    const count = workingCount();
     if (count === lastInFlightCount) return;
     lastInFlightCount = count;
     for (const w of BrowserWindow.getAllWindows()) {
@@ -1345,7 +1407,7 @@ app.whenReady().then(() => {
   };
   const inFlightTimer = setInterval(broadcastInFlight, 1000);
   if (typeof inFlightTimer.unref === 'function') inFlightTimer.unref();
-  app.on('before-quit', () => clearInterval(inFlightTimer));
+  app.on('will-quit', () => clearInterval(inFlightTimer));
   // Fire one immediately so any newly-created window starts with the right count.
   broadcastInFlight();
 
@@ -1357,17 +1419,26 @@ app.whenReady().then(() => {
   createWindow();
 }).catch((err: unknown) => { console.error('[main:whenReady-init]', err); });
 
-app.on('before-quit', () => {
+app.on('before-quit', (event) => {
+  if (!mayQuit()) event.preventDefault();
+});
+
+// Teardown hangs off `will-quit`, not `before-quit`: preventing a quit does
+// not stop Electron from calling the *remaining* `before-quit` listeners, so
+// a cancelled quit would still have closed the database out from under a
+// live app. `will-quit` only fires once the quit is actually going through.
+app.on('will-quit', () => {
   _sessionsService?.stopAll();
   _gitWatcherService?.disposeAll();
   _sessionCostService?.stopAll();
   _db?.close();
 });
 
+// Quit on every platform, macOS included. The stock Electron convention
+// leaves the process resident once the last window closes, which macOS
+// reports to the user as OmniFex "running in the background".
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
+  app.quit();
 });
 
 app.on('activate', () => {
