@@ -5,6 +5,57 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.110] — 2026-08-05
+
+### Added
+
+- **Project settings are reachable.** The screen holding CLAUDE.md and the
+  hooks editor had no way in — nothing in the app ever navigated to it. Every
+  row on the Projects list now has a settings action that opens it.
+- **Hooks for every Claude Code lifecycle event.** The editor knew five;
+  Claude Code fires thirty-one. Session start and end, prompt submission,
+  permission decisions, subagent start and stop, compaction, config and file
+  changes, and MCP elicitation are all configurable now, grouped by area, each
+  offering the values its own matcher accepts rather than tool names
+  everywhere. The ten events that always fire no longer show a matcher field
+  that would have done nothing.
+- **Claude Code tells you when it has moved on.** The Updates button carries a
+  marker when the installed CLI is newer than the release OmniFex was last
+  checked against, with the versions shown in its popover. Wrapping a CLI that
+  updates itself means its changes can quietly break things; this restores the
+  signal the old pinned SDK version used to give.
+- **Nested subagents appear in the subagent bar.** A subagent that dispatches
+  its own subagent produced a branch OmniFex could not see at all — the
+  grandchild is recorded only in its parent's transcript. Those runs are now
+  read and shown, indented under the agent that started them.
+- **Each subagent's own effort level.** A subagent dispatched at a different
+  effort than its session now says so alongside its model and token count.
+- **Notice when Claude Code skips an MCP server.** A server whose config it
+  rejects is dropped silently and never appears in the MCP status panel, so
+  the only symptom was a server that was mysteriously absent. A dismissible
+  banner now names each one and quotes the reason.
+
+### Changed
+
+- **The Projects list reads as one column of projects.** Each row puts the pin
+  ahead of the project name and the path beneath it in smaller type, so the
+  name leads and the path is there when you want it. Long paths wrap in full
+  instead of being cut with an ellipsis. Launch and Sessions became labelled
+  buttons with the session count on the button itself, replacing the separate
+  Path and Sessions columns and the icons that stood for them.
+
+### Fixed
+
+- **Hooks on Stop, Notification and Subagent Stop are no longer corrupted.**
+  OmniFex stored these in a shape Claude Code does not execute, so an existing
+  hook opened blank and saving would have broken it. Hooks configured through
+  OmniFex now run.
+
+### Notes
+
+- Installers remain **unsigned**. macOS Gatekeeper will block first launch;
+  right-click → Open to get past it.
+
 ## [0.4.109] — 2026-07-31
 
 ### Fixed
