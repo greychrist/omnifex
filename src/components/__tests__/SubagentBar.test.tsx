@@ -67,6 +67,43 @@ describe('SubagentBar row meta', () => {
     expect(text).toContain('53s');
   });
 
+  it('shows the subagent\'s own effort in the row meta', () => {
+    // A subagent dispatched with `effort: high` under a `medium` session is
+    // exactly the case the meta row exists to disambiguate.
+    const subs: Subagent[] = [
+      makeSub({ toolUseId: 'a', status: 'completed', model: 'claude-opus-4-8', effort: 'high' }),
+    ];
+    const { container } = render(<SubagentBar subagents={subs} />);
+    expect(container.textContent ?? '').toContain('high effort');
+  });
+
+  it('omits the effort bit entirely when the subagent reports none', () => {
+    // Most runs use the session default and carry no effort — a bare
+    // separator or an empty slot would be noise.
+    const subs: Subagent[] = [
+      makeSub({ toolUseId: 'a', status: 'completed', model: 'claude-opus-4-8' }),
+    ];
+    const { container } = render(<SubagentBar subagents={subs} />);
+    expect(container.textContent ?? '').not.toContain('effort');
+  });
+
+  it('indents a nested subagent under its parent', () => {
+    const subs: Subagent[] = [
+      makeSub({ toolUseId: 'a', status: 'completed', description: 'Parent work' }),
+      makeSub({
+        toolUseId: 'b',
+        status: 'completed',
+        parentToolUseId: 'a',
+        description: 'Parent work',
+      }),
+    ];
+    const { container } = render(<SubagentBar subagents={subs} />);
+    const rows = container.querySelectorAll('[data-subagent-row]');
+    expect(rows).toHaveLength(2);
+    expect(rows[0].getAttribute('data-nested')).toBeNull();
+    expect(rows[1].getAttribute('data-nested')).toBe('true');
+  });
+
   it('prefers authoritative final stats over the live latest entry', () => {
     const subs: Subagent[] = [
       makeSub({

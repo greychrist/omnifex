@@ -266,6 +266,109 @@ describe('applySubagentMeta', () => {
     applySubagentMeta(subs, { [TOOL_USE_ID]: { model: 'claude-opus-4-8' } });
     expect(subs[0].model).toBeUndefined();
   });
+
+  it('merges the subagent\'s own effort', () => {
+    const subs = deriveSubagents([agentToolUse(TOOL_USE_ID), taskNotification(TOOL_USE_ID)]);
+    const merged = applySubagentMeta(subs, { [TOOL_USE_ID]: { effort: 'high' } });
+    expect(merged[0].effort).toBe('high');
+  });
+
+  it('leaves effort undefined when meta carries none', () => {
+    const subs = deriveSubagents([agentToolUse(TOOL_USE_ID), taskNotification(TOOL_USE_ID)]);
+    const merged = applySubagentMeta(subs, { [TOOL_USE_ID]: { model: 'claude-opus-4-8' } });
+    expect(merged[0].effort).toBeUndefined();
+  });
+});
+
+// A nested subagent's dispatching tool_use is issued inside its PARENT's
+// transcript, so deriveSubagents (which reads the main stream) never produces
+// a row for it. The sidecars are the only record, and without this the whole
+// branch is silently missing from the SubagentBar.
+describe('applySubagentMeta — nested subagents', () => {
+  const CHILD_ID = 'toolu_CHILD';
+  const parentOnly = () =>
+    deriveSubagents([agentToolUse(TOOL_USE_ID), taskNotification(TOOL_USE_ID)]);
+
+  const nestedMeta = () => ({
+    [TOOL_USE_ID]: { agentId: 'a987', agentType: 'general-purpose', spawnDepth: 1 },
+    [CHILD_ID]: {
+      agentId: 'a843',
+      agentType: 'general-purpose',
+      parentAgentId: 'a987',
+      spawnDepth: 2,
+      model: 'claude-haiku-4-5-20251001',
+    },
+  });
+
+  it('adds a row for a nested subagent the main stream never dispatched', () => {
+    const merged = applySubagentMeta(parentOnly(), nestedMeta());
+    expect(merged).toHaveLength(2);
+    const child = merged.find((s) => s.toolUseId === CHILD_ID);
+    expect(child?.model).toBe('claude-haiku-4-5-20251001');
+    expect(child?.agentType).toBe('general-purpose');
+  });
+
+  it('links the nested row to its parent ROW, not just the parent agentId', () => {
+    // SubagentBar rows are keyed by toolUseId, so the agentId from the
+    // sidecar has to be resolved through the meta map to be useful.
+    const merged = applySubagentMeta(parentOnly(), nestedMeta());
+    const child = merged.find((s) => s.toolUseId === CHILD_ID);
+    expect(child?.parentToolUseId).toBe(TOOL_USE_ID);
+  });
+
+  it('places the nested row directly after its parent', () => {
+    const merged = applySubagentMeta(parentOnly(), nestedMeta());
+    expect(merged.map((s) => s.toolUseId)).toEqual([TOOL_USE_ID, CHILD_ID]);
+  });
+
+  it('inherits the parent\'s terminal status — a child cannot outlive its parent', () => {
+    // The sidecar carries no status, and a nested agent gets no
+    // toolUseResult anywhere. But if the parent Task has returned, its
+    // children are necessarily done.
+    const merged = applySubagentMeta(parentOnly(), nestedMeta());
+    const parent = merged.find((s) => s.toolUseId === TOOL_USE_ID);
+    const child = merged.find((s) => s.toolUseId === CHILD_ID);
+    expect(parent?.status).toBe('completed');
+    expect(child?.status).toBe('completed');
+  });
+
+  it('shows a nested row as running while its parent still is', () => {
+    const running = deriveSubagents([agentToolUse(TOOL_USE_ID)]);
+    expect(running[0].status).toBe('running');
+    const merged = applySubagentMeta(running, nestedMeta());
+    expect(merged.find((s) => s.toolUseId === CHILD_ID)?.status).toBe('running');
+  });
+
+  it('does not invent rows for depth-1 meta with no dispatch', () => {
+    // A depth-1 entry with no row means the main stream hasn't been read yet
+    // (or the dispatch was dropped) — not a nested branch. Synthesising it
+    // would duplicate the row once the dispatch does arrive.
+    const merged = applySubagentMeta([], {
+      [TOOL_USE_ID]: { agentId: 'a987', spawnDepth: 1 },
+    });
+    expect(merged).toEqual([]);
+  });
+
+  it('skips a nested entry whose parent cannot be resolved', () => {
+    // An orphan has nothing to attach to; a floating row with no context is
+    // worse than omitting it.
+    const merged = applySubagentMeta(parentOnly(), {
+      [CHILD_ID]: { agentId: 'a843', parentAgentId: 'MISSING', spawnDepth: 2 },
+    });
+    expect(merged).toHaveLength(1);
+    expect(merged[0].toolUseId).toBe(TOOL_USE_ID);
+  });
+
+  it('leaves parentToolUseId unset on ordinary depth-1 rows', () => {
+    const merged = applySubagentMeta(parentOnly(), nestedMeta());
+    expect(merged.find((s) => s.toolUseId === TOOL_USE_ID)?.parentToolUseId).toBeUndefined();
+  });
+
+  it('does not mutate the input array', () => {
+    const subs = parentOnly();
+    applySubagentMeta(subs, nestedMeta());
+    expect(subs).toHaveLength(1);
+  });
 });
 
 describe('deriveSubagents', () => {

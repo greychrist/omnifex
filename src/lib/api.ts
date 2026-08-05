@@ -337,6 +337,20 @@ export interface LimaDockerContainer {
 }
 
 /**
+ * Whether the installed Claude CLI has moved past the changelog watermark
+ * OmniFex was last reviewed against. Mirrors `CliReviewStatus` in
+ * `electron/services/claude-cli-review.ts`.
+ */
+export interface CliReviewStatus {
+  /** Installed CLI version, or null when the binary can't be found/probed. */
+  installed_version: string | null;
+  /** The release whose changelog this build was reviewed against. */
+  reviewed_version: string;
+  /** True when the installed CLI is strictly newer than `reviewed_version`. */
+  unreviewed: boolean;
+}
+
+/**
  * Represents the Claude Code version status
  */
 export interface ClaudeVersionStatus {
@@ -591,6 +605,13 @@ export interface SubagentMetaEntry {
   agentId?: string;
   agentType?: string;
   model?: string;
+  /** The subagent's own reasoning effort, when it differs from the session
+   *  default. Undefined otherwise. */
+  effort?: string;
+  /** agentId of the dispatching subagent — set only for nested subagents
+   *  (spawnDepth >= 2), which the main stream never mentions. */
+  parentAgentId?: string;
+  spawnDepth?: number;
   totalTokens?: number;
   durationMs?: number;
   toolUseCount?: number;
@@ -1834,6 +1855,20 @@ export const api = {
     } catch (error) {
       console.error("Failed to list Claude installations:", error);
       throw error;
+    }
+  },
+
+  /**
+   * Compare the installed Claude CLI against the changelog watermark this
+   * build was reviewed at. Resolves to null when the check is unavailable —
+   * callers should treat that as "no signal", not as "up to date".
+   */
+  async getClaudeCliReviewStatus(): Promise<CliReviewStatus | null> {
+    try {
+      return await apiCall<CliReviewStatus>("claude_cli_review_status");
+    } catch (error) {
+      console.error("Failed to read Claude CLI review status:", error);
+      return null;
     }
   },
 

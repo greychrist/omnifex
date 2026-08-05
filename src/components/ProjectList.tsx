@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { FolderOpen, ArrowUp, ArrowDown, ArrowUpDown, Zap, List, Pin, Infinity as InfinityIcon } from "lucide-react";
+import { FolderOpen, ArrowUp, ArrowDown, ArrowUpDown, Zap, List, Pin, Settings, Infinity as InfinityIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 import { AccountBadge } from "@/components/AccountBadge";
 import { fireAndLog } from "@/lib/fireAndLog";
 
-type SortKey = 'name' | 'path' | 'account' | 'sessions' | 'lastActivity';
+type SortKey = 'name' | 'account' | 'lastActivity';
 type SortDir = 'asc' | 'desc';
 
 /**
@@ -78,6 +78,12 @@ interface ProjectListProps {
    */
   onTogglePin?: (project: Project, pinned: boolean) => void | Promise<void>;
   /**
+   * Optional callback fired by the settings action. Opens the project's
+   * settings (CLAUDE.md, hooks). Omitted → the action is hidden, so callers
+   * that can't host the settings view degrade gracefully.
+   */
+  onOpenSettings?: (project: Project) => void | Promise<void>;
+  /**
    * Whether the list is currently loading
    */
   loading?: boolean;
@@ -96,35 +102,28 @@ const getProjectName = (path: string): string => {
 };
 
 /**
- * Formats path to be more readable - shows full path relative to home
- * Truncates long paths with ellipsis in the middle
+ * Rewrites a path to be home-relative (`~/Repos/...`) for display. Paths
+ * outside the home directory are returned unchanged.
+ *
+ * Deliberately does NOT shorten: the Name column takes the table's slack and
+ * the path wraps, so a middle-ellipsis would hide characters we now have the
+ * room to show. (This used to truncate to a `maxLength` — removed with the
+ * column rework rather than left as an unused parameter.)
  */
-const getDisplayPath = (path: string, maxLength = 30): string => {
-  // Try to make path home-relative
-  let displayPath = path;
+const getDisplayPath = (path: string): string => {
   const homeIndicators = ['/Users/', '/home/'];
   for (const indicator of homeIndicators) {
     if (path.includes(indicator)) {
       const parts = path.split('/');
-      const userIndex = parts.findIndex((_part, i) => 
+      const userIndex = parts.findIndex((_part, i) =>
         i > 0 && parts[i - 1] === indicator.split('/')[1]
       );
       if (userIndex > 0) {
-        const relativePath = parts.slice(userIndex + 1).join('/');
-        displayPath = `~/${relativePath}`;
-        break;
+        return `~/${parts.slice(userIndex + 1).join('/')}`;
       }
     }
   }
-  
-  // Truncate if too long
-  if (displayPath.length > maxLength) {
-    const start = displayPath.substring(0, Math.floor(maxLength / 2) - 2);
-    const end = displayPath.substring(displayPath.length - Math.floor(maxLength / 2) + 2);
-    return `${start}...${end}`;
-  }
-  
-  return displayPath;
+  return path;
 };
 
 /**
@@ -143,6 +142,7 @@ export const ProjectList: React.FC<ProjectListProps> = ({
   onOpenProject,
   onQuickLaunch,
   onTogglePin,
+  onOpenSettings,
   className,
 }) => {
   const [sortKey, setSortKey] = useState<SortKey>('lastActivity');
@@ -170,12 +170,8 @@ export const ProjectList: React.FC<ProjectListProps> = ({
       switch (sortKey) {
         case 'name':
           return getProjectName(a.path).localeCompare(getProjectName(b.path)) * dir;
-        case 'path':
-          return a.path.localeCompare(b.path) * dir;
         case 'account':
           return (a.account_name ?? '').localeCompare(b.account_name ?? '') * dir;
-        case 'sessions':
-          return (a.sessions.length - b.sessions.length) * dir;
         case 'lastActivity': {
           // most_recent_session = newest Claude session JSONL mtime.
           // We deliberately do NOT walk the project's working tree — file
@@ -207,9 +203,9 @@ export const ProjectList: React.FC<ProjectListProps> = ({
       setSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'));
     } else {
       setSortKey(key);
-      // For numeric/date columns the useful default is descending (newest /
-      // most-active first); for string columns ascending reads more naturally.
-      setSortDir(key === 'sessions' || key === 'lastActivity' ? 'desc' : 'asc');
+      // For date columns the useful default is descending (most-recent
+      // first); for string columns ascending reads more naturally.
+      setSortDir(key === 'lastActivity' ? 'desc' : 'asc');
     }
   };
 
@@ -322,17 +318,15 @@ export const ProjectList: React.FC<ProjectListProps> = ({
             <table className="w-full text-sm">
               <thead className="sticky top-0 bg-card z-10">
                 <tr className="text-left text-[10px] uppercase tracking-wider text-muted-foreground border-b border-border/50">
+                  {/* w-full: under `table-layout: auto` this makes the Name
+                      column absorb every pixel the other columns don't need,
+                      so the wrapped path gets the widest possible run before
+                      it breaks to a second line. */}
                   <th
-                    className="px-3 py-2 font-medium cursor-pointer hover:text-foreground select-none"
+                    className="w-full px-3 py-2 font-medium cursor-pointer hover:text-foreground select-none"
                     onClick={() => { toggleSort('name'); }}
                   >
                     Name<SortIcon k="name" />
-                  </th>
-                  <th
-                    className="px-3 py-2 font-medium cursor-pointer hover:text-foreground select-none"
-                    onClick={() => { toggleSort('path'); }}
-                  >
-                    Path<SortIcon k="path" />
                   </th>
                   <th
                     className="px-3 py-2 font-medium cursor-pointer hover:text-foreground select-none"
@@ -342,21 +336,16 @@ export const ProjectList: React.FC<ProjectListProps> = ({
                   </th>
                   <th
                     className="px-3 py-2 font-medium text-right cursor-pointer hover:text-foreground select-none"
-                    onClick={() => { toggleSort('sessions'); }}
-                  >
-                    Sessions<SortIcon k="sessions" />
-                  </th>
-                  <th
-                    className="px-3 py-2 font-medium text-right cursor-pointer hover:text-foreground select-none"
                     onClick={() => { toggleSort('lastActivity'); }}
                     title="When Claude last had a session for this project."
                   >
                     Last activity<SortIcon k="lastActivity" />
                   </th>
                   {/* Actions column — header is intentionally empty; the
-                      icons in each row carry their own tooltips. Width is
-                      fixed so the column doesn't grow with row count. */}
-                  <th className="px-3 py-2 w-[120px]" aria-label="Actions" />
+                      buttons in each row are self-labelling. Width is fixed
+                      so the column doesn't grow with the session counts and
+                      the Name column keeps the slack. */}
+                  <th className="px-3 py-2 w-[240px]" aria-label="Actions" />
                 </tr>
               </thead>
               <tbody>
@@ -419,65 +408,15 @@ export const ProjectList: React.FC<ProjectListProps> = ({
                           "border-b-[5px] [border-bottom-style:double] [border-bottom-color:color-mix(in_oklch,var(--color-muted-foreground)_45%,transparent)]!",
                       )}
                     >
+                      {/* Name cell: pin control, then the project name over
+                          its path — same stacked shape the Sessions list
+                          uses for size-over-cost, with the second line a
+                          size down and dimmed. The pin leads so the pinned
+                          group is scannable down the left edge; Launch and
+                          Sessions moved out to the actions cell as labelled
+                          buttons. */}
                       <td className="px-3 py-2 font-medium">
-                        {/* Name renders as a link-styled <button> that opens
-                            the project's sessions page. Quick Launch rides
-                            along at the right edge of this column so the
-                            "start a session" affordance sits next to the
-                            thing it starts — the actions cell keeps Pin and
-                            Sessions. The rest of the row has no click
-                            target. */}
-                        <div className="flex items-center justify-between gap-2">
-                          <button
-                            type="button"
-                            onClick={() => { onProjectClick(project); }}
-                            className="inline-flex min-w-0 items-center gap-1 text-left text-foreground hover:underline focus-visible:underline focus:outline-none"
-                            title="View this project's sessions"
-                          >
-                            {getProjectName(project.path)}
-                          </button>
-                          {onQuickLaunch && (
-                            <TooltipSimple content="Quick launch a new session (skips the sessions page)">
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  // Belt-and-suspenders: stop the click from
-                                  // bubbling to any future row-level handler.
-                                  e.stopPropagation();
-                                  void onQuickLaunch(project);
-                                }}
-                                className="shrink-0 p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                                aria-label="Quick launch a new session"
-                              >
-                                <Zap className="h-4 w-4" />
-                              </button>
-                            </TooltipSimple>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-3 py-2 text-muted-foreground font-mono text-xs truncate max-w-[420px]" title={project.path}>
-                        {getDisplayPath(project.path, 60)}
-                      </td>
-                      <td className="px-3 py-2">
-                        {project.account_name && (
-                          <AccountBadge name={project.account_name} />
-                        )}
-                      </td>
-                      <td className="px-3 py-2 text-right text-muted-foreground tabular-nums">
-                        {project.sessions.length}
-                      </td>
-                      <td
-                        className="px-3 py-2 text-right text-muted-foreground text-xs tabular-nums"
-                        title={
-                          lastActivity
-                            ? new Date(lastActivity * 1000).toLocaleString()
-                            : ''
-                        }
-                      >
-                        {lastActivity ? formatRelativeTime(lastActivity) : '—'}
-                      </td>
-                      <td className="px-3 py-2">
-                        <div className="flex items-center justify-end gap-1">
+                        <div className="flex items-start gap-2">
                           {onTogglePin && (
                             <TooltipSimple content={project.pinned ? "Unpin this project" : "Pin this project to the top"}>
                               <button
@@ -487,10 +426,13 @@ export const ProjectList: React.FC<ProjectListProps> = ({
                                   void onTogglePin(project, !project.pinned);
                                 }}
                                 className={cn(
-                                  "p-1 rounded-md transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+                                  // mt-px nudges the icon onto the name's
+                                  // baseline row; align-items:start would
+                                  // otherwise float it a hair high.
+                                  "mt-px shrink-0 p-1 rounded-md transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-ring",
                                   project.pinned
                                     ? "text-foreground hover:text-muted-foreground hover:bg-accent/60"
-                                    : "text-muted-foreground hover:text-foreground hover:bg-accent/60",
+                                    : "text-muted-foreground/50 hover:text-foreground hover:bg-accent/60",
                                 )}
                                 aria-label={project.pinned ? "Unpin this project" : "Pin this project"}
                               >
@@ -498,19 +440,104 @@ export const ProjectList: React.FC<ProjectListProps> = ({
                               </button>
                             </TooltipSimple>
                           )}
-                          <TooltipSimple content="View this project's sessions">
+                          <div className="min-w-0">
                             <button
                               type="button"
+                              data-project-name
+                              onClick={() => { onProjectClick(project); }}
+                              className="block max-w-full truncate text-left text-foreground hover:underline focus-visible:underline focus:outline-none"
+                              title="View this project's sessions"
+                            >
+                              {getProjectName(project.path)}
+                            </button>
+                            {/* break-all, not break-words: paths have no
+                                spaces, so the normal word-break rules would
+                                leave a long segment overflowing rather than
+                                wrapping it. */}
+                            <div
+                              data-project-path
+                              className="break-all font-mono text-[11px] font-normal leading-tight text-muted-foreground/70"
+                              title={project.path}
+                            >
+                              {getDisplayPath(project.path)}
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-3 py-2">
+                        {project.account_name && (
+                          <AccountBadge name={project.account_name} />
+                        )}
+                      </td>
+                      <td
+                        // whitespace-nowrap: the Name column now absorbs the
+                        // table's slack, and "1mo ago" was wrapping onto two
+                        // lines rather than holding the column open.
+                        className="px-3 py-2 text-right text-muted-foreground text-xs tabular-nums whitespace-nowrap"
+                        title={
+                          lastActivity
+                            ? new Date(lastActivity * 1000).toLocaleString()
+                            : ''
+                        }
+                      >
+                        {lastActivity ? formatRelativeTime(lastActivity) : '—'}
+                      </td>
+                      {/* Actions: two labelled buttons. The session count
+                          rides inside the Sessions label, which is why
+                          there's no standalone Sessions column any more. */}
+                      <td className="px-3 py-2">
+                        <div className="flex items-center justify-end gap-2">
+                          {onQuickLaunch && (
+                            <TooltipSimple content="Quick launch a new session (skips the sessions page)">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={(e) => {
+                                  // Belt-and-suspenders: stop the click from
+                                  // bubbling to any future row-level handler.
+                                  e.stopPropagation();
+                                  void onQuickLaunch(project);
+                                }}
+                                className="gap-1.5"
+                              >
+                                <Zap className="h-3.5 w-3.5" />
+                                Launch
+                              </Button>
+                            </TooltipSimple>
+                          )}
+                          <TooltipSimple content="View this project's sessions">
+                            <Button
+                              variant="outline"
+                              size="sm"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 onProjectClick(project);
                               }}
-                              className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                              aria-label="View project sessions"
+                              // min-w so a 1-digit count and a 3-digit count
+                              // produce the same button width — otherwise the
+                              // right-aligned pair shifts row to row and the
+                              // Launch buttons stop lining up.
+                              className="min-w-[8rem] gap-1.5 tabular-nums"
                             >
-                              <List className="h-4 w-4" />
-                            </button>
+                              <List className="h-3.5 w-3.5" />
+                              Sessions ({project.sessions.length})
+                            </Button>
                           </TooltipSimple>
+                          {onOpenSettings && (
+                            <TooltipSimple content="Project settings — CLAUDE.md and hooks">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  void onOpenSettings(project);
+                                }}
+                                className="shrink-0 p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                                aria-label="Project settings"
+                              >
+                                <Settings className="h-4 w-4" />
+                              </button>
+                            </TooltipSimple>
+                          )}
                         </div>
                       </td>
                     </motion.tr>

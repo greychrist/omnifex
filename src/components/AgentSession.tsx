@@ -21,6 +21,7 @@ import { useSessionGauges } from "@/contexts/SessionGaugesContext";
 import { resolveContextLimit } from "@/lib/contextLimit";
 import { evaluateContextPressure, selectContextTokens } from "@/lib/contextPressure";
 import { observeCacheTtlMs, lastAssistantAnchorMs, lastCacheTtlChange } from "@/lib/cacheExpiry";
+import { latestMcpServerErrors } from "@/lib/mcpServerErrors";
 import { evaluateContextJump } from "@/lib/turnDelta";
 import { SessionNotices } from "@/components/SessionNotices";
 import { useAccountVerdict } from "@/hooks/useAccountVerdict";
@@ -1012,6 +1013,10 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     () => (cacheTimerEnabled ? lastCacheTtlChange(messages) : null),
     [messages, cacheTimerEnabled],
   );
+  // Servers the CLI dropped for a config problem. Not in the MCP status
+  // panel — the CLI omits skipped servers from `mcp_servers` entirely — so
+  // this notice is the only place they surface.
+  const mcpServerErrors = useMemo(() => latestMcpServerErrors(messages), [messages]);
 
   // Mirror the cache clock onto the tab so the tab strip can show a glyph for
   // background sessions. Guarded by a last-value ref exactly like the
@@ -2426,7 +2431,11 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
             happened in a running session, and a transcript loaded from disk
             shouldn't announce a jump that happened days ago. */}
         {isSessionActive && (
-          <SessionNotices jump={contextJump} ttlChange={cacheTtlChange} />
+          <SessionNotices
+            jump={contextJump}
+            ttlChange={cacheTtlChange}
+            mcpErrors={mcpServerErrors}
+          />
         )}
         {!sessionStarted && (
           <div className="flex-1 flex items-center justify-center p-8">

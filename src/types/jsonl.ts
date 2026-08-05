@@ -167,6 +167,23 @@ export interface SystemRaw extends RawLineBase {
   estimated_tokens_delta?: number;
 }
 
+/**
+ * One MCP server the CLI refused to load, from the init event's
+ * `mcp_server_errors`. These servers are SKIPPED — unlike a server that
+ * merely failed to start, they never appear in `mcp_servers` at all, so
+ * without surfacing this the user just sees them missing.
+ *
+ * Shape verified against a live `--output-format stream-json` run:
+ * `{ name: 'bad_type', type: 'unknown_type', message: 'Skipped — …' }`.
+ */
+export interface McpServerConfigError {
+  name: string;
+  /** CLI-side reason code, e.g. 'invalid_config' | 'unknown_type'. Open string. */
+  type: string;
+  /** Human-readable explanation written by the CLI. */
+  message: string;
+}
+
 export interface CliInitRaw {
   type: 'system';
   subtype: 'init';
@@ -175,6 +192,10 @@ export interface CliInitRaw {
   model?: string;
   tools?: string[];
   mcp_servers?: unknown[];
+  /** Null on the vast majority of inits — only populated when a configured
+   *  server was rejected. Typed `unknown[]` because it crosses the CLI
+   *  boundary unvalidated; the reducer narrows it. */
+  mcp_server_errors?: unknown[] | null;
   [k: string]: unknown;
 }
 

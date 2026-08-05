@@ -52,6 +52,15 @@ export interface Subagent {
   /** The model the subagent ran on. Merged in from disk via
    *  `applySubagentMeta` — never present in the live message stream. */
   model?: string;
+  /** The subagent's OWN reasoning effort, which can differ from the
+   *  session's when the dispatch set `effort:`. Same provenance as `model`.
+   *  Undefined when the run used the session default. */
+  effort?: string;
+  /** For a NESTED subagent (spawnDepth >= 2): the `toolUseId` of the row that
+   *  dispatched it. Undefined on rows dispatched from the main stream.
+   *  Rows carrying this were synthesised from sidecars — the main stream has
+   *  no dispatch for them. */
+  parentToolUseId?: string;
   /** Authoritative end-of-run totals from the parent Task's `toolUseResult`,
    *  merged in via `applySubagentMeta`. Preferred over the live
    *  `latest.*` numbers when present (the stream's running totals can lag
@@ -67,8 +76,13 @@ export interface Subagent {
  * `SubagentMeta` shape without coupling this module to the IPC layer.
  */
 export interface SubagentMetaInput {
+  agentId?: string;
   agentType?: string;
   model?: string;
+  effort?: string;
+  /** agentId of the dispatching subagent; set only at spawnDepth >= 2. */
+  parentAgentId?: string;
+  spawnDepth?: number;
   totalTokens?: number;
   durationMs?: number;
   toolUseCount?: number;
@@ -84,18 +98,70 @@ export function applySubagentMeta(
   subs: Subagent[],
   meta: Record<string, SubagentMetaInput>,
 ): Subagent[] {
-  return subs.map((sub) => {
+  const merged = subs.map((sub) => {
     const m = meta[sub.toolUseId];
     if (!m) return sub;
     return {
       ...sub,
       agentType: sub.agentType ?? m.agentType,
       model: m.model ?? sub.model,
+      effort: m.effort ?? sub.effort,
       finalTotalTokens: m.totalTokens ?? sub.finalTotalTokens,
       finalDurationMs: m.durationMs ?? sub.finalDurationMs,
       finalToolUseCount: m.toolUseCount ?? sub.finalToolUseCount,
     };
   });
+
+  // agentId -> the row it belongs to, so a nested entry's `parentAgentId`
+  // can be resolved to the toolUseId that rows are actually keyed by.
+  const rowByAgentId = new Map<string, Subagent>();
+  for (const row of merged) {
+    const agentId = meta[row.toolUseId]?.agentId;
+    if (agentId) rowByAgentId.set(agentId, row);
+  }
+
+  // Synthesise rows for nested subagents. Only entries with a parentAgentId
+  // qualify: a depth-1 entry without a row means the dispatch simply hasn't
+  // been read yet, and inventing one would duplicate it when it arrives.
+  const nested: { parent: Subagent; row: Subagent }[] = [];
+  for (const [toolUseId, m] of Object.entries(meta)) {
+    if (!m.parentAgentId) continue;
+    if (merged.some((s) => s.toolUseId === toolUseId)) continue;
+    const parent = rowByAgentId.get(m.parentAgentId);
+    // An orphan has nothing to attach to — a floating row with no context
+    // reads worse than omitting it.
+    if (!parent) continue;
+    nested.push({
+      parent,
+      row: {
+        toolUseId,
+        parentToolUseId: parent.toolUseId,
+        agentType: m.agentType,
+        description: parent.description,
+        // Neither the sidecar nor any stream carries a nested agent's status.
+        // The parent's is a sound stand-in: a child cannot outlive the Task
+        // that dispatched it, so a returned parent means the child is done.
+        status: parent.status,
+        latest: null,
+        events: [],
+        colorIndex: parent.colorIndex,
+        model: m.model,
+        effort: m.effort,
+      },
+    });
+  }
+  if (nested.length === 0) return merged;
+
+  // Splice each child in directly after its parent so the branch reads as a
+  // group rather than as unexplained rows at the end of the list.
+  const out: Subagent[] = [];
+  for (const row of merged) {
+    out.push(row);
+    for (const n of nested) {
+      if (n.parent.toolUseId === row.toolUseId) out.push(n.row);
+    }
+  }
+  return out;
 }
 
 export const SUBAGENT_PALETTE_SIZE = 16;

@@ -21,7 +21,6 @@ import { MCPManager } from "@/components/MCPManager";
 import { ClaudeBinaryDialog } from "@/components/ClaudeBinaryDialog";
 import { AccountPickerDialog } from "@/components/AccountPickerDialog";
 import { Toast, ToastContainer } from "@/components/ui/toast";
-import { ProjectSettings } from '@/components/ProjectSettings';
 import { TabManager } from "@/components/TabManager";
 import { TabContent } from "@/components/TabContent";
 import { useTabState } from "@/hooks/useTabState";
@@ -39,7 +38,6 @@ type View =
   | "agent-execution"
   | "agent-run-view"
   | "mcp"
-  | "project-settings"
   | "tabs"; // New view for tab-based interface
 
 /**
@@ -66,8 +64,6 @@ function AppContent() {
     action?: { label: string; onClick: () => void };
     duration?: number;
   } | null>(null);
-  const [projectForSettings, setProjectForSettings] = useState<Project | null>(null);
-  const [previousView] = useState<View>("welcome");
 
   // Load projects on mount when in projects view
   useEffect(() => {
@@ -310,11 +306,6 @@ function AppContent() {
     setView(newView);
   };
 
-  /**
-   * Handles navigating to hooks configuration
-   */
-  // Project settings navigation handled via `projectForSettings` state when needed
-
 
   const renderContent = () => {
     switch (view) {
@@ -420,20 +411,6 @@ function AppContent() {
         return (
           <MCPManager onBack={() => { handleViewChange("welcome"); }} />
         );
-      
-      case "project-settings":
-        if (projectForSettings) {
-          return (
-            <ProjectSettings
-              project={projectForSettings}
-              onBack={() => {
-                setProjectForSettings(null);
-                handleViewChange(previousView || "projects");
-              }}
-            />
-          );
-        }
-        break;
       
       default:
         return null;

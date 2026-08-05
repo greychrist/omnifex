@@ -1,22 +1,30 @@
 /**
- * HooksEditor component for managing Claude Code hooks configuration
+ * HooksEditor — authoring UI for Claude Code hooks in settings.json.
+ *
+ * Two things worth knowing about the shape, because an earlier version got
+ * both wrong:
+ *
+ * 1. EVERY event uses the same nesting, `Event → [{matcher?, hooks:[…]}]`,
+ *    including the ten events that always fire and ignore `matcher`. There is
+ *    no flat-command form. This component therefore has ONE code path; the
+ *    old matcher-events/direct-events split both mis-read real configs and
+ *    wrote back a shape the CLI silently never executes.
+ * 2. The matcher vocabulary is per-event and not guessable — `SessionStart`
+ *    takes `startup|resume|clear`, `PreToolUse` takes tool names, `PreCompact`
+ *    takes `manual|auto`. `HOOK_EVENT_INFO` carries the hint and examples so
+ *    the field can offer the right values instead of tool names everywhere.
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  Plus, 
-  Trash2, 
-  AlertTriangle, 
-  Code2,
-  Terminal,
+import {
+  Plus,
+  Trash2,
+  AlertTriangle,
   FileText,
   ChevronRight,
   ChevronDown,
   Clock,
-  Zap,
-  Shield,
-  PlayCircle,
   Info,
   Save,
 } from 'lucide-react';
@@ -25,10 +33,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card } from '@/components/ui/card';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { 
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -58,14 +65,11 @@ import {
   HookMatcher,
   HookCommand,
   HookTemplate,
-  COMMON_TOOL_MATCHERS,
+  HOOK_EVENT_INFO,
   HOOK_TEMPLATES,
+  eventSupportsMatcher,
+  groupedHookEvents,
 } from '@/types/hooks';
-
-// Events with matchers (tool-related)
-const matcherEvents = ['PreToolUse', 'PostToolUse'] as const;
-// Events without matchers (non-tool-related)
-const directEvents = ['Notification', 'Stop', 'SubagentStop'] as const;
 
 interface HooksEditorProps {
   projectPath?: string;
@@ -91,33 +95,39 @@ interface EditableHookMatcher extends Omit<HookMatcher, 'hooks'> {
   expanded?: boolean;
 }
 
-const EVENT_INFO: Record<HookEvent, { label: string; description: string; icon: React.ReactNode }> = {
-  PreToolUse: {
-    label: 'Pre Tool Use',
-    description: 'Runs before tool calls, can block and provide feedback',
-    icon: <Shield className="h-4 w-4" />
-  },
-  PostToolUse: {
-    label: 'Post Tool Use',
-    description: 'Runs after successful tool completion',
-    icon: <PlayCircle className="h-4 w-4" />
-  },
-  Notification: {
-    label: 'Notification',
-    description: 'Customizes notifications when Claude needs attention',
-    icon: <Zap className="h-4 w-4" />
-  },
-  Stop: {
-    label: 'Stop',
-    description: 'Runs when Claude finishes responding',
-    icon: <Code2 className="h-4 w-4" />
-  },
-  SubagentStop: {
-    label: 'Subagent Stop',
-    description: 'Runs when a Claude subagent (Task) finishes',
-    icon: <Terminal className="h-4 w-4" />
+type EditableHooks = Partial<Record<HookEvent, EditableHookMatcher[]>>;
+
+/** Attach render ids to a loaded config so rows survive re-renders. */
+function toEditable(config: HooksConfiguration): EditableHooks {
+  const out: EditableHooks = {};
+  for (const [event, matchers] of Object.entries(config) as [HookEvent, HookMatcher[]][]) {
+    if (!Array.isArray(matchers)) continue;
+    out[event] = matchers.map((m) => ({
+      ...m,
+      id: HooksManager.generateId(),
+      // Expanded on load: the first question anyone opening this screen has
+      // is "what is configured?", and collapsed cards answer it with a
+      // chevron. Configs are a handful of entries, not hundreds.
+      expanded: true,
+      hooks: (m.hooks ?? []).map((h) => ({ ...h, id: HooksManager.generateId() })),
+    }));
   }
-};
+  return out;
+}
+
+/** Strip render ids back out. Events with no entries are omitted entirely so
+ *  saving an emptied event removes the key rather than writing `[]`. */
+function toConfig(editable: EditableHooks): HooksConfiguration {
+  const out: HooksConfiguration = {};
+  for (const [event, matchers] of Object.entries(editable) as [HookEvent, EditableHookMatcher[]][]) {
+    if (!matchers || matchers.length === 0) continue;
+    out[event] = matchers.map(({ id: _id, expanded: _expanded, ...m }) => ({
+      ...m,
+      hooks: m.hooks.map(({ id: _cid, ...h }) => h),
+    }));
+  }
+  return out;
+}
 
 export const HooksEditor: React.FC<HooksEditorProps> = ({
   projectPath,
@@ -128,205 +138,78 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
   onChange,
   hideActions = false
 }) => {
-  const [selectedEvent, setSelectedEvent] = useState<HookEvent>('PreToolUse');
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [showTemplateDialog, setShowTemplateDialog] = useState(false);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [validationWarnings, setValidationWarnings] = useState<string[]>([]);
-  const isInitialMount = React.useRef(true);
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [hooks, setHooks] = useState<HooksConfiguration>({});
-  
-  // Convert hooks to editable format with IDs
-  const [editableHooks, setEditableHooks] = useState<{
-    PreToolUse: EditableHookMatcher[];
-    PostToolUse: EditableHookMatcher[];
-    Notification: EditableHookCommand[];
-    Stop: EditableHookCommand[];
-    SubagentStop: EditableHookCommand[];
-  }>(() => {
-    const result = {
-      PreToolUse: [],
-      PostToolUse: [],
-      Notification: [],
-      Stop: [],
-      SubagentStop: []
-    } as any;
-    
-    // Initialize matcher events
-    matcherEvents.forEach(event => {
-      const matchers = hooks?.[event];
-      if (matchers && Array.isArray(matchers)) {
-        result[event] = matchers.map(matcher => ({
-          ...matcher,
-          id: HooksManager.generateId(),
-          expanded: false,
-          hooks: (matcher.hooks || []).map(hook => ({
-            ...hook,
-            id: HooksManager.generateId()
-          }))
-        }));
-      }
-    });
-    
-    // Initialize direct events
-    directEvents.forEach(event => {
-      const commands = hooks?.[event];
-      if (commands && Array.isArray(commands)) {
-        result[event] = commands.map(hook => ({
-          ...hook,
-          id: HooksManager.generateId()
-        }));
-      }
-    });
-    
-    return result;
-  });
+  const [selectedEvent, setSelectedEvent] = useState<HookEvent>('PreToolUse');
+  const [editableHooks, setEditableHooks] = useState<EditableHooks>({});
 
-  // Load hooks when projectPath or scope changes
-  useEffect(() => {
-    // For user scope, we don't need a projectPath
-    if (scope === 'user' || projectPath) {
-      setIsLoading(true);
-      setLoadError(null);
-      
-      api.getHooksConfig(scope, projectPath, configDir)
-        .then((config) => {
-          setHooks(config || {});
-          setHasUnsavedChanges(false);
-        })
-        .catch((err: unknown) => {
-          console.error("Failed to load hooks configuration:", err);
-          setLoadError(err instanceof Error ? err.message : "Failed to load hooks configuration");
-          setHooks({});
-        })
-        .finally(() => {
-          setIsLoading(false);
-        });
-    } else {
-      // No projectPath for project/local scopes
-      setHooks({});
-    }
-  }, [projectPath, scope, configDir]);
+  const entries = editableHooks[selectedEvent] ?? [];
+  const eventInfo = HOOK_EVENT_INFO[selectedEvent];
+  const supportsMatcher = eventSupportsMatcher(selectedEvent);
 
-  // Reset initial mount flag when hooks prop changes
-  useEffect(() => {
-    isInitialMount.current = true;
-    setHasUnsavedChanges(false); // Reset unsaved changes when hooks prop changes
-    
-    // Reinitialize editable hooks when hooks prop changes
-    const result = {
-      PreToolUse: [],
-      PostToolUse: [],
-      Notification: [],
-      Stop: [],
-      SubagentStop: []
-    } as any;
-    
-    // Initialize matcher events
-    matcherEvents.forEach(event => {
-      const matchers = hooks?.[event];
-      if (matchers && Array.isArray(matchers)) {
-        result[event] = matchers.map(matcher => ({
-          ...matcher,
-          id: HooksManager.generateId(),
-          expanded: false,
-          hooks: (matcher.hooks || []).map(hook => ({
-            ...hook,
-            id: HooksManager.generateId()
-          }))
-        }));
-      }
-    });
-    
-    // Initialize direct events
-    directEvents.forEach(event => {
-      const commands = hooks?.[event];
-      if (commands && Array.isArray(commands)) {
-        result[event] = commands.map(hook => ({
-          ...hook,
-          id: HooksManager.generateId()
-        }));
-      }
-    });
-    
-    setEditableHooks(result);
-  }, [hooks]);
+  /** Mutate one event's entries and mark the form dirty. */
+  const updateEntries = useCallback(
+    (event: HookEvent, fn: (prev: EditableHookMatcher[]) => EditableHookMatcher[]) => {
+      setEditableHooks((prev) => ({ ...prev, [event]: fn(prev[event] ?? []) }));
+      setHasUnsavedChanges(true);
+    },
+    [],
+  );
 
-  // Track changes when editable hooks change (but don't save automatically)
+  // Load hooks when scope/project/config dir changes.
   useEffect(() => {
-    if (isInitialMount.current) {
-      isInitialMount.current = false;
+    if (scope !== 'user' && !projectPath) {
+      setIsLoading(false);
       return;
     }
-    
-    setHasUnsavedChanges(true);
-  }, [editableHooks]);
+    setIsLoading(true);
+    setLoadError(null);
+    let cancelled = false;
+    api.getHooksConfig(scope, projectPath, configDir)
+      .then((config) => {
+        if (cancelled) return;
+        setEditableHooks(toEditable(config ?? {}));
+        setHasUnsavedChanges(false);
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        console.error("Failed to load hooks configuration:", err);
+        setLoadError(err instanceof Error ? err.message : "Failed to load hooks configuration");
+        setEditableHooks({});
+      })
+      .finally(() => { if (!cancelled) setIsLoading(false); });
+    return () => { cancelled = true; };
+  }, [scope, projectPath, configDir]);
 
-  // Notify parent of changes
+  const currentConfig = useMemo(() => toConfig(editableHooks), [editableHooks]);
+
+  // Notify the parent so it can drive its own save button.
   useEffect(() => {
-    if (onChange) {
-      const getHooks = () => {
-        const newHooks: HooksConfiguration = {};
-        
-        // Handle matcher events
-        matcherEvents.forEach(event => {
-          const matchers = editableHooks[event];
-          if (matchers.length > 0) {
-            newHooks[event] = matchers.map(({ id: _id, expanded: _expanded, ...matcher }) => ({
-              ...matcher,
-              hooks: matcher.hooks.map(({ id: _id, ...hook }) => hook)
-            }));
-          }
-        });
-        
-        // Handle direct events
-        directEvents.forEach(event => {
-          const commands = editableHooks[event];
-          if (commands.length > 0) {
-            newHooks[event] = commands.map(({ id: _id, ...hook }) => hook);
-          }
-        });
-        
-        return newHooks;
-      };
-      
-      onChange(hasUnsavedChanges, getHooks);
-    }
+    onChange?.(hasUnsavedChanges, () => toConfig(editableHooks));
   }, [hasUnsavedChanges, editableHooks, onChange]);
 
-  // Save function to be called explicitly
+  const validateHooks = useCallback(async () => {
+    const result = await HooksManager.validateConfig(currentConfig);
+    setValidationErrors(result.errors.map(e => `${e.event}: ${e.message}`));
+    setValidationWarnings(
+      result.warnings.map(w => `${w.message} in command: ${(w.command || '').substring(0, 50)}…`),
+    );
+  }, [currentConfig]);
+
+  useEffect(() => {
+    logAndForget('hooks-editor:validate-hooks', validateHooks());
+  }, [validateHooks]);
+
   const handleSave = async () => {
     if (scope !== 'user' && !projectPath) return;
-    
     setIsSaving(true);
-    
-    const newHooks: HooksConfiguration = {};
-    
-    // Handle matcher events
-    matcherEvents.forEach(event => {
-      const matchers = editableHooks[event];
-      if (matchers.length > 0) {
-        newHooks[event] = matchers.map(({ id: _id, expanded: _expanded, ...matcher }) => ({
-          ...matcher,
-          hooks: matcher.hooks.map(({ id: _id, ...hook }) => hook)
-        }));
-      }
-    });
-    
-    // Handle direct events
-    directEvents.forEach(event => {
-      const commands = editableHooks[event];
-      if (commands.length > 0) {
-        newHooks[event] = commands.map(({ id: _id, ...hook }) => hook);
-      }
-    });
-    
     try {
-      await api.updateHooksConfig(scope, newHooks, projectPath, configDir);
-      setHooks(newHooks);
+      await api.updateHooksConfig(scope, currentConfig, projectPath, configDir);
       setHasUnsavedChanges(false);
     } catch (error) {
       console.error('Failed to save hooks:', error);
@@ -337,255 +220,161 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
   };
 
   const addMatcher = (event: HookEvent) => {
-    // Only for events with matchers
-    if (!matcherEvents.includes(event as any)) return;
-    
-    const newMatcher: EditableHookMatcher = {
-      id: HooksManager.generateId(),
-      matcher: '',
-      hooks: [],
-      expanded: true
-    };
-    
-    setEditableHooks(prev => ({
+    updateEntries(event, (prev) => [
       ...prev,
-      [event]: [...(prev[event as 'PreToolUse' | 'PostToolUse']), newMatcher]
-    }));
-  };
-  
-  const addDirectCommand = (event: HookEvent) => {
-    // Only for events without matchers
-    if (!directEvents.includes(event as any)) return;
-    
-    const newCommand: EditableHookCommand = {
-      id: HooksManager.generateId(),
-      type: 'command',
-      command: ''
-    };
-    
-    setEditableHooks(prev => ({
-      ...prev,
-      [event]: [...(prev[event as 'Notification' | 'Stop' | 'SubagentStop']), newCommand]
-    }));
+      { id: HooksManager.generateId(), matcher: '', hooks: [], expanded: true },
+    ]);
   };
 
   const updateMatcher = (event: HookEvent, matcherId: string, updates: Partial<EditableHookMatcher>) => {
-    if (!matcherEvents.includes(event as any)) return;
-    
-    setEditableHooks(prev => ({
-      ...prev,
-      [event]: (prev[event as 'PreToolUse' | 'PostToolUse']).map(matcher =>
-        matcher.id === matcherId ? { ...matcher, ...updates } : matcher
-      )
-    }));
+    updateEntries(event, (prev) =>
+      prev.map((m) => (m.id === matcherId ? { ...m, ...updates } : m)),
+    );
   };
 
   const removeMatcher = (event: HookEvent, matcherId: string) => {
-    if (!matcherEvents.includes(event as any)) return;
-    
-    setEditableHooks(prev => ({
-      ...prev,
-      [event]: (prev[event as 'PreToolUse' | 'PostToolUse']).filter(matcher => matcher.id !== matcherId)
-    }));
+    updateEntries(event, (prev) => prev.filter((m) => m.id !== matcherId));
   };
-  
-  const updateDirectCommand = (event: HookEvent, commandId: string, updates: Partial<EditableHookCommand>) => {
-    if (!directEvents.includes(event as any)) return;
-    
-    setEditableHooks(prev => ({
-      ...prev,
-      [event]: (prev[event as 'Notification' | 'Stop' | 'SubagentStop']).map(cmd =>
-        cmd.id === commandId ? { ...cmd, ...updates } : cmd
-      )
-    }));
-  };
-  
-  const removeDirectCommand = (event: HookEvent, commandId: string) => {
-    if (!directEvents.includes(event as any)) return;
-    
-    setEditableHooks(prev => ({
-      ...prev,
-      [event]: (prev[event as 'Notification' | 'Stop' | 'SubagentStop']).filter(cmd => cmd.id !== commandId)
-    }));
-  };
-
-  const applyTemplate = (template: HookTemplate) => {
-    if (matcherEvents.includes(template.event as any)) {
-      // For events with matchers
-      const newMatcher: EditableHookMatcher = {
-        id: HooksManager.generateId(),
-        matcher: template.matcher,
-        hooks: template.commands.map(cmd => ({
-          id: HooksManager.generateId(),
-          type: 'command' as const,
-          command: cmd
-        })),
-        expanded: true
-      };
-      
-      setEditableHooks(prev => ({
-        ...prev,
-        [template.event]: [...(prev[template.event as 'PreToolUse' | 'PostToolUse']), newMatcher]
-      }));
-    } else {
-      // For direct events
-      const newCommands: EditableHookCommand[] = template.commands.map(cmd => ({
-        id: HooksManager.generateId(),
-        type: 'command' as const,
-        command: cmd
-      }));
-      
-      setEditableHooks(prev => ({
-        ...prev,
-        [template.event]: [...(prev[template.event as 'Notification' | 'Stop' | 'SubagentStop']), ...newCommands]
-      }));
-    }
-    
-    setSelectedEvent(template.event);
-    setShowTemplateDialog(false);
-  };
-
-  const validateHooks = useCallback(async () => {
-    if (!hooks) {
-      setValidationErrors([]);
-      setValidationWarnings([]);
-      return;
-    }
-
-    const result = await HooksManager.validateConfig(hooks);
-    setValidationErrors(result.errors.map(e => e.message));
-    setValidationWarnings(result.warnings.map(w => `${w.message} in command: ${(w.command || '').substring(0, 50)}...`));
-  }, [hooks]);
-
-  useEffect(() => {
-    logAndForget('hooks-editor:validate-hooks', validateHooks());
-  }, [validateHooks]);
 
   const addCommand = (event: HookEvent, matcherId: string) => {
-    if (!matcherEvents.includes(event as any)) return;
-    
-    const newCommand: EditableHookCommand = {
-      id: HooksManager.generateId(),
-      type: 'command',
-      command: ''
-    };
-    
-    setEditableHooks(prev => ({
-      ...prev,
-      [event]: (prev[event as 'PreToolUse' | 'PostToolUse']).map(matcher =>
-        matcher.id === matcherId
-          ? { ...matcher, hooks: [...matcher.hooks, newCommand] }
-          : matcher
-      )
-    }));
+    updateEntries(event, (prev) =>
+      prev.map((m) =>
+        m.id === matcherId
+          ? {
+              ...m,
+              hooks: [...m.hooks, { id: HooksManager.generateId(), type: 'command' as const, command: '' }],
+            }
+          : m,
+      ),
+    );
   };
 
   const updateCommand = (
     event: HookEvent,
     matcherId: string,
     commandId: string,
-    updates: Partial<EditableHookCommand>
+    updates: Partial<EditableHookCommand>,
   ) => {
-    if (!matcherEvents.includes(event as any)) return;
-    
-    setEditableHooks(prev => ({
-      ...prev,
-      [event]: (prev[event as 'PreToolUse' | 'PostToolUse']).map(matcher =>
-        matcher.id === matcherId
-          ? {
-              ...matcher,
-              hooks: matcher.hooks.map(cmd =>
-                cmd.id === commandId ? { ...cmd, ...updates } : cmd
-              )
-            }
-          : matcher
-      )
-    }));
+    updateEntries(event, (prev) =>
+      prev.map((m) =>
+        m.id === matcherId
+          ? { ...m, hooks: m.hooks.map((c) => (c.id === commandId ? { ...c, ...updates } : c)) }
+          : m,
+      ),
+    );
   };
 
   const removeCommand = (event: HookEvent, matcherId: string, commandId: string) => {
-    if (!matcherEvents.includes(event as any)) return;
-    
-    setEditableHooks(prev => ({
-      ...prev,
-      [event]: (prev[event as 'PreToolUse' | 'PostToolUse']).map(matcher =>
-        matcher.id === matcherId
-          ? { ...matcher, hooks: matcher.hooks.filter(cmd => cmd.id !== commandId) }
-          : matcher
-      )
-    }));
+    updateEntries(event, (prev) =>
+      prev.map((m) =>
+        m.id === matcherId ? { ...m, hooks: m.hooks.filter((c) => c.id !== commandId) } : m,
+      ),
+    );
   };
 
-  const renderMatcher = (event: HookEvent, matcher: EditableHookMatcher) => (
+  const applyTemplate = (template: HookTemplate) => {
+    updateEntries(template.event, (prev) => [
+      ...prev,
+      {
+        id: HooksManager.generateId(),
+        matcher: template.matcher,
+        hooks: template.commands.map((cmd) => ({
+          id: HooksManager.generateId(),
+          type: 'command' as const,
+          command: cmd,
+        })),
+        expanded: true,
+      },
+    ]);
+    setSelectedEvent(template.event);
+    setShowTemplateDialog(false);
+  };
+
+  const renderMatcher = (event: HookEvent, matcher: EditableHookMatcher) => {
+    const info = HOOK_EVENT_INFO[event];
+    const matcherInfo = info.matcher;
+    return (
     <Card key={matcher.id} className="p-4 space-y-4">
       <div className="flex items-start gap-4">
         <Button
           variant="ghost"
           size="sm"
           className="p-0 h-6 w-6"
+          aria-label={matcher.expanded ? 'Collapse hook' : 'Expand hook'}
           onClick={() => { updateMatcher(event, matcher.id, { expanded: !matcher.expanded }); }}
         >
           {matcher.expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
         </Button>
-        
+
         <div className="flex-1 space-y-2">
-          <div className="flex items-center gap-2">
-            <Label htmlFor={`matcher-${matcher.id}`}>Pattern</Label>
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Info className="h-3 w-3 text-muted-foreground" />
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>Tool name pattern (regex supported). Leave empty to match all tools.</p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          </div>
-          
-          <div className="flex items-center gap-2">
-            <Input
-              id={`matcher-${matcher.id}`}
-              placeholder="e.g., Bash, Edit|Write, mcp__.*"
-              value={matcher.matcher || ''}
-              onChange={(e) => { updateMatcher(event, matcher.id, { matcher: e.target.value }); }}
-              disabled={readOnly}
-              className="flex-1"
-            />
-            
-            <Select
-              value={matcher.matcher || 'custom'}
-              onValueChange={(value) => {
-                if (value !== 'custom') {
-                  updateMatcher(event, matcher.id, { matcher: value });
-                }
-              }}
-              disabled={readOnly}
-            >
-              <SelectTrigger className="w-40">
-                <SelectValue placeholder="Common patterns" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="custom">Custom</SelectItem>
-                {COMMON_TOOL_MATCHERS.map(pattern => (
-                  <SelectItem key={pattern} value={pattern}>{pattern}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            
-            {!readOnly && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => { removeMatcher(event, matcher.id); }}
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            )}
-          </div>
+          {matcherInfo ? (
+            <>
+              <div className="flex items-center gap-2">
+                <Label htmlFor={`matcher-${matcher.id}`}>{matcherInfo.hint}</Label>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Info className="h-3 w-3 text-muted-foreground" />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Leave empty to match everything this event fires on.</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Input
+                  id={`matcher-${matcher.id}`}
+                  placeholder={`e.g. ${matcherInfo.examples.slice(0, 3).join(', ')}`}
+                  value={matcher.matcher || ''}
+                  onChange={(e) => { updateMatcher(event, matcher.id, { matcher: e.target.value }); }}
+                  disabled={readOnly}
+                  className="flex-1"
+                />
+
+                <Select
+                  value={matcher.matcher || 'custom'}
+                  onValueChange={(value) => {
+                    if (value !== 'custom') updateMatcher(event, matcher.id, { matcher: value });
+                  }}
+                  disabled={readOnly}
+                >
+                  <SelectTrigger className="w-40">
+                    <SelectValue placeholder="Common values" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="custom">Custom</SelectItem>
+                    {matcherInfo.examples.map(pattern => (
+                      <SelectItem key={pattern} value={pattern}>{pattern}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                {!readOnly && (
+                  <Button variant="ghost" size="sm" onClick={() => { removeMatcher(event, matcher.id); }}>
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+            </>
+          ) : (
+            // The CLI ignores `matcher` on this event, so offering the field
+            // would invite a filter that silently does nothing.
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-sm text-muted-foreground">
+                {info.label} always fires — no matcher.
+              </p>
+              {!readOnly && (
+                <Button variant="ghost" size="sm" onClick={() => { removeMatcher(event, matcher.id); }}>
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
+          )}
         </div>
       </div>
-      
+
       <AnimatePresence>
         {matcher.expanded && (
           <motion.div
@@ -598,17 +387,13 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
               <div className="flex items-center justify-between">
                 <Label>Commands</Label>
                 {!readOnly && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => { addCommand(event, matcher.id); }}
-                  >
+                  <Button variant="outline" size="sm" onClick={() => { addCommand(event, matcher.id); }}>
                     <Plus className="h-3 w-3 mr-1" />
                     Add Command
                   </Button>
                 )}
               </div>
-              
+
               {matcher.hooks.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No commands added yet</p>
               ) : (
@@ -624,7 +409,7 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
                             disabled={readOnly}
                             className="font-mono text-sm min-h-[80px]"
                           />
-                          
+
                           <div className="flex items-center gap-4">
                             <div className="flex items-center gap-2">
                               <Clock className="h-3 w-3 text-muted-foreground" />
@@ -632,15 +417,15 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
                                 type="number"
                                 placeholder="60"
                                 value={hook.timeout || ''}
-                                onChange={(e) => { updateCommand(event, matcher.id, hook.id, { 
-                                  timeout: e.target.value ? parseInt(e.target.value) : undefined 
+                                onChange={(e) => { updateCommand(event, matcher.id, hook.id, {
+                                  timeout: e.target.value ? parseInt(e.target.value) : undefined
                                 }); }}
                                 disabled={readOnly}
                                 className="w-20 h-8"
                               />
                               <span className="text-sm text-muted-foreground">seconds</span>
                             </div>
-                            
+
                             {!readOnly && (
                               <Button
                                 variant="ghost"
@@ -653,8 +438,7 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
                           </div>
                         </div>
                       </div>
-                      
-                      {/* Show warnings for this command */}
+
                       {(() => {
                         const warnings = HooksManager.checkDangerousPatterns(hook.command || '');
                         return warnings.length > 0 && (
@@ -677,88 +461,27 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
         )}
       </AnimatePresence>
     </Card>
-  );
-  
-  const renderDirectCommand = (event: HookEvent, command: EditableHookCommand) => (
-    <Card key={command.id} className="p-4 space-y-2">
-      <div className="flex items-start gap-2">
-        <div className="flex-1 space-y-2">
-          <Textarea
-            placeholder="Enter shell command..."
-            value={command.command || ''}
-            onChange={(e) => { updateDirectCommand(event, command.id, { command: e.target.value }); }}
-            disabled={readOnly}
-            className="font-mono text-sm min-h-[80px]"
-          />
-          
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <Clock className="h-3 w-3 text-muted-foreground" />
-              <Input
-                type="number"
-                placeholder="60"
-                value={command.timeout || ''}
-                onChange={(e) => { updateDirectCommand(event, command.id, { 
-                  timeout: e.target.value ? parseInt(e.target.value) : undefined 
-                }); }}
-                disabled={readOnly}
-                className="w-20 h-8"
-              />
-              <span className="text-sm text-muted-foreground">seconds</span>
-            </div>
-            
-            {!readOnly && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => { removeDirectCommand(event, command.id); }}
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            )}
-          </div>
-        </div>
-      </div>
-      
-      {/* Show warnings for this command */}
-      {(() => {
-        const warnings = HooksManager.checkDangerousPatterns(command.command || '');
-        return warnings.length > 0 && (
-          <div className="flex items-start gap-2 p-2 bg-yellow-500/10 rounded-md">
-            <AlertTriangle className="h-4 w-4 text-yellow-600 mt-0.5" />
-            <div className="space-y-1">
-              {warnings.map((warning, i) => (
-                <p key={i} className="text-xs text-yellow-600">{warning}</p>
-              ))}
-            </div>
-          </div>
-        );
-      })()}
-    </Card>
-  );
+    );
+  };
 
   return (
     <div className={cn("space-y-6", className)}>
-      {/* Loading State */}
       {isLoading && (
         <div className="flex items-center justify-center p-8">
           <Spinner className="size-6 mr-2" />
           <span className="text-sm text-muted-foreground">Loading hooks configuration...</span>
         </div>
       )}
-      
-      {/* Error State */}
+
       {loadError && !isLoading && (
         <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-xs text-destructive flex items-center gap-2">
           <AlertTriangle className="h-4 w-4 flex-shrink-0" />
           {loadError}
         </div>
       )}
-      
-      {/* Main Content */}
+
       {!isLoading && (
         <>
-          {/* Header */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-semibold">Hooks Configuration</h3>
@@ -768,11 +491,7 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
                 </Badge>
                 {!readOnly && (
                   <>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => { setShowTemplateDialog(true); }}
-                    >
+                    <Button variant="outline" size="sm" onClick={() => { setShowTemplateDialog(true); }}>
                       <FileText className="h-4 w-4 mr-2" />
                       Templates
                     </Button>
@@ -781,13 +500,9 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
                         variant={hasUnsavedChanges ? "default" : "outline"}
                         size="sm"
                         onClick={fireAndLog('hooks-editor:click', handleSave)}
-                        disabled={!hasUnsavedChanges || isSaving || !projectPath}
+                        disabled={!hasUnsavedChanges || isSaving || (scope !== 'user' && !projectPath)}
                       >
-                        {isSaving ? (
-                          <Spinner className="mr-2" />
-                        ) : (
-                          <Save className="h-4 w-4 mr-2" />
-                        )}
+                        {isSaving ? <Spinner className="mr-2" /> : <Save className="h-4 w-4 mr-2" />}
                         {isSaving ? "Saving..." : "Save"}
                       </Button>
                     )}
@@ -806,7 +521,6 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
             )}
           </div>
 
-          {/* Validation Messages */}
           {validationErrors.length > 0 && (
             <div className="p-3 bg-red-500/10 rounded-md space-y-1">
               <p className="text-sm font-medium text-red-600">Validation Errors:</p>
@@ -825,80 +539,78 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
             </div>
           )}
 
-          {/* Event Tabs */}
-          <Tabs value={selectedEvent} onValueChange={(v) => { setSelectedEvent(v as HookEvent); }}>
-            <TabsList className="w-full">
-              {(Object.keys(EVENT_INFO) as HookEvent[]).map(event => {
-                const isMatcherEvent = matcherEvents.includes(event as any);
-                const count = isMatcherEvent 
-                  ? (editableHooks[event as 'PreToolUse' | 'PostToolUse']).length
-                  : (editableHooks[event as 'Notification' | 'Stop' | 'SubagentStop']).length;
-                
-                return (
-                  <TabsTrigger key={event} value={event} className="flex items-center gap-2">
-                    {EVENT_INFO[event].icon}
-                    <span className="hidden sm:inline">{EVENT_INFO[event].label}</span>
-                    {count > 0 && (
-                      <Badge variant="secondary" className="ml-1 h-5 px-1">
-                        {count}
-                      </Badge>
-                    )}
-                  </TabsTrigger>
-                );
-              })}
-            </TabsList>
+          {/* Event picker. A tab strip held five events; there are 31, so the
+              selector is a grouped dropdown. Counts ride on each item —
+              otherwise there is no way to find which of 31 events you have
+              hooks on without opening each one. */}
+          <div className="space-y-2">
+            <Label htmlFor="hook-event">Event</Label>
+            <div className="flex items-center gap-3">
+              <Select
+                value={selectedEvent}
+                onValueChange={(v) => { setSelectedEvent(v as HookEvent); }}
+              >
+                <SelectTrigger id="hook-event" className="w-72">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="max-h-[60vh]">
+                  {groupedHookEvents().map(([group, events]) => (
+                    <React.Fragment key={group}>
+                      <div className="px-2 py-1.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+                        {group}
+                      </div>
+                      {events.map((event) => {
+                        const count = editableHooks[event]?.length ?? 0;
+                        return (
+                          <SelectItem key={event} value={event}>
+                            <span className="flex items-center gap-2">
+                              {HOOK_EVENT_INFO[event].label}
+                              {count > 0 && (
+                                <Badge variant="secondary" className="h-4 px-1 text-[10px]">
+                                  {count}
+                                </Badge>
+                              )}
+                            </span>
+                          </SelectItem>
+                        );
+                      })}
+                    </React.Fragment>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-sm text-muted-foreground">{eventInfo.description}</p>
+            </div>
+          </div>
 
-            {(Object.keys(EVENT_INFO) as HookEvent[]).map(event => {
-              const isMatcherEvent = matcherEvents.includes(event as any);
-              const items = isMatcherEvent 
-                ? (editableHooks[event as 'PreToolUse' | 'PostToolUse'])
-                : (editableHooks[event as 'Notification' | 'Stop' | 'SubagentStop']);
-              
-              return (
-                <TabsContent key={event} value={event} className="space-y-4">
-                  <div className="space-y-2">
-                    <p className="text-sm text-muted-foreground">
-                      {EVENT_INFO[event].description}
-                    </p>
-                  </div>
+          <div className="space-y-4">
+            {entries.length === 0 ? (
+              <Card className="p-8 text-center">
+                <p className="text-muted-foreground mb-4">No hooks configured for this event</p>
+                {!readOnly && (
+                  <Button onClick={() => { addMatcher(selectedEvent); }}>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add Hook
+                  </Button>
+                )}
+              </Card>
+            ) : (
+              <div className="space-y-4">
+                {entries.map(matcher => renderMatcher(selectedEvent, matcher))}
 
-                  {items.length === 0 ? (
-                    <Card className="p-8 text-center">
-                      <p className="text-muted-foreground mb-4">No hooks configured for this event</p>
-                      {!readOnly && (
-                        // eslint-disable-next-line @typescript-eslint/no-unused-expressions -- side-effect expression intentional in this context.
-                        <Button onClick={() => { isMatcherEvent ? addMatcher(event) : addDirectCommand(event); }}>
-                          <Plus className="h-4 w-4 mr-2" />
-                          Add Hook
-                        </Button>
-                      )}
-                    </Card>
-                  ) : (
-                    <div className="space-y-4">
-                      {isMatcherEvent 
-                        ? (items as EditableHookMatcher[]).map(matcher => renderMatcher(event, matcher))
-                        : (items as EditableHookCommand[]).map(command => renderDirectCommand(event, command))
-                      }
-                      
-                      {!readOnly && (
-                        <Button
-                          variant="outline"
-                          // eslint-disable-next-line @typescript-eslint/no-unused-expressions -- side-effect expression intentional in this context.
-                          onClick={() => { isMatcherEvent ? addMatcher(event) : addDirectCommand(event); }}
-                          className="w-full"
-                        >
-                          <Plus className="h-4 w-4 mr-2" />
-                          Add Another {isMatcherEvent ? 'Matcher' : 'Command'}
-                        </Button>
-                      )}
-                    </div>
-                  )}
-                </TabsContent>
-              );
-            })}
-          </Tabs>
+                {!readOnly && (
+                  <Button
+                    variant="outline"
+                    onClick={() => { addMatcher(selectedEvent); }}
+                    className="w-full"
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add Another {supportsMatcher ? 'Matcher' : 'Hook'}
+                  </Button>
+                )}
+              </div>
+            )}
+          </div>
 
-          {/* Template Dialog */}
           <Dialog open={showTemplateDialog} onOpenChange={setShowTemplateDialog}>
             <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
               <DialogHeader>
@@ -907,7 +619,7 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
                   Choose a pre-configured hook template to get started quickly
                 </DialogDescription>
               </DialogHeader>
-              
+
               <div className="space-y-4 py-4">
                 {HOOK_TEMPLATES.map(template => (
                   <Card
@@ -918,10 +630,10 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
                         <h4 className="font-medium">{template.name}</h4>
-                        <Badge>{EVENT_INFO[template.event].label}</Badge>
+                        <Badge>{HOOK_EVENT_INFO[template.event].label}</Badge>
                       </div>
                       <p className="text-sm text-muted-foreground">{template.description}</p>
-                      {matcherEvents.includes(template.event as any) && template.matcher && (
+                      {template.matcher && (
                         <p className="text-xs font-mono bg-muted px-2 py-1 rounded inline-block">
                           Matcher: {template.matcher}
                         </p>
@@ -936,4 +648,4 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
       )}
     </div>
   );
-}; 
+};

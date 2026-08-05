@@ -3,12 +3,12 @@
  */
 
 import {
+  HOOK_EVENTS,
   HooksConfiguration,
   HookMatcher,
   HookValidationResult,
   HookValidationError,
   HookValidationWarning,
-  HookCommand,
 } from '@/types/hooks';
 
 // eslint-disable-next-line @typescript-eslint/no-extraneous-class -- utility-class pattern intentional; namespace-style functions less idiomatic in this codebase.
@@ -23,58 +23,20 @@ export class HooksManager {
     local: HooksConfiguration
   ): HooksConfiguration {
     const merged: HooksConfiguration = {};
-    
-    // Events with matchers (tool-related)
-    const matcherEvents: (keyof HooksConfiguration)[] = ['PreToolUse', 'PostToolUse'];
-    
-    // Events without matchers (non-tool-related)
-    const directEvents: (keyof HooksConfiguration)[] = ['Notification', 'Stop', 'SubagentStop'];
 
-    // Merge events with matchers
-    for (const event of matcherEvents) {
-      // Start with user hooks
-      let matchers = [...((user[event] as HookMatcher[] | undefined) || [])];
-      
-      // Add project hooks (may override by matcher pattern)
-      if (project[event]) {
-        matchers = this.mergeMatchers(matchers, project[event] as HookMatcher[]);
-      }
-      
-      // Add local hooks (highest priority)
-      if (local[event]) {
-        matchers = this.mergeMatchers(matchers, local[event] as HookMatcher[]);
-      }
-      
-      if (matchers.length > 0) {
-        (merged as any)[event] = matchers;
-      }
+    // One path for every event. Events that ignore `matcher` still store
+    // their commands under the same `[{matcher?, hooks:[…]}]` nesting, so
+    // there is nothing to special-case — the old direct-event branch both
+    // assumed a flat shape the CLI never uses and concatenated instead of
+    // overriding, so a project-scope hook would fire alongside the user one
+    // rather than replacing it.
+    for (const event of HOOK_EVENTS) {
+      let matchers = [...(user[event] ?? [])];
+      if (project[event]) matchers = this.mergeMatchers(matchers, project[event]);
+      if (local[event]) matchers = this.mergeMatchers(matchers, local[event]);
+      if (matchers.length > 0) merged[event] = matchers;
     }
-    
-    // Merge events without matchers
-    for (const event of directEvents) {
-      // Combine all hooks from all levels (local takes precedence)
-      const hooks: HookCommand[] = [];
-      
-      // Add user hooks
-      if (user[event]) {
-        hooks.push(...(user[event] as HookCommand[]));
-      }
-      
-      // Add project hooks
-      if (project[event]) {
-        hooks.push(...(project[event] as HookCommand[]));
-      }
-      
-      // Add local hooks (highest priority)
-      if (local[event]) {
-        hooks.push(...(local[event] as HookCommand[]));
-      }
-      
-      if (hooks.length > 0) {
-        (merged as any)[event] = hooks;
-      }
-    }
-    
+
     return merged;
   }
 
@@ -116,18 +78,24 @@ export class HooksManager {
       return { valid: true, errors, warnings };
     }
 
-    // Events with matchers
-    const matcherEvents = ['PreToolUse', 'PostToolUse'] as const;
-    
-    // Events without matchers
-    const directEvents = ['Notification', 'Stop', 'SubagentStop'] as const;
-
-    // Validate events with matchers
-    for (const event of matcherEvents) {
+    for (const event of HOOK_EVENTS) {
       const matchers = hooks[event];
       if (!matchers || !Array.isArray(matchers)) continue;
 
       for (const matcher of matchers) {
+        // A legacy flat entry — `{type:'command', command:'…'}` written
+        // straight into the event array — has no `hooks` member. The CLI
+        // silently never runs those, so surface it as an error rather than
+        // letting a dead hook look configured.
+        if (!Array.isArray(matcher.hooks)) {
+          errors.push({
+            event,
+            message:
+              'Malformed hook entry: expected { matcher?, hooks: [...] }. Commands must be nested under "hooks".',
+          });
+          continue;
+        }
+
         // Validate regex pattern if provided
         if (matcher.matcher) {
           try {
@@ -141,50 +109,24 @@ export class HooksManager {
           }
         }
 
-        // Validate commands
-        if (matcher.hooks && Array.isArray(matcher.hooks)) {
-          for (const hook of matcher.hooks) {
-            if (!hook.command?.trim()) {
-              errors.push({
-                event,
-                matcher: matcher.matcher,
-                message: 'Empty command'
-              });
-            }
-
-            // Check for dangerous patterns
-            const dangers = this.checkDangerousPatterns(hook.command || '');
-            warnings.push(...dangers.map(d => ({
+        for (const hook of matcher.hooks) {
+          if (!hook.command?.trim()) {
+            errors.push({
               event,
               matcher: matcher.matcher,
-              command: hook.command || '',
-              message: d
-            })));
+              message: 'Empty command'
+            });
           }
-        }
-      }
-    }
 
-    // Validate events without matchers
-    for (const event of directEvents) {
-      const directHooks = hooks[event];
-      if (!directHooks || !Array.isArray(directHooks)) continue;
-
-      for (const hook of directHooks) {
-        if (!hook.command?.trim()) {
-          errors.push({
+          // Check for dangerous patterns
+          const dangers = this.checkDangerousPatterns(hook.command || '');
+          warnings.push(...dangers.map(d => ({
             event,
-            message: 'Empty command'
-          });
+            matcher: matcher.matcher,
+            command: hook.command || '',
+            message: d
+          })));
         }
-
-        // Check for dangerous patterns
-        const dangers = this.checkDangerousPatterns(hook.command || '');
-        warnings.push(...dangers.map(d => ({
-          event,
-          command: hook.command || '',
-          message: d
-        })));
       }
     }
 

@@ -120,6 +120,8 @@ export interface Services {
     getPath(): unknown;
     setPath(path: string): unknown;
     listInstallations(): unknown;
+    /** Installed CLI version vs. the changelog watermark this build was reviewed against. */
+    reviewStatus(): unknown;
   };
   mcp?: {
     add(data: unknown): unknown;
@@ -606,6 +608,7 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     get_claude_binary_path: wrap(() => claudeBinary?.getPath() ?? null),
     set_claude_binary_path: wrapWith((p: Record<string, unknown>) => claudeBinary?.setPath(p?.path as string) ?? null),
     list_claude_installations: wrap(() => claudeBinary?.listInstallations() ?? null),
+    claude_cli_review_status: wrap(() => claudeBinary?.reviewStatus() ?? null),
 
     // ── MCP ───────────────────────────────────────────────────────────────────
     mcp_add: wrapWith((p: Record<string, unknown>) => { assertOwnedConfigDir(p?.configDir ?? p?.config_dir); return mcp?.add(p) ?? null; }),

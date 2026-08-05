@@ -127,3 +127,87 @@ describe('SessionNotices — stacking', () => {
     expect(screen.getByText(/prompt cache TTL/i)).toBeInTheDocument();
   });
 });
+
+// Servers the CLI skips for config reasons never appear in `mcp_servers`, so
+// without this notice they are simply absent from the session with no
+// explanation anywhere in the UI.
+describe('SessionNotices — skipped MCP servers', () => {
+  const ERRORS = [
+    {
+      name: 'missing_command',
+      type: 'invalid_config',
+      message: 'Skipped — invalid MCP server config for "missing_command": command: expected string, received undefined',
+    },
+    {
+      name: 'bad_type',
+      type: 'unknown_type',
+      message: 'Skipped — unknown MCP server type "nonsense" for server "bad_type"',
+    },
+  ];
+
+  it('names every skipped server', () => {
+    render(<SessionNotices jump={null} ttlChange={null} mcpErrors={ERRORS} />);
+    // Exact match, not substring: the CLI's own message also quotes the
+    // server name, so a loose regex matches twice and proves nothing about
+    // the name being called out as its own field.
+    expect(screen.getByText('missing_command')).toBeInTheDocument();
+    expect(screen.getByText('bad_type')).toBeInTheDocument();
+  });
+
+  it('says how many were skipped', () => {
+    render(<SessionNotices jump={null} ttlChange={null} mcpErrors={ERRORS} />);
+    expect(screen.getByText(/2 MCP servers were skipped/)).toBeInTheDocument();
+    cleanup();
+    render(<SessionNotices jump={null} ttlChange={null} mcpErrors={[ERRORS[0]]} />);
+    expect(screen.getByText(/1 MCP server was skipped/)).toBeInTheDocument();
+  });
+
+  it('shows the CLI\'s own reason for each skip', () => {
+    render(<SessionNotices jump={null} ttlChange={null} mcpErrors={ERRORS} />);
+    // The CLI's message says exactly what's wrong; paraphrasing it would
+    // lose the field name and the expected type.
+    expect(screen.getByText(/command: expected string, received undefined/)).toBeInTheDocument();
+  });
+
+  it('renders nothing for an empty or absent list', () => {
+    const { container: a } = render(<SessionNotices jump={null} ttlChange={null} mcpErrors={[]} />);
+    expect(a).toBeEmptyDOMElement();
+    cleanup();
+    const { container: b } = render(<SessionNotices jump={null} ttlChange={null} />);
+    expect(b).toBeEmptyDOMElement();
+  });
+
+  it('can be dismissed', () => {
+    const { container } = render(
+      <SessionNotices jump={null} ttlChange={null} mcpErrors={ERRORS} />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /dismiss skipped mcp/i }));
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it('re-shows when a DIFFERENT set of servers is skipped', () => {
+    // Dismissal is keyed to identity like the other notices — waving off one
+    // broken config must not mask the next one after a config edit + restart.
+    const { rerender, container } = render(
+      <SessionNotices jump={null} ttlChange={null} mcpErrors={ERRORS} />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /dismiss skipped mcp/i }));
+    expect(container).toBeEmptyDOMElement();
+
+    rerender(
+      <SessionNotices
+        jump={null}
+        ttlChange={null}
+        mcpErrors={[{ name: 'other', type: 'invalid_config', message: 'nope' }]}
+      />,
+    );
+    expect(screen.getByText(/other/)).toBeInTheDocument();
+  });
+
+  it('stacks with the other notices', () => {
+    render(<SessionNotices jump={JUMP} ttlChange={DROP} mcpErrors={ERRORS} />);
+    expect(screen.getByText(/added/)).toBeInTheDocument();
+    expect(screen.getByText(/prompt cache TTL/i)).toBeInTheDocument();
+    expect(screen.getByText('missing_command')).toBeInTheDocument();
+  });
+});

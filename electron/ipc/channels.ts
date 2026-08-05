@@ -117,6 +117,10 @@ export const INVOKE_CHANNELS: readonly string[] = [
   'get_claude_binary_path',
   'set_claude_binary_path',
   'list_claude_installations',
+  // Installed CLI version vs. the changelog watermark this build was
+  // reviewed at — drives the "Claude Code moved on" flag on the Updates
+  // button.
+  'claude_cli_review_status',
 
   // MCP
   'mcp_add',

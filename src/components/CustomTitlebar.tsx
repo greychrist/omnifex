@@ -8,7 +8,7 @@ import {
   TooltipSimple,
   TooltipTrigger,
 } from '@/components/ui/tooltip-modern';
-import { api } from '@/lib/api';
+import { api, type CliReviewStatus } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import OmniFexIcon from '../../icons/icon.png';
 import { TabStatusPopover } from '@/components/TabStatusPopover';
@@ -91,10 +91,21 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
     void Promise.all([work, minSpin]).finally(() => { setCheckingHold(false); });
   }, []);
 
-  // One-click refresh for the upgrade-check button.
+  // --- Claude CLI changelog watermark ---
+  // OmniFex wraps a CLI it doesn't ship, so a CLI release can silently move a
+  // surface we parse. This mirrors the signal the pinned SDK version used to
+  // give us: main compares the installed binary against the release whose
+  // changelog this build was reviewed against.
+  const [cliReview, setCliReview] = useState<CliReviewStatus | null>(null);
+  const checkCliReview = useCallback(async () => {
+    setCliReview(await api.getClaudeCliReviewStatus());
+  }, []);
+
+  // One-click refresh for the upgrade-check button. Checks both the app
+  // release and the CLI watermark — one button, one answer.
   const checkEverything = useCallback(() => {
-    withMinSpin(checkForUpdate());
-  }, [checkForUpdate, withMinSpin]);
+    withMinSpin(Promise.all([checkForUpdate(), checkCliReview()]));
+  }, [checkForUpdate, checkCliReview, withMinSpin]);
 
   // Auto-dismiss the green "up-to-date" badge after a beat.
   useEffect(() => {
@@ -110,7 +121,7 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
   // Fetch app version + check for updates on mount.
   useEffect(() => {
     api.getAppVersion().then(setAppVersion).catch(() => {});
-    withMinSpin(checkForUpdate());
+    withMinSpin(Promise.all([checkForUpdate(), checkCliReview()]));
 
     // Listen for download progress
     const cleanupProgress = api.onUpdateProgress((data: { percent: number }) => {
@@ -435,9 +446,21 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
                   className={isCheckingAnything ? 'animate-spin' : ''}
                 />
                 <span>Updates</span>
+                {/* Amber dot: the installed CLI is ahead of the release whose
+                    changelog we've read. Deliberately a quiet marker rather
+                    than the loud app-update chrome — nothing is broken, there
+                    is just drift worth looking at. Suppressed while a check
+                    is in flight so a stale dot doesn't outlive its answer. */}
+                {cliReview?.unreviewed && !isCheckingAnything && (
+                  <span
+                    aria-hidden
+                    data-cli-unreviewed
+                    className="h-1.5 w-1.5 rounded-full bg-amber-500"
+                  />
+                )}
               </motion.button>
             </TooltipTrigger>
-            <TooltipContent side="bottom" align="end" className="px-0 py-0 w-[240px]">
+            <TooltipContent side="bottom" align="end" className="px-0 py-0 w-[280px]">
               <div className="px-3.5 py-2.5 border-b border-border/50 flex items-center justify-between">
                 <span className="text-base font-semibold">
                   {isCheckingAnything ? 'Checking for upgrade…' : 'Check for Upgrade'}
@@ -451,6 +474,28 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
                   <span className="text-muted-foreground">App</span>
                   <span className="font-medium">OmniFex {appVersion || '—'}</span>
                 </div>
+                {/* Claude Code row. The version alone is the useful line; the
+                    watermark note only appears when the CLI has actually
+                    moved past what we've reviewed, so the popover stays
+                    two lines in the steady state. */}
+                {cliReview && (
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-muted-foreground">Claude Code</span>
+                    <span className="font-medium">
+                      {cliReview.installed_version ?? 'not found'}
+                    </span>
+                  </div>
+                )}
+                {cliReview?.unreviewed && (
+                  <div className="flex gap-2 rounded-md bg-amber-500/10 px-2 py-1.5 text-[12px] text-amber-500">
+                    <AlertCircle size={13} className="mt-px shrink-0" />
+                    <span>
+                      Claude Code is ahead of the {cliReview.reviewed_version} changelog
+                      OmniFex was last checked against — there may be new CLI behaviour
+                      to support.
+                    </span>
+                  </div>
+                )}
               </div>
             </TooltipContent>
           </Tooltip>

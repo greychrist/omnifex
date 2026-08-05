@@ -6,6 +6,7 @@ import { Plus, ArrowLeft } from 'lucide-react';
 import { Spinner } from '@/components/ui/spinner';
 import { api, type AgentKind, type Project, type ResolvePair, type Session, type SessionMode } from '@/lib/api';
 import { ProjectList } from '@/components/ProjectList';
+import { ProjectSettings } from '@/components/ProjectSettings';
 import { SessionList } from '@/components/SessionList';
 import { AccountPickerDialog } from '@/components/AccountPickerDialog';
 import { OpenSessionByIdDialog } from '@/components/OpenSessionByIdDialog';
@@ -67,6 +68,10 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
   const { updateTab } = useTabState();
   const [projects, setProjects] = React.useState<Project[]>([]);
   const [selectedProject, setSelectedProject] = React.useState<Project | null>(null);
+  // Project whose settings (CLAUDE.md, hooks) are open. Kept separate from
+  // `selectedProject` so opening settings doesn't also drill into sessions —
+  // they're sibling destinations from the same row, not nested ones.
+  const [settingsProject, setSettingsProject] = React.useState<Project | null>(null);
   const [sessions, setSessions] = React.useState<Session[]>([]);
   const [loading, setLoading] = React.useState(false);
   
@@ -437,8 +442,17 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
       case 'projects':
         return (
           <div className="h-full">
-              {/* Content based on selection */}
-              {selectedProject ? (
+              {/* Content based on selection. Settings takes precedence over
+                  the session drill-down: it's opened explicitly from a row
+                  action, so it should win over whatever was selected before. */}
+              {settingsProject ? (
+                <div className="h-full overflow-y-auto">
+                  <ProjectSettings
+                    project={settingsProject}
+                    onBack={() => { setSettingsProject(null); }}
+                  />
+                </div>
+              ) : selectedProject ? (
                 // Flex-column layout so the session-list table can fill
                 // the remaining height and scroll internally — no
                 // page-level scrollbar. Header + new-session form stay
@@ -585,6 +599,7 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                       onOpenProject={handleOpenProject}
                       onQuickLaunch={fireAndLog('tab-content:project-quick-launch', handleQuickLaunch)}
                       onTogglePin={handleTogglePin}
+                      onOpenSettings={fireAndLog('tab-content:project-settings', setSettingsProject)}
                       loading={loading}
                     />
                   </div>

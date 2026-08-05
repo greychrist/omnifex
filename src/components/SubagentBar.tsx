@@ -105,21 +105,33 @@ const SubagentRow: React.FC<SubagentRowProps> = ({ sub, onDismiss }) => {
   const toolCount = sub.finalToolUseCount ?? latest?.toolUses;
   const durationMs = sub.finalDurationMs ?? latest?.durationMs;
   const model = formatModel(sub.model);
+  // Only rendered when the subagent reports its own effort — most runs
+  // inherit the session default and carry none, and a placeholder there
+  // would be noise on every row.
+  const effort = sub.effort ? `${sub.effort} effort` : '';
   const tokens = tokenCount ? `${Math.round(tokenCount / 1000)}k tok` : '';
   const tools = toolCount ? `${toolCount} tools` : '';
   const elapsed = formatElapsed(durationMs);
-  const metaBits = [model, tools, tokens, elapsed].filter(Boolean).join(' · ');
+  const metaBits = [model, effort, tools, tokens, elapsed].filter(Boolean).join(' · ');
 
   const headline = latest?.description || sub.description || 'Working…';
   const agentLabel = sub.agentType ?? 'Agent';
 
+  // A nested subagent (dispatched by another subagent, not by the main
+  // session) is indented under its parent. It shares the parent's colour, so
+  // the indent is what distinguishes it from a sibling.
+  const nested = !!sub.parentToolUseId;
+
   return (
     <div
+      data-subagent-row
+      data-nested={nested ? 'true' : undefined}
       className={cn(
         'border-l-2 transition-opacity',
         color.border,
         color.bg,
         dim && 'opacity-60',
+        nested && 'ml-4',
       )}
     >
       <button

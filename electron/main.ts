@@ -44,6 +44,7 @@ import { createDatabase, ensureDefaultSettings } from './services/database';
 import { createAccountsService } from './services/accounts';
 import { runFirstTimeDiscovery } from './services/first-run-discovery';
 import { createClaudeBinaryService } from './services/claude-binary';
+import { createClaudeCliReviewService, probeCliVersion } from './services/claude-cli-review';
 import { createSessionsService } from './services/sessions';
 import { createNotificationsService } from './services/notifications';
 import {
@@ -465,6 +466,14 @@ app.whenReady().then(() => {
   });
 
   const claudeBinaryService = createClaudeBinaryService(db);
+  // Compares the CLI the user is actually running against the changelog
+  // watermark this build was reviewed at. Prefers the explicitly-chosen
+  // binary, falling back to discovery so the check works before the user
+  // ever visits the binary picker.
+  const claudeCliReviewService = createClaudeCliReviewService({
+    cliVersionFn: () =>
+      probeCliVersion(claudeBinaryService.getPath() ?? claudeBinaryService.findBestBinary()),
+  });
   // Logging must be constructed before sessions so the sessions service can
   // route CLI subprocess stderr into the log store. The predicate reads
   // app_settings live on every batch, so toggling the LogTab switches takes
@@ -1123,6 +1132,7 @@ app.whenReady().then(() => {
       getPath: () => claudeBinaryService.getPath(),
       setPath: (p: string) => claudeBinaryService.setPath(p),
       listInstallations: () => claudeBinaryService.listInstallations(),
+      reviewStatus: () => claudeCliReviewService.getStatus(),
     },
     // MCP adapter — service methods match handler interface names exactly
     mcp: {
