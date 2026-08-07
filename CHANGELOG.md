@@ -5,6 +5,23 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.112] — 2026-08-07
+
+### Added
+
+- **The "Claude Code is ahead of the changelog" warning is now a button.** When
+  the Claude Code version you have installed has moved past the one OmniFex was
+  last checked against, the Updates panel says so — and now clicking that
+  warning opens a session in the OmniFex source folder and starts the review of
+  exactly the versions that changed, instead of leaving you to set it up by
+  hand. If OmniFex can't work out where your source folder is, the warning stays
+  as plain text and points you at the new setting.
+- **Settings → General: "OmniFex checkout".** Tells the above where your OmniFex
+  source folder lives. Leave it blank and OmniFex finds it on its own.
+
+Installers remain **unsigned** — macOS Gatekeeper blocks the first launch;
+right-click → Open to get past it.
+
 ## [0.4.111] — 2026-08-07
 
 ### Fixed
