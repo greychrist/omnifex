@@ -5,6 +5,21 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.111] — 2026-08-07
+
+### Fixed
+
+- **Streaming a reply no longer costs a fifth of a CPU core.** While an answer
+  was arriving, the bubble holding the in-progress text re-parsed the whole
+  answer — markdown, code highlighting and all — around sixty times a second,
+  and the longer the answer got the more each pass cost. It now refreshes ten
+  times a second and reuses the highlighting it already built, which reads the
+  same on screen while doing a fraction of the work. The first words of a reply
+  still appear the moment they arrive.
+
+Installers remain **unsigned** — macOS Gatekeeper blocks the first launch;
+right-click → Open to get past it.
+
 ## [0.4.110] — 2026-08-05
 
 ### Added
