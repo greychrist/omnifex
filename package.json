@@ -82,7 +82,7 @@
     "@types/sharp": "^0.32.0",
     "@vitejs/plugin-react": "^4.3.4",
     "@vitest/coverage-v8": "^4.1.4",
-    "electron": "^41.2.0",
+    "electron": "^41.10.3",
     "eslint": "^9.39.4",
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^7.1.1",
