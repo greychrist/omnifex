@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
 import { Bot, FolderCode } from "lucide-react";
 import { api, type Project, type Session } from "@/lib/api";
@@ -14,7 +14,7 @@ import { Card } from "@/components/ui/card";
 import { ProjectList } from "@/components/ProjectList";
 import { FilePicker } from "@/components/FilePicker";
 import { SessionList } from "@/components/SessionList";
-import { CustomTitlebar } from "@/components/CustomTitlebar";
+import { CustomTitlebar, type CliReviewLaunchRequest } from "@/components/CustomTitlebar";
 import { MarkdownEditor } from "@/components/MarkdownEditor";
 import { Settings } from "@/components/Settings";
 import { MCPManager } from "@/components/MCPManager";
@@ -26,6 +26,7 @@ import { TabContent } from "@/components/TabContent";
 import { useTabState } from "@/hooks/useTabState";
 import { StartupIntro } from "@/components/StartupIntro";
 import { fireAndLog, logAndForget } from "@/lib/fireAndLog";
+import { buildCliReviewLaunch } from "@/lib/cliReviewLaunch";
 
 type View = 
   | "welcome" 
@@ -46,7 +47,7 @@ type View =
 function AppContent() {
   const [view, setView] = useState<View>("tabs");
   const { createSettingsTab, createLimaTab, createUsageTab } = useTabState();
-  const { activeTabId, setActiveTab, updateTab } = useTabContext();
+  const { activeTabId, setActiveTab, updateTab, addTab } = useTabContext();
   useNotifications(activeTabId, setActiveTab, updateTab);
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
@@ -299,6 +300,35 @@ function AppContent() {
   // New session creation is handled by the tab system via titlebar actions
 
   /**
+   * Opens a session in the OmniFex checkout running the Claude Code changelog
+   * review, launched from the Updates popover's drift warning.
+   *
+   * When no Claude account routes the checkout the tab still opens — without
+   * an auto-start config — so the user gets the normal routing guidance
+   * instead of a session spawned with no account (see the multi-account rules:
+   * there is no default-account fallback).
+   */
+  const handleCliReviewLaunch = useCallback(
+    (request: CliReviewLaunchRequest) => {
+      logAndForget('app:cli-review-launch', (async () => {
+        const pair = await api.resolveAccountForProject(request.repoDir).catch(() => ({
+          claude: null,
+          codex: null,
+        }));
+        const { tab } = buildCliReviewLaunch({
+          repoDir: request.repoDir,
+          reviewedVersion: request.reviewedVersion,
+          installedVersion: request.installedVersion,
+          pair,
+        });
+        setView('tabs');
+        setActiveTab(addTab(tab));
+      })());
+    },
+    [addTab, setActiveTab],
+  );
+
+  /**
    * Handles view changes with navigation protection
    */
   const handleViewChange = (newView: View) => {
@@ -423,6 +453,7 @@ function AppContent() {
       <CustomTitlebar
         onLimaClick={() => createLimaTab()}
         onSettingsClick={() => createSettingsTab()}
+        onCliReviewClick={handleCliReviewLaunch}
       />
 
       {/* Main Content */}

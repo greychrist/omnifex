@@ -80,6 +80,7 @@ describe('CustomTitlebar — Claude Code changelog watermark', () => {
       installed_version: '2.1.230',
       reviewed_version: '2.1.222',
       unreviewed: true,
+      repo_dir: null,
     });
     await renderSettled();
 
@@ -95,6 +96,7 @@ describe('CustomTitlebar — Claude Code changelog watermark', () => {
       installed_version: '2.1.222',
       reviewed_version: '2.1.222',
       unreviewed: false,
+      repo_dir: null,
     });
     await renderSettled();
 
@@ -110,6 +112,7 @@ describe('CustomTitlebar — Claude Code changelog watermark', () => {
       installed_version: null,
       reviewed_version: '2.1.222',
       unreviewed: false,
+      repo_dir: null,
     });
     await renderSettled();
 
@@ -126,5 +129,72 @@ describe('CustomTitlebar — Claude Code changelog watermark', () => {
     // The app row still renders — a CLI probe failure must not take the
     // rest of the popover down with it.
     expect(seen('OmniFex 0.4.109')).toBeGreaterThan(0);
+  });
+});
+
+describe('CustomTitlebar — launching the changelog review', () => {
+  const drifted = (repo_dir: string | null): CliReviewStatus => ({
+    installed_version: '2.1.224',
+    reviewed_version: '2.1.222',
+    unreviewed: true,
+    repo_dir,
+  });
+
+  // Radix duplicates tooltip content for screen readers, so the launch button
+  // exists twice; both copies are wired to the same handler.
+  const launchButtons = () =>
+    Array.from(document.querySelectorAll<HTMLButtonElement>('[data-cli-review-launch]'));
+
+  it('makes the drift warning clickable when a repo is resolved', async () => {
+    const onCliReviewClick = vi.fn();
+    getClaudeCliReviewStatus.mockResolvedValue(drifted('/repos/omnifex'));
+    render(<CustomTitlebar onCliReviewClick={onCliReviewClick} />);
+    await vi.advanceTimersByTimeAsync(1000);
+    fireEvent.focus(screen.getByText('Updates').closest('button')!);
+    await vi.advanceTimersByTimeAsync(300);
+
+    await waitFor(() => { expect(launchButtons().length).toBeGreaterThan(0); });
+    fireEvent.click(launchButtons()[0]);
+    // The handler gets the range that actually drifted, not just a ping.
+    expect(onCliReviewClick).toHaveBeenCalledWith({
+      repoDir: '/repos/omnifex',
+      reviewedVersion: '2.1.222',
+      installedVersion: '2.1.224',
+    });
+  });
+
+  it('stays plain text when no OmniFex checkout could be found', async () => {
+    // A launch button with nowhere to launch is worse than no button; point
+    // at the setting that fixes it instead.
+    getClaudeCliReviewStatus.mockResolvedValue(drifted(null));
+    await renderSettled();
+
+    await waitFor(() => { expect(seen(/ahead of the 2\.1\.222 changelog/)).toBeGreaterThan(0); });
+    expect(launchButtons()).toHaveLength(0);
+    expect(seen(/Settings → General/)).toBeGreaterThan(0);
+  });
+
+  it('stays plain text when the host provides no launch handler', async () => {
+    getClaudeCliReviewStatus.mockResolvedValue(drifted('/repos/omnifex'));
+    await renderSettled();
+
+    await waitFor(() => { expect(seen(/ahead of the 2\.1\.222 changelog/)).toBeGreaterThan(0); });
+    expect(launchButtons()).toHaveLength(0);
+  });
+
+  it('offers no launch when the CLI has not drifted', async () => {
+    getClaudeCliReviewStatus.mockResolvedValue({
+      installed_version: '2.1.222',
+      reviewed_version: '2.1.222',
+      unreviewed: false,
+      repo_dir: '/repos/omnifex',
+    });
+    render(<CustomTitlebar onCliReviewClick={vi.fn()} />);
+    await vi.advanceTimersByTimeAsync(1000);
+    fireEvent.focus(screen.getByText('Updates').closest('button')!);
+    await vi.advanceTimersByTimeAsync(300);
+
+    await waitFor(() => { expect(seen('2.1.222')).toBeGreaterThan(0); });
+    expect(launchButtons()).toHaveLength(0);
   });
 });

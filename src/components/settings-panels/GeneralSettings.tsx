@@ -16,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { api, type ClaudeInstallation } from "@/lib/api";
+import { api, CLI_REVIEW_REPO_DIR_SETTING_KEY, type ClaudeInstallation } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { ClaudeVersionSelector } from "@/components/ClaudeVersionSelector";
 import { useTheme } from "@/hooks";
@@ -137,6 +137,12 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
     return `${describe(1_000_000, "1M session")} · ${describe(200_000, "200k session")}.`;
   })();
 
+  // OmniFex checkout the Updates popover's changelog-review launch runs in.
+  // Empty means "discover it" — the dev cwd, else whichever known project is
+  // an OmniFex checkout — which is the normal state; this is an override for
+  // when discovery picks the wrong one or finds nothing.
+  const [cliReviewRepoDir, setCliReviewRepoDir] = useState('');
+
   const [tabPersistenceEnabled, setTabPersistenceEnabled] = useState(true);
   const [startupIntroEnabled, setStartupIntroEnabled] = useState(true);
   const [successSound, setSuccessSound] = useState<NotificationSoundId>(DEFAULT_SUCCESS_SOUND);
@@ -151,8 +157,30 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
       setSuccessSound(normalizeNotificationSoundId(successRaw, DEFAULT_SUCCESS_SOUND));
       const errorRaw = await api.getSetting(NOTIFICATION_SOUND_SETTING_KEYS.error);
       setErrorSound(normalizeNotificationSoundId(errorRaw, DEFAULT_ERROR_SOUND));
+      setCliReviewRepoDir((await api.getSetting(CLI_REVIEW_REPO_DIR_SETTING_KEY)) ?? '');
     })());
   }, []);
+
+  const saveCliReviewRepoDir = async (next: string) => {
+    setCliReviewRepoDir(next);
+    try {
+      await api.saveSetting(CLI_REVIEW_REPO_DIR_SETTING_KEY, next);
+      setToast({
+        message: next ? 'OmniFex checkout updated' : 'OmniFex checkout cleared — using auto-detection',
+        type: 'success',
+      });
+    } catch {
+      setToast({ message: 'Failed to save OmniFex checkout', type: 'error' });
+    }
+  };
+
+  const browseForCliReviewRepoDir = async () => {
+    const paths = (await window.electronAPI.showOpenDialog({
+      properties: ['openDirectory'],
+      title: 'Select your OmniFex source checkout',
+    })) as string[] | null;
+    if (paths?.[0]) await saveCliReviewRepoDir(paths[0]);
+  };
 
   const saveSound = async (
     kind: 'success' | 'error',
@@ -626,6 +654,42 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
                   void setCacheTimerEnabled(checked);
                 })}
               />
+            </div>
+          </div>
+
+          {/* Where the Updates popover's "Claude Code is ahead of the …
+              changelog" warning launches its review session. Persisted as
+              `cli_review_repo_dir`; blank falls back to auto-detection. */}
+          <div className="border-t border-border pt-4 mt-2" />
+          <div className="space-y-3">
+            <div>
+              <Label htmlFor="cli-review-repo-dir">OmniFex checkout</Label>
+              <p className="text-caption text-muted-foreground mt-1">
+                Where to run the Claude Code changelog review when you click the
+                drift warning in the Updates popover. Leave blank to auto-detect.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Input
+                id="cli-review-repo-dir"
+                placeholder="Auto-detect"
+                value={cliReviewRepoDir}
+                onChange={(e) => { setCliReviewRepoDir(e.target.value); }}
+                onBlur={fireAndLog('general-settings:blur', () =>
+                  saveCliReviewRepoDir(cliReviewRepoDir.trim()),
+                )}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') e.currentTarget.blur();
+                }}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={fireAndLog('general-settings:click', browseForCliReviewRepoDir)}
+              >
+                Browse…
+              </Button>
             </div>
           </div>
 

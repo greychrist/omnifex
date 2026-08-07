@@ -161,6 +161,21 @@ interface AgentSessionProps {
     };
   };
   /**
+   * First prompt to send once the auto-started session is up. Used by
+   * launchers that mean "open a session AND do this" — currently the Updates
+   * popover's changelog-drift warning. Sent after `startPersistentSession()`
+   * resolves, never before: `handleSendPrompt` starts a session of its own
+   * when none is running, so firing it alongside the auto-start would spawn a
+   * second CLI process.
+   */
+  initialPrompt?: string;
+  /**
+   * Called once `initialPrompt` has been handed to the session, so the owner
+   * can clear it from the tab record. Without this a persisted tab re-sends
+   * the prompt on every app launch.
+   */
+  onInitialPromptSent?: () => void;
+  /**
    * Optional className for styling
    */
   className?: string;
@@ -192,6 +207,8 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   initialProjectPath = "",
   tabId,
   initialSessionConfig,
+  initialPrompt,
+  onInitialPromptSent,
   className,
   onStreamingChange,
   onProjectPathChange,
@@ -1532,6 +1549,24 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
     [handleResend],
   );
 
+  // Launch prompt ("open a session AND do this"). Ref-captured rather than
+  // listed as an auto-start dep: the effect below runs once per activation and
+  // resolves its promise well after this render, so it needs the *current*
+  // send path, not the one captured when it fired.
+  const initialPromptRef = useRef(initialPrompt);
+  const initialPromptSentRef = useRef(false);
+  const fireInitialPromptRef = useRef<() => void>(() => {});
+  fireInitialPromptRef.current = () => {
+    const prompt = initialPromptRef.current;
+    if (!prompt || initialPromptSentRef.current) return;
+    // Latched before the send so a re-render or a second activation can't
+    // double-send, and cleared from the tab so a restored tab doesn't either.
+    initialPromptSentRef.current = true;
+    initialPromptRef.current = undefined;
+    onInitialPromptSent?.();
+    void handleSendPrompt(prompt, selectedModel);
+  };
+
   // Populate the late-bound entries on streamCtxRef now that the hooks
   // that own them have run. handleJsonlLine reads these through the ref
   // so it never needs to list them as deps.
@@ -1587,9 +1622,11 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
         await startPersistentSession(session.id);
       })().catch((err: unknown) => { console.error("[auto-start] resume/rebind failed:", err); });
     } else if (action === 'fresh-start') {
-      startPersistentSession().catch((err: unknown) =>
-        { console.error("[auto-start] fresh start failed:", err); },
-      );
+      startPersistentSession()
+        .then(() => { fireInitialPromptRef.current(); })
+        .catch((err: unknown) =>
+          { console.error("[auto-start] fresh start failed:", err); },
+        );
     }
   }, [isActive]); // eslint-disable-line react-hooks/exhaustive-deps
 

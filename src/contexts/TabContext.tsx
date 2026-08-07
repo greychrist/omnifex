@@ -23,6 +23,14 @@ export interface Tab {
   claudeFileId?: string; // for claude-file tabs
   initialProjectPath?: string; // for chat tabs
   /**
+   * First prompt to send once this tab's auto-started session is up. Set by
+   * launchers that mean "open a session AND do this" — currently the Updates
+   * popover's changelog-drift warning. AgentSession sends it after
+   * startPersistentSession() resolves and clears it from the tab, so a
+   * restored tab never re-sends on the next app launch.
+   */
+  initialPrompt?: string;
+  /**
    * Pre-filled session configuration for a chat tab that was started from
    * the project view's inline new-session form. ClaudeCodeSession seeds its
    * state with these values and auto-starts the session, so the user doesn't

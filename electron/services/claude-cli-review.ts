@@ -1,4 +1,6 @@
 import { execSync } from 'node:child_process';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 
 /**
  * Claude Code changelog watermark.
@@ -31,6 +33,13 @@ import { execSync } from 'node:child_process';
  */
 export const REVIEWED_CLI_VERSION = '2.1.222';
 
+/**
+ * app_settings key holding the user's explicit OmniFex-checkout override.
+ * Mirrored as `CLI_REVIEW_REPO_DIR_SETTING_KEY` in `src/lib/api.ts` — the
+ * renderer can't import from `electron/`.
+ */
+export const CLI_REVIEW_REPO_DIR_SETTING_KEY = 'cli_review_repo_dir';
+
 export interface CliReviewStatus {
   /** Parsed version of the installed binary, or null if not found/probed. */
   installed_version: string | null;
@@ -38,10 +47,16 @@ export interface CliReviewStatus {
   reviewed_version: string;
   /** True when the installed CLI is strictly newer than the watermark. */
   unreviewed: boolean;
+  /**
+   * OmniFex source checkout to run the changelog review in, or null when we
+   * can't find one. The renderer only makes the drift warning clickable when
+   * this is set — a launch button with nowhere to launch is worse than text.
+   */
+  repo_dir: string | null;
 }
 
 export interface ClaudeCliReviewService {
-  getStatus(): CliReviewStatus;
+  getStatus(): Promise<CliReviewStatus>;
 }
 
 /**
@@ -67,6 +82,31 @@ export function probeCliVersion(binaryPath: string | null): string | null {
   }
 }
 
+/**
+ * Is `dir` an OmniFex source checkout?
+ *
+ * Identified by `package.json` name rather than by path, so the packaged app —
+ * where `process.cwd()` is meaningless — can find the repo among the projects
+ * the user already works in, without anyone's machine-specific path being
+ * baked into the build.
+ */
+export function isOmnifexRepo(dir: string): boolean {
+  try {
+    const raw = fs.readFileSync(path.join(dir, 'package.json'), 'utf8');
+    return (JSON.parse(raw) as { name?: unknown }).name === 'omnifex';
+  } catch {
+    return false;
+  }
+}
+
+function dirExists(dir: string): boolean {
+  try {
+    return fs.statSync(dir).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
 export interface ClaudeCliReviewDeps {
   /**
    * Returns the raw `claude --version` output (e.g. "2.1.222 (Claude Code)"),
@@ -74,6 +114,20 @@ export interface ClaudeCliReviewDeps {
    * out, and so the caller owns binary resolution.
    */
   cliVersionFn: () => string | null;
+  /**
+   * The user's explicit `cli_review_repo_dir` override, or null/'' when unset.
+   * Wins over discovery whenever the directory still exists.
+   */
+  repoDirOverrideFn?: () => string | null;
+  /**
+   * Directories to probe when no override is set, in priority order — the dev
+   * cwd, then every known project path. Async because the project list is.
+   */
+  repoCandidatesFn?: () => string[] | Promise<string[]>;
+  /** Overridable for tests, which must never touch the real filesystem. */
+  dirExistsFn?: (dir: string) => boolean;
+  /** Overridable for tests. See `isOmnifexRepo`. */
+  isOmnifexRepoFn?: (dir: string) => boolean;
 }
 
 /**
@@ -105,7 +159,36 @@ export function compareCliVersions(a: string, b: string): number {
 export function createClaudeCliReviewService(
   deps: ClaudeCliReviewDeps,
 ): ClaudeCliReviewService {
-  function getStatus(): CliReviewStatus {
+  const exists = deps.dirExistsFn ?? dirExists;
+  const isRepo = deps.isOmnifexRepoFn ?? isOmnifexRepo;
+  // Positive discoveries only. Caching a miss would mean cloning the repo (or
+  // opening it as a project for the first time) needs an app restart to be
+  // noticed, and the scan is cheap enough that repeating it costs nothing.
+  let discovered: string | null = null;
+
+  async function resolveRepoDir(): Promise<string | null> {
+    const override = deps.repoDirOverrideFn?.() ?? null;
+    // A stale override (folder moved or deleted) falls through to discovery
+    // rather than disabling the launch button.
+    if (override && exists(override)) return override;
+    if (discovered) return discovered;
+    let candidates: string[] = [];
+    try {
+      candidates = (await deps.repoCandidatesFn?.()) ?? [];
+    } catch {
+      // Project list unavailable — the version half of the payload still ships.
+      return null;
+    }
+    for (const dir of candidates) {
+      if (isRepo(dir)) {
+        discovered = dir;
+        return dir;
+      }
+    }
+    return null;
+  }
+
+  async function getStatus(): Promise<CliReviewStatus> {
     // Probed fresh every call, not cached: the user can upgrade the CLI
     // while OmniFex is running, and a value cached at construction would
     // stay stale until the next app restart.
@@ -123,6 +206,7 @@ export function createClaudeCliReviewService(
       // Strictly-newer only. A user running an OLDER CLI has no unreviewed
       // changelog to show them, and an unknown version must never nag.
       unreviewed: installed !== null && compareCliVersions(installed, REVIEWED_CLI_VERSION) > 0,
+      repo_dir: await resolveRepoDir(),
     };
   }
 

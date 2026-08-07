@@ -44,7 +44,11 @@ import { createDatabase, ensureDefaultSettings } from './services/database';
 import { createAccountsService } from './services/accounts';
 import { runFirstTimeDiscovery } from './services/first-run-discovery';
 import { createClaudeBinaryService } from './services/claude-binary';
-import { createClaudeCliReviewService, probeCliVersion } from './services/claude-cli-review';
+import {
+  createClaudeCliReviewService,
+  probeCliVersion,
+  CLI_REVIEW_REPO_DIR_SETTING_KEY,
+} from './services/claude-cli-review';
 import { createSessionsService } from './services/sessions';
 import { createNotificationsService } from './services/notifications';
 import {
@@ -470,9 +474,18 @@ app.whenReady().then(() => {
   // watermark this build was reviewed at. Prefers the explicitly-chosen
   // binary, falling back to discovery so the check works before the user
   // ever visits the binary picker.
+  // Also resolves where to run the changelog review: the `cli_review_repo_dir`
+  // override if set, else the dev cwd, else whichever known project is an
+  // OmniFex checkout. `claudeService` is declared further down — the closure
+  // is only ever called from an IPC handler, long after construction.
   const claudeCliReviewService = createClaudeCliReviewService({
     cliVersionFn: () =>
       probeCliVersion(claudeBinaryService.getPath() ?? claudeBinaryService.findBestBinary()),
+    repoDirOverrideFn: () => db.getSetting(CLI_REVIEW_REPO_DIR_SETTING_KEY),
+    repoCandidatesFn: async () => [
+      ...(app.isPackaged ? [] : [process.cwd()]),
+      ...(await claudeService.listProjects()).map((p) => p.path),
+    ],
   });
   // Logging must be constructed before sessions so the sessions service can
   // route CLI subprocess stderr into the log store. The predicate reads

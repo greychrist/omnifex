@@ -20,6 +20,7 @@ import { BranchColorsCard } from '@/components/BranchColorsCard';
 import { CodexSignInModal } from '@/components/codex/CodexSignInModal';
 import { useCodexAuthStatus } from '@/hooks/useCodexAuthStatus';
 import { fireAndLog, logAndForget } from "@/lib/fireAndLog";
+import { slotToResolution, type FormAccountResolution } from "@/lib/accountResolution";
 
 // Lazy load heavy components
 const AgentSession = lazy(() => import('@/components/AgentSession').then(m => ({ default: m.AgentSession })));
@@ -31,33 +32,6 @@ const LimaViewer = lazy(() => import('@/components/LimaViewer').then(m => ({ def
 // const ClaudeFileEditor = lazy(() => import('@/components/ClaudeFileEditor').then(m => ({ default: m.ClaudeFileEditor })));
 
 // Import non-lazy components for projects view
-
-/** Single-engine resolution shape baked into a started session's
- *  initialSessionConfig (mirrors AgentSession's accountResolution). */
-type FormAccountResolution = {
-  account: { name: string; subscription_label: string; has_cost: boolean; config_dir: string; session_defaults?: import('@/lib/api').SessionDefaults };
-  match_type: string;
-  match_detail: string;
-};
-
-/** Map one engine's resolved routing slot to the resolution shape the session
- *  header consumes. Returns null when that engine has no matching rule —
- *  callers must NOT fall back to the other engine's slot, or a Claude session
- *  ends up showing a Codex account (and vice versa). */
-function slotToResolution(slot: ResolvePair[keyof ResolvePair]): FormAccountResolution | null {
-  if (!slot) return null;
-  return {
-    account: {
-      name: slot.account.name,
-      subscription_label: slot.account.subscription_label,
-      has_cost: slot.account.has_cost,
-      config_dir: slot.account.config_dir,
-      session_defaults: slot.account.session_defaults,
-    },
-    match_type: slot.matchType,
-    match_detail: slot.matchDetail,
-  };
-}
 
 interface TabPanelProps {
   tab: Tab;
@@ -684,6 +658,8 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
               initialProjectPath={tab.initialProjectPath || ''}
               tabId={tab.id}
               initialSessionConfig={tab.initialSessionConfig}
+              initialPrompt={tab.initialPrompt}
+              onInitialPromptSent={() => { updateTab(tab.id, { initialPrompt: undefined }); }}
               isActive={isActive}
               onStreamingChange={(isStreaming, sessionId) => {
                 // Persist the CLI session ID to the tab so it survives app restart

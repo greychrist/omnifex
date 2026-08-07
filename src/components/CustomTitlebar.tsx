@@ -18,15 +18,28 @@ import { fireAndLog } from "@/lib/fireAndLog";
 // happened; holding for ~700ms gives clear feedback.
 const MIN_CHECK_SPIN_MS = 700;
 
+/** What the drift warning hands its host when clicked. */
+export interface CliReviewLaunchRequest {
+  /** OmniFex checkout to run the review in (`CliReviewStatus.repo_dir`). */
+  repoDir: string;
+  /** Watermark this build was reviewed at — the low end of the range. */
+  reviewedVersion: string;
+  /** Version the user is actually running — the high end. */
+  installedVersion: string;
+}
+
 interface CustomTitlebarProps {
   onSettingsClick?: () => void;
   onLimaClick?: () => void;
+  /** Launches the changelog review. Omit to leave the drift warning as text. */
+  onCliReviewClick?: (request: CliReviewLaunchRequest) => void;
 }
 
 
 export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
   onSettingsClick,
   onLimaClick,
+  onCliReviewClick,
 }) => {
   const [appVersion, setAppVersion] = useState<string>('');
 
@@ -486,16 +499,57 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
                     </span>
                   </div>
                 )}
-                {cliReview?.unreviewed && (
-                  <div className="flex gap-2 rounded-md bg-amber-500/10 px-2 py-1.5 text-[12px] text-amber-500">
-                    <AlertCircle size={13} className="mt-px shrink-0" />
-                    <span>
-                      Claude Code is ahead of the {cliReview.reviewed_version} changelog
-                      OmniFex was last checked against — there may be new CLI behaviour
-                      to support.
-                    </span>
-                  </div>
-                )}
+                {/* The warning IS the action: clicking it opens a session in
+                    the OmniFex checkout running the review for exactly the
+                    range that drifted. Only a button when we have somewhere to
+                    launch and a host willing to launch it — a dead click
+                    target is worse than plain text. Radix keeps tooltip
+                    content open while the pointer is over it, so the button is
+                    reachable without turning the whole popover into a
+                    click-open surface. */}
+                {cliReview?.unreviewed && (() => {
+                  const repoDir = cliReview.repo_dir;
+                  const installedVersion = cliReview.installed_version;
+                  const canLaunch = !!repoDir && !!onCliReviewClick && !!installedVersion;
+                  const body = (
+                    <>
+                      <AlertCircle size={13} className="mt-px shrink-0" />
+                      <span className="text-left">
+                        Claude Code is ahead of the {cliReview.reviewed_version} changelog
+                        OmniFex was last checked against — there may be new CLI behaviour
+                        to support.
+                        {canLaunch ? (
+                          <span className="block mt-1 font-medium">Review it →</span>
+                        ) : (
+                          <span className="block mt-1 text-amber-500/70">
+                            Set your OmniFex checkout in Settings → General to review it
+                            from here.
+                          </span>
+                        )}
+                      </span>
+                    </>
+                  );
+                  const className =
+                    'flex w-full gap-2 rounded-md bg-amber-500/10 px-2 py-1.5 text-[12px] text-amber-500';
+                  return repoDir && installedVersion && onCliReviewClick ? (
+                    <button
+                      type="button"
+                      data-cli-review-launch
+                      onClick={() => {
+                        onCliReviewClick({
+                          repoDir,
+                          reviewedVersion: cliReview.reviewed_version,
+                          installedVersion,
+                        });
+                      }}
+                      className={cn(className, 'app-no-drag transition-colors hover:bg-amber-500/20')}
+                    >
+                      {body}
+                    </button>
+                  ) : (
+                    <div className={className}>{body}</div>
+                  );
+                })()}
               </div>
             </TooltipContent>
           </Tooltip>

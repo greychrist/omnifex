@@ -348,7 +348,17 @@ export interface CliReviewStatus {
   reviewed_version: string;
   /** True when the installed CLI is strictly newer than `reviewed_version`. */
   unreviewed: boolean;
+  /**
+   * OmniFex source checkout the changelog review should run in, or null when
+   * none could be resolved. Gates whether the drift warning is clickable.
+   */
+  repo_dir: string | null;
 }
+
+/** app_settings key for the OmniFex-checkout override the review launches in.
+ *  Mirrors `CLI_REVIEW_REPO_DIR_SETTING_KEY` in
+ *  `electron/services/claude-cli-review.ts`. */
+export const CLI_REVIEW_REPO_DIR_SETTING_KEY = 'cli_review_repo_dir';
 
 /**
  * Represents the Claude Code version status
