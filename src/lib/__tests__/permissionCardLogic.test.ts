@@ -6,6 +6,8 @@ import {
   buildSessionSuggestion,
   getInitialRuleString,
   unmatchedFileRuleWarning,
+  buildCommandPreview,
+  commandPreviewWarning,
   SCOPE_OPTIONS,
   DEFAULT_SCOPE,
 } from '../permissionCardLogic';
@@ -184,5 +186,89 @@ describe('unmatchedFileRuleWarning', () => {
     expect(unmatchedFileRuleWarning('Bash(git:*)')).toBeNull();
     expect(unmatchedFileRuleWarning('WebFetch(domain:example.com)')).toBeNull();
     expect(unmatchedFileRuleWarning('')).toBeNull();
+  });
+});
+
+describe('buildCommandPreview', () => {
+  it('passes ordinary commands through untouched', () => {
+    const p = buildCommandPreview('git status --porcelain');
+    expect(p.text).toBe('git status --porcelain');
+    expect(p.hiddenCount).toBe(0);
+    expect(p.lineCount).toBe(1);
+  });
+
+  it('makes zero-width characters visible instead of dropping them', () => {
+    // U+200B between `rm` and the rest renders as nothing in a <pre>, so the
+    // approval dialog would show a command different from the one that runs.
+    const p = buildCommandPreview('rm\u200B -rf ~/data');
+    expect(p.text).toBe('rm<U+200B> -rf ~/data');
+    expect(p.hiddenCount).toBe(1);
+  });
+
+  it('makes bidi override characters visible', () => {
+    // RLO can visually reverse the tail of a command in the dialog.
+    const p = buildCommandPreview('echo safe\u202E dangerous');
+    expect(p.text).toBe('echo safe<U+202E> dangerous');
+    expect(p.hiddenCount).toBe(1);
+  });
+
+  it('visualizes tabs so padding cannot be mistaken for absent text', () => {
+    const p = buildCommandPreview('ls\t\t\t; rm -rf /');
+    expect(p.text).toBe('ls⇥⇥⇥; rm -rf /');
+    expect(p.hiddenCount).toBe(3);
+  });
+
+  it('counts every neutralized character across the whole string', () => {
+    const p = buildCommandPreview('a\u200Bb\uFEFFc\u00ADd');
+    expect(p.hiddenCount).toBe(3);
+    expect(p.text).toBe('a<U+200B>b<U+FEFF>c<U+00AD>d');
+  });
+
+  it('preserves newlines and reports the line count', () => {
+    const p = buildCommandPreview('one\ntwo\nthree');
+    expect(p.text).toBe('one\ntwo\nthree');
+    expect(p.lineCount).toBe(3);
+    expect(p.hiddenCount).toBe(0);
+  });
+
+  it('neutralizes line/paragraph separators that break rendering', () => {
+    const p = buildCommandPreview('echo a\u2028rm -rf /');
+    expect(p.text).toBe('echo a<U+2028>rm -rf /');
+    expect(p.hiddenCount).toBe(1);
+    expect(p.lineCount).toBe(1);
+  });
+
+  it('handles empty input without throwing', () => {
+    const p = buildCommandPreview('');
+    expect(p.text).toBe('');
+    expect(p.hiddenCount).toBe(0);
+    expect(p.lineCount).toBe(1);
+  });
+});
+
+describe('commandPreviewWarning', () => {
+  it('is null for a short, clean command', () => {
+    expect(commandPreviewWarning(buildCommandPreview('ls -la'))).toBeNull();
+  });
+
+  it('warns when hidden characters were found', () => {
+    const w = commandPreviewWarning(buildCommandPreview('rm\u200B -rf ~'));
+    expect(w).toContain('1 hidden character');
+  });
+
+  it('pluralizes the hidden-character warning', () => {
+    const w = commandPreviewWarning(buildCommandPreview('a\u200Bb\u200Cc'));
+    expect(w).toContain('2 hidden characters');
+  });
+
+  it('warns when the command is long enough to scroll out of view', () => {
+    const w = commandPreviewWarning(buildCommandPreview('x\n'.repeat(40)));
+    expect(w).toContain('41 lines');
+  });
+
+  it('reports both problems together', () => {
+    const w = commandPreviewWarning(buildCommandPreview('a\u200B\n' + 'x\n'.repeat(40)));
+    expect(w).toContain('hidden character');
+    expect(w).toContain('lines');
   });
 });

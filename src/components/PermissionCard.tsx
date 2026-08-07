@@ -18,6 +18,8 @@ import {
   buildPersistedSuggestion,
   buildSessionSuggestion,
   getInitialRuleString,
+  buildCommandPreview,
+  commandPreviewWarning,
   type IncomingSuggestion,
 } from "@/lib/permissionCardLogic";
 import type { PermissionRequestPayload } from "@/lib/types/permissionRequest";
@@ -110,6 +112,15 @@ export function PermissionCard({ request, onAllow, onDeny }: PermissionCardProps
   const [rule, setRule] = useState(initialRule);
   const [scope, setScope] = useState<ScopeValue>(DEFAULT_SCOPE);
 
+  const inputPreview = useMemo(
+    () => buildCommandPreview(formatToolInput(toolName, toolInput)),
+    [toolName, toolInput],
+  );
+  const previewWarning = useMemo(
+    () => commandPreviewWarning(inputPreview),
+    [inputPreview],
+  );
+
   useEffect(() => {
     setRule(initialRule);
     setScope(DEFAULT_SCOPE);
@@ -151,11 +162,22 @@ export function PermissionCard({ request, onAllow, onDeny }: PermissionCardProps
           </div>
         </div>
 
-        {/* Tool input preview */}
-        <div className="max-h-32 overflow-auto rounded-md border border-border bg-muted/30 p-2">
-          <pre className="text-xs font-mono whitespace-pre-wrap break-all">
-            {formatToolInput(toolName, toolInput)}
-          </pre>
+        {/* Tool input preview. Escaped, never raw: this card is the only
+            approval surface, so a command must display as what will run. */}
+        <div className="rounded-md border border-border bg-muted/30">
+          <div className="max-h-32 overflow-auto p-2">
+            <pre className="text-xs font-mono whitespace-pre-wrap break-all">
+              {inputPreview.text}
+            </pre>
+          </div>
+          {previewWarning && (
+            <p
+              data-testid="permission-preview-warning"
+              className="border-t border-border px-2 py-1 text-[11px] text-amber-500"
+            >
+              {previewWarning}
+            </p>
+          )}
         </div>
 
         {/* Editable rule */}

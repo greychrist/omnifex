@@ -313,3 +313,56 @@ describe("PermissionCard — Codex exec variant", () => {
     expect(screen.getByText(/empty command/i)).toBeTruthy();
   });
 });
+
+describe("PermissionCard — command preview hardening", () => {
+  it("escapes zero-width characters so the preview matches what will run", () => {
+    render(
+      <PermissionCard
+        request={makeClaudeRequest({
+          toolInput: { command: "rm\u200B -rf ~/data" },
+        })}
+        onAllow={vi.fn()}
+        onDeny={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("rm<U+200B> -rf ~/data")).toBeTruthy();
+    expect(screen.getByText(/1 hidden character shown as escapes/)).toBeTruthy();
+  });
+
+  it("visualizes tab padding used to push text out of view", () => {
+    render(
+      <PermissionCard
+        request={makeClaudeRequest({
+          toolInput: { command: "ls\t\t; rm -rf /" },
+        })}
+        onAllow={vi.fn()}
+        onDeny={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("ls⇥⇥; rm -rf /")).toBeTruthy();
+  });
+
+  it("warns when the command is long enough to scroll out of the box", () => {
+    render(
+      <PermissionCard
+        request={makeClaudeRequest({
+          toolInput: { command: "echo hi\n".repeat(20) },
+        })}
+        onAllow={vi.fn()}
+        onDeny={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/21 lines — scroll to see the whole command/)).toBeTruthy();
+  });
+
+  it("shows no warning for an ordinary command", () => {
+    render(
+      <PermissionCard
+        request={makeClaudeRequest()}
+        onAllow={vi.fn()}
+        onDeny={vi.fn()}
+      />,
+    );
+    expect(screen.queryByText(/hidden character|scroll to see/)).toBeNull();
+  });
+});
