@@ -7,6 +7,13 @@ import { useTheme } from '@/hooks';
 import { getClaudeSyntaxTheme } from '@/lib/claudeSyntaxTheme';
 import { buildMarkdownComponents } from '@/lib/markdownComponents';
 
+// Stable module-level reference, for the same reason as StreamMessage's copy:
+// ReactMarkdown re-renders if `remarkPlugins` is a new array each call, which
+// rebuilds the nested Prism-highlighted code DOM. This component re-renders on
+// every flush of a streaming turn, so an inline literal here re-parsed the
+// whole accumulated answer several times a second.
+const REMARK_PLUGINS = [remarkGfm];
+
 /**
  * Renders the in-flight assistant text from the inflight slot. Returns
  * null when the slot is empty — the only side effect is mounting /
@@ -38,7 +45,7 @@ export const InflightAssistantBubble: React.FC<{ tabId: string }> = ({ tabId }) 
   return (
     <Card className="group/card relative my-1 border-border/40">
       <CardContent className="prose prose-sm dark:prose-invert max-w-none py-2 px-3">
-        <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
+        <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={mdComponents}>
           {inflight.text}
         </ReactMarkdown>
       </CardContent>

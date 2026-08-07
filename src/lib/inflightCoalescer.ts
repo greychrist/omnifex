@@ -1,10 +1,22 @@
-// Per-tab text-buffer Map + RAF flush for partial assistant messages.
+// Per-tab text-buffer Map + throttled flush for partial assistant messages.
 //
-// Owns the buffer state and the RAF schedule, but does NOT own the
+// Owns the buffer state and the flush schedule, but does NOT own the
 // rendered surface — claudeSessionStore.inflightAssistant does. React
 // reconciles only on flush, never per delta.
 
 import { useClaudeSessionStore } from '@/stores/claudeSessionStore';
+
+/**
+ * Minimum wall-clock gap between store writes for in-flight text.
+ *
+ * Every flush re-renders InflightAssistantBubble, which re-parses the *entire*
+ * accumulated turn through ReactMarkdown (plus Prism for any code). That cost
+ * grows with the length of the answer, so flushing per animation frame made a
+ * long response re-parse itself ~60x/second — the dominant renderer CPU cost
+ * while streaming, and far more often than anyone can read. Throttling to
+ * 100ms cuts those re-parses ~6x while still reading as live text.
+ */
+export const FLUSH_INTERVAL_MS = 100;
 
 interface Buffer {
   /** uuid of the most-recent stream_event message — informational only.
@@ -17,7 +29,11 @@ interface Buffer {
 }
 
 const buffers = new Map<string, Buffer>();
-let rafHandle: number | null = null;
+let flushTimer: ReturnType<typeof setTimeout> | null = null;
+// -Infinity, not 0, so the first delta after an idle gap flushes on the next
+// tick instead of waiting out a full interval — the throttle must never delay
+// the first visible token of a turn.
+let lastFlushAt = Number.NEGATIVE_INFINITY;
 
 /**
  * Append a text_delta chunk to the per-tab buffer. Always accumulates within
@@ -57,13 +73,18 @@ export function clearInflightBuffer(tabId: string): void {
 }
 
 function scheduleFlush(): void {
-  if (rafHandle !== null) return;
-  rafHandle = requestAnimationFrame(flush);
+  if (flushTimer !== null) return;
+  const delay = Math.max(0, FLUSH_INTERVAL_MS - (Date.now() - lastFlushAt));
+  flushTimer = setTimeout(flush, delay);
 }
 
 function flush(): void {
-  rafHandle = null;
+  flushTimer = null;
+  // Nothing buffered means the turn was cleared before this fired. Leave
+  // lastFlushAt alone: no store write happened, so the next real delta has
+  // no reason to serve out a throttle window.
   if (buffers.size === 0) return;
+  lastFlushAt = Date.now();
   const { setInflightAssistantText } = useClaudeSessionStore.getState();
   for (const [tabId, buf] of buffers) {
     setInflightAssistantText(tabId, buf.uuid, buf.text, buf.parentToolUseId);
@@ -73,8 +94,9 @@ function flush(): void {
 /** Test-only — wipe internal state between cases. */
 export function __resetCoalescerForTests(): void {
   buffers.clear();
-  if (rafHandle !== null) {
-    cancelAnimationFrame(rafHandle);
-    rafHandle = null;
+  if (flushTimer !== null) {
+    clearTimeout(flushTimer);
+    flushTimer = null;
   }
+  lastFlushAt = Number.NEGATIVE_INFINITY;
 }
