@@ -5,6 +5,30 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.113] — 2026-08-07
+
+### Fixed
+
+- **A command asking for permission now shows you what will actually run.** The
+  approval card used to print the command exactly as sent, which meant a command
+  could pad itself with invisible characters — zero-width spaces, text-direction
+  overrides, tabs — and appear on screen as something shorter or different than
+  what would execute. Those characters are now spelled out (`<U+200B>`), tabs are
+  drawn as `⇥`, and a note tells you how many were found. A command too long for
+  the preview box now says how many lines it has instead of quietly scrolling the
+  rest out of sight. This card is the only place OmniFex ever asks you to approve
+  a command, so it needed to be the honest one.
+- **Projects with dots, underscores or spaces in their path now find their own
+  history.** OmniFex worked out where Claude Code stores a project's sessions by
+  swapping `/` for `-`, but Claude Code replaces every non-alphanumeric character
+  and shortens very long paths. Any project whose path didn't happen to be plain
+  letters and slashes — `my_app.v2`, `Client Work` — had OmniFex looking in a
+  folder that was never written, so session history, costs and subagent details
+  came up empty. The two now agree, verified against the installed Claude Code.
+
+Installers remain **unsigned** — macOS Gatekeeper blocks the first launch;
+right-click → Open to get past it.
+
 ## [0.4.112] — 2026-08-07
 
 ### Added
