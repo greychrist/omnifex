@@ -4,6 +4,7 @@
 import path from 'node:path';
 import type { LoggingService } from '../logging';
 import { formatFilePathForRule } from './rule-paths';
+import { canonicalizeRule, type ParsedRule } from '../../../src/lib/permissionCardLogic';
 import type {
   SessionHandle,
   PermissionDecision,
@@ -187,6 +188,98 @@ export function augmentPermissionsWithSession(
   return out;
 }
 
+/**
+ * Build the rule OmniFex offers when the CLI hasn't supplied one.
+ *
+ * This is not a rare fallback for file edits: for `Write` / `Edit` the CLI's
+ * only `permission_suggestions` entry is `setMode: acceptEdits` — it never
+ * proposes a persistent path rule for file tools (verified against CLI
+ * 2.1.226 over the same `--permission-prompt-tool stdio` channel the engine
+ * uses). So for every file-edit card, this is the sole source of the rule,
+ * and it must come out in the form file permission checks actually match:
+ * `Edit(path)`, never `Write(path)` / `MultiEdit(path)` / `NotebookEdit(path)`.
+ *
+ * Bash is the opposite case — the CLI does supply a rule there (plus
+ * `addDirectories`), so `withDefaultRuleSuggestion` leaves its work alone.
+ *
+ * Pure function; `projectPath` decides the path form (see `rule-paths.ts`).
+ */
+export function buildDefaultRule(
+  toolName: string,
+  toolInput: Record<string, unknown>,
+  projectPath: string,
+): ParsedRule | null {
+  if (toolName === 'Bash' && typeof toolInput.command === 'string') {
+    const cmd = (toolInput.command).trim();
+    const base = cmd.split(/[\s;|&]/)[0];
+    return { toolName, ruleContent: base ? `${base}:*` : cmd };
+  }
+  if (
+    toolName === 'Write' ||
+    toolName === 'Edit' ||
+    toolName === 'MultiEdit' ||
+    toolName === 'Read' ||
+    toolName === 'NotebookEdit'
+  ) {
+    const fp = typeof toolInput.file_path === 'string' ? toolInput.file_path : undefined;
+    if (!fp) return { toolName };
+    return canonicalizeRule({
+      toolName,
+      ruleContent: formatFilePathForRule(fp, projectPath),
+    });
+  }
+  if (toolName === 'Glob' || toolName === 'Grep') {
+    const pattern = typeof toolInput.pattern === 'string' ? toolInput.pattern : undefined;
+    return pattern ? { toolName, ruleContent: pattern } : { toolName };
+  }
+  if (toolName === 'WebFetch' && typeof toolInput.url === 'string') {
+    try {
+      const u = new URL(toolInput.url);
+      return { toolName, ruleContent: `domain:${u.hostname}` };
+    } catch {
+      return { toolName };
+    }
+  }
+  return { toolName };
+}
+
+/**
+ * Add our fallback rule to the CLI's suggestions without discarding them.
+ *
+ * A file-edit request arrives carrying only `setMode: acceptEdits`. That entry
+ * has no `rules`, so it can't drive the card's rule editor — but it is the
+ * CLI's genuine recommendation and replacing the array outright would drop it.
+ * Instead we prepend an `addRules` entry and keep everything else, so the card
+ * gets a rule to edit AND the mode offer survives.
+ *
+ * Prepended rather than appended because the card reads the first entry that
+ * carries rules; keeping it at the front also matches the CLI's own ordering
+ * on the Bash path (addRules, addDirectories, setMode).
+ *
+ * Pure function, returns a new array; never mutates input.
+ */
+export function withDefaultRuleSuggestion(
+  suggestions: any[] | undefined,
+  defaultRule: ParsedRule | null,
+): any[] | undefined {
+  const alreadyHasRules = suggestions?.some(
+    (s: any) =>
+      s?.type === 'addRules' &&
+      Array.isArray(s.rules) &&
+      s.rules.some((r: any) => r && typeof r.toolName === 'string' && r.toolName.trim()),
+  );
+  if (alreadyHasRules || !defaultRule) return suggestions;
+  return [
+    {
+      type: 'addRules',
+      rules: [defaultRule],
+      behavior: 'allow',
+      destination: 'localSettings',
+    },
+    ...(suggestions ?? []),
+  ];
+}
+
 // ---------------------------------------------------------------------------
 // handleEnginePermissionRequest — engine.onPermissionRequest subscriber
 //
@@ -225,44 +318,6 @@ export function createPermissionRequestHandler(
       console.error('[sessions] permission logging failed:', err);
     }
   };
-
-  // Helper: build a sensible default rule from the tool name and input.
-  // Used when the CLI gives us no suggestions OR an empty rules array
-  // (which would render as a blank row in the dialog).
-  function buildDefaultRule(
-    toolName: string,
-    toolInput: Record<string, unknown>,
-  ): { toolName: string; ruleContent?: string } | null {
-    if (toolName === 'Bash' && typeof toolInput.command === 'string') {
-      const cmd = (toolInput.command).trim();
-      const base = cmd.split(/[\s;|&]/)[0];
-      return { toolName, ruleContent: base ? `${base}:*` : cmd };
-    }
-    if (
-      toolName === 'Write' ||
-      toolName === 'Edit' ||
-      toolName === 'MultiEdit' ||
-      toolName === 'Read' ||
-      toolName === 'NotebookEdit'
-    ) {
-      const fp = typeof toolInput.file_path === 'string' ? toolInput.file_path : undefined;
-      if (!fp) return { toolName };
-      return { toolName, ruleContent: formatFilePathForRule(fp, handle.projectPath) };
-    }
-    if (toolName === 'Glob' || toolName === 'Grep') {
-      const pattern = typeof toolInput.pattern === 'string' ? toolInput.pattern : undefined;
-      return pattern ? { toolName, ruleContent: pattern } : { toolName };
-    }
-    if (toolName === 'WebFetch' && typeof toolInput.url === 'string') {
-      try {
-        const u = new URL(toolInput.url);
-        return { toolName, ruleContent: `domain:${u.hostname}` };
-      } catch {
-        return { toolName };
-      }
-    }
-    return { toolName };
-  }
 
   /**
    * Forward a Codex approval (patch / exec) to the renderer. Codex requests
@@ -424,30 +479,10 @@ export function createPermissionRequestHandler(
       return;
     }
 
-    let suggestions = rawPayload.permission_suggestions;
-    const needsDefault =
-      !suggestions ||
-      suggestions.length === 0 ||
-      suggestions.every(
-        (s: any) =>
-          !s ||
-          !Array.isArray(s.rules) ||
-          s.rules.length === 0 ||
-          s.rules.every(
-            (r: any) => !r || typeof r.toolName !== 'string' || !r.toolName.trim(),
-          ),
-      );
-    if (needsDefault) {
-      const defaultRule = buildDefaultRule(toolName, toolInput);
-      if (defaultRule) {
-        suggestions = [{
-          type: 'addRules',
-          rules: [defaultRule],
-          behavior: 'allow',
-          destination: 'localSettings',
-        }];
-      }
-    }
+    const suggestions = withDefaultRuleSuggestion(
+      rawPayload.permission_suggestions,
+      buildDefaultRule(toolName, toolInput, handle.projectPath),
+    );
 
     const payload = {
       type: 'permission_request',

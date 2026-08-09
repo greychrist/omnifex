@@ -8,6 +8,8 @@ import {
   unmatchedFileRuleWarning,
   buildCommandPreview,
   commandPreviewWarning,
+  canonicalizeRule,
+  firstRuleSuggestion,
   SCOPE_OPTIONS,
   DEFAULT_SCOPE,
 } from '../permissionCardLogic';
@@ -270,5 +272,106 @@ describe('commandPreviewWarning', () => {
     const w = commandPreviewWarning(buildCommandPreview('a\u200B\n' + 'x\n'.repeat(40)));
     expect(w).toContain('hidden character');
     expect(w).toContain('lines');
+  });
+});
+
+describe('canonicalizeRule', () => {
+  it.each(['Write', 'MultiEdit', 'NotebookEdit'])(
+    'rewrites %s(path) to Edit(path) — only Edit rules are matched by file permission checks',
+    (toolName) => {
+      expect(canonicalizeRule({ toolName, ruleContent: '/src/foo.ts' })).toEqual({
+        toolName: 'Edit',
+        ruleContent: '/src/foo.ts',
+      });
+    },
+  );
+
+  it('leaves the path untouched when rewriting the tool name', () => {
+    expect(
+      canonicalizeRule({ toolName: 'Write', ruleContent: '~/Library/CloudStorage/OneDrive/**' }),
+    ).toEqual({ toolName: 'Edit', ruleContent: '~/Library/CloudStorage/OneDrive/**' });
+  });
+
+  it.each(['Edit', 'Read', 'Bash', 'WebFetch'])('leaves %s alone', (toolName) => {
+    const rule = { toolName, ruleContent: 'whatever' };
+    expect(canonicalizeRule(rule)).toEqual(rule);
+  });
+
+  it('leaves bare tool-name rules alone — those match at the tool level', () => {
+    expect(canonicalizeRule({ toolName: 'Write' })).toEqual({ toolName: 'Write' });
+  });
+
+  it('leaves Bash-style ":*" content alone — that is not a path rule', () => {
+    const rule = { toolName: 'Write', ruleContent: 'npm:*' };
+    expect(canonicalizeRule(rule)).toEqual(rule);
+  });
+
+  it('leaves Glob alone — Glob content is a pattern, not a path, and --allowedTools honors it', () => {
+    const rule = { toolName: 'Glob', ruleContent: '**/*.ts' };
+    expect(canonicalizeRule(rule)).toEqual(rule);
+  });
+
+  it('does not mutate its input', () => {
+    const rule = { toolName: 'Write', ruleContent: '/a.ts' };
+    canonicalizeRule(rule);
+    expect(rule).toEqual({ toolName: 'Write', ruleContent: '/a.ts' });
+  });
+});
+
+describe('buildPersistedSuggestion — canonicalisation at the persistence boundary', () => {
+  it('persists Write(path) as Edit(path)', () => {
+    const out = buildPersistedSuggestion('Write(/src/foo.ts)', 'localSettings');
+    expect(out.rules).toEqual([{ toolName: 'Edit', ruleContent: '/src/foo.ts' }]);
+  });
+
+  it('still persists a bare Write rule as-is', () => {
+    const out = buildPersistedSuggestion('Write', 'localSettings');
+    expect(out.rules).toEqual([{ toolName: 'Write' }]);
+  });
+});
+
+describe('getInitialRuleString — shows the rule that will actually be written', () => {
+  it('renders a CLI-suggested Write(path) as Edit(path)', () => {
+    const suggestion = {
+      type: 'addRules',
+      rules: [{ toolName: 'Write', ruleContent: '/src/foo.ts' }],
+      behavior: 'allow',
+      destination: 'localSettings',
+    };
+    expect(getInitialRuleString(suggestion as never, 'Write')).toBe('Edit(/src/foo.ts)');
+  });
+});
+
+describe('unmatchedFileRuleWarning', () => {
+  it('covers MultiEdit too', () => {
+    expect(unmatchedFileRuleWarning('MultiEdit(/src/foo.ts)')).toContain('Edit(/src/foo.ts)');
+  });
+});
+
+describe('firstRuleSuggestion', () => {
+  const setMode = { type: 'setMode', mode: 'acceptEdits', destination: 'session' };
+  const addRules = {
+    type: 'addRules',
+    rules: [{ toolName: 'Edit', ruleContent: '/a.ts' }],
+    behavior: 'allow',
+    destination: 'localSettings',
+  };
+
+  it('picks the addRules entry even when it is not first', () => {
+    expect(firstRuleSuggestion([setMode, addRules] as never)).toBe(addRules);
+  });
+
+  it('returns undefined when no entry carries usable rules', () => {
+    expect(firstRuleSuggestion([setMode] as never)).toBeUndefined();
+  });
+
+  it('skips an addRules entry with an empty rules array', () => {
+    const empty = { type: 'addRules', rules: [], behavior: 'allow', destination: 'localSettings' };
+    expect(firstRuleSuggestion([empty, addRules] as never)).toBe(addRules);
+  });
+
+  it('returns undefined for empty or missing input', () => {
+    expect(firstRuleSuggestion([])).toBeUndefined();
+    expect(firstRuleSuggestion(undefined)).toBeUndefined();
   });
 });

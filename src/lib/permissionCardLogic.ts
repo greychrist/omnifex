@@ -71,13 +71,53 @@ function assertNonEmptyRule(ruleString: string): void {
   }
 }
 
+/**
+ * Path-rule tool names the CLI's file permission checks never consult, mapped
+ * to the one they do. As of CLI 2.1.210 only `Edit(path)` and `Read(path)`
+ * participate; a rule written against any other file tool loads but is never
+ * matched, so the permission it was meant to grant silently does nothing.
+ *
+ * `Glob` is deliberately absent. Its rule content is a search pattern rather
+ * than a path, and the docs carve out an exception for `Glob` rules passed via
+ * `--allowedTools`, so rewriting it would change meaning rather than fix a
+ * typo. `unmatchedFileRuleWarning` still flags it for a human to decide.
+ */
+const UNMATCHED_FILE_RULE_TOOLS: Readonly<Record<string, string>> = {
+  Write: 'Edit',
+  MultiEdit: 'Edit',
+  NotebookEdit: 'Edit',
+};
+
+/**
+ * Rewrite a rule into the form the CLI will actually match, leaving the path
+ * untouched. Bare tool-name rules (no path) already match the tool everywhere,
+ * and `:*` content is Bash prefix syntax rather than a path — both pass through.
+ */
+export function canonicalizeRule(rule: ParsedRule): ParsedRule {
+  if (!rule.ruleContent) return rule;
+  if (rule.ruleContent.includes(':*')) return rule;
+  const canonical = UNMATCHED_FILE_RULE_TOOLS[rule.toolName];
+  return canonical ? { ...rule, toolName: canonical } : rule;
+}
+
+/**
+ * Pick the suggestion that actually carries rules. The CLI mixes `addRules`
+ * with `setMode` / `addDirectories` entries and does not promise an order, so
+ * indexing blindly into `[0]` can land on a suggestion with no rules at all.
+ */
+export function firstRuleSuggestion(
+  suggestions: IncomingSuggestion[] | undefined,
+): IncomingSuggestion | undefined {
+  return suggestions?.find((s) => Array.isArray(s?.rules) && s.rules.length > 0);
+}
+
 /** Build the `updatedPermissions` entry for an allow-and-persist action. */
 export function buildPersistedSuggestion(
   ruleString: string,
   scope: PersistedScopeValue,
 ): PersistedSuggestion {
   assertNonEmptyRule(ruleString);
-  const parsed = parseRuleString(ruleString);
+  const parsed = canonicalizeRule(parseRuleString(ruleString));
   return {
     type: 'addRules',
     rules: [{ toolName: parsed.toolName, ruleContent: parsed.ruleContent }],
@@ -89,7 +129,7 @@ export function buildPersistedSuggestion(
 /** Build the `updatedPermissions` entry for the current CLI session only. */
 export function buildSessionSuggestion(ruleString: string): SessionSuggestion {
   assertNonEmptyRule(ruleString);
-  const parsed = parseRuleString(ruleString);
+  const parsed = canonicalizeRule(parseRuleString(ruleString));
   return {
     type: 'addRules',
     rules: [{ toolName: parsed.toolName, ruleContent: parsed.ruleContent }],
@@ -111,11 +151,8 @@ export function unmatchedFileRuleWarning(ruleString: string): string | null {
   const parsed = parseRuleString(ruleString);
   if (!parsed.ruleContent) return null;
   const replacement =
-    parsed.toolName === 'Write' || parsed.toolName === 'NotebookEdit'
-      ? 'Edit'
-      : parsed.toolName === 'Glob'
-        ? 'Read'
-        : null;
+    UNMATCHED_FILE_RULE_TOOLS[parsed.toolName] ??
+    (parsed.toolName === 'Glob' ? 'Read' : null);
   if (!replacement) return null;
   return (
     `${parsed.toolName}(path) rules are never matched by file permission checks ` +
@@ -200,7 +237,10 @@ export function getInitialRuleString(
 ): string {
   const r = suggestion?.rules?.[0];
   if (r?.toolName) {
-    return r.ruleContent ? `${r.toolName}(${r.ruleContent})` : r.toolName;
+    // Canonicalise here too, so the rule shown in the card is the rule that
+    // will actually be written — the CLI can suggest an unmatched form.
+    const c = canonicalizeRule(r);
+    return c.ruleContent ? `${c.toolName}(${c.ruleContent})` : c.toolName;
   }
   return (fallbackToolName || '').trim();
 }

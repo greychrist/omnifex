@@ -18,6 +18,7 @@ import {
   buildPersistedSuggestion,
   buildSessionSuggestion,
   getInitialRuleString,
+  firstRuleSuggestion,
   buildCommandPreview,
   commandPreviewWarning,
   type IncomingSuggestion,
@@ -106,7 +107,7 @@ export function PermissionCard({ request, onAllow, onDeny }: PermissionCardProps
   const accentSwatch = swatchFor(config, "permission.request");
 
   const initialRule = useMemo(
-    () => getInitialRuleString(suggestions[0], toolName),
+    () => getInitialRuleString(firstRuleSuggestion(suggestions), toolName),
     [suggestions, toolName],
   );
   const [rule, setRule] = useState(initialRule);
