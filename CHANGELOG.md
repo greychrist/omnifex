@@ -5,6 +5,30 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.115] — 2026-08-08
+
+### Fixed
+
+- **"Allow always" on a file edit now actually sticks.** When you approved a
+  write or an edit and told OmniFex to remember it, the rule it saved was
+  `Write(path)` — a form Claude Code stopped consulting in 2.1.210. The rule
+  landed in `.claude/settings.local.json`, looked right, and did nothing: the
+  same file prompted again next time, and the CLI printed a warning about it at
+  every startup. OmniFex now writes `Edit(path)`, which is the form file
+  permission checks actually match, and which covers every file-editing tool.
+  Existing dead rules in your settings can be fixed by changing `Write(` to
+  `Edit(` — the path part was always correct.
+- **The CLI's "accept edits for this session" offer is no longer thrown away.**
+  For file edits the CLI doesn't suggest a saveable rule at all; it suggests
+  switching the session to accept-edits mode. OmniFex was discarding that
+  suggestion while building its own, so the option never reached the approval
+  card. Both are now kept.
+- The inline warning in the permissions editor that flags unmatched rule forms
+  now covers `MultiEdit(path)` as well as `Write(path)` and `NotebookEdit(path)`.
+
+Installers remain **unsigned**. macOS Gatekeeper will block the first launch —
+right-click the app and choose Open.
+
 ## [0.4.114] — 2026-08-07
 
 ### Fixed
