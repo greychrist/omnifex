@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import {
   AlertCircle,
   Check,
+  RotateCcw,
   Volume2,
 } from "lucide-react";
 import { Label } from "@/components/ui/label";
@@ -17,6 +18,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { api, CLI_REVIEW_REPO_DIR_SETTING_KEY, type ClaudeInstallation } from "@/lib/api";
+import {
+  CLI_REVIEW_PROMPT_SETTING_KEY,
+  DEFAULT_CLI_REVIEW_PROMPT,
+} from "@/lib/cliReviewPrompt";
 import { cn } from "@/lib/utils";
 import { ClaudeVersionSelector } from "@/components/ClaudeVersionSelector";
 import { useTheme } from "@/hooks";
@@ -143,6 +148,10 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
   // when discovery picks the wrong one or finds nothing.
   const [cliReviewRepoDir, setCliReviewRepoDir] = useState('');
 
+  // The prompt that same launch starts its session with. Empty means "use the
+  // shipped default", which is the normal state.
+  const [cliReviewPrompt, setCliReviewPrompt] = useState('');
+
   const [tabPersistenceEnabled, setTabPersistenceEnabled] = useState(true);
   const [startupIntroEnabled, setStartupIntroEnabled] = useState(true);
   const [successSound, setSuccessSound] = useState<NotificationSoundId>(DEFAULT_SUCCESS_SOUND);
@@ -158,6 +167,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
       const errorRaw = await api.getSetting(NOTIFICATION_SOUND_SETTING_KEYS.error);
       setErrorSound(normalizeNotificationSoundId(errorRaw, DEFAULT_ERROR_SOUND));
       setCliReviewRepoDir((await api.getSetting(CLI_REVIEW_REPO_DIR_SETTING_KEY)) ?? '');
+      setCliReviewPrompt((await api.getSetting(CLI_REVIEW_PROMPT_SETTING_KEY)) ?? '');
     })());
   }, []);
 
@@ -171,6 +181,21 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
       });
     } catch {
       setToast({ message: 'Failed to save OmniFex checkout', type: 'error' });
+    }
+  };
+
+  const saveCliReviewPrompt = async (next: string) => {
+    // Blank is meaningful: it clears the override and restores the built-in.
+    const value = next.trim() ? next : '';
+    setCliReviewPrompt(value);
+    try {
+      await api.saveSetting(CLI_REVIEW_PROMPT_SETTING_KEY, value);
+      setToast({
+        message: value ? 'Review prompt updated' : 'Review prompt cleared — using the built-in',
+        type: 'success',
+      });
+    } catch {
+      setToast({ message: 'Failed to save review prompt', type: 'error' });
     }
   };
 
@@ -691,6 +716,46 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
                 Browse…
               </Button>
             </div>
+          </div>
+
+          {/* The prompt that review session is started with. Shipped as a
+              constant so it works on a fresh clone; persisted override lives
+              in `cliReview.promptTemplate`. */}
+          <div className="space-y-3">
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <Label htmlFor="cli-review-prompt">Changelog review prompt</Label>
+                <p className="text-caption text-muted-foreground mt-1">
+                  What that session is asked to do. <code>{'{reviewedVersion}'}</code> and{' '}
+                  <code>{'{installedVersion}'}</code> are filled in with the range that
+                  drifted. Leave blank to use the built-in prompt.
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="shrink-0"
+                onClick={fireAndLog('general-settings:click', () =>
+                  saveCliReviewPrompt(DEFAULT_CLI_REVIEW_PROMPT),
+                )}
+              >
+                <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
+                Reset to default
+              </Button>
+            </div>
+            <textarea
+              id="cli-review-prompt"
+              value={cliReviewPrompt}
+              placeholder="Using the built-in prompt"
+              spellCheck={false}
+              rows={10}
+              onChange={(e) => { setCliReviewPrompt(e.target.value); }}
+              onBlur={fireAndLog('general-settings:blur', () =>
+                saveCliReviewPrompt(cliReviewPrompt),
+              )}
+              className="w-full rounded-md border border-border bg-background p-2 font-mono text-xs outline-none focus:border-white/30"
+            />
           </div>
 
           {/* Tab status indicators — the per-tab glyphs in the tab strip. */}

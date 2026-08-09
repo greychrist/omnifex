@@ -27,11 +27,28 @@ const pair = (claude: ResolveSlot | null, codex: ResolveSlot | null = null): Res
 });
 
 describe('buildCliReviewPrompt', () => {
-  it('invokes the repo-local review command with the drifted range', () => {
-    // The procedure lives in .claude/commands/cli-changelog-review.md so it can
-    // be edited without rebuilding the app; the app supplies only the range.
-    expect(buildCliReviewPrompt('2.1.222', '2.1.224')).toBe(
-      '/cli-changelog-review 2.1.222 2.1.224',
+  it('carries the whole procedure, not a slash-command invocation', () => {
+    // The procedure used to live in .claude/commands/cli-changelog-review.md,
+    // which is gitignored — so on any machine but the author's the drift
+    // warning fired a slash command the CLI had never heard of. The app now
+    // ships the prompt itself.
+    const prompt = buildCliReviewPrompt('2.1.222', '2.1.224');
+    expect(prompt).not.toMatch(/^\/cli-changelog-review/);
+    expect(prompt).toContain('src/types/jsonl.ts');
+    expect(prompt.length).toBeGreaterThan(500);
+  });
+
+  it('interpolates the drifted range', () => {
+    const prompt = buildCliReviewPrompt('2.1.222', '2.1.224');
+    expect(prompt).toContain('2.1.222');
+    expect(prompt).toContain('2.1.224');
+    expect(prompt).not.toContain('{reviewedVersion}');
+    expect(prompt).not.toContain('{installedVersion}');
+  });
+
+  it('honours a user-supplied template override', () => {
+    expect(buildCliReviewPrompt('2.1.222', '2.1.224', 'check {installedVersion}')).toBe(
+      'check 2.1.224',
     );
   });
 });
@@ -49,9 +66,10 @@ describe('buildCliReviewLaunch', () => {
       type: 'chat',
       agent: 'claude',
       initialProjectPath: '/Users/x/Repos/personal/omnifex',
-      initialPrompt: '/cli-changelog-review 2.1.222 2.1.224',
       accountName: 'personal',
     });
+    expect(result.tab.initialPrompt).toContain('2.1.222');
+    expect(result.tab.initialPrompt).toContain('2.1.224');
     expect(result.tab.initialSessionConfig?.sessionStartMode).toBe('rich');
   });
 
@@ -104,5 +122,28 @@ describe('buildCliReviewLaunch', () => {
     });
     expect(result.tab.agent).toBe('claude');
     expect(result.tab.accountName).toBe('personal');
+  });
+});
+
+describe('buildCliReviewLaunch — prompt template', () => {
+  const base = {
+    repoDir: '/Users/x/Repos/personal/omnifex',
+    reviewedVersion: '2.1.222',
+    installedVersion: '2.1.224',
+  };
+
+  it('threads a custom template into the tab prompt', () => {
+    const { tab } = buildCliReviewLaunch({
+      ...base,
+      pair: pair(slot(account())),
+      promptTemplate: 'review {reviewedVersion}..{installedVersion}',
+    });
+    expect(tab.initialPrompt).toBe('review 2.1.222..2.1.224');
+  });
+
+  it('falls back to the shipped default when no template is stored', () => {
+    const { tab } = buildCliReviewLaunch({ ...base, pair: pair(slot(account())) });
+    expect(tab.initialPrompt).toContain('src/types/jsonl.ts');
+    expect(tab.initialPrompt).toContain('2.1.224');
   });
 });

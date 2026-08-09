@@ -27,6 +27,7 @@ import { useTabState } from "@/hooks/useTabState";
 import { StartupIntro } from "@/components/StartupIntro";
 import { fireAndLog, logAndForget } from "@/lib/fireAndLog";
 import { buildCliReviewLaunch } from "@/lib/cliReviewLaunch";
+import { CLI_REVIEW_PROMPT_SETTING_KEY } from "@/lib/cliReviewPrompt";
 
 type View = 
   | "welcome" 
@@ -311,15 +312,21 @@ function AppContent() {
   const handleCliReviewLaunch = useCallback(
     (request: CliReviewLaunchRequest) => {
       logAndForget('app:cli-review-launch', (async () => {
-        const pair = await api.resolveAccountForProject(request.repoDir).catch(() => ({
-          claude: null,
-          codex: null,
-        }));
+        const [pair, promptTemplate] = await Promise.all([
+          api.resolveAccountForProject(request.repoDir).catch(() => ({
+            claude: null,
+            codex: null,
+          })),
+          // A failed read must not block the launch — the shipped default is a
+          // complete prompt on its own, so fall through to it.
+          api.getSetting(CLI_REVIEW_PROMPT_SETTING_KEY).catch(() => null),
+        ]);
         const { tab } = buildCliReviewLaunch({
           repoDir: request.repoDir,
           reviewedVersion: request.reviewedVersion,
           installedVersion: request.installedVersion,
           pair,
+          promptTemplate,
         });
         setView('tabs');
         setActiveTab(addTab(tab));

@@ -2,16 +2,24 @@ import type { ResolvePair } from '@/lib/api';
 import type { Tab } from '@/contexts/TabContext';
 import { normalizeThinkingConfig } from '@/lib/thinkingConfig';
 import { slotToResolution } from '@/lib/accountResolution';
+import { renderCliReviewPrompt } from '@/lib/cliReviewPrompt';
 
 /**
  * The prompt the drift warning launches.
  *
- * The review procedure itself lives in
- * `.claude/commands/cli-changelog-review.md` — editable without rebuilding the
- * app. All the app contributes is the version range that actually drifted.
+ * Ships the whole procedure rather than a `/cli-changelog-review` invocation:
+ * the command file lived under `.claude/`, which is gitignored, so the slash
+ * command only ever existed on the author's machine. See `cliReviewPrompt.ts`.
+ *
+ * `promptTemplate` is the user's stored override
+ * (`CLI_REVIEW_PROMPT_SETTING_KEY`); omit it to use the shipped default.
  */
-export function buildCliReviewPrompt(reviewedVersion: string, installedVersion: string): string {
-  return `/cli-changelog-review ${reviewedVersion} ${installedVersion}`;
+export function buildCliReviewPrompt(
+  reviewedVersion: string,
+  installedVersion: string,
+  promptTemplate?: string | null,
+): string {
+  return renderCliReviewPrompt(promptTemplate, reviewedVersion, installedVersion);
 }
 
 export interface CliReviewLaunchArgs {
@@ -21,6 +29,12 @@ export interface CliReviewLaunchArgs {
   installedVersion: string;
   /** Account routing for `repoDir`, as returned by `resolveAccountForProject`. */
   pair: ResolvePair;
+  /**
+   * The user's stored review-prompt override
+   * (`CLI_REVIEW_PROMPT_SETTING_KEY`). Omit or pass null/'' to use the
+   * shipped default.
+   */
+  promptTemplate?: string | null;
 }
 
 export interface CliReviewLaunch {
@@ -43,6 +57,7 @@ export function buildCliReviewLaunch({
   reviewedVersion,
   installedVersion,
   pair,
+  promptTemplate,
 }: CliReviewLaunchArgs): CliReviewLaunch {
   const resolution = slotToResolution(pair.claude);
   const title = `CLI ${installedVersion} review`;
@@ -67,7 +82,7 @@ export function buildCliReviewLaunch({
       accountName: resolution.account.name,
       accountColor: pair.claude?.account.color,
       accountIcon: pair.claude?.account.icon,
-      initialPrompt: buildCliReviewPrompt(reviewedVersion, installedVersion),
+      initialPrompt: buildCliReviewPrompt(reviewedVersion, installedVersion, promptTemplate),
       initialSessionConfig: {
         model: d?.model ?? 'opus',
         effort: d?.effort ?? 'high',

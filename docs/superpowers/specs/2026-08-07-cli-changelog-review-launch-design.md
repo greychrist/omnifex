@@ -66,6 +66,7 @@ project view's Quick Launch instead of duplicating it (`slotToResolution` moves
 here from `TabContent.tsx`):
 
 - `buildCliReviewPrompt(reviewed, installed)` → `/cli-changelog-review 2.1.222 2.1.224`
+  (**superseded** — now returns the full prompt text; see the amendment under §5)
 - `buildLaunchTab({ projectPath, pair, prompt })` → the chat-tab fields, or a
   no-account result the caller renders as the existing guidance rather than
   launching accountless
@@ -87,6 +88,15 @@ Guarded by a ref and cleared from the tab record after firing, so a persisted
 and restored tab doesn't re-send the prompt on the next app launch.
 
 ### 5. The review command
+
+> **Superseded 2026-08-07 (same day).** `.claude/` is gitignored, so this file
+> was never in the repo and existed only on the author's machine — on any other
+> clone the drift warning fired a slash command the CLI had never heard of. The
+> procedure now ships as `DEFAULT_CLI_REVIEW_PROMPT` in
+> `src/lib/cliReviewPrompt.ts`, with a `cliReview.promptTemplate` override in
+> `app_settings` for editing without a rebuild, and named
+> `{reviewedVersion}`/`{installedVersion}` placeholders instead of `$1`/`$2`.
+> The section below describes the original design.
 
 `.claude/commands/cli-changelog-review.md`, taking `$1` (reviewed watermark) and
 `$2` (installed version):
