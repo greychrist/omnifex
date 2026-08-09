@@ -5,6 +5,36 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.114] — 2026-08-07
+
+### Fixed
+
+- **The changelog-review button now works on a fresh clone.** Clicking the
+  "Claude Code is ahead of the changelog" warning opens a session and asks it to
+  review what changed — but the instructions for that review lived in a file
+  under `.claude/`, which git ignores. It was never in the repo, so on any copy
+  of OmniFex but the author's the button opened a session that asked for a
+  command nothing had ever installed, and quietly did nothing useful. The
+  instructions now ship inside the app.
+
+### Added
+
+- **Settings → General: "Changelog review prompt".** The instructions that
+  review session is started with are now yours to edit, with a Reset to default
+  button. `{reviewedVersion}` and `{installedVersion}` are filled in with the
+  range that actually drifted. Leave it blank to use the built-in prompt.
+
+### Changed
+
+- **The review is told the right version range.** The old prompt used positional
+  `$1`/`$2` markers, which were being substituted incorrectly — the review was
+  told to start from the version you have installed rather than the one OmniFex
+  was last checked against, so its own description of the range was wrong. The
+  versions are now named and filled in directly.
+
+Installers remain **unsigned** — macOS Gatekeeper blocks the first launch;
+right-click → Open to get past it.
+
 ## [0.4.113] — 2026-08-07
 
 ### Fixed
