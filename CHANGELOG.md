@@ -5,6 +5,38 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.116] — 2026-08-10
+
+### Changed
+
+- **The projects list puts its controls up front.** The row was Name,
+  Account, Last activity, and then a cluster of actions trailing off the
+  right edge, with the pin tucked inside the name cell. Controls now lead:
+  the pin sits furthest left on its own, so pinned projects are scannable
+  straight down the row edge, and Sessions and Launch follow immediately
+  before the project name.
+- **Launch and Sessions are icon-only.** The session count stays visible as a
+  numeral beside the list icon — it only ever lived inside the "Sessions (n)"
+  label, so stripping the text would have removed the only place the count
+  was shown.
+- **Every row control shares one style.** The pin and the settings gear were
+  bare buttons with their own padding and hover treatment; all four controls
+  now use the same outlined button, so the row reads as one set instead of
+  two visual languages. Pinned still looks distinct from unpinned — the icon
+  fills in.
+- **The settings gear moved to the far right**, alone in its own column, so it
+  reads as a project-level escape hatch rather than a fourth row action.
+- **Every column is labelled now**, including the three that previously had
+  blank headers: Pin, Actions, and Settings.
+
+### Fixed
+
+- Icon-only buttons carry accessible names. Without the visible text, a
+  screen reader would have announced them as unlabelled buttons.
+
+Installers remain **unsigned**. macOS Gatekeeper will block the first launch —
+right-click the app and choose Open.
+
 ## [0.4.115] — 2026-08-08
 
 ### Fixed
