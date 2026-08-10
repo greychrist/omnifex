@@ -318,6 +318,17 @@ export const ProjectList: React.FC<ProjectListProps> = ({
             <table className="w-full text-sm">
               <thead className="sticky top-0 bg-card z-10">
                 <tr className="text-left text-[10px] uppercase tracking-wider text-muted-foreground border-b border-border/50">
+                  {/* Pin column — furthest left, on its own so the pinned
+                      group is scannable straight down the row edge and the
+                      pin never shifts when the action buttons change. Not
+                      sortable, so no hover/cursor affordance. */}
+                  <th className="w-12 px-2 py-2 font-medium">Pin</th>
+                  {/* Actions column — header is left-justified (inheriting
+                      the row's text-left) while the buttons below stay
+                      right-aligned against the Name column. Fixed width so
+                      the column doesn't grow with the session counts and the
+                      Name column keeps the slack. */}
+                  <th className="w-[104px] px-3 py-2 font-medium">Actions</th>
                   {/* w-full: under `table-layout: auto` this makes the Name
                       column absorb every pixel the other columns don't need,
                       so the wrapped path gets the widest possible run before
@@ -341,11 +352,11 @@ export const ProjectList: React.FC<ProjectListProps> = ({
                   >
                     Last activity<SortIcon k="lastActivity" />
                   </th>
-                  {/* Actions column — header is intentionally empty; the
-                      buttons in each row are self-labelling. Width is fixed
-                      so the column doesn't grow with the session counts and
-                      the Name column keeps the slack. */}
-                  <th className="px-3 py-2 w-[240px]" aria-label="Actions" />
+                  {/* Settings column — trailing, so the gear stays clear of
+                      the per-row actions and reads as a project-level escape
+                      hatch rather than another row action. Wider than the
+                      32px gear needs: the header word sets the floor. */}
+                  <th className="w-20 px-3 py-2 font-medium">Settings</th>
                 </tr>
               </thead>
               <tbody>
@@ -408,38 +419,88 @@ export const ProjectList: React.FC<ProjectListProps> = ({
                           "border-b-[5px] [border-bottom-style:double] [border-bottom-color:color-mix(in_oklch,var(--color-muted-foreground)_45%,transparent)]!",
                       )}
                     >
-                      {/* Name cell: pin control, then the project name over
-                          its path — same stacked shape the Sessions list
-                          uses for size-over-cost, with the second line a
-                          size down and dimmed. The pin leads so the pinned
-                          group is scannable down the left edge; Launch and
-                          Sessions moved out to the actions cell as labelled
-                          buttons. */}
-                      <td className="px-3 py-2 font-medium">
-                        <div className="flex items-start gap-2">
-                          {onTogglePin && (
-                            <TooltipSimple content={project.pinned ? "Unpin this project" : "Pin this project to the top"}>
-                              <button
-                                type="button"
+                      {/* Pin cell — furthest left in the row, alone. */}
+                      <td className="px-2 py-2 align-top">
+                        {onTogglePin && (
+                          <TooltipSimple content={project.pinned ? "Unpin this project" : "Pin this project to the top"}>
+                            <Button
+                              variant="outline"
+                              size="icon"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                void onTogglePin(project, !project.pinned);
+                              }}
+                              className={cn(
+                                "h-8 w-8",
+                                // Pinned vs unpinned has to stay legible now
+                                // that both states share the same chrome —
+                                // the filled icon carries that distinction,
+                                // the dimmed outline reinforces it.
+                                project.pinned
+                                  ? "text-foreground"
+                                  : "text-muted-foreground/60",
+                              )}
+                              aria-label={project.pinned ? "Unpin this project" : "Pin this project"}
+                            >
+                              <Pin className={cn("h-3.5 w-3.5", project.pinned && "fill-current")} />
+                            </Button>
+                          </TooltipSimple>
+                        )}
+                      </td>
+                      {/* Actions: icon-only Launch and Sessions, ahead of the
+                          name. The words are gone, so each button carries an
+                          aria-label — without one an icon button has no
+                          accessible name at all. The session count stays as a
+                          visible numeral: it rides inside this button and
+                          there's no standalone Sessions column to fall back
+                          on. */}
+                      <td className="px-3 py-2 align-top">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <TooltipSimple content="View this project's sessions">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onProjectClick(project);
+                              }}
+                              // min-w so a 1-digit and a 3-digit count produce
+                              // the same width — otherwise the row-to-row
+                              // widths differ and the Launch buttons that
+                              // follow stop lining up.
+                              className="h-8 min-w-[3.25rem] gap-1 px-2 tabular-nums"
+                              aria-label={`Sessions (${project.sessions.length})`}
+                            >
+                              <List className="h-3.5 w-3.5" />
+                              {project.sessions.length}
+                            </Button>
+                          </TooltipSimple>
+                          {onQuickLaunch && (
+                            <TooltipSimple content="Quick launch a new session (skips the sessions page)">
+                              <Button
+                                variant="outline"
+                                size="icon"
                                 onClick={(e) => {
+                                  // Belt-and-suspenders: stop the click from
+                                  // bubbling to any future row-level handler.
                                   e.stopPropagation();
-                                  void onTogglePin(project, !project.pinned);
+                                  void onQuickLaunch(project);
                                 }}
-                                className={cn(
-                                  // mt-px nudges the icon onto the name's
-                                  // baseline row; align-items:start would
-                                  // otherwise float it a hair high.
-                                  "mt-px shrink-0 p-1 rounded-md transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-                                  project.pinned
-                                    ? "text-foreground hover:text-muted-foreground hover:bg-accent/60"
-                                    : "text-muted-foreground/50 hover:text-foreground hover:bg-accent/60",
-                                )}
-                                aria-label={project.pinned ? "Unpin this project" : "Pin this project"}
+                                className="h-8 w-8"
+                                aria-label="Launch"
                               >
-                                <Pin className={cn("h-4 w-4", project.pinned && "fill-current")} />
-                              </button>
+                                <Zap className="h-3.5 w-3.5" />
+                              </Button>
                             </TooltipSimple>
                           )}
+                        </div>
+                      </td>
+                      {/* Name cell: the project name over its path — same
+                          stacked shape the Sessions list uses for
+                          size-over-cost, with the second line a size down and
+                          dimmed. */}
+                      <td className="px-3 py-2 font-medium">
+                        <div className="flex items-start gap-2">
                           <div className="min-w-0">
                             <button
                               type="button"
@@ -482,63 +543,26 @@ export const ProjectList: React.FC<ProjectListProps> = ({
                       >
                         {lastActivity ? formatRelativeTime(lastActivity) : '—'}
                       </td>
-                      {/* Actions: two labelled buttons. The session count
-                          rides inside the Sessions label, which is why
-                          there's no standalone Sessions column any more. */}
-                      <td className="px-3 py-2">
-                        <div className="flex items-center justify-end gap-2">
-                          {onQuickLaunch && (
-                            <TooltipSimple content="Quick launch a new session (skips the sessions page)">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={(e) => {
-                                  // Belt-and-suspenders: stop the click from
-                                  // bubbling to any future row-level handler.
-                                  e.stopPropagation();
-                                  void onQuickLaunch(project);
-                                }}
-                                className="gap-1.5"
-                              >
-                                <Zap className="h-3.5 w-3.5" />
-                                Launch
-                              </Button>
-                            </TooltipSimple>
-                          )}
-                          <TooltipSimple content="View this project's sessions">
+                      {/* Settings: trailing, alone, so the gear reads as a
+                          project-level escape hatch rather than a row action
+                          competing with Launch and Sessions. */}
+                      <td className="px-3 py-2 align-top">
+                        {onOpenSettings && (
+                          <TooltipSimple content="Project settings — CLAUDE.md and hooks">
                             <Button
                               variant="outline"
-                              size="sm"
+                              size="icon"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                onProjectClick(project);
+                                void onOpenSettings(project);
                               }}
-                              // min-w so a 1-digit count and a 3-digit count
-                              // produce the same button width — otherwise the
-                              // right-aligned pair shifts row to row and the
-                              // Launch buttons stop lining up.
-                              className="min-w-[8rem] gap-1.5 tabular-nums"
+                              className="h-8 w-8 text-muted-foreground"
+                              aria-label="Project settings"
                             >
-                              <List className="h-3.5 w-3.5" />
-                              Sessions ({project.sessions.length})
+                              <Settings className="h-3.5 w-3.5" />
                             </Button>
                           </TooltipSimple>
-                          {onOpenSettings && (
-                            <TooltipSimple content="Project settings — CLAUDE.md and hooks">
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  void onOpenSettings(project);
-                                }}
-                                className="shrink-0 p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                                aria-label="Project settings"
-                              >
-                                <Settings className="h-4 w-4" />
-                              </button>
-                            </TooltipSimple>
-                          )}
-                        </div>
+                        )}
                       </td>
                     </motion.tr>
                   );

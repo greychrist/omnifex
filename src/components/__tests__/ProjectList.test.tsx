@@ -180,6 +180,8 @@ describe('ProjectList — click semantics', () => {
   function renderWithOne(handlers: {
     onProjectClick?: (p: Project) => void;
     onQuickLaunch?: (p: Project) => void;
+    onTogglePin?: (p: Project, pinned: boolean) => void;
+    onOpenSettings?: (p: Project) => void;
   }) {
     const projects: Project[] = [
       {
@@ -198,6 +200,8 @@ describe('ProjectList — click semantics', () => {
         projects={projects}
         onProjectClick={handlers.onProjectClick ?? (() => {})}
         onQuickLaunch={handlers.onQuickLaunch}
+        onTogglePin={handlers.onTogglePin}
+        onOpenSettings={handlers.onOpenSettings}
       />,
     );
   }
@@ -206,17 +210,119 @@ describe('ProjectList — click semantics', () => {
     const onProjectClick = vi.fn();
     const { container } = renderWithOne({ onProjectClick });
 
-    // Cells in order: name (+path), account, last activity, actions. Only
-    // the name link and the action buttons are interactive; the two
-    // informational middle cells must stay inert.
+    // Cells in order: pin, actions, name (+path), account, last activity,
+    // settings. Only the controls and the name link are interactive; the two
+    // informational cells in the middle must stay inert.
     const cells = Array.from(
       container.querySelectorAll('tbody tr td'),
     );
-    expect(cells).toHaveLength(4);
-    for (const cell of cells.slice(1, 3)) {
+    expect(cells).toHaveLength(6);
+    for (const cell of cells.slice(3, 5)) {
       fireEvent.click(cell);
     }
     expect(onProjectClick).not.toHaveBeenCalled();
+  });
+
+  it('orders the row: pin, actions, name, then the settings gear last', () => {
+    const { container } = renderWithOne({
+      onQuickLaunch: vi.fn(),
+      onTogglePin: vi.fn(),
+      onOpenSettings: vi.fn(),
+    });
+
+    const cells = Array.from(container.querySelectorAll('tbody tr td'));
+    // Pin is furthest left, on its own — not inside the action group.
+    expect(cells[0].querySelector('[aria-label="Pin this project"]')).not.toBeNull();
+    expect(cells[0].querySelector('[data-project-name]')).toBeNull();
+    // Then the action buttons, still ahead of the name.
+    expect(cells[1].querySelector('[aria-label="Launch"]')).not.toBeNull();
+    expect(cells[1].querySelector('[aria-label="Sessions (3)"]')).not.toBeNull();
+    // Then the name.
+    expect(cells[2].querySelector('[data-project-name]')?.textContent).toBe('alpha');
+    // Gear sits alone in the trailing cell.
+    expect(cells[5].querySelector('[aria-label="Project settings"]')).not.toBeNull();
+  });
+
+  it('gives every row control the same outline button chrome', () => {
+    renderWithOne({
+      onQuickLaunch: vi.fn(),
+      onTogglePin: vi.fn(),
+      onOpenSettings: vi.fn(),
+    });
+
+    // Pin and the settings gear used to be bare <button>s with ad-hoc
+    // padding; all four controls now share the Button outline variant so the
+    // row reads as one set rather than two visual languages.
+    for (const name of ['Pin this project', 'Sessions (3)', 'Launch', 'Project settings']) {
+      const btn = screen.getByRole('button', { name });
+      expect(btn.className).toContain('border-input');
+      expect(btn.className).toContain('h-8');
+    }
+  });
+
+  it('orders the actions Sessions first, then Launch', () => {
+    const { container } = renderWithOne({ onQuickLaunch: vi.fn() });
+
+    const sessions = screen.getByRole('button', { name: 'Sessions (3)' });
+    const launch = screen.getByRole('button', { name: 'Launch' });
+    // DOCUMENT_POSITION_FOLLOWING === 4: Launch comes *after* Sessions.
+    expect(
+      sessions.compareDocumentPosition(launch) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    // Both still live in the actions cell, ahead of the name.
+    const cells = Array.from(container.querySelectorAll('tbody tr td'));
+    expect(cells[1].contains(sessions)).toBe(true);
+    expect(cells[1].contains(launch)).toBe(true);
+  });
+
+  it('renders Launch and Sessions as icon-only buttons', () => {
+    const { container } = renderWithOne({ onQuickLaunch: vi.fn() });
+
+    const launch = screen.getByRole('button', { name: 'Launch' });
+    const sessions = screen.getByRole('button', { name: 'Sessions (3)' });
+    // The words are gone — the accessible name now comes from aria-label, so
+    // the buttons stay reachable by name for screen readers and these tests.
+    expect(launch.textContent).not.toContain('Launch');
+    expect(sessions.textContent).not.toContain('Sessions');
+    // ...but the session count survives as a visible numeral. Stripping the
+    // label would otherwise delete the only place the count is shown.
+    expect(sessions.textContent).toContain('3');
+    expect(container.querySelector('svg')).not.toBeNull();
+  });
+
+  it('labels every column, including the three control columns', () => {
+    const { container } = renderWithOne({});
+
+    const headers = Array.from(container.querySelectorAll('thead th'));
+    expect(headers.map((h) => h.textContent?.trim())).toEqual([
+      'Pin',
+      'Actions',
+      'Name',
+      'Account',
+      'Last activity',
+      'Settings',
+    ]);
+  });
+
+  it('left-justifies the Actions header', () => {
+    const { container } = renderWithOne({});
+
+    const actionsHeader = Array.from(container.querySelectorAll('thead th')).find(
+      (th) => th.textContent?.trim() === 'Actions',
+    )!;
+    // The buttons under it stay right-aligned; the header does not follow them.
+    expect(actionsHeader.className).not.toContain('text-right');
+  });
+
+  it('drops the redundant aria-labels now that the control headers have text', () => {
+    const { container } = renderWithOne({});
+
+    // An aria-label on a <th> overrides its visible text for screen readers,
+    // so leaving both would mean the heading announced differs from the one
+    // on screen. The text is the accessible name now.
+    for (const th of Array.from(container.querySelectorAll('thead th'))) {
+      expect(th.getAttribute('aria-label')).toBeNull();
+    }
   });
 
   it('fires onProjectClick when the user clicks the project name', () => {
@@ -259,13 +365,13 @@ describe('ProjectList — click semantics', () => {
     expect(onProjectClick).not.toHaveBeenCalled();
   });
 
-  // Launch + Sessions are labelled buttons living together in the trailing
-  // actions cell — the Name column carries only the pin, the name and the
-  // path now.
+  // Launch + Sessions are icon-only buttons living together in the actions
+  // cell, which follows the pin cell — the Name column carries only the name
+  // and the path now.
   it('renders Launch and Sessions as buttons in the actions cell', () => {
     const { container } = renderWithOne({ onQuickLaunch: vi.fn() });
     const cells = Array.from(container.querySelectorAll('tbody tr td'));
-    const actions = cells[cells.length - 1];
+    const actions = cells[1];
 
     const launch = screen.getByRole('button', { name: 'Launch' });
     const sessions = screen.getByRole('button', { name: 'Sessions (3)' });
@@ -329,7 +435,9 @@ describe('ProjectList — name column layout', () => {
     const { container } = render(
       <ProjectList projects={one()} onProjectClick={() => {}} />,
     );
-    const nameCell = container.querySelector('tbody tr td')!;
+    // Find the name cell by content, not position — this test is about the
+    // path living inside it, not about which column it happens to be.
+    const nameCell = container.querySelector('tbody tr td:has([data-project-name])')!;
     const path = nameCell.querySelector('[data-project-path]');
     expect(path?.textContent).toBe('~/Repos/personal/alpha');
   });
@@ -358,7 +466,10 @@ describe('ProjectList — name column layout', () => {
     const { container } = render(
       <ProjectList projects={one()} onProjectClick={() => {}} />,
     );
-    const nameHeader = container.querySelector('thead th')!;
+    // The Name header, located by its label rather than its position.
+    const nameHeader = Array.from(container.querySelectorAll('thead th')).find(
+      (th) => th.textContent?.trim().startsWith('Name'),
+    )!;
     expect(nameHeader.className).toContain('w-full');
   });
 
@@ -366,9 +477,12 @@ describe('ProjectList — name column layout', () => {
     const { container } = render(
       <ProjectList projects={one()} onProjectClick={() => {}} onTogglePin={() => {}} />,
     );
-    const nameCell = container.querySelector('tbody tr td')!;
+    // The pin has its own leading cell now — it is no longer inside the name
+    // cell, but it still reads before the name.
+    const nameCell = container.querySelector('tbody tr td:has([data-project-name])')!;
     const pin = screen.getByLabelText('Pin this project');
-    expect(nameCell.contains(pin)).toBe(true);
+    expect(nameCell.contains(pin)).toBe(false);
+    expect(container.querySelectorAll('tbody tr td')[0].contains(pin)).toBe(true);
     // DOCUMENT_POSITION_FOLLOWING === 4: the name comes *after* the pin.
     const name = container.querySelector('[data-project-name]')!;
     expect(pin.compareDocumentPosition(name) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
