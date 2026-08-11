@@ -56,24 +56,18 @@ export function resolveVaultRoot(input: string): string {
   return resolve(trimmed);
 }
 
-/** A path with any trailing separator removed, except a bare root ("/"). */
-function stripTrailingSep(path: string): string {
-  return path.length > 1 && path.endsWith(sep) ? path.slice(0, -1) : path;
-}
-
 /**
  * True when `child` IS `parent` or sits underneath it.
  *
- * The naive form (`child.startsWith(parent + sep)`) silently misses the
- * filesystem root: for parent "/", `parent + sep` is "//", which nothing starts
- * with, so "/" is judged to contain nothing at all. It also needs both sides
- * normalised, or a trailing separator on either one defeats the comparison.
+ * Both sides must already be `resolve()` or `realpathSync` output. Neither ever
+ * emits a trailing separator except for the filesystem root itself — and the
+ * root is exactly the case the naive form (`child.startsWith(parent + sep)`)
+ * misses, because for parent "/" that prefix is "//", which nothing starts
+ * with, so "/" would be judged to contain nothing at all.
  */
 export function isSameOrInside(child: string, parent: string): boolean {
-  const p = stripTrailingSep(parent);
-  const c = stripTrailingSep(child);
-  if (c === p) return true;
-  return c.startsWith(p.endsWith(sep) ? p : p + sep);
+  if (child === parent) return true;
+  return child.startsWith(parent.endsWith(sep) ? parent : parent + sep);
 }
 
 /**

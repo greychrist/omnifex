@@ -1,4 +1,4 @@
-import { lstatSync, mkdirSync, realpathSync, rmSync } from 'node:fs';
+import { lstatSync, mkdirSync, readdirSync, realpathSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import type { Database } from '../database';
 import { createVault, type Vault } from './vault';
@@ -74,7 +74,9 @@ export interface BrainService {
  */
 interface CachedHandle {
   readonly handle: VaultHandle;
-  readonly identity: string | null;
+  /** Never null: an entry whose identity could not be read is not cached, so a
+   *  missing object can never compare equal to another missing object. */
+  readonly identity: string;
 }
 
 /**
@@ -97,21 +99,36 @@ function handleIdentity(root: string, indexFile: string): string | null {
  * `vault.ts` routes every NOTE path through its own realpath discipline, but
  * the index is addressed here, by the registry, so nothing else guards it — and
  * the FTS5 table stores full note bodies (it is declared without `content=`),
- * so opening another account's `index.db` is the confidentiality defect in
- * full, in both directions. `mkdirSync` and better-sqlite3 both follow
- * symlinks, which gives three ways in, all of them observed leaking:
+ * so reaching another account's index is the confidentiality defect in full, in
+ * both directions.
  *
- *   1. `.omnifex` replaced by a symlink into another vault;
- *   2. `index.db` replaced by a symlink into another vault;
- *   3. `index.db` replaced by a DANGLING symlink — better-sqlite3 then CREATES
- *      the link target, inside the other vault.
+ * The directory is judged, not a list of filenames. `index.db` is only one of
+ * the files the connection owns: WAL mode gives it `index.db-wal` and
+ * `index.db-shm`, and a hard-linked `-wal` leaks just as completely as a
+ * hard-linked `index.db` — SQLite replays the shared WAL's frames over the
+ * other database on open, so the victim's bodies appear AND the reader's own
+ * notes disappear. Enumerating the directory is what makes this survive a
+ * change of `journal_mode`, or a future SQLite sidecar nobody here has heard of.
  *
- * (3) is why the file test is `lstat`-based rather than "resolve it and check
- * where it lands": a check that only fires when the target already exists is
- * the round-1 failure again. For the same reason the directory is CREATED here
- * rather than tested for existence — `createVaultIndex` would create it moments
- * later anyway. The index is derived, gitignored, and rebuildable, so there is
- * no legitimate reason for it to be a link.
+ * Two properties disqualify an entry:
+ *
+ *   - it is a SYMLINK. `mkdirSync` and better-sqlite3 both follow them, and a
+ *     dangling one is worse than a live one: better-sqlite3 CREATES the target,
+ *     inside the other vault. That is why the test is `lstat`-based rather than
+ *     "resolve it and check where it lands" — a check that only fires when the
+ *     target already exists is the round-1 failure again.
+ *   - it is a file with more than one NAME (`nlink > 1`), i.e. a hard link. No
+ *     path-based check can see one: both names are legitimately inside their
+ *     own vault. `nlink` is O(1), needs no cross-account scan, and catches a
+ *     link to anywhere rather than only to another configured account.
+ *     Directories are exempt because '.' and '..' make `nlink > 1` normal for
+ *     them; APFS/Time Machine clones use copy-on-write `clonefile`, which does
+ *     not raise `nlink`, so ordinary backups do not trip this.
+ *
+ * The directory is CREATED here rather than tested for existence, for the same
+ * reason as above — `createVaultIndex` would create it moments later anyway.
+ * The index is derived, gitignored and rebuildable, so no entry under it has
+ * any business being a link.
  */
 function ensureVaultIndexPath(root: string): string {
   const dir = join(root, INDEX_DIR);
@@ -125,18 +142,21 @@ function ensureVaultIndexPath(root: string): string {
     throw new VaultConflictError(`vault index directory resolves outside its vault: ${dir}`);
   }
 
-  const file = join(dir, INDEX_FILE);
-  let isLink = false;
-  try {
-    isLink = lstatSync(file).isSymbolicLink();
-  } catch (err) {
-    // ENOENT is the ordinary first-open state; anything else is a real failure.
-    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+  for (const entry of readdirSync(dir)) {
+    const abs = join(dir, entry);
+    // Sidecars come and go with the connection, so an entry can vanish between
+    // the readdir and the lstat. One that no longer exists cannot alias anything.
+    const stat = lstatSync(abs, { throwIfNoEntry: false });
+    if (!stat) continue;
+    if (stat.isSymbolicLink()) {
+      throw new VaultConflictError(`vault index entry is a symlink: ${abs}`);
+    }
+    if (stat.isFile() && stat.nlink > 1) {
+      throw new VaultConflictError(`vault index entry is hard-linked: ${abs}`);
+    }
   }
-  if (isLink) {
-    throw new VaultConflictError(`vault index database is a symlink: ${file}`);
-  }
-  return file;
+
+  return join(dir, INDEX_FILE);
 }
 
 /**
@@ -190,29 +210,6 @@ export function createBrainService(db: Database): BrainService {
       if (isSameOrInside(target, other) || isSameOrInside(other, target)) {
         throw new VaultConflictError(
           `vault path overlaps one already assigned to another account: ${target}`,
-        );
-      }
-    }
-  }
-
-  /**
-   * Reject an index database that IS another account's index database.
-   *
-   * Containment stops symlinks, but a HARD link gives one inode a second name
-   * inside a directory that is legitimately this vault's own, so every
-   * path-based check passes and both accounts read and write one FTS table.
-   * Identity is the only thing that sees it. An index that does not exist yet
-   * cannot be a hard link to anything, and the account that opens second
-   * detects the collision either way, so the test is symmetric.
-   */
-  function assertIndexNotShared(accountId: number, indexFile: string): void {
-    const identity = fsIdentity(indexFile);
-    if (identity === null) return;
-    for (const row of otherVaultRows(accountId)) {
-      const other = join(resolve(row.value), INDEX_DIR, INDEX_FILE);
-      if (fsIdentity(other) === identity) {
-        throw new VaultConflictError(
-          `vault index database is shared with another account: ${indexFile}`,
         );
       }
     }
@@ -297,7 +294,6 @@ export function createBrainService(db: Database): BrainService {
       try {
         assertNoOverlap(accountId, canonicalPath(root));
         indexFile = ensureVaultIndexPath(root);
-        assertIndexNotShared(accountId, indexFile);
       } catch (err) {
         // Fail closed and let go: a handle just judged unsafe must not keep a
         // live SQLite descriptor open on another account's vault.
@@ -307,13 +303,9 @@ export function createBrainService(db: Database): BrainService {
 
       // Reuse the handle only when the configured name AND the objects that
       // name currently reaches are the ones it was built for.
+      // (A null current identity can never match: cached.identity is a string.)
       const cached = handles.get(accountId);
-      if (
-        cached &&
-        cached.identity !== null &&
-        cached.identity === handleIdentity(root, indexFile) &&
-        cached.handle.root === root
-      ) {
+      if (cached?.identity === handleIdentity(root, indexFile) && cached.handle.root === root) {
         return cached.handle;
       }
       if (cached) closeHandle(accountId);
@@ -330,7 +322,10 @@ export function createBrainService(db: Database): BrainService {
       const handle: VaultHandle = { accountId, root: vault.root, vault, index, git };
       // Read the identity again, after the index file has been created: on a
       // cold open it did not exist a moment ago, so the earlier read was null.
-      handles.set(accountId, { handle, identity: handleIdentity(vault.root, indexFile) });
+      // If it still cannot be read, do not cache — an unidentifiable handle
+      // would be indistinguishable from the next unidentifiable one.
+      const identity = handleIdentity(vault.root, indexFile);
+      if (identity !== null) handles.set(accountId, { handle, identity });
       return handle;
     },
 

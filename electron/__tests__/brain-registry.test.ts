@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, existsSync, mkdirSync, symlinkSync, chmodSync, linkSync } from 'node:fs';
+import {
+  mkdtempSync, rmSync, existsSync, mkdirSync, symlinkSync, chmodSync, linkSync, renameSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, isAbsolute, sep } from 'node:path';
 import { createDatabase, type Database } from '../services/database';
@@ -439,6 +441,90 @@ describe('brain registry', () => {
 
     expect(brain.search(1, 'stdio')).toEqual([]);
     expect(brain.search(2, 'stdio')).toEqual([]);
+  });
+
+  // --- round 6 ---------------------------------------------------------------
+
+  it('ISOLATION: refuses a hard-linked WAL sidecar, not just index.db', () => {
+    brain.setVaultPath(1, join(dir, 'personal'));
+    brain.setVaultPath(2, join(dir, 'work'));
+    brain.writeNote(2, 'Subsystems/Work.md', note('work stdio secret'), 'Manual edit');
+    brain.closeAll(); // account 2's own WAL is checkpointed away on close
+    brain.writeNote(1, 'Subsystems/Personal.md', note('personal stdio secret'), 'Manual edit');
+    // Account 1 stays warm, so its -wal exists and still holds its note.
+    linkSync(join(indexDir('personal'), 'index.db-wal'), join(indexDir('work'), 'index.db-wal'));
+
+    // Reopening account 2 replays account 1's WAL frames over account 2's
+    // database: account 1's bodies appear and account 2's own note vanishes.
+    expect(() => brain.open(2)).toThrow(VaultConflictError);
+    expect(brain.search(2, 'stdio')).toEqual([]);
+  });
+
+  it('tolerates a subdirectory under the index directory', () => {
+    brain.setVaultPath(1, join(dir, 'personal'));
+    brain.writeNote(1, 'Subsystems/A.md', note('the stdio bridge'), 'Manual edit');
+    // A directory legitimately has nlink > 1 — '.' plus its parent's entry for
+    // it — so the hard-link test must never be applied to one.
+    mkdirSync(join(indexDir('personal'), 'scratch'), { recursive: true });
+
+    expect(brain.search(1, 'stdio').map((h) => h.notePath)).toEqual(['Subsystems/A.md']);
+  });
+
+  it('ISOLATION: refuses an index directory symlinked into the victim note tree', () => {
+    brain.setVaultPath(1, join(dir, 'personal'));
+    brain.setVaultPath(2, join(dir, 'work'));
+    brain.writeNote(1, 'Subsystems/Personal.md', note('personal stdio secret'), 'Manual edit');
+    brain.closeAll();
+    rmSync(indexDir('work'), { recursive: true, force: true });
+    // Not another .omnifex — an ordinary directory in the victim's note tree.
+    // Its entries are innocent, so only the containment check can object.
+    symlinkSync(join(dir, 'personal', 'Subsystems'), indexDir('work'));
+
+    expect(() => brain.open(2)).toThrow(VaultConflictError);
+    // Account 2's whole FTS database would otherwise be built in account 1's notes.
+    expect(existsSync(join(dir, 'personal', 'Subsystems', 'index.db'))).toBe(false);
+  });
+
+  it('releases the SQLite descriptor when a cached handle is judged unsafe', () => {
+    brain.setVaultPath(1, join(dir, 'personal'));
+    brain.setVaultPath(2, join(dir, 'work'));
+    const handle = brain.open(2)!;
+    rmSync(join(dir, 'work'), { recursive: true, force: true });
+    symlinkSync(join(dir, 'personal'), join(dir, 'work'));
+
+    expect(() => brain.open(2)).toThrow(VaultConflictError);
+    expect(() => handle.index.search('anything')).toThrow(/not open/);
+  });
+
+  it('rebuilds a handle when the configured path becomes an alias of the same directory', () => {
+    mkdirSync(join(dir, 'real'), { recursive: true });
+    symlinkSync(join(dir, 'real'), join(dir, 'alias'));
+    brain.setVaultPath(1, join(dir, 'real'));
+    const first = brain.open(1);
+
+    // Same directory, different name, written straight into app_settings. Every
+    // inode is unchanged, so only the path half of the cache key notices.
+    db.saveSetting(vaultSettingKey(1), join(dir, 'alias'));
+
+    const second = brain.open(1);
+    expect(second).not.toBe(first);
+    expect(second!.root).toBe(join(dir, 'alias'));
+  });
+
+  it('rebinds a cached handle when its root is replaced but its index survives', () => {
+    brain.setVaultPath(1, join(dir, 'personal'));
+    brain.writeNote(1, 'Subsystems/A.md', note('the stdio bridge'), 'Manual edit');
+    const first = brain.open(1);
+
+    // A different directory at the same path, carrying the SAME index file, so
+    // only the root half of the identity changes. It has to: the handle's Vault
+    // resolved its real root once and checks every note path against that.
+    renameSync(join(dir, 'personal'), join(dir, 'personal-old'));
+    mkdirSync(join(dir, 'personal'), { recursive: true });
+    renameSync(join(dir, 'personal-old', '.omnifex'), indexDir('personal'));
+
+    expect(brain.open(1)).not.toBe(first);
+    expect(brain.search(1, 'stdio').map((h) => h.notePath)).toEqual(['Subsystems/A.md']);
   });
 
   it('rebinds a cached handle when its index database is deleted', () => {
