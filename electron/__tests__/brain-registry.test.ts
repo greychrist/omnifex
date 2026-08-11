@@ -1,0 +1,114 @@
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { mkdtempSync, rmSync, existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createDatabase, type Database } from '../services/database';
+import { createBrainService, VaultConflictError, type BrainService } from '../services/brain/registry';
+import type { ParsedNote } from '../services/brain/types';
+
+function note(body: string, type: ParsedNote['frontmatter']['type'] = 'Subsystem'): ParsedNote {
+  return {
+    frontmatter: {
+      type, aliases: [], keywords: [],
+      created: '2026-01-01', updated: '2026-01-01', sources: [],
+    },
+    body,
+  };
+}
+
+describe('brain registry', () => {
+  let dir: string;
+  let db: Database;
+  let brain: BrainService;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'omnifex-brain-'));
+    db = createDatabase(':memory:');
+    brain = createBrainService(db);
+  });
+
+  afterEach(() => {
+    brain.closeAll();
+    db.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('returns null for an account with no vault configured', () => {
+    expect(brain.vaultPath(1)).toBeNull();
+    expect(brain.open(1)).toBeNull();
+  });
+
+  it('search on an unconfigured account returns [] rather than throwing', () => {
+    expect(brain.search(1, 'anything')).toEqual([]);
+  });
+
+  it('persists a vault path per account', () => {
+    brain.setVaultPath(1, join(dir, 'personal'));
+    expect(brain.vaultPath(1)).toBe(join(dir, 'personal'));
+    expect(brain.vaultPath(2)).toBeNull();
+  });
+
+  it('creates the vault layout on open', () => {
+    brain.setVaultPath(1, join(dir, 'personal'));
+    const handle = brain.open(1);
+    expect(handle).not.toBeNull();
+    expect(handle!.root).toBe(join(dir, 'personal'));
+    expect(existsSync(join(dir, 'personal', 'Subsystems'))).toBe(true);
+  });
+
+  it('rejects assigning one vault path to two accounts', () => {
+    brain.setVaultPath(1, join(dir, 'shared'));
+    expect(() => brain.setVaultPath(2, join(dir, 'shared'))).toThrow(VaultConflictError);
+  });
+
+  it('allows reassigning the same path to the same account', () => {
+    brain.setVaultPath(1, join(dir, 'personal'));
+    expect(() => brain.setVaultPath(1, join(dir, 'personal'))).not.toThrow();
+  });
+
+  it('frees a path once cleared', () => {
+    brain.setVaultPath(1, join(dir, 'shared'));
+    brain.clearVaultPath(1);
+    expect(() => brain.setVaultPath(2, join(dir, 'shared'))).not.toThrow();
+  });
+
+  it('writes a note and finds it via search', () => {
+    brain.setVaultPath(1, join(dir, 'personal'));
+    brain.writeNote(1, 'Subsystems/A.md', note('the stdio bridge'), 'Manual edit');
+    expect(brain.search(1, 'stdio').map((h) => h.notePath)).toEqual(['Subsystems/A.md']);
+  });
+
+  it('ISOLATION: a note written to one account is invisible to another', () => {
+    brain.setVaultPath(1, join(dir, 'personal'));
+    brain.setVaultPath(2, join(dir, 'work'));
+
+    brain.writeNote(1, 'Subsystems/Personal.md', note('personal stdio secret'), 'Manual edit');
+    brain.writeNote(2, 'Subsystems/Work.md', note('work stdio secret'), 'Manual edit');
+
+    expect(brain.search(1, 'stdio').map((h) => h.notePath)).toEqual(['Subsystems/Personal.md']);
+    expect(brain.search(2, 'stdio').map((h) => h.notePath)).toEqual(['Subsystems/Work.md']);
+  });
+
+  it('ISOLATION: each vault gets its own index database file', () => {
+    brain.setVaultPath(1, join(dir, 'personal'));
+    brain.setVaultPath(2, join(dir, 'work'));
+    brain.open(1);
+    brain.open(2);
+
+    expect(existsSync(join(dir, 'personal', '.omnifex', 'index.db'))).toBe(true);
+    expect(existsSync(join(dir, 'work', '.omnifex', 'index.db'))).toBe(true);
+  });
+
+  it('reuses one handle per account rather than reopening', () => {
+    brain.setVaultPath(1, join(dir, 'personal'));
+    expect(brain.open(1)).toBe(brain.open(1));
+  });
+
+  it('drops the cached handle when the path changes', () => {
+    brain.setVaultPath(1, join(dir, 'first'));
+    const first = brain.open(1);
+    brain.setVaultPath(1, join(dir, 'second'));
+    expect(brain.open(1)).not.toBe(first);
+    expect(brain.open(1)!.root).toBe(join(dir, 'second'));
+  });
+});
