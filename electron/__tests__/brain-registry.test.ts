@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, existsSync, mkdirSync, symlinkSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, mkdirSync, symlinkSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, isAbsolute, sep } from 'node:path';
 import { createDatabase, type Database } from '../services/database';
 import { createBrainService, VaultConflictError, type BrainService } from '../services/brain/registry';
 import type { ParsedNote } from '../services/brain/types';
@@ -173,5 +173,47 @@ describe('brain registry', () => {
 
   it('rejects an accountId beyond the safe integer range', () => {
     expect(() => brain.open(1e21)).toThrow(/accountId/);
+  });
+
+  it('rejects a vault path it cannot create', () => {
+    const ro = join(dir, 'readonly');
+    mkdirSync(ro, { recursive: true });
+    chmodSync(ro, 0o555);
+    try {
+      expect(() => brain.setVaultPath(1, join(ro, 'Vault'))).toThrow(/cannot create vault directory/);
+    } finally {
+      chmodSync(ro, 0o755); // so afterEach can clean up
+    }
+  });
+
+  it('does not leave a stray directory when the configuration is rejected', () => {
+    brain.setVaultPath(1, join(dir, 'personal'));
+    expect(() => brain.setVaultPath(2, join(dir, 'personal', 'work'))).toThrow(VaultConflictError);
+    expect(existsSync(join(dir, 'personal', 'work'))).toBe(false);
+  });
+
+  it('stores a relative vault path in resolved form', () => {
+    const cwd = process.cwd();
+    process.chdir(dir);
+    try {
+      brain.setVaultPath(1, 'relvault');
+      const stored = brain.vaultPath(1);
+      expect(stored).not.toBeNull();
+      expect(isAbsolute(stored!)).toBe(true);
+      expect(stored!.endsWith(`${sep}relvault`)).toBe(true);
+    } finally {
+      process.chdir(cwd);
+    }
+  });
+
+  it('detects an overlap introduced on disk after configuration', () => {
+    brain.setVaultPath(1, join(dir, 'personal'));
+    brain.setVaultPath(2, join(dir, 'work'));
+    brain.open(1);
+    brain.open(2);
+    brain.closeAll();
+    rmSync(join(dir, 'work'), { recursive: true, force: true });
+    symlinkSync(join(dir, 'personal'), join(dir, 'work'));
+    expect(() => brain.open(2)).toThrow(VaultConflictError);
   });
 });

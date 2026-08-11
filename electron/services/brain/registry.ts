@@ -1,4 +1,4 @@
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, rmSync } from 'node:fs';
 import { join, resolve, sep } from 'node:path';
 import type { Database } from '../database';
 import { createVault, type Vault } from './vault';
@@ -73,6 +73,28 @@ export function createBrainService(db: Database): BrainService {
     }
   }
 
+  /**
+   * Reject a vault path that IS, CONTAINS, or IS CONTAINED BY another account's
+   * vault. Equality alone is insufficient: a nested vault means the outer
+   * account's listNotes/readNote/rebuild see the inner account's notes, and the
+   * outer vault's `git add -A` races the inner `git init`.
+   */
+  function assertNoOverlap(accountId: number, target: string): void {
+    const rows = db.raw
+      .prepare(`SELECT key, value FROM app_settings WHERE key LIKE 'brain.vault.%'`)
+      .all() as { key: string; value: string }[];
+    for (const row of rows) {
+      if (!VAULT_KEY_RE.test(row.key)) continue;
+      if (row.key === vaultSettingKey(accountId)) continue;
+      const other = canonicalPath(row.value);
+      if (target === other || target.startsWith(other + sep) || other.startsWith(target + sep)) {
+        throw new VaultConflictError(
+          `vault path overlaps one already assigned to another account: ${target}`,
+        );
+      }
+    }
+  }
+
   const service: BrainService = {
     vaultPath(accountId: number): string | null {
       requireAccountId(accountId);
@@ -81,41 +103,40 @@ export function createBrainService(db: Database): BrainService {
 
     setVaultPath(accountId: number, path: string): void {
       requireAccountId(accountId);
-      // Canonicalisation can only resolve symlinks and filesystem case for
-      // segments that EXIST. Vault directories are created lazily by open(), so
-      // at this point the path normally does not exist and canonicalPath()
-      // degrades to a lexical resolve — the exact alias bypass this check
-      // exists to stop. Create it first; open() would create it moments later
-      // anyway, so this brings no new side effect.
-      try {
-        mkdirSync(resolve(path), { recursive: true });
-      } catch {
-        // Unwritable or otherwise uncreatable: fall through. canonicalPath
-        // still does what it can, and open() surfaces the real error.
-      }
-      const target = canonicalPath(path);
+      const resolved = resolve(path);
 
-      // Two accounts sharing a vault would defeat the whole isolation model, so
-      // this is rejected at configuration time rather than guarded downstream.
-      const rows = db.raw
-        .prepare(`SELECT key, value FROM app_settings WHERE key LIKE 'brain.vault.%'`)
-        .all() as { key: string; value: string }[];
-      for (const row of rows) {
-        if (!VAULT_KEY_RE.test(row.key)) continue;
-        if (row.key === vaultSettingKey(accountId)) continue;
-        const other = canonicalPath(row.value);
-        // Equality is not enough: one vault nested inside another means the
-        // outer account's listNotes/readNote/rebuild see the inner account's
-        // notes, and the outer vault's `git add -A` races the inner `git init`.
-        if (target === other || target.startsWith(other + sep) || other.startsWith(target + sep)) {
-          throw new VaultConflictError(
-            `vault path overlaps one already assigned to another account: ${target}`,
-          );
-        }
+      // Canonicalisation can only resolve symlinks and filesystem case for
+      // segments that EXIST, and vault directories are otherwise created lazily
+      // by open(). Materialise it first so the check below compares real
+      // on-disk identity rather than two strings that merely look different.
+      // mkdirSync returns the first directory it created, or undefined if
+      // nothing was created — that is how we clean up on rejection.
+      let created: string | undefined;
+      try {
+        created = mkdirSync(resolved, { recursive: true });
+      } catch (err) {
+        // A vault root the app cannot materialise is not a configurable vault.
+        // Swallowing this would drop back to a lexical comparison, which is
+        // exactly the alias bypass this check exists to stop.
+        throw new Error(`cannot create vault directory: ${resolved} (${(err as Error).message})`);
+      }
+
+      try {
+        assertNoOverlap(accountId, canonicalPath(resolved));
+      } catch (err) {
+        // Never leave a stray directory behind — least of all one whose name
+        // the caller chose, inside another account's vault.
+        if (created) rmSync(created, { recursive: true, force: true });
+        throw err;
       }
 
       closeHandle(accountId);
-      db.saveSetting(vaultSettingKey(accountId), path);
+      // Store the RESOLVED path, not the raw one: a stored relative path
+      // re-resolves against whatever cwd happens to be current later, so two
+      // configurations that looked distinct at config time can converge.
+      // Deliberately NOT the canonical path — that rewrites /var/... to
+      // /private/var/... and would surprise the user reading their settings.
+      db.saveSetting(vaultSettingKey(accountId), resolved);
     },
 
     clearVaultPath(accountId: number): void {
@@ -137,6 +158,11 @@ export function createBrainService(db: Database): BrainService {
 
       const vault = createVault(path);
       vault.ensureLayout();
+
+      // Re-validate at the point of use. The configuration-time check cannot
+      // see a later on-disk change — e.g. this directory being replaced by a
+      // symlink into another account's vault.
+      assertNoOverlap(accountId, canonicalPath(vault.root));
 
       const git = createVaultGit(vault.root);
       // Versioning is a safety net; a missing git binary must not block a write.
