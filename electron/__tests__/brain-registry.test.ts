@@ -30,7 +30,9 @@ describe('brain registry', () => {
   afterEach(() => {
     brain.closeAll();
     db.close();
-    rmSync(dir, { recursive: true, force: true });
+    // open() fires git init in the background, so a `.git` directory can still
+    // be growing while this runs. Retry rather than fail the test on ENOTEMPTY.
+    rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 });
   });
 
   it('returns null for an account with no vault configured', () => {
@@ -215,5 +217,97 @@ describe('brain registry', () => {
     rmSync(join(dir, 'work'), { recursive: true, force: true });
     symlinkSync(join(dir, 'personal'), join(dir, 'work'));
     expect(() => brain.open(2)).toThrow(VaultConflictError);
+  });
+
+  // --- round 4 ---------------------------------------------------------------
+
+  it('ISOLATION: re-validates a handle already cached when the swap happens', () => {
+    brain.setVaultPath(1, join(dir, 'personal'));
+    brain.setVaultPath(2, join(dir, 'work'));
+    brain.writeNote(1, 'Subsystems/Personal.md', note('personal stdio secret'), 'Manual edit');
+
+    // Cache account 2's handle, then swap its directory WITHOUT closing it.
+    // A guard that only runs on a cold open is no guard at all: once the
+    // process has a handle it keeps using it for the rest of its life.
+    brain.open(2);
+    rmSync(join(dir, 'work'), { recursive: true, force: true });
+    symlinkSync(join(dir, 'personal'), join(dir, 'work'));
+
+    expect(() =>
+      brain.writeNote(2, 'Subsystems/Leak.md', note('written under account 2'), 'Manual edit'),
+    ).toThrow(VaultConflictError);
+    expect(existsSync(join(dir, 'personal', 'Subsystems', 'Leak.md'))).toBe(false);
+    // Nothing is handed out either, so listNotes()/readNote() are unreachable.
+    expect(() => brain.open(2)).toThrow(VaultConflictError);
+  });
+
+  it('does not scaffold inside the victim vault before rejecting a cold open', () => {
+    brain.setVaultPath(1, join(dir, 'personal'));
+    brain.setVaultPath(2, join(dir, 'work'));
+    rmSync(join(dir, 'work'), { recursive: true, force: true });
+    symlinkSync(join(dir, 'personal'), join(dir, 'work'));
+
+    expect(() => brain.open(2)).toThrow(VaultConflictError);
+    expect(existsSync(join(dir, 'personal', 'Subsystems'))).toBe(false);
+    expect(existsSync(join(dir, 'personal', 'config', 'notes.json'))).toBe(false);
+  });
+
+  it('degrades search to [] instead of throwing when an overlap appears on disk', () => {
+    brain.setVaultPath(1, join(dir, 'personal'));
+    brain.setVaultPath(2, join(dir, 'work'));
+    brain.writeNote(1, 'Subsystems/Personal.md', note('personal stdio secret'), 'Manual edit');
+    brain.closeAll();
+
+    rmSync(join(dir, 'work'), { recursive: true, force: true });
+    symlinkSync(join(dir, 'personal'), join(dir, 'work'));
+
+    // Account 1's configuration and directory never changed; the Brain is
+    // auxiliary, so its search must not start throwing at the caller.
+    expect(brain.search(1, 'stdio')).toEqual([]);
+    expect(brain.search(2, 'stdio')).toEqual([]);
+    // Anything that hands out access or writes still fails closed.
+    expect(() => brain.open(1)).toThrow(VaultConflictError);
+    expect(() =>
+      brain.writeNote(2, 'Subsystems/Leak.md', note('leaked'), 'Manual edit'),
+    ).toThrow(VaultConflictError);
+  });
+
+  it('rejects an empty or whitespace-only vault path', () => {
+    const cwd = process.cwd();
+    process.chdir(dir);
+    try {
+      expect(() => brain.setVaultPath(1, '')).toThrow(/vault path/);
+      expect(() => brain.setVaultPath(1, '   ')).toThrow(/vault path/);
+      expect(brain.vaultPath(1)).toBeNull();
+    } finally {
+      process.chdir(cwd);
+    }
+  });
+
+  it('rejects an unexpanded ~ path rather than creating a literal ~ directory', () => {
+    const cwd = process.cwd();
+    process.chdir(dir);
+    try {
+      expect(() => brain.setVaultPath(1, '~/BrainVault')).toThrow(/vault path/);
+      expect(existsSync(join(dir, '~'))).toBe(false);
+      expect(brain.vaultPath(1)).toBeNull();
+    } finally {
+      process.chdir(cwd);
+    }
+  });
+
+  it('rebinds a cached handle when its directory is replaced on disk', () => {
+    brain.setVaultPath(1, join(dir, 'personal'));
+    const first = brain.open(1);
+    brain.writeNote(1, 'Subsystems/A.md', note('the stdio bridge'), 'Manual edit');
+    expect(brain.search(1, 'stdio').map((h) => h.notePath)).toEqual(['Subsystems/A.md']);
+
+    // Same path, different directory — a restore-from-backup, say. The cached
+    // index handle still points at the unlinked index.db.
+    rmSync(join(dir, 'personal'), { recursive: true, force: true });
+    mkdirSync(join(dir, 'personal'), { recursive: true });
+
+    expect(brain.open(1)).not.toBe(first);
+    expect(brain.search(1, 'stdio')).toEqual([]);
   });
 });

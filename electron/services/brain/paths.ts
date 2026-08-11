@@ -1,4 +1,4 @@
-import { existsSync, realpathSync } from 'node:fs';
+import { existsSync, realpathSync, statSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 
 /**
@@ -26,4 +26,51 @@ export function canonicalPath(input: string): string {
   }
   const real = realpathSync.native(probe);
   return tail.length > 0 ? join(real, ...tail) : real;
+}
+
+/**
+ * Validate a caller-supplied vault root and return it in absolute form.
+ *
+ * Canonicalising a path whose tail does not exist yet requires materialising
+ * it, so the string has to be judged BEFORE it reaches the filesystem — an
+ * unjudged one scaffolds a vault somewhere nobody asked for. Two inputs are
+ * wrong often enough to name:
+ *
+ *   - empty or whitespace-only, which `resolve()`s to the process cwd (for a
+ *     packaged Electron app that is `/`, and in dev it is the repo);
+ *   - a leading `~` segment. Tilde expansion is a shell/UI convention that node
+ *     never performs, so this would create a directory literally named `~`.
+ */
+export function resolveVaultRoot(input: string): string {
+  if (typeof input !== 'string' || input.trim() === '') {
+    throw new Error('vault path is empty');
+  }
+  if (input.split(/[\\/]/)[0] === '~') {
+    throw new Error(`vault path must be expanded before it is stored: ${input}`);
+  }
+  return resolve(input);
+}
+
+/**
+ * Identity of the directory a path currently reaches, as `dev:ino`, or null
+ * when it reaches nothing.
+ *
+ * A path string names a directory; it does not identify one. Two different
+ * directories can wear the same name over time — a symlink swap, a move-aside,
+ * a restore from backup — and a cached vault handle holds an open SQLite
+ * descriptor plus a `Vault` whose real root was resolved once, both bound to
+ * whatever the name meant at the moment it was opened. Comparing dev+ino is
+ * what makes a cache entry describe the directory rather than the name.
+ *
+ * `statSync` follows symlinks deliberately: the identity that matters is the
+ * one of the directory actually reached. `bigint` because inode numbers can
+ * exceed 2^53 on some filesystems.
+ */
+export function directoryIdentity(path: string): string | null {
+  try {
+    const st = statSync(path, { bigint: true });
+    return `${st.dev}:${st.ino}`;
+  } catch {
+    return null;
+  }
 }

@@ -5,7 +5,7 @@ import { createVault, type Vault } from './vault';
 import { createVaultIndex, type SearchHit, type SearchOptions, type VaultIndex } from './search';
 import { createVaultGit, type VaultGit } from './git';
 import { fireAndLogGitFailure } from './git-logging';
-import { canonicalPath } from './paths';
+import { canonicalPath, directoryIdentity, resolveVaultRoot } from './paths';
 import type { ParsedNote } from './types';
 
 /** Thrown when a vault path is already claimed by a different account. */
@@ -57,9 +57,31 @@ export interface BrainService {
   closeAll(): void;
 }
 
+/**
+ * A cached handle together with the on-disk identity of the directory it was
+ * built against. The identity is what makes the entry reusable: without it the
+ * cache is keyed on a name, and a name can come to mean a different directory.
+ */
+interface CachedHandle {
+  readonly handle: VaultHandle;
+  readonly identity: string | null;
+}
+
+/**
+ * Per-account vault registry.
+ *
+ * The isolation guarantee rests on one structural rule: `open()` is the ONLY
+ * place a VaultHandle is produced, and no handle leaves it without a fresh
+ * overlap check against the live filesystem and the live settings table. The
+ * handle cache is a memo, not an authority — it may skip CONSTRUCTION, never
+ * VALIDATION. Every previous shape of this file made the guard conditional on
+ * something (the directory already existing, mkdir succeeding, the handle being
+ * cold), and every one of those conditions turned out to be reachable.
+ */
 export function createBrainService(db: Database): BrainService {
-  // One handle per account. Keyed by accountId, invalidated when its path moves.
-  const handles = new Map<number, VaultHandle>();
+  // One handle per account. Keyed by accountId, invalidated when its path moves
+  // or when the directory that path names is no longer the same directory.
+  const handles = new Map<number, CachedHandle>();
 
   function readPath(accountId: number): string | null {
     return db.getSetting(vaultSettingKey(accountId));
@@ -68,7 +90,7 @@ export function createBrainService(db: Database): BrainService {
   function closeHandle(accountId: number): void {
     const existing = handles.get(accountId);
     if (existing) {
-      existing.index.close();
+      existing.handle.index.close();
       handles.delete(accountId);
     }
   }
@@ -103,7 +125,11 @@ export function createBrainService(db: Database): BrainService {
 
     setVaultPath(accountId: number, path: string): void {
       requireAccountId(accountId);
-      const resolved = resolve(path);
+      // Judge the string before it can have any filesystem effect: the
+      // materialisation below writes to whatever it is handed, so `''` (the
+      // process cwd) and `~/…` (a directory literally named `~`) have to be
+      // refused here, not discovered afterwards.
+      const resolved = resolveVaultRoot(path);
 
       // Canonicalisation can only resolve symlinks and filesystem case for
       // segments that EXIST, and vault directories are otherwise created lazily
@@ -151,18 +177,37 @@ export function createBrainService(db: Database): BrainService {
       // No configured vault is an ordinary state, not an error: indexing for
       // this account is simply inert.
       if (!path) return null;
+      const root = resolve(path);
 
+      // THE GUARD. Unconditional, and first: before the cache is consulted and
+      // before a single byte is written to disk.
+      //
+      // Before the cache, because a check that only runs on a cold open stops
+      // being a check the moment a handle exists — the process then reuses that
+      // handle for its whole life. Before ensureLayout(), because scaffolding a
+      // vault into the directory and only then deciding it belongs to another
+      // account means the victim's vault has already been written into.
+      try {
+        assertNoOverlap(accountId, canonicalPath(root));
+      } catch (err) {
+        // Fail closed and let go: a handle just judged unsafe must not keep a
+        // live SQLite descriptor open on another account's vault.
+        closeHandle(accountId);
+        throw err;
+      }
+
+      // Reuse the handle only when the configured name AND the directory that
+      // name currently reaches are both the ones it was built for. A null
+      // identity means the root is gone, which is a miss, not a match.
       const cached = handles.get(accountId);
-      if (cached?.root === resolve(path)) return cached;
+      const identity = directoryIdentity(root);
+      if (cached && identity !== null && cached.identity === identity && cached.handle.root === root) {
+        return cached.handle;
+      }
       if (cached) closeHandle(accountId);
 
-      const vault = createVault(path);
+      const vault = createVault(root);
       vault.ensureLayout();
-
-      // Re-validate at the point of use. The configuration-time check cannot
-      // see a later on-disk change — e.g. this directory being replaced by a
-      // symlink into another account's vault.
-      assertNoOverlap(accountId, canonicalPath(vault.root));
 
       const git = createVaultGit(vault.root);
       // Versioning is a safety net; a missing git binary must not block a write.
@@ -171,13 +216,31 @@ export function createBrainService(db: Database): BrainService {
       const index = createVaultIndex(join(vault.root, '.omnifex', 'index.db'));
 
       const handle: VaultHandle = { accountId, root: vault.root, vault, index, git };
-      handles.set(accountId, handle);
+      // Read the identity again, after ensureLayout: on a cold open the
+      // directory did not exist a moment ago, so the earlier read was null.
+      handles.set(accountId, { handle, identity: directoryIdentity(vault.root) });
       return handle;
     },
 
     search(accountId: number, query: string, opts?: SearchOptions): SearchHit[] {
       requireAccountId(accountId);
-      const handle = service.open(accountId);
+      let handle: VaultHandle | null;
+      try {
+        handle = service.open(accountId);
+      } catch (err) {
+        // The overlap test is necessarily symmetric — it cannot tell the victim
+        // of an aliasing swap from its cause — so a bad symlink under one
+        // account would otherwise start throwing at the OTHER account, whose
+        // configuration and directory never changed. The Brain is auxiliary, so
+        // a read degrades to empty instead. Everything that hands out a handle
+        // or writes (open, writeNote) still fails closed, so this costs
+        // visibility, never confidentiality.
+        if (err instanceof VaultConflictError) {
+          console.warn(`brain: search disabled for account ${accountId}: ${err.message}`);
+          return [];
+        }
+        throw err;
+      }
       if (!handle) return [];
       return handle.index.search(query, opts);
     },
