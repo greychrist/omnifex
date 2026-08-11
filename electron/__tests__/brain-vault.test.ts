@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, mkdirSync, symlinkSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createVault, VaultPathError, type Vault } from '../services/brain/vault';
@@ -11,7 +11,7 @@ const NOTE: ParsedNote = {
     type: 'Subsystem', aliases: ['decider'], keywords: ['permissions'],
     created: '2026-01-01', updated: '2026-01-01', sources: [],
   },
-  body: '# Permission decider\n\n## Summary\nEnforces permission changes.\n',
+  body: '# Permission-decider\n\n## Summary\nEnforces permission changes.\n',
 };
 
 describe('vault', () => {
@@ -51,7 +51,7 @@ describe('vault', () => {
   });
 
   it('maps a type and name to a path inside the right folder', () => {
-    expect(vault.notePath('Subsystem', 'Permission decider')).toBe('Subsystems/Permission decider.md');
+    expect(vault.notePath('Subsystem', 'Permission-decider')).toBe('Subsystems/Permission-decider.md');
   });
 
   it('rejects names containing path separators', () => {
@@ -69,7 +69,7 @@ describe('vault', () => {
   });
 
   it('round-trips a note through write and read', () => {
-    const rel = vault.notePath('Subsystem', 'Permission decider');
+    const rel = vault.notePath('Subsystem', 'Permission-decider');
     vault.writeNote(rel, NOTE);
     const read = vault.readNote(rel);
     expect(read.frontmatter.aliases).toEqual(['decider']);
@@ -88,7 +88,7 @@ describe('vault', () => {
   });
 
   it('derives a title from the filename', () => {
-    expect(vault.noteTitle('Subsystems/Permission decider.md')).toBe('Permission decider');
+    expect(vault.noteTitle('Subsystems/Permission-decider.md')).toBe('Permission-decider');
   });
 
   it('surfaces NoteParseError for a corrupt note without affecting others', () => {
@@ -100,5 +100,52 @@ describe('vault', () => {
 
   it('rejects reads that escape the vault root', () => {
     expect(() => vault.readNote('../outside.md')).toThrow(VaultPathError);
+  });
+
+  it('rejects reads through a symlink that targets outside the vault', () => {
+    const outside = mkdtempSync(join(tmpdir(), 'omnifex-outside-'));
+    writeFileSync(join(outside, 'secret.md'), 'x');
+    symlinkSync(outside, join(dir, 'Topics', 'link'));
+    expect(() => vault.readNote('Topics/link/secret.md')).toThrow(VaultPathError);
+    rmSync(outside, { recursive: true, force: true });
+  });
+
+  it('rejects writes through a symlink that targets outside the vault', () => {
+    const outside = mkdtempSync(join(tmpdir(), 'omnifex-outside-'));
+    symlinkSync(outside, join(dir, 'Topics', 'link'));
+    expect(() => vault.writeNote('Topics/link/pwned.md', NOTE)).toThrow(VaultPathError);
+    expect(existsSync(join(outside, 'pwned.md'))).toBe(false);
+    rmSync(outside, { recursive: true, force: true });
+  });
+
+  it('listNotes skips symlinks rather than following them', () => {
+    const outside = mkdtempSync(join(tmpdir(), 'omnifex-outside-'));
+    writeFileSync(join(outside, 'leaked.md'), 'x');
+    symlinkSync(outside, join(dir, 'Topics', 'link'));
+    vault.writeNote(vault.notePath('Subsystem', 'Real'), NOTE);
+    expect(vault.listNotes()).toEqual(['Subsystems/Real.md']);
+    rmSync(outside, { recursive: true, force: true });
+  });
+
+  it('listNotes survives a dangling symlink', () => {
+    symlinkSync(join(dir, 'nope'), join(dir, 'Topics', 'dangling.md'));
+    vault.writeNote(vault.notePath('Subsystem', 'Real'), NOTE);
+    expect(vault.listNotes()).toEqual(['Subsystems/Real.md']);
+  });
+
+  it('listNotes survives an unreadable directory', () => {
+    mkdirSync(join(dir, 'Topics', 'locked'));
+    chmodSync(join(dir, 'Topics', 'locked'), 0o000);
+    vault.writeNote(vault.notePath('Subsystem', 'Real'), NOTE);
+    expect(vault.listNotes()).toEqual(['Subsystems/Real.md']);
+    chmodSync(join(dir, 'Topics', 'locked'), 0o755); // so afterEach can clean up
+  });
+
+  it('rejects a note name containing a NUL byte', () => {
+    expect(() => vault.notePath('Topic', 'foo bar')).toThrow(VaultPathError);
+  });
+
+  it('rejects a note name longer than the filesystem allows', () => {
+    expect(() => vault.notePath('Topic', 'a'.repeat(300))).toThrow(VaultPathError);
   });
 });
