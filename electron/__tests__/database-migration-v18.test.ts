@@ -66,6 +66,21 @@ describe('brain orchestration schema (v18)', () => {
     expect(db.raw.prepare('SELECT COUNT(*) AS n FROM brain_queue').get()).toEqual({ n: 0 });
   });
 
+  it('deletes brain_sources rows when the owning account is deleted', () => {
+    db.raw.prepare(`INSERT INTO accounts (name, config_dir) VALUES ('a', '/tmp/a')`).run();
+    const accountId = (db.raw.prepare(`SELECT id FROM accounts WHERE name = 'a'`).get() as { id: number }).id;
+
+    db.raw
+      .prepare(
+        `INSERT INTO brain_sources (account_id, source_id, item_key, mtime, hash, status)
+         VALUES (?, 'session', 'k', 1, 'h', 'indexed')`,
+      )
+      .run(accountId);
+    db.raw.prepare(`DELETE FROM accounts WHERE id = ?`).run(accountId);
+
+    expect(db.raw.prepare('SELECT COUNT(*) AS n FROM brain_sources').get()).toEqual({ n: 0 });
+  });
+
   it('records the migration version', () => {
     const row = db.raw.prepare('SELECT MAX(version) AS v FROM schema_version').get() as { v: number };
     expect(row.v).toBeGreaterThanOrEqual(18);
