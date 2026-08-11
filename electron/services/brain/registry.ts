@@ -1,14 +1,19 @@
-import { mkdirSync, rmSync } from 'node:fs';
-import { join, resolve, sep } from 'node:path';
+import { lstatSync, mkdirSync, realpathSync, rmSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import type { Database } from '../database';
 import { createVault, type Vault } from './vault';
 import { createVaultIndex, type SearchHit, type SearchOptions, type VaultIndex } from './search';
 import { createVaultGit, type VaultGit } from './git';
 import { fireAndLogGitFailure } from './git-logging';
-import { canonicalPath, directoryIdentity, resolveVaultRoot } from './paths';
+import { canonicalPath, fsIdentity, isSameOrInside, resolveVaultRoot } from './paths';
 import type { ParsedNote } from './types';
 
-/** Thrown when a vault path is already claimed by a different account. */
+/**
+ * Thrown when a vault's storage is not structurally isolated: its root overlaps
+ * another account's vault, or its index database is not its own — either
+ * resolving outside its root, or being literally the same file as another
+ * account's index.
+ */
 export class VaultConflictError extends Error {
   constructor(message: string) {
     super(message);
@@ -24,6 +29,11 @@ export function vaultSettingKey(accountId: number): string {
 /** Only `brain.vault.<digits>` keys are vault paths. Task 8 may add other
  *  settings under this prefix; they must not be mistaken for vault paths. */
 const VAULT_KEY_RE = /^brain\.vault\.\d+$/;
+
+/** The derived search index, inside the vault it indexes. Gitignored by the
+ *  layout vault.ts scaffolds, and rebuildable from the Markdown. */
+const INDEX_DIR = '.omnifex';
+const INDEX_FILE = 'index.db';
 
 /**
  * accountId identifies which account's data is touched, so a malformed one is a
@@ -58,13 +68,75 @@ export interface BrainService {
 }
 
 /**
- * A cached handle together with the on-disk identity of the directory it was
- * built against. The identity is what makes the entry reusable: without it the
- * cache is keyed on a name, and a name can come to mean a different directory.
+ * A cached handle together with the on-disk identity of what it is bound to.
+ * The identity is what makes the entry reusable: without it the cache is keyed
+ * on a name, and a name can come to mean a different file or directory.
  */
 interface CachedHandle {
   readonly handle: VaultHandle;
   readonly identity: string | null;
+}
+
+/**
+ * The two on-disk objects a handle is bound to: the vault root its `Vault`
+ * writes Markdown into, and the index database its `VaultIndex` holds open.
+ * Null when either is missing — which is a cache miss, not a match, so a
+ * deleted index rebuilds instead of being written to through a stale
+ * descriptor pointing at an unlinked inode.
+ */
+function handleIdentity(root: string, indexFile: string): string | null {
+  const rootId = fsIdentity(root);
+  const indexId = fsIdentity(indexFile);
+  return rootId === null || indexId === null ? null : `${rootId}|${indexId}`;
+}
+
+/**
+ * Materialise the vault's index directory and return the index database path,
+ * refusing an index that is not this vault's own.
+ *
+ * `vault.ts` routes every NOTE path through its own realpath discipline, but
+ * the index is addressed here, by the registry, so nothing else guards it — and
+ * the FTS5 table stores full note bodies (it is declared without `content=`),
+ * so opening another account's `index.db` is the confidentiality defect in
+ * full, in both directions. `mkdirSync` and better-sqlite3 both follow
+ * symlinks, which gives three ways in, all of them observed leaking:
+ *
+ *   1. `.omnifex` replaced by a symlink into another vault;
+ *   2. `index.db` replaced by a symlink into another vault;
+ *   3. `index.db` replaced by a DANGLING symlink — better-sqlite3 then CREATES
+ *      the link target, inside the other vault.
+ *
+ * (3) is why the file test is `lstat`-based rather than "resolve it and check
+ * where it lands": a check that only fires when the target already exists is
+ * the round-1 failure again. For the same reason the directory is CREATED here
+ * rather than tested for existence — `createVaultIndex` would create it moments
+ * later anyway. The index is derived, gitignored, and rebuildable, so there is
+ * no legitimate reason for it to be a link.
+ */
+function ensureVaultIndexPath(root: string): string {
+  const dir = join(root, INDEX_DIR);
+  try {
+    mkdirSync(dir, { recursive: true });
+  } catch (err) {
+    throw new Error(`cannot create vault index directory: ${dir} (${(err as Error).message})`);
+  }
+
+  if (!isSameOrInside(realpathSync.native(dir), realpathSync.native(root))) {
+    throw new VaultConflictError(`vault index directory resolves outside its vault: ${dir}`);
+  }
+
+  const file = join(dir, INDEX_FILE);
+  let isLink = false;
+  try {
+    isLink = lstatSync(file).isSymbolicLink();
+  } catch (err) {
+    // ENOENT is the ordinary first-open state; anything else is a real failure.
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+  }
+  if (isLink) {
+    throw new VaultConflictError(`vault index database is a symlink: ${file}`);
+  }
+  return file;
 }
 
 /**
@@ -96,22 +168,51 @@ export function createBrainService(db: Database): BrainService {
   }
 
   /**
+   * Every OTHER account's configured vault row. Task 8 may add further settings
+   * under this prefix, so the key shape is what decides, not the prefix.
+   */
+  function otherVaultRows(accountId: number): { key: string; value: string }[] {
+    const rows = db.raw
+      .prepare(`SELECT key, value FROM app_settings WHERE key LIKE 'brain.vault.%'`)
+      .all() as { key: string; value: string }[];
+    return rows.filter((row) => VAULT_KEY_RE.test(row.key) && row.key !== vaultSettingKey(accountId));
+  }
+
+  /**
    * Reject a vault path that IS, CONTAINS, or IS CONTAINED BY another account's
    * vault. Equality alone is insufficient: a nested vault means the outer
    * account's listNotes/readNote/rebuild see the inner account's notes, and the
    * outer vault's `git add -A` races the inner `git init`.
    */
   function assertNoOverlap(accountId: number, target: string): void {
-    const rows = db.raw
-      .prepare(`SELECT key, value FROM app_settings WHERE key LIKE 'brain.vault.%'`)
-      .all() as { key: string; value: string }[];
-    for (const row of rows) {
-      if (!VAULT_KEY_RE.test(row.key)) continue;
-      if (row.key === vaultSettingKey(accountId)) continue;
+    for (const row of otherVaultRows(accountId)) {
       const other = canonicalPath(row.value);
-      if (target === other || target.startsWith(other + sep) || other.startsWith(target + sep)) {
+      if (isSameOrInside(target, other) || isSameOrInside(other, target)) {
         throw new VaultConflictError(
           `vault path overlaps one already assigned to another account: ${target}`,
+        );
+      }
+    }
+  }
+
+  /**
+   * Reject an index database that IS another account's index database.
+   *
+   * Containment stops symlinks, but a HARD link gives one inode a second name
+   * inside a directory that is legitimately this vault's own, so every
+   * path-based check passes and both accounts read and write one FTS table.
+   * Identity is the only thing that sees it. An index that does not exist yet
+   * cannot be a hard link to anything, and the account that opens second
+   * detects the collision either way, so the test is symmetric.
+   */
+  function assertIndexNotShared(accountId: number, indexFile: string): void {
+    const identity = fsIdentity(indexFile);
+    if (identity === null) return;
+    for (const row of otherVaultRows(accountId)) {
+      const other = join(resolve(row.value), INDEX_DIR, INDEX_FILE);
+      if (fsIdentity(other) === identity) {
+        throw new VaultConflictError(
+          `vault index database is shared with another account: ${indexFile}`,
         );
       }
     }
@@ -187,8 +288,16 @@ export function createBrainService(db: Database): BrainService {
       // handle for its whole life. Before ensureLayout(), because scaffolding a
       // vault into the directory and only then deciding it belongs to another
       // account means the victim's vault has already been written into.
+      //
+      // Two storage locations have to be judged, not one: the vault ROOT, which
+      // holds the Markdown, and the index DATABASE, which holds a full copy of
+      // every note body in its FTS table. Guarding only the root leaves the
+      // index reachable through its own aliases.
+      let indexFile: string;
       try {
         assertNoOverlap(accountId, canonicalPath(root));
+        indexFile = ensureVaultIndexPath(root);
+        assertIndexNotShared(accountId, indexFile);
       } catch (err) {
         // Fail closed and let go: a handle just judged unsafe must not keep a
         // live SQLite descriptor open on another account's vault.
@@ -196,12 +305,15 @@ export function createBrainService(db: Database): BrainService {
         throw err;
       }
 
-      // Reuse the handle only when the configured name AND the directory that
-      // name currently reaches are both the ones it was built for. A null
-      // identity means the root is gone, which is a miss, not a match.
+      // Reuse the handle only when the configured name AND the objects that
+      // name currently reaches are the ones it was built for.
       const cached = handles.get(accountId);
-      const identity = directoryIdentity(root);
-      if (cached && identity !== null && cached.identity === identity && cached.handle.root === root) {
+      if (
+        cached &&
+        cached.identity !== null &&
+        cached.identity === handleIdentity(root, indexFile) &&
+        cached.handle.root === root
+      ) {
         return cached.handle;
       }
       if (cached) closeHandle(accountId);
@@ -213,12 +325,12 @@ export function createBrainService(db: Database): BrainService {
       // Versioning is a safety net; a missing git binary must not block a write.
       fireAndLogGitFailure(git.init(), 'brain: git init');
 
-      const index = createVaultIndex(join(vault.root, '.omnifex', 'index.db'));
+      const index = createVaultIndex(indexFile);
 
       const handle: VaultHandle = { accountId, root: vault.root, vault, index, git };
-      // Read the identity again, after ensureLayout: on a cold open the
-      // directory did not exist a moment ago, so the earlier read was null.
-      handles.set(accountId, { handle, identity: directoryIdentity(vault.root) });
+      // Read the identity again, after the index file has been created: on a
+      // cold open it did not exist a moment ago, so the earlier read was null.
+      handles.set(accountId, { handle, identity: handleIdentity(vault.root, indexFile) });
       return handle;
     },
 

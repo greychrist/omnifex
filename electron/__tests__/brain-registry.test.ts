@@ -1,9 +1,14 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, existsSync, mkdirSync, symlinkSync, chmodSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, mkdirSync, symlinkSync, chmodSync, linkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, isAbsolute, sep } from 'node:path';
 import { createDatabase, type Database } from '../services/database';
-import { createBrainService, VaultConflictError, type BrainService } from '../services/brain/registry';
+import {
+  createBrainService,
+  vaultSettingKey,
+  VaultConflictError,
+  type BrainService,
+} from '../services/brain/registry';
 import type { ParsedNote } from '../services/brain/types';
 
 function note(body: string, type: ParsedNote['frontmatter']['type'] = 'Subsystem'): ParsedNote {
@@ -30,9 +35,18 @@ describe('brain registry', () => {
   afterEach(() => {
     brain.closeAll();
     db.close();
-    // open() fires git init in the background, so a `.git` directory can still
-    // be growing while this runs. Retry rather than fail the test on ENOTEMPTY.
-    rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 });
+    // open() fires `git init` in the background and nothing tracks the child
+    // process, so a `.git` directory can still be filling while this runs.
+    // Retry, then give up quietly: this is cleanup, not an assertion, and a
+    // temp directory surviving in $TMPDIR must never fail a test.
+    // The retry budget is deliberately small: node backs off linearly
+    // (retryDelay x attempt), so a large one blows vitest's 10s hook timeout,
+    // which is a worse failure than a surviving temp directory.
+    try {
+      rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 });
+    } catch {
+      // Best effort — the OS reaps $TMPDIR.
+    }
   });
 
   it('returns null for an account with no vault configured', () => {
@@ -294,6 +308,150 @@ describe('brain registry', () => {
     } finally {
       process.chdir(cwd);
     }
+  });
+
+  // --- round 5 ---------------------------------------------------------------
+
+  const indexDir = (name: string): string => join(dir, name, '.omnifex');
+  const indexDb = (name: string): string => join(indexDir(name), 'index.db');
+
+  /** Two configured vaults, each with one note and a built index. */
+  function twoVaults(): void {
+    brain.setVaultPath(1, join(dir, 'personal'));
+    brain.setVaultPath(2, join(dir, 'work'));
+    brain.writeNote(1, 'Subsystems/Personal.md', note('personal stdio secret'), 'Manual edit');
+    brain.writeNote(2, 'Subsystems/Work.md', note('work stdio secret'), 'Manual edit');
+    brain.closeAll();
+  }
+
+  it('ISOLATION: refuses an index directory symlinked into another vault', () => {
+    twoVaults();
+    rmSync(indexDir('work'), { recursive: true, force: true });
+    symlinkSync(indexDir('personal'), indexDir('work'));
+
+    expect(() => brain.open(2)).toThrow(VaultConflictError);
+    expect(brain.search(2, 'stdio')).toEqual([]);
+    expect(() =>
+      brain.writeNote(2, 'Subsystems/Leak.md', note('leaked'), 'Manual edit'),
+    ).toThrow(VaultConflictError);
+  });
+
+  it('ISOLATION: refuses an index database symlinked into another vault', () => {
+    twoVaults();
+    rmSync(indexDb('work'), { force: true });
+    symlinkSync(indexDb('personal'), indexDb('work'));
+
+    expect(() => brain.open(2)).toThrow(VaultConflictError);
+    expect(brain.search(2, 'stdio')).toEqual([]);
+  });
+
+  it('ISOLATION: refuses a DANGLING index symlink, which SQLite would create', () => {
+    brain.setVaultPath(1, join(dir, 'personal'));
+    brain.setVaultPath(2, join(dir, 'work'));
+    brain.writeNote(1, 'Subsystems/Personal.md', note('personal stdio secret'), 'Manual edit');
+    brain.closeAll();
+    // Account 2 has never been opened, so its index does not exist yet: the
+    // link has no target until better-sqlite3 creates one inside account 1.
+    mkdirSync(indexDir('work'), { recursive: true });
+    symlinkSync(join(dir, 'personal', '.omnifex', 'nonexistent.db'), indexDb('work'));
+
+    expect(() => brain.open(2)).toThrow(VaultConflictError);
+    expect(existsSync(join(dir, 'personal', '.omnifex', 'nonexistent.db'))).toBe(false);
+  });
+
+  it('ISOLATION: refuses an index database HARD-LINKED to another vault', () => {
+    twoVaults();
+    rmSync(indexDb('work'), { force: true });
+    linkSync(indexDb('personal'), indexDb('work'));
+
+    // No path check can see this: both names are legitimately inside their own
+    // vault, and there is no symlink anywhere. Only the inode gives it away.
+    expect(() => brain.open(2)).toThrow(VaultConflictError);
+    expect(brain.search(2, 'stdio')).toEqual([]);
+  });
+
+  it('ISOLATION: re-checks the index on a WARM handle', () => {
+    brain.setVaultPath(1, join(dir, 'personal'));
+    brain.setVaultPath(2, join(dir, 'work'));
+    brain.writeNote(1, 'Subsystems/Personal.md', note('personal stdio secret'), 'Manual edit');
+    brain.open(2); // warm — deliberately not closed
+    rmSync(indexDir('work'), { recursive: true, force: true });
+    symlinkSync(indexDir('personal'), indexDir('work'));
+
+    expect(() =>
+      brain.writeNote(2, 'Subsystems/Leak.md', note('leaked'), 'Manual edit'),
+    ).toThrow(VaultConflictError);
+    expect(() => brain.open(2)).toThrow(VaultConflictError);
+  });
+
+  it('accepts a vault reached through a symlinked root', () => {
+    // The guard must not fire on a legitimate arrangement: a vault whose root
+    // is itself a symlink is fine, so long as it overlaps nobody.
+    mkdirSync(join(dir, 'elsewhere'), { recursive: true });
+    symlinkSync(join(dir, 'elsewhere'), join(dir, 'linked'));
+    brain.setVaultPath(1, join(dir, 'linked'));
+    brain.writeNote(1, 'Subsystems/A.md', note('the stdio bridge'), 'Manual edit');
+    expect(brain.search(1, 'stdio').map((h) => h.notePath)).toEqual(['Subsystems/A.md']);
+  });
+
+  it('trims a vault path before resolving it, not only before validating it', () => {
+    const cwd = process.cwd();
+    process.chdir(dir);
+    try {
+      brain.setVaultPath(1, `  ${join(dir, 'padded')}  `);
+      expect(brain.vaultPath(1)).toBe(join(dir, 'padded'));
+      // A leading space would have made the absolute path RELATIVE.
+      expect(existsSync(join(dir, '  '))).toBe(false);
+    } finally {
+      process.chdir(cwd);
+    }
+  });
+
+  it('treats the filesystem root as containing every other vault', () => {
+    brain.setVaultPath(1, sep);
+    expect(() => brain.setVaultPath(2, join(dir, 'work'))).toThrow(VaultConflictError);
+  });
+
+  it('re-checks the settings table on a warm handle whose directory is untouched', () => {
+    brain.setVaultPath(2, join(dir, 'work'));
+    brain.writeNote(2, 'Subsystems/Work.md', note('work stdio secret'), 'Manual edit');
+
+    // A conflicting row written straight into app_settings: a migration, a
+    // second service instance, a future writer. Nothing on disk moves, so the
+    // handle's identity is unchanged and the cache would happily serve it.
+    // Only running the guard BEFORE the cache catches this.
+    db.saveSetting(vaultSettingKey(1), join(dir, 'work'));
+
+    expect(() => brain.open(2)).toThrow(VaultConflictError);
+    expect(() =>
+      brain.writeNote(2, 'Subsystems/X.md', note('x'), 'Manual edit'),
+    ).toThrow(VaultConflictError);
+    expect(brain.search(2, 'stdio')).toEqual([]);
+  });
+
+  it('degrades a WARM search to [] when an overlap appears on disk', () => {
+    brain.setVaultPath(1, join(dir, 'personal'));
+    brain.setVaultPath(2, join(dir, 'work'));
+    brain.writeNote(1, 'Subsystems/Personal.md', note('personal stdio secret'), 'Manual edit');
+    brain.open(2); // both handles warm — no closeAll before the swap
+    rmSync(join(dir, 'work'), { recursive: true, force: true });
+    symlinkSync(join(dir, 'personal'), join(dir, 'work'));
+
+    expect(brain.search(1, 'stdio')).toEqual([]);
+    expect(brain.search(2, 'stdio')).toEqual([]);
+  });
+
+  it('rebinds a cached handle when its index database is deleted', () => {
+    brain.setVaultPath(1, join(dir, 'personal'));
+    brain.writeNote(1, 'Subsystems/A.md', note('the stdio bridge'), 'Manual edit');
+    rmSync(indexDb('personal'), { force: true });
+
+    brain.writeNote(1, 'Subsystems/B.md', note('another stdio note'), 'Manual edit');
+    // A cached handle still holding the unlinked inode would swallow that write
+    // silently: the file would never come back and the note would be missing
+    // from the index for the life of the process.
+    expect(existsSync(indexDb('personal'))).toBe(true);
+    expect(brain.search(1, 'stdio').map((h) => h.notePath)).toEqual(['Subsystems/B.md']);
   });
 
   it('rebinds a cached handle when its directory is replaced on disk', () => {
