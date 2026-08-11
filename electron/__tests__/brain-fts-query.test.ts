@@ -49,4 +49,10 @@ describe('toFtsQuery', () => {
   it('returns null when the input is only operator keywords', () => {
     expect(toFtsQuery('AND OR NOT')).toBeNull();
   });
+
+  it('returns null for non-string input (undefined, null, number)', () => {
+    expect(toFtsQuery(undefined as unknown as string)).toBeNull();
+    expect(toFtsQuery(null as unknown as string)).toBeNull();
+    expect(toFtsQuery(123 as unknown as string)).toBeNull();
+  });
 });

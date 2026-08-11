@@ -20,6 +20,13 @@ const TOKEN = /[\p{L}\p{N}_-]+/gu;
  * query with an empty MATCH, which is a syntax error.
  */
 export function toFtsQuery(input: string): string | null {
+  // Runtime guard: the IPC boundary is untyped at runtime, so callers may pass
+  // non-strings despite the TypeScript signature. Treat non-strings the same as
+  // "no searchable tokens" to maintain the contract that this function never throws.
+  if (typeof input !== 'string') {
+    return null;
+  }
+
   const tokens = (input.match(TOKEN) ?? []).filter((t) => !FTS_KEYWORDS.has(t));
   if (tokens.length === 0) return null;
   // FTS5 escapes a double quote inside a string literal by doubling it. The
