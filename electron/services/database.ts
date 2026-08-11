@@ -47,6 +47,45 @@ export interface Migration {
   up: (db: BetterSqlite3.Database, opts: MigrationOptions) => void;
 }
 
+/**
+ * DDL for the Brain vault's orchestration tables (`brain_sources`,
+ * `brain_queue`). Defined once and shared by both `initSchema` (the
+ * canonical post-migration shape for fresh installs) and migration v18
+ * (the upgrade path for existing installs) so the two copies cannot drift.
+ *
+ * Note: *content* never lives here — only pointers (source_id/item_key) and
+ * status — so this table pair is not a hole in the per-account isolation
+ * model.
+ */
+const BRAIN_TABLES_DDL = `
+  CREATE TABLE IF NOT EXISTS brain_sources (
+    account_id INTEGER NOT NULL,
+    source_id TEXT NOT NULL,
+    item_key TEXT NOT NULL,
+    mtime INTEGER,
+    hash TEXT,
+    last_indexed_at TEXT,
+    status TEXT NOT NULL DEFAULT 'pending',
+    error TEXT,
+    PRIMARY KEY (account_id, source_id, item_key),
+    FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS brain_queue (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_id INTEGER NOT NULL,
+    source_id TEXT NOT NULL,
+    item_key TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    error TEXT,
+    enqueued_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    started_at TEXT,
+    finished_at TEXT,
+    UNIQUE (account_id, source_id, item_key),
+    FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+  );
+`;
+
 const migrations: Migration[] = [
   {
     version: 1,
@@ -496,6 +535,19 @@ const migrations: Migration[] = [
       }
     },
   },
+  {
+    version: 18,
+    description:
+      'Add brain_sources and brain_queue orchestration tables for the ' +
+      'per-account Brain vault (change-detection state and indexing work ' +
+      'queue, keyed by account_id). Content never lives here — only ' +
+      'pointers and status — so this is not a hole in the per-account ' +
+      'isolation model. DDL is shared with initSchema via BRAIN_TABLES_DDL ' +
+      'so the two cannot drift.',
+    up: (db) => {
+      db.exec(BRAIN_TABLES_DDL);
+    },
+  },
 ];
 
 /**
@@ -707,4 +759,8 @@ function initSchema(db: BetterSqlite3.Database): void {
     CREATE INDEX IF NOT EXISTS idx_app_logs_level ON app_logs(level);
     CREATE INDEX IF NOT EXISTS idx_app_logs_source ON app_logs(source);
   `);
+
+  // Canonical post-migration shape for brain_sources/brain_queue — see
+  // BRAIN_TABLES_DDL. Keeps fresh installs from needing migration v18 at all.
+  db.exec(BRAIN_TABLES_DDL);
 }
