@@ -1,9 +1,10 @@
-import { join, resolve } from 'node:path';
+import { join, resolve, sep } from 'node:path';
 import type { Database } from '../database';
 import { createVault, type Vault } from './vault';
 import { createVaultIndex, type SearchHit, type SearchOptions, type VaultIndex } from './search';
 import { createVaultGit, type VaultGit } from './git';
 import { fireAndLogGitFailure } from './git-logging';
+import { canonicalPath } from './paths';
 import type { ParsedNote } from './types';
 
 /** Thrown when a vault path is already claimed by a different account. */
@@ -17,6 +18,23 @@ export class VaultConflictError extends Error {
 /** app_settings key holding one account's vault root. */
 export function vaultSettingKey(accountId: number): string {
   return `brain.vault.${accountId}`;
+}
+
+/** Only `brain.vault.<digits>` keys are vault paths. Task 8 may add other
+ *  settings under this prefix; they must not be mistaken for vault paths. */
+const VAULT_KEY_RE = /^brain\.vault\.\d+$/;
+
+/**
+ * accountId identifies which account's data is touched, so a malformed one is a
+ * confidentiality risk, not a UX annoyance. It also has to agree with
+ * vaultSettingKey's string coercion, or the same account can hold two handles
+ * on one database file.
+ */
+function requireAccountId(accountId: number): number {
+  if (!Number.isInteger(accountId) || accountId < 1) {
+    throw new Error(`invalid accountId: ${String(accountId)}`);
+  }
+  return accountId;
 }
 
 export interface VaultHandle {
@@ -56,11 +74,13 @@ export function createBrainService(db: Database): BrainService {
 
   const service: BrainService = {
     vaultPath(accountId: number): string | null {
+      requireAccountId(accountId);
       return readPath(accountId);
     },
 
     setVaultPath(accountId: number, path: string): void {
-      const target = resolve(path);
+      requireAccountId(accountId);
+      const target = canonicalPath(path);
 
       // Two accounts sharing a vault would defeat the whole isolation model, so
       // this is rejected at configuration time rather than guarded downstream.
@@ -68,10 +88,15 @@ export function createBrainService(db: Database): BrainService {
         .prepare(`SELECT key, value FROM app_settings WHERE key LIKE 'brain.vault.%'`)
         .all() as { key: string; value: string }[];
       for (const row of rows) {
+        if (!VAULT_KEY_RE.test(row.key)) continue;
         if (row.key === vaultSettingKey(accountId)) continue;
-        if (resolve(row.value) === target) {
+        const other = canonicalPath(row.value);
+        // Equality is not enough: one vault nested inside another means the
+        // outer account's listNotes/readNote/rebuild see the inner account's
+        // notes, and the outer vault's `git add -A` races the inner `git init`.
+        if (target === other || target.startsWith(other + sep) || other.startsWith(target + sep)) {
           throw new VaultConflictError(
-            `vault path is already assigned to another account: ${target}`,
+            `vault path overlaps one already assigned to another account: ${target}`,
           );
         }
       }
@@ -81,11 +106,13 @@ export function createBrainService(db: Database): BrainService {
     },
 
     clearVaultPath(accountId: number): void {
+      requireAccountId(accountId);
       closeHandle(accountId);
       db.raw.prepare('DELETE FROM app_settings WHERE key = ?').run(vaultSettingKey(accountId));
     },
 
     open(accountId: number): VaultHandle | null {
+      requireAccountId(accountId);
       const path = readPath(accountId);
       // No configured vault is an ordinary state, not an error: indexing for
       // this account is simply inert.
@@ -110,12 +137,14 @@ export function createBrainService(db: Database): BrainService {
     },
 
     search(accountId: number, query: string, opts?: SearchOptions): SearchHit[] {
+      requireAccountId(accountId);
       const handle = service.open(accountId);
       if (!handle) return [];
       return handle.index.search(query, opts);
     },
 
     writeNote(accountId: number, relPath: string, note: ParsedNote, commitMessage: string): void {
+      requireAccountId(accountId);
       const handle = service.open(accountId);
       if (!handle) {
         // No silent fallback to another account's vault.

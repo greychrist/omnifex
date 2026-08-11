@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, mkdirSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createDatabase, type Database } from '../services/database';
@@ -110,5 +110,43 @@ describe('brain registry', () => {
     brain.setVaultPath(1, join(dir, 'second'));
     expect(brain.open(1)).not.toBe(first);
     expect(brain.open(1)!.root).toBe(join(dir, 'second'));
+  });
+
+  it('rejects a vault path that aliases another account via a symlink', () => {
+    const real = join(dir, 'realvault');
+    mkdirSync(real, { recursive: true });
+    symlinkSync(real, join(dir, 'linkvault'));
+    brain.setVaultPath(1, real);
+    expect(() => brain.setVaultPath(2, join(dir, 'linkvault'))).toThrow(VaultConflictError);
+  });
+
+  it('rejects a case-variant path on a case-insensitive filesystem', () => {
+    const upper = join(dir, 'Vault');
+    mkdirSync(upper, { recursive: true });
+    // Skip where aliasing is impossible; on a case-sensitive FS these are two dirs.
+    if (!existsSync(join(dir, 'vault'))) return;
+    brain.setVaultPath(1, upper);
+    expect(() => brain.setVaultPath(2, join(dir, 'vault'))).toThrow(VaultConflictError);
+  });
+
+  it('rejects a vault path nested inside another account vault', () => {
+    brain.setVaultPath(1, join(dir, 'personal'));
+    expect(() => brain.setVaultPath(2, join(dir, 'personal', 'work'))).toThrow(VaultConflictError);
+  });
+
+  it('rejects a vault path that contains another account vault', () => {
+    brain.setVaultPath(1, join(dir, 'outer', 'inner'));
+    expect(() => brain.setVaultPath(2, join(dir, 'outer'))).toThrow(VaultConflictError);
+  });
+
+  it('rejects a non-integer accountId rather than silently keying on it', () => {
+    expect(() => brain.setVaultPath('1' as unknown as number, join(dir, 'x'))).toThrow(/accountId/);
+    expect(() => brain.open(NaN)).toThrow(/accountId/);
+    expect(() => brain.search(0, 'x')).toThrow(/accountId/);
+  });
+
+  it('ignores non-path settings under the brain.vault namespace', () => {
+    db.saveSetting('brain.vault.enabled', 'true');
+    expect(() => brain.setVaultPath(1, join(dir, 'personal'))).not.toThrow();
   });
 });
