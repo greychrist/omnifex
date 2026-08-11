@@ -477,7 +477,7 @@ session, block the UI, or consume rate limit needed for real work.
 
 | Failure | Behaviour |
 |---|---|
-| Vault missing or moved | Brain tab shows a setup state; indexing pauses. No crash, no auto-recreate at a stale path. |
+| Vault missing or moved | `open()` lazily creates the vault layout on first use — including at a path whose directory has since been removed, since that is the correct behaviour for first-use creation. A Brain tab that needs to distinguish "never configured" from "configured but missing" therefore cannot rely on `open()`; it requires a non-creating status probe (Plan 2 requirement). |
 | `git` unavailable | Indexing proceeds, versioning disabled, warning surfaced. |
 | Extraction fails zod validation | One retry, then `failed` with the error visible in the tab. Never blocks the queue. |
 | No resolved account | Item marked `blocked: no account` and surfaced. No silent default-account fallback, and never written to another account's vault. |

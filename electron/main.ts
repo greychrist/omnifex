@@ -435,16 +435,13 @@ app.whenReady().then(() => {
   }
   _db = db;
 
-  // The Brain is auxiliary: a construction failure (e.g. a locked/corrupt
-  // settings row) must not stop the app from starting. `brain` stays
-  // `undefined` in that case, and every Brain IPC handler degrades to an
-  // inert response rather than throwing when the service isn't wired.
-  let brainService: BrainService | undefined;
-  try {
-    brainService = createBrainService(db);
-  } catch (err) {
-    console.error('Failed to create brain service:', err);
-  }
+  // `createBrainService` reads no settings and does no I/O — it closes over
+  // `db` and returns an object literal — so there is no construction failure
+  // to guard against here. It stays typed as `BrainService | undefined`
+  // because every entry in the Services interface is optional by convention,
+  // and every Brain IPC handler already degrades (reads) or throws cleanly
+  // (writes) when it isn't wired.
+  const brainService: BrainService | undefined = createBrainService(db);
 
   // Seed first-run defaults. Empty-string values (user deliberately cleared)
   // are preserved; only truly-missing keys get the default.

@@ -1,5 +1,5 @@
 import { lstatSync, mkdirSync, readdirSync, realpathSync, rmSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 import type { Database } from '../database';
 import { createVault, type Vault } from './vault';
 import { createVaultIndex, type SearchHit, type SearchOptions, type VaultIndex } from './search';
@@ -275,7 +275,23 @@ export function createBrainService(db: Database): BrainService {
       // No configured vault is an ordinary state, not an error: indexing for
       // this account is simply inert.
       if (!path) return null;
-      const root = resolve(path);
+
+      // Route the stored value through the SAME validation setVaultPath()
+      // applies, here at the point it is READ FROM STORAGE — not only where it
+      // was written. app_settings can be written directly (tests do it, and a
+      // dev-only raw-SQL channel exists), so a stored value never actually
+      // passed through setVaultPath() at all. A bare `resolve()` would accept
+      // whitespace-only or `~`-prefixed garbage and happily scaffold a vault at
+      // e.g. `<cwd>/   `. An invalid stored value is treated the same as "no
+      // configured vault" (return null) rather than thrown: this keeps the
+      // unconfigured-account contract uniform for every caller of open(),
+      // including search(), which already returns [] for that case.
+      let root: string;
+      try {
+        root = resolveVaultRoot(path);
+      } catch {
+        return null;
+      }
 
       // THE GUARD. Unconditional, and first: before the cache is consulted and
       // before a single byte is written to disk.

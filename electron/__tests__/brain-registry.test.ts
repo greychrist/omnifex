@@ -540,6 +540,22 @@ describe('brain registry', () => {
     expect(brain.search(1, 'stdio').map((h) => h.notePath)).toEqual(['Subsystems/B.md']);
   });
 
+  it('treats a whitespace-only stored path as unconfigured rather than scaffolding at cwd', () => {
+    // Bypasses setVaultPath() entirely — the same way a raw app_settings write
+    // (tests, or the dev-only raw-SQL channel) would. `db.saveSetting` is
+    // truthy and survives the `if (!path) return null` guard in open(), so
+    // only a read-side resolveVaultRoot() call catches it. open() returns null
+    // rather than throwing: an unusable stored value is treated the same as
+    // "no configured vault" for every other unconfigured-account case (e.g.
+    // search() already returns [] rather than throwing).
+    db.saveSetting(vaultSettingKey(1), '   ');
+    const cwd = process.cwd();
+
+    expect(brain.open(1)).toBeNull();
+    expect(brain.search(1, 'anything')).toEqual([]);
+    expect(existsSync(join(cwd, '   '))).toBe(false);
+  });
+
   it('rebinds a cached handle when its directory is replaced on disk', () => {
     brain.setVaultPath(1, join(dir, 'personal'));
     const first = brain.open(1);

@@ -51,6 +51,13 @@ function requireString(params: Params, camel: string, snake: string): string {
  *    applies the identical degrade-to-`[]` rule here at the IPC boundary
  *    (the registry doesn't do it for `open()` itself, since `open()` is also
  *    what `writeNote`/`brain_read_note` rely on to fail closed).
+ *
+ * `brain` being `undefined` (service failed to construct) is handled per
+ * handler, not uniformly: read handlers keep `brain?.` and degrade to `[]` /
+ * `null`, matching the "Brain is auxiliary" rule above. `brain_set_vault_path`
+ * and `brain_clear_vault_path` are writes — reporting success via `null` while
+ * `brain` is undefined would be a write that silently never happened — so they
+ * throw instead.
  */
 export function createBrainHandlers(brain?: BrainService): Record<string, HandlerFn> {
   return {
@@ -59,15 +66,22 @@ export function createBrainHandlers(brain?: BrainService): Record<string, Handle
     },
 
     async brain_set_vault_path(_event, params = {}) {
+      // Unlike the read handlers, this is a write: `brain?.` here would report
+      // success while doing nothing when the service failed to construct. A
+      // write path must not claim to have performed a write it did not do.
+      if (!brain) throw new Error('brain service unavailable');
       // Tilde expansion is the UI layer's job; the registry rejects a path
       // whose first segment is `~` and that rejection message is surfaced
       // as-is below, not special-cased.
-      brain?.setVaultPath(requireAccountId(params), requireString(params, 'path', 'path'));
+      brain.setVaultPath(requireAccountId(params), requireString(params, 'path', 'path'));
       return null;
     },
 
     async brain_clear_vault_path(_event, params = {}) {
-      brain?.clearVaultPath(requireAccountId(params));
+      // Same reasoning as brain_set_vault_path above: a silent no-op here
+      // would look like a successful clear when nothing was cleared.
+      if (!brain) throw new Error('brain service unavailable');
+      brain.clearVaultPath(requireAccountId(params));
       return null;
     },
 

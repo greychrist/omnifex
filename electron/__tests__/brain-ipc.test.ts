@@ -119,6 +119,18 @@ describe('brain IPC handlers', () => {
     expect(await none.brain_vault_path(null, { accountId: 1 })).toBeNull();
   });
 
+  it('write handlers throw rather than silently no-op when no brain service is wired', async () => {
+    // Unlike the read handlers above, a write must not report success (via a
+    // `null` return) when nothing was actually written.
+    const none = createBrainHandlers(undefined);
+    await expect(
+      none.brain_set_vault_path(null, { accountId: 1, path: join(dir, 'personal') }),
+    ).rejects.toThrow(/brain service unavailable/);
+    await expect(
+      none.brain_clear_vault_path(null, { accountId: 1 }),
+    ).rejects.toThrow(/brain service unavailable/);
+  });
+
   // --- error-shape behaviour beyond the brief -------------------------------
   //
   // The registry (Task 7) went through six security-fix rounds and now throws
