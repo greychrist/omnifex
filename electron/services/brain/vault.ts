@@ -132,7 +132,7 @@ export function createVault(root: string): Vault {
       if (trimmed === '.' || trimmed === '..') {
         throw new VaultPathError(`note name is a directory reference: ${name}`);
       }
-      if (trimmed.includes(' ')) {
+      if (trimmed.includes('\0')) {
         throw new VaultPathError(`note name contains a NUL byte: ${name}`);
       }
       if (Buffer.byteLength(`${trimmed}.md`, 'utf8') > MAX_NAME_BYTES) {

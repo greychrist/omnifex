@@ -11,7 +11,7 @@ const NOTE: ParsedNote = {
     type: 'Subsystem', aliases: ['decider'], keywords: ['permissions'],
     created: '2026-01-01', updated: '2026-01-01', sources: [],
   },
-  body: '# Permission-decider\n\n## Summary\nEnforces permission changes.\n',
+  body: '# Permission decider\n\n## Summary\nEnforces permission changes.\n',
 };
 
 describe('vault', () => {
@@ -51,7 +51,7 @@ describe('vault', () => {
   });
 
   it('maps a type and name to a path inside the right folder', () => {
-    expect(vault.notePath('Subsystem', 'Permission-decider')).toBe('Subsystems/Permission-decider.md');
+    expect(vault.notePath('Subsystem', 'Permission decider')).toBe('Subsystems/Permission decider.md');
   });
 
   it('rejects names containing path separators', () => {
@@ -69,7 +69,7 @@ describe('vault', () => {
   });
 
   it('round-trips a note through write and read', () => {
-    const rel = vault.notePath('Subsystem', 'Permission-decider');
+    const rel = vault.notePath('Subsystem', 'Permission decider');
     vault.writeNote(rel, NOTE);
     const read = vault.readNote(rel);
     expect(read.frontmatter.aliases).toEqual(['decider']);
@@ -88,7 +88,7 @@ describe('vault', () => {
   });
 
   it('derives a title from the filename', () => {
-    expect(vault.noteTitle('Subsystems/Permission-decider.md')).toBe('Permission-decider');
+    expect(vault.noteTitle('Subsystems/Permission decider.md')).toBe('Permission decider');
   });
 
   it('surfaces NoteParseError for a corrupt note without affecting others', () => {
@@ -142,7 +142,11 @@ describe('vault', () => {
   });
 
   it('rejects a note name containing a NUL byte', () => {
-    expect(() => vault.notePath('Topic', 'foo bar')).toThrow(VaultPathError);
+    expect(() => vault.notePath('Topic', 'foo\0bar')).toThrow(VaultPathError);
+  });
+
+  it('allows spaces in note names', () => {
+    expect(vault.notePath('Topic', 'Claude permission rules')).toBe('Topics/Claude permission rules.md');
   });
 
   it('rejects a note name longer than the filesystem allows', () => {
