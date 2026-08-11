@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -74,5 +74,35 @@ describe('vault git', () => {
 
     // No interleaving: each commit's start is immediately followed by its end.
     expect(order).toEqual(['start:A', 'end:A', 'start:B', 'end:B']);
+  });
+
+  it('creates its own repo when the vault is nested inside another repo', async () => {
+    const outer = mkdtempSync(join(tmpdir(), 'omnifex-outer-'));
+    execFileSync('git', ['init', '-q'], { cwd: outer });
+    execFileSync('git', ['config', 'user.email', 't@t'], { cwd: outer });
+    execFileSync('git', ['config', 'user.name', 'T'], { cwd: outer });
+    writeFileSync(join(outer, 'unrelated-wip.txt'), 'do not commit me');
+
+    const vaultDir = join(outer, 'brain-vault');
+    mkdirSync(vaultDir);
+    const git = createVaultGit(vaultDir);
+    await git.init();
+
+    // The vault must have its OWN repo, not the outer one.
+    expect(existsSync(join(vaultDir, '.git'))).toBe(true);
+
+    execFileSync('git', ['config', 'user.email', 't@t'], { cwd: vaultDir });
+    execFileSync('git', ['config', 'user.name', 'T'], { cwd: vaultDir });
+    writeFileSync(join(vaultDir, 'note.md'), 'x');
+    expect(await git.commitAll('Index session xyz')).toBe(true);
+
+    // The outer repo must be completely untouched: no commits, and the
+    // unrelated file still unstaged.
+    const outerCommits = execFileSync('git', ['rev-list', '--count', '--all'], { cwd: outer, encoding: 'utf8' }).trim();
+    expect(outerCommits).toBe('0');
+    const outerStatus = execFileSync('git', ['status', '--porcelain'], { cwd: outer, encoding: 'utf8' });
+    expect(outerStatus).toContain('unrelated-wip.txt');
+
+    rmSync(outer, { recursive: true, force: true });
   });
 });

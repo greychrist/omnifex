@@ -41,15 +41,16 @@ export function createVaultGit(root: string, exec: ExecGit = defaultExec): Vault
     init(): Promise<void> {
       return serialize(async () => {
         try {
-          await exec(['rev-parse', '--git-dir'], root);
-          return; // already a repo
-        } catch {
-          // not a repo yet
-        }
-        try {
+          // `git init` is idempotent, and it correctly creates a NESTED repo
+          // when the vault sits inside another repository. Do not pre-check
+          // with `rev-parse --git-dir`: that walks UP the tree, so a vault
+          // placed inside an existing repo would look already-initialised, and
+          // every later `git add -A` would stage the OUTER repo's whole working
+          // tree — committing the user's unrelated work under a Brain message.
           await exec(['init', '-q'], root);
         } catch {
-          // Versioning is a safety net, not a hard dependency. Callers proceed.
+          // Versioning is a safety net, not a hard dependency. A missing git
+          // binary must not fail a write whose Markdown already landed.
         }
       });
     },
