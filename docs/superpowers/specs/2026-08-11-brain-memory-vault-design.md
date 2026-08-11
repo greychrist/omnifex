@@ -75,6 +75,7 @@ Rowboat converged on independently. They become a source, not the vault.
 
 | Question | Decision |
 |---|---|
+| Scope of memory | **One vault per account.** Memory belongs to an account, not the app. Isolation is enforced by process environment — each account's MCP server is spawned with only its own vault path — not by query filters. |
 | Retrieval | SQLite FTS5 with agent-authored aliases/keywords. Not grep, not embeddings — there is no embeddings endpoint on a Claude subscription, and introducing one means a new credential and a new cost centre. |
 | Sources (v1) | Session transcripts, repo artifacts, explicit capture, auto-memory ingest. GitHub/Jira get the adapter interface but no implementation — they are the only source depending on credentials that are not wired. |
 | Auto-memory | Ingested as a source. The vault stays separate; OmniFex never writes into a Claude config dir. |
@@ -96,15 +97,24 @@ by spawning the system binary through an injectable exec, matching
 
 ## Design
 
-### 1. Vault
+### 1. Vault — one per account
 
-Default `~/Documents/OmniFex Brain/`, overridable in Settings, persisted in
-`app_settings`. Deliberately outside userData: the vault must be openable in
-Obsidian, backed up, and deletable without touching OmniFex.
+Memory belongs to an account, not to the app. A single shared vault would let a
+session running under the personal account retrieve work content through
+`brain_search`, breaking the same boundary the user's own global CLAUDE.md
+enforces. Every account gets its own vault, its own git repo, and its own
+index.
+
+Default `~/Documents/OmniFex Brain/<account-name>/`, overridable per account and
+persisted in `app_settings` under `brain.vault.<account_id>`. Deliberately
+outside userData: a vault must be openable in Obsidian, backed up, and deletable
+without touching OmniFex.
 
 ```
-OmniFex Brain/
+OmniFex Brain/<account-name>/
 ├── .git/                     # system git via execFile, injectable for tests
+├── .gitignore                # ignores .omnifex/
+├── .omnifex/index.db         # FTS5 index — derived, disposable, not versioned
 ├── config/notes.json         # note-type definitions
 ├── Projects/                 # one per repo
 ├── Subsystems/               # named areas within a project
@@ -112,6 +122,16 @@ OmniFex Brain/
 ├── Sessions/                 # append-only digest per indexed session
 └── Notes/                    # explicit capture + ingested auto-memory
 ```
+
+The index DB lives **inside** the vault rather than in `greychrist.db`. That
+makes isolation structural rather than conditional: there is no table containing
+two accounts' notes, so there is no query that can accidentally cross accounts by
+omitting a filter. It also makes a vault self-contained — move the directory and
+its index moves with it. The index remains derived and rebuildable from the
+Markdown, so excluding it from git costs nothing.
+
+Wikilinks never cross vaults. A `Topics/MCP` note may exist in two accounts'
+vaults; they are unrelated notes and are never merged.
 
 Three entity types that accumulate and get curated; two record types that are
 append-only. Decisions are **not** a type — they are a `## Decisions` section
@@ -184,15 +204,35 @@ indexing proceeds with versioning disabled and a warning surfaced.
 
 ### 4. Multi-account
 
-Indexing runs headless against a real account, so `resolve()` applies: a
-session's index run uses **the project's resolved account** (explicit override →
-longest path rule → `null`). Cross-project work — curation, cross-repo Topic
-merges — has no project to resolve from and uses an explicit **Brain account**
-setting. If it is unset and there is no project context, the run does not happen
-and the queue records why. No silent default-account fallback.
+The governing invariant: **the account that owns a source is the account that
+indexes it, and the account whose vault receives it.** No source is ever
+processed by, or written into, another account.
 
-Auto-memory ingest resolves memory directories from the account's
-`CLAUDE_CONFIG_DIR`, never from a hardcoded `~/.claude/`.
+Account ownership is derived from the source's location, not from `resolve()`:
+
+| Source | Owning account |
+|---|---|
+| Session transcript | The config dir it lives under — `getAccountByConfigDir()` (`accounts.ts:283`). Definitive; no resolution needed. |
+| Auto-memory note | Same: `$CLAUDE_CONFIG_DIR/projects/<encoded>/memory/`. Never a hardcoded `~/.claude/`. |
+| Repo artifact | `resolve()` on the repo path (explicit override → longest path rule → `null`). Unresolved means no vault, so the item is skipped and recorded — no silent default-account fallback. |
+| Explicit capture | The account whose MCP server received the `brain_remember` call. |
+
+Deriving transcript ownership from the config dir rather than `resolve()` is
+deliberate: it stays correct even if path rules change after a session ran.
+
+This also matters beyond storage. Indexing a work transcript through the
+personal account would push work content through the wrong subscription — a leak
+in the opposite direction from the retrieval one. Binding both the vault and the
+indexing account to the source's owner closes both.
+
+There is no separate "Brain account" setting. Cross-project work within a vault
+— curation, cross-repo Topic merges — runs under that vault's own account.
+
+Orchestration state stays in `greychrist.db` and carries `account_id`:
+`brain_sources (account_id, source_id, item_key, mtime, hash, last_indexed_at,
+status, error)` and `brain_queue (account_id, …)`. A single worker drains the
+queue across accounts, switching `CLAUDE_CONFIG_DIR` per item. Note *content*
+never lives here — only pointers and status.
 
 ### 5. Source adapters
 
@@ -208,11 +248,13 @@ interface BrainSource {
 All three methods are independently testable. GitHub/Jira later implement the
 same interface with nothing upstream changing.
 
-**Change detection** is Rowboat's hybrid mtime-then-sha256, but state lives in a
-`brain_sources` table (`source_id, item_key, mtime, hash, last_indexed_at,
-status, error`) rather than their `knowledge_graph_state.json`. The DB,
-migrations, and `createDatabase(':memory:')` harness already exist, and a JSON
-blob rewritten per item is a corruption risk their design simply accepts.
+Every adapter also reports an owning account for each item, per the table in §4.
+
+**Change detection** is Rowboat's hybrid mtime-then-sha256, but state lives in
+the `brain_sources` table described in §4 rather than their
+`knowledge_graph_state.json`. The DB, migrations, and
+`createDatabase(':memory:')` harness already exist, and a JSON blob rewritten
+per item is a corruption risk their design simply accepts.
 
 ### 6. Distillation
 
@@ -239,8 +281,9 @@ precision proves inadequate, an LLM classifier modelled on Rowboat's
 
 One headless run per admitted item — `BATCH_SIZE = 1`, adopted from Rowboat for
 the reason they document. It runs through the existing `AgentEngine`
-(`claude-cli-engine.ts`) with the resolved account's `CLAUDE_CONFIG_DIR`, pinned
-to Haiku, returning JSON validated by zod:
+(`claude-cli-engine.ts`) with the **owning** account's `CLAUDE_CONFIG_DIR` per
+§4 — not a resolved or default one — pinned to Haiku, returning JSON validated
+by zod:
 
 ```ts
 const Extraction = z.object({
@@ -291,8 +334,10 @@ must never compete with the user for rate limit.
 
 ### 12. FTS5 index
 
-Derived from the vault; the files remain the source of truth and the index is
-disposable.
+One index per vault, at `<vault>/.omnifex/index.db`. Derived from the Markdown;
+the files remain the source of truth and the index is disposable. There is no
+`account_id` column because there is no shared table — a search opens exactly
+one account's database.
 
 ```sql
 CREATE VIRTUAL TABLE brain_fts USING fts5(
@@ -320,8 +365,29 @@ Retrieval returns note paths; the caller reads the file.
 
 ### 13. Brain MCP server
 
-A stdio script registered into the resolved account's `mcpServers` block through
-existing `mcp.ts` machinery. Three tools:
+A stdio script registered into **each participating account's** `mcpServers`
+block through existing `mcp.ts` machinery, spawned with that account's vault in
+its environment:
+
+```jsonc
+"omnifex-brain": {
+  "command": "<process.execPath>",
+  "args": ["<resources>/brain-mcp.js"],
+  "env": {
+    "ELECTRON_RUN_AS_NODE": "1",
+    "OMNIFEX_VAULT": "/Users/…/OmniFex Brain/personal",
+    "OMNIFEX_BRAIN_DB": "/Users/…/OmniFex Brain/personal/.omnifex/index.db"
+  }
+}
+```
+
+This is where account isolation is actually enforced. The server has no account
+concept and no way to enumerate vaults — it reads the one path it was handed. A
+session under the personal account cannot reach the work vault because that
+process was never given its location. Isolation is a property of the process
+environment, not of application logic that could forget a filter.
+
+Three tools:
 
 - `brain_search(query, type?, project?, limit?)` → ranked hits with snippets
 - `brain_read(path)` → full note
@@ -339,14 +405,22 @@ SQLite; it appends to a capture file in the vault that the queue picks up on its
 next drain. This removes cross-process write contention rather than relying on
 WAL to paper over it.
 
-**Registration is opt-in and per-account.** It writes into a real Claude
-`settings.json`, so it is an explicit, reversible toggle that respects account
-resolution rather than blasting every config dir.
+**Registration is opt-in per account.** It writes into a real Claude
+`settings.json`, so each account is enabled by an explicit, reversible toggle.
+Enabling the Brain for one account never touches another's config dir, and an
+account with no vault gets no registration.
 
 ### 14. Brain tab
 
-A new tab kind. Three panes — folder tree, searchable note list, note viewer —
-plus a backlinks panel computed from wikilinks.
+A new tab kind, **scoped to exactly one account at a time**, with an explicit
+account switcher in the header reusing the existing `AccountBadge` treatment.
+Results are never merged across accounts into one list: a search shows one
+vault's hits, and switching vaults is a deliberate act. Merged-with-badges was
+considered and rejected — it makes cross-account leakage a rendering detail
+rather than an impossibility.
+
+Three panes — folder tree, searchable note list, note viewer — plus a backlinks
+panel computed from wikilinks.
 
 It is also the operational surface: queue depth, current item, failed items with
 their validation errors, Index-now, pause, kill switch. If the indexer starts
@@ -361,9 +435,10 @@ and the vault is openable there.
 
 Registered in OmniFex's own slash-command picker, deliberately **not** written
 into `$CLAUDE_CONFIG_DIR/commands/` — the Brain should leave no residue in the
-user's Claude config. It runs `brain_search`, shows ranked results, and inserts
-selected notes into the prompt. Zero token cost when unused, and it is the
-fallback for when the model does not think to call the MCP tool itself.
+user's Claude config. It searches **only the vault of the session's own
+account**, shows ranked results, and inserts selected notes into the prompt.
+Zero token cost when unused, and it is the fallback for when the model does not
+think to call the MCP tool itself.
 
 ### 16. Services and wiring
 
@@ -381,6 +456,12 @@ electron/services/brain/
 └── search.ts       FTS5
 ```
 
+`createBrainService` holds a per-account vault registry: `vault.ts`, `git.ts`,
+and `search.ts` are all instantiated per vault, so no call site can operate on
+"the vault" without having named an account first. Every Brain IPC channel takes
+an explicit `accountId`; there is no implicit current-account default, because a
+wrong default here is a confidentiality failure rather than a UX annoyance.
+
 New channels go through `src/lib/api.ts` and the `preload.ts` allow-list;
 handlers register in `ipc/handlers.ts` against `createBrainService(deps)`
 constructed in `main.ts`. Optional `undefined` params stripped before crossing
@@ -396,7 +477,10 @@ session, block the UI, or consume rate limit needed for real work.
 | Vault missing or moved | Brain tab shows a setup state; indexing pauses. No crash, no auto-recreate at a stale path. |
 | `git` unavailable | Indexing proceeds, versioning disabled, warning surfaced. |
 | Extraction fails zod validation | One retry, then `failed` with the error visible in the tab. Never blocks the queue. |
-| No resolved account | Item marked `blocked: no account` and surfaced. No silent default-account fallback. |
+| No resolved account | Item marked `blocked: no account` and surfaced. No silent default-account fallback, and never written to another account's vault. |
+| Account deleted while its vault exists | The vault is **never** deleted — it is user data. It is orphaned, surfaced in the tab as unowned, and read-only until reassigned to an account. |
+| Account has no vault configured | Indexing for it is inert and its MCP server is not registered. Not an error. |
+| Two accounts pointed at the same vault path | Rejected at configuration time. Shared vaults defeat the entire isolation model. |
 | Rate limit hit while indexing | Back off, pause the queue, surface it. |
 | FTS index corrupt or stale | Rebuild from the vault. The index is derived and disposable. |
 | Hand-edited note has broken frontmatter | Parse failure isolated to that note, shown in the tab. |
@@ -418,8 +502,16 @@ Heavily tested, pure, no model and no I/O:
 - FTS query sanitization — `node-pty`, embedded quotes, bare `OR`, `*`, empty
   string, unicode.
 - `admit()` gate rules; frontmatter round-trip; mtime/hash change detection.
-- Queue: restart survival, failure isolation, yielding to interactive sessions.
-- Account resolution: asserts the no-silent-fallback path.
+- Queue: restart survival, failure isolation, yielding to interactive sessions,
+  and correct `CLAUDE_CONFIG_DIR` switching between items owned by different
+  accounts.
+- Account ownership: transcript path → owning account via
+  `getAccountByConfigDir()`; the no-silent-fallback path for unresolved repos;
+  rejection of two accounts sharing a vault path.
+- **Isolation**: a source owned by account A never produces a write outside A's
+  vault, and a search against A's vault never returns a note from B's. Asserted
+  with two vaults wired up in a single test, since this is the property whose
+  failure is a confidentiality breach rather than a bug.
 
 Fixtures are real session JSONL, redacted and checked in.
 
@@ -436,9 +528,12 @@ app, since vitest leaves `better-sqlite3` built for Node.
 
 Ordered so the inspection surface exists before the first automated write.
 
-1. Vault + git + FTS + search — no LLM. Verifiable end-to-end against
-   hand-written notes.
-2. Brain tab — browse, search, edit. Anything the system produces is now visible.
+1. Vault + git + FTS + search, **multi-vault from the start**. No LLM.
+   Verifiable end-to-end against hand-written notes in two vaults. Account
+   scoping is not retrofittable — a single-vault step 1 would bake shared-table
+   assumptions into every layer above it.
+2. Brain tab — browse, search, edit, switch accounts. Anything the system
+   produces is now visible.
 3. Session adapter: `discover` + `admit` + `distill` — still no LLM.
    Distillation output is eyeballed before a token is spent.
 4. Extract + merge + queue — first LLM spend, into an inspectable vault.
@@ -456,6 +551,15 @@ finding out.
 
 GitHub/Jira adapters (interface only) · auto-inject on session start · graph
 visualization · embeddings and vector search · `People/` notes.
+
+**A shared cross-account tier.** Some knowledge is arguably account-agnostic —
+how the user likes work done, rather than what a given project needs. Rowboat
+keeps this in `Agent Notes/user.md` at user level. A shared tier is deliberately
+excluded from v1: it reintroduces exactly the leakage boundary per-account
+vaults exist to remove, and every safeguard would have to be re-argued. If
+duplicating preferences across vaults becomes annoying in practice, a read-only
+shared tier can be added later — at which point it needs its own explicit
+threat model, not a quiet extension of this one.
 
 ## Follow-on sub-projects
 
