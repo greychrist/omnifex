@@ -995,6 +995,31 @@ export interface SessionModelInfo {
   supportedEffortLevels?: ('low' | 'medium' | 'high' | 'xhigh' | 'max')[];
 }
 
+/** Mirrors the backend `SearchHit` in electron/services/brain/search.ts. */
+export interface BrainSearchHit {
+  notePath: string;
+  type: string;
+  title: string;
+  snippet: string;
+  /** Raw bm25 score. More negative is a better match. */
+  score: number;
+}
+
+/** Mirrors the backend `ParsedNote` in electron/services/brain/types.ts. */
+export interface BrainNote {
+  frontmatter: {
+    type: string;
+    project?: string;
+    aliases: string[];
+    keywords: string[];
+    created: string;
+    updated: string;
+    curated_at?: string;
+    sources: string[];
+  };
+  body: string;
+}
+
 /**
  * API client for interacting with the Rust backend
  */
@@ -2838,6 +2863,45 @@ export const api = {
    */
   async listCodexSessions(): Promise<CodexSessionEntry[]> {
     return apiCall<CodexSessionEntry[]>('codex_session_list', {});
+  },
+
+  // ── Brain (per-account Markdown vault) ────────────────────────────────────
+  //
+  // Every call takes an explicit accountId — there is no implicit
+  // current-account default, because a wrong default here is a
+  // confidentiality failure rather than a UX annoyance.
+
+  async brainVaultPath(accountId: number): Promise<string | null> {
+    return apiCall<string | null>('brain_vault_path', { accountId });
+  },
+
+  async brainSetVaultPath(accountId: number, path: string): Promise<void> {
+    return apiCall<void>('brain_set_vault_path', { accountId, path });
+  },
+
+  async brainClearVaultPath(accountId: number): Promise<void> {
+    return apiCall<void>('brain_clear_vault_path', { accountId });
+  },
+
+  async brainSearch(
+    accountId: number,
+    query: string,
+    opts: { type?: string; limit?: number } = {},
+  ): Promise<BrainSearchHit[]> {
+    return apiCall<BrainSearchHit[]>('brain_search', stripUndefined({
+      accountId,
+      query,
+      type: opts.type,
+      limit: opts.limit,
+    }));
+  },
+
+  async brainListNotes(accountId: number): Promise<string[]> {
+    return apiCall<string[]>('brain_list_notes', { accountId });
+  },
+
+  async brainReadNote(accountId: number, notePath: string): Promise<BrainNote> {
+    return apiCall<BrainNote>('brain_read_note', { accountId, notePath });
   },
 
 };

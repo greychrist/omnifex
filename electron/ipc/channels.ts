@@ -10,6 +10,14 @@
  *  in `getHandlerMap()` or registered directly in `registerIpcHandlers` /
  *  `main.ts`); see `ipc-channel-contract.test.ts`. */
 export const INVOKE_CHANNELS: readonly string[] = [
+  // Brain (per-account Markdown vault registry)
+  'brain_vault_path',
+  'brain_set_vault_path',
+  'brain_clear_vault_path',
+  'brain_search',
+  'brain_list_notes',
+  'brain_read_note',
+
   // Accounts
   'list_accounts',
   'create_account',

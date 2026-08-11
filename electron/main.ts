@@ -41,6 +41,7 @@ process.on('unhandledRejection', (err) => {
 });
 import { decideQuit } from './quit-policy';
 import { createDatabase, ensureDefaultSettings } from './services/database';
+import { createBrainService, type BrainService } from './services/brain/registry';
 import { createAccountsService } from './services/accounts';
 import { runFirstTimeDiscovery } from './services/first-run-discovery';
 import { createClaudeBinaryService } from './services/claude-binary';
@@ -433,6 +434,17 @@ app.whenReady().then(() => {
     return;
   }
   _db = db;
+
+  // The Brain is auxiliary: a construction failure (e.g. a locked/corrupt
+  // settings row) must not stop the app from starting. `brain` stays
+  // `undefined` in that case, and every Brain IPC handler degrades to an
+  // inert response rather than throwing when the service isn't wired.
+  let brainService: BrainService | undefined;
+  try {
+    brainService = createBrainService(db);
+  } catch (err) {
+    console.error('Failed to create brain service:', err);
+  }
 
   // Seed first-run defaults. Empty-string values (user deliberately cleared)
   // are preserved; only truly-missing keys get the default.
@@ -951,6 +963,7 @@ app.whenReady().then(() => {
 
   registerIpcHandlers({
     database: db,
+    brain: brainService,
     // Arbitrary-SQL admin channel is dev-only; never exposed in shipped builds.
     allowRawSql: !app.isPackaged,
     // Accounts adapter — maps handler interface to service methods
