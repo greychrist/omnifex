@@ -90,9 +90,12 @@ deterministic writes are maximally testable but produce a vault that reads like
 a database dump, defeating the human-readable property that justifies the
 project. The hybrid puts nondeterminism exactly where git can absorb it.
 
-**No new dependencies.** `zod` covers extraction schemas, `better-sqlite3`
-provides FTS5, `@uiw/react-md-editor` covers the tab's editor, and git is driven
-by spawning the system binary through an injectable exec, matching
+**One new dependency.** `js-yaml` is added for frontmatter parsing — it is
+present only transitively under eslint today, and hand-rolling a parser would
+reintroduce the regex-scraping bug class YAML was chosen to remove. Everything
+else is already in: `zod` covers extraction schemas, `better-sqlite3` provides
+FTS5, `@uiw/react-md-editor` covers the tab's editor, and git is driven by
+spawning the system binary through an injectable exec, matching
 `git-branches.ts:1` and `git-worktrees.ts:5`.
 
 ## Design
