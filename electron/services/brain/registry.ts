@@ -1,3 +1,4 @@
+import { mkdirSync } from 'node:fs';
 import { join, resolve, sep } from 'node:path';
 import type { Database } from '../database';
 import { createVault, type Vault } from './vault';
@@ -31,7 +32,7 @@ const VAULT_KEY_RE = /^brain\.vault\.\d+$/;
  * on one database file.
  */
 function requireAccountId(accountId: number): number {
-  if (!Number.isInteger(accountId) || accountId < 1) {
+  if (!Number.isSafeInteger(accountId) || accountId < 1) {
     throw new Error(`invalid accountId: ${String(accountId)}`);
   }
   return accountId;
@@ -80,6 +81,18 @@ export function createBrainService(db: Database): BrainService {
 
     setVaultPath(accountId: number, path: string): void {
       requireAccountId(accountId);
+      // Canonicalisation can only resolve symlinks and filesystem case for
+      // segments that EXIST. Vault directories are created lazily by open(), so
+      // at this point the path normally does not exist and canonicalPath()
+      // degrades to a lexical resolve — the exact alias bypass this check
+      // exists to stop. Create it first; open() would create it moments later
+      // anyway, so this brings no new side effect.
+      try {
+        mkdirSync(resolve(path), { recursive: true });
+      } catch {
+        // Unwritable or otherwise uncreatable: fall through. canonicalPath
+        // still does what it can, and open() surfaces the real error.
+      }
       const target = canonicalPath(path);
 
       // Two accounts sharing a vault would defeat the whole isolation model, so

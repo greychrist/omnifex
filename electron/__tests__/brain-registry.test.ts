@@ -149,4 +149,29 @@ describe('brain registry', () => {
     db.saveSetting('brain.vault.enabled', 'true');
     expect(() => brain.setVaultPath(1, join(dir, 'personal'))).not.toThrow();
   });
+
+  it('rejects a symlink alias when the target does not exist at config time', () => {
+    const real = join(dir, 'realvault');
+    symlinkSync(real, join(dir, 'linkvault')); // dangling right now
+    brain.setVaultPath(1, real);
+    expect(() => brain.setVaultPath(2, join(dir, 'linkvault'))).toThrow(VaultConflictError);
+  });
+
+  it('rejects a case-variant alias when the directory does not exist at config time', () => {
+    mkdirSync(join(dir, 'CaseProbe'), { recursive: true });
+    if (!existsSync(join(dir, 'caseprobe'))) return; // case-sensitive FS: not aliasable
+    brain.setVaultPath(1, join(dir, 'Vault'));       // NOT pre-created
+    expect(() => brain.setVaultPath(2, join(dir, 'vault'))).toThrow(VaultConflictError);
+  });
+
+  it('rejects nesting under a case-variant parent', () => {
+    mkdirSync(join(dir, 'CaseProbe2'), { recursive: true });
+    if (!existsSync(join(dir, 'caseprobe2'))) return;
+    brain.setVaultPath(1, join(dir, 'Personal'));
+    expect(() => brain.setVaultPath(2, join(dir, 'personal', 'work'))).toThrow(VaultConflictError);
+  });
+
+  it('rejects an accountId beyond the safe integer range', () => {
+    expect(() => brain.open(1e21)).toThrow(/accountId/);
+  });
 });
