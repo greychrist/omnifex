@@ -1,6 +1,6 @@
 import { load, dump } from 'js-yaml';
 import { z } from 'zod';
-import { NOTE_TYPES, type NoteFrontmatter, type ParsedNote } from './types';
+import { NOTE_TYPES, type ParsedNote } from './types';
 
 /**
  * Thrown when a note cannot be read. Callers isolate the failure to the single
@@ -45,7 +45,7 @@ export function parseNote(raw: string): ParsedNote {
   // letting a null reach the schema.
   if (loaded && typeof loaded === 'object') {
     for (const [k, v] of Object.entries(loaded as Record<string, unknown>)) {
-      if (v === null) delete (loaded as Record<string, unknown>)[k];
+      if (v === null) Reflect.deleteProperty(loaded, k);
     }
   }
 
