@@ -202,6 +202,10 @@ describe('session transcript source', () => {
       const distilled = await source.distill(item);
       expect(distilled.prose).toContain('USER: first ask');
       expect(distilled.prose).toContain('ASSISTANT: first answer');
+      // The discriminant is asserted, not assumed: it is what tells the
+      // extraction prompt this is a transcript rather than a capture.
+      expect(distilled.metadata.kind).toBe('session');
+      if (distilled.metadata.kind !== 'session') throw new Error('unreachable');
       expect(distilled.metadata.sessionId).toBe('sess-a');
       expect(distilled.metadata.promptCount).toBe(2);
     });
@@ -258,7 +262,9 @@ describe('session transcript source', () => {
       const preview = await brain.previewSource(personalId, 'sess-a');
       expect(preview?.prose).toContain('USER: first ask');
       expect(preview?.admitted).toBe(true);
-      expect(preview?.metadata.projectPath).toBe('/Users/dev/Repos/omnifex');
+      expect(preview?.metadata.kind).toBe('session');
+      if (preview?.metadata.kind !== 'session') throw new Error('unreachable');
+      expect(preview.metadata.projectPath).toBe('/Users/dev/Repos/omnifex');
       brain.closeAll();
     });
 

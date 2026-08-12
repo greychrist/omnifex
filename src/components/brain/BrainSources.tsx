@@ -164,20 +164,33 @@ export const BrainSources: React.FC<{ accountId: number | null }> = ({ accountId
               {outcome && <span className="text-xs text-muted-foreground">{outcome}</span>}
             </div>
             <dl className="mb-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs">
-              <dt className="text-muted-foreground">project</dt>
-              <dd className="truncate">{preview.metadata.projectPath ?? '—'}</dd>
-              <dt className="text-muted-foreground">branch</dt>
-              <dd>{preview.metadata.gitBranch ?? '—'}</dd>
-              <dt className="text-muted-foreground">models</dt>
-              <dd>{preview.metadata.models.join(', ') || '—'}</dd>
-              <dt className="text-muted-foreground">turns</dt>
-              <dd>
-                {preview.metadata.promptCount} prompts · {preview.metadata.proseCount} replies
-              </dd>
-              <dt className="text-muted-foreground">files</dt>
-              <dd>{preview.metadata.filesTouched.length}</dd>
-              <dt className="text-muted-foreground">outcome</dt>
-              <dd>{preview.metadata.terminalStatus}</dd>
+              {preview.metadata.kind === 'capture' ? (
+                <>
+                  <dt className="text-muted-foreground">captured</dt>
+                  <dd>{preview.metadata.capturedAt.slice(0, 10) || '—'}</dd>
+                  <dt className="text-muted-foreground">project</dt>
+                  <dd className="truncate">{preview.metadata.project ?? '—'}</dd>
+                  <dt className="text-muted-foreground">directory</dt>
+                  <dd className="truncate">{preview.metadata.cwd ?? '—'}</dd>
+                </>
+              ) : (
+                <>
+                  <dt className="text-muted-foreground">project</dt>
+                  <dd className="truncate">{preview.metadata.projectPath ?? '—'}</dd>
+                  <dt className="text-muted-foreground">branch</dt>
+                  <dd>{preview.metadata.gitBranch ?? '—'}</dd>
+                  <dt className="text-muted-foreground">models</dt>
+                  <dd>{preview.metadata.models.join(', ') || '—'}</dd>
+                  <dt className="text-muted-foreground">turns</dt>
+                  <dd>
+                    {preview.metadata.promptCount} prompts · {preview.metadata.proseCount} replies
+                  </dd>
+                  <dt className="text-muted-foreground">files</dt>
+                  <dd>{preview.metadata.filesTouched.length}</dd>
+                  <dt className="text-muted-foreground">outcome</dt>
+                  <dd>{preview.metadata.terminalStatus}</dd>
+                </>
+              )}
             </dl>
             {preview.truncated && (
               <div className="mb-2 text-xs text-amber-600">

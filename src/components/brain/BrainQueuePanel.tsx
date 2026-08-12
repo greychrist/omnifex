@@ -49,6 +49,9 @@ export const BrainQueuePanel: React.FC<{ accountId: number | null }> = ({ accoun
   const [nonce, setNonce] = useState(0);
   const [autoIndex, setAutoIndex] = useState(false);
   const [paused, setPaused] = useState(false);
+  // Unlike the two above, this one IS per account — it writes into one
+  // account's Claude config — so it re-reads whenever the account changes.
+  const [mcpStatus, setMcpStatus] = useState({ registered: false, available: false });
 
   // Both switches are GLOBAL, not per account. Read once on mount rather than
   // on every account change, which would imply they are scoped when they are
@@ -67,6 +70,35 @@ export const BrainQueuePanel: React.FC<{ accountId: number | null }> = ({ accoun
       });
     return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => {
+    if (accountId === null) {
+      setMcpStatus({ registered: false, available: false });
+      return;
+    }
+    let cancelled = false;
+    void api
+      .brainMcpStatus(accountId)
+      .then((status) => { if (!cancelled) setMcpStatus(status); })
+      .catch(() => {
+        // Unknown reads as "not exposed", which is the safe direction: it can
+        // never imply residue exists in a config dir when it does not.
+        if (!cancelled) setMcpStatus({ registered: false, available: false });
+      });
+    return () => { cancelled = true; };
+  }, [accountId, nonce]);
+
+  const setMcpRegistered = useCallback((next: boolean) => {
+    if (accountId === null) return;
+    // Not optimistic, unlike the two global switches: this one writes into a
+    // real Claude config dir, and showing it flipped before the write landed
+    // would claim residue that may not exist.
+    setError(null);
+    const call = next ? api.brainMcpRegister(accountId) : api.brainMcpUnregister(accountId);
+    void call
+      .then(() => { setMcpStatus((prev) => ({ ...prev, registered: next })); })
+      .catch((err: Error) => { setError(err.message); });
+  }, [accountId]);
 
   const setSwitch = useCallback((key: string, next: boolean, apply: (v: boolean) => void) => {
     // Optimistic, then persisted: the toggle is the user's own action, and a
@@ -180,6 +212,15 @@ export const BrainQueuePanel: React.FC<{ accountId: number | null }> = ({ accoun
           checked={paused}
           onChange={(next) => { setSwitch(PAUSED_KEY, next, setPaused); }}
         />
+
+        {mcpStatus.available && (
+          <SettingSwitch
+            label="Expose to Claude outside OmniFex"
+            title="Sessions started from OmniFex already reach this vault. This also writes the Brain server into this account's Claude config, so terminal sessions reach it too."
+            checked={mcpStatus.registered}
+            onChange={setMcpRegistered}
+          />
+        )}
 
         {outcome && <span className="text-muted-foreground">{outcome}</span>}
         {error && <span className="text-destructive">{error}</span>}

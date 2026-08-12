@@ -11,7 +11,7 @@
 import type { Database } from '../services/database';
 import type { PermissionsIOService } from '../services/permissions-io';
 import { validateCliPath } from '../services/cli-path-validator';
-import { createBrainHandlers } from './brain-handlers';
+import { createBrainHandlers, type BrainMcpHandlerDeps } from './brain-handlers';
 import type { BrainService } from '../services/brain/registry';
 
 // Services parameter type — each property is optional so we can add services
@@ -21,6 +21,13 @@ export interface Services {
    *  repo (electron/services/brain/registry.ts) so there is no reason to
    *  restate it here. */
   brain?: BrainService;
+  /**
+   * The persistent half of Brain MCP registration, plus the one account
+   * lookup it needs. A narrow object rather than the accounts service: these
+   * handlers need an account's config dir and nothing else, and widening the
+   * dependency would let a future edit reach for the rest of it.
+   */
+  brainMcp?: BrainMcpHandlerDeps;
   accounts?: {
     list(): unknown;
     create(data: unknown): unknown;
@@ -327,7 +334,7 @@ function wrapWith<P>(fn: (params: P) => unknown): HandlerFn {
  * renderer gets a defined (but empty) response rather than a blocked channel.
  */
 export function getHandlerMap(services: Services = {}): Record<string, HandlerFn> {
-  const { brain, accounts, claude, sessions, cost, usage, rateLimits, usageRunner, claudeBinary, mcp, slashCommands, sessionsSummary, logging, database, proxy, permissionsIO, models, commands, gitWatcher, branchColors, gitBranches, lima, filesystem, notificationSounds, oneShotTerminal, codexAuth, codexSessionWalker, accountIdentity, allowRawSql } = services;
+  const { brain, brainMcp, accounts, claude, sessions, cost, usage, rateLimits, usageRunner, claudeBinary, mcp, slashCommands, sessionsSummary, logging, database, proxy, permissionsIO, models, commands, gitWatcher, branchColors, gitBranches, lima, filesystem, notificationSounds, oneShotTerminal, codexAuth, codexSessionWalker, accountIdentity, allowRawSql } = services;
 
   // Positive account-ownership guard for config-editing channels. A non-empty
   // configDir supplied by the renderer must belong to a known account, so a
@@ -357,7 +364,7 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     // safety property, since the `brain_` prefix should make collisions
     // impossible and a silent override of an existing channel would be far
     // worse than a duplicated Brain one.
-    ...createBrainHandlers(brain),
+    ...createBrainHandlers(brain, brainMcp),
 
     // ── Accounts ──────────────────────────────────────────────────────────────
     list_accounts: wrap(() => accounts?.list() ?? null),

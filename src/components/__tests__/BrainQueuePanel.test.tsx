@@ -13,6 +13,9 @@ vi.mock('@/lib/api', () => ({
     brainQueueClear: vi.fn(),
     getSetting: vi.fn(),
     saveSetting: vi.fn(),
+    brainMcpStatus: vi.fn(),
+    brainMcpRegister: vi.fn(),
+    brainMcpUnregister: vi.fn(),
   },
 }));
 
@@ -38,6 +41,9 @@ describe('BrainQueuePanel', () => {
     vi.mocked(api.brainQueueClear).mockResolvedValue(undefined);
     vi.mocked(api.getSetting).mockResolvedValue('false');
     vi.mocked(api.saveSetting).mockResolvedValue(undefined);
+    vi.mocked(api.brainMcpStatus).mockResolvedValue({ registered: false, available: true });
+    vi.mocked(api.brainMcpRegister).mockResolvedValue(undefined);
+    vi.mocked(api.brainMcpUnregister).mockResolvedValue(undefined);
   });
 
   it('shows queue depth for the selected account', async () => {
@@ -169,5 +175,57 @@ describe('BrainQueuePanel', () => {
     // Both switches are GLOBAL, not per account — re-reading them on every
     // account switch would imply they are scoped when they are not.
     expect(vi.mocked(api.getSetting).mock.calls.length).toBe(before);
+  });
+
+  describe('expose to Claude outside OmniFex', () => {
+    const toggle = () => screen.getByLabelText(/outside omnifex/i);
+
+    it('offers the toggle only for an account with a vault', async () => {
+      vi.mocked(api.brainMcpStatus).mockResolvedValue({ registered: false, available: false });
+      render(<BrainQueuePanel accountId={1} />);
+      await waitFor(() => { expect(api.brainMcpStatus).toHaveBeenCalledWith(1); });
+      expect(screen.queryByLabelText(/outside omnifex/i)).toBeNull();
+    });
+
+    it('registers this account when switched on', async () => {
+      render(<BrainQueuePanel accountId={1} />);
+      await waitFor(() => { expect(toggle()).toBeTruthy(); });
+
+      fireEvent.click(toggle());
+
+      await waitFor(() => { expect(api.brainMcpRegister).toHaveBeenCalledWith(1); });
+      expect(api.brainMcpUnregister).not.toHaveBeenCalled();
+    });
+
+    it('unregisters when switched off', async () => {
+      vi.mocked(api.brainMcpStatus).mockResolvedValue({ registered: true, available: true });
+      render(<BrainQueuePanel accountId={1} />);
+      await waitFor(() => { expect((toggle() as HTMLInputElement).checked).toBe(true); });
+
+      fireEvent.click(toggle());
+
+      await waitFor(() => { expect(api.brainMcpUnregister).toHaveBeenCalledWith(1); });
+    });
+
+    it('re-reads per account, since this one is not global', async () => {
+      const { rerender } = render(<BrainQueuePanel accountId={1} />);
+      await waitFor(() => { expect(api.brainMcpStatus).toHaveBeenCalledWith(1); });
+
+      rerender(<BrainQueuePanel accountId={2} />);
+      await waitFor(() => { expect(api.brainMcpStatus).toHaveBeenCalledWith(2); });
+    });
+
+    it('surfaces a failure and leaves the switch unflipped', async () => {
+      vi.mocked(api.brainMcpRegister).mockRejectedValue(new Error('no vault configured'));
+      render(<BrainQueuePanel accountId={1} />);
+      await waitFor(() => { expect(toggle()).toBeTruthy(); });
+
+      fireEvent.click(toggle());
+
+      // Not optimistic: flipping before the write lands would claim residue in
+      // a Claude config dir that was never created.
+      expect(await screen.findByText('no vault configured')).toBeTruthy();
+      expect((toggle() as HTMLInputElement).checked).toBe(false);
+    });
   });
 });

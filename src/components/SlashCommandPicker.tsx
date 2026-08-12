@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from "react"
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { api, type SlashCommand } from "@/lib/api";
+import { localSlashCommands } from "@/lib/localSlashCommands";
 import {
   X,
   Command,
@@ -13,6 +14,12 @@ import { cn } from "@/lib/utils";
 import { logAndForget } from "@/lib/fireAndLog";
 
 interface SlashCommandPickerProps {
+  /**
+   * True when the session's account has a configured Brain vault. Gates the
+   * OmniFex-local /recall entry: without a vault the dialog would open onto
+   * nothing and every search would come back empty.
+   */
+  hasBrainVault?: boolean;
   projectPath?: string;
   tabId?: string;
   prefetchedCommands?: import("@/lib/api").SessionSlashCommand[];
@@ -29,12 +36,16 @@ const SCOPE_LABEL: Record<string, string> = {
   default: "claude",
   project: "project",
   user: "user",
+  // OmniFex's own commands. Badged distinctly so it is visible that they are
+  // not something the CLI knows about and not a file in a config dir.
+  omnifex: "omnifex",
 };
 
 const SCOPE_COLOR: Record<string, string> = {
   default: "bg-emerald-500/15 text-emerald-400",
   project: "bg-blue-500/15 text-blue-400",
   user: "bg-violet-500/15 text-violet-400",
+  omnifex: "bg-amber-500/15 text-amber-400",
 };
 
 type ScopeFilter = "project" | "user" | "default" | "all";
@@ -119,6 +130,7 @@ export const SlashCommandPicker: React.FC<SlashCommandPickerProps> = ({
   initialQuery = "",
   className,
   configDir,
+  hasBrainVault = false,
 }) => {
   const [commands, setCommands] = useState<SlashCommand[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -185,7 +197,10 @@ export const SlashCommandPicker: React.FC<SlashCommandPickerProps> = ({
         seen.add(cmd.full_command);
         return true;
       });
-      setCommands(unique);
+      // OmniFex's own commands go in last and are never deduped away: they
+      // have no CLI counterpart to collide with, and they are the only entries
+      // in this list that no config dir knows about.
+      setCommands([...unique, ...localSlashCommands({ hasVault: hasBrainVault })]);
     } catch (err) {
       console.error("Failed to load slash commands:", err);
       setError(err instanceof Error ? err.message : 'Failed to load commands');
@@ -193,7 +208,7 @@ export const SlashCommandPicker: React.FC<SlashCommandPickerProps> = ({
     } finally {
       setIsLoading(false);
     }
-  }, [projectPath, configDir, tabId, prefetchedCommands]);
+  }, [projectPath, configDir, tabId, prefetchedCommands, hasBrainVault]);
 
   // Load commands on mount (re-runs when the loadCommands callback changes,
   // i.e. when projectPath, configDir, tabId, or prefetchedCommands change).

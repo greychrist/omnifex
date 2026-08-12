@@ -175,6 +175,74 @@ length cap. These remain:
 
 ---
 
+## Opened by Plan 5 (`feat/brain-mcp-recall`, 2026-08-12)
+
+**The MCP server is proven against a packaged build, not a dev bundle.** Driven
+through a real MCP stdio handshake with the SDK's own client against
+`out/OmniFex-darwin-arm64/OmniFex.app`: `tools/list` returned all three tools,
+`brain_search` returned a ranked hit with a snippet, `brain_read` returned
+frontmatter and body, `brain_read` on `../escape.md` came back `isError` with
+"path escapes the vault root", and `brain_remember` wrote a capture. That run
+exercised Electron-as-node with `better-sqlite3` on the Electron ABI, which is
+the combination no unit test can reach.
+
+**The capture round trip is proven with the real model.** One
+`brain_remember` about the node-pty pin, through discovery, the gate, a live
+Sonnet extraction and `merge()`, produced `Subsystems/node-pty.md` with
+`sources: [capture:cap-e2e-1]`, aliases and keywords a developer would type,
+and every factual claim correct. A second `indexSource` spent nothing
+(`unchanged since it was last indexed`), the note was findable through the
+read-only index the MCP server uses, and the capture file survived as
+provenance.
+
+- **`mcpServers` in `settings.json` was dead, and OmniFex has been writing
+  there.** Claude Code reads user-scope MCP servers from
+  `<configDir>/.claude.json`; the only MCP keys `settings.json` honours govern
+  APPROVAL of servers defined elsewhere. So every server added through
+  OmniFex's MCP manager tab has been silently ignored by the CLI for as long as
+  that tab has existed. Fixed in this branch. No migration shipped: neither
+  config dir had a stranded block, verified immediately before the change.
+
+- **Measured against CLI 2.1.228, so later versions are worth re-checking.**
+  `--mcp-config` loads on a fresh spawn AND on `--resume`; it MERGES rather
+  than replacing (all 12 of the user's other servers stayed loaded);
+  `--allowedTools` merges with the account's `settings.json` rules rather than
+  replacing them. `claude mcp list` rejects `--mcp-config`, so it cannot be
+  used to probe. The spawn-time path depends on all three of these.
+
+- **A latent packaging trap, currently unreachable.** The bundled MCP SDK
+  contains `require("ajv/dist/runtime/...")` calls, and forge ships only the
+  explicitly copied native modules — `ajv` is not in the package. Those
+  requires sit in ajv's generated-validator path, used for raw JSON-Schema tool
+  definitions; all three Brain tools use zod, so nothing reaches them. Define a
+  future tool with a JSON Schema and the packaged server dies with
+  `Cannot find module 'ajv/...'` while the dev build works. One
+  `copyNativeModule(buildPath, 'ajv')` line in `forge.config.ts` closes it.
+
+- **`useAccounts` threw outside its provider and nearly coupled the prompt
+  input to it.** `/recall` needs the session's account, and reaching for
+  `useAccounts()` in `FloatingPromptInput` broke every test that renders it
+  bare — and would have crashed any future non-provider mount. Added
+  `useOptionalAccounts()`. The rule generalises: a feature that is enrichment
+  must degrade when its context is absent, not take the host down with it.
+
+- **A rejected `brain_remember` deliberately does not consume an id.** Ids are
+  the capture's `itemKey`, so a gap would read as a lost capture in the queue.
+  A test pins this.
+
+- **NOT yet verified: the in-app live round trip.** The real app database has
+  no vault configured (`brain_queue` and `brain_sources` are both empty), so
+  everything above ran against throwaway vaults. Configuring a vault in the
+  Brain tab and opening a session under that account is the remaining step —
+  and the one question no test can answer is whether the model reaches for
+  `brain_search` on its own, since nothing auto-injects the Brain into a
+  session's context. If it does not, the tool description is the lever.
+
+- **The Brain tab still has no view of captures as a distinct kind.** They
+  appear in the Sources pane beside session transcripts, with a capture-shaped
+  metadata table, but there is no filter for them. Fine at a handful; worth
+  revisiting if explicit capture becomes a habit.
+
 ## Opened by Plan 4b (`feat/brain-queue`, 2026-08-12)
 
 **The worker is proven end-to-end.** Two real sessions drained through the live

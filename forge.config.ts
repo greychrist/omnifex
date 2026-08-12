@@ -98,6 +98,10 @@ const config: ForgeConfig = {
     new VitePlugin({
       build: [
         { entry: 'electron/main.ts', config: 'vite.main.config.ts', target: 'main' },
+        // The Brain MCP server. Not loaded by the app: the Claude CLI spawns
+        // it as `process.execPath` with ELECTRON_RUN_AS_NODE=1, which is what
+        // keeps better-sqlite3 on the Electron ABI it was built for.
+        { entry: 'electron/brain-mcp.ts', config: 'vite.main.config.ts', target: 'main' },
         { entry: 'electron/preload.ts', config: 'vite.preload.config.ts', target: 'preload' },
       ],
       renderer: [

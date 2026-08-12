@@ -1,6 +1,17 @@
 import type { DistilledItem, SessionMetadata } from './sources/types';
 
 /**
+ * A distillation that is definitely a session.
+ *
+ * `DistilledItem.metadata` is a union, but everything this module produces is
+ * a session — so callers get the session fields without narrowing, and the
+ * narrowing that WOULD be needed is a branch that could never be taken.
+ */
+export interface DistilledSession extends DistilledItem {
+  metadata: { kind: 'session' } & SessionMetadata;
+}
+
+/**
  * JSONL transcript → bounded prose plus structured metadata.
  *
  * Pure: text in, values out. No filesystem, no account awareness, no model.
@@ -275,7 +286,7 @@ function truncateWithPromptPriority(chunks: Chunk[]): { prose: string; truncated
  * the authority on which session it is, and a transcript whose rows disagree
  * with its filename should not get to rename itself.
  */
-export function distillTranscript(jsonl: string, sessionId: string): DistilledItem {
+export function distillTranscript(jsonl: string, sessionId: string): DistilledSession {
   const rows = parseRows(jsonl);
   const chunks: Chunk[] = [];
 
@@ -290,5 +301,9 @@ export function distillTranscript(jsonl: string, sessionId: string): DistilledIt
   }
 
   const { prose, truncated } = truncateWithPromptPriority(chunks);
-  return { prose, metadata: collectMetadata(rows, sessionId), truncated };
+  return {
+    prose,
+    metadata: { kind: 'session', ...collectMetadata(rows, sessionId) },
+    truncated,
+  };
 }

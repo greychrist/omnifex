@@ -31,6 +31,9 @@ export const INVOKE_CHANNELS: readonly string[] = [
   'brain_queue_drain',
   'brain_queue_clear',
   'brain_backfill',
+  'brain_mcp_status',
+  'brain_mcp_register',
+  'brain_mcp_unregister',
 
   // Accounts
   'list_accounts',

@@ -97,7 +97,25 @@ function unconfiguredStatus(accountId: number): VaultStatus {
  * `brain` is undefined would be a write that silently never happened — so they
  * throw instead.
  */
-export function createBrainHandlers(brain?: BrainService): Record<string, HandlerFn> {
+/**
+ * What the three `brain_mcp_*` handlers need: the registration itself, and the
+ * one account lookup that turns an accountId into the config dir it writes to.
+ *
+ * Deliberately not the accounts service. These handlers need a config dir and
+ * nothing else, and a wider dependency is one a future edit can reach into.
+ */
+export interface BrainMcpHandlerDeps {
+  isRegistered(configDir: string): boolean;
+  register(configDir: string, vaultRoot: string): void;
+  unregister(configDir: string): void;
+  /** The account's config dir, or null when there is no such account. */
+  configDirFor(accountId: number): string | null;
+}
+
+export function createBrainHandlers(
+  brain?: BrainService,
+  brainMcp?: BrainMcpHandlerDeps,
+): Record<string, HandlerFn> {
   return {
     async brain_vault_path(_event, params = {}) {
       return brain?.vaultPath(requireAccountId(params)) ?? null;
@@ -255,6 +273,45 @@ export function createBrainHandlers(brain?: BrainService): Record<string, Handle
         throw err;
       }
       return handle ? handle.vault.listNotes() : [];
+    },
+
+    /**
+     * Whether this account's Brain is exposed to sessions started OUTSIDE
+     * OmniFex, and whether it could be. A read, so it degrades to a truthful
+     * "no, and not available" rather than throwing — a Brain tab must render.
+     */
+    async brain_mcp_status(_event, params = {}) {
+      const accountId = requireAccountId(params);
+      const configDir = brainMcp?.configDirFor(accountId);
+      if (!brainMcp || !configDir) return { registered: false, available: false };
+      return {
+        registered: brainMcp.isRegistered(configDir),
+        available: Boolean(brain?.vaultPath(accountId)),
+      };
+    },
+
+    async brain_mcp_register(_event, params = {}) {
+      // A write into a real Claude config dir. Reporting success while the
+      // service is missing would claim residue that was never created — and
+      // the toggle would then show a state that does not exist.
+      if (!brainMcp || !brain) throw new Error('brain service unavailable');
+      const accountId = requireAccountId(params);
+      const configDir = brainMcp.configDirFor(accountId);
+      if (!configDir) throw new Error('no such account');
+      const vaultRoot = brain.vaultPath(accountId);
+      // Registering a vault-less account would point the CLI at a server that
+      // has nothing to serve, and the tools would fail on every call.
+      if (!vaultRoot) throw new Error('no vault configured for this account');
+      brainMcp.register(configDir, vaultRoot);
+      return null;
+    },
+
+    async brain_mcp_unregister(_event, params = {}) {
+      if (!brainMcp) throw new Error('brain service unavailable');
+      const configDir = brainMcp.configDirFor(requireAccountId(params));
+      if (!configDir) throw new Error('no such account');
+      brainMcp.unregister(configDir);
+      return null;
     },
 
     async brain_read_note(_event, params = {}) {

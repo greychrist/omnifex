@@ -15,6 +15,12 @@ export interface TuiSessionParams {
    *  picker that was causing cold-start timeouts. */
   resume: boolean;
   claudeBinaryPath: string;
+  /**
+   * Extra CLI arguments appended after the session flag, e.g. the Brain's
+   * `--mcp-config` / `--allowedTools` pair. Supplied by the caller rather than
+   * derived here so this module keeps no knowledge of what is being injected.
+   */
+  extraArgs?: string[];
   cols?: number;
   rows?: number;
 }
@@ -29,7 +35,7 @@ export interface TuiSession {
 
 export function createTuiSession(params: TuiSessionParams): TuiSession {
   const flag = params.resume ? '--resume' : '--session-id';
-  const args = [flag, params.sessionId];
+  const args = [flag, params.sessionId, ...(params.extraArgs ?? [])];
   const pty: IPty = ptySpawn(
     params.claudeBinaryPath,
     args,

@@ -4,6 +4,7 @@ import type { AccountsService } from '../../accounts';
 import { SCRATCH_DIR_NAME } from '../../sessions/summary-query';
 import { distillTranscript } from '../distill';
 import type { AdmitVerdict, BrainSource, DistilledItem, SourceItem } from './types';
+import type { DistilledSession } from '../distill';
 
 export interface SessionSourceDeps {
   accounts: AccountsService;
@@ -109,7 +110,7 @@ export function createSessionSource(deps: SessionSourceDeps): BrainSource {
    * file that vanished — sessions are deleted from the app's own UI, and a
    * discovery list is a snapshot, not a lock.
    */
-  function distillItem(item: SourceItem): DistilledItem | null {
+  function distillItem(item: SourceItem): DistilledSession | null {
     try {
       return distillTranscript(readFile(item.path), item.itemKey);
     } catch {

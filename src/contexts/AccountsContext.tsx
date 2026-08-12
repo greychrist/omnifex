@@ -57,3 +57,14 @@ export function useAccounts() {
   if (!ctx) throw new Error('useAccounts must be used within AccountsProvider');
   return ctx;
 }
+
+/**
+ * The accounts context when there is one, null when there is not.
+ *
+ * For features that are enrichment rather than function — a component that
+ * merely wants to know which account it is under should degrade, not crash,
+ * when rendered outside the provider.
+ */
+export function useOptionalAccounts(): AccountsContextType | null {
+  return useContext(AccountsContext) ?? null;
+}

@@ -105,6 +105,16 @@ export function createSessionsService(
   accountMismatchSink:
     | ((configDir: string, observedEmail: string | null) => AccountMismatch | null)
     | null = null,
+  /**
+   * Optional extra CLI arguments for a spawn, derived from its resolved
+   * configDir. Returns [] when there is nothing to add.
+   *
+   * Injected rather than computed here so the session layer keeps no knowledge
+   * of the Brain: main.ts is where accounts, vaults and app paths are all in
+   * scope, and it is the only place that can map a configDir to a vault
+   * without this module growing a dependency on either.
+   */
+  extraSpawnArgs: ((configDir: string) => string[]) | null = null,
 ): SessionsService {
   const sessions = new Map<string, SessionHandle>();
   // Hoisted so both the public return and stop()'s plugin-cache eviction
@@ -613,6 +623,7 @@ export function createSessionsService(
         sessionId: handle.sessionId,
         resume: resumeExistingTranscript,
         claudeBinaryPath: binaryPath,
+        extraArgs: extraSpawnArgs?.(handle.configDir) ?? [],
       });
 
       tui.onData((data: string) => sendToRenderer(`session-tui-data:${tabId}`, data));
@@ -801,6 +812,7 @@ export function createSessionsService(
         // with a caller-chosen UUID so the JSONL path is known up front).
         resume: resuming,
         claudeBinaryPath: binaryPath,
+        extraArgs: extraSpawnArgs?.(configDir) ?? [],
       });
     } catch (err) {
       if (sessions.get(tabId) === handle) {

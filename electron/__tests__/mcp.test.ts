@@ -13,9 +13,9 @@ describe('mcp service', () => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'greychrist-mcp-test-'));
     configDir = tmpDir;
 
-    // Create the settings.json with an empty mcpServers object
-    const settingsPath = path.join(configDir, 'settings.json');
-    fs.writeFileSync(settingsPath, JSON.stringify({ mcpServers: {} }), 'utf-8');
+    // User-scope MCP servers live in .claude.json, not settings.json.
+    const userConfigPath = path.join(configDir, '.claude.json');
+    fs.writeFileSync(userConfigPath, JSON.stringify({ mcpServers: {} }), 'utf-8');
 
     mcp = createMCPService();
   });
@@ -188,7 +188,7 @@ describe('mcp service', () => {
     expect(fs.existsSync(path.join(projectPath, '.mcp.json'))).toBe(true);
   });
 
-  it('service works even when settings.json does not exist', () => {
+  it('service works even when .claude.json does not exist', () => {
     const freshDir = fs.mkdtempSync(path.join(os.tmpdir(), 'greychrist-mcp-fresh-'));
     try {
       const fresh = createMCPService();
@@ -208,8 +208,8 @@ describe('mcp service', () => {
       accountA = fs.mkdtempSync(path.join(os.tmpdir(), 'greychrist-mcp-acctA-'));
       accountB = fs.mkdtempSync(path.join(os.tmpdir(), 'greychrist-mcp-acctB-'));
       // Initialise both dirs with empty mcpServers
-      fs.writeFileSync(path.join(accountA, 'settings.json'), JSON.stringify({ mcpServers: {} }), 'utf-8');
-      fs.writeFileSync(path.join(accountB, 'settings.json'), JSON.stringify({ mcpServers: {} }), 'utf-8');
+      fs.writeFileSync(path.join(accountA, '.claude.json'), JSON.stringify({ mcpServers: {} }), 'utf-8');
+      fs.writeFileSync(path.join(accountB, '.claude.json'), JSON.stringify({ mcpServers: {} }), 'utf-8');
     });
 
     afterEach(() => {
@@ -217,10 +217,10 @@ describe('mcp service', () => {
       fs.rmSync(accountB, { recursive: true, force: true });
     });
 
-    it('list with per-call configDir reads the correct account settings', () => {
-      // Add a server directly to accountA's settings
+    it('list with per-call configDir reads the correct account config', () => {
+      // Add a server directly to accountA's user config
       fs.writeFileSync(
-        path.join(accountA, 'settings.json'),
+        path.join(accountA, '.claude.json'),
         JSON.stringify({ mcpServers: { 'acct-a-server': { command: 'node', args: [] } } }),
         'utf-8',
       );
@@ -285,5 +285,73 @@ describe('mcp service', () => {
       expect(() => mcp.get('x')).toThrow(/configDir is required/);
       expect(() => mcp.remove('x')).toThrow(/configDir is required/);
     });
+  });
+});
+
+describe('mcp user-scope storage', () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'omnifex-mcp-scope-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('writes servers into .claude.json, not settings.json', () => {
+    // Claude Code has never read an mcpServers key from settings.json.
+    // Writing there produced a config the CLI silently ignored.
+    createMCPService().add({ name: 'omnifex-brain', command: '/bin/node', args: ['x.js'], configDir: dir });
+
+    const claudeJson = JSON.parse(fs.readFileSync(path.join(dir, '.claude.json'), 'utf-8')) as {
+      mcpServers: Record<string, unknown>;
+    };
+    expect(Object.keys(claudeJson.mcpServers)).toEqual(['omnifex-brain']);
+    expect(claudeJson.mcpServers['omnifex-brain']).toEqual({ command: '/bin/node', args: ['x.js'] });
+    expect(fs.existsSync(path.join(dir, 'settings.json'))).toBe(false);
+  });
+
+  it('reads servers a real CLI wrote', () => {
+    fs.writeFileSync(
+      path.join(dir, '.claude.json'),
+      JSON.stringify({
+        mcpServers: { jira: { command: 'jira-mcp' } },
+        projects: { '/some/path': { allowedTools: [] } },
+      }),
+      'utf-8',
+    );
+    expect(createMCPService().list(dir).map((s) => s.name)).toEqual(['jira']);
+  });
+
+  it('preserves unrelated keys when writing', () => {
+    // .claude.json also holds the OAuth session and per-project state. A
+    // whole-file rewrite that dropped them would sign the account out.
+    fs.writeFileSync(
+      path.join(dir, '.claude.json'),
+      JSON.stringify({ oauthAccount: { uuid: 'x' }, projects: { '/p': {} } }),
+      'utf-8',
+    );
+    createMCPService().add({ name: 'a', command: 'c', configDir: dir });
+
+    const after = JSON.parse(fs.readFileSync(path.join(dir, '.claude.json'), 'utf-8')) as {
+      oauthAccount: unknown;
+      projects: unknown;
+    };
+    expect(after.oauthAccount).toEqual({ uuid: 'x' });
+    expect(after.projects).toEqual({ '/p': {} });
+  });
+
+  it('ignores an mcpServers block left behind in settings.json', () => {
+    fs.writeFileSync(
+      path.join(dir, 'settings.json'),
+      JSON.stringify({ mcpServers: { stranded: { command: 'never-loaded' } } }),
+      'utf-8',
+    );
+    expect(createMCPService().list(dir)).toEqual([]);
+  });
+
+  it('still requires an explicit configDir', () => {
+    expect(() => createMCPService().list()).toThrow(/configDir is required/);
   });
 });

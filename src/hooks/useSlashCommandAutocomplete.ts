@@ -1,5 +1,6 @@
 import { useState, useCallback } from "react";
 import { type SlashCommand } from "@/lib/api";
+import { isLocalSlashCommand } from "@/lib/localSlashCommands";
 
 interface SlashCommandAutocompleteState {
   showSlashCommandPicker: boolean;
@@ -30,11 +31,26 @@ export type SlashCommandAutocomplete = SlashCommandAutocompleteState & SlashComm
  * The actual SlashCommandPicker UI remains a separate component; this
  * hook only manages the STATE and LOGIC that drives it.
  */
-export function useSlashCommandAutocomplete(): SlashCommandAutocomplete {
+export interface SlashCommandAutocompleteOptions {
+  /**
+   * Called when the user picks a command OmniFex provides itself rather than
+   * one the CLI knows about. The trigger text is stripped from the prompt
+   * first, so the handler starts from a clean insertion point.
+   */
+  onLocalCommand?: (commandId: string) => void;
+}
+
+export function useSlashCommandAutocomplete(
+  opts: SlashCommandAutocompleteOptions = {},
+): SlashCommandAutocomplete {
   const [showSlashCommandPicker, setShowSlashCommandPicker] = useState(false);
   const [slashCommandQuery, setSlashCommandQuery] = useState("");
   // Internal cursor snapshot for query-range math
   const [triggerCursorPosition, setTriggerCursorPosition] = useState(0);
+  // Read through a ref-stable binding so the select callback's identity does
+  // not change on every parent render — TabContent's inline closures have
+  // caused render loops here before.
+  const { onLocalCommand } = opts;
 
   const handleTextChangeForSlash = useCallback(
     (newValue: string, newCursorPosition: number, prevPrompt: string) => {
@@ -108,6 +124,22 @@ export function useSlashCommandAutocomplete(): SlashCommandAutocomplete {
       const beforeSlash = prompt.substring(0, slashPosition);
       const afterCursor = prompt.substring(cursorPosition);
 
+      // An OmniFex-local command runs a handler instead of being inserted as
+      // text — the CLI has never heard of it, so sending "/recall" would just
+      // be an unknown command. The trigger text is removed either way, so the
+      // handler inserts into a prompt with no half-typed "/rec" in it.
+      if (isLocalSlashCommand(command.id)) {
+        setPrompt(`${beforeSlash}${afterCursor}`);
+        setShowSlashCommandPicker(false);
+        setSlashCommandQuery("");
+        setTimeout(() => {
+          textarea.focus();
+          textarea.setSelectionRange(beforeSlash.length, beforeSlash.length);
+        }, 0);
+        onLocalCommand?.(command.id);
+        return;
+      }
+
       if (command.accepts_arguments) {
         const newPrompt = `${beforeSlash}${command.full_command} `;
         setPrompt(newPrompt);
@@ -132,7 +164,7 @@ export function useSlashCommandAutocomplete(): SlashCommandAutocomplete {
         }, 0);
       }
     },
-    [],
+    [onLocalCommand],
   );
 
   const handleSlashCommandPickerClose = useCallback(

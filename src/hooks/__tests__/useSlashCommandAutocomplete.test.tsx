@@ -3,6 +3,7 @@ import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { renderHook, act, cleanup } from '@testing-library/react';
 import { useSlashCommandAutocomplete } from '../useSlashCommandAutocomplete';
 import type { SlashCommand } from '@/lib/api';
+import { localSlashCommands } from '@/lib/localSlashCommands';
 
 let consoleLogSpy: ReturnType<typeof vi.spyOn>;
 beforeEach(() => {
@@ -205,5 +206,74 @@ describe('useSlashCommandAutocomplete — close', () => {
     expect(() => {
       act(() => { result.current.handleSlashCommandPickerClose(null); });
     }).not.toThrow();
+  });
+});
+
+describe('local commands', () => {
+  const recall = localSlashCommands({ hasVault: true })[0];
+
+  function textarea(): HTMLTextAreaElement {
+    const el = document.createElement('textarea');
+    document.body.appendChild(el);
+    return el;
+  }
+
+  it('dispatches to the handler instead of inserting the command text', () => {
+    const onLocalCommand = vi.fn();
+    const setPrompt = vi.fn();
+    const { result } = renderHook(() => useSlashCommandAutocomplete({ onLocalCommand }));
+
+    act(() => {
+      result.current.handleSlashCommandSelect(recall, 'ask /rec', 8, setPrompt, textarea());
+    });
+
+    expect(onLocalCommand).toHaveBeenCalledWith(recall.id);
+    // The CLI has never heard of /recall, so inserting it would send an
+    // unknown command. The trigger text is stripped instead.
+    expect(setPrompt).toHaveBeenCalledWith('ask ');
+  });
+
+  it('closes the picker when a local command is chosen', () => {
+    const { result } = renderHook(() => useSlashCommandAutocomplete({ onLocalCommand: vi.fn() }));
+
+    act(() => {
+      result.current.handleTextChangeForSlash('/', 1, '');
+    });
+    expect(result.current.showSlashCommandPicker).toBe(true);
+
+    act(() => {
+      result.current.handleSlashCommandSelect(recall, '/', 1, vi.fn(), textarea());
+    });
+    expect(result.current.showSlashCommandPicker).toBe(false);
+  });
+
+  it('still inserts an ordinary CLI command as text', () => {
+    const onLocalCommand = vi.fn();
+    const setPrompt = vi.fn();
+    const { result } = renderHook(() => useSlashCommandAutocomplete({ onLocalCommand }));
+
+    act(() => {
+      result.current.handleSlashCommandSelect(
+        {
+          id: 'user:default:commit',
+          name: 'commit',
+          full_command: '/commit',
+          scope: 'user',
+          file_path: '/x.md',
+          content: '',
+          allowed_tools: [],
+          has_bash_commands: false,
+          has_file_references: false,
+          accepts_arguments: false,
+        },
+        'ask /com',
+        8,
+        setPrompt,
+        textarea(),
+      );
+    });
+
+    expect(onLocalCommand).not.toHaveBeenCalled();
+    expect(setPrompt).toHaveBeenCalledWith('ask /commit ');
   });
 });
