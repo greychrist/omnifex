@@ -1,8 +1,15 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createVaultIndex, readIndexedCount, type VaultIndex } from '../services/brain/search';
+import BetterSqlite3 from 'better-sqlite3';
+import {
+  BrainIndexUnavailableError,
+  createVaultIndex,
+  openVaultIndexReadOnly,
+  readIndexedCount,
+  type VaultIndex,
+} from '../services/brain/search';
 import { createVault } from '../services/brain/vault';
 import type { ParsedNote } from '../services/brain/types';
 
@@ -166,5 +173,114 @@ describe('vault index', () => {
       writeFileSync(path, 'not a database', 'utf8');
       expect(readIndexedCount(path)).toBeNull();
     });
+  });
+
+  describe('project filter', () => {
+    it('returns only notes whose frontmatter project matches', () => {
+      index.upsert('Subsystems/A.md', 'A', note({ project: '[[Projects/omnifex]]' }, 'permission decider'));
+      index.upsert('Subsystems/B.md', 'B', note({ project: '[[Projects/win]]' }, 'permission decider'));
+
+      expect(index.search('permission')).toHaveLength(2);
+      expect(
+        index.search('permission', { project: '[[Projects/omnifex]]' }).map((h) => h.notePath),
+      ).toEqual(['Subsystems/A.md']);
+    });
+
+    it('excludes a note with no project when one is requested', () => {
+      index.upsert('Subsystems/A.md', 'A', note({}, 'permission decider'));
+      expect(index.search('permission', { project: '[[Projects/omnifex]]' })).toEqual([]);
+    });
+  });
+
+  describe('schema migration', () => {
+    it('rebuilds when it opens an index that predates the project column', () => {
+      const path = join(dir, 'old', 'index.db');
+      mkdirSync(join(dir, 'old'), { recursive: true });
+      const raw = new BetterSqlite3(path);
+      raw.exec(`CREATE VIRTUAL TABLE brain_fts USING fts5(
+        note_path UNINDEXED, type UNINDEXED, title, aliases, keywords, summary, body)`);
+      raw.prepare('INSERT INTO brain_fts VALUES (?,?,?,?,?,?,?)')
+        .run('Old.md', 'Note', 'Old', '', '', '', 'stale');
+      raw.close();
+
+      const migrated = createVaultIndex(path);
+      // The derived rows are discarded; the caller rebuilds from the vault.
+      expect(migrated.search('stale')).toEqual([]);
+      migrated.upsert('New.md', 'New', note({ project: '[[Projects/x]]' }, 'fresh'));
+      expect(migrated.search('fresh', { project: '[[Projects/x]]' })).toHaveLength(1);
+      migrated.close();
+    });
+  });
+});
+
+describe('openVaultIndexReadOnly', () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'omnifex-ro-index-'));
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('reads an existing index', () => {
+    const path = join(dir, 'index.db');
+    const writer = createVaultIndex(path);
+    writer.upsert('Topics/T.md', 'T', note({ type: 'Topic' }, 'node-pty leak'));
+    writer.close();
+
+    const reader = openVaultIndexReadOnly(path);
+    expect(reader.search('node-pty').map((h) => h.notePath)).toEqual(['Topics/T.md']);
+    reader.close();
+  });
+
+  it('throws for a missing file and creates nothing', () => {
+    const path = join(dir, 'absent', 'index.db');
+    expect(() => openVaultIndexReadOnly(path)).toThrow(BrainIndexUnavailableError);
+    expect(existsSync(path)).toBe(false);
+  });
+
+  it('throws for a file that is not a vault index', () => {
+    const path = join(dir, 'garbage.db');
+    writeFileSync(path, 'not a database', 'utf8');
+    expect(() => openVaultIndexReadOnly(path)).toThrow(BrainIndexUnavailableError);
+  });
+
+  it('throws for an index that predates the project column', () => {
+    const path = join(dir, 'old.db');
+    const raw = new BetterSqlite3(path);
+    raw.exec(`CREATE VIRTUAL TABLE brain_fts USING fts5(
+      note_path UNINDEXED, type UNINDEXED, title, aliases, keywords, summary, body)`);
+    raw.close();
+
+    expect(() => openVaultIndexReadOnly(path)).toThrow(BrainIndexUnavailableError);
+  });
+
+  it('ranks identically to the read-write index over the same corpus', () => {
+    const path = join(dir, 'index.db');
+    const writer = createVaultIndex(path);
+    writer.upsert('Subsystems/Queue.md', 'Queue', note({ keywords: ['queue.ts'] }, 'the drain worker'));
+    writer.upsert('Topics/Drain.md', 'Drain', note({ type: 'Topic' }, 'mentions the queue in passing'));
+    const expected = writer.search('queue');
+    writer.close();
+
+    const reader = openVaultIndexReadOnly(path);
+    expect(reader.search('queue')).toEqual(expected);
+    reader.close();
+  });
+
+  it('honours the type and project filters', () => {
+    const path = join(dir, 'index.db');
+    const writer = createVaultIndex(path);
+    writer.upsert('Subsystems/A.md', 'A', note({ project: '[[Projects/omnifex]]' }, 'shared word'));
+    writer.upsert('Topics/B.md', 'B', note({ type: 'Topic' }, 'shared word'));
+    writer.close();
+
+    const reader = openVaultIndexReadOnly(path);
+    expect(reader.search('shared', { type: 'Topic' }).map((h) => h.notePath)).toEqual(['Topics/B.md']);
+    expect(reader.search('shared', { project: '[[Projects/omnifex]]' }).map((h) => h.notePath))
+      .toEqual(['Subsystems/A.md']);
+    reader.close();
   });
 });
