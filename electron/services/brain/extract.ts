@@ -175,15 +175,30 @@ export function buildExtractionPrompt(
   context?: ExtractionContext,
 ): string {
   const m = item.metadata;
-  const facts = [
-    `session: ${m.sessionId}`,
-    `project: ${m.projectPath ?? 'unknown'}`,
-    `branch: ${m.gitBranch ?? 'unknown'}`,
-    `started: ${m.startedAt ?? 'unknown'}`,
-    `turns: ${String(m.promptCount)} prompts, ${String(m.proseCount)} replies`,
-    `files touched: ${m.filesTouched.length > 0 ? m.filesTouched.join(', ') : 'none'}`,
-    `outcome: ${m.terminalStatus}`,
-  ].join('\n');
+  // The two kinds get different preambles and different facts. A capture has
+  // no session behind it, and stating one anyway — a fabricated prompt count,
+  // a made-up session id — would hand the model a false fact about the very
+  // material it is summarising.
+  const preamble =
+    m.kind === 'capture'
+      ? 'You are turning one fact a developer explicitly captured into durable vault entities.'
+      : 'You are extracting durable engineering knowledge from one coding session.';
+  const facts =
+    m.kind === 'capture'
+      ? [
+          `captured: ${m.capturedAt}`,
+          `project: ${m.project ?? 'unknown'}`,
+          `working directory: ${m.cwd ?? 'unknown'}`,
+        ].join('\n')
+      : [
+          `session: ${m.sessionId}`,
+          `project: ${m.projectPath ?? 'unknown'}`,
+          `branch: ${m.gitBranch ?? 'unknown'}`,
+          `started: ${m.startedAt ?? 'unknown'}`,
+          `turns: ${String(m.promptCount)} prompts, ${String(m.proseCount)} replies`,
+          `files touched: ${m.filesTouched.length > 0 ? m.filesTouched.join(', ') : 'none'}`,
+          `outcome: ${m.terminalStatus}`,
+        ].join('\n');
 
   const truncationNote = item.truncated
     ? '\nNOTE: this transcript was TRUNCATED to fit a size limit. You are seeing ' +
@@ -201,7 +216,7 @@ you are describing the same thing, rather than inventing a variant:
 ${context.existingNames.map((n) => `- ${n}`).join('\n')}\n`
       : '';
 
-  return `You are extracting durable engineering knowledge from one coding session.
+  return `${preamble}
 
 Return ONLY a JSON object matching this shape, with no commentary:
 
@@ -211,20 +226,25 @@ Return ONLY a JSON object matching this shape, with no commentary:
 "keyFacts":[string]}]}
 
 Rules:
-- Extract only what will still matter in six months. A session that decided
-  nothing durable should return {"entities":[]}.
+- Extract only what will still matter in six months. ${
+    m.kind === 'capture'
+      ? 'A capture that records nothing durable'
+      : 'A session that decided nothing durable'
+  } should return {"entities":[]}.
 - \`aliases\` and \`keywords\` are what make this searchable later. Include the
   literal identifiers a developer would type: file names, function names,
   flags, error strings. Prefer exact spellings over descriptions.
 - \`summary\` is 2-3 sentences of plain prose.
 - \`links.target\` names another entity, e.g. "Projects/omnifex".
-- \`timelineEntry\` is one sentence describing what THIS session did.
+- \`timelineEntry\` is one sentence describing what ${
+    m.kind === 'capture' ? 'THIS capture records' : 'THIS session did'
+  }.
 - Use the facts below rather than inferring them.
 
 FACTS
 ${facts}
 ${truncationNote}${existing}
-TRANSCRIPT
+${m.kind === 'capture' ? 'CAPTURED NOTE' : 'TRANSCRIPT'}
 ${item.prose}`;
 }
 

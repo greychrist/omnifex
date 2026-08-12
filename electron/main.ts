@@ -43,6 +43,7 @@ import { decideQuit } from './quit-policy';
 import { createDatabase, ensureDefaultSettings } from './services/database';
 import { createBrainService, type BrainService } from './services/brain/registry';
 import { createSessionSource } from './services/brain/sources/session-transcripts';
+import { createCaptureSource } from './services/brain/sources/capture';
 import { createExtractor } from './services/brain/extract';
 import {
   BRAIN_AUTO_INDEX_SETTING_KEY,
@@ -479,10 +480,23 @@ app.whenReady().then(() => {
   // Constructed after `accountsService` because the session source derives a
   // transcript's owning account from the config dir it lives under (spec §4),
   // which needs the account list.
+  // The capture source needs the configured vaults, which only the service it
+  // is being passed into knows. Late-bound through this reference rather than
+  // duplicating the vault-path lookup: two readers of `brain.vault.<id>` would
+  // be two things to keep in step.
+  let brainRef: BrainService | undefined;
+  const captureSource = createCaptureSource({
+    vaults: () =>
+      accountsService
+        .listAccounts()
+        .map((a) => ({ accountId: a.id, root: brainRef?.vaultPath(a.id) ?? '' }))
+        .filter((v) => v.root !== ''),
+  });
+
   const brainService: BrainService | undefined = createBrainService(db, {
     accounts: accountsService,
     extractor: createExtractor(),
-    sources: [createSessionSource({ accounts: accountsService })],
+    sources: [createSessionSource({ accounts: accountsService }), captureSource],
     // `listActiveTabIds`, never `listInFlightTabIds` — the latter is hardcoded
     // to return [] (sessions/lifecycle.ts, dead since the jsonl-as-rendered
     // refactor), so a worker gated on it would never yield and would run
@@ -493,6 +507,7 @@ app.whenReady().then(() => {
     hasActiveSession: () => (_sessionsService?.listActiveTabIds().length ?? 0) > 0,
     isQueuePaused: () => db.getSetting(BRAIN_QUEUE_PAUSED_SETTING_KEY) === 'true',
   });
+  brainRef = brainService;
 
   // First-launch account discovery: if this is a fresh install with no
   // accounts yet, scan $HOME for `.claude*` dirs and create one account per

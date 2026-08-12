@@ -40,6 +40,7 @@ function preview(over: Partial<BrainSourcePreview> = {}): BrainSourcePreview {
     admitted: true,
     reason: 'ok',
     metadata: {
+      kind: 'session' as const,
       sessionId: 'sess-a', projectPath: '/repo', gitBranch: 'main',
       models: ['claude-opus-5'], cliVersion: '2.1.228',
       startedAt: null, endedAt: null, durationMs: null,

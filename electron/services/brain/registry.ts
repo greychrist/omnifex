@@ -20,7 +20,7 @@ import {
   type QueueCounts,
   type QueueEntry,
 } from './queue';
-import type { BrainSource, SessionMetadata, SourceItem } from './sources/types';
+import type { BrainSource, ItemMetadata, SourceItem } from './sources/types';
 import type { Extractor } from './extract';
 import { resolveEntityPath, type ExistingNote } from './resolve';
 import { merge } from './merge';
@@ -152,7 +152,7 @@ export interface IndexResult {
 export interface SourcePreview {
   itemKey: string;
   prose: string;
-  metadata: SessionMetadata;
+  metadata: ItemMetadata;
   truncated: boolean;
   admitted: boolean;
   reason: string;
@@ -934,7 +934,13 @@ export function createBrainService(
 
       const provenance = {
         sourceKey: `${item.sourceId}:${item.itemKey}`,
-        date: distilled.metadata.startedAt?.slice(0, 10) ?? today(),
+        // A capture has no session start; its capture time is the date the
+        // note should record. Both fall back to today rather than to each
+        // other, since an empty string would sort before every real date.
+        date:
+          distilled.metadata.kind === 'capture'
+            ? distilled.metadata.capturedAt.slice(0, 10) || today()
+            : distilled.metadata.startedAt?.slice(0, 10) ?? today(),
       };
 
       const notesWritten: string[] = [];

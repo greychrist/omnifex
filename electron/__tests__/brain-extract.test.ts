@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   createExtractor,
   parseExtraction,
+  buildExtractionPrompt,
   ExtractionParseError,
 } from '../services/brain/extract';
 import type { DistilledItem } from '../services/brain/sources/types';
@@ -115,6 +116,7 @@ const ITEM: DistilledItem = {
   prose: 'USER: add a probe\nASSISTANT: added one',
   truncated: false,
   metadata: {
+    kind: 'session',
     sessionId: 'sess-a',
     projectPath: '/repo',
     gitBranch: 'main',
@@ -230,5 +232,47 @@ describe('createExtractor', () => {
     // fails twice as fast and doubles the log noise.
     await expect(extract(ITEM, '/cfg')).rejects.toThrow(/not logged in/);
     expect(n).toBe(1);
+  });
+});
+
+describe('buildExtractionPrompt', () => {
+  const CAPTURE: DistilledItem = {
+    prose: 'node-pty must stay on 1.2.0-beta.13; stable leaks a pty per spawn.',
+    truncated: false,
+    metadata: {
+      kind: 'capture',
+      capturedAt: '2026-08-12T18:00:00.000Z',
+      project: 'omnifex',
+      cwd: '/repo',
+    },
+  };
+
+  it('describes a session as a session', () => {
+    const prompt = buildExtractionPrompt(ITEM);
+    expect(prompt).toContain('coding session');
+    expect(prompt).toContain('session: sess-a');
+    expect(prompt).toContain('turns: 2 prompts, 2 replies');
+  });
+
+  it('describes a capture as a capture', () => {
+    const prompt = buildExtractionPrompt(CAPTURE);
+    expect(prompt).toContain('explicitly captured');
+    expect(prompt).not.toContain('coding session');
+  });
+
+  it('never states session facts a capture does not have', () => {
+    // The prompt STATES its facts, so a fabricated prompt count would be a
+    // false fact about the material the model is summarising — the exact
+    // failure mode Plan 4a recorded.
+    const prompt = buildExtractionPrompt(CAPTURE);
+    expect(prompt).not.toContain('turns:');
+    expect(prompt).not.toContain('session:');
+    expect(prompt).not.toContain('outcome:');
+    expect(prompt).toContain('captured: 2026-08-12T18:00:00.000Z');
+    expect(prompt).toContain('project: omnifex');
+  });
+
+  it('carries the captured text as the material to extract from', () => {
+    expect(buildExtractionPrompt(CAPTURE)).toContain('node-pty must stay on 1.2.0-beta.13');
   });
 });

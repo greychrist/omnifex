@@ -1056,11 +1056,27 @@ export interface BrainSessionMetadata {
   terminalStatus: 'completed' | 'error' | 'unknown';
 }
 
+/** Mirrors `CaptureMetadata` in electron/services/brain/sources/types.ts. */
+export interface BrainCaptureMetadata {
+  capturedAt: string;
+  project: string | null;
+  cwd: string | null;
+}
+
+/**
+ * Mirrors `ItemMetadata` in electron/services/brain/sources/types.ts. The
+ * discriminant is what lets a Sources pane render a capture without inventing
+ * session fields it does not have.
+ */
+export type BrainItemMetadata =
+  | ({ kind: 'session' } & BrainSessionMetadata)
+  | ({ kind: 'capture' } & BrainCaptureMetadata);
+
 /** Mirrors the backend `SourcePreview` in electron/services/brain/registry.ts. */
 export interface BrainSourcePreview {
   itemKey: string;
   prose: string;
-  metadata: BrainSessionMetadata;
+  metadata: BrainItemMetadata;
   truncated: boolean;
   admitted: boolean;
   reason: string;
