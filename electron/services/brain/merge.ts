@@ -53,7 +53,7 @@ type SectionName = (typeof SECTION_ORDER)[number];
  */
 const HUMAN_SECTIONS: ReadonlySet<string> = new Set(['Open items', 'Assistant notes']);
 
-type Sections = Map<string, string[]>;
+export type Sections = Map<string, string[]>;
 
 /**
  * Split a note body into `## Heading` → lines.
@@ -61,8 +61,12 @@ type Sections = Map<string, string[]>;
  * Parsing and re-rendering, rather than appending to raw text, is what lets
  * hand-written content in untouched sections survive a merge while the
  * sections merge does own get rewritten cleanly.
+ *
+ * Exported for `curate.ts`, which folds into the same seven-section shape. A
+ * second Markdown section parser would drift from this one, and the two would
+ * disagree about a note neither had a test for.
  */
-function parseSections(body: string): { title: string | null; sections: Sections } {
+export function parseSections(body: string): { title: string | null; sections: Sections } {
   const sections: Sections = new Map();
   let title: string | null = null;
   let current: string | null = null;
@@ -94,7 +98,7 @@ function parseSections(body: string): { title: string | null; sections: Sections
   return { title, sections };
 }
 
-function renderBody(title: string, sections: Sections): string {
+export function renderBody(title: string, sections: Sections): string {
   const parts: string[] = [`# ${title}`, ''];
   for (const name of SECTION_ORDER) {
     parts.push(`## ${name}`);
@@ -107,7 +111,7 @@ function renderBody(title: string, sections: Sections): string {
 }
 
 /** Union preserving first-seen order. */
-function union(existing: readonly string[], incoming: readonly string[]): string[] {
+export function union(existing: readonly string[], incoming: readonly string[]): string[] {
   const out = [...existing];
   for (const value of incoming) {
     if (!out.includes(value)) out.push(value);
@@ -116,7 +120,7 @@ function union(existing: readonly string[], incoming: readonly string[]): string
 }
 
 /** Append only the bullets whose text is not already present. */
-function appendUnique(existing: readonly string[], incoming: readonly string[]): string[] {
+export function appendUnique(existing: readonly string[], incoming: readonly string[]): string[] {
   const out = existing.filter((l) => l.trim() !== '');
   for (const line of incoming) {
     if (!out.includes(line)) out.push(line);
