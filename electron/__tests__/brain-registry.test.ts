@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
   mkdtempSync, rmSync, existsSync, mkdirSync, symlinkSync, chmodSync, linkSync, renameSync,
+  writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, isAbsolute, sep } from 'node:path';
@@ -569,5 +570,41 @@ describe('brain registry', () => {
 
     expect(brain.open(1)).not.toBe(first);
     expect(brain.search(1, 'stdio')).toEqual([]);
+  });
+
+  describe('git directory ownership', () => {
+    it('rejects a symlinked .git', () => {
+      const victimGit = join(dir, 'victim-git');
+      mkdirSync(victimGit, { recursive: true });
+
+      const root = join(dir, 'attacker');
+      mkdirSync(root, { recursive: true });
+      symlinkSync(victimGit, join(root, '.git'), 'dir');
+
+      brain.setVaultPath(1, root);
+      expect(() => brain.open(1)).toThrow(VaultConflictError);
+    });
+
+    it('rejects a .git gitfile that redirects elsewhere', () => {
+      const root = join(dir, 'gitfile-vault');
+      mkdirSync(root, { recursive: true });
+      writeFileSync(join(root, '.git'), `gitdir: ${join(dir, 'somewhere-else')}\n`, 'utf8');
+
+      brain.setVaultPath(1, root);
+      expect(() => brain.open(1)).toThrow(VaultConflictError);
+    });
+
+    it('accepts a vault with an ordinary .git directory', () => {
+      const root = join(dir, 'normal-vault');
+      mkdirSync(join(root, '.git'), { recursive: true });
+
+      brain.setVaultPath(1, root);
+      expect(brain.open(1)).not.toBeNull();
+    });
+
+    it('accepts a vault with no .git at all', () => {
+      brain.setVaultPath(1, join(dir, 'fresh-vault'));
+      expect(brain.open(1)).not.toBeNull();
+    });
   });
 });

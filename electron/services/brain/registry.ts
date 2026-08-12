@@ -35,6 +35,9 @@ const VAULT_KEY_RE = /^brain\.vault\.\d+$/;
 const INDEX_DIR = '.omnifex';
 const INDEX_FILE = 'index.db';
 
+/** Git's own directory name inside a repository working tree. */
+const GIT_DIR = '.git';
+
 /**
  * accountId identifies which account's data is touched, so a malformed one is a
  * confidentiality risk, not a UX annoyance. It also has to agree with
@@ -157,6 +160,32 @@ function ensureVaultIndexPath(root: string): string {
   }
 
   return join(dir, INDEX_FILE);
+}
+
+/**
+ * Refuse a `.git` that is anything other than this vault's own directory.
+ *
+ * Git resolves the repository from the working tree's `.git` entry, and that
+ * entry has two redirecting forms. A SYMLINK points the object database at
+ * another directory; a "gitfile" (a regular file containing `gitdir: <path>`)
+ * does the same thing without a symlink. Under either, `commitAll` from this
+ * vault appends this vault's note bodies into ANOTHER account's git history —
+ * durable, cumulative, and invisible from either vault's directory listing,
+ * because the working trees stay separate and only the history converges.
+ *
+ * Unlike the index database, `.git` is not created here. `git init` creates it
+ * on a vault that has none, and the ordinary case is that it does not exist
+ * yet — which is why absence is accepted rather than materialised.
+ */
+function assertOwnGitDir(root: string): void {
+  const gitPath = join(root, GIT_DIR);
+  const stat = lstatSync(gitPath, { throwIfNoEntry: false });
+  if (!stat) return;
+  if (!stat.isDirectory()) {
+    throw new VaultConflictError(
+      `vault .git is not its own directory (symlink or gitfile): ${gitPath}`,
+    );
+  }
 }
 
 /**
@@ -309,6 +338,7 @@ export function createBrainService(db: Database): BrainService {
       let indexFile: string;
       try {
         assertNoOverlap(accountId, canonicalPath(root));
+        assertOwnGitDir(root);
         indexFile = ensureVaultIndexPath(root);
       } catch (err) {
         // Fail closed and let go: a handle just judged unsafe must not keep a
