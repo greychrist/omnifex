@@ -47,7 +47,17 @@ describe('brain IPC handlers', () => {
   afterEach(() => {
     brain.closeAll();
     db.close();
-    rmSync(dir, { recursive: true, force: true });
+    // open() fires `git init` in the background and nothing tracks the child
+    // process, so `.git` can still be filling while this runs — which surfaces
+    // as ENOTEMPTY under full-suite load. Same mitigation, and same reasoning,
+    // as brain-registry.test.ts's afterEach. The real fix is threading an
+    // injectable ExecGit through createBrainService so the init is awaitable;
+    // it is recorded in the Brain follow-ups doc.
+    try {
+      rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 });
+    } catch {
+      // Best effort — the OS reaps $TMPDIR. Cleanup must never fail a test.
+    }
   });
 
   it('exposes exactly the expected channels', () => {
