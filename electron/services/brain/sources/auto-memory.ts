@@ -69,12 +69,25 @@ export function parseAutoMemory(raw: string, fallbackName: string): AutoMemoryFi
 }
 
 /**
- * One memory file becomes one note in `Notes/`.
+ * One memory file becomes one note in `Notes/`, named after the SOURCE FILE,
+ * not after its `name:` field.
  *
- * The slug stays the filename. It is an ugly title, but `linkMatchesNote`
- * binds a target by final segment with `.md` stripped, so preserving slugs
- * keeps the corpus's existing link graph intact for free. Humanising titles
- * would silently break every `[[…]]` in it.
+ * Two reasons, both measured on the real corpus (2026-08-12):
+ *
+ *  1. **The link graph points at filenames.** Memories link each other as
+ *     `[[project_native_module_abi.md]]`, and `linkMatchesNote` binds by final
+ *     segment with `.md` stripped. In 72 of 90 files the `name:` field is a
+ *     human sentence that differs from the filename, so naming notes after it
+ *     would break four fifths of the corpus's links.
+ *  2. **A `name:` is untrusted input for a filesystem path.** Real values
+ *     include `AWS cost reduction target ~$400/mo` and
+ *     `Don't grandfather tech debt via baselines/ratchets` — using them as
+ *     paths created nested directories inside `Notes/`. This is Plan 4a's
+ *     lesson recurring at a different boundary: a name that came from outside
+ *     is never a path.
+ *
+ * The human `name` is kept as an alias, so a search for the sentence still
+ * finds the note.
  *
  * `metadata.originSessionId` is deliberately NOT recorded in `sources`. It is
  * a real provenance link, but `merge()` dedups by source key — a Note claiming
@@ -83,18 +96,22 @@ export function parseAutoMemory(raw: string, fallbackName: string): AutoMemoryFi
  */
 export function translateAutoMemory(
   file: AutoMemoryFile,
-  opts: { sourceKey: string; date: string },
+  opts: { stem: string; sourceKey: string; date: string },
 ): TranslatedNote {
   const summary = file.description || 'Ingested from Claude Code auto-memory.';
+  // The memory's own type becomes a searchable alias rather than a vault type:
+  // `feedback` and `reference` have no NOTE_TYPES equivalent, and inventing one
+  // would fork the ontology for four values.
+  const aliases = [
+    ...(file.name && file.name !== opts.stem ? [file.name] : []),
+    ...(file.memoryType ? [file.memoryType] : []),
+  ];
   return {
-    relPath: `Notes/${file.name}.md`,
+    relPath: `Notes/${opts.stem}.md`,
     note: {
       frontmatter: {
         type: 'Note',
-        // The memory's own type becomes a searchable alias rather than a vault
-        // type: `feedback` and `reference` have no NOTE_TYPES equivalent, and
-        // inventing one would fork the ontology for four values.
-        aliases: file.memoryType ? [file.memoryType] : [],
+        aliases,
         keywords: [],
         created: opts.date,
         updated: opts.date,
@@ -184,8 +201,10 @@ export function createAutoMemorySource(deps: { accounts: AccountsService }): Bra
     translate(item: SourceItem): Promise<TranslatedNote[]> {
       const file = read(item);
       if (!file) return Promise.resolve([]);
+      const stem = item.itemKey.split('/').pop()?.replace(/\.md$/, '') ?? item.itemKey;
       return Promise.resolve([
         translateAutoMemory(file, {
+          stem,
           sourceKey: `${AUTO_MEMORY_SOURCE_ID}:${item.itemKey}`,
           // The file's own mtime, so a re-translation of an unchanged file is
           // byte-identical rather than restamped with today's date.

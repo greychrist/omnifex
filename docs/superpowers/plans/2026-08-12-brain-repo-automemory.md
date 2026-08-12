@@ -1460,7 +1460,17 @@ git commit -m "docs: record Plan 6's verification"
 
 ## Notes (fill in during execution)
 
-- Auto-memory files discovered / admitted / notes written:
-- Did wikilinks survive translation intact?
-- Was the artifact extraction worth its token?
-- `electron/services/brain` coverage:
+- **Auto-memory:** 86 discovered / 83 admitted / 83 notes written, in 99ms with
+  no model. Three rejects, all genuinely frontmatter-less hand-written files.
+- **Did wikilinks survive?** Yes, and better after a fix: 83% of targets bound,
+  rising to 90% once `linkMatchesNote` was made separator-insensitive to match
+  `resolve.ts`'s `fold()`. Backlinks verified working across translated notes.
+- **Was the artifact extraction worth its token?** Yes, with a caveat. This
+  repo's `CLAUDE.md` produced a `Projects/OmniFex.md` whose every factual claim
+  checks out — but only ONE entity, not the Subsystem seeds the spec predicted,
+  and the model left `"...wait"` and `"placeholder"` in `keyFacts`.
+- **Coverage:** `electron/services/brain` 94.88% statements / 96.23% lines;
+  `electron/services` 88.87% / 91.01%. Above the 80%-lines backend target.
+- **The design was wrong about `name:`.** 72 of 90 real files have a `name`
+  that differs from the filename, and some contain `/`. Notes are named after
+  the source file; see the followups doc.

@@ -62,3 +62,21 @@ describe('linkMatchesNote', () => {
     expect(linkMatchesNote('Permissions', 'Subsystems/Sessions.md')).toBe(false);
   });
 });
+
+describe('separator-insensitive link matching', () => {
+  it('binds a hyphenated reference to an underscored filename', () => {
+    // Measured on a real auto-memory corpus: 5 of 29 links were hyphenated
+    // references to underscored filenames, and resolve.ts's fold() already
+    // treats the two as one entity.
+    expect(linkMatchesNote('project-native-module-abi', 'Notes/project_native_module_abi.md'))
+      .toBe(true);
+  });
+
+  it('binds a spaced title to a hyphenated filename', () => {
+    expect(linkMatchesNote('Brain memory vault', 'Subsystems/brain-memory-vault.md')).toBe(true);
+  });
+
+  it('still refuses two genuinely different names', () => {
+    expect(linkMatchesNote('Brain', 'Subsystems/Brain memory vault.md')).toBe(false);
+  });
+});

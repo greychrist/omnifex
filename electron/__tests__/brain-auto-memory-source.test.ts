@@ -70,16 +70,36 @@ describe('parseAutoMemory', () => {
 
 describe('translateAutoMemory', () => {
   const opts = {
+    stem: 'project_nodepty_pty_leak',
     sourceKey: 'auto-memory:-Users-dev-repo/project_nodepty_pty_leak.md',
     date: '2026-08-12',
   };
   const translated = translateAutoMemory(parseAutoMemory(REAL, 'x')!, opts);
 
-  it('keeps the slug as the filename so existing wikilinks still bind', () => {
-    // linkMatchesNote compares final segments with .md stripped, so
-    // [[project_native_module_abi.md]] resolves ONLY if slugs are preserved.
-    // Humanising titles would silently break every link in the corpus.
+  it('names the note after the source FILE so existing wikilinks still bind', () => {
+    // Memories link each other as [[project_native_module_abi.md]] and
+    // linkMatchesNote binds by final segment with .md stripped. Measured on the
+    // real corpus, 72 of 90 files have a `name:` that differs from the
+    // filename, so naming notes after `name` would break four fifths of them.
     expect(translated.relPath).toBe('Notes/project_nodepty_pty_leak.md');
+  });
+
+  it('never lets a name become part of the path', () => {
+    // Real values include "AWS cost reduction target ~$400/mo" — using one as a
+    // path created nested directories inside Notes/. Plan 4a's lesson at a
+    // different boundary: a name that came from outside is never a path.
+    const nasty = parseAutoMemory(
+      '---\nname: Don\'t grandfather tech debt via baselines/ratchets\n---\n\nbody\n',
+      'feedback_no_tech_debt_baselining',
+    )!;
+    const out = translateAutoMemory(nasty, { ...opts, stem: 'feedback_no_tech_debt_baselining' });
+
+    expect(out.relPath).toBe('Notes/feedback_no_tech_debt_baselining.md');
+    expect(out.relPath.split('/')).toHaveLength(2);
+    // Not lost, just not a path: it stays searchable as an alias.
+    expect(out.note.frontmatter.aliases).toContain(
+      "Don't grandfather tech debt via baselines/ratchets",
+    );
   });
 
   it('maps description to a Summary section and keeps the body verbatim', () => {
@@ -93,7 +113,20 @@ describe('translateAutoMemory', () => {
     // `feedback` and `reference` have no NOTE_TYPES equivalent, and inventing
     // one would fork the ontology for four values.
     expect(translated.note.frontmatter.type).toBe('Note');
+    // The name here equals the stem, so only the type is aliased.
     expect(translated.note.frontmatter.aliases).toEqual(['project']);
+  });
+
+  it('keeps a human name as an alias when it differs from the filename', () => {
+    const humanNamed = parseAutoMemory(
+      '---\nname: AWS cost reduction target\nmetadata:\n  type: project\n---\n\nbody\n',
+      'project_aws_cost_reduction_target',
+    )!;
+    const out = translateAutoMemory(humanNamed, {
+      ...opts,
+      stem: 'project_aws_cost_reduction_target',
+    });
+    expect(out.note.frontmatter.aliases).toEqual(['AWS cost reduction target', 'project']);
   });
 
   it('never puts the origin session in sources', () => {
@@ -111,7 +144,10 @@ describe('translateAutoMemory', () => {
   });
 
   it('still produces a Summary when the memory has no description', () => {
-    const bare = translateAutoMemory(parseAutoMemory('---\nname: n\n---\n\nbody\n', 'x')!, opts);
+    const bare = translateAutoMemory(
+      parseAutoMemory('---\nname: x\n---\n\nbody\n', 'x')!,
+      { ...opts, stem: 'x' },
+    );
     expect(bare.note.body).toContain('## Summary');
     expect(bare.note.frontmatter.aliases).toEqual([]);
   });
