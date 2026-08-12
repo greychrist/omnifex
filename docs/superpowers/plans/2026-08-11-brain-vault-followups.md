@@ -183,6 +183,38 @@ replies, 1.99MB raw) through the live CLI at Haiku into a throwaway vault:
 byte-identical files — the end-to-end idempotency property, proven on real
 output rather than on `merge()`'s return value.
 
+**Extraction moved off Haiku to Sonnet 5 (2026-08-12).** A deliberate deviation
+from spec §8's Haiku pin, on the evidence below. Opus was rejected on volume:
+backfill is ~142 sessions. Re-running the SAME session at Sonnet produced
+notes whose every factual claim checked out against the code, including
+correctly recording which of the session's own bugs were fixed and which were
+still open at the moment the transcript was captured.
+
+**The model change surfaced two real defects that stub-based tests could not.**
+
+1. **A model-supplied entity name is untrusted input for a filesystem path.**
+   Sonnet returned an entity *named* `Projects/omnifex` — it generalized the
+   prompt's folder-qualified `links.target` shape to `name`. `vault.notePath`
+   rejects separators, and that exception escaped `indexSource` and killed the
+   whole item. Fixed twice over: the zod schema normalizes a name to its last
+   path segment (consistent with how `linkMatchesNote` already resolves
+   wikilinks), and `indexSource` now isolates per-entity failures so one
+   unusable entity costs that entity rather than the four good notes beside it.
+
+2. **`indexSource` ignored `hasChanged()`.** Re-indexing re-called the model,
+   and a non-deterministic model returns different prose, so the second run
+   rewrote the note — end-to-end idempotency was `false` on real output while
+   every unit test passed, because the tests use a *stub* extractor that
+   returns the same thing twice. The change-detection store Plan 3 built for
+   exactly this was never wired in. `indexSource` now stops before spending
+   anything when an item is already `indexed` and unchanged, with a `force`
+   option for a deliberate redo. Re-verified live: second run is a free no-op
+   and the bytes are identical.
+
+   **The lesson generalizes:** a deterministic stub makes an idempotency test
+   vacuous when the real dependency is a language model. Plan 4b's worker will
+   re-run over items repeatedly and needs this same guard on every path.
+
 - **Haiku hallucinates implementation detail it cannot see.** The generated
   `Subsystems/Distiller.md` says the distiller "detects file changes from git
   diffs" and parses "decision/fact blocks from prose patterns". Neither exists;

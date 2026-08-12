@@ -9,9 +9,28 @@ import type { DistilledItem } from './sources/types';
  * merge is a pure fold over these, and every `?? []` it would otherwise need
  * is a place a future edit forgets one.
  */
+/**
+ * An entity name is model-supplied, so it is untrusted input for a filesystem
+ * path. `vault.notePath` rejects any separator outright, and one bad name
+ * would otherwise fail a whole item.
+ *
+ * Observed from a live run: the prompt shows `links.target` as
+ * "Projects/omnifex" and the model generalized that shape to `name`. Taking
+ * the last segment is both the obvious intent and consistent with
+ * `linkMatchesNote`, which already resolves wikilinks by last segment.
+ */
+function lastNameSegment(name: string): string {
+  return name.split(/[/\\]/).pop()?.trim() ?? '';
+}
+
 const EntitySchema = z.object({
   type: z.enum(['Project', 'Subsystem', 'Topic']),
-  name: z.string().trim().min(1),
+  name: z
+    .string()
+    .trim()
+    .min(1)
+    .transform(lastNameSegment)
+    .refine((n) => n.length > 0, { message: 'name is empty after removing path segments' }),
   aliases: z.array(z.string()).default([]),
   keywords: z.array(z.string()).default([]),
   summary: z.string(),
@@ -105,11 +124,22 @@ export function parseExtraction(raw: string): Extraction {
 }
 
 /**
- * Pinned, not configurable (spec §8). Extraction is a high-volume,
- * low-judgement task, and letting it inherit an account's session default
- * would quietly bill Opus for it.
+ * Pinned, not configurable: letting extraction inherit an account's session
+ * default would quietly bill Opus for a high-volume background task.
+ *
+ * Spec §8 pins Haiku. This is Sonnet instead, and the reason is measured
+ * rather than assumed. The first live extraction at Haiku (session 27b32dad,
+ * 1.99MB, 5 notes) produced a note asserting the distiller "detects file
+ * changes from git diffs" and parses "decision/fact blocks from prose
+ * patterns" — neither of which exists anywhere in `distill.ts`. Working from a
+ * truncated tail, it invented plausible internals. zod cannot catch that: it
+ * validates shape, not truth, and a confidently wrong note is worse than no
+ * note because it will be retrieved and believed later.
+ *
+ * Opus was considered and rejected on volume: backfill is ~142 sessions, and
+ * one extraction already costs ~2.5 minutes of wall-clock at a smaller model.
  */
-export const EXTRACTION_MODEL = 'claude-haiku-4-5';
+export const EXTRACTION_MODEL = 'claude-sonnet-5';
 
 export interface ExtractorDeps {
   /**

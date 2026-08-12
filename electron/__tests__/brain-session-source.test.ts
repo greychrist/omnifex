@@ -437,6 +437,94 @@ describe('session transcript source', () => {
       brain.closeAll();
     });
 
+    it('does not re-extract an unchanged item that is already indexed', async () => {
+      writeSession(personalCfg, '-Users-dev-Repos-omnifex', 'sess-a', GOOD);
+      const calls: string[] = [];
+      const brain = service(stubExtractor(calls));
+
+      await brain.indexSource(personalId, 'sess-a');
+      const second = await brain.indexSource(personalId, 'sess-a');
+
+      // The whole point of the mtime-then-sha256 store. Without this check a
+      // re-index spends a token to ask a NON-DETERMINISTIC model the same
+      // question, and rewrites the note with whatever it says the second time
+      // — which is how a stable vault turns into churn.
+      expect(calls).toHaveLength(1);
+      expect(second.skipped).toBe(true);
+      expect(second.reason).toMatch(/unchanged|already/i);
+      brain.closeAll();
+    });
+
+    it('re-extracts an unchanged item when forced', async () => {
+      writeSession(personalCfg, '-Users-dev-Repos-omnifex', 'sess-a', GOOD);
+      const calls: string[] = [];
+      const brain = service(stubExtractor(calls));
+
+      await brain.indexSource(personalId, 'sess-a');
+      await brain.indexSource(personalId, 'sess-a', { force: true });
+
+      // Deliberate re-index stays available — a better prompt or a better
+      // model is exactly when you want to redo one.
+      expect(calls).toHaveLength(2);
+      brain.closeAll();
+    });
+
+    it('re-extracts when the transcript itself changed', async () => {
+      const file = writeSession(personalCfg, '-Users-dev-Repos-omnifex', 'sess-a', GOOD);
+      const calls: string[] = [];
+      const brain = service(stubExtractor(calls));
+
+      await brain.indexSource(personalId, 'sess-a');
+      writeFileSync(file, `${GOOD}\n${PROSE('a later reply', 3)}`, 'utf-8');
+      await brain.indexSource(personalId, 'sess-a');
+
+      // A session the user continued is genuinely new material.
+      expect(calls).toHaveLength(2);
+      brain.closeAll();
+    });
+
+    it('isolates a bad entity: writes the others and records the failure', async () => {
+      writeSession(personalCfg, '-Users-dev-Repos-omnifex', 'sess-a', GOOD);
+      const brain = service(async () => ({
+        entities: [
+          // `..` survives schema normalization (no separator) but vault.ts
+          // rejects it. A model-supplied name is untrusted input for a path,
+          // and one bad one must not cost the whole item.
+          { type: 'Topic' as const, name: '..', aliases: [], keywords: [],
+            summary: 'bad', links: [], decisions: [], keyFacts: [] },
+          { type: 'Subsystem' as const, name: 'Good One', aliases: [], keywords: [],
+            summary: 'fine', links: [], decisions: [], keyFacts: [] },
+        ],
+      }));
+
+      const result = await brain.indexSource(personalId, 'sess-a');
+
+      expect(result.notesWritten).toEqual(['Subsystems/Good One.md']);
+      expect(result.reason).toMatch(/1 entit/i);
+      // Partially-written is still indexed: the item was processed, and
+      // re-running it would spend another token to reach the same place.
+      const row = createSourceStateStore(db).get(personalId, 'session', 'sess-a');
+      expect(row?.status).toBe('indexed');
+      expect(row?.error).toContain('..');
+      brain.closeAll();
+    });
+
+    it('never throws out of indexSource for a wholly unusable extraction', async () => {
+      writeSession(personalCfg, '-Users-dev-Repos-omnifex', 'sess-a', GOOD);
+      const brain = service(async () => ({
+        entities: [
+          { type: 'Topic' as const, name: '..', aliases: [], keywords: [],
+            summary: 'bad', links: [], decisions: [], keyFacts: [] },
+        ],
+      }));
+      // The Brain is auxiliary: even an extraction where every entity is
+      // unusable resolves as a recorded outcome, never an exception.
+      const result = await brain.indexSource(personalId, 'sess-a');
+      expect(result.notesWritten).toEqual([]);
+      expect(result.skipped).toBe(true);
+      brain.closeAll();
+    });
+
     it('throws when the owning account has no vault configured', async () => {
       writeSession(personalCfg, '-Users-dev-Repos-omnifex', 'sess-a', GOOD);
       const brain = createBrainService(db, {

@@ -190,7 +190,11 @@ export interface BrainService {
    * an unknown item, an unconfigured vault, or a service built without an
    * extractor.
    */
-  indexSource(accountId: number, itemKey: string): Promise<IndexResult>;
+  indexSource(
+    accountId: number,
+    itemKey: string,
+    opts?: { force?: boolean },
+  ): Promise<IndexResult>;
   closeAll(): void;
 }
 
@@ -787,7 +791,11 @@ export function createBrainService(
       };
     },
 
-    async indexSource(accountId: number, itemKey: string): Promise<IndexResult> {
+    async indexSource(
+      accountId: number,
+      itemKey: string,
+      runOpts: { force?: boolean } = {},
+    ): Promise<IndexResult> {
       requireAccountId(accountId);
       if (!opts.extractor) throw new Error('brain: no extractor configured');
       if (!opts.accounts) throw new Error('brain: no accounts service configured');
@@ -795,6 +803,23 @@ export function createBrainService(
       const found = await findItem(accountId, itemKey);
       if (!found) throw new Error(`source item not found for this account: ${itemKey}`);
       const { source, item } = found;
+
+      // Already done and nothing moved — stop before spending anything.
+      //
+      // This is what the mtime-then-sha256 store is FOR. Extraction asks a
+      // non-deterministic model, so a re-run does not merely waste a token: it
+      // returns different prose and rewrites the note, turning a stable vault
+      // into churn and every re-index into a git commit. `force` keeps a
+      // deliberate redo available for when the prompt or the model improves.
+      const prior = sourceState.get(accountId, item.sourceId, item.itemKey);
+      if (!runOpts.force && prior?.status === 'indexed' && !sourceState.hasChanged(item)) {
+        return {
+          itemKey,
+          notesWritten: [],
+          skipped: true,
+          reason: 'unchanged since it was last indexed',
+        };
+      }
 
       // Gate first: a rejected item must not reach the model at all. This is
       // the only thing standing between "142 sessions" and "142 Haiku calls".
@@ -836,35 +861,57 @@ export function createBrainService(
       };
 
       const notesWritten: string[] = [];
+      const entityErrors: string[] = [];
       for (const entity of extraction.entities) {
-        const relPath = handle.vault.notePath(entity.type, entity.name);
-        let existing: ParsedNote | null = null;
+        // Per-entity isolation. An entity name is model-supplied and therefore
+        // untrusted input for a filesystem path; `vault.notePath` rejects
+        // `..`, separators and the like. One unusable entity must cost that
+        // entity, not the whole item — the token has already been spent, and
+        // discarding four good notes to punish a fifth bad one is the worst
+        // available outcome.
         try {
-          existing = handle.vault.readNote(relPath);
-        } catch {
-          // Absent, or unparseable after a hand edit. Either way this merge
-          // starts from nothing rather than failing the whole item — spec's
-          // error table isolates a broken note to that note.
-          existing = null;
+          const relPath = handle.vault.notePath(entity.type, entity.name);
+          let existing: ParsedNote | null = null;
+          try {
+            existing = handle.vault.readNote(relPath);
+          } catch {
+            // Absent, or unparseable after a hand edit. Either way this merge
+            // starts from nothing rather than failing the item — the spec's
+            // error table isolates a broken note to that note.
+            existing = null;
+          }
+          const merged = merge(existing, entity, provenance);
+          handle.vault.writeNote(relPath, merged);
+          handle.index.upsert(relPath, handle.vault.noteTitle(relPath), merged);
+          notesWritten.push(relPath);
+        } catch (err) {
+          entityErrors.push(`${entity.name}: ${(err as Error).message}`);
         }
-        const merged = merge(existing, entity, provenance);
-        handle.vault.writeNote(relPath, merged);
-        handle.index.upsert(relPath, handle.vault.noteTitle(relPath), merged);
-        notesWritten.push(relPath);
       }
 
       // One commit for the whole item, not one per note: the unit of work is
       // "indexed this session", and per-note commits would make `git revert`
       // of a bad run a multi-step operation.
       if (notesWritten.length > 0) commitAndRecord(handle, `Index ${provenance.sourceKey}`);
-      sourceState.record(item, { status: 'indexed' });
 
-      return {
-        itemKey,
-        notesWritten,
-        skipped: false,
-        reason: `${String(notesWritten.length)} note(s) written`,
-      };
+      const errorSummary = entityErrors.length > 0 ? entityErrors.join('; ') : undefined;
+
+      // Nothing usable at all is reported as skipped, so the Sources pane does
+      // not claim a successful run that produced no note.
+      if (notesWritten.length === 0 && entityErrors.length > 0) {
+        sourceState.record(item, { status: 'failed', error: errorSummary });
+        return { itemKey, notesWritten, skipped: true, reason: errorSummary ?? 'no notes written' };
+      }
+
+      // Partially written still counts as indexed: the item was processed, and
+      // re-running would spend another token to arrive at the same place.
+      sourceState.record(item, { status: 'indexed', error: errorSummary });
+
+      const reason =
+        entityErrors.length > 0
+          ? `${String(notesWritten.length)} note(s) written, ${String(entityErrors.length)} entity skipped: ${errorSummary ?? ''}`
+          : `${String(notesWritten.length)} note(s) written`;
+      return { itemKey, notesWritten, skipped: false, reason };
     },
 
     closeAll(): void {

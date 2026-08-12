@@ -89,6 +89,26 @@ describe('parseExtraction', () => {
   it('accepts an empty entity list — a session can be worth nothing', () => {
     expect(parseExtraction('{"entities":[]}').entities).toEqual([]);
   });
+
+  it('normalizes a folder-qualified name to its last segment', () => {
+    // Observed from a live Sonnet run: the prompt shows `links.target` as
+    // "Projects/omnifex" and the model generalized that to `name`. A name with
+    // a separator is rejected outright by vault.notePath, so one bad name
+    // would otherwise fail the whole item. Last-segment matches how
+    // linkMatchesNote already resolves wikilinks.
+    const q = { entities: [{ type: 'Project', name: 'Projects/omnifex', summary: 'x' }] };
+    expect(parseExtraction(JSON.stringify(q)).entities[0].name).toBe('omnifex');
+  });
+
+  it('rejects a name that is only a separator', () => {
+    const bad = { entities: [{ type: 'Topic', name: 'Topics/', summary: 'x' }] };
+    expect(() => parseExtraction(JSON.stringify(bad))).toThrow(ExtractionParseError);
+  });
+
+  it('normalizes a backslash-qualified name too', () => {
+    const q = { entities: [{ type: 'Topic', name: 'Topics\\Thing', summary: 'x' }] };
+    expect(parseExtraction(JSON.stringify(q)).entities[0].name).toBe('Thing');
+  });
 });
 
 const ITEM: DistilledItem = {
@@ -111,7 +131,7 @@ const ITEM: DistilledItem = {
 };
 
 describe('createExtractor', () => {
-  it('calls the CLI once with Haiku and the owning config dir', async () => {
+  it('calls the CLI once with the pinned model and the owning config dir', async () => {
     const calls: { model: string; configDir: string; prompt: string }[] = [];
     const extract = createExtractor({
       runQuery: async (opts) => {
@@ -123,7 +143,7 @@ describe('createExtractor', () => {
     await extract(ITEM, '/Users/dev/.claude-work');
 
     expect(calls).toHaveLength(1);
-    expect(calls[0].model).toBe('claude-haiku-4-5');
+    expect(calls[0].model).toBe('claude-sonnet-5');
     // The OWNING account's dir. Indexing a work transcript through the
     // personal account would push work content through the wrong
     // subscription (spec §8).
