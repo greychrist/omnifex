@@ -1066,6 +1066,16 @@ export interface BrainSourcePreview {
   reason: string;
 }
 
+/** Mirrors the backend `IndexResult` in electron/services/brain/registry.ts. */
+export interface BrainIndexResult {
+  itemKey: string;
+  /** Vault-relative paths written, in the order they were written. */
+  notesWritten: string[];
+  /** True when nothing was indexed — gate rejection or a recorded failure. */
+  skipped: boolean;
+  reason: string;
+}
+
 /** Mirrors the backend `ParsedNote` in electron/services/brain/types.ts. */
 export interface BrainNote {
   frontmatter: {
@@ -3002,6 +3012,11 @@ export const api = {
     itemKey: string,
   ): Promise<BrainSourcePreview | null> {
     return apiCall<BrainSourcePreview | null>('brain_source_preview', { accountId, itemKey });
+  },
+
+  /** Extract one item and merge it into the account's vault. Spends tokens. */
+  async brainIndexSource(accountId: number, itemKey: string): Promise<BrainIndexResult> {
+    return apiCall<BrainIndexResult>('brain_index_source', { accountId, itemKey });
   },
 
 };

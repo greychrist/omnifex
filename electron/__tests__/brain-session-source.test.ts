@@ -7,7 +7,8 @@ import { createAccountsService, type AccountsService } from '../services/account
 import { createBrainService } from '../services/brain/registry';
 import { createSessionSource } from '../services/brain/sources/session-transcripts';
 import { createSourceStateStore } from '../services/brain/sources/state';
-import type { BrainSource } from '../services/brain/sources/types';
+import type { BrainSource, DistilledItem } from '../services/brain/sources/types';
+import type { Extractor } from '../services/brain/extract';
 
 const PROMPT = (text: string, i: number): string =>
   JSON.stringify({
@@ -290,6 +291,262 @@ describe('session transcript source', () => {
     it('returns an empty listing for an account with no transcripts', async () => {
       const brain = service();
       await expect(brain.listSources(workId)).resolves.toEqual([]);
+      brain.closeAll();
+    });
+  });
+
+  describe('indexSource', () => {
+    const EXTRACTION = {
+      entities: [
+        {
+          type: 'Subsystem' as const,
+          name: 'Permission decider',
+          aliases: ['decider'],
+          keywords: ['permissions'],
+          summary: 'The stdio bridge.',
+          links: [],
+          timelineEntry: 'Reworked the decider.',
+          decisions: [],
+          keyFacts: [],
+        },
+      ],
+    };
+
+    /** Records which config dir each extraction ran under. */
+    function stubExtractor(calls: string[] = [], result = EXTRACTION) {
+      return async (_item: DistilledItem, configDir: string) => {
+        calls.push(configDir);
+        return result;
+      };
+    }
+
+    function service(extractor: Extractor, vaultDir = join(dir, 'personal-vault')) {
+      const brain = createBrainService(db, {
+        execGit: async () => '',
+        accounts,
+        extractor,
+        sources: [createSessionSource({ accounts })],
+      });
+      brain.setVaultPath(personalId, vaultDir);
+      return brain;
+    }
+
+    it('writes a note into the owning account vault and records the item indexed', async () => {
+      writeSession(personalCfg, '-Users-dev-Repos-omnifex', 'sess-a', GOOD);
+      const brain = service(stubExtractor());
+
+      const result = await brain.indexSource(personalId, 'sess-a');
+
+      expect(result.skipped).toBe(false);
+      expect(result.notesWritten).toEqual(['Subsystems/Permission decider.md']);
+      const note = brain.open(personalId)!.vault.readNote('Subsystems/Permission decider.md');
+      expect(note.body).toContain('The stdio bridge.');
+      expect(note.frontmatter.sources).toEqual(['session:sess-a']);
+
+      const [row] = createSourceStateStore(db).list(personalId, 'session');
+      expect(row.status).toBe('indexed');
+      brain.closeAll();
+    });
+
+    it('uses the owning account config dir for the extraction call', async () => {
+      writeSession(personalCfg, '-Users-dev-Repos-omnifex', 'sess-a', GOOD);
+      const calls: string[] = [];
+      const brain = service(stubExtractor(calls));
+
+      await brain.indexSource(personalId, 'sess-a');
+
+      // Not a resolved dir, not a default one. Indexing a work transcript
+      // through the personal account would push work content through the
+      // wrong subscription (spec §8).
+      expect(calls).toEqual([personalCfg]);
+      brain.closeAll();
+    });
+
+    it('refuses to index an item owned by another account', async () => {
+      writeSession(workCfg, '-Users-dev-Repos-mango', 'sess-work', GOOD);
+      const calls: string[] = [];
+      const brain = service(stubExtractor(calls));
+
+      await expect(brain.indexSource(personalId, 'sess-work')).rejects.toThrow(/not found/i);
+      // No token spent on an item this account does not own.
+      expect(calls).toEqual([]);
+      brain.closeAll();
+    });
+
+    it('skips a gate-rejected item without calling the extractor', async () => {
+      writeSession(personalCfg, '-Users-dev-Repos-omnifex', 'sess-thin', PROMPT('only one', 1));
+      const calls: string[] = [];
+      const brain = service(stubExtractor(calls));
+
+      const result = await brain.indexSource(personalId, 'sess-thin');
+
+      expect(result.skipped).toBe(true);
+      expect(result.reason).toContain('prompt');
+      expect(calls).toEqual([]);
+      expect(createSourceStateStore(db).get(personalId, 'session', 'sess-thin')?.status)
+        .toBe('skipped');
+      brain.closeAll();
+    });
+
+    it('records failed with the error when extraction throws, and writes nothing', async () => {
+      writeSession(personalCfg, '-Users-dev-Repos-omnifex', 'sess-a', GOOD);
+      const brain = service(async () => { throw new Error('validation blew up'); });
+
+      const result = await brain.indexSource(personalId, 'sess-a');
+
+      // The Brain is auxiliary: a failed extraction is a recorded status, not
+      // an exception into whatever called this.
+      expect(result.skipped).toBe(true);
+      expect(result.reason).toContain('validation blew up');
+      expect(result.notesWritten).toEqual([]);
+      expect(brain.open(personalId)!.vault.listNotes()).toEqual([]);
+
+      const row = createSourceStateStore(db).get(personalId, 'session', 'sess-a');
+      expect(row?.status).toBe('failed');
+      expect(row?.error).toContain('validation blew up');
+      brain.closeAll();
+    });
+
+    it('is idempotent end to end: indexing twice leaves the note byte-identical', async () => {
+      writeSession(personalCfg, '-Users-dev-Repos-omnifex', 'sess-a', GOOD);
+      const brain = service(stubExtractor());
+      const notePath = join(dir, 'personal-vault', 'Subsystems', 'Permission decider.md');
+
+      await brain.indexSource(personalId, 'sess-a');
+      const first = readFileSync(notePath, 'utf-8');
+      await brain.indexSource(personalId, 'sess-a');
+      const second = readFileSync(notePath, 'utf-8');
+
+      // The property spec §9 names as the one to test hardest, asserted on the
+      // bytes on disk rather than on the merge function's return value.
+      expect(second).toBe(first);
+      brain.closeAll();
+    });
+
+    it('indexes an empty extraction without writing a note', async () => {
+      writeSession(personalCfg, '-Users-dev-Repos-omnifex', 'sess-a', GOOD);
+      const brain = service(stubExtractor([], { entities: [] }));
+
+      const result = await brain.indexSource(personalId, 'sess-a');
+
+      // A session worth nothing is a valid, final answer — not a failure.
+      expect(result.skipped).toBe(false);
+      expect(result.notesWritten).toEqual([]);
+      expect(createSourceStateStore(db).get(personalId, 'session', 'sess-a')?.status)
+        .toBe('indexed');
+      brain.closeAll();
+    });
+
+    it('does not re-extract an unchanged item that is already indexed', async () => {
+      writeSession(personalCfg, '-Users-dev-Repos-omnifex', 'sess-a', GOOD);
+      const calls: string[] = [];
+      const brain = service(stubExtractor(calls));
+
+      await brain.indexSource(personalId, 'sess-a');
+      const second = await brain.indexSource(personalId, 'sess-a');
+
+      // The whole point of the mtime-then-sha256 store. Without this check a
+      // re-index spends a token to ask a NON-DETERMINISTIC model the same
+      // question, and rewrites the note with whatever it says the second time
+      // — which is how a stable vault turns into churn.
+      expect(calls).toHaveLength(1);
+      expect(second.skipped).toBe(true);
+      expect(second.reason).toMatch(/unchanged|already/i);
+      brain.closeAll();
+    });
+
+    it('re-extracts an unchanged item when forced', async () => {
+      writeSession(personalCfg, '-Users-dev-Repos-omnifex', 'sess-a', GOOD);
+      const calls: string[] = [];
+      const brain = service(stubExtractor(calls));
+
+      await brain.indexSource(personalId, 'sess-a');
+      await brain.indexSource(personalId, 'sess-a', { force: true });
+
+      // Deliberate re-index stays available — a better prompt or a better
+      // model is exactly when you want to redo one.
+      expect(calls).toHaveLength(2);
+      brain.closeAll();
+    });
+
+    it('re-extracts when the transcript itself changed', async () => {
+      const file = writeSession(personalCfg, '-Users-dev-Repos-omnifex', 'sess-a', GOOD);
+      const calls: string[] = [];
+      const brain = service(stubExtractor(calls));
+
+      await brain.indexSource(personalId, 'sess-a');
+      writeFileSync(file, `${GOOD}\n${PROSE('a later reply', 3)}`, 'utf-8');
+      await brain.indexSource(personalId, 'sess-a');
+
+      // A session the user continued is genuinely new material.
+      expect(calls).toHaveLength(2);
+      brain.closeAll();
+    });
+
+    it('isolates a bad entity: writes the others and records the failure', async () => {
+      writeSession(personalCfg, '-Users-dev-Repos-omnifex', 'sess-a', GOOD);
+      const brain = service(async () => ({
+        entities: [
+          // `..` survives schema normalization (no separator) but vault.ts
+          // rejects it. A model-supplied name is untrusted input for a path,
+          // and one bad one must not cost the whole item.
+          { type: 'Topic' as const, name: '..', aliases: [], keywords: [],
+            summary: 'bad', links: [], decisions: [], keyFacts: [] },
+          { type: 'Subsystem' as const, name: 'Good One', aliases: [], keywords: [],
+            summary: 'fine', links: [], decisions: [], keyFacts: [] },
+        ],
+      }));
+
+      const result = await brain.indexSource(personalId, 'sess-a');
+
+      expect(result.notesWritten).toEqual(['Subsystems/Good One.md']);
+      expect(result.reason).toMatch(/1 entit/i);
+      // Partially-written is still indexed: the item was processed, and
+      // re-running it would spend another token to reach the same place.
+      const row = createSourceStateStore(db).get(personalId, 'session', 'sess-a');
+      expect(row?.status).toBe('indexed');
+      expect(row?.error).toContain('..');
+      brain.closeAll();
+    });
+
+    it('never throws out of indexSource for a wholly unusable extraction', async () => {
+      writeSession(personalCfg, '-Users-dev-Repos-omnifex', 'sess-a', GOOD);
+      const brain = service(async () => ({
+        entities: [
+          { type: 'Topic' as const, name: '..', aliases: [], keywords: [],
+            summary: 'bad', links: [], decisions: [], keyFacts: [] },
+        ],
+      }));
+      // The Brain is auxiliary: even an extraction where every entity is
+      // unusable resolves as a recorded outcome, never an exception.
+      const result = await brain.indexSource(personalId, 'sess-a');
+      expect(result.notesWritten).toEqual([]);
+      expect(result.skipped).toBe(true);
+      brain.closeAll();
+    });
+
+    it('throws when the owning account has no vault configured', async () => {
+      writeSession(personalCfg, '-Users-dev-Repos-omnifex', 'sess-a', GOOD);
+      const brain = createBrainService(db, {
+        execGit: async () => '',
+        accounts,
+        extractor: stubExtractor(),
+        sources: [createSessionSource({ accounts })],
+      });
+      await expect(brain.indexSource(personalId, 'sess-a')).rejects.toThrow(/vault/i);
+      brain.closeAll();
+    });
+
+    it('throws rather than silently no-opping when no extractor is wired', async () => {
+      writeSession(personalCfg, '-Users-dev-Repos-omnifex', 'sess-a', GOOD);
+      const brain = createBrainService(db, {
+        execGit: async () => '',
+        accounts,
+        sources: [createSessionSource({ accounts })],
+      });
+      brain.setVaultPath(personalId, join(dir, 'personal-vault'));
+      // A missing dependency must not become a silent no-op indexer.
+      await expect(brain.indexSource(personalId, 'sess-a')).rejects.toThrow(/extractor/i);
       brain.closeAll();
     });
   });

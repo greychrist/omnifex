@@ -182,6 +182,17 @@ export function createBrainHandlers(brain?: BrainService): Record<string, Handle
       return brain.previewSource(accountId, requireString(params, 'itemKey', 'item_key'));
     },
 
+    async brain_index_source(_event, params = {}) {
+      // Neither a read nor an ordinary write: this one spends tokens. A `null`
+      // result while the service is missing would report an indexing run that
+      // never happened, so it throws like the other write handlers.
+      if (!brain) throw new Error('brain service unavailable');
+      return brain.indexSource(
+        requireAccountId(params),
+        requireString(params, 'itemKey', 'item_key'),
+      );
+    },
+
     async brain_search(_event, params = {}) {
       const accountId = requireAccountId(params);
       if (!brain) return [];

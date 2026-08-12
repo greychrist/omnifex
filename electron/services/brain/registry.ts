@@ -14,7 +14,10 @@ import { linkMatchesNote, parseWikilinks } from './links';
 import { fireAndLogGitFailure } from './git-logging';
 import { canonicalPath, fsIdentity, isSameOrInside, resolveVaultRoot } from './paths';
 import { createSourceStateStore, type SourceStatus } from './sources/state';
-import type { BrainSource, SessionMetadata } from './sources/types';
+import type { BrainSource, SessionMetadata, SourceItem } from './sources/types';
+import type { Extractor } from './extract';
+import { merge } from './merge';
+import type { AccountsService } from '../accounts';
 import type { ParsedNote } from './types';
 
 /**
@@ -128,6 +131,16 @@ export interface SourceSummary {
   changed: boolean;
 }
 
+/** What one indexing run did. */
+export interface IndexResult {
+  itemKey: string;
+  /** Vault-relative paths written, in the order they were written. */
+  notesWritten: string[];
+  /** True when nothing was indexed — gate rejection or a recorded failure. */
+  skipped: boolean;
+  reason: string;
+}
+
 /** The distilled view of one item, for inspection before any token is spent. */
 export interface SourcePreview {
   itemKey: string;
@@ -168,6 +181,20 @@ export interface BrainService {
   listSources(accountId: number): Promise<SourceSummary[]>;
   /** Distilled preview of one item, or null when it is not this account's. */
   previewSource(accountId: number, itemKey: string): Promise<SourcePreview | null>;
+  /**
+   * Extract one item and merge the result into this account's vault.
+   *
+   * The only method here that spends tokens. It resolves rather than rejecting
+   * for a gate rejection or a failed extraction — both are recorded outcomes,
+   * and the Brain is auxiliary — but it throws for the caller's own mistakes:
+   * an unknown item, an unconfigured vault, or a service built without an
+   * extractor.
+   */
+  indexSource(
+    accountId: number,
+    itemKey: string,
+    opts?: { force?: boolean },
+  ): Promise<IndexResult>;
   closeAll(): void;
 }
 
@@ -315,6 +342,15 @@ export interface BrainServiceOptions {
    * a config dir on disk.
    */
   sources?: BrainSource[];
+  /**
+   * Account lookup, needed only by `indexSource`: an item's owning account
+   * supplies the `CLAUDE_CONFIG_DIR` its extraction runs under (spec §8).
+   * Optional so every existing construction site keeps working, but
+   * `indexSource` fails loudly without it rather than becoming a silent no-op.
+   */
+  accounts?: AccountsService;
+  /** Turns distilled prose into entities. Absent means indexing is unavailable. */
+  extractor?: Extractor;
 }
 
 export function createBrainService(
@@ -334,6 +370,25 @@ export function createBrainService(
   // caller that never wired any up.
   const sources = opts.sources ?? [];
   const sourceState = createSourceStateStore(db);
+
+  /**
+   * Locate one item by account AND key.
+   *
+   * Both, never the key alone: a session id is unique per account, not
+   * globally, so matching on the key would hand one account's transcript to
+   * whoever guessed the id.
+   */
+  async function findItem(
+    accountId: number,
+    itemKey: string,
+  ): Promise<{ source: BrainSource; item: SourceItem } | null> {
+    for (const source of sources) {
+      const items = await source.discover();
+      const item = items.find((i) => i.itemKey === itemKey && i.accountId === accountId);
+      if (item) return { source, item };
+    }
+    return null;
+  }
 
   function readPath(accountId: number): string | null {
     return db.getSetting(vaultSettingKey(accountId));
@@ -722,25 +777,141 @@ export function createBrainService(
 
     async previewSource(accountId: number, itemKey: string): Promise<SourcePreview | null> {
       requireAccountId(accountId);
-      for (const source of sources) {
-        const items = await source.discover();
-        // Matching on BOTH keys, not just itemKey: a session id is unique per
-        // account, not globally, and matching on the key alone would preview
-        // another account's transcript to whoever guessed the id.
-        const item = items.find((i) => i.itemKey === itemKey && i.accountId === accountId);
-        if (!item) continue;
-        const verdict = source.admit(item);
-        const distilled = await source.distill(item);
+      const found = await findItem(accountId, itemKey);
+      if (!found) return null;
+      const verdict = found.source.admit(found.item);
+      const distilled = await found.source.distill(found.item);
+      return {
+        itemKey,
+        prose: distilled.prose,
+        metadata: distilled.metadata,
+        truncated: distilled.truncated,
+        admitted: verdict.admitted,
+        reason: verdict.reason,
+      };
+    },
+
+    async indexSource(
+      accountId: number,
+      itemKey: string,
+      runOpts: { force?: boolean } = {},
+    ): Promise<IndexResult> {
+      requireAccountId(accountId);
+      if (!opts.extractor) throw new Error('brain: no extractor configured');
+      if (!opts.accounts) throw new Error('brain: no accounts service configured');
+
+      const found = await findItem(accountId, itemKey);
+      if (!found) throw new Error(`source item not found for this account: ${itemKey}`);
+      const { source, item } = found;
+
+      // Already done and nothing moved — stop before spending anything.
+      //
+      // This is what the mtime-then-sha256 store is FOR. Extraction asks a
+      // non-deterministic model, so a re-run does not merely waste a token: it
+      // returns different prose and rewrites the note, turning a stable vault
+      // into churn and every re-index into a git commit. `force` keeps a
+      // deliberate redo available for when the prompt or the model improves.
+      const prior = sourceState.get(accountId, item.sourceId, item.itemKey);
+      if (!runOpts.force && prior?.status === 'indexed' && !sourceState.hasChanged(item)) {
         return {
           itemKey,
-          prose: distilled.prose,
-          metadata: distilled.metadata,
-          truncated: distilled.truncated,
-          admitted: verdict.admitted,
-          reason: verdict.reason,
+          notesWritten: [],
+          skipped: true,
+          reason: 'unchanged since it was last indexed',
         };
       }
-      return null;
+
+      // Gate first: a rejected item must not reach the model at all. This is
+      // the only thing standing between "142 sessions" and "142 Haiku calls".
+      const verdict = source.admit(item);
+      if (!verdict.admitted) {
+        sourceState.record(item, { status: 'skipped', error: verdict.reason });
+        return { itemKey, notesWritten: [], skipped: true, reason: verdict.reason };
+      }
+
+      // Fail before spending a token, not after: an extraction whose result
+      // has nowhere to go is pure waste.
+      const handle = requireHandle(accountId);
+
+      const account = opts.accounts.listAccounts().find((a) => a.id === accountId);
+      if (!account) {
+        // No silent fallback to another account's config dir — that would push
+        // this account's content through the wrong subscription (spec §4).
+        const reason = 'no account for this item';
+        sourceState.record(item, { status: 'blocked', error: reason });
+        return { itemKey, notesWritten: [], skipped: true, reason };
+      }
+
+      const distilled = await source.distill(item);
+
+      let extraction;
+      try {
+        extraction = await opts.extractor(distilled, account.config_dir);
+      } catch (err) {
+        // A failed extraction is a recorded status, never an exception into
+        // whatever called this. A failed item must not block anything (spec §8).
+        const reason = (err as Error).message;
+        sourceState.record(item, { status: 'failed', error: reason });
+        return { itemKey, notesWritten: [], skipped: true, reason };
+      }
+
+      const provenance = {
+        sourceKey: `${item.sourceId}:${item.itemKey}`,
+        date: distilled.metadata.startedAt?.slice(0, 10) ?? today(),
+      };
+
+      const notesWritten: string[] = [];
+      const entityErrors: string[] = [];
+      for (const entity of extraction.entities) {
+        // Per-entity isolation. An entity name is model-supplied and therefore
+        // untrusted input for a filesystem path; `vault.notePath` rejects
+        // `..`, separators and the like. One unusable entity must cost that
+        // entity, not the whole item — the token has already been spent, and
+        // discarding four good notes to punish a fifth bad one is the worst
+        // available outcome.
+        try {
+          const relPath = handle.vault.notePath(entity.type, entity.name);
+          let existing: ParsedNote | null = null;
+          try {
+            existing = handle.vault.readNote(relPath);
+          } catch {
+            // Absent, or unparseable after a hand edit. Either way this merge
+            // starts from nothing rather than failing the item — the spec's
+            // error table isolates a broken note to that note.
+            existing = null;
+          }
+          const merged = merge(existing, entity, provenance);
+          handle.vault.writeNote(relPath, merged);
+          handle.index.upsert(relPath, handle.vault.noteTitle(relPath), merged);
+          notesWritten.push(relPath);
+        } catch (err) {
+          entityErrors.push(`${entity.name}: ${(err as Error).message}`);
+        }
+      }
+
+      // One commit for the whole item, not one per note: the unit of work is
+      // "indexed this session", and per-note commits would make `git revert`
+      // of a bad run a multi-step operation.
+      if (notesWritten.length > 0) commitAndRecord(handle, `Index ${provenance.sourceKey}`);
+
+      const errorSummary = entityErrors.length > 0 ? entityErrors.join('; ') : undefined;
+
+      // Nothing usable at all is reported as skipped, so the Sources pane does
+      // not claim a successful run that produced no note.
+      if (notesWritten.length === 0 && entityErrors.length > 0) {
+        sourceState.record(item, { status: 'failed', error: errorSummary });
+        return { itemKey, notesWritten, skipped: true, reason: errorSummary ?? 'no notes written' };
+      }
+
+      // Partially written still counts as indexed: the item was processed, and
+      // re-running would spend another token to arrive at the same place.
+      sourceState.record(item, { status: 'indexed', error: errorSummary });
+
+      const reason =
+        entityErrors.length > 0
+          ? `${String(notesWritten.length)} note(s) written, ${String(entityErrors.length)} entity skipped: ${errorSummary ?? ''}`
+          : `${String(notesWritten.length)} note(s) written`;
+      return { itemKey, notesWritten, skipped: false, reason };
     },
 
     closeAll(): void {

@@ -110,6 +110,78 @@ describe('distillTranscript', () => {
     expect(prose).toContain('ENDMARKER');
   });
 
+  it('keeps every prompt when truncating, and spends what is left on the newest replies', () => {
+    const filler = 'z'.repeat(1_500);
+    const rows: string[] = [];
+    for (let i = 0; i < 10; i += 1) {
+      rows.push(
+        JSON.stringify({
+          type: 'user', uuid: `u${i}`, timestamp: '2026-08-01T10:00:00.000Z',
+          message: { role: 'user', content: `PROMPT-${i}` },
+        }),
+      );
+      rows.push(
+        JSON.stringify({
+          type: 'assistant', uuid: `a${i}`, timestamp: '2026-08-01T10:00:01.000Z',
+          message: { role: 'assistant', content: [{ type: 'text', text: `REPLY-${i} ${filler}` }] },
+        }),
+      );
+    }
+    const { prose, truncated } = distillTranscript(rows.join('\n'), 's');
+
+    expect(truncated).toBe(true);
+    expect(prose.length).toBeLessThanOrEqual(DISTILL_MAX_CHARS);
+    // Every prompt survives — the whole point of the policy. Measured on the
+    // real corpus, plain oldest-first dropped ALL of them.
+    for (let i = 0; i < 10; i += 1) expect(prose).toContain(`PROMPT-${i}`);
+    // Replies are sacrificed oldest-first, so the newest survives.
+    expect(prose).toContain('REPLY-9');
+    expect(prose).not.toContain('REPLY-0 ');
+    expect(prose).toContain('elided');
+  });
+
+  it('keeps prompts in transcript order, not grouped at the end', () => {
+    const filler = 'z'.repeat(4_000);
+    const rows = [
+      JSON.stringify({
+        type: 'user', uuid: 'u1', timestamp: '2026-08-01T10:00:00.000Z',
+        message: { role: 'user', content: 'FIRST-ASK' },
+      }),
+      JSON.stringify({
+        type: 'assistant', uuid: 'a1', timestamp: '2026-08-01T10:00:01.000Z',
+        message: { role: 'assistant', content: [{ type: 'text', text: `OLD-REPLY ${filler}` }] },
+      }),
+      JSON.stringify({
+        type: 'user', uuid: 'u2', timestamp: '2026-08-01T10:00:02.000Z',
+        message: { role: 'user', content: 'SECOND-ASK' },
+      }),
+      JSON.stringify({
+        type: 'assistant', uuid: 'a2', timestamp: '2026-08-01T10:00:03.000Z',
+        message: { role: 'assistant', content: [{ type: 'text', text: `NEW-REPLY ${filler}` }] },
+      }),
+    ];
+    const { prose } = distillTranscript(rows.join('\n'), 's');
+    // Reordering would make the prose read as a different conversation than
+    // the one that happened.
+    expect(prose.indexOf('FIRST-ASK')).toBeLessThan(prose.indexOf('SECOND-ASK'));
+  });
+
+  it('still truncates prompts when the prompts alone exceed the ceiling', () => {
+    const rows = Array.from({ length: 6 }, (_, i) =>
+      JSON.stringify({
+        type: 'user', uuid: `u${i}`, timestamp: '2026-08-01T10:00:00.000Z',
+        message: { role: 'user', content: `P${i} ${'q'.repeat(2_000)}` },
+      }),
+    );
+    const { prose, truncated } = distillTranscript(rows.join('\n'), 's');
+    // The ceiling is a hard budget. "Keep every prompt" is a PRIORITY, not an
+    // exemption — otherwise one pathological session blows the bound that
+    // makes extraction cost predictable.
+    expect(truncated).toBe(true);
+    expect(prose.length).toBeLessThanOrEqual(DISTILL_MAX_CHARS);
+    expect(prose).toContain('P5');
+  });
+
   it('does not mark a transcript under the ceiling as truncated', () => {
     const { truncated, prose } = distillTranscript(normal, 'sess-normal');
     expect(truncated).toBe(false);

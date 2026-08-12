@@ -21,6 +21,7 @@ const CHANNELS = [
   'brain_clear_vault_path',
   'brain_default_vault_path',
   'brain_delete_note',
+  'brain_index_source',
   'brain_list_notes',
   'brain_list_sources',
   'brain_read_note',
@@ -123,6 +124,20 @@ describe('brain IPC handlers', () => {
     const bare = createBrainHandlers(undefined);
     await expect(bare.brain_list_sources(null, { accountId: 1 })).resolves.toEqual([]);
     await expect(bare.brain_source_preview(null, { accountId: 1, itemKey: 'x' })).resolves.toBeNull();
+  });
+
+  it('brain_index_source requires an accountId and an itemKey', async () => {
+    await expect(handlers.brain_index_source(null, {})).rejects.toThrow(/accountId/);
+    await expect(handlers.brain_index_source(null, { accountId: 1 })).rejects.toThrow(/itemKey/);
+  });
+
+  it('brain_index_source throws rather than degrading when the service is unavailable', async () => {
+    // Unlike the read handlers, this is a WRITE that also spends tokens.
+    // Returning a null result would report an indexing run that never happened.
+    const bare = createBrainHandlers(undefined);
+    await expect(
+      bare.brain_index_source(null, { account_id: 1, item_key: 'sess-a' }),
+    ).rejects.toThrow(/brain service unavailable/);
   });
 
   it('brain_clear_vault_path actually clears a configured path', async () => {
@@ -234,6 +249,7 @@ describe('brain IPC handlers', () => {
       backlinks: () => { throw boom; },
       listSources: () => { throw boom; },
       previewSource: () => { throw boom; },
+      indexSource: () => { throw boom; },
       closeAll: () => {},
     };
     const stubHandlers = createBrainHandlers(stub);

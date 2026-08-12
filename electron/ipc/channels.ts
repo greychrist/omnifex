@@ -25,6 +25,7 @@ export const INVOKE_CHANNELS: readonly string[] = [
   'brain_backlinks',
   'brain_list_sources',
   'brain_source_preview',
+  'brain_index_source',
 
   // Accounts
   'list_accounts',

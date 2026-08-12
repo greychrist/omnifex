@@ -5,7 +5,7 @@ import { BrainSources } from '@/components/brain/BrainSources';
 import { api, type BrainSourcePreview, type BrainSourceSummary } from '@/lib/api';
 
 vi.mock('@/lib/api', () => ({
-  api: { brainListSources: vi.fn(), brainSourcePreview: vi.fn() },
+  api: { brainListSources: vi.fn(), brainSourcePreview: vi.fn(), brainIndexSource: vi.fn() },
 }));
 
 function summary(over: Partial<BrainSourceSummary> = {}): BrainSourceSummary {
@@ -46,6 +46,9 @@ describe('BrainSources', () => {
     vi.clearAllMocks();
     vi.mocked(api.brainListSources).mockResolvedValue([]);
     vi.mocked(api.brainSourcePreview).mockResolvedValue(null);
+    vi.mocked(api.brainIndexSource).mockResolvedValue({
+      itemKey: 'sess-a', notesWritten: ['Subsystems/A.md'], skipped: false, reason: '1 note(s) written',
+    });
   });
 
   it('lists discovered items for the given account', async () => {
@@ -114,5 +117,59 @@ describe('BrainSources', () => {
   it('asks for nothing when no account is selected', () => {
     render(<BrainSources accountId={null} />);
     expect(api.brainListSources).not.toHaveBeenCalled();
+  });
+
+  it('indexes the selected item and refreshes the listing', async () => {
+    vi.mocked(api.brainListSources).mockResolvedValue([summary()]);
+    vi.mocked(api.brainSourcePreview).mockResolvedValue(preview());
+    render(<BrainSources accountId={1} />);
+
+    fireEvent.click(await screen.findByText('sess-a'));
+    await screen.findByText(/USER: do the thing/);
+    fireEvent.click(screen.getByRole('button', { name: /^index$/i }));
+
+    await waitFor(() => { expect(api.brainIndexSource).toHaveBeenCalledWith(1, 'sess-a'); });
+    // Refreshing is what turns the row's status from null to indexed. Without
+    // it the button looks like it did nothing.
+    await waitFor(() => { expect(api.brainListSources).toHaveBeenCalledTimes(2); });
+  });
+
+  it('offers no Index button for an item the gate rejected', async () => {
+    vi.mocked(api.brainListSources).mockResolvedValue([summary({ admitted: false, reason: 'no prose' })]);
+    vi.mocked(api.brainSourcePreview).mockResolvedValue(preview({ admitted: false, reason: 'no prose' }));
+    render(<BrainSources accountId={1} />);
+
+    fireEvent.click(await screen.findByText('sess-a'));
+    await screen.findByText(/USER: do the thing/);
+    // Indexing a rejected item would spend a token the gate exists to save.
+    expect(screen.queryByRole('button', { name: /^index$/i })).toBeNull();
+  });
+
+  it('reports a skipped result rather than claiming success', async () => {
+    vi.mocked(api.brainListSources).mockResolvedValue([summary()]);
+    vi.mocked(api.brainSourcePreview).mockResolvedValue(preview());
+    vi.mocked(api.brainIndexSource).mockResolvedValue({
+      itemKey: 'sess-a', notesWritten: [], skipped: true, reason: 'validation blew up',
+    });
+    render(<BrainSources accountId={1} />);
+
+    fireEvent.click(await screen.findByText('sess-a'));
+    await screen.findByText(/USER: do the thing/);
+    fireEvent.click(screen.getByRole('button', { name: /^index$/i }));
+
+    expect(await screen.findByText(/validation blew up/)).toBeTruthy();
+  });
+
+  it('surfaces an indexing failure', async () => {
+    vi.mocked(api.brainListSources).mockResolvedValue([summary()]);
+    vi.mocked(api.brainSourcePreview).mockResolvedValue(preview());
+    vi.mocked(api.brainIndexSource).mockRejectedValue(new Error('no vault configured'));
+    render(<BrainSources accountId={1} />);
+
+    fireEvent.click(await screen.findByText('sess-a'));
+    await screen.findByText(/USER: do the thing/);
+    fireEvent.click(screen.getByRole('button', { name: /^index$/i }));
+
+    expect(await screen.findByText(/no vault configured/)).toBeTruthy();
   });
 });
