@@ -206,30 +206,65 @@ function collectMetadata(rows: Row[], sessionId: string): SessionMetadata {
   };
 }
 
+interface Chunk {
+  kind: 'prompt' | 'prose';
+  text: string;
+}
+
 /**
- * Trim to the ceiling by dropping the OLDEST turns, marking what happened.
+ * Trim to the ceiling, sacrificing assistant replies before user prompts.
  *
- * Oldest-first rather than head+tail (which is what `sessions-summary.ts` does
- * for a different contract): a session's conclusions live at its end, and
- * those are what a memory note is for. The marker is not decoration — a reader
- * with no marker narrates a tail as if it were the whole session.
+ * Spec §6 says oldest-first, and this keeps that ordering WITHIN each kind.
+ * But it spends the budget on prompts first, because the measured behaviour of
+ * plain oldest-first on this corpus was that it dropped every prompt: the
+ * median admitted transcript is 1.4MB against an 8KB ceiling, and assistant
+ * prose outweighs prompts by roughly 9:1. A note recording what was said
+ * without what was asked is the weaker half of the session.
+ *
+ * "Keep every prompt" is a PRIORITY, not an exemption. When the prompts alone
+ * exceed the budget they are themselves dropped oldest-first, because the
+ * ceiling is what makes extraction cost predictable.
+ *
+ * Output is always in transcript order. Reordering would make the prose read
+ * as a different conversation than the one that happened.
+ *
+ * Head+tail (what `sessions-summary.ts` does) is a different contract for a
+ * different consumer and deliberately not shared.
  */
-function truncateOldestFirst(chunks: string[]): { prose: string; truncated: boolean } {
-  const joined = chunks.join('\n\n');
+function truncateWithPromptPriority(chunks: Chunk[]): { prose: string; truncated: boolean } {
+  const joined = chunks.map((c) => c.text).join('\n\n');
   if (joined.length <= DISTILL_MAX_CHARS) return { prose: joined, truncated: false };
 
   const budget = DISTILL_MAX_CHARS - TRUNCATION_MARKER.length;
-  const kept: string[] = [];
+  const keep = new Set<number>();
   let used = 0;
-  for (let i = chunks.length - 1; i >= 0; i -= 1) {
-    const cost = chunks[i].length + (kept.length > 0 ? 2 : 0);
-    if (used + cost > budget) break;
-    kept.unshift(chunks[i]);
-    used += cost;
+
+  // Pass 1 takes prompts, newest-first so the most recent survive a
+  // prompt-only overflow; pass 2 fills what is left with replies.
+  //
+  // `continue` rather than `break`: a chunk too large to fit must not stop
+  // smaller later ones from being considered, or one long reply near the start
+  // silently costs every reply after it.
+  for (const kind of ['prompt', 'prose'] as const) {
+    for (let i = chunks.length - 1; i >= 0; i -= 1) {
+      if (chunks[i].kind !== kind) continue;
+      const cost = chunks[i].text.length + (keep.size > 0 ? 2 : 0);
+      if (used + cost > budget) continue;
+      keep.add(i);
+      used += cost;
+    }
   }
+
   // A single chunk larger than the whole budget still has to yield something,
   // or a session with one enormous prompt distills to nothing but a marker.
-  if (kept.length === 0) kept.push(chunks[chunks.length - 1].slice(-budget));
+  if (keep.size === 0) {
+    return {
+      prose: TRUNCATION_MARKER + chunks[chunks.length - 1].text.slice(-budget),
+      truncated: true,
+    };
+  }
+
+  const kept = chunks.filter((_, i) => keep.has(i)).map((c) => c.text);
   return { prose: TRUNCATION_MARKER + kept.join('\n\n'), truncated: true };
 }
 
@@ -242,18 +277,18 @@ function truncateOldestFirst(chunks: string[]): { prose: string; truncated: bool
  */
 export function distillTranscript(jsonl: string, sessionId: string): DistilledItem {
   const rows = parseRows(jsonl);
-  const chunks: string[] = [];
+  const chunks: Chunk[] = [];
 
   for (const row of rows) {
     const prompt = isPromptRow(row) ? promptText(row) : null;
     if (prompt) {
-      chunks.push(`USER: ${prompt}`);
+      chunks.push({ kind: 'prompt', text: `USER: ${prompt}` });
       continue;
     }
     const prose = assistantProse(row);
-    if (prose) chunks.push(`ASSISTANT: ${prose}`);
+    if (prose) chunks.push({ kind: 'prose', text: `ASSISTANT: ${prose}` });
   }
 
-  const { prose, truncated } = truncateOldestFirst(chunks);
+  const { prose, truncated } = truncateWithPromptPriority(chunks);
   return { prose, metadata: collectMetadata(rows, sessionId), truncated };
 }
