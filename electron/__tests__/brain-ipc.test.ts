@@ -22,10 +22,12 @@ const CHANNELS = [
   'brain_default_vault_path',
   'brain_delete_note',
   'brain_list_notes',
+  'brain_list_sources',
   'brain_read_note',
   'brain_rebuild',
   'brain_search',
   'brain_set_vault_path',
+  'brain_source_preview',
   'brain_status',
   'brain_update_note',
   'brain_vault_path',
@@ -40,24 +42,17 @@ describe('brain IPC handlers', () => {
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'omnifex-brain-ipc-'));
     db = createDatabase(':memory:');
-    brain = createBrainService(db);
+    // A stub git runner: no child process, so nothing is still writing into
+    // `.git` when afterEach removes the directory. This replaced a
+    // retry-and-swallow rmSync that raced an untracked `git init`.
+    brain = createBrainService(db, { execGit: async () => '' });
     handlers = createBrainHandlers(brain);
   });
 
   afterEach(() => {
     brain.closeAll();
     db.close();
-    // open() fires `git init` in the background and nothing tracks the child
-    // process, so `.git` can still be filling while this runs — which surfaces
-    // as ENOTEMPTY under full-suite load. Same mitigation, and same reasoning,
-    // as brain-registry.test.ts's afterEach. The real fix is threading an
-    // injectable ExecGit through createBrainService so the init is awaitable;
-    // it is recorded in the Brain follow-ups doc.
-    try {
-      rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 });
-    } catch {
-      // Best effort — the OS reaps $TMPDIR. Cleanup must never fail a test.
-    }
+    rmSync(dir, { recursive: true, force: true });
   });
 
   it('exposes exactly the expected channels', () => {
@@ -106,6 +101,28 @@ describe('brain IPC handlers', () => {
 
   it('rejects a missing accountId instead of defaulting', async () => {
     await expect(handlers.brain_search(null, { query: 'x' })).rejects.toThrow(/accountId/);
+  });
+
+  it('rejects a source listing with no accountId', async () => {
+    // Same rule as every other brain handler: defaulting the account would
+    // read the wrong vault's material, which is a confidentiality failure
+    // rather than a UX annoyance.
+    await expect(handlers.brain_list_sources(null, {})).rejects.toThrow(/accountId/);
+  });
+
+  it('accepts snake_case params and returns null for an unknown item', async () => {
+    // No sources are wired into this file's service, so discovery finds
+    // nothing and the preview is null — which is the point: the handler must
+    // pass both params through and not throw.
+    await expect(
+      handlers.brain_source_preview(null, { account_id: 1, item_key: 'nope' }),
+    ).resolves.toBeNull();
+  });
+
+  it('degrades to an empty listing when the service is unavailable', async () => {
+    const bare = createBrainHandlers(undefined);
+    await expect(bare.brain_list_sources(null, { accountId: 1 })).resolves.toEqual([]);
+    await expect(bare.brain_source_preview(null, { accountId: 1, itemKey: 'x' })).resolves.toBeNull();
   });
 
   it('brain_clear_vault_path actually clears a configured path', async () => {
@@ -215,6 +232,8 @@ describe('brain IPC handlers', () => {
       deleteNote: () => { throw boom; },
       updateNoteBody: () => { throw boom; },
       backlinks: () => { throw boom; },
+      listSources: () => { throw boom; },
+      previewSource: () => { throw boom; },
       closeAll: () => {},
     };
     const stubHandlers = createBrainHandlers(stub);

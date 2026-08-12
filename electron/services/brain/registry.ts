@@ -9,10 +9,12 @@ import {
   type SearchOptions,
   type VaultIndex,
 } from './search';
-import { createVaultGit, type VaultGit } from './git';
+import { createVaultGit, type ExecGit, type VaultGit } from './git';
 import { linkMatchesNote, parseWikilinks } from './links';
 import { fireAndLogGitFailure } from './git-logging';
 import { canonicalPath, fsIdentity, isSameOrInside, resolveVaultRoot } from './paths';
+import { createSourceStateStore, type SourceStatus } from './sources/state';
+import type { BrainSource, SessionMetadata } from './sources/types';
 import type { ParsedNote } from './types';
 
 /**
@@ -69,6 +71,20 @@ export interface VaultHandle {
   readonly vault: Vault;
   readonly index: VaultIndex;
   readonly git: VaultGit;
+  /**
+   * Resolves when this handle's `git init` has settled — successfully or not.
+   *
+   * `open()` cannot await it: opening a vault stays synchronous, and
+   * versioning is auxiliary anyway. But an untracked child process still
+   * writing into `.git` is observable to anyone who deletes the vault
+   * directory afterwards — test cleanup hit exactly this, as ENOTEMPTY under
+   * full-suite load. Retaining the promise makes the init joinable by whoever
+   * needs it to be, without making anyone wait who does not.
+   *
+   * Never rejects: a rejection here would surface as an unhandled rejection in
+   * every call site that stores a handle without awaiting.
+   */
+  readonly gitReady: Promise<void>;
 }
 
 /**
@@ -98,6 +114,30 @@ export interface VaultStatus {
   conflict: string | null;
 }
 
+/** One discovered item, with the gate's verdict and its recorded state. */
+export interface SourceSummary {
+  accountId: number;
+  sourceId: string;
+  itemKey: string;
+  label: string;
+  mtimeMs: number;
+  admitted: boolean;
+  reason: string;
+  /** Recorded state, or null when this item has never been through indexing. */
+  status: SourceStatus | null;
+  changed: boolean;
+}
+
+/** The distilled view of one item, for inspection before any token is spent. */
+export interface SourcePreview {
+  itemKey: string;
+  prose: string;
+  metadata: SessionMetadata;
+  truncated: boolean;
+  admitted: boolean;
+  reason: string;
+}
+
 export interface BrainService {
   vaultPath(accountId: number): string | null;
   setVaultPath(accountId: number, path: string): void;
@@ -115,6 +155,19 @@ export interface BrainService {
   deleteNote(accountId: number, relPath: string): void;
   /** Replace a note's body, preserving its frontmatter. Returns the new note. */
   updateNoteBody(accountId: number, relPath: string, body: string): ParsedNote;
+  /**
+   * Discovered items for ONE account, with each item's gate verdict and
+   * whether it has changed since it was last recorded.
+   *
+   * Filtering happens after discovery rather than by asking adapters for one
+   * account's items: ownership is derived from where an item lives, so an
+   * adapter that accepted an accountId would be letting the caller assert
+   * ownership instead. Discovery is a directory walk, not a model call —
+   * doing it whole and filtering after costs nothing worth protecting.
+   */
+  listSources(accountId: number): Promise<SourceSummary[]>;
+  /** Distilled preview of one item, or null when it is not this account's. */
+  previewSource(accountId: number, itemKey: string): Promise<SourcePreview | null>;
   closeAll(): void;
 }
 
@@ -247,7 +300,27 @@ function assertOwnGitDir(root: string): void {
  * something (the directory already existing, mkdir succeeding, the handle being
  * cold), and every one of those conditions turned out to be reachable.
  */
-export function createBrainService(db: Database): BrainService {
+export interface BrainServiceOptions {
+  /**
+   * Git runner for every vault this service opens. Production passes nothing
+   * and gets the real `git` binary. Tests pass a stub so no child process is
+   * spawned — which is what makes vault cleanup deterministic rather than a
+   * race against an untracked `git init`.
+   */
+  execGit?: ExecGit;
+  /**
+   * Source adapters this service can enumerate. Injected rather than
+   * constructed here so the registry stays free of any knowledge of where
+   * transcripts live — and so tests can supply a fake source without needing
+   * a config dir on disk.
+   */
+  sources?: BrainSource[];
+}
+
+export function createBrainService(
+  db: Database,
+  opts: BrainServiceOptions = {},
+): BrainService {
   // One handle per account. Keyed by accountId, invalidated when its path moves
   // or when the directory that path names is no longer the same directory.
   const handles = new Map<number, CachedHandle>();
@@ -255,6 +328,12 @@ export function createBrainService(db: Database): BrainService {
   // Last real git failure per account, surfaced by status(). A vault whose
   // versioning is broken must be able to say so; see git.ts's CommitResult.
   const lastGitError = new Map<number, string>();
+
+  // Source adapters and their bookkeeping. Empty by default: a service with no
+  // sources answers "nothing discovered", which is the correct answer for a
+  // caller that never wired any up.
+  const sources = opts.sources ?? [];
+  const sourceState = createSourceStateStore(db);
 
   function readPath(accountId: number): string | null {
     return db.getSetting(vaultSettingKey(accountId));
@@ -446,13 +525,18 @@ export function createBrainService(db: Database): BrainService {
       const vault = createVault(root);
       vault.ensureLayout();
 
-      const git = createVaultGit(vault.root);
-      // Versioning is a safety net; a missing git binary must not block a write.
-      fireAndLogGitFailure(git.init(), 'brain: git init');
+      const git = createVaultGit(vault.root, opts.execGit);
+      // Versioning is a safety net; a missing git binary must not block a
+      // write. The promise is RETAINED rather than dropped, so callers that
+      // must not race the init — test cleanup, and any future indexer that
+      // commits immediately after opening — can join it.
+      const gitReady = git.init().catch((err: unknown) => {
+        console.warn('brain: git init failed:', err);
+      });
 
       const index = createVaultIndex(indexFile);
 
-      const handle: VaultHandle = { accountId, root: vault.root, vault, index, git };
+      const handle: VaultHandle = { accountId, root: vault.root, vault, index, git, gitReady };
       // Read the identity again, after the index file has been created: on a
       // cold open it did not exist a moment ago, so the earlier read was null.
       // If it still cannot be read, do not cache — an unidentifiable handle
@@ -604,6 +688,59 @@ export function createBrainService(db: Database): BrainService {
       handle.index.upsert(relPath, handle.vault.noteTitle(relPath), updated);
       commitAndRecord(handle, 'Manual edit');
       return updated;
+    },
+
+    async listSources(accountId: number): Promise<SourceSummary[]> {
+      requireAccountId(accountId);
+      const summaries: SourceSummary[] = [];
+      for (const source of sources) {
+        for (const item of await source.discover()) {
+          // The filter that makes this account-scoped. An item belonging to
+          // another account is not merely uninteresting here — surfacing it
+          // would put one account's project names in another's UI.
+          if (item.accountId !== accountId) continue;
+          const verdict = source.admit(item);
+          const prior = sourceState.get(accountId, item.sourceId, item.itemKey);
+          summaries.push({
+            accountId,
+            sourceId: item.sourceId,
+            itemKey: item.itemKey,
+            label: item.label,
+            mtimeMs: item.mtimeMs,
+            admitted: verdict.admitted,
+            reason: verdict.reason,
+            status: prior?.status ?? null,
+            changed: sourceState.hasChanged(item),
+          });
+        }
+      }
+      // Newest first: the session a user wants to check is almost always the
+      // one they just finished.
+      summaries.sort((a, b) => b.mtimeMs - a.mtimeMs);
+      return summaries;
+    },
+
+    async previewSource(accountId: number, itemKey: string): Promise<SourcePreview | null> {
+      requireAccountId(accountId);
+      for (const source of sources) {
+        const items = await source.discover();
+        // Matching on BOTH keys, not just itemKey: a session id is unique per
+        // account, not globally, and matching on the key alone would preview
+        // another account's transcript to whoever guessed the id.
+        const item = items.find((i) => i.itemKey === itemKey && i.accountId === accountId);
+        if (!item) continue;
+        const verdict = source.admit(item);
+        const distilled = await source.distill(item);
+        return {
+          itemKey,
+          prose: distilled.prose,
+          metadata: distilled.metadata,
+          truncated: distilled.truncated,
+          admitted: verdict.admitted,
+          reason: verdict.reason,
+        };
+      }
+      return null;
     },
 
     closeAll(): void {

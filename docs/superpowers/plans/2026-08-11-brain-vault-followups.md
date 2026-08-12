@@ -133,14 +133,14 @@ length cap. These remain:
 - **Extract `walkToRealAncestor(path, realpathFn)`** — unchanged from above.
   Still purely a de-duplication, still gated by the two existing suites.
 
-- **Thread the injectable `ExecGit` from `createBrainService` through to
-  `createVaultGit`.** This got MORE valuable during Plan 2, not less. The
-  untracked background `git init` now demonstrably races test cleanup:
-  `brain-ipc.test.ts` started failing with `ENOTEMPTY` on `.git` under
-  full-suite load once Task 7's handlers made it call `open()` far more often.
-  Both that file and `brain-registry.test.ts` now carry the same
-  retry-and-swallow workaround in `afterEach`. Threading the exec would make
-  the init awaitable and delete both workarounds.
+- ~~**Thread the injectable `ExecGit` from `createBrainService` through to
+  `createVaultGit`.**~~ **CLOSED in Plan 3** (`feat/brain-session-adapter`).
+  `createBrainService(db, { execGit })` now forwards the runner, and
+  `VaultHandle` carries a `gitReady` promise that resolves when the init has
+  settled (never rejects — a rejection would surface as an unhandled rejection
+  in every call site that stores a handle without awaiting). Both
+  `brain-ipc.test.ts` and `brain-registry.test.ts` inject a stub exec and their
+  retry-and-swallow `afterEach` blocks are gone.
 
 - **Lift `'.omnifex'` to a shared constant** — unchanged. Note that `'.git'`
   now has the same shape: `GIT_DIR` in `registry.ts` and the literal in
@@ -172,3 +172,53 @@ length cap. These remain:
   it would silently miss links) and fine for the hundreds-of-files case, but
   it is O(vault) per navigation. If a vault ever reaches the thousands, add a
   link table maintained on write rather than weakening the scan.
+
+---
+
+## Opened by Plan 3 (`feat/brain-session-adapter`, 2026-08-12)
+
+- **Oldest-first truncation can drop every user prompt.** Verified against a
+  real 1.06MB transcript: 2 prompts and 18 assistant replies distilled to
+  7.9KB, and the surviving tail was assistant prose only — the user's original
+  ask was elided. Spec §6 specifies oldest-first, and this implementation
+  follows it, but prompts are the most information-dense rows in a transcript
+  and losing all of them makes a note describe what was said without what was
+  asked. Plan 4 should decide whether the extractor gets a prompt-preserving
+  budget (e.g. keep every `USER:` chunk, spend the remaining budget on the
+  assistant tail) before it starts writing notes from these.
+
+- **`listSources` and `previewSource` each call `discover()`**, which walks
+  every account's projects tree. Fine at hundreds of sessions on a warm page
+  cache — the Sources pane is a deliberate, low-frequency action — but a config
+  dir holding thousands would feel it, and `previewSource` re-walks purely to
+  re-find one item. Cache the discovery result per call if it starts to matter.
+
+- **The `.summary.json` sidecars beside each transcript are ignored.** They are
+  already-generated prose about the same session, so Plan 4 may want them as
+  extractor input rather than re-deriving. Deliberately out of scope here:
+  they are optional, model-generated, and this step spends no tokens.
+
+- **Gate precision, measured on the real corpus (2026-08-12).** Run across both
+  live config dirs: **185 transcripts discovered** (77 personal, 108 work),
+  **142 admitted (77%)**, 43 skipped — 42 for "fewer than 2 prompts", 1 for "no
+  assistant prose". No startup-error skips fired. Median admitted transcript is
+  1.4MB, so essentially every admitted session will hit the 8KB ceiling and be
+  truncated, which is what makes the truncation item above the pressing one.
+  Whether 77% is the right admission rate is a judgement to make after Plan 4
+  produces notes from these; spec §7 already names the remedy if it is too
+  loose (an LLM classifier behind the same `admit()` call).
+
+- **Both discovery exclusions are load-bearing, confirmed by count.** The
+  personal config dir holds 401 `.jsonl` files; only 199 are top-level session
+  transcripts (202 live in `<sessionId>/subagents/`), and **122 of those 199
+  are OmniFex's own summary-scratch runs**. 77 remain, matching discovery
+  exactly. Without the scratch exclusion, 61% of what the Brain indexed from
+  that account would have been OmniFex talking to itself.
+
+- **`isPromptRow` in `distill.ts` is a twin of `src/lib/jsonlClassifier.ts`.**
+  The renderer's version is authoritative but unimportable from `electron/`
+  (it uses the `@/` alias, which `tsconfig.electron.json` does not define).
+  Same arrangement as `links.ts` / `brainWikilinks.ts`, but weaker: these two
+  are NOT tested over a shared case list, so a CLI change to how a prompt row
+  is marked would be caught in one and missed in the other. Worth a shared
+  fixture if a third consumer appears.

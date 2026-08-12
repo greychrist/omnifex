@@ -7,6 +7,7 @@ import { SelectComponent } from '@/components/ui/select';
 import { BrainVaultSetup } from './BrainVaultSetup';
 import { BrainNoteList } from './BrainNoteList';
 import { BrainNoteViewer } from './BrainNoteViewer';
+import { BrainSources } from './BrainSources';
 
 /**
  * The Brain tab, scoped to exactly ONE account at a time.
@@ -48,6 +49,12 @@ export const BrainTab: React.FC = () => {
   const [showVault, setShowVault] = useState(false);
   useEffect(() => { setShowVault(false); }, [accountId]);
 
+  // Notes are what the vault holds; Sources is what the indexer can see. They
+  // are different questions about the same account, so they share the header
+  // and the account switcher rather than being separate tabs.
+  const [pane, setPane] = useState<'notes' | 'sources'>('notes');
+  useEffect(() => { setPane('notes'); }, [accountId]);
+
   const headerSummary = (): string => {
     if (!status) return vault.loading ? 'loading…' : '';
     if (!status.configured) return 'no vault';
@@ -88,6 +95,23 @@ export const BrainTab: React.FC = () => {
           {headerSummary()}
         </span>
         {!needsSetup && (
+          <div className="flex items-center gap-1 text-xs">
+            {(['notes', 'sources'] as const).map((p) => (
+              <button
+                key={p}
+                type="button"
+                onClick={() => { setPane(p); }}
+                aria-pressed={pane === p}
+                className={`rounded-md px-2 py-1 capitalize hover:bg-accent ${
+                  pane === p ? 'bg-accent text-accent-foreground' : 'text-muted-foreground'
+                }`}
+              >
+                {p}
+              </button>
+            ))}
+          </div>
+        )}
+        {!needsSetup && (
           <button
             type="button"
             onClick={() => { setShowVault((v) => !v); }}
@@ -109,6 +133,8 @@ export const BrainTab: React.FC = () => {
 
       {needsSetup || showVault ? (
         <BrainVaultSetup vault={vault} accountName={account?.name ?? null} />
+      ) : pane === 'sources' ? (
+        <BrainSources accountId={accountId} />
       ) : (
         <div className="flex min-h-0 flex-1">
           <div className="w-72 shrink-0 overflow-y-auto border-r">

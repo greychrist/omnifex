@@ -167,6 +167,21 @@ export function createBrainHandlers(brain?: BrainService): Record<string, Handle
       return brain.backlinks(accountId, requireString(params, 'notePath', 'note_path'));
     },
 
+    async brain_list_sources(_event, params = {}) {
+      const accountId = requireAccountId(params);
+      // A read path, so it degrades to [] when the service failed to
+      // construct — matching brain_list_notes and the "Brain is auxiliary"
+      // rule in this file's module doc.
+      if (!brain) return [];
+      return brain.listSources(accountId);
+    },
+
+    async brain_source_preview(_event, params = {}) {
+      const accountId = requireAccountId(params);
+      if (!brain) return null;
+      return brain.previewSource(accountId, requireString(params, 'itemKey', 'item_key'));
+    },
+
     async brain_search(_event, params = {}) {
       const accountId = requireAccountId(params);
       if (!brain) return [];
