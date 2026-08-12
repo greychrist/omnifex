@@ -72,19 +72,24 @@ export interface MCPService {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function readSettings(settingsPath: string): Record<string, unknown> {
+function readJsonFile(filePath: string): Record<string, unknown> {
   try {
-    const content = fs.readFileSync(settingsPath, 'utf-8');
+    const content = fs.readFileSync(filePath, 'utf-8');
     return JSON.parse(content) as Record<string, unknown>;
   } catch {
     return {};
   }
 }
 
-function writeSettings(settingsPath: string, settings: Record<string, unknown>): void {
-  const dir = path.dirname(settingsPath);
+/**
+ * Read-modify-write, never a whole-file replace: `.claude.json` also holds the
+ * account's OAuth session, per-project trust state and caches, and dropping
+ * them would sign the account out.
+ */
+function writeJsonFile(filePath: string, contents: Record<string, unknown>): void {
+  const dir = path.dirname(filePath);
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf-8');
+  fs.writeFileSync(filePath, JSON.stringify(contents, null, 2), 'utf-8');
 }
 
 // ---------------------------------------------------------------------------
@@ -92,29 +97,40 @@ function writeSettings(settingsPath: string, settings: Record<string, unknown>):
 // ---------------------------------------------------------------------------
 
 export function createMCPService(): MCPService {
-  // configDir is required for every operation that touches settings.json.
-  // There is no default-account fallback to ~/.claude — the caller (renderer
-  // via IPC) must explicitly pass the resolved account's config_dir.
-  function getSettingsPath(configDir?: string): string {
+  /**
+   * User-scope MCP servers live in `<configDir>/.claude.json`, NOT
+   * `settings.json`.
+   *
+   * Claude Code has never read an `mcpServers` key from `settings.json` — the
+   * only MCP keys it honours there are `enableAllProjectMcpServers`,
+   * `enabledMcpjsonServers` and `disabledMcpjsonServers`, which govern
+   * APPROVAL of servers defined elsewhere. This service wrote to settings.json
+   * until 2026-08-12, so every server added through OmniFex's MCP tab was
+   * silently ignored by the CLI.
+   *
+   * configDir is required for every operation. There is no default-account
+   * fallback to ~/.claude — the caller must pass the resolved account's dir.
+   */
+  function getUserConfigPath(configDir?: string): string {
     if (!configDir) {
       throw new Error(
         'MCP: configDir is required. The renderer must pass the resolved ' +
         "account's config_dir; there is no default-account fallback.",
       );
     }
-    return path.join(configDir, 'settings.json');
+    return path.join(configDir, '.claude.json');
   }
 
   function getMcpServers(configDir?: string): Record<string, MCPServerConfig> {
-    const settings = readSettings(getSettingsPath(configDir));
-    return (settings.mcpServers as Record<string, MCPServerConfig>) ?? {};
+    const config = readJsonFile(getUserConfigPath(configDir));
+    return (config.mcpServers as Record<string, MCPServerConfig>) ?? {};
   }
 
   function saveMcpServers(servers: Record<string, MCPServerConfig>, configDir?: string): void {
-    const settingsPath = getSettingsPath(configDir);
-    const settings = readSettings(settingsPath);
-    settings.mcpServers = servers;
-    writeSettings(settingsPath, settings);
+    const configPath = getUserConfigPath(configDir);
+    const config = readJsonFile(configPath);
+    config.mcpServers = servers;
+    writeJsonFile(configPath, config);
   }
 
   function list(configDir?: string): MCPServer[] {
