@@ -1882,6 +1882,21 @@ git commit -m "docs: record Plan 5's live verification"
 
 ## Notes (fill in during execution)
 
-- Task 3 smoke test result:
+- **Task 3 smoke test: PASSED against the packaged app** (`npm run package`, 2026-08-12).
+  Driven through a real MCP stdio handshake with the SDK's own client:
+  `tools/list` returned all three tools; `brain_search` returned a ranked hit
+  with a snippet; `brain_read` returned frontmatter and body; `brain_read` on
+  `../escape.md` came back `isError` with "path escapes the vault root";
+  `brain_remember` wrote a capture and returned `queued for indexing`. This
+  exercised Electron-as-node with `better-sqlite3` on the Electron ABI, which
+  is the combination no unit test can cover.
+- **Latent packaging risk, not currently reachable.** The bundled SDK contains
+  `require("ajv/dist/runtime/...")` calls, and forge ships only the explicitly
+  copied native modules — `ajv` is not in the package. Those requires live in
+  ajv's generated-validator path, which is used for raw JSON-Schema tool
+  definitions; all three Brain tools declare zod schemas, so it is never
+  reached. If a future tool is defined with a JSON Schema, the packaged server
+  will die with `Cannot find module 'ajv/...'` while the dev build works fine.
+  The fix is one `copyNativeModule(buildPath, 'ajv')` line in `forge.config.ts`.
 - Task 9 coverage number:
 - Did the model call `brain_search` without being told to?

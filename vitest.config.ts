@@ -23,6 +23,10 @@ export default defineConfig({
         'electron/__tests__/**',
         'electron/main.ts',
         'electron/preload.ts',
+        // Thin process entry over mcp-tools.ts, which is fully tested.
+        // Exercising it means spawning a stdio server; the smoke test in the
+        // Plan 5 doc covers that end to end.
+        'electron/brain-mcp.ts',
         // vitest defaults still apply (node_modules, dist, .vite, etc.)
       ],
       // Coverage is reported (via `npm run test:coverage`) but not gated.
