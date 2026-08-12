@@ -74,6 +74,27 @@ export function createVault(root: string): Vault {
   }
 
   /**
+   * Reject a path whose target is a regular file with more than one name.
+   *
+   * A hard link has no distinct realpath from its target — both names resolve
+   * to the same inode — so the containment check below cannot see one. The link
+   * is legitimately inside this vault; the *inode* is shared with another. So
+   * reading it returns the other file's bytes and writing it truncates them,
+   * which is the same defect `registry.ts`'s `ensureVaultIndexPath` already
+   * closes for the index directory, applied here to note files.
+   *
+   * Directories are exempt: '.' and '..' make `nlink > 1` normal for them.
+   * APFS/Time Machine clones use copy-on-write `clonefile`, which does not
+   * raise `nlink`, so ordinary backups do not trip this.
+   */
+  function assertSingleName(abs: string, relPath: string): void {
+    const stat = lstatSync(abs, { throwIfNoEntry: false });
+    if (stat && stat.isFile() && stat.nlink > 1) {
+      throw new VaultPathError(`note file is hard-linked: ${relPath}`);
+    }
+  }
+
+  /**
    * Resolve a vault-relative path, refusing anything that escapes the root.
    *
    * A lexical prefix check is not sufficient: a symlink INSIDE the vault whose
@@ -101,6 +122,7 @@ export function createVault(root: string): Vault {
     if (resolved !== root && !resolved.startsWith(root + sep)) {
       throw new VaultPathError(`path escapes the vault root via a symlink: ${relPath}`);
     }
+    assertSingleName(abs, relPath);
     return abs;
   }
 
@@ -171,6 +193,11 @@ export function createVault(root: string): Vault {
             if (stat.isSymbolicLink()) continue;
             if (stat.isDirectory()) walk(abs);
             else if (stat.isFile() && entry.endsWith('.md')) {
+              // Same reasoning as assertSingleName: a hard-linked file is one
+              // inode wearing two names. Listing it would round-trip it back
+              // into readNote, which now refuses it — so it could only ever
+              // surface as an error in the UI.
+              if (stat.nlink > 1) continue;
               out.push(relative(absoluteRoot, abs).split(sep).join('/'));
             }
           } catch {

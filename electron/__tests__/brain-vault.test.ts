@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, mkdirSync, symlinkSync, chmodSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, mkdirSync, symlinkSync, chmodSync, linkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createVault, VaultPathError, type Vault } from '../services/brain/vault';
@@ -151,5 +151,48 @@ describe('vault', () => {
 
   it('rejects a note name longer than the filesystem allows', () => {
     expect(() => vault.notePath('Topic', 'a'.repeat(300))).toThrow(VaultPathError);
+  });
+
+  describe('hard-linked notes', () => {
+    let outside: string;
+
+    beforeEach(() => {
+      outside = mkdtempSync(join(tmpdir(), 'omnifex-outside-'));
+    });
+
+    afterEach(() => {
+      rmSync(outside, { recursive: true, force: true });
+    });
+
+    it('refuses to read a note that has more than one name', () => {
+      const secret = join(outside, 'secret.md');
+      writeFileSync(secret, '---\ntype: Note\naliases: []\nkeywords: []\ncreated: "2026-01-01"\nupdated: "2026-01-01"\nsources: []\n---\n\nleaked\n', 'utf8');
+      linkSync(secret, join(dir, 'Notes', 'Innocent.md'));
+
+      expect(() => vault.readNote('Notes/Innocent.md')).toThrow(VaultPathError);
+    });
+
+    it('refuses to write through a hard link', () => {
+      const target = join(outside, 'target.md');
+      writeFileSync(target, 'original\n', 'utf8');
+      linkSync(target, join(dir, 'Notes', 'Trojan.md'));
+
+      expect(() => vault.writeNote('Notes/Trojan.md', NOTE)).toThrow(VaultPathError);
+      expect(readFileSync(target, 'utf8')).toBe('original\n');
+    });
+
+    it('omits hard-linked files from listNotes', () => {
+      const secret = join(outside, 'secret.md');
+      writeFileSync(secret, 'x\n', 'utf8');
+      vault.writeNote('Notes/Real.md', NOTE);
+      linkSync(secret, join(dir, 'Notes', 'Linked.md'));
+
+      expect(vault.listNotes()).toEqual(['Notes/Real.md']);
+    });
+
+    it('still allows an ordinary single-name note', () => {
+      vault.writeNote('Notes/Ordinary.md', NOTE);
+      expect(vault.readNote('Notes/Ordinary.md').body).toBe(NOTE.body);
+    });
   });
 });
