@@ -263,3 +263,14 @@ export function createBrainQueueWorker(deps: QueueWorkerDeps): BrainQueueWorker 
     running: () => draining,
   };
 }
+
+/**
+ * Auto-indexing on session close. Default `'false'`: the worker ships fully
+ * built but idle, because it spends tokens unattended and the user should opt
+ * in once — after seeing real notes from an explicit backfill — rather than
+ * discovering it already ran.
+ */
+export const BRAIN_AUTO_INDEX_SETTING_KEY = 'brain.autoIndex';
+
+/** User-facing pause for the queue, independent of the auto-index opt-in. */
+export const BRAIN_QUEUE_PAUSED_SETTING_KEY = 'brain.queuePaused';

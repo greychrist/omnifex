@@ -525,6 +525,86 @@ describe('session transcript source', () => {
       brain.closeAll();
     });
 
+    it('backfill enqueues admitted items and skips gate-rejected ones', async () => {
+      writeSession(personalCfg, '-Users-dev-Repos-omnifex', 'sess-good', GOOD);
+      writeSession(personalCfg, '-Users-dev-Repos-omnifex', 'sess-thin', PROMPT('only one', 1));
+      const brain = service(stubExtractor());
+
+      const queued = await brain.backfill(personalId);
+
+      expect(queued).toBe(1);
+      expect(brain.queueList(personalId).map((e) => e.itemKey)).toEqual(['sess-good']);
+      brain.closeAll();
+    });
+
+    it('backfill skips items already indexed and unchanged', async () => {
+      writeSession(personalCfg, '-Users-dev-Repos-omnifex', 'sess-a', GOOD);
+      const brain = service(stubExtractor());
+      await brain.indexSource(personalId, 'sess-a');
+
+      // Re-running backfill after a partial run must cost only what is left.
+      // The revised time estimate assumes exactly this.
+      await expect(brain.backfill(personalId)).resolves.toBe(0);
+      brain.closeAll();
+    });
+
+    it('backfill only touches the account it was given', async () => {
+      writeSession(personalCfg, '-Users-dev-Repos-omnifex', 'sess-personal', GOOD);
+      writeSession(workCfg, '-Users-dev-Repos-mango', 'sess-work', GOOD);
+      const brain = service(stubExtractor());
+
+      await brain.backfill(personalId);
+
+      // Enqueuing a work transcript under the personal account would index it
+      // through the wrong subscription (spec §4).
+      expect(brain.queueList(personalId).map((e) => e.itemKey)).toEqual(['sess-personal']);
+      expect(brain.queueList(workId)).toEqual([]);
+      brain.closeAll();
+    });
+
+    it('enqueueSource refuses an item owned by another account', async () => {
+      writeSession(workCfg, '-Users-dev-Repos-mango', 'sess-work', GOOD);
+      const brain = service(stubExtractor());
+      await expect(brain.enqueueSource(personalId, 'sess-work')).rejects.toThrow(/not found/i);
+      brain.closeAll();
+    });
+
+    it('drainQueue runs the queued items through indexSource', async () => {
+      writeSession(personalCfg, '-Users-dev-Repos-omnifex', 'sess-a', GOOD);
+      const calls: string[] = [];
+      const brain = service(stubExtractor(calls));
+
+      await brain.backfill(personalId);
+      await brain.drainQueue();
+
+      expect(calls).toHaveLength(1);
+      expect(brain.queueCounts(personalId)).toMatchObject({ pending: 0, done: 1 });
+      brain.closeAll();
+    });
+
+    it('drainQueue yields entirely while an interactive session is active', async () => {
+      writeSession(personalCfg, '-Users-dev-Repos-omnifex', 'sess-a', GOOD);
+      const calls: string[] = [];
+      let active = true;
+      const brain = createBrainService(db, {
+        execGit: async () => '',
+        accounts,
+        extractor: stubExtractor(calls),
+        sources: [createSessionSource({ accounts })],
+        hasActiveSession: () => active,
+      });
+      brain.setVaultPath(personalId, join(dir, 'personal-vault'));
+
+      await brain.backfill(personalId);
+      await brain.drainQueue();
+      expect(calls).toEqual([]);
+
+      active = false;
+      await brain.drainQueue();
+      expect(calls).toHaveLength(1);
+      brain.closeAll();
+    });
+
     it('throws when the owning account has no vault configured', async () => {
       writeSession(personalCfg, '-Users-dev-Repos-omnifex', 'sess-a', GOOD);
       const brain = createBrainService(db, {

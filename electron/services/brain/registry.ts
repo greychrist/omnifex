@@ -14,6 +14,12 @@ import { linkMatchesNote, parseWikilinks } from './links';
 import { fireAndLogGitFailure } from './git-logging';
 import { canonicalPath, fsIdentity, isSameOrInside, resolveVaultRoot } from './paths';
 import { createSourceStateStore, type SourceStatus } from './sources/state';
+import {
+  createBrainQueueStore,
+  createBrainQueueWorker,
+  type QueueCounts,
+  type QueueEntry,
+} from './queue';
 import type { BrainSource, SessionMetadata, SourceItem } from './sources/types';
 import type { Extractor } from './extract';
 import { merge } from './merge';
@@ -195,6 +201,20 @@ export interface BrainService {
     itemKey: string,
     opts?: { force?: boolean },
   ): Promise<IndexResult>;
+  /** Queue one item this account owns. Throws for an item it does not. */
+  enqueueSource(accountId: number, itemKey: string): Promise<void>;
+  /**
+   * Queue every admitted item this account owns that is not already indexed
+   * and unchanged. Returns how many were queued.
+   */
+  backfill(accountId: number): Promise<number>;
+  queueCounts(accountId?: number): QueueCounts;
+  queueList(accountId: number, limit?: number): QueueEntry[];
+  clearFinishedQueue(accountId: number): void;
+  /** Drain the queue, yielding to interactive sessions. Never throws. */
+  drainQueue(): Promise<void>;
+  /** The entry being indexed right now, for the operational pane. */
+  queueCurrent(): QueueEntry | null;
   closeAll(): void;
 }
 
@@ -351,6 +371,17 @@ export interface BrainServiceOptions {
   accounts?: AccountsService;
   /** Turns distilled prose into entities. Absent means indexing is unavailable. */
   extractor?: Extractor;
+  /**
+   * True while the user has an interactive session open. The worker yields
+   * entirely while it is (spec §11) — indexing must never compete with real
+   * work for rate limit.
+   *
+   * Defaults to "never active", which is correct for tests and for a service
+   * built without a sessions dependency; `main.ts` supplies the real one.
+   */
+  hasActiveSession?: () => boolean;
+  /** True while the user has paused the queue from the Brain tab. */
+  isQueuePaused?: () => boolean;
 }
 
 export function createBrainService(
@@ -370,6 +401,22 @@ export function createBrainService(
   // caller that never wired any up.
   const sources = opts.sources ?? [];
   const sourceState = createSourceStateStore(db);
+  const queueStore = createBrainQueueStore(db);
+
+  // A crash or quit mid-item leaves a row `running` forever; without this the
+  // queue silently stops draining after one bad shutdown.
+  const orphans = queueStore.recoverOrphans();
+  if (orphans > 0) console.warn(`brain: recovered ${String(orphans)} orphaned queue entries`);
+
+  const queueWorker = createBrainQueueWorker({
+    store: queueStore,
+    // Routed through the service's own method rather than a captured closure,
+    // so every drain gets the unchanged-item short-circuit and the per-entity
+    // isolation that live there.
+    indexSource: (accountId, itemKey) => service.indexSource(accountId, itemKey),
+    hasActiveSession: opts.hasActiveSession ?? (() => false),
+    isPaused: opts.isQueuePaused ?? (() => false),
+  });
 
   /**
    * Locate one item by account AND key.
@@ -912,6 +959,59 @@ export function createBrainService(
           ? `${String(notesWritten.length)} note(s) written, ${String(entityErrors.length)} entity skipped: ${errorSummary ?? ''}`
           : `${String(notesWritten.length)} note(s) written`;
       return { itemKey, notesWritten, skipped: false, reason };
+    },
+
+    async enqueueSource(accountId: number, itemKey: string): Promise<void> {
+      requireAccountId(accountId);
+      const found = await findItem(accountId, itemKey);
+      // Refuse rather than enqueue blind: the queue is what later spends
+      // tokens, and an item this account does not own would be indexed
+      // through the wrong subscription and into the wrong vault.
+      if (!found) throw new Error(`source item not found for this account: ${itemKey}`);
+      queueStore.enqueue(accountId, found.item.sourceId, found.item.itemKey);
+    },
+
+    async backfill(accountId: number): Promise<number> {
+      requireAccountId(accountId);
+      let queued = 0;
+      for (const source of sources) {
+        for (const item of await source.discover()) {
+          if (item.accountId !== accountId) continue;
+          // Gate first, so the queue never holds work that would be skipped
+          // the moment it was claimed.
+          if (!source.admit(item).admitted) continue;
+          // Already done and unmoved: `indexSource` would short-circuit
+          // anyway, but keeping it out of the queue is what makes re-running
+          // backfill after a partial run cost only what is left.
+          const prior = sourceState.get(accountId, item.sourceId, item.itemKey);
+          if (prior?.status === 'indexed' && !sourceState.hasChanged(item)) continue;
+          queueStore.enqueue(accountId, item.sourceId, item.itemKey);
+          queued += 1;
+        }
+      }
+      return queued;
+    },
+
+    queueCounts(accountId?: number): QueueCounts {
+      return queueStore.counts(accountId);
+    },
+
+    queueList(accountId: number, limit?: number): QueueEntry[] {
+      requireAccountId(accountId);
+      return queueStore.list(accountId, limit);
+    },
+
+    clearFinishedQueue(accountId: number): void {
+      requireAccountId(accountId);
+      queueStore.clearFinished(accountId);
+    },
+
+    drainQueue(): Promise<void> {
+      return queueWorker.drain();
+    },
+
+    queueCurrent(): QueueEntry | null {
+      return queueWorker.current();
     },
 
     closeAll(): void {

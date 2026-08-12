@@ -250,6 +250,13 @@ describe('brain IPC handlers', () => {
       listSources: () => { throw boom; },
       previewSource: () => { throw boom; },
       indexSource: () => { throw boom; },
+      enqueueSource: () => { throw boom; },
+      backfill: () => { throw boom; },
+      queueCounts: () => { throw boom; },
+      queueList: () => { throw boom; },
+      clearFinishedQueue: () => { throw boom; },
+      drainQueue: () => { throw boom; },
+      queueCurrent: () => { throw boom; },
       closeAll: () => {},
     };
     const stubHandlers = createBrainHandlers(stub);

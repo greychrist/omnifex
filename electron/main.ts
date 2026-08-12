@@ -44,6 +44,10 @@ import { createDatabase, ensureDefaultSettings } from './services/database';
 import { createBrainService, type BrainService } from './services/brain/registry';
 import { createSessionSource } from './services/brain/sources/session-transcripts';
 import { createExtractor } from './services/brain/extract';
+import {
+  BRAIN_AUTO_INDEX_SETTING_KEY,
+  BRAIN_QUEUE_PAUSED_SETTING_KEY,
+} from './services/brain/queue';
 import { createAccountsService } from './services/accounts';
 import { runFirstTimeDiscovery } from './services/first-run-discovery';
 import { createClaudeBinaryService } from './services/claude-binary';
@@ -111,7 +115,10 @@ declare const MAIN_WINDOW_VITE_NAME: string;
 
 const windows = new Set<BrowserWindow>();
 const router = createWindowRouter();
-let _sessionsService: { stopAll(): void } | null = null;
+// `listActiveTabIds` is here so the Brain's queue worker can ask whether the
+// user has a session open without main having to thread the whole service
+// through service construction that happens before it exists.
+let _sessionsService: { stopAll(): void; listActiveTabIds(): string[] } | null = null;
 let _notificationsService: { dismissAll(): void } | null = null;
 let _gitWatcherService: { disposeAll(): void } | null = null;
 let _sessionCostService: { stopAll(): void } | null = null;
@@ -454,6 +461,11 @@ app.whenReady().then(() => {
     // Settings → Session Summaries owns both switches.
     [ENABLED_SETTING_KEY]: 'true',
     [AUTO_ON_CLOSE_SETTING_KEY]: 'true',
+    // Brain auto-indexing is OFF by default. It spends tokens unattended, so
+    // the user opts in once — after seeing real notes from an explicit
+    // backfill — rather than discovering it already ran.
+    [BRAIN_AUTO_INDEX_SETTING_KEY]: 'false',
+    [BRAIN_QUEUE_PAUSED_SETTING_KEY]: 'false',
   });
   const accountsService = createAccountsService(db);
 
@@ -471,6 +483,15 @@ app.whenReady().then(() => {
     accounts: accountsService,
     extractor: createExtractor(),
     sources: [createSessionSource({ accounts: accountsService })],
+    // `listActiveTabIds`, never `listInFlightTabIds` — the latter is hardcoded
+    // to return [] (sessions/lifecycle.ts, dead since the jsonl-as-rendered
+    // refactor), so a worker gated on it would never yield and would run
+    // hardest exactly when the user is working. See docs/session-lifecycle.md.
+    //
+    // Read through a getter rather than captured: `sessionsService` is
+    // constructed below this line.
+    hasActiveSession: () => (_sessionsService?.listActiveTabIds().length ?? 0) > 0,
+    isQueuePaused: () => db.getSetting(BRAIN_QUEUE_PAUSED_SETTING_KEY) === 'true',
   });
 
   // First-launch account discovery: if this is a fresh install with no
@@ -680,12 +701,40 @@ app.whenReady().then(() => {
       // exact account that ran the session.
       const enabled = db.getSetting(ENABLED_SETTING_KEY) === 'true';
       const autoOn = db.getSetting(AUTO_ON_CLOSE_SETTING_KEY) === 'true';
-      if (!enabled || !autoOn) return;
-      sessionsSummaryServiceRef
-        ?.generateSummary(sessionId, projectPath, configDir)
-        .catch((err: unknown) =>
-          console.warn('[main] auto-summarize on close failed:', err),
-        );
+      // Both close-time consumers share this one callback — the sessions
+      // service takes a single `onSessionClosed`, so a second positional
+      // argument here would land in an unrelated parameter. The summary gate
+      // is therefore a branch rather than the early return it used to be:
+      // returning here would silently disable Brain indexing for anyone who
+      // has summaries turned off.
+      if (enabled && autoOn) {
+        sessionsSummaryServiceRef
+          ?.generateSummary(sessionId, projectPath, configDir)
+          .catch((err: unknown) =>
+            console.warn('[main] auto-summarize on close failed:', err),
+          );
+      }
+
+      // Brain auto-index. OFF by default — the user opts in once, after seeing
+      // real notes from an explicit backfill. Read fresh on every close so a
+      // Settings flip applies without a restart, matching the summary gate
+      // directly above.
+      //
+      // Ownership comes from the config dir the session ran under, never from
+      // resolve() (spec §4) — the same rule the session source applies, and it
+      // stays correct even if path rules changed after the session ran.
+      //
+      // Fire-and-forget: session teardown must never wait on indexing, and the
+      // worker yields immediately anyway while another session is still open.
+      if (db.getSetting(BRAIN_AUTO_INDEX_SETTING_KEY) === 'true') {
+        const account = accountsService.getAccountByConfigDir(configDir);
+        if (account) {
+          brainService
+            ?.enqueueSource(account.id, sessionId)
+            .then(() => brainService?.drainQueue())
+            .catch((err: unknown) => console.warn('[main] brain auto-index failed:', err));
+        }
+      }
     },
     // Account re-resolver: main re-resolves the account at session_start so
     // a path-rule change between the renderer's form-mount and the user's
