@@ -147,6 +147,36 @@ describe('distillTranscript', () => {
     expect(metadata.proseCount).toBe(0);
   });
 
+  it('reads a prompt whose content is an array of text blocks', () => {
+    // The CLI emits both shapes for a typed prompt: a bare string, and an
+    // array of content blocks when the message carries more than plain text.
+    const arrayForm = JSON.stringify({
+      type: 'user',
+      uuid: 'u1',
+      timestamp: '2026-08-01T10:00:00.000Z',
+      message: {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'first line' },
+          { type: 'text', text: 'second line' },
+        ],
+      },
+    });
+    const { prose, metadata } = distillTranscript(arrayForm, 's');
+    expect(prose).toBe('USER: first line\nsecond line');
+    expect(metadata.promptCount).toBe(1);
+  });
+
+  it('ignores an array-form user row that is only a slash-command wrapper', () => {
+    const wrapped = JSON.stringify({
+      type: 'user',
+      uuid: 'u1',
+      timestamp: '2026-08-01T10:00:00.000Z',
+      message: { role: 'user', content: [{ type: 'text', text: '<command-name>/verify</command-name>' }] },
+    });
+    expect(distillTranscript(wrapped, 's').metadata.promptCount).toBe(0);
+  });
+
   it('returns empty prose and zero counts for an empty transcript', () => {
     const { prose, metadata, truncated } = distillTranscript('', 'sess-empty');
     expect(prose).toBe('');
