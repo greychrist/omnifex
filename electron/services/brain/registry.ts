@@ -21,6 +21,7 @@ import {
   type QueueEntry,
 } from './queue';
 import type { BrainSource, ItemMetadata, SourceItem } from './sources/types';
+import { SESSION_SOURCE_ID } from './sources/session-transcripts';
 import type { Extractor } from './extract';
 import { resolveEntityPath, type ExistingNote } from './resolve';
 import { merge } from './merge';
@@ -73,6 +74,18 @@ function requireAccountId(accountId: number): number {
 /** Today in the ISO date form the frontmatter schema requires. */
 function today(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+/** The date a distilled item should stamp on the notes it produces. */
+function provenanceDate(metadata: ItemMetadata): string {
+  switch (metadata.kind) {
+    case 'capture':
+      return metadata.capturedAt.slice(0, 10) || today();
+    case 'session':
+      return metadata.startedAt?.slice(0, 10) ?? today();
+    case 'artifact':
+      return today();
+  }
 }
 
 export interface VaultHandle {
@@ -148,11 +161,21 @@ export interface IndexResult {
   reason: string;
 }
 
-/** The distilled view of one item, for inspection before any token is spent. */
+/**
+ * The view of one item, for inspection before any token is spent.
+ *
+ * `metadata` is null for a translating source: there is no distillation behind
+ * it and therefore no distillation metadata. What it produces is the preview,
+ * so `notePaths` names the notes it would write and `prose` carries their
+ * bodies. Reporting a fabricated metadata shape instead would be the same
+ * mistake the ItemMetadata discriminant exists to prevent.
+ */
 export interface SourcePreview {
   itemKey: string;
   prose: string;
-  metadata: ItemMetadata;
+  metadata: ItemMetadata | null;
+  /** Notes a translating source would write. Empty for a distilled item. */
+  notePaths: string[];
   truncated: boolean;
   admitted: boolean;
   reason: string;
@@ -204,6 +227,16 @@ export interface BrainService {
   ): Promise<IndexResult>;
   /** Queue one item this account owns. Throws for an item it does not. */
   enqueueSource(accountId: number, itemKey: string): Promise<void>;
+  /**
+   * Queue every NON-session item this account owns that belongs to
+   * `projectPath` — its auto-memory notes and its repo instruction files.
+   * Returns how many were queued.
+   *
+   * Matched on each item's own key rather than on keys reconstructed by the
+   * caller: the key formats belong to the adapters, and a second spelling in
+   * `main.ts` would go quietly stale the moment one changed.
+   */
+  enqueueProjectSources(accountId: number, projectPath: string): Promise<number>;
   /**
    * Queue every admitted item this account owns that is not already indexed
    * and unchanged. Returns how many were queued.
@@ -852,11 +885,38 @@ export function createBrainService(
       const found = await findItem(accountId, itemKey);
       if (!found) return null;
       const verdict = found.source.admit(found.item);
+
+      if (found.source.translate) {
+        const translated = await found.source.translate(found.item);
+        return {
+          itemKey,
+          prose: translated.map((t) => `### ${t.relPath}\n\n${t.note.body}`).join('\n\n'),
+          metadata: null,
+          notePaths: translated.map((t) => t.relPath),
+          truncated: false,
+          admitted: verdict.admitted,
+          reason: verdict.reason,
+        };
+      }
+
+      if (!found.source.distill) {
+        return {
+          itemKey,
+          prose: '',
+          metadata: null,
+          notePaths: [],
+          truncated: false,
+          admitted: false,
+          reason: `source ${found.source.id} cannot produce notes`,
+        };
+      }
+
       const distilled = await found.source.distill(found.item);
       return {
         itemKey,
         prose: distilled.prose,
         metadata: distilled.metadata,
+        notePaths: [],
         truncated: distilled.truncated,
         admitted: verdict.admitted,
         reason: verdict.reason,
@@ -869,8 +929,6 @@ export function createBrainService(
       runOpts: { force?: boolean } = {},
     ): Promise<IndexResult> {
       requireAccountId(accountId);
-      if (!opts.extractor) throw new Error('brain: no extractor configured');
-      if (!opts.accounts) throw new Error('brain: no accounts service configured');
 
       const found = await findItem(accountId, itemKey);
       if (!found) throw new Error(`source item not found for this account: ${itemKey}`);
@@ -905,6 +963,50 @@ export function createBrainService(
       // has nowhere to go is pure waste.
       const handle = requireHandle(accountId);
 
+      // A translating source produces finished notes with no model, so it needs
+      // neither an extractor nor an owning-account config dir. The branch sits
+      // before both: requiring an account here would block a source that cannot
+      // spend anything through the wrong subscription in the first place.
+      if (source.translate) {
+        const translated = await source.translate(item);
+        const written: string[] = [];
+        const failures: string[] = [];
+        for (const { relPath, note } of translated) {
+          try {
+            // The source file is the authority for a translated note — it is a
+            // projection of one file, and re-translating overwrites. Change
+            // detection means that only happens when the file actually changed.
+            handle.vault.writeNote(relPath, note);
+            handle.index.upsert(relPath, handle.vault.noteTitle(relPath), note);
+            written.push(relPath);
+          } catch (err) {
+            failures.push(`${relPath}: ${(err as Error).message}`);
+          }
+        }
+        const summary = failures.length > 0 ? failures.join('; ') : undefined;
+        if (written.length > 0) commitAndRecord(handle, `Index ${item.sourceId}:${item.itemKey}`);
+        if (written.length === 0 && failures.length > 0) {
+          sourceState.record(item, { status: 'failed', error: summary });
+          return { itemKey, notesWritten: [], skipped: true, reason: summary ?? 'no notes written' };
+        }
+        sourceState.record(item, { status: 'indexed', error: summary });
+        return {
+          itemKey,
+          notesWritten: written,
+          skipped: false,
+          reason:
+            failures.length > 0
+              ? `${String(written.length)} note(s) written, ${String(failures.length)} failed: ${summary ?? ''}`
+              : `${String(written.length)} note(s) written`,
+        };
+      }
+
+      // Everything below spends tokens, so both dependencies are required from
+      // here down rather than at the top of the method.
+      if (!source.distill) throw new Error(`brain: source ${source.id} cannot produce notes`);
+      if (!opts.extractor) throw new Error('brain: no extractor configured');
+      if (!opts.accounts) throw new Error('brain: no accounts service configured');
+
       const account = opts.accounts.listAccounts().find((a) => a.id === accountId);
       if (!account) {
         // No silent fallback to another account's config dir — that would push
@@ -934,13 +1036,12 @@ export function createBrainService(
 
       const provenance = {
         sourceKey: `${item.sourceId}:${item.itemKey}`,
-        // A capture has no session start; its capture time is the date the
-        // note should record. Both fall back to today rather than to each
-        // other, since an empty string would sort before every real date.
-        date:
-          distilled.metadata.kind === 'capture'
-            ? distilled.metadata.capturedAt.slice(0, 10) || today()
-            : distilled.metadata.startedAt?.slice(0, 10) ?? today(),
+        // Each kind supplies the date it actually knows. A capture has its
+        // capture time; a session its start; an instruction file has no event
+        // date at all, so the day it was indexed is the only honest answer.
+        // Every arm falls back to today rather than to another kind's field,
+        // since an empty string would sort before every real date.
+        date: provenanceDate(distilled.metadata),
       };
 
       const notesWritten: string[] = [];
@@ -1013,6 +1114,36 @@ export function createBrainService(
       // through the wrong subscription and into the wrong vault.
       if (!found) throw new Error(`source item not found for this account: ${itemKey}`);
       queueStore.enqueue(accountId, found.item.sourceId, found.item.itemKey);
+    },
+
+    async enqueueProjectSources(accountId: number, projectPath: string): Promise<number> {
+      requireAccountId(accountId);
+      // The CLI's own encoding, which is what an auto-memory item's key is
+      // qualified by. Lossy in the decode direction, but exact in this one.
+      const encoded = projectPath.replace(/[^a-zA-Z0-9]/g, '-');
+      let queued = 0;
+
+      for (const source of sources) {
+        // The transcript is enqueued by its own key at the call site; this
+        // covers what a session close does NOT already reach.
+        if (source.id === SESSION_SOURCE_ID) continue;
+
+        for (const item of await source.discover()) {
+          if (item.accountId !== accountId) continue;
+          // Auto-memory keys are `<encoded project>/<file>`; repo artifacts are
+          // `<repoPath>:<file>`. Matching either shape keeps the check here
+          // without teaching the caller both formats.
+          const belongs =
+            item.itemKey.startsWith(`${encoded}/`) || item.itemKey.startsWith(`${projectPath}:`);
+          if (!belongs) continue;
+          if (!source.admit(item).admitted) continue;
+          const prior = sourceState.get(accountId, item.sourceId, item.itemKey);
+          if (prior?.status === 'indexed' && !sourceState.hasChanged(item)) continue;
+          queueStore.enqueue(accountId, item.sourceId, item.itemKey);
+          queued += 1;
+        }
+      }
+      return queued;
     },
 
     async backfill(accountId: number): Promise<number> {

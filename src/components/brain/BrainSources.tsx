@@ -164,7 +164,23 @@ export const BrainSources: React.FC<{ accountId: number | null }> = ({ accountId
               {outcome && <span className="text-xs text-muted-foreground">{outcome}</span>}
             </div>
             <dl className="mb-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs">
-              {preview.metadata.kind === 'capture' ? (
+              {preview.metadata === null ? (
+                <>
+                  {/* A translating source: no distillation, so what it would
+                      write IS the preview. */}
+                  <dt className="text-muted-foreground">writes</dt>
+                  <dd className="truncate">{preview.notePaths.join(', ') || '—'}</dd>
+                  <dt className="text-muted-foreground">model</dt>
+                  <dd>not used</dd>
+                </>
+              ) : preview.metadata.kind === 'artifact' ? (
+                <>
+                  <dt className="text-muted-foreground">repository</dt>
+                  <dd className="truncate">{preview.metadata.repoPath}</dd>
+                  <dt className="text-muted-foreground">file</dt>
+                  <dd className="truncate">{preview.metadata.file}</dd>
+                </>
+              ) : preview.metadata.kind === 'capture' ? (
                 <>
                   <dt className="text-muted-foreground">captured</dt>
                   <dd>{preview.metadata.capturedAt.slice(0, 10) || '—'}</dd>

@@ -175,6 +175,76 @@ length cap. These remain:
 
 ---
 
+## Opened by Plan 6 (`feat/brain-repo-automemory`, 2026-08-12)
+
+**The whole auto-memory corpus translated, free.** 86 files discovered under
+the personal config dir, 83 admitted, **83 notes written in 99ms with no model
+and no tokens**. The second run skipped as unchanged. The three rejects are all
+genuine: hand-written files in the WIN memory directory with no frontmatter
+fence (`test-data-log.md`, `feedback_no_direct_server_edits.md`,
+`production-credentials.md`).
+
+- **The `name:` field is NOT the filename, and using it as one was a bug.**
+  Measured: **72 of 90 files have `name:` different from the filename stem** —
+  it is often a human sentence (`AWS cost reduction target ~$400/mo`). Two
+  consequences, both found by running the real corpus rather than fixtures:
+  1. Naming notes after `name` would break four fifths of the corpus's links,
+     because memories link each other by FILENAME (`[[project_native_module_abi.md]]`).
+  2. A `name` containing `/` became a directory: the first run created
+     `Notes/AWS cost reduction target ~$400/mo.md`, i.e. a nested folder inside
+     `Notes/`. **This is Plan 4a's lesson recurring at a different boundary** —
+     there it was a model-supplied entity name, here a human-written frontmatter
+     field. A name that came from outside is never a path. Notes are now named
+     after the source file and the human name is kept as an alias.
+
+- **Link matching and entity resolution disagreed about separators, and now do
+  not.** `resolve.ts`'s `fold()` collapses `[\s_-]+`, but `linkMatchesNote` only
+  lowercased — so the vault treated `foo-bar` and `foo_bar` as one entity but
+  two link targets. On the real corpus that cost 5 of 29 links, all hyphenated
+  references to underscored filenames. Folding separators in `linkMatchesNote`
+  and the renderer's `resolveWikilink` took link binding from **83% to 90%**.
+  The remaining 3 are genuinely dangling in the source corpus too
+  (`[[tui-control-mirror]]` where the file is `project_tui_control_mirror.md`).
+  This was a scope addition, justified by the measurement rather than by taste.
+
+**Repo artifacts: one real extraction, and it is worth its token — with a
+caveat.** 8 artifacts discovered across the personal repos. This repo's
+`CLAUDE.md` extracted in 18.4s into `Projects/OmniFex.md` whose every factual
+claim checks out: the Tauri→Electron migration, node-pty vs child_process, the
+no-worktrees rule, the legacy `greychrist` identifiers. Aliases and keywords
+are exactly the strings a developer would type.
+
+- **The extraction produced ONE entity, not the Subsystem seeds predicted.**
+  The spec argued artifacts would seed `Projects/<repo>` *plus* Subsystem notes.
+  In practice it produced the Project note with dangling links to
+  `[[Subsystems/omnifex-session-lifecycle]]`, `[[Subsystems/omnifex-permissions]]`
+  and `[[Subsystems/omnifex-service-pattern]]`. Dangling links are normal vault
+  behaviour and do mark notes worth creating, but the claim was overstated:
+  artifacts seed the ONTOLOGY, not the notes.
+
+- **The model left junk in `keyFacts`.** The generated note contains
+  `- Legacy identifiers greychrist.db, greychrist://... wait` and
+  `- placeholder` — the model apparently thought out loud mid-JSON and left a
+  stub behind. zod validated the shape and could not have caught it. Same class
+  as Plan 4a's hallucinated internals, and the same mitigation: the Brain tab.
+  One sample, so the frequency is unknown; worth watching across a backfill
+  before deciding whether it needs more than inspection.
+
+- **`previewSource` now returns `metadata: null` for a translating source**,
+  with `notePaths` naming what it would write. Fabricating a distillation shape
+  for a source that never distills would have been the same mistake the
+  `ItemMetadata` discriminant exists to prevent.
+
+- **`repoPathFromTranscripts` reads a bounded 256KB prefix.** A project
+  directory whose transcripts carry no `cwd` in that window is skipped with a
+  reason rather than guessed at. Not observed on the real corpus, but a very
+  long tool-only prologue could in principle trip it.
+
+- **NOT verified: the close-time trigger in the running app.** The
+  `enqueueProjectSources` path is unit-tested and wired into `onSessionClosed`,
+  but the live app still has no vault configured, so it has never fired for
+  real. Same gap Plan 5 recorded.
+
 ## Opened by Plan 5 (`feat/brain-mcp-recall`, 2026-08-12)
 
 **The MCP server is proven against a packaged build, not a dev bundle.** Driven

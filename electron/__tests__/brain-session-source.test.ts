@@ -199,7 +199,7 @@ describe('session transcript source', () => {
     it('returns bounded prose and metadata for an item', async () => {
       writeSession(personalCfg, '-Users-dev-Repos-omnifex', 'sess-a', GOOD);
       const [item] = await source.discover();
-      const distilled = await source.distill(item);
+      const distilled = await source.distill!(item);
       expect(distilled.prose).toContain('USER: first ask');
       expect(distilled.prose).toContain('ASSISTANT: first answer');
       // The discriminant is asserted, not assumed: it is what tells the
@@ -217,7 +217,7 @@ describe('session transcript source', () => {
       // Unlike admit(), which degrades to a skip verdict, distill() has no
       // truthful empty answer: returning empty prose would let Plan 4 write a
       // note asserting the session had nothing in it.
-      await expect(source.distill(item)).rejects.toThrow(/cannot read/i);
+      await expect(source.distill!(item)).rejects.toThrow(/cannot read/i);
     });
   });
 
@@ -262,8 +262,8 @@ describe('session transcript source', () => {
       const preview = await brain.previewSource(personalId, 'sess-a');
       expect(preview?.prose).toContain('USER: first ask');
       expect(preview?.admitted).toBe(true);
-      expect(preview?.metadata.kind).toBe('session');
-      if (preview?.metadata.kind !== 'session') throw new Error('unreachable');
+      expect(preview?.metadata?.kind).toBe('session');
+      if (preview?.metadata?.kind !== 'session') throw new Error('unreachable');
       expect(preview.metadata.projectPath).toBe('/Users/dev/Repos/omnifex');
       brain.closeAll();
     });

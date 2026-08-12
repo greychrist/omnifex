@@ -44,6 +44,8 @@ import { createDatabase, ensureDefaultSettings } from './services/database';
 import { createBrainService, type BrainService } from './services/brain/registry';
 import { createSessionSource } from './services/brain/sources/session-transcripts';
 import { createCaptureSource } from './services/brain/sources/capture';
+import { createAutoMemorySource } from './services/brain/sources/auto-memory';
+import { createRepoArtifactSource } from './services/brain/sources/repo-artifacts';
 import {
   brainSpawnArgs,
   createBrainMcpRegistration,
@@ -502,7 +504,13 @@ app.whenReady().then(() => {
   const brainService: BrainService | undefined = createBrainService(db, {
     accounts: accountsService,
     extractor: createExtractor(),
-    sources: [createSessionSource({ accounts: accountsService }), captureSource],
+    sources: [
+      createSessionSource({ accounts: accountsService }),
+      captureSource,
+      // Translated with no model; extracted like a session, respectively.
+      createAutoMemorySource({ accounts: accountsService }),
+      createRepoArtifactSource({ accounts: accountsService }),
+    ],
     // `listActiveTabIds`, never `listInFlightTabIds` — the latter is hardcoded
     // to return [] (sessions/lifecycle.ts, dead since the jsonl-as-rendered
     // refactor), so a worker gated on it would never yield and would run
@@ -764,6 +772,12 @@ app.whenReady().then(() => {
         if (account) {
           brainService
             ?.enqueueSource(account.id, sessionId)
+            // The session just closed in this project, which is exactly when
+            // its auto-memory notes and instruction files were most likely
+            // edited — the memory tool writes during a session, and a CLAUDE.md
+            // is edited in one. Change detection makes the ordinary case a free
+            // no-op, so this costs a directory walk and nothing else.
+            .then(() => brainService?.enqueueProjectSources(account.id, projectPath))
             .then(() => brainService?.drainQueue())
             .catch((err: unknown) => console.warn('[main] brain auto-index failed:', err));
         }

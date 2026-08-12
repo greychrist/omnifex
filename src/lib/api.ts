@@ -1073,6 +1073,12 @@ export interface BrainCaptureMetadata {
   cwd: string | null;
 }
 
+/** Mirrors `ArtifactMetadata` in electron/services/brain/sources/types.ts. */
+export interface BrainArtifactMetadata {
+  repoPath: string;
+  file: string;
+}
+
 /**
  * Mirrors `ItemMetadata` in electron/services/brain/sources/types.ts. The
  * discriminant is what lets a Sources pane render a capture without inventing
@@ -1080,13 +1086,17 @@ export interface BrainCaptureMetadata {
  */
 export type BrainItemMetadata =
   | ({ kind: 'session' } & BrainSessionMetadata)
-  | ({ kind: 'capture' } & BrainCaptureMetadata);
+  | ({ kind: 'capture' } & BrainCaptureMetadata)
+  | ({ kind: 'artifact' } & BrainArtifactMetadata);
 
 /** Mirrors the backend `SourcePreview` in electron/services/brain/registry.ts. */
 export interface BrainSourcePreview {
   itemKey: string;
   prose: string;
-  metadata: BrainItemMetadata;
+  /** Null for a translating source — there is no distillation behind it. */
+  metadata: BrainItemMetadata | null;
+  /** Notes a translating source would write. Empty for a distilled item. */
+  notePaths: string[];
   truncated: boolean;
   admitted: boolean;
   reason: string;
@@ -3042,6 +3052,11 @@ export const api = {
 
   async brainDeleteNote(accountId: number, notePath: string): Promise<void> {
     return apiCall<void>('brain_delete_note', { accountId, notePath });
+  },
+
+  /** Queue this project's auto-memory notes and repo instruction files. */
+  async brainEnqueueProjectSources(accountId: number, projectPath: string): Promise<number> {
+    return apiCall<number>('brain_enqueue_project_sources', { accountId, projectPath });
   },
 
   async brainBacklinks(accountId: number, notePath: string): Promise<string[]> {

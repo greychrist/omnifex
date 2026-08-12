@@ -40,13 +40,17 @@ const stripMd = (s: string): string => (s.endsWith('.md') ? s.slice(0, -3) : s);
  * right one. An inert link is honest.
  */
 export function resolveWikilink(target: string, notePaths: string[]): string | null {
-  const wanted = stripMd(target).toLowerCase();
+  // Separators (spaces, `-`, `_`) are insignificant, matching both
+  // electron/services/brain/links.ts's linkMatchesNote and resolve.ts's fold().
+  // A hyphenated reference to an underscored filename is the same note.
+  const key = (s: string): string => stripMd(s).toLowerCase().replace(/[\s_-]+/g, '');
+  const wanted = key(target);
 
-  const exact = notePaths.filter((p) => stripMd(p).toLowerCase() === wanted);
+  const exact = notePaths.filter((p) => key(p) === wanted);
   if (exact.length === 1) return exact[0];
   if (exact.length > 1) return null;
 
-  const lastSegment = (s: string): string => stripMd(s).split('/').pop()?.toLowerCase() ?? '';
+  const lastSegment = (s: string): string => key(stripMd(s).split('/').pop() ?? '');
   const wantedTitle = lastSegment(target);
   const byTitle = notePaths.filter((p) => lastSegment(p) === wantedTitle);
   return byTitle.length === 1 ? byTitle[0] : null;

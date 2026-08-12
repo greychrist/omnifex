@@ -33,14 +33,21 @@ export function parseWikilinks(body: string): string[] {
  * True when `target` names the note at `notePath`.
  *
  * A target may be a bare title or a vault-relative path, with or without the
- * `.md` suffix, so comparison is on the final segment, case-insensitively —
- * matching how a vault's filenames are derived from note titles in the first
- * place (`vault.notePath`).
+ * `.md` suffix, so comparison is on the final segment — matching how a vault's
+ * filenames are derived from note titles in the first place
+ * (`vault.notePath`).
+ *
+ * Separators (spaces, `-`, `_`) are insignificant, the same normalization
+ * `resolve.ts`'s `fold()` applies when deciding whether two entities are the
+ * same thing. Treating them as significant HERE while ignoring them THERE made
+ * `foo-bar` and `foo_bar` one entity but two link targets — measured on a real
+ * auto-memory corpus, that cost 5 of 29 links, all of them hyphenated
+ * references to underscored filenames.
  */
 export function linkMatchesNote(target: string, notePath: string): boolean {
-  const lastSegment = (s: string): string => {
+  const key = (s: string): string => {
     const seg = s.split('/').pop() ?? s;
-    return (seg.endsWith('.md') ? seg.slice(0, -3) : seg).toLowerCase();
+    return (seg.endsWith('.md') ? seg.slice(0, -3) : seg).toLowerCase().replace(/[\s_-]+/g, '');
   };
-  return lastSegment(target) === lastSegment(notePath);
+  return key(target) === key(notePath);
 }

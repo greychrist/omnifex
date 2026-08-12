@@ -275,4 +275,23 @@ describe('buildExtractionPrompt', () => {
   it('carries the captured text as the material to extract from', () => {
     expect(buildExtractionPrompt(CAPTURE)).toContain('node-pty must stay on 1.2.0-beta.13');
   });
+
+  const ARTIFACT: DistilledItem = {
+    prose: '# CLAUDE.md\n\nPackage manager: npm. Tests live in electron/__tests__.',
+    truncated: false,
+    metadata: { kind: 'artifact', repoPath: '/Users/dev/Repos/omnifex', file: 'CLAUDE.md' },
+  };
+
+  it('describes a repo artifact as an instruction file, not a session', () => {
+    const prompt = buildExtractionPrompt(ARTIFACT);
+    expect(prompt).toContain('instruction file');
+    expect(prompt).not.toContain('coding session');
+    expect(prompt).not.toContain('turns:');
+  });
+
+  it('states the repo and file as facts', () => {
+    const prompt = buildExtractionPrompt(ARTIFACT);
+    expect(prompt).toContain('repository: /Users/dev/Repos/omnifex');
+    expect(prompt).toContain('file: CLAUDE.md');
+  });
 });

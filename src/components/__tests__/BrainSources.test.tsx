@@ -36,6 +36,7 @@ function preview(over: Partial<BrainSourcePreview> = {}): BrainSourcePreview {
   return {
     itemKey: 'sess-a',
     prose: 'USER: do the thing',
+    notePaths: [],
     truncated: false,
     admitted: true,
     reason: 'ok',
