@@ -6,6 +6,7 @@
  * them implement `BrainSource`, so adding one changes nothing upstream
  * (spec §5).
  */
+import type { ParsedNote } from '../types';
 
 /**
  * One candidate for indexing, with a key that is stable across restarts.
@@ -111,9 +112,27 @@ export interface DistilledItem {
 }
 
 /**
- * A source of indexable material. All three methods are independently
- * testable, and GitHub/Jira adapters later implement this same interface with
- * nothing upstream changing (spec §5).
+ * A finished note and where it goes, built with no model.
+ *
+ * The path is chosen by the ADAPTER rather than by `resolveEntityPath`: a
+ * translated note is a projection of one source file, not an entity other
+ * sources merge into, so folding it into a same-named entity note would blend
+ * two different kinds of provenance under one title.
+ */
+export interface TranslatedNote {
+  /** Vault-relative, e.g. "Notes/project_nodepty_pty_leak.md". */
+  relPath: string;
+  note: ParsedNote;
+}
+
+/**
+ * A source of indexable material. Every method is independently testable, and
+ * GitHub/Jira adapters later implement this same interface with nothing
+ * upstream changing (spec §5).
+ *
+ * A source produces material one of two ways: `distill()` for material a model
+ * turns into entities, or `translate()` for material that is already a note.
+ * Exactly one of them is implemented.
  */
 export interface BrainSource {
   readonly id: string;
@@ -125,5 +144,12 @@ export interface BrainSource {
    */
   discover(): Promise<SourceItem[]>;
   admit(item: SourceItem): AdmitVerdict;
-  distill(item: SourceItem): Promise<DistilledItem>;
+  /** Bounded prose for the model. Absent on a source that translates instead. */
+  distill?(item: SourceItem): Promise<DistilledItem>;
+  /**
+   * Notes built with NO model. When present, `indexSource` skips extraction
+   * entirely — no extractor, no owning-account config dir, no tokens spent.
+   * The gate, change detection, the git commit and the queue are unchanged.
+   */
+  translate?(item: SourceItem): Promise<TranslatedNote[]>;
 }

@@ -1086,7 +1086,10 @@ export type BrainItemMetadata =
 export interface BrainSourcePreview {
   itemKey: string;
   prose: string;
-  metadata: BrainItemMetadata;
+  /** Null for a translating source — there is no distillation behind it. */
+  metadata: BrainItemMetadata | null;
+  /** Notes a translating source would write. Empty for a distilled item. */
+  notePaths: string[];
   truncated: boolean;
   admitted: boolean;
   reason: string;

@@ -13,6 +13,8 @@ import {
   type BrainService,
 } from '../services/brain/registry';
 import type { ParsedNote } from '../services/brain/types';
+import type { BrainSource, TranslatedNote } from '../services/brain/sources/types';
+import type { AccountsService } from '../services/accounts';
 
 function note(body: string, type: ParsedNote['frontmatter']['type'] = 'Subsystem'): ParsedNote {
   return {
@@ -854,5 +856,163 @@ describe('brain registry', () => {
 
       svc.closeAll();
     });
+  });
+});
+
+describe('translating sources', () => {
+  let dir: string;
+  let db: Database;
+
+  const stubExec = async () => '';
+  const accountsStub = {
+    listAccounts: () => [{ id: 1, config_dir: '/cfg/personal' }],
+  } as unknown as AccountsService;
+
+  const NOTE: ParsedNote = {
+    frontmatter: {
+      type: 'Note', aliases: [], keywords: [],
+      created: '2026-08-12', updated: '2026-08-12',
+      sources: ['auto-memory:proj/x.md'],
+    },
+    body: '## Summary\n\ntranslated body\n',
+  };
+
+  /** A source that produces finished notes with no model, like auto-memory. */
+  function fakeTranslator(accountId: number, notes: TranslatedNote[]): BrainSource {
+    return {
+      id: 'fake-translate',
+      discover: () => Promise.resolve([{
+        sourceId: 'fake-translate', itemKey: 'item-1', accountId,
+        path: join(dir, 'fake-item-1'), mtimeMs: 1, size: 10, label: 'fake',
+      }]),
+      admit: () => ({ admitted: true, reason: 'ok' }),
+      translate: () => Promise.resolve(notes),
+    };
+  }
+
+  function fakeExtractor(accountId: number, itemKey: string): BrainSource {
+    return {
+      id: 'fake-extract',
+      discover: () => Promise.resolve([{
+        sourceId: 'fake-extract', itemKey, accountId,
+        path: join(dir, itemKey), mtimeMs: 1, size: 10, label: 'fake',
+      }]),
+      admit: () => ({ admitted: true, reason: 'ok' }),
+      distill: () => Promise.resolve({
+        prose: 'x', truncated: false,
+        metadata: {
+          kind: 'capture' as const,
+          capturedAt: '2026-08-12T00:00:00.000Z', project: null, cwd: null,
+        },
+      }),
+    };
+  }
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'omnifex-translate-'));
+    db = createDatabase(':memory:');
+    db.raw.prepare('INSERT INTO accounts (id, name, config_dir) VALUES (?, ?, ?)')
+      .run(1, 'Personal', '/cfg/personal');
+  });
+
+  afterEach(() => {
+    db.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('writes translated notes without an extractor at all', async () => {
+    // No extractor is configured: a translating source must not need one,
+    // which is the entire point of the seam.
+    const brain = createBrainService(db, {
+      execGit: stubExec,
+      accounts: accountsStub,
+      sources: [fakeTranslator(1, [{ relPath: 'Notes/x.md', note: NOTE }])],
+    });
+    brain.setVaultPath(1, join(dir, 'v1'));
+
+    const result = await brain.indexSource(1, 'item-1');
+
+    expect(result.skipped).toBe(false);
+    expect(result.notesWritten).toEqual(['Notes/x.md']);
+    expect(brain.open(1)!.vault.readNote('Notes/x.md').body).toContain('translated body');
+    brain.closeAll();
+  });
+
+  it('never calls the extractor for a translating source', async () => {
+    let called = 0;
+    const brain = createBrainService(db, {
+      execGit: stubExec,
+      accounts: accountsStub,
+      extractor: () => { called += 1; return Promise.resolve({ entities: [] }); },
+      sources: [fakeTranslator(1, [{ relPath: 'Notes/x.md', note: NOTE }])],
+    });
+    brain.setVaultPath(1, join(dir, 'v2'));
+
+    await brain.indexSource(1, 'item-1');
+
+    expect(called).toBe(0);
+    brain.closeAll();
+  });
+
+  it('indexes a translated note for search', async () => {
+    const brain = createBrainService(db, {
+      execGit: stubExec, accounts: accountsStub,
+      sources: [fakeTranslator(1, [{ relPath: 'Notes/x.md', note: NOTE }])],
+    });
+    brain.setVaultPath(1, join(dir, 'v3'));
+    await brain.indexSource(1, 'item-1');
+
+    expect(brain.search(1, 'translated').map((h) => h.notePath)).toEqual(['Notes/x.md']);
+    brain.closeAll();
+  });
+
+  it('still honours the unchanged short-circuit', async () => {
+    const brain = createBrainService(db, {
+      execGit: stubExec, accounts: accountsStub,
+      sources: [fakeTranslator(1, [{ relPath: 'Notes/x.md', note: NOTE }])],
+    });
+    brain.setVaultPath(1, join(dir, 'v4'));
+
+    await brain.indexSource(1, 'item-1');
+    const second = await brain.indexSource(1, 'item-1');
+
+    expect(second.skipped).toBe(true);
+    expect(second.reason).toMatch(/unchanged/);
+    brain.closeAll();
+  });
+
+  it('isolates a failing note to that note', async () => {
+    const brain = createBrainService(db, {
+      execGit: stubExec, accounts: accountsStub,
+      sources: [fakeTranslator(1, [
+        // A path vault.writeNote rejects, beside a good one.
+        { relPath: '../escape.md', note: NOTE },
+        { relPath: 'Notes/good.md', note: NOTE },
+      ])],
+    });
+    brain.setVaultPath(1, join(dir, 'v5'));
+
+    const result = await brain.indexSource(1, 'item-1');
+
+    expect(result.notesWritten).toEqual(['Notes/good.md']);
+    expect(result.reason).toMatch(/escape/);
+    brain.closeAll();
+  });
+
+  it('backfills translating and extracting sources together', async () => {
+    // Both kinds in one queue: the worker must not care which it claims.
+    const brain = createBrainService(db, {
+      execGit: stubExec,
+      accounts: accountsStub,
+      extractor: () => Promise.resolve({ entities: [] }),
+      sources: [
+        fakeTranslator(1, [{ relPath: 'Notes/x.md', note: NOTE }]),
+        fakeExtractor(1, 'item-2'),
+      ],
+    });
+    brain.setVaultPath(1, join(dir, 'both'));
+
+    expect(await brain.backfill(1)).toBe(2);
+    brain.closeAll();
   });
 });

@@ -148,11 +148,21 @@ export interface IndexResult {
   reason: string;
 }
 
-/** The distilled view of one item, for inspection before any token is spent. */
+/**
+ * The view of one item, for inspection before any token is spent.
+ *
+ * `metadata` is null for a translating source: there is no distillation behind
+ * it and therefore no distillation metadata. What it produces is the preview,
+ * so `notePaths` names the notes it would write and `prose` carries their
+ * bodies. Reporting a fabricated metadata shape instead would be the same
+ * mistake the ItemMetadata discriminant exists to prevent.
+ */
 export interface SourcePreview {
   itemKey: string;
   prose: string;
-  metadata: ItemMetadata;
+  metadata: ItemMetadata | null;
+  /** Notes a translating source would write. Empty for a distilled item. */
+  notePaths: string[];
   truncated: boolean;
   admitted: boolean;
   reason: string;
@@ -852,11 +862,38 @@ export function createBrainService(
       const found = await findItem(accountId, itemKey);
       if (!found) return null;
       const verdict = found.source.admit(found.item);
+
+      if (found.source.translate) {
+        const translated = await found.source.translate(found.item);
+        return {
+          itemKey,
+          prose: translated.map((t) => `### ${t.relPath}\n\n${t.note.body}`).join('\n\n'),
+          metadata: null,
+          notePaths: translated.map((t) => t.relPath),
+          truncated: false,
+          admitted: verdict.admitted,
+          reason: verdict.reason,
+        };
+      }
+
+      if (!found.source.distill) {
+        return {
+          itemKey,
+          prose: '',
+          metadata: null,
+          notePaths: [],
+          truncated: false,
+          admitted: false,
+          reason: `source ${found.source.id} cannot produce notes`,
+        };
+      }
+
       const distilled = await found.source.distill(found.item);
       return {
         itemKey,
         prose: distilled.prose,
         metadata: distilled.metadata,
+        notePaths: [],
         truncated: distilled.truncated,
         admitted: verdict.admitted,
         reason: verdict.reason,
@@ -869,8 +906,6 @@ export function createBrainService(
       runOpts: { force?: boolean } = {},
     ): Promise<IndexResult> {
       requireAccountId(accountId);
-      if (!opts.extractor) throw new Error('brain: no extractor configured');
-      if (!opts.accounts) throw new Error('brain: no accounts service configured');
 
       const found = await findItem(accountId, itemKey);
       if (!found) throw new Error(`source item not found for this account: ${itemKey}`);
@@ -904,6 +939,50 @@ export function createBrainService(
       // Fail before spending a token, not after: an extraction whose result
       // has nowhere to go is pure waste.
       const handle = requireHandle(accountId);
+
+      // A translating source produces finished notes with no model, so it needs
+      // neither an extractor nor an owning-account config dir. The branch sits
+      // before both: requiring an account here would block a source that cannot
+      // spend anything through the wrong subscription in the first place.
+      if (source.translate) {
+        const translated = await source.translate(item);
+        const written: string[] = [];
+        const failures: string[] = [];
+        for (const { relPath, note } of translated) {
+          try {
+            // The source file is the authority for a translated note — it is a
+            // projection of one file, and re-translating overwrites. Change
+            // detection means that only happens when the file actually changed.
+            handle.vault.writeNote(relPath, note);
+            handle.index.upsert(relPath, handle.vault.noteTitle(relPath), note);
+            written.push(relPath);
+          } catch (err) {
+            failures.push(`${relPath}: ${(err as Error).message}`);
+          }
+        }
+        const summary = failures.length > 0 ? failures.join('; ') : undefined;
+        if (written.length > 0) commitAndRecord(handle, `Index ${item.sourceId}:${item.itemKey}`);
+        if (written.length === 0 && failures.length > 0) {
+          sourceState.record(item, { status: 'failed', error: summary });
+          return { itemKey, notesWritten: [], skipped: true, reason: summary ?? 'no notes written' };
+        }
+        sourceState.record(item, { status: 'indexed', error: summary });
+        return {
+          itemKey,
+          notesWritten: written,
+          skipped: false,
+          reason:
+            failures.length > 0
+              ? `${String(written.length)} note(s) written, ${String(failures.length)} failed: ${summary ?? ''}`
+              : `${String(written.length)} note(s) written`,
+        };
+      }
+
+      // Everything below spends tokens, so both dependencies are required from
+      // here down rather than at the top of the method.
+      if (!source.distill) throw new Error(`brain: source ${source.id} cannot produce notes`);
+      if (!opts.extractor) throw new Error('brain: no extractor configured');
+      if (!opts.accounts) throw new Error('brain: no accounts service configured');
 
       const account = opts.accounts.listAccounts().find((a) => a.id === accountId);
       if (!account) {

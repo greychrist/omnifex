@@ -108,7 +108,7 @@ describe('capture source', () => {
     const src = source();
     const [item] = await src.discover();
 
-    const distilled = await src.distill(item);
+    const distilled = await src.distill!(item);
     expect(distilled.truncated).toBe(false);
     expect(distilled.prose).toBe('node-pty must stay on 1.2.0-beta.13');
     expect(distilled.metadata).toEqual({
