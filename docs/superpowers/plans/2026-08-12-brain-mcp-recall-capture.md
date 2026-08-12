@@ -1899,4 +1899,7 @@ git commit -m "docs: record Plan 5's live verification"
   will die with `Cannot find module 'ajv/...'` while the dev build works fine.
   The fix is one `copyNativeModule(buildPath, 'ajv')` line in `forge.config.ts`.
 - Task 9 coverage number:
-- Did the model call `brain_search` without being told to?
+- **Did the model call `brain_search` unprompted?** UNANSWERED. The real app
+  database has no vault configured, so this needs a vault set up in the Brain
+  tab and a session opened under that account. It is the one property no test
+  can cover.
