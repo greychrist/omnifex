@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, cleanup } from '@testing-library/react';
+import { render, screen, waitFor, cleanup, fireEvent } from '@testing-library/react';
 import { BrainTab } from '@/components/brain/BrainTab';
 import { api, type BrainVaultStatus } from '@/lib/api';
 
@@ -112,6 +112,34 @@ describe('BrainTab', () => {
     await waitFor(() => {
       expect(screen.getByTestId('brain-summary').textContent).toBe('vault missing');
     });
+  });
+
+  it('opens the vault panel for a healthy vault via the header toggle', async () => {
+    render(<BrainTab />);
+    await waitFor(() => { expect(screen.getByTestId('note-list')).toBeTruthy(); });
+
+    // Without this route the rebuild and disconnect controls would only be
+    // reachable by first BREAKING the vault.
+    fireEvent.click(screen.getByRole('button', { name: /vault/i }));
+    expect(screen.getByTestId('vault-setup')).toBeTruthy();
+    expect(screen.queryByTestId('note-list')).toBeNull();
+  });
+
+  it('closes the vault panel again on a second click', async () => {
+    render(<BrainTab />);
+    await waitFor(() => { expect(screen.getByTestId('note-list')).toBeTruthy(); });
+
+    const toggle = screen.getByRole('button', { name: /vault/i });
+    fireEvent.click(toggle);
+    fireEvent.click(toggle);
+    expect(screen.getByTestId('note-list')).toBeTruthy();
+  });
+
+  it('does not offer the toggle when the vault is already routed to setup', async () => {
+    vi.mocked(api.brainStatus).mockResolvedValue(status({ configured: false, path: null, exists: false }));
+    render(<BrainTab />);
+    await waitFor(() => { expect(screen.getByTestId('vault-setup')).toBeTruthy(); });
+    expect(screen.queryByRole('button', { name: /vault/i })).toBeNull();
   });
 
   it('surfaces a load error', async () => {

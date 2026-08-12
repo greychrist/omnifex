@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { Settings2 } from 'lucide-react';
 import { useAccounts } from '@/contexts/AccountsContext';
 import { useBrainVault } from '@/hooks/useBrainVault';
 import { AccountBadge } from '@/components/AccountBadge';
@@ -41,6 +42,12 @@ export const BrainTab: React.FC = () => {
   const account = accounts.find((a) => a.id === accountId) ?? null;
   const status = vault.status;
 
+  // A healthy vault still has things to manage — rebuilding a stale index,
+  // disconnecting, seeing why git stopped committing. Without this toggle the
+  // setup panel would only ever be reachable by BREAKING the vault first.
+  const [showVault, setShowVault] = useState(false);
+  useEffect(() => { setShowVault(false); }, [accountId]);
+
   const headerSummary = (): string => {
     if (!status) return vault.loading ? 'loading…' : '';
     if (!status.configured) return 'no vault';
@@ -54,6 +61,8 @@ export const BrainTab: React.FC = () => {
   // matching repair.
   const needsSetup =
     status !== null && (!status.configured || !status.exists || status.conflict !== null);
+
+  const indexIsStale = status !== null && status.exists && status.indexedCount !== status.noteCount;
 
   return (
     <div className="flex h-full flex-col">
@@ -78,6 +87,18 @@ export const BrainTab: React.FC = () => {
         <span className="ml-auto text-xs text-muted-foreground" data-testid="brain-summary">
           {headerSummary()}
         </span>
+        {!needsSetup && (
+          <button
+            type="button"
+            onClick={() => { setShowVault((v) => !v); }}
+            aria-pressed={showVault}
+            className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs hover:bg-accent hover:text-accent-foreground"
+          >
+            <Settings2 className="h-3.5 w-3.5" />
+            Vault
+            {indexIsStale && <span className="ml-1 h-1.5 w-1.5 rounded-full bg-amber-500" />}
+          </button>
+        )}
       </header>
 
       {vault.error && (
@@ -86,7 +107,7 @@ export const BrainTab: React.FC = () => {
         </div>
       )}
 
-      {needsSetup ? (
+      {needsSetup || showVault ? (
         <BrainVaultSetup vault={vault} accountName={account?.name ?? null} />
       ) : (
         <div className="flex min-h-0 flex-1">
