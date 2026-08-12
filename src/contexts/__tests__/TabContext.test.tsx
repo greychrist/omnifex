@@ -361,6 +361,26 @@ describe('TabContext — lookups', () => {
 });
 
 describe('useTabState — operation wrappers', () => {
+  it('createBrainTab adds a brain tab', async () => {
+    const { result } = renderHook(() => useTabState(), { wrapper });
+    await waitFor(() => { expect(result.current.tabs.length).toBe(1); });
+    act(() => { result.current.createBrainTab(); });
+    expect(result.current.tabs.filter((t) => t.type === 'brain')).toHaveLength(1);
+  });
+
+  it('createBrainTab reuses the existing brain tab instead of opening a second', async () => {
+    const { result } = renderHook(() => useTabState(), { wrapper });
+    await waitFor(() => { expect(result.current.tabs.length).toBe(1); });
+    let first: string | null = null;
+    act(() => { first = result.current.createBrainTab(); });
+    let second: string | null = null;
+    act(() => { second = result.current.createBrainTab(); });
+
+    expect(second).toBe(first);
+    expect(result.current.tabs.filter((t) => t.type === 'brain')).toHaveLength(1);
+    expect(result.current.activeTabId).toBe(first);
+  });
+
   it('createChatTab adds a chat tab and returns its id', async () => {
     const { result } = renderHook(() => useTabState(), { wrapper });
     await waitFor(() => { expect(result.current.tabs.length).toBe(1); });
