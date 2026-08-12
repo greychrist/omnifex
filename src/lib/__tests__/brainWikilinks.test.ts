@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { parseWikilinks, resolveWikilink } from '@/lib/brainWikilinks';
+import {
+  parseWikilinks,
+  resolveWikilink,
+  wikilinkTarget,
+  wikilinksToMarkdown,
+  WIKILINK_SCHEME,
+} from '@/lib/brainWikilinks';
 
 // These nine cases are deliberately identical to
 // electron/__tests__/brain-links.test.ts. The two implementations are twins
@@ -80,5 +86,55 @@ describe('resolveWikilink', () => {
 
   it('returns null against an empty vault', () => {
     expect(resolveWikilink('anything', [])).toBeNull();
+  });
+});
+
+describe('wikilinksToMarkdown', () => {
+  it('rewrites a bare link as a markdown link', () => {
+    expect(wikilinksToMarkdown('see [[Sessions]]')).toBe(
+      `see [Sessions](${WIKILINK_SCHEME}Sessions)`,
+    );
+  });
+
+  it('keeps the display text and links the target', () => {
+    expect(wikilinksToMarkdown('[[Subsystems/Sessions|the layer]]')).toBe(
+      `[the layer](${WIKILINK_SCHEME}Subsystems%2FSessions)`,
+    );
+  });
+
+  it('encodes a target containing spaces', () => {
+    expect(wikilinksToMarkdown('[[Permission decider]]')).toBe(
+      `[Permission decider](${WIKILINK_SCHEME}Permission%20decider)`,
+    );
+  });
+
+  it('leaves prose without links untouched', () => {
+    expect(wikilinksToMarkdown('# Title\n\nplain\n')).toBe('# Title\n\nplain\n');
+  });
+
+  it('does not rewrite inside a fenced code block', () => {
+    const src = 'before [[A]]\n\n```\nconst x = [[B]];\n```\n\nafter [[C]]';
+    const out = wikilinksToMarkdown(src);
+    expect(out).toContain('const x = [[B]];');
+    expect(out).toContain(`[A](${WIKILINK_SCHEME}A)`);
+    expect(out).toContain(`[C](${WIKILINK_SCHEME}C)`);
+  });
+
+  it('leaves an empty target alone', () => {
+    expect(wikilinksToMarkdown('[[]]')).toBe('[[]]');
+  });
+});
+
+describe('wikilinkTarget', () => {
+  it('decodes a wikilink href', () => {
+    expect(wikilinkTarget(`${WIKILINK_SCHEME}Permission%20decider`)).toBe('Permission decider');
+  });
+
+  it('returns null for an ordinary link', () => {
+    expect(wikilinkTarget('https://example.com')).toBeNull();
+  });
+
+  it('returns null for a missing href', () => {
+    expect(wikilinkTarget(undefined)).toBeNull();
   });
 });

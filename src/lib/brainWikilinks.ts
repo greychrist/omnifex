@@ -52,6 +52,42 @@ export function resolveWikilink(target: string, notePaths: string[]): string | n
   return byTitle.length === 1 ? byTitle[0] : null;
 }
 
+/** URL scheme used to smuggle a wikilink through the markdown renderer. */
+export const WIKILINK_SCHEME = 'omnifex-wikilink:';
+
+/**
+ * Rewrite `[[wikilinks]]` as ordinary markdown links so the note body can go
+ * through one markdown renderer rather than a hand-rolled segment splitter.
+ * The link renderer recognises WIKILINK_SCHEME and turns those into buttons.
+ *
+ * Fenced code blocks are left alone: `[[...]]` inside a fence is code the user
+ * wrote, and turning it into a link would both mangle the sample and invent a
+ * navigation target that does not exist. Splitting on ``` and transforming only
+ * the even segments is what keeps that true.
+ */
+export function wikilinksToMarkdown(body: string): string {
+  return body
+    .split(/(```)/)
+    .map((segment, i) => {
+      // Segments alternate: text, fence marker, code, fence marker, text…
+      // so index % 4 === 0 is prose outside any fence.
+      if (i % 4 !== 0) return segment;
+      return segment.replace(WIKILINK, (whole, rawTarget: string) => {
+        const target = rawTarget.trim();
+        if (!target) return whole;
+        const display = whole.slice(2, -2).split('|')[1]?.trim() ?? target;
+        return `[${display}](${WIKILINK_SCHEME}${encodeURIComponent(target)})`;
+      });
+    })
+    .join('');
+}
+
+/** The link target encoded into a WIKILINK_SCHEME href, or null. */
+export function wikilinkTarget(href: string | undefined): string | null {
+  if (!href?.startsWith(WIKILINK_SCHEME)) return null;
+  return decodeURIComponent(href.slice(WIKILINK_SCHEME.length));
+}
+
 /** A note path's display title: its basename without the `.md` suffix. */
 export function noteTitle(notePath: string): string {
   return stripMd(notePath.split('/').pop() ?? notePath);
