@@ -175,6 +175,52 @@ length cap. These remain:
 
 ---
 
+## Opened by Plan 4b (`feat/brain-queue`, 2026-08-12)
+
+**The worker is proven end-to-end.** Two real sessions drained through the live
+pipeline: with a session marked active both stayed `pending` and nothing was
+consumed; with it inactive both completed, 0 failed, 63.2s for two items
+(~31s each, so ~77 personal sessions is roughly 40 minutes — consistent with
+the 30–100 minute estimate).
+
+- **Near-duplicate entities are real, and they are the blocker for an
+  unattended full backfill.** Two sessions about the same work produced
+  `Subsystems/Brain memory vault.md` *and* `Subsystems/omnifex-brain-vault.md`
+  — one subsystem, two notes. `merge()` dedups by note path, so an entity the
+  model names differently on a later run becomes a second note rather than an
+  update to the first. At n=2 this is visible; at 77 it would fragment the
+  vault badly enough to undermine retrieval, which is the entire point of the
+  Brain.
+
+  Options, none implemented: (a) pass the vault's existing entity names into
+  the extraction prompt so the model can reuse one, (b) resolve a new name
+  against existing notes by alias/last-segment before choosing a path, (c)
+  leave it to curation (spec §10, step 7) to merge duplicates after the fact.
+  (a) is cheapest and most likely to work, since the model already emits good
+  aliases; (b) risks collapsing genuinely distinct entities. **Decide before
+  running a full backfill**, not after.
+
+- **`listInFlightTabIds` is dead and the worker must never use it.** It is
+  hardcoded to `return []` (`sessions/lifecycle.ts:511`) since the
+  jsonl-as-rendered refactor, and `docs/session-lifecycle.md` names relying on
+  it as an anti-pattern. A worker gated on it would never yield — it would run
+  hardest exactly when the user is working. The queue uses `listActiveTabIds`.
+  Worth noting that `docs/session-lifecycle.md:139` already flagged this and
+  the TODO to wire the renderer's derived count into the installer gate is
+  still open; anything else that needs a real in-flight signal in main has the
+  same problem.
+
+- **The summary hook's early return was load-bearing and is now a branch.**
+  `main.ts`'s `onSessionClosed` previously did `if (!enabled || !autoOn)
+  return;`. Since both close-time consumers share that one callback, leaving
+  the early return would have silently disabled Brain auto-indexing for anyone
+  who has session summaries turned off.
+
+- **Auto-indexing ships off by default** (`brain.autoIndex`). There is no
+  Settings UI for it yet — it is togglable only by writing the setting. The
+  Brain tab's queue panel has Backfill / Drain now / Clear finished, but the
+  opt-in toggle and the pause switch still need a home in Settings.
+
 ## Opened by Plan 4a (`feat/brain-extract-merge`, 2026-08-12)
 
 **First real extraction, measured.** One session (`27b32dad`, 4 prompts / 53
