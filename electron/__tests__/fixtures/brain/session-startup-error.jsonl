@@ -1,0 +1,2 @@
+{"type":"user","uuid":"u1","sessionId":"sess-err","timestamp":"2026-08-01T10:00:00.000Z","cwd":"/Users/dev/Repos/omnifex","message":{"role":"user","content":"fix the failing test"}}
+{"type":"assistant","uuid":"a1","sessionId":"sess-err","timestamp":"2026-08-01T10:00:01.000Z","isApiErrorMessage":true,"message":{"role":"assistant","content":[{"type":"text","text":"Not logged in · Please run /login"}]}}
