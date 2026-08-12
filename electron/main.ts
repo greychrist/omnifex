@@ -44,6 +44,12 @@ import { createDatabase, ensureDefaultSettings } from './services/database';
 import { createBrainService, type BrainService } from './services/brain/registry';
 import { createSessionSource } from './services/brain/sources/session-transcripts';
 import { createCaptureSource } from './services/brain/sources/capture';
+import {
+  brainSpawnArgs,
+  createBrainMcpRegistration,
+  writeBrainSpawnConfig,
+  type BrainMcpEnvironment,
+} from './services/brain/mcp-registration';
 import { createExtractor } from './services/brain/extract';
 import {
   BRAIN_AUTO_INDEX_SETTING_KEY,
@@ -509,6 +515,18 @@ app.whenReady().then(() => {
   });
   brainRef = brainService;
 
+  // Where the Brain MCP server lives and how it must be run. `__dirname` is
+  // `.vite/build` in both dev and a packaged app, so brain-mcp.js sits beside
+  // main.js in either. `process.execPath` is the Electron binary — run as node
+  // by the spawned server, which is what keeps better-sqlite3 on the ABI it
+  // was compiled against.
+  const brainMcpEnv: BrainMcpEnvironment = {
+    execPath: process.execPath,
+    serverScript: path.join(__dirname, 'brain-mcp.js'),
+    userDataDir: app.getPath('userData'),
+  };
+
+
   // First-launch account discovery: if this is a fresh install with no
   // accounts yet, scan $HOME for `.claude*` dirs and create one account per
   // match. Resolution still requires explicit choice — this just populates
@@ -795,6 +813,24 @@ app.whenReady().then(() => {
         source: 'session-init' as const,
       };
     },
+    // Brain MCP injection. A session under an account with a configured vault
+    // is spawned with `--mcp-config` and the two read tools pre-allowed, so
+    // the Brain needs no write into the user's Claude config to be reachable.
+    //
+    // Wrapped whole: the Brain is auxiliary, and a failure to build these args
+    // must cost the Brain, not the session.
+    (configDir: string) => {
+      try {
+        const account = accountsService.getAccountByConfigDir(configDir);
+        if (!account) return [];
+        const vaultRoot = brainService?.vaultPath(account.id);
+        if (!vaultRoot) return [];
+        return brainSpawnArgs(writeBrainSpawnConfig(account.id, vaultRoot, brainMcpEnv));
+      } catch (err) {
+        console.warn('[main] brain MCP spawn args unavailable:', err);
+        return [];
+      }
+    },
   );
   const claudeService = createClaudeService(db, accountsService);
   const usageService = createUsageService(accountsService, loggingService);
@@ -823,6 +859,9 @@ app.whenReady().then(() => {
   }, 60 * 60 * 1000);
   const proxyService = createProxyService(db);
   const mcpService = createMCPService();
+  // The persistent, per-account half of Brain MCP registration. Reuses
+  // MCPService so there is one writer of MCP config rather than two.
+  const brainMcpRegistration = createBrainMcpRegistration(mcpService, brainMcpEnv);
   const slashCommandsService = createSlashCommandsService();
   const sessionsSummaryService = createSessionsSummaryService({
     jsonlPathFor: (sessionUuid, projectPath, configDir) => {
@@ -1035,6 +1074,13 @@ app.whenReady().then(() => {
   registerIpcHandlers({
     database: db,
     brain: brainService,
+    brainMcp: {
+      isRegistered: (configDir) => brainMcpRegistration.isRegistered(configDir),
+      register: (configDir, vaultRoot) => { brainMcpRegistration.register(configDir, vaultRoot); },
+      unregister: (configDir) => { brainMcpRegistration.unregister(configDir); },
+      configDirFor: (accountId) =>
+        accountsService.listAccounts().find((a) => a.id === accountId)?.config_dir ?? null,
+    },
     // Arbitrary-SQL admin channel is dev-only; never exposed in shipped builds.
     allowRawSql: !app.isPackaged,
     // Accounts adapter — maps handler interface to service methods

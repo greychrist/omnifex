@@ -1056,6 +1056,16 @@ export interface BrainSessionMetadata {
   terminalStatus: 'completed' | 'error' | 'unknown';
 }
 
+/**
+ * Whether the Brain MCP server is written into this account's Claude config.
+ * `available` is false for an account with no vault, which is when the toggle
+ * should not be offered at all.
+ */
+export interface BrainMcpStatus {
+  registered: boolean;
+  available: boolean;
+}
+
 /** Mirrors `CaptureMetadata` in electron/services/brain/sources/types.ts. */
 export interface BrainCaptureMetadata {
   capturedAt: string;
@@ -3036,6 +3046,19 @@ export const api = {
 
   async brainBacklinks(accountId: number, notePath: string): Promise<string[]> {
     return apiCall<string[]>('brain_backlinks', { accountId, notePath });
+  },
+
+  /** Whether this account's Brain is exposed to sessions started outside OmniFex. */
+  async brainMcpStatus(accountId: number): Promise<BrainMcpStatus> {
+    return apiCall<BrainMcpStatus>('brain_mcp_status', { accountId });
+  },
+
+  async brainMcpRegister(accountId: number): Promise<void> {
+    return apiCall<void>('brain_mcp_register', { accountId });
+  },
+
+  async brainMcpUnregister(accountId: number): Promise<void> {
+    return apiCall<void>('brain_mcp_unregister', { accountId });
   },
 
   /** Discovered source items for one account, newest first. */

@@ -25,6 +25,9 @@ const CHANNELS = [
   'brain_index_source',
   'brain_list_notes',
   'brain_list_sources',
+  'brain_mcp_register',
+  'brain_mcp_status',
+  'brain_mcp_unregister',
   'brain_queue_clear',
   'brain_queue_counts',
   'brain_queue_drain',
@@ -400,6 +403,100 @@ describe('brain IPC handlers', () => {
       expect(await none.brain_backlinks(null, {
         accountId: 1, notePath: 'Subsystems/A.md',
       })).toEqual([]);
+    });
+  });
+
+  describe('brain_mcp_*', () => {
+    /** A registration double: records calls, answers from its own state. */
+    function fakeMcp(overrides: Partial<Record<string, unknown>> = {}) {
+      const registered = new Set<string>();
+      const calls: { register: string[]; unregister: string[] } = { register: [], unregister: [] };
+      return {
+        deps: {
+          isRegistered: (cfg: string) => registered.has(cfg),
+          register: (cfg: string, vault: string) => {
+            calls.register.push(`${cfg}|${vault}`);
+            registered.add(cfg);
+          },
+          unregister: (cfg: string) => {
+            calls.unregister.push(cfg);
+            registered.delete(cfg);
+          },
+          configDirFor: (id: number) => (id === 1 ? '/cfg/personal' : null),
+          ...overrides,
+        },
+        calls,
+      };
+    }
+
+    it('reports not-registered and not-available with no registration service', async () => {
+      const bare = createBrainHandlers(undefined);
+      expect(await bare.brain_mcp_status(null, { accountId: 1 })).toEqual({
+        registered: false,
+        available: false,
+      });
+    });
+
+    it('reports available only once a vault is configured', async () => {
+      const mcp = fakeMcp();
+      const h = createBrainHandlers(brain, mcp.deps);
+      expect(await h.brain_mcp_status(null, { accountId: 1 })).toEqual({
+        registered: false,
+        available: false,
+      });
+
+      await handlers.brain_set_vault_path(null, { accountId: 1, path: join(dir, 'mcpvault') });
+      expect(await h.brain_mcp_status(null, { accountId: 1 })).toEqual({
+        registered: false,
+        available: true,
+      });
+    });
+
+    it('registers with the account\'s own config dir and vault', async () => {
+      await handlers.brain_set_vault_path(null, { accountId: 1, path: join(dir, 'mcpvault2') });
+      const mcp = fakeMcp();
+      const h = createBrainHandlers(brain, mcp.deps);
+
+      await h.brain_mcp_register(null, { accountId: 1 });
+
+      expect(mcp.calls.register).toEqual([`/cfg/personal|${join(dir, 'mcpvault2')}`]);
+      expect(await h.brain_mcp_status(null, { accountId: 1 })).toMatchObject({ registered: true });
+    });
+
+    it('refuses to register an account with no vault', async () => {
+      const h = createBrainHandlers(brain, fakeMcp().deps);
+      await expect(h.brain_mcp_register(null, { accountId: 1 })).rejects.toThrow(
+        /no vault configured/,
+      );
+    });
+
+    it('refuses to register an unknown account', async () => {
+      const h = createBrainHandlers(brain, fakeMcp().deps);
+      await expect(h.brain_mcp_register(null, { accountId: 99 })).rejects.toThrow(/no such account/);
+    });
+
+    it('throws rather than silently doing nothing when unwired', async () => {
+      // A write that reports success while writing nothing would leave the
+      // toggle showing a state that does not exist.
+      const bare = createBrainHandlers(brain);
+      await expect(bare.brain_mcp_register(null, { accountId: 1 })).rejects.toThrow(/unavailable/);
+      await expect(bare.brain_mcp_unregister(null, { accountId: 1 })).rejects.toThrow(/unavailable/);
+    });
+
+    it('unregisters the account it was asked about', async () => {
+      await handlers.brain_set_vault_path(null, { accountId: 1, path: join(dir, 'mcpvault3') });
+      const mcp = fakeMcp();
+      const h = createBrainHandlers(brain, mcp.deps);
+      await h.brain_mcp_register(null, { accountId: 1 });
+
+      await h.brain_mcp_unregister(null, { accountId: 1 });
+
+      expect(mcp.calls.unregister).toEqual(['/cfg/personal']);
+    });
+
+    it('requires an accountId', async () => {
+      const h = createBrainHandlers(brain, fakeMcp().deps);
+      await expect(h.brain_mcp_status(null, {})).rejects.toThrow(/accountId is required/);
     });
   });
 });
