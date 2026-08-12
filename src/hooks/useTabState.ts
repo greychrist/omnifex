@@ -17,6 +17,7 @@ interface UseTabStateReturn {
   createUsageTab: () => string | null;
   createMCPTab: () => string | null;
   createLimaTab: () => string | null;
+  createBrainTab: () => string | null;
   createSettingsTab: () => string | null;
   createClaudeMdTab: () => string | null;
   createClaudeFileTab: (fileId: string, fileName: string) => string;
@@ -132,6 +133,26 @@ export const useTabState = (): UseTabStateReturn => {
       status: 'idle',
       hasUnsavedChanges: false,
       icon: 'hard-drive',
+    });
+  }, [addTab, tabs, setActiveTab]);
+
+  const createBrainTab = useCallback((): string | null => {
+    // Singleton — reuse the existing tab if one is already open. The Brain tab
+    // is scoped to one account at a time, so a second instance would only
+    // create two views of the same vault that can silently disagree.
+    const existingTab = tabs.find(tab => tab.type === 'brain');
+    if (existingTab) {
+      setActiveTab(existingTab.id);
+      return existingTab.id;
+    }
+
+    return addTab({
+      type: 'brain',
+      title: 'Brain',
+      agent: 'claude',
+      status: 'idle',
+      hasUnsavedChanges: false,
+      icon: 'brain',
     });
   }, [addTab, tabs, setActiveTab]);
 
@@ -270,6 +291,7 @@ export const useTabState = (): UseTabStateReturn => {
     createUsageTab,
     createMCPTab,
     createLimaTab,
+    createBrainTab,
     createSettingsTab,
     createClaudeMdTab,
     createClaudeFileTab,

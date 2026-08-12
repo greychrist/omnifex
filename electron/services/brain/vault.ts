@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, lstatSync, realpathSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, rmSync, existsSync, readdirSync, lstatSync, realpathSync } from 'node:fs';
 import { join, dirname, basename, relative, resolve, sep } from 'node:path';
 import { parseNote, serializeNote } from './frontmatter';
 import { NOTE_FOLDERS, type NoteType, type ParsedNote } from './types';
@@ -54,6 +54,8 @@ export interface Vault {
   notePath(type: NoteType, name: string): string;
   readNote(relPath: string): ParsedNote;
   writeNote(relPath: string, note: ParsedNote): void;
+  /** Removes a note. Absent is not an error. */
+  deleteNote(relPath: string): void;
   listNotes(): string[];
   noteTitle(relPath: string): string;
 }
@@ -71,6 +73,27 @@ export function createVault(root: string): Vault {
       cachedRealRoot = existsSync(absoluteRoot) ? realpathSync(absoluteRoot) : absoluteRoot;
     }
     return cachedRealRoot;
+  }
+
+  /**
+   * Reject a path whose target is a regular file with more than one name.
+   *
+   * A hard link has no distinct realpath from its target — both names resolve
+   * to the same inode — so the containment check below cannot see one. The link
+   * is legitimately inside this vault; the *inode* is shared with another. So
+   * reading it returns the other file's bytes and writing it truncates them,
+   * which is the same defect `registry.ts`'s `ensureVaultIndexPath` already
+   * closes for the index directory, applied here to note files.
+   *
+   * Directories are exempt: '.' and '..' make `nlink > 1` normal for them.
+   * APFS/Time Machine clones use copy-on-write `clonefile`, which does not
+   * raise `nlink`, so ordinary backups do not trip this.
+   */
+  function assertSingleName(abs: string, relPath: string): void {
+    const stat = lstatSync(abs, { throwIfNoEntry: false });
+    if (stat && stat.isFile() && stat.nlink > 1) {
+      throw new VaultPathError(`note file is hard-linked: ${relPath}`);
+    }
   }
 
   /**
@@ -101,6 +124,7 @@ export function createVault(root: string): Vault {
     if (resolved !== root && !resolved.startsWith(root + sep)) {
       throw new VaultPathError(`path escapes the vault root via a symlink: ${relPath}`);
     }
+    assertSingleName(abs, relPath);
     return abs;
   }
 
@@ -151,6 +175,12 @@ export function createVault(root: string): Vault {
       writeFileSync(abs, serializeNote(note), 'utf8');
     },
 
+    deleteNote(relPath: string): void {
+      // safeJoin first: deletion has to be judged by the same containment and
+      // hard-link rules as reading and writing, or it becomes the one way out.
+      rmSync(safeJoin(relPath), { force: true });
+    },
+
     listNotes(): string[] {
       const out: string[] = [];
       const walk = (dir: string): void => {
@@ -171,6 +201,11 @@ export function createVault(root: string): Vault {
             if (stat.isSymbolicLink()) continue;
             if (stat.isDirectory()) walk(abs);
             else if (stat.isFile() && entry.endsWith('.md')) {
+              // Same reasoning as assertSingleName: a hard-linked file is one
+              // inode wearing two names. Listing it would round-trip it back
+              // into readNote, which now refuses it — so it could only ever
+              // surface as an error in the UI.
+              if (stat.nlink > 1) continue;
               out.push(relative(absoluteRoot, abs).split(sep).join('/'));
             }
           } catch {

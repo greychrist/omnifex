@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createVaultIndex, type VaultIndex } from '../services/brain/search';
+import { createVaultIndex, readIndexedCount, type VaultIndex } from '../services/brain/search';
 import { createVault } from '../services/brain/vault';
 import type { ParsedNote } from '../services/brain/types';
 
@@ -138,5 +138,33 @@ describe('vault index', () => {
 
     index.rebuild(vault);
     expect(index.search('stdio')).toEqual([]);
+  });
+
+  describe('readIndexedCount', () => {
+    it('returns null when no index database exists', () => {
+      expect(readIndexedCount(join(dir, 'absent', 'index.db'))).toBeNull();
+    });
+
+    it('does not create the database it was asked about', () => {
+      const path = join(dir, 'absent2', 'index.db');
+      readIndexedCount(path);
+      expect(existsSync(path)).toBe(false);
+    });
+
+    it('returns the row count of an existing index', () => {
+      const path = join(dir, 'present', 'index.db');
+      const other = createVaultIndex(path);
+      other.upsert('Notes/A.md', 'A', note({}, 'alpha'));
+      other.upsert('Notes/B.md', 'B', note({}, 'beta'));
+      other.close();
+
+      expect(readIndexedCount(path)).toBe(2);
+    });
+
+    it('returns null for a file that is not a vault index', () => {
+      const path = join(dir, 'garbage.db');
+      writeFileSync(path, 'not a database', 'utf8');
+      expect(readIndexedCount(path)).toBeNull();
+    });
   });
 });

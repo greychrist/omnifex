@@ -37,43 +37,99 @@ describe('vault git', () => {
     expect(existsSync(join(dir, '.git'))).toBe(true);
   });
 
-  it('commitAll commits new files and returns true', async () => {
+  it('commitAll commits new files and reports ok', async () => {
     const git = createVaultGit(dir);
     await git.init();
     writeFileSync(join(dir, 'a.md'), 'hello');
-    expect(await git.commitAll('Index session abc')).toBe(true);
+    expect(await git.commitAll('Index session abc')).toEqual({ ok: true });
 
     const log = execFileSync('git', ['log', '--format=%s'], { cwd: dir, encoding: 'utf8' });
     expect(log.trim()).toBe('Index session abc');
   });
 
-  it('commitAll returns false when there is nothing to commit', async () => {
-    const git = createVaultGit(dir);
-    await git.init();
-    writeFileSync(join(dir, 'a.md'), 'hello');
-    await git.commitAll('first');
-    expect(await git.commitAll('second')).toBe(false);
-  });
-
-  it('commitAll returns false rather than throwing when git is unavailable', async () => {
-    const failing: ExecGit = async () => { throw new Error('ENOENT'); };
-    expect(await createVaultGit(dir, failing).commitAll('x')).toBe(false);
-  });
-
   it('serialises concurrent commits through the mutex', async () => {
     const order: string[] = [];
     const slow: ExecGit = async (args) => {
+      if (args[0] === 'status') return ' M a.md\n';
       if (args[0] === 'commit') {
         order.push(`start:${args[args.length - 1]}`);
         await new Promise((r) => setTimeout(r, 10));
         order.push(`end:${args[args.length - 1]}`);
       }
+      return '';
     };
     const git = createVaultGit(dir, slow);
     await Promise.all([git.commitAll('A'), git.commitAll('B')]);
 
     // No interleaving: each commit's start is immediately followed by its end.
     expect(order).toEqual(['start:A', 'end:A', 'start:B', 'end:B']);
+  });
+
+  describe('commitAll result', () => {
+    it('reports ok when there is something to commit', async () => {
+      const calls: string[][] = [];
+      const exec: ExecGit = async (args) => {
+        calls.push(args);
+        return args[0] === 'status' ? ' M Notes/A.md\n' : '';
+      };
+
+      expect(await createVaultGit(dir, exec).commitAll('Manual edit')).toEqual({ ok: true });
+      expect(calls).toEqual([
+        ['add', '-A'],
+        ['status', '--porcelain'],
+        ['commit', '-q', '-m', 'Manual edit'],
+      ]);
+    });
+
+    it('reports nothing-to-commit without invoking commit', async () => {
+      const calls: string[][] = [];
+      const exec: ExecGit = async (args) => {
+        calls.push(args);
+        return '';
+      };
+
+      expect(await createVaultGit(dir, exec).commitAll('Manual edit')).toEqual({
+        ok: false,
+        reason: 'nothing-to-commit',
+      });
+      expect(calls.map((c) => c[0])).not.toContain('commit');
+    });
+
+    it('reports a real failure with its message', async () => {
+      const exec: ExecGit = async (args) => {
+        if (args[0] === 'status') return ' M Notes/A.md\n';
+        if (args[0] === 'commit') throw new Error('fatal: unable to write');
+        return '';
+      };
+
+      expect(await createVaultGit(dir, exec).commitAll('Manual edit')).toEqual({
+        ok: false,
+        reason: 'failed',
+        message: 'fatal: unable to write',
+      });
+    });
+
+    it('reports a missing git binary as a failure, not as nothing-to-commit', async () => {
+      const exec: ExecGit = async () => { throw new Error('spawn git ENOENT'); };
+
+      expect(await createVaultGit(dir, exec).commitAll('Manual edit')).toEqual({
+        ok: false,
+        reason: 'failed',
+        message: 'spawn git ENOENT',
+      });
+    });
+
+    it('reports nothing-to-commit against a real repo with no changes', async () => {
+      const git = createVaultGit(dir);
+      await git.init();
+      writeFileSync(join(dir, 'a.md'), 'hello');
+      await git.commitAll('first');
+
+      expect(await git.commitAll('second')).toEqual({
+        ok: false,
+        reason: 'nothing-to-commit',
+      });
+    });
   });
 
   it('creates its own repo when the vault is nested inside another repo', async () => {
@@ -94,7 +150,7 @@ describe('vault git', () => {
     execFileSync('git', ['config', 'user.email', 't@t'], { cwd: vaultDir });
     execFileSync('git', ['config', 'user.name', 'T'], { cwd: vaultDir });
     writeFileSync(join(vaultDir, 'note.md'), 'x');
-    expect(await git.commitAll('Index session xyz')).toBe(true);
+    expect(await git.commitAll('Index session xyz')).toEqual({ ok: true });
 
     // The outer repo must be completely untouched: no commits, and the
     // unrelated file still unstaged.

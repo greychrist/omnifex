@@ -8,7 +8,7 @@ import { logAndForget } from "@/lib/fireAndLog";
 
 export interface Tab {
   id: string;
-  type: 'chat' | 'projects' | 'usage' | 'mcp' | 'settings' | 'claude-md' | 'claude-file' | 'lima';
+  type: 'chat' | 'projects' | 'usage' | 'mcp' | 'settings' | 'claude-md' | 'claude-file' | 'lima' | 'brain';
   title: string;
   /**
    * Which agent engine powers this tab's session. Defaults to `'claude'`

@@ -1005,10 +1005,31 @@ export interface BrainSearchHit {
   score: number;
 }
 
+/** Mirrors NOTE_TYPES in electron/services/brain/types.ts. */
+export type BrainNoteType = 'Project' | 'Subsystem' | 'Topic' | 'Session' | 'Note';
+
+/** Mirrors the backend `VaultStatus` in electron/services/brain/registry.ts. */
+export interface BrainVaultStatus {
+  accountId: number;
+  configured: boolean;
+  /** The stored path, exactly as it was set. Null when unconfigured. */
+  path: string | null;
+  exists: boolean;
+  /** The scaffolded layout is present (config/notes.json). */
+  initialized: boolean;
+  noteCount: number;
+  /** Rows in the FTS index, or null when there is no readable index. */
+  indexedCount: number | null;
+  gitAvailable: boolean;
+  lastGitError: string | null;
+  /** Why this vault cannot be opened, when it cannot be. */
+  conflict: string | null;
+}
+
 /** Mirrors the backend `ParsedNote` in electron/services/brain/types.ts. */
 export interface BrainNote {
   frontmatter: {
-    type: string;
+    type: BrainNoteType;
     project?: string;
     aliases: string[];
     keywords: string[];
@@ -2902,6 +2923,32 @@ export const api = {
 
   async brainReadNote(accountId: number, notePath: string): Promise<BrainNote> {
     return apiCall<BrainNote>('brain_read_note', { accountId, notePath });
+  },
+
+  async brainStatus(accountId: number): Promise<BrainVaultStatus> {
+    return apiCall<BrainVaultStatus>('brain_status', { accountId });
+  },
+
+  /** Suggested vault location for an account. Only a suggestion — the backend
+   *  validates whatever is actually submitted to brainSetVaultPath. */
+  async brainDefaultVaultPath(accountName: string): Promise<string> {
+    return apiCall<string>('brain_default_vault_path', { accountName });
+  },
+
+  async brainRebuild(accountId: number): Promise<number> {
+    return apiCall<number>('brain_rebuild', { accountId });
+  },
+
+  async brainUpdateNote(accountId: number, notePath: string, body: string): Promise<BrainNote> {
+    return apiCall<BrainNote>('brain_update_note', { accountId, notePath, body });
+  },
+
+  async brainDeleteNote(accountId: number, notePath: string): Promise<void> {
+    return apiCall<void>('brain_delete_note', { accountId, notePath });
+  },
+
+  async brainBacklinks(accountId: number, notePath: string): Promise<string[]> {
+    return apiCall<string[]>('brain_backlinks', { accountId, notePath });
   },
 
 };

@@ -1,9 +1,16 @@
-import { lstatSync, mkdirSync, readdirSync, realpathSync, rmSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readdirSync, realpathSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Database } from '../database';
 import { createVault, type Vault } from './vault';
-import { createVaultIndex, type SearchHit, type SearchOptions, type VaultIndex } from './search';
+import {
+  createVaultIndex,
+  readIndexedCount,
+  type SearchHit,
+  type SearchOptions,
+  type VaultIndex,
+} from './search';
 import { createVaultGit, type VaultGit } from './git';
+import { linkMatchesNote, parseWikilinks } from './links';
 import { fireAndLogGitFailure } from './git-logging';
 import { canonicalPath, fsIdentity, isSameOrInside, resolveVaultRoot } from './paths';
 import type { ParsedNote } from './types';
@@ -35,6 +42,9 @@ const VAULT_KEY_RE = /^brain\.vault\.\d+$/;
 const INDEX_DIR = '.omnifex';
 const INDEX_FILE = 'index.db';
 
+/** Git's own directory name inside a repository working tree. */
+const GIT_DIR = '.git';
+
 /**
  * accountId identifies which account's data is touched, so a malformed one is a
  * confidentiality risk, not a UX annoyance. It also has to agree with
@@ -48,6 +58,11 @@ function requireAccountId(accountId: number): number {
   return accountId;
 }
 
+/** Today in the ISO date form the frontmatter schema requires. */
+function today(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
 export interface VaultHandle {
   readonly accountId: number;
   readonly root: string;
@@ -56,14 +71,50 @@ export interface VaultHandle {
   readonly git: VaultGit;
 }
 
+/**
+ * A vault's condition, answerable WITHOUT creating it.
+ *
+ * `open()` cannot serve this purpose: it lazily scaffolds the layout, which is
+ * correct for first use and useless for a UI that has to tell "never
+ * configured" apart from "configured, but the directory is gone". Every field
+ * here is derived by looking, never by materialising.
+ */
+export interface VaultStatus {
+  accountId: number;
+  configured: boolean;
+  /** The stored path, exactly as it was set. Null when unconfigured. */
+  path: string | null;
+  /** The directory exists on disk. */
+  exists: boolean;
+  /** The scaffolded layout is present (config/notes.json). */
+  initialized: boolean;
+  /** Markdown notes on disk. 0 when the vault does not exist. */
+  noteCount: number;
+  /** Rows in the FTS index, or null when there is no readable index. */
+  indexedCount: number | null;
+  gitAvailable: boolean;
+  lastGitError: string | null;
+  /** Why this vault cannot be opened, when it cannot be. */
+  conflict: string | null;
+}
+
 export interface BrainService {
   vaultPath(accountId: number): string | null;
   setVaultPath(accountId: number, path: string): void;
   clearVaultPath(accountId: number): void;
   /** Opens (and lazily creates) the account's vault. Null when unconfigured. */
   open(accountId: number): VaultHandle | null;
+  /** Describes the vault without creating it. Never throws for a broken one. */
+  status(accountId: number): Promise<VaultStatus>;
   search(accountId: number, query: string, opts?: SearchOptions): SearchHit[];
+  /** Note paths whose bodies wikilink to `relPath`. Empty when unconfigured. */
+  backlinks(accountId: number, relPath: string): string[];
   writeNote(accountId: number, relPath: string, note: ParsedNote, commitMessage: string): void;
+  /** Reindex the whole vault from disk. Returns the number of notes indexed. */
+  rebuild(accountId: number): number;
+  deleteNote(accountId: number, relPath: string): void;
+  /** Replace a note's body, preserving its frontmatter. Returns the new note. */
+  updateNoteBody(accountId: number, relPath: string, body: string): ParsedNote;
   closeAll(): void;
 }
 
@@ -160,6 +211,32 @@ function ensureVaultIndexPath(root: string): string {
 }
 
 /**
+ * Refuse a `.git` that is anything other than this vault's own directory.
+ *
+ * Git resolves the repository from the working tree's `.git` entry, and that
+ * entry has two redirecting forms. A SYMLINK points the object database at
+ * another directory; a "gitfile" (a regular file containing `gitdir: <path>`)
+ * does the same thing without a symlink. Under either, `commitAll` from this
+ * vault appends this vault's note bodies into ANOTHER account's git history —
+ * durable, cumulative, and invisible from either vault's directory listing,
+ * because the working trees stay separate and only the history converges.
+ *
+ * Unlike the index database, `.git` is not created here. `git init` creates it
+ * on a vault that has none, and the ordinary case is that it does not exist
+ * yet — which is why absence is accepted rather than materialised.
+ */
+function assertOwnGitDir(root: string): void {
+  const gitPath = join(root, GIT_DIR);
+  const stat = lstatSync(gitPath, { throwIfNoEntry: false });
+  if (!stat) return;
+  if (!stat.isDirectory()) {
+    throw new VaultConflictError(
+      `vault .git is not its own directory (symlink or gitfile): ${gitPath}`,
+    );
+  }
+}
+
+/**
  * Per-account vault registry.
  *
  * The isolation guarantee rests on one structural rule: `open()` is the ONLY
@@ -175,8 +252,39 @@ export function createBrainService(db: Database): BrainService {
   // or when the directory that path names is no longer the same directory.
   const handles = new Map<number, CachedHandle>();
 
+  // Last real git failure per account, surfaced by status(). A vault whose
+  // versioning is broken must be able to say so; see git.ts's CommitResult.
+  const lastGitError = new Map<number, string>();
+
   function readPath(accountId: number): string | null {
     return db.getSetting(vaultSettingKey(accountId));
+  }
+
+  /**
+   * Commit in the background and remember whether it worked.
+   *
+   * Fire-and-forget: the Markdown is already on disk and versioning is a safety
+   * net, so a slow or failing commit must not block the write. But "must not
+   * block" is not "must not be reported" — the previous shape discarded the
+   * result entirely, so a persistently failing commit produced no log, no
+   * error, and no visible signal anywhere.
+   */
+  function commitAndRecord(handle: VaultHandle, message: string): void {
+    void handle.git
+      .commitAll(message)
+      .then((result) => {
+        if (result.ok || result.reason === 'nothing-to-commit') {
+          lastGitError.delete(handle.accountId);
+          return;
+        }
+        lastGitError.set(handle.accountId, result.message);
+        console.warn(`brain: commit failed for account ${handle.accountId}: ${result.message}`);
+      })
+      .catch((err: unknown) => {
+        const message = (err as Error).message;
+        lastGitError.set(handle.accountId, message);
+        console.warn(`brain: commit threw for account ${handle.accountId}: ${message}`);
+      });
   }
 
   function closeHandle(accountId: number): void {
@@ -213,6 +321,14 @@ export function createBrainService(db: Database): BrainService {
         );
       }
     }
+  }
+
+  /** open() plus the "there must be a vault" contract every write path shares.
+   *  Never falls back to another account's vault. */
+  function requireHandle(accountId: number): VaultHandle {
+    const handle = service.open(accountId);
+    if (!handle) throw new Error(`no vault configured for account ${accountId}`);
+    return handle;
   }
 
   const service: BrainService = {
@@ -309,6 +425,7 @@ export function createBrainService(db: Database): BrainService {
       let indexFile: string;
       try {
         assertNoOverlap(accountId, canonicalPath(root));
+        assertOwnGitDir(root);
         indexFile = ensureVaultIndexPath(root);
       } catch (err) {
         // Fail closed and let go: a handle just judged unsafe must not keep a
@@ -345,6 +462,54 @@ export function createBrainService(db: Database): BrainService {
       return handle;
     },
 
+    async status(accountId: number): Promise<VaultStatus> {
+      requireAccountId(accountId);
+      const stored = readPath(accountId);
+      const base: VaultStatus = {
+        accountId,
+        configured: stored !== null,
+        path: stored,
+        exists: false,
+        initialized: false,
+        noteCount: 0,
+        indexedCount: null,
+        // Probed from the process cwd, not the vault root: the vault may not
+        // exist, and "is git installed" is a property of the machine anyway.
+        gitAvailable: await createVaultGit(process.cwd()).available(),
+        lastGitError: lastGitError.get(accountId) ?? null,
+        conflict: null,
+      };
+      if (stored === null) return base;
+
+      // A stored value that open() would refuse is REPORTED rather than
+      // thrown: this method exists to describe broken states, so failing on
+      // one would leave the UI with nothing to render.
+      let root: string;
+      try {
+        root = resolveVaultRoot(stored);
+      } catch (err) {
+        return { ...base, conflict: (err as Error).message };
+      }
+
+      try {
+        assertNoOverlap(accountId, canonicalPath(root));
+        assertOwnGitDir(root);
+      } catch (err) {
+        if (err instanceof VaultConflictError) return { ...base, conflict: err.message };
+        throw err;
+      }
+
+      if (!existsSync(root)) return base;
+
+      return {
+        ...base,
+        exists: true,
+        initialized: existsSync(join(root, 'config', 'notes.json')),
+        noteCount: createVault(root).listNotes().length,
+        indexedCount: readIndexedCount(join(root, INDEX_DIR, INDEX_FILE)),
+      };
+    },
+
     search(accountId: number, query: string, opts?: SearchOptions): SearchHit[] {
       requireAccountId(accountId);
       let handle: VaultHandle | null;
@@ -368,16 +533,77 @@ export function createBrainService(db: Database): BrainService {
       return handle.index.search(query, opts);
     },
 
+    backlinks(accountId: number, relPath: string): string[] {
+      requireAccountId(accountId);
+      // A read path, so it degrades to empty rather than throwing — same rule
+      // as search(). An unconfigured account simply has no backlinks.
+      let handle: VaultHandle | null;
+      try {
+        handle = service.open(accountId);
+      } catch (err) {
+        if (err instanceof VaultConflictError) return [];
+        throw err;
+      }
+      if (!handle) return [];
+
+      // A full scan, deliberately: the FTS index is stemmed and limited, so
+      // narrowing with it would silently miss links. A vault is hundreds of
+      // local files and this runs only when a note is opened.
+      const out: string[] = [];
+      for (const candidate of handle.vault.listNotes()) {
+        if (candidate === relPath) continue;
+        let body: string;
+        try {
+          body = handle.vault.readNote(candidate).body;
+        } catch {
+          // A hand-edited note with broken frontmatter must not abort the scan.
+          continue;
+        }
+        if (parseWikilinks(body).some((target) => linkMatchesNote(target, relPath))) {
+          out.push(candidate);
+        }
+      }
+      return out;
+    },
+
     writeNote(accountId: number, relPath: string, note: ParsedNote, commitMessage: string): void {
       requireAccountId(accountId);
-      const handle = service.open(accountId);
-      if (!handle) {
-        // No silent fallback to another account's vault.
-        throw new Error(`no vault configured for account ${accountId}`);
-      }
+      const handle = requireHandle(accountId);
       handle.vault.writeNote(relPath, note);
       handle.index.upsert(relPath, handle.vault.noteTitle(relPath), note);
-      fireAndLogGitFailure(handle.git.commitAll(commitMessage), 'brain: commit');
+      commitAndRecord(handle, commitMessage);
+    },
+
+    rebuild(accountId: number): number {
+      requireAccountId(accountId);
+      const handle = requireHandle(accountId);
+      return handle.index.rebuild(handle.vault);
+    },
+
+    deleteNote(accountId: number, relPath: string): void {
+      requireAccountId(accountId);
+      const handle = requireHandle(accountId);
+      handle.vault.deleteNote(relPath);
+      handle.index.remove(relPath);
+      commitAndRecord(handle, `Delete ${handle.vault.noteTitle(relPath)}`);
+    },
+
+    updateNoteBody(accountId: number, relPath: string, body: string): ParsedNote {
+      requireAccountId(accountId);
+      const handle = requireHandle(accountId);
+      // Read-modify-write rather than accepting a whole note from the caller.
+      // The renderer edits prose; it has no business rewriting a note's type,
+      // provenance or sources, and an edit box that could do so would make the
+      // frontmatter untrustworthy for merge dedup later.
+      const existing = handle.vault.readNote(relPath);
+      const updated: ParsedNote = {
+        frontmatter: { ...existing.frontmatter, updated: today() },
+        body,
+      };
+      handle.vault.writeNote(relPath, updated);
+      handle.index.upsert(relPath, handle.vault.noteTitle(relPath), updated);
+      commitAndRecord(handle, 'Manual edit');
+      return updated;
     },
 
     closeAll(): void {

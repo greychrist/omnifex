@@ -14,9 +14,15 @@ export const INVOKE_CHANNELS: readonly string[] = [
   'brain_vault_path',
   'brain_set_vault_path',
   'brain_clear_vault_path',
+  'brain_default_vault_path',
+  'brain_status',
   'brain_search',
   'brain_list_notes',
   'brain_read_note',
+  'brain_update_note',
+  'brain_delete_note',
+  'brain_rebuild',
+  'brain_backlinks',
 
   // Accounts
   'list_accounts',
