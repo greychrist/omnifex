@@ -175,6 +175,53 @@ length cap. These remain:
 
 ---
 
+## Opened by Plan 4a (`feat/brain-extract-merge`, 2026-08-12)
+
+**First real extraction, measured.** One session (`27b32dad`, 4 prompts / 53
+replies, 1.99MB raw) through the live CLI at Haiku into a throwaway vault:
+5 notes written, 1 git commit, and a second run produced **no** commit and
+byte-identical files — the end-to-end idempotency property, proven on real
+output rather than on `merge()`'s return value.
+
+- **Haiku hallucinates implementation detail it cannot see.** The generated
+  `Subsystems/Distiller.md` says the distiller "detects file changes from git
+  diffs" and parses "decision/fact blocks from prose patterns". Neither exists;
+  `distill.ts` does nothing of the kind. The model was working from a truncated
+  tail of a session about the distiller and invented plausible internals. This
+  is the failure mode the Brain tab exists to catch, and it is not fixable by
+  validation — zod checks shape, not truth.
+
+- **It also conflates similar numbers.** The corpus has both "77 personal
+  sessions" and "142 of 185 admitted (77%)". The generated notes report
+  "77 admitted (77% final pass rate)" and "77 real sessions (19%)", mixing the
+  two. Numbers in extracted notes should be treated as untrusted.
+
+- **Bare wikilinks resolve, so this is NOT a problem.** The prompt asks for
+  folder-qualified targets (`Projects/omnifex`) and the model emitted bare ones
+  (`[[Brain]]`, `[[Omnifex]]`). `linkMatchesNote` compares last segments
+  case-insensitively, so these bind correctly; `[[Omnifex]]` is simply a
+  dangling link to a note that does not exist yet, which is normal vault
+  behaviour and marks a note worth creating.
+
+- **Aliases and keywords are good** — the part spec §2 calls load-bearing.
+  Generated keyword lists are literal identifiers a developer would actually
+  type (`distill.ts`, `createSummaryQueryRunner`, `turnDelta.ts`,
+  `session-transcripts.ts`), not descriptions. FTS should work well on these.
+
+- **Entity carve-up is arbitrary but defensible.** One session produced
+  `Brain`, `Distiller`, `Session Discovery & Filtering`, `Extraction & Merge
+  Pipeline` and a `Prompt-Preserving Truncation` topic. Reasonable, though a
+  different run would likely split differently — worth watching for whether
+  re-indexing related sessions converges on stable names or spawns near-
+  duplicates. `merge()` dedups by note path, so a renamed entity becomes a
+  second note rather than an update.
+
+- **Cost and latency.** One extraction took ~2.5 minutes wall-clock for a 1.99MB
+  transcript (dominated by the CLI call, not distillation). At 142 sessions
+  that is roughly six hours of serial indexing, which materially shapes Plan
+  4b's worker: it needs to be interruptible and to yield to interactive
+  sessions, not merely "concurrency 1".
+
 ## Opened by Plan 3 (`feat/brain-session-adapter`, 2026-08-12)
 
 - **Oldest-first truncation can drop every user prompt.** Verified against a
