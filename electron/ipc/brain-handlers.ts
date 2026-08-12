@@ -193,6 +193,42 @@ export function createBrainHandlers(brain?: BrainService): Record<string, Handle
       );
     },
 
+    async brain_queue_counts(_event, params = {}) {
+      const accountId = requireAccountId(params);
+      // A read: degrades so the Brain tab renders truthful zeroes rather than
+      // an error when the service failed to construct.
+      if (!brain) return { pending: 0, running: 0, done: 0, failed: 0 };
+      return brain.queueCounts(accountId);
+    },
+
+    async brain_queue_list(_event, params = {}) {
+      const accountId = requireAccountId(params);
+      if (!brain) return [];
+      const limit = typeof params.limit === 'number' ? params.limit : undefined;
+      return brain.queueList(accountId, limit);
+    },
+
+    async brain_backfill(_event, params = {}) {
+      // A write that queues token-spending work. Reporting a count while the
+      // service is missing would claim a backfill that never happened.
+      if (!brain) throw new Error('brain service unavailable');
+      return brain.backfill(requireAccountId(params));
+    },
+
+    async brain_queue_drain(_event) {
+      if (!brain) throw new Error('brain service unavailable');
+      // No accountId: the queue spans accounts and each entry carries its own,
+      // which is what keeps a drain from ever crossing them.
+      await brain.drainQueue();
+      return null;
+    },
+
+    async brain_queue_clear(_event, params = {}) {
+      if (!brain) throw new Error('brain service unavailable');
+      brain.clearFinishedQueue(requireAccountId(params));
+      return null;
+    },
+
     async brain_search(_event, params = {}) {
       const accountId = requireAccountId(params);
       if (!brain) return [];

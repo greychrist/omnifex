@@ -175,6 +175,66 @@ length cap. These remain:
 
 ---
 
+## Opened by Plan 4b (`feat/brain-queue`, 2026-08-12)
+
+**The worker is proven end-to-end.** Two real sessions drained through the live
+pipeline: with a session marked active both stayed `pending` and nothing was
+consumed; with it inactive both completed, 0 failed, 63.2s for two items
+(~31s each, so ~77 personal sessions is roughly 40 minutes — consistent with
+the 30–100 minute estimate).
+
+- ~~**Near-duplicate entities.**~~ **FIXED.** Two sessions about the same work
+  produced `Subsystems/Brain memory vault.md` *and*
+  `Subsystems/omnifex-brain-vault.md` — one subsystem, two notes, because
+  `merge()` dedups by note path. Fixed with both available levers:
+  `resolve.ts` matches a new entity's name and aliases against existing notes'
+  titles and aliases (case- and separator-insensitive, never on substrings, so
+  `Brain` does not collapse into `Brain memory vault`), and the extraction
+  prompt now lists the vault's existing entity names so the model converges on
+  one in the first place. Re-verified live on the exact pair that failed: the
+  second session merged into the first note, both session keys are in
+  `sources`, the Timeline has both entries, and `omnifex-brain-vault` survives
+  as an alias.
+
+  Note the residual risk: over-matching would silently lose one entity inside
+  another's note, which is worse than a duplicate. That is why matching is
+  deliberately conservative and a test pins `Brain` staying separate from
+  `Brain memory vault`.
+
+- **`updated` could precede `created`, and backfill would have made it the
+  norm.** Discovery sorts newest-first, so an older session merges into a note
+  a newer one created on essentially every backfill step. `merge()` took
+  `provenance.date` verbatim, so a note created 2026-08-12 ended up stamped
+  `updated: 2026-08-11` — and across a full run most notes would have reported
+  the OLDEST session they saw as their last touch. Now `created` is the
+  earliest date the note has seen and `updated` the latest; both stay pure
+  functions of their inputs, so idempotency is unaffected.
+
+- **`listInFlightTabIds` is dead and the worker must never use it.** It is
+  hardcoded to `return []` (`sessions/lifecycle.ts:511`) since the
+  jsonl-as-rendered refactor, and `docs/session-lifecycle.md` names relying on
+  it as an anti-pattern. A worker gated on it would never yield — it would run
+  hardest exactly when the user is working. The queue uses `listActiveTabIds`.
+  Worth noting that `docs/session-lifecycle.md:139` already flagged this and
+  the TODO to wire the renderer's derived count into the installer gate is
+  still open; anything else that needs a real in-flight signal in main has the
+  same problem.
+
+- **The summary hook's early return was load-bearing and is now a branch.**
+  `main.ts`'s `onSessionClosed` previously did `if (!enabled || !autoOn)
+  return;`. Since both close-time consumers share that one callback, leaving
+  the early return would have silently disabled Brain auto-indexing for anyone
+  who has session summaries turned off.
+
+- **Auto-indexing ships off by default** (`brain.autoIndex`), with its opt-in
+  toggle and the pause switch in the Brain tab's queue panel alongside
+  Backfill / Drain now / Clear finished. Spec §14 puts the kill switch in
+  Settings; it is here instead because every other operational control already
+  is, and splitting them would mean hunting in two places to stop indexing.
+  Both switches are global rather than per account, and are read once on mount
+  rather than per account change so the UI does not imply a scoping they do
+  not have.
+
 ## Opened by Plan 4a (`feat/brain-extract-merge`, 2026-08-12)
 
 **First real extraction, measured.** One session (`27b32dad`, 4 prompts / 53

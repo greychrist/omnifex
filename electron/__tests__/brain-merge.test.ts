@@ -157,6 +157,33 @@ describe('merge', () => {
     expect(second.frontmatter.updated).toBe('2027-01-01');
   });
 
+  it('never lets updated precede created when sources arrive out of order', () => {
+    const newer = merge(null, entity, { sourceKey: 'session:new', date: '2026-08-12' });
+    const older = merge(
+      newer,
+      { ...entity, summary: 'from an older session' },
+      { sourceKey: 'session:old', date: '2026-08-11' },
+    );
+
+    // Backfill discovers newest-first, so an older session is merged into a
+    // note a newer one created constantly. Taking provenance.date verbatim
+    // made `updated` older than `created` and made every note report the
+    // OLDEST session it saw as its last touch.
+    expect(older.frontmatter.created).toBe('2026-08-11');
+    expect(older.frontmatter.updated).toBe('2026-08-12');
+  });
+
+  it('advances updated when a newer source arrives', () => {
+    const first = merge(null, entity, { sourceKey: 'session:a', date: '2026-08-11' });
+    const second = merge(
+      first,
+      { ...entity, summary: 'newer' },
+      { sourceKey: 'session:b', date: '2026-08-12' },
+    );
+    expect(second.frontmatter.created).toBe('2026-08-11');
+    expect(second.frontmatter.updated).toBe('2026-08-12');
+  });
+
   it('handles an entity with nothing but a name and summary', () => {
     const bare: ExtractedEntity = {
       type: 'Topic', name: 'Something', aliases: [], keywords: [],

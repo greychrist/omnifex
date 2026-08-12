@@ -17,6 +17,7 @@ const NOTE: ParsedNote = {
 };
 
 const CHANNELS = [
+  'brain_backfill',
   'brain_backlinks',
   'brain_clear_vault_path',
   'brain_default_vault_path',
@@ -24,6 +25,10 @@ const CHANNELS = [
   'brain_index_source',
   'brain_list_notes',
   'brain_list_sources',
+  'brain_queue_clear',
+  'brain_queue_counts',
+  'brain_queue_drain',
+  'brain_queue_list',
   'brain_read_note',
   'brain_rebuild',
   'brain_search',
@@ -129,6 +134,22 @@ describe('brain IPC handlers', () => {
   it('brain_index_source requires an accountId and an itemKey', async () => {
     await expect(handlers.brain_index_source(null, {})).rejects.toThrow(/accountId/);
     await expect(handlers.brain_index_source(null, { accountId: 1 })).rejects.toThrow(/itemKey/);
+  });
+
+  it('queue reads degrade and queue writes throw when the service is unavailable', async () => {
+    const bare = createBrainHandlers(undefined);
+    // Reads stay inert so the Brain tab can still render something truthful.
+    await expect(bare.brain_queue_counts(null, { accountId: 1 }))
+      .resolves.toMatchObject({ pending: 0, failed: 0 });
+    await expect(bare.brain_queue_list(null, { accountId: 1 })).resolves.toEqual([]);
+    // Writes must not report work that never happened.
+    await expect(bare.brain_backfill(null, { accountId: 1 })).rejects.toThrow(/unavailable/);
+    await expect(bare.brain_queue_drain(null, {})).rejects.toThrow(/unavailable/);
+    await expect(bare.brain_queue_clear(null, { accountId: 1 })).rejects.toThrow(/unavailable/);
+  });
+
+  it('brain_backfill requires an accountId', async () => {
+    await expect(handlers.brain_backfill(null, {})).rejects.toThrow(/accountId/);
   });
 
   it('brain_index_source throws rather than degrading when the service is unavailable', async () => {
@@ -250,6 +271,13 @@ describe('brain IPC handlers', () => {
       listSources: () => { throw boom; },
       previewSource: () => { throw boom; },
       indexSource: () => { throw boom; },
+      enqueueSource: () => { throw boom; },
+      backfill: () => { throw boom; },
+      queueCounts: () => { throw boom; },
+      queueList: () => { throw boom; },
+      clearFinishedQueue: () => { throw boom; },
+      drainQueue: () => { throw boom; },
+      queueCurrent: () => { throw boom; },
       closeAll: () => {},
     };
     const stubHandlers = createBrainHandlers(stub);

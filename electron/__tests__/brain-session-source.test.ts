@@ -483,6 +483,98 @@ describe('session transcript source', () => {
       brain.closeAll();
     });
 
+    it('folds a later differently-named entity into the existing note', async () => {
+      writeSession(personalCfg, '-Users-dev-Repos-omnifex', 'sess-a', GOOD);
+      writeSession(personalCfg, '-Users-dev-Repos-omnifex', 'sess-b', GOOD);
+      let call = 0;
+      const brain = service(async () => {
+        call += 1;
+        return {
+          entities: [
+            call === 1
+              ? { type: 'Subsystem' as const, name: 'Brain memory vault',
+                  aliases: ['omnifex-brain-vault'], keywords: [], summary: 'first',
+                  links: [], decisions: [], keyFacts: [] }
+              // A second session names the same subsystem differently. Observed
+              // live: this produced a SECOND note, because merge dedups by path.
+              : { type: 'Subsystem' as const, name: 'omnifex-brain-vault',
+                  aliases: [], keywords: [], summary: 'second',
+                  links: [], decisions: [], keyFacts: [] },
+          ],
+        };
+      });
+
+      await brain.indexSource(personalId, 'sess-a');
+      const second = await brain.indexSource(personalId, 'sess-b');
+
+      expect(second.notesWritten).toEqual(['Subsystems/Brain memory vault.md']);
+      expect(brain.open(personalId)!.vault.listNotes()).toEqual([
+        'Subsystems/Brain memory vault.md',
+      ]);
+      // Folded in, not replaced: both sessions are recorded as sources.
+      const note = brain.open(personalId)!.vault.readNote('Subsystems/Brain memory vault.md');
+      expect(note.frontmatter.sources).toEqual(['session:sess-a', 'session:sess-b']);
+      brain.closeAll();
+    });
+
+    it('still creates a separate note for a genuinely different entity', async () => {
+      writeSession(personalCfg, '-Users-dev-Repos-omnifex', 'sess-a', GOOD);
+      writeSession(personalCfg, '-Users-dev-Repos-omnifex', 'sess-b', GOOD);
+      let call = 0;
+      const brain = service(async () => {
+        call += 1;
+        return {
+          entities: [
+            { type: 'Subsystem' as const,
+              name: call === 1 ? 'Brain memory vault' : 'Distiller',
+              aliases: [], keywords: [], summary: 'x',
+              links: [], decisions: [], keyFacts: [] },
+          ],
+        };
+      });
+
+      await brain.indexSource(personalId, 'sess-a');
+      await brain.indexSource(personalId, 'sess-b');
+
+      // Over-matching would silently lose one entity inside another's note,
+      // which is worse than the duplicate it was meant to prevent.
+      expect(brain.open(personalId)!.vault.listNotes().sort()).toEqual([
+        'Subsystems/Brain memory vault.md',
+        'Subsystems/Distiller.md',
+      ]);
+      brain.closeAll();
+    });
+
+    it('tells the extractor which entities the vault already holds', async () => {
+      writeSession(personalCfg, '-Users-dev-Repos-omnifex', 'sess-a', GOOD);
+      writeSession(personalCfg, '-Users-dev-Repos-omnifex', 'sess-b', GOOD);
+      const seen: string[][] = [];
+      const brain = createBrainService(db, {
+        execGit: async () => '',
+        accounts,
+        extractor: async (_item, _cfg, ctx) => {
+          seen.push(ctx?.existingNames ?? []);
+          return {
+            entities: [
+              { type: 'Subsystem' as const, name: 'Brain memory vault', aliases: [],
+                keywords: [], summary: 'x', links: [], decisions: [], keyFacts: [] },
+            ],
+          };
+        },
+        sources: [createSessionSource({ accounts })],
+      });
+      brain.setVaultPath(personalId, join(dir, 'personal-vault'));
+
+      await brain.indexSource(personalId, 'sess-a');
+      await brain.indexSource(personalId, 'sess-b');
+
+      // Resolution catches a mismatch after the fact; telling the model what
+      // already exists stops it happening as often in the first place.
+      expect(seen[0]).toEqual([]);
+      expect(seen[1]).toContain('Brain memory vault');
+      brain.closeAll();
+    });
+
     it('isolates a bad entity: writes the others and records the failure', async () => {
       writeSession(personalCfg, '-Users-dev-Repos-omnifex', 'sess-a', GOOD);
       const brain = service(async () => ({
@@ -522,6 +614,86 @@ describe('session transcript source', () => {
       const result = await brain.indexSource(personalId, 'sess-a');
       expect(result.notesWritten).toEqual([]);
       expect(result.skipped).toBe(true);
+      brain.closeAll();
+    });
+
+    it('backfill enqueues admitted items and skips gate-rejected ones', async () => {
+      writeSession(personalCfg, '-Users-dev-Repos-omnifex', 'sess-good', GOOD);
+      writeSession(personalCfg, '-Users-dev-Repos-omnifex', 'sess-thin', PROMPT('only one', 1));
+      const brain = service(stubExtractor());
+
+      const queued = await brain.backfill(personalId);
+
+      expect(queued).toBe(1);
+      expect(brain.queueList(personalId).map((e) => e.itemKey)).toEqual(['sess-good']);
+      brain.closeAll();
+    });
+
+    it('backfill skips items already indexed and unchanged', async () => {
+      writeSession(personalCfg, '-Users-dev-Repos-omnifex', 'sess-a', GOOD);
+      const brain = service(stubExtractor());
+      await brain.indexSource(personalId, 'sess-a');
+
+      // Re-running backfill after a partial run must cost only what is left.
+      // The revised time estimate assumes exactly this.
+      await expect(brain.backfill(personalId)).resolves.toBe(0);
+      brain.closeAll();
+    });
+
+    it('backfill only touches the account it was given', async () => {
+      writeSession(personalCfg, '-Users-dev-Repos-omnifex', 'sess-personal', GOOD);
+      writeSession(workCfg, '-Users-dev-Repos-mango', 'sess-work', GOOD);
+      const brain = service(stubExtractor());
+
+      await brain.backfill(personalId);
+
+      // Enqueuing a work transcript under the personal account would index it
+      // through the wrong subscription (spec §4).
+      expect(brain.queueList(personalId).map((e) => e.itemKey)).toEqual(['sess-personal']);
+      expect(brain.queueList(workId)).toEqual([]);
+      brain.closeAll();
+    });
+
+    it('enqueueSource refuses an item owned by another account', async () => {
+      writeSession(workCfg, '-Users-dev-Repos-mango', 'sess-work', GOOD);
+      const brain = service(stubExtractor());
+      await expect(brain.enqueueSource(personalId, 'sess-work')).rejects.toThrow(/not found/i);
+      brain.closeAll();
+    });
+
+    it('drainQueue runs the queued items through indexSource', async () => {
+      writeSession(personalCfg, '-Users-dev-Repos-omnifex', 'sess-a', GOOD);
+      const calls: string[] = [];
+      const brain = service(stubExtractor(calls));
+
+      await brain.backfill(personalId);
+      await brain.drainQueue();
+
+      expect(calls).toHaveLength(1);
+      expect(brain.queueCounts(personalId)).toMatchObject({ pending: 0, done: 1 });
+      brain.closeAll();
+    });
+
+    it('drainQueue yields entirely while an interactive session is active', async () => {
+      writeSession(personalCfg, '-Users-dev-Repos-omnifex', 'sess-a', GOOD);
+      const calls: string[] = [];
+      let active = true;
+      const brain = createBrainService(db, {
+        execGit: async () => '',
+        accounts,
+        extractor: stubExtractor(calls),
+        sources: [createSessionSource({ accounts })],
+        hasActiveSession: () => active,
+      });
+      brain.setVaultPath(personalId, join(dir, 'personal-vault'));
+
+      await brain.backfill(personalId);
+      await brain.drainQueue();
+      expect(calls).toEqual([]);
+
+      active = false;
+      await brain.drainQueue();
+      expect(calls).toHaveLength(1);
       brain.closeAll();
     });
 
