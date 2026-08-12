@@ -39,6 +39,32 @@ vi.mock('@/components/brain/BrainNoteViewer', () => ({
 vi.mock('@/components/brain/BrainVaultSetup', () => ({
   BrainVaultSetup: () => <div data-testid="vault-setup" />,
 }));
+vi.mock('@/components/brain/BrainSources', () => ({
+  BrainSources: ({ accountId }: { accountId: number | null }) => (
+    <div data-testid="sources">{String(accountId)}</div>
+  ),
+}));
+
+// Radix's Select renders a button-plus-portal that jsdom cannot drive with a
+// change event. A native <select> with the same contract is enough here: this
+// file tests what the header's account switcher DOES, not how Radix paints it.
+vi.mock('@/components/ui/select', () => ({
+  SelectComponent: ({
+    value, onValueChange, options,
+  }: {
+    value: string;
+    onValueChange: (v: string) => void;
+    options: { value: string; label: string }[];
+  }) => (
+    <select
+      data-testid="account-select"
+      value={value}
+      onChange={(e) => { onValueChange(e.target.value); }}
+    >
+      {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+    </select>
+  ),
+}));
 
 // AccountBadge reaches for ThemeProvider; its own rendering is covered by
 // AccountBadge.test.tsx. Here it only needs to report which account it got.
@@ -146,5 +172,31 @@ describe('BrainTab', () => {
     vi.mocked(api.brainStatus).mockRejectedValue(new Error('disk on fire'));
     render(<BrainTab />);
     await waitFor(() => { expect(screen.getByText(/disk on fire/)).toBeTruthy(); });
+  });
+
+  it('switches between the notes and sources panes', async () => {
+    render(<BrainTab />);
+    await waitFor(() => { expect(screen.getByTestId('note-list')).toBeTruthy(); });
+
+    fireEvent.click(screen.getByRole('button', { name: /^sources$/i }));
+    expect(screen.getByTestId('sources')).toBeTruthy();
+    expect(screen.queryByTestId('note-list')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: /^notes$/i }));
+    expect(screen.getByTestId('note-list')).toBeTruthy();
+  });
+
+  it('hands the sources pane the selected account, and resets to notes on a switch', async () => {
+    render(<BrainTab />);
+    await waitFor(() => { expect(screen.getByTestId('note-list')).toBeTruthy(); });
+
+    fireEvent.click(screen.getByRole('button', { name: /^sources$/i }));
+    expect(screen.getByTestId('sources').textContent).toBe('7');
+
+    fireEvent.change(screen.getByTestId('account-select'), { target: { value: '9' } });
+    // Landing back on notes after a switch is deliberate: the sources list is
+    // a scan of another account's config dir, and silently re-running it under
+    // a new account reads as if the previous list simply updated.
+    await waitFor(() => { expect(screen.getByTestId('note-list')).toBeTruthy(); });
   });
 });
