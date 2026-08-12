@@ -23,6 +23,8 @@ export const INVOKE_CHANNELS: readonly string[] = [
   'brain_delete_note',
   'brain_rebuild',
   'brain_backlinks',
+  'brain_list_sources',
+  'brain_source_preview',
 
   // Accounts
   'list_accounts',

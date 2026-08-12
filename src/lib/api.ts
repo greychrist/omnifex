@@ -1026,6 +1026,46 @@ export interface BrainVaultStatus {
   conflict: string | null;
 }
 
+/** Mirrors the backend `SourceSummary` in electron/services/brain/registry.ts. */
+export interface BrainSourceSummary {
+  accountId: number;
+  sourceId: string;
+  itemKey: string;
+  label: string;
+  mtimeMs: number;
+  admitted: boolean;
+  reason: string;
+  /** Mirrors `SourceStatus` in electron/services/brain/sources/state.ts. */
+  status: 'pending' | 'indexed' | 'skipped' | 'failed' | 'blocked' | null;
+  changed: boolean;
+}
+
+/** Mirrors the backend `SessionMetadata` in electron/services/brain/sources/types.ts. */
+export interface BrainSessionMetadata {
+  sessionId: string;
+  projectPath: string | null;
+  gitBranch: string | null;
+  models: string[];
+  cliVersion: string | null;
+  startedAt: string | null;
+  endedAt: string | null;
+  durationMs: number | null;
+  promptCount: number;
+  proseCount: number;
+  filesTouched: string[];
+  terminalStatus: 'completed' | 'error' | 'unknown';
+}
+
+/** Mirrors the backend `SourcePreview` in electron/services/brain/registry.ts. */
+export interface BrainSourcePreview {
+  itemKey: string;
+  prose: string;
+  metadata: BrainSessionMetadata;
+  truncated: boolean;
+  admitted: boolean;
+  reason: string;
+}
+
 /** Mirrors the backend `ParsedNote` in electron/services/brain/types.ts. */
 export interface BrainNote {
   frontmatter: {
@@ -2949,6 +2989,19 @@ export const api = {
 
   async brainBacklinks(accountId: number, notePath: string): Promise<string[]> {
     return apiCall<string[]>('brain_backlinks', { accountId, notePath });
+  },
+
+  /** Discovered source items for one account, newest first. */
+  async brainListSources(accountId: number): Promise<BrainSourceSummary[]> {
+    return apiCall<BrainSourceSummary[]>('brain_list_sources', { accountId });
+  },
+
+  /** The distilled view of one item, or null when it is not this account's. */
+  async brainSourcePreview(
+    accountId: number,
+    itemKey: string,
+  ): Promise<BrainSourcePreview | null> {
+    return apiCall<BrainSourcePreview | null>('brain_source_preview', { accountId, itemKey });
   },
 
 };
