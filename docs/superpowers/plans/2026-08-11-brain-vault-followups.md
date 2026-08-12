@@ -198,12 +198,22 @@ length cap. These remain:
   extractor input rather than re-deriving. Deliberately out of scope here:
   they are optional, model-generated, and this step spends no tokens.
 
-- **The admission gate is unmeasured against a real corpus.** The three rules
-  (under two prompts / no assistant prose / startup error) are the spec's, and
-  a live personal config dir turned out to hold no sessions small enough to
-  trip the first two — the smallest transcript there is 11KB. Precision is
-  therefore untested against real noise. Spec §7 already names the remedy if it
-  proves inadequate: an LLM classifier behind the same `admit()` call.
+- **Gate precision, measured on the real corpus (2026-08-12).** Run across both
+  live config dirs: **185 transcripts discovered** (77 personal, 108 work),
+  **142 admitted (77%)**, 43 skipped — 42 for "fewer than 2 prompts", 1 for "no
+  assistant prose". No startup-error skips fired. Median admitted transcript is
+  1.4MB, so essentially every admitted session will hit the 8KB ceiling and be
+  truncated, which is what makes the truncation item above the pressing one.
+  Whether 77% is the right admission rate is a judgement to make after Plan 4
+  produces notes from these; spec §7 already names the remedy if it is too
+  loose (an LLM classifier behind the same `admit()` call).
+
+- **Both discovery exclusions are load-bearing, confirmed by count.** The
+  personal config dir holds 401 `.jsonl` files; only 199 are top-level session
+  transcripts (202 live in `<sessionId>/subagents/`), and **122 of those 199
+  are OmniFex's own summary-scratch runs**. 77 remain, matching discovery
+  exactly. Without the scratch exclusion, 61% of what the Brain indexed from
+  that account would have been OmniFex talking to itself.
 
 - **`isPromptRow` in `distill.ts` is a twin of `src/lib/jsonlClassifier.ts`.**
   The renderer's version is authoritative but unimportable from `electron/`
