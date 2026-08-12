@@ -11,6 +11,8 @@ vi.mock('@/lib/api', () => ({
     brainBackfill: vi.fn(),
     brainQueueDrain: vi.fn(),
     brainQueueClear: vi.fn(),
+    getSetting: vi.fn(),
+    saveSetting: vi.fn(),
   },
 }));
 
@@ -34,6 +36,8 @@ describe('BrainQueuePanel', () => {
     vi.mocked(api.brainBackfill).mockResolvedValue(0);
     vi.mocked(api.brainQueueDrain).mockResolvedValue(undefined);
     vi.mocked(api.brainQueueClear).mockResolvedValue(undefined);
+    vi.mocked(api.getSetting).mockResolvedValue('false');
+    vi.mocked(api.saveSetting).mockResolvedValue(undefined);
   });
 
   it('shows queue depth for the selected account', async () => {
@@ -115,5 +119,55 @@ describe('BrainQueuePanel', () => {
     // Queue depth is per account; showing one account's backlog under another
     // would misreport what is about to be indexed and where.
     await waitFor(() => { expect(api.brainQueueCounts).toHaveBeenCalledWith(2); });
+  });
+
+  it('reflects that auto-indexing is off by default', async () => {
+    render(<BrainQueuePanel accountId={1} />);
+    const toggle = await screen.findByRole('checkbox', { name: /auto-index/i });
+    // Off by default: it spends tokens unattended, so the user opts in.
+    expect((toggle as HTMLInputElement).checked).toBe(false);
+  });
+
+  it('turns auto-indexing on and persists it', async () => {
+    render(<BrainQueuePanel accountId={1} />);
+    const toggle = await screen.findByRole('checkbox', { name: /auto-index/i });
+
+    fireEvent.click(toggle);
+
+    await waitFor(() => {
+      expect(api.saveSetting).toHaveBeenCalledWith('brain.autoIndex', 'true');
+    });
+  });
+
+  it('reflects auto-indexing already on', async () => {
+    vi.mocked(api.getSetting).mockImplementation(async (key: string) =>
+      key === 'brain.autoIndex' ? 'true' : 'false');
+    render(<BrainQueuePanel accountId={1} />);
+    const toggle = await screen.findByRole('checkbox', { name: /auto-index/i });
+    await waitFor(() => { expect((toggle as HTMLInputElement).checked).toBe(true); });
+  });
+
+  it('pauses the queue', async () => {
+    render(<BrainQueuePanel accountId={1} />);
+    const pause = await screen.findByRole('checkbox', { name: /pause/i });
+
+    fireEvent.click(pause);
+
+    await waitFor(() => {
+      expect(api.saveSetting).toHaveBeenCalledWith('brain.queuePaused', 'true');
+    });
+  });
+
+  it('reads both switches once, not per account change', async () => {
+    const { rerender } = render(<BrainQueuePanel accountId={1} />);
+    await screen.findByRole('checkbox', { name: /auto-index/i });
+    const before = vi.mocked(api.getSetting).mock.calls.length;
+
+    rerender(<BrainQueuePanel accountId={2} />);
+    await waitFor(() => { expect(api.brainQueueCounts).toHaveBeenCalledWith(2); });
+
+    // Both switches are GLOBAL, not per account — re-reading them on every
+    // account switch would imply they are scoped when they are not.
+    expect(vi.mocked(api.getSetting).mock.calls.length).toBe(before);
   });
 });

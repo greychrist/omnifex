@@ -141,6 +141,15 @@ function sortTimeline(lines: readonly string[]): string[] {
   return dated.map((d) => d.line);
 }
 
+/** ISO dates compare correctly as strings, so no Date parsing is needed. */
+function minDate(a: string | undefined, b: string): string {
+  return a === undefined || b < a ? b : a;
+}
+
+function maxDate(a: string | undefined, b: string): string {
+  return a === undefined || b > a ? b : a;
+}
+
 function sectionsFor(existing: ParsedNote | null, name: SectionName): string[] {
   if (!existing) return [];
   return parseSections(existing.body).sections.get(name) ?? [];
@@ -206,9 +215,15 @@ export function merge(
     type: entity.type,
     aliases: union(existing?.frontmatter.aliases ?? [], entity.aliases),
     keywords: union(existing?.frontmatter.keywords ?? [], entity.keywords),
-    created: existing?.frontmatter.created ?? provenance.date,
+    // Earliest and latest of everything this note has seen, rather than
+    // "first write" and "this write". Backfill discovers newest-first, so an
+    // older session is merged into a note a newer one created constantly —
+    // taking `provenance.date` verbatim made `updated` PRECEDE `created` and
+    // left most notes reporting the oldest session they saw as their last
+    // touch. Both are still pure functions of the inputs, so idempotency holds.
+    created: minDate(existing?.frontmatter.created, provenance.date),
     // Placeholder; resolved below once there is something to compare against.
-    updated: existing?.frontmatter.updated ?? provenance.date,
+    updated: maxDate(existing?.frontmatter.updated, provenance.date),
     sources: union(existing?.frontmatter.sources ?? [], [provenance.sourceKey]),
   };
   if (provenance.projectLink) frontmatter.project = provenance.projectLink;
@@ -225,7 +240,7 @@ export function merge(
   return {
     frontmatter: {
       ...frontmatter,
-      updated: unchanged ? existing.frontmatter.updated : provenance.date,
+      updated: unchanged ? existing.frontmatter.updated : frontmatter.updated,
     },
     body,
   };

@@ -151,7 +151,17 @@ export interface ExtractorDeps {
   runQuery?: (opts: { prompt: string; model: string; configDir: string }) => Promise<string>;
 }
 
-export type Extractor = (item: DistilledItem, configDir: string) => Promise<Extraction>;
+/** What the vault already holds, so a run can converge on existing names. */
+export interface ExtractionContext {
+  /** Titles of notes already in this account's vault. */
+  existingNames: string[];
+}
+
+export type Extractor = (
+  item: DistilledItem,
+  configDir: string,
+  context?: ExtractionContext,
+) => Promise<Extraction>;
 
 /**
  * The extraction prompt.
@@ -160,7 +170,10 @@ export type Extractor = (item: DistilledItem, configDir: string) => Promise<Extr
  * aliases; asking it to restate a branch name it can already see is an
  * opportunity for it to get one wrong (spec §6).
  */
-export function buildExtractionPrompt(item: DistilledItem): string {
+export function buildExtractionPrompt(
+  item: DistilledItem,
+  context?: ExtractionContext,
+): string {
   const m = item.metadata;
   const facts = [
     `session: ${m.sessionId}`,
@@ -177,6 +190,16 @@ export function buildExtractionPrompt(item: DistilledItem): string {
       'every user prompt but only the most recent assistant replies. Do not ' +
       'describe the session as if you saw all of it.\n'
     : '';
+
+  // Naming an entity the vault already holds is how a second session UPDATES a
+  // note instead of spawning a near-duplicate beside it. Resolution catches a
+  // mismatch after the fact; this stops it happening as often to begin with.
+  const existing =
+    context && context.existingNames.length > 0
+      ? `\nENTITIES ALREADY IN THIS VAULT — reuse one of these names EXACTLY when
+you are describing the same thing, rather than inventing a variant:
+${context.existingNames.map((n) => `- ${n}`).join('\n')}\n`
+      : '';
 
   return `You are extracting durable engineering knowledge from one coding session.
 
@@ -200,7 +223,7 @@ Rules:
 
 FACTS
 ${facts}
-${truncationNote}
+${truncationNote}${existing}
 TRANSCRIPT
 ${item.prose}`;
 }
@@ -214,8 +237,8 @@ ${item.prose}`;
 export function createExtractor(deps: ExtractorDeps = {}): Extractor {
   const runQuery = deps.runQuery ?? createSummaryQueryRunner();
 
-  return async function extract(item, configDir) {
-    const prompt = buildExtractionPrompt(item);
+  return async function extract(item, configDir, context) {
+    const prompt = buildExtractionPrompt(item, context);
     const reply = await runQuery({ prompt, model: EXTRACTION_MODEL, configDir });
     try {
       return parseExtraction(reply);

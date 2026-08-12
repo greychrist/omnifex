@@ -22,6 +22,7 @@ import {
 } from './queue';
 import type { BrainSource, SessionMetadata, SourceItem } from './sources/types';
 import type { Extractor } from './extract';
+import { resolveEntityPath, type ExistingNote } from './resolve';
 import { merge } from './merge';
 import type { AccountsService } from '../accounts';
 import type { ParsedNote } from './types';
@@ -334,6 +335,30 @@ function assertOwnGitDir(root: string): void {
       `vault .git is not its own directory (symlink or gitfile): ${gitPath}`,
     );
   }
+}
+
+/**
+ * Titles and aliases of every note currently in a vault.
+ *
+ * A note that cannot be parsed is skipped rather than failing the read: the
+ * spec's error table isolates a broken note to that note, and a single
+ * hand-mangled file must not stop the whole vault from being resolvable.
+ */
+function readExistingNotes(handle: VaultHandle): ExistingNote[] {
+  const out: ExistingNote[] = [];
+  for (const path of handle.vault.listNotes()) {
+    try {
+      const note = handle.vault.readNote(path);
+      out.push({
+        path,
+        title: handle.vault.noteTitle(path),
+        aliases: note.frontmatter.aliases,
+      });
+    } catch {
+      // Unparseable frontmatter — surfaced elsewhere, ignored here.
+    }
+  }
+  return out;
 }
 
 /**
@@ -893,7 +918,12 @@ export function createBrainService(
 
       let extraction;
       try {
-        extraction = await opts.extractor(distilled, account.config_dir);
+        extraction = await opts.extractor(distilled, account.config_dir, {
+          // Telling the model what the vault already holds is the cheap half
+          // of the duplicate fix; `resolveEntityPath` below is the reliable
+          // half that catches what the model still renames.
+          existingNames: handle.vault.listNotes().map((p) => handle.vault.noteTitle(p)),
+        });
       } catch (err) {
         // A failed extraction is a recorded status, never an exception into
         // whatever called this. A failed item must not block anything (spec §8).
@@ -909,6 +939,9 @@ export function createBrainService(
 
       const notesWritten: string[] = [];
       const entityErrors: string[] = [];
+      // Built once per item, not per entity: it is O(vault) reads, and the
+      // entities of one extraction all resolve against the same snapshot.
+      const existingNotes = readExistingNotes(handle);
       for (const entity of extraction.entities) {
         // Per-entity isolation. An entity name is model-supplied and therefore
         // untrusted input for a filesystem path; `vault.notePath` rejects
@@ -917,7 +950,12 @@ export function createBrainService(
         // discarding four good notes to punish a fifth bad one is the worst
         // available outcome.
         try {
-          const relPath = handle.vault.notePath(entity.type, entity.name);
+          // Resolve against what the vault already holds before minting a new
+          // path. `merge()` dedups by path, so without this an entity the model
+          // renames on a later run becomes a second note beside the first.
+          const relPath = resolveEntityPath(entity, existingNotes, (name) =>
+            handle.vault.notePath(entity.type, name),
+          );
           let existing: ParsedNote | null = null;
           try {
             existing = handle.vault.readNote(relPath);

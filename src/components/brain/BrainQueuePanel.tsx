@@ -12,6 +12,34 @@ import { api, type BrainQueueCounts, type BrainQueueEntry } from '@/lib/api';
  */
 const EMPTY: BrainQueueCounts = { pending: 0, running: 0, done: 0, failed: 0 };
 
+/** Mirrors the backend keys in electron/services/brain/queue.ts. */
+const AUTO_INDEX_KEY = 'brain.autoIndex';
+const PAUSED_KEY = 'brain.queuePaused';
+
+/**
+ * A labelled switch for one global setting.
+ *
+ * Both switches live here rather than in Settings — spec §14 puts the kill
+ * switch in Settings, but every other operational control is already in this
+ * panel and splitting them would mean hunting in two places to stop indexing.
+ */
+const SettingSwitch: React.FC<{
+  label: string;
+  title: string;
+  checked: boolean;
+  onChange: (next: boolean) => void;
+}> = ({ label, title, checked, onChange }) => (
+  <label className="inline-flex items-center gap-1.5" title={title}>
+    <input
+      type="checkbox"
+      checked={checked}
+      onChange={(e) => { onChange(e.target.checked); }}
+      className="h-3 w-3"
+    />
+    <span className="text-muted-foreground">{label}</span>
+  </label>
+);
+
 export const BrainQueuePanel: React.FC<{ accountId: number | null }> = ({ accountId }) => {
   const [counts, setCounts] = useState<BrainQueueCounts>(EMPTY);
   const [entries, setEntries] = useState<BrainQueueEntry[]>([]);
@@ -19,6 +47,36 @@ export const BrainQueuePanel: React.FC<{ accountId: number | null }> = ({ accoun
   const [outcome, setOutcome] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
+  const [autoIndex, setAutoIndex] = useState(false);
+  const [paused, setPaused] = useState(false);
+
+  // Both switches are GLOBAL, not per account. Read once on mount rather than
+  // on every account change, which would imply they are scoped when they are
+  // not.
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.all([api.getSetting(AUTO_INDEX_KEY), api.getSetting(PAUSED_KEY)])
+      .then(([auto, pause]) => {
+        if (cancelled) return;
+        setAutoIndex(auto === 'true');
+        setPaused(pause === 'true');
+      })
+      .catch(() => {
+        // A settings read failure leaves both switches off, which is the safe
+        // reading: it never turns unattended spending ON by accident.
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  const setSwitch = useCallback((key: string, next: boolean, apply: (v: boolean) => void) => {
+    // Optimistic, then persisted: the toggle is the user's own action, and a
+    // control that lags a round trip reads as broken.
+    apply(next);
+    api.saveSetting(key, next ? 'true' : 'false').catch((err: Error) => {
+      apply(!next);
+      setError(err.message);
+    });
+  }, []);
 
   useEffect(() => {
     setOutcome(null);
@@ -108,6 +166,20 @@ export const BrainQueuePanel: React.FC<{ accountId: number | null }> = ({ accoun
         >
           Clear finished
         </button>
+
+        <SettingSwitch
+          label="Auto-index"
+          title="Index each session when it closes. Off by default — it spends tokens unattended."
+          checked={autoIndex}
+          onChange={(next) => { setSwitch(AUTO_INDEX_KEY, next, setAutoIndex); }}
+        />
+
+        <SettingSwitch
+          label="Pause"
+          title="Stop the worker from draining, without turning auto-index off."
+          checked={paused}
+          onChange={(next) => { setSwitch(PAUSED_KEY, next, setPaused); }}
+        />
 
         {outcome && <span className="text-muted-foreground">{outcome}</span>}
         {error && <span className="text-destructive">{error}</span>}

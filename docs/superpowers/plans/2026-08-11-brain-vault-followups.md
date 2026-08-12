@@ -183,22 +183,32 @@ consumed; with it inactive both completed, 0 failed, 63.2s for two items
 (~31s each, so ~77 personal sessions is roughly 40 minutes — consistent with
 the 30–100 minute estimate).
 
-- **Near-duplicate entities are real, and they are the blocker for an
-  unattended full backfill.** Two sessions about the same work produced
-  `Subsystems/Brain memory vault.md` *and* `Subsystems/omnifex-brain-vault.md`
-  — one subsystem, two notes. `merge()` dedups by note path, so an entity the
-  model names differently on a later run becomes a second note rather than an
-  update to the first. At n=2 this is visible; at 77 it would fragment the
-  vault badly enough to undermine retrieval, which is the entire point of the
-  Brain.
+- ~~**Near-duplicate entities.**~~ **FIXED.** Two sessions about the same work
+  produced `Subsystems/Brain memory vault.md` *and*
+  `Subsystems/omnifex-brain-vault.md` — one subsystem, two notes, because
+  `merge()` dedups by note path. Fixed with both available levers:
+  `resolve.ts` matches a new entity's name and aliases against existing notes'
+  titles and aliases (case- and separator-insensitive, never on substrings, so
+  `Brain` does not collapse into `Brain memory vault`), and the extraction
+  prompt now lists the vault's existing entity names so the model converges on
+  one in the first place. Re-verified live on the exact pair that failed: the
+  second session merged into the first note, both session keys are in
+  `sources`, the Timeline has both entries, and `omnifex-brain-vault` survives
+  as an alias.
 
-  Options, none implemented: (a) pass the vault's existing entity names into
-  the extraction prompt so the model can reuse one, (b) resolve a new name
-  against existing notes by alias/last-segment before choosing a path, (c)
-  leave it to curation (spec §10, step 7) to merge duplicates after the fact.
-  (a) is cheapest and most likely to work, since the model already emits good
-  aliases; (b) risks collapsing genuinely distinct entities. **Decide before
-  running a full backfill**, not after.
+  Note the residual risk: over-matching would silently lose one entity inside
+  another's note, which is worse than a duplicate. That is why matching is
+  deliberately conservative and a test pins `Brain` staying separate from
+  `Brain memory vault`.
+
+- **`updated` could precede `created`, and backfill would have made it the
+  norm.** Discovery sorts newest-first, so an older session merges into a note
+  a newer one created on essentially every backfill step. `merge()` took
+  `provenance.date` verbatim, so a note created 2026-08-12 ended up stamped
+  `updated: 2026-08-11` — and across a full run most notes would have reported
+  the OLDEST session they saw as their last touch. Now `created` is the
+  earliest date the note has seen and `updated` the latest; both stay pure
+  functions of their inputs, so idempotency is unaffected.
 
 - **`listInFlightTabIds` is dead and the worker must never use it.** It is
   hardcoded to `return []` (`sessions/lifecycle.ts:511`) since the
@@ -216,10 +226,14 @@ the 30–100 minute estimate).
   the early return would have silently disabled Brain auto-indexing for anyone
   who has session summaries turned off.
 
-- **Auto-indexing ships off by default** (`brain.autoIndex`). There is no
-  Settings UI for it yet — it is togglable only by writing the setting. The
-  Brain tab's queue panel has Backfill / Drain now / Clear finished, but the
-  opt-in toggle and the pause switch still need a home in Settings.
+- **Auto-indexing ships off by default** (`brain.autoIndex`), with its opt-in
+  toggle and the pause switch in the Brain tab's queue panel alongside
+  Backfill / Drain now / Clear finished. Spec §14 puts the kill switch in
+  Settings; it is here instead because every other operational control already
+  is, and splitting them would mean hunting in two places to stop indexing.
+  Both switches are global rather than per account, and are read once on mount
+  rather than per account change so the UI does not imply a scoping they do
+  not have.
 
 ## Opened by Plan 4a (`feat/brain-extract-merge`, 2026-08-12)
 
