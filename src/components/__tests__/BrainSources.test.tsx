@@ -8,6 +8,15 @@ vi.mock('@/lib/api', () => ({
   api: { brainListSources: vi.fn(), brainSourcePreview: vi.fn(), brainIndexSource: vi.fn() },
 }));
 
+// The queue panel has its own tests; here it only needs to report which
+// account it was handed, which is what keeps these assertions about the
+// sources list rather than about queue depth.
+vi.mock('@/components/brain/BrainQueuePanel', () => ({
+  BrainQueuePanel: ({ accountId }: { accountId: number | null }) => (
+    <div data-testid="queue-panel">{String(accountId)}</div>
+  ),
+}));
+
 function summary(over: Partial<BrainSourceSummary> = {}): BrainSourceSummary {
   return {
     accountId: 1,

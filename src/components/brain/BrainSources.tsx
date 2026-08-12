@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { api, type BrainSourcePreview, type BrainSourceSummary } from '@/lib/api';
+import { BrainQueuePanel } from './BrainQueuePanel';
 
 /** Bumped to re-run the listing effect after an indexing run changes a status. */
 type Nonce = number;
@@ -104,7 +105,9 @@ export const BrainSources: React.FC<{ accountId: number | null }> = ({ accountId
   }
 
   return (
-    <div className="flex min-h-0 flex-1">
+    <div className="flex min-h-0 flex-1 flex-col">
+      <BrainQueuePanel accountId={accountId} />
+      <div className="flex min-h-0 flex-1">
       <div className="w-80 shrink-0 overflow-y-auto border-r">
         {loading && <div className="p-3 text-xs text-muted-foreground">scanning…</div>}
         {!loading && items.length === 0 && (
@@ -186,6 +189,7 @@ export const BrainSources: React.FC<{ accountId: number | null }> = ({ accountId
             </pre>
           </>
         )}
+      </div>
       </div>
     </div>
   );

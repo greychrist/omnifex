@@ -1066,6 +1066,27 @@ export interface BrainSourcePreview {
   reason: string;
 }
 
+/** Mirrors `QueueCounts` in electron/services/brain/queue.ts. */
+export interface BrainQueueCounts {
+  pending: number;
+  running: number;
+  done: number;
+  failed: number;
+}
+
+/** Mirrors `QueueEntry` in electron/services/brain/queue.ts. */
+export interface BrainQueueEntry {
+  id: number;
+  accountId: number;
+  sourceId: string;
+  itemKey: string;
+  status: 'pending' | 'running' | 'done' | 'failed';
+  error: string | null;
+  enqueuedAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+}
+
 /** Mirrors the backend `IndexResult` in electron/services/brain/registry.ts. */
 export interface BrainIndexResult {
   itemKey: string;
@@ -3017,6 +3038,28 @@ export const api = {
   /** Extract one item and merge it into the account's vault. Spends tokens. */
   async brainIndexSource(accountId: number, itemKey: string): Promise<BrainIndexResult> {
     return apiCall<BrainIndexResult>('brain_index_source', { accountId, itemKey });
+  },
+
+  async brainQueueCounts(accountId: number): Promise<BrainQueueCounts> {
+    return apiCall<BrainQueueCounts>('brain_queue_counts', { accountId });
+  },
+
+  async brainQueueList(accountId: number, limit?: number): Promise<BrainQueueEntry[]> {
+    return apiCall<BrainQueueEntry[]>('brain_queue_list', stripUndefined({ accountId, limit }));
+  },
+
+  /** Queue every admitted, not-yet-indexed item for an account. */
+  async brainBackfill(accountId: number): Promise<number> {
+    return apiCall<number>('brain_backfill', { accountId });
+  },
+
+  /** Drain the queue now. Yields immediately if a session is open. */
+  async brainQueueDrain(): Promise<void> {
+    return apiCall<void>('brain_queue_drain', {});
+  },
+
+  async brainQueueClear(accountId: number): Promise<void> {
+    return apiCall<void>('brain_queue_clear', { accountId });
   },
 
 };
