@@ -32,24 +32,16 @@ describe('brain registry', () => {
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'omnifex-brain-'));
     db = createDatabase(':memory:');
-    brain = createBrainService(db);
+    // A stub git runner: no child process, so nothing is still writing into
+    // `.git` when afterEach removes the directory. This replaced a
+    // retry-and-swallow rmSync that raced an untracked `git init`.
+    brain = createBrainService(db, { execGit: async () => '' });
   });
 
   afterEach(() => {
     brain.closeAll();
     db.close();
-    // open() fires `git init` in the background and nothing tracks the child
-    // process, so a `.git` directory can still be filling while this runs.
-    // Retry, then give up quietly: this is cleanup, not an assertion, and a
-    // temp directory surviving in $TMPDIR must never fail a test.
-    // The retry budget is deliberately small: node backs off linearly
-    // (retryDelay x attempt), so a large one blows vitest's 10s hook timeout,
-    // which is a worse failure than a surviving temp directory.
-    try {
-      rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 });
-    } catch {
-      // Best effort — the OS reaps $TMPDIR.
-    }
+    rmSync(dir, { recursive: true, force: true });
   });
 
   it('returns null for an account with no vault configured', () => {
@@ -820,6 +812,47 @@ describe('brain registry', () => {
     it('accepts a vault with no .git at all', () => {
       brain.setVaultPath(1, join(dir, 'fresh-vault'));
       expect(brain.open(1)).not.toBeNull();
+    });
+  });
+
+  describe('injectable git', () => {
+    it('routes vault git through an injected exec and exposes an awaitable init', async () => {
+      const calls: { args: string[]; cwd: string }[] = [];
+      const svc = createBrainService(db, {
+        execGit: async (args, cwd) => {
+          calls.push({ args, cwd });
+          return '';
+        },
+      });
+      svc.setVaultPath(1, join(dir, 'injected-vault'));
+
+      const handle = svc.open(1);
+      expect(handle).not.toBeNull();
+
+      // The point of the promise: after awaiting it, no git work is still in
+      // flight, so a caller (or a test's afterEach) can delete the directory
+      // without racing an untracked child process.
+      await handle!.gitReady;
+      expect(calls).toEqual([{ args: ['init', '-q'], cwd: handle!.root }]);
+
+      svc.closeAll();
+    });
+
+    it('never rejects gitReady when git is unavailable', async () => {
+      const svc = createBrainService(db, {
+        execGit: async () => {
+          throw new Error('git: command not found');
+        },
+      });
+      svc.setVaultPath(1, join(dir, 'no-git-vault'));
+
+      const handle = svc.open(1);
+      // Versioning is a safety net, not a dependency: a missing binary must
+      // not turn into an unhandled rejection at every call site that stores a
+      // handle without awaiting it.
+      await expect(handle!.gitReady).resolves.toBeUndefined();
+
+      svc.closeAll();
     });
   });
 });

@@ -40,24 +40,17 @@ describe('brain IPC handlers', () => {
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'omnifex-brain-ipc-'));
     db = createDatabase(':memory:');
-    brain = createBrainService(db);
+    // A stub git runner: no child process, so nothing is still writing into
+    // `.git` when afterEach removes the directory. This replaced a
+    // retry-and-swallow rmSync that raced an untracked `git init`.
+    brain = createBrainService(db, { execGit: async () => '' });
     handlers = createBrainHandlers(brain);
   });
 
   afterEach(() => {
     brain.closeAll();
     db.close();
-    // open() fires `git init` in the background and nothing tracks the child
-    // process, so `.git` can still be filling while this runs — which surfaces
-    // as ENOTEMPTY under full-suite load. Same mitigation, and same reasoning,
-    // as brain-registry.test.ts's afterEach. The real fix is threading an
-    // injectable ExecGit through createBrainService so the init is awaitable;
-    // it is recorded in the Brain follow-ups doc.
-    try {
-      rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 });
-    } catch {
-      // Best effort — the OS reaps $TMPDIR. Cleanup must never fail a test.
-    }
+    rmSync(dir, { recursive: true, force: true });
   });
 
   it('exposes exactly the expected channels', () => {
