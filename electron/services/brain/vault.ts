@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, lstatSync, realpathSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, rmSync, existsSync, readdirSync, lstatSync, realpathSync } from 'node:fs';
 import { join, dirname, basename, relative, resolve, sep } from 'node:path';
 import { parseNote, serializeNote } from './frontmatter';
 import { NOTE_FOLDERS, type NoteType, type ParsedNote } from './types';
@@ -54,6 +54,8 @@ export interface Vault {
   notePath(type: NoteType, name: string): string;
   readNote(relPath: string): ParsedNote;
   writeNote(relPath: string, note: ParsedNote): void;
+  /** Removes a note. Absent is not an error. */
+  deleteNote(relPath: string): void;
   listNotes(): string[];
   noteTitle(relPath: string): string;
 }
@@ -171,6 +173,12 @@ export function createVault(root: string): Vault {
       const abs = safeJoin(relPath);
       mkdirSync(dirname(abs), { recursive: true });
       writeFileSync(abs, serializeNote(note), 'utf8');
+    },
+
+    deleteNote(relPath: string): void {
+      // safeJoin first: deletion has to be judged by the same containment and
+      // hard-link rules as reading and writing, or it becomes the one way out.
+      rmSync(safeJoin(relPath), { force: true });
     },
 
     listNotes(): string[] {

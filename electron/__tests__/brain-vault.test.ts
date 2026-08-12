@@ -153,6 +153,22 @@ describe('vault', () => {
     expect(() => vault.notePath('Topic', 'a'.repeat(300))).toThrow(VaultPathError);
   });
 
+  describe('deleteNote', () => {
+    it('removes the file', () => {
+      vault.writeNote('Notes/Gone.md', NOTE);
+      vault.deleteNote('Notes/Gone.md');
+      expect(vault.listNotes()).not.toContain('Notes/Gone.md');
+    });
+
+    it('is a no-op for a note that is already absent', () => {
+      expect(() => vault.deleteNote('Notes/Never.md')).not.toThrow();
+    });
+
+    it('refuses a path that escapes the vault', () => {
+      expect(() => vault.deleteNote('../../etc/passwd')).toThrow(VaultPathError);
+    });
+  });
+
   describe('hard-linked notes', () => {
     let outside: string;
 

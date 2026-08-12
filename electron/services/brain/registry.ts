@@ -57,6 +57,11 @@ function requireAccountId(accountId: number): number {
   return accountId;
 }
 
+/** Today in the ISO date form the frontmatter schema requires. */
+function today(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
 export interface VaultHandle {
   readonly accountId: number;
   readonly root: string;
@@ -102,6 +107,11 @@ export interface BrainService {
   status(accountId: number): Promise<VaultStatus>;
   search(accountId: number, query: string, opts?: SearchOptions): SearchHit[];
   writeNote(accountId: number, relPath: string, note: ParsedNote, commitMessage: string): void;
+  /** Reindex the whole vault from disk. Returns the number of notes indexed. */
+  rebuild(accountId: number): number;
+  deleteNote(accountId: number, relPath: string): void;
+  /** Replace a note's body, preserving its frontmatter. Returns the new note. */
+  updateNoteBody(accountId: number, relPath: string, body: string): ParsedNote;
   closeAll(): void;
 }
 
@@ -310,6 +320,14 @@ export function createBrainService(db: Database): BrainService {
     }
   }
 
+  /** open() plus the "there must be a vault" contract every write path shares.
+   *  Never falls back to another account's vault. */
+  function requireHandle(accountId: number): VaultHandle {
+    const handle = service.open(accountId);
+    if (!handle) throw new Error(`no vault configured for account ${accountId}`);
+    return handle;
+  }
+
   const service: BrainService = {
     vaultPath(accountId: number): string | null {
       requireAccountId(accountId);
@@ -514,14 +532,42 @@ export function createBrainService(db: Database): BrainService {
 
     writeNote(accountId: number, relPath: string, note: ParsedNote, commitMessage: string): void {
       requireAccountId(accountId);
-      const handle = service.open(accountId);
-      if (!handle) {
-        // No silent fallback to another account's vault.
-        throw new Error(`no vault configured for account ${accountId}`);
-      }
+      const handle = requireHandle(accountId);
       handle.vault.writeNote(relPath, note);
       handle.index.upsert(relPath, handle.vault.noteTitle(relPath), note);
       commitAndRecord(handle, commitMessage);
+    },
+
+    rebuild(accountId: number): number {
+      requireAccountId(accountId);
+      const handle = requireHandle(accountId);
+      return handle.index.rebuild(handle.vault);
+    },
+
+    deleteNote(accountId: number, relPath: string): void {
+      requireAccountId(accountId);
+      const handle = requireHandle(accountId);
+      handle.vault.deleteNote(relPath);
+      handle.index.remove(relPath);
+      commitAndRecord(handle, `Delete ${handle.vault.noteTitle(relPath)}`);
+    },
+
+    updateNoteBody(accountId: number, relPath: string, body: string): ParsedNote {
+      requireAccountId(accountId);
+      const handle = requireHandle(accountId);
+      // Read-modify-write rather than accepting a whole note from the caller.
+      // The renderer edits prose; it has no business rewriting a note's type,
+      // provenance or sources, and an edit box that could do so would make the
+      // frontmatter untrustworthy for merge dedup later.
+      const existing = handle.vault.readNote(relPath);
+      const updated: ParsedNote = {
+        frontmatter: { ...existing.frontmatter, updated: today() },
+        body,
+      };
+      handle.vault.writeNote(relPath, updated);
+      handle.index.upsert(relPath, handle.vault.noteTitle(relPath), updated);
+      commitAndRecord(handle, 'Manual edit');
+      return updated;
     },
 
     closeAll(): void {

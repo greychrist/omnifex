@@ -572,6 +572,96 @@ describe('brain registry', () => {
     expect(brain.search(1, 'stdio')).toEqual([]);
   });
 
+  describe('rebuild', () => {
+    it('indexes notes that were written into the vault behind the service', () => {
+      brain.setVaultPath(1, join(dir, 'preexisting'));
+      const handle = brain.open(1)!;
+      // Simulate a vault populated in Obsidian: files on disk, index empty.
+      handle.vault.writeNote('Notes/Outside.md', note('written elsewhere'));
+      expect(brain.search(1, 'elsewhere')).toEqual([]);
+
+      expect(brain.rebuild(1)).toBe(1);
+      expect(brain.search(1, 'elsewhere')).toHaveLength(1);
+    });
+
+    it('drops index rows for notes deleted on disk', () => {
+      brain.setVaultPath(1, join(dir, 'stale'));
+      brain.writeNote(1, 'Notes/A.md', note('alpha'), 'test');
+      brain.open(1)!.vault.deleteNote('Notes/A.md');
+
+      expect(brain.rebuild(1)).toBe(0);
+      expect(brain.search(1, 'alpha')).toEqual([]);
+    });
+
+    it('throws for an account with no vault', () => {
+      expect(() => brain.rebuild(1)).toThrow(/no vault configured/);
+    });
+  });
+
+  describe('deleteNote', () => {
+    it('removes the note from disk and from the index', () => {
+      brain.setVaultPath(1, join(dir, 'delnote'));
+      brain.writeNote(1, 'Notes/A.md', note('alpha'), 'test');
+      expect(brain.search(1, 'alpha')).toHaveLength(1);
+
+      brain.deleteNote(1, 'Notes/A.md');
+      expect(brain.search(1, 'alpha')).toEqual([]);
+      expect(brain.open(1)!.vault.listNotes()).not.toContain('Notes/A.md');
+    });
+
+    it('throws for an account with no vault', () => {
+      expect(() => brain.deleteNote(1, 'Notes/A.md')).toThrow(/no vault configured/);
+    });
+  });
+
+  describe('updateNoteBody', () => {
+    it('replaces the body and reindexes', () => {
+      brain.setVaultPath(1, join(dir, 'edit'));
+      brain.writeNote(1, 'Notes/A.md', note('alpha'), 'test');
+
+      const updated = brain.updateNoteBody(1, 'Notes/A.md', '## Summary\n\nomega\n');
+      expect(updated.body).toBe('## Summary\n\nomega\n');
+      expect(brain.search(1, 'omega')).toHaveLength(1);
+      expect(brain.search(1, 'alpha')).toEqual([]);
+    });
+
+    it('preserves frontmatter the caller did not supply', () => {
+      brain.setVaultPath(1, join(dir, 'edit2'));
+      const original = note('alpha');
+      original.frontmatter.sources = ['session:abc'];
+      original.frontmatter.keywords = ['pty'];
+      brain.writeNote(1, 'Notes/A.md', original, 'test');
+
+      const updated = brain.updateNoteBody(1, 'Notes/A.md', 'rewritten\n');
+      expect(updated.frontmatter.sources).toEqual(['session:abc']);
+      expect(updated.frontmatter.keywords).toEqual(['pty']);
+      expect(updated.frontmatter.type).toBe(original.frontmatter.type);
+    });
+
+    it('stamps updated with today', () => {
+      brain.setVaultPath(1, join(dir, 'edit3'));
+      const original = note('alpha');
+      original.frontmatter.updated = '2020-01-01';
+      brain.writeNote(1, 'Notes/A.md', original, 'test');
+
+      const updated = brain.updateNoteBody(1, 'Notes/A.md', 'rewritten\n');
+      expect(updated.frontmatter.updated).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(updated.frontmatter.updated).not.toBe('2020-01-01');
+    });
+
+    it('persists the change to disk, not just to the index', () => {
+      brain.setVaultPath(1, join(dir, 'edit4'));
+      brain.writeNote(1, 'Notes/A.md', note('alpha'), 'test');
+      brain.updateNoteBody(1, 'Notes/A.md', 'rewritten\n');
+
+      expect(brain.open(1)!.vault.readNote('Notes/A.md').body).toBe('rewritten\n');
+    });
+
+    it('throws for an account with no vault', () => {
+      expect(() => brain.updateNoteBody(1, 'Notes/A.md', 'x')).toThrow(/no vault configured/);
+    });
+  });
+
   describe('status', () => {
     it('reports an unconfigured account without creating anything', async () => {
       expect(await brain.status(1)).toMatchObject({
