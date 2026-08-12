@@ -3,18 +3,32 @@ import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
 
-/** Injectable git runner. Matches the pattern in git-branches.ts / git-worktrees.ts. */
-export type ExecGit = (args: string[], cwd: string) => Promise<void>;
+/** Injectable git runner, resolving with the command's stdout. Matches the
+ *  pattern in git-branches.ts / git-worktrees.ts. */
+export type ExecGit = (args: string[], cwd: string) => Promise<string>;
 
 const defaultExec: ExecGit = async (args, cwd) => {
-  await execFileAsync('git', args, { cwd });
+  const { stdout } = await execFileAsync('git', args, { cwd });
+  return stdout;
 };
+
+/**
+ * Why this is a discriminated result and not a boolean: "nothing to commit" and
+ * "the commit failed" are the same exit status from git, and collapsing them
+ * means a vault whose `.git` is corrupt, unwritable or full looks exactly like
+ * a vault where the user changed nothing. That silence is harmless while
+ * nothing displays versioning state; it becomes a lie the moment the Brain tab
+ * claims a vault is versioned.
+ */
+export type CommitResult =
+  | { ok: true }
+  | { ok: false; reason: 'nothing-to-commit' }
+  | { ok: false; reason: 'failed'; message: string };
 
 export interface VaultGit {
   available(): Promise<boolean>;
   init(): Promise<void>;
-  /** Returns true when a commit was created, false when unavailable or a no-op. */
-  commitAll(message: string): Promise<boolean>;
+  commitAll(message: string): Promise<CommitResult>;
 }
 
 export function createVaultGit(root: string, exec: ExecGit = defaultExec): VaultGit {
@@ -55,16 +69,20 @@ export function createVaultGit(root: string, exec: ExecGit = defaultExec): Vault
       });
     },
 
-    commitAll(message: string): Promise<boolean> {
+    commitAll(message: string): Promise<CommitResult> {
       return serialize(async () => {
         try {
           await exec(['add', '-A'], root);
+          // Ask git what is staged rather than inferring it from the exit
+          // status of `commit`. `commit` exits non-zero for an empty index AND
+          // for a genuine failure, so its status alone cannot distinguish the
+          // two — which is the whole point of this method's return type.
+          const status = await exec(['status', '--porcelain'], root);
+          if (status.trim() === '') return { ok: false, reason: 'nothing-to-commit' };
           await exec(['commit', '-q', '-m', message], root);
-          return true;
-        } catch {
-          // Either git is missing or there was nothing staged. Both are
-          // non-fatal: the Markdown is already written.
-          return false;
+          return { ok: true };
+        } catch (err) {
+          return { ok: false, reason: 'failed', message: (err as Error).message };
         }
       });
     },

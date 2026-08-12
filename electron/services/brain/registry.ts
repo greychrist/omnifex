@@ -204,8 +204,39 @@ export function createBrainService(db: Database): BrainService {
   // or when the directory that path names is no longer the same directory.
   const handles = new Map<number, CachedHandle>();
 
+  // Last real git failure per account, surfaced by status(). A vault whose
+  // versioning is broken must be able to say so; see git.ts's CommitResult.
+  const lastGitError = new Map<number, string>();
+
   function readPath(accountId: number): string | null {
     return db.getSetting(vaultSettingKey(accountId));
+  }
+
+  /**
+   * Commit in the background and remember whether it worked.
+   *
+   * Fire-and-forget: the Markdown is already on disk and versioning is a safety
+   * net, so a slow or failing commit must not block the write. But "must not
+   * block" is not "must not be reported" — the previous shape discarded the
+   * result entirely, so a persistently failing commit produced no log, no
+   * error, and no visible signal anywhere.
+   */
+  function commitAndRecord(handle: VaultHandle, message: string): void {
+    void handle.git
+      .commitAll(message)
+      .then((result) => {
+        if (result.ok || result.reason === 'nothing-to-commit') {
+          lastGitError.delete(handle.accountId);
+          return;
+        }
+        lastGitError.set(handle.accountId, result.message);
+        console.warn(`brain: commit failed for account ${handle.accountId}: ${result.message}`);
+      })
+      .catch((err: unknown) => {
+        const message = (err as Error).message;
+        lastGitError.set(handle.accountId, message);
+        console.warn(`brain: commit threw for account ${handle.accountId}: ${message}`);
+      });
   }
 
   function closeHandle(accountId: number): void {
@@ -407,7 +438,7 @@ export function createBrainService(db: Database): BrainService {
       }
       handle.vault.writeNote(relPath, note);
       handle.index.upsert(relPath, handle.vault.noteTitle(relPath), note);
-      fireAndLogGitFailure(handle.git.commitAll(commitMessage), 'brain: commit');
+      commitAndRecord(handle, commitMessage);
     },
 
     closeAll(): void {
