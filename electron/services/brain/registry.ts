@@ -75,6 +75,18 @@ function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+/** The date a distilled item should stamp on the notes it produces. */
+function provenanceDate(metadata: ItemMetadata): string {
+  switch (metadata.kind) {
+    case 'capture':
+      return metadata.capturedAt.slice(0, 10) || today();
+    case 'session':
+      return metadata.startedAt?.slice(0, 10) ?? today();
+    case 'artifact':
+      return today();
+  }
+}
+
 export interface VaultHandle {
   readonly accountId: number;
   readonly root: string;
@@ -1013,13 +1025,12 @@ export function createBrainService(
 
       const provenance = {
         sourceKey: `${item.sourceId}:${item.itemKey}`,
-        // A capture has no session start; its capture time is the date the
-        // note should record. Both fall back to today rather than to each
-        // other, since an empty string would sort before every real date.
-        date:
-          distilled.metadata.kind === 'capture'
-            ? distilled.metadata.capturedAt.slice(0, 10) || today()
-            : distilled.metadata.startedAt?.slice(0, 10) ?? today(),
+        // Each kind supplies the date it actually knows. A capture has its
+        // capture time; a session its start; an instruction file has no event
+        // date at all, so the day it was indexed is the only honest answer.
+        // Every arm falls back to today rather than to another kind's field,
+        // since an empty string would sort before every real date.
+        date: provenanceDate(distilled.metadata),
       };
 
       const notesWritten: string[] = [];

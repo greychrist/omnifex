@@ -1073,6 +1073,12 @@ export interface BrainCaptureMetadata {
   cwd: string | null;
 }
 
+/** Mirrors `ArtifactMetadata` in electron/services/brain/sources/types.ts. */
+export interface BrainArtifactMetadata {
+  repoPath: string;
+  file: string;
+}
+
 /**
  * Mirrors `ItemMetadata` in electron/services/brain/sources/types.ts. The
  * discriminant is what lets a Sources pane render a capture without inventing
@@ -1080,7 +1086,8 @@ export interface BrainCaptureMetadata {
  */
 export type BrainItemMetadata =
   | ({ kind: 'session' } & BrainSessionMetadata)
-  | ({ kind: 'capture' } & BrainCaptureMetadata);
+  | ({ kind: 'capture' } & BrainCaptureMetadata)
+  | ({ kind: 'artifact' } & BrainArtifactMetadata);
 
 /** Mirrors the backend `SourcePreview` in electron/services/brain/registry.ts. */
 export interface BrainSourcePreview {

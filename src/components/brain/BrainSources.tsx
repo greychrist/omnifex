@@ -173,6 +173,13 @@ export const BrainSources: React.FC<{ accountId: number | null }> = ({ accountId
                   <dt className="text-muted-foreground">model</dt>
                   <dd>not used</dd>
                 </>
+              ) : preview.metadata.kind === 'artifact' ? (
+                <>
+                  <dt className="text-muted-foreground">repository</dt>
+                  <dd className="truncate">{preview.metadata.repoPath}</dd>
+                  <dt className="text-muted-foreground">file</dt>
+                  <dd className="truncate">{preview.metadata.file}</dd>
+                </>
               ) : preview.metadata.kind === 'capture' ? (
                 <>
                   <dt className="text-muted-foreground">captured</dt>

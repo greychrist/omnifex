@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { createSummaryQueryRunner } from '../sessions/summary-query';
-import type { DistilledItem } from './sources/types';
+import type { DistilledItem, ItemMetadata } from './sources/types';
 
 /**
  * The extraction contract (spec §8).
@@ -164,6 +164,72 @@ export type Extractor = (
 ) => Promise<Extraction>;
 
 /**
+ * The per-kind wording of the prompt.
+ *
+ * A switch rather than nested ternaries: the prompt STATES its facts, so each
+ * kind has to say only what is true of it — a capture has no prompt count and
+ * an instruction file has no session — and a fourth source would otherwise add
+ * a fourth level of nesting to five separate expressions. The exhaustive
+ * default is what makes adding one a compile error rather than a silent
+ * fall-through to session wording.
+ */
+interface PromptShape {
+  preamble: string;
+  facts: string;
+  /** Names the material, for the "return nothing durable" rule. */
+  emptyCase: string;
+  /** Completes "one sentence describing …". */
+  timelineNoun: string;
+  /** Heading above the material itself. */
+  heading: string;
+}
+
+function promptShapeFor(m: ItemMetadata): PromptShape {
+  switch (m.kind) {
+    case 'capture':
+      return {
+        preamble:
+          'You are turning one fact a developer explicitly captured into durable vault entities.',
+        facts: [
+          `captured: ${m.capturedAt}`,
+          `project: ${m.project ?? 'unknown'}`,
+          `working directory: ${m.cwd ?? 'unknown'}`,
+        ].join('\n'),
+        emptyCase: 'A capture that records nothing durable',
+        timelineNoun: 'what THIS capture records',
+        heading: 'CAPTURED NOTE',
+      };
+    case 'artifact':
+      return {
+        preamble:
+          "You are extracting durable engineering knowledge from a project's agent " +
+          'instruction file — the standing rules and architecture a developer wrote ' +
+          'for this repository.',
+        facts: [`repository: ${m.repoPath}`, `file: ${m.file}`].join('\n'),
+        emptyCase: 'An instruction file that establishes nothing durable',
+        timelineNoun: 'what THIS file establishes',
+        heading: 'INSTRUCTION FILE',
+      };
+    case 'session':
+      return {
+        preamble: 'You are extracting durable engineering knowledge from one coding session.',
+        facts: [
+          `session: ${m.sessionId}`,
+          `project: ${m.projectPath ?? 'unknown'}`,
+          `branch: ${m.gitBranch ?? 'unknown'}`,
+          `started: ${m.startedAt ?? 'unknown'}`,
+          `turns: ${String(m.promptCount)} prompts, ${String(m.proseCount)} replies`,
+          `files touched: ${m.filesTouched.length > 0 ? m.filesTouched.join(', ') : 'none'}`,
+          `outcome: ${m.terminalStatus}`,
+        ].join('\n'),
+        emptyCase: 'A session that decided nothing durable',
+        timelineNoun: 'what THIS session did',
+        heading: 'TRANSCRIPT',
+      };
+  }
+}
+
+/**
  * The extraction prompt.
  *
  * Deterministic facts are STATED, not requested. The model's job is prose and
@@ -175,30 +241,8 @@ export function buildExtractionPrompt(
   context?: ExtractionContext,
 ): string {
   const m = item.metadata;
-  // The two kinds get different preambles and different facts. A capture has
-  // no session behind it, and stating one anyway — a fabricated prompt count,
-  // a made-up session id — would hand the model a false fact about the very
-  // material it is summarising.
-  const preamble =
-    m.kind === 'capture'
-      ? 'You are turning one fact a developer explicitly captured into durable vault entities.'
-      : 'You are extracting durable engineering knowledge from one coding session.';
-  const facts =
-    m.kind === 'capture'
-      ? [
-          `captured: ${m.capturedAt}`,
-          `project: ${m.project ?? 'unknown'}`,
-          `working directory: ${m.cwd ?? 'unknown'}`,
-        ].join('\n')
-      : [
-          `session: ${m.sessionId}`,
-          `project: ${m.projectPath ?? 'unknown'}`,
-          `branch: ${m.gitBranch ?? 'unknown'}`,
-          `started: ${m.startedAt ?? 'unknown'}`,
-          `turns: ${String(m.promptCount)} prompts, ${String(m.proseCount)} replies`,
-          `files touched: ${m.filesTouched.length > 0 ? m.filesTouched.join(', ') : 'none'}`,
-          `outcome: ${m.terminalStatus}`,
-        ].join('\n');
+  const shape = promptShapeFor(m);
+  const { preamble, facts } = shape;
 
   const truncationNote = item.truncated
     ? '\nNOTE: this transcript was TRUNCATED to fit a size limit. You are seeing ' +
@@ -226,25 +270,20 @@ Return ONLY a JSON object matching this shape, with no commentary:
 "keyFacts":[string]}]}
 
 Rules:
-- Extract only what will still matter in six months. ${
-    m.kind === 'capture'
-      ? 'A capture that records nothing durable'
-      : 'A session that decided nothing durable'
-  } should return {"entities":[]}.
+- Extract only what will still matter in six months. ${shape.emptyCase} should
+  return {"entities":[]}.
 - \`aliases\` and \`keywords\` are what make this searchable later. Include the
   literal identifiers a developer would type: file names, function names,
   flags, error strings. Prefer exact spellings over descriptions.
 - \`summary\` is 2-3 sentences of plain prose.
 - \`links.target\` names another entity, e.g. "Projects/omnifex".
-- \`timelineEntry\` is one sentence describing what ${
-    m.kind === 'capture' ? 'THIS capture records' : 'THIS session did'
-  }.
+- \`timelineEntry\` is one sentence describing ${shape.timelineNoun}.
 - Use the facts below rather than inferring them.
 
 FACTS
 ${facts}
 ${truncationNote}${existing}
-${m.kind === 'capture' ? 'CAPTURED NOTE' : 'TRANSCRIPT'}
+${shape.heading}
 ${item.prose}`;
 }
 

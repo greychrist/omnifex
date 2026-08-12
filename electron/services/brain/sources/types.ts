@@ -90,6 +90,16 @@ export interface CaptureMetadata {
 }
 
 /**
+ * Deterministic facts about a repository's agent instruction file
+ * (`CLAUDE.md` / `AGENTS.md`). There is no session and no capture behind one.
+ */
+export interface ArtifactMetadata {
+  repoPath: string;
+  /** Repo-relative, e.g. "CLAUDE.md" or "src/CLAUDE.md". */
+  file: string;
+}
+
+/**
  * What a distillation knows about its item.
  *
  * A discriminated union rather than one shape with optional fields: the
@@ -100,7 +110,8 @@ export interface CaptureMetadata {
  */
 export type ItemMetadata =
   | ({ kind: 'session' } & SessionMetadata)
-  | ({ kind: 'capture' } & CaptureMetadata);
+  | ({ kind: 'capture' } & CaptureMetadata)
+  | ({ kind: 'artifact' } & ArtifactMetadata);
 
 /** The bounded prose plus structured metadata handed to the extractor. */
 export interface DistilledItem {
