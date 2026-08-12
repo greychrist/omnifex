@@ -38,7 +38,14 @@ import { buildClaudeEnv } from '../util/claude-env';
 //   to a race has no observable effect.
 // ---------------------------------------------------------------------------
 
-const SCRATCH_DIR_NAME = 'omnifex-summary-scratch';
+/**
+ * Exported because the Brain's session source has to EXCLUDE these. The CLI
+ * encodes this scratch cwd into a real `projects/<encoded>/` directory, so
+ * OmniFex's own summary runs are indistinguishable from user sessions by shape
+ * alone — only by name. Two independent spellings of that name would
+ * eventually diverge and quietly start indexing them.
+ */
+export const SCRATCH_DIR_NAME = 'omnifex-summary-scratch';
 
 export interface SummaryQueryOptions {
   prompt: string;
