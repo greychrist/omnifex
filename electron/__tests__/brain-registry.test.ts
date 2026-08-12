@@ -999,6 +999,115 @@ describe('translating sources', () => {
     brain.closeAll();
   });
 
+  describe('enqueueProjectSources', () => {
+    /** A source whose items use the auto-memory key shape. */
+    function memoryLike(keys: string[]): BrainSource {
+      return {
+        id: 'auto-memory',
+        discover: () => Promise.resolve(keys.map((k) => ({
+          sourceId: 'auto-memory', itemKey: k, accountId: 1,
+          path: join(dir, k.replace(/\//g, '_')), mtimeMs: 1, size: 10, label: 'mem',
+        }))),
+        admit: () => ({ admitted: true, reason: 'ok' }),
+        translate: () => Promise.resolve([]),
+      };
+    }
+
+    /** A source whose items use the repo-artifact key shape. */
+    function artifactLike(keys: string[]): BrainSource {
+      return {
+        id: 'repo',
+        discover: () => Promise.resolve(keys.map((k) => ({
+          sourceId: 'repo', itemKey: k, accountId: 1,
+          path: join(dir, k.replace(/[/:]/g, '_')), mtimeMs: 1, size: 10, label: 'art',
+        }))),
+        admit: () => ({ admitted: true, reason: 'ok' }),
+        distill: () => Promise.resolve({
+          prose: 'x', truncated: false,
+          metadata: { kind: 'artifact' as const, repoPath: '/repo', file: 'CLAUDE.md' },
+        }),
+      };
+    }
+
+    function serviceWith(sources: BrainSource[], vault: string) {
+      const brain = createBrainService(db, {
+        execGit: stubExec, accounts: accountsStub,
+        extractor: () => Promise.resolve({ entities: [] }),
+        sources,
+      });
+      brain.setVaultPath(1, join(dir, vault));
+      return brain;
+    }
+
+    it('queues both key shapes for the project it was given', async () => {
+      const brain = serviceWith([
+        memoryLike(['-Users-dev-repo/a.md']),
+        artifactLike(['/Users/dev/repo:CLAUDE.md']),
+      ], 'eps1');
+
+      expect(await brain.enqueueProjectSources(1, '/Users/dev/repo')).toBe(2);
+      brain.closeAll();
+    });
+
+    it('leaves another project\'s items alone', async () => {
+      const brain = serviceWith([
+        memoryLike(['-Users-dev-other/a.md']),
+        artifactLike(['/Users/dev/other:CLAUDE.md']),
+      ], 'eps2');
+
+      expect(await brain.enqueueProjectSources(1, '/Users/dev/repo')).toBe(0);
+      brain.closeAll();
+    });
+
+    it('never re-queues the transcript, which the caller enqueues by key', async () => {
+      const brain = serviceWith([fakeTranslator(1, []), {
+        id: 'session',
+        discover: () => Promise.resolve([{
+          sourceId: 'session', itemKey: 'sess-a', accountId: 1,
+          path: join(dir, 'sess-a'), mtimeMs: 1, size: 10, label: '-Users-dev-repo',
+        }]),
+        admit: () => ({ admitted: true, reason: 'ok' }),
+        distill: () => Promise.resolve({
+          prose: 'x', truncated: false,
+          metadata: {
+            kind: 'capture' as const,
+            capturedAt: '2026-08-12T00:00:00.000Z', project: null, cwd: null,
+          },
+        }),
+      }], 'eps3');
+
+      expect(await brain.enqueueProjectSources(1, '/Users/dev/repo')).toBe(0);
+      brain.closeAll();
+    });
+
+    it('skips an item already indexed and unchanged', async () => {
+      const brain = serviceWith([memoryLike(['-Users-dev-repo/a.md'])], 'eps4');
+
+      expect(await brain.enqueueProjectSources(1, '/Users/dev/repo')).toBe(1);
+      await brain.indexSource(1, '-Users-dev-repo/a.md');
+      // The whole point of the close-time trigger being cheap: the ordinary
+      // case is a directory walk that queues nothing.
+      expect(await brain.enqueueProjectSources(1, '/Users/dev/repo')).toBe(0);
+      brain.closeAll();
+    });
+
+    it('never queues another account\'s item', async () => {
+      const otherAccount: BrainSource = {
+        id: 'auto-memory',
+        discover: () => Promise.resolve([{
+          sourceId: 'auto-memory', itemKey: '-Users-dev-repo/a.md', accountId: 2,
+          path: join(dir, 'other'), mtimeMs: 1, size: 10, label: 'mem',
+        }]),
+        admit: () => ({ admitted: true, reason: 'ok' }),
+        translate: () => Promise.resolve([]),
+      };
+      const brain = serviceWith([otherAccount], 'eps5');
+
+      expect(await brain.enqueueProjectSources(1, '/Users/dev/repo')).toBe(0);
+      brain.closeAll();
+    });
+  });
+
   it('backfills translating and extracting sources together', async () => {
     // Both kinds in one queue: the worker must not care which it claims.
     const brain = createBrainService(db, {

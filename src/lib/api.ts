@@ -3054,6 +3054,11 @@ export const api = {
     return apiCall<void>('brain_delete_note', { accountId, notePath });
   },
 
+  /** Queue this project's auto-memory notes and repo instruction files. */
+  async brainEnqueueProjectSources(accountId: number, projectPath: string): Promise<number> {
+    return apiCall<number>('brain_enqueue_project_sources', { accountId, projectPath });
+  },
+
   async brainBacklinks(accountId: number, notePath: string): Promise<string[]> {
     return apiCall<string[]>('brain_backlinks', { accountId, notePath });
   },

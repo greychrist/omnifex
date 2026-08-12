@@ -21,6 +21,7 @@ import {
   type QueueEntry,
 } from './queue';
 import type { BrainSource, ItemMetadata, SourceItem } from './sources/types';
+import { SESSION_SOURCE_ID } from './sources/session-transcripts';
 import type { Extractor } from './extract';
 import { resolveEntityPath, type ExistingNote } from './resolve';
 import { merge } from './merge';
@@ -226,6 +227,16 @@ export interface BrainService {
   ): Promise<IndexResult>;
   /** Queue one item this account owns. Throws for an item it does not. */
   enqueueSource(accountId: number, itemKey: string): Promise<void>;
+  /**
+   * Queue every NON-session item this account owns that belongs to
+   * `projectPath` — its auto-memory notes and its repo instruction files.
+   * Returns how many were queued.
+   *
+   * Matched on each item's own key rather than on keys reconstructed by the
+   * caller: the key formats belong to the adapters, and a second spelling in
+   * `main.ts` would go quietly stale the moment one changed.
+   */
+  enqueueProjectSources(accountId: number, projectPath: string): Promise<number>;
   /**
    * Queue every admitted item this account owns that is not already indexed
    * and unchanged. Returns how many were queued.
@@ -1103,6 +1114,36 @@ export function createBrainService(
       // through the wrong subscription and into the wrong vault.
       if (!found) throw new Error(`source item not found for this account: ${itemKey}`);
       queueStore.enqueue(accountId, found.item.sourceId, found.item.itemKey);
+    },
+
+    async enqueueProjectSources(accountId: number, projectPath: string): Promise<number> {
+      requireAccountId(accountId);
+      // The CLI's own encoding, which is what an auto-memory item's key is
+      // qualified by. Lossy in the decode direction, but exact in this one.
+      const encoded = projectPath.replace(/[^a-zA-Z0-9]/g, '-');
+      let queued = 0;
+
+      for (const source of sources) {
+        // The transcript is enqueued by its own key at the call site; this
+        // covers what a session close does NOT already reach.
+        if (source.id === SESSION_SOURCE_ID) continue;
+
+        for (const item of await source.discover()) {
+          if (item.accountId !== accountId) continue;
+          // Auto-memory keys are `<encoded project>/<file>`; repo artifacts are
+          // `<repoPath>:<file>`. Matching either shape keeps the check here
+          // without teaching the caller both formats.
+          const belongs =
+            item.itemKey.startsWith(`${encoded}/`) || item.itemKey.startsWith(`${projectPath}:`);
+          if (!belongs) continue;
+          if (!source.admit(item).admitted) continue;
+          const prior = sourceState.get(accountId, item.sourceId, item.itemKey);
+          if (prior?.status === 'indexed' && !sourceState.hasChanged(item)) continue;
+          queueStore.enqueue(accountId, item.sourceId, item.itemKey);
+          queued += 1;
+        }
+      }
+      return queued;
     },
 
     async backfill(accountId: number): Promise<number> {

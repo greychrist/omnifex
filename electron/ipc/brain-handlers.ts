@@ -233,6 +233,17 @@ export function createBrainHandlers(
       return brain.backfill(requireAccountId(params));
     },
 
+    async brain_enqueue_project_sources(_event, params = {}) {
+      // A write that queues token-spending work, like brain_backfill: a count
+      // returned while the service is missing would claim an enqueue that
+      // never happened.
+      if (!brain) throw new Error('brain service unavailable');
+      return brain.enqueueProjectSources(
+        requireAccountId(params),
+        requireString(params, 'projectPath', 'project_path'),
+      );
+    },
+
     async brain_queue_drain(_event) {
       if (!brain) throw new Error('brain service unavailable');
       // No accountId: the queue spans accounts and each entry carries its own,
