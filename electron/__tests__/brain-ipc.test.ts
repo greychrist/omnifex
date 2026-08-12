@@ -234,6 +234,7 @@ describe('brain IPC handlers', () => {
       backlinks: () => { throw boom; },
       listSources: () => { throw boom; },
       previewSource: () => { throw boom; },
+      indexSource: () => { throw boom; },
       closeAll: () => {},
     };
     const stubHandlers = createBrainHandlers(stub);

@@ -43,6 +43,7 @@ import { decideQuit } from './quit-policy';
 import { createDatabase, ensureDefaultSettings } from './services/database';
 import { createBrainService, type BrainService } from './services/brain/registry';
 import { createSessionSource } from './services/brain/sources/session-transcripts';
+import { createExtractor } from './services/brain/extract';
 import { createAccountsService } from './services/accounts';
 import { runFirstTimeDiscovery } from './services/first-run-discovery';
 import { createClaudeBinaryService } from './services/claude-binary';
@@ -467,6 +468,8 @@ app.whenReady().then(() => {
   // transcript's owning account from the config dir it lives under (spec §4),
   // which needs the account list.
   const brainService: BrainService | undefined = createBrainService(db, {
+    accounts: accountsService,
+    extractor: createExtractor(),
     sources: [createSessionSource({ accounts: accountsService })],
   });
 
