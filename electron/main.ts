@@ -42,6 +42,7 @@ process.on('unhandledRejection', (err) => {
 import { decideQuit } from './quit-policy';
 import { createDatabase, ensureDefaultSettings } from './services/database';
 import { createBrainService, type BrainService } from './services/brain/registry';
+import { createSessionSource } from './services/brain/sources/session-transcripts';
 import { createAccountsService } from './services/accounts';
 import { runFirstTimeDiscovery } from './services/first-run-discovery';
 import { createClaudeBinaryService } from './services/claude-binary';
@@ -435,14 +436,6 @@ app.whenReady().then(() => {
   }
   _db = db;
 
-  // `createBrainService` reads no settings and does no I/O — it closes over
-  // `db` and returns an object literal — so there is no construction failure
-  // to guard against here. It stays typed as `BrainService | undefined`
-  // because every entry in the Services interface is optional by convention,
-  // and every Brain IPC handler already degrades (reads) or throws cleanly
-  // (writes) when it isn't wired.
-  const brainService: BrainService | undefined = createBrainService(db);
-
   // Seed first-run defaults. Empty-string values (user deliberately cleared)
   // are preserved; only truly-missing keys get the default.
   //
@@ -462,6 +455,20 @@ app.whenReady().then(() => {
     [AUTO_ON_CLOSE_SETTING_KEY]: 'true',
   });
   const accountsService = createAccountsService(db);
+
+  // `createBrainService` reads no settings and does no I/O — it closes over
+  // `db` and returns an object literal — so there is no construction failure
+  // to guard against here. It stays typed as `BrainService | undefined`
+  // because every entry in the Services interface is optional by convention,
+  // and every Brain IPC handler already degrades (reads) or throws cleanly
+  // (writes) when it isn't wired.
+  //
+  // Constructed after `accountsService` because the session source derives a
+  // transcript's owning account from the config dir it lives under (spec §4),
+  // which needs the account list.
+  const brainService: BrainService | undefined = createBrainService(db, {
+    sources: [createSessionSource({ accounts: accountsService })],
+  });
 
   // First-launch account discovery: if this is a fresh install with no
   // accounts yet, scan $HOME for `.claude*` dirs and create one account per

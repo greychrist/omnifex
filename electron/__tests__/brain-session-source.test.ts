@@ -4,7 +4,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createDatabase, type Database } from '../services/database';
 import { createAccountsService, type AccountsService } from '../services/accounts';
+import { createBrainService } from '../services/brain/registry';
 import { createSessionSource } from '../services/brain/sources/session-transcripts';
+import { createSourceStateStore } from '../services/brain/sources/state';
 import type { BrainSource } from '../services/brain/sources/types';
 
 const PROMPT = (text: string, i: number): string =>
@@ -211,6 +213,84 @@ describe('session transcript source', () => {
       // truthful empty answer: returning empty prose would let Plan 4 write a
       // note asserting the session had nothing in it.
       await expect(source.distill(item)).rejects.toThrow(/cannot read/i);
+    });
+  });
+
+  describe('BrainService source wiring', () => {
+    // These live here rather than in brain-ipc.test.ts because that file
+    // deliberately uses bare account ids with no `accounts` rows, and
+    // discovery needs real config dirs on disk to walk.
+    function service() {
+      return createBrainService(db, {
+        execGit: async () => '',
+        sources: [createSessionSource({ accounts })],
+      });
+    }
+
+    it('lists sources for one account only, with verdicts and change state', async () => {
+      writeSession(personalCfg, '-Users-dev-Repos-omnifex', 'sess-personal', GOOD);
+      writeSession(workCfg, '-Users-dev-Repos-mango', 'sess-work', GOOD);
+      const brain = service();
+
+      const summaries = await brain.listSources(personalId);
+
+      // The isolation property at the service boundary: listSources answers
+      // for exactly the account asked about.
+      expect(summaries.every((s) => s.accountId === personalId)).toBe(true);
+      expect(summaries.map((s) => s.itemKey)).toEqual(['sess-personal']);
+      expect(summaries[0]).toMatchObject({ admitted: true, status: null, changed: true });
+      brain.closeAll();
+    });
+
+    it('will not preview another account item even when the key is known', async () => {
+      writeSession(workCfg, '-Users-dev-Repos-mango', 'sess-work', GOOD);
+      const brain = service();
+      // A session id is unique per account, not globally. Matching on the key
+      // alone would hand a work transcript to whoever asked as personal.
+      await expect(brain.previewSource(personalId, 'sess-work')).resolves.toBeNull();
+      brain.closeAll();
+    });
+
+    it('previews the distilled prose of an item it owns', async () => {
+      writeSession(personalCfg, '-Users-dev-Repos-omnifex', 'sess-a', GOOD);
+      const brain = service();
+      const preview = await brain.previewSource(personalId, 'sess-a');
+      expect(preview?.prose).toContain('USER: first ask');
+      expect(preview?.admitted).toBe(true);
+      expect(preview?.metadata.projectPath).toBe('/Users/dev/Repos/omnifex');
+      brain.closeAll();
+    });
+
+    it('reports a recorded status back on the next listing', async () => {
+      writeSession(personalCfg, '-Users-dev-Repos-omnifex', 'sess-a', GOOD);
+      const brain = service();
+      const [before] = await brain.listSources(personalId);
+      expect(before.status).toBeNull();
+
+      createSourceStateStore(db).record(
+        {
+          sourceId: 'session',
+          itemKey: 'sess-a',
+          accountId: personalId,
+          path: join(personalCfg, 'projects', '-Users-dev-Repos-omnifex', 'sess-a.jsonl'),
+          mtimeMs: before.mtimeMs,
+          size: 0,
+          label: '',
+        },
+        { status: 'indexed' },
+      );
+
+      const [after] = await brain.listSources(personalId);
+      expect(after.status).toBe('indexed');
+      // Recorded at the same mtime, so nothing has moved since.
+      expect(after.changed).toBe(false);
+      brain.closeAll();
+    });
+
+    it('returns an empty listing for an account with no transcripts', async () => {
+      const brain = service();
+      await expect(brain.listSources(workId)).resolves.toEqual([]);
+      brain.closeAll();
     });
   });
 });
