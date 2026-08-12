@@ -1,6 +1,9 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { api, type BrainSourcePreview, type BrainSourceSummary } from '@/lib/api';
 
+/** Bumped to re-run the listing effect after an indexing run changes a status. */
+type Nonce = number;
+
 /**
  * The Sources pane: what the session adapter found, what the admission gate
  * decided, and what a distilled transcript actually looks like.
@@ -20,12 +23,16 @@ export const BrainSources: React.FC<{ accountId: number | null }> = ({ accountId
   const [preview, setPreview] = useState<BrainSourcePreview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [indexing, setIndexing] = useState(false);
+  const [outcome, setOutcome] = useState<string | null>(null);
+  const [nonce, setNonce] = useState<Nonce>(0);
 
   // Both are account-scoped: carrying either across a switch would render one
   // account's material under another account's header.
   useEffect(() => {
     setSelected(null);
     setPreview(null);
+    setOutcome(null);
   }, [accountId]);
 
   useEffect(() => {
@@ -50,13 +57,14 @@ export const BrainSources: React.FC<{ accountId: number | null }> = ({ accountId
     return () => {
       cancelled = true;
     };
-  }, [accountId]);
+  }, [accountId, nonce]);
 
   const select = useCallback(
     (itemKey: string) => {
       if (accountId === null) return;
       setSelected(itemKey);
       setPreview(null);
+      setOutcome(null);
       api
         .brainSourcePreview(accountId, itemKey)
         .then(setPreview)
@@ -64,6 +72,32 @@ export const BrainSources: React.FC<{ accountId: number | null }> = ({ accountId
     },
     [accountId],
   );
+
+  /**
+   * The only control in this app that spends tokens on its own. One item at a
+   * time and only on an explicit press — Plan 4b's worker is what makes this
+   * automatic, and it does not exist yet.
+   */
+  const index = useCallback(() => {
+    if (accountId === null || selected === null) return;
+    setIndexing(true);
+    setOutcome(null);
+    setError(null);
+    api
+      .brainIndexSource(accountId, selected)
+      .then((result) => {
+        setOutcome(
+          result.skipped
+            ? `Not indexed: ${result.reason}`
+            : `Indexed — ${result.notesWritten.join(', ') || 'nothing worth a note'}`,
+        );
+        // Re-listing is what turns this row's status from null to indexed.
+        // Without it the button looks like it did nothing.
+        setNonce((n) => n + 1);
+      })
+      .catch((err: Error) => setError(err.message))
+      .finally(() => { setIndexing(false); });
+  }, [accountId, selected]);
 
   if (accountId === null) {
     return <div className="p-4 text-xs text-muted-foreground">Select an account.</div>;
@@ -113,6 +147,19 @@ export const BrainSources: React.FC<{ accountId: number | null }> = ({ accountId
         )}
         {preview && (
           <>
+            <div className="mb-3 flex items-center gap-3">
+              {preview.admitted && (
+                <button
+                  type="button"
+                  onClick={index}
+                  disabled={indexing}
+                  className="rounded-md border px-2 py-1 text-xs hover:bg-accent disabled:opacity-50"
+                >
+                  {indexing ? 'Indexing…' : 'Index'}
+                </button>
+              )}
+              {outcome && <span className="text-xs text-muted-foreground">{outcome}</span>}
+            </div>
             <dl className="mb-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs">
               <dt className="text-muted-foreground">project</dt>
               <dd className="truncate">{preview.metadata.projectPath ?? '—'}</dd>
