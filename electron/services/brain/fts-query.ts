@@ -12,6 +12,15 @@ const FTS_KEYWORDS = new Set(['AND', 'OR', 'NOT', 'NEAR']);
 const TOKEN = /[\p{L}\p{N}_-]+/gu;
 
 /**
+ * Longest input accepted, in characters. A longer query is truncated rather
+ * than rejected: `registry.search()` only catches VaultConflictError, so an
+ * oversized MATCH expression would surface as a raw SQLite error rejecting the
+ * IPC call instead of as a search that simply found nothing useful. Generous
+ * enough that no human-typed query is affected.
+ */
+const MAX_QUERY_CHARS = 512;
+
+/**
  * Convert free user input into a safe FTS5 MATCH expression.
  *
  * Every token is emitted as a quoted string literal, so no input can inject
@@ -27,7 +36,8 @@ export function toFtsQuery(input: string): string | null {
     return null;
   }
 
-  const tokens = (input.match(TOKEN) ?? []).filter((t) => !FTS_KEYWORDS.has(t));
+  const capped = input.slice(0, MAX_QUERY_CHARS);
+  const tokens = (capped.match(TOKEN) ?? []).filter((t) => !FTS_KEYWORDS.has(t));
   if (tokens.length === 0) return null;
   // FTS5 escapes a double quote inside a string literal by doubling it. The
   // tokenizer above cannot emit one, but the escape is kept so this stays

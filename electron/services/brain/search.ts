@@ -43,6 +43,34 @@ const BM25_WEIGHTS = '0.0, 0.0, 10.0, 8.0, 6.0, 3.0, 1.0';
 /** Ordinal of the body column, for snippet(). */
 const BODY_COLUMN = 6;
 
+/**
+ * Row count of an existing index, or null when there is no readable index.
+ *
+ * Deliberately separate from `createVaultIndex`, which CREATES the database it
+ * is handed — a status probe must be able to report "configured but never
+ * indexed" without bringing the thing it is reporting on into existence.
+ * `fileMustExist` is what enforces that; `readonly` keeps a probe from
+ * migrating a schema or writing a WAL into a vault nobody opened.
+ */
+export function readIndexedCount(dbPath: string): number | null {
+  let db: BetterSqlite3.Database;
+  try {
+    db = new BetterSqlite3(dbPath, { readonly: true, fileMustExist: true });
+  } catch {
+    return null;
+  }
+  try {
+    const row = db.prepare('SELECT count(*) AS n FROM brain_fts').get() as { n: number } | undefined;
+    return row?.n ?? 0;
+  } catch {
+    // A file that exists but has no brain_fts table is corrupt, not empty.
+    // Null means "unknown", which is what the tab should show.
+    return null;
+  } finally {
+    db.close();
+  }
+}
+
 export function createVaultIndex(dbPath: string): VaultIndex {
   mkdirSync(dirname(dbPath), { recursive: true });
   const db = new BetterSqlite3(dbPath);

@@ -192,6 +192,7 @@ describe('brain IPC handlers', () => {
       setVaultPath: () => { throw boom; },
       clearVaultPath: () => { throw boom; },
       open: () => { throw boom; },
+      status: () => { throw boom; },
       search: () => { throw boom; },
       writeNote: () => { throw boom; },
       closeAll: () => {},

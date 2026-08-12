@@ -1,8 +1,14 @@
-import { lstatSync, mkdirSync, readdirSync, realpathSync, rmSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readdirSync, realpathSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Database } from '../database';
 import { createVault, type Vault } from './vault';
-import { createVaultIndex, type SearchHit, type SearchOptions, type VaultIndex } from './search';
+import {
+  createVaultIndex,
+  readIndexedCount,
+  type SearchHit,
+  type SearchOptions,
+  type VaultIndex,
+} from './search';
 import { createVaultGit, type VaultGit } from './git';
 import { fireAndLogGitFailure } from './git-logging';
 import { canonicalPath, fsIdentity, isSameOrInside, resolveVaultRoot } from './paths';
@@ -59,12 +65,41 @@ export interface VaultHandle {
   readonly git: VaultGit;
 }
 
+/**
+ * A vault's condition, answerable WITHOUT creating it.
+ *
+ * `open()` cannot serve this purpose: it lazily scaffolds the layout, which is
+ * correct for first use and useless for a UI that has to tell "never
+ * configured" apart from "configured, but the directory is gone". Every field
+ * here is derived by looking, never by materialising.
+ */
+export interface VaultStatus {
+  accountId: number;
+  configured: boolean;
+  /** The stored path, exactly as it was set. Null when unconfigured. */
+  path: string | null;
+  /** The directory exists on disk. */
+  exists: boolean;
+  /** The scaffolded layout is present (config/notes.json). */
+  initialized: boolean;
+  /** Markdown notes on disk. 0 when the vault does not exist. */
+  noteCount: number;
+  /** Rows in the FTS index, or null when there is no readable index. */
+  indexedCount: number | null;
+  gitAvailable: boolean;
+  lastGitError: string | null;
+  /** Why this vault cannot be opened, when it cannot be. */
+  conflict: string | null;
+}
+
 export interface BrainService {
   vaultPath(accountId: number): string | null;
   setVaultPath(accountId: number, path: string): void;
   clearVaultPath(accountId: number): void;
   /** Opens (and lazily creates) the account's vault. Null when unconfigured. */
   open(accountId: number): VaultHandle | null;
+  /** Describes the vault without creating it. Never throws for a broken one. */
+  status(accountId: number): Promise<VaultStatus>;
   search(accountId: number, query: string, opts?: SearchOptions): SearchHit[];
   writeNote(accountId: number, relPath: string, note: ParsedNote, commitMessage: string): void;
   closeAll(): void;
@@ -404,6 +439,54 @@ export function createBrainService(db: Database): BrainService {
       const identity = handleIdentity(vault.root, indexFile);
       if (identity !== null) handles.set(accountId, { handle, identity });
       return handle;
+    },
+
+    async status(accountId: number): Promise<VaultStatus> {
+      requireAccountId(accountId);
+      const stored = readPath(accountId);
+      const base: VaultStatus = {
+        accountId,
+        configured: stored !== null,
+        path: stored,
+        exists: false,
+        initialized: false,
+        noteCount: 0,
+        indexedCount: null,
+        // Probed from the process cwd, not the vault root: the vault may not
+        // exist, and "is git installed" is a property of the machine anyway.
+        gitAvailable: await createVaultGit(process.cwd()).available(),
+        lastGitError: lastGitError.get(accountId) ?? null,
+        conflict: null,
+      };
+      if (stored === null) return base;
+
+      // A stored value that open() would refuse is REPORTED rather than
+      // thrown: this method exists to describe broken states, so failing on
+      // one would leave the UI with nothing to render.
+      let root: string;
+      try {
+        root = resolveVaultRoot(stored);
+      } catch (err) {
+        return { ...base, conflict: (err as Error).message };
+      }
+
+      try {
+        assertNoOverlap(accountId, canonicalPath(root));
+        assertOwnGitDir(root);
+      } catch (err) {
+        if (err instanceof VaultConflictError) return { ...base, conflict: err.message };
+        throw err;
+      }
+
+      if (!existsSync(root)) return base;
+
+      return {
+        ...base,
+        exists: true,
+        initialized: existsSync(join(root, 'config', 'notes.json')),
+        noteCount: createVault(root).listNotes().length,
+        indexedCount: readIndexedCount(join(root, INDEX_DIR, INDEX_FILE)),
+      };
     },
 
     search(accountId: number, query: string, opts?: SearchOptions): SearchHit[] {

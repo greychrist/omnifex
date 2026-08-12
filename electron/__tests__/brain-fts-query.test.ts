@@ -55,4 +55,15 @@ describe('toFtsQuery', () => {
     expect(toFtsQuery(null as unknown as string)).toBeNull();
     expect(toFtsQuery(123 as unknown as string)).toBeNull();
   });
+
+  it('caps a pathological query rather than building a giant MATCH expression', () => {
+    const huge = 'alpha '.repeat(5000);
+    const out = toFtsQuery(huge);
+    expect(out).not.toBeNull();
+    expect(out!.length).toBeLessThan(4000);
+  });
+
+  it('still returns null for a query that is only whitespace, however long', () => {
+    expect(toFtsQuery(' '.repeat(5000))).toBeNull();
+  });
 });

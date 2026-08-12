@@ -572,6 +572,88 @@ describe('brain registry', () => {
     expect(brain.search(1, 'stdio')).toEqual([]);
   });
 
+  describe('status', () => {
+    it('reports an unconfigured account without creating anything', async () => {
+      expect(await brain.status(1)).toMatchObject({
+        accountId: 1,
+        configured: false,
+        path: null,
+        exists: false,
+        initialized: false,
+        noteCount: 0,
+        indexedCount: null,
+        conflict: null,
+      });
+    });
+
+    it('reports a configured vault whose directory was deleted', async () => {
+      const root = join(dir, 'gone');
+      brain.setVaultPath(1, root);
+      brain.closeAll();
+      rmSync(root, { recursive: true, force: true });
+
+      const status = await brain.status(1);
+      expect(status.configured).toBe(true);
+      expect(status.path).toBe(root);
+      expect(status.exists).toBe(false);
+      expect(status.initialized).toBe(false);
+      expect(status.noteCount).toBe(0);
+    });
+
+    it('does not create the vault it reports on', async () => {
+      const root = join(dir, 'never-created');
+      db.saveSetting(vaultSettingKey(1), root);
+
+      await brain.status(1);
+      expect(existsSync(root)).toBe(false);
+    });
+
+    it('counts notes on disk and rows in the index separately', async () => {
+      brain.setVaultPath(1, join(dir, 'populated'));
+      brain.writeNote(1, 'Notes/A.md', note('alpha'), 'test');
+
+      const status = await brain.status(1);
+      expect(status.exists).toBe(true);
+      expect(status.initialized).toBe(true);
+      expect(status.noteCount).toBe(1);
+      expect(status.indexedCount).toBe(1);
+    });
+
+    it('reports a stale index without rebuilding it', async () => {
+      brain.setVaultPath(1, join(dir, 'stale-index'));
+      const handle = brain.open(1)!;
+      // A vault populated in Obsidian: files on disk, index untouched.
+      handle.vault.writeNote('Notes/Outside.md', note('written elsewhere'));
+
+      const status = await brain.status(1);
+      expect(status.noteCount).toBe(1);
+      expect(status.indexedCount).toBe(0);
+    });
+
+    it('reports a conflict instead of throwing', async () => {
+      const shared = join(dir, 'shared');
+      brain.setVaultPath(1, shared);
+      // Write account 2's row directly: setVaultPath would reject the overlap,
+      // and the point of this test is the state where a conflict already exists.
+      db.saveSetting(vaultSettingKey(2), shared);
+
+      const status = await brain.status(2);
+      expect(status.conflict).toContain('overlaps');
+      expect(status.configured).toBe(true);
+    });
+
+    it('reports a stored path that could never be opened as a conflict', async () => {
+      db.saveSetting(vaultSettingKey(1), '   ');
+      const status = await brain.status(1);
+      expect(status.conflict).toBeTruthy();
+      expect(status.exists).toBe(false);
+    });
+
+    it('rejects a malformed accountId', async () => {
+      await expect(brain.status(0)).rejects.toThrow(/invalid accountId/);
+    });
+  });
+
   describe('git directory ownership', () => {
     it('rejects a symlinked .git', () => {
       const victimGit = join(dir, 'victim-git');
