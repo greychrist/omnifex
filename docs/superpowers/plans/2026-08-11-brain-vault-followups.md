@@ -6,7 +6,14 @@ final whole-branch review (verdict: MERGE WITH FIXES). This is the durable
 record of everything deferred out of that review — the execution workspace it
 was tracked in is being deleted, so anything not written here is lost.
 
-## Required before Plan 2 (the Brain tab) ships
+> **Status update (Plan 2, `feat/brain-tab`).** Every item in the "Required
+> before Plan 2" section below is now CLOSED, along with the `toFtsQuery`
+> length cap from the second section — the Brain tab ships a search box, which
+> was that item's stated trigger. What remains open is listed under
+> "Still open" at the end of this document. The sections below are kept as the
+> record of what was wrong and why it mattered.
+
+## Required before Plan 2 (the Brain tab) ships — ALL CLOSED
 
 - **No `rebuild(accountId)`, `deleteNote(accountId, relPath)`, or non-creating
   vault-status probe on `BrainService` / IPC.** `VaultIndex.rebuild()` and
@@ -64,7 +71,7 @@ was tracked in is being deleted, so anything not written here is lost.
   claims to surface git/versioning status for a vault — right now that status
   would be fiction.
 
-## Worth doing, not urgent
+## Worth doing, not urgent (see "Still open" below for current status)
 
 - **Extract `walkToRealAncestor(path, realpathFn)`** shared by
   `paths.ts`'s `canonicalPath` and `vault.ts`'s `safeJoin` — both walk up to
@@ -115,3 +122,53 @@ was tracked in is being deleted, so anything not written here is lost.
   real pass in CI output. Switch these to `ctx.skip()` (vitest's context-based
   skip) so a case-sensitive CI runner reports them as explicitly skipped
   rather than silently green.
+
+---
+
+## Still open after Plan 2 (`feat/brain-tab`, 2026-08-11)
+
+Everything under "Required before Plan 2" is closed, as is the `toFtsQuery`
+length cap. These remain:
+
+- **Extract `walkToRealAncestor(path, realpathFn)`** — unchanged from above.
+  Still purely a de-duplication, still gated by the two existing suites.
+
+- **Thread the injectable `ExecGit` from `createBrainService` through to
+  `createVaultGit`.** This got MORE valuable during Plan 2, not less. The
+  untracked background `git init` now demonstrably races test cleanup:
+  `brain-ipc.test.ts` started failing with `ENOTEMPTY` on `.git` under
+  full-suite load once Task 7's handlers made it call `open()` far more often.
+  Both that file and `brain-registry.test.ts` now carry the same
+  retry-and-swallow workaround in `afterEach`. Threading the exec would make
+  the init awaitable and delete both workarounds.
+
+- **Lift `'.omnifex'` to a shared constant** — unchanged. Note that `'.git'`
+  now has the same shape: `GIT_DIR` in `registry.ts` and the literal in
+  `vault.ts`'s `EXCLUDED_DIRS`. Fold both into one move.
+
+- **Two tests in `brain-registry.test.ts` self-skip via an early `return`** —
+  unchanged; switch to `ctx.skip()`.
+
+- **`parseWikilinks` exists twice on purpose.** `electron/services/brain/links.ts`
+  and `src/lib/brainWikilinks.ts` are twins across the process boundary, since
+  the renderer cannot import from `electron/`. Both carry a comment naming the
+  other and both are tested over the same nine cases, so a drift shows up as a
+  red suite rather than silently. If a third consumer appears, that is the
+  moment to introduce a shared module — not a third copy.
+
+- **The Brain tab has no operational pane** — queue depth, current item, failed
+  items, Index-now, pause, kill switch. Spec §14 places these in this tab, but
+  the queue has no worker until Plan 4, so an operations panel over a table
+  nothing drains would be a control surface for nothing. It lands with the
+  worker. This is a deliberate deferral, not an oversight.
+
+- **The tab cannot create notes.** `updateNoteBody` is read-modify-write by
+  design and refuses to create. Explicit capture ships in Plan 5 alongside
+  `brain_remember`; until then the tab edits and deletes what the vault
+  already holds.
+
+- **`backlinks()` reads every note in the vault on each note open.** Correct
+  by construction (the FTS index is stemmed and limited, so narrowing through
+  it would silently miss links) and fine for the hundreds-of-files case, but
+  it is O(vault) per navigation. If a vault ever reaches the thousands, add a
+  link table maintained on write rather than weakening the scan.
