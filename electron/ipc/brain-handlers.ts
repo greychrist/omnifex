@@ -1,4 +1,11 @@
-import { VaultConflictError, type BrainService, type VaultHandle } from '../services/brain/registry';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+import {
+  VaultConflictError,
+  type BrainService,
+  type VaultHandle,
+  type VaultStatus,
+} from '../services/brain/registry';
 import { NoteParseError } from '../services/brain/frontmatter';
 
 type Params = Record<string, unknown>;
@@ -26,6 +33,37 @@ function requireString(params: Params, camel: string, snake: string): string {
   const value = params[camel] ?? params[snake];
   if (typeof value !== 'string' || !value) throw new Error(`${camel} is required`);
   return value;
+}
+
+/**
+ * A note body may legitimately be the empty string — clearing a note is an
+ * edit, not a missing parameter — so this does not reuse `requireString`,
+ * which rejects `''` on purpose for names and paths.
+ */
+function requireBody(params: Params): string {
+  const value = params.body;
+  if (typeof value !== 'string') throw new Error('body is required');
+  return value;
+}
+
+/**
+ * What `status()` would return for an account with no vault. Used when the
+ * service failed to construct: the Brain tab must still render something
+ * truthful rather than an error, since the Brain is auxiliary.
+ */
+function unconfiguredStatus(accountId: number): VaultStatus {
+  return {
+    accountId,
+    configured: false,
+    path: null,
+    exists: false,
+    initialized: false,
+    noteCount: 0,
+    indexedCount: null,
+    gitAvailable: false,
+    lastGitError: null,
+    conflict: null,
+  };
 }
 
 /**
@@ -83,6 +121,50 @@ export function createBrainHandlers(brain?: BrainService): Record<string, Handle
       if (!brain) throw new Error('brain service unavailable');
       brain.clearVaultPath(requireAccountId(params));
       return null;
+    },
+
+    async brain_status(_event, params = {}) {
+      const accountId = requireAccountId(params);
+      if (!brain) return unconfiguredStatus(accountId);
+      return brain.status(accountId);
+    },
+
+    async brain_default_vault_path(_event, params = {}) {
+      const name = requireString(params, 'accountName', 'account_name');
+      // The name becomes a directory name, so it must not be able to steer the
+      // suggestion out of the Brain folder. This is only a SUGGESTION — the
+      // registry validates whatever is actually submitted — but a suggestion
+      // pre-filled into a text box is one click away from being submitted.
+      if (name.includes('/') || name.includes('\\') || name.includes('\0')) {
+        throw new Error(`account name is not usable as a folder name: ${name}`);
+      }
+      return join(homedir(), 'Documents', 'OmniFex Brain', name);
+    },
+
+    async brain_rebuild(_event, params = {}) {
+      if (!brain) throw new Error('brain service unavailable');
+      return brain.rebuild(requireAccountId(params));
+    },
+
+    async brain_update_note(_event, params = {}) {
+      if (!brain) throw new Error('brain service unavailable');
+      return brain.updateNoteBody(
+        requireAccountId(params),
+        requireString(params, 'notePath', 'note_path'),
+        requireBody(params),
+      );
+    },
+
+    async brain_delete_note(_event, params = {}) {
+      if (!brain) throw new Error('brain service unavailable');
+      brain.deleteNote(requireAccountId(params), requireString(params, 'notePath', 'note_path'));
+      return null;
+    },
+
+    async brain_backlinks(_event, params = {}) {
+      const accountId = requireAccountId(params);
+      if (!brain) return [];
+      return brain.backlinks(accountId, requireString(params, 'notePath', 'note_path'));
     },
 
     async brain_search(_event, params = {}) {

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createDatabase, type Database } from '../services/database';
 import { createBrainService, type BrainService } from '../services/brain/registry';
@@ -17,11 +17,17 @@ const NOTE: ParsedNote = {
 };
 
 const CHANNELS = [
+  'brain_backlinks',
   'brain_clear_vault_path',
+  'brain_default_vault_path',
+  'brain_delete_note',
   'brain_list_notes',
   'brain_read_note',
+  'brain_rebuild',
   'brain_search',
   'brain_set_vault_path',
+  'brain_status',
+  'brain_update_note',
   'brain_vault_path',
 ];
 
@@ -208,5 +214,119 @@ describe('brain IPC handlers', () => {
       stubHandlers.brain_set_vault_path(null, { accountId: 1, path: join(dir, 'x') }),
     ).rejects.toThrow('disk on fire');
     await expect(stubHandlers.brain_list_notes(null, { accountId: 1 })).rejects.toThrow('disk on fire');
+  });
+
+  describe('brain_status', () => {
+    it('returns a status object for a configured account', async () => {
+      await handlers.brain_set_vault_path(null, { accountId: 1, path: join(dir, 'v') });
+      const status = (await handlers.brain_status(null, { accountId: 1 })) as { configured: boolean };
+      expect(status.configured).toBe(true);
+    });
+
+    it('accepts snake_case', async () => {
+      const status = (await handlers.brain_status(null, { account_id: 1 })) as { accountId: number };
+      expect(status.accountId).toBe(1);
+    });
+
+    it('degrades to an unconfigured status when the service is unavailable', async () => {
+      const none = createBrainHandlers(undefined);
+      const status = (await none.brain_status(null, { accountId: 1 })) as { configured: boolean };
+      expect(status.configured).toBe(false);
+    });
+  });
+
+  describe('brain_default_vault_path', () => {
+    it('suggests a path under the user home, named for the account', async () => {
+      expect(await handlers.brain_default_vault_path(null, { accountName: 'personal' })).toBe(
+        join(homedir(), 'Documents', 'OmniFex Brain', 'personal'),
+      );
+    });
+
+    it('rejects an account name containing a path separator', async () => {
+      await expect(
+        handlers.brain_default_vault_path(null, { accountName: '../escape' }),
+      ).rejects.toThrow(/folder name/);
+    });
+  });
+
+  describe('brain_rebuild', () => {
+    it('reindexes and returns the count', async () => {
+      await handlers.brain_set_vault_path(null, { accountId: 1, path: join(dir, 'rb') });
+      brain.writeNote(1, 'Subsystems/A.md', NOTE, 'test');
+
+      expect(await handlers.brain_rebuild(null, { accountId: 1 })).toBe(1);
+    });
+
+    it('throws when the service is unavailable rather than reporting success', async () => {
+      const none = createBrainHandlers(undefined);
+      await expect(none.brain_rebuild(null, { accountId: 1 })).rejects.toThrow(
+        /brain service unavailable/,
+      );
+    });
+  });
+
+  describe('brain_update_note', () => {
+    it('writes the body and returns the updated note', async () => {
+      await handlers.brain_set_vault_path(null, { accountId: 1, path: join(dir, 'up') });
+      brain.writeNote(1, 'Subsystems/A.md', NOTE, 'test');
+
+      const updated = (await handlers.brain_update_note(null, {
+        accountId: 1, notePath: 'Subsystems/A.md', body: 'omega\n',
+      })) as ParsedNote;
+      expect(updated.body).toBe('omega\n');
+    });
+
+    it('accepts an empty body', async () => {
+      await handlers.brain_set_vault_path(null, { accountId: 1, path: join(dir, 'up2') });
+      brain.writeNote(1, 'Subsystems/A.md', NOTE, 'test');
+
+      const updated = (await handlers.brain_update_note(null, {
+        account_id: 1, note_path: 'Subsystems/A.md', body: '',
+      })) as ParsedNote;
+      expect(updated.body).toBe('');
+    });
+
+    it('throws when the service is unavailable', async () => {
+      const none = createBrainHandlers(undefined);
+      await expect(
+        none.brain_update_note(null, { accountId: 1, notePath: 'Subsystems/A.md', body: 'x' }),
+      ).rejects.toThrow(/brain service unavailable/);
+    });
+  });
+
+  describe('brain_delete_note', () => {
+    it('deletes the note', async () => {
+      await handlers.brain_set_vault_path(null, { accountId: 1, path: join(dir, 'del') });
+      brain.writeNote(1, 'Subsystems/A.md', NOTE, 'test');
+
+      await handlers.brain_delete_note(null, { accountId: 1, notePath: 'Subsystems/A.md' });
+      expect(await handlers.brain_list_notes(null, { accountId: 1 })).toEqual([]);
+    });
+
+    it('throws when the service is unavailable', async () => {
+      const none = createBrainHandlers(undefined);
+      await expect(
+        none.brain_delete_note(null, { accountId: 1, notePath: 'Subsystems/A.md' }),
+      ).rejects.toThrow(/brain service unavailable/);
+    });
+  });
+
+  describe('brain_backlinks', () => {
+    it('returns linking notes', async () => {
+      await handlers.brain_set_vault_path(null, { accountId: 1, path: join(dir, 'bl') });
+      brain.writeNote(1, 'Subsystems/A.md', NOTE, 'test');
+      brain.writeNote(1, 'Topics/B.md', { ...NOTE, body: 'see [[A]]' }, 'test');
+
+      expect(await handlers.brain_backlinks(null, {
+        accountId: 1, notePath: 'Subsystems/A.md',
+      })).toEqual(['Topics/B.md']);
+    });
+
+    it('degrades to empty when the service is unavailable', async () => {
+      const none = createBrainHandlers(undefined);
+      expect(await none.brain_backlinks(null, {
+        accountId: 1, notePath: 'Subsystems/A.md',
+      })).toEqual([]);
+    });
   });
 });
