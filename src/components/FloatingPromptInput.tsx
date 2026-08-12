@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Send,
@@ -13,7 +13,7 @@ import { TooltipProvider, TooltipSimple } from "@/components/ui/tooltip-modern";
 import { FilePicker } from "./FilePicker";
 import { SlashCommandPicker } from "./SlashCommandPicker";
 import { ImagePreview } from "./ImagePreview";
-import { type FileEntry, type SlashCommand } from "@/lib/api";
+import { api, type FileEntry, type SlashCommand } from "@/lib/api";
 
 // Sub-components
 import type { EffortLevel, ThinkingConfig, PermissionMode } from "./ControlBar";
@@ -24,6 +24,9 @@ import {
   useImageDropZone,
 } from "./ImageAttachments";
 import { useSlashCommandAutocomplete } from "@/hooks/useSlashCommandAutocomplete";
+import { RECALL_COMMAND_ID } from "@/lib/localSlashCommands";
+import { RecallDialog } from "./brain/RecallDialog";
+import { useOptionalAccounts } from "@/contexts/AccountsContext";
 
 // Re-export types so existing consumers don't break. The model / effort /
 // permission pickers themselves moved to the SessionCard context popover.
@@ -96,7 +99,56 @@ const FloatingPromptInputInner = (
   const isIMEComposingRef = useRef(false);
 
   // -- Slash command autocomplete hook --
-  const slash = useSlashCommandAutocomplete();
+  // The Brain, for /recall. The account is derived from the session's resolved
+  // configDir rather than passed in: this component already receives the
+  // configDir, and a second source of account identity is a second thing that
+  // can disagree.
+  // Optional on purpose: /recall is enrichment, and a prompt input rendered
+  // outside AccountsProvider must still work.
+  const accountsCtx = useOptionalAccounts();
+  const accounts = accountsCtx?.accounts;
+  const brainAccountId = useMemo(
+    () => (configDir ? accounts?.find((a) => a.config_dir === configDir)?.id ?? null : null),
+    [accounts, configDir],
+  );
+  const [hasBrainVault, setHasBrainVault] = useState(false);
+  const [recallOpen, setRecallOpen] = useState(false);
+
+  useEffect(() => {
+    if (brainAccountId === null) {
+      setHasBrainVault(false);
+      return;
+    }
+    let cancelled = false;
+    void api
+      .brainStatus(brainAccountId)
+      .then((status) => {
+        if (!cancelled) setHasBrainVault(status.configured);
+      })
+      // The Brain is auxiliary: a failed probe means no /recall entry, never a
+      // broken prompt input.
+      .catch(() => { if (!cancelled) setHasBrainVault(false); });
+    return () => { cancelled = true; };
+  }, [brainAccountId]);
+
+  const handleLocalCommand = useCallback((commandId: string) => {
+    if (commandId === RECALL_COMMAND_ID) setRecallOpen(true);
+  }, []);
+
+  /**
+   * Splice recalled notes in at the cursor. Appended to whatever is already
+   * typed rather than replacing it: /recall is used mid-thought, and the ask
+   * the user was writing is the reason they reached for it.
+   */
+  const insertRecalledNotes = useCallback((text: string) => {
+    if (!text) return;
+    setPrompt((prev) => {
+      const at = Math.min(cursorPosition, prev.length);
+      return `${prev.slice(0, at)}${text}${prev.slice(at)}`;
+    });
+  }, [cursorPosition]);
+
+  const slash = useSlashCommandAutocomplete({ onLocalCommand: handleLocalCommand });
 
   // -- Image drop zone hook --
   // Dropped images flow through the same base64 state as pasted ones.
@@ -567,6 +619,15 @@ const FloatingPromptInputInner = (
                   )}
                 </AnimatePresence>
 
+                {brainAccountId !== null && (
+                  <RecallDialog
+                    open={recallOpen}
+                    accountId={brainAccountId}
+                    onOpenChange={setRecallOpen}
+                    onInsert={insertRecalledNotes}
+                  />
+                )}
+
                 {/* Slash Command Picker */}
                 <AnimatePresence>
                   {slash.showSlashCommandPicker && (
@@ -580,6 +641,7 @@ const FloatingPromptInputInner = (
                       onClose={() => { slash.handleSlashCommandPickerClose(activeTextarea()); }}
                       initialQuery={slash.slashCommandQuery}
                       configDir={configDir}
+                      hasBrainVault={hasBrainVault}
                     />
                   )}
                 </AnimatePresence>
