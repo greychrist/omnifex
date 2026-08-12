@@ -198,6 +198,7 @@ describe('brain IPC handlers', () => {
       rebuild: () => { throw boom; },
       deleteNote: () => { throw boom; },
       updateNoteBody: () => { throw boom; },
+      backlinks: () => { throw boom; },
       closeAll: () => {},
     };
     const stubHandlers = createBrainHandlers(stub);

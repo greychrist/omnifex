@@ -572,6 +572,49 @@ describe('brain registry', () => {
     expect(brain.search(1, 'stdio')).toEqual([]);
   });
 
+  describe('backlinks', () => {
+    it('finds notes that link to the given note', () => {
+      brain.setVaultPath(1, join(dir, 'links'));
+      brain.writeNote(1, 'Subsystems/Sessions.md', note('the session layer'), 'test');
+      brain.writeNote(1, 'Projects/omnifex.md', note('uses [[Sessions]] heavily'), 'test');
+      brain.writeNote(1, 'Topics/Unrelated.md', note('nothing here'), 'test');
+
+      expect(brain.backlinks(1, 'Subsystems/Sessions.md')).toEqual(['Projects/omnifex.md']);
+    });
+
+    it('matches a path-form link and a display-text link', () => {
+      brain.setVaultPath(1, join(dir, 'links2'));
+      brain.writeNote(1, 'Subsystems/Sessions.md', note('x'), 'test');
+      brain.writeNote(1, 'Projects/a.md', note('[[Subsystems/Sessions]]'), 'test');
+      brain.writeNote(1, 'Projects/b.md', note('[[Sessions|the layer]]'), 'test');
+
+      expect(brain.backlinks(1, 'Subsystems/Sessions.md').sort()).toEqual([
+        'Projects/a.md',
+        'Projects/b.md',
+      ]);
+    });
+
+    it('never lists the note itself', () => {
+      brain.setVaultPath(1, join(dir, 'links3'));
+      brain.writeNote(1, 'Notes/Self.md', note('I link to [[Self]]'), 'test');
+
+      expect(brain.backlinks(1, 'Notes/Self.md')).toEqual([]);
+    });
+
+    it('skips a corrupt note rather than aborting the scan', () => {
+      brain.setVaultPath(1, join(dir, 'links4'));
+      brain.writeNote(1, 'Subsystems/Sessions.md', note('x'), 'test');
+      brain.writeNote(1, 'Projects/a.md', note('[[Sessions]]'), 'test');
+      writeFileSync(join(dir, 'links4', 'Topics', 'Bad.md'), 'no frontmatter\n');
+
+      expect(brain.backlinks(1, 'Subsystems/Sessions.md')).toEqual(['Projects/a.md']);
+    });
+
+    it('returns empty for an account with no vault', () => {
+      expect(brain.backlinks(1, 'Notes/A.md')).toEqual([]);
+    });
+  });
+
   describe('rebuild', () => {
     it('indexes notes that were written into the vault behind the service', () => {
       brain.setVaultPath(1, join(dir, 'preexisting'));

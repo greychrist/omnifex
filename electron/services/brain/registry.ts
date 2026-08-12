@@ -10,6 +10,7 @@ import {
   type VaultIndex,
 } from './search';
 import { createVaultGit, type VaultGit } from './git';
+import { linkMatchesNote, parseWikilinks } from './links';
 import { fireAndLogGitFailure } from './git-logging';
 import { canonicalPath, fsIdentity, isSameOrInside, resolveVaultRoot } from './paths';
 import type { ParsedNote } from './types';
@@ -106,6 +107,8 @@ export interface BrainService {
   /** Describes the vault without creating it. Never throws for a broken one. */
   status(accountId: number): Promise<VaultStatus>;
   search(accountId: number, query: string, opts?: SearchOptions): SearchHit[];
+  /** Note paths whose bodies wikilink to `relPath`. Empty when unconfigured. */
+  backlinks(accountId: number, relPath: string): string[];
   writeNote(accountId: number, relPath: string, note: ParsedNote, commitMessage: string): void;
   /** Reindex the whole vault from disk. Returns the number of notes indexed. */
   rebuild(accountId: number): number;
@@ -528,6 +531,39 @@ export function createBrainService(db: Database): BrainService {
       }
       if (!handle) return [];
       return handle.index.search(query, opts);
+    },
+
+    backlinks(accountId: number, relPath: string): string[] {
+      requireAccountId(accountId);
+      // A read path, so it degrades to empty rather than throwing — same rule
+      // as search(). An unconfigured account simply has no backlinks.
+      let handle: VaultHandle | null;
+      try {
+        handle = service.open(accountId);
+      } catch (err) {
+        if (err instanceof VaultConflictError) return [];
+        throw err;
+      }
+      if (!handle) return [];
+
+      // A full scan, deliberately: the FTS index is stemmed and limited, so
+      // narrowing with it would silently miss links. A vault is hundreds of
+      // local files and this runs only when a note is opened.
+      const out: string[] = [];
+      for (const candidate of handle.vault.listNotes()) {
+        if (candidate === relPath) continue;
+        let body: string;
+        try {
+          body = handle.vault.readNote(candidate).body;
+        } catch {
+          // A hand-edited note with broken frontmatter must not abort the scan.
+          continue;
+        }
+        if (parseWikilinks(body).some((target) => linkMatchesNote(target, relPath))) {
+          out.push(candidate);
+        }
+      }
+      return out;
     },
 
     writeNote(accountId: number, relPath: string, note: ParsedNote, commitMessage: string): void {
