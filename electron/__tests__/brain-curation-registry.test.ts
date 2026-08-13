@@ -176,6 +176,19 @@ describe('curation on the registry', () => {
     expect(brain.enqueueCuration(accountId)).toBe(0);
   });
 
+  it('reports stats over the real vault, and zeroes when unconfigured', () => {
+    brain.writeNote(accountId, 'Subsystems/Widget.md', noteWith(12), 'seed');
+    brain.writeNote(accountId, 'Subsystems/Short.md', noteWith(2), 'seed');
+
+    const stats = brain.stats(accountId);
+    expect(stats.noteCount).toBe(2);
+    expect(stats.qualifyingCount).toBe(1);
+    expect(stats.totalBytes).toBeGreaterThan(0);
+
+    brain.clearVaultPath(accountId);
+    expect(brain.stats(accountId).noteCount).toBe(0);
+  });
+
   it('drains a curation row through the worker', async () => {
     brain.writeNote(accountId, 'Subsystems/Widget.md', noteWith(12), 'seed');
     brain.enqueueCuration(accountId);

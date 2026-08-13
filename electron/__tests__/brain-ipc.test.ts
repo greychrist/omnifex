@@ -280,6 +280,7 @@ describe('brain IPC handlers', () => {
       enqueueSource: () => { throw boom; },
       enqueueProjectSources: () => { throw boom; },
       backfill: () => { throw boom; },
+      stats: () => { throw boom; },
       queueCounts: () => { throw boom; },
       queueList: () => { throw boom; },
       clearFinishedQueue: () => { throw boom; },

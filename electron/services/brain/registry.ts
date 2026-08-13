@@ -28,6 +28,7 @@ import { resolveEntityPath, type ExistingNote } from './resolve';
 import { merge } from './merge';
 import { MAX_NOTES_PER_RUN, collapsibleEntries, curate, qualifies } from './curate';
 import type { Curator } from './curation';
+import { computeVaultStats, type VaultStats } from './stats';
 import type { AccountsService } from '../accounts';
 import type { ParsedNote } from './types';
 
@@ -274,6 +275,11 @@ export interface BrainService {
    * and unchanged. Returns how many were queued.
    */
   backfill(accountId: number): Promise<number>;
+  /**
+   * Vault size, context cost and Timeline distribution. Zeroes when
+   * unconfigured — a stats panel must render rather than throw.
+   */
+  stats(accountId: number): VaultStats;
   queueCounts(accountId?: number): QueueCounts;
   queueList(accountId: number, limit?: number): QueueEntry[];
   clearFinishedQueue(accountId: number): void;
@@ -1230,6 +1236,22 @@ export function createBrainService(
       const chosen = candidates.slice(0, MAX_NOTES_PER_RUN);
       for (const c of chosen) queueStore.enqueue(accountId, CURATION_SOURCE_ID, c.relPath);
       return chosen.length;
+    },
+
+    stats(accountId: number): VaultStats {
+      requireAccountId(accountId);
+      const handle = readPath(accountId) === null ? null : requireHandle(accountId);
+      if (!handle) return computeVaultStats([], today());
+
+      const notes: { relPath: string; note: ParsedNote }[] = [];
+      for (const relPath of handle.vault.listNotes()) {
+        try {
+          notes.push({ relPath, note: handle.vault.readNote(relPath) });
+        } catch {
+          // One unreadable note must not cost the whole reading.
+        }
+      }
+      return computeVaultStats(notes, today());
     },
 
     async enqueueSource(accountId: number, itemKey: string): Promise<void> {
