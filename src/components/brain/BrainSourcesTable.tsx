@@ -11,7 +11,7 @@ import { Popover } from '@/components/ui/popover';
  * a queue.
  */
 
-export type SortKey = 'project' | 'item' | 'when' | 'size' | 'status';
+export type SortKey = 'project' | 'type' | 'when' | 'size' | 'status';
 export type StatusFilter = 'all' | 'never' | 'indexed' | 'failed' | 'changed';
 
 export interface BrainSourcesTableProps {
@@ -40,6 +40,25 @@ function matchesStatus(r: BrainSourceSummary, f: StatusFilter): boolean {
   if (f === 'indexed') return r.status === 'indexed';
   if (f === 'failed') return r.status === 'failed';
   return r.status === null;
+}
+
+/**
+ * What kind of thing a row is.
+ *
+ * Not every row is a session — auto-memory notes and repo instruction files
+ * are `.md` on disk and were indistinguishable from one, which made a Markdown
+ * file masquerading as a conversation. Mirrors the `*_SOURCE_ID` constants in
+ * electron/services/brain/sources/.
+ */
+export function sourceTypeLabel(sourceId: string): string {
+  switch (sourceId) {
+    case 'session': return 'Session';
+    case 'auto-memory': return 'Memory';
+    case 'repo': return 'Repo file';
+    case 'capture': return 'Capture';
+    // An adapter added later still renders as something rather than blank.
+    default: return sourceId;
+  }
 }
 
 function kb(bytes: number): string {
@@ -99,14 +118,17 @@ export const BrainSourcesTable: React.FC<BrainSourcesTableProps> = ({
         !hidden.has(r.label) &&
         matchesStatus(r, status) &&
         (needle === '' ||
+          // The item key stays searchable though it no longer has a column:
+          // pasting a session id is how you find one specific conversation.
           r.itemKey.toLowerCase().includes(needle) ||
-          r.label.toLowerCase().includes(needle)),
+          r.label.toLowerCase().includes(needle) ||
+          sourceTypeLabel(r.sourceId).toLowerCase().includes(needle)),
     );
     const dir = sort.desc ? -1 : 1;
     return [...filtered].sort((a, b) => {
       switch (sort.key) {
         case 'project': return dir * comparePaths(a.label, b.label);
-        case 'item': return dir * a.itemKey.localeCompare(b.itemKey);
+        case 'type': return dir * a.sourceId.localeCompare(b.sourceId);
         case 'size': return dir * (a.size - b.size);
         case 'status': return dir * statusOf(a).localeCompare(statusOf(b));
         default: return dir * (a.mtimeMs - b.mtimeMs);
@@ -244,7 +266,9 @@ export const BrainSourcesTable: React.FC<BrainSourcesTableProps> = ({
         </span>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      {/* Scrolls in both directions: paths are not truncated, so a deep one
+          is allowed to run past the pane rather than be abridged. */}
+      <div className="min-h-0 flex-1 overflow-auto">
         <table className="w-full text-xs">
           <thead className="sticky top-0 bg-background text-muted-foreground">
             <tr className="border-b">
@@ -258,7 +282,7 @@ export const BrainSourcesTable: React.FC<BrainSourcesTableProps> = ({
                 />
               </th>
               {header('project', 'Project')}
-              {header('item', 'Session')}
+              {header('type', 'Type')}
               {header('when', 'When')}
               {header('size', 'Size')}
               {header('status', 'Status')}
@@ -285,13 +309,14 @@ export const BrainSourcesTable: React.FC<BrainSourcesTableProps> = ({
                       className="h-3 w-3"
                     />
                   </td>
-                  {/* The whole path, never abridged. Wraps rather than
-                      truncating: these paths share long prefixes, so cutting
-                      one anywhere hides the part that identifies it. */}
-                  <td className="break-all px-2 py-1">{r.label}</td>
-                  {/* An artifact's key carries its repo path, so this wraps
-                      for the same reason the Project column does. */}
-                  <td className="break-all px-2 py-1">{r.itemKey}</td>
+                  {/* One line, whole path. These share long prefixes, so
+                      cutting one anywhere hides the part that identifies it,
+                      and wrapping made every row two lines tall. The table
+                      scrolls sideways instead. */}
+                  <td className="whitespace-nowrap px-2 py-1">{r.label}</td>
+                  <td className="whitespace-nowrap px-2 py-1 text-muted-foreground">
+                    {sourceTypeLabel(r.sourceId)}
+                  </td>
                   <td className="whitespace-nowrap px-2 py-1 text-muted-foreground">
                     {new Date(r.mtimeMs).toISOString().slice(0, 10)}
                   </td>

@@ -35,6 +35,13 @@ const ROWS = [
   }),
 ];
 
+/** One row of each kind, newest first, for the Type-column tests. */
+const MIXED = [
+  row({ itemKey: 'sess', sourceId: 'session', mtimeMs: Date.parse('2026-08-03T00:00:00Z') }),
+  row({ itemKey: 'mem', sourceId: 'auto-memory', mtimeMs: Date.parse('2026-08-02T00:00:00Z') }),
+  row({ itemKey: 'repo', sourceId: 'repo', mtimeMs: Date.parse('2026-08-01T00:00:00Z') }),
+];
+
 /** Wraps the controlled selection so tests can drive it like the real pane. */
 function Harness({ rows = ROWS }: { rows?: BrainSourceSummary[] }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -52,11 +59,18 @@ function Harness({ rows = ROWS }: { rows?: BrainSourceSummary[] }) {
   );
 }
 
+/**
+ * Row order, by item key.
+ *
+ * Read off each row's select checkbox rather than a cell: the session id has
+ * no column any more, and identifying rows by a rendered cell would couple
+ * every ordering test to the column layout.
+ */
 function itemCells(): string[] {
   return screen
     .getAllByRole('row')
     .slice(1)
-    .map((r) => within(r).getAllByRole('cell')[2].textContent ?? '');
+    .map((r) => within(r).getByRole('checkbox').getAttribute('aria-label')?.replace('Select ', '') ?? '');
 }
 
 afterEach(() => { cleanup(); });
@@ -75,13 +89,42 @@ describe('BrainSourcesTable', () => {
     expect(itemCells()).toEqual(['aaa', 'ccc', 'bbb']);
   });
 
-  it('filters on free text across session and project', () => {
+  it('filters on free text across item key, project and type', () => {
     render(<Harness />);
+    // The key has no column, but pasting a session id must still find it.
     fireEvent.change(screen.getByLabelText(/filter sessions/i), { target: { value: 'ccc' } });
     expect(itemCells()).toEqual(['ccc']);
 
     fireEvent.change(screen.getByLabelText(/filter sessions/i), { target: { value: 'tmp' } });
     expect(itemCells()).toEqual(['ccc']);
+
+    fireEvent.change(screen.getByLabelText(/filter sessions/i), { target: { value: 'session' } });
+    expect(itemCells()).toEqual(['bbb', 'ccc', 'aaa']);
+  });
+
+  /**
+   * Auto-memory notes and repo instruction files are `.md` on disk, so without
+   * a Type column a Markdown file is indistinguishable from a conversation.
+   */
+  it('names the kind of each row, so a .md file is not read as a session', () => {
+    render(<Harness rows={MIXED} />);
+    const types = screen
+      .getAllByRole('row')
+      .slice(1)
+      .map((r) => within(r).getAllByRole('cell')[2].textContent ?? '');
+    expect(types).toEqual(['Session', 'Memory', 'Repo file']);
+  });
+
+  it('does not show the session id', () => {
+    render(<Harness />);
+    expect(screen.queryByRole('columnheader', { name: /session/i })).toBeNull();
+    expect(screen.queryByText('aaa')).toBeNull();
+  });
+
+  it('sorts by type', () => {
+    render(<Harness rows={MIXED} />);
+    fireEvent.click(screen.getByRole('button', { name: /^type/i }));
+    expect(itemCells()).toEqual(['sess', 'repo', 'mem']);
   });
 
   it('filters by project from the popover', () => {

@@ -9,7 +9,6 @@ vi.mock('@/lib/api', () => ({
     brainQueueCounts: vi.fn(),
     brainQueueList: vi.fn(),
     brainBackfill: vi.fn(),
-    brainQueueDrain: vi.fn(),
     brainQueueClear: vi.fn(),
     brainEnqueueCuration: vi.fn(),
     getSetting: vi.fn(),
@@ -43,9 +42,6 @@ describe('BrainQueuePanel controls', () => {
     });
     vi.mocked(api.brainQueueList).mockResolvedValue([]);
     vi.mocked(api.brainBackfill).mockResolvedValue(0);
-    vi.mocked(api.brainQueueDrain).mockResolvedValue({
-      processed: 0, yielded: false, reason: 'empty',
-    });
     vi.mocked(api.brainQueueClear).mockResolvedValue(undefined);
     vi.mocked(api.getSetting).mockResolvedValue('false');
     vi.mocked(api.saveSetting).mockResolvedValue(undefined);
@@ -53,53 +49,11 @@ describe('BrainQueuePanel controls', () => {
     vi.mocked(api.brainEnqueueCuration).mockResolvedValue(0);
   });
 
-  it('labels the bulk action with the pending count', async () => {
-    render(<BrainQueuePanel accountId={1} />);
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: /index all \(154\)/i })).toBeTruthy();
-    });
-    // "Drain" describes the queue's internals, not what the user is doing.
-    expect(screen.queryByRole('button', { name: /drain/i })).toBeNull();
-  });
-
-  it('does not start a bulk run on the first click', async () => {
-    render(<BrainQueuePanel accountId={1} />);
-    fireEvent.click(await screen.findByRole('button', { name: /index all \(154\)/i }));
-    expect(api.brainQueueDrain).not.toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: /confirm/i })).toBeTruthy();
-  });
-
-  it('starts the bulk run only after confirmation', async () => {
-    render(<BrainQueuePanel accountId={1} />);
-    fireEvent.click(await screen.findByRole('button', { name: /index all \(154\)/i }));
-    fireEvent.click(screen.getByRole('button', { name: /confirm/i }));
-    await waitFor(() => { expect(api.brainQueueDrain).toHaveBeenCalledTimes(1); });
-  });
-
-  it('says it yielded rather than claiming a run finished', async () => {
-    vi.mocked(api.brainQueueDrain).mockResolvedValue({
-      processed: 0, yielded: true, reason: 'session-active',
-    });
-    render(<BrainQueuePanel accountId={1} />);
-    fireEvent.click(await screen.findByRole('button', { name: /index all \(154\)/i }));
-    fireEvent.click(screen.getByRole('button', { name: /confirm/i }));
-    await waitFor(() => { expect(screen.getByText(/yielded/i)).toBeTruthy(); });
-    expect(screen.getByText(/session is open/i)).toBeTruthy();
-    // It must not claim to have indexed anything. (Not a bare /finished/i
-    // check — the "Clear finished" button matches that.)
-    expect(screen.queryByText(/^indexed \d/i)).toBeNull();
-  });
-
-  it('reports what a completed run actually indexed', async () => {
-    vi.mocked(api.brainQueueDrain).mockResolvedValue({
-      processed: 12, yielded: false, reason: 'empty',
-    });
-    render(<BrainQueuePanel accountId={1} />);
-    fireEvent.click(await screen.findByRole('button', { name: /index all \(154\)/i }));
-    fireEvent.click(screen.getByRole('button', { name: /confirm/i }));
-    await waitFor(() => { expect(screen.getByText(/indexed 12/i)).toBeTruthy(); });
-  });
-
+  
+  
+  
+  
+  
   it('offers Resume, not Pause, when the queue is already paused', async () => {
     vi.mocked(api.getSetting).mockImplementation((k: string) =>
       Promise.resolve(k === 'brain.queuePaused' ? 'true' : 'false'));
@@ -117,46 +71,6 @@ describe('BrainQueuePanel controls', () => {
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /^resume$/i })).toBeTruthy();
     });
-  });
-
-  /**
-   * The other half of the original failure: the worker WAS running, correctly,
-   * for a full minute — and the panel showed nothing at all, so the user could
-   * not tell it from a dead button.
-   */
-  it('shows live progress while a run is in flight', async () => {
-    let finish: (o: { processed: number; yielded: boolean; reason: 'empty' }) => void = () => {};
-    vi.mocked(api.brainQueueDrain).mockReturnValue(
-      new Promise((r) => { finish = r; }) as ReturnType<typeof api.brainQueueDrain>,
-    );
-    // 158 total: 4 already done, 154 pending.
-    render(<BrainQueuePanel accountId={1} />);
-    fireEvent.click(await screen.findByRole('button', { name: /index all \(154\)/i }));
-    fireEvent.click(screen.getByRole('button', { name: /confirm/i }));
-
-    // The poll observes progress moving.
-    vi.mocked(api.brainQueueCounts).mockResolvedValue({
-      pending: 150, running: 1, done: 8, failed: 0,
-    });
-    await waitFor(
-      () => { expect(screen.getByText(/indexing 9 of 158/i)).toBeTruthy(); },
-      { timeout: 3000 },
-    );
-
-    finish({ processed: 154, yielded: false, reason: 'empty' });
-    await waitFor(() => { expect(screen.queryByText(/indexing \d+ of/i)).toBeNull(); });
-  });
-
-  it('stops polling once the run ends', async () => {
-    render(<BrainQueuePanel accountId={1} />);
-    fireEvent.click(await screen.findByRole('button', { name: /index all \(154\)/i }));
-    fireEvent.click(screen.getByRole('button', { name: /confirm/i }));
-    await waitFor(() => { expect(screen.getByText(/indexed 0/i)).toBeTruthy(); });
-
-    const settled = vi.mocked(api.brainQueueCounts).mock.calls.length;
-    await new Promise((r) => setTimeout(r, 1200));
-    // A timer left running would keep calling after the run finished.
-    expect(vi.mocked(api.brainQueueCounts).mock.calls.length).toBe(settled);
   });
 
   /**
@@ -186,9 +100,6 @@ describe('BrainQueuePanel', () => {
     });
     vi.mocked(api.brainQueueList).mockResolvedValue([]);
     vi.mocked(api.brainBackfill).mockResolvedValue(0);
-    vi.mocked(api.brainQueueDrain).mockResolvedValue({
-      processed: 0, yielded: false, reason: 'empty',
-    });
     vi.mocked(api.brainQueueClear).mockResolvedValue(undefined);
     vi.mocked(api.getSetting).mockResolvedValue('false');
     vi.mocked(api.saveSetting).mockResolvedValue(undefined);
@@ -234,24 +145,8 @@ describe('BrainQueuePanel', () => {
     await waitFor(() => { expect(api.brainQueueCounts).toHaveBeenCalledTimes(2); });
   });
 
-  it('drains on demand, behind the confirmation', async () => {
-    vi.mocked(api.brainQueueCounts).mockResolvedValue({
-      pending: 3, running: 0, done: 0, failed: 0,
-    });
-    render(<BrainQueuePanel accountId={1} />);
-
-    fireEvent.click(await screen.findByRole('button', { name: /index all \(3\)/i }));
-    fireEvent.click(screen.getByRole('button', { name: /confirm/i }));
-
-    await waitFor(() => { expect(api.brainQueueDrain).toHaveBeenCalled(); });
-  });
-
-  it('cannot start a bulk run with nothing pending', async () => {
-    render(<BrainQueuePanel accountId={1} />);
-    const btn = await screen.findByRole('button', { name: /index all \(0\)/i });
-    expect(btn).toHaveProperty('disabled', true);
-  });
-
+  
+  
   it('clears finished entries', async () => {
     render(<BrainQueuePanel accountId={1} />);
     await screen.findByText(/0 pending/i);

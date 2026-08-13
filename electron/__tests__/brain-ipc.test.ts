@@ -33,7 +33,6 @@ const CHANNELS = [
   'brain_mcp_unregister',
   'brain_queue_clear',
   'brain_queue_counts',
-  'brain_queue_drain',
   'brain_queue_list',
   'brain_read_note',
   'brain_rebuild',
@@ -152,7 +151,6 @@ describe('brain IPC handlers', () => {
     await expect(bare.brain_queue_list(null, { accountId: 1 })).resolves.toEqual([]);
     // Writes must not report work that never happened.
     await expect(bare.brain_backfill(null, { accountId: 1 })).rejects.toThrow(/unavailable/);
-    await expect(bare.brain_queue_drain(null, {})).rejects.toThrow(/unavailable/);
     await expect(bare.brain_queue_clear(null, { accountId: 1 })).rejects.toThrow(/unavailable/);
   });
 

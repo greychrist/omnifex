@@ -1115,15 +1115,6 @@ export interface BrainQueueCounts {
   failed: number;
 }
 
-/** Mirrors `DrainOutcome` in electron/services/brain/queue.ts. */
-export interface BrainDrainOutcome {
-  /** Items taken to a terminal state, successes and failures alike. */
-  processed: number;
-  /** True when the worker stopped for a reason other than an empty queue. */
-  yielded: boolean;
-  reason: 'empty' | 'paused' | 'session-active';
-}
-
 /** Mirrors `QueueEntry` in electron/services/brain/queue.ts. */
 export interface BrainQueueEntry {
   id: number;
@@ -3179,11 +3170,6 @@ export const api = {
   /** Vault size, context cost and Timeline distribution. */
   async brainStats(accountId: number): Promise<BrainVaultStats> {
     return apiCall<BrainVaultStats>('brain_stats', { accountId });
-  },
-
-  /** Drain the queue now. Yields immediately if a session is open. */
-  async brainQueueDrain(): Promise<BrainDrainOutcome> {
-    return apiCall<BrainDrainOutcome>('brain_queue_drain', {});
   },
 
   async brainQueueClear(accountId: number): Promise<void> {
